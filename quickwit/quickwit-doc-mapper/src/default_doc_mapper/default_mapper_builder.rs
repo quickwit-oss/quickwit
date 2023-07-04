@@ -22,6 +22,7 @@ use std::num::NonZeroU32;
 use anyhow::bail;
 use serde::{Deserialize, Serialize};
 
+use super::tokenizer_entry::TokenizerEntry;
 use super::FieldMappingEntry;
 use crate::default_doc_mapper::default_mapper::Mode;
 use crate::default_doc_mapper::QuickwitJsonOptions;
@@ -66,6 +67,9 @@ pub struct DefaultDocMapperBuilder {
     /// how the unmapped fields should be handled.
     #[serde(default)]
     pub dynamic_mapping: Option<QuickwitJsonOptions>,
+    /// User-defined tokenizers.
+    #[serde(default)]
+    pub tokenizers: Vec<TokenizerEntry>,
 }
 
 /// `Mode` describing how the unmapped field should be handled.

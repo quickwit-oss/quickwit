@@ -21,6 +21,7 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 use tantivy::schema::Schema as TantivySchema;
+use tantivy::tokenizer::TokenizerManager;
 
 use super::{BuildTantivyAst, QueryAst};
 use crate::query_ast::{FullTextParams, TantivyQueryAst};
@@ -54,6 +55,7 @@ impl BuildTantivyAst for TermQuery {
     fn build_tantivy_ast_impl(
         &self,
         schema: &TantivySchema,
+        tokenizer_manager: &TokenizerManager,
         _search_fields: &[String],
         _with_validation: bool,
     ) -> Result<TantivyQueryAst, InvalidQuery> {
@@ -68,6 +70,7 @@ impl BuildTantivyAst for TermQuery {
             &self.value,
             &full_text_params,
             schema,
+            tokenizer_manager,
         )
     }
 }
@@ -124,6 +127,7 @@ impl From<TermQuery> for HashMap<String, TermQueryValue> {
 mod tests {
     use tantivy::schema::{Schema, INDEXED};
 
+    use crate::create_default_quickwit_tokenizer_manager;
     use crate::query_ast::{BuildTantivyAst, TermQuery};
 
     #[test]
@@ -136,7 +140,12 @@ mod tests {
         schema_builder.add_ip_addr_field("ip", INDEXED);
         let schema = schema_builder.build();
         let tantivy_query_ast = term_query
-            .build_tantivy_ast_call(&schema, &[], true)
+            .build_tantivy_ast_call(
+                &schema,
+                &create_default_quickwit_tokenizer_manager(),
+                &[],
+                true,
+            )
             .unwrap();
         let leaf = tantivy_query_ast.as_leaf().unwrap();
         assert_eq!(
@@ -155,7 +164,12 @@ mod tests {
         schema_builder.add_ip_addr_field("ip", INDEXED);
         let schema = schema_builder.build();
         let tantivy_query_ast = term_query
-            .build_tantivy_ast_call(&schema, &[], true)
+            .build_tantivy_ast_call(
+                &schema,
+                &create_default_quickwit_tokenizer_manager(),
+                &[],
+                true,
+            )
             .unwrap();
         let leaf = tantivy_query_ast.as_leaf().unwrap();
         assert_eq!(
@@ -174,7 +188,12 @@ mod tests {
         schema_builder.add_bytes_field("bytes", INDEXED);
         let schema = schema_builder.build();
         let tantivy_query_ast = term_query
-            .build_tantivy_ast_call(&schema, &[], true)
+            .build_tantivy_ast_call(
+                &schema,
+                &create_default_quickwit_tokenizer_manager(),
+                &[],
+                true,
+            )
             .unwrap();
         let leaf = tantivy_query_ast.as_leaf().unwrap();
         assert_eq!(
@@ -193,7 +212,12 @@ mod tests {
         schema_builder.add_bytes_field("bytes", INDEXED);
         let schema = schema_builder.build();
         let tantivy_query_ast = term_query
-            .build_tantivy_ast_call(&schema, &[], true)
+            .build_tantivy_ast_call(
+                &schema,
+                &create_default_quickwit_tokenizer_manager(),
+                &[],
+                true,
+            )
             .unwrap();
         let leaf = tantivy_query_ast.as_leaf().unwrap();
         assert_eq!(

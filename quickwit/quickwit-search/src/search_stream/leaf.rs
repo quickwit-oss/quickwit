@@ -124,7 +124,14 @@ async fn leaf_search_stream_single_split(
         &split,
     );
 
-    let index = open_index_with_caches(&searcher_context, storage, &split, true).await?;
+    let index = open_index_with_caches(
+        &searcher_context,
+        storage,
+        &split,
+        Some(doc_mapper.tokenizer_manager()),
+        true,
+    )
+    .await?;
     let split_schema = index.schema();
 
     let request_fields = Arc::new(SearchStreamRequestFields::from_request(

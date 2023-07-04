@@ -852,7 +852,7 @@ async fn test_single_node_split_pruning_by_tags() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn test_search_dynamic_util(test_sandbox: &TestSandbox, query: &str) -> Vec<u32> {
+async fn test_search_util(test_sandbox: &TestSandbox, query: &str) -> Vec<u32> {
     let splits = test_sandbox
         .metastore()
         .list_all_splits(test_sandbox.index_uid())
@@ -908,11 +908,11 @@ async fn test_search_dynamic_mode() -> anyhow::Result<()> {
     ];
     test_sandbox.add_documents(docs).await.unwrap();
     {
-        let docs = test_search_dynamic_util(&test_sandbox, "body:hello").await;
+        let docs = test_search_util(&test_sandbox, "body:hello").await;
         assert_eq!(&docs[..], &[1u32, 0u32]);
     }
     {
-        let docs = test_search_dynamic_util(&test_sandbox, "body_dynamic:hello").await;
+        let docs = test_search_util(&test_sandbox, "body_dynamic:hello").await;
         assert_eq!(&docs[..], &[3u32]); // 1 is not matched due to the raw tokenizer
     }
     test_sandbox.assert_quit().await;
@@ -938,12 +938,11 @@ async fn test_search_dynamic_mode_expand_dots() -> anyhow::Result<()> {
     let docs = vec![json!({"k8s.component.name": "quickwit"})];
     test_sandbox.add_documents(docs).await.unwrap();
     {
-        let docs = test_search_dynamic_util(&test_sandbox, "k8s.component.name:quickwit").await;
+        let docs = test_search_util(&test_sandbox, "k8s.component.name:quickwit").await;
         assert_eq!(&docs[..], &[0u32]);
     }
     {
-        let docs =
-            test_search_dynamic_util(&test_sandbox, r#"k8s\.component\.name:quickwit"#).await;
+        let docs = test_search_util(&test_sandbox, r#"k8s\.component\.name:quickwit"#).await;
         assert_eq!(&docs[..], &[0u32]);
     }
     test_sandbox.assert_quit().await;
@@ -969,12 +968,11 @@ async fn test_search_dynamic_mode_do_not_expand_dots() -> anyhow::Result<()> {
     let docs = vec![json!({"k8s.component.name": "quickwit"})];
     test_sandbox.add_documents(docs).await.unwrap();
     {
-        let docs =
-            test_search_dynamic_util(&test_sandbox, r#"k8s\.component\.name:quickwit"#).await;
+        let docs = test_search_util(&test_sandbox, r#"k8s\.component\.name:quickwit"#).await;
         assert_eq!(&docs[..], &[0u32]);
     }
     {
-        let docs = test_search_dynamic_util(&test_sandbox, r#"k8s.component.name:quickwit"#).await;
+        let docs = test_search_util(&test_sandbox, r#"k8s.component.name:quickwit"#).await;
         assert!(docs.is_empty());
     }
     test_sandbox.assert_quit().await;
@@ -1663,4 +1661,36 @@ async fn test_single_node_find_trace_ids_collector() {
         );
     }
     test_sandbox.assert_quit().await;
+}
+
+#[tokio::test]
+async fn test_search_in_text_field_with_custom_tokenizer() -> anyhow::Result<()> {
+    let doc_mapping_yaml = r#"
+            tokenizers:
+              - name: custom_tokenizer
+                type: ngram
+                min_gram: 3
+                max_gram: 5
+                prefix_only: true
+            field_mappings:
+              - name: body
+                type: text
+                tokenizer: custom_tokenizer
+                indexed: true
+        "#;
+    let test_sandbox = TestSandbox::create("search_custom_tokenizer", doc_mapping_yaml, "{}", &[])
+        .await
+        .unwrap();
+    let docs = vec![json!({"body": "hellohappy"})];
+    test_sandbox.add_documents(docs).await.unwrap();
+    {
+        let docs = test_search_util(&test_sandbox, "body:happy").await;
+        assert!(&docs.is_empty());
+    }
+    {
+        let docs = test_search_util(&test_sandbox, "body:hel").await;
+        assert_eq!(&docs[..], &[0u32]);
+    }
+    test_sandbox.assert_quit().await;
+    Ok(())
 }
