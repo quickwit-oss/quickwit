@@ -171,9 +171,15 @@ async fn fetch_docs_in_split(
     global_doc_addrs.sort_by_key(|doc| doc.doc_addr);
     // Opens the index without the ephemeral unbounded cache, this cache is indeed not useful
     // when fetching docs as we will fetch them only once.
-    let index = open_index_with_caches(&searcher_context, index_storage, split, false)
-        .await
-        .with_context(|| "open-index-for-split")?;
+    let index = open_index_with_caches(
+        &searcher_context,
+        index_storage,
+        split,
+        Some(doc_mapper.tokenizer_manager()),
+        false,
+    )
+    .await
+    .context("open-index-for-split")?;
     let index_reader = index
         .reader_builder()
         // the docs are presorted so a cache size of NUM_CONCURRENT_REQUESTS is fine

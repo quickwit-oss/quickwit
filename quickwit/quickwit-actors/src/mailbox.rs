@@ -174,7 +174,7 @@ impl<A: Actor> Mailbox<A> {
     ) -> Result<oneshot::Receiver<A::Reply>, SendError>
     where
         A: DeferableReplyHandler<M>,
-        M: 'static + Send + Sync + fmt::Debug,
+        M: fmt::Debug + Send + 'static,
     {
         self.send_message_with_backpressure_counter(message, None)
             .await
@@ -189,7 +189,7 @@ impl<A: Actor> Mailbox<A> {
     ) -> Result<oneshot::Receiver<A::Reply>, TrySendError<M>>
     where
         A: DeferableReplyHandler<M>,
-        M: 'static + Send + Sync + fmt::Debug,
+        M: fmt::Debug + Send + 'static,
     {
         let (envelope, response_rx) = self.wrap_in_envelope(message);
         self.inner
@@ -211,7 +211,7 @@ impl<A: Actor> Mailbox<A> {
     fn wrap_in_envelope<M>(&self, message: M) -> (Envelope<A>, oneshot::Receiver<A::Reply>)
     where
         A: DeferableReplyHandler<M>,
-        M: 'static + Send + Sync + fmt::Debug,
+        M: fmt::Debug + Send + 'static,
     {
         let guard = self
             .inner
@@ -233,7 +233,7 @@ impl<A: Actor> Mailbox<A> {
     ) -> Result<oneshot::Receiver<A::Reply>, SendError>
     where
         A: DeferableReplyHandler<M>,
-        M: 'static + Send + Sync + fmt::Debug,
+        M: fmt::Debug + Send + 'static,
     {
         let (envelope, response_rx) = self.wrap_in_envelope(message);
         match self.inner.tx.try_send_low_priority(envelope) {
@@ -259,7 +259,7 @@ impl<A: Actor> Mailbox<A> {
     ) -> Result<oneshot::Receiver<A::Reply>, SendError>
     where
         A: DeferableReplyHandler<M>,
-        M: 'static + Send + Sync + fmt::Debug,
+        M: fmt::Debug + Send + 'static,
     {
         let (envelope, response_rx) = self.wrap_in_envelope(message);
         self.inner.tx.send_high_priority(envelope)?;
@@ -273,7 +273,7 @@ impl<A: Actor> Mailbox<A> {
     ) -> Result<oneshot::Receiver<A::Reply>, SendError>
     where
         A: DeferableReplyHandler<M>,
-        M: 'static + Send + Sync + fmt::Debug,
+        M: fmt::Debug + Send + 'static,
     {
         let (envelope, response_rx) = self.wrap_in_envelope(message);
         match priority {
@@ -292,7 +292,7 @@ impl<A: Actor> Mailbox<A> {
     pub async fn ask<M, T>(&self, message: M) -> Result<T, AskError<Infallible>>
     where
         A: DeferableReplyHandler<M, Reply = T>,
-        M: 'static + Send + Sync + fmt::Debug,
+        M: fmt::Debug + Send + 'static,
     {
         self.ask_with_backpressure_counter(message, None).await
     }
@@ -315,7 +315,7 @@ impl<A: Actor> Mailbox<A> {
     ) -> Result<T, AskError<Infallible>>
     where
         A: DeferableReplyHandler<M, Reply = T>,
-        M: 'static + Send + Sync + fmt::Debug,
+        M: fmt::Debug + Send + 'static,
     {
         let resp = self
             .send_message_with_backpressure_counter(message, backpressure_micros_counter_opt)
@@ -332,7 +332,7 @@ impl<A: Actor> Mailbox<A> {
     pub async fn ask_for_res<M, T, E>(&self, message: M) -> Result<T, AskError<E>>
     where
         A: DeferableReplyHandler<M, Reply = Result<T, E>>,
-        M: fmt::Debug + Send + Sync + 'static,
+        M: fmt::Debug + Send + 'static,
         E: fmt::Debug,
     {
         self.send_message(message)

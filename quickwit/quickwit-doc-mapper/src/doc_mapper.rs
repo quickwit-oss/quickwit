@@ -28,6 +28,7 @@ use quickwit_query::query_ast::QueryAst;
 use serde_json::Value as JsonValue;
 use tantivy::query::Query;
 use tantivy::schema::{Field, FieldType, Schema, Value};
+use tantivy::tokenizer::TokenizerManager;
 use tantivy::{Document, Term};
 
 pub type Partition = u64;
@@ -143,6 +144,9 @@ pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
 
     /// Returns the maximum number of partitions.
     fn max_num_partitions(&self) -> NonZeroU32;
+
+    /// Returns the tokenizer manager.
+    fn tokenizer_manager(&self) -> &TokenizerManager;
 }
 
 /// A struct to wrap a tantivy field with its name.
@@ -249,7 +253,10 @@ mod tests {
         let json_doc = br#"{"title": "hello", "body": "world"}"#;
         doc_mapper.doc_from_json_bytes(json_doc).unwrap();
 
-        let DocParsingError::NotJsonObject(json_doc_sample) = doc_mapper.doc_from_json_bytes(br#"Not a JSON object"#).unwrap_err() else {
+        let DocParsingError::NotJsonObject(json_doc_sample) = doc_mapper
+            .doc_from_json_bytes(br#"Not a JSON object"#)
+            .unwrap_err()
+        else {
             panic!("Expected `DocParsingError::NotJsonObject` error");
         };
         assert_eq!(json_doc_sample, "Not a JSON object...");
@@ -261,7 +268,10 @@ mod tests {
         let json_doc = r#"{"title": "hello", "body": "world"}"#;
         doc_mapper.doc_from_json_str(json_doc).unwrap();
 
-        let DocParsingError::NotJsonObject(json_doc_sample) = doc_mapper.doc_from_json_str(r#"Not a JSON object"#).unwrap_err() else {
+        let DocParsingError::NotJsonObject(json_doc_sample) = doc_mapper
+            .doc_from_json_str(r#"Not a JSON object"#)
+            .unwrap_err()
+        else {
             panic!("Expected `DocParsingError::NotJsonObject` error");
         };
         assert_eq!(json_doc_sample, "Not a JSON object...");

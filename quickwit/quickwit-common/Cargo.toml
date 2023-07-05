@@ -14,7 +14,6 @@ anyhow = { workspace = true }
 async-speed-limit = { workspace = true }
 async-trait = { workspace = true }
 byte-unit = { workspace = true }
-colored = { workspace = true }
 dyn-clone = { workspace = true }
 env_logger = { workspace = true }
 futures = { workspace = true }

@@ -38,7 +38,6 @@ use quickwit_metastore::checkpoint::{
 };
 use quickwit_proto::IndexUid;
 use serde_json::{json, Value as JsonValue};
-use tokio::sync::Mutex;
 use tokio::time;
 use tracing::{debug, info, warn};
 
@@ -61,7 +60,7 @@ use crate::source::{
 /// 5MB seems like a good one size fits all value.
 const BATCH_NUM_BYTES_LIMIT: u64 = 5_000_000;
 
-type PulsarConsumer = Mutex<Consumer<PulsarMessage, TokioExecutor>>;
+type PulsarConsumer = Consumer<PulsarMessage, TokioExecutor>;
 
 pub struct PulsarSourceFactory;
 
@@ -207,12 +206,11 @@ impl PulsarSource {
         Ok(())
     }
 
-    async fn try_ack_messages(&self, checkpoint: SourceCheckpoint) -> anyhow::Result<()> {
+    async fn try_ack_messages(&mut self, checkpoint: SourceCheckpoint) -> anyhow::Result<()> {
         debug!(ckpt = ?checkpoint, "Truncating message queue.");
-        let mut consumer = self.pulsar_consumer.lock().await;
         for (partition, position) in checkpoint.iter() {
             if let Some(msg_id) = msg_id_from_position(&position) {
-                consumer
+                self.pulsar_consumer
                     .cumulative_ack_with_id(partition.0.as_ref(), msg_id)
                     .await?;
             }
@@ -238,7 +236,7 @@ impl Source for PulsarSource {
                 // This does not actually acquire the lock of the mutex internally
                 // we're using the mutex in order to convince the Rust compiler
                 // that we can use the consumer within this Sync context.
-                message = self.pulsar_consumer.get_mut().next() => {
+                message = self.pulsar_consumer.next() => {
                     let message = message
                         .ok_or_else(|| ActorExitStatus::from(anyhow!("Consumer was dropped.")))?
                         .map_err(|e| ActorExitStatus::from(anyhow!("Failed to get message from consumer: {:?}", e)))?;
@@ -270,7 +268,7 @@ impl Source for PulsarSource {
     }
 
     async fn suggest_truncate(
-        &self,
+        &mut self,
         checkpoint: SourceCheckpoint,
         _ctx: &ActorContext<SourceActor>,
     ) -> anyhow::Result<()> {
@@ -363,8 +361,7 @@ async fn create_pulsar_consumer(
                 .await?;
         }
     }
-
-    Ok(Mutex::new(consumer))
+    Ok(consumer)
 }
 
 fn msg_id_to_position(msg: &MessageIdData) -> Position {

@@ -35,7 +35,6 @@ use indicatif::{ProgressBar, ProgressStyle};
 use itertools::Itertools;
 use quickwit_actors::{ActorHandle, ObservationType};
 use quickwit_common::uri::Uri;
-use quickwit_common::GREEN_COLOR;
 use quickwit_config::{ConfigFormat, IndexConfig};
 use quickwit_indexing::models::IndexingStatistics;
 use quickwit_indexing::IndexingPipeline;
@@ -51,6 +50,7 @@ use tabled::{Alignment, Concat, Format, Modify, Panel, Rotate, Style, Table, Tab
 use thousands::Separable;
 use tracing::{debug, Level};
 
+use crate::checklist::GREEN_COLOR;
 use crate::stats::{mean, percentile, std_deviation};
 use crate::{client_args, make_table, prompt_confirmation, ClientArgs, THROUGHPUT_WINDOW_SIZE};
 

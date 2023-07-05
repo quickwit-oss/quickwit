@@ -23,7 +23,7 @@ use tantivy::schema::{
     Field, FieldEntry, FieldType, IndexRecordOption, JsonObjectOptions, Schema as TantivySchema,
     Type,
 };
-use tantivy::Term;
+use tantivy::{tokenizer, Term};
 
 use crate::json_literal::InterpretUserInput;
 use crate::query_ast::full_text_query::FullTextParams;
@@ -75,9 +75,17 @@ pub(crate) fn full_text_query(
     text_query: &str,
     full_text_params: &FullTextParams,
     schema: &TantivySchema,
+    tokenizer_manager: &tokenizer::TokenizerManager,
 ) -> Result<TantivyQueryAst, InvalidQuery> {
     let (field, field_entry, path) = find_field_or_hit_dynamic(full_path, schema)?;
-    compute_query_with_field(field, field_entry, path, text_query, full_text_params)
+    compute_query_with_field(
+        field,
+        field_entry,
+        path,
+        text_query,
+        full_text_params,
+        tokenizer_manager,
+    )
 }
 
 fn parse_value_from_user_text<'a, T: InterpretUserInput<'a>>(
@@ -100,6 +108,7 @@ fn compute_query_with_field(
     json_path: &str,
     value: &str,
     full_text_params: &FullTextParams,
+    tokenizer_manager: &tokenizer::TokenizerManager,
 ) -> Result<TantivyQueryAst, InvalidQuery> {
     let field_type = field_entry.field_type();
     match field_type {
@@ -135,8 +144,12 @@ fn compute_query_with_field(
                     field_entry.name()
                 ))
             })?;
-            let terms =
-                full_text_params.tokenize_text_into_terms(field, value, text_field_indexing)?;
+            let terms = full_text_params.tokenize_text_into_terms(
+                field,
+                value,
+                text_field_indexing,
+                tokenizer_manager,
+            )?;
             full_text_params.make_query(terms, text_field_indexing.index_option())
         }
         FieldType::IpAddr(_) => {
@@ -150,6 +163,7 @@ fn compute_query_with_field(
             value,
             full_text_params,
             json_options,
+            tokenizer_manager,
         ),
         FieldType::Facet(_) => Err(InvalidQuery::SchemaError(
             "Facets are not supported in Quickwit.".to_string(),
@@ -168,6 +182,7 @@ fn compute_tantivy_ast_query_for_json(
     text: &str,
     full_text_params: &FullTextParams,
     json_options: &JsonObjectOptions,
+    tokenizer_manager: &tokenizer::TokenizerManager,
 ) -> Result<TantivyQueryAst, InvalidQuery> {
     let mut bool_query = TantivyBoolQuery::default();
     let mut term = Term::with_capacity(100);
@@ -182,8 +197,13 @@ fn compute_tantivy_ast_query_for_json(
             .should
             .push(TantivyTermQuery::new(term, IndexRecordOption::Basic).into());
     }
-    let position_terms: Vec<(usize, Term)> =
-        full_text_params.tokenize_text_into_terms_json(field, json_path, text, json_options)?;
+    let position_terms: Vec<(usize, Term)> = full_text_params.tokenize_text_into_terms_json(
+        field,
+        json_path,
+        text,
+        json_options,
+        tokenizer_manager,
+    )?;
     let index_record_option = json_options
         .get_text_indexing_options()
         .map(|text_indexing_options| text_indexing_options.index_option())

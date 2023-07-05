@@ -172,7 +172,9 @@ const LENIENT_BASE64_ENGINE: base64::engine::GeneralPurpose = base64::engine::Ge
 
 impl<'a> InterpretUserInput<'a> for Vec<u8> {
     fn interpret_str(mut text: &str) -> Option<Vec<u8>> {
-        let Some(first_byte) = text.as_bytes().first().copied() else { return Some(Vec::new()); };
+        let Some(first_byte) = text.as_bytes().first().copied() else {
+            return Some(Vec::new());
+        };
         let mut buffer = Vec::with_capacity(text.len() * 3 / 4);
         if first_byte == b'!' {
             // We use ! as a marker to force base64 decoding.

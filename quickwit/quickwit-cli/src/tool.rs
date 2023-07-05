@@ -35,7 +35,6 @@ use quickwit_actors::{ActorExitStatus, ActorHandle, ObservationType, Universe};
 use quickwit_cluster::{Cluster, ClusterMember};
 use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::uri::Uri;
-use quickwit_common::{GREEN_COLOR, RED_COLOR};
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{
     IndexerConfig, QuickwitConfig, SourceConfig, SourceInputFormat, SourceParams, TransformConfig,
@@ -51,6 +50,7 @@ use quickwit_storage::{BundleStorage, Storage};
 use thousands::Separable;
 use tracing::{debug, info};
 
+use crate::checklist::{GREEN_COLOR, RED_COLOR};
 use crate::{
     config_cli_arg, get_resolvers, load_node_config, parse_duration_with_unit, run_index_checklist,
     start_actor_runtimes, THROUGHPUT_WINDOW_SIZE,
