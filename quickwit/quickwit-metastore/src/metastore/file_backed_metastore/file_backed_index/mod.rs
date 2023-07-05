@@ -25,6 +25,7 @@ mod serialize;
 
 use std::collections::HashMap;
 use std::fmt::Debug;
+use std::ops::Bound;
 
 use quickwit_common::PrettySample;
 use quickwit_config::SourceConfig;
@@ -500,11 +501,14 @@ fn split_query_predicate(split: &&Split, query: &ListSplitsQuery) -> bool {
         return false;
     }
 
-    if let Some(maturity_filter) = &query.maturity {
-        let is_mature = split
-            .split_metadata
-            .is_mature(maturity_filter.evaluation_datetime);
-        return is_mature == maturity_filter.mature;
+    match &query.mature {
+        Bound::Included(evaluation_datetime) => {
+            return split.split_metadata.is_mature(*evaluation_datetime);
+        }
+        Bound::Excluded(evaluation_datetime) => {
+            return !split.split_metadata.is_mature(*evaluation_datetime);
+        }
+        Bound::Unbounded => {}
     }
 
     if let Some(range) = split.split_metadata.time_range.as_ref() {

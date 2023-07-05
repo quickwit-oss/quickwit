@@ -211,7 +211,7 @@ pub trait Metastore: Send + Sync + 'static {
         let query = ListSplitsQuery::for_index(index_uid)
             .with_delete_opstamp_lt(delete_opstamp)
             .with_split_state(SplitState::Published)
-            .is_mature(true, OffsetDateTime::now_utc());
+            .retain_mature(OffsetDateTime::now_utc());
 
         let mut splits = self.list_splits(query).await?;
         splits.sort_by(|split_left, split_right| {
@@ -339,14 +339,8 @@ pub struct ListSplitsQuery {
     /// The create timestamp range to filter by.
     pub create_timestamp: FilterRange<i64>,
 
-    /// Is the split mature or immature at a given datetime.
-    pub maturity: Option<SplitMaturityFilter>,
-}
-
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub struct SplitMaturityFilter {
-    pub mature: bool,
-    pub evaluation_datetime: OffsetDateTime,
+    /// The datetime at which you include or exclude mature splits.
+    pub mature: Bound<OffsetDateTime>,
 }
 
 #[allow(unused_attributes)]
@@ -363,7 +357,7 @@ impl ListSplitsQuery {
             delete_opstamp: Default::default(),
             update_timestamp: Default::default(),
             create_timestamp: Default::default(),
-            maturity: None,
+            mature: Bound::Unbounded,
         }
     }
 
@@ -509,13 +503,15 @@ impl ListSplitsQuery {
         self
     }
 
-    /// Set the maturity filter to match splits that are mature or immature
-    /// at a given datetime.
-    pub fn is_mature(mut self, mature: bool, evaluation_datetime: OffsetDateTime) -> Self {
-        self.maturity = Some(SplitMaturityFilter {
-            mature,
-            evaluation_datetime,
-        });
+    /// Retains splits that are mature at the given datetime.
+    pub fn retain_mature(mut self, now: OffsetDateTime) -> Self {
+        self.mature = Bound::Included(now);
+        self
+    }
+
+    /// Retains splits that are immature at the given datetime.
+    pub fn retain_immature(mut self, now: OffsetDateTime) -> Self {
+        self.mature = Bound::Excluded(now);
         self
     }
 }

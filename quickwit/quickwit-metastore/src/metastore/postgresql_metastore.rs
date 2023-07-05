@@ -269,20 +269,23 @@ fn build_query_filter(mut sql: String, query: &ListSplitsQuery) -> String {
         Bound::Unbounded => {}
     };
 
-    if let Some(maturity_filter) = &query.maturity {
-        let evaluation_timestamp = maturity_filter.evaluation_datetime.unix_timestamp();
-        if maturity_filter.mature {
+    match &query.mature {
+        Bound::Included(evaluation_datetime) => {
             let _ = write!(
                 sql,
-                " AND (maturity_timestamp = to_timestamp(0) OR \
-                 to_timestamp({evaluation_timestamp}) >= maturity_timestamp)"
-            );
-        } else {
-            let _ = write!(
-                sql,
-                " AND to_timestamp({evaluation_timestamp}) < maturity_timestamp"
+                " AND (maturity_timestamp = to_timestamp(0) OR to_timestamp({}) >= \
+                 maturity_timestamp)",
+                evaluation_datetime.unix_timestamp()
             );
         }
+        Bound::Excluded(evaluation_datetime) => {
+            let _ = write!(
+                sql,
+                " AND to_timestamp({}) < maturity_timestamp",
+                evaluation_datetime.unix_timestamp()
+            );
+        }
+        Bound::Unbounded => {}
     }
 
     // WARNING: Not SQL injection proof
@@ -1406,7 +1409,7 @@ mod tests {
 
         let maturity_evaluation_datetime = OffsetDateTime::from_unix_timestamp(55).unwrap();
         let query = ListSplitsQuery::for_index(index_uid.clone())
-            .is_mature(true, maturity_evaluation_datetime);
+            .retain_mature(maturity_evaluation_datetime);
         let sql = build_query_filter(String::new(), &query);
         assert_eq!(
             sql,
@@ -1415,7 +1418,7 @@ mod tests {
         );
 
         let query = ListSplitsQuery::for_index(index_uid.clone())
-            .is_mature(false, maturity_evaluation_datetime);
+            .retain_immature(maturity_evaluation_datetime);
         let sql = build_query_filter(String::new(), &query);
         assert_eq!(
             sql,

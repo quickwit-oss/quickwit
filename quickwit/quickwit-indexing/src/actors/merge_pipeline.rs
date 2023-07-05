@@ -201,7 +201,7 @@ impl MergePipeline {
         );
         let query = ListSplitsQuery::for_index(self.params.pipeline_id.index_uid.clone())
             .with_split_state(SplitState::Published)
-            .is_mature(false, OffsetDateTime::now_utc());
+            .retain_immature(OffsetDateTime::now_utc());
         let published_splits = ctx
             .protect_future(self.params.metastore.list_splits(query))
             .await?
@@ -441,6 +441,7 @@ pub struct MergePipelineParams {
 
 #[cfg(test)]
 mod tests {
+    use std::ops::Bound;
     use std::sync::Arc;
 
     use quickwit_actors::{ActorExitStatus, Universe};
@@ -474,10 +475,11 @@ mod tests {
                     list_split_query.split_states,
                     vec![quickwit_metastore::SplitState::Published]
                 );
-                if let Some(maturity_filter) = list_split_query.maturity {
-                    assert!(!maturity_filter.mature);
-                } else {
-                    panic!("Expected maturity filter.");
+                match list_split_query.mature {
+                    Bound::Excluded(_) => {}
+                    _ => {
+                        panic!("Expected excluded bound.");
+                    }
                 }
                 Ok(Vec::new())
             });

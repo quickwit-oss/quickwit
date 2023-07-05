@@ -2084,7 +2084,7 @@ pub mod test_suite {
             let maturity_evaluation_timestamp =
                 OffsetDateTime::from_unix_timestamp(current_timestamp).unwrap();
             let query = ListSplitsQuery::for_index(index_uid.clone())
-                .is_mature(true, maturity_evaluation_timestamp);
+                .retain_mature(maturity_evaluation_timestamp);
             let splits = metastore.list_splits(query.clone()).await.unwrap();
             let split_ids = collect_split_ids(&splits);
             assert_eq!(
@@ -2093,7 +2093,7 @@ pub mod test_suite {
             );
 
             let query = ListSplitsQuery::for_index(index_uid.clone())
-                .is_mature(false, maturity_evaluation_timestamp);
+                .retain_immature(maturity_evaluation_timestamp);
             let splits = metastore.list_splits(query.clone()).await.unwrap();
             let split_ids = collect_split_ids(&splits);
             assert_eq!(split_ids, &[&split_id_2, &split_id_3]);
