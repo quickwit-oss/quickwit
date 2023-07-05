@@ -233,7 +233,12 @@ tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "3c30066", d
   "zstd-compression",
   "quickwit",
 ] }
-tantivy-tokenizer-api = { git = "https://github.com/quickwit-oss/tantivy/", rev = "3c30066" }
+# tantivy-tokenizer-api is later patched for `tantivy` git repository. To avoid
+# getting the error " patch for `tantivy-tokenizer-api` in `https://github.com/quickwit-oss/tantivy`
+# points to the same source, but patches must point to different sources", we patch 
+# with URL "https://github.com/quickwit-oss/tantivy?rev=3c30066".
+# See https://github.com/rust-lang/cargo/issues/5478.
+tantivy-tokenizer-api = { git = "https://github.com/quickwit-oss/tantivy?rev=3c30066" }
 
 # This is actually not used directly the goal is to fix the version
 # used by reqwest.
@@ -413,3 +418,6 @@ sasl2-sys = { git = "https://github.com/quickwit-oss/rust-sasl/", rev = "daca921
 #tracing-log = { git = "https://github.com/trinity-1686a/tracing.git", rev = "6806cac3" }
 #tracing-opentelemetry = { git = "https://github.com/trinity-1686a/tracing.git", rev = "6806cac3" }
 #tracing-subscriber = { git = "https://github.com/trinity-1686a/tracing.git", rev = "6806cac3" }
+
+[patch.'https://github.com/quickwit-oss/tantivy/']
+tantivy-tokenizer-api = { git = "https://github.com/quickwit-oss/tantivy?rev=3c30066" }
