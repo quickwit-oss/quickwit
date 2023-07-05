@@ -28,28 +28,56 @@ use futures_util::StreamExt;
 use hyper::StatusCode;
 use itertools::Itertools;
 use quickwit_common::truncate_str;
+use quickwit_config::QuickwitConfig;
 use quickwit_proto::{SearchResponse, ServiceErrorCode};
 use quickwit_query::query_ast::{QueryAst, UserInputQuery};
 use quickwit_query::BooleanOperand;
 use quickwit_search::{SearchError, SearchService};
+use serde_json::json;
 use warp::{Filter, Rejection};
 
-use super::filter::elastic_multi_search_filter;
+use super::filter::{
+    elastic_cluster_info_filter, elastic_index_search_filter, elastic_multi_search_filter,
+    elastic_search_filter,
+};
 use super::model::{
     ElasticSearchError, MultiSearchHeader, MultiSearchQueryParams, MultiSearchResponse,
     MultiSearchSingleResponse, SearchBody, SearchQueryParams,
 };
-use crate::elastic_search_api::filter::elastic_index_search_filter;
 use crate::elastic_search_api::model::SortField;
 use crate::format::BodyFormat;
 use crate::json_api_response::{make_json_api_response, ApiError, JsonApiResponse};
-use crate::with_arg;
+use crate::{with_arg, BuildInfo};
+
+/// Elastic compatible cluster info handler.
+pub fn es_compat_cluster_info_handler(
+    quickwit_config: Arc<QuickwitConfig>,
+    build_info: &'static BuildInfo,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    elastic_cluster_info_filter()
+        .and(with_arg(quickwit_config))
+        .and(with_arg(build_info))
+        .then(
+            |config: Arc<QuickwitConfig>, build_info: &'static BuildInfo| async move {
+                warp::reply::json(&json!({
+                    "name" : config.node_id,
+                    "cluster_name" : config.cluster_id,
+                    "version" : {
+                        "distribution" : "quickwit",
+                        "number" : build_info.version,
+                        "build_hash" : build_info.commit_hash,
+                        "build_date" : build_info.build_date,
+                    }
+                }))
+            },
+        )
+}
 
 /// GET or POST _elastic/_search
 pub fn es_compat_search_handler(
     _search_service: Arc<dyn SearchService>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    super::filter::elastic_search_filter().then(|_params: SearchQueryParams| async move {
+    elastic_search_filter().then(|_params: SearchQueryParams| async move {
         // TODO
         let api_error = ApiError {
             service_code: ServiceErrorCode::NotSupportedYet,

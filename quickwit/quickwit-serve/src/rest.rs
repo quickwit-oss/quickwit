@@ -116,6 +116,7 @@ pub(crate) async fn start_rest_server(
             quickwit_services.metastore.clone(),
         ))
         .or(elastic_api_handlers(
+            quickwit_services.config.clone(),
             quickwit_services.search_service.clone(),
             ingest_service.clone(),
         ));

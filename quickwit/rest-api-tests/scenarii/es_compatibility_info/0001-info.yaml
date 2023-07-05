@@ -1,0 +1,6 @@
+expected:
+  cluster_name:
+    $expect: "val != ''"
+  version:
+    build_date:
+      $expect: "val != ''"
