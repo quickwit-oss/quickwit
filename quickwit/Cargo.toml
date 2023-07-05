@@ -233,8 +233,7 @@ tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "3c30066", d
   "zstd-compression",
   "quickwit",
 ] }
-
-lindera-tantivy = { git = "https://github.com/quickwit-oss/lindera-tantivy/", branch = "fmassot/use-tokenizer-api-on-branch-fmassot/add-box-token-filter-and-refactor", features = ["ipadic", "ipadic-compress", "cc-cedict", "cc-cedict-compress", "ko-dic", "ko-dic-compress"] }
+tantivy-tokenizer-api = { git = "https://github.com/quickwit-oss/tantivy/", rev = "3c30066" }
 
 # This is actually not used directly the goal is to fix the version
 # used by reqwest.

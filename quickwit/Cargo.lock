@@ -3104,8 +3104,7 @@ dependencies = [
 [[package]]
 name = "lindera-cc-cedict"
 version = "0.25.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f988655d468ac5d9b278c435b45e4cd67c299e156d47d7bf62d5002048962aa6"
+source = "git+https://github.com/lindera-morphology/lindera?rev=1fd5848#1fd58489d6abc5d9acc30241ed18ccd1365528e1"
 dependencies = [
  "bincode",
  "byteorder",
@@ -3120,8 +3119,7 @@ dependencies = [
 [[package]]
 name = "lindera-cc-cedict-builder"
 version = "0.25.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c6bf79b29a90bcd22036e494d6cc9ac3abe9ab604b21f3258ba6dc1ce501801"
+source = "git+https://github.com/lindera-morphology/lindera?rev=1fd5848#1fd58489d6abc5d9acc30241ed18ccd1365528e1"
 dependencies = [
  "anyhow",
  "bincode",
@@ -3140,8 +3138,7 @@ dependencies = [
 [[package]]
 name = "lindera-compress"
 version = "0.25.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8f2e99e67736352bbb6ed1c273643975822505067ca32194b0981040bc50527a"
+source = "git+https://github.com/lindera-morphology/lindera?rev=1fd5848#1fd58489d6abc5d9acc30241ed18ccd1365528e1"
 dependencies = [
  "anyhow",
  "flate2",
@@ -3151,8 +3148,7 @@ dependencies = [
 [[package]]
 name = "lindera-core"
 version = "0.25.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7c3935e966409156f22cb4b334b21b0dce84b7aa1cad62214b466489d249c8e5"
+source = "git+https://github.com/lindera-morphology/lindera?rev=1fd5848#1fd58489d6abc5d9acc30241ed18ccd1365528e1"
 dependencies = [
  "anyhow",
  "bincode",
@@ -3168,8 +3164,7 @@ dependencies = [
 [[package]]
 name = "lindera-decompress"
 version = "0.25.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7476406abb63c49d7f59c88b9b868ee8d2981495ea7e2c3ad129902f9916b3c6"
+source = "git+https://github.com/lindera-morphology/lindera?rev=1fd5848#1fd58489d6abc5d9acc30241ed18ccd1365528e1"
 dependencies = [
  "anyhow",
  "flate2",
@@ -3179,8 +3174,7 @@ dependencies = [
 [[package]]
 name = "lindera-dictionary"
 version = "0.25.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "808b7d2b3cabc25a4022526d484a4cfd1d5924dc76a26e0379707698841acef2"
+source = "git+https://github.com/lindera-morphology/lindera?rev=1fd5848#1fd58489d6abc5d9acc30241ed18ccd1365528e1"
 dependencies = [
  "anyhow",
  "bincode",
@@ -3200,8 +3194,7 @@ dependencies = [
 [[package]]
 name = "lindera-ipadic"
 version = "0.25.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "dd568e5fac2ed19743de03049e0edb947e2a0991e3ac4209b79b9e0783100b99"
+source = "git+https://github.com/lindera-morphology/lindera?rev=1fd5848#1fd58489d6abc5d9acc30241ed18ccd1365528e1"
 dependencies = [
  "bincode",
  "byteorder",
@@ -3217,8 +3210,7 @@ dependencies = [
 [[package]]
 name = "lindera-ipadic-builder"
 version = "0.25.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "31f373a280958c930e5ee4a1e4db3a0ee0542afaf02d3b5cacb8cab4e298648e"
+source = "git+https://github.com/lindera-morphology/lindera?rev=1fd5848#1fd58489d6abc5d9acc30241ed18ccd1365528e1"
 dependencies = [
  "anyhow",
  "bincode",
@@ -3239,8 +3231,7 @@ dependencies = [
 [[package]]
 name = "lindera-ipadic-neologd-builder"
 version = "0.25.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "92eff98e9ed1a7a412b91709c2343457a04ef02fa0c27c27e3a5892f5591eae9"
+source = "git+https://github.com/lindera-morphology/lindera?rev=1fd5848#1fd58489d6abc5d9acc30241ed18ccd1365528e1"
 dependencies = [
  "anyhow",
  "bincode",
@@ -3260,8 +3251,7 @@ dependencies = [
 [[package]]
 name = "lindera-ko-dic"
 version = "0.25.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "74c6d5bf7d8092bd6d10de7a5d74b70ea7cf234586235b0d6cdb903b05a6c9e2"
+source = "git+https://github.com/lindera-morphology/lindera?rev=1fd5848#1fd58489d6abc5d9acc30241ed18ccd1365528e1"
 dependencies = [
  "bincode",
  "byteorder",
@@ -3277,8 +3267,7 @@ dependencies = [
 [[package]]
 name = "lindera-ko-dic-builder"
 version = "0.25.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f0a4add6d3c1e41ec9e2690d33e287d0223fb59a30ccee4980c23f31368cae1e"
+source = "git+https://github.com/lindera-morphology/lindera?rev=1fd5848#1fd58489d6abc5d9acc30241ed18ccd1365528e1"
 dependencies = [
  "anyhow",
  "bincode",
@@ -3296,8 +3285,8 @@ dependencies = [
 
 [[package]]
 name = "lindera-tantivy"
-version = "0.25.0"
-source = "git+https://github.com/quickwit-oss/lindera-tantivy/?branch=fmassot/use-tokenizer-api-on-branch-fmassot/add-box-token-filter-and-refactor#2c97e7adb406de3d5eaa7efcf0b7d2ea4808baba"
+version = "0.25.1"
+source = "git+https://github.com/quickwit-oss/lindera-tantivy?branch=quickwit#58b104dd68086ef0bf9accf99a7c08493233d90b"
 dependencies = [
  "lindera-core",
  "lindera-dictionary",
@@ -3308,8 +3297,7 @@ dependencies = [
 [[package]]
 name = "lindera-tokenizer"
 version = "0.25.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb6a8acbd068019d1cdac7316f0dcb87f8e33ede2b13aa237f45114f9750afb8"
+source = "git+https://github.com/lindera-morphology/lindera?rev=1fd5848#1fd58489d6abc5d9acc30241ed18ccd1365528e1"
 dependencies = [
  "bincode",
  "byteorder",
@@ -3323,8 +3311,7 @@ dependencies = [
 [[package]]
 name = "lindera-unidic-builder"
 version = "0.25.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e204ed53d9bd63227d1e6a6c1f122ca039e00a8634ac32e7fb0281eeec8615c4"
+source = "git+https://github.com/lindera-morphology/lindera?rev=1fd5848#1fd58489d6abc5d9acc30241ed18ccd1365528e1"
 dependencies = [
  "anyhow",
  "bincode",
@@ -5534,6 +5521,7 @@ dependencies = [
  "serde_json",
  "serde_with 3.0.0",
  "tantivy",
+ "tantivy-tokenizer-api",
  "thiserror",
  "time 0.3.23",
  "whichlang",

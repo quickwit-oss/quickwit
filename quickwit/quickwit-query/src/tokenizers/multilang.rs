@@ -22,7 +22,8 @@ use lindera_dictionary::{load_dictionary_from_config, DictionaryConfig, Dictiona
 use lindera_tantivy::stream::LinderaTokenStream;
 use lindera_tantivy::tokenizer::LinderaTokenizer;
 use once_cell::sync::Lazy;
-use tantivy::tokenizer::{SimpleTokenStream, SimpleTokenizer, Token, TokenStream, Tokenizer};
+use tantivy::tokenizer::{SimpleTokenStream, SimpleTokenizer};
+use tantivy_tokenizer_api::{Token, Tokenizer, TokenStream};
 use whichlang::{detect_language, Lang};
 
 // Use lazy lindera tokenizers to load the dictionaries only when needed.
