@@ -17,21 +17,35 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use futures::StreamExt;
+use std::time::Duration;
+
+use base64::Engine;
+use futures::future::ready;
+use futures::{Future, StreamExt};
 use quickwit_proto::{
-    FetchDocsRequest, FetchDocsResponse, LeafListTermsRequest, LeafListTermsResponse,
+    FetchDocsRequest, FetchDocsResponse, GetKvRequest, LeafListTermsRequest, LeafListTermsResponse,
     LeafSearchRequest, LeafSearchResponse, LeafSearchStreamRequest, LeafSearchStreamResponse,
+    PutKvRequest,
 };
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
 use tokio::sync::mpsc::error::SendError;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tracing::debug;
+use tracing::{debug, error, info, warn};
 
 use crate::retry::search::LeafSearchRetryPolicy;
 use crate::retry::search_stream::{LeafSearchStreamRetryPolicy, SuccessfulSplitIds};
 use crate::retry::{retry_client, DefaultRetryPolicy, RetryPolicy};
 use crate::{SearchError, SearchJobPlacer, SearchServiceClient};
+
+/// Maximum number of put requests emitted to perform a replicated given PUT KV.
+const MAX_PUT_KV_ATTEMPTS: usize = 6;
+
+/// Maximum number of get requests emitted to perform a GET KV request.
+const MAX_GET_KV_ATTEMPTS: usize = 6;
+
+/// We attempt to store our KVs on two nodes.
+const TARGET_NUM_REPLICATION: usize = 2;
 
 /// Client that executes placed requests (Request, `SearchServiceClient`) and provides
 /// retry policies for `FetchDocsRequest`, `LeafSearchRequest` and `LeafSearchStreamRequest`
@@ -156,6 +170,86 @@ impl ClusterClient {
     ) -> crate::Result<LeafListTermsResponse> {
         // TODO: implement retry
         client.leaf_list_terms(request.clone()).await
+    }
+
+    /// Attempts to store a given search context within the cluster.
+    ///
+    /// This function may fail silently, if no clients was available.
+    pub async fn put_kv(&self, key: &[u8], payload: &[u8], ttl: Duration) {
+        let clients: Vec<SearchServiceClient> = self
+            .search_job_placer
+            .best_nodes_per_affinity(key)
+            .await
+            .take(MAX_PUT_KV_ATTEMPTS)
+            .collect();
+
+        if clients.is_empty() {
+            // We only log a warning as it might be that we are just running in a
+            // single node cluster.
+            // (That's odd though, the node running this code should be in the pool too)
+            warn!("No other node available to replicate scroll context.");
+            return;
+        }
+
+        // We run the put requests concurrently.
+        // Our target is a replication over TARGET_NUM_REPLICATION nodes, we therefore try to avoid
+        // replicating on more than TARGET_NUM_REPLICATION nodes at the same time. Of
+        // course, this may still result in the replication over more nodes, but this is not
+        // a problem.
+        //
+        // The requests are made in a concurrent manner, up to two at a time. As soon as 2 requests
+        // are successful, we stop.
+        let put_kv_futs = clients
+            .into_iter()
+            .map(|client| replicate_kv_to_one_server(client, key, payload, ttl));
+        let successful_replication = futures::stream::iter(put_kv_futs)
+            .buffer_unordered(TARGET_NUM_REPLICATION)
+            .filter(|put_kv_successful| ready(*put_kv_successful))
+            .take(TARGET_NUM_REPLICATION)
+            .count()
+            .await;
+
+        if successful_replication == 0 {
+            error!(successful_replication=%successful_replication,"failed-to-replicate-scroll-context");
+        }
+    }
+
+    /// Returns a search_after context
+    pub async fn get_kv(&self, key: &[u8]) -> Option<Vec<u8>> {
+        let clients = self.search_job_placer.best_nodes_per_affinity(key).await;
+        // On the read side, we attempt to contact up to 6 nodes.
+        for mut client in clients.take(MAX_GET_KV_ATTEMPTS) {
+            let get_request = GetKvRequest { key: key.to_vec() };
+            if let Ok(Some(search_after_resp)) = client.get_kv(get_request.clone()).await {
+                return Some(search_after_resp);
+            } else {
+                let base64_key: String = base64::prelude::BASE64_STANDARD.encode(key);
+                info!(destination=?client, key=base64_key, "Failed to get KV");
+            }
+        }
+        None
+    }
+}
+
+fn replicate_kv_to_one_server(
+    mut client: SearchServiceClient,
+    key: &[u8],
+    payload: &[u8],
+    ttl: Duration,
+) -> impl Future<Output = bool> {
+    let put_kv_request = PutKvRequest {
+        key: key.to_vec(),
+        payload: payload.to_vec(),
+        ttl_secs: ttl.as_secs() as u32,
+    };
+    let base64_key: String = base64::prelude::BASE64_STANDARD.encode(key);
+    async move {
+        if client.put_kv(put_kv_request).await.is_ok() {
+            true
+        } else {
+            warn!(destination=?client, key=base64_key, "Failed to replicate KV");
+            false
+        }
     }
 }
 
@@ -604,5 +698,98 @@ mod tests {
         let results: Vec<_> = result.collect().await;
         assert_eq!(results.len(), 2);
         assert!(results[0].is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_put_kv_happy_path() {
+        // 3 servers 1, 2, 3
+        // Targetted key has affinity [1, 2, 3].
+        //
+        // Put on 1 and 2 is successful
+        // Get succeeds on 1.
+        let mut mock_search_service_1 = MockSearchService::new();
+        mock_search_service_1
+            .expect_put_kv()
+            .once()
+            .returning(|_put_req: quickwit_proto::PutKvRequest| {});
+        mock_search_service_1
+            .expect_get_kv()
+            .once()
+            .returning(|_get_req: quickwit_proto::GetKvRequest| Some(b"my_payload".to_vec()));
+        let mut mock_search_service_2 = MockSearchService::new();
+        mock_search_service_2
+            .expect_put_kv()
+            .once()
+            .returning(|_put_req: quickwit_proto::PutKvRequest| {});
+        let mut mock_search_service_3 = MockSearchService::new();
+        // Due to the buffered call it is possible for the
+        // put request to 3 to be emitted too.
+        mock_search_service_3
+            .expect_put_kv()
+            .returning(|_put_req: quickwit_proto::PutKvRequest| {});
+        let searcher_pool = searcher_pool_for_test([
+            ("127.0.0.1:1001", mock_search_service_1),
+            ("127.0.0.1:1002", mock_search_service_2),
+            ("127.0.0.1:1003", mock_search_service_3),
+        ]);
+        let search_job_placer = SearchJobPlacer::new(searcher_pool);
+        let cluster_client = ClusterClient::new(search_job_placer);
+        cluster_client
+            .put_kv(
+                &b"my_key"[..],
+                &b"my_payload"[..],
+                Duration::from_secs(10 * 60),
+            )
+            .await;
+        let result = cluster_client.get_kv(&b"my_key"[..]).await;
+        assert_eq!(result, Some(b"my_payload".to_vec()))
+    }
+
+    #[tokio::test]
+    async fn test_put_kv_failing_get() {
+        // 3 servers 1, 2, 3
+        // Targetted key has affinity [1, 2, 3].
+        //
+        // Put on 1 and 2 is successful
+        // Get fails on 1.
+        // Get succeeds on 2.
+        let mut mock_search_service_1 = MockSearchService::new();
+        mock_search_service_1
+            .expect_put_kv()
+            .once()
+            .returning(|_put_req: quickwit_proto::PutKvRequest| {});
+        mock_search_service_1
+            .expect_get_kv()
+            .once()
+            .returning(|_get_req: quickwit_proto::GetKvRequest| None);
+        let mut mock_search_service_2 = MockSearchService::new();
+        mock_search_service_2
+            .expect_put_kv()
+            .once()
+            .returning(|_put_req: quickwit_proto::PutKvRequest| {});
+        mock_search_service_2
+            .expect_get_kv()
+            .once()
+            .returning(|_get_req: quickwit_proto::GetKvRequest| Some(b"my_payload".to_vec()));
+        let mut mock_search_service_3 = MockSearchService::new();
+        mock_search_service_3
+            .expect_put_kv()
+            .returning(|_leaf_search_req: quickwit_proto::PutKvRequest| {});
+        let searcher_pool = searcher_pool_for_test([
+            ("127.0.0.1:1001", mock_search_service_1),
+            ("127.0.0.1:1002", mock_search_service_2),
+            ("127.0.0.1:1003", mock_search_service_3),
+        ]);
+        let search_job_placer = SearchJobPlacer::new(searcher_pool);
+        let cluster_client = ClusterClient::new(search_job_placer);
+        cluster_client
+            .put_kv(
+                &b"my_key"[..],
+                &b"my_payload"[..],
+                Duration::from_secs(10 * 60),
+            )
+            .await;
+        let result = cluster_client.get_kv(&b"my_key"[..]).await;
+        assert_eq!(result, Some(b"my_payload".to_vec()))
     }
 }

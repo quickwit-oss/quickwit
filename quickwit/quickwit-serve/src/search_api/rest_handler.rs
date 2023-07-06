@@ -221,6 +221,7 @@ async fn search_endpoint(
             .aggs
             .map(|agg| serde_json::to_string(&agg).expect("could not serialize JsonValue")),
         sort_fields: search_request.sort_by.sort_fields,
+        scroll_ttl_secs: None,
     };
     let search_response = search_service.root_search(search_request).await?;
     let search_response_rest = SearchResponseRest::try_from(search_response)?;

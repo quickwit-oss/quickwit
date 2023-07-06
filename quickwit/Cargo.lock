@@ -5482,6 +5482,7 @@ dependencies = [
  "anyhow",
  "assert-json-diff 2.0.2",
  "async-trait",
+ "base64 0.21.2",
  "bytes",
  "chitchat",
  "fnv",
@@ -5520,6 +5521,8 @@ dependencies = [
  "tower",
  "tracing",
  "tracing-opentelemetry",
+ "ttl_cache",
+ "ulid",
  "utoipa",
 ]
 
@@ -5537,6 +5540,7 @@ dependencies = [
  "futures",
  "futures-util",
  "http-serde",
+ "humantime",
  "hyper",
  "itertools 0.11.0",
  "mime_guess",
@@ -7743,6 +7747,15 @@ name = "try-lock"
 version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3528ecfd12c466c6f163363caf2d02a71161dd5e1cc6ae7b34207ea2d42d81ed"
+
+[[package]]
+name = "ttl_cache"
+version = "0.5.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4189890526f0168710b6ee65ceaedf1460c48a14318ceec933cb26baa492096a"
+dependencies = [
+ "linked-hash-map",
+]
 
 [[package]]
 name = "tungstenite"
