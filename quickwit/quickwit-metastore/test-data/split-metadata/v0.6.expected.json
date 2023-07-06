@@ -7,7 +7,7 @@
   },
   "index_uid": "my-index:11111111111111111111111111",
   "maturity": {
-    "maturation_period_millisecs": 4000,
+    "maturation_period_millis": 4000,
     "type": "immature"
   },
   "node_id": "node",

@@ -26,6 +26,7 @@ use std::time::Duration;
 use quickwit_common::FileEntry;
 use quickwit_proto::IndexUid;
 use serde::{Deserialize, Serialize};
+use serde_with::{serde_as, DurationMilliSeconds};
 use time::OffsetDateTime;
 
 use crate::split_metadata_version::VersionedSplitMetadata;
@@ -266,6 +267,7 @@ impl FromStr for SplitState {
 /// `SplitMaturity` defines the maturity of a split, it is either `Mature`
 /// or `Immature` with a given maturation period.
 /// The maturity is determined by the `MergePolicy`.
+#[serde_as]
 #[derive(Clone, Copy, Debug, Default, Eq, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type")]
 #[serde(rename_all = "snake_case")]
@@ -273,30 +275,14 @@ pub enum SplitMaturity {
     /// The split is mature and no longer a candidates for merges.
     #[default]
     Mature,
-    /// The split is immature and can undergo merges until `ripening_period` passes,
+    /// The split is immature and can undergo merges until `maturation_period` passes,
     /// measured relatively from the split's creation timestamp.
     Immature {
-        /// Time to maturity.
-        #[serde(with = "serde_duration_millisecs")]
-        #[serde(rename = "maturation_period_millisecs")]
+        /// Maturation period.
+        #[serde_as(as = "DurationMilliSeconds<u64>")]
+        #[serde(rename = "maturation_period_millis")]
         maturation_period: Duration,
     },
-}
-
-// Serializer/Deserializer of `Duration` in milliseconds.
-pub mod serde_duration_millisecs {
-    pub fn serialize<S>(duration: &std::time::Duration, serializer: S) -> Result<S::Ok, S::Error>
-    where S: serde::Serializer {
-        serializer.serialize_u64(duration.as_millis() as u64)
-    }
-
-    pub fn deserialize<'de, D>(deserializer: D) -> Result<std::time::Duration, D::Error>
-    where D: serde::Deserializer<'de> {
-        let maturation_periods_millisecs: u64 = serde::Deserialize::deserialize(deserializer)?;
-        Ok(std::time::Duration::from_millis(
-            maturation_periods_millisecs,
-        ))
-    }
 }
 
 /// Helper function to provide a UTC now timestamp to use
@@ -322,7 +308,7 @@ mod tests {
             let serialized = serde_json::to_string(&split_maturity).unwrap();
             assert_eq!(
                 serialized,
-                r#"{"type":"immature","maturation_period_millisecs":10}"#
+                r#"{"type":"immature","maturation_period_millis":10}"#
             );
             let deserialized: super::SplitMaturity = serde_json::from_str(&serialized).unwrap();
             assert_eq!(deserialized, split_maturity);
