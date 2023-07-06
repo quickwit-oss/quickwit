@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::str::FromStr;
+use std::time::Duration;
 
 use quickwit_proto::SortOrder;
 use quickwit_query::BooleanOperand;
@@ -188,6 +189,20 @@ impl SearchQueryParams {
             sort_fields.push(parse_sort_field_str(sort_field_str)?);
         }
         Ok(Some(sort_fields))
+    }
+
+    /// Returns the scroll duration supplied by the user.
+    ///
+    /// This function returns an error if the scroll duration is not in the expected format. (`40s`
+    /// etc.)
+    pub fn parse_scroll_ttl(&self) -> Result<Option<Duration>, SearchError> {
+        let Some(scroll_str) = self.scroll.as_ref() else {
+            return Ok(None);
+        };
+        let duration: Duration = humantime::parse_duration(scroll_str).map_err(|_err| {
+            SearchError::InvalidArgument(format!("Invalid scroll duration: `{scroll_str}`"))
+        })?;
+        Ok(Some(duration))
     }
 }
 

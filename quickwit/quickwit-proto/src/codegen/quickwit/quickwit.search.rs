@@ -1,3 +1,43 @@
+/// / Scroll Request
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ScrollRequest {
+    /// / The `scroll_id` is the given in the response of a search request including a scroll.
+    #[prost(string, tag = "1")]
+    pub scroll_id: ::prost::alloc::string::String,
+    #[prost(uint32, optional, tag = "2")]
+    pub scroll_ttl_secs: ::core::option::Option<u32>,
+}
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PutKvRequest {
+    #[prost(bytes = "vec", tag = "1")]
+    pub key: ::prost::alloc::vec::Vec<u8>,
+    #[prost(bytes = "vec", tag = "2")]
+    pub payload: ::prost::alloc::vec::Vec<u8>,
+    #[prost(uint32, tag = "3")]
+    pub ttl_secs: u32,
+}
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct PutKvResponse {}
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetKvRequest {
+    #[prost(bytes = "vec", tag = "1")]
+    pub key: ::prost::alloc::vec::Vec<u8>,
+}
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetKvResponse {
+    #[prost(bytes = "vec", optional, tag = "1")]
+    pub payload: ::core::option::Option<::prost::alloc::vec::Vec<u8>>,
+}
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[derive(Eq, Hash)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -35,6 +75,11 @@ pub struct SearchRequest {
     /// Optional sort by one or more fields (limited to 2 at the moment).
     #[prost(message, repeated, tag = "14")]
     pub sort_fields: ::prost::alloc::vec::Vec<SortField>,
+    /// If set, the search response will include a search id
+    /// that will make it possible to paginate through the results
+    /// in a consistent manner.
+    #[prost(uint32, optional, tag = "15")]
+    pub scroll_ttl_secs: ::core::option::Option<u32>,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[derive(Eq, Hash)]
@@ -66,6 +111,9 @@ pub struct SearchResponse {
     /// Serialized aggregation response
     #[prost(string, optional, tag = "5")]
     pub aggregation: ::core::option::Option<::prost::alloc::string::String>,
+    /// Scroll Id (only set if scroll_secs was set in the request)
+    #[prost(string, optional, tag = "6")]
+    pub scroll_id: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -122,19 +170,19 @@ pub struct SplitIdAndFooterOffsets {
     #[prost(int64, optional, tag = "5")]
     pub timestamp_end: ::core::option::Option<i64>,
 }
-/// / Hits returned by a FetchDocRequest.
-/// /
-/// / The json that is joined is the raw tantivy json doc.
-/// / It is very different from a quickwit json doc.
-/// /
-/// / For instance:
-/// / - it may contain a _source and a _dynamic field.
-/// / - since tantivy has no notion of cardinality,
-/// / all fields is  are arrays.
-/// / - since tantivy has no notion of object, the object is
-/// / flattened by concatenating the path to the root.
-/// /
-/// / See  `quickwit_search::convert_leaf_hit`
+/// Hits returned by a FetchDocRequest.
+///
+/// The json that is joined is the raw tantivy json doc.
+/// It is very different from a quickwit json doc.
+///
+/// For instance:
+/// - it may contain a _source and a _dynamic field.
+/// - since tantivy has no notion of cardinality,
+/// all fields is  are arrays.
+/// - since tantivy has no notion of object, the object is
+/// flattened by concatenating the path to the root.
+///
+/// See  `quickwit_search::convert_leaf_hit`
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -247,6 +295,15 @@ pub struct LeafSearchResponse {
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SnippetRequest {
+    #[prost(string, repeated, tag = "1")]
+    pub snippet_fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(string, tag = "2")]
+    pub query_ast_resolved: ::prost::alloc::string::String,
+}
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct FetchDocsRequest {
     /// Request fetching the content of a given list of partial_hits.
     #[prost(message, repeated, tag = "1")]
@@ -263,10 +320,8 @@ pub struct FetchDocsRequest {
     /// split files.
     #[prost(string, tag = "4")]
     pub index_uri: ::prost::alloc::string::String,
-    /// Search request. This is a perfect copy of the original search request,
-    /// that was sent to root apart from the start_offset & max_hits params.
-    #[prost(message, optional, tag = "5")]
-    pub search_request: ::core::option::Option<SearchRequest>,
+    #[prost(message, optional, tag = "7")]
+    pub snippet_request: ::core::option::Option<SnippetRequest>,
     /// `DocMapper` as json serialized trait.
     #[prost(string, tag = "6")]
     pub doc_mapper: ::prost::alloc::string::String,
@@ -419,9 +474,9 @@ pub struct LeafSearchStreamResponse {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum SortOrder {
-    /// / Ascending order.
+    /// Ascending order.
     Asc = 0,
-    /// / Descending order.
+    /// Descending order.
     ///
     /// < This will be the default value;
     Desc = 1,
@@ -451,13 +506,13 @@ impl SortOrder {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum OutputFormat {
-    /// / Comma Separated Values format (<https://datatracker.ietf.org/doc/html/rfc4180>).
-    /// / The delimiter is `,`.
+    /// Comma Separated Values format (<https://datatracker.ietf.org/doc/html/rfc4180>).
+    /// The delimiter is `,`.
     ///
     /// < This will be the default value
     Csv = 0,
-    /// / Format data by row in ClickHouse binary format.
-    /// / <https://clickhouse.tech/docs/en/interfaces/formats/#rowbinary>
+    /// Format data by row in ClickHouse binary format.
+    /// <https://clickhouse.tech/docs/en/interfaces/formats/#rowbinary>
     ClickHouseRowBinary = 1,
 }
 impl OutputFormat {
@@ -711,7 +766,7 @@ pub mod search_service_client {
                 );
             self.inner.unary(req, path, codec).await
         }
-        /// Perform a leaf list terms on a given set of splits.
+        /// Performs a leaf list terms on a given set of splits.
         ///
         /// It is like a regular list term except that:
         /// - the node should perform the listing locally instead of dispatching
@@ -742,6 +797,77 @@ pub mod search_service_client {
                 .insert(
                     GrpcMethod::new("quickwit.search.SearchService", "LeafListTerms"),
                 );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Performs a scroll request.
+        pub async fn scroll(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ScrollRequest>,
+        ) -> std::result::Result<tonic::Response<super::SearchResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.search.SearchService/Scroll",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("quickwit.search.SearchService", "Scroll"));
+            self.inner.unary(req, path, codec).await
+        }
+        /// gRPC request used to store a key in the local storage of the targetted node.
+        /// This RPC is used in the mini distributed immutable KV store embedded in quickwit.
+        pub async fn put_kv(
+            &mut self,
+            request: impl tonic::IntoRequest<super::PutKvRequest>,
+        ) -> std::result::Result<tonic::Response<super::PutKvResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.search.SearchService/PutKV",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("quickwit.search.SearchService", "PutKV"));
+            self.inner.unary(req, path, codec).await
+        }
+        /// Gets a key from the local storage of the targetted node.
+        /// This RPC is used in the mini distributed immutable KV store embedded in quickwit.
+        pub async fn get_kv(
+            &mut self,
+            request: impl tonic::IntoRequest<super::GetKvRequest>,
+        ) -> std::result::Result<tonic::Response<super::GetKvResponse>, tonic::Status> {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.search.SearchService/GetKV",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("quickwit.search.SearchService", "GetKV"));
             self.inner.unary(req, path, codec).await
         }
     }
@@ -814,7 +940,7 @@ pub mod search_service_server {
             tonic::Response<super::ListTermsResponse>,
             tonic::Status,
         >;
-        /// Perform a leaf list terms on a given set of splits.
+        /// Performs a leaf list terms on a given set of splits.
         ///
         /// It is like a regular list term except that:
         /// - the node should perform the listing locally instead of dispatching
@@ -827,6 +953,23 @@ pub mod search_service_server {
             tonic::Response<super::LeafListTermsResponse>,
             tonic::Status,
         >;
+        /// Performs a scroll request.
+        async fn scroll(
+            &self,
+            request: tonic::Request<super::ScrollRequest>,
+        ) -> std::result::Result<tonic::Response<super::SearchResponse>, tonic::Status>;
+        /// gRPC request used to store a key in the local storage of the targetted node.
+        /// This RPC is used in the mini distributed immutable KV store embedded in quickwit.
+        async fn put_kv(
+            &self,
+            request: tonic::Request<super::PutKvRequest>,
+        ) -> std::result::Result<tonic::Response<super::PutKvResponse>, tonic::Status>;
+        /// Gets a key from the local storage of the targetted node.
+        /// This RPC is used in the mini distributed immutable KV store embedded in quickwit.
+        async fn get_kv(
+            &self,
+            request: tonic::Request<super::GetKvRequest>,
+        ) -> std::result::Result<tonic::Response<super::GetKvResponse>, tonic::Status>;
     }
     #[derive(Debug)]
     pub struct SearchServiceServer<T: SearchService> {
@@ -1164,6 +1307,136 @@ pub mod search_service_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = LeafListTermsSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.search.SearchService/Scroll" => {
+                    #[allow(non_camel_case_types)]
+                    struct ScrollSvc<T: SearchService>(pub Arc<T>);
+                    impl<
+                        T: SearchService,
+                    > tonic::server::UnaryService<super::ScrollRequest>
+                    for ScrollSvc<T> {
+                        type Response = super::SearchResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ScrollRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move { (*inner).scroll(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = ScrollSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.search.SearchService/PutKV" => {
+                    #[allow(non_camel_case_types)]
+                    struct PutKVSvc<T: SearchService>(pub Arc<T>);
+                    impl<
+                        T: SearchService,
+                    > tonic::server::UnaryService<super::PutKvRequest> for PutKVSvc<T> {
+                        type Response = super::PutKvResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::PutKvRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move { (*inner).put_kv(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = PutKVSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.search.SearchService/GetKV" => {
+                    #[allow(non_camel_case_types)]
+                    struct GetKVSvc<T: SearchService>(pub Arc<T>);
+                    impl<
+                        T: SearchService,
+                    > tonic::server::UnaryService<super::GetKvRequest> for GetKVSvc<T> {
+                        type Response = super::GetKvResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::GetKvRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move { (*inner).get_kv(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = GetKVSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

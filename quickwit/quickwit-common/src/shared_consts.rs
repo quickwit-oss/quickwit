@@ -17,35 +17,18 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-mod bulk_body;
-mod bulk_query_params;
-mod error;
-mod multi_search;
-mod scroll;
-mod search_body;
-mod search_query_params;
+use std::time::Duration;
 
-pub use bulk_body::{BulkAction, BulkActionMeta};
-pub use bulk_query_params::{ElasticIngestOptions, ElasticRefresh};
-pub use error::ElasticSearchError;
-pub use multi_search::{
-    MultiSearchHeader, MultiSearchQueryParams, MultiSearchResponse, MultiSearchSingleResponse,
-};
-use quickwit_proto::SortOrder;
-pub use scroll::ScrollQueryParams;
-pub use search_body::SearchBody;
-pub use search_query_params::SearchQueryParams;
+/// We cannot safely delete splits right away as a:
+/// - in-flight queries could actually have selected this split,
+/// - scroll queries may also have a point in time on these splits.
+///
+/// We deal this probably by introducing a grace period. A split is first marked as delete,
+/// and hence won't be selected for search. After a few minutes, once it reasonably safe to assume
+/// that all queries involving this split have terminated, we effectively delete the split.
+/// This duration is controlled by `DELETION_GRACE_PERIOD`.
+pub const DELETION_GRACE_PERIOD: Duration = Duration::from_secs(60 * 32); // 32 min
 
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct SortField {
-    pub field: String,
-    pub order: SortOrder,
-}
-
-pub(crate) fn default_elasticsearch_sort_order(field_name: &str) -> SortOrder {
-    if field_name == "_score" {
-        SortOrder::Desc
-    } else {
-        SortOrder::Asc
-    }
-}
+/// In order to amortized search with scroll, we fetch more documents than are
+/// being requested.
+pub const SCROLL_BATCH_LEN: usize = 1_000;

@@ -33,6 +33,7 @@ mod leaf;
 mod leaf_cache;
 mod retry;
 mod root;
+mod scroll_context;
 mod search_job_placer;
 mod search_response_rest;
 mod search_stream;

@@ -40,13 +40,15 @@ def open_scenario(scenario_filepath):
         if type(step_dict) == dict:
             yield step_dict
 
-def run_step(step):
+def run_step(step, previous_result):
+    result = {}
     if "method" in step:
         methods = step["method"]
         if type(methods) != list:
             methods = [methods]
         for method in methods:
-            run_request_step(method, step)
+            result = run_request_step(method, step, previous_result)
+    return result
 
 def load_data(path):
     if path.endswith("gz"):
@@ -66,7 +68,24 @@ def run_request_with_retry(run_req, expected_status_code=None, num_retries=10, w
     raise Exception("Wrong status code. Got %s, expected %s" % (r.status_code, expected_status_code))
 
 
-def run_request_step(method, step):
+def resolve_previous_result(c, previous_result):
+    if type(c) == dict:
+        result = {}
+        if len(c) == 1 and "$previous" in c:
+            return eval(c["$previous"], None, {"val": previous_result})
+        for (k, v) in c.items():
+            result[k] = resolve_previous_result(v, previous_result)
+        return result
+    if type(c) == list:
+        return [
+            resolve_previous_result(v, previous_result)
+            for v in c
+        ]
+    return c
+
+print(resolve_previous_result({"hello": {"$previous": "val[\"scroll_id\"]"}}, {"scroll_id": "123"}))
+
+def run_request_step(method, step, previous_result):
     assert method in {"GET", "POST", "PUT", "DELETE"}
     if "headers" not in step:
         step["headers"] = {'user-agent': 'my-app/0.0.1'}
@@ -82,6 +101,7 @@ def run_request_step(method, step):
     if body_from_file is not None:
         body_from_file = osp.join(step["cwd"], body_from_file)
         kvargs["data"] = load_data(body_from_file)
+    kvargs = resolve_previous_result(kvargs, previous_result)
     ndjson = step.get("ndjson", None)
     if ndjson is not None:
         kvargs["data"] = "\n".join([json.dumps(doc) for doc in ndjson])
@@ -91,12 +111,14 @@ def run_request_step(method, step):
     run_req = lambda : method_req(url, **kvargs)
     r = run_request_with_retry(run_req, expected_status_code, num_retries)
     expected_resp = step.get("expected", None)
+    json_res = r.json()
     if expected_resp is not None:
         try:
-            check_result(r.json(), expected_resp)
+            check_result(json_res, expected_resp, context_path="")
         except Exception as e:
-            print(json.dumps(r.json(), indent=2))
+            print(json.dumps(json_res, indent=2))
             raise e
+    return json_res
 
 def check_result(result, expected, context_path = ""):
     if type(expected) == dict and "$expect" in expected:
@@ -211,6 +233,7 @@ class Visitor:
         steps = list(open_scenario(scenario_path))
         num_steps_executed = 0
         num_steps_skipped = 0
+        previous_result = {}
         for (i, step) in enumerate(steps, 1):
             step = stack_dicts(self.context, step)
             applicable_engine = step.get("engines", None)
@@ -219,7 +242,7 @@ class Visitor:
                     num_steps_skipped += 1
                     continue
             try:
-                run_step(step)
+                previous_result = run_step(step, previous_result)
                 num_steps_executed += 1
             except Exception as e:
                 print("🔴 %s" % scenario_path)

@@ -20,7 +20,7 @@
 use std::collections::BTreeMap;
 use std::str::from_utf8;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use bytes::Bytes;
 use elasticsearch_dsl::search::{Hit as ElasticHit, SearchResponse as ElasticSearchResponse};
@@ -30,7 +30,7 @@ use hyper::StatusCode;
 use itertools::Itertools;
 use quickwit_common::truncate_str;
 use quickwit_config::NodeConfig;
-use quickwit_proto::{SearchResponse, ServiceErrorCode};
+use quickwit_proto::{ScrollRequest, SearchResponse, ServiceErrorCode};
 use quickwit_query::query_ast::{QueryAst, UserInputQuery};
 use quickwit_query::BooleanOperand;
 use quickwit_search::{SearchError, SearchService};
@@ -39,11 +39,11 @@ use warp::{Filter, Rejection};
 
 use super::filter::{
     elastic_cluster_info_filter, elastic_index_search_filter, elastic_multi_search_filter,
-    elastic_search_filter,
+    elastic_scroll_filter, elastic_search_filter,
 };
 use super::model::{
     ElasticSearchError, MultiSearchHeader, MultiSearchQueryParams, MultiSearchResponse,
-    MultiSearchSingleResponse, SearchBody, SearchQueryParams,
+    MultiSearchSingleResponse, ScrollQueryParams, SearchBody, SearchQueryParams,
 };
 use crate::format::BodyFormat;
 use crate::json_api_response::{make_json_api_response, ApiError, JsonApiResponse};
@@ -99,7 +99,17 @@ pub fn es_compat_index_search_handler(
         .map(make_elastic_api_response)
 }
 
-/// POST _elastic/_msearch
+/// GET or POST _elastic/_search/scroll
+pub fn es_compat_scroll_handler(
+    search_service: Arc<dyn SearchService>,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    elastic_scroll_filter()
+        .and(with_arg(search_service))
+        .then(es_scroll)
+        .map(make_elastic_api_response)
+}
+
+/// POST _elastic/_search
 pub fn es_compat_index_multi_search_handler(
     search_service: Arc<dyn SearchService>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
@@ -162,6 +172,9 @@ fn build_request_for_es_api(
         )));
     }
 
+    let scroll_duration: Option<Duration> = search_params.parse_scroll_ttl()?;
+    let scroll_ttl_secs: Option<u32> = scroll_duration.map(|duration| duration.as_secs() as u32);
+
     Ok(quickwit_proto::SearchRequest {
         index_id,
         query_ast: serde_json::to_string(&query_ast).expect("Failed to serialize QueryAst"),
@@ -169,7 +182,10 @@ fn build_request_for_es_api(
         start_offset,
         aggregation_request,
         sort_fields,
-        ..Default::default()
+        start_timestamp: None,
+        end_timestamp: None,
+        snippet_fields: Vec::new(),
+        scroll_ttl_secs,
     })
 }
 
@@ -285,6 +301,32 @@ async fn es_compat_index_multi_search(
     Ok(multi_search_response)
 }
 
+async fn es_scroll(
+    scroll_query_params: ScrollQueryParams,
+    search_service: Arc<dyn SearchService>,
+) -> Result<ElasticSearchResponse, ElasticSearchError> {
+    let start_instant = Instant::now();
+    let Some(scroll_id) = scroll_query_params.scroll_id.clone() else {
+        return Err(SearchError::InvalidArgument("Missing scroll_id".to_string()).into());
+    };
+    let scroll_ttl_secs: Option<u32> = if let Some(scroll_ttl) = scroll_query_params.scroll {
+        let scroll_ttl_duration = humantime::parse_duration(&scroll_ttl)
+            .map_err(|_| SearchError::InvalidArgument(format!("Scroll invalid: {}", scroll_ttl)))?;
+        Some(scroll_ttl_duration.as_secs() as u32)
+    } else {
+        None
+    };
+    let scroll_request = ScrollRequest {
+        scroll_id,
+        scroll_ttl_secs,
+    };
+    let search_response: SearchResponse = search_service.scroll(scroll_request).await?;
+    let mut search_response_rest: ElasticSearchResponse =
+        convert_to_es_search_response(search_response);
+    search_response_rest.took = start_instant.elapsed().as_millis() as u32;
+    Ok(search_response_rest)
+}
+
 fn convert_to_es_search_response(resp: SearchResponse) -> ElasticSearchResponse {
     let hits: Vec<ElasticHit> = resp.hits.into_iter().map(convert_hit).collect();
     let aggregations: Option<serde_json::Value> = if let Some(aggregation_json) = resp.aggregation {
@@ -303,6 +345,7 @@ fn convert_to_es_search_response(resp: SearchResponse) -> ElasticSearchResponse 
             hits,
         },
         aggregations,
+        scroll_id: resp.scroll_id,
         ..Default::default()
     }
 }

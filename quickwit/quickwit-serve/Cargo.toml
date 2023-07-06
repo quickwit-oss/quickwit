@@ -14,9 +14,10 @@ anyhow = { workspace = true }
 async-trait = { workspace = true }
 bytes = { workspace = true }
 byte-unit = { workspace = true }
-elasticsearch-dsl = "0.4.14"
+elasticsearch-dsl = "0.4.15"
 futures = { workspace = true }
 futures-util = { workspace = true }
+humantime = { workspace = true }
 http-serde = { workspace = true }
 hyper = { workspace = true }
 itertools = { workspace = true }
