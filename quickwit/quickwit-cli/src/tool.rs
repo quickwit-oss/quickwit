@@ -52,8 +52,8 @@ use tracing::{debug, info};
 
 use crate::checklist::{GREEN_COLOR, RED_COLOR};
 use crate::{
-    config_cli_arg, get_resolvers, load_node_config, parse_duration_with_unit, run_index_checklist,
-    start_actor_runtimes, THROUGHPUT_WINDOW_SIZE,
+    config_cli_arg, get_resolvers, load_node_config, run_index_checklist, start_actor_runtimes,
+    THROUGHPUT_WINDOW_SIZE,
 };
 
 pub fn build_tool_command() -> Command {
@@ -238,15 +238,15 @@ impl ToolCliCommand {
 
     fn parse_garbage_collect_args(mut matches: ArgMatches) -> anyhow::Result<Self> {
         let config_uri = matches
-            .remove_one::<String>("config")
-            .map(|uri_str| Uri::from_str(&uri_str))
+            .get_one("config")
+            .map(|uri_str: &String| Uri::from_str(uri_str))
             .expect("`config` should be a required arg.")?;
         let index_id = matches
             .remove_one::<String>("index")
             .expect("`index` should be a required arg.");
         let grace_period = matches
-            .remove_one::<String>("grace-period")
-            .map(|duration| parse_duration_with_unit(&duration))
+            .get_one("grace-period")
+            .map(|duration_str: &String| humantime::parse_duration(duration_str))
             .expect("`grace-period` should have a default value.")?;
         let dry_run = matches.get_flag("dry-run");
         Ok(Self::GarbageCollect(GarbageCollectIndexArgs {
