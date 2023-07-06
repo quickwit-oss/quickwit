@@ -31,11 +31,6 @@ criterion = { workspace = true }
 proptest = { workspace = true }
 time = { workspace = true }
 
-[[bench]]
-name = "tokenizers_bench"
-harness = false
-
-
 [features]
 multilang = [
     "lindera-core",
@@ -47,3 +42,11 @@ multilang = [
 testsuite = [
     "multilang",
 ]
+
+[[bench]]
+name = "tokenizers_bench"
+harness = false
+
+[[bench]]
+name = "multilang_tokenizers_bench"
+harness = false

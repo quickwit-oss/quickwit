@@ -7252,7 +7252,7 @@ dependencies = [
 [[package]]
 name = "tantivy-tokenizer-api"
 version = "0.1.0"
-source = "git+https://github.com/quickwit-oss/tantivy?rev=3c30066#3c300666ad448386136d2595b613b3236b123ff9"
+source = "git+https://github.com/quickwit-oss/tantivy?rev=3c30066#67bdf3f5f64f6a653bf93fc99a01701f3b08ab9d"
 dependencies = [
  "serde",
 ]
