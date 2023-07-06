@@ -21,13 +21,11 @@
 
 use std::collections::HashSet;
 use std::str::FromStr;
-use std::time::Duration;
 
-use anyhow::{bail, Context};
+use anyhow::Context;
 use clap::{arg, Arg, ArgMatches};
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::Confirm;
-use once_cell::sync::Lazy;
 use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::uri::Uri;
 use quickwit_config::service::QuickwitService;
@@ -40,7 +38,6 @@ use quickwit_metastore::{Metastore, MetastoreResolver};
 use quickwit_rest_client::models::Timeout;
 use quickwit_rest_client::rest_client::{QuickwitClient, QuickwitClientBuilder, DEFAULT_BASE_URL};
 use quickwit_storage::{load_file, StorageResolver};
-use regex::Regex;
 use reqwest::Url;
 use tabled::object::Rows;
 use tabled::{Alignment, Header, Modify, Style, Table, Tabled};
@@ -69,9 +66,6 @@ pub const QW_ENABLE_TOKIO_CONSOLE_ENV_KEY: &str = "QW_ENABLE_TOKIO_CONSOLE";
 
 pub const QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY: &str =
     "QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER";
-
-/// Regular expression representing a valid duration with unit.
-pub const DURATION_WITH_UNIT_PATTERN: &str = r#"^(\d{1,3})(s|m|h|d)$"#;
 
 fn config_cli_arg() -> Arg {
     Arg::new("config")
@@ -204,32 +198,13 @@ impl ClientArgs {
     }
 }
 
-/// Parse duration with unit like `1s`, `2m`, `3h`, `5d`.
-pub fn parse_duration_with_unit(duration_with_unit_str: &str) -> anyhow::Result<Duration> {
-    static DURATION_WITH_UNIT_RE: Lazy<Regex> =
-        Lazy::new(|| Regex::new(DURATION_WITH_UNIT_PATTERN).unwrap());
-    let captures = DURATION_WITH_UNIT_RE
-        .captures(duration_with_unit_str)
-        .ok_or_else(|| anyhow::anyhow!("Invalid duration format: `[0-9]+[smhd]`"))?;
-    let value = captures.get(1).unwrap().as_str().parse::<u64>().unwrap();
-    let unit = captures.get(2).unwrap().as_str();
-
-    match unit {
-        "s" => Ok(Duration::from_secs(value)),
-        "m" => Ok(Duration::from_secs(value * 60)),
-        "h" => Ok(Duration::from_secs(value * 60 * 60)),
-        "d" => Ok(Duration::from_secs(value * 60 * 60 * 24)),
-        _ => bail!("Invalid duration format: `[0-9]+[smhd]`"),
-    }
-}
-
 pub fn parse_duration_or_none(duration_with_unit_str: &str) -> anyhow::Result<Timeout> {
     if duration_with_unit_str == "none" {
         Ok(Timeout::none())
     } else {
-        parse_duration_with_unit(duration_with_unit_str)
+        humantime::parse_duration(duration_with_unit_str)
             .map(Timeout::new)
-            .map_err(|_| anyhow::anyhow!("Invalid duration format: `[0-9]+[smhd]|none`"))
+            .context("Failed to parse timeout.")
     }
 }
 
@@ -442,33 +417,11 @@ pub mod busy_detector {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-
-    use quickwit_config::S3StorageConfig;
+    use quickwit_config::{S3StorageConfig, StorageConfigs};
     use quickwit_rest_client::models::Timeout;
 
     use super::*;
-
-    #[test]
-    fn test_parse_duration_with_unit() -> anyhow::Result<()> {
-        assert_eq!(parse_duration_with_unit("8s")?, Duration::from_secs(8));
-        assert_eq!(parse_duration_with_unit("5m")?, Duration::from_secs(5 * 60));
-        assert_eq!(
-            parse_duration_with_unit("2h")?,
-            Duration::from_secs(2 * 60 * 60)
-        );
-        assert_eq!(
-            parse_duration_with_unit("3d")?,
-            Duration::from_secs(3 * 60 * 60 * 24)
-        );
-
-        assert!(parse_duration_with_unit("").is_err());
-        assert!(parse_duration_with_unit("a2d").is_err());
-        assert!(parse_duration_with_unit("3 d").is_err());
-        assert!(parse_duration_with_unit("3").is_err());
-        assert!(parse_duration_with_unit("1h30").is_err());
-        Ok(())
-    }
+    use crate::parse_duration_or_none;
 
     #[test]
     fn test_parse_duration_or_none() -> anyhow::Result<()> {
