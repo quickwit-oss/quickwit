@@ -20,11 +20,13 @@
 use std::collections::BTreeSet;
 use std::fmt;
 use std::ops::{Range, RangeInclusive};
+use std::sync::Arc;
 
 use quickwit_metastore::SplitMetadata;
 use tantivy::DateTime;
 use time::OffsetDateTime;
 
+use crate::merge_policy::MergePolicy;
 use crate::models::IndexingPipelineId;
 
 pub struct SplitAttrs {
@@ -81,10 +83,14 @@ impl fmt::Debug for SplitAttrs {
 }
 
 pub fn create_split_metadata(
+    merge_policy: &Arc<dyn MergePolicy>,
     split_attrs: &SplitAttrs,
     tags: BTreeSet<String>,
     footer_offsets: Range<u64>,
 ) -> SplitMetadata {
+    let create_timestamp = OffsetDateTime::now_utc().unix_timestamp();
+    let maturity =
+        merge_policy.split_maturity(split_attrs.num_docs as usize, split_attrs.num_merge_ops);
     SplitMetadata {
         split_id: split_attrs.split_id.clone(),
         index_uid: split_attrs.pipeline_id.index_uid.clone(),
@@ -97,7 +103,8 @@ pub fn create_split_metadata(
             .as_ref()
             .map(|range| range.start().into_timestamp_secs()..=range.end().into_timestamp_secs()),
         uncompressed_docs_size_in_bytes: split_attrs.uncompressed_docs_size_in_bytes,
-        create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
+        create_timestamp,
+        maturity,
         tags,
         footer_offsets,
         delete_opstamp: split_attrs.delete_opstamp,

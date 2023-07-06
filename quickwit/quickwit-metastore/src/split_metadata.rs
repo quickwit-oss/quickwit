@@ -21,10 +21,12 @@ use std::collections::BTreeSet;
 use std::fmt;
 use std::ops::{Range, RangeInclusive};
 use std::str::FromStr;
+use std::time::Duration;
 
 use quickwit_common::FileEntry;
 use quickwit_proto::IndexUid;
 use serde::{Deserialize, Serialize};
+use serde_with::{serde_as, DurationMilliSeconds};
 use time::OffsetDateTime;
 
 use crate::split_metadata_version::VersionedSplitMetadata;
@@ -101,6 +103,9 @@ pub struct SplitMetadata {
     /// Timestamp for tracking when the split was created.
     pub create_timestamp: i64,
 
+    /// Split maturity either `Mature` or `Immature` with a given maturation period.
+    pub maturity: SplitMaturity,
+
     /// Set of unique tags values of form `{field_name}:{field_value}`.
     /// The set is filled at indexing with values from each field registered
     /// in the [`DocMapping`](quickwit_config::DocMapping) `tag_fields` attribute and only when
@@ -153,6 +158,19 @@ impl SplitMetadata {
         &self.split_id
     }
 
+    /// Returns true if the split is mature at the unix `timestamp`.
+    pub fn is_mature(&self, datetime: OffsetDateTime) -> bool {
+        match self.maturity {
+            SplitMaturity::Mature => true,
+            SplitMaturity::Immature {
+                maturation_period: time_to_maturity,
+            } => {
+                self.create_timestamp + time_to_maturity.as_secs() as i64
+                    <= datetime.unix_timestamp()
+            }
+        }
+    }
+
     #[cfg(any(test, feature = "testsuite"))]
     /// Returns an instance of `SplitMetadata` for testing.
     pub fn for_test(split_id: String) -> Self {
@@ -186,6 +204,9 @@ impl quickwit_config::TestableForRegression for SplitMetadata {
             uncompressed_docs_size_in_bytes: 234234,
             time_range: Some(121000..=130198),
             create_timestamp: 3,
+            maturity: SplitMaturity::Immature {
+                maturation_period: Duration::from_secs(4),
+            },
             tags: ["234".to_string(), "aaa".to_string()].into_iter().collect(),
             footer_offsets: 1000..2000,
             num_merge_ops: 3,
@@ -243,6 +264,27 @@ impl FromStr for SplitState {
     }
 }
 
+/// `SplitMaturity` defines the maturity of a split, it is either `Mature`
+/// or `Immature` with a given maturation period.
+/// The maturity is determined by the `MergePolicy`.
+#[serde_as]
+#[derive(Clone, Copy, Debug, Default, Eq, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "type")]
+#[serde(rename_all = "snake_case")]
+pub enum SplitMaturity {
+    /// The split is mature and no longer a candidates for merges.
+    #[default]
+    Mature,
+    /// The split is immature and can undergo merges until `maturation_period` passes,
+    /// measured relatively from the split's creation timestamp.
+    Immature {
+        /// Maturation period.
+        #[serde_as(as = "DurationMilliSeconds<u64>")]
+        #[serde(rename = "maturation_period_millis")]
+        maturation_period: Duration,
+    },
+}
+
 /// Helper function to provide a UTC now timestamp to use
 /// as a default in deserialization.
 ///
@@ -252,5 +294,31 @@ pub fn utc_now_timestamp() -> i64 {
         1640577000
     } else {
         OffsetDateTime::now_utc().unix_timestamp()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn test_split_maturity_serialization() {
+        {
+            let split_maturity = super::SplitMaturity::Immature {
+                maturation_period: std::time::Duration::from_millis(10),
+            };
+            let serialized = serde_json::to_string(&split_maturity).unwrap();
+            assert_eq!(
+                serialized,
+                r#"{"type":"immature","maturation_period_millis":10}"#
+            );
+            let deserialized: super::SplitMaturity = serde_json::from_str(&serialized).unwrap();
+            assert_eq!(deserialized, split_maturity);
+        }
+        {
+            let split_maturity = super::SplitMaturity::Mature;
+            let serialized = serde_json::to_string(&split_maturity).unwrap();
+            assert_eq!(serialized, r#"{"type":"mature"}"#);
+            let deserialized: super::SplitMaturity = serde_json::from_str(&serialized).unwrap();
+            assert_eq!(deserialized, split_maturity);
+        }
     }
 }

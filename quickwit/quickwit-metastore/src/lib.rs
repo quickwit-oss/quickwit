@@ -56,7 +56,7 @@ pub use metastore_factory::{MetastoreFactory, UnsupportedMetastore};
 pub use metastore_resolver::MetastoreResolver;
 use quickwit_common::is_disjoint;
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
-pub use split_metadata::{Split, SplitMetadata, SplitState};
+pub use split_metadata::{Split, SplitMaturity, SplitMetadata, SplitState};
 pub(crate) use split_metadata_version::{SplitMetadataV0_6, VersionedSplitMetadata};
 
 #[derive(utoipa::OpenApi)]

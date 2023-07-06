@@ -37,6 +37,7 @@ use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
 use quickwit_proto::IndexUid;
+use time::OffsetDateTime;
 
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{MetastoreError, MetastoreResult, Split, SplitMetadata, SplitState};
@@ -209,7 +210,8 @@ pub trait Metastore: Send + Sync + 'static {
     ) -> MetastoreResult<Vec<Split>> {
         let query = ListSplitsQuery::for_index(index_uid)
             .with_delete_opstamp_lt(delete_opstamp)
-            .with_split_state(SplitState::Published);
+            .with_split_state(SplitState::Published)
+            .retain_mature(OffsetDateTime::now_utc());
 
         let mut splits = self.list_splits(query).await?;
         splits.sort_by(|split_left, split_right| {
@@ -336,6 +338,9 @@ pub struct ListSplitsQuery {
 
     /// The create timestamp range to filter by.
     pub create_timestamp: FilterRange<i64>,
+
+    /// The datetime at which you include or exclude mature splits.
+    pub mature: Bound<OffsetDateTime>,
 }
 
 #[allow(unused_attributes)]
@@ -352,6 +357,7 @@ impl ListSplitsQuery {
             delete_opstamp: Default::default(),
             update_timestamp: Default::default(),
             create_timestamp: Default::default(),
+            mature: Bound::Unbounded,
         }
     }
 
@@ -494,6 +500,18 @@ impl ListSplitsQuery {
     /// *greater than* the provided value.
     pub fn with_create_timestamp_gt(mut self, v: i64) -> Self {
         self.create_timestamp.start = Bound::Excluded(v);
+        self
+    }
+
+    /// Retains splits that are mature at the given datetime.
+    pub fn retain_mature(mut self, now: OffsetDateTime) -> Self {
+        self.mature = Bound::Included(now);
+        self
+    }
+
+    /// Retains splits that are immature at the given datetime.
+    pub fn retain_immature(mut self, now: OffsetDateTime) -> Self {
+        self.mature = Bound::Excluded(now);
         self
     }
 }

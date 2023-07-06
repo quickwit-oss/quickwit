@@ -31,6 +31,7 @@ use quickwit_common::temp_dir::TempDirectory;
 use quickwit_common::KillSwitch;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::{ListSplitsQuery, Metastore, MetastoreError, SplitState};
+use time::OffsetDateTime;
 use tokio::join;
 use tracing::{debug, error, info, instrument};
 
@@ -199,7 +200,8 @@ impl MergePipeline {
             "Spawning merge pipeline.",
         );
         let query = ListSplitsQuery::for_index(self.params.pipeline_id.index_uid.clone())
-            .with_split_state(SplitState::Published);
+            .with_split_state(SplitState::Published)
+            .retain_immature(OffsetDateTime::now_utc());
         let published_splits = ctx
             .protect_future(self.params.metastore.list_splits(query))
             .await?
@@ -223,6 +225,7 @@ impl MergePipeline {
         let merge_uploader = Uploader::new(
             UploaderType::MergeUploader,
             self.params.metastore.clone(),
+            self.params.merge_policy.clone(),
             self.params.split_store.clone(),
             merge_publisher_mailbox.into(),
             self.params.max_concurrent_split_uploads,
@@ -438,6 +441,7 @@ pub struct MergePipelineParams {
 
 #[cfg(test)]
 mod tests {
+    use std::ops::Bound;
     use std::sync::Arc;
 
     use quickwit_actors::{ActorExitStatus, Universe};
@@ -455,17 +459,31 @@ mod tests {
     #[tokio::test]
     async fn test_merge_pipeline_simple() -> anyhow::Result<()> {
         let mut metastore = MockMetastore::default();
-        metastore
-            .expect_list_splits()
-            .times(1)
-            .returning(|_| Ok(Vec::new()));
-        let universe = Universe::with_accelerated_time();
+        let index_uid = IndexUid::new("test-index");
         let pipeline_id = IndexingPipelineId {
-            index_uid: IndexUid::new("test-index"),
+            index_uid: index_uid.clone(),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
         };
+        metastore
+            .expect_list_splits()
+            .times(1)
+            .returning(move |list_split_query| {
+                assert_eq!(list_split_query.index_uid, index_uid);
+                assert_eq!(
+                    list_split_query.split_states,
+                    vec![quickwit_metastore::SplitState::Published]
+                );
+                match list_split_query.mature {
+                    Bound::Excluded(_) => {}
+                    _ => {
+                        panic!("Expected excluded bound.");
+                    }
+                }
+                Ok(Vec::new())
+            });
+        let universe = Universe::with_accelerated_time();
         let storage = Arc::new(RamStorage::default());
         let split_store = IndexingSplitStore::create_without_local_store(storage.clone());
         let pipeline_params = MergePipelineParams {

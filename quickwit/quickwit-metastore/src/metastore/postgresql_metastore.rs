@@ -48,7 +48,7 @@ use crate::metastore::postgresql_model::{
 use crate::metastore::FilterRange;
 use crate::{
     IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, MetastoreFactory,
-    MetastoreResolverError, MetastoreResult, Split, SplitMetadata, SplitState,
+    MetastoreResolverError, MetastoreResult, Split, SplitMaturity, SplitMetadata, SplitState,
 };
 
 static MIGRATOR: Migrator = sqlx::migrate!("migrations/postgresql");
@@ -269,6 +269,25 @@ fn build_query_filter(mut sql: String, query: &ListSplitsQuery) -> String {
         Bound::Unbounded => {}
     };
 
+    match &query.mature {
+        Bound::Included(evaluation_datetime) => {
+            let _ = write!(
+                sql,
+                " AND (maturity_timestamp = to_timestamp(0) OR to_timestamp({}) >= \
+                 maturity_timestamp)",
+                evaluation_datetime.unix_timestamp()
+            );
+        }
+        Bound::Excluded(evaluation_datetime) => {
+            let _ = write!(
+                sql,
+                " AND to_timestamp({}) < maturity_timestamp",
+                evaluation_datetime.unix_timestamp()
+            );
+        }
+        Bound::Unbounded => {}
+    }
+
     // WARNING: Not SQL injection proof
     write_sql_filter(
         &mut sql,
@@ -295,6 +314,18 @@ fn build_query_filter(mut sql: String, query: &ListSplitsQuery) -> String {
     }
 
     sql
+}
+
+/// Returns the unix timestamp at which the split becomes mature.
+/// If the split is mature (`SplitMaturity::Mature`), we return 0
+/// as we don't want the maturity to depend on datetime.
+fn split_maturity_timestamp(split_metadata: &SplitMetadata) -> i64 {
+    match split_metadata.maturity {
+        SplitMaturity::Mature => 0,
+        SplitMaturity::Immature { maturation_period } => {
+            split_metadata.create_timestamp + maturation_period.as_secs() as i64
+        }
+    }
 }
 
 fn convert_sqlx_err(index_id: &str, sqlx_err: sqlx::Error) -> MetastoreError {
@@ -471,6 +502,7 @@ impl Metastore for PostgresqlMetastore {
         let mut tags_list = Vec::with_capacity(split_metadata_list.len());
         let mut split_metadata_json_list = Vec::with_capacity(split_metadata_list.len());
         let mut delete_opstamps = Vec::with_capacity(split_metadata_list.len());
+        let mut maturity_timestamps = Vec::with_capacity(split_metadata_list.len());
 
         for split_metadata in split_metadata_list {
             let split_metadata_json = serde_json::to_string(&split_metadata).map_err(|error| {
@@ -486,13 +518,13 @@ impl Metastore for PostgresqlMetastore {
                 .as_ref()
                 .map(|range| *range.start());
             time_range_start_list.push(time_range_start);
+            maturity_timestamps.push(split_maturity_timestamp(&split_metadata));
 
             let time_range_end = split_metadata.time_range.map(|range| *range.end());
             time_range_end_list.push(time_range_end);
 
             let tags: Vec<String> = split_metadata.tags.into_iter().collect();
             tags_list.push(sqlx::types::Json(tags));
-
             split_ids.push(split_metadata.split_id);
             delete_opstamps.push(split_metadata.delete_opstamp as i64);
         }
@@ -501,7 +533,7 @@ impl Metastore for PostgresqlMetastore {
         run_with_tx!(self.connection_pool, tx, {
             let upserted_split_ids: Vec<String> = sqlx::query_scalar(r#"
                 INSERT INTO splits
-                    (split_id, time_range_start, time_range_end, tags, split_metadata_json, delete_opstamp, split_state, index_uid)
+                    (split_id, time_range_start, time_range_end, tags, split_metadata_json, delete_opstamp, maturity_timestamp, split_state, index_uid)
                 SELECT
                     split_id,
                     time_range_start,
@@ -509,11 +541,12 @@ impl Metastore for PostgresqlMetastore {
                     ARRAY(SELECT json_array_elements_text(tags_json::json)) as tags,
                     split_metadata_json,
                     delete_opstamp,
-                    $7 as split_state,
-                    $8 as index_uid
+                    to_timestamp(maturity_timestamp),
+                    $8 as split_state,
+                    $9 as index_uid
                 FROM
-                    UNNEST($1, $2, $3, $4, $5, $6)
-                    as tr(split_id, time_range_start, time_range_end, tags_json, split_metadata_json, delete_opstamp)
+                    UNNEST($1, $2, $3, $4, $5, $6, $7)
+                    as tr(split_id, time_range_start, time_range_end, tags_json, split_metadata_json, delete_opstamp, maturity_timestamp)
                 ON CONFLICT(split_id) DO UPDATE
                     SET
                         time_range_start = excluded.time_range_start,
@@ -521,6 +554,7 @@ impl Metastore for PostgresqlMetastore {
                         tags = excluded.tags,
                         split_metadata_json = excluded.split_metadata_json,
                         delete_opstamp = excluded.delete_opstamp,
+                        maturity_timestamp = excluded.maturity_timestamp,
                         index_uid = excluded.index_uid,
                         update_timestamp = CURRENT_TIMESTAMP,
                         create_timestamp = CURRENT_TIMESTAMP
@@ -533,6 +567,7 @@ impl Metastore for PostgresqlMetastore {
                 .bind(tags_list)
                 .bind(split_metadata_json_list)
                 .bind(delete_opstamps)
+                .bind(maturity_timestamps)
                 .bind(SplitState::Staged.as_str())
                 .bind(index_uid.to_string())
                 .fetch_all(tx)
@@ -1086,6 +1121,7 @@ impl Metastore for PostgresqlMetastore {
                     index_uid = $1
                     AND delete_opstamp < $2
                     AND split_state = $3
+                    AND (maturity_timestamp = to_timestamp(0) OR (CURRENT_TIMESTAMP AT TIME ZONE 'UTC') >= maturity_timestamp)
                 ORDER BY delete_opstamp ASC, publish_timestamp ASC
                 LIMIT $4
                 "#,
@@ -1269,6 +1305,7 @@ metastore_test_suite!(crate::PostgresqlMetastore);
 mod tests {
     use quickwit_doc_mapper::tag_pruning::{no_tag, tag, TagFilterAst};
     use quickwit_proto::IndexUid;
+    use time::OffsetDateTime;
 
     use super::{build_query_filter, tags_filter_expression_helper};
     use crate::{ListSplitsQuery, SplitState};
@@ -1368,6 +1405,24 @@ mod tests {
         assert_eq!(
             sql,
             " WHERE index_uid = $1 AND create_timestamp <= to_timestamp(55)"
+        );
+
+        let maturity_evaluation_datetime = OffsetDateTime::from_unix_timestamp(55).unwrap();
+        let query = ListSplitsQuery::for_index(index_uid.clone())
+            .retain_mature(maturity_evaluation_datetime);
+        let sql = build_query_filter(String::new(), &query);
+        assert_eq!(
+            sql,
+            " WHERE index_uid = $1 AND (maturity_timestamp = to_timestamp(0) OR to_timestamp(55) \
+             >= maturity_timestamp)"
+        );
+
+        let query = ListSplitsQuery::for_index(index_uid.clone())
+            .retain_immature(maturity_evaluation_datetime);
+        let sql = build_query_filter(String::new(), &query);
+        assert_eq!(
+            sql,
+            " WHERE index_uid = $1 AND to_timestamp(55) < maturity_timestamp"
         );
 
         let query = ListSplitsQuery::for_index(index_uid.clone()).with_delete_opstamp_gte(4);

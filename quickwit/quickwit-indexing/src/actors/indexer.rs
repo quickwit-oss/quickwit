@@ -767,10 +767,9 @@ mod tests {
         let batch = messages.into_iter().next().unwrap();
         assert_eq!(batch.commit_trigger, CommitTrigger::NumDocsLimit);
         assert_eq!(batch.splits[0].split_attrs.num_docs, 4);
-        assert_eq!(
-            batch.splits[0].split_attrs.delete_opstamp,
-            last_delete_opstamp
-        );
+        for split in batch.splits.iter() {
+            assert_eq!(split.split_attrs.delete_opstamp, last_delete_opstamp);
+        }
         let index_checkpoint = batch.checkpoint_delta.unwrap();
         assert_eq!(index_checkpoint.source_id, "test-source");
         assert_eq!(
