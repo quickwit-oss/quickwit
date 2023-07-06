@@ -3,6 +3,10 @@ index_id: hdfs-logs
 index_uri: s3://quickwit-indexes/hdfs-logs
 
 doc_mapping:
+  tokenizers:
+    - name: service_regex
+      type: regex
+      pattern: "\\w*"
   field_mappings:
     - name: tenant_id
       type: u64
@@ -22,7 +26,7 @@ doc_mapping:
       field_mappings:
         - name: service
           type: text
-          tokenizer: raw
+          tokenizer: service_regex
   tag_fields: [tenant_id]
   timestamp_field: timestamp
   store_source: true

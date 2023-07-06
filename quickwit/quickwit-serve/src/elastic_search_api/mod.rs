@@ -25,23 +25,30 @@ mod rest_handler;
 use std::sync::Arc;
 
 use bulk::{es_compat_bulk_handler, es_compat_index_bulk_handler};
+pub use filter::ElasticCompatibleApi;
+use quickwit_config::QuickwitConfig;
 use quickwit_ingest::IngestServiceClient;
 use quickwit_search::SearchService;
 use rest_handler::{
-    es_compat_index_multi_search_handler, es_compat_index_search_handler, es_compat_search_handler,
+    es_compat_cluster_info_handler, es_compat_index_multi_search_handler,
+    es_compat_index_search_handler, es_compat_search_handler,
 };
 use serde::{Deserialize, Serialize};
 use warp::{Filter, Rejection};
+
+use crate::BuildInfo;
 
 /// Setup Elasticsearch API handlers
 ///
 /// This is where all newly supported Elasticsearch handlers
 /// should be registered.
 pub fn elastic_api_handlers(
+    quickwit_config: Arc<QuickwitConfig>,
     search_service: Arc<dyn SearchService>,
     ingest_service: IngestServiceClient,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    es_compat_search_handler(search_service.clone())
+    es_compat_cluster_info_handler(quickwit_config, BuildInfo::get())
+        .or(es_compat_search_handler(search_service.clone()))
         .or(es_compat_index_search_handler(search_service.clone()))
         .or(es_compat_index_multi_search_handler(search_service))
         .or(es_compat_bulk_handler(ingest_service.clone()))
@@ -82,12 +89,19 @@ impl From<i64> for TrackTotalHits {
 mod tests {
     use std::sync::Arc;
 
+    use assert_json_diff::assert_json_include;
     use mockall::predicate;
+    use quickwit_config::QuickwitConfig;
     use quickwit_ingest::{IngestApiService, IngestServiceClient};
     use quickwit_search::MockSearchService;
+    use serde_json::Value as JsonValue;
+    use warp::Filter;
 
     use super::model::ElasticSearchError;
     use crate::elastic_search_api::model::MultiSearchResponse;
+    use crate::elastic_search_api::rest_handler::es_compat_cluster_info_handler;
+    use crate::rest::recover_fn;
+    use crate::BuildInfo;
 
     fn ingest_service_client() -> IngestServiceClient {
         let universe = quickwit_actors::Universe::new();
@@ -97,6 +111,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_msearch_api_return_200_responses() {
+        let config = Arc::new(QuickwitConfig::for_test());
         let mut mock_search_service = MockSearchService::new();
         mock_search_service
             .expect_root_search()
@@ -111,8 +126,11 @@ mod tests {
                 },
             ))
             .returning(|_| Ok(Default::default()));
-        let es_search_api_handler =
-            super::elastic_api_handlers(Arc::new(mock_search_service), ingest_service_client());
+        let es_search_api_handler = super::elastic_api_handlers(
+            config,
+            Arc::new(mock_search_service),
+            ingest_service_client(),
+        );
         let msearch_payload = r#"
             {"index":"index-1"}
             {"query":{"query_string":{"query":"test"}}, "from": 5, "size": 20}
@@ -138,6 +156,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_msearch_api_return_one_500_and_one_200_responses() {
+        let config = Arc::new(QuickwitConfig::for_test());
         let mut mock_search_service = MockSearchService::new();
         mock_search_service
             .expect_root_search()
@@ -150,8 +169,11 @@ mod tests {
                     ))
                 }
             });
-        let es_search_api_handler =
-            super::elastic_api_handlers(Arc::new(mock_search_service), ingest_service_client());
+        let es_search_api_handler = super::elastic_api_handlers(
+            config,
+            Arc::new(mock_search_service),
+            ingest_service_client(),
+        );
         let msearch_payload = r#"
             {"index":"index-1"}
             {"query":{"query_string":{"query":"test"}}, "from": 5, "size": 10}
@@ -180,9 +202,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_msearch_api_return_400_with_malformed_request_header() {
+        let config = Arc::new(QuickwitConfig::for_test());
         let mock_search_service = MockSearchService::new();
-        let es_search_api_handler =
-            super::elastic_api_handlers(Arc::new(mock_search_service), ingest_service_client());
+        let es_search_api_handler = super::elastic_api_handlers(
+            config,
+            Arc::new(mock_search_service),
+            ingest_service_client(),
+        );
         let msearch_payload = r#"
             {"index":"index-1"
             {"query":{"query_string":{"query":"test"}}}
@@ -204,9 +230,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_msearch_api_return_400_with_malformed_request_body() {
+        let config = Arc::new(QuickwitConfig::for_test());
         let mock_search_service = MockSearchService::new();
-        let es_search_api_handler =
-            super::elastic_api_handlers(Arc::new(mock_search_service), ingest_service_client());
+        let es_search_api_handler = super::elastic_api_handlers(
+            config,
+            Arc::new(mock_search_service),
+            ingest_service_client(),
+        );
         let msearch_payload = r#"
             {"index":"index-1"}
             {"query":{"query_string":{"bad":"test"}}}
@@ -228,9 +258,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_msearch_api_return_400_with_only_a_header_request() {
+        let config = Arc::new(QuickwitConfig::for_test());
         let mock_search_service = MockSearchService::new();
-        let es_search_api_handler =
-            super::elastic_api_handlers(Arc::new(mock_search_service), ingest_service_client());
+        let es_search_api_handler = super::elastic_api_handlers(
+            config,
+            Arc::new(mock_search_service),
+            ingest_service_client(),
+        );
         let msearch_payload = r#"
             {"index":"index-1"}
             "#;
@@ -251,9 +285,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_msearch_api_return_400_with_no_index() {
+        let config = Arc::new(QuickwitConfig::for_test());
         let mock_search_service = MockSearchService::new();
-        let es_search_api_handler =
-            super::elastic_api_handlers(Arc::new(mock_search_service), ingest_service_client());
+        let es_search_api_handler = super::elastic_api_handlers(
+            config,
+            Arc::new(mock_search_service),
+            ingest_service_client(),
+        );
         let msearch_payload = r#"
             {}
             {"query":{"query_string":{"bad":"test"}}}
@@ -273,9 +311,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_msearch_api_return_400_with_multiple_indexes() {
+        let config = Arc::new(QuickwitConfig::for_test());
         let mock_search_service = MockSearchService::new();
-        let es_search_api_handler =
-            super::elastic_api_handlers(Arc::new(mock_search_service), ingest_service_client());
+        let es_search_api_handler = super::elastic_api_handlers(
+            config,
+            Arc::new(mock_search_service),
+            ingest_service_client(),
+        );
         let msearch_payload = r#"
             {"index": ["index-1", "index-2"]}
             {"query":{"query_string":{"bad":"test"}}}
@@ -293,5 +335,30 @@ mod tests {
             .reason
             .unwrap()
             .starts_with("Invalid argument: Searching only one index is supported for now."));
+    }
+
+    #[tokio::test]
+    async fn test_es_compat_cluster_info_handler() {
+        let build_info = BuildInfo::get();
+        let config = Arc::new(QuickwitConfig::for_test());
+        let handler =
+            es_compat_cluster_info_handler(config.clone(), build_info).recover(recover_fn);
+        let resp = warp::test::request()
+            .path("/_elastic")
+            .reply(&handler)
+            .await;
+        assert_eq!(resp.status(), 200);
+        let resp_json: JsonValue = serde_json::from_slice(resp.body()).unwrap();
+        let expected_response_json = serde_json::json!({
+            "name" : config.node_id,
+            "cluster_name" : config.cluster_id,
+            "version" : {
+                "distribution" : "quickwit",
+                "number" : build_info.version,
+                "build_hash" : build_info.commit_hash,
+                "build_date" : build_info.build_date,
+            }
+        });
+        assert_json_include!(actual: resp_json, expected: expected_response_json);
     }
 }

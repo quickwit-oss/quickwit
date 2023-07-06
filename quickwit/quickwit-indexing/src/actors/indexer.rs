@@ -39,10 +39,11 @@ use quickwit_config::IndexingSettings;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
 use quickwit_metastore::Metastore;
-use quickwit_query::{get_quickwit_fastfield_normalizer_manager, get_quickwit_tokenizer_manager};
+use quickwit_query::get_quickwit_fastfield_normalizer_manager;
 use serde::Serialize;
 use tantivy::schema::Schema;
 use tantivy::store::{Compressor, ZstdCompressor};
+use tantivy::tokenizer::TokenizerManager;
 use tantivy::{DateTime, IndexBuilder, IndexSettings};
 use tokio::runtime::Handle;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
@@ -83,6 +84,7 @@ struct IndexerState {
     indexing_settings: IndexingSettings,
     publish_lock: PublishLock,
     schema: Schema,
+    tokenizer_manager: TokenizerManager,
     max_num_partitions: NonZeroU32,
     index_settings: IndexSettings,
     cooperative_indexing_permits: Option<Arc<Semaphore>>,
@@ -98,7 +100,7 @@ impl IndexerState {
         let index_builder = IndexBuilder::new()
             .settings(self.index_settings.clone())
             .schema(self.schema.clone())
-            .tokenizers(get_quickwit_tokenizer_manager().clone())
+            .tokenizers(self.tokenizer_manager.clone())
             .fast_field_tokenizers(get_quickwit_fastfield_normalizer_manager().clone());
 
         let io_controls = IoControls::default()
@@ -466,6 +468,7 @@ impl Indexer {
         index_serializer_mailbox: Mailbox<IndexSerializer>,
     ) -> Self {
         let schema = doc_mapper.schema();
+        let tokenizer_manager = doc_mapper.tokenizer_manager().clone();
         let docstore_compression = Compressor::Zstd(ZstdCompressor {
             compression_level: Some(indexing_settings.docstore_compression_level),
         });
@@ -483,6 +486,7 @@ impl Indexer {
                 indexing_settings,
                 publish_lock: PublishLock::default(),
                 schema,
+                tokenizer_manager,
                 index_settings,
                 max_num_partitions: doc_mapper.max_num_partitions(),
                 cooperative_indexing_permits,

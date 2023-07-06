@@ -20,6 +20,7 @@
 use serde::{Deserialize, Serialize};
 use tantivy::query::PhrasePrefixQuery as TantivyPhrasePrefixQuery;
 use tantivy::schema::{Field, FieldType, Schema as TantivySchema};
+use tantivy::tokenizer::TokenizerManager;
 use tantivy::Term;
 
 use crate::query_ast::tantivy_query_ast::TantivyQueryAst;
@@ -43,6 +44,7 @@ impl PhrasePrefixQuery {
     pub fn get_terms(
         &self,
         schema: &TantivySchema,
+        tokenizer_manager: &TokenizerManager,
     ) -> Result<(Field, Vec<(usize, Term)>), InvalidQuery> {
         let (field, field_entry, json_path) = find_field_or_hit_dynamic(&self.field, schema)?;
         let field_type = field_entry.field_type();
@@ -67,6 +69,7 @@ impl PhrasePrefixQuery {
                     field,
                     &self.phrase,
                     text_field_indexing,
+                    tokenizer_manager,
                 )?;
                 Ok((field, terms))
             }
@@ -90,6 +93,7 @@ impl PhrasePrefixQuery {
                     json_path,
                     &self.phrase,
                     json_options,
+                    tokenizer_manager,
                 )?;
                 Ok((field, terms))
             }
@@ -110,10 +114,11 @@ impl BuildTantivyAst for PhrasePrefixQuery {
     fn build_tantivy_ast_impl(
         &self,
         schema: &TantivySchema,
+        tokenizer_manager: &TokenizerManager,
         _search_fields: &[String],
         _with_validation: bool,
     ) -> Result<TantivyQueryAst, InvalidQuery> {
-        let (_, terms) = self.get_terms(schema)?;
+        let (_, terms) = self.get_terms(schema, tokenizer_manager)?;
 
         if terms.is_empty() {
             if self.params.zero_terms_query.is_none() {

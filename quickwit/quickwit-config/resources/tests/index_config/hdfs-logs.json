@@ -4,6 +4,13 @@
     "index_id": "hdfs-logs",
     "index_uri": "s3://quickwit-indexes/hdfs-logs",
     "doc_mapping": {
+        "tokenizers": [
+            {
+                "name": "service_regex",
+                "type": "regex",
+                "pattern": "\\w*"
+            }
+        ],
         "field_mappings": [
             {
                 "name": "tenant_id",
@@ -33,7 +40,7 @@
                     {
                         "name": "service",
                         "type": "text",
-                        "tokenizer": "raw"
+                        "tokenizer": "service_regex"
                     }
                 ]
             }

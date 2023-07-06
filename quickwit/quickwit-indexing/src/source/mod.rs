@@ -151,7 +151,7 @@ pub type SourceContext = ActorContext<SourceActor>;
 /// # }
 /// ```
 #[async_trait]
-pub trait Source: Send + Sync + 'static {
+pub trait Source: Send + 'static {
     /// This method will be called before any calls to `emit_batches`.
     async fn initialize(
         &mut self,
@@ -189,7 +189,7 @@ pub trait Source: Send + Sync + 'static {
     /// indexing pipeline, as truncation is just "a suggestion".
     /// The error will however be logged.
     async fn suggest_truncate(
-        &self,
+        &mut self,
         _checkpoint: SourceCheckpoint,
         _ctx: &ActorContext<SourceActor>,
     ) -> anyhow::Result<()> {

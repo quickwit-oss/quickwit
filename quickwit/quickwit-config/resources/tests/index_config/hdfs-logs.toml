@@ -3,12 +3,15 @@ index_id = "hdfs-logs"
 index_uri = "s3://quickwit-indexes/hdfs-logs"
 
 [doc_mapping]
+tokenizers = [
+  { name = "service_regex", type = "regex", pattern = "\\w*" },
+]
 field_mappings = [
   { name = "tenant_id", type = "u64", fast = true },
   { name = "timestamp", type = "datetime", fast = true },
   { name = "severity_text", type = "text", tokenizer = "raw" },
   { name = "body", type = "text", tokenizer = "default", record = "position" },
-  { name = "resource", type = "object", field_mappings = [ { name = "service", type = "text", tokenizer = "raw" } ] },
+  { name = "resource", type = "object", field_mappings = [ { name = "service", type = "text", tokenizer = "service_regex" } ] },
 ]
 tag_fields = [ "tenant_id" ]
 store_source = true

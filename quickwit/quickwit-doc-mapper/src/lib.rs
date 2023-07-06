@@ -35,11 +35,13 @@ mod routing_expression;
 pub mod tag_pruning;
 
 pub use default_doc_mapper::{
-    DefaultDocMapper, DefaultDocMapperBuilder, FieldMappingEntry, ModeType, QuickwitJsonOptions,
+    analyze_text, DefaultDocMapper, DefaultDocMapperBuilder, FieldMappingEntry, ModeType,
+    QuickwitJsonOptions, TokenizerConfig, TokenizerEntry,
 };
 use default_doc_mapper::{
     FastFieldOptions, FieldMappingEntryForSerialization, IndexRecordOptionSchema,
-    QuickwitTextNormalizer, QuickwitTextTokenizer,
+    NgramTokenizerOption, QuickwitTextNormalizer, QuickwitTextTokenizer, RegexTokenizerOption,
+    TokenFilterType, TokenizerType,
 };
 pub use doc_mapper::{DocMapper, JsonObject, NamedField, TermRange, WarmupInfo};
 pub use error::{DocParsingError, QueryParserError};
@@ -61,13 +63,19 @@ pub(crate) enum Cardinality {
 
 #[derive(utoipa::OpenApi)]
 #[openapi(components(schemas(
-    QuickwitJsonOptions,
     FastFieldOptions,
-    QuickwitTextNormalizer,
-    ModeType,
-    QuickwitTextTokenizer,
-    IndexRecordOptionSchema,
     FieldMappingEntryForSerialization,
+    IndexRecordOptionSchema,
+    ModeType,
+    NgramTokenizerOption,
+    QuickwitJsonOptions,
+    QuickwitTextNormalizer,
+    QuickwitTextTokenizer,
+    RegexTokenizerOption,
+    TokenFilterType,
+    TokenizerConfig,
+    TokenizerEntry,
+    TokenizerType,
 )))]
 /// Schema used for the OpenAPI generation which are apart of this crate.
 pub struct DocMapperApiSchemas;
