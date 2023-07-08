@@ -207,6 +207,12 @@ fn get_status_with_error(rejection: Rejection) -> ApiError {
             service_code: ServiceErrorCode::BadRequest,
             message: error.0.to_string(),
         }
+    } else if let Some(error) = rejection.find::<InvalidArgument>() {
+        // Happens when the url path or request body contains invalid argument(s).
+        ApiError {
+            service_code: ServiceErrorCode::BadRequest,
+            message: error.0.to_string(),
+        }
     } else if let Some(error) = rejection.find::<warp::filters::body::BodyDeserializeError>() {
         // Happens when the request body could not be deserialized correctly.
         ApiError {

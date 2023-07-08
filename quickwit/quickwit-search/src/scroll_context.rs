@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::HashMap;
 use std::ops::Range;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -25,14 +26,15 @@ use std::time::Duration;
 use anyhow::Context;
 use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
-use quickwit_common::uri::Uri;
 use quickwit_metastore::SplitMetadata;
 use quickwit_proto::search::{LeafSearchResponse, PartialHit, SearchRequest};
+use quickwit_proto::IndexUid;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 use ttl_cache::TtlCache;
 use ulid::Ulid;
 
+use crate::root::IndexMetasForLeafSearch;
 use crate::service::SearcherContext;
 use crate::ClusterClient;
 
@@ -49,8 +51,7 @@ const SCROLL_BATCH_LEN: usize = 1_000;
 pub(crate) struct ScrollContext {
     pub split_metadatas: Vec<SplitMetadata>,
     pub search_request: SearchRequest,
-    pub index_uri: Uri,
-    pub doc_mapper_str: String,
+    pub indexes_metas_for_leaf_search: HashMap<IndexUid, IndexMetasForLeafSearch>,
     pub total_num_hits: u64,
     pub max_hits_per_page: u64,
     pub cached_partial_hits_start_offset: u64,
@@ -96,7 +97,7 @@ impl ScrollContext {
     }
 
     /// Loads in the `ScrollContext` cache all the
-    /// hits in range [start_offset..start_offset + SCROLL_BATCH_LEN)
+    /// hits in range [start_offset..start_offset + SCROLL_BATCH_LEN).
     pub async fn load_batch_starting_at(
         &mut self,
         start_offset: u64,
@@ -110,9 +111,8 @@ impl ScrollContext {
         self.search_request.start_offset = start_offset;
         let leaf_search_response: LeafSearchResponse = crate::root::search_partial_hits_phase(
             searcher_context,
+            &self.indexes_metas_for_leaf_search,
             &self.search_request,
-            &self.index_uri,
-            &self.doc_mapper_str,
             &self.split_metadatas[..],
             cluster_client,
         )

@@ -197,7 +197,7 @@ mod tests {
         };
 
         let query_1 = SearchRequest {
-            index_id: "test-idx".to_string(),
+            index_id_patterns: vec!["test-idx".to_string()],
             query_ast: "test".to_string(),
             start_timestamp: None,
             end_timestamp: None,
@@ -207,7 +207,7 @@ mod tests {
         };
 
         let query_2 = SearchRequest {
-            index_id: "test-idx".to_string(),
+            index_id_patterns: vec!["test-idx".to_string()],
             query_ast: "test2".to_string(),
             start_timestamp: None,
             end_timestamp: None,
@@ -265,7 +265,7 @@ mod tests {
         };
 
         let query_1 = SearchRequest {
-            index_id: "test-idx".to_string(),
+            index_id_patterns: vec!["test-idx".to_string()],
             query_ast: "test".to_string(),
             start_timestamp: Some(100),
             end_timestamp: Some(250),
@@ -274,7 +274,7 @@ mod tests {
             ..Default::default()
         };
         let query_1bis = SearchRequest {
-            index_id: "test-idx".to_string(),
+            index_id_patterns: vec!["test-idx".to_string()],
             query_ast: "test".to_string(),
             start_timestamp: Some(150),
             end_timestamp: Some(300),
@@ -284,7 +284,7 @@ mod tests {
         };
 
         let query_2 = SearchRequest {
-            index_id: "test-idx".to_string(),
+            index_id_patterns: vec!["test-idx".to_string()],
             query_ast: "test2".to_string(),
             start_timestamp: None,
             end_timestamp: None,
@@ -293,7 +293,7 @@ mod tests {
             ..Default::default()
         };
         let query_2bis = SearchRequest {
-            index_id: "test-idx".to_string(),
+            index_id_patterns: vec!["test-idx".to_string()],
             query_ast: "test2".to_string(),
             start_timestamp: Some(50),
             end_timestamp: Some(200),

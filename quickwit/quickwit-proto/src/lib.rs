@@ -180,7 +180,7 @@ impl TryFrom<search::SearchStreamRequest> for search::SearchRequest {
 
     fn try_from(search_stream_req: search::SearchStreamRequest) -> Result<Self, Self::Error> {
         Ok(Self {
-            index_id: search_stream_req.index_id,
+            index_id_patterns: vec![search_stream_req.index_id],
             query_ast: search_stream_req.query_ast,
             snippet_fields: search_stream_req.snippet_fields,
             start_timestamp: search_stream_req.start_timestamp,
@@ -196,7 +196,7 @@ impl TryFrom<metastore::DeleteQuery> for search::SearchRequest {
     fn try_from(delete_query: metastore::DeleteQuery) -> anyhow::Result<Self> {
         let index_uid: IndexUid = delete_query.index_uid.into();
         Ok(Self {
-            index_id: index_uid.index_id().to_string(),
+            index_id_patterns: vec![index_uid.index_id().to_string()],
             query_ast: delete_query.query_ast,
             start_timestamp: delete_query.start_timestamp,
             end_timestamp: delete_query.end_timestamp,

@@ -119,6 +119,38 @@ pub fn validate_identifier(label: &str, value: &str) -> anyhow::Result<()> {
     );
 }
 
+/// Checks whether an index ID pattern conforms to Quickwit conventions.
+/// Index id patterns accepts the same characters as identifiers AND accepts `*`
+/// chars to allow for glob-like patterns.
+pub fn validate_index_id_pattern(value: &str) -> anyhow::Result<()> {
+    static IDENTIFIER_REGEX_WITH_GLOB_PATTERN: OnceCell<Regex> = OnceCell::new();
+
+    if !IDENTIFIER_REGEX_WITH_GLOB_PATTERN
+        .get_or_init(|| Regex::new(r"^[a-zA-Z\*][a-zA-Z0-9-_\.\*]{0,254}$").expect("Failed to compile regular expression. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues."))
+        .is_match(value)
+    {
+        bail!(
+            "Index ID pattern `{value}` is invalid. Patterns must match the following regular \
+             expression: `^[a-zA-Z\\*][a-zA-Z0-9-_\\.\\*]{{0,254}}$`."
+        );
+    }
+
+    // Forbid multiple stars in the pattern to force the user making simpler patterns
+    // as multiple stars does not bring any value.
+    if value.contains("**") {
+        bail!("Index ID pattern `{value}` is invalid. Patterns must not contain `**`.");
+    }
+
+    // If there is no star in the pattern, we need at least 3 characters.
+    if !value.contains('*') && value.len() < 3 {
+        bail!(
+            "Index ID pattern `{value}` is invalid. An index ID must have at least 3 characters."
+        );
+    }
+
+    Ok(())
+}
+
 pub fn validate_node_id(node_id: &str) -> anyhow::Result<()> {
     if !is_valid_hostname(node_id) {
         bail!(
@@ -216,6 +248,7 @@ pub trait TestableForRegression: Serialize + DeserializeOwned {
 #[cfg(test)]
 mod tests {
     use super::validate_identifier;
+    use crate::validate_index_id_pattern;
 
     #[test]
     fn test_validate_identifier() {
@@ -235,5 +268,18 @@ mod tests {
             .unwrap_err()
             .to_string()
             .contains("Cluster ID identifier `foo!` is invalid."));
+    }
+
+    #[test]
+    fn test_validate_index_id_pattern() {
+        validate_index_id_pattern("*").unwrap();
+        validate_index_id_pattern("abc.*").unwrap();
+        validate_index_id_pattern("ab").unwrap_err();
+        validate_index_id_pattern("").unwrap_err();
+        validate_index_id_pattern("**").unwrap_err();
+        assert!(validate_index_id_pattern("foo!")
+            .unwrap_err()
+            .to_string()
+            .contains("Index ID pattern `foo!` is invalid."));
     }
 }

@@ -98,8 +98,8 @@ message GetKVResponse {
 // -- Search -------------------
 
 message SearchRequest {
-  // Index ID
-  string index_id = 1;
+  // Index ID patterns
+  repeated string index_id_patterns = 1;
 
   // deprecated `query``
   reserved 2;
@@ -139,7 +139,7 @@ message SearchRequest {
   optional string aggregation_request = 11;
 
   // Fields to extract snippet on
-  repeated string  snippet_fields = 12;
+  repeated string snippet_fields = 12;
 
   // Optional sort by one or more fields (limited to 2 at the moment).
   repeated SortField sort_fields = 14;
@@ -329,9 +329,6 @@ message SnippetRequest {
 message FetchDocsRequest {
   // Request fetching the content of a given list of partial_hits.
   repeated PartialHit partial_hits = 1;
-
-  // Index ID
-  string index_id = 2;
 
   // Split footer offsets. They are required for fetch docs to
   // fetch the document content in two reads, when the footer is not

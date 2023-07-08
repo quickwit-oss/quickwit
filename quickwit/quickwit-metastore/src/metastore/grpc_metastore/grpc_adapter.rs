@@ -102,7 +102,13 @@ impl MetastoreService for GrpcMetastoreAdapter {
         request: tonic::Request<ListIndexesMetadatasRequest>,
     ) -> Result<tonic::Response<ListIndexesMetadatasResponse>, tonic::Status> {
         set_parent_span_from_request_metadata(request.metadata());
-        let indexes_metadatas = self.0.list_indexes_metadatas().await?;
+        let query = serde_json::from_str(&request.into_inner().filter_json).map_err(|error| {
+            MetastoreError::JsonSerializeError {
+                struct_name: "ListIndexesQuery".to_string(),
+                message: error.to_string(),
+            }
+        })?;
+        let indexes_metadatas = self.0.list_indexes_metadatas(query).await?;
         let list_indexes_metadatas_reply = serde_json::to_string(&indexes_metadatas)
             .map(
                 |indexes_metadatas_serialized_json| ListIndexesMetadatasResponse {

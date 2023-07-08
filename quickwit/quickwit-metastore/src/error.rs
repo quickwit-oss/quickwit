@@ -36,8 +36,8 @@ pub enum MetastoreError {
     #[error("Access forbidden: `{message}`.")]
     Forbidden { message: String },
 
-    #[error("Index `{index_id}` does not exist.")]
-    IndexDoesNotExist { index_id: String },
+    #[error("Indexes `{index_ids:?}` do not exist.")]
+    IndexesDoNotExist { index_ids: Vec<String> },
 
     /// Any generic internal error.
     /// The message can be helpful to users, but the detail of the error
@@ -113,7 +113,7 @@ impl ServiceError for MetastoreError {
             Self::Forbidden { .. } => ServiceErrorCode::MethodNotAllowed,
             Self::IncompatibleCheckpointDelta(_) => ServiceErrorCode::BadRequest,
             Self::IndexAlreadyExists { .. } => ServiceErrorCode::BadRequest,
-            Self::IndexDoesNotExist { .. } => ServiceErrorCode::NotFound,
+            Self::IndexesDoNotExist { .. } => ServiceErrorCode::NotFound,
             Self::InternalError { .. } => ServiceErrorCode::Internal,
             Self::InvalidManifest { .. } => ServiceErrorCode::Internal,
             Self::Io { .. } => ServiceErrorCode::Internal,

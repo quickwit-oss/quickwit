@@ -1,0 +1,19 @@
+params:
+  q: "*"
+expected:
+  hits:
+    total:
+      value: 4
+      relation: "eq"
+    hits:
+      $expect: "len(val) == 4"
+---
+params:
+  q: "actor.login:fmassot OR actor.login:guilload"
+expected:
+  hits:
+    total:
+      value: 2
+      relation: "eq"
+    hits:
+      $expect: "len(val) == 2"

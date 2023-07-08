@@ -29,7 +29,7 @@ use futures_util::StreamExt;
 use hyper::StatusCode;
 use itertools::Itertools;
 use quickwit_common::truncate_str;
-use quickwit_config::NodeConfig;
+use quickwit_config::{validate_index_id_pattern, NodeConfig};
 use quickwit_proto::search::{ScrollRequest, SearchResponse};
 use quickwit_proto::ServiceErrorCode;
 use quickwit_query::query_ast::{QueryAst, UserInputQuery};
@@ -127,7 +127,7 @@ pub fn es_compat_index_multi_search_handler(
 }
 
 fn build_request_for_es_api(
-    index_id: String,
+    index_id_patterns: Vec<String>,
     search_params: SearchQueryParams,
     search_body: SearchBody,
 ) -> Result<quickwit_proto::search::SearchRequest, ElasticSearchError> {
@@ -177,7 +177,7 @@ fn build_request_for_es_api(
     let scroll_ttl_secs: Option<u32> = scroll_duration.map(|duration| duration.as_secs() as u32);
 
     Ok(quickwit_proto::search::SearchRequest {
-        index_id,
+        index_id_patterns,
         query_ast: serde_json::to_string(&query_ast).expect("Failed to serialize QueryAst"),
         max_hits,
         start_offset,
@@ -191,13 +191,13 @@ fn build_request_for_es_api(
 }
 
 async fn es_compat_index_search(
-    index_id: String,
+    index_id_patterns: Vec<String>,
     search_params: SearchQueryParams,
     search_body: SearchBody,
     search_service: Arc<dyn SearchService>,
 ) -> Result<ElasticSearchResponse, ElasticSearchError> {
     let start_instant = Instant::now();
-    let search_request = build_request_for_es_api(index_id, search_params, search_body)?;
+    let search_request = build_request_for_es_api(index_id_patterns, search_params, search_body)?;
     let search_response: SearchResponse = search_service.root_search(search_request).await?;
     let elapsed = start_instant.elapsed();
     let mut search_response_rest: ElasticSearchResponse =
@@ -243,20 +243,20 @@ async fn es_compat_index_multi_search(
                 err
             ))
         })?;
-        if request_header.index.len() != 1 {
-            let message = if request_header.index.is_empty() {
-                "`_msearch` must define one `index` in the request header. Got none.".to_string()
-            } else {
-                format!(
-                    "Searching only one index is supported for now. Got {:?}",
-                    request_header.index
-                )
-            };
+        if request_header.index.is_empty() {
             return Err(ElasticSearchError::from(SearchError::InvalidArgument(
-                message,
+                "`_msearch` request header must define at least one index.".to_string(),
             )));
         }
-        let index_id = request_header.index[0].clone();
+        for index in &request_header.index {
+            validate_index_id_pattern(index).map_err(|err| {
+                SearchError::InvalidArgument(format!(
+                    "Request header contains an invalid index: {}",
+                    err
+                ))
+            })?;
+        }
+        let index_ids_patterns = request_header.index.clone();
         let search_body = payload_lines
             .next()
             .ok_or_else(|| {
@@ -272,7 +272,8 @@ async fn es_compat_index_multi_search(
                 })
             })?;
         let search_query_params = SearchQueryParams::from(request_header);
-        let es_request = build_request_for_es_api(index_id, search_query_params, search_body)?;
+        let es_request =
+            build_request_for_es_api(index_ids_patterns, search_query_params, search_body)?;
         search_requests.push(es_request);
     }
     let futures = search_requests.into_iter().map(|search_request| async {

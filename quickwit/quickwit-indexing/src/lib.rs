@@ -48,7 +48,7 @@ mod split_store;
 mod test_utils;
 
 #[cfg(any(test, feature = "testsuite"))]
-pub use test_utils::{mock_split, mock_split_meta, TestSandbox};
+pub use test_utils::{mock_split, mock_split_meta, MockSplitBuilder, TestSandbox};
 
 use self::merge_policy::MergePolicy;
 pub use self::source::check_source_connectivity;

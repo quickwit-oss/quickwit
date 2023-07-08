@@ -1,0 +1,107 @@
+# Delete possibly remaining index
+method: DELETE
+endpoint: gharchive-1
+status_code: null
+---
+# Delete possibly remaining index
+method: DELETE
+endpoint: gharchive-2
+status_code: null
+---
+# Create index 1
+method: PUT
+endpoint: gharchive-1
+json: {
+  "mappings": {
+    "properties": {
+      "id": {
+        "type": "text",
+        "store": true,
+        "norms": false,
+        "index_options": "docs"
+      },
+      "type": {
+        "type": "text",
+        "store": true,
+        "norms": false,
+        "index_options": "docs",
+        "fielddata": true
+      },
+      "actor": {
+        "properties": {
+          "id": {
+            "type": "long",
+            "store": true
+          },
+          "login": {
+            "type": "text",
+            "store": true,
+            "norms": false,
+            "index_options": "docs"
+          }
+        }
+      },
+      "created_at": {
+        "type": "date",
+        "store": true
+      }
+    }
+  }
+}
+---
+# Create index 2
+method: PUT
+endpoint: gharchive-2
+json: {
+  "mappings": {
+    "properties": {
+      "id": {
+        "type": "text",
+        "store": true,
+        "norms": false,
+        "index_options": "docs"
+      },
+      "type": {
+        "type": "text",
+        "store": true,
+        "norms": false,
+        "index_options": "docs",
+        "fielddata": true
+      },
+      "actor": {
+        "properties": {
+          "id": {
+            "type": "long",
+            "store": true
+          },
+          "login": {
+            "type": "text",
+            "store": true,
+            "norms": false,
+            "index_options": "docs"
+          }
+        }
+      },
+      "created_at": {
+        "type": "date",
+        "store": true
+      }
+    }
+  }
+}
+---
+# Ingest documents in index 1 and 2
+method: POST
+endpoint: _bulk
+params:
+  refresh: "true"
+headers: {"Content-Type": "application/json"}
+ndjson:
+  - "index": { "_index": "gharchive-1" }
+  - {"id": 1, "created_at":"2015-02-01T00:00:14Z", "type": "CreateEvent", "actor": { "id": 1, "login": "fmassot" } }
+  - "index": { "_index": "gharchive-1" }
+  - {"id": 2, "created_at":"2015-02-01T00:00:14Z", "type": "CreateEvent", "actor": { "id": 2, "login": "fulmicoton" } }
+  - "index": { "_index": "gharchive-2" }
+  - {"id": 3, "created_at":"2015-02-01T00:00:14Z", "type": "CreateEvent", "actor": { "id": 3, "login": "guilload" } }
+  - "index": { "_index": "gharchive-2" }
+  - {"id": 4, "created_at":"2015-02-01T00:00:14Z", "type": "CreateEvent", "actor": { "id": 4, "login": "trinity" } }

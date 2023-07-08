@@ -15,7 +15,10 @@ pub struct CreateIndexResponse {
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ListIndexesMetadatasRequest {}
+pub struct ListIndexesMetadatasRequest {
+    #[prost(string, tag = "1")]
+    pub filter_json: ::prost::alloc::string::String,
+}
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]

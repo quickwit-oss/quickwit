@@ -118,10 +118,10 @@ mod tests {
             .expect_root_search()
             .with(predicate::function(
                 |search_request: &quickwit_proto::search::SearchRequest| {
-                    (search_request.index_id == "index-1"
+                    (search_request.index_id_patterns == vec!["index-1".to_string()]
                         && search_request.start_offset == 5
                         && search_request.max_hits == 20)
-                        || (search_request.index_id == "index-2"
+                        || (search_request.index_id_patterns == vec!["index-2".to_string()]
                             && search_request.start_offset == 0
                             && search_request.max_hits == 10)
                 },
@@ -162,7 +162,10 @@ mod tests {
         mock_search_service
             .expect_root_search()
             .returning(|search_request| {
-                if search_request.index_id == "index-1" {
+                if search_request
+                    .index_id_patterns
+                    .contains(&"index-1".to_string())
+                {
                     Ok(Default::default())
                 } else {
                     Err(quickwit_search::SearchError::InternalError(
@@ -305,15 +308,29 @@ mod tests {
             .await;
         assert_eq!(resp.status(), 400);
         let es_error: ElasticSearchError = serde_json::from_slice(resp.body()).unwrap();
-        assert!(es_error.error.reason.unwrap().starts_with(
-            "Invalid argument: `_msearch` must define one `index` in the request header"
-        ));
+        assert_eq!(
+            es_error.error.reason.unwrap(),
+            "Invalid argument: `_msearch` request header must define at least one index."
+        );
     }
 
     #[tokio::test]
     async fn test_msearch_api_return_400_with_multiple_indexes() {
         let config = Arc::new(NodeConfig::for_test());
-        let mock_search_service = MockSearchService::new();
+        let mut mock_search_service = MockSearchService::new();
+        mock_search_service
+            .expect_root_search()
+            .returning(|search_request| {
+                if search_request.index_id_patterns
+                    == vec!["index-1".to_string(), "index-2".to_string()]
+                {
+                    Ok(Default::default())
+                } else {
+                    Err(quickwit_search::SearchError::InternalError(
+                        "something bad happened".to_string(),
+                    ))
+                }
+            });
         let es_search_api_handler = super::elastic_api_handlers(
             config,
             Arc::new(mock_search_service),
@@ -321,7 +338,7 @@ mod tests {
         );
         let msearch_payload = r#"
             {"index": ["index-1", "index-2"]}
-            {"query":{"query_string":{"bad":"test"}}}
+            {"query":{"query_string":{"query":"test"}}}
             "#;
         let resp = warp::test::request()
             .path("/_elastic/_msearch")
@@ -329,13 +346,7 @@ mod tests {
             .body(msearch_payload)
             .reply(&es_search_api_handler)
             .await;
-        assert_eq!(resp.status(), 400);
-        let es_error: ElasticSearchError = serde_json::from_slice(resp.body()).unwrap();
-        assert!(es_error
-            .error
-            .reason
-            .unwrap()
-            .starts_with("Invalid argument: Searching only one index is supported for now."));
+        assert_eq!(resp.status(), 200);
     }
 
     #[tokio::test]

@@ -28,7 +28,7 @@ use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler};
 use quickwit_config::SourceConfig;
-use quickwit_metastore::Metastore;
+use quickwit_metastore::{ListIndexesQuery, Metastore};
 use quickwit_proto::control_plane::{
     ControlPlaneResult, NotifyIndexChangeRequest, NotifyIndexChangeResponse,
 };
@@ -193,7 +193,10 @@ impl IndexingScheduler {
     }
 
     async fn fetch_source_configs(&self) -> anyhow::Result<HashMap<IndexSourceId, SourceConfig>> {
-        let indexes_metadatas = self.metastore.list_indexes_metadatas().await?;
+        let indexes_metadatas = self
+            .metastore
+            .list_indexes_metadatas(ListIndexesQuery::All)
+            .await?;
         let source_configs: HashMap<IndexSourceId, SourceConfig> = indexes_metadatas
             .into_iter()
             .flat_map(|index_metadata| {
@@ -532,7 +535,7 @@ mod tests {
     use quickwit_config::service::QuickwitService;
     use quickwit_config::{KafkaSourceParams, SourceConfig, SourceInputFormat, SourceParams};
     use quickwit_indexing::IndexingService;
-    use quickwit_metastore::{IndexMetadata, MockMetastore};
+    use quickwit_metastore::{IndexMetadata, ListIndexesQuery, MockMetastore};
     use quickwit_proto::indexing::{ApplyIndexingPlanRequest, IndexingServiceClient, IndexingTask};
     use serde_json::json;
 
@@ -615,9 +618,11 @@ mod tests {
         let mut index_metadata_2 = index_metadata_for_test(index_2, source_2, 1, 1);
         index_metadata_2.create_timestamp = index_metadata_1.create_timestamp + 1;
         let mut metastore = MockMetastore::default();
-        metastore
-            .expect_list_indexes_metadatas()
-            .returning(move || Ok(vec![index_metadata_2.clone(), index_metadata_1.clone()]));
+        metastore.expect_list_indexes_metadatas().returning(
+            move |_list_indexes_query: ListIndexesQuery| {
+                Ok(vec![index_metadata_2.clone(), index_metadata_1.clone()])
+            },
+        );
         let mut indexer_inboxes = Vec::new();
         let indexing_client_pool = Pool::default();
         let change_stream = cluster.ready_nodes_change_stream().await;

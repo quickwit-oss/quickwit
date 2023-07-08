@@ -218,19 +218,42 @@ impl TestSandbox {
     }
 }
 
-/// Mock split helper.
-pub fn mock_split(split_id: &str) -> Split {
-    Split {
-        split_state: SplitState::Published,
-        split_metadata: mock_split_meta(split_id),
-        update_timestamp: 0,
-        publish_timestamp: None,
+/// Mock split builder.
+pub struct MockSplitBuilder {
+    split_metadata: SplitMetadata,
+}
+
+impl MockSplitBuilder {
+    pub fn new(split_id: &str) -> Self {
+        Self {
+            split_metadata: mock_split_meta(split_id, &IndexUid::new("test-index")),
+        }
+    }
+
+    pub fn with_index_uid(mut self, index_uid: &IndexUid) -> Self {
+        self.split_metadata.index_uid = index_uid.clone();
+        self
+    }
+
+    pub fn build(self) -> Split {
+        Split {
+            split_state: SplitState::Published,
+            split_metadata: self.split_metadata,
+            update_timestamp: 0,
+            publish_timestamp: None,
+        }
     }
 }
 
+/// Mock split helper.
+pub fn mock_split(split_id: &str) -> Split {
+    MockSplitBuilder::new(split_id).build()
+}
+
 /// Mock split meta helper.
-pub fn mock_split_meta(split_id: &str) -> SplitMetadata {
+pub fn mock_split_meta(split_id: &str, index_uid: &IndexUid) -> SplitMetadata {
     SplitMetadata {
+        index_uid: index_uid.clone(),
         split_id: split_id.to_string(),
         partition_id: 13u64,
         num_docs: 10,

@@ -27,6 +27,7 @@ use super::model::MultiSearchQueryParams;
 use crate::elastic_search_api::model::{
     ElasticIngestOptions, ScrollQueryParams, SearchBody, SearchQueryParams,
 };
+use crate::search_api::extract_index_id_patterns;
 
 const BODY_LENGTH_LIMIT: Byte = byte_unit::Byte::from_bytes(1_000_000);
 const CONTENT_LENGTH_LIMIT: Byte = byte_unit::Byte::from_bytes(10 * 1024 * 1024); // 10MiB
@@ -101,23 +102,10 @@ fn json_or_empty<T: DeserializeOwned + Send + Default>(
 
 #[utoipa::path(get, tag = "Search", path = "/{index}/_search")]
 pub(crate) fn elastic_index_search_filter(
-) -> impl Filter<Extract = (String, SearchQueryParams, SearchBody), Error = Rejection> + Clone {
+) -> impl Filter<Extract = (Vec<String>, SearchQueryParams, SearchBody), Error = Rejection> + Clone
+{
     warp::path!("_elastic" / String / "_search")
-        .and_then(|comma_separated_indexes: String| async move {
-            if comma_separated_indexes.contains(',') {
-                return Err(warp::reject::custom(crate::rest::InvalidArgument(format!(
-                    "Searching only one index is supported for now. Got \
-                     (`{comma_separated_indexes}`)"
-                ))));
-            }
-            let index = comma_separated_indexes.trim();
-            if index.is_empty() {
-                return Err(warp::reject::custom(crate::rest::InvalidArgument(
-                    "Missing index name.".to_string(),
-                )));
-            }
-            Ok(index.to_string())
-        })
+        .and_then(extract_index_id_patterns)
         .and(warp::get().or(warp::post()).unify())
         .and(serde_qs::warp::query(serde_qs::Config::default()))
         .and(json_or_empty())

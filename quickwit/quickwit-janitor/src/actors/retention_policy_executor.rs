@@ -25,7 +25,7 @@ use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, Handler};
 use quickwit_config::IndexConfig;
-use quickwit_metastore::Metastore;
+use quickwit_metastore::{ListIndexesQuery, Metastore};
 use quickwit_proto::IndexUid;
 use serde::Serialize;
 use tracing::{debug, error, info};
@@ -81,7 +81,11 @@ impl RetentionPolicyExecutor {
         debug!("retention-policy-refresh-indexes-operation");
         self.counters.num_refresh_passes += 1;
 
-        let index_metadatas = match self.metastore.list_indexes_metadatas().await {
+        let index_metadatas = match self
+            .metastore
+            .list_indexes_metadatas(ListIndexesQuery::All)
+            .await
+        {
             Ok(metadatas) => metadatas,
             Err(error) => {
                 error!(error=?error, "Failed to list indexes from the metastore.");
@@ -248,7 +252,9 @@ mod tests {
     use mockall::Sequence;
     use quickwit_actors::Universe;
     use quickwit_config::RetentionPolicy;
-    use quickwit_metastore::{IndexMetadata, MockMetastore, Split, SplitMetadata, SplitState};
+    use quickwit_metastore::{
+        IndexMetadata, ListIndexesQuery, MockMetastore, Split, SplitMetadata, SplitState,
+    };
 
     use super::*;
 
@@ -341,7 +347,7 @@ mod tests {
             .expect_list_indexes_metadatas()
             .times(1)
             .in_sequence(&mut sequence)
-            .returning(|| {
+            .returning(|_list_indexes_query: ListIndexesQuery| {
                 Ok(make_indexes(&[
                     ("a", Some("1 hour")),
                     ("b", Some("1 hour")),
@@ -353,7 +359,7 @@ mod tests {
             .expect_list_indexes_metadatas()
             .times(1)
             .in_sequence(&mut sequence)
-            .returning(|| {
+            .returning(|_list_indexes_query: ListIndexesQuery| {
                 Ok(make_indexes(&[
                     ("a", Some("1 hour")),
                     ("b", Some("2 hour")),
@@ -365,7 +371,7 @@ mod tests {
             .expect_list_indexes_metadatas()
             .times(1)
             .in_sequence(&mut sequence)
-            .returning(|| {
+            .returning(|_list_indexes_query: ListIndexesQuery| {
                 Ok(make_indexes(&[
                     ("b", Some("1 hour")),
                     ("d", Some("1 hour")),
@@ -417,7 +423,7 @@ mod tests {
         mock_metastore
             .expect_list_indexes_metadatas()
             .times(..)
-            .returning(|| {
+            .returning(|_list_indexes_query: ListIndexesQuery| {
                 Ok(make_indexes(&[
                     ("a", Some("2 hour")),
                     ("b", Some("1 hour")),
@@ -430,7 +436,7 @@ mod tests {
             .times(2..=4)
             .returning(|query| {
                 assert_eq!(query.split_states, &[SplitState::Published]);
-                let splits = match query.index_uid.index_id() {
+                let splits = match query.index_uids[0].index_id() {
                     "a" => {
                         vec![
                             make_split("split-1", Some(1000..=5000)),
