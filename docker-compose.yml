@@ -27,7 +27,7 @@ networks:
 
 services:
   localstack:
-    image: localstack/localstack:${LOCALSTACK_VERSION:-2.0.2}
+    image: localstack/localstack:${LOCALSTACK_VERSION:-2.1.0}
     container_name: localstack
     ports:
       - "${MAP_HOST_LOCALSTACK:-127.0.0.1}:4566:4566"
@@ -137,7 +137,7 @@ services:
       retries: 100
 
   azurite:
-    image: mcr.microsoft.com/azure-storage/azurite:${AZURITE_VERSION:-3.23.0}
+    image: mcr.microsoft.com/azure-storage/azurite:${AZURITE_VERSION:-3.24.0}
     container_name: azurite
     ports:
         - "${MAP_HOST_AZURITE:-127.0.0.1}:10000:10000" # Blob store port
