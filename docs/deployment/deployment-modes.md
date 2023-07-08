@@ -28,12 +28,8 @@ One indexer running on a small instance (4 vCPUs) can ingest documents at a thro
 ## Multiple indexers, multiple searchers
 
 Indexing a single [data source](../configuration/source-config.md) on several indexers is only possible with a [Kafka source](../configuration/source-config.md#kafka-source).
-Support distributed indexing for Pulsar and the Ingest API is planned for Quickwit 0.7 (Q3). Stay tuned!
+Support for native distributed indexing is planned for Quickwit 0.7 (Q4). Stay tuned!
 
 ## File-backed metastore limitations
 
-The file-backed metastore is a good fit for standalone and small deployments. However, it has the following limitations:
-- It does not support multiple instances.
-- It caches metastore data and polls files periodically to update its cache. Thus it has a delayed view of the metastore state.
-
-As long as you can guarantee that no more than one metastore is running at any given time, the file-backed metastore is safe to use. For heavier workloads, we recommend using a PostgreSQL metastore.
+The file-backed metastore is a good fit for standalone and small deployments. However, it does not support multiple instances running at the same time. As long as you can guarantee that no more than one metastore is running at any given time, the file-backed metastore is safe to use. For heavy workloads, we recommend using a PostgreSQL metastore.

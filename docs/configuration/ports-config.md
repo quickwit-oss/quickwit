@@ -1,6 +1,6 @@
 ---
 title: Ports configuration
-sidebar_position: 5
+sidebar_position: 6
 ---
 
 When starting a quickwit search server, one important parameter that can be configured is
