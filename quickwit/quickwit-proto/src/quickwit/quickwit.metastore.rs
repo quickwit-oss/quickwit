@@ -525,7 +525,7 @@ pub mod metastore_service_client {
             self.inner.unary(req, path, codec).await
         }
         /// / Stream splits from index.
-        pub async fn splits(
+        pub async fn stream_splits(
             &mut self,
             request: impl tonic::IntoRequest<super::ListSplitsRequest>,
         ) -> std::result::Result<
@@ -543,14 +543,14 @@ pub mod metastore_service_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/quickwit_metastore_api.MetastoreApiService/Splits",
+                "/quickwit_metastore_api.MetastoreApiService/StreamSplits",
             );
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(
                     GrpcMethod::new(
                         "quickwit_metastore_api.MetastoreApiService",
-                        "Splits",
+                        "StreamSplits",
                     ),
                 );
             self.inner.server_streaming(req, path, codec).await
@@ -985,17 +985,20 @@ pub mod metastore_service_server {
             tonic::Response<super::ListSplitsResponse>,
             tonic::Status,
         >;
-        /// Server streaming response type for the Splits method.
-        type SplitsStream: futures_core::Stream<
+        /// Server streaming response type for the StreamSplits method.
+        type StreamSplitsStream: futures_core::Stream<
                 Item = std::result::Result<super::ListSplitsResponse, tonic::Status>,
             >
             + Send
             + 'static;
         /// / Stream splits from index.
-        async fn splits(
+        async fn stream_splits(
             &self,
             request: tonic::Request<super::ListSplitsRequest>,
-        ) -> std::result::Result<tonic::Response<Self::SplitsStream>, tonic::Status>;
+        ) -> std::result::Result<
+            tonic::Response<Self::StreamSplitsStream>,
+            tonic::Status,
+        >;
         /// Stages several splits.
         async fn stage_splits(
             &self,
@@ -1427,15 +1430,15 @@ pub mod metastore_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/quickwit.metastore.MetastoreService/Splits" => {
+                "/quickwit.metastore.MetastoreService/StreamSplits" => {
                     #[allow(non_camel_case_types)]
-                    struct SplitsSvc<T: MetastoreApiService>(pub Arc<T>);
+                    struct StreamSplitsSvc<T: MetastoreApiService>(pub Arc<T>);
                     impl<
                         T: MetastoreApiService,
                     > tonic::server::ServerStreamingService<super::ListSplitsRequest>
-                    for SplitsSvc<T> {
+                    for StreamSplitsSvc<T> {
                         type Response = super::ListSplitsResponse;
-                        type ResponseStream = T::SplitsStream;
+                        type ResponseStream = T::StreamSplitsStream;
                         type Future = BoxFuture<
                             tonic::Response<Self::ResponseStream>,
                             tonic::Status,
@@ -1445,7 +1448,9 @@ pub mod metastore_service_server {
                             request: tonic::Request<super::ListSplitsRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move { (*inner).splits(request).await };
+                            let fut = async move {
+                                (*inner).stream_splits(request).await
+                            };
                             Box::pin(fut)
                         }
                     }
@@ -1456,7 +1461,7 @@ pub mod metastore_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
-                        let method = SplitsSvc(inner);
+                        let method = StreamSplitsSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

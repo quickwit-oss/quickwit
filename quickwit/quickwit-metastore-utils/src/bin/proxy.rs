@@ -139,15 +139,15 @@ impl MetastoreService for MetastoreProxyService {
         let resp = lock.client.list_splits(request).await?;
         Ok(resp)
     }
-    type SplitsStream = ServiceStream<ListSplitsResponse, tonic::Status>;
+    type StreamSplitsStream = ServiceStream<ListSplitsResponse, tonic::Status>;
     /// Stream splits.
-    async fn splits(
+    async fn stream_splits(
         &self,
         request: tonic::Request<ListSplitsRequest>,
-    ) -> std::result::Result<tonic::Response<Self::SplitsStream>, tonic::Status> {
+    ) -> std::result::Result<tonic::Response<Self::StreamSplitsStream>, tonic::Status> {
         let mut lock = self.inner.lock().await;
         lock.record(request.get_ref().clone()).await.unwrap();
-        let resp = lock.client.splits(request).await?.into_inner();
+        let resp = lock.client.stream_splits(request).await?.into_inner();
         let service_stream = ServiceStream::from(resp);
         Ok(Response::new(service_stream))
     }

@@ -143,12 +143,12 @@ impl Metastore for RetryingMetastore {
         .await
     }
 
-    async fn splits(
+    async fn stream_splits(
         &self,
         query: ListSplitsQuery,
     ) -> MetastoreResult<ServiceStream<Vec<Split>, MetastoreError>> {
         retry(&self.retry_params, || async {
-            self.inner.splits(query.clone()).await
+            self.inner.stream_splits(query.clone()).await
         })
         .await
     }

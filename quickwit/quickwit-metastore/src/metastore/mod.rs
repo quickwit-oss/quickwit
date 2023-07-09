@@ -31,6 +31,7 @@ pub mod retrying_metastore;
 use std::ops::{Bound, RangeInclusive};
 
 use async_trait::async_trait;
+use futures::TryStreamExt;
 pub use index_metadata::IndexMetadata;
 use quickwit_common::uri::Uri;
 use quickwit_common::ServiceStream;
@@ -190,7 +191,14 @@ pub trait Metastore: Send + Sync + 'static {
     /// Returns a list of splits that intersects the given `time_range`, `split_state`, and `tag`.
     /// Regardless of the time range filter, if a split has no timestamp it is always returned.
     /// An error will occur if an index that does not exist in the storage is specified.
-    async fn list_splits(&self, query: ListSplitsQuery) -> MetastoreResult<Vec<Split>>;
+    async fn list_splits(&self, query: ListSplitsQuery) -> MetastoreResult<Vec<Split>> {
+        let mut stream = self.stream_splits(query).await?;
+        let mut splits = Vec::new();
+        while let Some(splits_batch) = stream.try_next().await? {
+            splits.extend(splits_batch);
+        }
+        Ok(splits)
+    }
 
     /// Lists all the splits without filtering.
     ///
@@ -200,8 +208,8 @@ pub trait Metastore: Send + Sync + 'static {
         self.list_splits(query).await
     }
 
-    /// Stream splits
-    async fn splits(
+    /// Stream splits batches matching the given query.
+    async fn stream_splits(
         &self,
         query: ListSplitsQuery,
     ) -> MetastoreResult<ServiceStream<Vec<Split>, MetastoreError>>;

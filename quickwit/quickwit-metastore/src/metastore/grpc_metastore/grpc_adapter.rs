@@ -181,13 +181,12 @@ impl grpc::MetastoreService for GrpcMetastoreAdapter {
         Ok(tonic::Response::new(list_splits_reply))
     }
 
-    type SplitsStream = ServiceStream<ListSplitsResponse, tonic::Status>;
-    /// Stream splits.
+    type StreamSplitsStream = ServiceStream<ListSplitsResponse, tonic::Status>;
     #[instrument(skip(self, request))]
-    async fn splits(
+    async fn stream_splits(
         &self,
         request: tonic::Request<ListSplitsRequest>,
-    ) -> std::result::Result<tonic::Response<Self::SplitsStream>, tonic::Status> {
+    ) -> std::result::Result<tonic::Response<Self::StreamSplitsStream>, tonic::Status> {
         set_parent_span_from_request_metadata(request.metadata());
         let list_splits_request = request.into_inner();
         let query: ListSplitsQuery = serde_json::from_str(&list_splits_request.filter_json)
@@ -195,7 +194,7 @@ impl grpc::MetastoreService for GrpcMetastoreAdapter {
                 struct_name: "ListSplitsQuery".to_string(),
                 message: error.to_string(),
             })?;
-        let stream_response = self.0.splits(query).await?;
+        let stream_response = self.0.stream_splits(query).await?;
         let splits_response_stream = stream_response
             .map(|result| match result {
                 Ok(splits) => {

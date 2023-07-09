@@ -167,12 +167,12 @@ impl Metastore for InstrumentedMetastore {
     }
 
     /// Stream splits
-    async fn splits(
+    async fn stream_splits(
         &self,
         query: ListSplitsQuery,
     ) -> MetastoreResult<ServiceStream<Vec<Split>, MetastoreError>> {
         instrument!(
-            self.underlying.splits(query.clone()).await,
+            self.underlying.stream_splits(query.clone()).await,
             [splits, query.index_uid.index_id()]
         );
     }

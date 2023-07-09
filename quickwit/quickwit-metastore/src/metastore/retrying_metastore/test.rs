@@ -136,7 +136,7 @@ impl Metastore for RetryTestMetastore {
         }
     }
 
-    async fn splits(
+    async fn stream_splits(
         &self,
         _query: ListSplitsQuery,
     ) -> MetastoreResult<ServiceStream<Vec<Split>, MetastoreError>> {

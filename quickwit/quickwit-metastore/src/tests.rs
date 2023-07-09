@@ -1676,7 +1676,7 @@ pub mod test_suite {
             .unwrap();
         let query =
             ListSplitsQuery::for_index(index_uid.clone()).with_split_state(SplitState::Staged);
-        let mut splits_stream = metastore.splits(query).await.unwrap();
+        let mut splits_stream = metastore.stream_splits(query).await.unwrap();
 
         let first_batch = splits_stream.try_next().await.unwrap().unwrap();
         assert_eq!(first_batch.len(), 100);

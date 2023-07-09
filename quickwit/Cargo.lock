@@ -5354,7 +5354,6 @@ name = "quickwit-metastore"
 version = "0.6.2"
 dependencies = [
  "anyhow",
- "async-stream",
  "async-trait",
  "byte-unit",
  "dotenv",
@@ -5365,7 +5364,6 @@ dependencies = [
  "mockall",
  "once_cell",
  "ouroboros",
- "pin-utils",
  "quickwit-common",
  "quickwit-config",
  "quickwit-doc-mapper",

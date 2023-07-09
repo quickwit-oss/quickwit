@@ -296,7 +296,7 @@ impl Metastore for MetastoreGrpcClient {
         Ok(splits)
     }
 
-    async fn splits(
+    async fn stream_splits(
         &self,
         query: ListSplitsQuery,
     ) -> MetastoreResult<ServiceStream<Vec<Split>, MetastoreError>> {
@@ -310,7 +310,7 @@ impl Metastore for MetastoreGrpcClient {
         let response = self
             .underlying
             .clone()
-            .splits(request)
+            .stream_splits(request)
             .await
             .map(|tonic_response| tonic_response.into_inner())
             .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;

@@ -164,11 +164,11 @@ impl Metastore for MetastoreEventPublisher {
     }
 
     /// Stream splits
-    async fn splits(
+    async fn stream_splits(
         &self,
         query: ListSplitsQuery,
     ) -> MetastoreResult<ServiceStream<Vec<Split>, MetastoreError>> {
-        self.underlying.splits(query.clone()).await
+        self.underlying.stream_splits(query.clone()).await
     }
 
     async fn list_all_splits(&self, index_uid: IndexUid) -> MetastoreResult<Vec<Split>> {

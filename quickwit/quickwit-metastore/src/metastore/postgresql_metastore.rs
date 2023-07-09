@@ -762,23 +762,13 @@ impl Metastore for PostgresqlMetastore {
     }
 
     #[instrument(skip(self), fields(index_id=query.index_uid.index_id()))]
-    async fn splits(
+    async fn stream_splits(
         &self,
         query: ListSplitsQuery,
     ) -> MetastoreResult<ServiceStream<Vec<Split>, MetastoreError>> {
-        #[self_referencing]
-        struct SplitStream<T> {
-            connection_pool: Pool<Postgres>,
-            sql: String,
-            #[borrows(connection_pool, sql)]
-            #[covariant]
-            inner: BoxStream<'this, Result<T, sqlx::Error>>,
-        }
-
         let sql_base = "SELECT * FROM splits".to_string();
         let sql: String = build_query_filter(sql_base, &query);
         let connection_pool = self.connection_pool.clone();
-
         let split_stream = SplitStream::new(
             connection_pool,
             sql,
@@ -788,17 +778,6 @@ impl Metastore for PostgresqlMetastore {
                     .fetch(connection_pool)
             },
         );
-
-        impl<T> Stream for SplitStream<T> {
-            type Item = Result<T, sqlx::Error>;
-
-            fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
-                SplitStream::with_inner_mut(&mut self, |this| {
-                    Pin::new(&mut this.as_mut()).poll_next(cx)
-                })
-            }
-        }
-
         let mapped_split_stream = split_stream
             .map(|result| match result {
                 Ok(pg_split) => {
@@ -814,34 +793,6 @@ impl Metastore for PostgresqlMetastore {
                     .collect::<Result<Vec<Split>, MetastoreError>>()
             });
         let service_stream = ServiceStream::new(Box::pin(mapped_split_stream));
-
-        // TODO: can we do better than this spawn?
-        // let (tx, service_stream) = ServiceStream::new_unbounded();
-        // let connection_pool = self.connection_pool.clone();
-        // tokio::spawn(async move {
-        //     let sql_base = "SELECT * FROM splits".to_string();
-        //     let sql: String = build_query_filter(sql_base, &query);
-        //     let mut stream = sqlx::query_as::<_, PgSplit>(&sql)
-        //         .bind(query.index_uid.to_string())
-        //         .fetch(&connection_pool)
-        //         .map(|result| match result {
-        //             Ok(pg_split) => {
-        //                 let split_res: Result<Split, MetastoreError> = pg_split.try_into();
-        //                 split_res
-        //             }
-        //             Err(error) => Err(MetastoreError::from(error)),
-        //         })
-        //         .chunks(100)
-        //         .map(|chunk| {
-        //             chunk
-        //                 .into_iter()
-        //                 .collect::<Result<Vec<Split>, MetastoreError>>()
-        //         });
-
-        //     while let Some(item) = stream.next().await {
-        //         tx.send(item).unwrap();
-        //     }
-        // });
         Ok(service_stream)
     }
 
@@ -1243,6 +1194,23 @@ impl Metastore for PostgresqlMetastore {
             .into_iter()
             .map(|pg_split| pg_split.try_into())
             .collect()
+    }
+}
+
+#[self_referencing]
+struct SplitStream<T> {
+    connection_pool: Pool<Postgres>,
+    sql: String,
+    #[borrows(connection_pool, sql)]
+    #[covariant]
+    inner: BoxStream<'this, Result<T, sqlx::Error>>,
+}
+
+impl<T> Stream for SplitStream<T> {
+    type Item = Result<T, sqlx::Error>;
+
+    fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+        SplitStream::with_inner_mut(&mut self, |this| Pin::new(&mut this.as_mut()).poll_next(cx))
     }
 }
 

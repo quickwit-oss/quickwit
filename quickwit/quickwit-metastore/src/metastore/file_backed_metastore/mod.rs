@@ -554,7 +554,7 @@ impl Metastore for FileBackedMetastore {
     }
 
     /// Stream splits
-    async fn splits(
+    async fn stream_splits(
         &self,
         query: ListSplitsQuery,
     ) -> MetastoreResult<ServiceStream<Vec<Split>, MetastoreError>> {
