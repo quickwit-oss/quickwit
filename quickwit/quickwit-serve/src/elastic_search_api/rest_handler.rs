@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::BTreeMap;
 use std::str::from_utf8;
 use std::sync::Arc;
 use std::time::Instant;
@@ -192,7 +193,7 @@ async fn es_compat_index_search(
 }
 
 fn convert_hit(hit: quickwit_proto::Hit) -> ElasticHit {
-    let fields: elasticsearch_dsl::Map<String, serde_json::Value> =
+    let fields: BTreeMap<String, serde_json::Value> =
         serde_json::from_str(&hit.json).unwrap_or_default();
     ElasticHit {
         fields,
