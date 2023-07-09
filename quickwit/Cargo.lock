@@ -5389,24 +5389,6 @@ dependencies = [
 ]
 
 [[package]]
-<<<<<<< HEAD
-=======
-name = "quickwit-metastore-utils"
-version = "0.1.0"
-dependencies = [
- "anyhow",
- "async-trait",
- "futures",
- "quickwit-common",
- "quickwit-proto",
- "serde",
- "serde_json",
- "structopt",
- "tokio",
-]
-
-[[package]]
->>>>>>> 476dce104 (POC)
 name = "quickwit-opentelemetry"
 version = "0.6.2"
 dependencies = [

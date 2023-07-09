@@ -140,7 +140,7 @@ impl MetastoreService for MetastoreProxyService {
         Ok(resp)
     }
     type StreamSplitsStream = ServiceStream<ListSplitsResponse, tonic::Status>;
-    /// Stream splits.
+    /// Stream splits from index.
     async fn stream_splits(
         &self,
         request: tonic::Request<ListSplitsRequest>,

@@ -181,12 +181,12 @@ impl grpc::MetastoreService for GrpcMetastoreAdapter {
         Ok(tonic::Response::new(list_splits_reply))
     }
 
-    type StreamSplitsStream = ServiceStream<ListSplitsResponse, tonic::Status>;
+    type stream_splitsStream = ServiceStream<Result<ListSplitsResponse, tonic::Status>>;
     #[instrument(skip(self, request))]
     async fn stream_splits(
         &self,
         request: tonic::Request<ListSplitsRequest>,
-    ) -> std::result::Result<tonic::Response<Self::StreamSplitsStream>, tonic::Status> {
+    ) -> std::result::Result<tonic::Response<Self::stream_splitsStream>, tonic::Status> {
         set_parent_span_from_request_metadata(request.metadata());
         let list_splits_request = request.into_inner();
         let query: ListSplitsQuery = serde_json::from_str(&list_splits_request.filter_json)
@@ -196,23 +196,22 @@ impl grpc::MetastoreService for GrpcMetastoreAdapter {
             })?;
         let stream_response = self.0.stream_splits(query).await?;
         let splits_response_stream = stream_response
-            .map(|result| match result {
-                Ok(splits) => {
-                    let splits_serialized_json_res =
-                        serde_json::to_string(&splits).map_err(|error| {
-                            MetastoreError::JsonSerializeError {
-                                struct_name: "Vec<Split>".to_string(),
-                                message: error.to_string(),
-                            }
-                        });
-                    match splits_serialized_json_res {
-                        Ok(splits_serialized_json) => Ok(ListSplitsResponse {
-                            splits_serialized_json,
-                        }),
-                        Err(error) => Err(error),
+            .map(|result| {
+                let splits = match result {
+                    Ok(splits) => splits,
+                    Err(error) => {
+                        return Err(error);
                     }
-                }
-                Err(metastore_error) => Err(metastore_error),
+                };
+                let splits_serialized_json = serde_json::to_string(&splits).map_err(|error| {
+                    MetastoreError::JsonSerializeError {
+                        struct_name: "Vec<Split>".to_string(),
+                        message: error.to_string(),
+                    }
+                })?;
+                Ok(ListSplitsResponse {
+                    splits_serialized_json,
+                })
             })
             .map_err(tonic::Status::from);
         let service_stream = ServiceStream::new(Box::pin(splits_response_stream));

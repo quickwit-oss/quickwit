@@ -543,14 +543,14 @@ pub mod metastore_service_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/quickwit_metastore_api.MetastoreApiService/StreamSplits",
+                "/quickwit.metastore.MetastoreService/stream_splits",
             );
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(
                     GrpcMethod::new(
-                        "quickwit_metastore_api.MetastoreApiService",
-                        "StreamSplits",
+                        "quickwit.metastore.MetastoreService",
+                        "stream_splits",
                     ),
                 );
             self.inner.server_streaming(req, path, codec).await
@@ -985,8 +985,8 @@ pub mod metastore_service_server {
             tonic::Response<super::ListSplitsResponse>,
             tonic::Status,
         >;
-        /// Server streaming response type for the StreamSplits method.
-        type StreamSplitsStream: futures_core::Stream<
+        /// Server streaming response type for the stream_splits method.
+        type stream_splitsStream: futures_core::Stream<
                 Item = std::result::Result<super::ListSplitsResponse, tonic::Status>,
             >
             + Send
@@ -996,7 +996,7 @@ pub mod metastore_service_server {
             &self,
             request: tonic::Request<super::ListSplitsRequest>,
         ) -> std::result::Result<
-            tonic::Response<Self::StreamSplitsStream>,
+            tonic::Response<Self::stream_splitsStream>,
             tonic::Status,
         >;
         /// Stages several splits.
@@ -1430,15 +1430,15 @@ pub mod metastore_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/quickwit.metastore.MetastoreService/StreamSplits" => {
+                "/quickwit.metastore.MetastoreService/stream_splits" => {
                     #[allow(non_camel_case_types)]
-                    struct StreamSplitsSvc<T: MetastoreApiService>(pub Arc<T>);
+                    struct stream_splitsSvc<T: MetastoreService>(pub Arc<T>);
                     impl<
-                        T: MetastoreApiService,
+                        T: MetastoreService,
                     > tonic::server::ServerStreamingService<super::ListSplitsRequest>
-                    for StreamSplitsSvc<T> {
+                    for stream_splitsSvc<T> {
                         type Response = super::ListSplitsResponse;
-                        type ResponseStream = T::StreamSplitsStream;
+                        type ResponseStream = T::stream_splitsStream;
                         type Future = BoxFuture<
                             tonic::Response<Self::ResponseStream>,
                             tonic::Status,
@@ -1461,7 +1461,7 @@ pub mod metastore_service_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
-                        let method = StreamSplitsSvc(inner);
+                        let method = stream_splitsSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

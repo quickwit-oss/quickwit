@@ -44,6 +44,9 @@ use time::OffsetDateTime;
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{MetastoreError, MetastoreResult, Split, SplitMetadata, SplitState};
 
+/// Splits batch size returned by the stream splits API
+const STREAM_SPLITS_CHUNK_SIZE: usize = 100;
+
 /// Metastore meant to manage Quickwit's indexes, their splits and delete tasks.
 ///
 /// I. Index and splits management.
@@ -212,7 +215,7 @@ pub trait Metastore: Send + Sync + 'static {
     async fn stream_splits(
         &self,
         query: ListSplitsQuery,
-    ) -> MetastoreResult<ServiceStream<Vec<Split>, MetastoreError>>;
+    ) -> MetastoreResult<ServiceStream<MetastoreResult<Vec<Split>>>>;
 
     /// Lists splits with `split.delete_opstamp` < `delete_opstamp` for a given `index_uid`.
     /// These splits are called "stale" as they have an `delete_opstamp` strictly inferior

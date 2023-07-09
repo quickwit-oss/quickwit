@@ -24,7 +24,7 @@ members = [
   "quickwit-macros",
   "quickwit-macros/impl",
   "quickwit-metastore",
-  # Disabling metastore-utils from the quicwit projects to ease build/deps.
+  # Disabling metastore-utils from the quickwit projects to ease build/deps.
   # We can reenable it when we need it.
   # "quickwit-metastore-utils",
   "quickwit-opentelemetry",
@@ -46,6 +46,8 @@ arc-swap = "1.6"
 assert-json-diff = "2"
 async-speed-limit = "0.4"
 async-trait = "0.1"
+async-compression = { version = "0.4.1", features = ["gzip", "futures-io"] }
+atty = "0.2"
 backoff = { version = "0.4", features = ["tokio"] }
 base64 = "0.21"
 byte-unit = { version = "4", default-features = false, features = ["serde", "std"] }
@@ -138,6 +140,7 @@ regex = "1.9.1"
 reqwest = { version = "0.11", default-features = false, features = [
   "json",
   "rustls-tls",
+  "stream",
 ] }
 rust-embed = "6.8.1"
 serde = { version = "1.0", features = ["derive", "rc"] }

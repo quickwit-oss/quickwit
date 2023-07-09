@@ -31,10 +31,7 @@ use quickwit_proto::IndexUid;
 
 use self::retry::{retry, RetryParams};
 use crate::checkpoint::IndexCheckpointDelta;
-use crate::{
-    IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, MetastoreResult, Split,
-    SplitMetadata,
-};
+use crate::{IndexMetadata, ListSplitsQuery, Metastore, MetastoreResult, Split, SplitMetadata};
 
 /// Retry layer for a [`Metastore`].
 /// This is a band-aid solution for now. This will be removed after retry can be usable on
@@ -146,7 +143,7 @@ impl Metastore for RetryingMetastore {
     async fn stream_splits(
         &self,
         query: ListSplitsQuery,
-    ) -> MetastoreResult<ServiceStream<Vec<Split>, MetastoreError>> {
+    ) -> MetastoreResult<ServiceStream<MetastoreResult<Vec<Split>>>> {
         retry(&self.retry_params, || async {
             self.inner.stream_splits(query.clone()).await
         })

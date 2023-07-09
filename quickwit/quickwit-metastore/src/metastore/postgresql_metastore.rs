@@ -20,8 +20,8 @@
 use std::collections::HashMap;
 use std::fmt::{Display, Write};
 use std::ops::Bound;
-use std::str::FromStr;
 use std::pin::Pin;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::task::{Context, Poll};
 use std::time::Duration;
@@ -47,6 +47,7 @@ use tokio_stream::Stream;
 use tracing::log::LevelFilter;
 use tracing::{debug, error, info, instrument, warn};
 
+use super::STREAM_SPLITS_CHUNK_SIZE;
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::metastore::instrumented_metastore::InstrumentedMetastore;
 use crate::metastore::postgresql_model::{
@@ -765,7 +766,7 @@ impl Metastore for PostgresqlMetastore {
     async fn stream_splits(
         &self,
         query: ListSplitsQuery,
-    ) -> MetastoreResult<ServiceStream<Vec<Split>, MetastoreError>> {
+    ) -> MetastoreResult<ServiceStream<MetastoreResult<Vec<Split>>>> {
         let sql_base = "SELECT * FROM splits".to_string();
         let sql: String = build_query_filter(sql_base, &query);
         let connection_pool = self.connection_pool.clone();
@@ -786,7 +787,7 @@ impl Metastore for PostgresqlMetastore {
                 }
                 Err(error) => Err(MetastoreError::from(error)),
             })
-            .chunks(100)
+            .chunks(STREAM_SPLITS_CHUNK_SIZE)
             .map(|chunk| {
                 chunk
                     .into_iter()

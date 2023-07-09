@@ -48,6 +48,7 @@ use self::store_operations::{
     check_indexes_states_exist, delete_index, fetch_index, fetch_or_init_indexes_states,
     index_exists, put_index, put_indexes_states,
 };
+use super::STREAM_SPLITS_CHUNK_SIZE;
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{
     IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, MetastoreResult, Split,
@@ -553,14 +554,13 @@ impl Metastore for FileBackedMetastore {
             .await
     }
 
-    /// Stream splits
     async fn stream_splits(
         &self,
         query: ListSplitsQuery,
-    ) -> MetastoreResult<ServiceStream<Vec<Split>, MetastoreError>> {
+    ) -> MetastoreResult<ServiceStream<MetastoreResult<Vec<Split>>>> {
         let splits = self.list_splits(query).await?;
         let chunks = splits
-            .chunks(100)
+            .chunks(STREAM_SPLITS_CHUNK_SIZE)
             .map(|chunk| Ok(chunk.to_vec()))
             .collect_vec();
         let stream_ok = futures::stream::iter(chunks.into_iter());

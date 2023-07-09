@@ -30,10 +30,7 @@ use quickwit_proto::IndexUid;
 use tracing::info;
 
 use crate::checkpoint::IndexCheckpointDelta;
-use crate::{
-    IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, MetastoreResult, Split,
-    SplitMetadata,
-};
+use crate::{IndexMetadata, ListSplitsQuery, Metastore, MetastoreResult, Split, SplitMetadata};
 
 /// Metastore events dispatched to subscribers.
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -167,7 +164,7 @@ impl Metastore for MetastoreEventPublisher {
     async fn stream_splits(
         &self,
         query: ListSplitsQuery,
-    ) -> MetastoreResult<ServiceStream<Vec<Split>, MetastoreError>> {
+    ) -> MetastoreResult<ServiceStream<MetastoreResult<Vec<Split>>>> {
         self.underlying.stream_splits(query.clone()).await
     }
 

@@ -139,7 +139,7 @@ impl Metastore for RetryTestMetastore {
     async fn stream_splits(
         &self,
         _query: ListSplitsQuery,
-    ) -> MetastoreResult<ServiceStream<Vec<Split>, MetastoreError>> {
+    ) -> MetastoreResult<ServiceStream<MetastoreResult<Vec<Split>>>> {
         let result = self.try_success();
         match result {
             Ok(_) => {

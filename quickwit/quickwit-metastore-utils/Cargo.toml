@@ -10,14 +10,14 @@ name = "replay"
 [[bin]]
 name = "proxy"
 
-
 [dependencies]
 serde_json = {workspace = true}
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 futures = { workspace = true }
-quickwit-common = { workspace = true }
-quickwit-proto = { workspace = true }
 serde = "1"
 structopt = "0.3"
-tokio = {workspace = true}
+tokio = { workspace = true}
+
+quickwit-common = { workspace = true }
+quickwit-proto = { workspace = true }

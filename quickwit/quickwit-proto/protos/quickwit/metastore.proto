@@ -42,7 +42,7 @@ service MetastoreService {
   rpc list_splits(ListSplitsRequest) returns (ListSplitsResponse);
 
   /// Stream splits from index.
-  rpc StreamSplits(ListSplitsRequest) returns (stream ListSplitsResponse);
+  rpc stream_splits(ListSplitsRequest) returns (stream ListSplitsResponse);
 
   // Stages several splits.
   rpc stage_splits(StageSplitsRequest) returns (SplitResponse);
