@@ -767,12 +767,12 @@ impl Metastore for PostgresqlMetastore {
         query: ListSplitsQuery,
     ) -> MetastoreResult<ServiceStream<Vec<Split>, MetastoreError>> {
         #[self_referencing]
-        struct SplitStream {
+        struct SplitStream<T> {
             connection_pool: Pool<Postgres>,
             sql: String,
             #[borrows(connection_pool, sql)]
             #[covariant]
-            inner: BoxStream<'this, Result<PgSplit, sqlx::Error>>,
+            inner: BoxStream<'this, Result<T, sqlx::Error>>,
         }
 
         let sql_base = "SELECT * FROM splits".to_string();
@@ -789,8 +789,8 @@ impl Metastore for PostgresqlMetastore {
             },
         );
 
-        impl Stream for SplitStream {
-            type Item = Result<PgSplit, sqlx::Error>;
+        impl<T> Stream for SplitStream<T> {
+            type Item = Result<T, sqlx::Error>;
 
             fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
                 SplitStream::with_inner_mut(&mut self, |this| {
