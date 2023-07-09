@@ -395,7 +395,7 @@ async fn leaf_search_single_split(
 /// or applying date range when the range covers the entire split.
 fn rewrite_request(search_request: &mut SearchRequest, split: &SplitIdAndFooterOffsets) {
     if search_request.max_hits == 0 {
-        search_request.sort_by_field = None;
+        search_request.sort_fields = vec![];
     }
     rewrite_start_end_time_bounds(
         &mut search_request.start_timestamp,

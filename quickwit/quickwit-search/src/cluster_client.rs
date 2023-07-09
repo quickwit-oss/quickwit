@@ -244,7 +244,8 @@ mod tests {
 
     fn mock_partial_hit(split_id: &str, sort_value: u64, doc_id: u32) -> PartialHit {
         PartialHit {
-            sort_value: Some(SortValue::U64(sort_value)),
+            sort_value: Some(SortValue::U64(sort_value).into()),
+            sort_value2: None,
             split_id: split_id.to_string(),
             segment_ord: 1,
             doc_id,
