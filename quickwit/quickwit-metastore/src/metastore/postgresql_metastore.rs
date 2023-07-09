@@ -21,12 +21,16 @@ use std::collections::HashMap;
 use std::fmt::{Display, Write};
 use std::ops::Bound;
 use std::str::FromStr;
+use std::pin::Pin;
 use std::sync::Arc;
+use std::task::{Context, Poll};
 use std::time::Duration;
 
 use async_trait::async_trait;
+use futures::stream::BoxStream;
 use futures::StreamExt;
 use itertools::Itertools;
+use ouroboros::self_referencing;
 use quickwit_common::uri::Uri;
 use quickwit_common::{PrettySample, ServiceStream};
 use quickwit_config::{
@@ -39,6 +43,7 @@ use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgDatabaseError, PgPoolOptions};
 use sqlx::{ConnectOptions, Pool, Postgres, Transaction};
 use tokio::sync::Mutex;
+use tokio_stream::Stream;
 use tracing::log::LevelFilter;
 use tracing::{debug, error, info, instrument, warn};
 
@@ -761,33 +766,82 @@ impl Metastore for PostgresqlMetastore {
         &self,
         query: ListSplitsQuery,
     ) -> MetastoreResult<ServiceStream<Vec<Split>, MetastoreError>> {
-        // TODO: can we do better than this spawn?
-        let (tx, service_stream) = ServiceStream::new_unbounded();
-        let connection_pool = self.connection_pool.clone();
-        tokio::spawn(async move {
-            let sql_base = "SELECT * FROM splits".to_string();
-            let sql: String = build_query_filter(sql_base, &query);
-            let mut stream = sqlx::query_as::<_, PgSplit>(&sql)
-                .bind(query.index_uid.to_string())
-                .fetch(&connection_pool)
-                .map(|result| match result {
-                    Ok(pg_split) => {
-                        let split_res: Result<Split, MetastoreError> = pg_split.try_into();
-                        split_res
-                    }
-                    Err(error) => Err(MetastoreError::from(error)),
-                })
-                .chunks(100)
-                .map(|chunk| {
-                    chunk
-                        .into_iter()
-                        .collect::<Result<Vec<Split>, MetastoreError>>()
-                });
+        #[self_referencing]
+        struct SplitStream {
+            connection_pool: Pool<Postgres>,
+            sql: String,
+            #[borrows(connection_pool, sql)]
+            #[covariant]
+            inner: BoxStream<'this, Result<PgSplit, sqlx::Error>>,
+        }
 
-            while let Some(item) = stream.next().await {
-                tx.send(item).unwrap();
+        let sql_base = "SELECT * FROM splits".to_string();
+        let sql: String = build_query_filter(sql_base, &query);
+        let connection_pool = self.connection_pool.clone();
+
+        let split_stream = SplitStream::new(
+            connection_pool,
+            sql,
+            |connection_pool: &Pool<Postgres>, sql: &String| {
+                sqlx::query_as::<_, PgSplit>(sql)
+                    .bind(query.index_uid.to_string())
+                    .fetch(connection_pool)
+            },
+        );
+
+        impl Stream for SplitStream {
+            type Item = Result<PgSplit, sqlx::Error>;
+
+            fn poll_next(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<Option<Self::Item>> {
+                SplitStream::with_inner_mut(&mut self, |this| {
+                    Pin::new(&mut this.as_mut()).poll_next(cx)
+                })
             }
-        });
+        }
+
+        let mapped_split_stream = split_stream
+            .map(|result| match result {
+                Ok(pg_split) => {
+                    let split_res: Result<Split, MetastoreError> = pg_split.try_into();
+                    split_res
+                }
+                Err(error) => Err(MetastoreError::from(error)),
+            })
+            .chunks(100)
+            .map(|chunk| {
+                chunk
+                    .into_iter()
+                    .collect::<Result<Vec<Split>, MetastoreError>>()
+            });
+        let service_stream = ServiceStream::new(Box::pin(mapped_split_stream));
+
+        // TODO: can we do better than this spawn?
+        // let (tx, service_stream) = ServiceStream::new_unbounded();
+        // let connection_pool = self.connection_pool.clone();
+        // tokio::spawn(async move {
+        //     let sql_base = "SELECT * FROM splits".to_string();
+        //     let sql: String = build_query_filter(sql_base, &query);
+        //     let mut stream = sqlx::query_as::<_, PgSplit>(&sql)
+        //         .bind(query.index_uid.to_string())
+        //         .fetch(&connection_pool)
+        //         .map(|result| match result {
+        //             Ok(pg_split) => {
+        //                 let split_res: Result<Split, MetastoreError> = pg_split.try_into();
+        //                 split_res
+        //             }
+        //             Err(error) => Err(MetastoreError::from(error)),
+        //         })
+        //         .chunks(100)
+        //         .map(|chunk| {
+        //             chunk
+        //                 .into_iter()
+        //                 .collect::<Result<Vec<Split>, MetastoreError>>()
+        //         });
+
+        //     while let Some(item) = stream.next().await {
+        //         tx.send(item).unwrap();
+        //     }
+        // });
         Ok(service_stream)
     }
 

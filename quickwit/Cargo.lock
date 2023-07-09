@@ -5364,6 +5364,7 @@ dependencies = [
  "md5",
  "mockall",
  "once_cell",
+ "ouroboros",
  "pin-utils",
  "quickwit-common",
  "quickwit-config",

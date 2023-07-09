@@ -35,6 +35,7 @@ tower = { workspace = true }
 tracing = { workspace = true }
 utoipa = { workspace = true }
 ulid = { workspace = true, features = ["serde"] }
+ouroboros = "0.17.0"
 
 quickwit-common = { workspace = true }
 quickwit-config = { workspace = true }
