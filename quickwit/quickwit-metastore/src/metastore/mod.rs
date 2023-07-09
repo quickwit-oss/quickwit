@@ -33,6 +33,7 @@ use std::ops::{Bound, RangeInclusive};
 use async_trait::async_trait;
 pub use index_metadata::IndexMetadata;
 use quickwit_common::uri::Uri;
+use quickwit_common::ServiceStream;
 use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_proto::metastore::{DeleteQuery, DeleteTask};
@@ -198,6 +199,12 @@ pub trait Metastore: Send + Sync + 'static {
         let query = ListSplitsQuery::for_index(index_uid);
         self.list_splits(query).await
     }
+
+    /// Stream splits
+    async fn splits(
+        &self,
+        query: ListSplitsQuery,
+    ) -> MetastoreResult<ServiceStream<Vec<Split>, MetastoreError>>;
 
     /// Lists splits with `split.delete_opstamp` < `delete_opstamp` for a given `index_uid`.
     /// These splits are called "stale" as they have an `delete_opstamp` strictly inferior

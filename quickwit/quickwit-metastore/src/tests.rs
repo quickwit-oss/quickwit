@@ -26,6 +26,7 @@ pub mod test_suite {
 
     use async_trait::async_trait;
     use futures::future::try_join_all;
+    use futures::TryStreamExt;
     use itertools::Itertools;
     use quickwit_common::rand::append_random_suffix;
     use quickwit_config::{IndexConfig, SourceConfig, SourceInputFormat, SourceParams};
@@ -1648,6 +1649,42 @@ pub mod test_suite {
         cleanup_index(&metastore, index_uid).await;
     }
 
+    pub async fn test_metastore_stream_splits<MetastoreToTest: Metastore + DefaultForTest>() {
+        let metastore = MetastoreToTest::default_for_test().await;
+        let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
+        let index_id = append_random_suffix("test-list-splits");
+        let index_uri = format!("ram:///indexes/{index_id}");
+        let index_config = IndexConfig::for_test(&index_id, &index_uri);
+        let index_uid = metastore.create_index(index_config.clone()).await.unwrap();
+        let mut splits_metadatas = Vec::new();
+
+        for i in 0..150 {
+            let split_id = format!("{index_id}--split-{i}");
+            let split_metadata = SplitMetadata {
+                split_id: split_id.clone(),
+                index_uid: index_uid.clone(),
+                time_range: Some(i..=i),
+                create_timestamp: current_timestamp,
+                maturity: SplitMaturity::Mature,
+                ..Default::default()
+            };
+            splits_metadatas.push(split_metadata);
+        }
+        metastore
+            .stage_splits(index_uid.clone(), splits_metadatas)
+            .await
+            .unwrap();
+        let query =
+            ListSplitsQuery::for_index(index_uid.clone()).with_split_state(SplitState::Staged);
+        let mut splits_stream = metastore.splits(query).await.unwrap();
+
+        let first_batch = splits_stream.try_next().await.unwrap().unwrap();
+        assert_eq!(first_batch.len(), 100);
+        let second_batch = splits_stream.try_next().await.unwrap().unwrap();
+        assert_eq!(second_batch.len(), 50);
+        assert!(splits_stream.try_next().await.unwrap().is_none());
+    }
+
     pub async fn test_metastore_list_splits<MetastoreToTest: Metastore + DefaultForTest>() {
         let metastore = MetastoreToTest::default_for_test().await;
 
@@ -2815,6 +2852,12 @@ macro_rules! metastore_test_suite {
             async fn test_metastore_list_splits() {
                 let _ = tracing_subscriber::fmt::try_init();
                 crate::tests::test_suite::test_metastore_list_splits::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            async fn test_metastore_stream_splits() {
+                let _ = tracing_subscriber::fmt::try_init();
+                crate::tests::test_suite::test_metastore_stream_splits::<$metastore_type>().await;
             }
 
             #[tokio::test]

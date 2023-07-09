@@ -23,13 +23,17 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use quickwit_common::pubsub::{Event, EventBroker};
 use quickwit_common::uri::Uri;
+use quickwit_common::ServiceStream;
 use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_proto::metastore::{DeleteQuery, DeleteTask};
 use quickwit_proto::IndexUid;
 use tracing::info;
 
 use crate::checkpoint::IndexCheckpointDelta;
-use crate::{IndexMetadata, ListSplitsQuery, Metastore, MetastoreResult, Split, SplitMetadata};
+use crate::{
+    IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, MetastoreResult, Split,
+    SplitMetadata,
+};
 
 /// Metastore events dispatched to subscribers.
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -157,6 +161,14 @@ impl Metastore for MetastoreEventPublisher {
 
     async fn list_splits(&self, query: ListSplitsQuery) -> MetastoreResult<Vec<Split>> {
         self.underlying.list_splits(query).await
+    }
+
+    /// Stream splits
+    async fn splits(
+        &self,
+        query: ListSplitsQuery,
+    ) -> MetastoreResult<ServiceStream<Vec<Split>, MetastoreError>> {
+        self.underlying.splits(query.clone()).await
     }
 
     async fn list_all_splits(&self, index_uid: IndexUid) -> MetastoreResult<Vec<Split>> {

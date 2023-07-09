@@ -32,7 +32,9 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::future::try_join_all;
+use itertools::Itertools;
 use quickwit_common::uri::Uri;
+use quickwit_common::ServiceStream;
 use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_proto::metastore::{DeleteQuery, DeleteTask};
 use quickwit_proto::IndexUid;
@@ -549,6 +551,21 @@ impl Metastore for FileBackedMetastore {
         let query_clone = query.clone();
         self.read(query.index_uid, |index| index.list_splits(query_clone))
             .await
+    }
+
+    /// Stream splits
+    async fn splits(
+        &self,
+        query: ListSplitsQuery,
+    ) -> MetastoreResult<ServiceStream<Vec<Split>, MetastoreError>> {
+        let splits = self.list_splits(query).await?;
+        let chunks = splits
+            .chunks(100)
+            .map(|chunk| Ok(chunk.to_vec()))
+            .collect_vec();
+        let stream_ok = futures::stream::iter(chunks.into_iter());
+        let stream = ServiceStream::new(Box::pin(stream_ok));
+        Ok(stream)
     }
 
     async fn index_metadata(&self, index_id: &str) -> MetastoreResult<IndexMetadata> {

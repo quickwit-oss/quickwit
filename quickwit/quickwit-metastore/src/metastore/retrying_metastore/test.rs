@@ -21,6 +21,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use async_trait::async_trait;
 use quickwit_common::uri::Uri;
+use quickwit_common::ServiceStream;
 use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_proto::metastore::{DeleteQuery, DeleteTask};
 use quickwit_proto::IndexUid;
@@ -131,6 +132,20 @@ impl Metastore for RetryTestMetastore {
         let result = self.try_success();
         match result {
             Ok(_) => Ok(Vec::new()),
+            Err(err) => Err(err),
+        }
+    }
+
+    async fn splits(
+        &self,
+        _query: ListSplitsQuery,
+    ) -> MetastoreResult<ServiceStream<Vec<Split>, MetastoreError>> {
+        let result = self.try_success();
+        match result {
+            Ok(_) => {
+                let stream = futures::stream::iter(vec![Ok(Vec::new())]);
+                Ok(ServiceStream::new(Box::pin(stream)))
+            }
             Err(err) => Err(err),
         }
     }

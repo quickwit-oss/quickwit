@@ -45,6 +45,7 @@ anyhow = "1"
 arc-swap = "1.6"
 assert-json-diff = "2"
 async-speed-limit = "0.4"
+async-stream = "0.3.5"
 async-trait = "0.1"
 backoff = { version = "0.4", features = ["tokio"] }
 base64 = "0.21"
@@ -108,6 +109,7 @@ openssl-probe = "0.1.5"
 opentelemetry = { version = "0.19", features = ["rt-tokio"] }
 opentelemetry-jaeger = { version = "0.18", features = ["rt-tokio"] }
 opentelemetry-otlp = "0.12.0"
+pin-utils = "0.1.0"
 pin-project = "1.1.0"
 pnet = { version = "0.33.0", features = ["std"] }
 postcard = { version = "1.0.4", features = ["use-std"], default-features = false}

@@ -22,6 +22,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use quickwit_common::ServiceStream;
 use quickwit_metastore_utils::{GrpcCall, GrpcRequest};
 use quickwit_proto::metastore::metastore_service_client::MetastoreServiceClient;
 use quickwit_proto::metastore::metastore_service_server::{
@@ -137,6 +138,18 @@ impl MetastoreService for MetastoreProxyService {
         lock.record(request.get_ref().clone()).await.unwrap();
         let resp = lock.client.list_splits(request).await?;
         Ok(resp)
+    }
+    type SplitsStream = ServiceStream<ListSplitsResponse, tonic::Status>;
+    /// Stream splits.
+    async fn splits(
+        &self,
+        request: tonic::Request<ListSplitsRequest>,
+    ) -> std::result::Result<tonic::Response<Self::SplitsStream>, tonic::Status> {
+        let mut lock = self.inner.lock().await;
+        lock.record(request.get_ref().clone()).await.unwrap();
+        let resp = lock.client.splits(request).await?.into_inner();
+        let service_stream = ServiceStream::from(resp);
+        Ok(Response::new(service_stream))
     }
     /// Stages several splits.
     async fn stage_splits(

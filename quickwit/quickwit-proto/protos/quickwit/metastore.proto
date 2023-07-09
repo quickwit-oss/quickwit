@@ -41,6 +41,9 @@ service MetastoreService {
   // Gets splits from index.
   rpc list_splits(ListSplitsRequest) returns (ListSplitsResponse);
 
+  /// Stream splits from index.
+  rpc Splits(ListSplitsRequest) returns (stream ListSplitsResponse);
+
   // Stages several splits.
   rpc stage_splits(StageSplitsRequest) returns (SplitResponse);
 
@@ -121,6 +124,10 @@ message ListSplitsRequest {
 
 message ListSplitsResponse {
   string splits_serialized_json = 1;
+}
+
+message SplitStreamResponse {
+  string split = 1;
 }
 
 message StageSplitsRequest {

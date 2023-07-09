@@ -24,13 +24,17 @@ mod test;
 
 use async_trait::async_trait;
 use quickwit_common::uri::Uri;
+use quickwit_common::ServiceStream;
 use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_proto::metastore::{DeleteQuery, DeleteTask};
 use quickwit_proto::IndexUid;
 
 use self::retry::{retry, RetryParams};
 use crate::checkpoint::IndexCheckpointDelta;
-use crate::{IndexMetadata, ListSplitsQuery, Metastore, MetastoreResult, Split, SplitMetadata};
+use crate::{
+    IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, MetastoreResult, Split,
+    SplitMetadata,
+};
 
 /// Retry layer for a [`Metastore`].
 /// This is a band-aid solution for now. This will be removed after retry can be usable on
@@ -135,6 +139,16 @@ impl Metastore for RetryingMetastore {
     async fn list_splits(&self, query: ListSplitsQuery) -> MetastoreResult<Vec<Split>> {
         retry(&self.retry_params, || async {
             self.inner.list_splits(query.clone()).await
+        })
+        .await
+    }
+
+    async fn splits(
+        &self,
+        query: ListSplitsQuery,
+    ) -> MetastoreResult<ServiceStream<Vec<Split>, MetastoreError>> {
+        retry(&self.retry_params, || async {
+            self.inner.splits(query.clone()).await
         })
         .await
     }

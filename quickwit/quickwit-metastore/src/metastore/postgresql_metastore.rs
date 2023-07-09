@@ -25,9 +25,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use futures::StreamExt;
 use itertools::Itertools;
 use quickwit_common::uri::Uri;
-use quickwit_common::PrettySample;
+use quickwit_common::{PrettySample, ServiceStream};
 use quickwit_config::{
     IndexConfig, MetastoreBackend, MetastoreConfig, PostgresMetastoreConfig, SourceConfig,
 };
@@ -753,6 +754,41 @@ impl Metastore for PostgresqlMetastore {
             .into_iter()
             .map(|pg_split| pg_split.try_into())
             .collect()
+    }
+
+    #[instrument(skip(self), fields(index_id=query.index_uid.index_id()))]
+    async fn splits(
+        &self,
+        query: ListSplitsQuery,
+    ) -> MetastoreResult<ServiceStream<Vec<Split>, MetastoreError>> {
+        // TODO: can we do better than this spawn?
+        let (tx, service_stream) = ServiceStream::new_unbounded();
+        let connection_pool = self.connection_pool.clone();
+        tokio::spawn(async move {
+            let sql_base = "SELECT * FROM splits".to_string();
+            let sql: String = build_query_filter(sql_base, &query);
+            let mut stream = sqlx::query_as::<_, PgSplit>(&sql)
+                .bind(query.index_uid.to_string())
+                .fetch(&connection_pool)
+                .map(|result| match result {
+                    Ok(pg_split) => {
+                        let split_res: Result<Split, MetastoreError> = pg_split.try_into();
+                        split_res
+                    }
+                    Err(error) => Err(MetastoreError::from(error)),
+                })
+                .chunks(100)
+                .map(|chunk| {
+                    chunk
+                        .into_iter()
+                        .collect::<Result<Vec<Split>, MetastoreError>>()
+                });
+
+            while let Some(item) = stream.next().await {
+                tx.send(item).unwrap();
+            }
+        });
+        Ok(service_stream)
     }
 
     #[instrument(skip(self), fields(index_id=index_uid.index_id()))]

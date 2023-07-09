@@ -35,6 +35,18 @@ pub struct ServiceStream<T> {
 
 impl<T> fmt::Debug for ServiceStream<T>
 where T: 'static
+impl<T, E> ServiceStream<T, E> {
+    pub fn new(inner: BoxStream<Result<T, E>>) -> Self {
+        Self { inner }
+    }
+}
+
+impl<T, E> Unpin for ServiceStream<T, E> {}
+
+impl<T, E> ServiceStream<T, E>
+where
+    T: Send + 'static,
+    E: Send + 'static,
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "ServiceStream<{:?}>", TypeId::of::<T>())

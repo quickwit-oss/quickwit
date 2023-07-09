@@ -19,12 +19,16 @@
 
 use async_trait::async_trait;
 use quickwit_common::uri::Uri;
+use quickwit_common::ServiceStream;
 use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_proto::metastore::{DeleteQuery, DeleteTask};
 use quickwit_proto::IndexUid;
 
 use crate::checkpoint::IndexCheckpointDelta;
-use crate::{IndexMetadata, ListSplitsQuery, Metastore, MetastoreResult, Split, SplitMetadata};
+use crate::{
+    IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, MetastoreResult, Split,
+    SplitMetadata,
+};
 
 macro_rules! instrument {
     ($expr:expr, [$operation:ident, $($label:expr),*]) => {
@@ -159,6 +163,17 @@ impl Metastore for InstrumentedMetastore {
         instrument!(
             self.underlying.list_splits(query.clone()).await,
             [list_splits, query.index_uid.index_id()]
+        );
+    }
+
+    /// Stream splits
+    async fn splits(
+        &self,
+        query: ListSplitsQuery,
+    ) -> MetastoreResult<ServiceStream<Vec<Split>, MetastoreError>> {
+        instrument!(
+            self.underlying.splits(query.clone()).await,
+            [splits, query.index_uid.index_id()]
         );
     }
 

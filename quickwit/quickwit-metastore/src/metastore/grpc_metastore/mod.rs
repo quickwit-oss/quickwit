@@ -24,10 +24,12 @@ use std::net::SocketAddr;
 
 use anyhow::bail;
 use async_trait::async_trait;
+use futures::StreamExt;
 pub use grpc_adapter::GrpcMetastoreAdapter;
 use itertools::Itertools;
 use quickwit_common::tower::BalanceChannel;
 use quickwit_common::uri::Uri as QuickwitUri;
+use quickwit_common::ServiceStream;
 use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_proto::metastore::metastore_service_client::MetastoreServiceClient;
 use quickwit_proto::metastore::{
@@ -292,6 +294,39 @@ impl Metastore for MetastoreGrpcClient {
                 }
             })?;
         Ok(splits)
+    }
+
+    async fn splits(
+        &self,
+        query: ListSplitsQuery,
+    ) -> MetastoreResult<ServiceStream<Vec<Split>, MetastoreError>> {
+        let filter_json =
+            serde_json::to_string(&query).map_err(|error| MetastoreError::JsonSerializeError {
+                struct_name: "ListSplitsQuery".to_string(),
+                message: error.to_string(),
+            })?;
+
+        let request = ListSplitsRequest { filter_json };
+        let response = self
+            .underlying
+            .clone()
+            .splits(request)
+            .await
+            .map(|tonic_response| tonic_response.into_inner())
+            .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
+
+        let stream = response.map(|result| match result {
+            Ok(response) => {
+                let splits: Vec<Split> = serde_json::from_str(&response.splits_serialized_json)
+                    .map_err(|error| MetastoreError::JsonDeserializeError {
+                        struct_name: "Vec<Split>".to_string(),
+                        message: error.to_string(),
+                    })?;
+                Ok(splits)
+            }
+            Err(tonic_error) => Err(parse_grpc_error(&tonic_error)),
+        });
+        Ok(ServiceStream::new(Box::pin(stream)))
     }
 
     /// Lists all the splits without filtering.

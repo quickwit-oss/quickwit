@@ -11,6 +11,7 @@ documentation = "https://quickwit.io/docs/"
 
 [dependencies]
 anyhow = { workspace = true }
+async-stream = { workspace = true }
 async-trait = { workspace = true }
 byte-unit = { workspace = true }
 sqlx = { workspace = true, optional = true }
@@ -19,6 +20,7 @@ http = { workspace = true }
 itertools = { workspace = true }
 mockall = { workspace = true, optional = true }
 once_cell = { workspace = true }
+pin-utils = { workspace = true }
 rand = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true }
