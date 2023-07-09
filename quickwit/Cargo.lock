@@ -1909,9 +1909,9 @@ checksum = "7fcaabb2fef8c910e7f4c7ce9f67a1283a1715879a7c230ca9d6d1ae31f16d91"
 
 [[package]]
 name = "elasticsearch-dsl"
-version = "0.4.11"
+version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1c820db919f52bf9427bd3720625641c4b7de60834eb47a9fe9a98b9b179db9b"
+checksum = "68ab1335c08fb99784b100ed23db38416b5fb52f5a178966d3b972b969e183e1"
 dependencies = [
  "chrono",
  "num-traits",
