@@ -199,7 +199,7 @@ pub async fn single_node_search(
     let metas = list_relevant_splits(index_uid, &search_request, metastore).await?;
     let split_metadata: Vec<SplitIdAndFooterOffsets> =
         metas.iter().map(extract_split_and_footer_offsets).collect();
-    validate_request(&*doc_mapper, &search_request)?;
+    validate_request(&*doc_mapper, &search_request, &SearcherConfig::default())?;
 
     // Verifying that the query is valid.
     doc_mapper

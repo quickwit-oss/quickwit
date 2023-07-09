@@ -120,6 +120,7 @@ pub struct SearcherConfig {
     pub partial_request_cache_capacity: Byte,
     pub max_num_concurrent_split_searches: usize,
     pub max_num_concurrent_split_streams: usize,
+    pub max_query_string_length: Byte,
 }
 
 impl Default for SearcherConfig {
@@ -132,6 +133,7 @@ impl Default for SearcherConfig {
             max_num_concurrent_split_searches: 100,
             aggregation_memory_limit: Byte::from_bytes(500_000_000), // 500M
             aggregation_bucket_limit: 65000,
+            max_query_string_length: Byte::from_bytes(512), // 512 bytes
         }
     }
 }

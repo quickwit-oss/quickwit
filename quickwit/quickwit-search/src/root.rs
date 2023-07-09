@@ -22,7 +22,7 @@ use std::collections::{HashMap, HashSet};
 use anyhow::Context;
 use futures::future::try_join_all;
 use itertools::Itertools;
-use quickwit_config::{build_doc_mapper, IndexConfig};
+use quickwit_config::{build_doc_mapper, IndexConfig, SearcherConfig};
 use quickwit_doc_mapper::{DocMapper, DYNAMIC_FIELD_NAME};
 use quickwit_metastore::{Metastore, SplitMetadata};
 use quickwit_proto::{
@@ -173,6 +173,7 @@ fn validate_sort_by_field(field_name: &str, schema: &Schema) -> crate::Result<()
 pub(crate) fn validate_request(
     doc_mapper: &dyn DocMapper,
     search_request: &SearchRequest,
+    searcher_config: &SearcherConfig,
 ) -> crate::Result<()> {
     let schema = doc_mapper.schema();
 
@@ -204,6 +205,15 @@ pub(crate) fn validate_request(
         )));
     }
 
+    if search_request.query_ast.len() > searcher_config.max_query_string_length.get_bytes() as usize
+    {
+        return Err(SearchError::InvalidArgument(format!(
+            "max length for query string is {}, but got {}",
+            searcher_config.max_query_string_length,
+            search_request.query_ast.len()
+        )));
+    }
+
     Ok(())
 }
 
@@ -230,7 +240,11 @@ pub async fn root_search(
             SearchError::InternalError(format!("Failed to build doc mapper. Cause: {err}"))
         })?;
 
-    validate_request(&*doc_mapper, &search_request)?;
+    validate_request(
+        &*doc_mapper,
+        &search_request,
+        &searcher_context.searcher_config,
+    )?;
 
     let query_ast: QueryAst = serde_json::from_str(&search_request.query_ast)
         .map_err(|err| SearchError::InvalidQuery(err.to_string()))?;
@@ -2056,6 +2070,27 @@ mod tests {
         assert_eq!(
             search_response.unwrap_err().to_string(),
             "Invalid argument: max value for max_hits is 10_000, but got 20000",
+        );
+
+        let search_request = quickwit_proto::SearchRequest {
+            index_id: "test-index".to_string(),
+            query_ast: qast_helper("abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyzabcdefghijklmnopq", &["body"]),
+            max_hits: 10_000,
+            ..Default::default()
+        };
+
+        let search_response = root_search(
+            &SearcherContext::new(SearcherConfig::default()),
+            search_request,
+            &metastore,
+            &cluster_client,
+            &search_job_placer,
+        )
+        .await;
+        assert!(search_response.is_err());
+        assert_eq!(
+            search_response.unwrap_err().to_string(),
+            "Invalid argument: max length for query string is 512, but got 513",
         );
 
         Ok(())
