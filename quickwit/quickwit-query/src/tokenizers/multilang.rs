@@ -26,7 +26,7 @@ use tantivy::tokenizer::{SimpleTokenStream, SimpleTokenizer};
 use tantivy_tokenizer_api::{Token, TokenStream, Tokenizer};
 use whichlang::{detect_language, Lang};
 
-// Use lazy lindera tokenizers to load the dictionaries only when needed.
+/// Mandarin chinese tokenizer.
 static CMN_TOKENIZER: Lazy<LinderaTokenizer> = Lazy::new(|| {
     let cmn_dictionary_config = DictionaryConfig {
         kind: Some(DictionaryKind::CcCedict),
@@ -37,6 +37,7 @@ static CMN_TOKENIZER: Lazy<LinderaTokenizer> = Lazy::new(|| {
     LinderaTokenizer::new(cmn_dictionary, None, Mode::Normal)
 });
 
+/// Japanese tokenizer.
 static JPN_TOKENIZER: Lazy<LinderaTokenizer> = Lazy::new(|| {
     let jpn_dictionary_config = DictionaryConfig {
         kind: Some(DictionaryKind::IPADIC),
@@ -47,6 +48,7 @@ static JPN_TOKENIZER: Lazy<LinderaTokenizer> = Lazy::new(|| {
     LinderaTokenizer::new(jpn_dictionary, None, Mode::Normal)
 });
 
+/// Korean tokenizer.
 static KOR_TOKENIZER: Lazy<LinderaTokenizer> = Lazy::new(|| {
     let kor_dictionary_config = DictionaryConfig {
         kind: Some(DictionaryKind::KoDic),
