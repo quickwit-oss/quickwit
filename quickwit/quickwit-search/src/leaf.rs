@@ -497,11 +497,7 @@ impl CanSplitDoBetter {
                     // if we get a timestamp of, says 1.5s, we need to check up to 2s to make
                     // sure we don't throw away something like 1.2s, so we should round up while
                     // dividing.
-                    let mut timestamp_s = timestamp_ns / 1_000_000_000;
-                    if timestamp_ns % 1_000_000_000 != 0 {
-                        timestamp_s += 1;
-                    }
-                    *timestamp = Some(timestamp_s);
+                    *timestamp = Some(quickwit_common::ceil_div(timestamp_ns, 1_000_000_000));
                 }
             }
             MutCanSplitDoBetter::SplitTimestampLower(timestamp) => {
@@ -527,7 +523,13 @@ impl CanSplitDoBetter {
     }
 
     /// Whether we should wash score and rely only on document GlobalAddress.
-    pub fn wash_score(&self) -> bool {
+    ///
+    /// Currently, documents are sorted by (Score, SplitId, SegmentId, DocId),
+    /// for "unsorted" queries, the Score is the DocId, which sadly prevent optimising
+    /// by skipping entire splits. In case of "unsorted" query, we should then "wash away"
+    /// the Score, so data is sorted by (SplitId, SegmentId, DocId), which allows us to
+    /// skip entire splits if we have enough results just from splits with higher Ids.
+    pub fn should_wash_score(&self) -> bool {
         matches!(
             *self.inner.read().unwrap(),
             MutCanSplitDoBetter::SplitIdHigher(_)
@@ -550,6 +552,10 @@ pub async fn leaf_search(
 ) -> Result<LeafSearchResponse, SearchError> {
     let request = Arc::new(request.clone());
 
+    // The leaf search code contains some logic that makes it possible to skip entire splits
+    // when we are confident they won't make it into top K.
+    // To make this optimization as potent as possible, we sort the splits so that the first splits
+    // are the most likely to fill our Top K.
     let split_filter = if request.sort_fields.is_empty() {
         splits.sort_unstable_by(|a, b| b.split_id.cmp(&a.split_id));
         CanSplitDoBetter::no_order()
@@ -560,10 +566,10 @@ pub async fn leaf_search(
     {
         if sort_by.field_name == timestamp_field {
             if sort_by.sort_order() == SortOrder::Desc {
-                splits.sort_unstable_by_key(|b| std::cmp::Reverse(b.timestamp_end()));
+                splits.sort_unstable_by_key(|split| std::cmp::Reverse(split.timestamp_end()));
                 CanSplitDoBetter::desc_timestamp()
             } else {
-                splits.sort_unstable_by_key(|a| a.timestamp_start());
+                splits.sort_unstable_by_key(|split| split.timestamp_start());
                 CanSplitDoBetter::asc_timestamp()
             }
         } else {
@@ -632,7 +638,7 @@ pub async fn leaf_search(
     let merge_collector =
         make_merge_collector(&request, &searcher_context.get_aggregation_limits())?;
 
-    let wash_score = split_filter.wash_score();
+    let wash_score = split_filter.should_wash_score();
     if split_filter.iterative_merge() {
         // TODO we know splits processed and pending, and the current worst-best result.
         // If !run_all_splits, we could cancel pending tasks based on that.
@@ -668,7 +674,9 @@ pub async fn leaf_search(
             }
         }
 
-        incremental_merge_collector.finalize().map_err(Into::into)
+        crate::run_cpu_intensive(|| incremental_merge_collector.finalize().map_err(Into::into))
+            .await
+            .context("Failed to merge split search responses.")?
     } else {
         // not by doc_id inside a split.
         let split_search_results = leaf_search_single_split_futures.collect::<Vec<_>>().await;
