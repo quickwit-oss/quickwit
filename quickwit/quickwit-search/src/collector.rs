@@ -108,14 +108,12 @@ impl SortByComponent {
         }
     }
     pub fn add_fast_field(&self, set: &mut HashSet<String>) {
-        match self {
-            SortByComponent::FastField {
-                field_name,
-                order: _,
-            } => {
-                set.insert(field_name.clone());
-            }
-            _ => {}
+        if let SortByComponent::FastField {
+            field_name,
+            order: _,
+        } = self
+        {
+            set.insert(field_name.clone());
         }
     }
     pub fn sort_order(&self) -> SortOrder {
@@ -161,7 +159,7 @@ impl SortingFieldComputerComponent {
                 SortFieldType::U64 => SortValue::U64(sort_value),
                 SortFieldType::I64 => SortValue::I64(i64::from_u64(sort_value)),
                 SortFieldType::F64 => SortValue::F64(f64::from_u64(sort_value)),
-                SortFieldType::DateTime => SortValue::U64(i64::from_u64(sort_value)),
+                SortFieldType::DateTime => SortValue::I64(i64::from_u64(sort_value)),
                 SortFieldType::Bool => SortValue::Boolean(sort_value == 1u64),
             }
         };
@@ -205,12 +203,9 @@ impl SortingFieldComputerComponent {
             SortingFieldComputerComponent::DocId => Some(doc_id as u64),
             SortingFieldComputerComponent::FastField {
                 sort_column, order, ..
-            } => {
-                let field_val1 = sort_column
-                    .first(doc_id)
-                    .map(|field_val| apply_sort(*order, field_val));
-                field_val1
-            }
+            } => sort_column
+                .first(doc_id)
+                .map(|field_val| apply_sort(*order, field_val)),
             SortingFieldComputerComponent::Score { order } => {
                 let u64_score = (score as f64).to_u64();
                 let u64_score = apply_sort(*order, u64_score);
