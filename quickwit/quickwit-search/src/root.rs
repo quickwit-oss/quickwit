@@ -159,13 +159,6 @@ fn validate_sort_by_fields(sort_fields: &[SortField], schema: &Schema) -> crate:
         validate_sort_by_field(&sort.field_name, schema)?;
     }
 
-    if sort_fields.len() > 1 && sort_fields.iter().any(|sort| sort.field_name == "_score") {
-        return Err(SearchError::InvalidArgument(format!(
-            "Sort on score and another field is not supported currently {:?}.",
-            sort_fields
-        )));
-    }
-
     Ok(())
 }
 fn validate_sort_by_field(field_name: &str, schema: &Schema) -> crate::Result<()> {
