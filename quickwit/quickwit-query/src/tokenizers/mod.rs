@@ -28,7 +28,7 @@ use tantivy::tokenizer::{
 
 use self::chinese_compatible::ChineseTokenizer;
 #[cfg(feature = "multilang")]
-use self::multilang::MultiLangTokenizer;
+pub use self::multilang::MultiLangTokenizer;
 
 pub const DEFAULT_REMOVE_TOKEN_LENGTH: usize = 255;
 
@@ -36,24 +36,15 @@ pub const DEFAULT_REMOVE_TOKEN_LENGTH: usize = 255;
 pub fn create_default_quickwit_tokenizer_manager() -> TokenizerManager {
     let tokenizer_manager = TokenizerManager::default();
     let raw_tokenizer = TextAnalyzer::builder(RawTokenizer::default())
-        .filter(RemoveLongFilter::limit(100))
+        .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
         .build();
     tokenizer_manager.register("raw", raw_tokenizer);
 
     let chinese_tokenizer = TextAnalyzer::builder(ChineseTokenizer)
-        .filter(RemoveLongFilter::limit(40))
+        .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
         .filter(LowerCaser)
         .build();
     tokenizer_manager.register("chinese_compatible", chinese_tokenizer);
-
-    #[cfg(feature = "multilang")]
-    let multilanguage_tokenizer = TextAnalyzer::builder(MultiLangTokenizer::new())
-        .filter(RemoveLongFilter::limit(40))
-        .filter(LowerCaser)
-        .build();
-    #[cfg(feature = "multilang")]
-    tokenizer_manager.register("multilang", multilanguage_tokenizer);
-
     tokenizer_manager
 }
 

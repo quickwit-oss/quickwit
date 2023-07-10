@@ -531,7 +531,10 @@ mod tests {
     fn test_doc_mapper_query_with_multilang_field() {
         use quickwit_query::query_ast::TermQuery;
 
-        use crate::default_doc_mapper::{QuickwitTextOptions, QuickwitTextTokenizer};
+        use crate::default_doc_mapper::{
+            QuickwitTextOptions, QuickwitTextTokenizer, TokenizerType,
+        };
+        use crate::{TokenizerConfig, TokenizerEntry};
         let mut doc_mapper_builder = DefaultDocMapperBuilder::default();
         doc_mapper_builder.field_mappings.push(FieldMappingEntry {
             name: "multilang".to_string(),
@@ -542,6 +545,13 @@ mod tests {
                 },
                 Cardinality::SingleValue,
             ),
+        });
+        doc_mapper_builder.tokenizers.push(TokenizerEntry {
+            name: "multilang".to_string(),
+            config: TokenizerConfig {
+                tokenizer_type: TokenizerType::Multilang,
+                filters: vec![],
+            },
         });
         let doc_mapper = doc_mapper_builder.try_build().unwrap();
         let schema = doc_mapper.schema();

@@ -20,7 +20,7 @@
 use lindera_core::mode::Mode;
 use lindera_dictionary::{load_dictionary_from_config, DictionaryConfig, DictionaryKind};
 use lindera_tantivy::stream::LinderaTokenStream;
-use lindera_tantivy::tokenizer::LinderaTokenizer;
+use lindera_tokenizer::tokenizer::Tokenizer as LinderaTokenizer;
 use once_cell::sync::Lazy;
 use tantivy::tokenizer::{SimpleTokenStream, SimpleTokenizer};
 use tantivy_tokenizer_api::{Token, TokenStream, Tokenizer};
@@ -71,25 +71,21 @@ static KOR_TOKENIZER: Lazy<LinderaTokenizer> = Lazy::new(|| {
 /// - `CMN:` for Chinese tokenizer
 /// - `ENG:` for Quickwit's default tokenizer
 #[derive(Clone)]
-pub(crate) struct MultiLangTokenizer {
+pub struct MultiLangTokenizer {
     default_tokenizer: SimpleTokenizer,
-    cmn_tokenizer: LinderaTokenizer,
-    jpn_tokenizer: LinderaTokenizer,
-    kor_tokenizer: LinderaTokenizer,
+    token: Token,
 }
 
 impl MultiLangTokenizer {
     pub fn new() -> Self {
         Self {
             default_tokenizer: SimpleTokenizer::default(),
-            cmn_tokenizer: CMN_TOKENIZER.clone(),
-            jpn_tokenizer: JPN_TOKENIZER.clone(),
-            kor_tokenizer: KOR_TOKENIZER.clone(),
+            token: Token::default(),
         }
     }
 }
 
-pub(crate) enum MultiLanguageTokenStream<'a> {
+pub enum MultiLanguageTokenStream<'a> {
     Empty,
     Lindera(LinderaTokenStream<'a>),
     Simple(SimpleTokenStream<'a>),
@@ -150,6 +146,7 @@ fn get_language_from_prefix(text: &str) -> (Option<Lang>, &str) {
 impl Tokenizer for MultiLangTokenizer {
     type TokenStream<'a> = MultiLanguageTokenStream<'a>;
     fn token_stream<'a>(&'a mut self, text: &'a str) -> MultiLanguageTokenStream<'a> {
+        self.token.reset();
         let (language_prefix, text_to_tokenize) = get_language_from_prefix(text);
         // If the text is empty, we return an empty token stream.
         // `whichlang::detect_language` panicks if the text is empty.
@@ -159,13 +156,31 @@ impl Tokenizer for MultiLangTokenizer {
         let language = language_prefix.unwrap_or_else(|| detect_language(text_to_tokenize));
         match language {
             Lang::Cmn => {
-                MultiLanguageTokenStream::Lindera(self.cmn_tokenizer.token_stream(text_to_tokenize))
+                let lindera_token_stream = LinderaTokenStream {
+                    tokens: CMN_TOKENIZER
+                        .tokenize(text_to_tokenize)
+                        .expect("tokenizer method should never fail"),
+                    token: &mut self.token,
+                };
+                MultiLanguageTokenStream::Lindera(lindera_token_stream)
             }
             Lang::Jpn => {
-                MultiLanguageTokenStream::Lindera(self.jpn_tokenizer.token_stream(text_to_tokenize))
+                let lindera_token_stream = LinderaTokenStream {
+                    tokens: JPN_TOKENIZER
+                        .tokenize(text_to_tokenize)
+                        .expect("tokenizer method should never fail"),
+                    token: &mut self.token,
+                };
+                MultiLanguageTokenStream::Lindera(lindera_token_stream)
             }
             Lang::Kor => {
-                MultiLanguageTokenStream::Lindera(self.kor_tokenizer.token_stream(text_to_tokenize))
+                let lindera_token_stream = LinderaTokenStream {
+                    tokens: KOR_TOKENIZER
+                        .tokenize(text_to_tokenize)
+                        .expect("tokenizer method should never fail"),
+                    token: &mut self.token,
+                };
+                MultiLanguageTokenStream::Lindera(lindera_token_stream)
             }
             _ => MultiLanguageTokenStream::Simple(
                 self.default_tokenizer.token_stream(text_to_tokenize),
