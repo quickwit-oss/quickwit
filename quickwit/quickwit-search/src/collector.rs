@@ -1033,7 +1033,8 @@ mod tests {
     use std::cmp::Ordering;
 
     use quickwit_proto::{
-        LeafSearchResponse, PartialHit, SearchRequest, SortOrder, SortValue, SplitSearchError,
+        LeafSearchResponse, PartialHit, SearchRequest, SortField, SortOrder, SortValue,
+        SplitSearchError,
     };
     use tantivy::collector::Collector;
 
@@ -1168,8 +1169,10 @@ mod tests {
             &SearchRequest {
                 start_offset: 0,
                 max_hits: 2,
-                sort_by_field: Some("timestamp".to_string()),
-                sort_order: Some(SortOrder::Desc as i32),
+                sort_fields: vec![SortField {
+                    field_name: "timestamp".to_string(),
+                    sort_order: SortOrder::Desc as i32,
+                }],
                 aggregation_request: None,
                 ..Default::default()
             },
@@ -1179,7 +1182,8 @@ mod tests {
                     split_id: "1".to_string(),
                     segment_ord: 0,
                     doc_id: 123,
-                    sort_value: Some(SortValue::I64(1234)),
+                    sort_value: Some(SortValue::I64(1234).into()),
+                    sort_value2: None,
                 }],
                 failed_splits: Vec::new(),
                 num_attempted_splits: 3,
@@ -1195,7 +1199,8 @@ mod tests {
                     split_id: "1".to_string(),
                     segment_ord: 0,
                     doc_id: 123,
-                    sort_value: Some(SortValue::I64(1234)),
+                    sort_value: Some(SortValue::I64(1234).into()),
+                    sort_value2: None,
                 }],
                 failed_splits: Vec::new(),
                 num_attempted_splits: 3,
@@ -1207,8 +1212,10 @@ mod tests {
             &SearchRequest {
                 start_offset: 0,
                 max_hits: 2,
-                sort_by_field: Some("timestamp".to_string()),
-                sort_order: Some(SortOrder::Desc as i32),
+                sort_fields: vec![SortField {
+                    field_name: "timestamp".to_string(),
+                    sort_order: SortOrder::Desc as i32,
+                }],
                 aggregation_request: None,
                 ..Default::default()
             },
@@ -1220,13 +1227,15 @@ mod tests {
                             split_id: "1".to_string(),
                             segment_ord: 0,
                             doc_id: 123,
-                            sort_value: Some(SortValue::I64(1234)),
+                            sort_value: Some(SortValue::I64(1234).into()),
+                            sort_value2: None,
                         },
                         PartialHit {
                             split_id: "1".to_string(),
                             segment_ord: 0,
                             doc_id: 125,
-                            sort_value: Some(SortValue::I64(1236)),
+                            sort_value: Some(SortValue::I64(1236).into()),
+                            sort_value2: None,
                         },
                     ],
                     failed_splits: Vec::new(),
@@ -1239,7 +1248,8 @@ mod tests {
                         split_id: "2".to_string(),
                         segment_ord: 0,
                         doc_id: 3,
-                        sort_value: Some(SortValue::I64(1235)),
+                        sort_value: Some(SortValue::I64(1235).into()),
+                        sort_value2: None,
                     }],
                     failed_splits: vec![SplitSearchError {
                         error: "fake error".to_string(),
@@ -1261,13 +1271,15 @@ mod tests {
                         split_id: "1".to_string(),
                         segment_ord: 0,
                         doc_id: 125,
-                        sort_value: Some(SortValue::I64(1236)),
+                        sort_value: Some(SortValue::I64(1236).into()),
+                        sort_value2: None,
                     },
                     PartialHit {
                         split_id: "2".to_string(),
                         segment_ord: 0,
                         doc_id: 3,
-                        sort_value: Some(SortValue::I64(1235)),
+                        sort_value: Some(SortValue::I64(1235).into()),
+                        sort_value2: None,
                     },
                 ],
                 failed_splits: vec![SplitSearchError {
@@ -1285,8 +1297,10 @@ mod tests {
             &SearchRequest {
                 start_offset: 0,
                 max_hits: 2,
-                sort_by_field: Some("timestamp".to_string()),
-                sort_order: Some(SortOrder::Asc as i32),
+                sort_fields: vec![SortField {
+                    field_name: "timestamp".to_string(),
+                    sort_order: SortOrder::Asc as i32,
+                }],
                 aggregation_request: None,
                 ..Default::default()
             },
@@ -1298,13 +1312,15 @@ mod tests {
                             split_id: "1".to_string(),
                             segment_ord: 0,
                             doc_id: 123,
-                            sort_value: Some(SortValue::I64(1234)),
+                            sort_value: Some(SortValue::I64(1234).into()),
+                            sort_value2: None,
                         },
                         PartialHit {
                             split_id: "1".to_string(),
                             segment_ord: 0,
                             doc_id: 125,
-                            sort_value: Some(SortValue::I64(1236)),
+                            sort_value: Some(SortValue::I64(1236).into()),
+                            sort_value2: None,
                         },
                     ],
                     failed_splits: Vec::new(),
@@ -1317,7 +1333,8 @@ mod tests {
                         split_id: "2".to_string(),
                         segment_ord: 0,
                         doc_id: 3,
-                        sort_value: Some(SortValue::I64(1235)),
+                        sort_value: Some(SortValue::I64(1235).into()),
+                        sort_value2: None,
                     }],
                     failed_splits: vec![SplitSearchError {
                         error: "fake error".to_string(),
@@ -1339,13 +1356,15 @@ mod tests {
                         split_id: "1".to_string(),
                         segment_ord: 0,
                         doc_id: 123,
-                        sort_value: Some(SortValue::I64(1234)),
+                        sort_value: Some(SortValue::I64(1234).into()),
+                        sort_value2: None,
                     },
                     PartialHit {
                         split_id: "2".to_string(),
                         segment_ord: 0,
                         doc_id: 3,
-                        sort_value: Some(SortValue::I64(1235)),
+                        sort_value: Some(SortValue::I64(1235).into()),
+                        sort_value2: None,
                     },
                 ],
                 failed_splits: vec![SplitSearchError {

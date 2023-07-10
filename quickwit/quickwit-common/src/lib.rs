@@ -172,6 +172,16 @@ where T: Debug
     }
 }
 
+#[inline]
+pub fn ceil_div(n: i64, q: i64) -> i64 {
+    assert!(q != 0i64);
+    // TODO trinity-1686a: i'm unsure about this assertion, i64::MIN makes more sense to me,
+    // and we would be better of using checked operation, q - 1 rarely underflow, but n+q-1
+    // can overflow a quitilion ways.
+    assert!(q != i64::MAX);
+    (n + (q - 1)) / q
+}
+
 #[cfg(test)]
 mod tests {
     use std::io::ErrorKind;
@@ -226,5 +236,13 @@ mod tests {
 
         let pretty_sample = PrettySample::new(&[1, 2, 3, 4], 2);
         assert_eq!(format!("{pretty_sample:?}"), "[1, 2, and 2 more]");
+    }
+
+    #[test]
+    fn test_ceil_div() {
+        assert_eq!(ceil_div(5, 1), 5);
+        assert_eq!(ceil_div(5, 2), 3);
+        assert_eq!(ceil_div(6, 2), 3);
+        // we could also test negative numbers
     }
 }
