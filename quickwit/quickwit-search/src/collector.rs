@@ -38,30 +38,91 @@ use crate::find_trace_ids_collector::{FindTraceIdsCollector, FindTraceIdsSegment
 use crate::GlobalDocAddress;
 
 #[derive(Clone, Debug)]
-pub(crate) enum SortBy {
+pub(crate) enum SortByComponent {
     DocId,
     FastField {
         field_name: String,
         order: SortOrder,
     },
-    TwoFastField {
-        field_name1: String,
-        order1: SortOrder,
-        field_name2: String,
-        order2: SortOrder,
-    },
     Score {
         order: SortOrder,
     },
 }
-
-impl SortBy {
+impl From<SortByComponent> for SortByPair {
+    fn from(value: SortByComponent) -> Self {
+        Self {
+            first: value,
+            second: None,
+        }
+    }
+}
+#[derive(Clone)]
+pub(crate) struct SortByPair {
+    first: SortByComponent,
+    second: Option<SortByComponent>,
+}
+impl SortByPair {
     pub fn sort_orders(&self) -> (SortOrder, SortOrder) {
+        (
+            self.first.sort_order(),
+            self.second
+                .as_ref()
+                .map(|sort_by| sort_by.sort_order())
+                .unwrap_or(SortOrder::Desc),
+        )
+    }
+}
+impl SortByComponent {
+    fn to_sorting_field_computer_component(
+        &self,
+        segment_reader: &SegmentReader,
+    ) -> tantivy::Result<SortingFieldComputerComponent> {
         match self {
-            SortBy::DocId => (SortOrder::Desc, SortOrder::Desc),
-            SortBy::FastField { order, .. } => (*order, SortOrder::Desc),
-            SortBy::Score { order } => (*order, SortOrder::Desc),
-            SortBy::TwoFastField { order1, order2, .. } => (*order1, *order2),
+            SortByComponent::DocId => Ok(SortingFieldComputerComponent::DocId),
+            SortByComponent::FastField { field_name, order } => {
+                let sort_column_opt: Option<(Column<u64>, ColumnType)> =
+                    segment_reader.fast_fields().u64_lenient(field_name)?;
+                let (sort_column, column_type) = sort_column_opt.unwrap_or_else(|| {
+                    (
+                        Column::build_empty_column(segment_reader.max_doc()),
+                        ColumnType::U64,
+                    )
+                });
+                let sort_field_type = SortFieldType::try_from(column_type)?;
+                Ok(SortingFieldComputerComponent::FastField {
+                    sort_column,
+                    sort_field_type,
+                    order: *order,
+                })
+            }
+            SortByComponent::Score { order } => {
+                Ok(SortingFieldComputerComponent::Score { order: *order })
+            }
+        }
+    }
+    pub fn requires_scoring(&self) -> bool {
+        match self {
+            SortByComponent::DocId => false,
+            SortByComponent::FastField { .. } => false,
+            SortByComponent::Score { .. } => true,
+        }
+    }
+    pub fn add_fast_field(&self, set: &mut HashSet<String>) {
+        match self {
+            SortByComponent::FastField {
+                field_name,
+                order: _,
+            } => {
+                set.insert(field_name.clone());
+            }
+            _ => {}
+        }
+    }
+    pub fn sort_order(&self) -> SortOrder {
+        match self {
+            SortByComponent::DocId => SortOrder::Desc,
+            SortByComponent::FastField { order, .. } => *order,
+            SortByComponent::Score { order } => *order,
         }
     }
 }
@@ -77,7 +138,7 @@ enum SortFieldType {
 
 /// The `SortingFieldComputer` can be seen as the specialization of `SortBy` applied to a specific
 /// `SegmentReader`. Its role is to compute the sorting field given a `DocId`.
-enum SortingFieldComputer {
+enum SortingFieldComputerComponent {
     /// If undefined, we simply sort by DocIds.
     DocId,
     FastField {
@@ -85,25 +146,12 @@ enum SortingFieldComputer {
         sort_field_type: SortFieldType,
         order: SortOrder,
     },
-    TwoFastField {
-        sort_column1: Column<u64>,
-        sort_field_type1: SortFieldType,
-        order1: SortOrder,
-        sort_column2: Column<u64>,
-        sort_field_type2: SortFieldType,
-        order2: SortOrder,
-    },
     Score {
         order: SortOrder,
     },
 }
-
-impl SortingFieldComputer {
-    fn recover_typed_sort_value(
-        &self,
-        sort_value1: Option<u64>,
-        sort_value2: Option<u64>,
-    ) -> (Option<SortValue>, Option<SortValue>) {
+impl SortingFieldComputerComponent {
+    fn recover_typed_sort_value(&self, sort_value: Option<u64>) -> Option<SortValue> {
         let recover_from_fast_field = |sort_value: u64, order: SortOrder, sort_field_type| {
             let sort_value = match order {
                 SortOrder::Asc => u64::MAX - sort_value,
@@ -117,45 +165,88 @@ impl SortingFieldComputer {
                 SortFieldType::Bool => SortValue::Boolean(sort_value == 1u64),
             }
         };
-        if let Some(sort_value1) = sort_value1 {
+        if let Some(sort_value) = sort_value {
             match self {
-                SortingFieldComputer::DocId => (Some(SortValue::U64(sort_value1)), None),
-                SortingFieldComputer::FastField {
+                SortingFieldComputerComponent::DocId => Some(SortValue::U64(sort_value)),
+                SortingFieldComputerComponent::FastField {
+                    sort_column: _,
                     sort_field_type,
                     order,
-                    ..
-                } => (
-                    Some(recover_from_fast_field(
-                        sort_value1,
-                        *order,
-                        *sort_field_type,
-                    )),
-                    None,
-                ),
-                SortingFieldComputer::TwoFastField {
-                    sort_field_type1,
-                    order1,
-                    sort_field_type2,
-                    order2,
-                    ..
-                } => (
-                    Some(recover_from_fast_field(
-                        sort_value1,
-                        *order1,
-                        *sort_field_type1,
-                    )),
-                    Some(recover_from_fast_field(
-                        sort_value2.expect("missing sort_value2"),
-                        *order2,
-                        *sort_field_type2,
-                    )),
-                ),
-                SortingFieldComputer::Score { .. } => (
-                    Some(SortValue::F64(MonotonicallyMappableToU64::from_u64(
-                        sort_value1,
-                    ))),
-                    None,
-                ),
+                } => Some(recover_from_fast_field(
+                    sort_value,
+                    *order,
+                    *sort_field_type,
+                )),
+                SortingFieldComputerComponent::Score { order: _ } => Some(SortValue::F64(
+                    MonotonicallyMappableToU64::from_u64(sort_value),
+                )),
+            }
+        } else {
+            None
+        }
+    }
+
+    /// Returns the ranking key for the given element
+    ///
+    /// The functions return None if the sort key is a fast field, for which we have no value
+    /// for the given doc_id.
+    /// All value are mapped using a monotonic mapping.
+    /// If the sort ord is ascending, we use the mapping `val -> u64::MAX - val` to
+    /// artificially invert the order.
+    ///
+    /// Given the u64 value, it is possible to recover the original value using
+    /// `Self::recover_typed_sort_value`.
+    fn compute_u64_sort_value_opt(&self, doc_id: DocId, score: Score) -> Option<u64> {
+        let apply_sort = |order, field_val| match order {
+            SortOrder::Desc => field_val,
+            SortOrder::Asc => u64::MAX - field_val,
+        };
+        match self {
+            SortingFieldComputerComponent::DocId => Some(doc_id as u64),
+            SortingFieldComputerComponent::FastField {
+                sort_column, order, ..
+            } => {
+                let field_val1 = sort_column
+                    .first(doc_id)
+                    .map(|field_val| apply_sort(*order, field_val));
+                field_val1
+            }
+            SortingFieldComputerComponent::Score { order } => {
+                let u64_score = (score as f64).to_u64();
+                let u64_score = apply_sort(*order, u64_score);
+                Some(u64_score)
+            }
+        }
+    }
+}
+impl From<SortingFieldComputerComponent> for SortingFieldComputerPair {
+    fn from(value: SortingFieldComputerComponent) -> Self {
+        Self {
+            first: value,
+            second: None,
+        }
+    }
+}
+
+pub(crate) struct SortingFieldComputerPair {
+    first: SortingFieldComputerComponent,
+    second: Option<SortingFieldComputerComponent>,
+}
+
+impl SortingFieldComputerPair {
+    fn recover_typed_sort_value(
+        &self,
+        sort_value1: Option<u64>,
+        sort_value2: Option<u64>,
+    ) -> (Option<SortValue>, Option<SortValue>) {
+        if let Some(sort_value1) = sort_value1 {
+            let val1 = self.first.recover_typed_sort_value(Some(sort_value1));
+            if let Some(second) = self.second.as_ref() {
+                assert!(sort_value2.is_some());
+                let val2 = second.recover_typed_sort_value(sort_value2);
+                (val1, val2)
+            } else {
+                (val1, None)
             }
         } else {
             (None, None)
@@ -177,41 +268,12 @@ impl SortingFieldComputer {
         doc_id: DocId,
         score: Score,
     ) -> (Option<u64>, Option<u64>) {
-        let apply_sort = |order, field_val| match order {
-            SortOrder::Desc => field_val,
-            SortOrder::Asc => u64::MAX - field_val,
-        };
-        match self {
-            SortingFieldComputer::FastField {
-                sort_column, order, ..
-            } => {
-                let field_val1 = sort_column
-                    .first(doc_id)
-                    .map(|field_val| apply_sort(*order, field_val));
-                (field_val1, None)
-            }
-            SortingFieldComputer::TwoFastField {
-                sort_column1,
-                order1,
-                sort_column2,
-                order2,
-                ..
-            } => {
-                let field_val1 = sort_column1
-                    .first(doc_id)
-                    .map(|field_val| apply_sort(*order1, field_val));
-                let field_val2 = sort_column2
-                    .first(doc_id)
-                    .map(|field_val| apply_sort(*order2, field_val));
-                (field_val1, field_val2)
-            }
-            SortingFieldComputer::DocId => (Some(doc_id as u64), None),
-            SortingFieldComputer::Score { order } => {
-                let u64_score = (score as f64).to_u64();
-                let u64_score = apply_sort(*order, u64_score);
-                (Some(u64_score), None)
-            }
-        }
+        let first = self.first.compute_u64_sort_value_opt(doc_id, score);
+        let second = self
+            .second
+            .as_ref()
+            .and_then(|second| second.compute_u64_sort_value_opt(doc_id, score));
+        (first, second)
     }
 }
 
@@ -236,64 +298,19 @@ impl TryFrom<ColumnType> for SortFieldType {
 /// Takes a user-defined sorting criteria and resolves it to a
 /// segment specific `SortFieldComputer`.
 fn resolve_sort_by(
-    sort_by: &SortBy,
+    sort_by: &SortByPair,
     segment_reader: &SegmentReader,
-) -> tantivy::Result<SortingFieldComputer> {
-    match sort_by {
-        SortBy::DocId => Ok(SortingFieldComputer::DocId),
-        SortBy::FastField { field_name, order } => {
-            let sort_column_opt: Option<(Column<u64>, ColumnType)> =
-                segment_reader.fast_fields().u64_lenient(field_name)?;
-            let (sort_column, column_type) = sort_column_opt.unwrap_or_else(|| {
-                (
-                    Column::build_empty_column(segment_reader.max_doc()),
-                    ColumnType::U64,
-                )
-            });
-            let sort_field_type = SortFieldType::try_from(column_type)?;
-            Ok(SortingFieldComputer::FastField {
-                sort_column,
-                sort_field_type,
-                order: *order,
-            })
-        }
-        SortBy::TwoFastField {
-            field_name1,
-            order1,
-            field_name2,
-            order2,
-        } => {
-            // field1
-            let sort_column_opt: Option<(Column<u64>, ColumnType)> =
-                segment_reader.fast_fields().u64_lenient(field_name1)?;
-            let (sort_column1, column_type1) = sort_column_opt.unwrap_or_else(|| {
-                (
-                    Column::build_empty_column(segment_reader.max_doc()),
-                    ColumnType::U64,
-                )
-            });
-            let sort_field_type1 = SortFieldType::try_from(column_type1)?;
-            // field2
-            let sort_column_opt: Option<(Column<u64>, ColumnType)> =
-                segment_reader.fast_fields().u64_lenient(field_name2)?;
-            let (sort_column2, column_type2) = sort_column_opt.unwrap_or_else(|| {
-                (
-                    Column::build_empty_column(segment_reader.max_doc()),
-                    ColumnType::U64,
-                )
-            });
-            let sort_field_type2 = SortFieldType::try_from(column_type2)?;
-            Ok(SortingFieldComputer::TwoFastField {
-                sort_column1,
-                sort_field_type1,
-                order1: *order1,
-                sort_column2,
-                sort_field_type2,
-                order2: *order2,
-            })
-        }
-        SortBy::Score { order } => Ok(SortingFieldComputer::Score { order: *order }),
-    }
+) -> tantivy::Result<SortingFieldComputerPair> {
+    Ok(SortingFieldComputerPair {
+        first: sort_by
+            .first
+            .to_sorting_field_computer_component(segment_reader)?,
+        second: sort_by
+            .second
+            .as_ref()
+            .map(|first| first.to_sorting_field_computer_component(segment_reader))
+            .transpose()?,
+    })
 }
 
 /// PartialHitHeapItem order is the inverse of the natural order
@@ -347,7 +364,7 @@ enum AggregationSegmentCollectors {
 pub struct QuickwitSegmentCollector {
     num_hits: u64,
     split_id: String,
-    sort_by: SortingFieldComputer,
+    sort_by: SortingFieldComputerPair,
     hits: BinaryHeap<PartialHitHeapItem>,
     max_hits: usize,
     segment_ord: u32,
@@ -507,7 +524,7 @@ pub(crate) struct QuickwitCollector {
     pub split_id: String,
     pub start_offset: usize,
     pub max_hits: usize,
-    pub sort_by: SortBy,
+    pub sort_by: SortByPair,
     timestamp_filter_builder_opt: Option<TimestampFilterBuilder>,
     pub aggregation: Option<QuickwitAggregations>,
     pub aggregation_limits: AggregationLimits,
@@ -516,19 +533,9 @@ pub(crate) struct QuickwitCollector {
 impl QuickwitCollector {
     pub fn fast_field_names(&self) -> HashSet<String> {
         let mut fast_field_names = HashSet::default();
-        match &self.sort_by {
-            SortBy::DocId | SortBy::Score { .. } => {}
-            SortBy::FastField { field_name, .. } => {
-                fast_field_names.insert(field_name.clone());
-            }
-            SortBy::TwoFastField {
-                field_name1,
-                field_name2,
-                ..
-            } => {
-                fast_field_names.insert(field_name1.clone());
-                fast_field_names.insert(field_name2.clone());
-            }
+        self.sort_by.first.add_fast_field(&mut fast_field_names);
+        if let Some(sort_by_second) = &self.sort_by.second {
+            sort_by_second.add_fast_field(&mut fast_field_names);
         }
         if let Some(aggregations) = &self.aggregation {
             fast_field_names.extend(aggregations.fast_field_names());
@@ -599,10 +606,13 @@ impl Collector for QuickwitCollector {
         // We do not need BM25 scoring in Quickwit if it is not opted-in.
         // By returning false, we inform tantivy that it does not need to decompress
         // term frequencies.
-        match self.sort_by {
-            SortBy::DocId | SortBy::FastField { .. } | SortBy::TwoFastField { .. } => false,
-            SortBy::Score { .. } => true,
-        }
+        self.sort_by.first.requires_scoring()
+            || self
+                .sort_by
+                .second
+                .as_ref()
+                .map(|sort_by| sort_by.requires_scoring())
+                .unwrap_or(false)
     }
 
     fn merge_fruits(
@@ -779,34 +789,33 @@ fn top_k_partial_hits(
     }
 }
 
-pub(crate) fn sort_by_from_request(search_request: &SearchRequest) -> SortBy {
-    let num_sort_fields = search_request.sort_fields.len();
-    if num_sort_fields == 0 {
-        SortBy::DocId
-    } else if num_sort_fields == 1 {
-        let sort_field = &search_request.sort_fields[0];
-        let order = SortOrder::from_i32(sort_field.sort_order).unwrap_or(SortOrder::Desc);
-
-        if sort_field.field_name == "_score" {
-            SortBy::Score { order }
+pub(crate) fn sort_by_from_request(search_request: &SearchRequest) -> SortByPair {
+    let to_sort_by_component = |field_name: &str, order| {
+        if field_name == "_score" {
+            SortByComponent::Score { order }
         } else {
-            SortBy::FastField {
-                field_name: sort_field.field_name.to_string(),
+            SortByComponent::FastField {
+                field_name: field_name.to_string(),
                 order,
             }
         }
+    };
+
+    let num_sort_fields = search_request.sort_fields.len();
+    if num_sort_fields == 0 {
+        SortByComponent::DocId.into()
+    } else if num_sort_fields == 1 {
+        let sort_field = &search_request.sort_fields[0];
+        let order = SortOrder::from_i32(sort_field.sort_order).unwrap_or(SortOrder::Desc);
+        to_sort_by_component(&sort_field.field_name, order).into()
     } else if num_sort_fields == 2 {
         let sort_field1 = &search_request.sort_fields[0];
         let order1 = SortOrder::from_i32(sort_field1.sort_order).unwrap_or(SortOrder::Desc);
         let sort_field2 = &search_request.sort_fields[1];
         let order2 = SortOrder::from_i32(sort_field2.sort_order).unwrap_or(SortOrder::Desc);
-
-        // TODO Should we support _score + fast field?
-        SortBy::TwoFastField {
-            field_name1: sort_field1.field_name.to_string(),
-            order1,
-            field_name2: sort_field2.field_name.to_string(),
-            order2,
+        SortByPair {
+            first: to_sort_by_component(&sort_field1.field_name, order1),
+            second: Some(to_sort_by_component(&sort_field2.field_name, order2)),
         }
     } else {
         panic!("Sort by more than 2 fields is not supported yet.")

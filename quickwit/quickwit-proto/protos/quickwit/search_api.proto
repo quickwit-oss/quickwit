@@ -98,11 +98,6 @@ message SearchRequest {
   // deprecated `sort_order``
   reserved 9;
 
-  // Sort by fast field. If unset sort by docid
-  // sort_by_field can be:
-  // - a field name
-  // - _score
-  // - None, in which case the hits will be sorted by (SplitId, doc_id).
   // deprecated `sort_by_field``
   reserved 10;
 
