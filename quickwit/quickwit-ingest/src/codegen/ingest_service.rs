@@ -115,6 +115,7 @@ pub struct ListQueuesResponse {
     pub queues: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 /// BEGIN quickwit-codegen
+use tower::{Layer, Service, ServiceExt};
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait::async_trait]
 pub trait IngestService: std::fmt::Debug + dyn_clone::DynClone + Send + Sync + 'static {
@@ -508,13 +509,12 @@ impl<A: quickwit_actors::Actor> Clone for IngestServiceMailbox<A> {
         Self { inner }
     }
 }
-use tower::{Layer, Service, ServiceExt};
 impl<A, M, T, E> tower::Service<M> for IngestServiceMailbox<A>
 where
     A: quickwit_actors::Actor
         + quickwit_actors::DeferableReplyHandler<M, Reply = Result<T, E>> + Send
         + 'static,
-    M: std::fmt::Debug + Send + Sync + 'static,
+    M: std::fmt::Debug + Send + 'static,
     T: Send + 'static,
     E: std::fmt::Debug + Send + 'static,
     crate::IngestServiceError: From<quickwit_actors::AskError<E>>,
@@ -542,7 +542,7 @@ where
 #[async_trait::async_trait]
 impl<A> IngestService for IngestServiceMailbox<A>
 where
-    A: quickwit_actors::Actor + std::fmt::Debug + Send + Sync + 'static,
+    A: quickwit_actors::Actor + std::fmt::Debug,
     IngestServiceMailbox<
         A,
     >: tower::Service<
