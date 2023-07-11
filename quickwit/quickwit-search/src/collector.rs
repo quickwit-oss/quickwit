@@ -449,10 +449,10 @@ impl SegmentCollector for QuickwitSegmentCollector {
                     sort_by.recover_typed_sort_value(hit.sort_value_opt1, hit.sort_value_opt2);
 
                 PartialHit {
-                    sort_value: Some(quickwit_proto::SortBy {
+                    sort_value: Some(quickwit_proto::SortByValue {
                         sort_value: sort_value1,
                     }),
-                    sort_value2: Some(quickwit_proto::SortBy {
+                    sort_value2: Some(quickwit_proto::SortByValue {
                         sort_value: sort_value2,
                     }),
                     segment_ord,

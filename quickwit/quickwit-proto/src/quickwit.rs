@@ -183,9 +183,9 @@ pub struct Hit {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PartialHit {
     #[prost(message, optional, tag = "10")]
-    pub sort_value: ::core::option::Option<SortBy>,
+    pub sort_value: ::core::option::Option<SortByValue>,
     #[prost(message, optional, tag = "11")]
-    pub sort_value2: ::core::option::Option<SortBy>,
+    pub sort_value2: ::core::option::Option<SortByValue>,
     #[prost(string, tag = "2")]
     pub split_id: ::prost::alloc::string::String,
     /// (segment_ord, doc) form a tantivy DocAddress, which is sufficient to identify a document
@@ -197,14 +197,15 @@ pub struct PartialHit {
     pub doc_id: u32,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Ord, PartialOrd)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct SortBy {
-    #[prost(oneof = "sort_by::SortValue", tags = "1, 2, 3, 4")]
-    pub sort_value: ::core::option::Option<sort_by::SortValue>,
+pub struct SortByValue {
+    #[prost(oneof = "sort_by_value::SortValue", tags = "1, 2, 3, 4")]
+    pub sort_value: ::core::option::Option<sort_by_value::SortValue>,
 }
-/// Nested message and enum types in `SortBy`.
-pub mod sort_by {
+/// Nested message and enum types in `SortByValue`.
+pub mod sort_by_value {
     #[derive(Serialize, Deserialize, utoipa::ToSchema)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]

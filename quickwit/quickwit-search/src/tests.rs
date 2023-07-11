@@ -25,8 +25,8 @@ use quickwit_doc_mapper::DefaultDocMapper;
 use quickwit_indexing::TestSandbox;
 use quickwit_opentelemetry::otlp::TraceId;
 use quickwit_proto::{
-    qast_helper, query_ast_from_user_text, LeafListTermsResponse, SearchRequest, SortBy, SortField,
-    SortOrder, SortValue,
+    qast_helper, query_ast_from_user_text, LeafListTermsResponse, SearchRequest, SortByValue,
+    SortField, SortOrder, SortValue,
 };
 use serde_json::{json, Value as JsonValue};
 use tantivy::schema::Value as TantivyValue;
@@ -609,7 +609,7 @@ async fn test_sort_bm25() {
                 .into_iter()
                 .map(|hit| {
                     let partial_hit = hit.partial_hit.unwrap();
-                    let Some(SortBy {
+                    let Some(SortByValue {
                         sort_value: Some(SortValue::F64(score)),
                     }) = partial_hit.sort_value
                     else {

@@ -26,7 +26,7 @@ use ulid::Ulid;
 mod quickwit;
 mod quickwit_indexing_api;
 mod quickwit_metastore_api;
-pub use sort_by::SortValue;
+pub use sort_by_value::SortValue;
 use std::cmp::Ordering;
 
 pub mod indexing_api {
@@ -463,21 +463,11 @@ pub fn query_ast_from_user_text(user_text: &str, default_fields: Option<Vec<Stri
 // Prost imposes the PartialEq derived implementation.
 // This is terrible because this means Eq, PartialEq are not really in line with Ord's implementation.
 // if in presence of NaN.
-impl PartialOrd for SortBy {
-    fn partial_cmp(&self, other: &SortBy) -> Option<Ordering> {
-        self.sort_value.partial_cmp(&other.sort_value)
-    }
-}
-impl Ord for SortBy {
-    fn cmp(&self, other: &SortBy) -> Ordering {
-        self.sort_value.cmp(&other.sort_value)
-    }
-}
-impl Eq for SortBy {}
-impl Copy for SortBy {}
-impl From<SortValue> for SortBy {
+impl Eq for SortByValue {}
+impl Copy for SortByValue {}
+impl From<SortValue> for SortByValue {
     fn from(sort_value: SortValue) -> Self {
-        SortBy {
+        SortByValue {
             sort_value: Some(sort_value),
         }
     }

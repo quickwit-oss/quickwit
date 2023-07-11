@@ -235,8 +235,8 @@ message PartialHit {
   reserved 1;
   // Room for eventual future sorted key types.
   reserved 12 to 20;
-  SortBy sort_value = 10;
-  SortBy sort_value2 = 11;
+  SortByValue sort_value = 10;
+  SortByValue sort_value2 = 11;
 
   string split_id = 2;
 
@@ -248,7 +248,7 @@ message PartialHit {
   uint32 doc_id = 4;
 }
 
-message SortBy {
+message SortByValue {
   oneof sort_value {
     uint64 u64 = 1;
     int64 i64 = 2;
