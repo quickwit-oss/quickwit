@@ -98,6 +98,8 @@ mod tests {
         assert!(haiku_stream.advance());
         assert!(!haiku_stream.advance());
         let mut other_tokenizer = tokenizer_manager.get("raw").unwrap();
-        assert!(!other_tokenizer.token_stream(my_long_text).advance());
+        let mut other_stream = other_tokenizer.token_stream(my_long_text);
+        assert!(other_stream.advance());
+        assert!(!other_stream.advance());
     }
 }
