@@ -1,6 +1,6 @@
 [package]
 name = "quickwit-cli"
-version = "0.6.1"
+version = "0.6.2"
 authors = ["Quickwit, Inc. <hello@quickwit.io>"]
 edition = "2021"
 license = "AGPL-3.0-or-later"                               # For a commercial, license, contact hello@quickwit.io
@@ -43,6 +43,7 @@ reqwest = { workspace = true }
 serde_json = { workspace = true }
 tabled = { workspace = true }
 tempfile = { workspace = true }
+thiserror = { workspace = true }
 thousands = { workspace = true }
 tikv-jemalloc-ctl = { workspace = true, optional = true }
 tikv-jemallocator = { workspace = true, optional = true }

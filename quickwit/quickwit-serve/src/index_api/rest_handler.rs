@@ -28,6 +28,7 @@ use quickwit_config::{
     CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID,
 };
 use quickwit_core::{IndexService, IndexServiceError};
+use quickwit_doc_mapper::{analyze_text, TokenizerConfig};
 use quickwit_metastore::{
     IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, Split, SplitState,
 };
@@ -82,6 +83,8 @@ pub fn index_management_handlers(
         .or(create_source_handler(index_service.clone()))
         .or(get_source_handler(index_service.metastore()))
         .or(delete_source_handler(index_service.metastore()))
+        // Tokenizer handlers.
+        .or(analyze_request_handler())
 }
 
 fn json_body<T: DeserializeOwned + Send>(
@@ -716,6 +719,47 @@ async fn delete_source(
     }
     metastore.delete_source(index_uid, &source_id).await?;
     Ok(())
+}
+
+#[derive(Debug, Deserialize, utoipa::IntoParams, utoipa::ToSchema)]
+struct AnalyzeRequest {
+    /// The tokenizer to use.
+    #[serde(flatten)]
+    pub tokenizer_config: TokenizerConfig,
+    /// The text to analyze.
+    pub text: String,
+}
+
+fn analyze_request_filter() -> impl Filter<Extract = (AnalyzeRequest,), Error = Rejection> + Clone {
+    warp::path!("analyze")
+        .and(warp::post())
+        .and(warp::body::json())
+}
+
+fn analyze_request_handler() -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone
+{
+    analyze_request_filter()
+        .then(analyze_request)
+        .and(extract_format_from_qs())
+        .map(make_json_api_response)
+}
+
+/// Analyzes text with given tokenizer config and returns the list of tokens.
+#[utoipa::path(
+    post,
+    tag = "analyze",
+    path = "/analyze",
+    request_body = AnalyzeRequest,
+    responses(
+        (status = 200, description = "Successfully analyze text.")
+    ),
+)]
+async fn analyze_request(request: AnalyzeRequest) -> Result<serde_json::Value, IndexServiceError> {
+    let tokens = analyze_text(&request.text, &request.tokenizer_config)
+        .map_err(|err| IndexServiceError::Internal(format!("{err:?}")))?;
+    let json_value = serde_json::to_value(tokens)
+        .map_err(|err| IndexServiceError::Internal(format!("Cannot serialize tokens: {err}")))?;
+    Ok(json_value)
 }
 
 #[cfg(test)]
@@ -1641,5 +1685,46 @@ mod tests {
             .await;
         assert_eq!(resp.status(), 405);
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_analyze_request() {
+        let mut metastore = MockMetastore::new();
+        metastore
+            .expect_index_metadata()
+            .return_once(|_index_id: &str| {
+                Ok(IndexMetadata::for_test(
+                    "test-index",
+                    "ram:///indexes/test-index",
+                ))
+            });
+        let index_service = IndexService::new(Arc::new(metastore), StorageResolver::unconfigured());
+        let index_management_handler = super::index_management_handlers(
+            Arc::new(index_service),
+            Arc::new(QuickwitConfig::for_test()),
+        )
+        .recover(recover_fn);
+        let resp = warp::test::request()
+            .path("/analyze")
+            .method("POST")
+            .json(&true)
+            .body(r#"{"type": "ngram", "min_gram": 3, "max_gram": 3, "text": "Hel", "filters": ["lower_caser"]}"#)
+            .reply(&index_management_handler)
+            .await;
+        assert_eq!(resp.status(), 200);
+        let actual_response_json: JsonValue = serde_json::from_slice(resp.body()).unwrap();
+        let expected_response_json = serde_json::json!([
+            {
+                "offset_from": 0,
+                "offset_to": 3,
+                "position": 0,
+                "position_length": 1,
+                "text": "hel"
+            }
+        ]);
+        assert_json_include!(
+            actual: actual_response_json,
+            expected: expected_response_json
+        );
     }
 }

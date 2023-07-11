@@ -28,6 +28,7 @@ use quickwit_query::query_ast::QueryAst;
 use serde_json::Value as JsonValue;
 use tantivy::query::Query;
 use tantivy::schema::{Field, FieldType, Schema, Value};
+use tantivy::tokenizer::TokenizerManager;
 use tantivy::{Document, Term};
 
 pub type Partition = u64;
@@ -143,6 +144,9 @@ pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
 
     /// Returns the maximum number of partitions.
     fn max_num_partitions(&self) -> NonZeroU32;
+
+    /// Returns the tokenizer manager.
+    fn tokenizer_manager(&self) -> &TokenizerManager;
 }
 
 /// A struct to wrap a tantivy field with its name.

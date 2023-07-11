@@ -28,7 +28,7 @@ use quickwit_common::extract_time_range;
 use quickwit_common::uri::Uri;
 use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
 use quickwit_indexing::actors::MergeSplitDownloader;
-use quickwit_indexing::merge_policy::{MergeOperation, MergePolicy};
+use quickwit_indexing::merge_policy::MergeOperation;
 use quickwit_metastore::{
     split_tag_filter, split_time_range_filter, Metastore, MetastoreResult, Split,
 };
@@ -79,7 +79,6 @@ pub struct DeleteTaskPlanner {
     doc_mapper_str: String,
     metastore: Arc<dyn Metastore>,
     search_job_placer: SearchJobPlacer,
-    merge_policy: Arc<dyn MergePolicy>,
     merge_split_downloader_mailbox: Mailbox<MergeSplitDownloader>,
     /// Inventory of ongoing delete operations. If everything goes well,
     /// a merge operation is dropped after the publish of the split that underwent
@@ -124,7 +123,6 @@ impl DeleteTaskPlanner {
         doc_mapper_str: String,
         metastore: Arc<dyn Metastore>,
         search_job_placer: SearchJobPlacer,
-        merge_policy: Arc<dyn MergePolicy>,
         merge_split_downloader_mailbox: Mailbox<MergeSplitDownloader>,
     ) -> Self {
         Self {
@@ -133,7 +131,6 @@ impl DeleteTaskPlanner {
             doc_mapper_str,
             metastore,
             search_job_placer,
-            merge_policy,
             merge_split_downloader_mailbox,
             ongoing_delete_operations_inventory: Inventory::new(),
         }
@@ -338,12 +335,9 @@ impl DeleteTaskPlanner {
             last_delete_opstamp = last_delete_opstamp,
             num_stale_splits_from_metastore = stale_splits.len()
         );
-        // Keep only mature splits and splits that are not already part of ongoing delete
-        // operations.
         let ongoing_delete_operations = self.ongoing_delete_operations_inventory.list();
         let filtered_splits = stale_splits
             .into_iter()
-            .filter(|stale_split| self.merge_policy.is_mature(&stale_split.split_metadata))
             .filter(|stale_split| {
                 !ongoing_delete_operations.iter().any(|operation| {
                     operation
@@ -403,7 +397,7 @@ impl Handler<PlanDeleteLoop> for DeleteTaskPlanner {
 #[cfg(test)]
 mod tests {
     use quickwit_config::build_doc_mapper;
-    use quickwit_indexing::merge_policy::{MergeOperation, NopMergePolicy};
+    use quickwit_indexing::merge_policy::MergeOperation;
     use quickwit_indexing::TestSandbox;
     use quickwit_metastore::SplitMetadata;
     use quickwit_proto::metastore_api::DeleteQuery;
@@ -425,7 +419,17 @@ mod tests {
                 type: i64
                 fast: true
         "#;
-        let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"]).await?;
+        let indexing_settings_yaml = r#"
+            merge_policy:
+                type: no_merge
+        "#;
+        let test_sandbox = TestSandbox::create(
+            index_id,
+            doc_mapping_yaml,
+            indexing_settings_yaml,
+            &["body"],
+        )
+        .await?;
         let docs = [
             serde_json::json!({"body": "info", "ts": 0 }),
             serde_json::json!({"body": "info", "ts": 0 }),
@@ -503,7 +507,6 @@ mod tests {
             doc_mapper_str,
             metastore.clone(),
             search_job_placer,
-            Arc::new(NopMergePolicy),
             downloader_mailbox,
         );
         let (delete_planner_mailbox, delete_planner_handle) = test_sandbox

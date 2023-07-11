@@ -35,7 +35,6 @@ use indicatif::{ProgressBar, ProgressStyle};
 use itertools::Itertools;
 use quickwit_actors::{ActorHandle, ObservationType};
 use quickwit_common::uri::Uri;
-use quickwit_common::GREEN_COLOR;
 use quickwit_config::{ConfigFormat, IndexConfig};
 use quickwit_indexing::models::IndexingStatistics;
 use quickwit_indexing::IndexingPipeline;
@@ -51,6 +50,7 @@ use tabled::{Alignment, Concat, Format, Modify, Panel, Rotate, Style, Table, Tab
 use thousands::Separable;
 use tracing::{debug, Level};
 
+use crate::checklist::GREEN_COLOR;
 use crate::stats::{mean, percentile, std_deviation};
 use crate::{client_args, make_table, prompt_confirmation, ClientArgs, THROUGHPUT_WINDOW_SIZE};
 
@@ -1124,13 +1124,13 @@ mod test {
             split_metadata: split_metadata_1,
             split_state: quickwit_metastore::SplitState::Published,
             update_timestamp: 0,
-            publish_timestamp: Some(0),
+            publish_timestamp: Some(10),
         };
         let split_data_2 = Split {
             split_metadata: split_metadata_2,
             split_state: quickwit_metastore::SplitState::MarkedForDeletion,
             update_timestamp: 0,
-            publish_timestamp: Some(0),
+            publish_timestamp: Some(10),
         };
 
         let index_stats =
@@ -1162,8 +1162,8 @@ mod test {
         let split_id = "stat-test-split".to_string();
         let template_split = Split {
             split_state: quickwit_metastore::SplitState::Published,
-            update_timestamp: 0,
-            publish_timestamp: Some(0),
+            update_timestamp: 10,
+            publish_timestamp: Some(10),
             split_metadata: SplitMetadata::default(),
         };
 

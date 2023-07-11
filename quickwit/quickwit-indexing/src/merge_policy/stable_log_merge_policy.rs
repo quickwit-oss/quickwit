@@ -22,7 +22,7 @@ use std::ops::Range;
 
 use quickwit_config::merge_policy_config::StableLogMergePolicyConfig;
 use quickwit_config::IndexingSettings;
-use quickwit_metastore::SplitMetadata;
+use quickwit_metastore::{SplitMaturity, SplitMetadata};
 use time::OffsetDateTime;
 use tracing::debug;
 
@@ -118,16 +118,13 @@ impl MergePolicy for StableLogMergePolicy {
     }
 
     /// A mature split for merge is a split that won't undergo any merge operation in the future.
-    fn is_mature(&self, split: &SplitMetadata) -> bool {
-        if split.num_docs >= self.split_num_docs_target {
-            return true;
+    fn split_maturity(&self, split_num_docs: usize, _split_num_merge_ops: usize) -> SplitMaturity {
+        if split_num_docs >= self.split_num_docs_target {
+            return SplitMaturity::Mature;
         }
-        if OffsetDateTime::now_utc().unix_timestamp()
-            >= split.create_timestamp + self.config.maturation_period.as_secs() as i64
-        {
-            return true;
+        SplitMaturity::Immature {
+            maturation_period: self.config.maturation_period,
         }
-        false
     }
 
     #[cfg(test)]
@@ -191,7 +188,8 @@ impl StableLogMergePolicy {
             return Vec::new();
         }
         // First we isolate splits that are mature.
-        let splits_not_for_merge = remove_matching_items(splits, |split| self.is_mature(split));
+        let splits_not_for_merge =
+            remove_matching_items(splits, |split| split.is_mature(OffsetDateTime::now_utc()));
 
         let mut merge_operations: Vec<MergeOperation> = Vec::new();
         splits.sort_unstable_by(cmp_splits_by_reverse_time_end);
@@ -377,21 +375,24 @@ mod tests {
     fn test_split_is_mature() {
         let merge_policy = StableLogMergePolicy::default();
         // Split under max_merge_docs and created before now() - maturation_period is not mature.
-        let split = create_splits(vec![9_000_000]).into_iter().next().unwrap();
-        assert!(!merge_policy.is_mature(&split));
-        {
-            // Split with docs > max_merge_docs is mature.
-            let mut mature_split = split.clone();
-            mature_split.num_docs = merge_policy.split_num_docs_target + 1;
-            assert!(merge_policy.is_mature(&mature_split));
-        }
-        {
-            // Split under max_merge_docs but with create_timestamp >= now + maturity duration is
-            // mature.
-            let mut mature_split = split;
-            mature_split.create_timestamp -= merge_policy.config.maturation_period.as_secs() as i64;
-            assert!(merge_policy.is_mature(&mature_split));
-        }
+        assert_eq!(
+            merge_policy.split_maturity(9_000_000, 0),
+            SplitMaturity::Immature {
+                maturation_period: Duration::from_secs(3600 * 48)
+            }
+        );
+        assert_eq!(
+            merge_policy.split_maturity(&merge_policy.split_num_docs_target + 1, 0),
+            SplitMaturity::Mature
+        );
+        // Split under max_merge_docs but with create_timestamp >= now + maturity duration is
+        // mature.
+        assert_eq!(
+            merge_policy.split_maturity(9_000_000, 0),
+            SplitMaturity::Immature {
+                maturation_period: merge_policy.config.maturation_period
+            }
+        );
     }
 
     #[test]
@@ -404,8 +405,11 @@ mod tests {
 
     #[test]
     fn test_stable_log_merge_policy_build_split_simple() {
-        let merge_policy = StableLogMergePolicy::default();
-        let splits = create_splits(vec![100_000, 100_000, 100_000, 800_000, 900_000]);
+        let merge_policy: StableLogMergePolicy = StableLogMergePolicy::default();
+        let splits = create_splits(
+            &merge_policy,
+            vec![100_000, 100_000, 100_000, 800_000, 900_000],
+        );
         let split_groups = merge_policy.build_split_levels(&splits);
         assert_eq!(&split_groups, &[0..3, 3..5]);
     }
@@ -413,10 +417,13 @@ mod tests {
     #[test]
     fn test_stable_log_merge_policy_build_split_perfect_world() {
         let merge_policy = StableLogMergePolicy::default();
-        let splits = create_splits(vec![
-            100_000, 100_000, 100_000, 100_000, 100_000, 100_000, 100_000, 100_000, 800_000,
-            1_600_000,
-        ]);
+        let splits = create_splits(
+            &merge_policy,
+            vec![
+                100_000, 100_000, 100_000, 100_000, 100_000, 100_000, 100_000, 100_000, 800_000,
+                1_600_000,
+            ],
+        );
         let split_groups = merge_policy.build_split_levels(&splits);
         assert_eq!(&split_groups, &[0..8, 8..10]);
     }
@@ -424,10 +431,13 @@ mod tests {
     #[test]
     fn test_stable_log_merge_policy_build_split_decreasing() {
         let merge_policy = StableLogMergePolicy::default();
-        let splits = create_splits(vec![
-            100_000, 100_000, 100_000, 100_000, 100_000, 100_000, 100_000, 100_000, 800_000,
-            100_000, 1_600_000,
-        ]);
+        let splits = create_splits(
+            &merge_policy,
+            vec![
+                100_000, 100_000, 100_000, 100_000, 100_000, 100_000, 100_000, 100_000, 800_000,
+                100_000, 1_600_000,
+            ],
+        );
         let split_groups = merge_policy.build_split_levels(&splits);
         assert_eq!(&split_groups, &[0..8, 8..11]);
     }
@@ -436,14 +446,14 @@ mod tests {
     #[should_panic(expected = "All splits are expected to be smaller than `max_merge_docs`.")]
     fn test_stable_log_merge_policy_build_split_panics_if_exceeding_max_merge_docs() {
         let merge_policy = StableLogMergePolicy::default();
-        let splits = create_splits(vec![11_000_000]);
+        let splits = create_splits(&merge_policy, vec![11_000_000]);
         merge_policy.build_split_levels(&splits);
     }
 
     #[test]
     fn test_stable_log_merge_policy_not_enough_splits() {
         let merge_policy = StableLogMergePolicy::default();
-        let mut splits = create_splits(vec![100; 7]);
+        let mut splits = create_splits(&merge_policy, vec![100; 7]);
         assert_eq!(splits.len(), 7);
         assert!(merge_policy.operations(&mut splits).is_empty());
     }
@@ -451,7 +461,7 @@ mod tests {
     #[test]
     fn test_stable_log_merge_policy_just_enough_splits_for_a_merge() {
         let merge_policy = StableLogMergePolicy::default();
-        let mut splits = create_splits(vec![100; 10]);
+        let mut splits = create_splits(&merge_policy, vec![100; 10]);
         let mut merge_ops = merge_policy.operations(&mut splits);
         assert!(splits.is_empty());
         assert_eq!(merge_ops.len(), 1);
@@ -474,7 +484,7 @@ mod tests {
     #[test]
     fn test_stable_log_merge_policy_many_splits_on_same_level() {
         let merge_policy = StableLogMergePolicy::default();
-        let mut splits = create_splits(vec![100; 13]);
+        let mut splits = create_splits(&merge_policy, vec![100; 13]);
         let mut merge_ops = merge_policy.operations(&mut splits);
         assert_eq!(splits.len(), 1);
         assert_eq!(splits[0].split_id(), "split_00");
@@ -498,9 +508,12 @@ mod tests {
     #[test]
     fn test_stable_log_merge_policy_splits_below_min_level() {
         let merge_policy = StableLogMergePolicy::default();
-        let mut splits = create_splits(vec![
-            100, 1000, 10_000, 10_000, 10_000, 10_000, 10_000, 40_000, 40_000, 40_000,
-        ]);
+        let mut splits = create_splits(
+            &merge_policy,
+            vec![
+                100, 1000, 10_000, 10_000, 10_000, 10_000, 10_000, 40_000, 40_000, 40_000,
+            ],
+        );
         let mut merge_ops = merge_policy.operations(&mut splits);
         assert_eq!(splits.len(), 0);
         assert_eq!(merge_ops.len(), 1);
@@ -523,9 +536,13 @@ mod tests {
     #[test]
     fn test_stable_log_merge_policy_splits_above_min_level() {
         let merge_policy = StableLogMergePolicy::default();
-        let mut splits = create_splits(vec![
-            100_000, 1_000_000, 1_000_000, 1_000_000, 1_000_000, 1_000_000, 1_000_000, 1_000_000,
-        ]);
+        let mut splits = create_splits(
+            &merge_policy,
+            vec![
+                100_000, 1_000_000, 1_000_000, 1_000_000, 1_000_000, 1_000_000, 1_000_000,
+                1_000_000,
+            ],
+        );
         let merge_ops = merge_policy.operations(&mut splits);
         assert_eq!(splits.len(), 8);
         assert_eq!(merge_ops.len(), 0);
@@ -534,11 +551,14 @@ mod tests {
     #[test]
     fn test_stable_log_merge_policy_above_max_merge_docs_is_ignored() {
         let merge_policy = StableLogMergePolicy::default();
-        let mut splits = create_splits(vec![
-            100_000, 100_000, 100_000, 100_000, 100_000,
-            10_000_000, // this split should not interfere with the merging of other splits
-            100_000, 100_000, 100_000, 100_000, 100_000,
-        ]);
+        let mut splits = create_splits(
+            &merge_policy,
+            vec![
+                100_000, 100_000, 100_000, 100_000, 100_000,
+                10_000_000, // this split should not interfere with the merging of other splits
+                100_000, 100_000, 100_000, 100_000, 100_000,
+            ],
+        );
         let merge_ops = merge_policy.operations(&mut splits);
         assert_eq!(splits.len(), 1);
         assert_eq!(splits[0].num_docs, 10_000_000);
@@ -548,7 +568,11 @@ mod tests {
     #[test]
     fn test_merge_policy_splits_too_large_are_ignored() {
         let merge_policy = StableLogMergePolicy::default();
-        let mut splits = create_splits(vec![9_999_999, 10_000_000]);
+        let mut splits = create_splits(&merge_policy, vec![9_999_999, 10_000_000]);
+        for split in splits.iter_mut() {
+            let time_to_maturity = merge_policy.split_maturity(split.num_docs, split.num_merge_ops);
+            split.maturity = time_to_maturity;
+        }
         let merge_ops = merge_policy.operations(&mut splits);
         assert_eq!(splits.len(), 2);
         assert_eq!(splits[0].num_docs, 9_999_999);
@@ -559,7 +583,7 @@ mod tests {
     #[test]
     fn test_merge_policy_splits_entire_level_reach_merge_max_doc() {
         let merge_policy = StableLogMergePolicy::default();
-        let mut splits = create_splits(vec![5_000_000, 5_000_000]);
+        let mut splits = create_splits(&merge_policy, vec![5_000_000, 5_000_000]);
         let merge_ops = merge_policy.operations(&mut splits);
         assert!(splits.is_empty());
         assert_eq!(merge_ops.len(), 1);
@@ -569,7 +593,7 @@ mod tests {
     #[test]
     fn test_merge_policy_last_merge_can_have_a_lower_merge_factor() {
         let merge_policy = StableLogMergePolicy::default();
-        let mut splits = create_splits(vec![9_999_997, 9_999_998, 9_999_999]);
+        let mut splits = create_splits(&merge_policy, vec![9_999_997, 9_999_998, 9_999_999]);
         let merge_ops = merge_policy.operations(&mut splits);
         assert_eq!(splits.len(), 1);
         assert_eq!(splits[0].num_docs, 9_999_997);
@@ -580,7 +604,7 @@ mod tests {
     #[test]
     fn test_merge_policy_no_merge_with_only_one_split() {
         let merge_policy = StableLogMergePolicy::default();
-        let mut splits = create_splits(vec![9_999_999]);
+        let mut splits = create_splits(&merge_policy, vec![9_999_999]);
         let merge_ops = merge_policy.operations(&mut splits);
         assert_eq!(splits.len(), 1);
         assert_eq!(splits[0].num_docs, 9_999_999);

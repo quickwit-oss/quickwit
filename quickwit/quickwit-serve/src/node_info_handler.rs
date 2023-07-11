@@ -25,6 +25,10 @@ use warp::{Filter, Rejection};
 
 use crate::{with_arg, BuildInfo, RuntimeInfo};
 
+#[derive(utoipa::OpenApi)]
+#[openapi(paths(node_version_handler, node_config_handler,))]
+pub struct NodeInfoApi;
+
 pub fn node_info_handler(
     build_info: &'static BuildInfo,
     runtime_info: &'static RuntimeInfo,
@@ -33,6 +37,7 @@ pub fn node_info_handler(
     node_version_handler(build_info, runtime_info).or(node_config_handler(config))
 }
 
+#[utoipa::path(get, tag = "Node Info", path = "/version")]
 fn node_version_handler(
     build_info: &'static BuildInfo,
     runtime_info: &'static RuntimeInfo,
@@ -54,6 +59,7 @@ async fn get_version(
     }))
 }
 
+#[utoipa::path(get, tag = "Node Info", path = "/config")]
 fn node_config_handler(
     config: Arc<QuickwitConfig>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {

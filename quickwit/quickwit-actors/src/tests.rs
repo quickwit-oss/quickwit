@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::cell::Cell;
 use std::collections::HashMap;
 use std::ops::Mul;
 use std::time::Duration;
@@ -636,5 +637,91 @@ async fn test_drain_is_called() {
             drain_calls_count: 2
         }
     );
+    universe.assert_quit().await;
+}
+
+#[tokio::test]
+async fn test_unsync_actor() {
+    #[derive(Default)]
+    struct UnsyncActor(Cell<u64>);
+
+    impl Actor for UnsyncActor {
+        type ObservableState = u64;
+
+        fn observable_state(&self) -> Self::ObservableState {
+            self.0.get()
+        }
+    }
+
+    #[async_trait]
+    impl Handler<u64> for UnsyncActor {
+        type Reply = u64;
+
+        async fn handle(
+            &mut self,
+            number: u64,
+            _ctx: &ActorContext<Self>,
+        ) -> Result<u64, ActorExitStatus> {
+            *self.0.get_mut() += number;
+            Ok(self.0.get())
+        }
+    }
+    let universe = Universe::with_accelerated_time();
+    let unsync_message_actor = UnsyncActor::default();
+    let (mailbox, _handle) = universe.spawn_builder().spawn(unsync_message_actor);
+
+    let response = mailbox.ask(1).await.unwrap();
+    assert_eq!(response, 1);
+
+    universe.assert_quit().await;
+}
+
+#[tokio::test]
+async fn test_unsync_actor_message() {
+    #[derive(Default)]
+    struct UnsyncMessageActor(u64);
+
+    impl Actor for UnsyncMessageActor {
+        type ObservableState = u64;
+
+        fn observable_state(&self) -> Self::ObservableState {
+            self.0
+        }
+    }
+
+    #[async_trait]
+    impl Handler<Cell<u64>> for UnsyncMessageActor {
+        type Reply = anyhow::Result<u64>;
+
+        async fn handle(
+            &mut self,
+            number: Cell<u64>,
+            _ctx: &ActorContext<Self>,
+        ) -> Result<anyhow::Result<u64>, ActorExitStatus> {
+            self.0 += number.get();
+            Ok(Ok(self.0))
+        }
+    }
+    let universe = Universe::with_accelerated_time();
+    let unsync_message_actor = UnsyncMessageActor::default();
+    let (mailbox, _handle) = universe.spawn_builder().spawn(unsync_message_actor);
+
+    let response_rx = mailbox.send_message(Cell::new(1)).await.unwrap();
+    assert_eq!(response_rx.await.unwrap().unwrap(), 1);
+
+    let response = mailbox.ask(Cell::new(1)).await.unwrap().unwrap();
+    assert_eq!(response, 2);
+
+    let response = mailbox.ask_for_res(Cell::new(1)).await.unwrap();
+    assert_eq!(response, 3);
+
+    let response_rx = mailbox
+        .send_message_with_high_priority(Cell::new(1))
+        .unwrap();
+    assert_eq!(response_rx.await.unwrap().unwrap(), 4);
+
+    let response_rx = mailbox.try_send_message(Cell::new(1)).unwrap();
+    assert_eq!(response_rx.await.unwrap().unwrap(), 5);
+
     universe.assert_quit().await;
 }

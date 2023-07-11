@@ -23,6 +23,7 @@ mod default_mapper_builder;
 mod field_mapping_entry;
 mod field_mapping_type;
 mod mapping_tree;
+mod tokenizer_entry;
 
 use anyhow::bail;
 use once_cell::sync::Lazy;
@@ -38,6 +39,10 @@ pub(crate) use self::field_mapping_entry::{
     FieldMappingEntryForSerialization, IndexRecordOptionSchema, QuickwitTextTokenizer,
 };
 pub(crate) use self::field_mapping_type::FieldMappingType;
+pub use self::tokenizer_entry::{analyze_text, TokenizerConfig, TokenizerEntry};
+pub(crate) use self::tokenizer_entry::{
+    NgramTokenizerOption, RegexTokenizerOption, TokenFilterType, TokenizerType,
+};
 use crate::QW_RESERVED_FIELD_NAMES;
 
 /// Regular expression validating a field mapping name.

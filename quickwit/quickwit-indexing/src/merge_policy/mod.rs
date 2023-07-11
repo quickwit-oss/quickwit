@@ -29,7 +29,7 @@ use itertools::Itertools;
 pub use nop_merge_policy::NopMergePolicy;
 use quickwit_config::merge_policy_config::MergePolicyConfig;
 use quickwit_config::IndexingSettings;
-use quickwit_metastore::SplitMetadata;
+use quickwit_metastore::{SplitMaturity, SplitMetadata};
 use serde::Serialize;
 pub(crate) use stable_log_merge_policy::StableLogMergePolicy;
 use tracing::{info_span, Span};
@@ -108,8 +108,13 @@ impl fmt::Debug for MergeOperation {
 pub trait MergePolicy: Send + Sync + fmt::Debug {
     /// Returns the list of merge operations that should be performed.
     fn operations(&self, splits: &mut Vec<SplitMetadata>) -> Vec<MergeOperation>;
-    /// A mature split is a split that won't undergo a merge operation in the future.
-    fn is_mature(&self, split: &SplitMetadata) -> bool;
+
+    /// Returns split maturity.
+    /// A split is either:
+    /// - `Mature` if it does not undergo new merge operations.
+    /// - or `Immature` with a `maturation_period` after which it becomes mature.
+    fn split_maturity(&self, split_num_docs: usize, split_num_merge_ops: usize) -> SplitMaturity;
+
     /// Checks a bunch of properties specific to the given merge policy.
     /// This method is used in proptesting.
     ///
@@ -207,28 +212,37 @@ pub mod tests {
       }
     }
 
-    pub(crate) fn create_splits(num_docs_vec: Vec<usize>) -> Vec<SplitMetadata> {
+    pub(crate) fn create_splits(
+        merge_policy: &dyn MergePolicy,
+        num_docs_vec: Vec<usize>,
+    ) -> Vec<SplitMetadata> {
         let num_docs_with_timestamp = num_docs_vec
             .into_iter()
             // we give the same timestamp to all of them and rely on stable sort to keep the split
             // order.
             .map(|num_docs| (num_docs, (1630563067..=1630564067)))
             .collect();
-        create_splits_with_timestamps(num_docs_with_timestamp)
+        create_splits_with_timestamps(merge_policy, num_docs_with_timestamp)
     }
 
     fn create_splits_with_timestamps(
+        merge_policy: &dyn MergePolicy,
         num_docs_vec: Vec<(usize, RangeInclusive<i64>)>,
     ) -> Vec<SplitMetadata> {
         num_docs_vec
             .into_iter()
             .enumerate()
-            .map(|(split_ord, (num_docs, time_range))| SplitMetadata {
-                split_id: format!("split_{split_ord:02}"),
-                num_docs,
-                time_range: Some(time_range),
-                create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
-                ..Default::default()
+            .map(|(split_ord, (num_docs, time_range))| {
+                let create_timestamp = OffsetDateTime::now_utc().unix_timestamp();
+                let time_to_maturity = merge_policy.split_maturity(num_docs, 0);
+                SplitMetadata {
+                    split_id: format!("split_{split_ord:02}"),
+                    num_docs,
+                    time_range: Some(time_range),
+                    create_timestamp,
+                    maturity: time_to_maturity,
+                    ..Default::default()
+                }
             })
             .collect()
     }
@@ -290,7 +304,7 @@ pub mod tests {
             //     merge_policy.operations(&mut splits).is_empty(),
             //     "Merge policy are expected to return all available merge operations."
             // );
-
+            let now_utc = OffsetDateTime::now_utc();
             for merge_op in &mut operations {
                 assert_eq!(merge_op.operation_type, MergeOperationType::Merge,
                     "A merge policy should only emit Merge operations."
@@ -298,7 +312,7 @@ pub mod tests {
                 assert!(merge_op.splits_as_slice().len() >= 2,
             "Merge policies should not suggest merging a single split.");
                 for split in merge_op.splits_as_slice() {
-                    assert!(!merge_policy.is_mature(split), "Merges should not contain mature splits.");
+                    assert!(!split.is_mature(now_utc), "Merges should not contain mature splits.");
                 }
                 merge_policy.check_is_valid(merge_op, &splits[..]);
             }
@@ -312,7 +326,7 @@ pub mod tests {
             .collect()
     }
 
-    fn fake_merge(splits: &[SplitMetadata]) -> SplitMetadata {
+    fn fake_merge(merge_policy: &Arc<dyn MergePolicy>, splits: &[SplitMetadata]) -> SplitMetadata {
         assert!(!splits.is_empty(), "Split list should not be empty.");
         let merged_split_id = new_split_id();
         let tags = merge_tags(splits);
@@ -323,17 +337,18 @@ pub mod tests {
             pipeline_ord: 0,
         };
         let split_attrs = merge_split_attrs(merged_split_id, &pipeline_id, splits);
-        create_split_metadata(&split_attrs, tags, 0..0)
+        create_split_metadata(merge_policy, &split_attrs, tags, 0..0)
     }
 
     fn apply_merge(
+        merge_policy: &Arc<dyn MergePolicy>,
         split_index: &mut HashMap<String, SplitMetadata>,
         merge_op: &MergeOperation,
     ) -> SplitMetadata {
         for split in merge_op.splits_as_slice() {
             assert!(split_index.remove(split.split_id()).is_some());
         }
-        let merged_split = fake_merge(merge_op.splits_as_slice());
+        let merged_split = fake_merge(merge_policy, merge_op.splits_as_slice());
         split_index.insert(merged_split.split_id().to_string(), merged_split.clone());
         merged_split
     }
@@ -352,8 +367,12 @@ pub mod tests {
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
         };
-        let merge_planner =
-            MergePlanner::new(pipeline_id, Vec::new(), merge_policy, merge_op_mailbox);
+        let merge_planner = MergePlanner::new(
+            pipeline_id,
+            Vec::new(),
+            merge_policy.clone(),
+            merge_op_mailbox,
+        );
         let mut split_index: HashMap<String, SplitMetadata> = HashMap::default();
         let (merge_planner_mailbox, merge_planner_handler) =
             universe.spawn_builder().spawn(merge_planner);
@@ -375,7 +394,7 @@ pub mod tests {
                 }
                 let new_splits: Vec<SplitMetadata> = merge_ops
                     .into_iter()
-                    .map(|merge_op| apply_merge(&mut split_index, &merge_op))
+                    .map(|merge_op| apply_merge(&merge_policy, &mut split_index, &merge_op))
                     .collect();
                 merge_planner_mailbox
                     .send_message(NewSplits { new_splits })
@@ -392,6 +411,7 @@ pub mod tests {
     fn mock_split_meta_from_num_docs(
         time_range: RangeInclusive<i64>,
         num_docs: u64,
+        maturity: SplitMaturity,
     ) -> SplitMetadata {
         SplitMetadata {
             split_id: crate::new_split_id(),
@@ -400,6 +420,7 @@ pub mod tests {
             uncompressed_docs_size_in_bytes: 256u64 * num_docs,
             time_range: Some(time_range),
             create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
+            maturity,
             tags: BTreeSet::from_iter(vec!["tenant_id:1".to_string(), "tenant_id:2".to_string()]),
             footer_offsets: 0..100,
             index_uid: IndexUid::new("test-index"),
@@ -422,7 +443,8 @@ pub mod tests {
                 let time_first = split_ord as i64 * 1_000;
                 let time_last = time_first + 999;
                 let time_range = time_first..=time_last;
-                mock_split_meta_from_num_docs(time_range, num_docs as u64)
+                let time_to_maturity = merge_policy.split_maturity(num_docs, 0);
+                mock_split_meta_from_num_docs(time_range, num_docs as u64, time_to_maturity)
             })
             .collect();
         aux_test_simulate_merge_planner(merge_policy, split_metadatas, check_final_configuration)

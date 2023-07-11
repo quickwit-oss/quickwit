@@ -25,7 +25,6 @@ use clap::{arg, ArgMatches, Command};
 use colored::Colorize;
 use itertools::Itertools;
 use quickwit_common::uri::Uri;
-use quickwit_common::GREEN_COLOR;
 use quickwit_config::{validate_identifier, ConfigFormat, SourceConfig};
 use quickwit_metastore::checkpoint::SourceCheckpoint;
 use quickwit_storage::{load_file, StorageResolver};
@@ -33,6 +32,7 @@ use serde_json::Value as JsonValue;
 use tabled::{Table, Tabled};
 use tracing::debug;
 
+use crate::checklist::GREEN_COLOR;
 use crate::{client_args, make_table, prompt_confirmation, ClientArgs};
 
 pub fn build_source_command() -> Command {

@@ -28,6 +28,7 @@ use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, Qu
 use quickwit_metastore::SplitMetadata;
 use serde::Serialize;
 use tantivy::Inventory;
+use time::OffsetDateTime;
 use tracing::info;
 
 use crate::actors::MergeSplitDownloader;
@@ -148,7 +149,7 @@ impl MergePlanner {
     }
 
     fn record_split(&mut self, new_split: SplitMetadata) {
-        if self.merge_policy.is_mature(&new_split) {
+        if new_split.is_mature(OffsetDateTime::now_utc()) {
             return;
         }
         let splits_for_partition: &mut Vec<SplitMetadata> = self
@@ -305,7 +306,7 @@ mod tests {
         ConstWriteAmplificationMergePolicyConfig, MergePolicyConfig, StableLogMergePolicyConfig,
     };
     use quickwit_config::IndexingSettings;
-    use quickwit_metastore::SplitMetadata;
+    use quickwit_metastore::{SplitMaturity, SplitMetadata};
     use quickwit_proto::IndexUid;
     use tantivy::TrackedObject;
     use time::OffsetDateTime;
@@ -331,6 +332,9 @@ mod tests {
             partition_id,
             num_merge_ops,
             create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
+            maturity: SplitMaturity::Immature {
+                maturation_period: Duration::from_secs(3600),
+            },
             ..Default::default()
         }
     }

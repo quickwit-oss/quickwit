@@ -100,7 +100,7 @@ impl SortingFieldComputer {
                     SortFieldType::U64 => SortValue::U64(sort_value),
                     SortFieldType::I64 => SortValue::I64(i64::from_u64(sort_value)),
                     SortFieldType::F64 => SortValue::F64(f64::from_u64(sort_value)),
-                    SortFieldType::DateTime => SortValue::U64(sort_value),
+                    SortFieldType::DateTime => SortValue::I64(i64::from_u64(sort_value)),
                     SortFieldType::Bool => SortValue::Boolean(sort_value == 1u64),
                 }
             }

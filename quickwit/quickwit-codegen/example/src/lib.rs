@@ -28,6 +28,7 @@ use std::task::{Context, Poll};
 use std::time::Duration;
 
 use async_trait::async_trait;
+use futures::StreamExt;
 use quickwit_common::ServiceStream;
 use tower::{Layer, Service};
 
@@ -76,21 +77,35 @@ impl<S> Layer<S> for CounterLayer {
     }
 }
 
-fn spawn_ping_response_stream(name: String) -> ServiceStream<PingResponse, HelloError> {
+fn spawn_ping_response_stream(
+    mut request_stream: ServiceStream<PingRequest>,
+) -> ServiceStream<HelloResult<PingResponse>> {
     let (ping_tx, service_stream) = ServiceStream::new_bounded(1);
     let future = async move {
+        let mut name = "".to_string();
         let mut interval = tokio::time::interval(Duration::from_millis(100));
-        loop {
-            interval.tick().await;
 
-            if ping_tx
-                .send(Ok(PingResponse {
-                    message: format!("Pong, {}!", name),
-                }))
-                .await
-                .is_err()
-            {
-                break;
+        loop {
+            tokio::select! {
+                request_opt = request_stream.next() => {
+                    match request_opt {
+                        Some(request) => name = request.name,
+                        _ => break,
+                    };
+                }
+                _ = interval.tick() => {
+                    if name.is_empty() {
+                        continue;
+                    }
+                    if name == "stop" {
+                        break;
+                    }
+                    if ping_tx.send(Ok(PingResponse {
+                        message: format!("Pong, {name}!")
+                    })).await.is_err() {
+                        break;
+                    }
+                }
             }
         }
     };
@@ -103,13 +118,13 @@ struct HelloImpl;
 
 #[async_trait]
 impl Hello for HelloImpl {
-    async fn hello(&mut self, request: HelloRequest) -> crate::HelloResult<HelloResponse> {
+    async fn hello(&mut self, request: HelloRequest) -> HelloResult<HelloResponse> {
         Ok(HelloResponse {
             message: format!("Hello, {}!", request.name),
         })
     }
 
-    async fn goodbye(&mut self, request: GoodbyeRequest) -> crate::HelloResult<GoodbyeResponse> {
+    async fn goodbye(&mut self, request: GoodbyeRequest) -> HelloResult<GoodbyeResponse> {
         Ok(GoodbyeResponse {
             message: format!("Goodbye, {}!", request.name),
         })
@@ -117,9 +132,9 @@ impl Hello for HelloImpl {
 
     async fn ping(
         &mut self,
-        request: PingRequest,
-    ) -> crate::HelloResult<ServiceStream<PingResponse, HelloError>> {
-        Ok(spawn_ping_response_stream(request.name))
+        request: ServiceStream<PingRequest>,
+    ) -> HelloResult<HelloStream<PingResponse>> {
+        Ok(spawn_ping_response_stream(request))
     }
 }
 
@@ -131,6 +146,7 @@ mod tests {
 
     use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Universe};
     use quickwit_common::tower::{BalanceChannel, Change};
+    use tokio::sync::mpsc::error::TrySendError;
     use tokio_stream::StreamExt;
     use tonic::transport::{Endpoint, Server};
     use tower::timeout::Timeout;
@@ -139,7 +155,7 @@ mod tests {
     use crate::hello::hello_grpc_server::HelloGrpcServer;
     use crate::hello::MockHello;
     use crate::hello_grpc_client::HelloGrpcClient;
-    use crate::{CounterLayer, GoodbyeRequest, GoodbyeResponse, HelloError};
+    use crate::{CounterLayer, GoodbyeRequest, GoodbyeResponse};
 
     #[tokio::test]
     async fn test_hello_codegen() {
@@ -171,16 +187,40 @@ mod tests {
             }
         );
 
-        let mut pong_stream = client
-            .ping(PingRequest {
+        let (ping_stream_tx, ping_stream) = ServiceStream::new_bounded(1);
+        let mut pong_stream = client.ping(ping_stream).await.unwrap();
+
+        ping_stream_tx
+            .try_send(PingRequest {
                 name: "World".to_string(),
             })
-            .await
             .unwrap();
         assert_eq!(
             pong_stream.next().await.unwrap().unwrap().message,
             "Pong, World!"
         );
+        ping_stream_tx
+            .try_send(PingRequest {
+                name: "Mundo".to_string(),
+            })
+            .unwrap();
+        assert_eq!(
+            pong_stream.next().await.unwrap().unwrap().message,
+            "Pong, Mundo!"
+        );
+        ping_stream_tx
+            .try_send(PingRequest {
+                name: "stop".to_string(),
+            })
+            .unwrap();
+        assert!(pong_stream.next().await.is_none());
+
+        let error = ping_stream_tx
+            .try_send(PingRequest {
+                name: "stop".to_string(),
+            })
+            .unwrap_err();
+        assert!(matches!(error, TrySendError::Closed(_)));
 
         let mut mock_hello = MockHello::new();
 
@@ -189,6 +229,7 @@ mod tests {
                 message: "Hello, Mock!".to_string(),
             })
         });
+
         assert_eq!(
             mock_hello
                 .hello(HelloRequest {
@@ -200,8 +241,11 @@ mod tests {
                 message: "Hello, Mock!".to_string()
             }
         );
+    }
 
-        let grpc_server_adapter = HelloGrpcServerAdapter::new(hello.clone());
+    #[tokio::test]
+    async fn test_hello_codegen_grpc() {
+        let grpc_server_adapter = HelloGrpcServerAdapter::new(HelloImpl);
         let grpc_server = HelloGrpcServer::new(grpc_server_adapter);
         let addr: SocketAddr = "127.0.0.1:6666".parse().unwrap();
 
@@ -223,26 +267,45 @@ mod tests {
         assert_eq!(
             grpc_client
                 .hello(HelloRequest {
-                    name: "Client".to_string()
+                    name: "gRPC client".to_string()
                 })
                 .await
                 .unwrap(),
             HelloResponse {
-                message: "Hello, Client!".to_string()
+                message: "Hello, gRPC client!".to_string()
             }
         );
 
-        let mut pong_stream = grpc_client
-            .ping(PingRequest {
-                name: "Client".to_string(),
+        let (ping_stream_tx, ping_stream) = ServiceStream::new_bounded(1);
+        let mut pong_stream = grpc_client.ping(ping_stream).await.unwrap();
+
+        ping_stream_tx
+            .try_send(PingRequest {
+                name: "gRPC client".to_string(),
             })
-            .await
             .unwrap();
         assert_eq!(
             pong_stream.next().await.unwrap().unwrap().message,
-            "Pong, Client!"
+            "Pong, gRPC client!"
         );
 
+        ping_stream_tx
+            .try_send(PingRequest {
+                name: "stop".to_string(),
+            })
+            .unwrap();
+        assert!(pong_stream.next().await.is_none());
+
+        let error = ping_stream_tx
+            .try_send(PingRequest {
+                name: "stop".to_string(),
+            })
+            .unwrap_err();
+        assert!(matches!(error, TrySendError::Closed(_)));
+    }
+
+    #[tokio::test]
+    async fn test_hello_codegen_actor() {
         #[derive(Debug)]
         struct HelloActor;
 
@@ -283,15 +346,15 @@ mod tests {
         }
 
         #[async_trait]
-        impl Handler<PingRequest> for HelloActor {
-            type Reply = HelloResult<ServiceStream<PingResponse, HelloError>>;
+        impl Handler<ServiceStream<PingRequest>> for HelloActor {
+            type Reply = HelloResult<HelloStream<PingResponse>>;
 
             async fn handle(
                 &mut self,
-                message: PingRequest,
+                message: ServiceStream<PingRequest>,
                 _ctx: &ActorContext<Self>,
             ) -> Result<Self::Reply, ActorExitStatus> {
-                Ok(Ok(spawn_ping_response_stream(message.name)))
+                Ok(Ok(spawn_ping_response_stream(message)))
             }
         }
 
@@ -312,11 +375,13 @@ mod tests {
             }
         );
 
-        let mut pong_stream = actor_client
-            .ping(PingRequest {
+        let (ping_stream_tx, ping_stream) = ServiceStream::new_bounded(1);
+        let mut pong_stream = actor_client.ping(ping_stream).await.unwrap();
+
+        ping_stream_tx
+            .try_send(PingRequest {
                 name: "beautiful actor".to_string(),
             })
-            .await
             .unwrap();
         assert_eq!(
             pong_stream.next().await.unwrap().unwrap().message,
@@ -349,15 +414,17 @@ mod tests {
             }
         );
 
-        let mut pong_stream = actor_client
-            .ping(PingRequest {
-                name: "Tower actor".to_string(),
+        let (ping_stream_tx, ping_stream) = ServiceStream::new_bounded(1);
+        let mut pong_stream = actor_client.ping(ping_stream).await.unwrap();
+
+        ping_stream_tx
+            .try_send(PingRequest {
+                name: "beautiful Tower actor".to_string(),
             })
-            .await
             .unwrap();
         assert_eq!(
             pong_stream.next().await.unwrap().unwrap().message,
-            "Pong, Tower actor!"
+            "Pong, beautiful Tower actor!"
         );
 
         universe.assert_quit().await;
@@ -389,12 +456,18 @@ mod tests {
             .await
             .unwrap();
 
-        hello_tower
-            .ping(PingRequest {
+        let (ping_stream_tx, ping_stream) = ServiceStream::new_bounded(1);
+        let mut pong_stream = hello_tower.ping(ping_stream).await.unwrap();
+
+        ping_stream_tx
+            .try_send(PingRequest {
                 name: "Tower".to_string(),
             })
-            .await
             .unwrap();
+        assert_eq!(
+            pong_stream.next().await.unwrap().unwrap().message,
+            "Pong, Tower!"
+        );
 
         assert_eq!(hello_layer.counter.load(Ordering::Relaxed), 1);
         assert_eq!(goodbye_layer.counter.load(Ordering::Relaxed), 1);
@@ -423,12 +496,18 @@ mod tests {
             .await
             .unwrap();
 
-        hello_tower
-            .ping(PingRequest {
+        let (ping_stream_tx, ping_stream) = ServiceStream::new_bounded(1);
+        let mut pong_stream = hello_tower.ping(ping_stream).await.unwrap();
+
+        ping_stream_tx
+            .try_send(PingRequest {
                 name: "Tower".to_string(),
             })
-            .await
             .unwrap();
+        assert_eq!(
+            pong_stream.next().await.unwrap().unwrap().message,
+            "Pong, Tower!"
+        );
 
         assert_eq!(layer.counter.load(Ordering::Relaxed), 3);
     }

@@ -23,7 +23,7 @@ use std::ops::{Range, RangeInclusive};
 use quickwit_proto::IndexUid;
 use serde::{Deserialize, Serialize};
 
-use crate::split_metadata::utc_now_timestamp;
+use crate::split_metadata::{utc_now_timestamp, SplitMaturity};
 use crate::SplitMetadata;
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
@@ -67,6 +67,11 @@ pub(crate) struct SplitMetadataV0_6 {
     #[serde(default = "utc_now_timestamp")]
     pub create_timestamp: i64,
 
+    /// Split maturity either `Mature` or `Immature` with a given maturation period.
+    #[serde(default)]
+    #[schema(value_type = Value)]
+    pub maturity: SplitMaturity,
+
     #[serde(default)]
     #[schema(value_type = Vec<String>)]
     /// A set of tags for categorizing and searching group of splits.
@@ -89,10 +94,10 @@ pub(crate) struct SplitMetadataV0_6 {
 }
 
 impl From<SplitMetadataV0_6> for SplitMetadata {
-    fn from(v3: SplitMetadataV0_6) -> Self {
-        let source_id = v3.source_id.unwrap_or_else(|| "unknown".to_string());
+    fn from(v6: SplitMetadataV0_6) -> Self {
+        let source_id = v6.source_id.unwrap_or_else(|| "unknown".to_string());
 
-        let node_id = if let Some(node_id) = v3.node_id {
+        let node_id = if let Some(node_id) = v6.node_id {
             // The previous version encoded `v1.node_id` as `{node_id}/{pipeline_ord}`.
             // Since pipeline_ord is no longer needed, we only extract the `node_id` portion
             // to keep backward compatibility.  This has the advantage of avoiding a
@@ -107,19 +112,20 @@ impl From<SplitMetadataV0_6> for SplitMetadata {
         };
 
         SplitMetadata {
-            split_id: v3.split_id,
-            index_uid: v3.index_uid,
-            partition_id: v3.partition_id,
+            split_id: v6.split_id,
+            index_uid: v6.index_uid,
+            partition_id: v6.partition_id,
             source_id,
             node_id,
-            delete_opstamp: v3.delete_opstamp,
-            num_docs: v3.num_docs,
-            uncompressed_docs_size_in_bytes: v3.uncompressed_docs_size_in_bytes,
-            time_range: v3.time_range,
-            create_timestamp: v3.create_timestamp,
-            tags: v3.tags,
-            footer_offsets: v3.footer_offsets,
-            num_merge_ops: v3.num_merge_ops,
+            delete_opstamp: v6.delete_opstamp,
+            num_docs: v6.num_docs,
+            uncompressed_docs_size_in_bytes: v6.uncompressed_docs_size_in_bytes,
+            time_range: v6.time_range,
+            create_timestamp: v6.create_timestamp,
+            maturity: v6.maturity,
+            tags: v6.tags,
+            footer_offsets: v6.footer_offsets,
+            num_merge_ops: v6.num_merge_ops,
         }
     }
 }
@@ -137,6 +143,7 @@ impl From<SplitMetadata> for SplitMetadataV0_6 {
             uncompressed_docs_size_in_bytes: split.uncompressed_docs_size_in_bytes,
             time_range: split.time_range,
             create_timestamp: split.create_timestamp,
+            maturity: split.maturity,
             tags: split.tags,
             footer_offsets: split.footer_offsets,
             num_merge_ops: split.num_merge_ops,

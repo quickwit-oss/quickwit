@@ -1909,9 +1909,9 @@ checksum = "7fcaabb2fef8c910e7f4c7ce9f67a1283a1715879a7c230ca9d6d1ae31f16d91"
 
 [[package]]
 name = "elasticsearch-dsl"
-version = "0.4.11"
+version = "0.4.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1c820db919f52bf9427bd3720625641c4b7de60834eb47a9fe9a98b9b179db9b"
+checksum = "68ab1335c08fb99784b100ed23db38416b5fb52f5a178966d3b972b969e183e1"
 dependencies = [
  "chrono",
  "num-traits",
@@ -2997,9 +2997,9 @@ dependencies = [
 
 [[package]]
 name = "lz4_flex"
-version = "0.10.0"
+version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b8c72594ac26bfd34f2d99dfced2edfaddfe8a476e3ff2ca0eb293d925c4f83"
+checksum = "3ea9b256699eda7b0387ffbc776dd625e28bde3918446381781245b7a50349d8"
 
 [[package]]
 name = "match_cfg"
@@ -3013,7 +3013,7 @@ version = "0.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8263075bb86c5a1b1427b5ae862e8889656f126e9f77c484496e8b47cf5c5558"
 dependencies = [
- "regex-automata",
+ "regex-automata 0.1.10",
 ]
 
 [[package]]
@@ -3061,9 +3061,9 @@ checksum = "2dffe52ecf27772e601905b7522cb4ef790d2cc203488bbd0e2fe85fcb74566d"
 
 [[package]]
 name = "memmap2"
-version = "0.6.2"
+version = "0.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6d28bba84adfe6646737845bc5ebbfa2c08424eb1c37e94a1fd2a82adb56a872"
+checksum = "f49388d20533534cd19360ad3d6a7dadc885944aa802ba3995040c5ec11288c6"
 dependencies = [
  "libc",
 ]
@@ -3683,7 +3683,7 @@ checksum = "b15813163c1d831bf4a13c3610c05c0d03b39feb07f7e09fa234dac9b15aaf39"
 [[package]]
 name = "ownedbytes"
 version = "0.5.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=924fc70#924fc70cb58f56dcd1a0547f2528c9ea86452763"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=3c30066#3c300666ad448386136d2595b613b3236b123ff9"
 dependencies = [
  "stable_deref_trait",
 ]
@@ -4328,7 +4328,7 @@ checksum = "a1d01941d82fa2ab50be1e79e6714289dd7cde78eba4c074bc5a4374f650dfe0"
 
 [[package]]
 name = "quickwit-actors"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4341,6 +4341,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_json",
+ "sync_wrapper",
  "thiserror",
  "tokio",
  "tracing",
@@ -4348,7 +4349,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-aws"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4372,7 +4373,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-cli"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4414,6 +4415,7 @@ dependencies = [
  "serde_json",
  "tabled",
  "tempfile",
+ "thiserror",
  "thousands",
  "tikv-jemalloc-ctl",
  "tikv-jemallocator",
@@ -4429,7 +4431,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-cluster"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4455,7 +4457,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-codegen"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "anyhow",
  "heck 0.4.1",
@@ -4471,10 +4473,11 @@ dependencies = [
 
 [[package]]
 name = "quickwit-codegen-example"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "async-trait",
  "dyn-clone",
+ "futures",
  "http",
  "hyper",
  "mockall",
@@ -4493,13 +4496,12 @@ dependencies = [
 
 [[package]]
 name = "quickwit-common"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "anyhow",
  "async-speed-limit",
  "async-trait",
  "byte-unit",
- "colored",
  "dyn-clone",
  "env_logger",
  "futures",
@@ -4531,7 +4533,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-config"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "anyhow",
  "byte-unit",
@@ -4561,7 +4563,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-control-plane"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4598,7 +4600,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-core"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4630,7 +4632,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-datetime"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "itertools",
  "ouroboros",
@@ -4643,7 +4645,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-directories"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4664,7 +4666,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-doc-mapper"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "anyhow",
  "base64 0.21.2",
@@ -4697,7 +4699,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-grpc-clients"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4716,7 +4718,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-indexing"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -4774,7 +4776,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-ingest"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4810,7 +4812,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-integration-tests"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "anyhow",
  "bytes",
@@ -4842,7 +4844,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-jaeger"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4877,7 +4879,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-janitor"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4914,7 +4916,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-macros"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "proc-macro2",
  "quickwit-macros-impl",
@@ -4922,7 +4924,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-macros-impl"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "heck 0.4.1",
  "proc-macro2",
@@ -4932,7 +4934,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-metastore"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -4953,6 +4955,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
+ "serde_with 2.3.3",
  "sqlx",
  "tempfile",
  "thiserror",
@@ -4981,7 +4984,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-opentelemetry"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5004,7 +5007,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-proto"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "anyhow",
  "glob",
@@ -5025,7 +5028,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-query"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "anyhow",
  "base64 0.21.2",
@@ -5043,7 +5046,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-rest-client"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "anyhow",
  "bytes",
@@ -5067,7 +5070,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-search"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "anyhow",
  "assert-json-diff 2.0.2",
@@ -5116,7 +5119,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-serve"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "anyhow",
  "assert-json-diff 2.0.2",
@@ -5178,7 +5181,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-storage"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5220,7 +5223,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-telemetry"
-version = "0.6.1"
+version = "0.6.2"
 dependencies = [
  "async-trait",
  "encoding_rs",
@@ -5434,13 +5437,14 @@ dependencies = [
 
 [[package]]
 name = "regex"
-version = "1.8.3"
+version = "1.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "81ca098a9821bd52d6b24fd8b10bd081f47d39c22778cafaa75a2857a62c6390"
+checksum = "b2eae68fc220f7cf2532e4494aded17545fce192d59cd996e0fe7887f4ceb575"
 dependencies = [
  "aho-corasick",
  "memchr",
- "regex-syntax 0.7.2",
+ "regex-automata 0.3.1",
+ "regex-syntax 0.7.3",
 ]
 
 [[package]]
@@ -5453,6 +5457,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "regex-automata"
+version = "0.3.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "e9aaecc05d5c4b5f7da074b9a0d1a0867e71fd36e7fc0482d8bcfe8e8fc56290"
+dependencies = [
+ "aho-corasick",
+ "memchr",
+ "regex-syntax 0.7.3",
+]
+
+[[package]]
 name = "regex-syntax"
 version = "0.6.29"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5460,9 +5475,9 @@ checksum = "f162c6dd7b008981e4d40210aca20b4bd0f9b60ca9271061b07f78537722f2e1"
 
 [[package]]
 name = "regex-syntax"
-version = "0.7.2"
+version = "0.7.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "436b050e76ed2903236f032a59761c1eb99e1b0aead2c257922771dab1fc8c78"
+checksum = "2ab07dc67230e4a4718e70fd5c20055a4334b121f1f9db8fe63ef39ce9b8c846"
 
 [[package]]
 name = "rend"
@@ -6472,8 +6487,8 @@ dependencies = [
 
 [[package]]
 name = "tantivy"
-version = "0.20.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=924fc70#924fc70cb58f56dcd1a0547f2528c9ea86452763"
+version = "0.20.2"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=3c30066#3c300666ad448386136d2595b613b3236b123ff9"
 dependencies = [
  "aho-corasick",
  "arc-swap",
@@ -6485,7 +6500,6 @@ dependencies = [
  "crc32fast",
  "crossbeam-channel",
  "downcast-rs",
- "fail",
  "fastdivide",
  "fs4",
  "futures-util",
@@ -6528,7 +6542,7 @@ dependencies = [
 [[package]]
 name = "tantivy-bitpacker"
 version = "0.4.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=924fc70#924fc70cb58f56dcd1a0547f2528c9ea86452763"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=3c30066#3c300666ad448386136d2595b613b3236b123ff9"
 dependencies = [
  "bitpacking",
 ]
@@ -6536,7 +6550,7 @@ dependencies = [
 [[package]]
 name = "tantivy-columnar"
 version = "0.1.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=924fc70#924fc70cb58f56dcd1a0547f2528c9ea86452763"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=3c30066#3c300666ad448386136d2595b613b3236b123ff9"
 dependencies = [
  "fastdivide",
  "fnv",
@@ -6551,7 +6565,7 @@ dependencies = [
 [[package]]
 name = "tantivy-common"
 version = "0.5.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=924fc70#924fc70cb58f56dcd1a0547f2528c9ea86452763"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=3c30066#3c300666ad448386136d2595b613b3236b123ff9"
 dependencies = [
  "async-trait",
  "byteorder",
@@ -6574,7 +6588,7 @@ dependencies = [
 [[package]]
 name = "tantivy-query-grammar"
 version = "0.20.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=924fc70#924fc70cb58f56dcd1a0547f2528c9ea86452763"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=3c30066#3c300666ad448386136d2595b613b3236b123ff9"
 dependencies = [
  "combine",
  "once_cell",
@@ -6584,7 +6598,7 @@ dependencies = [
 [[package]]
 name = "tantivy-sstable"
 version = "0.1.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=924fc70#924fc70cb58f56dcd1a0547f2528c9ea86452763"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=3c30066#3c300666ad448386136d2595b613b3236b123ff9"
 dependencies = [
  "tantivy-common",
  "tantivy-fst",
@@ -6594,7 +6608,7 @@ dependencies = [
 [[package]]
 name = "tantivy-stacker"
 version = "0.1.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=924fc70#924fc70cb58f56dcd1a0547f2528c9ea86452763"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=3c30066#3c300666ad448386136d2595b613b3236b123ff9"
 dependencies = [
  "murmurhash32",
  "tantivy-common",
@@ -6603,7 +6617,7 @@ dependencies = [
 [[package]]
 name = "tantivy-tokenizer-api"
 version = "0.1.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=924fc70#924fc70cb58f56dcd1a0547f2528c9ea86452763"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=3c30066#3c300666ad448386136d2595b613b3236b123ff9"
 dependencies = [
  "serde",
 ]

@@ -67,7 +67,8 @@
           "log_level",
           "tenant_id"
         ],
-        "timestamp_field": "timestamp"
+        "timestamp_field": "timestamp",
+        "tokenizers": []
       },
       "index_id": "my-index",
       "index_uri": "s3://quickwit-indexes/my-index",
@@ -125,6 +126,9 @@
         "start": 1000
       },
       "index_uid": "my-index",
+      "maturity": {
+        "type": "mature"
+      },
       "node_id": "node",
       "num_docs": 12303,
       "num_merge_ops": 3,

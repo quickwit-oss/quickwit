@@ -27,6 +27,7 @@ use std::str::FromStr;
 use anyhow::Result;
 use clap::error::ErrorKind;
 use helpers::{TestEnv, TestStorageType};
+use quickwit_cli::checklist::ChecklistError;
 use quickwit_cli::cli::build_cli;
 use quickwit_cli::index::{
     create_index_cli, delete_index_cli, search_index, CreateIndexArgs, DeleteIndexArgs,
@@ -39,7 +40,6 @@ use quickwit_cli::ClientArgs;
 use quickwit_common::fs::get_cache_directory_path;
 use quickwit_common::rand::append_random_suffix;
 use quickwit_common::uri::Uri;
-use quickwit_common::ChecklistError;
 use quickwit_config::{SourceInputFormat, CLI_INGEST_SOURCE_ID};
 use quickwit_metastore::{MetastoreError, MetastoreResolver, SplitState};
 use serde_json::{json, Number, Value};
