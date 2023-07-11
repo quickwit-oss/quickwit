@@ -45,6 +45,8 @@ pub fn create_default_quickwit_tokenizer_manager() -> TokenizerManager {
         .filter(LowerCaser)
         .build();
     tokenizer_manager.register("chinese_compatible", chinese_tokenizer);
+    #[cfg(feature = "multilang")]
+    tokenizer_manager.register("multilang", MultiLangTokenizer::default());
     tokenizer_manager
 }
 
@@ -77,8 +79,6 @@ mod tests {
         tokenizer_manager.get("chinese_compatible").unwrap();
         tokenizer_manager.get("default").unwrap();
         tokenizer_manager.get("raw").unwrap();
-        #[cfg(feature = "multilang")]
-        tokenizer_manager.get("multilang").unwrap();
     }
 
     #[test]

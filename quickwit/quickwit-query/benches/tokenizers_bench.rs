@@ -62,8 +62,7 @@ WORDWITHCONSECUTIVEUppercase2 = "2"
 WORDWITHCONSECUTIVEUPPERCASE2 = "3"
 =======
 use quickwit_query::create_default_quickwit_tokenizer_manager;
-use tantivy::tokenizer::TextAnalyzer;
-use tantivy_tokenizer_api::Token;
+use tantivy::tokenizer::{TextAnalyzer, Token, TokenStream};
 
 // A random ascii string of length 100 chars.
 const ASCII_SHORT: &str = "It is a long established fact";

@@ -15,15 +15,14 @@ base64 = { workspace = true }
 hex = { workspace = true }
 lindera-core = { workspace = true, optional = true}
 lindera-dictionary = { workspace = true, optional = true }
-lindera-tantivy = { workspace = true, optional = true }
 lindera-tokenizer = { workspace = true, optional = true }
 once_cell = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
 tantivy = { workspace = true }
-tantivy-tokenizer-api = { workspace = true }
 thiserror = { workspace = true }
+tracing = { workspace = true }
 whichlang = { workspace = true, optional = true }
 
 quickwit-datetime = { workspace = true }
@@ -37,7 +36,6 @@ time = { workspace = true }
 multilang = [
     "lindera-core",
     "lindera-dictionary",
-    "lindera-tantivy",
     "lindera-tokenizer",
     "whichlang",
 ]
