@@ -27,11 +27,7 @@ use anyhow::Context;
 use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler};
-use quickwit_cluster::{Cluster, ClusterMember};
-use quickwit_config::service::QuickwitService;
 use quickwit_config::SourceConfig;
-use quickwit_grpc_clients::service_client_pool::ServiceClientPool;
-use quickwit_indexing::indexing_client::IndexingServiceClient;
 use quickwit_metastore::Metastore;
 use quickwit_proto::indexing_api::{ApplyIndexingPlanRequest, IndexingTask};
 use serde::Serialize;
@@ -40,7 +36,7 @@ use tracing::{debug, error, info, warn};
 use crate::indexing_plan::{
     build_indexing_plan, build_physical_indexing_plan, IndexSourceId, PhysicalIndexingPlan,
 };
-use crate::{NotifyIndexChangeRequest, NotifyIndexChangeResponse};
+use crate::{IndexerNodeInfo, IndexerPool, NotifyIndexChangeRequest, NotifyIndexChangeResponse};
 
 /// Interval between two controls (or checks) of the desired plan VS running plan.
 const CONTROL_PLAN_LOOP_INTERVAL: Duration = if cfg!(any(test, feature = "testsuite")) {
@@ -109,17 +105,18 @@ pub struct IndexingSchedulerState {
 /// plase will wait at least [`MIN_DURATION_BETWEEN_SCHEDULING`] before comparing the desired
 /// plan with the running plan.
 pub struct IndexingScheduler {
-    cluster: Cluster,
+    cluster_id: String,
+    self_node_id: String,
     metastore: Arc<dyn Metastore>,
-    indexing_client_pool: ServiceClientPool<IndexingServiceClient>,
+    indexing_client_pool: IndexerPool,
     state: IndexingSchedulerState,
 }
 
 impl fmt::Debug for IndexingScheduler {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("IndexingScheduler")
-            .field("cluster_id", &self.cluster.cluster_id())
-            .field("node_id", &self.cluster.self_node_id())
+            .field("cluster_id", &self.cluster_id)
+            .field("node_id", &self.self_node_id)
             .field("metastore_uri", &self.metastore.uri())
             .field(
                 "last_applied_plan_ts",
@@ -151,12 +148,14 @@ impl Actor for IndexingScheduler {
 
 impl IndexingScheduler {
     pub fn new(
-        cluster: Cluster,
+        cluster_id: String,
+        self_node_id: String,
         metastore: Arc<dyn Metastore>,
-        indexing_client_pool: ServiceClientPool<IndexingServiceClient>,
+        indexing_client_pool: IndexerPool,
     ) -> Self {
         Self {
-            cluster,
+            cluster_id,
+            self_node_id,
             metastore,
             indexing_client_pool,
             state: IndexingSchedulerState::default(),
@@ -164,7 +163,7 @@ impl IndexingScheduler {
     }
 
     async fn schedule_indexing_plan_if_needed(&mut self) -> anyhow::Result<()> {
-        let indexers: Vec<ClusterMember> = self.get_indexers_from_cluster_state().await;
+        let mut indexers = self.get_indexers_from_indexer_pool().await;
         if indexers.is_empty() {
             warn!("No indexer available, cannot schedule an indexing plan.");
             return Ok(());
@@ -184,7 +183,7 @@ impl IndexingScheduler {
                 return Ok(());
             }
         }
-        self.apply_physical_indexing_plan(&indexers, new_physical_plan)
+        self.apply_physical_indexing_plan(&mut indexers, new_physical_plan)
             .await;
         self.state.num_schedule_indexing_plan += 1;
         Ok(())
@@ -236,15 +235,10 @@ impl IndexingScheduler {
             }
         }
 
-        let indexers = self.get_indexers_from_cluster_state().await;
+        let mut indexers = self.get_indexers_from_indexer_pool().await;
         let running_indexing_tasks_by_node_id: HashMap<String, Vec<IndexingTask>> = indexers
             .iter()
-            .map(|cluster_member| {
-                (
-                    cluster_member.node_id.clone(),
-                    cluster_member.indexing_tasks.clone(),
-                )
-            })
+            .map(|indexer| (indexer.0.clone(), indexer.1.indexing_tasks.clone()))
             .collect();
 
         let indexing_plans_diff = get_indexing_plans_diff(
@@ -257,48 +251,36 @@ impl IndexingScheduler {
         } else if !indexing_plans_diff.has_same_tasks() {
             // Some nodes may have not received their tasks, apply it again.
             info!(plans_diff=?indexing_plans_diff, "Running tasks and last applied tasks differ: reapply last plan.");
-            self.apply_physical_indexing_plan(&indexers, last_applied_plan.clone())
+            self.apply_physical_indexing_plan(&mut indexers, last_applied_plan.clone())
                 .await;
         }
         Ok(())
     }
 
-    async fn get_indexers_from_cluster_state(&self) -> Vec<ClusterMember> {
-        self.cluster
-            .ready_members()
-            .await
-            .into_iter()
-            .filter(|member| member.enabled_services.contains(&QuickwitService::Indexer))
-            .collect()
+    async fn get_indexers_from_indexer_pool(&self) -> Vec<(String, IndexerNodeInfo)> {
+        self.indexing_client_pool.all().await
     }
 
     async fn apply_physical_indexing_plan(
         &mut self,
-        indexers: &[ClusterMember],
+        indexers: &mut [(String, IndexerNodeInfo)],
         new_physical_plan: PhysicalIndexingPlan,
     ) {
         debug!("Apply physical indexing plan: {:?}", new_physical_plan);
         for (node_id, indexing_tasks) in new_physical_plan.indexing_tasks_per_node() {
             let indexer = indexers
-                .iter()
-                .find(|indexer| &indexer.node_id == node_id)
+                .iter_mut()
+                .find(|indexer| &indexer.0 == node_id)
                 .expect("This should never happen as the plan was built from these indexers.");
-            match self.indexing_client_pool.get(indexer.grpc_advertise_addr) {
-                Some(mut indexing_client) => {
-                    if let Err(error) = indexing_client
-                        .apply_indexing_plan(ApplyIndexingPlanRequest {
-                            indexing_tasks: indexing_tasks.clone(),
-                        })
-                        .await
-                    {
-                        error!(indexer_node_id=%indexer.node_id, err=?error, "Error occurred when appling indexing plan to indexer.");
-                    }
-                }
-                None => {
-                    error!(indexer_node_id=%indexer.node_id,
-                        "Indexing service client not found in pool for indexer, it should never happened, skip indexing plan.",
-                    );
-                }
+            if let Err(error) = indexer
+                .1
+                .client
+                .apply_indexing_plan(ApplyIndexingPlanRequest {
+                    indexing_tasks: indexing_tasks.clone(),
+                })
+                .await
+            {
+                error!(indexer_node_id=%indexer.0, err=?error, "Error occurred when appling indexing plan to indexer.");
             }
         }
         self.state.num_applied_physical_indexing_plan += 1;
@@ -533,12 +515,13 @@ mod tests {
     use std::time::Duration;
 
     use chitchat::transport::ChannelTransport;
-    use quickwit_actors::{ActorHandle, Inbox, Universe};
-    use quickwit_cluster::{create_cluster_for_test, grpc_addr_from_listen_addr_for_test, Cluster};
+    use futures::{Stream, StreamExt};
+    use quickwit_actors::{ActorHandle, Inbox, Mailbox, Universe};
+    use quickwit_cluster::{create_cluster_for_test, Cluster, ClusterChange};
     use quickwit_common::test_utils::wait_until_predicate;
+    use quickwit_common::tower::{Change, Pool};
     use quickwit_config::service::QuickwitService;
     use quickwit_config::{KafkaSourceParams, SourceConfig, SourceInputFormat, SourceParams};
-    use quickwit_grpc_clients::service_client_pool::ServiceClientPool;
     use quickwit_indexing::indexing_client::IndexingServiceClient;
     use quickwit_indexing::IndexingService;
     use quickwit_metastore::{IndexMetadata, MockMetastore};
@@ -549,6 +532,7 @@ mod tests {
     use crate::scheduler::{
         get_indexing_plans_diff, MIN_DURATION_BETWEEN_SCHEDULING, REFRESH_PLAN_LOOP_INTERVAL,
     };
+    use crate::IndexerNodeInfo;
 
     fn index_metadata_for_test(
         index_id: &str,
@@ -580,6 +564,37 @@ mod tests {
         index_metadata
     }
 
+    pub fn test_indexer_change_stream(
+        cluster_change_stream: impl Stream<Item = ClusterChange> + Send + 'static,
+        indexing_clients: HashMap<String, Mailbox<IndexingService>>,
+    ) -> impl Stream<Item = Change<String, IndexerNodeInfo>> + Send + 'static {
+        cluster_change_stream.filter_map(move |cluster_change| {
+            let indexing_clients = indexing_clients.clone();
+            Box::pin(async move {
+                match cluster_change {
+                    ClusterChange::Add(node)
+                        if node.enabled_services().contains(&QuickwitService::Indexer) =>
+                    {
+                        let node_id = node.node_id().to_string();
+                        let grpc_addr = node.grpc_advertise_addr();
+                        let indexing_tasks = node.indexing_tasks().to_vec();
+                        let client_mailbox = indexing_clients.get(&node_id).unwrap().clone();
+                        let client = IndexingServiceClient::from_service(client_mailbox, grpc_addr);
+                        Some(Change::Insert(
+                            node_id,
+                            IndexerNodeInfo {
+                                client,
+                                indexing_tasks,
+                            },
+                        ))
+                    }
+                    ClusterChange::Remove(node) => Some(Change::Remove(node.node_id().to_string())),
+                    _ => None,
+                }
+            })
+        })
+    }
+
     async fn start_scheduler(
         cluster: Cluster,
         indexers: &[&Cluster],
@@ -597,19 +612,23 @@ mod tests {
             .expect_list_indexes_metadatas()
             .returning(move || Ok(vec![index_metadata_2.clone(), index_metadata_1.clone()]));
         let mut indexer_inboxes = Vec::new();
-        let mut indexing_clients = Vec::new();
+        let indexing_client_pool = Pool::default();
+        let change_stream = cluster.ready_nodes_change_stream().await;
+        let mut indexing_clients = HashMap::new();
         for indexer in indexers {
             let (indexing_service_mailbox, indexing_service_inbox) = universe.create_test_mailbox();
-            let client_grpc_addr =
-                grpc_addr_from_listen_addr_for_test(indexer.gossip_listen_addr());
-            let indexing_client =
-                IndexingServiceClient::from_service(indexing_service_mailbox, client_grpc_addr);
-            indexing_clients.push(indexing_client);
+            indexing_clients.insert(indexer.self_node_id().to_string(), indexing_service_mailbox);
             indexer_inboxes.push(indexing_service_inbox);
         }
-        let indexing_client_pool = ServiceClientPool::for_clients_list(indexing_clients);
-        let indexing_scheduler =
-            IndexingScheduler::new(cluster, Arc::new(metastore), indexing_client_pool);
+        let indexer_change_stream = test_indexer_change_stream(change_stream, indexing_clients);
+        indexing_client_pool.listen_for_changes(indexer_change_stream);
+
+        let indexing_scheduler = IndexingScheduler::new(
+            cluster.cluster_id().to_string(),
+            cluster.self_node_id().to_string(),
+            Arc::new(metastore),
+            indexing_client_pool,
+        );
         let (_, scheduler_handler) = universe.spawn_builder().spawn(indexing_scheduler);
         (indexer_inboxes, scheduler_handler)
     }
@@ -698,29 +717,23 @@ mod tests {
             .unwrap();
         let universe = Universe::with_accelerated_time();
         let (indexing_service_inboxes, scheduler_handler) =
-            start_scheduler(cluster.clone(), &[&cluster.clone()], &universe).await;
-        let indexing_service_inbox = indexing_service_inboxes[0].clone();
+            start_scheduler(cluster.clone(), &[], &universe).await;
+        assert_eq!(indexing_service_inboxes.len(), 0);
 
         // No indexer.
         universe.sleep(CONTROL_PLAN_LOOP_INTERVAL).await;
         let scheduler_state = scheduler_handler.process_pending_and_observe().await;
-        let indexing_service_inbox_messages =
-            indexing_service_inbox.drain_for_test_typed::<ApplyIndexingPlanRequest>();
         assert_eq!(scheduler_state.num_applied_physical_indexing_plan, 0);
         assert_eq!(scheduler_state.num_schedule_indexing_plan, 0);
         assert!(scheduler_state.last_applied_physical_plan.is_none());
-        assert_eq!(indexing_service_inbox_messages.len(), 0);
 
         // Wait REFRESH_PLAN_LOOP_INTERVAL * 2, as there is no indexer, we should observe no
         // scheduling.
         universe.sleep(REFRESH_PLAN_LOOP_INTERVAL * 2).await;
         let scheduler_state = scheduler_handler.process_pending_and_observe().await;
-        let indexing_service_inbox_messages =
-            indexing_service_inbox.drain_for_test_typed::<ApplyIndexingPlanRequest>();
         assert_eq!(scheduler_state.num_applied_physical_indexing_plan, 0);
         assert_eq!(scheduler_state.num_schedule_indexing_plan, 0);
         assert!(scheduler_state.last_applied_physical_plan.is_none());
-        assert_eq!(indexing_service_inbox_messages.len(), 0);
         universe.assert_quit().await;
     }
 

@@ -4569,6 +4569,7 @@ dependencies = [
  "async-trait",
  "chitchat",
  "dyn-clone",
+ "futures",
  "http",
  "hyper",
  "itertools",
