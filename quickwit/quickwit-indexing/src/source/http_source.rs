@@ -152,7 +152,12 @@ pub(crate) const BATCH_NUM_BYTES_LIMIT: u64 = 5_000_000u64;
 async fn read_lines(
     uri: &str,
 ) -> anyhow::Result<Lines<BufReader<Box<dyn AsyncRead + Send + Unpin>>>> {
-    let stream = reqwest::Client::new()
+    let client = reqwest::ClientBuilder::new()
+        .connect_timeout(Duration::from_secs(10))
+        .timeout(Duration::from_secs(15))
+        .build()
+        .context("Failed to build reqwest client.")?;
+    let stream = client
         .get(uri)
         .send()
         .await
@@ -347,6 +352,16 @@ mod tests {
         assert_eq!(parse_node_idx("kafka-node-0"), 0);
         assert_eq!(parse_node_idx("searcher-1"), 1);
         assert_eq!(parse_node_idx("kafka_node_020"), 20);
+    }
+
+    #[test]
+    fn test_gh_archive_uri_expand() {
+        let uri = "https://data.gharchive.org/{2015..2024}-{01..13}-{01..32}-{0..24}.json.gz";
+        let uris = expand_uris(uri);
+        for uri in uris {
+            println!("{}", uri);
+        }
+        panic!("test")
     }
 
     #[test]
