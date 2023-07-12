@@ -234,18 +234,15 @@ impl SortingFieldComputerPair {
         sort_value1: Option<u64>,
         sort_value2: Option<u64>,
     ) -> (Option<SortValue>, Option<SortValue>) {
-        if let Some(sort_value1) = sort_value1 {
-            let val1 = self.first.recover_typed_sort_value(Some(sort_value1));
-            if let Some(second) = self.second.as_ref() {
-                assert!(sort_value2.is_some());
-                let val2 = second.recover_typed_sort_value(sort_value2);
-                (val1, val2)
-            } else {
-                (val1, None)
-            }
-        } else {
-            (None, None)
-        }
+        let first_sort = sort_value1
+            .and_then(|sort_value1| self.first.recover_typed_sort_value(Some(sort_value1)));
+        let second_sort = sort_value2.and_then(|sort_value2| {
+            self.second
+                .as_ref()
+                .expect("no second sort field, but got second sort value")
+                .recover_typed_sort_value(Some(sort_value2))
+        });
+        (first_sort, second_sort)
     }
 
     /// Returns the ranking key for the given element
