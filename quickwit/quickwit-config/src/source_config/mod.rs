@@ -86,13 +86,14 @@ impl SourceConfig {
         match self.source_params {
             SourceParams::File(_) => "file",
             SourceParams::GcpPubSub(_) => "gcp_pubsub",
+            SourceParams::Http(_) => "http",
+            SourceParams::Vec(_) => "vec",
+            SourceParams::Void(_) => "void",
             SourceParams::IngestApi => "ingest-api",
             SourceParams::IngestCli => "ingest-cli",
             SourceParams::Kafka(_) => "kafka",
             SourceParams::Kinesis(_) => "kinesis",
             SourceParams::Pulsar(_) => "pulsar",
-            SourceParams::Vec(_) => "vec",
-            SourceParams::Void(_) => "void",
         }
     }
 
@@ -101,13 +102,14 @@ impl SourceConfig {
         match &self.source_params {
             SourceParams::File(params) => serde_json::to_value(params),
             SourceParams::GcpPubSub(params) => serde_json::to_value(params),
-            SourceParams::IngestApi => serde_json::to_value(()),
-            SourceParams::IngestCli => serde_json::to_value(()),
+            SourceParams::Http(params) => serde_json::to_value(params),
             SourceParams::Kafka(params) => serde_json::to_value(params),
             SourceParams::Kinesis(params) => serde_json::to_value(params),
-            SourceParams::Pulsar(params) => serde_json::to_value(params),
             SourceParams::Vec(params) => serde_json::to_value(params),
             SourceParams::Void(params) => serde_json::to_value(params),
+            SourceParams::IngestApi => serde_json::to_value(()),
+            SourceParams::IngestCli => serde_json::to_value(()),
+            SourceParams::Pulsar(params) => serde_json::to_value(params),
         }
         .unwrap()
     }
@@ -204,15 +206,22 @@ impl FromStr for SourceInputFormat {
 pub enum SourceParams {
     File(FileSourceParams),
     GcpPubSub(GcpPubSubSourceParams),
+    #[serde(rename = "http")]
+    Http(HttpSourceParams),
+    #[serde(rename = "kafka")]
+    Kafka(KafkaSourceParams),
+    #[serde(rename = "kinesis")]
+    Kinesis(KinesisSourceParams),
+    #[serde(rename = "pulsar")]
+    Pulsar(PulsarSourceParams),
+    #[serde(rename = "vec")]
+    Vec(VecSourceParams),
+    #[serde(rename = "void")]
+    Void(VoidSourceParams),
     #[serde(rename = "ingest-api")]
     IngestApi,
     #[serde(rename = "ingest-cli")]
     IngestCli,
-    Kafka(KafkaSourceParams),
-    Kinesis(KinesisSourceParams),
-    Pulsar(PulsarSourceParams),
-    Vec(VecSourceParams),
-    Void(VoidSourceParams),
 }
 
 impl SourceParams {
@@ -510,6 +519,34 @@ impl TransformConfig {
         Self {
             vrl_script: vrl_script.to_string(),
             timezone: default_timezone(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct HttpSourceParams {
+    #[schema(value_type = Vec<String>)]
+    #[serde(default)]
+    pub uris: Vec<Uri>,
+    #[schema(value_type = Option<String>)]
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub uri_pattern: Option<Uri>,
+}
+
+impl HttpSourceParams {
+    pub fn from_pattern(uri: Uri) -> Self {
+        Self {
+            uris: vec![],
+            uri_pattern: Some(uri),
+        }
+    }
+
+    pub fn from_list(uris: Vec<Uri>) -> Self {
+        Self {
+            uris,
+            uri_pattern: None,
         }
     }
 }
@@ -1175,5 +1212,17 @@ mod tests {
             load_source_config_from_user_config(ConfigFormat::Json, file_content.as_bytes())
                 .unwrap();
         assert_eq!(source_config.input_format, SourceInputFormat::PlainText);
+    }
+
+    #[tokio::test]
+    async fn test_http_source_config() {
+        let file_content = r#"{"uris":["http://localhost:9000/file.json"], "uri_pattern": "http://localhost:9000/a.json"}"#;
+        assert_eq!(
+            serde_json::from_str::<HttpSourceParams>(file_content).unwrap(),
+            HttpSourceParams {
+                uris: vec![Uri::from_well_formed("http://localhost:9000/file.json")],
+                uri_pattern: Some(Uri::from_well_formed("http://localhost:9000/a.json")),
+            }
+        );
     }
 }
