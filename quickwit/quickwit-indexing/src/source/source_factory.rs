@@ -127,6 +127,7 @@ mod tests {
     use quickwit_proto::IndexUid;
 
     use super::*;
+    use crate::models::IndexingPipelineId;
     use crate::source::quickwit_supported_sources;
 
     #[tokio::test]
@@ -142,11 +143,17 @@ mod tests {
             transform_config: None,
             input_format: SourceInputFormat::Json,
         };
+        let pipeline_id = IndexingPipelineId {
+            index_uid: IndexUid::new("test-index"),
+            source_id: "kafka-file-source".to_string(),
+            node_id: "kafka-node".to_string(),
+            pipeline_ord: 0,
+        };
         source_loader
             .load_source(
                 SourceExecutionContext::for_test(
                     metastore,
-                    IndexUid::new("test-index"),
+                    pipeline_id,
                     PathBuf::from("./queues"),
                     source_config,
                 ),

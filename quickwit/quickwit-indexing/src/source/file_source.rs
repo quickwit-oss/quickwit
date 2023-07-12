@@ -181,6 +181,7 @@ mod tests {
     use quickwit_proto::IndexUid;
 
     use super::*;
+    use crate::models::IndexingPipelineId;
     use crate::source::SourceActor;
 
     #[tokio::test]
@@ -190,10 +191,16 @@ mod tests {
         let params = FileSourceParams::file("data/test_corpus.json");
 
         let metastore = metastore_for_test();
+        let pipeline_id = IndexingPipelineId {
+            index_uid: IndexUid::new("test-index"),
+            source_id: "test-file-source".to_string(),
+            node_id: "test-node".to_string(),
+            pipeline_ord: 0,
+        };
         let file_source = FileSourceFactory::typed_create_source(
             SourceExecutionContext::for_test(
                 metastore,
-                IndexUid::new("test-index"),
+                pipeline_id,
                 PathBuf::from("./queues"),
                 SourceConfig {
                     source_id: "test-file-source".to_string(),
@@ -256,10 +263,16 @@ mod tests {
             .to_string();
 
         let metastore = metastore_for_test();
+        let pipeline_id = IndexingPipelineId {
+            index_uid: IndexUid::new("test-index"),
+            source_id: "test-file-source".to_string(),
+            node_id: "test-node".to_string(),
+            pipeline_ord: 0,
+        };
         let source = FileSourceFactory::typed_create_source(
             SourceExecutionContext::for_test(
                 metastore,
-                IndexUid::new("test-index"),
+                pipeline_id,
                 PathBuf::from("./queues"),
                 SourceConfig {
                     source_id: "test-file-source".to_string(),
@@ -346,10 +359,16 @@ mod tests {
         checkpoint.try_apply_delta(checkpoint_delta).unwrap();
 
         let metastore = metastore_for_test();
+        let pipeline_id = IndexingPipelineId {
+            index_uid: IndexUid::new("test-index"),
+            source_id: "test-file-source".to_string(),
+            node_id: "test-node".to_string(),
+            pipeline_ord: 0,
+        };
         let source = FileSourceFactory::typed_create_source(
             SourceExecutionContext::for_test(
                 metastore,
-                IndexUid::new("test-index"),
+                pipeline_id,
                 PathBuf::from("./queues"),
                 SourceConfig {
                     source_id: "test-file-source".to_string(),

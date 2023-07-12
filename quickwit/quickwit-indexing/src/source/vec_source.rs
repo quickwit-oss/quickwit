@@ -136,6 +136,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use crate::models::IndexingPipelineId;
     use crate::source::SourceActor;
 
     #[tokio::test]
@@ -151,10 +152,16 @@ mod tests {
             partition: "partition".to_string(),
         };
         let metastore = metastore_for_test();
+        let pipeline_id = IndexingPipelineId {
+            index_uid: IndexUid::new("test-index"),
+            source_id: "kafka-file-source".to_string(),
+            node_id: "kafka-node".to_string(),
+            pipeline_ord: 0,
+        };
         let vec_source = VecSourceFactory::typed_create_source(
             SourceExecutionContext::for_test(
                 metastore,
-                IndexUid::new("test-index"),
+                pipeline_id,
                 PathBuf::from("./queues"),
                 SourceConfig {
                     source_id: "test-vec-source".to_string(),
@@ -211,10 +218,16 @@ mod tests {
         checkpoint.try_apply_delta(SourceCheckpointDelta::from_range(0u64..2u64))?;
 
         let metastore = metastore_for_test();
+        let pipeline_id = IndexingPipelineId {
+            index_uid: IndexUid::new("test-index"),
+            source_id: "kafka-file-source".to_string(),
+            node_id: "kafka-node".to_string(),
+            pipeline_ord: 0,
+        };
         let vec_source = VecSourceFactory::typed_create_source(
             SourceExecutionContext::for_test(
                 metastore,
-                IndexUid::new("test-index"),
+                pipeline_id,
                 PathBuf::from("./queues"),
                 SourceConfig {
                     source_id: "test-vec-source".to_string(),

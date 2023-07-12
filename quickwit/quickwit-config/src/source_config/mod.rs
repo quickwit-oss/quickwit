@@ -89,6 +89,7 @@ impl SourceConfig {
     pub fn source_type(&self) -> &str {
         match self.source_params {
             SourceParams::File(_) => "file",
+            SourceParams::Http(_) => "http",
             SourceParams::Kafka(_) => "kafka",
             SourceParams::Kinesis(_) => "kinesis",
             SourceParams::Vec(_) => "vec",
@@ -103,6 +104,7 @@ impl SourceConfig {
     pub fn params(&self) -> JsonValue {
         match &self.source_params {
             SourceParams::File(params) => serde_json::to_value(params),
+            SourceParams::Http(params) => serde_json::to_value(params),
             SourceParams::Kafka(params) => serde_json::to_value(params),
             SourceParams::Kinesis(params) => serde_json::to_value(params),
             SourceParams::Vec(params) => serde_json::to_value(params),
@@ -206,6 +208,8 @@ impl FromStr for SourceInputFormat {
 pub enum SourceParams {
     #[serde(rename = "file")]
     File(FileSourceParams),
+    #[serde(rename = "http")]
+    Http(HttpSourceParams),
     #[serde(rename = "kafka")]
     Kafka(KafkaSourceParams),
     #[serde(rename = "kinesis")]
@@ -472,6 +476,34 @@ impl TransformConfig {
         Self {
             vrl_script: vrl_script.to_string(),
             timezone_opt: None,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct HttpSourceParams {
+    #[schema(value_type = Vec<String>)]
+    #[serde(default)]
+    pub uris: Vec<Uri>,
+    #[schema(value_type = Option<String>)]
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub uri_pattern: Option<Uri>,
+}
+
+impl HttpSourceParams {
+    pub fn from_pattern(uri: Uri) -> Self {
+        Self {
+            uris: vec![],
+            uri_pattern: Some(uri),
+        }
+    }
+
+    pub fn from_list(uris: Vec<Uri>) -> Self {
+        Self {
+            uris,
+            uri_pattern: None,
         }
     }
 }
@@ -1135,5 +1167,17 @@ mod tests {
             load_source_config_from_user_config(ConfigFormat::Json, file_content.as_bytes())
                 .unwrap();
         assert_eq!(source_config.input_format, SourceInputFormat::PlainText);
+    }
+
+    #[tokio::test]
+    async fn test_http_source_config() {
+        let file_content = r#"{"uris":["http://localhost:9000/file.json"], "uri_pattern": "http://localhost:9000/a.json"}"#;
+        assert_eq!(
+            serde_json::from_str::<HttpSourceParams>(file_content).unwrap(),
+            HttpSourceParams {
+                uris: vec![Uri::from_well_formed("http://localhost:9000/file.json")],
+                uri_pattern: Some(Uri::from_well_formed("http://localhost:9000/a.json")),
+            }
+        );
     }
 }

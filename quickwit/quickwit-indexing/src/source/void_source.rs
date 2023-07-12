@@ -82,6 +82,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use crate::models::IndexingPipelineId;
     use crate::source::{quickwit_supported_sources, SourceActor, SourceConfig};
 
     #[tokio::test]
@@ -96,9 +97,15 @@ mod tests {
             input_format: SourceInputFormat::Json,
         };
         let metastore = metastore_for_test();
+        let pipeline_id = IndexingPipelineId {
+            index_uid: IndexUid::new("test-index"),
+            source_id: "kafka-file-source".to_string(),
+            node_id: "kafka-node".to_string(),
+            pipeline_ord: 0,
+        };
         let ctx = SourceExecutionContext::for_test(
             metastore,
-            IndexUid::new("test-index"),
+            pipeline_id,
             PathBuf::from("./queues"),
             source_config,
         );
@@ -113,10 +120,16 @@ mod tests {
     async fn test_void_source_running() -> anyhow::Result<()> {
         let universe = Universe::with_accelerated_time();
         let metastore = metastore_for_test();
+        let pipeline_id = IndexingPipelineId {
+            index_uid: IndexUid::new("test-index"),
+            source_id: "kafka-file-source".to_string(),
+            node_id: "kafka-node".to_string(),
+            pipeline_ord: 0,
+        };
         let void_source = VoidSourceFactory::typed_create_source(
             SourceExecutionContext::for_test(
                 metastore,
-                IndexUid::new("test-index"),
+                pipeline_id,
                 PathBuf::from("./queues"),
                 SourceConfig {
                     source_id: "test-void-source".to_string(),

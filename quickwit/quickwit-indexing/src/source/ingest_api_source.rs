@@ -80,7 +80,7 @@ impl IngestApiSource {
 
         // Ensure a queue for this index exists.
         let create_queue_req = CreateQueueIfNotExistsRequest {
-            queue_id: ctx.index_uid.index_id().to_string(),
+            queue_id: ctx.pipeline_id.index_uid.index_id().to_string(),
         };
         ingest_api_service.ask_for_res(create_queue_req).await?;
 
@@ -121,7 +121,7 @@ impl Source for IngestApiSource {
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
         let fetch_req = FetchRequest {
-            index_id: self.ctx.index_uid.index_id().to_string(),
+            index_id: self.ctx.pipeline_id.index_uid.index_id().to_string(),
             start_after: self.counters.current_offset,
             num_bytes_limit: None,
         };
@@ -180,7 +180,7 @@ impl Source for IngestApiSource {
         {
             let up_to_position_included = offset_str.parse::<u64>()?;
             let suggest_truncate_req = SuggestTruncateRequest {
-                index_id: self.ctx.index_uid.index_id().to_string(),
+                index_id: self.ctx.pipeline_id.index_uid.index_id().to_string(),
                 up_to_position_included,
             };
             ctx.ask_for_res(&self.ingest_api_service, suggest_truncate_req)
@@ -231,6 +231,7 @@ mod tests {
     use quickwit_proto::IndexUid;
 
     use super::*;
+    use crate::models::IndexingPipelineId;
     use crate::source::SourceActor;
 
     fn make_ingest_request(
@@ -275,7 +276,6 @@ mod tests {
         let universe = Universe::with_accelerated_time();
         let metastore = metastore_for_test();
         let index_id = append_random_suffix("test-ingest-api-source");
-        let index_uid = IndexUid::new(&index_id);
         let temp_dir = tempfile::tempdir()?;
         let queues_dir_path = temp_dir.path();
 
@@ -283,9 +283,15 @@ mod tests {
             init_ingest_api(&universe, queues_dir_path, &IngestApiConfig::default()).await?;
         let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
         let source_config = make_source_config();
+        let pipeline_id = IndexingPipelineId {
+            index_uid: IndexUid::new(&index_id),
+            source_id: "kafka-file-source".to_string(),
+            node_id: "kafka-node".to_string(),
+            pipeline_ord: 0,
+        };
         let ctx = SourceExecutionContext::for_test(
             metastore,
-            index_uid,
+            pipeline_id,
             queues_dir_path.to_path_buf(),
             source_config,
         );
@@ -364,7 +370,6 @@ mod tests {
         let universe = Universe::with_accelerated_time();
         let metastore = metastore_for_test();
         let index_id = append_random_suffix("test-ingest-api-source");
-        let index_uid = IndexUid::new(&index_id);
         let temp_dir = tempfile::tempdir()?;
         let queues_dir_path = temp_dir.path();
         let ingest_api_service =
@@ -382,9 +387,15 @@ mod tests {
         checkpoint.try_apply_delta(checkpoint_delta).unwrap();
 
         let source_config = make_source_config();
+        let pipeline_id = IndexingPipelineId {
+            index_uid: IndexUid::new(&index_id),
+            source_id: "kafka-file-source".to_string(),
+            node_id: "kafka-node".to_string(),
+            pipeline_ord: 0,
+        };
         let ctx = SourceExecutionContext::for_test(
             metastore,
-            index_uid,
+            pipeline_id,
             queues_dir_path.to_path_buf(),
             source_config,
         );
@@ -434,7 +445,6 @@ mod tests {
         let universe = Universe::with_accelerated_time();
         let metastore = metastore_for_test();
         let index_id = append_random_suffix("test-ingest-api-source");
-        let index_uid = IndexUid::new(&index_id);
         let temp_dir = tempfile::tempdir()?;
         let queues_dir_path = temp_dir.path();
         let ingest_api_service =
@@ -442,9 +452,15 @@ mod tests {
 
         let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
         let source_config = make_source_config();
+        let pipeline_id = IndexingPipelineId {
+            index_uid: IndexUid::new(&index_id),
+            source_id: "kafka-file-source".to_string(),
+            node_id: "kafka-node".to_string(),
+            pipeline_ord: 0,
+        };
         let ctx = SourceExecutionContext::for_test(
             metastore,
-            index_uid,
+            pipeline_id,
             queues_dir_path.to_path_buf(),
             source_config,
         );
@@ -488,7 +504,6 @@ mod tests {
         let universe = Universe::with_accelerated_time();
         let metastore = metastore_for_test();
         let index_id = append_random_suffix("test-ingest-api-source");
-        let index_uid = IndexUid::new(&index_id);
         let temp_dir = tempfile::tempdir()?;
         let queues_dir_path = temp_dir.path();
 
@@ -496,9 +511,15 @@ mod tests {
             init_ingest_api(&universe, queues_dir_path, &IngestApiConfig::default()).await?;
         let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
         let source_config = make_source_config();
+        let pipeline_id = IndexingPipelineId {
+            index_uid: IndexUid::new(&index_id),
+            source_id: "kafka-file-source".to_string(),
+            node_id: "kafka-node".to_string(),
+            pipeline_ord: 0,
+        };
         let ctx = SourceExecutionContext::for_test(
             metastore,
-            index_uid,
+            pipeline_id,
             queues_dir_path.to_path_buf(),
             source_config,
         );
@@ -555,7 +576,6 @@ mod tests {
         let universe = Universe::with_accelerated_time();
         let metastore = metastore_for_test();
         let index_id = append_random_suffix("test-ingest-api-source");
-        let index_uid = IndexUid::new(&index_id);
         let temp_dir = tempfile::tempdir()?;
         let queues_dir_path = temp_dir.path();
 
@@ -563,9 +583,15 @@ mod tests {
             init_ingest_api(&universe, queues_dir_path, &IngestApiConfig::default()).await?;
         let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
         let source_config = make_source_config();
+        let pipeline_id = IndexingPipelineId {
+            index_uid: IndexUid::new(&index_id),
+            source_id: "kafka-file-source".to_string(),
+            node_id: "kafka-node".to_string(),
+            pipeline_ord: 0,
+        };
         let ctx = SourceExecutionContext::for_test(
             metastore,
-            index_uid,
+            pipeline_id,
             queues_dir_path.to_path_buf(),
             source_config,
         );

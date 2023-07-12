@@ -16,6 +16,7 @@ aws-sdk-kinesis = { workspace = true, optional = true }
 
 anyhow = { workspace = true }
 arc-swap = { workspace = true }
+async-compression = { workspace = true }
 async-trait = { workspace = true }
 backoff = { workspace = true, optional = true }
 byte-unit = { workspace = true }
@@ -25,6 +26,7 @@ fail = { workspace = true }
 flume = { workspace = true }
 fnv = { workspace = true }
 futures = { workspace = true }
+futures-util = {workspace = true }
 itertools = { workspace = true }
 libz-sys = { workspace = true, optional = true }
 once_cell = { workspace = true }
@@ -33,6 +35,8 @@ openssl = { workspace = true, optional = true }
 pulsar = { workspace = true, optional = true }
 quickwit-query = { workspace = true }
 rdkafka = { workspace = true, optional = true }
+regex = { workspace = true }
+reqwest = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 tantivy = { workspace = true }

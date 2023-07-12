@@ -380,7 +380,7 @@ impl IndexingPipeline {
             .protect_future(quickwit_supported_sources().load_source(
                 Arc::new(SourceExecutionContext {
                     metastore: self.params.metastore.clone(),
-                    index_uid: self.params.pipeline_id.index_uid.clone(),
+                    pipeline_id: self.params.pipeline_id.clone(),
                     queues_dir_path: self.params.queues_dir_path.clone(),
                     source_config: self.params.source_config.clone(),
                 }),
