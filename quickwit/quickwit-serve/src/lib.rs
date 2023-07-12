@@ -62,9 +62,13 @@ use quickwit_common::tower::{
 };
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{QuickwitConfig, SearcherConfig};
-use quickwit_control_plane::{start_control_plane_service, ControlPlaneServiceClient};
+use quickwit_control_plane::scheduler::IndexingScheduler;
+use quickwit_control_plane::{
+    start_control_plane_service, ControlPlaneServiceClient, IndexerNodeInfo, IndexerPool,
+};
 use quickwit_core::{IndexService, IndexServiceError};
 use quickwit_indexing::actors::IndexingService;
+use quickwit_indexing::indexing_client::IndexingServiceClient;
 use quickwit_indexing::start_indexing_service;
 use quickwit_ingest::{
     start_ingest_api_service, GetMemoryCapacity, IngestRequest, IngestServiceClient, MemoryCapacity,
@@ -203,33 +207,6 @@ pub async fn serve_quickwit(
         storage_resolver.clone(),
     ));
 
-    // Instantiate the control plane service if enabled.
-    // If not and metastore service is enabled, we need to instantiate the control plane client
-    // so the metastore can notify the control plane.
-    let control_plane_service: Option<ControlPlaneServiceClient> = if config
-        .enabled_services
-        .contains(&QuickwitService::ControlPlane)
-    {
-        let control_plane_mailbox =
-            start_control_plane_service(&universe, cluster.clone(), metastore.clone()).await?;
-        Some(ControlPlaneServiceClient::from_mailbox(
-            control_plane_mailbox,
-        ))
-    } else if config
-        .enabled_services
-        .contains(&QuickwitService::Metastore)
-    {
-        let balance_channel =
-            balance_channel_for_service(&cluster, QuickwitService::ControlPlane).await;
-        Some(ControlPlaneServiceClient::from_channel(balance_channel))
-    } else {
-        None
-    };
-    let control_plane_subscription_handle =
-        control_plane_service.as_ref().map(|scheduler_service| {
-            event_broker.subscribe::<MetastoreEvent>(scheduler_service.clone())
-        });
-
     let (ingest_service, indexing_service) = if config
         .enabled_services
         .contains(&QuickwitService::Indexer)
@@ -288,6 +265,41 @@ pub async fn serve_quickwit(
         let ingest_service = IngestServiceClient::from_channel(balance_channel);
         (ingest_service, None)
     };
+
+    // Instantiate the control plane service if enabled.
+    // If not and metastore service is enabled, we need to instantiate the control plane client
+    // so the metastore can notify the control plane.
+    let control_plane_service: Option<ControlPlaneServiceClient> = if config
+        .enabled_services
+        .contains(&QuickwitService::ControlPlane)
+    {
+        let cluster_change_stream = cluster.ready_nodes_change_stream().await;
+        let control_plane_mailbox = setup_control_plane_service(
+            &universe,
+            cluster.cluster_id().to_string(),
+            cluster.self_node_id().to_string(),
+            cluster_change_stream,
+            indexing_service.clone(),
+            metastore.clone(),
+        )
+        .await?;
+        Some(ControlPlaneServiceClient::from_mailbox(
+            control_plane_mailbox,
+        ))
+    } else if config
+        .enabled_services
+        .contains(&QuickwitService::Metastore)
+    {
+        let balance_channel =
+            balance_channel_for_service(&cluster, QuickwitService::ControlPlane).await;
+        Some(ControlPlaneServiceClient::from_channel(balance_channel))
+    } else {
+        None
+    };
+    let control_plane_subscription_handle =
+        control_plane_service.as_ref().map(|scheduler_service| {
+            event_broker.subscribe::<MetastoreEvent>(scheduler_service.clone())
+        });
 
     let searcher_config = config.searcher_config.clone();
     let cluster_change_stream = cluster.ready_nodes_change_stream().await;
@@ -508,6 +520,62 @@ async fn setup_searcher(
     });
     searcher_pool.listen_for_changes(searcher_change_stream);
     Ok((search_job_placer, search_service))
+}
+
+async fn setup_control_plane_service(
+    universe: &Universe,
+    cluster_id: String,
+    self_node_id: String,
+    cluster_change_stream: impl Stream<Item = ClusterChange> + Send + 'static,
+    indexing_service: Option<Mailbox<IndexingService>>,
+    metastore: Arc<dyn Metastore>,
+) -> anyhow::Result<Mailbox<IndexingScheduler>> {
+    let indexer_pool = IndexerPool::default();
+    let indexing_scheduler = start_control_plane_service(
+        cluster_id,
+        self_node_id,
+        universe,
+        indexer_pool.clone(),
+        metastore,
+    )
+    .await?;
+    let indexer_change_stream = cluster_change_stream.filter_map(move |cluster_change| {
+        let indexing_service_clone = indexing_service.clone();
+        Box::pin(async move {
+            match cluster_change {
+                ClusterChange::Add(node)
+                    if node.enabled_services().contains(&QuickwitService::Indexer) =>
+                {
+                    let node_id = node.node_id().to_string();
+                    let grpc_addr = node.grpc_advertise_addr();
+                    let indexing_tasks = node.indexing_tasks().to_vec();
+
+                    if node.is_self_node() {
+                        if let Some(indexing_service_clone) = indexing_service_clone {
+                            let client =
+                            IndexingServiceClient::from_service(indexing_service_clone, grpc_addr);
+                            Some(Change::Insert(node_id, IndexerNodeInfo { client, indexing_tasks }))
+                        } else {
+                            // That means that cluster thinks we are supposed to have an indexer, but we actually don't.
+                            None
+                        }
+                    } else {
+                        let grpc_client =
+                        quickwit_proto::indexing_api::indexing_service_client::IndexingServiceClient::new(
+                            node.channel(),
+                        );
+                        let client =
+                            IndexingServiceClient::from_grpc_client(grpc_client, grpc_addr);
+                        Some(Change::Insert(node_id, IndexerNodeInfo { client, indexing_tasks }))
+                    }
+                }
+                ClusterChange::Remove(node) => Some(Change::Remove(node.node_id().to_string())),
+                _ => None,
+            }
+        })
+    });
+    indexer_pool.listen_for_changes(indexer_change_stream);
+    Ok(indexing_scheduler)
 }
 
 fn require<T: Clone + Send>(
