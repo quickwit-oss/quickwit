@@ -22,12 +22,13 @@ use std::collections::HashMap;
 use std::hash::Hash;
 
 use itertools::Itertools;
-use quickwit_cluster::ClusterMember;
 use quickwit_common::rendezvous_hasher::sort_by_rendez_vous_hash;
 use quickwit_config::{SourceConfig, CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID};
 use quickwit_proto::indexing_api::IndexingTask;
 use quickwit_proto::IndexUid;
 use serde::Serialize;
+
+use crate::IndexerNodeInfo;
 
 /// A [`PhysicalIndexingPlan`] defines the list of indexing tasks
 /// each indexer, identified by its node ID, should run.
@@ -137,7 +138,7 @@ impl PhysicalIndexingPlan {
 /// tasks. We can potentially use this info to assign an indexing task to a node running the same
 /// task.
 pub(crate) fn build_physical_indexing_plan(
-    indexers: &[ClusterMember],
+    indexers: &[(String, IndexerNodeInfo)],
     source_configs: &HashMap<IndexSourceId, SourceConfig>,
     mut indexing_tasks: Vec<IndexingTask>,
 ) -> PhysicalIndexingPlan {
@@ -147,7 +148,7 @@ pub(crate) fn build_physical_indexing_plan(
     });
     let mut node_ids = indexers
         .iter()
-        .map(|indexer| indexer.node_id.to_string())
+        .map(|indexer| indexer.0.clone())
         .collect_vec();
 
     // Build the plan.
@@ -271,7 +272,7 @@ impl From<IndexingTask> for IndexSourceId {
 /// - Ignore disabled sources, `CLI_INGEST_SOURCE_ID` and files sources (Quickwit is not aware of
 ///   the files locations and thus are ignored).
 pub(crate) fn build_indexing_plan(
-    indexers: &[ClusterMember],
+    indexers: &[(String, IndexerNodeInfo)],
     source_configs: &HashMap<IndexSourceId, SourceConfig>,
 ) -> Vec<IndexingTask> {
     let mut indexing_tasks: Vec<IndexingTask> = Vec::new();
@@ -311,19 +312,19 @@ pub(crate) fn build_indexing_plan(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::{HashMap, HashSet};
+    use std::collections::HashMap;
     use std::net::SocketAddr;
     use std::num::NonZeroUsize;
 
     use itertools::Itertools;
     use proptest::prelude::*;
-    use quickwit_cluster::ClusterMember;
     use quickwit_common::rand::append_random_suffix;
     use quickwit_config::service::QuickwitService;
     use quickwit_config::{
         FileSourceParams, KafkaSourceParams, SourceConfig, SourceInputFormat, SourceParams,
         CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID,
     };
+    use quickwit_indexing::indexing_client::create_indexing_service_client;
     use quickwit_proto::indexing_api::IndexingTask;
     use quickwit_proto::IndexUid;
     use rand::seq::SliceRandom;
@@ -331,6 +332,7 @@ mod tests {
 
     use super::{build_physical_indexing_plan, IndexSourceId};
     use crate::indexing_plan::build_indexing_plan;
+    use crate::IndexerNodeInfo;
 
     fn kafka_source_params_for_test() -> SourceParams {
         SourceParams::Kafka(KafkaSourceParams {
@@ -343,22 +345,21 @@ mod tests {
         })
     }
 
-    fn cluster_members_for_test(
+    async fn cluster_members_for_test(
         num_members: usize,
-        quickwit_service: QuickwitService,
-    ) -> Vec<ClusterMember> {
+        _quickwit_service: QuickwitService,
+    ) -> Vec<(String, IndexerNodeInfo)> {
         let mut members = Vec::new();
         for idx in 0..num_members {
             let addr: SocketAddr = ([127, 0, 0, 1], 10).into();
-            members.push(ClusterMember::new(
+            let client = create_indexing_service_client(addr).await.unwrap();
+            members.push((
                 (1 + idx).to_string(),
-                0.into(),
-                true,
-                HashSet::from_iter([quickwit_service].into_iter()),
-                addr,
-                addr,
-                Vec::new(),
-            ))
+                IndexerNodeInfo {
+                    client,
+                    indexing_tasks: Vec::new(),
+                },
+            ));
         }
         members
     }
@@ -378,9 +379,9 @@ mod tests {
             .sum()
     }
 
-    #[test]
-    fn test_build_indexing_plan_one_source() {
-        let indexers = cluster_members_for_test(4, QuickwitService::Indexer);
+    #[tokio::test]
+    async fn test_build_indexing_plan_one_source() {
+        let indexers = cluster_members_for_test(4, QuickwitService::Indexer).await;
         let mut source_configs_map = HashMap::new();
         let index_source_id = IndexSourceId {
             index_uid: "one-source-index:11111111111111111111111111"
@@ -415,9 +416,9 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_build_indexing_plan_with_ingest_api_source() {
-        let indexers = cluster_members_for_test(4, QuickwitService::Indexer);
+    #[tokio::test]
+    async fn test_build_indexing_plan_with_ingest_api_source() {
+        let indexers = cluster_members_for_test(4, QuickwitService::Indexer).await;
         let mut source_configs_map = HashMap::new();
         let index_source_id = IndexSourceId {
             index_uid: "ingest-api-index:11111111111111111111111111"
@@ -452,9 +453,9 @@ mod tests {
         }
     }
 
-    #[test]
-    fn test_build_indexing_plan_with_sources_to_ignore() {
-        let indexers = cluster_members_for_test(4, QuickwitService::Indexer);
+    #[tokio::test]
+    async fn test_build_indexing_plan_with_sources_to_ignore() {
+        let indexers = cluster_members_for_test(4, QuickwitService::Indexer).await;
         let mut source_configs_map = HashMap::new();
         let file_index_source_id = IndexSourceId {
             index_uid: "one-source-index:11111111111111111111111111"
@@ -515,8 +516,8 @@ mod tests {
         assert_eq!(indexing_tasks.len(), 0);
     }
 
-    #[test]
-    fn test_build_physical_indexing_plan_simple() {
+    #[tokio::test]
+    async fn test_build_physical_indexing_plan_simple() {
         quickwit_common::setup_logging_for_tests();
         // Rdv hashing for (index 1, source) returns [node 2, node 1].
         let index_1 = "1";
@@ -579,17 +580,17 @@ mod tests {
             });
         }
 
-        let indexers = cluster_members_for_test(2, QuickwitService::Indexer);
+        let indexers = cluster_members_for_test(2, QuickwitService::Indexer).await;
         let physical_plan =
             build_physical_indexing_plan(&indexers, &source_configs_map, indexing_tasks.clone());
         assert_eq!(physical_plan.indexing_tasks_per_node_id.len(), 2);
         let indexer_1_tasks = physical_plan
             .indexing_tasks_per_node_id
-            .get(&indexers[0].node_id)
+            .get(&indexers[0].0)
             .unwrap();
         let indexer_2_tasks = physical_plan
             .indexing_tasks_per_node_id
-            .get(&indexers[1].node_id)
+            .get(&indexers[1].0)
             .unwrap();
         // (index 1, source) tasks are first placed on indexer 2 by rdv hashing.
         // Thus task 0 => indexer 2, task 1 => indexer 1, task 2 => indexer 2, task 3 => indexer 1.
@@ -611,8 +612,8 @@ mod tests {
         assert_eq!(indexer_2_tasks, &expected_indexer_2_tasks);
     }
 
-    #[test]
-    fn test_build_physical_indexing_plan_with_not_enough_indexers() {
+    #[tokio::test]
+    async fn test_build_physical_indexing_plan_with_not_enough_indexers() {
         quickwit_common::setup_logging_for_tests();
         let index_1 = "test-indexing-plan-1";
         let source_1 = "source-1";
@@ -644,7 +645,7 @@ mod tests {
             },
         ];
 
-        let indexers = cluster_members_for_test(1, QuickwitService::Indexer);
+        let indexers = cluster_members_for_test(1, QuickwitService::Indexer).await;
         // This case should never happens but we just check that the plan building is resilient
         // enough, it will ignore the tasks that cannot be allocated.
         let physical_plan =
@@ -655,7 +656,10 @@ mod tests {
     proptest! {
         #[test]
         fn test_building_indexing_tasks_and_physical_plan(num_indexers in 1usize..50usize, index_id_sources in proptest::collection::vec(gen_kafka_source(), 1..20)) {
-            let mut indexers = cluster_members_for_test(num_indexers, QuickwitService::Indexer);
+            // proptest doesn't work with async
+            let mut indexers = tokio::runtime::Runtime::new().unwrap().block_on(
+                cluster_members_for_test(num_indexers, QuickwitService::Indexer)
+            );
             let source_configs: HashMap<IndexSourceId, SourceConfig> = index_id_sources
                 .into_iter()
                 .map(|(index_uid, source_config)| {

@@ -27,15 +27,25 @@ use std::sync::Arc;
 use async_trait::async_trait;
 pub use control_plane_service::*;
 use quickwit_actors::{AskError, Mailbox, Universe};
-use quickwit_cluster::Cluster;
 use quickwit_common::pubsub::EventSubscriber;
+use quickwit_common::tower::Pool;
 use quickwit_config::SourceParams;
-use quickwit_grpc_clients::service_client_pool::ServiceClientPool;
+use quickwit_indexing::indexing_client::IndexingServiceClient;
 use quickwit_metastore::{Metastore, MetastoreEvent};
+use quickwit_proto::indexing_api::IndexingTask;
 use scheduler::IndexingScheduler;
 use tracing::error;
 
 pub type Result<T> = std::result::Result<T, ControlPlaneError>;
+
+/// Indexer-node specific information stored in the pool of available indexer nodes
+#[derive(Debug, Clone)]
+pub struct IndexerNodeInfo {
+    pub client: IndexingServiceClient,
+    pub indexing_tasks: Vec<IndexingTask>,
+}
+
+pub type IndexerPool = Pool<String, IndexerNodeInfo>;
 
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum ControlPlaneError {
@@ -81,14 +91,13 @@ impl From<AskError<ControlPlaneError>> for ControlPlaneError {
 
 /// Starts the Control Plane.
 pub async fn start_control_plane_service(
+    cluster_id: String,
+    self_node_id: String,
     universe: &Universe,
-    cluster: Cluster,
+    indexer_pool: IndexerPool,
     metastore: Arc<dyn Metastore>,
 ) -> anyhow::Result<Mailbox<IndexingScheduler>> {
-    let ready_members_watcher = cluster.ready_members_watcher().await;
-    let indexing_service_client_pool =
-        ServiceClientPool::create_and_update_members(ready_members_watcher).await?;
-    let scheduler = IndexingScheduler::new(cluster, metastore, indexing_service_client_pool);
+    let scheduler = IndexingScheduler::new(cluster_id, self_node_id, metastore, indexer_pool);
     let (scheduler_mailbox, _) = universe.spawn_builder().spawn(scheduler);
     Ok(scheduler_mailbox)
 }

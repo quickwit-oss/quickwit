@@ -40,6 +40,7 @@ quickwit-metastore = { workspace = true }
 quickwit-proto = { workspace = true }
 
 [dev-dependencies]
+futures = { workspace = true }
 mockall = { workspace = true }
 proptest = { workspace = true }
 rand = { workspace = true }
