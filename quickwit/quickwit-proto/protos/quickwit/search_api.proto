@@ -95,21 +95,25 @@ message SearchRequest {
   // deprecated tag field
   reserved 8;
 
-  // Sort order
-  optional SortOrder sort_order = 9;
+  // deprecated `sort_order``
+  reserved 9;
 
-  // Sort by fast field. If unset sort by docid
-  // sort_by_field can be:
-  // - a field name
-  // - _score
-  // - None, in which case the hits will be sorted by (SplitId, doc_id).
-  optional string sort_by_field = 10;
+  // deprecated `sort_by_field``
+  reserved 10;
 
   // json serialized aggregation_request
   optional string aggregation_request = 11;
 
   // Fields to extract snippet on
   repeated string  snippet_fields = 12;
+
+  // Optional sort by one or more fields (limited to 2 at the moment). 
+  repeated SortField sort_fields = 14;
+}
+
+message SortField {
+  string field_name = 1;
+  SortOrder sort_order = 2;
 }
 
 enum SortOrder {
@@ -226,16 +230,13 @@ message PartialHit {
   // - the split_id,
   // - the segment_ord,
   // - the doc id.
-  oneof sort_value {
-    uint64 u64 = 5;
-    int64 i64 = 6;
-    double f64 = 7;
-    bool boolean = 8;
-  }
+
   // Deprecated
   reserved 1;
   // Room for eventual future sorted key types.
-  reserved 9 to 20;
+  reserved 12 to 20;
+  SortByValue sort_value = 10;
+  SortByValue sort_value2 = 11;
 
   string split_id = 2;
 
@@ -245,6 +246,17 @@ message PartialHit {
 
   // The DocId identifies a unique document at the scale of a tantivy segment.
   uint32 doc_id = 4;
+}
+
+message SortByValue {
+  oneof sort_value {
+    uint64 u64 = 1;
+    int64 i64 = 2;
+    double f64 = 3;
+    bool boolean = 4;
+  }
+  // Room for eventual future sorted key types.
+  reserved 5 to 20;
 }
 
 message LeafSearchResponse {

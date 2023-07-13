@@ -26,7 +26,7 @@ use ulid::Ulid;
 mod quickwit;
 mod quickwit_indexing_api;
 mod quickwit_metastore_api;
-pub use partial_hit::SortValue;
+pub use sort_by_value::SortValue;
 use std::cmp::Ordering;
 
 pub mod indexing_api {
@@ -187,7 +187,6 @@ pub fn convert_to_grpc_result<T, E: ServiceError>(
 }
 
 impl TryFrom<SearchStreamRequest> for SearchRequest {
-
     type Error = anyhow::Error;
 
     fn try_from(search_stream_req: SearchStreamRequest) -> Result<Self, Self::Error> {
@@ -197,7 +196,7 @@ impl TryFrom<SearchStreamRequest> for SearchRequest {
             snippet_fields: search_stream_req.snippet_fields,
             start_timestamp: search_stream_req.start_timestamp,
             end_timestamp: search_stream_req.end_timestamp,
-            .. Default::default()
+            ..Default::default()
         })
     }
 }
@@ -212,7 +211,7 @@ impl TryFrom<DeleteQuery> for SearchRequest {
             query_ast: delete_query.query_ast,
             start_timestamp: delete_query.start_timestamp,
             end_timestamp: delete_query.end_timestamp,
-            .. Default::default()
+            ..Default::default()
         })
     }
 }
@@ -464,7 +463,17 @@ pub fn query_ast_from_user_text(user_text: &str, default_fields: Option<Vec<Stri
 // Prost imposes the PartialEq derived implementation.
 // This is terrible because this means Eq, PartialEq are not really in line with Ord's implementation.
 // if in presence of NaN.
+impl Eq for SortByValue {}
+impl Copy for SortByValue {}
+impl From<SortValue> for SortByValue {
+    fn from(sort_value: SortValue) -> Self {
+        SortByValue {
+            sort_value: Some(sort_value),
+        }
+    }
+}
 
+impl Copy for SortValue {}
 impl Eq for SortValue {}
 
 impl Ord for SortValue {

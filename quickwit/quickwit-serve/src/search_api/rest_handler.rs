@@ -170,15 +170,17 @@ pub struct SearchRequestQueryString {
     pub sort_by_field: Option<SortByField>,
 }
 
-fn get_proto_search_by(search_request: &SearchRequestQueryString) -> (Option<i32>, Option<String>) {
-    if let Some(sort_by_field) = &search_request.sort_by_field {
-        (
-            Some(sort_by_field.order as i32),
-            Some(sort_by_field.field_name.clone()),
-        )
-    } else {
-        (None, None)
-    }
+fn get_proto_sort_by(search_request: &SearchRequestQueryString) -> Vec<quickwit_proto::SortField> {
+    search_request
+        .sort_by_field
+        .as_ref()
+        .map(|sort_by| {
+            vec![quickwit_proto::SortField {
+                field_name: sort_by.field_name.to_string(),
+                sort_order: sort_by.order as i32,
+            }]
+        })
+        .unwrap_or_default()
 }
 
 async fn search_endpoint(
@@ -186,7 +188,7 @@ async fn search_endpoint(
     search_request: SearchRequestQueryString,
     search_service: &dyn SearchService,
 ) -> Result<SearchResponseRest, SearchError> {
-    let (sort_order, sort_by_field) = get_proto_search_by(&search_request);
+    let sort_fields = get_proto_sort_by(&search_request);
     // The query ast below may still contain user input query. The actual
     // parsing of the user query will happen in the root service, and might require
     // the user of the docmapper default fields (which we do not have at this point).
@@ -203,8 +205,7 @@ async fn search_endpoint(
         aggregation_request: search_request
             .aggs
             .map(|agg| serde_json::to_string(&agg).expect("could not serialize JsonValue")),
-        sort_order,
-        sort_by_field,
+        sort_fields,
     };
     let search_response = search_service.root_search(search_request).await?;
     let search_response_rest = SearchResponseRest::try_from(search_response)?;

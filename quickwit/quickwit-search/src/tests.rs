@@ -25,8 +25,8 @@ use quickwit_doc_mapper::DefaultDocMapper;
 use quickwit_indexing::TestSandbox;
 use quickwit_opentelemetry::otlp::TraceId;
 use quickwit_proto::{
-    qast_helper, query_ast_from_user_text, LeafListTermsResponse, SearchRequest, SortOrder,
-    SortValue,
+    qast_helper, query_ast_from_user_text, LeafListTermsResponse, SearchRequest, SortByValue,
+    SortField, SortOrder, SortValue,
 };
 use serde_json::{json, Value as JsonValue};
 use tantivy::schema::Value as TantivyValue;
@@ -378,8 +378,10 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
         start_timestamp: Some(start_timestamp + 10),
         end_timestamp: Some(start_timestamp + 20),
         max_hits: 15,
-        sort_by_field: Some("ts".to_string()),
-        sort_order: Some(SortOrder::Desc as i32),
+        sort_fields: vec![SortField {
+            field_name: "ts".to_string(),
+            sort_order: SortOrder::Desc as i32,
+        }],
         ..Default::default()
     };
     let single_node_response = single_node_search(
@@ -399,8 +401,10 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
         query_ast: qast_helper("info", &["body"]),
         end_timestamp: Some(start_timestamp + 20),
         max_hits: 25,
-        sort_by_field: Some("ts".to_string()),
-        sort_order: Some(SortOrder::Desc as i32),
+        sort_fields: vec![SortField {
+            field_name: "ts".to_string(),
+            sort_order: SortOrder::Desc as i32,
+        }],
         ..Default::default()
     };
     let single_node_response = single_node_search(
@@ -419,8 +423,10 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
         index_id: index_id.to_string(),
         query_ast: qast_helper("tag:foo AND info", &["body"]),
         max_hits: 25,
-        sort_by_field: Some("ts".to_string()),
-        sort_order: Some(SortOrder::Desc as i32),
+        sort_fields: vec![SortField {
+            field_name: "ts".to_string(),
+            sort_order: SortOrder::Desc as i32,
+        }],
         ..Default::default()
     };
     let single_node_response = single_node_search(
@@ -502,8 +508,10 @@ async fn single_node_search_sort_by_field(
         index_id: index_id.to_string(),
         query_ast: qast_helper("city", &["description"]),
         max_hits: 15,
-        sort_by_field: Some(sort_by_field.to_string()),
-        sort_order: Some(SortOrder::Desc as i32),
+        sort_fields: vec![SortField {
+            field_name: sort_by_field.to_string(),
+            sort_order: SortOrder::Desc as i32,
+        }],
         ..Default::default()
     };
 
@@ -585,8 +593,10 @@ async fn test_sort_bm25() {
             index_id: index_id.to_string(),
             query_ast: query_ast_json,
             max_hits: 1_000,
-            sort_by_field: Some("_score".to_string()),
-            sort_order: Some(SortOrder::Desc as i32),
+            sort_fields: vec![SortField {
+                field_name: "_score".to_string(),
+                sort_order: SortOrder::Desc as i32,
+            }],
             ..Default::default()
         };
         let metastore = test_sandbox.metastore();
@@ -599,7 +609,10 @@ async fn test_sort_bm25() {
                 .into_iter()
                 .map(|hit| {
                     let partial_hit = hit.partial_hit.unwrap();
-                    let Some(SortValue::F64(score)) = partial_hit.sort_value else {
+                    let Some(SortByValue {
+                        sort_value: Some(SortValue::F64(score)),
+                    }) = partial_hit.sort_value
+                    else {
                         panic!()
                     };
                     (score as f32, partial_hit.doc_id)
@@ -672,8 +685,10 @@ async fn test_sort_by_static_and_dynamic_field() {
             index_id: index_id.to_string(),
             query_ast: query_ast_json,
             max_hits: 1_000,
-            sort_by_field: Some(sort_field.to_string()),
-            sort_order: Some(order as i32),
+            sort_fields: vec![SortField {
+                field_name: sort_field.to_string(),
+                sort_order: order as i32,
+            }],
             ..Default::default()
         };
         let metastore = test_sandbox.metastore();
@@ -729,6 +744,102 @@ async fn test_sort_by_static_and_dynamic_field() {
 }
 
 #[tokio::test]
+async fn test_sort_by_2_field() {
+    let index_id = "sort_by_dynamic_field".to_string();
+    // In this test, we will try sorting docs by several fields.
+    // - static_u64
+    // - dynamic_u64
+    let doc_mapping_yaml = r#"
+            mode: dynamic
+            field_mappings:
+              - name: static_u64
+                type: u64
+                fast: true
+            dynamic_mapping:
+                fast: true
+                stored: true
+            "#;
+    let test_sandbox = TestSandbox::create(&index_id, doc_mapping_yaml, "{}", &[])
+        .await
+        .unwrap();
+    let docs = vec![
+        // 0
+        json!({"static_u64": 3u64, "dynamic_u64": 3u64}),
+        // 1
+        json!({"static_u64": 3u64, "dynamic_u64": 2u64}),
+        // 2
+        json!({}),
+        // 3
+        json!({"dynamic_u64": 2u64}),
+        // 4
+        json!({"static_u64": 4u64, "dynamic_u64": (i64::MAX as u64) + 1}),
+    ];
+    test_sandbox.add_documents(docs).await.unwrap();
+    let search_hits =
+        |sort_field1: &str, order1: SortOrder, sort_field2: &str, order2: SortOrder| {
+            let query_ast_json = serde_json::to_string(&QueryAst::MatchAll).unwrap();
+            let search_request = SearchRequest {
+                index_id: index_id.to_string(),
+                query_ast: query_ast_json,
+                max_hits: 1_000,
+                sort_fields: vec![
+                    SortField {
+                        field_name: sort_field1.to_string(),
+                        sort_order: order1 as i32,
+                    },
+                    SortField {
+                        field_name: sort_field2.to_string(),
+                        sort_order: order2 as i32,
+                    },
+                ],
+                ..Default::default()
+            };
+            let metastore = test_sandbox.metastore();
+            let storage_resolver = test_sandbox.storage_resolver();
+            async move {
+                let search_resp = single_node_search(search_request, &*metastore, storage_resolver)
+                    .await
+                    .unwrap();
+                assert_eq!(search_resp.num_hits, 5);
+                search_resp
+                    .hits
+                    .into_iter()
+                    .map(|hit| {
+                        let partial_hit = hit.partial_hit.unwrap();
+                        partial_hit.doc_id
+                    })
+                    .collect::<Vec<u32>>()
+            }
+        };
+    {
+        let ordered_docs: Vec<u32> = search_hits(
+            "static_u64",
+            SortOrder::Desc,
+            "dynamic_u64",
+            SortOrder::Desc,
+        )
+        .await;
+        assert_eq!(&ordered_docs[..], &[4, 0, 1, 3, 2]);
+    }
+    {
+        let ordered_docs: Vec<u32> =
+            search_hits("static_u64", SortOrder::Desc, "dynamic_u64", SortOrder::Asc).await;
+        assert_eq!(&ordered_docs[..], &[4, 1, 0, 3, 2]);
+    }
+    {
+        let ordered_docs: Vec<u32> =
+            search_hits("static_u64", SortOrder::Asc, "dynamic_u64", SortOrder::Desc).await;
+        assert_eq!(&ordered_docs[..], &[0, 1, 4, 3, 2]);
+    }
+    {
+        let ordered_docs: Vec<u32> =
+            search_hits("static_u64", SortOrder::Asc, "dynamic_u64", SortOrder::Asc).await;
+        assert_eq!(&ordered_docs[..], &[1, 0, 4, 3, 2]);
+    }
+    test_sandbox.assert_quit().await;
+}
+
+#[tokio::test]
 async fn test_single_node_invalid_sorting_with_query() {
     let index_id = "single-node-invalid-sorting";
     let doc_mapping_yaml = r#"
@@ -754,8 +865,10 @@ async fn test_single_node_invalid_sorting_with_query() {
         index_id: index_id.to_string(),
         query_ast: qast_helper("city", &["description"]),
         max_hits: 15,
-        sort_by_field: Some("description".to_string()),
-        sort_order: Some(SortOrder::Desc as i32),
+        sort_fields: vec![SortField {
+            field_name: "description".to_string(),
+            sort_order: SortOrder::Desc as i32,
+        }],
         ..Default::default()
     };
     let single_node_response = single_node_search(
