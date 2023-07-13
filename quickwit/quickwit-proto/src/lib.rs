@@ -120,6 +120,8 @@ use tonic::Status;
 use tracing::Span;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
 
+pub const GRPC_MAX_MESSAGE_SIZE: usize = 20 * 1024 * 1024;
+
 /// This enum serves as a Rosetta stone of
 /// gRPC and Http status code.
 ///

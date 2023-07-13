@@ -355,16 +355,6 @@ mod tests {
     }
 
     #[test]
-    fn test_gh_archive_uri_expand() {
-        let uri = "https://data.gharchive.org/{2015..2024}-{01..13}-{01..32}-{0..24}.json.gz";
-        let uris = expand_uris(uri);
-        for uri in uris {
-            println!("{}", uri);
-        }
-        panic!("test")
-    }
-
-    #[test]
     fn test_uri_expand() {
         let uri = "http://localhost:3000/{00..2}-{0..3}.json";
         let uris = expand_uris(uri);
