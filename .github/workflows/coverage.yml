@@ -14,7 +14,7 @@ on:
 env:
   AWS_ACCESS_KEY_ID: "placeholder"
   AWS_SECRET_ACCESS_KEY: "placeholder"
-  AWS_REGION: "us-east-1"
+  AWS_REGION: us-east-1
   CARGO_INCREMENTAL: 0
   QW_DISABLE_TELEMETRY: 1
   QW_S3_ENDPOINT: "http://localhost:4566" # Services are exposed as localhost because we are not running coverage in a container.
@@ -24,7 +24,7 @@ env:
 jobs:
   test:
     name: Coverage
-    runs-on: ubuntu-latest
+    runs-on: buildjet-8vcpu-ubuntu-2204 # ubuntu-latest
     # Setting a containing will require to fix the QW_S3_ENDPOINT to http://localstack:4566
     services:
       localstack:
@@ -34,15 +34,15 @@ jobs:
           - "4571:4571"
           - "8080:8080"
         env:
-          # `kinesalite` provides a more accurate implementation than
-          # the default Kinesis provider (`kinesis-mock`).
-          KINESIS_PROVIDER: kinesalite
           SERVICES: kinesis,s3
         options: >-
           --health-cmd "curl -k https://localhost:4566"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+        credentials:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_ACCESS_TOKEN }}
 
       postgres:
         image: postgres:latest
@@ -57,6 +57,9 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+        credentials:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_ACCESS_TOKEN }}
 
       kafka-broker:
         image: confluentinc/cp-kafka:7.2.1
@@ -74,17 +77,22 @@ jobs:
           KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
           KAFKA_JMX_PORT: 9101
           KAFKA_JMX_HOSTNAME: localhost
+          KAFKA_HEAP_OPTS: -Xms256M -Xmx256M
         options: >-
           --health-cmd "cub kafka-ready -b localhost:9092 1 5"
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+        credentials:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_ACCESS_TOKEN }}
 
       zookeeper:
         image: confluentinc/cp-zookeeper:7.2.1
         ports:
           - "2181:2181"
         env:
+          KAFKA_HEAP_OPTS: -Xms256M -Xmx256M
           ZOOKEEPER_CLIENT_PORT: 2181
           ZOOKEEPER_TICK_TIME: 2000
         options: >-
@@ -92,6 +100,10 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+        credentials:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_ACCESS_TOKEN }}
+
     steps:
       - uses: actions/checkout@v3
 
@@ -106,7 +118,6 @@ jobs:
           path: |
             ~/.cargo/git
             ~/.cargo/registry
-            target
           key: ${{ runner.os }}-cargo-test-${{ hashFiles('Cargo.lock') }}
           restore-keys: |
             ${{ runner.os }}-cargo-test-${{ hashFiles('Cargo.lock') }}
@@ -127,24 +138,20 @@ jobs:
       - name: Run Pulsar service
         run: DOCKER_SERVICES=pulsar make docker-compose-up
 
-      - uses: actions-rs/toolchain@v1
+      - name: Install Rust
+        run: rustup update stable
+
+      - uses: taiki-e/install-action@v2
         with:
-          toolchain: 1.62
-          override: true
-          components: clippy, llvm-tools-preview, rustfmt
+          tool: cargo-llvm-cov,nextest,protoc
 
-      - uses: taiki-e/install-action@v1
-        with:
-          tool: cargo-llvm-cov,protoc
-
-      - uses: Swatinem/rust-cache@v2
-
+      # We limit the number of jobs to 4 to avoid OOM errors when linking the binary.
       - name: Generate code coverage
         run: |
           cargo llvm-cov clean --workspace
-          cargo llvm-cov --test failpoints --no-report --features fail/failpoints
-          cargo llvm-cov --no-report --all-features
-          cargo llvm-cov --no-run --lcov --output-path lcov.info
+          cargo llvm-cov nextest --no-report --test failpoints --features fail/failpoints --retries 2
+          CARGO_BUILD_JOBS=4 cargo llvm-cov nextest --no-report --all-features --retries 2
+          cargo llvm-cov report --lcov --output-path lcov.info
         working-directory: ./quickwit
 
       - name: Upload coverage to Codecov
