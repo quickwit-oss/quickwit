@@ -531,7 +531,7 @@ async fn start_control_plane(
     indexing_service: Option<Mailbox<IndexingService>>,
     metastore: Arc<dyn Metastore>,
 ) -> anyhow::Result<Mailbox<ControlPlane>> {
-    let scheduler = setup_indexer_scheduler(
+    let scheduler = setup_indexing_scheduler(
         universe,
         cluster_id,
         self_node_id,
@@ -545,7 +545,7 @@ async fn start_control_plane(
     Ok(control_plane_mailbox)
 }
 
-async fn setup_indexer_scheduler(
+async fn setup_indexing_scheduler(
     universe: &Universe,
     cluster_id: String,
     self_node_id: String,
