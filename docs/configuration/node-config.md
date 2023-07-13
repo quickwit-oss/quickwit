@@ -75,7 +75,7 @@ storage:
 
 | Property | Description | Default value |
 | --- | --- | --- |
-| `flavor` |  The optional storage flavor to use. Available flavors are `garage`, `gcs`, and `minio`. | |
+| `flavor` |  The optional storage flavor to use. Available flavors are `digital_ocean`, `garage`, `gcs`, and `minio`. | |
 | `access_key_id` | The AWS access key ID. | |
 | `secret_access_key` | The AWS secret access key. | |
 | `region` | The AWS region to send requests to. | `us-east-1` (SDK default) |
@@ -91,9 +91,14 @@ Hardcoding credentials into configuration files is not secure and strongly disco
 **Storage flavors**
 
 Storage flavors ensure that Quickwit works correctly with storage providers that deviate from the S3 API by automatically configuring the appropriate settings. The available flavors are:
+- `digital_ocean`
 - `garage`
 - `gcs`
 - `minio`
+
+*Digital Ocean*
+
+The Digital Ocean flavor (`digital_ocean`) forces path-style access and turns off multi-object delete requests.
 
 *Garage flavor*
 

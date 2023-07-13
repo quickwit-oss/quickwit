@@ -42,12 +42,16 @@ pub enum StorageBackend {
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum StorageBackendFlavor {
+    /// Digital Ocean Spaces
+    #[serde(alias = "do")]
+    DigitalOcean,
     /// Garage
     Garage,
     /// Google Cloud Storage
     #[serde(alias = "gcp", alias = "google")]
     Gcs,
     /// MinIO
+    #[serde(rename = "minio")]
     MinIO,
 }
 
@@ -307,6 +311,10 @@ pub struct S3StorageConfig {
 impl S3StorageConfig {
     fn apply_flavor(&mut self) {
         match self.flavor {
+            Some(StorageBackendFlavor::DigitalOcean) => {
+                self.force_path_style_access = true;
+                self.disable_multi_object_delete = true;
+            }
             Some(StorageBackendFlavor::Garage) => {
                 self.region = Some("garage".to_string());
                 self.force_path_style_access = true;
@@ -403,6 +411,16 @@ mod tests {
     fn test_storage_configs_apply_flavors() {
         let mut storage_configs = StorageConfigs(vec![
             S3StorageConfig {
+                flavor: Some(StorageBackendFlavor::DigitalOcean),
+                ..Default::default()
+            }
+            .into(),
+            S3StorageConfig {
+                flavor: Some(StorageBackendFlavor::Garage),
+                ..Default::default()
+            }
+            .into(),
+            S3StorageConfig {
                 flavor: Some(StorageBackendFlavor::Gcs),
                 ..Default::default()
             }
@@ -415,11 +433,19 @@ mod tests {
         ]);
         storage_configs.apply_flavors();
 
-        let gcs_storage_config = storage_configs[0].as_s3().unwrap();
+        let do_storage_config = storage_configs[0].as_s3().unwrap();
+        assert!(do_storage_config.force_path_style_access);
+        assert!(do_storage_config.disable_multi_object_delete);
+
+        let garage_storage_config = storage_configs[1].as_s3().unwrap();
+        assert_eq!(garage_storage_config.region, Some("garage".to_string()));
+        assert!(garage_storage_config.force_path_style_access);
+
+        let gcs_storage_config = storage_configs[2].as_s3().unwrap();
         assert!(gcs_storage_config.disable_multi_object_delete);
         assert!(gcs_storage_config.disable_multipart_upload);
 
-        let minio_storage_config = storage_configs[1].as_s3().unwrap();
+        let minio_storage_config = storage_configs[3].as_s3().unwrap();
         assert!(minio_storage_config.force_path_style_access);
     }
 
@@ -542,6 +568,49 @@ mod tests {
                 ..Default::default()
             };
             assert_eq!(s3_storage_config, expected_s3_config);
+        }
+    }
+
+    #[test]
+    fn test_storage_s3_config_flavor_serde() {
+        {
+            let s3_storage_config_yaml = r#"
+                flavor: digital_ocean
+            "#;
+            let s3_storage_config: S3StorageConfig =
+                serde_yaml::from_str(s3_storage_config_yaml).unwrap();
+
+            assert_eq!(
+                s3_storage_config.flavor,
+                Some(StorageBackendFlavor::DigitalOcean)
+            );
+        }
+        {
+            let s3_storage_config_yaml = r#"
+                flavor: garage
+            "#;
+            let s3_storage_config: S3StorageConfig =
+                serde_yaml::from_str(s3_storage_config_yaml).unwrap();
+
+            assert_eq!(s3_storage_config.flavor, Some(StorageBackendFlavor::Garage));
+        }
+        {
+            let s3_storage_config_yaml = r#"
+                flavor: gcs
+            "#;
+            let s3_storage_config: S3StorageConfig =
+                serde_yaml::from_str(s3_storage_config_yaml).unwrap();
+
+            assert_eq!(s3_storage_config.flavor, Some(StorageBackendFlavor::Gcs));
+        }
+        {
+            let s3_storage_config_yaml = r#"
+                flavor: minio
+            "#;
+            let s3_storage_config: S3StorageConfig =
+                serde_yaml::from_str(s3_storage_config_yaml).unwrap();
+
+            assert_eq!(s3_storage_config.flavor, Some(StorageBackendFlavor::MinIO));
         }
     }
 }
