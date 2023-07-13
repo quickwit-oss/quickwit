@@ -136,7 +136,7 @@ impl GcpPubSubSource {
 
         info!(
             index_id=%ctx.pipeline_id.index_uid.index_id(),
-            source_id=%ctx.source_config.source_id,
+            source_id=%ctx.pipeline_id.source_id,
             subscription=%subscription_name,
             max_messages_per_pull=%max_messages_per_pull,
             "Starting GCP PubSub source."
