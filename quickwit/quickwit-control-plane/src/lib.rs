@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+pub mod control_plane;
 #[path = "codegen/control_plane_service.rs"]
 mod control_plane_service;
 pub mod indexing_plan;
@@ -90,7 +91,7 @@ impl From<AskError<ControlPlaneError>> for ControlPlaneError {
 }
 
 /// Starts the Control Plane.
-pub async fn start_control_plane_service(
+pub async fn start_indexing_scheduler(
     cluster_id: String,
     self_node_id: String,
     universe: &Universe,
