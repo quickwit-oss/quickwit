@@ -62,9 +62,10 @@ use quickwit_common::tower::{
 };
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{QuickwitConfig, SearcherConfig};
+use quickwit_control_plane::control_plane::ControlPlane;
 use quickwit_control_plane::scheduler::IndexingScheduler;
 use quickwit_control_plane::{
-    start_control_plane_service, ControlPlaneServiceClient, IndexerNodeInfo, IndexerPool,
+    start_indexing_scheduler, ControlPlaneServiceClient, IndexerNodeInfo, IndexerPool,
 };
 use quickwit_core::{IndexService, IndexServiceError};
 use quickwit_indexing::actors::IndexingService;
@@ -274,7 +275,7 @@ pub async fn serve_quickwit(
         .contains(&QuickwitService::ControlPlane)
     {
         let cluster_change_stream = cluster.ready_nodes_change_stream().await;
-        let control_plane_mailbox = setup_control_plane_service(
+        let control_plane_mailbox = start_control_plane(
             &universe,
             cluster.cluster_id().to_string(),
             cluster.self_node_id().to_string(),
@@ -522,7 +523,29 @@ async fn setup_searcher(
     Ok((search_job_placer, search_service))
 }
 
-async fn setup_control_plane_service(
+async fn start_control_plane(
+    universe: &Universe,
+    cluster_id: String,
+    self_node_id: String,
+    cluster_change_stream: impl Stream<Item = ClusterChange> + Send + 'static,
+    indexing_service: Option<Mailbox<IndexingService>>,
+    metastore: Arc<dyn Metastore>,
+) -> anyhow::Result<Mailbox<ControlPlane>> {
+    let scheduler = setup_indexing_scheduler(
+        universe,
+        cluster_id,
+        self_node_id,
+        cluster_change_stream,
+        indexing_service,
+        metastore,
+    )
+    .await?;
+    let control_plane = ControlPlane::new(scheduler);
+    let (control_plane_mailbox, _) = universe.spawn_builder().spawn(control_plane);
+    Ok(control_plane_mailbox)
+}
+
+async fn setup_indexing_scheduler(
     universe: &Universe,
     cluster_id: String,
     self_node_id: String,
@@ -531,7 +554,7 @@ async fn setup_control_plane_service(
     metastore: Arc<dyn Metastore>,
 ) -> anyhow::Result<Mailbox<IndexingScheduler>> {
     let indexer_pool = IndexerPool::default();
-    let indexing_scheduler = start_control_plane_service(
+    let indexing_scheduler = start_indexing_scheduler(
         cluster_id,
         self_node_id,
         universe,
