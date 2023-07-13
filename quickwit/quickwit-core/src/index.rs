@@ -22,14 +22,14 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use quickwit_common::fs::{empty_dir, get_cache_directory_path};
-use quickwit_common::FileEntry;
 use quickwit_config::{validate_identifier, IndexConfig, SourceConfig};
 use quickwit_indexing::check_source_connectivity;
 use quickwit_janitor::{
-    delete_splits_with_files, run_garbage_collect, SplitDeletionError, SplitRemovalInfo,
+    delete_splits_from_storage_and_metastore, run_garbage_collect, DeleteSplitsError,
+    SplitRemovalInfo,
 };
 use quickwit_metastore::{
-    IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, SplitMetadata, SplitState,
+    IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, SplitInfo, SplitMetadata, SplitState,
 };
 use quickwit_proto::{IndexUid, ServiceError, ServiceErrorCode};
 use quickwit_storage::{StorageResolver, StorageResolverError};
@@ -43,7 +43,7 @@ pub enum IndexServiceError {
     #[error("Metastore error `{0}`.")]
     MetastoreError(#[from] MetastoreError),
     #[error("Split deletion error `{0}`.")]
-    SplitDeletionError(#[from] SplitDeletionError),
+    SplitDeletionError(#[from] DeleteSplitsError),
     #[error("Invalid config: {0:#}.")]
     InvalidConfig(anyhow::Error),
     #[error("Invalid identifier: {0}.")]
@@ -135,33 +135,29 @@ impl IndexService {
         &self,
         index_id: &str,
         dry_run: bool,
-    ) -> Result<Vec<FileEntry>, IndexServiceError> {
+    ) -> Result<Vec<SplitInfo>, IndexServiceError> {
         let index_metadata = self.metastore.index_metadata(index_id).await?;
         let index_uid = index_metadata.index_uid.clone();
         let index_uri = index_metadata.into_index_config().index_uri.clone();
         let storage = self.storage_resolver.resolve(&index_uri).await?;
 
         if dry_run {
-            let all_splits = self
+            let splits_to_delete = self
                 .metastore
                 .list_all_splits(index_uid.clone())
                 .await?
                 .into_iter()
-                .map(|metadata| metadata.split_metadata)
+                .map(|split| split.split_metadata.as_split_info())
                 .collect::<Vec<_>>();
-
-            let file_entries_to_delete: Vec<FileEntry> =
-                all_splits.iter().map(FileEntry::from).collect();
-            return Ok(file_entries_to_delete);
+            return Ok(splits_to_delete);
         }
-
         // Schedule staged and published splits for deletion.
         let query = ListSplitsQuery::for_index(index_uid.clone())
             .with_split_states([SplitState::Staged, SplitState::Published]);
         let splits = self.metastore.list_splits(query).await?;
         let split_ids = splits
             .iter()
-            .map(|meta| meta.split_id())
+            .map(|split| split.split_id())
             .collect::<Vec<_>>();
         self.metastore
             .mark_splits_for_deletion(index_uid.clone(), &split_ids)
@@ -175,10 +171,10 @@ impl IndexService {
             .list_splits(query)
             .await?
             .into_iter()
-            .map(|metadata| metadata.split_metadata)
+            .map(|split| split.split_metadata)
             .collect::<Vec<_>>();
 
-        let deleted_entries = delete_splits_with_files(
+        let deleted_splits = delete_splits_from_storage_and_metastore(
             index_uid.clone(),
             storage,
             self.metastore.clone(),
@@ -187,7 +183,8 @@ impl IndexService {
         )
         .await?;
         self.metastore.delete_index(index_uid).await?;
-        Ok(deleted_entries)
+
+        Ok(deleted_splits)
     }
 
     /// Detect all dangling splits and associated files from the index and removes them.
@@ -251,7 +248,7 @@ impl IndexService {
             .map(|split| split.split_metadata)
             .collect();
         // FIXME: return an error.
-        if let Err(err) = delete_splits_with_files(
+        if let Err(err) = delete_splits_from_storage_and_metastore(
             index_uid.clone(),
             storage,
             self.metastore.clone(),
@@ -350,4 +347,100 @@ pub async fn validate_storage_uri(
 ) -> anyhow::Result<()> {
     storage_resolver.resolve(&index_config.index_uri).await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use quickwit_common::uri::Uri;
+    use quickwit_metastore::metastore_for_test;
+    use quickwit_storage::PutPayload;
+
+    use super::*;
+
+    #[tokio::test]
+    async fn test_create_index() {
+        let metastore = metastore_for_test();
+        let storage_resolver = StorageResolver::ram_for_test();
+        let index_service = IndexService::new(metastore.clone(), storage_resolver);
+        let index_id = "test-index";
+        let index_uri = "ram://indexes/test-index";
+        let index_config = IndexConfig::for_test(index_id, index_uri);
+        let index_metadata_0 = index_service
+            .create_index(index_config.clone(), false)
+            .await
+            .unwrap();
+        assert_eq!(index_metadata_0.index_id(), index_id);
+        assert_eq!(index_metadata_0.index_uri(), &index_uri);
+        assert!(metastore.index_exists(index_id).await.unwrap());
+
+        let error = index_service
+            .create_index(index_config.clone(), false)
+            .await
+            .unwrap_err();
+        let IndexServiceError::MetastoreError(inner_error) = error else {
+            panic!("Expected `MetastoreError` variant, got {:?}", error)
+        };
+        assert!(
+            matches!(inner_error, MetastoreError::IndexAlreadyExists { index_id } if index_id == index_metadata_0.index_id())
+        );
+
+        let index_metadata_1 = index_service
+            .create_index(index_config, true)
+            .await
+            .unwrap();
+        assert_eq!(index_metadata_1.index_id(), index_id);
+        assert_eq!(index_metadata_1.index_uri(), &index_uri);
+        assert!(index_metadata_0.index_uid != index_metadata_1.index_uid);
+    }
+
+    #[tokio::test]
+    async fn test_delete_index() {
+        let metastore = metastore_for_test();
+        let storage_resolver = StorageResolver::ram_for_test();
+        let storage = storage_resolver
+            .resolve(&Uri::for_test("ram://indexes/test-index"))
+            .await
+            .unwrap();
+        let index_service = IndexService::new(metastore.clone(), storage_resolver);
+        let index_id = "test-index";
+        let index_uri = "ram://indexes/test-index";
+        let index_config = IndexConfig::for_test(index_id, index_uri);
+        let index_uid = index_service
+            .create_index(index_config.clone(), false)
+            .await
+            .unwrap()
+            .index_uid;
+
+        let split_id = "test-split";
+        let split_metadata = SplitMetadata {
+            split_id: split_id.to_string(),
+            index_uid: index_uid.clone(),
+            ..Default::default()
+        };
+        metastore
+            .stage_splits(index_uid.clone(), vec![split_metadata.clone()])
+            .await
+            .unwrap();
+
+        let splits = metastore.list_all_splits(index_uid.clone()).await.unwrap();
+        assert_eq!(splits.len(), 1);
+
+        let split_path_str = format!("{}.split", split_id);
+        let split_path = Path::new(&split_path_str);
+        let payload: Box<dyn PutPayload> = Box::new(vec![0]);
+        storage.put(split_path, payload).await.unwrap();
+        assert!(storage.exists(split_path).await.unwrap());
+
+        let split_infos = index_service.delete_index(index_id, false).await.unwrap();
+        assert_eq!(split_infos.len(), 1);
+
+        let error = metastore
+            .list_all_splits(index_uid.clone())
+            .await
+            .unwrap_err();
+        assert!(
+            matches!(error, MetastoreError::IndexDoesNotExist { index_id } if index_id == index_uid.index_id())
+        );
+        assert!(!storage.exists(split_path).await.unwrap());
+    }
 }

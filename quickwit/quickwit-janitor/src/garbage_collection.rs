@@ -17,35 +17,38 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::HashMap;
-use std::path::Path;
+use std::collections::{HashMap, HashSet};
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
 use futures::Future;
 use quickwit_actors::ActorContext;
-use quickwit_common::{FileEntry, PrettySample};
-use quickwit_metastore::{ListSplitsQuery, Metastore, MetastoreError, SplitMetadata, SplitState};
+use quickwit_common::PrettySample;
+use quickwit_metastore::{
+    ListSplitsQuery, Metastore, MetastoreError, SplitInfo, SplitMetadata, SplitState,
+};
 use quickwit_proto::IndexUid;
-use quickwit_storage::Storage;
+use quickwit_storage::{BulkDeleteError, Storage};
 use thiserror::Error;
 use time::OffsetDateTime;
 use tracing::{error, instrument};
 
 use crate::actors::GarbageCollector;
 
-/// The maximum number of splits that should be deleted in one go by the GC.
+/// The maximum number of splits that the GC should delete per attempt.
 const DELETE_SPLITS_BATCH_SIZE: usize = 1000;
 
-/// SplitDeletionError denotes error that can happen when deleting split
-/// during garbage collection.
+/// [`DeleteSplitsError`] describes the errors that occurred during the deletion of splits from
+/// storage and metastore.
 #[derive(Error, Debug)]
-pub enum SplitDeletionError {
-    #[error("Failed to delete splits from metastore: '{error:?}'.")]
-    MetastoreFailure {
-        error: MetastoreError,
-        failed_split_ids: Vec<String>,
-    },
+#[error("Failed to delete splits from storage and/or metastore.")]
+pub struct DeleteSplitsError {
+    successes: Vec<SplitInfo>,
+    storage_error: Option<BulkDeleteError>,
+    storage_failures: Vec<SplitInfo>,
+    metastore_error: Option<MetastoreError>,
+    metastore_failures: Vec<SplitInfo>,
 }
 
 async fn protect_future<Fut, T>(
@@ -65,9 +68,9 @@ where
 /// Information on what splits have and have not been cleaned up by the GC.
 pub struct SplitRemovalInfo {
     /// The set of splits that have been removed.
-    pub removed_split_entries: Vec<FileEntry>,
+    pub removed_split_entries: Vec<SplitInfo>,
     /// The set of split ids that were attempted to be removed, but were unsuccessful.
-    pub failed_split_ids: Vec<String>,
+    pub failed_splits: Vec<SplitInfo>,
 }
 
 /// Detect all dangling splits and associated files from the index and removes them.
@@ -112,24 +115,24 @@ pub async fn run_garbage_collect(
         let mut splits_marked_for_deletion = protect_future(ctx_opt, metastore.list_splits(query))
             .await?
             .into_iter()
-            .map(|meta| meta.split_metadata)
+            .map(|split| split.split_metadata)
             .collect::<Vec<_>>();
         splits_marked_for_deletion.extend(deletable_staged_splits);
 
-        let candidate_entries: Vec<FileEntry> = splits_marked_for_deletion
-            .iter()
-            .map(FileEntry::from)
+        let candidate_entries: Vec<SplitInfo> = splits_marked_for_deletion
+            .into_iter()
+            .map(|split| split.as_split_info())
             .collect();
         return Ok(SplitRemovalInfo {
             removed_split_entries: candidate_entries,
-            failed_split_ids: Vec::new(),
+            failed_splits: Vec::new(),
         });
     }
 
     // Schedule all eligible staged splits for delete
     let split_ids: Vec<&str> = deletable_staged_splits
         .iter()
-        .map(|meta| meta.split_id())
+        .map(|split| split.split_id())
         .collect();
     if !split_ids.is_empty() {
         protect_future(
@@ -144,7 +147,7 @@ pub async fn run_garbage_collect(
     let updated_before_timestamp =
         OffsetDateTime::now_utc().unix_timestamp() - deletion_grace_period.as_secs() as i64;
 
-    let deleted_files = delete_splits_marked_for_deletion(
+    let deleted_splits = delete_splits_marked_for_deletion(
         index_uid,
         updated_before_timestamp,
         storage,
@@ -153,7 +156,7 @@ pub async fn run_garbage_collect(
     )
     .await;
 
-    Ok(deleted_files)
+    Ok(deleted_splits)
 }
 
 #[instrument(skip(storage, metastore, ctx_opt))]
@@ -169,8 +172,9 @@ async fn delete_splits_marked_for_deletion(
     metastore: Arc<dyn Metastore>,
     ctx_opt: Option<&ActorContext<GarbageCollector>>,
 ) -> SplitRemovalInfo {
-    let mut failed_split_ids = Vec::new();
-    let mut removed_split_files = Vec::new();
+    let mut removed_splits = Vec::new();
+    let mut failed_splits = Vec::new();
+
     loop {
         let query = ListSplitsQuery::for_index(index_uid.clone())
             .with_split_state(SplitState::MarkedForDeletion)
@@ -186,18 +190,17 @@ async fn delete_splits_marked_for_deletion(
                 break;
             }
         };
-
         let splits_to_delete = splits_to_delete
             .into_iter()
             .map(|split| split.split_metadata)
             .collect::<Vec<_>>();
 
         let num_splits_to_delete = splits_to_delete.len();
+
         if num_splits_to_delete == 0 {
             break;
         }
-
-        let delete_splits_result = delete_splits_with_files(
+        let delete_splits_result = delete_splits_from_storage_and_metastore(
             index_uid.clone(),
             storage.clone(),
             metastore.clone(),
@@ -207,31 +210,20 @@ async fn delete_splits_marked_for_deletion(
         .await;
 
         match delete_splits_result {
-            Ok(entries) => removed_split_files.extend(entries),
-            Err(SplitDeletionError::MetastoreFailure {
-                error,
-                failed_split_ids: failed_split_ids_inner,
-            }) => {
-                error!(
-                    error=?error,
-                    index_id=%index_uid.index_id(),
-                    split_ids=?PrettySample::new(&failed_split_ids_inner, 5),
-                    "Failed to delete {} splits.",
-                    failed_split_ids_inner.len()
-                );
-                failed_split_ids.extend(failed_split_ids_inner);
+            Ok(entries) => removed_splits.extend(entries),
+            Err(delete_splits_error) => {
+                failed_splits.extend(delete_splits_error.storage_failures);
+                failed_splits.extend(delete_splits_error.metastore_failures);
                 break;
             }
         }
-
         if num_splits_to_delete < DELETE_SPLITS_BATCH_SIZE {
             break;
         }
     }
-
     SplitRemovalInfo {
-        removed_split_entries: removed_split_files,
-        failed_split_ids,
+        removed_split_entries: removed_splits,
+        failed_splits,
     }
 }
 
@@ -243,100 +235,113 @@ async fn delete_splits_marked_for_deletion(
 /// * `metastore` - The metastore managing the target index.
 /// * `splits`  - The list of splits to delete.
 /// * `ctx_opt` - A context for reporting progress (only useful within quickwit actor).
-pub async fn delete_splits_with_files(
+pub async fn delete_splits_from_storage_and_metastore(
     index_uid: IndexUid,
     storage: Arc<dyn Storage>,
     metastore: Arc<dyn Metastore>,
     splits: Vec<SplitMetadata>,
     ctx_opt: Option<&ActorContext<GarbageCollector>>,
-) -> anyhow::Result<Vec<FileEntry>, SplitDeletionError> {
-    let mut paths_to_splits = HashMap::with_capacity(splits.len());
+) -> anyhow::Result<Vec<SplitInfo>, DeleteSplitsError> {
+    let mut split_infos: HashMap<PathBuf, SplitInfo> = HashMap::with_capacity(splits.len());
 
     for split in splits {
-        let file_entry = FileEntry::from(&split);
-        let split_filename = quickwit_common::split_file(split.split_id());
-        let split_path = Path::new(&split_filename);
-
-        paths_to_splits.insert(
-            split_path.to_path_buf(),
-            (split.split_id().to_string(), file_entry),
-        );
+        let split_info = split.as_split_info();
+        split_infos.insert(split_info.file_name.clone(), split_info);
     }
-
-    let paths = paths_to_splits
+    let split_paths = split_infos
         .keys()
-        .map(|key| key.as_path())
+        .map(|split_path_buf| split_path_buf.as_path())
         .collect::<Vec<&Path>>();
-    let delete_result = storage.bulk_delete(&paths).await;
+    let delete_result = protect_future(ctx_opt, storage.bulk_delete(&split_paths)).await;
 
     if let Some(ctx) = ctx_opt {
         ctx.record_progress();
     }
-
-    let mut deleted_split_ids = Vec::new();
-    let mut deleted_file_entries = Vec::new();
+    let mut successes = Vec::with_capacity(split_infos.len());
+    let mut storage_error: Option<BulkDeleteError> = None;
+    let mut storage_failures = Vec::new();
 
     match delete_result {
-        Ok(()) => {
-            for (split_id, entry) in paths_to_splits.into_values() {
-                deleted_split_ids.push(split_id);
-                deleted_file_entries.push(entry);
-            }
-        }
+        Ok(_) => successes.extend(split_infos.into_values()),
         Err(bulk_delete_error) => {
-            let num_failed_splits =
-                bulk_delete_error.failures.len() + bulk_delete_error.unattempted.len();
-            let truncated_split_ids = bulk_delete_error
-                .failures
-                .keys()
-                .chain(bulk_delete_error.unattempted.iter())
-                .take(5)
-                .collect::<Vec<_>>();
-
-            error!(
-                error = ?bulk_delete_error.error,
-                index_id = ?index_uid.index_id(),
-                num_failed_splits = num_failed_splits,
-                "Failed to delete {:?} and {} other splits.",
-                truncated_split_ids, num_failed_splits,
-            );
-
-            for split_path in bulk_delete_error.successes {
-                let (split_id, entry) = paths_to_splits
-                    .remove(&split_path)
-                    .expect("The successful split path should be present within the lookup table.");
-
-                deleted_split_ids.push(split_id);
-                deleted_file_entries.push(entry);
+            let success_split_paths: HashSet<&PathBuf> =
+                bulk_delete_error.successes.iter().collect();
+            for (split_path, split_info) in split_infos {
+                if success_split_paths.contains(&split_path) {
+                    successes.push(split_info);
+                } else {
+                    storage_failures.push(split_info);
+                }
             }
+            let failed_split_paths = storage_failures
+                .iter()
+                .map(|split_info| split_info.file_name.as_path())
+                .collect::<Vec<_>>();
+            error!(
+                error=?bulk_delete_error.error,
+                index_id=index_uid.index_id(),
+                "Failed to delete split file(s) {:?} from storage.",
+                PrettySample::new(&failed_split_paths, 5),
+            );
+            storage_error = Some(bulk_delete_error);
         }
     };
+    if !successes.is_empty() {
+        let split_ids: Vec<&str> = successes
+            .iter()
+            .map(|split_info| split_info.split_id.as_str())
+            .collect();
+        let metastore_result = protect_future(
+            ctx_opt,
+            metastore.delete_splits(index_uid.clone(), &split_ids),
+        )
+        .await;
 
-    if !deleted_split_ids.is_empty() {
-        let split_ids: Vec<&str> = deleted_split_ids.iter().map(String::as_str).collect();
-        protect_future(ctx_opt, metastore.delete_splits(index_uid, &split_ids))
-            .await
-            .map_err(|error| SplitDeletionError::MetastoreFailure {
-                error,
-                failed_split_ids: split_ids.into_iter().map(str::to_string).collect(),
-            })?;
+        if let Err(metastore_error) = metastore_result {
+            error!(
+                error=?metastore_error,
+                index_id=index_uid.index_id(),
+                "Failed to delete split(s) {:?} from metastore.",
+                PrettySample::new(&split_ids, 5),
+            );
+            let delete_splits_error = DeleteSplitsError {
+                successes: Vec::new(),
+                storage_error,
+                storage_failures,
+                metastore_error: Some(metastore_error),
+                metastore_failures: successes,
+            };
+            return Err(delete_splits_error);
+        }
     }
-
-    Ok(deleted_file_entries)
+    if !storage_failures.is_empty() {
+        let delete_splits_error = DeleteSplitsError {
+            successes,
+            storage_error,
+            storage_failures,
+            metastore_error: None,
+            metastore_failures: Vec::new(),
+        };
+        return Err(delete_splits_error);
+    }
+    Ok(successes)
 }
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
     use std::time::Duration;
 
+    use itertools::Itertools;
     use quickwit_config::IndexConfig;
     use quickwit_metastore::{
         metastore_for_test, ListSplitsQuery, MockMetastore, SplitMetadata, SplitState,
     };
     use quickwit_proto::IndexUid;
-    use quickwit_storage::storage_for_test;
+    use quickwit_storage::{
+        storage_for_test, BulkDeleteError, DeleteFailure, MockStorage, PutPayload,
+    };
 
+    use super::*;
     use crate::run_garbage_collect;
 
     #[tokio::test]
@@ -482,5 +487,207 @@ mod tests {
         )
         .await
         .unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_delete_splits_from_storage_and_metastore_happy_path() {
+        let storage = storage_for_test();
+        let metastore = metastore_for_test();
+
+        let index_id = "test-delete-splits-happy--index";
+        let index_uri = format!("ram:///indexes/{index_id}");
+        let index_config = IndexConfig::for_test(index_id, &index_uri);
+        let index_uid = metastore.create_index(index_config).await.unwrap();
+
+        let split_id = "test-delete-splits-happy--split";
+        let split_metadata = SplitMetadata {
+            split_id: split_id.to_string(),
+            index_uid: IndexUid::new(index_id),
+            ..Default::default()
+        };
+        metastore
+            .stage_splits(index_uid.clone(), vec![split_metadata.clone()])
+            .await
+            .unwrap();
+        metastore
+            .mark_splits_for_deletion(index_uid.clone(), &[split_id])
+            .await
+            .unwrap();
+
+        let split_path_str = format!("{}.split", split_id);
+        let split_path = Path::new(&split_path_str);
+        let payload: Box<dyn PutPayload> = Box::new(vec![0]);
+        storage.put(split_path, payload).await.unwrap();
+        assert!(storage.exists(split_path).await.unwrap());
+
+        let splits = metastore.list_all_splits(index_uid.clone()).await.unwrap();
+        assert_eq!(splits.len(), 1);
+
+        let deleted_split_infos = delete_splits_from_storage_and_metastore(
+            index_uid.clone(),
+            storage.clone(),
+            metastore.clone(),
+            vec![split_metadata],
+            None,
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(deleted_split_infos.len(), 1);
+        assert_eq!(deleted_split_infos[0].split_id, split_id,);
+        assert_eq!(
+            deleted_split_infos[0].file_name,
+            Path::new(&format!("{split_id}.split"))
+        );
+        assert!(!storage.exists(split_path).await.unwrap());
+        assert!(metastore
+            .list_all_splits(index_uid)
+            .await
+            .unwrap()
+            .is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_delete_splits_from_storage_and_metastore_storage_error() {
+        let mut mock_storage = MockStorage::new();
+        mock_storage
+            .expect_bulk_delete()
+            .return_once(|split_paths| {
+                assert_eq!(split_paths.len(), 2);
+
+                let split_paths: Vec<PathBuf> = split_paths
+                    .iter()
+                    .map(|split_path| split_path.to_path_buf())
+                    .sorted()
+                    .collect();
+                let split_path = split_paths[0].to_path_buf();
+                let successes = vec![split_path];
+
+                let split_path = split_paths[1].to_path_buf();
+                let delete_failure = DeleteFailure {
+                    code: Some("AccessDenied".to_string()),
+                    ..Default::default()
+                };
+                let failures = HashMap::from_iter([(split_path, delete_failure)]);
+                let bulk_delete_error = BulkDeleteError {
+                    successes,
+                    failures,
+                    ..Default::default()
+                };
+                Err(bulk_delete_error)
+            });
+        let storage = Arc::new(mock_storage);
+        let metastore = metastore_for_test();
+
+        let index_id = "test-delete-splits-storage-error--index";
+        let index_uri = format!("ram:///indexes/{index_id}");
+        let index_config = IndexConfig::for_test(index_id, &index_uri);
+        let index_uid = metastore.create_index(index_config).await.unwrap();
+
+        let split_id_0 = "test-delete-splits-storage-error--split-0";
+        let split_metadata_0 = SplitMetadata {
+            split_id: split_id_0.to_string(),
+            index_uid: index_uid.clone(),
+            ..Default::default()
+        };
+        let split_id_1 = "test-delete-splits-storage-error--split-1";
+        let split_metadata_1 = SplitMetadata {
+            split_id: split_id_1.to_string(),
+            index_uid: index_uid.clone(),
+            ..Default::default()
+        };
+        metastore
+            .stage_splits(
+                index_uid.clone(),
+                vec![split_metadata_0.clone(), split_metadata_1.clone()],
+            )
+            .await
+            .unwrap();
+        metastore
+            .mark_splits_for_deletion(index_uid.clone(), &[split_id_0, split_id_1])
+            .await
+            .unwrap();
+
+        let error = delete_splits_from_storage_and_metastore(
+            index_uid.clone(),
+            storage.clone(),
+            metastore.clone(),
+            vec![split_metadata_0, split_metadata_1],
+            None,
+        )
+        .await
+        .unwrap_err();
+
+        assert_eq!(error.successes.len(), 1);
+        assert_eq!(error.storage_failures.len(), 1);
+        assert_eq!(error.metastore_failures.len(), 0);
+
+        let splits = metastore.list_all_splits(index_uid.clone()).await.unwrap();
+        assert_eq!(splits.len(), 1);
+        assert_eq!(splits[0].split_id(), split_id_1);
+    }
+
+    #[tokio::test]
+    async fn test_delete_splits_from_storage_and_metastore_metastore_error() {
+        let mut mock_storage = MockStorage::new();
+        mock_storage
+            .expect_bulk_delete()
+            .return_once(|split_paths| {
+                assert_eq!(split_paths.len(), 2);
+
+                let split_path = split_paths[0].to_path_buf();
+                let successes = vec![split_path];
+
+                let split_path = split_paths[1].to_path_buf();
+                let delete_failure = DeleteFailure {
+                    code: Some("AccessDenied".to_string()),
+                    ..Default::default()
+                };
+                let failures = HashMap::from_iter([(split_path, delete_failure)]);
+                let bulk_delete_error = BulkDeleteError {
+                    successes,
+                    failures,
+                    ..Default::default()
+                };
+                Err(bulk_delete_error)
+            });
+        let storage = Arc::new(mock_storage);
+
+        let index_id = "test-delete-splits-storage-error--index";
+        let index_uid = IndexUid::new(index_id.to_string());
+
+        let mut mock_metastore = MockMetastore::new();
+        mock_metastore.expect_delete_splits().return_once(|_, _| {
+            Err(MetastoreError::IndexDoesNotExist {
+                index_id: index_id.to_string(),
+            })
+        });
+        let metastore = Arc::new(mock_metastore);
+
+        let split_id_0 = "test-delete-splits-storage-error--split-0";
+        let split_metadata_0 = SplitMetadata {
+            split_id: split_id_0.to_string(),
+            index_uid: index_uid.clone(),
+            ..Default::default()
+        };
+        let split_id_1 = "test-delete-splits-storage-error--split-1";
+        let split_metadata_1 = SplitMetadata {
+            split_id: split_id_1.to_string(),
+            index_uid: index_uid.clone(),
+            ..Default::default()
+        };
+        let error = delete_splits_from_storage_and_metastore(
+            index_uid.clone(),
+            storage.clone(),
+            metastore.clone(),
+            vec![split_metadata_0, split_metadata_1],
+            None,
+        )
+        .await
+        .unwrap_err();
+
+        assert!(error.successes.is_empty());
+        assert_eq!(error.storage_failures.len(), 1);
+        assert_eq!(error.metastore_failures.len(), 1);
     }
 }

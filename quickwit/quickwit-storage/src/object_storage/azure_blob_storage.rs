@@ -48,10 +48,10 @@ use tokio_util::compat::FuturesAsyncReadCompatExt;
 use tracing::{instrument, warn};
 
 use crate::debouncer::DebouncedStorage;
-use crate::storage::{BulkDeleteError, DeleteFailure, SendableAsync};
+use crate::storage::SendableAsync;
 use crate::{
-    MultiPartPolicy, PutPayload, Storage, StorageError, StorageErrorKind, StorageFactory,
-    StorageResolverError, StorageResult, STORAGE_METRICS,
+    BulkDeleteError, DeleteFailure, MultiPartPolicy, PutPayload, Storage, StorageError,
+    StorageErrorKind, StorageFactory, StorageResolverError, StorageResult, STORAGE_METRICS,
 };
 
 /// Azure object storage resolver.
