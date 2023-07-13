@@ -175,7 +175,7 @@ tracing-subscriber = { version = "0.3.16", features = [
 typetag = "0.2"
 ulid = "1.0"
 username = "0.2"
-utoipa = "3.3.0"
+utoipa = "3.4.0"
 uuid = { version = "1.4", features = ["v4", "serde"] }
 warp = "0.3"
 wiremock = "0.5"
