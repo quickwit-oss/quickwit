@@ -37,9 +37,6 @@ services:
       - all
       - localstack
     environment:
-      # `kinesalite` provides a more accurate implementation than
-      # the default Kinesis provider (`kinesis-mock`).
-      KINESIS_PROVIDER: kinesalite
       SERVICES: kinesis,s3
       PERSISTENCE: 1
     volumes:
@@ -53,7 +50,7 @@ services:
 
   postgres:
     # The oldest supported version. EOL November 9, 2023
-    image: postgres:${POSTGRES_VERSION:-11.19-alpine} 
+    image: postgres:${POSTGRES_VERSION:-11.19-alpine}
     container_name: postgres
     ports:
       - "${MAP_HOST_POSTGRESS:-127.0.0.1}:5432:5432"
@@ -82,14 +79,14 @@ services:
       - "${MAP_HOST_PULSAR:-127.0.0.1}:6650:6650"
       - "${MAP_HOST_PULSAR:-127.0.0.1}:8081:8080"
     environment:
-      PULSAR_MEM: " -Xms512m -Xmx512m -XX:MaxDirectMemorySize=2g"
+      PULSAR_MEM: "-Xms256M -Xmx256M"
     profiles:
       - all
       - pulsar
 
   kafka-broker:
-    # The oldest supported version with arm64 docker images. EOL October 27, 2023 
-    image: confluentinc/cp-kafka:${CP_VERSION:-7.0.9} 
+    # The oldest supported version with arm64 docker images. EOL October 27, 2023
+    image: confluentinc/cp-kafka:${CP_VERSION:-7.0.9}
     container_name: kafka-broker
     depends_on:
       - zookeeper
@@ -110,6 +107,7 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_JMX_PORT: 9101
       KAFKA_JMX_HOSTNAME: localhost
+      KAFKA_HEAP_OPTS: -Xms256M -Xmx256M
     healthcheck:
       test: ["CMD", "cub", "kafka-ready", "-b", "localhost:9092", "1", "5"]
       start_period: 5s
@@ -118,7 +116,7 @@ services:
       retries: 100
 
   zookeeper:
-    # The oldest supported version with arm64 images. EOL October 27, 2023 
+    # The oldest supported version with arm64 images. EOL October 27, 2023
     image: confluentinc/cp-zookeeper:${CP_VERSION:-7.0.9}
     container_name: zookeeper
     ports:
@@ -127,6 +125,7 @@ services:
       - all
       - kafka
     environment:
+      KAFKA_HEAP_OPTS: -Xms256M -Xmx256M
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
     healthcheck:
