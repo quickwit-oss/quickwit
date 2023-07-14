@@ -26,7 +26,6 @@ fn main() {
         "crate::Result",
         "crate::ControlPlaneError",
         &[],
-        &[],
     )
     .unwrap();
 }

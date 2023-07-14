@@ -26,7 +26,6 @@ fn main() {
         "crate::HelloResult",
         "crate::HelloError",
         &[],
-        &[],
     )
     .unwrap();
 }
