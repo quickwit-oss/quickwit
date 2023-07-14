@@ -187,8 +187,9 @@ impl Source for HttpSource {
             .find(|(_, partition_counters)| partition_counters.current_offset < u64::MAX)
         else {
             info!("No more partitions to read from, stopping source.");
-            ctx.send_exit_with_success(doc_processor_mailbox).await?;
-            return Err(ActorExitStatus::Success);
+            info!("Resetting failing URIs and retrying in 1h");
+            self.uri_with_errors.clear();
+            return Ok(Duration::from_secs(3600));
         };
         let uri = partition.0.as_str();
         let lines_result: anyhow::Result<Lines<BufReader<Box<dyn AsyncRead + Send + Unpin>>>> =
