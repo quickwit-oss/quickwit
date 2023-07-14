@@ -4815,6 +4815,7 @@ dependencies = [
  "mrecordlog",
  "once_cell",
  "prost",
+ "prost-build",
  "quickwit-actors",
  "quickwit-codegen",
  "quickwit-common",

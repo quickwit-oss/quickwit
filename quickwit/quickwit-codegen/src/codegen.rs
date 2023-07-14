@@ -31,15 +31,31 @@ impl Codegen {
         out_dir: &str,
         result_type_path: &str,
         error_type_path: &str,
-        bytes: &[&str],
         includes: &[&str],
+    ) -> anyhow::Result<()> {
+        Self::run_with_config(
+            protos,
+            out_dir,
+            result_type_path,
+            error_type_path,
+            includes,
+            prost_build::Config::default(),
+        )
+    }
+
+    pub fn run_with_config(
+        protos: &[&str],
+        out_dir: &str,
+        result_type_path: &str,
+        error_type_path: &str,
+        includes: &[&str],
+        mut prost_config: prost_build::Config,
     ) -> anyhow::Result<()> {
         let service_generator = Box::new(QuickwitServiceGenerator::new(
             result_type_path,
             error_type_path,
         ));
 
-        let mut prost_config = prost_build::Config::default();
         prost_config
             .protoc_arg("--experimental_allow_proto3_optional")
             .type_attribute(
@@ -50,7 +66,6 @@ impl Codegen {
                 "DocBatch.doc_buffer",
                 "#[schema(value_type = String, format = Binary)]",
             )
-            .bytes(bytes)
             .service_generator(service_generator)
             .out_dir(out_dir);
 
