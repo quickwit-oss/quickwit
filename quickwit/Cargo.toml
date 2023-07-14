@@ -83,7 +83,7 @@ hyper = { version = "0.14", features = [
   "tcp",
 ] }
 hyper-rustls = "0.24"
-indexmap = { version = "1.9.2", features = ["serde"] }
+indexmap = { version = "2.0.0", features = ["serde"] }
 indicatif = "0.17.3"
 itertools = "0.10.5"
 json_comments = "0.2"

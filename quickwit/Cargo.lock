@@ -4698,7 +4698,7 @@ dependencies = [
  "dyn-clone",
  "fnv",
  "hex",
- "indexmap 1.9.3",
+ "indexmap 2.0.0",
  "itertools",
  "matches",
  "mockall",
