@@ -28,7 +28,7 @@ fn main() {
         "crate::Result",
         "crate::IngestServiceError",
         &[],
-       config,
+        config,
     )
     .unwrap();
 }
