@@ -524,6 +524,18 @@ impl PartialOrd for SortValue {
     }
 }
 
+use quickwit_actors::AskError;
+
+impl<E: fmt::Debug + ServiceError> ServiceError for quickwit_actors::AskError<E> {
+    fn status_code(&self) -> ServiceErrorCode {
+        match self {
+            AskError::MessageNotDelivered => ServiceErrorCode::Internal,
+            AskError::ProcessMessageError => ServiceErrorCode::Internal,
+            AskError::ErrorReply(err) => err.status_code(),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
