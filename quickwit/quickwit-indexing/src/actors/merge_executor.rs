@@ -460,7 +460,10 @@ impl MergeExecutor {
         ];
         directory_stack.extend(split_directories.into_iter());
         let union_directory = UnionDirectory::union_of(directory_stack);
-        let union_index = open_index(union_directory, self.doc_mapper.tokenizer_manager())?;
+        let mut union_index = open_index(union_directory, self.doc_mapper.tokenizer_manager())?;
+        union_index
+            .settings_mut()
+            .docstore_compress_dedicated_thread = false;
 
         ctx.record_progress();
         let _protect_guard = ctx.protect_zone();
