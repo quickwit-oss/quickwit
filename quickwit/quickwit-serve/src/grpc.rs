@@ -31,9 +31,9 @@ use quickwit_ingest::IngestServiceGrpcServerAdapter;
 use quickwit_jaeger::JaegerService;
 use quickwit_metastore::GrpcMetastoreAdapter;
 use quickwit_opentelemetry::otlp::{OtlpGrpcLogsService, OtlpGrpcTracesService};
-use quickwit_proto::indexing_api::indexing_service_server::IndexingServiceServer;
+use quickwit_proto::indexing::indexing_service_server::IndexingServiceServer;
 use quickwit_proto::jaeger::storage::v1::span_reader_plugin_server::SpanReaderPluginServer;
-use quickwit_proto::metastore_api::metastore_api_service_server::MetastoreApiServiceServer;
+use quickwit_proto::metastore::metastore_service_server::MetastoreServiceServer;
 use quickwit_proto::opentelemetry::proto::collector::logs::v1::logs_service_server::LogsServiceServer;
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::trace_service_server::TraceServiceServer;
 use quickwit_proto::search_service_server::SearchServiceServer;
@@ -60,7 +60,7 @@ pub(crate) async fn start_grpc_server(
         enabled_grpc_services.insert("metastore");
         let metastore = services.metastore.clone();
         let grpc_metastore = GrpcMetastoreAdapter::from(metastore);
-        Some(MetastoreApiServiceServer::new(grpc_metastore))
+        Some(MetastoreServiceServer::new(grpc_metastore))
     } else {
         None
     };

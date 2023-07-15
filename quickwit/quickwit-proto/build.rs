@@ -46,7 +46,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .type_attribute("OutputFormat", "#[serde(rename_all = \"snake_case\")]")
         .type_attribute("PartialHit.sort_value", "#[derive(Copy)]")
         .type_attribute("SortOrder", "#[serde(rename_all = \"lowercase\")]")
-        .out_dir("src/")
+        .out_dir("src/quickwit")
         .compile_with_config(prost_config, &protos, &["protos/quickwit"])?;
 
     // Jaeger proto

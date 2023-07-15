@@ -34,7 +34,7 @@ use quickwit_common::temp_dir::TempDirectory;
 use quickwit_directories::UnionDirectory;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::{Metastore, SplitMetadata};
-use quickwit_proto::metastore_api::DeleteTask;
+use quickwit_proto::metastore::DeleteTask;
 use quickwit_query::get_quickwit_fastfield_normalizer_manager;
 use quickwit_query::query_ast::QueryAst;
 use tantivy::directory::{DirectoryClone, MmapDirectory, RamDirectory};
@@ -532,7 +532,7 @@ mod tests {
     use quickwit_actors::Universe;
     use quickwit_common::split_file;
     use quickwit_metastore::SplitMetadata;
-    use quickwit_proto::metastore_api::DeleteQuery;
+    use quickwit_proto::metastore::DeleteQuery;
     use serde_json::Value as JsonValue;
     use tantivy::{Inventory, ReloadPolicy};
 

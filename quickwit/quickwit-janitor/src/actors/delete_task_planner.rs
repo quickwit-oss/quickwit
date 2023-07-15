@@ -32,7 +32,7 @@ use quickwit_indexing::merge_policy::MergeOperation;
 use quickwit_metastore::{
     split_tag_filter, split_time_range_filter, Metastore, MetastoreResult, Split,
 };
-use quickwit_proto::metastore_api::DeleteTask;
+use quickwit_proto::metastore::DeleteTask;
 use quickwit_proto::{IndexUid, SearchRequest};
 use quickwit_search::{jobs_to_leaf_request, SearchJob, SearchJobPlacer};
 use serde::Serialize;
@@ -400,7 +400,7 @@ mod tests {
     use quickwit_indexing::merge_policy::MergeOperation;
     use quickwit_indexing::TestSandbox;
     use quickwit_metastore::SplitMetadata;
-    use quickwit_proto::metastore_api::DeleteQuery;
+    use quickwit_proto::metastore::DeleteQuery;
     use quickwit_proto::{LeafSearchRequest, LeafSearchResponse};
     use quickwit_search::{searcher_pool_for_test, MockSearchService};
     use tantivy::TrackedObject;

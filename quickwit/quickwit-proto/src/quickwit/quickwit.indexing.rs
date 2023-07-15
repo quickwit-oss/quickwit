@@ -125,13 +125,13 @@ pub mod indexing_service_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/quickwit_indexing_api.IndexingService/applyIndexingPlan",
+                "/quickwit.indexing.IndexingService/applyIndexingPlan",
             );
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(
                     GrpcMethod::new(
-                        "quickwit_indexing_api.IndexingService",
+                        "quickwit.indexing.IndexingService",
                         "applyIndexingPlan",
                     ),
                 );
@@ -234,7 +234,7 @@ pub mod indexing_service_server {
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
             let inner = self.inner.clone();
             match req.uri().path() {
-                "/quickwit_indexing_api.IndexingService/applyIndexingPlan" => {
+                "/quickwit.indexing.IndexingService/applyIndexingPlan" => {
                     #[allow(non_camel_case_types)]
                     struct applyIndexingPlanSvc<T: IndexingService>(pub Arc<T>);
                     impl<
@@ -318,6 +318,6 @@ pub mod indexing_service_server {
         }
     }
     impl<T: IndexingService> tonic::server::NamedService for IndexingServiceServer<T> {
-        const NAME: &'static str = "quickwit_indexing_api.IndexingService";
+        const NAME: &'static str = "quickwit.indexing.IndexingService";
     }
 }

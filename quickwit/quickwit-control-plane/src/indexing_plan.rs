@@ -24,7 +24,7 @@ use std::hash::Hash;
 use itertools::Itertools;
 use quickwit_common::rendezvous_hasher::sort_by_rendez_vous_hash;
 use quickwit_config::{SourceConfig, CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID};
-use quickwit_proto::indexing_api::IndexingTask;
+use quickwit_proto::indexing::IndexingTask;
 use quickwit_proto::IndexUid;
 use serde::Serialize;
 
@@ -325,7 +325,7 @@ mod tests {
         CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID,
     };
     use quickwit_indexing::indexing_client::create_indexing_service_client;
-    use quickwit_proto::indexing_api::IndexingTask;
+    use quickwit_proto::indexing::IndexingTask;
     use quickwit_proto::IndexUid;
     use rand::seq::SliceRandom;
     use serde_json::json;

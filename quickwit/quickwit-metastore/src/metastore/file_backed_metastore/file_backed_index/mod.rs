@@ -29,7 +29,7 @@ use std::ops::Bound;
 
 use quickwit_common::PrettySample;
 use quickwit_config::SourceConfig;
-use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
+use quickwit_proto::metastore::{DeleteQuery, DeleteTask};
 use quickwit_proto::IndexUid;
 use serde::{Deserialize, Serialize};
 use serialize::VersionedFileBackedIndex;

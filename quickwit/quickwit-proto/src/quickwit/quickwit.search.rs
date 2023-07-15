@@ -584,11 +584,11 @@ pub mod search_service_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/quickwit.SearchService/RootSearch",
+                "/quickwit.search.SearchService/RootSearch",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("quickwit.SearchService", "RootSearch"));
+                .insert(GrpcMethod::new("quickwit.search.SearchService", "RootSearch"));
             self.inner.unary(req, path, codec).await
         }
         /// Perform a leaf search on a given set of splits.
@@ -616,11 +616,11 @@ pub mod search_service_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/quickwit.SearchService/LeafSearch",
+                "/quickwit.search.SearchService/LeafSearch",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("quickwit.SearchService", "LeafSearch"));
+                .insert(GrpcMethod::new("quickwit.search.SearchService", "LeafSearch"));
             self.inner.unary(req, path, codec).await
         }
         /// / Fetches the documents contents from the document store.
@@ -643,11 +643,11 @@ pub mod search_service_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/quickwit.SearchService/FetchDocs",
+                "/quickwit.search.SearchService/FetchDocs",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("quickwit.SearchService", "FetchDocs"));
+                .insert(GrpcMethod::new("quickwit.search.SearchService", "FetchDocs"));
             self.inner.unary(req, path, codec).await
         }
         /// Perform a leaf stream on a given set of splits.
@@ -669,11 +669,13 @@ pub mod search_service_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/quickwit.SearchService/LeafSearchStream",
+                "/quickwit.search.SearchService/LeafSearchStream",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("quickwit.SearchService", "LeafSearchStream"));
+                .insert(
+                    GrpcMethod::new("quickwit.search.SearchService", "LeafSearchStream"),
+                );
             self.inner.server_streaming(req, path, codec).await
         }
         /// Root list terms API.
@@ -699,11 +701,13 @@ pub mod search_service_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/quickwit.SearchService/RootListTerms",
+                "/quickwit.search.SearchService/RootListTerms",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("quickwit.SearchService", "RootListTerms"));
+                .insert(
+                    GrpcMethod::new("quickwit.search.SearchService", "RootListTerms"),
+                );
             self.inner.unary(req, path, codec).await
         }
         /// Perform a leaf list terms on a given set of splits.
@@ -730,11 +734,13 @@ pub mod search_service_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/quickwit.SearchService/LeafListTerms",
+                "/quickwit.search.SearchService/LeafListTerms",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("quickwit.SearchService", "LeafListTerms"));
+                .insert(
+                    GrpcMethod::new("quickwit.search.SearchService", "LeafListTerms"),
+                );
             self.inner.unary(req, path, codec).await
         }
     }
@@ -900,7 +906,7 @@ pub mod search_service_server {
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
             let inner = self.inner.clone();
             match req.uri().path() {
-                "/quickwit.SearchService/RootSearch" => {
+                "/quickwit.search.SearchService/RootSearch" => {
                     #[allow(non_camel_case_types)]
                     struct RootSearchSvc<T: SearchService>(pub Arc<T>);
                     impl<
@@ -944,7 +950,7 @@ pub mod search_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/quickwit.SearchService/LeafSearch" => {
+                "/quickwit.search.SearchService/LeafSearch" => {
                     #[allow(non_camel_case_types)]
                     struct LeafSearchSvc<T: SearchService>(pub Arc<T>);
                     impl<
@@ -988,7 +994,7 @@ pub mod search_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/quickwit.SearchService/FetchDocs" => {
+                "/quickwit.search.SearchService/FetchDocs" => {
                     #[allow(non_camel_case_types)]
                     struct FetchDocsSvc<T: SearchService>(pub Arc<T>);
                     impl<
@@ -1032,7 +1038,7 @@ pub mod search_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/quickwit.SearchService/LeafSearchStream" => {
+                "/quickwit.search.SearchService/LeafSearchStream" => {
                     #[allow(non_camel_case_types)]
                     struct LeafSearchStreamSvc<T: SearchService>(pub Arc<T>);
                     impl<
@@ -1080,7 +1086,7 @@ pub mod search_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/quickwit.SearchService/RootListTerms" => {
+                "/quickwit.search.SearchService/RootListTerms" => {
                     #[allow(non_camel_case_types)]
                     struct RootListTermsSvc<T: SearchService>(pub Arc<T>);
                     impl<
@@ -1126,7 +1132,7 @@ pub mod search_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/quickwit.SearchService/LeafListTerms" => {
+                "/quickwit.search.SearchService/LeafListTerms" => {
                     #[allow(non_camel_case_types)]
                     struct LeafListTermsSvc<T: SearchService>(pub Arc<T>);
                     impl<
@@ -1210,6 +1216,6 @@ pub mod search_service_server {
         }
     }
     impl<T: SearchService> tonic::server::NamedService for SearchServiceServer<T> {
-        const NAME: &'static str = "quickwit.SearchService";
+        const NAME: &'static str = "quickwit.search.SearchService";
     }
 }

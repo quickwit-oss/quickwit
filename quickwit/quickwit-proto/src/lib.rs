@@ -23,19 +23,33 @@
 
 use anyhow::anyhow;
 use ulid::Ulid;
-mod quickwit;
-mod quickwit_indexing_api;
-mod quickwit_metastore_api;
-pub use sort_by_value::SortValue;
 use std::cmp::Ordering;
+use std::convert::Infallible;
+use std::fmt;
+use ::opentelemetry::global;
+use ::opentelemetry::propagation::Extractor;
+use ::opentelemetry::propagation::Injector;
+use quickwit_query::query_ast::QueryAst;
+use tonic::codegen::http;
+use tonic::service::Interceptor;
+use tonic::Status;
+use tracing::Span;
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 
-pub mod indexing_api {
-    pub use crate::quickwit_indexing_api::*;
-}
+pub use tonic;
 
-pub mod metastore_api {
-    pub use crate::quickwit_metastore_api::*;
-}
+#[path = "quickwit/quickwit.indexing.rs"]
+pub mod indexing;
+#[path = "quickwit/quickwit.metastore.rs"]
+pub mod metastore;
+#[path = "quickwit/quickwit.search.rs"]
+pub mod search;
+
+pub use indexing::*;
+pub use metastore::*;
+pub use search::*;
+
+pub use search::sort_by_value::SortValue;
 
 pub mod jaeger {
     pub mod api_v2 {
@@ -49,7 +63,6 @@ pub mod jaeger {
 }
 
 pub mod opentelemetry {
-
     #[cfg(not(doctest))]
     pub mod proto {
 
@@ -103,23 +116,6 @@ pub mod opentelemetry {
 
 #[macro_use]
 extern crate serde;
-
-use std::convert::Infallible;
-use std::fmt;
-
-use ::opentelemetry::global;
-use ::opentelemetry::propagation::Extractor;
-use ::opentelemetry::propagation::Injector;
-pub use quickwit::*;
-use quickwit_indexing_api::IndexingTask;
-use quickwit_metastore_api::DeleteQuery;
-use quickwit_query::query_ast::QueryAst;
-pub use tonic;
-use tonic::codegen::http;
-use tonic::service::Interceptor;
-use tonic::Status;
-use tracing::Span;
-use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 /// This enum serves as a Rosetta stone of
 /// gRPC and Http status code.

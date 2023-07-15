@@ -22,7 +22,7 @@ use std::sync::Arc;
 use quickwit_config::build_doc_mapper;
 use quickwit_janitor::error::JanitorError;
 use quickwit_metastore::{Metastore, MetastoreError};
-use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
+use quickwit_proto::metastore::{DeleteQuery, DeleteTask};
 use quickwit_proto::{query_ast_from_user_text, IndexUid, SearchRequest};
 use quickwit_query::query_ast::QueryAst;
 use serde::Deserialize;
@@ -167,7 +167,7 @@ pub async fn post_delete_request(
 #[cfg(test)]
 mod tests {
     use quickwit_indexing::TestSandbox;
-    use quickwit_proto::metastore_api::DeleteTask;
+    use quickwit_proto::metastore::DeleteTask;
     use warp::Filter;
 
     use crate::rest::recover_fn;
