@@ -56,7 +56,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     prost_config.type_attribute("Operation", "#[derive(Eq, Ord, PartialOrd)]");
 
     tonic_build::configure()
-        .out_dir("src/")
+        .out_dir("src/jaeger")
         .compile_with_config(
             prost_config,
             &protos,

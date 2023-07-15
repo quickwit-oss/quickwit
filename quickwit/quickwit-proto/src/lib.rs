@@ -39,11 +39,11 @@ pub mod metastore_api {
 
 pub mod jaeger {
     pub mod api_v2 {
-        include!("jaeger.api_v2.rs");
+        include!("jaeger/jaeger.api_v2.rs");
     }
     pub mod storage {
         pub mod v1 {
-            include!("jaeger.storage.v1.rs");
+            include!("jaeger/jaeger.storage.v1.rs");
         }
     }
 }
