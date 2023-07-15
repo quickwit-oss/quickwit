@@ -699,7 +699,7 @@ mod tests {
     use futures::executor::block_on;
     use quickwit_config::IndexConfig;
     use quickwit_proto::metastore::DeleteQuery;
-    use quickwit_proto::qast_helper;
+    use quickwit_query::query_ast::qast_helper;
     use quickwit_storage::{MockStorage, RamStorage, Storage, StorageErrorKind};
     use rand::Rng;
     use time::OffsetDateTime;

@@ -29,7 +29,6 @@ use std::fmt;
 use ::opentelemetry::global;
 use ::opentelemetry::propagation::Extractor;
 use ::opentelemetry::propagation::Injector;
-use quickwit_query::query_ast::QueryAst;
 use tonic::codegen::http;
 use tonic::service::Interceptor;
 use tonic::Status;
@@ -414,47 +413,6 @@ impl TryFrom<&str> for IndexingTask {
     }
 }
 
-/// Parses a user query and returns a JSON query AST.
-///
-/// The resulting query does not include `UserInputQuery` nodes.
-/// The resolution assumes that there are no default search fields
-/// in the doc mapper.
-///
-/// # Panics
-///
-/// Panics if the user text is invalid.
-pub fn qast_helper(user_text: &str, default_fields: &[&'static str]) -> String {
-    let default_fields: Vec<String> = default_fields
-        .iter()
-        .map(|default_field| default_field.to_string())
-        .collect();
-    let ast: QueryAst = query_ast_from_user_text(user_text, Some(default_fields))
-        .parse_user_query(&[])
-        .expect("The user query should be valid.");
-    serde_json::to_string(&ast).expect("The query AST should be JSON serializable.")
-}
-
-/// Creates a QueryAST with a single UserInputQuery node.
-///
-/// Disclaimer:
-/// At this point the query has not been parsed.
-///
-/// The actual parsing is meant to happen on a root node,
-/// `default_fields` can be passed to decide which field should be search
-/// if not specified specifically in the user query (e.g. hello as opposed to "body:hello").
-///
-/// If it is not supplied, the docmapper search fields are meant to be used.
-///
-/// If no boolean operator is specified, the default is `AND` (contrary to the Elasticsearch default).
-pub fn query_ast_from_user_text(user_text: &str, default_fields: Option<Vec<String>>) -> QueryAst {
-    quickwit_query::query_ast::UserInputQuery {
-        user_text: user_text.to_string(),
-        default_fields,
-        default_operator: quickwit_query::BooleanOperand::And,
-    }
-    .into()
-}
-
 // !!! Disclaimer !!!
 //
 // Prost imposes the PartialEq derived implementation.
@@ -591,13 +549,4 @@ mod tests {
         index_uid_from_parts.to_string()
     }
 
-    #[test]
-    fn test_query_ast_from_user_text_default_as_and() {
-        let ast = query_ast_from_user_text("hello you", None);
-        let QueryAst::UserInput(input_query) = ast else { panic!() };
-        assert_eq!(
-            input_query.default_operator,
-            quickwit_query::BooleanOperand::And
-        );
-    }
 }

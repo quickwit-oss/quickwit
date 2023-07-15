@@ -55,9 +55,10 @@ impl RetryPolicy<LeafSearchRequest, LeafSearchResponse, SearchError> for LeafSea
 #[cfg(test)]
 mod tests {
     use quickwit_proto::{
-        qast_helper, LeafSearchRequest, LeafSearchResponse, SearchRequest, SplitIdAndFooterOffsets,
+        LeafSearchRequest, LeafSearchResponse, SearchRequest, SplitIdAndFooterOffsets,
         SplitSearchError,
     };
+    use quickwit_query::query_ast::qast_helper;
 
     use crate::retry::search::LeafSearchRetryPolicy;
     use crate::retry::RetryPolicy;

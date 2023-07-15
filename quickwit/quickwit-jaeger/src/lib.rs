@@ -542,7 +542,7 @@ fn build_search_query(
 ) -> QueryAst {
     // TODO disable based on some feature?
     if let Some(qw_query) = tags.remove("_qw_query") {
-        return quickwit_proto::query_ast_from_user_text(&qw_query, None);
+        return quickwit_query::query_ast::query_ast_from_user_text(&qw_query, None);
     }
     // TODO should we use filter instead of must? Does it changes anything? Less scoring?
     let mut query_ast = BoolQuery::default();
