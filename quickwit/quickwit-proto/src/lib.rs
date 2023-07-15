@@ -49,52 +49,53 @@ pub mod jaeger {
 }
 
 pub mod opentelemetry {
+
     #[cfg(not(doctest))]
     pub mod proto {
 
         pub mod collector {
             pub mod logs {
                 pub mod v1 {
-                    include!("opentelemetry.proto.collector.logs.v1.rs");
+                    include!("opentelemetry/opentelemetry.proto.collector.logs.v1.rs");
                 }
             }
             // pub mod metrics {
             //     pub mod v1 {
-            //         include!("opentelemetry.proto.collector.metrics.v1.rs");
+            //         include!("opentelemetry/opentelemetry.proto.collector.metrics.v1.rs");
             //     }
             // }
             pub mod trace {
                 pub mod v1 {
-                    include!("opentelemetry.proto.collector.trace.v1.rs");
+                    include!("opentelemetry/opentelemetry.proto.collector.trace.v1.rs");
                 }
             }
         }
         pub mod common {
             pub mod v1 {
-                include!("opentelemetry.proto.common.v1.rs");
+                include!("opentelemetry/opentelemetry.proto.common.v1.rs");
             }
         }
         pub mod logs {
             pub mod v1 {
-                include!("opentelemetry.proto.logs.v1.rs");
+                include!("opentelemetry/opentelemetry.proto.logs.v1.rs");
             }
         }
         // pub mod metrics {
         //     pub mod experimental {
-        //         include!("opentelemetry.proto.metrics.experimental.rs");
+        //         include!("opentelemetry/opentelemetry.proto.metrics.experimental.rs");
         //     }
         //     pub mod v1 {
-        //         tonic::include_proto!("opentelemetry.proto.metrics.v1");
+        //         tonic::include_proto!("opentelemetry/opentelemetry.proto.metrics.v1");
         //     }
         // }
         pub mod resource {
             pub mod v1 {
-                include!("opentelemetry.proto.resource.v1.rs");
+                include!("opentelemetry/opentelemetry.proto.resource.v1.rs");
             }
         }
         pub mod trace {
             pub mod v1 {
-                include!("opentelemetry.proto.trace.v1.rs");
+                include!("opentelemetry/opentelemetry.proto.trace.v1.rs");
             }
         }
     }
