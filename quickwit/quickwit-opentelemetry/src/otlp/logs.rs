@@ -73,6 +73,7 @@ doc_mapping:
       fast: true
     - name: body
       type: json
+      tokenizer: default
     - name: attributes
       type: json
       tokenizer: raw
