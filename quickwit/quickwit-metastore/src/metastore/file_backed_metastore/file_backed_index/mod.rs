@@ -30,7 +30,7 @@ use std::ops::Bound;
 use quickwit_common::PrettySample;
 use quickwit_config::SourceConfig;
 use quickwit_proto::metastore::{DeleteQuery, DeleteTask};
-use quickwit_proto::IndexUid;
+use quickwit_proto::{IndexUid, Timestamp};
 use serde::{Deserialize, Serialize};
 use serialize::VersionedFileBackedIndex;
 use time::OffsetDateTime;
@@ -82,7 +82,7 @@ impl quickwit_config::TestableForRegression for FileBackedIndex {
         };
         let splits = vec![split];
         let delete_task = DeleteTask {
-            create_timestamp: 0,
+            create_timestamp: Some(Timestamp::new(1689471496, 1)),
             opstamp: 10,
             delete_query: Some(DeleteQuery {
                 index_uid: "index:11111111111111111111111111".to_string(),
@@ -401,9 +401,8 @@ impl FileBackedIndex {
         &mut self,
         delete_query: DeleteQuery,
     ) -> MetastoreResult<DeleteTask> {
-        let now_timestamp = OffsetDateTime::now_utc().unix_timestamp();
         let delete_task = DeleteTask {
-            create_timestamp: now_timestamp,
+            create_timestamp: Some(Timestamp::now_utc()),
             opstamp: self.stamper.stamp() as u64,
             delete_query: Some(delete_query),
         };

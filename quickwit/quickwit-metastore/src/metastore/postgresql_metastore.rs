@@ -1027,7 +1027,7 @@ impl Metastore for PostgresqlMetastore {
             })?;
 
         Ok(DeleteTask {
-            create_timestamp: create_timestamp.assume_utc().unix_timestamp(),
+            create_timestamp: Some(create_timestamp.into()),
             opstamp: opstamp as u64,
             delete_query: Some(delete_query),
         })

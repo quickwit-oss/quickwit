@@ -20,12 +20,12 @@
 use std::convert::TryInto;
 use std::str::FromStr;
 
-use quickwit_proto::metastore::{DeleteQuery, DeleteTask as QuickwitDeleteTask};
+use quickwit_proto::metastore::{DeleteQuery, DeleteTask as ProtobufDeleteTask};
 use quickwit_proto::IndexUid;
 use tracing::error;
 
 use crate::{
-    IndexMetadata, MetastoreError, MetastoreResult, Split as QuickwitSplit, SplitMetadata,
+    IndexMetadata, MetastoreError, MetastoreResult, Split as QuickwitBufSplit, SplitMetadata,
     SplitState,
 };
 
@@ -123,10 +123,10 @@ impl Split {
     }
 }
 
-impl TryInto<QuickwitSplit> for Split {
+impl TryInto<QuickwitBufSplit> for Split {
     type Error = MetastoreError;
 
-    fn try_into(self) -> Result<QuickwitSplit, Self::Error> {
+    fn try_into(self) -> Result<QuickwitBufSplit, Self::Error> {
         let mut split_metadata = self.split_metadata()?;
         // `create_timestamp` and `delete_opstamp` are duplicated in `SplitMetadata` and needs to be
         // overridden with the "true" value stored in a column.
@@ -138,7 +138,7 @@ impl TryInto<QuickwitSplit> for Split {
             .map(|publish_timestamp| publish_timestamp.assume_utc().unix_timestamp());
         split_metadata.index_uid = self.index_uid;
         split_metadata.delete_opstamp = self.delete_opstamp as u64;
-        Ok(QuickwitSplit {
+        Ok(QuickwitBufSplit {
             split_metadata,
             split_state,
             update_timestamp,
@@ -175,13 +175,13 @@ impl DeleteTask {
     }
 }
 
-impl TryInto<QuickwitDeleteTask> for DeleteTask {
+impl TryInto<ProtobufDeleteTask> for DeleteTask {
     type Error = MetastoreError;
 
-    fn try_into(self) -> Result<QuickwitDeleteTask, Self::Error> {
+    fn try_into(self) -> Result<ProtobufDeleteTask, Self::Error> {
         let delete_query = self.delete_query()?;
-        Ok(QuickwitDeleteTask {
-            create_timestamp: self.create_timestamp.assume_utc().unix_timestamp(),
+        Ok(ProtobufDeleteTask {
+            create_timestamp: Some(self.create_timestamp.into()),
             opstamp: self.opstamp as u64,
             delete_query: Some(delete_query),
         })

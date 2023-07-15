@@ -44,10 +44,12 @@ pub mod indexing;
 pub mod metastore;
 #[path = "quickwit/quickwit.search.rs"]
 pub mod search;
+pub mod types;
 
 pub use indexing::*;
 pub use metastore::*;
 pub use search::*;
+pub use types::*;
 
 pub use search::sort_by_value::SortValue;
 

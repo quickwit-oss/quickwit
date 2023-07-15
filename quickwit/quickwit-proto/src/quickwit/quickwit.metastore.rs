@@ -165,8 +165,8 @@ pub struct SourceResponse {}
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteTask {
-    #[prost(int64, tag = "1")]
-    pub create_timestamp: i64,
+    #[prost(message, optional, tag = "1")]
+    pub create_timestamp: ::core::option::Option<crate::types::Timestamp>,
     #[prost(uint64, tag = "2")]
     pub opstamp: u64,
     #[prost(message, optional, tag = "3")]

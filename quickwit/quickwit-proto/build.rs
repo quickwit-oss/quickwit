@@ -29,12 +29,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     prost_config.protoc_arg("--experimental_allow_proto3_optional");
 
     tonic_build::configure()
-        .type_attribute(".", "#[derive(Serialize, Deserialize, utoipa::ToSchema)]")
-        .type_attribute("IndexingTask", "#[derive(Eq, Hash)]")
-        .type_attribute("SearchRequest", "#[derive(Eq, Hash)]")
-        .type_attribute("SortField", "#[derive(Eq, Hash)]")
-        .type_attribute("SortByValue", "#[derive(Ord, PartialOrd)]")
-        .type_attribute("DeleteQuery", "#[serde(default)]")
+        .extern_path(".google.protobuf.Timestamp", "crate::types::Timestamp")
         .field_attribute(
             "DeleteQuery.start_timestamp",
             "#[serde(skip_serializing_if = \"Option::is_none\")]",
@@ -43,8 +38,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "DeleteQuery.end_timestamp",
             "#[serde(skip_serializing_if = \"Option::is_none\")]",
         )
+        .type_attribute(".", "#[derive(Serialize, Deserialize, utoipa::ToSchema)]")
+        .type_attribute("DeleteQuery", "#[serde(default)]")
+        .type_attribute("IndexingTask", "#[derive(Eq, Hash)]")
         .type_attribute("OutputFormat", "#[serde(rename_all = \"snake_case\")]")
         .type_attribute("PartialHit.sort_value", "#[derive(Copy)]")
+        .type_attribute("SearchRequest", "#[derive(Eq, Hash)]")
+        .type_attribute("SortByValue", "#[derive(Ord, PartialOrd)]")
+        .type_attribute("SortField", "#[derive(Eq, Hash)]")
         .type_attribute("SortOrder", "#[serde(rename_all = \"lowercase\")]")
         .out_dir("src/quickwit")
         .compile_with_config(prost_config, &protos, &["protos/quickwit"])?;

@@ -23,7 +23,7 @@ use async_trait::async_trait;
 use quickwit_common::uri::Uri;
 use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_proto::metastore::{DeleteQuery, DeleteTask};
-use quickwit_proto::IndexUid;
+use quickwit_proto::{IndexUid, Timestamp};
 
 use super::retry::RetryParams;
 use crate::checkpoint::IndexCheckpointDelta;
@@ -180,7 +180,7 @@ impl Metastore for RetryTestMetastore {
         let result = self.try_success();
         match result {
             Ok(_) => Ok(DeleteTask {
-                create_timestamp: 0,
+                create_timestamp: Some(Timestamp::default()),
                 opstamp: 0,
                 delete_query: None,
             }),

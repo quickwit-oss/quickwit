@@ -22,6 +22,8 @@ syntax = "proto3";
 
 package quickwit.metastore;
 
+import "google/protobuf/timestamp.proto";
+
 service MetastoreService {
   // Creates an index.
   rpc create_index(CreateIndexRequest) returns (CreateIndexResponse);
@@ -175,7 +177,7 @@ message SourceResponse {}
 ///
 
 message DeleteTask {
-  int64 create_timestamp = 1;
+  google.protobuf.Timestamp create_timestamp = 1;
   uint64 opstamp = 2;
   DeleteQuery delete_query = 3;
 }
