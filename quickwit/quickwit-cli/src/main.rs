@@ -68,7 +68,7 @@ fn setup_logging_and_tracing(
                 .expect("Time format invalid."),
             ),
         );
-    // Note on disanbling ANSI characters: setting the ansi bool on event format is not sufficient.
+    // Note on disabling ANSI characters: setting the ansi boolean on event format is insufficient.
     // It is thus set on layers, see https://github.com/tokio-rs/tracing/issues/1817
     if std::env::var_os(QW_ENABLE_JAEGER_EXPORTER_ENV_KEY).is_some() {
         let tracer = opentelemetry_jaeger::new_agent_pipeline()
