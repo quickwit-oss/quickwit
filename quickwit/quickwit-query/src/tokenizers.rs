@@ -59,6 +59,13 @@ pub fn create_default_quickwit_tokenizer_manager() -> TokenizerManager {
             ))
             .build(),
     );
+    tokenizer_manager.register(
+        "source_code",
+        TextAnalyzer::builder(CodeTokenizer::default())
+            .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
+            .filter(LowerCaser)
+            .build(),
+    );
 
     tokenizer_manager
 }
@@ -90,7 +97,7 @@ impl Tokenizer for CodeTokenizer {
         self.0.reset();
         CodeTokenStream {
             chars: text.char_indices(),
-            state: CodeTokenizerState::Empty,
+            state: CodeTokenStreamState::Empty,
             text,
             token: &mut self.0,
         }
@@ -101,7 +108,7 @@ pub struct CodeTokenStream<'a> {
     text: &'a str,
     chars: CharIndices<'a>,
     token: &'a mut Token,
-    state: CodeTokenizerState,
+    state: CodeTokenStreamState,
 }
 
 impl<'a> TokenStream for CodeTokenStream<'a> {
@@ -150,7 +157,7 @@ impl<'a> CodeTokenStream<'a> {
     }
 }
 
-enum CodeTokenizerState {
+enum CodeTokenStreamState {
     Empty,
     ProcessingChars(ProcessingCharsState),
 }
@@ -165,9 +172,9 @@ struct ProcessingCharsState {
 
 type TokenOffsets = Range<usize>;
 
-impl CodeTokenizerState {
+impl CodeTokenStreamState {
     fn reset(&mut self) {
-        *self = CodeTokenizerState::Empty;
+        *self = CodeTokenStreamState::Empty;
     }
 
     fn advance(&mut self, next_char_offset: usize, next_char: char) -> Option<TokenOffsets> {
@@ -179,7 +186,7 @@ impl CodeTokenizerState {
                     None
                 }
                 _ => {
-                    *self = CodeTokenizerState::ProcessingChars(ProcessingCharsState {
+                    *self = CodeTokenStreamState::ProcessingChars(ProcessingCharsState {
                         is_first_char: true,
                         start_offset: next_char_offset,
                         current_char_offset: next_char_offset,
@@ -584,6 +591,19 @@ mod tests {
 
             assert_eq!(cn_res, default_res);
         }
+    }
+
+    #[test]
+    fn test_code_tokenizer_in_tokenizer_manager() {
+        let mut code_tokenizer = create_default_quickwit_tokenizer_manager()
+            .get("source_code")
+            .unwrap();
+        let mut token_stream = code_tokenizer.token_stream("PigCaféFactory2");
+        let mut tokens = Vec::new();
+        while let Some(token) = token_stream.next() {
+            tokens.push(token.text.to_string());
+        }
+        assert_eq!(tokens, vec!["pig", "café", "factory", "2"])
     }
 
     #[test]
