@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 mod chinese_compatible;
+mod code_tokenizer;
 #[cfg(feature = "multilang")]
 mod multilang;
 
@@ -27,6 +28,7 @@ use tantivy::tokenizer::{
 };
 
 use self::chinese_compatible::ChineseTokenizer;
+pub use self::code_tokenizer::CodeTokenizer;
 #[cfg(feature = "multilang")]
 pub use self::multilang::MultiLangTokenizer;
 
@@ -45,6 +47,13 @@ pub fn create_default_quickwit_tokenizer_manager() -> TokenizerManager {
         .filter(LowerCaser)
         .build();
     tokenizer_manager.register("chinese_compatible", chinese_tokenizer);
+    tokenizer_manager.register(
+        "source_code",
+        TextAnalyzer::builder(CodeTokenizer::default())
+            .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
+            .filter(LowerCaser)
+            .build(),
+    );
     #[cfg(feature = "multilang")]
     tokenizer_manager.register("multilang", MultiLangTokenizer::default());
     tokenizer_manager
@@ -101,5 +110,18 @@ mod tests {
         let mut other_stream = other_tokenizer.token_stream(my_long_text);
         assert!(other_stream.advance());
         assert!(!other_stream.advance());
+    }
+
+    #[test]
+    fn test_code_tokenizer_in_tokenizer_manager() {
+        let mut code_tokenizer = super::create_default_quickwit_tokenizer_manager()
+            .get("source_code")
+            .unwrap();
+        let mut token_stream = code_tokenizer.token_stream("PigCaféFactory2");
+        let mut tokens = Vec::new();
+        while let Some(token) = token_stream.next() {
+            tokens.push(token.text.to_string());
+        }
+        assert_eq!(tokens, vec!["pig", "café", "factory", "2"])
     }
 }
