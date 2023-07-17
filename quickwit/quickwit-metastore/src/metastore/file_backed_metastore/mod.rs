@@ -34,7 +34,7 @@ use async_trait::async_trait;
 use futures::future::try_join_all;
 use quickwit_common::uri::Uri;
 use quickwit_config::{IndexConfig, SourceConfig};
-use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
+use quickwit_proto::metastore::{DeleteQuery, DeleteTask};
 use quickwit_proto::IndexUid;
 use quickwit_storage::Storage;
 use tokio::sync::{Mutex, OwnedMutexGuard, RwLock};
@@ -698,8 +698,8 @@ mod tests {
 
     use futures::executor::block_on;
     use quickwit_config::IndexConfig;
-    use quickwit_proto::metastore_api::DeleteQuery;
-    use quickwit_proto::qast_helper;
+    use quickwit_proto::metastore::DeleteQuery;
+    use quickwit_query::query_ast::qast_helper;
     use quickwit_storage::{MockStorage, RamStorage, Storage, StorageErrorKind};
     use rand::Rng;
     use time::OffsetDateTime;

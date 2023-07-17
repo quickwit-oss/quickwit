@@ -43,7 +43,7 @@ pub use term_set_query::TermSetQuery;
 pub use user_input_query::UserInputQuery;
 pub use visitor::QueryAstVisitor;
 
-use crate::{InvalidQuery, NotNaNf32};
+use crate::{BooleanOperand, InvalidQuery, NotNaNf32};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 #[serde(tag = "type")]
@@ -253,11 +253,55 @@ fn parse_user_query_in_asts(
         .collect::<anyhow::Result<_>>()
 }
 
+/// Parses a user query and returns a JSON query AST.
+///
+/// The resulting query does not include `UserInputQuery` nodes.
+/// The resolution assumes that there are no default search fields
+/// in the doc mapper.
+///
+/// # Panics
+///
+/// Panics if the user text is invalid.
+pub fn qast_helper(user_text: &str, default_fields: &[&'static str]) -> String {
+    let default_fields: Vec<String> = default_fields
+        .iter()
+        .map(|default_field| default_field.to_string())
+        .collect();
+    let ast: QueryAst = query_ast_from_user_text(user_text, Some(default_fields))
+        .parse_user_query(&[])
+        .expect("The user query should be valid.");
+    serde_json::to_string(&ast).expect("The query AST should be JSON serializable.")
+}
+
+/// Creates a QueryAST with a single UserInputQuery node.
+///
+/// Disclaimer:
+/// At this point the query has not been parsed.
+///
+/// The actual parsing is meant to happen on a root node,
+/// `default_fields` can be passed to decide which field should be search
+/// if not specified specifically in the user query (e.g. hello as opposed to "body:hello").
+///
+/// If it is not supplied, the docmapper search fields are meant to be used.
+///
+/// If no boolean operator is specified, the default is `AND` (contrary to the Elasticsearch
+/// default).
+pub fn query_ast_from_user_text(user_text: &str, default_fields: Option<Vec<String>>) -> QueryAst {
+    UserInputQuery {
+        user_text: user_text.to_string(),
+        default_fields,
+        default_operator: BooleanOperand::And,
+    }
+    .into()
+}
+
 #[cfg(test)]
 mod tests {
     use crate::query_ast::tantivy_query_ast::TantivyQueryAst;
-    use crate::query_ast::{BoolQuery, BuildTantivyAst, QueryAst, UserInputQuery};
-    use crate::{create_default_quickwit_tokenizer_manager, InvalidQuery};
+    use crate::query_ast::{
+        query_ast_from_user_text, BoolQuery, BuildTantivyAst, QueryAst, UserInputQuery,
+    };
+    use crate::{create_default_quickwit_tokenizer_manager, BooleanOperand, InvalidQuery};
 
     #[test]
     fn test_user_query_not_parsed() {
@@ -365,5 +409,14 @@ mod tests {
             panic!()
         };
         assert_eq!(bool_query.should.len(), 2);
+    }
+
+    #[test]
+    fn test_query_ast_from_user_text_default_as_and() {
+        let ast = query_ast_from_user_text("hello you", None);
+        let QueryAst::UserInput(input_query) = ast else {
+            panic!()
+        };
+        assert_eq!(input_query.default_operator, BooleanOperand::And);
     }
 }

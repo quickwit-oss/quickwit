@@ -32,7 +32,7 @@ use quickwit_indexing::merge_policy::MergeOperation;
 use quickwit_metastore::{
     split_tag_filter, split_time_range_filter, Metastore, MetastoreResult, Split,
 };
-use quickwit_proto::metastore_api::DeleteTask;
+use quickwit_proto::metastore::DeleteTask;
 use quickwit_proto::{IndexUid, SearchRequest};
 use quickwit_search::{jobs_to_leaf_request, SearchJob, SearchJobPlacer};
 use serde::Serialize;
@@ -400,7 +400,7 @@ mod tests {
     use quickwit_indexing::merge_policy::MergeOperation;
     use quickwit_indexing::TestSandbox;
     use quickwit_metastore::SplitMetadata;
-    use quickwit_proto::metastore_api::DeleteQuery;
+    use quickwit_proto::metastore::DeleteQuery;
     use quickwit_proto::{LeafSearchRequest, LeafSearchResponse};
     use quickwit_search::{searcher_pool_for_test, MockSearchService};
     use tantivy::TrackedObject;
@@ -457,8 +457,8 @@ mod tests {
         // Creates 2 delete tasks, one that will match 1 document,
         // the other that will match no document.
 
-        let body_delete_ast = quickwit_proto::qast_helper("body:delete", &[]);
-        let match_nothing_ast = quickwit_proto::qast_helper("body:matchnothing", &[]);
+        let body_delete_ast = quickwit_query::query_ast::qast_helper("body:delete", &[]);
+        let match_nothing_ast = quickwit_query::query_ast::qast_helper("body:matchnothing", &[]);
         metastore
             .create_delete_task(DeleteQuery {
                 index_uid: index_uid.to_string(),

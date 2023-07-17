@@ -29,8 +29,8 @@ use itertools::Itertools;
 use quickwit_common::tower::BalanceChannel;
 use quickwit_common::uri::Uri as QuickwitUri;
 use quickwit_config::{IndexConfig, SourceConfig};
-use quickwit_proto::metastore_api::metastore_api_service_client::MetastoreApiServiceClient;
-use quickwit_proto::metastore_api::{
+use quickwit_proto::metastore::metastore_service_client::MetastoreServiceClient;
+use quickwit_proto::metastore::{
     AddSourceRequest, CreateIndexRequest, DeleteIndexRequest, DeleteQuery, DeleteSourceRequest,
     DeleteSplitsRequest, DeleteTask, IndexMetadataRequest, LastDeleteOpstampRequest,
     ListAllSplitsRequest, ListDeleteTasksRequest, ListIndexesMetadatasRequest, ListSplitsRequest,
@@ -55,7 +55,7 @@ use crate::{
 const GRPC_METASTORE_BASE_URI: &str = "grpc://metastore.service.cluster";
 
 type Transport = InterceptedService<BalanceChannel<SocketAddr>, SpanContextInterceptor>;
-type MetastoreGrpcClientImpl = MetastoreApiServiceClient<Transport>;
+type MetastoreGrpcClientImpl = MetastoreServiceClient<Transport>;
 
 /// The [`MetastoreGrpcClient`] sends gRPC requests to cluster members running a [`Metastore`]
 /// service, those nodes will execute the queries on the metastore.
@@ -79,7 +79,7 @@ impl MetastoreGrpcClient {
     pub async fn from_balance_channel(
         balance_channel: BalanceChannel<SocketAddr>,
     ) -> anyhow::Result<Self> {
-        let underlying = MetastoreApiServiceClient::with_interceptor(
+        let underlying = MetastoreServiceClient::with_interceptor(
             balance_channel.clone(),
             SpanContextInterceptor,
         );
@@ -110,7 +110,7 @@ impl MetastoreGrpcClient {
             .await?;
         let dummy_addr = "127.0.0.1:1234".parse::<SocketAddr>()?;
         let balance_channel = BalanceChannel::from_channel(dummy_addr, channel);
-        let underlying = MetastoreApiServiceClient::with_interceptor(
+        let underlying = MetastoreServiceClient::with_interceptor(
             balance_channel.clone(),
             SpanContextInterceptor,
         );
@@ -569,7 +569,7 @@ impl crate::tests::test_suite::DefaultForTest for MetastoreGrpcClient {
     async fn default_for_test() -> Self {
         use std::sync::Arc;
 
-        use quickwit_proto::metastore_api::metastore_api_service_server::MetastoreApiServiceServer;
+        use quickwit_proto::metastore::metastore_service_server::MetastoreServiceServer;
         use quickwit_proto::tonic::transport::Server;
         use quickwit_storage::RamStorage;
 
@@ -582,7 +582,7 @@ impl crate::tests::test_suite::DefaultForTest for MetastoreGrpcClient {
         let grpc_adapter = GrpcMetastoreAdapter::from(Arc::new(metastore) as Arc<dyn Metastore>);
         tokio::spawn(async move {
             Server::builder()
-                .add_service(MetastoreApiServiceServer::new(grpc_adapter))
+                .add_service(MetastoreServiceServer::new(grpc_adapter))
                 .serve_with_incoming(futures::stream::iter(vec![Ok::<_, std::io::Error>(server)]))
                 .await
         });

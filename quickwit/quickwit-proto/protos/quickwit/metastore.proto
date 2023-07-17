@@ -20,9 +20,9 @@
 
 syntax = "proto3";
 
-package quickwit_metastore_api;
+package quickwit.metastore;
 
-service MetastoreApiService {
+service MetastoreService {
   // Creates an index.
   rpc create_index(CreateIndexRequest) returns (CreateIndexResponse);
 

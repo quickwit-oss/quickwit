@@ -46,7 +46,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .type_attribute("OutputFormat", "#[serde(rename_all = \"snake_case\")]")
         .type_attribute("PartialHit.sort_value", "#[derive(Copy)]")
         .type_attribute("SortOrder", "#[serde(rename_all = \"lowercase\")]")
-        .out_dir("src/")
+        .out_dir("src/quickwit")
         .compile_with_config(prost_config, &protos, &["protos/quickwit"])?;
 
     // Jaeger proto
@@ -56,7 +56,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     prost_config.type_attribute("Operation", "#[derive(Eq, Ord, PartialOrd)]");
 
     tonic_build::configure()
-        .out_dir("src/")
+        .out_dir("src/jaeger")
         .compile_with_config(
             prost_config,
             &protos,
@@ -67,12 +67,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut prost_config = prost_build::Config::default();
     prost_config.protoc_arg("--experimental_allow_proto3_optional");
 
-    let protos = find_protos("protos/third-party/otlp");
+    let protos = find_protos("protos/third-party/opentelemetry");
     tonic_build::configure()
         .type_attribute(".", "#[derive(Serialize, Deserialize)]")
         .type_attribute("StatusCode", r#"#[serde(rename_all = "snake_case")]"#)
-        .out_dir("src/")
-        .compile_with_config(prost_config, &protos, &["protos/third-party/otlp"])?;
+        .out_dir("src/opentelemetry")
+        .compile_with_config(prost_config, &protos, &["protos/third-party"])?;
     Ok(())
 }
 

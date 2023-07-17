@@ -29,7 +29,7 @@ use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler};
 use quickwit_config::SourceConfig;
 use quickwit_metastore::Metastore;
-use quickwit_proto::indexing_api::{ApplyIndexingPlanRequest, IndexingTask};
+use quickwit_proto::indexing::{ApplyIndexingPlanRequest, IndexingTask};
 use serde::Serialize;
 use tracing::{debug, error, info, warn};
 
@@ -525,7 +525,7 @@ mod tests {
     use quickwit_indexing::indexing_client::IndexingServiceClient;
     use quickwit_indexing::IndexingService;
     use quickwit_metastore::{IndexMetadata, MockMetastore};
-    use quickwit_proto::indexing_api::{ApplyIndexingPlanRequest, IndexingTask};
+    use quickwit_proto::indexing::{ApplyIndexingPlanRequest, IndexingTask};
     use serde_json::json;
 
     use super::{IndexingScheduler, CONTROL_PLAN_LOOP_INTERVAL};

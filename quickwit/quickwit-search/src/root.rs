@@ -784,7 +784,8 @@ mod tests {
     use quickwit_config::SearcherConfig;
     use quickwit_indexing::mock_split;
     use quickwit_metastore::{IndexMetadata, MockMetastore};
-    use quickwit_proto::{qast_helper, SortOrder, SortValue, SplitSearchError};
+    use quickwit_proto::{SortOrder, SortValue, SplitSearchError};
+    use quickwit_query::query_ast::qast_helper;
     use tantivy::schema::{FAST, STORED, TEXT};
 
     use super::*;

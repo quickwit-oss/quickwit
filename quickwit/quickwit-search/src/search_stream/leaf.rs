@@ -460,7 +460,7 @@ mod tests {
     use itertools::Itertools;
     use quickwit_config::SearcherConfig;
     use quickwit_indexing::TestSandbox;
-    use quickwit_proto::qast_helper;
+    use quickwit_query::query_ast::qast_helper;
     use serde_json::json;
     use tantivy::time::{Duration, OffsetDateTime};
 
