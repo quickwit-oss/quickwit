@@ -141,7 +141,7 @@ serde_qs = { version = "0.12", features = ["warp"] }
 serde_with = "3.0.0"
 serde_yaml = "0.9"
 siphasher = "0.3"
-sqlx = { version = "0.6", features = [
+sqlx = { version = "0.7", features = [
   "runtime-tokio-rustls",
   "postgres",
   "migrate",
@@ -175,7 +175,7 @@ tracing-subscriber = { version = "0.3.16", features = [
 typetag = "0.2"
 ulid = "1.0"
 username = "0.2"
-utoipa = "3.4.0"
+utoipa = "3.3.0"
 uuid = { version = "1.4", features = ["v4", "serde"] }
 warp = "0.3"
 wiremock = "0.5"
