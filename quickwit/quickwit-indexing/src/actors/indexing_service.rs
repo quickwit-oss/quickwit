@@ -37,7 +37,7 @@ use quickwit_config::{
 };
 use quickwit_ingest::{DropQueueRequest, IngestApiService, ListQueuesRequest, QUEUES_DIR_NAME};
 use quickwit_metastore::{IndexMetadata, Metastore, MetastoreError};
-use quickwit_proto::indexing_api::{ApplyIndexingPlanRequest, IndexingTask};
+use quickwit_proto::indexing::{ApplyIndexingPlanRequest, IndexingTask};
 use quickwit_proto::{IndexUid, ServiceError, ServiceErrorCode};
 use quickwit_storage::{StorageError, StorageResolver, StorageResolverError};
 use serde::{Deserialize, Serialize};
@@ -800,7 +800,7 @@ mod tests {
     };
     use quickwit_ingest::{init_ingest_api, CreateQueueIfNotExistsRequest};
     use quickwit_metastore::{metastore_for_test, MockMetastore};
-    use quickwit_proto::indexing_api::IndexingTask;
+    use quickwit_proto::indexing::IndexingTask;
 
     use super::*;
 

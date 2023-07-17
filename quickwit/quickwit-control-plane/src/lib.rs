@@ -33,7 +33,7 @@ use quickwit_common::tower::Pool;
 use quickwit_config::SourceParams;
 use quickwit_indexing::indexing_client::IndexingServiceClient;
 use quickwit_metastore::{Metastore, MetastoreEvent};
-use quickwit_proto::indexing_api::IndexingTask;
+use quickwit_proto::indexing::IndexingTask;
 use scheduler::IndexingScheduler;
 use tracing::error;
 

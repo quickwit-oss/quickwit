@@ -19,7 +19,7 @@
 
 syntax = "proto3";
 
-package quickwit_indexing_api;
+package quickwit.indexing;
 
 service IndexingService {
   /// Apply an indexing plan on the node.

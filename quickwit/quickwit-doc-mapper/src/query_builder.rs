@@ -186,8 +186,8 @@ fn extract_phrase_prefix_term_ranges(
 
 #[cfg(test)]
 mod test {
-    use quickwit_proto::query_ast_from_user_text;
     use quickwit_query::create_default_quickwit_tokenizer_manager;
+    use quickwit_query::query_ast::query_ast_from_user_text;
     use tantivy::schema::{Schema, FAST, INDEXED, STORED, TEXT};
 
     use super::build_query;

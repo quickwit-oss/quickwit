@@ -584,7 +584,7 @@ async fn setup_indexing_scheduler(
                         }
                     } else {
                         let grpc_client =
-                        quickwit_proto::indexing_api::indexing_service_client::IndexingServiceClient::new(
+                        quickwit_proto::indexing::indexing_service_client::IndexingServiceClient::new(
                             node.channel(),
                         );
                         let client =

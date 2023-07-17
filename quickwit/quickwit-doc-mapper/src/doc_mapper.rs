@@ -228,8 +228,7 @@ mod tests {
     use std::collections::{HashMap, HashSet};
     use std::ops::Bound;
 
-    use quickwit_proto::query_ast_from_user_text;
-    use quickwit_query::query_ast::UserInputQuery;
+    use quickwit_query::query_ast::{query_ast_from_user_text, UserInputQuery};
     use quickwit_query::BooleanOperand;
     use tantivy::schema::{Field, FieldType, Term};
 

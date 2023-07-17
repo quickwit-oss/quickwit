@@ -234,9 +234,10 @@ mod tests {
     use std::net::SocketAddr;
 
     use quickwit_proto::{
-        qast_helper, PartialHit, SearchRequest, SearchStreamRequest, SortValue,
-        SplitIdAndFooterOffsets, SplitSearchError,
+        PartialHit, SearchRequest, SearchStreamRequest, SortValue, SplitIdAndFooterOffsets,
+        SplitSearchError,
     };
+    use quickwit_query::query_ast::qast_helper;
 
     use super::*;
     use crate::root::SearchJob;
