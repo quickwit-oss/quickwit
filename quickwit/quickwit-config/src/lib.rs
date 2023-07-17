@@ -70,7 +70,7 @@ pub use crate::quickwit_config::{
 use crate::source_config::serialize::{SourceConfigV0_6, VersionedSourceConfig};
 pub use crate::storage_config::{
     AzureStorageConfig, FileStorageConfig, RamStorageConfig, S3StorageConfig, StorageBackend,
-    StorageConfig, StorageConfigs,
+    StorageBackendFlavor, StorageConfig, StorageConfigs,
 };
 
 #[derive(utoipa::OpenApi)]
