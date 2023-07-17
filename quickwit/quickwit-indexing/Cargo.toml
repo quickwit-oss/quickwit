@@ -44,8 +44,8 @@ tokio-stream = { workspace = true }
 tracing = { workspace = true }
 ulid = { workspace = true }
 utoipa = { workspace = true }
-vrl = { workspace = true }
-vrl-stdlib = { workspace = true }
+vrl = { workspace = true, optional = true }
+vrl-stdlib = { workspace = true, optional = true }
 
 quickwit-actors = { workspace = true }
 quickwit-aws = { workspace = true }
@@ -67,6 +67,7 @@ vendored-kafka = ["kafka", "libz-sys/static", "openssl/vendored", "rdkafka/gssap
 vendored-kafka-macos = ["kafka", "libz-sys/static", "openssl/vendored"]
 kinesis = ["aws-config", "aws-smithy-client", "aws-sdk-kinesis", "quickwit-aws/kinesis"]
 kinesis-localstack-tests = []
+vrl = ["dep:vrl", "vrl-stdlib", "quickwit-config/vrl"]
 pulsar = ["dep:pulsar"]
 pulsar-broker-tests = []
 testsuite = [

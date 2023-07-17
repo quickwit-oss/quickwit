@@ -20,14 +20,14 @@
 use std::path::PathBuf;
 
 use quickwit_metastore_utils::{GrpcCall, GrpcRequest};
-use quickwit_proto::metastore_api::metastore_api_service_client::MetastoreApiServiceClient;
+use quickwit_proto::metastore::metastore_service_client::MetastoreServiceClient;
 use quickwit_proto::tonic::transport::Channel;
 use structopt::StructOpt;
 use tokio::fs::File;
 use tokio::io::AsyncBufReadExt;
 
 async fn replay_grpc_request(
-    client: &mut MetastoreApiServiceClient<Channel>,
+    client: &mut MetastoreServiceClient<Channel>,
     req: GrpcRequest,
 ) -> anyhow::Result<()> {
     match req {
@@ -113,7 +113,7 @@ async fn main() -> anyhow::Result<()> {
     let file = File::open(&opt.file).await?;
     let buffered = tokio::io::BufReader::new(file);
     let mut lines = buffered.lines();
-    let mut client = MetastoreApiServiceClient::connect(opt.forward_to.clone()).await?;
+    let mut client = MetastoreServiceClient::connect(opt.forward_to.clone()).await?;
     let mut i = 0;
     while let Some(line) = lines.next_line().await? {
         println!("line {i} = {line}");

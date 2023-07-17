@@ -23,11 +23,11 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use quickwit_metastore_utils::{GrpcCall, GrpcRequest};
-use quickwit_proto::metastore_api::metastore_api_service_client::MetastoreApiServiceClient;
-use quickwit_proto::metastore_api::metastore_api_service_server::{
-    MetastoreApiService, MetastoreApiServiceServer,
+use quickwit_proto::metastore::metastore_service_client::MetastoreServiceClient;
+use quickwit_proto::metastore::metastore_service_server::{
+    MetastoreService, MetastoreServiceServer,
 };
-use quickwit_proto::metastore_api::*;
+use quickwit_proto::metastore::*;
 use quickwit_proto::tonic;
 use quickwit_proto::tonic::transport::Channel;
 use quickwit_proto::tonic::{Request, Response, Status};
@@ -39,7 +39,7 @@ use tokio::time::Instant;
 
 struct Inner {
     start: Instant,
-    client: MetastoreApiServiceClient<Channel>,
+    client: MetastoreServiceClient<Channel>,
     file: BufWriter<File>,
 }
 
@@ -48,7 +48,7 @@ struct MetastoreProxyService {
 }
 
 impl MetastoreProxyService {
-    pub fn new(client: MetastoreApiServiceClient<Channel>, record_file: File) -> Self {
+    pub fn new(client: MetastoreServiceClient<Channel>, record_file: File) -> Self {
         let inner = Inner {
             start: Instant::now(),
             client,
@@ -77,7 +77,7 @@ impl Inner {
 }
 
 #[async_trait]
-impl MetastoreApiService for MetastoreProxyService {
+impl MetastoreService for MetastoreProxyService {
     /// Creates an index.
     async fn create_index(
         &self,
@@ -284,10 +284,10 @@ struct Opt {
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     let opt = Opt::from_args();
-    let client = MetastoreApiServiceClient::connect(opt.forward_to.clone()).await?;
+    let client = MetastoreServiceClient::connect(opt.forward_to.clone()).await?;
     let file = File::create(&opt.file).await?;
     let service = MetastoreProxyService::new(client, file);
-    let server = MetastoreApiServiceServer::new(service);
+    let server = MetastoreServiceServer::new(service);
     println!(
         "Listening to {}, Forwarding to {}",
         opt.listen_to, opt.forward_to

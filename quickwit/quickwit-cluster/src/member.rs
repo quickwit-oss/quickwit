@@ -23,7 +23,7 @@ use std::net::SocketAddr;
 use anyhow::{anyhow, Context};
 use chitchat::{ChitchatId, NodeState};
 use itertools::Itertools;
-use quickwit_proto::indexing_api::IndexingTask;
+use quickwit_proto::indexing::IndexingTask;
 use tracing::warn;
 
 use crate::{GenerationId, QuickwitService};

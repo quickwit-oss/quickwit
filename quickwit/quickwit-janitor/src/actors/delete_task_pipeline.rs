@@ -291,7 +291,7 @@ mod tests {
     use quickwit_common::temp_dir::TempDirectory;
     use quickwit_indexing::TestSandbox;
     use quickwit_metastore::SplitState;
-    use quickwit_proto::metastore_api::DeleteQuery;
+    use quickwit_proto::metastore::DeleteQuery;
     use quickwit_proto::{LeafSearchRequest, LeafSearchResponse};
     use quickwit_search::{
         searcher_pool_for_test, MockSearchService, SearchError, SearchJobPlacer,
@@ -356,7 +356,7 @@ mod tests {
                 index_uid: index_uid.to_string(),
                 start_timestamp: None,
                 end_timestamp: None,
-                query_ast: quickwit_proto::qast_helper("body:delete", &[]),
+                query_ast: quickwit_query::query_ast::qast_helper("body:delete", &[]),
             })
             .await
             .unwrap();

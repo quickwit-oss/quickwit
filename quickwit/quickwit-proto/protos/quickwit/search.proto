@@ -19,7 +19,7 @@
 
 syntax = "proto3";
 
-package quickwit;
+package quickwit.search;
 
 service SearchService {
   // Root search API.
@@ -107,7 +107,7 @@ message SearchRequest {
   // Fields to extract snippet on
   repeated string  snippet_fields = 12;
 
-  // Optional sort by one or more fields (limited to 2 at the moment). 
+  // Optional sort by one or more fields (limited to 2 at the moment).
   repeated SortField sort_fields = 14;
 }
 
