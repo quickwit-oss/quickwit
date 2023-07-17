@@ -79,37 +79,29 @@ fn create_quickwit_fastfield_normalizer_manager() -> TokenizerManager {
     tokenizer_manager
 }
 
-#[derive(Clone)]
-struct CodeTokenizer;
+/// TODO: add docs.
+#[derive(Clone, Default)]
+pub struct CodeTokenizer(Token);
 
 impl Tokenizer for CodeTokenizer {
     type TokenStream<'a> = CodeTokenStream<'a>;
 
-    fn token_stream<'a>(&mut self, text: &'a str) -> Self::TokenStream<'a> {
+    fn token_stream<'a>(&'a mut self, text: &'a str) -> Self::TokenStream<'a> {
+        self.0.reset();
         CodeTokenStream {
-            text,
             chars: text.char_indices(),
-            token: Token::default(),
-            state: CodeTokenizerState::Init,
+            state: CodeTokenizerState::Empty,
+            text,
+            token: &mut self.0,
         }
     }
 }
 
-struct CodeTokenStream<'a> {
+pub struct CodeTokenStream<'a> {
     text: &'a str,
     chars: CharIndices<'a>,
-    token: Token,
+    token: &'a mut Token,
     state: CodeTokenizerState,
-}
-
-impl<'a> CodeTokenStream<'a> {
-    fn update_token(&mut self, token_offsets: Range<usize>) {
-        self.token.offset_from = token_offsets.start;
-        self.token.offset_to = token_offsets.end;
-        self.token
-            .text
-            .push_str(&self.text[token_offsets.start..token_offsets.end]);
-    }
 }
 
 impl<'a> TokenStream for CodeTokenStream<'a> {
@@ -140,26 +132,30 @@ impl<'a> TokenStream for CodeTokenStream<'a> {
     }
 
     fn token(&self) -> &Token {
-        &self.token
+        self.token
     }
 
     fn token_mut(&mut self) -> &mut Token {
-        &mut self.token
+        self.token
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum CharType {
-    UpperCase,
-    LowerCase,
-    Numeric,
-    Delimiter,
+impl<'a> CodeTokenStream<'a> {
+    fn update_token(&mut self, token_offsets: Range<usize>) {
+        self.token.offset_from = token_offsets.start;
+        self.token.offset_to = token_offsets.end;
+        self.token
+            .text
+            .push_str(&self.text[token_offsets.start..token_offsets.end]);
+    }
 }
+
 enum CodeTokenizerState {
-    Init,
-    State(InnerState),
+    Empty,
+    ProcessingChars(ProcessingCharsState),
 }
-struct InnerState {
+
+struct ProcessingCharsState {
     is_first_char: bool,
     start_offset: usize,
     current_char: char,
@@ -171,19 +167,19 @@ type TokenOffsets = Range<usize>;
 
 impl CodeTokenizerState {
     fn reset(&mut self) {
-        *self = CodeTokenizerState::Init;
+        *self = CodeTokenizerState::Empty;
     }
 
     fn advance(&mut self, next_char_offset: usize, next_char: char) -> Option<TokenOffsets> {
         let next_char_type = get_char_type(next_char);
         match self {
-            Self::Init => match next_char_type {
+            Self::Empty => match next_char_type {
                 CharType::Delimiter => {
                     self.reset();
                     None
                 }
                 _ => {
-                    *self = CodeTokenizerState::State(InnerState {
+                    *self = CodeTokenizerState::ProcessingChars(ProcessingCharsState {
                         is_first_char: true,
                         start_offset: next_char_offset,
                         current_char_offset: next_char_offset,
@@ -193,7 +189,7 @@ impl CodeTokenizerState {
                     None
                 }
             },
-            Self::State(state) => {
+            Self::ProcessingChars(state) => {
                 match (state.current_char_type, next_char_type) {
                     (_, CharType::Delimiter) => {
                         let offsets = TokenOffsets {
@@ -225,7 +221,7 @@ impl CodeTokenizerState {
                             Some(offsets)
                         }
                     }
-                    // Same char types.
+                    // Don't emit tokens on identical char types.
                     (CharType::UpperCase, CharType::UpperCase)
                     | (CharType::LowerCase, CharType::LowerCase)
                     | (CharType::Numeric, CharType::Numeric) => {
@@ -253,31 +249,48 @@ impl CodeTokenizerState {
 
     fn finalize(&mut self) -> Option<TokenOffsets> {
         match self {
-            Self::Init => None,
-            Self::State(char_state) => {
+            Self::Empty => None,
+            Self::ProcessingChars(char_state) => {
                 let offsets = TokenOffsets {
                     start: char_state.start_offset,
                     end: char_state.current_char_offset + char_state.current_char.len_utf8(),
                 };
-                *self = Self::Init;
+                *self = Self::Empty;
                 Some(offsets)
             }
         }
     }
 }
 
+/// Returns the type of the character:
+/// - `UpperCase` for `p{Lu}`.
+/// - `LowerCase` for `p{Ll}`.
+/// - `Numeric` for `\d`.
+/// - `Delimiter` for the remaining characters.
 fn get_char_type(c: char) -> CharType {
     if c.is_alphabetic() {
         if c.is_uppercase() {
-            return CharType::UpperCase;
+            CharType::UpperCase
         } else {
-            return CharType::LowerCase;
+            CharType::LowerCase
         }
     } else if c.is_numeric() {
         return CharType::Numeric;
     } else {
         return CharType::Delimiter;
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum CharType {
+    // Equivalent of regex `p{Lu}`.
+    UpperCase,
+    // Equivalent of regex `p{Ll}`.
+    LowerCase,
+    // Equivalent of regex `\d`.
+    Numeric,
+    // Other characters.
+    Delimiter,
 }
 
 #[derive(Clone)]
@@ -575,7 +588,7 @@ mod tests {
 
     #[test]
     fn test_code_tokenizer() {
-        let mut tokenizer = CodeTokenizer;
+        let mut tokenizer = CodeTokenizer::default();
         {
             let mut token_stream = tokenizer.token_stream("PigCaféFactory2");
             let mut res = Vec::new();
