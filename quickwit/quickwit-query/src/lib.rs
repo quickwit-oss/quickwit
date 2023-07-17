@@ -44,7 +44,7 @@ use serde::{Deserialize, Serialize};
 pub use tantivy::query::Query as TantivyQuery;
 pub use tokenizers::{
     create_default_quickwit_tokenizer_manager, get_quickwit_fastfield_normalizer_manager,
-    DEFAULT_REMOVE_TOKEN_LENGTH,
+    CodeTokenizer, DEFAULT_REMOVE_TOKEN_LENGTH,
 };
 
 #[derive(Serialize, Deserialize, Debug, Default, Copy, Clone, Eq, PartialEq)]

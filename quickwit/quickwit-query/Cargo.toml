@@ -22,5 +22,10 @@ tantivy = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
+criterion = { workspace = true }
 proptest = { workspace = true }
 time = { workspace = true }
+
+[[bench]]
+name = "tokenizers_bench"
+harness = false
