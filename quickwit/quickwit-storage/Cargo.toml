@@ -70,8 +70,5 @@ azure = [
 ci-test = []
 testsuite = [
   "azure",
-  "azure_core/azurite_workaround",
-  "azure_storage/azurite_workaround",
-  "azure_storage_blobs/azurite_workaround",
   "mockall",
 ]

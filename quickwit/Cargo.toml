@@ -55,12 +55,12 @@ clap = { version = "4.3.0", features = ["env", "string"] }
 colored = "2.0.0"
 console-subscriber = "0.1.8"
 criterion = { version = "0.5", features = ["async_tokio"] }
-cron = "0.11.0"
+cron = "0.12.0"
 dialoguer = "0.10.3"
 dotenv = "0.15"
 dyn-clone = "1.0.10"
 enum-iterator = "1.4"
-env_logger = "0.9"
+env_logger = "0.10"
 fail = "0.5"
 flume = "0.10"
 fnv = "1"
@@ -85,10 +85,10 @@ hyper = { version = "0.14", features = [
 hyper-rustls = "0.24"
 indexmap = { version = "2.0.0", features = ["serde"] }
 indicatif = "0.17.3"
-itertools = "0.10.5"
+itertools = "0.11"
 json_comments = "0.2"
 libz-sys = "1.1.8"
-lru = "0.10"
+lru = "0.11"
 matches = "0.1.9"
 md5 = "0.7"
 mime_guess = "2.0.4"
@@ -105,9 +105,9 @@ opentelemetry = { version = "0.19", features = ["rt-tokio"] }
 opentelemetry-jaeger = { version = "0.18", features = ["rt-tokio"] }
 opentelemetry-otlp = "0.12.0"
 pin-project = "1.1.0"
-pnet = { version = "0.31.0", features = ["std"] }
+pnet = { version = "0.33.0", features = ["std"] }
 postcard = { version = "1.0.4", features = ["use-std"], default-features = false}
-predicates = "2"
+predicates = "3"
 prettyplease = "0.2.0"
 proc-macro2 = "1.0.50"
 prometheus = { version = "0.13", features = ["process"] }
@@ -122,7 +122,7 @@ quote = "1.0.23"
 rand = "0.8"
 rand_distr = "0.4"
 rayon = "1"
-rdkafka = { version = "0.32", default-features = false, features = [
+rdkafka = { version = "0.33", default-features = false, features = [
   "cmake-build",
   "libz",
   "ssl",
@@ -137,8 +137,8 @@ reqwest = { version = "0.11", default-features = false, features = [
 rust-embed = "6.8.1"
 serde = { version = "1.0", features = ["derive", "rc"] }
 serde_json = "1.0"
-serde_qs = { version = "0.10", features = ["warp"] }
-serde_with = "2.3.0"
+serde_qs = { version = "0.12", features = ["warp"] }
+serde_with = "3.0.0"
 serde_yaml = "0.9"
 siphasher = "0.3"
 sqlx = { version = "0.6", features = [
@@ -160,7 +160,7 @@ time = { version = "0.3.17", features = ["std", "formatting", "macros"] }
 tokio = { version = "1.29", features = ["full"] }
 tokio-stream = { version = "0.1", features = ["sync"] }
 tokio-util = { version = "0.7", features = ["full"] }
-toml = "0.6.0"
+toml = "0.7.6"
 tonic = { version = "0.9.0", features = ["gzip"] }
 tonic-build = "0.9.0"
 tower = { version = "0.4.13", features = ["balance", "buffer", "load", "util"] }
@@ -182,17 +182,17 @@ wiremock = "0.5"
 
 aws-config = "0.55.0"
 aws-credential-types = { version = "0.55.0", features = ["hardcoded-credentials"] }
-aws-sdk-kinesis = "0.27.0"
-aws-sdk-s3 = "0.27.0"
+aws-sdk-kinesis = "0.28.0"
+aws-sdk-s3 = "0.28.0"
 aws-smithy-async = "0.55.0"
 aws-smithy-client = "0.55.0"
 aws-smithy-http = "0.55.0"
 aws-smithy-types = "0.55.0"
 aws-types = "0.55.0"
 
-azure_core = { version = "0.5.0", features = ["enable_reqwest_rustls"] }
-azure_storage = { version = "0.6.0", default-features = false, features = ["enable_reqwest_rustls"] }
-azure_storage_blobs = { version = "0.6.0", default-features = false, features = ["enable_reqwest_rustls"] }
+azure_core = { version = "0.13.0", features = ["enable_reqwest_rustls"] }
+azure_storage = { version = "0.13.0", default-features = false, features = ["enable_reqwest_rustls"] }
+azure_storage_blobs = { version = "0.13.0", default-features = false, features = ["enable_reqwest_rustls"] }
 
 quickwit-actors = { version = "0.6.2", path = "./quickwit-actors" }
 quickwit-aws = { version = "0.6.2", path = "./quickwit-aws" }

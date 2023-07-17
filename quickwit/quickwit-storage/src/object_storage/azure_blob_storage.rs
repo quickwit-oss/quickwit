@@ -228,7 +228,7 @@ impl AzureBlobStorage {
             .inc_by(payload.len());
         retry(&self.retry_params, || async {
             let data = Bytes::from(payload.read_all().await?.to_vec());
-            let hash = md5::compute(&data[..]);
+            let hash = azure_storage_blobs::prelude::Hash::from(md5::compute(&data[..]).0);
             self.container_client
                 .blob_client(name)
                 .put_block_blob(data)
@@ -265,9 +265,10 @@ impl AzureBlobStorage {
                 async move {
                     retry(&self.retry_params, || async {
                         let block_id = format!("block:{num}");
-                        let (data, hash) =
+                        let (data, hash_digest) =
                             extract_range_data_and_hash(moved_payload.box_clone(), range.clone())
                                 .await?;
+                        let hash = azure_storage_blobs::prelude::Hash::from(hash_digest.0);
                         moved_blob_client
                             .put_block(block_id.clone(), data)
                             .hash(hash)
