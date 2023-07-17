@@ -209,11 +209,11 @@ pub async fn create_test_env(
             .replace("#index_id", &index_id)
             .replace("index_uri: #index_uri\n", ""),
     )?;
-    let quickwit_config_path = resources_dir_path.join("config.yaml");
+    let node_config_path = resources_dir_path.join("config.yaml");
     let rest_listen_port = find_available_tcp_port()?;
     let grpc_listen_port = find_available_tcp_port()?;
     fs::write(
-        &quickwit_config_path,
+        &node_config_path,
         // A poor's man templating engine reloaded...
         DEFAULT_QUICKWIT_CONFIG
             .replace("#metastore_uri", metastore_uri.as_str())
@@ -227,7 +227,7 @@ pub async fn create_test_env(
     fs::write(&wikipedia_docs_path, WIKI_JSON_DOCS)?;
 
     let mut resource_files = HashMap::new();
-    resource_files.insert("config", quickwit_config_path);
+    resource_files.insert("config", node_config_path);
     resource_files.insert("index_config", index_config_path);
     resource_files.insert("index_config_without_uri", index_config_without_uri_path);
     resource_files.insert("logs", log_docs_path);

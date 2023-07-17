@@ -33,7 +33,7 @@ use quickwit_common::uri::Uri;
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
-use crate::quickwit_config::serialize::load_quickwit_config_with_env;
+use crate::node_config::serialize::load_node_config_with_env;
 use crate::service::QuickwitService;
 use crate::storage_config::StorageConfigs;
 use crate::{ConfigFormat, MetastoreConfigs};
@@ -222,7 +222,7 @@ impl Default for JaegerConfig {
 }
 
 #[derive(Clone, Debug, Serialize)]
-pub struct QuickwitConfig {
+pub struct NodeConfig {
     pub cluster_id: String,
     pub node_id: String,
     pub enabled_services: HashSet<QuickwitService>,
@@ -244,12 +244,11 @@ pub struct QuickwitConfig {
     pub jaeger_config: JaegerConfig,
 }
 
-impl QuickwitConfig {
-    /// Parses and validates a [`QuickwitConfig`] from a given URI and config content.
+impl NodeConfig {
+    /// Parses and validates a [`NodeConfig`] from a given URI and config content.
     pub async fn load(config_format: ConfigFormat, config_content: &[u8]) -> anyhow::Result<Self> {
         let env_vars = env::vars().collect::<HashMap<_, _>>();
-        let config =
-            load_quickwit_config_with_env(config_format, config_content, &env_vars).await?;
+        let config = load_node_config_with_env(config_format, config_content, &env_vars).await?;
         if !config.data_dir_path.try_exists()? {
             bail!(
                 "Data dir `{}` does not exist.",
@@ -294,6 +293,6 @@ impl QuickwitConfig {
 
     #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test() -> Self {
-        serialize::quickwit_config_for_test()
+        serialize::node_config_for_test()
     }
 }

@@ -23,7 +23,7 @@ use std::sync::Arc;
 
 use quickwit_actors::{Mailbox, Universe};
 use quickwit_common::FileEntry;
-use quickwit_config::QuickwitConfig;
+use quickwit_config::NodeConfig;
 use quickwit_metastore::Metastore;
 use quickwit_search::SearchJobPlacer;
 use quickwit_storage::StorageResolver;
@@ -50,7 +50,7 @@ pub struct JanitorApiSchemas;
 
 pub async fn start_janitor_service(
     universe: &Universe,
-    config: &QuickwitConfig,
+    config: &NodeConfig,
     metastore: Arc<dyn Metastore>,
     search_job_placer: SearchJobPlacer,
     storage_resolver: StorageResolver,

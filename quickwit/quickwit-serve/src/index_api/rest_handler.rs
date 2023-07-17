@@ -24,7 +24,7 @@ use hyper::header::CONTENT_TYPE;
 use quickwit_common::uri::Uri;
 use quickwit_common::FileEntry;
 use quickwit_config::{
-    load_source_config_from_user_config, ConfigFormat, QuickwitConfig, SourceConfig, SourceParams,
+    load_source_config_from_user_config, ConfigFormat, NodeConfig, SourceConfig, SourceParams,
     CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID,
 };
 use quickwit_core::{IndexService, IndexServiceError};
@@ -65,12 +65,12 @@ pub struct IndexApi;
 
 pub fn index_management_handlers(
     index_service: Arc<IndexService>,
-    quickwit_config: Arc<QuickwitConfig>,
+    node_config: Arc<NodeConfig>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     // Indexes handlers.
     get_index_metadata_handler(index_service.metastore())
         .or(get_indexes_metadatas_handler(index_service.metastore()))
-        .or(create_index_handler(index_service.clone(), quickwit_config))
+        .or(create_index_handler(index_service.clone(), node_config))
         .or(clear_index_handler(index_service.clone()))
         .or(delete_index_handler(index_service.clone()))
         // Splits handlers
@@ -386,7 +386,7 @@ struct CreateIndexQueryParams {
 
 fn create_index_handler(
     index_service: Arc<IndexService>,
-    quickwit_config: Arc<QuickwitConfig>,
+    node_config: Arc<NodeConfig>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     warp::path!("indexes")
         .and(warp::post())
@@ -395,7 +395,7 @@ fn create_index_handler(
         .and(warp::body::content_length_limit(1024 * 1024))
         .and(warp::filters::body::bytes())
         .and(with_arg(index_service))
-        .and(with_arg(quickwit_config))
+        .and(with_arg(node_config))
         .then(create_index)
         .and(extract_format_from_qs())
         .map(make_json_api_response)
@@ -420,12 +420,12 @@ async fn create_index(
     config_format: ConfigFormat,
     index_config_bytes: Bytes,
     index_service: Arc<IndexService>,
-    quickwit_config: Arc<QuickwitConfig>,
+    node_config: Arc<NodeConfig>,
 ) -> Result<IndexMetadata, IndexServiceError> {
     let index_config = quickwit_config::load_index_config_from_user_config(
         config_format,
         &index_config_bytes,
-        &quickwit_config.default_index_root_uri,
+        &node_config.default_index_root_uri,
     )
     .map_err(IndexServiceError::InvalidConfig)?;
     info!(index_id = %index_config.index_id, overwrite = create_index_query_params.overwrite, "create-index");
@@ -792,7 +792,7 @@ mod tests {
         let index_service = IndexService::new(Arc::new(metastore), StorageResolver::unconfigured());
         let index_management_handler = super::index_management_handlers(
             Arc::new(index_service),
-            Arc::new(QuickwitConfig::for_test()),
+            Arc::new(NodeConfig::for_test()),
         )
         .recover(recover_fn);
         let resp = warp::test::request()
@@ -818,7 +818,7 @@ mod tests {
         let index_service = IndexService::new(metastore, StorageResolver::unconfigured());
         let index_management_handler = super::index_management_handlers(
             Arc::new(index_service),
-            Arc::new(QuickwitConfig::for_test()),
+            Arc::new(NodeConfig::for_test()),
         )
         .recover(recover_fn);
         let resp = warp::test::request()
@@ -861,7 +861,7 @@ mod tests {
         let index_service = IndexService::new(Arc::new(metastore), StorageResolver::unconfigured());
         let index_management_handler = super::index_management_handlers(
             Arc::new(index_service),
-            Arc::new(QuickwitConfig::for_test()),
+            Arc::new(NodeConfig::for_test()),
         )
         .recover(recover_fn);
         {
@@ -928,7 +928,7 @@ mod tests {
         let index_service = IndexService::new(Arc::new(metastore), StorageResolver::unconfigured());
         let index_management_handler = super::index_management_handlers(
             Arc::new(index_service),
-            Arc::new(QuickwitConfig::for_test()),
+            Arc::new(NodeConfig::for_test()),
         )
         .recover(recover_fn);
         let resp = warp::test::request()
@@ -983,7 +983,7 @@ mod tests {
         let index_service = IndexService::new(Arc::new(metastore), StorageResolver::unconfigured());
         let index_management_handler = super::index_management_handlers(
             Arc::new(index_service),
-            Arc::new(QuickwitConfig::for_test()),
+            Arc::new(NodeConfig::for_test()),
         )
         .recover(recover_fn);
         let resp = warp::test::request()
@@ -1022,7 +1022,7 @@ mod tests {
         let index_service = IndexService::new(Arc::new(metastore), StorageResolver::unconfigured());
         let index_management_handler = super::index_management_handlers(
             Arc::new(index_service),
-            Arc::new(QuickwitConfig::for_test()),
+            Arc::new(NodeConfig::for_test()),
         )
         .recover(recover_fn);
         let resp = warp::test::request()
@@ -1056,7 +1056,7 @@ mod tests {
         let index_service = IndexService::new(Arc::new(metastore), StorageResolver::unconfigured());
         let index_management_handler = super::index_management_handlers(
             Arc::new(index_service),
-            Arc::new(QuickwitConfig::for_test()),
+            Arc::new(NodeConfig::for_test()),
         )
         .recover(recover_fn);
         let resp = warp::test::request()
@@ -1105,7 +1105,7 @@ mod tests {
         let index_service = IndexService::new(Arc::new(metastore), StorageResolver::unconfigured());
         let index_management_handler = super::index_management_handlers(
             Arc::new(index_service),
-            Arc::new(QuickwitConfig::for_test()),
+            Arc::new(NodeConfig::for_test()),
         )
         .recover(recover_fn);
         let resp = warp::test::request()
@@ -1148,7 +1148,7 @@ mod tests {
         let index_service = IndexService::new(Arc::new(metastore), StorageResolver::unconfigured());
         let index_management_handler = super::index_management_handlers(
             Arc::new(index_service),
-            Arc::new(QuickwitConfig::for_test()),
+            Arc::new(NodeConfig::for_test()),
         )
         .recover(recover_fn);
         {
@@ -1188,7 +1188,7 @@ mod tests {
         let index_service = IndexService::new(metastore, StorageResolver::unconfigured());
         let index_management_handler = super::index_management_handlers(
             Arc::new(index_service),
-            Arc::new(QuickwitConfig::for_test()),
+            Arc::new(NodeConfig::for_test()),
         )
         .recover(recover_fn);
         let resp = warp::test::request()
@@ -1203,11 +1203,11 @@ mod tests {
     async fn test_create_index_with_overwrite() {
         let metastore = metastore_for_test();
         let index_service = IndexService::new(metastore.clone(), StorageResolver::unconfigured());
-        let mut quickwit_config = QuickwitConfig::for_test();
-        quickwit_config.default_index_root_uri =
+        let mut node_config = NodeConfig::for_test();
+        node_config.default_index_root_uri =
             Uri::from_well_formed("file:///default-index-root-uri");
         let index_management_handler =
-            super::index_management_handlers(Arc::new(index_service), Arc::new(quickwit_config));
+            super::index_management_handlers(Arc::new(index_service), Arc::new(node_config));
         {
             let resp = warp::test::request()
                 .path("/indexes?overwrite=true")
@@ -1244,11 +1244,11 @@ mod tests {
     async fn test_create_delete_index_and_source() {
         let metastore = metastore_for_test();
         let index_service = IndexService::new(metastore.clone(), StorageResolver::unconfigured());
-        let mut quickwit_config = QuickwitConfig::for_test();
-        quickwit_config.default_index_root_uri =
+        let mut node_config = NodeConfig::for_test();
+        node_config.default_index_root_uri =
             Uri::from_well_formed("file:///default-index-root-uri");
         let index_management_handler =
-            super::index_management_handlers(Arc::new(index_service), Arc::new(quickwit_config));
+            super::index_management_handlers(Arc::new(index_service), Arc::new(node_config));
         let resp = warp::test::request()
             .path("/indexes")
             .method("POST")
@@ -1352,11 +1352,11 @@ mod tests {
     async fn test_create_file_source_returns_405() {
         let metastore = metastore_for_test();
         let index_service = IndexService::new(metastore.clone(), StorageResolver::unconfigured());
-        let mut quickwit_config = QuickwitConfig::for_test();
-        quickwit_config.default_index_root_uri =
+        let mut node_config = NodeConfig::for_test();
+        node_config.default_index_root_uri =
             Uri::from_well_formed("file:///default-index-root-uri");
         let index_management_handler =
-            super::index_management_handlers(Arc::new(index_service), Arc::new(quickwit_config))
+            super::index_management_handlers(Arc::new(index_service), Arc::new(node_config))
                 .recover(recover_fn);
         let source_config_body = r#"{"version": "0.6", "source_id": "file-source", "source_type": "file", "params": {"filepath": "FILEPATH"}}"#;
         let resp = warp::test::request()
@@ -1374,11 +1374,11 @@ mod tests {
     async fn test_create_index_with_yaml() {
         let metastore = metastore_for_test();
         let index_service = IndexService::new(metastore.clone(), StorageResolver::unconfigured());
-        let mut quickwit_config = QuickwitConfig::for_test();
-        quickwit_config.default_index_root_uri =
+        let mut node_config = NodeConfig::for_test();
+        node_config.default_index_root_uri =
             Uri::from_well_formed("file:///default-index-root-uri");
         let index_management_handler =
-            super::index_management_handlers(Arc::new(index_service), Arc::new(quickwit_config))
+            super::index_management_handlers(Arc::new(index_service), Arc::new(node_config))
                 .recover(recover_fn);
         let resp = warp::test::request()
             .path("/indexes")
@@ -1413,11 +1413,11 @@ mod tests {
     async fn test_create_index_and_source_with_toml() {
         let metastore = metastore_for_test();
         let index_service = IndexService::new(metastore.clone(), StorageResolver::unconfigured());
-        let mut quickwit_config = QuickwitConfig::for_test();
-        quickwit_config.default_index_root_uri =
+        let mut node_config = NodeConfig::for_test();
+        node_config.default_index_root_uri =
             Uri::from_well_formed("file:///default-index-root-uri");
         let index_management_handler =
-            super::index_management_handlers(Arc::new(index_service), Arc::new(quickwit_config))
+            super::index_management_handlers(Arc::new(index_service), Arc::new(node_config))
                 .recover(recover_fn);
         let resp = warp::test::request()
             .path("/indexes")
@@ -1450,11 +1450,11 @@ mod tests {
     async fn test_create_index_with_wrong_content_type() {
         let metastore = metastore_for_test();
         let index_service = IndexService::new(metastore.clone(), StorageResolver::unconfigured());
-        let mut quickwit_config = QuickwitConfig::for_test();
-        quickwit_config.default_index_root_uri =
+        let mut node_config = NodeConfig::for_test();
+        node_config.default_index_root_uri =
             Uri::from_well_formed("file:///default-index-root-uri");
         let index_management_handler =
-            super::index_management_handlers(Arc::new(index_service), Arc::new(quickwit_config))
+            super::index_management_handlers(Arc::new(index_service), Arc::new(node_config))
                 .recover(recover_fn);
         let resp = warp::test::request()
             .path("/indexes")
@@ -1474,7 +1474,7 @@ mod tests {
         let index_service = IndexService::new(Arc::new(metastore), StorageResolver::unconfigured());
         let index_management_handler = super::index_management_handlers(
             Arc::new(index_service),
-            Arc::new(QuickwitConfig::for_test()),
+            Arc::new(NodeConfig::for_test()),
         )
         .recover(recover_fn);
         let resp = warp::test::request()
@@ -1500,7 +1500,7 @@ mod tests {
         let index_service = IndexService::new(metastore, StorageResolver::unconfigured());
         let index_management_handler = super::index_management_handlers(
             Arc::new(index_service),
-            Arc::new(QuickwitConfig::for_test()),
+            Arc::new(NodeConfig::for_test()),
         )
         .recover(recover_fn);
         {
@@ -1557,7 +1557,7 @@ mod tests {
         let index_service = IndexService::new(Arc::new(metastore), StorageResolver::unconfigured());
         let index_management_handler = super::index_management_handlers(
             Arc::new(index_service),
-            Arc::new(QuickwitConfig::for_test()),
+            Arc::new(NodeConfig::for_test()),
         )
         .recover(recover_fn);
         let resp = warp::test::request()
@@ -1595,7 +1595,7 @@ mod tests {
         let index_service = IndexService::new(Arc::new(metastore), StorageResolver::unconfigured());
         let index_management_handler = super::index_management_handlers(
             Arc::new(index_service),
-            Arc::new(QuickwitConfig::for_test()),
+            Arc::new(NodeConfig::for_test()),
         )
         .recover(recover_fn);
         let resp = warp::test::request()
@@ -1642,7 +1642,7 @@ mod tests {
         let index_service = IndexService::new(Arc::new(metastore), StorageResolver::unconfigured());
         let index_management_handler = super::index_management_handlers(
             Arc::new(index_service),
-            Arc::new(QuickwitConfig::for_test()),
+            Arc::new(NodeConfig::for_test()),
         )
         .recover(recover_fn);
         // Check server returns 405 if sources root path is used.
@@ -1701,7 +1701,7 @@ mod tests {
         let index_service = IndexService::new(Arc::new(metastore), StorageResolver::unconfigured());
         let index_management_handler = super::index_management_handlers(
             Arc::new(index_service),
-            Arc::new(QuickwitConfig::for_test()),
+            Arc::new(NodeConfig::for_test()),
         )
         .recover(recover_fn);
         let resp = warp::test::request()

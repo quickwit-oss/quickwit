@@ -26,7 +26,7 @@ use std::sync::Arc;
 
 use bulk::{es_compat_bulk_handler, es_compat_index_bulk_handler};
 pub use filter::ElasticCompatibleApi;
-use quickwit_config::QuickwitConfig;
+use quickwit_config::NodeConfig;
 use quickwit_ingest::IngestServiceClient;
 use quickwit_search::SearchService;
 use rest_handler::{
@@ -43,11 +43,11 @@ use crate::BuildInfo;
 /// This is where all newly supported Elasticsearch handlers
 /// should be registered.
 pub fn elastic_api_handlers(
-    quickwit_config: Arc<QuickwitConfig>,
+    node_config: Arc<NodeConfig>,
     search_service: Arc<dyn SearchService>,
     ingest_service: IngestServiceClient,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    es_compat_cluster_info_handler(quickwit_config, BuildInfo::get())
+    es_compat_cluster_info_handler(node_config, BuildInfo::get())
         .or(es_compat_search_handler(search_service.clone()))
         .or(es_compat_index_search_handler(search_service.clone()))
         .or(es_compat_index_multi_search_handler(search_service))
@@ -91,7 +91,7 @@ mod tests {
 
     use assert_json_diff::assert_json_include;
     use mockall::predicate;
-    use quickwit_config::QuickwitConfig;
+    use quickwit_config::NodeConfig;
     use quickwit_ingest::{IngestApiService, IngestServiceClient};
     use quickwit_search::MockSearchService;
     use serde_json::Value as JsonValue;
@@ -111,7 +111,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_msearch_api_return_200_responses() {
-        let config = Arc::new(QuickwitConfig::for_test());
+        let config = Arc::new(NodeConfig::for_test());
         let mut mock_search_service = MockSearchService::new();
         mock_search_service
             .expect_root_search()
@@ -156,7 +156,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_msearch_api_return_one_500_and_one_200_responses() {
-        let config = Arc::new(QuickwitConfig::for_test());
+        let config = Arc::new(NodeConfig::for_test());
         let mut mock_search_service = MockSearchService::new();
         mock_search_service
             .expect_root_search()
@@ -202,7 +202,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_msearch_api_return_400_with_malformed_request_header() {
-        let config = Arc::new(QuickwitConfig::for_test());
+        let config = Arc::new(NodeConfig::for_test());
         let mock_search_service = MockSearchService::new();
         let es_search_api_handler = super::elastic_api_handlers(
             config,
@@ -230,7 +230,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_msearch_api_return_400_with_malformed_request_body() {
-        let config = Arc::new(QuickwitConfig::for_test());
+        let config = Arc::new(NodeConfig::for_test());
         let mock_search_service = MockSearchService::new();
         let es_search_api_handler = super::elastic_api_handlers(
             config,
@@ -258,7 +258,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_msearch_api_return_400_with_only_a_header_request() {
-        let config = Arc::new(QuickwitConfig::for_test());
+        let config = Arc::new(NodeConfig::for_test());
         let mock_search_service = MockSearchService::new();
         let es_search_api_handler = super::elastic_api_handlers(
             config,
@@ -285,7 +285,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_msearch_api_return_400_with_no_index() {
-        let config = Arc::new(QuickwitConfig::for_test());
+        let config = Arc::new(NodeConfig::for_test());
         let mock_search_service = MockSearchService::new();
         let es_search_api_handler = super::elastic_api_handlers(
             config,
@@ -311,7 +311,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_msearch_api_return_400_with_multiple_indexes() {
-        let config = Arc::new(QuickwitConfig::for_test());
+        let config = Arc::new(NodeConfig::for_test());
         let mock_search_service = MockSearchService::new();
         let es_search_api_handler = super::elastic_api_handlers(
             config,
@@ -340,7 +340,7 @@ mod tests {
     #[tokio::test]
     async fn test_es_compat_cluster_info_handler() {
         let build_info = BuildInfo::get();
-        let config = Arc::new(QuickwitConfig::for_test());
+        let config = Arc::new(NodeConfig::for_test());
         let handler =
             es_compat_cluster_info_handler(config.clone(), build_info).recover(recover_fn);
         let resp = warp::test::request()

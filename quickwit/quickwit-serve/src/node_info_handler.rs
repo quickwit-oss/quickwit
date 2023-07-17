@@ -19,7 +19,7 @@
 
 use std::sync::Arc;
 
-use quickwit_config::QuickwitConfig;
+use quickwit_config::NodeConfig;
 use serde_json::json;
 use warp::{Filter, Rejection};
 
@@ -32,7 +32,7 @@ pub struct NodeInfoApi;
 pub fn node_info_handler(
     build_info: &'static BuildInfo,
     runtime_info: &'static RuntimeInfo,
-    config: Arc<QuickwitConfig>,
+    config: Arc<NodeConfig>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     node_version_handler(build_info, runtime_info).or(node_config_handler(config))
 }
@@ -61,7 +61,7 @@ async fn get_version(
 
 #[utoipa::path(get, tag = "Node Info", path = "/config")]
 fn node_config_handler(
-    config: Arc<QuickwitConfig>,
+    config: Arc<NodeConfig>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     warp::path("config")
         .and(warp::path::end())
@@ -69,7 +69,7 @@ fn node_config_handler(
         .then(get_config)
 }
 
-async fn get_config(config: Arc<QuickwitConfig>) -> impl warp::Reply {
+async fn get_config(config: Arc<NodeConfig>) -> impl warp::Reply {
     // We must redact sensitive information such as credentials.
     let mut config = (*config).clone();
     config.redact();
@@ -89,7 +89,7 @@ mod tests {
     async fn test_rest_node_info() {
         let build_info = BuildInfo::get();
         let runtime_info = RuntimeInfo::get();
-        let mut config = QuickwitConfig::for_test();
+        let mut config = NodeConfig::for_test();
         config.metastore_uri = Uri::for_test("postgresql://username:password@db");
         let handler = node_info_handler(build_info, runtime_info, Arc::new(config.clone()))
             .recover(recover_fn);
