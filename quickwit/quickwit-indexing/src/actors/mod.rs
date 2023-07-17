@@ -39,6 +39,9 @@ mod merge_executor;
 mod merge_planner;
 mod merge_split_downloader;
 
+#[cfg(feature = "vrl")]
+mod vrl_processing;
+
 pub use self::doc_processor::{DocProcessor, DocProcessorCounters};
 pub use self::index_serializer::IndexSerializer;
 pub use self::indexer::{Indexer, IndexerCounters};

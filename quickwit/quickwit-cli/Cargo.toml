@@ -92,6 +92,7 @@ release-feature-set = [
   "quickwit-indexing/kafka",
   "quickwit-indexing/kinesis",
   "quickwit-indexing/pulsar",
+  "quickwit-indexing/vrl",
   "quickwit-metastore/azure",
   "quickwit-metastore/postgres",
 ]
