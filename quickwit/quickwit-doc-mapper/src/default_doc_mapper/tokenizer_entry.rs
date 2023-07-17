@@ -51,14 +51,10 @@ impl TokenizerConfig {
     pub fn text_analyzer(&self) -> anyhow::Result<TextAnalyzer> {
         let mut text_analyzer_builder = match &self.tokenizer_type {
             TokenizerType::Simple => TextAnalyzer::builder(SimpleTokenizer::default()).dynamic(),
-            // Note(fmassot): `multilang` is currently an "all-in-one" tokenizer with default
-            // filter. Static filters allows better performance which is a requirement
-            // for the `happy-plazza` project. We may want to revisit that later.
             #[cfg(feature = "multilang")]
-            TokenizerType::Multilang => TextAnalyzer::builder(MultiLangTokenizer::default())
-                .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
-                .filter(LowerCaser)
-                .dynamic(),
+            TokenizerType::Multilang => {
+                TextAnalyzer::builder(MultiLangTokenizer::default()).dynamic()
+            }
             TokenizerType::Ngram(options) => {
                 let tokenizer =
                     NgramTokenizer::new(options.min_gram, options.max_gram, options.prefix_only)

@@ -55,7 +55,13 @@ pub fn create_default_quickwit_tokenizer_manager() -> TokenizerManager {
             .build(),
     );
     #[cfg(feature = "multilang")]
-    tokenizer_manager.register("multilang", MultiLangTokenizer::default());
+    tokenizer_manager.register(
+        "multilang_default",
+        TextAnalyzer::builder(MultiLangTokenizer::default())
+            .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
+            .filter(LowerCaser)
+            .build(),
+    );
     tokenizer_manager
 }
 
