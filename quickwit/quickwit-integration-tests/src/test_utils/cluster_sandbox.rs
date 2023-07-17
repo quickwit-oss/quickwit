@@ -31,7 +31,7 @@ use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::test_utils::{wait_for_server_ready, wait_until_predicate};
 use quickwit_common::tower::BoxFutureInfaillible;
 use quickwit_common::uri::Uri as QuickwitUri;
-use quickwit_config::service::QuickwitService;
+use quickwit_config::node_role::NodeRole;
 use quickwit_config::NodeConfig;
 use quickwit_metastore::{MetastoreResolver, SplitState};
 use quickwit_rest_client::models::IngestSource;
@@ -47,11 +47,11 @@ use tokio::task::JoinHandle;
 use tracing::debug;
 
 /// Configuration of a node made of a [`NodeConfig`] and a
-/// set of services.
+/// set of roles.
 #[derive(Clone)]
 pub struct TestNodeConfig {
     pub node_config: NodeConfig,
-    pub services: HashSet<QuickwitService>,
+    pub roles: HashSet<NodeRole>,
 }
 
 struct ClusterShutdownTrigger {
@@ -139,11 +139,11 @@ pub async fn ingest_with_retry(
 }
 
 impl ClusterSandbox {
-    // Starts one node that runs all the services.
+    // Starts one node that runs all the roles.
     pub async fn start_standalone_node() -> anyhow::Result<Self> {
         let temp_dir = tempfile::tempdir()?;
-        let services = QuickwitService::supported_services();
-        let node_configs = build_node_configs(temp_dir.path().to_path_buf(), &[services]);
+        let roles = NodeRole::all_roles();
+        let node_configs = build_node_configs(temp_dir.path().to_path_buf(), &[roles]);
         let storage_resolver = StorageResolver::unconfigured();
         let metastore_resolver = MetastoreResolver::unconfigured();
         // There is exactly one node.
@@ -181,9 +181,7 @@ impl ClusterSandbox {
     }
 
     // Starts nodes with corresponding services given by `nodes_services`.
-    pub async fn start_cluster_nodes(
-        nodes_services: &[HashSet<QuickwitService>],
-    ) -> anyhow::Result<Self> {
+    pub async fn start_cluster_nodes(nodes_services: &[HashSet<NodeRole>]) -> anyhow::Result<Self> {
         let temp_dir = tempfile::tempdir()?;
         let node_configs = build_node_configs(temp_dir.path().to_path_buf(), nodes_services);
         let runtimes_config = RuntimesConfig::light_for_tests();
@@ -212,12 +210,12 @@ impl ClusterSandbox {
         }
         let searcher_config = node_configs
             .iter()
-            .find(|node_config| node_config.services.contains(&QuickwitService::Searcher))
+            .find(|node_config| node_config.roles.contains(&NodeRole::Searcher))
             .cloned()
             .unwrap();
         let indexer_config = node_configs
             .iter()
-            .find(|node_config| node_config.services.contains(&QuickwitService::Indexer))
+            .find(|node_config| node_config.roles.contains(&NodeRole::Indexer))
             .cloned()
             .unwrap();
         // Wait for a duration greater than chitchat GOSSIP_INTERVAL (50ms) so that the cluster is
@@ -376,7 +374,7 @@ impl ClusterSandbox {
 /// - `peers` defined by others nodes `gossip_advertise_addr`.
 pub fn build_node_configs(
     root_data_dir: PathBuf,
-    nodes_services: &[HashSet<QuickwitService>],
+    nodes_services: &[HashSet<NodeRole>],
 ) -> Vec<TestNodeConfig> {
     let cluster_id = new_coolid("test-cluster");
     let mut node_configs = Vec::new();
@@ -384,7 +382,7 @@ pub fn build_node_configs(
     let unique_dir_name = new_coolid("test-dir");
     for (node_idx, node_services) in nodes_services.iter().enumerate() {
         let mut config = NodeConfig::for_test();
-        config.enabled_services = node_services.clone();
+        config.assigned_roles = node_services.clone();
         config.cluster_id = cluster_id.clone();
         config.node_id = format!("test-node-{node_idx}");
         config.data_dir_path = root_data_dir.join(&config.node_id);
@@ -395,7 +393,7 @@ pub fn build_node_configs(
         peers.push(config.gossip_advertise_addr.to_string());
         node_configs.push(TestNodeConfig {
             node_config: config,
-            services: node_services.clone(),
+            roles: node_services.clone(),
         });
     }
     for node_config in node_configs.iter_mut() {

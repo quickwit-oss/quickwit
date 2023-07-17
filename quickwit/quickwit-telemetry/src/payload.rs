@@ -93,16 +93,17 @@ pub struct ClientInfo {
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct QuickwitTelemetryInfo {
     pub version: String,
-    pub services: HashSet<String>,
+    #[serde(rename = "services")]
+    pub roles: HashSet<String>,
     pub features: HashSet<QuickwitFeature>,
 }
 
 impl QuickwitTelemetryInfo {
-    pub fn new(services: HashSet<String>, features: HashSet<QuickwitFeature>) -> Self {
+    pub fn new(roles: HashSet<String>, features: HashSet<QuickwitFeature>) -> Self {
         Self {
             features,
             version: env!("CARGO_PKG_VERSION").to_string(),
-            services,
+            roles,
         }
     }
 }
@@ -112,7 +113,7 @@ impl Default for QuickwitTelemetryInfo {
         Self {
             features: HashSet::new(),
             version: env!("CARGO_PKG_VERSION").to_string(),
-            services: HashSet::new(),
+            roles: HashSet::new(),
         }
     }
 }

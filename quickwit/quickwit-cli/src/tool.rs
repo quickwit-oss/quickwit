@@ -35,7 +35,7 @@ use quickwit_actors::{ActorExitStatus, ActorHandle, ObservationType, Universe};
 use quickwit_cluster::{Cluster, ClusterMember};
 use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::uri::Uri;
-use quickwit_config::service::QuickwitService;
+use quickwit_config::node_role::NodeRole;
 use quickwit_config::{
     IndexerConfig, NodeConfig, SourceConfig, SourceInputFormat, SourceParams, TransformConfig,
     VecSourceParams, CLI_INGEST_SOURCE_ID,
@@ -336,10 +336,7 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
         ..Default::default()
     };
     let runtimes_config = RuntimesConfig::default();
-    start_actor_runtimes(
-        runtimes_config,
-        &HashSet::from_iter([QuickwitService::Indexer]),
-    )?;
+    start_actor_runtimes(runtimes_config, &HashSet::from_iter([NodeRole::Indexer]))?;
     let indexing_server = IndexingService::new(
         config.node_id.clone(),
         config.data_dir_path.clone(),
@@ -426,10 +423,7 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
     // and avoid impacting potential control plane running on the cluster.
     let cluster = create_empty_cluster(&config).await?;
     let runtimes_config = RuntimesConfig::default();
-    start_actor_runtimes(
-        runtimes_config,
-        &HashSet::from_iter([QuickwitService::Indexer]),
-    )?;
+    start_actor_runtimes(runtimes_config, &HashSet::from_iter([NodeRole::Indexer]))?;
     let universe = Universe::new();
     let indexer_config = IndexerConfig {
         ..Default::default()

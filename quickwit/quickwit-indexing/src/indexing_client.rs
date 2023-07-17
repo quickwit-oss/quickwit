@@ -23,7 +23,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use quickwit_actors::Mailbox;
-use quickwit_config::service::QuickwitService;
+use quickwit_config::node_role::NodeRole;
 use quickwit_grpc_clients::service_client_pool::ServiceClient;
 use quickwit_proto::indexing::ApplyIndexingPlanRequest;
 use quickwit_proto::tonic::transport::{Channel, Endpoint, Uri};
@@ -57,8 +57,8 @@ impl fmt::Debug for IndexingServiceClient {
 
 #[async_trait]
 impl ServiceClient for IndexingServiceClient {
-    fn service() -> QuickwitService {
-        QuickwitService::Indexer
+    fn role() -> NodeRole {
+        NodeRole::Indexer
     }
 
     async fn build_client(grpc_addr: SocketAddr) -> anyhow::Result<Self> {

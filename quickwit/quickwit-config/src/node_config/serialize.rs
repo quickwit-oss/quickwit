@@ -29,8 +29,8 @@ use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
 use crate::config_value::ConfigValue;
+use crate::node_role::NodeRole;
 use crate::qw_env_vars::*;
-use crate::service::QuickwitService;
 use crate::storage_config::StorageConfigs;
 use crate::templating::render_config;
 use crate::{
@@ -75,11 +75,11 @@ impl FromStr for List {
     }
 }
 
-fn default_enabled_services() -> ConfigValue<List, QW_ENABLED_SERVICES> {
+fn default_assigned_roles() -> ConfigValue<List, QW_ASSIGNED_ROLES> {
     ConfigValue::with_default(List(
-        QuickwitService::supported_services()
+        NodeRole::all_roles()
             .into_iter()
-            .map(|service| service.to_string())
+            .map(|role| role.to_string())
             .collect(),
     ))
 }
@@ -163,8 +163,9 @@ struct NodeConfigBuilder {
     cluster_id: ConfigValue<String, QW_CLUSTER_ID>,
     #[serde(default = "default_node_id")]
     node_id: ConfigValue<String, QW_NODE_ID>,
-    #[serde(default = "default_enabled_services")]
-    enabled_services: ConfigValue<List, QW_ENABLED_SERVICES>,
+    #[serde(alias = "enabled_services")]
+    #[serde(default = "default_assigned_roles")]
+    assigned_roles: ConfigValue<List, QW_ASSIGNED_ROLES>,
     #[serde(default = "default_listen_address")]
     listen_address: ConfigValue<String, QW_LISTEN_ADDRESS>,
     advertise_address: ConfigValue<String, QW_ADVERTISE_ADDRESS>,
@@ -207,12 +208,12 @@ impl NodeConfigBuilder {
         mut self,
         env_vars: &HashMap<String, String>,
     ) -> anyhow::Result<NodeConfig> {
-        let enabled_services = self
-            .enabled_services
+        let assigned_roles = self
+            .assigned_roles
             .resolve(env_vars)?
             .0
             .into_iter()
-            .map(|service| service.parse())
+            .map(|role| role.parse())
             .collect::<Result<_, _>>()?;
 
         let listen_address = self.listen_address.resolve(env_vars)?;
@@ -270,7 +271,7 @@ impl NodeConfigBuilder {
         let node_config = NodeConfig {
             cluster_id: self.cluster_id.resolve(env_vars)?,
             node_id: self.node_id.resolve(env_vars)?,
-            enabled_services,
+            assigned_roles: assigned_roles,
             rest_listen_addr,
             gossip_listen_addr,
             grpc_listen_addr,
@@ -316,7 +317,7 @@ impl Default for NodeConfigBuilder {
         Self {
             cluster_id: default_cluster_id(),
             node_id: default_node_id(),
-            enabled_services: default_enabled_services(),
+            assigned_roles: default_assigned_roles(),
             listen_address: default_listen_address(),
             rest_listen_port: default_rest_listen_port(),
             gossip_listen_port: ConfigValue::none(),
@@ -339,7 +340,7 @@ impl Default for NodeConfigBuilder {
 
 #[cfg(any(test, feature = "testsuite"))]
 pub fn node_config_for_test() -> NodeConfig {
-    let enabled_services = QuickwitService::supported_services();
+    let assigned_roles = NodeRole::all_roles();
 
     let listen_address = Host::default();
     let rest_listen_port = quickwit_common::net::find_available_tcp_port()
@@ -370,7 +371,7 @@ pub fn node_config_for_test() -> NodeConfig {
     NodeConfig {
         cluster_id: default_cluster_id().unwrap(),
         node_id: default_node_id().unwrap(),
-        enabled_services,
+        assigned_roles: assigned_roles,
         gossip_advertise_addr: gossip_listen_addr,
         grpc_advertise_addr: grpc_listen_addr,
         rest_listen_addr,
@@ -418,12 +419,10 @@ mod tests {
         let env_vars = HashMap::default();
         let config = load_node_config_with_env(config_format, file.as_bytes(), &env_vars).await?;
         assert_eq!(config.cluster_id, "quickwit-cluster");
-        assert_eq!(config.enabled_services.len(), 2);
+        assert_eq!(config.assigned_roles.len(), 2);
 
-        assert!(config.enabled_services.contains(&QuickwitService::Janitor));
-        assert!(config
-            .enabled_services
-            .contains(&QuickwitService::Metastore));
+        assert!(config.assigned_roles.contains(&NodeRole::Janitor));
+        assert!(config.assigned_roles.contains(&NodeRole::Metastore));
 
         assert_eq!(
             config.rest_listen_addr,
@@ -560,10 +559,7 @@ mod tests {
         .unwrap();
         assert_eq!(config.cluster_id, DEFAULT_CLUSTER_ID);
         assert_eq!(config.node_id, get_short_hostname().unwrap());
-        assert_eq!(
-            config.enabled_services,
-            QuickwitService::supported_services()
-        );
+        assert_eq!(config.assigned_roles, NodeRole::all_roles());
         assert_eq!(
             config.rest_listen_addr,
             SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), 7280)
@@ -603,7 +599,7 @@ mod tests {
         env_vars.insert("QW_CLUSTER_ID".to_string(), "test-cluster".to_string());
         env_vars.insert("QW_NODE_ID".to_string(), "test-node".to_string());
         env_vars.insert(
-            "QW_ENABLED_SERVICES".to_string(),
+            "QW_assigned_roles".to_string(),
             "indexer,metastore".to_string(),
         );
         env_vars.insert("QW_LISTEN_ADDRESS".to_string(), "172.0.0.12".to_string());
@@ -630,14 +626,14 @@ mod tests {
                 .unwrap();
         assert_eq!(config.cluster_id, "test-cluster");
         assert_eq!(config.node_id, "test-node");
-        assert_eq!(config.enabled_services.len(), 2);
+        assert_eq!(config.assigned_roles.len(), 2);
         assert_eq!(
             config
-                .enabled_services
+                .assigned_roles
                 .iter()
-                .sorted_by_key(|service| service.as_str())
+                .sorted_by_key(|role| role.as_str())
                 .collect::<Vec<_>>(),
-            &[&QuickwitService::Indexer, &QuickwitService::Metastore]
+            &[&NodeRole::Indexer, &NodeRole::Metastore]
         );
         assert_eq!(
             config.rest_listen_addr,

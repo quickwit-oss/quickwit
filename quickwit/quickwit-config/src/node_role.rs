@@ -28,57 +28,57 @@ use serde::Serialize;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Serialize, Sequence)]
 #[serde(into = "&'static str")]
-pub enum QuickwitService {
+pub enum NodeRole {
     ControlPlane,
     Indexer,
-    Searcher,
     Janitor,
     Metastore,
+    Searcher,
 }
 
 #[allow(clippy::from_over_into)]
-impl Into<&'static str> for QuickwitService {
+impl Into<&'static str> for NodeRole {
     fn into(self) -> &'static str {
         self.as_str()
     }
 }
 
-impl QuickwitService {
+impl NodeRole {
     pub fn as_str(&self) -> &'static str {
         match self {
-            QuickwitService::ControlPlane => "control_plane",
-            QuickwitService::Indexer => "indexer",
-            QuickwitService::Searcher => "searcher",
-            QuickwitService::Janitor => "janitor",
-            QuickwitService::Metastore => "metastore",
+            NodeRole::ControlPlane => "control_plane",
+            NodeRole::Indexer => "indexer",
+            NodeRole::Searcher => "searcher",
+            NodeRole::Janitor => "janitor",
+            NodeRole::Metastore => "metastore",
         }
     }
 
-    pub fn supported_services() -> HashSet<QuickwitService> {
-        all::<QuickwitService>().collect()
+    pub fn all_roles() -> HashSet<NodeRole> {
+        all::<NodeRole>().collect()
     }
 }
 
-impl Display for QuickwitService {
+impl Display for NodeRole {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.as_str())
     }
 }
 
-impl FromStr for QuickwitService {
+impl FromStr for NodeRole {
     type Err = anyhow::Error;
 
-    fn from_str(service_str: &str) -> Result<Self, Self::Err> {
-        match service_str {
-            "control-plane" | "control_plane" => Ok(QuickwitService::ControlPlane),
-            "indexer" => Ok(QuickwitService::Indexer),
-            "searcher" => Ok(QuickwitService::Searcher),
-            "janitor" => Ok(QuickwitService::Janitor),
-            "metastore" => Ok(QuickwitService::Metastore),
+    fn from_str(role_str: &str) -> Result<Self, Self::Err> {
+        match role_str {
+            "control-plane" | "control_plane" => Ok(NodeRole::ControlPlane),
+            "indexer" => Ok(NodeRole::Indexer),
+            "searcher" => Ok(NodeRole::Searcher),
+            "janitor" => Ok(NodeRole::Janitor),
+            "metastore" => Ok(NodeRole::Metastore),
             _ => {
                 bail!(
-                    "Failed to parse service `{service_str}`. Supported services are: `{}`.",
-                    QuickwitService::supported_services().iter().join("`, `")
+                    "Failed to parse role `{role_str}`. Supported node roles are: `{}`.",
+                    NodeRole::all_roles().iter().join("`, `")
                 )
             }
         }

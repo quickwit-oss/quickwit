@@ -23,7 +23,7 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use hyper::{Body, Method, Request, StatusCode};
-use quickwit_config::service::QuickwitService;
+use quickwit_config::node_role::NodeRole;
 use quickwit_rest_client::models::IngestSource;
 use quickwit_rest_client::rest_client::CommitType;
 use quickwit_serve::SearchRequestQueryString;
@@ -137,11 +137,11 @@ async fn test_standalone_server() {
 async fn test_multi_nodes_cluster() {
     quickwit_common::setup_logging_for_tests();
     let nodes_services = vec![
-        HashSet::from_iter([QuickwitService::Searcher]),
-        HashSet::from_iter([QuickwitService::Metastore]),
-        HashSet::from_iter([QuickwitService::Indexer]),
-        HashSet::from_iter([QuickwitService::ControlPlane]),
-        HashSet::from_iter([QuickwitService::Janitor]),
+        HashSet::from_iter([NodeRole::Searcher]),
+        HashSet::from_iter([NodeRole::Metastore]),
+        HashSet::from_iter([NodeRole::Indexer]),
+        HashSet::from_iter([NodeRole::ControlPlane]),
+        HashSet::from_iter([NodeRole::Janitor]),
     ];
     let sandbox = ClusterSandbox::start_cluster_nodes(&nodes_services)
         .await

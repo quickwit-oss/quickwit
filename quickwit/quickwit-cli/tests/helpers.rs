@@ -24,11 +24,11 @@ use std::sync::Arc;
 
 use anyhow::Context;
 use predicates::str;
-use quickwit_cli::service::RunCliCommand;
+use quickwit_cli::run::RunCliCommand;
 use quickwit_common::net::find_available_tcp_port;
 use quickwit_common::test_utils::wait_for_server_ready;
 use quickwit_common::uri::Uri;
-use quickwit_config::service::QuickwitService;
+use quickwit_config::node_role::NodeRole;
 use quickwit_metastore::{IndexMetadata, Metastore, MetastoreResolver};
 use quickwit_storage::{Storage, StorageResolver};
 use reqwest::Url;
@@ -150,7 +150,7 @@ impl TestEnv {
     pub async fn start_server(&self) -> anyhow::Result<()> {
         let run_command = RunCliCommand {
             config_uri: self.config_uri.clone(),
-            services: Some(QuickwitService::supported_services()),
+            roles: Some(NodeRole::all_roles()),
         };
         tokio::spawn(async move {
             if let Err(error) = run_command.execute().await {

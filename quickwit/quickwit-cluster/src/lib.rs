@@ -30,7 +30,7 @@ use std::collections::HashSet;
 pub use chitchat::transport::ChannelTransport;
 use chitchat::transport::UdpTransport;
 use chitchat::FailureDetectorConfig;
-use quickwit_config::service::QuickwitService;
+use quickwit_config::node_role::NodeRole;
 use quickwit_config::NodeConfig;
 use time::OffsetDateTime;
 
@@ -62,7 +62,7 @@ impl From<u64> for GenerationId {
 
 pub async fn start_cluster_service(
     node_config: &NodeConfig,
-    enabled_services: &HashSet<QuickwitService>,
+    assigned_roles: &HashSet<NodeRole>,
 ) -> anyhow::Result<Cluster> {
     let cluster_id = node_config.cluster_id.clone();
     let gossip_listen_addr = node_config.gossip_listen_addr;
@@ -76,7 +76,7 @@ pub async fn start_cluster_service(
         node_id,
         generation_id,
         is_ready,
-        enabled_services.clone(),
+        assigned_roles.clone(),
         node_config.gossip_advertise_addr,
         node_config.grpc_advertise_addr,
         indexing_tasks,

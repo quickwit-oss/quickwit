@@ -520,7 +520,7 @@ mod tests {
     use quickwit_cluster::{create_cluster_for_test, Cluster, ClusterChange};
     use quickwit_common::test_utils::wait_until_predicate;
     use quickwit_common::tower::{Change, Pool};
-    use quickwit_config::service::QuickwitService;
+    use quickwit_config::node_role::NodeRole;
     use quickwit_config::{KafkaSourceParams, SourceConfig, SourceInputFormat, SourceParams};
     use quickwit_indexing::indexing_client::IndexingServiceClient;
     use quickwit_indexing::IndexingService;
@@ -573,7 +573,7 @@ mod tests {
             Box::pin(async move {
                 match cluster_change {
                     ClusterChange::Add(node)
-                        if node.enabled_services().contains(&QuickwitService::Indexer) =>
+                        if node.assigned_roles().contains(&NodeRole::Indexer) =>
                     {
                         let node_id = node.node_id().to_string();
                         let grpc_addr = node.grpc_advertise_addr();
@@ -785,7 +785,7 @@ mod tests {
                 |members| {
                     members
                         .iter()
-                        .any(|member| member.enabled_services.contains(&QuickwitService::Indexer))
+                        .any(|member| member.assigned_roles.contains(&NodeRole::Indexer))
                 },
                 Duration::from_secs(5),
             )
@@ -839,9 +839,7 @@ mod tests {
                 |members| {
                     members
                         .iter()
-                        .filter(|member| {
-                            member.enabled_services.contains(&QuickwitService::Indexer)
-                        })
+                        .filter(|member| member.assigned_roles.contains(&NodeRole::Indexer))
                         .count()
                         == 1
                 },

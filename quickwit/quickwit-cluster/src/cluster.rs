@@ -41,9 +41,8 @@ use tracing::{info, warn};
 
 use crate::change::{compute_cluster_change_events, ClusterChange};
 use crate::member::{
-    build_cluster_member, ClusterMember, NodeStateExt, ENABLED_SERVICES_KEY,
-    GRPC_ADVERTISE_ADDR_KEY, INDEXING_TASK_PREFIX, READINESS_KEY, READINESS_VALUE_NOT_READY,
-    READINESS_VALUE_READY,
+    build_cluster_member, ClusterMember, NodeStateExt, ASSIGNED_ROLES_KEY, GRPC_ADVERTISE_ADDR_KEY,
+    INDEXING_TASK_PREFIX, READINESS_KEY, READINESS_VALUE_NOT_READY, READINESS_VALUE_READY,
 };
 use crate::ClusterNode;
 
@@ -115,7 +114,7 @@ impl Cluster {
         info!(
             cluster_id=%cluster_id,
             node_id=%self_node.node_id,
-            enabled_services=?self_node.enabled_services,
+            assigned_roles=?self_node.assigned_roles,
             gossip_listen_addr=%gossip_listen_addr,
             gossip_advertise_addr=%self_node.gossip_advertise_addr,
             grpc_advertise_addr=%self_node.grpc_advertise_addr,
@@ -135,11 +134,11 @@ impl Cluster {
             chitchat_config,
             vec![
                 (
-                    ENABLED_SERVICES_KEY.to_string(),
+                    ASSIGNED_ROLES_KEY.to_string(),
                     self_node
-                        .enabled_services
+                        .assigned_roles
                         .iter()
-                        .map(|service| service.as_str())
+                        .map(|role| role.as_str())
                         .join(","),
                 ),
                 (
@@ -470,7 +469,7 @@ pub struct ClusterSnapshot {
         example = json!({
             "key_values": {
                 "grpc_advertise_addr": "127.0.0.1:8080",
-                "enabled_services": "searcher",
+                "assigned_roles": "searcher",
             },
             "max_version": 5,
         })
@@ -491,7 +490,7 @@ pub async fn create_cluster_for_test_with_id(
     node_id: u16,
     cluster_id: String,
     peer_seed_addrs: Vec<String>,
-    enabled_services: &HashSet<quickwit_config::service::QuickwitService>,
+    assigned_roles: &HashSet<quickwit_config::node_role::NodeRole>,
     transport: &dyn Transport,
     self_node_readiness: bool,
 ) -> anyhow::Result<Cluster> {
@@ -501,7 +500,7 @@ pub async fn create_cluster_for_test_with_id(
         node_id,
         crate::GenerationId(1),
         self_node_readiness,
-        enabled_services.clone(),
+        assigned_roles.clone(),
         gossip_advertise_addr,
         grpc_addr_from_listen_addr_for_test(gossip_advertise_addr),
         Vec::new(),
@@ -534,26 +533,26 @@ fn create_failure_detector_config_for_test() -> FailureDetectorConfig {
 #[cfg(any(test, feature = "testsuite"))]
 pub async fn create_cluster_for_test(
     seeds: Vec<String>,
-    enabled_services: &[&str],
+    assigned_roles: &[&str],
     transport: &dyn Transport,
     self_node_readiness: bool,
 ) -> anyhow::Result<Cluster> {
     use std::str::FromStr;
     use std::sync::atomic::{AtomicU16, Ordering};
 
-    use quickwit_config::service::QuickwitService;
+    use quickwit_config::node_role::NodeRole;
 
     static NODE_AUTO_INCREMENT: AtomicU16 = AtomicU16::new(1u16);
     let node_id = NODE_AUTO_INCREMENT.fetch_add(1, Ordering::Relaxed);
-    let enabled_services = enabled_services
+    let assigned_roles = assigned_roles
         .iter()
-        .map(|service_str| QuickwitService::from_str(service_str))
+        .map(|role_str| NodeRole::from_str(role_str))
         .collect::<Result<HashSet<_>, _>>()?;
     let cluster = create_cluster_for_test_with_id(
         node_id,
         "test-cluster".to_string(),
         seeds,
-        &enabled_services,
+        &assigned_roles,
         transport,
         self_node_readiness,
     )
@@ -570,7 +569,7 @@ mod tests {
     use chitchat::transport::ChannelTransport;
     use itertools::Itertools;
     use quickwit_common::test_utils::wait_until_predicate;
-    use quickwit_config::service::QuickwitService;
+    use quickwit_config::node_role::NodeRole;
     use quickwit_proto::indexing::IndexingTask;
     use rand::Rng;
 
@@ -787,8 +786,8 @@ mod tests {
             .find(|member| member.chitchat_id() == cluster2.self_chitchat_id)
             .unwrap();
         assert_eq!(
-            member_node_1.enabled_services,
-            HashSet::from_iter([QuickwitService::Indexer])
+            member_node_1.assigned_roles,
+            HashSet::from_iter([NodeRole::Indexer])
         );
         assert!(member_node_1.indexing_tasks.is_empty());
         assert_eq!(
@@ -796,8 +795,8 @@ mod tests {
             ([127, 0, 0, 1], 1001).into()
         );
         assert_eq!(
-            member_node_2.enabled_services,
-            HashSet::from_iter([QuickwitService::Indexer, QuickwitService::Metastore].into_iter())
+            member_node_2.assigned_roles,
+            HashSet::from_iter([NodeRole::Indexer, NodeRole::Metastore].into_iter())
         );
         assert_eq!(
             member_node_2.indexing_tasks,

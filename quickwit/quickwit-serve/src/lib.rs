@@ -60,7 +60,7 @@ use quickwit_common::tower::{
     BalanceChannel, BoxFutureInfaillible, BufferLayer, Change, ConstantRate, EstimateRateLayer,
     Rate, RateLimitLayer, SmaRateEstimator,
 };
-use quickwit_config::service::QuickwitService;
+use quickwit_config::node_role::NodeRole;
 use quickwit_config::{NodeConfig, SearcherConfig};
 use quickwit_control_plane::control_plane::ControlPlane;
 use quickwit_control_plane::scheduler::IndexingScheduler;
@@ -121,20 +121,18 @@ struct QuickwitServices {
     pub janitor_service: Option<Mailbox<JanitorService>>,
     pub ingest_service: IngestServiceClient,
     pub index_service: Arc<IndexService>,
-    pub services: HashSet<QuickwitService>,
+    pub services: HashSet<NodeRole>,
 }
 
 fn has_node_with_metastore_service(members: &[ClusterMember]) -> bool {
-    members.iter().any(|member| {
-        member
-            .enabled_services
-            .contains(&QuickwitService::Metastore)
-    })
+    members
+        .iter()
+        .any(|member| member.assigned_roles.contains(&NodeRole::Metastore))
 }
 
 async fn balance_channel_for_service(
     cluster: &Cluster,
-    service: QuickwitService,
+    service: NodeRole,
 ) -> BalanceChannel<SocketAddr> {
     let cluster_change_stream = cluster.ready_nodes_change_stream().await;
     let service_change_stream = cluster_change_stream.filter_map(move |cluster_change| {
@@ -160,15 +158,11 @@ pub async fn serve_quickwit(
 ) -> anyhow::Result<HashMap<String, ActorExitStatus>> {
     let universe = Universe::new();
     let event_broker = EventBroker::default();
-    let cluster =
-        quickwit_cluster::start_cluster_service(&config, &config.enabled_services).await?;
+    let cluster = quickwit_cluster::start_cluster_service(&config, &config.assigned_roles).await?;
 
     // Instantiate either a file-backed or postgresql [`Metastore`] if the node runs a `Metastore`
     // service, else instantiate a [`MetastoreGrpcClient`].
-    let metastore: Arc<dyn Metastore> = if config
-        .enabled_services
-        .contains(&QuickwitService::Metastore)
-    {
+    let metastore: Arc<dyn Metastore> = if config.assigned_roles.contains(&NodeRole::Metastore) {
         let metastore = metastore_resolver.resolve(&config.metastore_uri).await?;
         Arc::new(MetastoreEventPublisher::new(
             metastore,
@@ -187,8 +181,7 @@ pub async fn serve_quickwit(
                      run --service metastore`."
                 )
             })?;
-        let balance_channel =
-            balance_channel_for_service(&cluster, QuickwitService::Metastore).await;
+        let balance_channel = balance_channel_for_service(&cluster, NodeRole::Metastore).await;
         let grpc_metastore_client =
             MetastoreGrpcClient::from_balance_channel(balance_channel).await?;
         let metastore_client = RetryingMetastore::new(Box::new(grpc_metastore_client));
@@ -196,7 +189,7 @@ pub async fn serve_quickwit(
     };
 
     check_cluster_configuration(
-        &config.enabled_services,
+        &config.assigned_roles,
         &config.peer_seeds,
         metastore.clone(),
     )
@@ -208,10 +201,7 @@ pub async fn serve_quickwit(
         storage_resolver.clone(),
     ));
 
-    let (ingest_service, indexing_service) = if config
-        .enabled_services
-        .contains(&QuickwitService::Indexer)
-    {
+    let (ingest_service, indexing_service) = if config.assigned_roles.contains(&NodeRole::Indexer) {
         let ingest_api_service =
             start_ingest_api_service(&universe, &config.data_dir_path, &config.ingest_api_config)
                 .await?;
@@ -262,7 +252,7 @@ pub async fn serve_quickwit(
             .build_from_mailbox(ingest_api_service);
         (ingest_service, Some(indexing_service))
     } else {
-        let balance_channel = balance_channel_for_service(&cluster, QuickwitService::Indexer).await;
+        let balance_channel = balance_channel_for_service(&cluster, NodeRole::Indexer).await;
         let ingest_service = IngestServiceClient::from_channel(balance_channel);
         (ingest_service, None)
     };
@@ -270,33 +260,28 @@ pub async fn serve_quickwit(
     // Instantiate the control plane service if enabled.
     // If not and metastore service is enabled, we need to instantiate the control plane client
     // so the metastore can notify the control plane.
-    let control_plane_service: Option<ControlPlaneServiceClient> = if config
-        .enabled_services
-        .contains(&QuickwitService::ControlPlane)
-    {
-        let cluster_change_stream = cluster.ready_nodes_change_stream().await;
-        let control_plane_mailbox = start_control_plane(
-            &universe,
-            cluster.cluster_id().to_string(),
-            cluster.self_node_id().to_string(),
-            cluster_change_stream,
-            indexing_service.clone(),
-            metastore.clone(),
-        )
-        .await?;
-        Some(ControlPlaneServiceClient::from_mailbox(
-            control_plane_mailbox,
-        ))
-    } else if config
-        .enabled_services
-        .contains(&QuickwitService::Metastore)
-    {
-        let balance_channel =
-            balance_channel_for_service(&cluster, QuickwitService::ControlPlane).await;
-        Some(ControlPlaneServiceClient::from_channel(balance_channel))
-    } else {
-        None
-    };
+    let control_plane_service: Option<ControlPlaneServiceClient> =
+        if config.assigned_roles.contains(&NodeRole::ControlPlane) {
+            let cluster_change_stream = cluster.ready_nodes_change_stream().await;
+            let control_plane_mailbox = start_control_plane(
+                &universe,
+                cluster.cluster_id().to_string(),
+                cluster.self_node_id().to_string(),
+                cluster_change_stream,
+                indexing_service.clone(),
+                metastore.clone(),
+            )
+            .await?;
+            Some(ControlPlaneServiceClient::from_mailbox(
+                control_plane_mailbox,
+            ))
+        } else if config.assigned_roles.contains(&NodeRole::Metastore) {
+            let balance_channel =
+                balance_channel_for_service(&cluster, NodeRole::ControlPlane).await;
+            Some(ControlPlaneServiceClient::from_channel(balance_channel))
+        } else {
+            None
+        };
     let control_plane_subscription_handle =
         control_plane_service.as_ref().map(|scheduler_service| {
             event_broker.subscribe::<MetastoreEvent>(scheduler_service.clone())
@@ -313,7 +298,7 @@ pub async fn serve_quickwit(
     )
     .await?;
 
-    let janitor_service = if config.enabled_services.contains(&QuickwitService::Janitor) {
+    let janitor_service = if config.assigned_roles.contains(&NodeRole::Janitor) {
         let janitor_service = start_janitor_service(
             &universe,
             &config,
@@ -329,7 +314,7 @@ pub async fn serve_quickwit(
 
     let grpc_listen_addr = config.grpc_listen_addr;
     let rest_listen_addr = config.rest_listen_addr;
-    let services = config.enabled_services.clone();
+    let services = config.assigned_roles.clone();
     let quickwit_services: Arc<QuickwitServices> = Arc::new(QuickwitServices {
         config: Arc::new(config),
         cluster: cluster.clone(),
@@ -499,7 +484,7 @@ async fn setup_searcher(
         Box::pin(async move {
             match cluster_change {
                 ClusterChange::Add(node)
-                    if node.enabled_services().contains(&QuickwitService::Searcher) =>
+                    if node.enabled_services().contains(&NodeRole::Searcher) =>
                 {
                     let grpc_addr = node.grpc_advertise_addr();
 
@@ -567,7 +552,7 @@ async fn setup_indexing_scheduler(
         Box::pin(async move {
             match cluster_change {
                 ClusterChange::Add(node)
-                    if node.enabled_services().contains(&QuickwitService::Indexer) =>
+                    if node.enabled_services().contains(&NodeRole::Indexer) =>
                 {
                     let node_id = node.node_id().to_string();
                     let grpc_addr = node.grpc_advertise_addr();
@@ -661,11 +646,11 @@ async fn node_readiness_reporting_task(
 /// Displays some warnings if the cluster runs a file-backed metastore or serves file-backed
 /// indexes.
 async fn check_cluster_configuration(
-    services: &HashSet<QuickwitService>,
+    services: &HashSet<NodeRole>,
     peer_seeds: &[String],
     metastore: Arc<dyn Metastore>,
 ) -> anyhow::Result<()> {
-    if !services.contains(&QuickwitService::Metastore) || peer_seeds.is_empty() {
+    if !services.contains(&NodeRole::Metastore) || peer_seeds.is_empty() {
         return Ok(());
     }
     if !metastore.uri().protocol().is_database() {
@@ -712,7 +697,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_check_cluster_configuration() {
-        let services = HashSet::from_iter([QuickwitService::Metastore]);
+        let services = HashSet::from_iter([NodeRole::Metastore]);
         let peer_seeds = ["192.168.0.12:7280".to_string()];
         let mut metastore = MockMetastore::new();
 

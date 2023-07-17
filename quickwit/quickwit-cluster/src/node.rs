@@ -23,7 +23,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use chitchat::{ChitchatId, NodeState};
-use quickwit_config::service::QuickwitService;
+use quickwit_config::node_role::NodeRole;
 use quickwit_proto::indexing::IndexingTask;
 use tonic::transport::Channel;
 
@@ -46,7 +46,7 @@ impl ClusterNode {
         let inner = InnerNode {
             chitchat_id,
             channel,
-            enabled_services: member.enabled_services,
+            assigned_roles: member.assigned_roles,
             grpc_advertise_addr: member.grpc_advertise_addr,
             indexing_tasks: member.indexing_tasks,
             is_ready: member.is_ready,
@@ -63,18 +63,18 @@ impl ClusterNode {
         node_id: &str,
         port: u16,
         is_self_node: bool,
-        enabled_services: &[&str],
+        assigned_roles: &[&str],
     ) -> Self {
         use quickwit_common::tower::make_channel;
 
-        use crate::member::{ENABLED_SERVICES_KEY, GRPC_ADVERTISE_ADDR_KEY};
+        use crate::member::{ASSIGNED_ROLES_KEY, GRPC_ADVERTISE_ADDR_KEY};
 
         let gossip_advertise_addr = ([127, 0, 0, 1], port).into();
         let grpc_advertise_addr = ([127, 0, 0, 1], port + 1).into();
         let chitchat_id = ChitchatId::new(node_id.to_string(), 0, gossip_advertise_addr);
         let channel = make_channel(grpc_advertise_addr).await;
         let mut node_state = NodeState::default();
-        node_state.set(ENABLED_SERVICES_KEY, enabled_services.join(","));
+        node_state.set(ASSIGNED_ROLES_KEY, assigned_roles.join(","));
         node_state.set(GRPC_ADVERTISE_ADDR_KEY, grpc_advertise_addr.to_string());
         Self::try_new(chitchat_id, &node_state, channel, is_self_node).unwrap()
     }
@@ -91,8 +91,8 @@ impl ClusterNode {
         self.inner.channel.clone()
     }
 
-    pub fn enabled_services(&self) -> &HashSet<QuickwitService> {
-        &self.inner.enabled_services
+    pub fn assigned_roles(&self) -> &HashSet<NodeRole> {
+        &self.inner.assigned_roles
     }
 
     pub fn grpc_advertise_addr(&self) -> SocketAddr {
@@ -116,7 +116,7 @@ impl Debug for ClusterNode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Node")
             .field("node_id", &self.inner.chitchat_id.node_id)
-            .field("enabled_services", &self.inner.enabled_services)
+            .field("assigned_roles", &self.inner.assigned_roles)
             .field("is_ready", &self.inner.is_ready)
             .finish()
     }
@@ -126,7 +126,7 @@ impl Debug for ClusterNode {
 impl PartialEq for ClusterNode {
     fn eq(&self, other: &Self) -> bool {
         self.inner.chitchat_id == other.inner.chitchat_id
-            && self.inner.enabled_services == other.inner.enabled_services
+            && self.inner.assigned_roles == other.inner.assigned_roles
             && self.inner.grpc_advertise_addr == other.inner.grpc_advertise_addr
             && self.inner.indexing_tasks == other.inner.indexing_tasks
             && self.inner.is_ready == other.inner.is_ready
@@ -137,7 +137,7 @@ impl PartialEq for ClusterNode {
 struct InnerNode {
     chitchat_id: ChitchatId,
     channel: Channel,
-    enabled_services: HashSet<QuickwitService>,
+    assigned_roles: HashSet<NodeRole>,
     grpc_advertise_addr: SocketAddr,
     indexing_tasks: Vec<IndexingTask>,
     is_ready: bool,

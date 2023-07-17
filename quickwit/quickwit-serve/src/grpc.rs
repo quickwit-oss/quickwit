@@ -22,7 +22,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use quickwit_common::tower::BoxFutureInfaillible;
-use quickwit_config::service::QuickwitService;
+use quickwit_config::node_role::NodeRole;
 use quickwit_control_plane::control_plane_service_grpc_server::ControlPlaneServiceGrpcServer;
 use quickwit_control_plane::ControlPlaneServiceGrpcServerAdapter;
 use quickwit_indexing::grpc_adapter::GrpcIndexingAdapter;
@@ -56,7 +56,7 @@ pub(crate) async fn start_grpc_server(
     let mut server = Server::builder();
 
     // Mount gRPC metastore service if `QuickwitService::Metastore` is enabled on node.
-    let metastore_grpc_service = if services.services.contains(&QuickwitService::Metastore) {
+    let metastore_grpc_service = if services.services.contains(&NodeRole::Metastore) {
         enabled_grpc_services.insert("metastore");
         let metastore = services.metastore.clone();
         let grpc_metastore = GrpcMetastoreAdapter::from(metastore);
@@ -65,7 +65,7 @@ pub(crate) async fn start_grpc_server(
         None
     };
     // Mount gRPC indexing service if `QuickwitService::Indexer` is enabled on node.
-    let indexing_grpc_service = if services.services.contains(&QuickwitService::Indexer) {
+    let indexing_grpc_service = if services.services.contains(&NodeRole::Indexer) {
         if let Some(indexing_service) = services.indexing_service.as_ref() {
             enabled_grpc_services.insert("indexing");
             let grpc_indexing = GrpcIndexingAdapter::from(indexing_service.clone());
@@ -77,7 +77,7 @@ pub(crate) async fn start_grpc_server(
         None
     };
     // Mount gRPC ingest service if `QuickwitService::Indexer` is enabled on node.
-    let ingest_api_grpc_service = if services.services.contains(&QuickwitService::Indexer) {
+    let ingest_api_grpc_service = if services.services.contains(&NodeRole::Indexer) {
         enabled_grpc_services.insert("ingest_api");
         let ingest_service_adapter =
             IngestServiceGrpcServerAdapter::new(services.ingest_service.clone());
@@ -86,7 +86,7 @@ pub(crate) async fn start_grpc_server(
         None
     };
     // Mount gRPC control plane service if `QuickwitService::ControlPlane` is enabled on node.
-    let control_plane_grpc_service = if services.services.contains(&QuickwitService::ControlPlane) {
+    let control_plane_grpc_service = if services.services.contains(&NodeRole::ControlPlane) {
         if let Some(control_plane_client) = &services.control_plane_service {
             enabled_grpc_services.insert("control-plane");
             let adapter = ControlPlaneServiceGrpcServerAdapter::new(control_plane_client.clone());
@@ -101,7 +101,7 @@ pub(crate) async fn start_grpc_server(
     let enable_opentelemetry_otlp_grpc_service =
         services.config.indexer_config.enable_otlp_endpoint;
     let otlp_trace_service = if enable_opentelemetry_otlp_grpc_service
-        && services.services.contains(&QuickwitService::Indexer)
+        && services.services.contains(&NodeRole::Indexer)
     {
         enabled_grpc_services.insert("otlp-trace");
         let ingest_service = services.ingest_service.clone();
@@ -114,7 +114,7 @@ pub(crate) async fn start_grpc_server(
         None
     };
     let otlp_log_grpc_service = if enable_opentelemetry_otlp_grpc_service
-        && services.services.contains(&QuickwitService::Indexer)
+        && services.services.contains(&NodeRole::Indexer)
     {
         enabled_grpc_services.insert("otlp-logs");
         let ingest_service = services.ingest_service.clone();
@@ -125,7 +125,7 @@ pub(crate) async fn start_grpc_server(
         None
     };
     // Mount gRPC search service if `QuickwitService::Searcher` is enabled on node.
-    let search_grpc_service = if services.services.contains(&QuickwitService::Searcher) {
+    let search_grpc_service = if services.services.contains(&NodeRole::Searcher) {
         enabled_grpc_services.insert("search");
         let search_service = services.search_service.clone();
         let grpc_search_service = GrpcSearchAdapter::from(search_service);
@@ -135,7 +135,7 @@ pub(crate) async fn start_grpc_server(
     };
     let enable_jaeger_endpoint = services.config.jaeger_config.enable_endpoint;
     let jaeger_grpc_service =
-        if enable_jaeger_endpoint && services.services.contains(&QuickwitService::Searcher) {
+        if enable_jaeger_endpoint && services.services.contains(&NodeRole::Searcher) {
             enabled_grpc_services.insert("jaeger");
             let search_service = services.search_service.clone();
             Some(SpanReaderPluginServer::new(JaegerService::new(

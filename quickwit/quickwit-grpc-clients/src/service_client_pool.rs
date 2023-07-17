@@ -25,19 +25,19 @@ use std::sync::{Arc, RwLock};
 use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_cluster::ClusterMember;
-use quickwit_config::service::QuickwitService;
+use quickwit_config::node_role::NodeRole;
 use tokio_stream::wrappers::WatchStream;
 use tokio_stream::StreamExt;
 use tracing::{debug, error};
 
 /// A service client is a gRPC client that sends requests
-/// to a [`QuickwitService`] running on a node .
+/// to a [`NodeRole`] running on a node .
 /// It is used by the [`ServiceClientPool`] that manages
 /// a list of clients.
 #[async_trait]
 pub trait ServiceClient: Clone + Send + Sync + 'static {
-    /// Returns the [`QuickwitService`] of the client.
-    fn service() -> QuickwitService;
+    /// Returns the [`NodeRole`] of the client.
+    fn role() -> NodeRole;
     /// Builds a client from a [`SocketAddr`].
     async fn build_client(addr: SocketAddr) -> anyhow::Result<Self>;
     /// Returns the gRPC address of the client.
@@ -137,7 +137,7 @@ async fn update_client_map<T: ServiceClient>(
 ) {
     let filtered_cluster_members = cluster_members
         .iter()
-        .filter(|member| member.enabled_services.contains(&T::service()))
+        .filter(|member| member.assigned_roles.contains(&T::role()))
         .collect_vec();
     let members_grpc_addrs: HashSet<SocketAddr> = filtered_cluster_members
         .iter()
@@ -183,7 +183,7 @@ mod tests {
     use async_trait::async_trait;
     use itertools::Itertools;
     use quickwit_cluster::ClusterMember;
-    use quickwit_config::service::QuickwitService;
+    use quickwit_config::node_role::NodeRole;
     use quickwit_proto::search_service_client::SearchServiceClient;
     use quickwit_proto::tonic::transport::{Channel, Endpoint, Uri};
     use tokio::sync::watch;
@@ -204,8 +204,8 @@ mod tests {
             Ok(SearchServiceClient::new(channel))
         }
 
-        fn service() -> quickwit_config::service::QuickwitService {
-            QuickwitService::Searcher
+        fn role() -> quickwit_config::node_role::NodeRole {
+            NodeRole::Searcher
         }
 
         fn grpc_addr(&self) -> SocketAddr {
@@ -222,7 +222,7 @@ mod tests {
             "0".to_string(),
             0.into(),
             true,
-            HashSet::from([QuickwitService::Metastore]),
+            HashSet::from([NodeRole::Metastore]),
             metastore_grpc_addr,
             metastore_grpc_addr,
             Vec::new(),
@@ -231,7 +231,7 @@ mod tests {
             "1".to_string(),
             0.into(),
             true,
-            HashSet::from([QuickwitService::Searcher]),
+            HashSet::from([NodeRole::Searcher]),
             searcher_1_grpc_addr,
             searcher_1_grpc_addr,
             Vec::new(),
@@ -240,7 +240,7 @@ mod tests {
             "2".to_string(),
             0.into(),
             true,
-            HashSet::from([QuickwitService::Searcher]),
+            HashSet::from([NodeRole::Searcher]),
             searcher_2_grpc_addr,
             searcher_2_grpc_addr,
             Vec::new(),

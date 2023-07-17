@@ -26,11 +26,11 @@ use itertools::Itertools;
 use quickwit_proto::indexing::IndexingTask;
 use tracing::warn;
 
-use crate::{GenerationId, QuickwitService};
+use crate::{GenerationId, NodeRole};
 
 // Keys used to store member's data in chitchat state.
 pub(crate) const GRPC_ADVERTISE_ADDR_KEY: &str = "grpc_advertise_addr";
-pub(crate) const ENABLED_SERVICES_KEY: &str = "enabled_services";
+pub(crate) const ASSIGNED_ROLES_KEY: &str = "assigned_roles";
 // An indexing task key is formatted as
 // `{INDEXING_TASK_PREFIX}{INDEXING_TASK_SEPARATOR}{index_id}{INDEXING_TASK_SEPARATOR}{source_id}`.
 pub(crate) const INDEXING_TASK_PREFIX: &str = "indexing_task";
@@ -76,9 +76,10 @@ pub struct ClusterMember {
     pub node_id: String,
     /// The start timestamp (seconds) of the node.
     pub generation_id: GenerationId,
-    /// Enabled services, i.e. services configured to run on the node. Depending on the node and
-    /// service health, each service may or may not be available/running.
-    pub enabled_services: HashSet<QuickwitService>,
+    /// Roles assigned to the node that determine which services are running
+    /// on it. Depending on the node roles and services health, some services may or may not be
+    /// available/running.
+    pub assigned_roles: HashSet<NodeRole>,
     /// Gossip advertise address, i.e. the address that other nodes should use to gossip with the
     /// node.
     pub gossip_advertise_addr: SocketAddr,
@@ -97,7 +98,7 @@ impl ClusterMember {
         node_id: String,
         generation_id: GenerationId,
         is_ready: bool,
-        enabled_services: HashSet<QuickwitService>,
+        assigned_roles: HashSet<NodeRole>,
         gossip_advertise_addr: SocketAddr,
         grpc_advertise_addr: SocketAddr,
         indexing_tasks: Vec<IndexingTask>,
@@ -106,7 +107,7 @@ impl ClusterMember {
             node_id,
             generation_id,
             is_ready,
-            enabled_services,
+            assigned_roles: assigned_roles,
             gossip_advertise_addr,
             grpc_advertise_addr,
             indexing_tasks,
@@ -134,17 +135,17 @@ pub(crate) fn build_cluster_member(
     node_state: &NodeState,
 ) -> anyhow::Result<ClusterMember> {
     let is_ready = node_state.is_ready();
-    let enabled_services = node_state
-        .get(ENABLED_SERVICES_KEY)
+    let assigned_roles = node_state
+        .get(ASSIGNED_ROLES_KEY)
         .ok_or_else(|| {
             anyhow::anyhow!(
                 "Could not find `{}` key in node `{}` state.",
-                ENABLED_SERVICES_KEY,
+                ASSIGNED_ROLES_KEY,
                 chitchat_id.node_id
             )
         })
-        .map(|enabled_services_str| {
-            parse_enabled_services_str(enabled_services_str, &chitchat_id.node_id)
+        .map(|assigned_roles_str| {
+            parse_assigned_roles_str(assigned_roles_str, &chitchat_id.node_id)
         })?;
     let grpc_advertise_addr = node_state.grpc_advertise_addr()?;
     let indexing_tasks = parse_indexing_tasks(node_state, &chitchat_id.node_id);
@@ -152,7 +153,7 @@ pub(crate) fn build_cluster_member(
         chitchat_id.node_id,
         chitchat_id.generation_id.into(),
         is_ready,
-        enabled_services,
+        assigned_roles,
         chitchat_id.gossip_advertise_addr,
         grpc_advertise_addr,
         indexing_tasks,
@@ -201,30 +202,27 @@ pub(crate) fn parse_indexing_tasks(node_state: &NodeState, node_id: &str) -> Vec
         .collect()
 }
 
-fn parse_enabled_services_str(
-    enabled_services_str: &str,
-    node_id: &str,
-) -> HashSet<QuickwitService> {
-    let enabled_services: HashSet<QuickwitService> = enabled_services_str
+fn parse_assigned_roles_str(assigned_roles_str: &str, node_id: &str) -> HashSet<NodeRole> {
+    let assigned_roles: HashSet<NodeRole> = assigned_roles_str
         .split(',')
-        .filter(|service_str| !service_str.is_empty())
-        .filter_map(|service_str| match service_str.parse() {
-            Ok(service) => Some(service),
+        .filter(|role_str| !role_str.is_empty())
+        .filter_map(|role_str| match role_str.parse() {
+            Ok(role) => Some(role),
             Err(_) => {
                 warn!(
                     node_id=%node_id,
-                    service=%service_str,
-                    "Found unknown service enabled on node."
+                    role=%role_str,
+                    "Unknown node role."
                 );
                 None
             }
         })
         .collect();
-    if enabled_services.is_empty() {
+    if assigned_roles.is_empty() {
         warn!(
             node_id=%node_id,
-            "Node has no enabled services."
+            "Node has no assigned role."
         )
     }
-    enabled_services
+    assigned_roles
 }

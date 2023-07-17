@@ -28,7 +28,7 @@ use dialoguer::theme::ColorfulTheme;
 use dialoguer::Confirm;
 use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::uri::Uri;
-use quickwit_config::service::QuickwitService;
+use quickwit_config::node_role::NodeRole;
 use quickwit_config::{
     ConfigFormat, MetastoreConfigs, NodeConfig, SourceConfig, StorageConfigs,
     DEFAULT_QW_CONFIG_PATH,
@@ -51,7 +51,7 @@ pub mod index;
 #[cfg(feature = "jemalloc")]
 pub mod jemalloc;
 pub mod metrics;
-pub mod service;
+pub mod run;
 pub mod source;
 pub mod split;
 pub mod stats;
@@ -210,11 +210,11 @@ pub fn parse_duration_or_none(duration_with_unit_str: &str) -> anyhow::Result<Ti
 
 pub fn start_actor_runtimes(
     runtimes_config: RuntimesConfig,
-    services: &HashSet<QuickwitService>,
+    roles: &HashSet<NodeRole>,
 ) -> anyhow::Result<()> {
-    if services.contains(&QuickwitService::Indexer)
-        || services.contains(&QuickwitService::Janitor)
-        || services.contains(&QuickwitService::ControlPlane)
+    if roles.contains(&NodeRole::Indexer)
+        || roles.contains(&NodeRole::Janitor)
+        || roles.contains(&NodeRole::ControlPlane)
     {
         quickwit_common::runtimes::initialize_runtimes(runtimes_config)
             .context("Failed to start actor runtimes.")?;

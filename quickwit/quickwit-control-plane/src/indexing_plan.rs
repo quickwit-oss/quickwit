@@ -319,7 +319,7 @@ mod tests {
     use itertools::Itertools;
     use proptest::prelude::*;
     use quickwit_common::rand::append_random_suffix;
-    use quickwit_config::service::QuickwitService;
+    use quickwit_config::node_role::NodeRole;
     use quickwit_config::{
         FileSourceParams, KafkaSourceParams, SourceConfig, SourceInputFormat, SourceParams,
         CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID,
@@ -347,7 +347,7 @@ mod tests {
 
     async fn cluster_members_for_test(
         num_members: usize,
-        _quickwit_service: QuickwitService,
+        _node_role: NodeRole,
     ) -> Vec<(String, IndexerNodeInfo)> {
         let mut members = Vec::new();
         for idx in 0..num_members {
@@ -381,7 +381,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_build_indexing_plan_one_source() {
-        let indexers = cluster_members_for_test(4, QuickwitService::Indexer).await;
+        let indexers = cluster_members_for_test(4, NodeRole::Indexer).await;
         let mut source_configs_map = HashMap::new();
         let index_source_id = IndexSourceId {
             index_uid: "one-source-index:11111111111111111111111111"
@@ -418,7 +418,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_build_indexing_plan_with_ingest_api_source() {
-        let indexers = cluster_members_for_test(4, QuickwitService::Indexer).await;
+        let indexers = cluster_members_for_test(4, NodeRole::Indexer).await;
         let mut source_configs_map = HashMap::new();
         let index_source_id = IndexSourceId {
             index_uid: "ingest-api-index:11111111111111111111111111"
@@ -455,7 +455,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_build_indexing_plan_with_sources_to_ignore() {
-        let indexers = cluster_members_for_test(4, QuickwitService::Indexer).await;
+        let indexers = cluster_members_for_test(4, NodeRole::Indexer).await;
         let mut source_configs_map = HashMap::new();
         let file_index_source_id = IndexSourceId {
             index_uid: "one-source-index:11111111111111111111111111"
@@ -580,7 +580,7 @@ mod tests {
             });
         }
 
-        let indexers = cluster_members_for_test(2, QuickwitService::Indexer).await;
+        let indexers = cluster_members_for_test(2, NodeRole::Indexer).await;
         let physical_plan =
             build_physical_indexing_plan(&indexers, &source_configs_map, indexing_tasks.clone());
         assert_eq!(physical_plan.indexing_tasks_per_node_id.len(), 2);
@@ -645,7 +645,7 @@ mod tests {
             },
         ];
 
-        let indexers = cluster_members_for_test(1, QuickwitService::Indexer).await;
+        let indexers = cluster_members_for_test(1, NodeRole::Indexer).await;
         // This case should never happens but we just check that the plan building is resilient
         // enough, it will ignore the tasks that cannot be allocated.
         let physical_plan =
@@ -658,7 +658,7 @@ mod tests {
         fn test_building_indexing_tasks_and_physical_plan(num_indexers in 1usize..50usize, index_id_sources in proptest::collection::vec(gen_kafka_source(), 1..20)) {
             // proptest doesn't work with async
             let mut indexers = tokio::runtime::Runtime::new().unwrap().block_on(
-                cluster_members_for_test(num_indexers, QuickwitService::Indexer)
+                cluster_members_for_test(num_indexers, NodeRole::Indexer)
             );
             let source_configs: HashMap<IndexSourceId, SourceConfig> = index_id_sources
                 .into_iter()

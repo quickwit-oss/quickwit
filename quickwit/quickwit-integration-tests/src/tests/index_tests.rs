@@ -22,7 +22,7 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use quickwit_common::test_utils::wait_until_predicate;
-use quickwit_config::service::QuickwitService;
+use quickwit_config::node_role::NodeRole;
 use quickwit_indexing::actors::INDEXING_DIR_NAME;
 use quickwit_janitor::actors::DELETE_SERVICE_TASK_DIR_NAME;
 use quickwit_metastore::SplitState;
@@ -358,11 +358,11 @@ async fn test_commit_modes() {
 async fn test_very_large_index_name() {
     quickwit_common::setup_logging_for_tests();
     let nodes_services = vec![
-        HashSet::from_iter([QuickwitService::Searcher]),
-        HashSet::from_iter([QuickwitService::Metastore]),
-        HashSet::from_iter([QuickwitService::Indexer]),
-        HashSet::from_iter([QuickwitService::ControlPlane]),
-        HashSet::from_iter([QuickwitService::Janitor]),
+        HashSet::from_iter([NodeRole::Searcher]),
+        HashSet::from_iter([NodeRole::Metastore]),
+        HashSet::from_iter([NodeRole::Indexer]),
+        HashSet::from_iter([NodeRole::ControlPlane]),
+        HashSet::from_iter([NodeRole::Janitor]),
     ];
     let sandbox = ClusterSandbox::start_cluster_nodes(&nodes_services)
         .await

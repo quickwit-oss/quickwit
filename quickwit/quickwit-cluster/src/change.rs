@@ -242,17 +242,17 @@ mod tests {
     use std::net::SocketAddr;
 
     use itertools::Itertools;
-    use quickwit_config::service::QuickwitService;
+    use quickwit_config::node_role::NodeRole;
     use tonic::transport::Channel;
 
     use super::*;
     use crate::member::{
-        ENABLED_SERVICES_KEY, GRPC_ADVERTISE_ADDR_KEY, READINESS_KEY, READINESS_VALUE_NOT_READY,
+        ASSIGNED_ROLES_KEY, GRPC_ADVERTISE_ADDR_KEY, READINESS_KEY, READINESS_VALUE_NOT_READY,
         READINESS_VALUE_READY,
     };
 
     pub(crate) struct NodeStateBuilder {
-        enabled_services: HashSet<QuickwitService>,
+        assigned_roles: HashSet<NodeRole>,
         grpc_advertise_addr: SocketAddr,
         readiness: bool,
         key_values: Vec<(String, String)>,
@@ -261,7 +261,7 @@ mod tests {
     impl Default for NodeStateBuilder {
         fn default() -> Self {
             Self {
-                enabled_services: QuickwitService::supported_services(),
+                assigned_roles: NodeRole::all_roles(),
                 grpc_advertise_addr: "127.0.0.1:7281"
                     .parse()
                     .expect("`127.0.0.1:7281` should be a valid socket address."),
@@ -291,10 +291,10 @@ mod tests {
             let mut node_state = NodeState::default();
 
             node_state.set(
-                ENABLED_SERVICES_KEY,
-                self.enabled_services
+                ASSIGNED_ROLES_KEY,
+                self.assigned_roles
                     .iter()
-                    .map(|service| service.as_str())
+                    .map(|role| role.as_str())
                     .join(","),
             );
             node_state.set(

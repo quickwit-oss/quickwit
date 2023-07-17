@@ -34,7 +34,7 @@ use serde::{Deserialize, Serialize};
 use tracing::warn;
 
 use crate::node_config::serialize::load_node_config_with_env;
-use crate::service::QuickwitService;
+use crate::node_role::NodeRole;
 use crate::storage_config::StorageConfigs;
 use crate::{ConfigFormat, MetastoreConfigs};
 
@@ -225,7 +225,7 @@ impl Default for JaegerConfig {
 pub struct NodeConfig {
     pub cluster_id: String,
     pub node_id: String,
-    pub enabled_services: HashSet<QuickwitService>,
+    pub assigned_roles: HashSet<NodeRole>,
     pub rest_listen_addr: SocketAddr,
     pub gossip_listen_addr: SocketAddr,
     pub grpc_listen_addr: SocketAddr,

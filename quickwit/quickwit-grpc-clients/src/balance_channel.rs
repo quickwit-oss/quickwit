@@ -21,7 +21,7 @@ use std::time::Duration;
 
 use futures::Stream;
 use quickwit_cluster::ClusterChange;
-use quickwit_config::service::QuickwitService;
+use quickwit_config::node_role::NodeRole;
 use tokio_stream::StreamExt;
 use tonic::transport::{Channel, Endpoint, Uri};
 use tower::discover::Change;
@@ -35,7 +35,7 @@ const CLIENT_TIMEOUT_DURATION: Duration = if cfg!(any(test, feature = "testsuite
 };
 
 pub async fn create_balance_channel_from_cluster_change_stream(
-    service: QuickwitService,
+    role: NodeRole,
     mut ready_nodes_change_stream: impl Stream<Item = ClusterChange> + Send + Unpin + 'static,
 ) -> Timeout<Channel> {
     let (channel, channel_tx) = Channel::balance_channel(100);
@@ -43,7 +43,7 @@ pub async fn create_balance_channel_from_cluster_change_stream(
     let future = async move {
         while let Some(cluster_change) = ready_nodes_change_stream.next().await {
             match cluster_change {
-                ClusterChange::Add(node) if node.enabled_services().contains(&service) => {
+                ClusterChange::Add(node) if node.assigned_roles().contains(&role) => {
                     let grpc_addr = node.grpc_advertise_addr();
                     let uri = Uri::builder()
                         .scheme("http")
@@ -53,15 +53,15 @@ pub async fn create_balance_channel_from_cluster_change_stream(
                         .expect("");
                     let endpoint = Endpoint::from(uri).connect_timeout(Duration::from_secs(5));
                     let change = Change::Insert(grpc_addr, endpoint);
-                    info!(node_id=%node.node_id(), grpc_addr=?grpc_addr, "Adding node to {} pool.", service);
+                    info!(node_id=%node.node_id(), grpc_addr=?grpc_addr, "Adding node to {} pool.", role);
                     if channel_tx.send(change).await.is_err() {
                         break;
                     }
                 }
-                ClusterChange::Remove(node) if node.enabled_services().contains(&service) => {
+                ClusterChange::Remove(node) if node.assigned_roles().contains(&role) => {
                     let grpc_addr = node.grpc_advertise_addr();
                     let change = Change::Remove(grpc_addr);
-                    info!(node_id=%node.node_id(), grpc_addr=?grpc_addr, "Removing node from {} pool.", service);
+                    info!(node_id=%node.node_id(), grpc_addr=?grpc_addr, "Removing node from {} pool.", role);
                     if channel_tx.send(change).await.is_err() {
                         break;
                     }

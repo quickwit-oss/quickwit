@@ -24,7 +24,7 @@ use clap::{arg, ArgAction, ArgMatches, Command};
 use itertools::Itertools;
 use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::uri::Uri;
-use quickwit_config::service::QuickwitService;
+use quickwit_config::node_role::NodeRole;
 use quickwit_config::NodeConfig;
 use quickwit_serve::serve_quickwit;
 use quickwit_telemetry::payload::{QuickwitFeature, QuickwitTelemetryInfo, TelemetryEvent};
@@ -36,11 +36,12 @@ use crate::{config_cli_arg, get_resolvers, load_node_config, start_actor_runtime
 pub fn build_run_command() -> Command {
     Command::new("run")
         .about("Starts a Quickwit node.")
-        .long_about("Starts a Quickwit node with all services enabled by default: `indexer`, `searcher`, `metastore`, `control-plane`, and `janitor`.")
+        .long_about("Starts a node with assigned roles.")
         .arg(config_cli_arg())
         .args(&[
-            arg!(--"service" <SERVICE> "Services (indexer,searcher,janitor,metastore or control-plane) to run. If unspecified, all the supported services are started.")
+            arg!(--"role" <ROLE> "Role among `indexer`, `searcher`, `metastore`, `control-plane`, and `janitor` to assign to the node.")
                 .action(ArgAction::Append)
+                .alias("service")
                 .required(false),
         ])
 }
@@ -48,7 +49,7 @@ pub fn build_run_command() -> Command {
 #[derive(Debug, Eq, PartialEq)]
 pub struct RunCliCommand {
     pub config_uri: Uri,
-    pub services: Option<HashSet<QuickwitService>>,
+    pub roles: Option<HashSet<NodeRole>>,
 }
 
 impl RunCliCommand {
@@ -57,39 +58,36 @@ impl RunCliCommand {
             .remove_one::<String>("config")
             .map(|uri_str| Uri::from_str(&uri_str))
             .expect("`config` should be a required arg.")?;
-        let services = matches
-            .remove_many::<String>("service")
+        let roles = matches
+            .remove_many::<String>("role")
             .map(|values| {
-                let services: Result<HashSet<_>, _> = values
+                let roles: Result<HashSet<_>, _> = values
                     .into_iter()
-                    .map(|service_str| QuickwitService::from_str(&service_str))
+                    .map(|role_str| NodeRole::from_str(&role_str))
                     .collect();
-                services
+                roles
             })
             .transpose()?;
-        Ok(RunCliCommand {
-            config_uri,
-            services,
-        })
+        Ok(RunCliCommand { config_uri, roles })
     }
 
     pub async fn execute(&self) -> anyhow::Result<()> {
-        debug!(args = ?self, "run-service");
+        debug!(args = ?self, "start-node");
         let mut config = load_node_config(&self.config_uri).await?;
         let (storage_resolver, metastore_resolver) =
             get_resolvers(&config.storage_configs, &config.metastore_configs);
         crate::busy_detector::set_enabled(true);
 
-        if let Some(services) = &self.services {
-            tracing::info!(services = %services.iter().join(", "), "Setting services from override.");
-            config.enabled_services = services.clone();
+        if let Some(roles) = &self.roles {
+            tracing::info!(roles = %roles.iter().join(", "), "Setting roles from override.");
+            config.assigned_roles = roles.clone();
         }
         let telemetry_handle_opt =
             quickwit_telemetry::start_telemetry_loop(quickwit_telemetry_info(&config));
         quickwit_telemetry::send_telemetry_event(TelemetryEvent::RunCommand).await;
         // TODO move in serve quickwit?
         let runtimes_config = RuntimesConfig::default();
-        start_actor_runtimes(runtimes_config, &config.enabled_services)?;
+        start_actor_runtimes(runtimes_config, &config.assigned_roles)?;
         let shutdown_signal = Box::pin(async move {
             signal::ctrl_c()
                 .await
@@ -125,22 +123,19 @@ fn quickwit_telemetry_info(config: &NodeConfig) -> QuickwitTelemetryInfo {
         features.insert(QuickwitFeature::Jaeger);
     }
     // The metastore URI is only relevant if the metastore is enabled.
-    if config
-        .enabled_services
-        .contains(&QuickwitService::Metastore)
-    {
+    if config.assigned_roles.contains(&NodeRole::Metastore) {
         if config.metastore_uri.protocol().is_postgresql() {
             features.insert(QuickwitFeature::PostgresqMetastore);
         } else {
             features.insert(QuickwitFeature::FileBackedMetastore);
         }
     }
-    let services = config
-        .enabled_services
+    let roles = config
+        .assigned_roles
         .iter()
-        .map(|service| service.to_string())
+        .map(|role| role.to_string())
         .collect();
-    QuickwitTelemetryInfo::new(services, features)
+    QuickwitTelemetryInfo::new(roles, features)
 }
 
 #[cfg(test)]
@@ -150,7 +145,7 @@ mod tests {
     use crate::cli::{build_cli, CliCommand};
 
     #[test]
-    fn test_parse_service_run_args_all_services() -> anyhow::Result<()> {
+    fn test_parse_run_args_all_roles() -> anyhow::Result<()> {
         let command = build_cli().no_binary_name(true);
         let matches = command.try_get_matches_from(vec!["run", "--config", "/config.yaml"])?;
         let command = CliCommand::parse_cli_args(matches)?;
@@ -159,16 +154,16 @@ mod tests {
             command,
             CliCommand::Run(RunCliCommand {
                 config_uri,
-                services,
+                roles,
                 ..
             })
-            if config_uri == expected_config_uri && services.is_none()
+            if config_uri == expected_config_uri && roles.is_none()
         ));
         Ok(())
     }
 
     #[test]
-    fn test_parse_service_run_args_indexer_only() -> anyhow::Result<()> {
+    fn test_parse_run_args_indexer_only() -> anyhow::Result<()> {
         let command = build_cli().no_binary_name(true);
         let matches = command.try_get_matches_from(vec![
             "run",
@@ -183,16 +178,16 @@ mod tests {
             command,
             CliCommand::Run(RunCliCommand {
                 config_uri,
-                services,
+                roles,
                 ..
             })
-            if config_uri == expected_config_uri && services.as_ref().unwrap().len() == 1 && services.as_ref().unwrap().iter().cloned().next().unwrap() == QuickwitService::Indexer
+            if config_uri == expected_config_uri && roles.as_ref().unwrap().len() == 1 && roles.as_ref().unwrap().iter().cloned().next().unwrap() == NodeRole::Indexer
         ));
         Ok(())
     }
 
     #[test]
-    fn test_parse_service_run_args_searcher_and_metastore() -> anyhow::Result<()> {
+    fn test_parse_run_args_searcher_and_metastore() -> anyhow::Result<()> {
         let command = build_cli().no_binary_name(true);
         let matches = command.try_get_matches_from(vec![
             "run",
@@ -205,22 +200,21 @@ mod tests {
         ])?;
         let command = CliCommand::parse_cli_args(matches).unwrap();
         let expected_config_uri = Uri::from_str("file:///config.yaml").unwrap();
-        let expected_services =
-            HashSet::from_iter([QuickwitService::Metastore, QuickwitService::Searcher]);
+        let expected_roles = HashSet::from_iter([NodeRole::Metastore, NodeRole::Searcher]);
         assert!(matches!(
             command,
             CliCommand::Run(RunCliCommand {
                 config_uri,
-                services,
+                roles,
                 ..
             })
-            if config_uri == expected_config_uri && services.as_ref().unwrap().len() == 2 && services.as_ref().unwrap() == &expected_services
+            if config_uri == expected_config_uri && roles.as_ref().unwrap().len() == 2 && roles.as_ref().unwrap() == &expected_roles
         ));
         Ok(())
     }
 
     #[test]
-    fn test_parse_service_run_indexer_only_args() -> anyhow::Result<()> {
+    fn test_parse_run_indexer_only_args() -> anyhow::Result<()> {
         let command = build_cli().no_binary_name(true);
         let matches = command.try_get_matches_from(vec![
             "run",
@@ -235,10 +229,10 @@ mod tests {
             command,
             CliCommand::Run(RunCliCommand {
                 config_uri,
-                services,
+                roles,
                 ..
             })
-            if config_uri == expected_config_uri && services.as_ref().unwrap().len() == 1 && services.as_ref().unwrap().contains(&QuickwitService::Indexer)
+            if config_uri == expected_config_uri && roles.as_ref().unwrap().len() == 1 && roles.as_ref().unwrap().contains(&NodeRole::Indexer)
         ));
         Ok(())
     }

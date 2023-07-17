@@ -2,7 +2,7 @@ version: 0.6
 
 cluster_id: quickwit-cluster
 node_id: my-unique-node-id
-enabled_services:
+assigned_roles:
   - janitor
   - metastore
 listen_address: 0.0.0.0
