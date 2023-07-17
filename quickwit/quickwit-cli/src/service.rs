@@ -25,7 +25,7 @@ use itertools::Itertools;
 use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::uri::Uri;
 use quickwit_config::service::QuickwitService;
-use quickwit_config::QuickwitConfig;
+use quickwit_config::NodeConfig;
 use quickwit_serve::serve_quickwit;
 use quickwit_telemetry::payload::{QuickwitFeature, QuickwitTelemetryInfo, TelemetryEvent};
 use tokio::signal;
@@ -116,7 +116,7 @@ impl RunCliCommand {
     }
 }
 
-fn quickwit_telemetry_info(config: &QuickwitConfig) -> QuickwitTelemetryInfo {
+fn quickwit_telemetry_info(config: &NodeConfig) -> QuickwitTelemetryInfo {
     let mut features = HashSet::new();
     if config.indexer_config.enable_otlp_endpoint {
         features.insert(QuickwitFeature::Otlp);

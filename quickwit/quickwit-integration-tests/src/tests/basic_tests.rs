@@ -54,7 +54,7 @@ async fn test_ui_redirect_on_get() {
         .pool_idle_timeout(Duration::from_secs(30))
         .http2_only(true)
         .build_http();
-    let root_uri = format!("http://{}/", node_config.quickwit_config.rest_listen_addr)
+    let root_uri = format!("http://{}/", node_config.node_config.rest_listen_addr)
         .parse::<hyper::Uri>()
         .unwrap();
     let response = client.get(root_uri.clone()).await.unwrap();

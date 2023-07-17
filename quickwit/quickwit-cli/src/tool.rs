@@ -37,7 +37,7 @@ use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::uri::Uri;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{
-    IndexerConfig, QuickwitConfig, SourceConfig, SourceInputFormat, SourceParams, TransformConfig,
+    IndexerConfig, NodeConfig, SourceConfig, SourceInputFormat, SourceParams, TransformConfig,
     VecSourceParams, CLI_INGEST_SOURCE_ID,
 };
 use quickwit_core::{clear_cache_directory, IndexService};
@@ -775,7 +775,7 @@ impl ThroughputCalculator {
     }
 }
 
-async fn create_empty_cluster(config: &QuickwitConfig) -> anyhow::Result<Cluster> {
+async fn create_empty_cluster(config: &NodeConfig) -> anyhow::Result<Cluster> {
     let self_node = ClusterMember::new(
         config.node_id.clone(),
         quickwit_cluster::GenerationId::now(),

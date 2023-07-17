@@ -32,7 +32,7 @@ mod config_value;
 mod index_config;
 pub mod merge_policy_config;
 mod metastore_config;
-mod quickwit_config;
+mod node_config;
 mod qw_env_vars;
 pub mod service;
 mod source_config;
@@ -63,8 +63,8 @@ use crate::merge_policy_config::{
 pub use crate::metastore_config::{
     MetastoreBackend, MetastoreConfig, MetastoreConfigs, PostgresMetastoreConfig,
 };
-pub use crate::quickwit_config::{
-    IndexerConfig, IngestApiConfig, JaegerConfig, QuickwitConfig, SearcherConfig,
+pub use crate::node_config::{
+    IndexerConfig, IngestApiConfig, JaegerConfig, NodeConfig, SearcherConfig,
     DEFAULT_QW_CONFIG_PATH,
 };
 use crate::source_config::serialize::{SourceConfigV0_6, VersionedSourceConfig};
