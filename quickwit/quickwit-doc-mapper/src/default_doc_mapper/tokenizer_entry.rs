@@ -20,7 +20,7 @@
 use anyhow::Context;
 #[cfg(feature = "multilang")]
 use quickwit_query::MultiLangTokenizer;
-use quickwit_query::DEFAULT_REMOVE_TOKEN_LENGTH;
+use quickwit_query::{CodeTokenizer, DEFAULT_REMOVE_TOKEN_LENGTH};
 use serde::{Deserialize, Serialize};
 use tantivy::tokenizer::{
     AsciiFoldingFilter, LowerCaser, NgramTokenizer, RegexTokenizer, RemoveLongFilter,
