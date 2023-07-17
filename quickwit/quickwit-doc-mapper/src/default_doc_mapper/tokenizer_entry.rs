@@ -55,6 +55,7 @@ impl TokenizerConfig {
             TokenizerType::Multilang => {
                 TextAnalyzer::builder(MultiLangTokenizer::default()).dynamic()
             }
+            TokenizerType::SourceCode => TextAnalyzer::builder(CodeTokenizer::default()).dynamic(),
             TokenizerType::Ngram(options) => {
                 let tokenizer =
                     NgramTokenizer::new(options.min_gram, options.max_gram, options.prefix_only)
@@ -126,11 +127,12 @@ impl TokenFilterType {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum TokenizerType {
-    Simple,
     #[cfg(feature = "multilang")]
     Multilang,
     Ngram(NgramTokenizerOption),
     Regex(RegexTokenizerOption),
+    Simple,
+    SourceCode,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq, utoipa::ToSchema)]

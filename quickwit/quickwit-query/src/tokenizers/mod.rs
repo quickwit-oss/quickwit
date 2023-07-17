@@ -24,7 +24,7 @@ mod multilang;
 
 use once_cell::sync::Lazy;
 use tantivy::tokenizer::{
-    LowerCaser, RawTokenizer, RemoveLongFilter, TextAnalyzer, TokenizerManager,
+    AsciiFoldingFilter, LowerCaser, RawTokenizer, RemoveLongFilter, TextAnalyzer, TokenizerManager,
 };
 
 use self::chinese_compatible::ChineseTokenizer;
@@ -48,10 +48,11 @@ pub fn create_default_quickwit_tokenizer_manager() -> TokenizerManager {
         .build();
     tokenizer_manager.register("chinese_compatible", chinese_tokenizer);
     tokenizer_manager.register(
-        "source_code",
+        "source_code_default",
         TextAnalyzer::builder(CodeTokenizer::default())
             .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
             .filter(LowerCaser)
+            .filter(AsciiFoldingFilter)
             .build(),
     );
     #[cfg(feature = "multilang")]
