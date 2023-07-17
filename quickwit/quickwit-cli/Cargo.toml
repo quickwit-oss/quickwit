@@ -80,6 +80,7 @@ quickwit-actors = { workspace = true, features = ["testsuite"] }
 quickwit-common = { workspace = true, features = ["testsuite"] }
 quickwit-config = { workspace = true, features = ["testsuite"] }
 quickwit-metastore = { workspace = true, features = ["testsuite"] }
+quickwit-storage = { workspace = true, features = ["testsuite"] }
 
 [features]
 jemalloc = ["dep:tikv-jemalloc-ctl", "dep:tikv-jemallocator"]
@@ -95,6 +96,7 @@ release-feature-set = [
   "quickwit-indexing/vrl",
   "quickwit-metastore/azure",
   "quickwit-metastore/postgres",
+  "quickwit-doc-mapper/multilang",
 ]
 release-feature-vendored-set = [
   "jemalloc",
@@ -104,6 +106,7 @@ release-feature-vendored-set = [
   "quickwit-indexing/vendored-kafka",
   "quickwit-metastore/azure",
   "quickwit-metastore/postgres",
+  "quickwit-doc-mapper/multilang",
 ]
 release-macos-feature-vendored-set = [
   "jemalloc",
@@ -113,4 +116,5 @@ release-macos-feature-vendored-set = [
   "quickwit-indexing/vendored-kafka-macos",
   "quickwit-metastore/azure",
   "quickwit-metastore/postgres",
+  "quickwit-doc-mapper/multilang",
 ]

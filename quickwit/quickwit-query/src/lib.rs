@@ -33,7 +33,7 @@ mod error;
 mod json_literal;
 mod not_nan_f32;
 pub mod query_ast;
-mod tokenizers;
+pub mod tokenizers;
 
 pub use elastic_query_dsl::{ElasticQueryDsl, OneFieldMap};
 pub use error::InvalidQuery;
@@ -42,6 +42,8 @@ pub(crate) use not_nan_f32::NotNaNf32;
 pub use query_ast::utils::find_field_or_hit_dynamic;
 use serde::{Deserialize, Serialize};
 pub use tantivy::query::Query as TantivyQuery;
+#[cfg(feature = "multilang")]
+pub use tokenizers::MultiLangTokenizer;
 pub use tokenizers::{
     create_default_quickwit_tokenizer_manager, get_quickwit_fastfield_normalizer_manager,
     CodeTokenizer, DEFAULT_REMOVE_TOKEN_LENGTH,

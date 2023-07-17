@@ -1,0 +1,34 @@
+#
+# Index config file for multilang wikipedia datasets.
+#
+
+version: 0.6
+
+index_id: multilang-wikipedia
+
+doc_mapping:
+  tokenizers:
+    - name: multilang
+      type: multilang
+  field_mappings:
+    - name: title
+      type: text
+      tokenizer: multilang
+      record: position
+      stored: true
+      fieldnorms: true
+    - name: body
+      type: text
+      tokenizer: multilang
+      record: position
+      stored: true
+      fieldnorms: true
+    - name: url
+      type: text
+      tokenizer: raw
+
+search_settings:
+  default_search_fields: [title, body]
+
+indexing_settings:
+  commit_timeout_secs: 10

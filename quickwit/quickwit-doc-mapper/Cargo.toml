@@ -31,17 +31,20 @@ typetag = { workspace = true }
 utoipa = { workspace = true }
 
 quickwit-datetime = { workspace = true }
-quickwit-query = { workspace = true }
+quickwit-query = { workspace = true, features = ["multilang"] }
 
 [dev-dependencies]
 criterion = { workspace = true }
 matches = { workspace = true }
 proptest = { workspace = true }
+quickwit-proto = { workspace = true }
+quickwit-query = { workspace = true, features = ["testsuite"] }
 serde_yaml = { workspace = true }
 time = { workspace = true }
 
 [features]
-testsuite = []
+multilang = ["quickwit-query/multilang"]
+testsuite = ["multilang"]
 
 [[bench]]
 name = "doc_to_json_bench"

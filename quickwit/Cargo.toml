@@ -89,6 +89,9 @@ itertools = "0.11"
 json_comments = "0.2"
 libz-sys = "1.1.8"
 lru = "0.11"
+lindera-core = "0.27.0"
+lindera-dictionary = "0.27.0"
+lindera-tokenizer = { version = "0.27.0", features = ["ipadic", "ipadic-compress", "cc-cedict", "cc-cedict-compress", "ko-dic", "ko-dic-compress"] }
 matches = "0.1.9"
 md5 = "0.7"
 mime_guess = "2.0.4"
@@ -178,6 +181,7 @@ username = "0.2"
 utoipa = "3.3.0"
 uuid = { version = "1.4", features = ["v4", "serde"] }
 warp = "0.3"
+whichlang = { git = "https://github.com/quickwit-oss/whichlang", rev = "fe406416" }
 wiremock = "0.5"
 
 aws-config = "0.55.0"
@@ -232,8 +236,8 @@ tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "3c30066", d
 ] }
 
 # This is actually not used directly the goal is to fix the version
-# used by reqwest. 0.8.30 has an unclear license.
-encoding_rs = "=0.8.29"
+# used by reqwest.
+encoding_rs = "=0.8.32"
 
 # vrl deps, at the end because the feature list for vrl-stdlib is long
 vrl = { git = "https://github.com/vectordotdev/vrl", rev = "v0.3.0", default-features = false, features = [

@@ -119,11 +119,16 @@ impl PostgresqlMetastore {
         postgres_metastore_config: &PostgresMetastoreConfig,
         connection_uri: &Uri,
     ) -> MetastoreResult<Self> {
+        let acquire_timeout = if cfg!(any(test, feature = "testsuite")) {
+            Duration::from_secs(20)
+        } else {
+            Duration::from_secs(2)
+        };
         let connection_pool = establish_connection(
             connection_uri,
             1,
             postgres_metastore_config.max_num_connections.get(),
-            Duration::from_secs(2),
+            acquire_timeout,
             Some(Duration::from_secs(1)),
             None,
         )
