@@ -159,45 +159,59 @@ impl ClusterClient {
     }
 }
 
+/// Takes two intermediate aggregation results serialized using postcard,
+/// merge them and returns the merged serialized result.
+fn merge_intermediate_aggregation(left: &[u8], right: &[u8]) -> crate::Result<Vec<u8>> {
+    let mut intermediate_aggregation_results_left: IntermediateAggregationResults =
+        postcard::from_bytes(left)?;
+    let intermediate_aggregation_results_right: IntermediateAggregationResults =
+        postcard::from_bytes(right)?;
+    intermediate_aggregation_results_left.merge_fruits(intermediate_aggregation_results_right)?;
+    let serialized = postcard::to_allocvec(&intermediate_aggregation_results_left)?;
+    Ok(serialized)
+}
+
+fn merge_leaf_search_response(
+    mut left_response: LeafSearchResponse,
+    right_response: LeafSearchResponse,
+) -> crate::Result<LeafSearchResponse> {
+    left_response
+        .partial_hits
+        .extend(right_response.partial_hits);
+    let intermediate_aggregation_result: Option<Vec<u8>> = match (
+        left_response.intermediate_aggregation_result,
+        right_response.intermediate_aggregation_result,
+    ) {
+        (Some(left_agg_bytes), Some(right_agg_bytes)) => {
+            let intermediate_aggregation_bytes: Vec<u8> =
+                merge_intermediate_aggregation(&left_agg_bytes[..], &right_agg_bytes[..])?;
+            Some(intermediate_aggregation_bytes)
+        }
+        (None, Some(right)) => Some(right),
+        (Some(left), None) => Some(left),
+        (None, None) => None,
+    };
+    Ok(LeafSearchResponse {
+        intermediate_aggregation_result,
+        num_hits: left_response.num_hits + right_response.num_hits,
+        num_attempted_splits: left_response.num_attempted_splits
+            + right_response.num_attempted_splits,
+        failed_splits: right_response.failed_splits,
+        partial_hits: left_response.partial_hits,
+    })
+}
+
 // Merge initial leaf search results with results obtained from a retry.
 fn merge_leaf_search_results(
-    initial_response_result: crate::Result<LeafSearchResponse>,
-    retry_response_result: crate::Result<LeafSearchResponse>,
+    left_search_response_result: crate::Result<LeafSearchResponse>,
+    right_search_response_result: crate::Result<LeafSearchResponse>,
 ) -> crate::Result<LeafSearchResponse> {
-    match (initial_response_result, retry_response_result) {
-        (Ok(mut initial_response), Ok(mut retry_response)) => {
-            initial_response
-                .partial_hits
-                .append(&mut retry_response.partial_hits);
-            let intermediate_aggregation_result = initial_response
-                .intermediate_aggregation_result
-                .map::<crate::Result<_>, _>(|res1_bytes| {
-                    if let Some(res2_str) = retry_response.intermediate_aggregation_result.as_ref()
-                    {
-                        let mut res1: IntermediateAggregationResults =
-                            postcard::from_bytes(res1_bytes.as_slice())?;
-                        let res2: IntermediateAggregationResults =
-                            postcard::from_bytes(res2_str.as_slice())?;
-                        res1.merge_fruits(res2)?;
-                        let serialized = postcard::to_allocvec(&res1)?;
-                        Ok(serialized)
-                    } else {
-                        Ok(res1_bytes)
-                    }
-                })
-                .transpose()?;
-            let merged_response = LeafSearchResponse {
-                intermediate_aggregation_result,
-                num_hits: initial_response.num_hits + retry_response.num_hits,
-                num_attempted_splits: initial_response.num_attempted_splits
-                    + retry_response.num_attempted_splits,
-                failed_splits: retry_response.failed_splits,
-                partial_hits: initial_response.partial_hits,
-            };
-            Ok(merged_response)
+    match (left_search_response_result, right_search_response_result) {
+        (Ok(left_response), Ok(right_response)) => {
+            merge_leaf_search_response(left_response, right_response)
         }
-        (Ok(initial_response), Err(_)) => Ok(initial_response),
-        (Err(_), Ok(retry_response)) => Ok(retry_response),
+        (Ok(single_valid_response), Err(_)) => Ok(single_valid_response),
+        (Err(_), Ok(single_valid_response)) => Ok(single_valid_response),
         (Err(error), Err(_)) => Err(error),
     }
 }
