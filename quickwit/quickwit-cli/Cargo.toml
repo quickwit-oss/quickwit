@@ -21,7 +21,6 @@ path = "src/generate_markdown.rs"
 [dependencies]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
-atty = { workspace = true }
 byte-unit = { workspace = true }
 bytes = { workspace = true }
 chitchat = { workspace = true }
