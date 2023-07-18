@@ -22,9 +22,8 @@
 use std::sync::Arc;
 
 use quickwit_actors::{Mailbox, Universe};
-use quickwit_common::FileEntry;
 use quickwit_config::NodeConfig;
-use quickwit_metastore::Metastore;
+use quickwit_metastore::{Metastore, SplitInfo};
 use quickwit_search::SearchJobPlacer;
 use quickwit_storage::StorageResolver;
 use tracing::info;
@@ -39,12 +38,13 @@ mod retention_policy_execution;
 pub use janitor_service::JanitorService;
 
 pub use self::garbage_collection::{
-    delete_splits_with_files, run_garbage_collect, SplitDeletionError, SplitRemovalInfo,
+    delete_splits_from_storage_and_metastore, run_garbage_collect, DeleteSplitsError,
+    SplitRemovalInfo,
 };
 use crate::actors::{DeleteTaskService, GarbageCollector, RetentionPolicyExecutor};
 
 #[derive(utoipa::OpenApi)]
-#[openapi(components(schemas(FileEntry)))]
+#[openapi(components(schemas(SplitInfo)))]
 /// Schema used for the OpenAPI generation which are apart of this crate.
 pub struct JanitorApiSchemas;
 

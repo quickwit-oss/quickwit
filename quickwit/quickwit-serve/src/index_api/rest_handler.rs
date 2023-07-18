@@ -22,7 +22,6 @@ use std::sync::Arc;
 use bytes::Bytes;
 use hyper::header::CONTENT_TYPE;
 use quickwit_common::uri::Uri;
-use quickwit_common::FileEntry;
 use quickwit_config::{
     load_source_config_from_user_config, ConfigFormat, NodeConfig, SourceConfig, SourceParams,
     CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID,
@@ -30,7 +29,7 @@ use quickwit_config::{
 use quickwit_core::{IndexService, IndexServiceError};
 use quickwit_doc_mapper::{analyze_text, TokenizerConfig};
 use quickwit_metastore::{
-    IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, Split, SplitState,
+    IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, Split, SplitInfo, SplitState,
 };
 use quickwit_proto::IndexUid;
 use serde::de::DeserializeOwned;
@@ -503,7 +502,7 @@ async fn delete_index(
     index_id: String,
     delete_index_query_param: DeleteIndexQueryParam,
     index_service: Arc<IndexService>,
-) -> Result<Vec<FileEntry>, IndexServiceError> {
+) -> Result<Vec<SplitInfo>, IndexServiceError> {
     info!(index_id = %index_id, dry_run = delete_index_query_param.dry_run, "delete-index");
     index_service
         .delete_index(&index_id, delete_index_query_param.dry_run)
@@ -1162,7 +1161,7 @@ mod tests {
             let resp_json: serde_json::Value = serde_json::from_slice(resp.body()).unwrap();
             let expected_response_json = serde_json::json!([{
                 "file_name": "split_1.split",
-                "file_size_in_bytes": 800,
+                "file_size_bytes": 800,
             }]);
             assert_json_include!(actual: resp_json, expected: expected_response_json);
         }
@@ -1176,7 +1175,7 @@ mod tests {
             let resp_json: serde_json::Value = serde_json::from_slice(resp.body()).unwrap();
             let expected_response_json = serde_json::json!([{
                 "file_name": "split_1.split",
-                "file_size_in_bytes": 800,
+                "file_size_bytes": 800,
             }]);
             assert_json_include!(actual: resp_json, expected: expected_response_json);
         }

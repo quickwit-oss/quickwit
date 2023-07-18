@@ -21,11 +21,10 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use quickwit_cluster::ClusterSnapshot;
-use quickwit_common::FileEntry;
 use quickwit_config::{ConfigFormat, SourceConfig};
 use quickwit_indexing::actors::IndexingServiceCounters;
 pub use quickwit_ingest::CommitType;
-use quickwit_metastore::{IndexMetadata, Split};
+use quickwit_metastore::{IndexMetadata, Split, SplitInfo};
 use quickwit_search::SearchResponseRest;
 use quickwit_serve::{ListSplitsQueryParams, SearchRequestQueryString};
 use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
@@ -374,7 +373,7 @@ impl<'a> IndexClient<'a> {
         Ok(())
     }
 
-    pub async fn delete(&self, index_id: &str, dry_run: bool) -> Result<Vec<FileEntry>, Error> {
+    pub async fn delete(&self, index_id: &str, dry_run: bool) -> Result<Vec<SplitInfo>, Error> {
         let path = format!("indexes/{index_id}");
         let response = self
             .transport
@@ -933,10 +932,13 @@ mod test {
         Mock::given(method("DELETE"))
             .and(path("/api/v1/indexes/my-index"))
             .and(query_param("dry_run", "true"))
-            .respond_with(
-                ResponseTemplate::new(StatusCode::OK)
-                    .set_body_json(json!([{"file_name": "filename", "file_size_in_bytes": 100}])),
-            )
+            .respond_with(ResponseTemplate::new(StatusCode::OK).set_body_json(json!([{
+                "split_id": "my-split",
+                "num_docs": 1,
+                "uncompressed_docs_size_bytes": 1024,
+                "file_name": "my-split.split",
+                "file_size_bytes": 128,
+            }])))
             .up_to_n_times(1)
             .mount(&mock_server)
             .await;

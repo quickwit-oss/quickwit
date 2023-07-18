@@ -25,8 +25,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use quickwit_common::uri::Uri;
 
-use crate::storage::{BulkDeleteError, SendableAsync};
-use crate::{OwnedBytes, Storage};
+use crate::storage::SendableAsync;
+use crate::{BulkDeleteError, OwnedBytes, Storage};
 
 /// This storage acts as a proxy to another storage that simply modifies each API call
 /// by preceding each path with a given a prefix.
@@ -180,7 +180,7 @@ mod tests {
     use std::collections::HashMap;
 
     use super::*;
-    use crate::storage::DeleteFailure;
+    use crate::DeleteFailure;
 
     #[test]
     fn test_strip_prefix_from_error() {
