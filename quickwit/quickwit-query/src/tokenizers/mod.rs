@@ -122,13 +122,13 @@ mod tests {
     #[test]
     fn test_code_tokenizer_in_tokenizer_manager() {
         let mut code_tokenizer = super::create_default_quickwit_tokenizer_manager()
-            .get("source_code")
+            .get("source_code_default")
             .unwrap();
         let mut token_stream = code_tokenizer.token_stream("PigCaféFactory2");
         let mut tokens = Vec::new();
         while let Some(token) = token_stream.next() {
             tokens.push(token.text.to_string());
         }
-        assert_eq!(tokens, vec!["pig", "café", "factory", "2"])
+        assert_eq!(tokens, vec!["pig", "cafe", "factory", "2"])
     }
 }
