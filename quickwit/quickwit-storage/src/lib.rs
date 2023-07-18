@@ -82,7 +82,10 @@ pub use self::test_suite::{
     storage_test_multi_part_upload, storage_test_single_part_upload, storage_test_suite,
     test_write_and_bulk_delete,
 };
-pub use crate::error::{StorageError, StorageErrorKind, StorageResolverError, StorageResult};
+pub use crate::error::{
+    BulkDeleteError, DeleteFailure, StorageError, StorageErrorKind, StorageResolverError,
+    StorageResult,
+};
 
 /// Loads an entire local or remote file into memory.
 pub async fn load_file(

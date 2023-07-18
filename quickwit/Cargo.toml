@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-rust-version = "1.69"
+rust-version = "1.70"
 members = [
   "quickwit-actors",
   "quickwit-aws",
@@ -24,7 +24,9 @@ members = [
   "quickwit-macros",
   "quickwit-macros/impl",
   "quickwit-metastore",
-  "quickwit-metastore-utils",
+  # Disabling metastore-utils from the quicwit projects to ease build/deps.
+  # We can reenable it when we need it.
+  # "quickwit-metastore-utils",
   "quickwit-opentelemetry",
   "quickwit-proto",
   "quickwit-query",
@@ -44,7 +46,6 @@ arc-swap = "1.6"
 assert-json-diff = "2"
 async-speed-limit = "0.4"
 async-trait = "0.1"
-atty = "0.2"
 backoff = { version = "0.4", features = ["tokio"] }
 base64 = "0.21"
 byte-unit = { version = "4", default-features = false, features = ["serde", "std"] }
@@ -141,7 +142,7 @@ rust-embed = "6.8.1"
 serde = { version = "1.0", features = ["derive", "rc"] }
 serde_json = "1.0"
 serde_qs = { version = "0.12", features = ["warp"] }
-serde_with = "3.0.0"
+serde_with = "3.1.0"
 serde_yaml = "0.9"
 siphasher = "0.3"
 sqlx = { version = "0.7", features = [

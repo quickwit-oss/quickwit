@@ -29,7 +29,7 @@ use futures_util::StreamExt;
 use hyper::StatusCode;
 use itertools::Itertools;
 use quickwit_common::truncate_str;
-use quickwit_config::QuickwitConfig;
+use quickwit_config::NodeConfig;
 use quickwit_proto::{SearchResponse, ServiceErrorCode};
 use quickwit_query::query_ast::{QueryAst, UserInputQuery};
 use quickwit_query::BooleanOperand;
@@ -51,14 +51,14 @@ use crate::{with_arg, BuildInfo};
 
 /// Elastic compatible cluster info handler.
 pub fn es_compat_cluster_info_handler(
-    quickwit_config: Arc<QuickwitConfig>,
+    node_config: Arc<NodeConfig>,
     build_info: &'static BuildInfo,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     elastic_cluster_info_filter()
-        .and(with_arg(quickwit_config))
+        .and(with_arg(node_config))
         .and(with_arg(build_info))
         .then(
-            |config: Arc<QuickwitConfig>, build_info: &'static BuildInfo| async move {
+            |config: Arc<NodeConfig>, build_info: &'static BuildInfo| async move {
                 warp::reply::json(&json!({
                     "name" : config.node_id,
                     "cluster_name" : config.cluster_id,
