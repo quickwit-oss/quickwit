@@ -25,7 +25,7 @@ mod test;
 use async_trait::async_trait;
 use quickwit_common::uri::Uri;
 use quickwit_config::{IndexConfig, SourceConfig};
-use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
+use quickwit_proto::metastore::{DeleteQuery, DeleteTask};
 use quickwit_proto::IndexUid;
 
 use self::retry::{retry, RetryParams};

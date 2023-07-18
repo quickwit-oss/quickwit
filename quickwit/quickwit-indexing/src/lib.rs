@@ -23,7 +23,7 @@ use std::sync::Arc;
 
 use quickwit_actors::{Mailbox, Universe};
 use quickwit_cluster::Cluster;
-use quickwit_config::QuickwitConfig;
+use quickwit_config::NodeConfig;
 use quickwit_ingest::IngestApiService;
 use quickwit_metastore::Metastore;
 use quickwit_storage::StorageResolver;
@@ -66,7 +66,7 @@ pub fn new_split_id() -> String {
 
 pub async fn start_indexing_service(
     universe: &Universe,
-    config: &QuickwitConfig,
+    config: &NodeConfig,
     num_blocking_threads: usize,
     cluster: Cluster,
     metastore: Arc<dyn Metastore>,

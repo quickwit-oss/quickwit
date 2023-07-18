@@ -30,7 +30,7 @@ use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::uri::Uri;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{
-    ConfigFormat, MetastoreConfigs, QuickwitConfig, SourceConfig, StorageConfigs,
+    ConfigFormat, MetastoreConfigs, NodeConfig, SourceConfig, StorageConfigs,
     DEFAULT_QW_CONFIG_PATH,
 };
 use quickwit_indexing::check_source_connectivity;
@@ -223,12 +223,12 @@ pub fn start_actor_runtimes(
 }
 
 /// Loads a node config located at `config_uri` with the default storage configuration.
-async fn load_node_config(config_uri: &Uri) -> anyhow::Result<QuickwitConfig> {
+async fn load_node_config(config_uri: &Uri) -> anyhow::Result<NodeConfig> {
     let config_content = load_file(&StorageResolver::unconfigured(), config_uri)
         .await
         .context("Failed to load node config.")?;
     let config_format = ConfigFormat::sniff_from_uri(config_uri)?;
-    let config = QuickwitConfig::load(config_format, config_content.as_slice())
+    let config = NodeConfig::load(config_format, config_content.as_slice())
         .await
         .with_context(|| format!("Failed to parse node config `{config_uri}`."))?;
     info!(config_uri=%config_uri, config=?config, "Loaded node config.");

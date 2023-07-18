@@ -31,7 +31,7 @@ use chitchat::{
 };
 use futures::Stream;
 use itertools::Itertools;
-use quickwit_proto::indexing_api::IndexingTask;
+use quickwit_proto::indexing::IndexingTask;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, watch, Mutex, RwLock};
 use tokio::time::timeout;
@@ -571,7 +571,7 @@ mod tests {
     use itertools::Itertools;
     use quickwit_common::test_utils::wait_until_predicate;
     use quickwit_config::service::QuickwitService;
-    use quickwit_proto::indexing_api::IndexingTask;
+    use quickwit_proto::indexing::IndexingTask;
     use rand::Rng;
 
     use super::*;

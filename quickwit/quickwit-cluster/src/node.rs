@@ -24,7 +24,7 @@ use std::sync::Arc;
 
 use chitchat::{ChitchatId, NodeState};
 use quickwit_config::service::QuickwitService;
-use quickwit_proto::indexing_api::IndexingTask;
+use quickwit_proto::indexing::IndexingTask;
 use tonic::transport::Channel;
 
 use crate::member::build_cluster_member;

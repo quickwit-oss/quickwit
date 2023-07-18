@@ -22,8 +22,8 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_config::IndexConfig;
-use quickwit_proto::metastore_api::metastore_api_service_server::{self as grpc};
-use quickwit_proto::metastore_api::{
+use quickwit_proto::metastore::metastore_service_server::{self as grpc};
+use quickwit_proto::metastore::{
     AddSourceRequest, CreateIndexRequest, CreateIndexResponse, DeleteIndexRequest,
     DeleteIndexResponse, DeleteQuery, DeleteSourceRequest, DeleteSplitsRequest, DeleteTask,
     IndexMetadataRequest, IndexMetadataResponse, LastDeleteOpstampRequest,
@@ -51,7 +51,7 @@ impl From<Arc<dyn Metastore>> for GrpcMetastoreAdapter {
 }
 
 #[async_trait]
-impl grpc::MetastoreApiService for GrpcMetastoreAdapter {
+impl grpc::MetastoreService for GrpcMetastoreAdapter {
     #[instrument(skip(self, request))]
     async fn create_index(
         &self,

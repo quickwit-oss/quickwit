@@ -20,7 +20,7 @@
 use std::convert::TryInto;
 use std::str::FromStr;
 
-use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask as QuickwitDeleteTask};
+use quickwit_proto::metastore::{DeleteQuery, DeleteTask as QuickwitDeleteTask};
 use quickwit_proto::IndexUid;
 use tracing::error;
 

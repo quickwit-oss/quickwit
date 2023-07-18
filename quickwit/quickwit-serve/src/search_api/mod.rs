@@ -35,7 +35,8 @@ mod tests {
     use quickwit_indexing::mock_split;
     use quickwit_metastore::{IndexMetadata, MockMetastore};
     use quickwit_proto::search_service_server::SearchServiceServer;
-    use quickwit_proto::{qast_helper, tonic, OutputFormat};
+    use quickwit_proto::{tonic, OutputFormat};
+    use quickwit_query::query_ast::qast_helper;
     use quickwit_search::{
         create_search_client_from_grpc_addr, root_search_stream, ClusterClient, MockSearchService,
         SearchError, SearchJobPlacer, SearchService, SearcherPool,

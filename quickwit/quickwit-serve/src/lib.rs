@@ -61,7 +61,7 @@ use quickwit_common::tower::{
     Rate, RateLimitLayer, SmaRateEstimator,
 };
 use quickwit_config::service::QuickwitService;
-use quickwit_config::{QuickwitConfig, SearcherConfig};
+use quickwit_config::{NodeConfig, SearcherConfig};
 use quickwit_control_plane::control_plane::ControlPlane;
 use quickwit_control_plane::scheduler::IndexingScheduler;
 use quickwit_control_plane::{
@@ -105,7 +105,7 @@ const READINESS_REPORTING_INTERVAL: Duration = if cfg!(any(test, feature = "test
 };
 
 struct QuickwitServices {
-    pub config: Arc<QuickwitConfig>,
+    pub config: Arc<NodeConfig>,
     pub cluster: Cluster,
     pub metastore: Arc<dyn Metastore>,
     pub control_plane_service: Option<ControlPlaneServiceClient>,
@@ -152,7 +152,7 @@ async fn balance_channel_for_service(
 }
 
 pub async fn serve_quickwit(
-    config: QuickwitConfig,
+    config: NodeConfig,
     runtimes_config: RuntimesConfig,
     storage_resolver: StorageResolver,
     metastore_resolver: MetastoreResolver,
@@ -584,7 +584,7 @@ async fn setup_indexing_scheduler(
                         }
                     } else {
                         let grpc_client =
-                        quickwit_proto::indexing_api::indexing_service_client::IndexingServiceClient::new(
+                        quickwit_proto::indexing::indexing_service_client::IndexingServiceClient::new(
                             node.channel(),
                         );
                         let client =

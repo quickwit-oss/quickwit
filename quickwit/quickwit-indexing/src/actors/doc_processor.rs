@@ -17,7 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::BTreeMap;
 use std::string::FromUtf8Error;
 use std::sync::Arc;
 
@@ -34,11 +33,9 @@ use tantivy::schema::{Field, Value};
 use tantivy::{DateTime, Document};
 use tokio::runtime::Handle;
 use tracing::warn;
-use vrl::compiler::runtime::{Runtime, Terminate};
-use vrl::compiler::state::RuntimeState;
-use vrl::compiler::{Program, TargetValueRef, TimeZone};
-use vrl::value::{Secrets as VrlSecrets, Value as VrlValue};
 
+#[cfg(feature = "vrl")]
+use super::vrl_processing::*;
 use crate::actors::Indexer;
 use crate::models::{NewPublishLock, ProcessedDoc, ProcessedDocBatch, PublishLock, RawDocBatch};
 
@@ -57,10 +54,12 @@ impl InputDoc {
         }
     }
 
+    #[cfg(feature = "vrl")]
     fn try_into_vrl_doc(self) -> Result<VrlValue, DocProcessorError> {
         let vrl_doc = match self {
             InputDoc::Json(bytes) => serde_json::from_slice::<VrlValue>(&bytes)?,
             InputDoc::PlainText(bytes) => {
+                use std::collections::BTreeMap;
                 let mut map = BTreeMap::new();
                 let key = PLAIN_TEXT.to_string();
                 let value = VrlValue::Bytes(bytes);
@@ -90,7 +89,8 @@ impl InputDoc {
 pub enum DocProcessorError {
     ParsingError,
     MissingField,
-    TransformError(Terminate),
+    #[cfg(feature = "vrl")]
+    TransformError(VrlTerminate),
 }
 
 impl From<serde_json::Error> for DocProcessorError {
@@ -239,6 +239,7 @@ pub struct DocProcessor {
     timestamp_field_opt: Option<Field>,
     counters: DocProcessorCounters,
     publish_lock: PublishLock,
+    #[cfg(feature = "vrl")]
     transform_opt: Option<VrlProgram>,
     input_format: SourceInputFormat,
 }
@@ -253,17 +254,19 @@ impl DocProcessor {
         input_format: SourceInputFormat,
     ) -> anyhow::Result<Self> {
         let timestamp_field_opt = extract_timestamp_field(doc_mapper.as_ref())?;
-        let transform_opt = transform_config_opt
-            .map(VrlProgram::try_from_transform_config)
-            .transpose()?;
-
+        if cfg!(not(feature = "vrl")) && transform_config_opt.is_some() {
+            anyhow::bail!("VRL is not enabled. Please recompile with the `vrl` feature.")
+        }
         let doc_processor = Self {
             doc_mapper,
             indexer_mailbox,
             timestamp_field_opt,
             counters: DocProcessorCounters::new(index_id, source_id),
             publish_lock: PublishLock::default(),
-            transform_opt,
+            #[cfg(feature = "vrl")]
+            transform_opt: transform_config_opt
+                .map(VrlProgram::try_from_transform_config)
+                .transpose()?,
             input_format,
         };
         Ok(doc_processor)
@@ -284,6 +287,26 @@ impl DocProcessor {
         Ok(Some(timestamp))
     }
 
+    #[cfg(feature = "vrl")]
+    fn get_json_doc(&mut self, input_doc: InputDoc) -> Result<JsonObject, DocProcessorError> {
+        if let Some(vrl_program) = self.transform_opt.as_mut() {
+            let vrl_doc = input_doc.try_into_vrl_doc()?;
+            let transformed_vrl_doc = vrl_program.transform_doc(vrl_doc)?;
+            if let Ok(JsonValue::Object(json_doc)) = serde_json::to_value(transformed_vrl_doc) {
+                Ok(json_doc)
+            } else {
+                Err(DocProcessorError::ParsingError)
+            }
+        } else {
+            input_doc.try_into_json_doc()
+        }
+    }
+
+    #[cfg(not(feature = "vrl"))]
+    fn get_json_doc(&mut self, input_doc: InputDoc) -> Result<JsonObject, DocProcessorError> {
+        input_doc.try_into_json_doc()
+    }
+
     fn process_document(
         &mut self,
         doc_bytes: Bytes,
@@ -293,18 +316,7 @@ impl DocProcessor {
 
         let num_bytes = doc_bytes.len();
         let input_doc = InputDoc::from_bytes(&self.input_format, doc_bytes);
-
-        let json_doc: JsonObject = if let Some(vrl_program) = self.transform_opt.as_mut() {
-            let vrl_doc = input_doc.try_into_vrl_doc()?;
-            let transformed_vrl_doc = vrl_program.transform_doc(vrl_doc)?;
-
-            match serde_json::to_value(transformed_vrl_doc) {
-                Ok(JsonValue::Object(json_doc)) => json_doc,
-                _ => return Err(DocProcessorError::ParsingError),
-            }
-        } else {
-            input_doc.try_into_json_doc()?
-        };
+        let json_doc: JsonObject = self.get_json_doc(input_doc)?;
         let (partition, doc) = self
             .doc_mapper
             .doc_from_json_obj(json_doc)
@@ -399,6 +411,7 @@ impl Handler<RawDocBatch> for DocProcessor {
                 Err(DocProcessorError::ParsingError) => {
                     self.counters.record_parsing_error(doc_num_bytes);
                 }
+                #[cfg(feature = "vrl")]
                 Err(DocProcessorError::TransformError(_)) => {
                     self.counters.record_transform_error(doc_num_bytes);
                 }
@@ -432,47 +445,6 @@ impl Handler<NewPublishLock> for DocProcessor {
         ctx.send_message(&self.indexer_mailbox, new_publish_lock)
             .await?;
         Ok(())
-    }
-}
-
-struct VrlProgram {
-    runtime: Runtime,
-    program: Program,
-    timezone: TimeZone,
-}
-
-impl VrlProgram {
-    fn transform_doc(&mut self, mut vrl_doc: VrlValue) -> Result<VrlValue, DocProcessorError> {
-        let mut metadata = VrlValue::Object(BTreeMap::new());
-        let mut secrets = VrlSecrets::new();
-        let mut target = TargetValueRef {
-            value: &mut vrl_doc,
-            metadata: &mut metadata,
-            secrets: &mut secrets,
-        };
-        let runtime_res = self
-            .runtime
-            .resolve(&mut target, &self.program, &self.timezone)
-            .map_err(|transform_error| {
-                warn!(transform_error=?transform_error);
-                DocProcessorError::TransformError(transform_error)
-            });
-
-        self.runtime.clear();
-
-        runtime_res
-    }
-
-    fn try_from_transform_config(transform_config: TransformConfig) -> anyhow::Result<Self> {
-        let (program, timezone) = transform_config.compile_vrl_script()?;
-        let state = RuntimeState::default();
-        let runtime = Runtime::new(state);
-
-        Ok(VrlProgram {
-            program,
-            runtime,
-            timezone,
-        })
     }
 }
 
@@ -712,6 +684,17 @@ mod tests {
         assert!(indexer_messages.is_empty());
         universe.assert_quit().await;
     }
+}
+
+#[cfg(feature = "vrl")]
+#[cfg(test)]
+mod tests_vrl {
+    use quickwit_actors::Universe;
+    use quickwit_doc_mapper::default_doc_mapper_for_test;
+    use quickwit_metastore::checkpoint::SourceCheckpointDelta;
+    use tantivy::schema::NamedFieldDocument;
+
+    use super::*;
 
     #[tokio::test]
     async fn test_doc_processor_simple_vrl() -> anyhow::Result<()> {

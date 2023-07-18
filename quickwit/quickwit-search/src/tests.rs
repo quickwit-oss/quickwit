@@ -25,9 +25,9 @@ use quickwit_doc_mapper::DefaultDocMapper;
 use quickwit_indexing::TestSandbox;
 use quickwit_opentelemetry::otlp::TraceId;
 use quickwit_proto::{
-    qast_helper, query_ast_from_user_text, LeafListTermsResponse, SearchRequest, SortByValue,
-    SortField, SortOrder, SortValue,
+    LeafListTermsResponse, SearchRequest, SortByValue, SortField, SortOrder, SortValue,
 };
+use quickwit_query::query_ast::{qast_helper, query_ast_from_user_text};
 use serde_json::{json, Value as JsonValue};
 use tantivy::schema::Value as TantivyValue;
 use tantivy::time::OffsetDateTime;

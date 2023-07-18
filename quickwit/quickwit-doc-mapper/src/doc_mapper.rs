@@ -228,8 +228,7 @@ mod tests {
     use std::collections::{HashMap, HashSet};
     use std::ops::Bound;
 
-    use quickwit_proto::query_ast_from_user_text;
-    use quickwit_query::query_ast::UserInputQuery;
+    use quickwit_query::query_ast::{query_ast_from_user_text, UserInputQuery};
     use quickwit_query::BooleanOperand;
     use tantivy::schema::{Field, FieldType, Term};
 
@@ -525,5 +524,45 @@ mod tests {
         let mut wi_cloned = wi_base.clone();
         wi_cloned.merge(wi_2);
         assert_eq!(wi_cloned, wi_base);
+    }
+
+    #[test]
+    #[cfg(feature = "testsuite")]
+    fn test_doc_mapper_query_with_multilang_field() {
+        use quickwit_query::query_ast::TermQuery;
+
+        use crate::default_doc_mapper::{
+            QuickwitTextOptions, QuickwitTextTokenizer, TokenizerType,
+        };
+        use crate::{TokenizerConfig, TokenizerEntry};
+        let mut doc_mapper_builder = DefaultDocMapperBuilder::default();
+        doc_mapper_builder.field_mappings.push(FieldMappingEntry {
+            name: "multilang".to_string(),
+            mapping_type: FieldMappingType::Text(
+                QuickwitTextOptions {
+                    tokenizer: Some(QuickwitTextTokenizer::from_static("multilang")),
+                    ..Default::default()
+                },
+                Cardinality::SingleValue,
+            ),
+        });
+        doc_mapper_builder.tokenizers.push(TokenizerEntry {
+            name: "multilang".to_string(),
+            config: TokenizerConfig {
+                tokenizer_type: TokenizerType::Multilang,
+                filters: vec![],
+            },
+        });
+        let doc_mapper = doc_mapper_builder.try_build().unwrap();
+        let schema = doc_mapper.schema();
+        let query_ast = quickwit_query::query_ast::QueryAst::Term(TermQuery {
+            field: "multilang".to_string(),
+            value: "JPN:す".to_string(),
+        });
+        let (query, _) = doc_mapper.query(schema, &query_ast, false).unwrap();
+        assert_eq!(
+            format!("{query:?}"),
+            r#"TermQuery(Term(field=0, type=Str, "JPN:す"))"#
+        );
     }
 }

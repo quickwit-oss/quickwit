@@ -20,6 +20,7 @@
 use std::collections::HashMap;
 use std::fmt::{Display, Write};
 use std::ops::Bound;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -31,7 +32,7 @@ use quickwit_config::{
     IndexConfig, MetastoreBackend, MetastoreConfig, PostgresMetastoreConfig, SourceConfig,
 };
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
-use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
+use quickwit_proto::metastore::{DeleteQuery, DeleteTask};
 use quickwit_proto::IndexUid;
 use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgDatabaseError, PgPoolOptions};
@@ -74,8 +75,8 @@ async fn establish_connection(
         .acquire_timeout(acquire_timeout)
         .idle_timeout(idle_timeout_opt)
         .max_lifetime(max_lifetime_opt);
-    let mut pg_connect_options: PgConnectOptions = connection_uri.as_str().parse()?;
-    pg_connect_options.log_statements(LevelFilter::Info);
+    let pg_connect_options: PgConnectOptions =
+        PgConnectOptions::from_str(connection_uri.as_str())?.log_statements(LevelFilter::Info);
     pool_options
         .connect_with(pg_connect_options)
         .await
@@ -118,11 +119,16 @@ impl PostgresqlMetastore {
         postgres_metastore_config: &PostgresMetastoreConfig,
         connection_uri: &Uri,
     ) -> MetastoreResult<Self> {
+        let acquire_timeout = if cfg!(any(test, feature = "testsuite")) {
+            Duration::from_secs(20)
+        } else {
+            Duration::from_secs(2)
+        };
         let connection_pool = establish_connection(
             connection_uri,
             1,
             postgres_metastore_config.max_num_connections.get(),
-            Duration::from_secs(2),
+            acquire_timeout,
             Some(Duration::from_secs(1)),
             None,
         )
@@ -184,7 +190,7 @@ async fn index_metadata(
     tx: &mut Transaction<'_, Postgres>,
     index_id: &str,
 ) -> MetastoreResult<IndexMetadata> {
-    index_opt(tx, index_id)
+    index_opt(tx.as_mut(), index_id)
         .await?
         .ok_or_else(|| MetastoreError::IndexDoesNotExist {
             index_id: index_id.to_string(),
@@ -427,7 +433,7 @@ where
     )
     .bind(index_metadata_json)
     .bind(index_uid.to_string())
-    .execute(tx)
+    .execute(tx.as_mut())
     .await?;
     if update_index_res.rows_affected() == 0 {
         return Err(MetastoreError::IndexDoesNotExist {
@@ -570,7 +576,7 @@ impl Metastore for PostgresqlMetastore {
                 .bind(maturity_timestamps)
                 .bind(SplitState::Staged.as_str())
                 .bind(index_uid.to_string())
-                .fetch_all(tx)
+                .fetch_all(tx.as_mut())
                 .await
                 .map_err(|error| convert_sqlx_err(index_uid.index_id(), error))?;
 
@@ -695,7 +701,7 @@ impl Metastore for PostgresqlMetastore {
                     .bind(index_metadata_json)
                     .bind(staged_split_ids)
                     .bind(replaced_split_ids)
-                    .fetch_one(tx)
+                    .fetch_one(tx.as_mut())
                     .await
                     .map_err(|error| convert_sqlx_err(index_uid.index_id(), error))?;
 
