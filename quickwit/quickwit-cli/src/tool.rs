@@ -18,7 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::{HashSet, VecDeque};
-use std::io::{stdout, Stdout, Write};
+use std::io::{stdout, IsTerminal, Stdout, Write};
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -370,8 +370,7 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
         .ask_for_res(DetachIndexingPipeline { pipeline_id })
         .await?;
 
-    let is_stdin_atty = atty::is(atty::Stream::Stdin);
-    if args.input_path_opt.is_none() && is_stdin_atty {
+    if args.input_path_opt.is_none() && io::stdin().is_terminal() {
         let eof_shortcut = match env::consts::OS {
             "windows" => "CTRL+Z",
             _ => "CTRL+D",

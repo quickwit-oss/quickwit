@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-rust-version = "1.69"
+rust-version = "1.70"
 members = [
   "quickwit-actors",
   "quickwit-aws",
@@ -44,7 +44,6 @@ arc-swap = "1.6"
 assert-json-diff = "2"
 async-speed-limit = "0.4"
 async-trait = "0.1"
-atty = "0.2"
 backoff = { version = "0.4", features = ["tokio"] }
 base64 = "0.21"
 byte-unit = { version = "4", default-features = false, features = ["serde", "std"] }
