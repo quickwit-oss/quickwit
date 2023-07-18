@@ -96,7 +96,9 @@ impl Default for DefaultDocMapperBuilder {
 // By default, in dynamic mode, all fields are fast fields.
 fn default_dynamic_mapping() -> QuickwitJsonOptions {
     QuickwitJsonOptions {
-        fast: super::FastFieldOptions::IsEnabled(true),
+        fast: super::FastFieldOptions::EnabledWithNormalizer {
+            normalizer: super::QuickwitTextNormalizer::Raw,
+        },
         ..Default::default()
     }
 }
