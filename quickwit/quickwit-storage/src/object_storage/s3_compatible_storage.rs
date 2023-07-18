@@ -45,10 +45,10 @@ use tokio::sync::Semaphore;
 use tracing::{info, instrument, warn};
 
 use crate::object_storage::MultiPartPolicy;
-use crate::storage::{BulkDeleteError, DeleteFailure, SendableAsync};
+use crate::storage::SendableAsync;
 use crate::{
-    OwnedBytes, Storage, StorageError, StorageErrorKind, StorageResolverError, StorageResult,
-    STORAGE_METRICS,
+    BulkDeleteError, DeleteFailure, OwnedBytes, Storage, StorageError, StorageErrorKind,
+    StorageResolverError, StorageResult, STORAGE_METRICS,
 };
 
 /// Semaphore to limit the number of concurent requests to the object store. Some object stores

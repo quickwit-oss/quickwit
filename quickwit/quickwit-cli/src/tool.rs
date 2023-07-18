@@ -509,47 +509,47 @@ pub async fn garbage_collect_index_cli(args: GarbageCollectIndexArgs) -> anyhow:
     let removal_info = index_service
         .garbage_collect_index(&args.index_id, args.grace_period, args.dry_run)
         .await?;
-    if removal_info.removed_split_entries.is_empty() && removal_info.failed_split_ids.is_empty() {
+    if removal_info.removed_split_entries.is_empty() && removal_info.failed_splits.is_empty() {
         println!("No dangling files to garbage collect.");
         return Ok(());
     }
 
     if args.dry_run {
         println!("The following files will be garbage collected.");
-        for file_entry in removal_info.removed_split_entries {
-            println!(" - {}", file_entry.file_name);
+        for split_info in removal_info.removed_split_entries {
+            println!(" - {}", split_info.file_name.display());
         }
         return Ok(());
     }
 
-    if !removal_info.failed_split_ids.is_empty() {
+    if !removal_info.failed_splits.is_empty() {
         println!("The following splits were attempted to be removed, but failed.");
-        for split_id in removal_info.failed_split_ids.iter() {
-            println!(" - {split_id}");
+        for split_info in &removal_info.failed_splits {
+            println!(" - {}", split_info.split_id);
         }
         println!(
             "{} Splits were unable to be removed.",
-            removal_info.failed_split_ids.len()
+            removal_info.failed_splits.len()
         );
     }
 
     let deleted_bytes: u64 = removal_info
         .removed_split_entries
         .iter()
-        .map(|entry| entry.file_size_in_bytes)
+        .map(|split_info| split_info.file_size_bytes.get_bytes())
         .sum();
     println!(
         "{}MB of storage garbage collected.",
         deleted_bytes / 1_000_000
     );
 
-    if removal_info.failed_split_ids.is_empty() {
+    if removal_info.failed_splits.is_empty() {
         println!(
             "{} Index successfully garbage collected.",
             "✔".color(GREEN_COLOR)
         );
     } else if removal_info.removed_split_entries.is_empty()
-        && !removal_info.failed_split_ids.is_empty()
+        && !removal_info.failed_splits.is_empty()
     {
         println!("{} Failed to garbage collect index.", "✘".color(RED_COLOR));
     } else {

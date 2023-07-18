@@ -24,7 +24,7 @@ GET [..]/search?query=barack%20obama
 
 Successful requests return a 2xx HTTP status code.
 
-Failed requests return a 4xx HTTP status code. The response body of failed requests holds a JSON object containing an `message` field that describes the error.
+Failed requests return a 4xx HTTP status code. The response body of failed requests holds a JSON object containing a `message` field that describes the error.
 
 ```json
 {
@@ -37,7 +37,7 @@ Failed requests return a 4xx HTTP status code. The response body of failed reque
 ### Search in an index
 
 Search for documents matching a query in the given index `api/v1/<index id>/search`. This endpoint is available as long as you have at least one node running a searcher service in the cluster.
-The search endpoint accepts `GET` and `POST` requests. The [parameters](#get-parameters) are URL parameters in case of `GET` or JSON key value pairs in case of `POST`.
+The search endpoint accepts `GET` and `POST` requests. The [parameters](#get-parameters) are URL parameters for `GET` requests or JSON key-value pairs for `POST` requests.
 
 ```
 GET api/v1/<index id>/search?query=searchterm
@@ -91,10 +91,10 @@ The response is a JSON object, and the content type is `application/json; charse
 GET api/v1/<index id>/search/stream?query=searchterm&fast_field=my_id
 ```
 
-Streams field values from ALL documents matching a search query in the given index `<index id>`, in a specified output format among the following:
+Streams field values from ALL documents matching a search query in the target index `<index id>`, in a specified output format among the following:
 
 - [CSV](https://datatracker.ietf.org/doc/html/rfc4180)
-- [ClickHouse RowBinary](https://clickhouse.tech/docs/en/interfaces/formats/#rowbinary). If `partition_by_field` is set, Quickwit returns chunks of data for a each partition field value. Each chunk starts with 16 bytes being partition value and content length and then the `fast_field` values in `RowBinary` format.
+- [ClickHouse RowBinary](https://clickhouse.tech/docs/en/interfaces/formats/#rowbinary). If `partition_by_field` is set, Quickwit returns chunks of data for each partition field value. Each chunk starts with 16 bytes being partition value and content length and then the `fast_field` values in `RowBinary` format.
 
 `fast_field` and `partition_by_field` must be fast fields of type `i64` or `u64`.
 
@@ -104,7 +104,7 @@ This endpoint is available as long as you have at least one node running a searc
 
 :::note
 
-The endpoint will return 10 million values if 10 million documents match the query. This is expected, this endpoint is made to support queries matching millions of document and return field values in a reasonable response time.
+The endpoint will return 10 million values if 10 million documents match the query. This is expected, this endpoint is made to support queries matching millions of documents and return field values in a reasonable response time.
 
 :::
 
@@ -345,24 +345,27 @@ Delete index of ID `index id`.
 
 #### Response
 
-The response is the list of delete split files, and the content type is `application/json; charset=UTF-8.`
+The response is the list of deleted split files; the content type is `application/json; charset=UTF-8.`
 
 ```json
 [
     {
+        "split_id": "01GK1XNAECH7P14850S9VV6P94",
+        "num_docs": 1337,
+        "uncompressed_docs_size_bytes": 23933408,
         "file_name": "01GK1XNAECH7P14850S9VV6P94.split",
-        "file_size_in_bytes": 2991676
+        "file_size_bytes": 2991676
     }
 ]
 ```
 
-### Get all indexes metadatas
+### Get all indexes metadata
 
 ```
 GET api/v1/indexes
 ```
 
-Get the indexes metadatas of all indexes present in the metastore.
+Retrieve the metadata of all indexes present in the metastore.
 
 #### Response
 

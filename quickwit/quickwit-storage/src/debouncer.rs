@@ -30,8 +30,8 @@ use futures::{Future, FutureExt};
 use quickwit_common::uri::Uri;
 use tantivy::directory::OwnedBytes;
 
-use crate::storage::{BulkDeleteError, SendableAsync};
-use crate::{Storage, StorageResult};
+use crate::storage::SendableAsync;
+use crate::{BulkDeleteError, Storage, StorageResult};
 
 /// The AsyncDebouncer debounces inflight Futures, so that concurrent async request to the same data
 /// source can be deduplicated.
