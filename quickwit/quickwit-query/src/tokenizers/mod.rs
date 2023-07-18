@@ -24,7 +24,7 @@ mod multilang;
 
 use once_cell::sync::Lazy;
 use tantivy::tokenizer::{
-    LowerCaser, RawTokenizer, RemoveLongFilter, TextAnalyzer, TokenizerManager,
+    AsciiFoldingFilter, LowerCaser, RawTokenizer, RemoveLongFilter, TextAnalyzer, TokenizerManager,
 };
 
 use self::chinese_compatible::ChineseTokenizer;
@@ -48,10 +48,11 @@ pub fn create_default_quickwit_tokenizer_manager() -> TokenizerManager {
         .build();
     tokenizer_manager.register("chinese_compatible", chinese_tokenizer);
     tokenizer_manager.register(
-        "source_code",
+        "source_code_default",
         TextAnalyzer::builder(CodeTokenizer::default())
             .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
             .filter(LowerCaser)
+            .filter(AsciiFoldingFilter)
             .build(),
     );
     #[cfg(feature = "multilang")]
@@ -121,13 +122,13 @@ mod tests {
     #[test]
     fn test_code_tokenizer_in_tokenizer_manager() {
         let mut code_tokenizer = super::create_default_quickwit_tokenizer_manager()
-            .get("source_code")
+            .get("source_code_default")
             .unwrap();
         let mut token_stream = code_tokenizer.token_stream("PigCaféFactory2");
         let mut tokens = Vec::new();
         while let Some(token) = token_stream.next() {
             tokens.push(token.text.to_string());
         }
-        assert_eq!(tokens, vec!["pig", "café", "factory", "2"])
+        assert_eq!(tokens, vec!["pig", "cafe", "factory", "2"])
     }
 }
