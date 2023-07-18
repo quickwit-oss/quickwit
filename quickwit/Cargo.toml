@@ -24,7 +24,9 @@ members = [
   "quickwit-macros",
   "quickwit-macros/impl",
   "quickwit-metastore",
-  "quickwit-metastore-utils",
+  # Disabling metastore-utils from the quicwit projects to ease build/deps.
+  # We can reenable it when we need it.
+  # "quickwit-metastore-utils",
   "quickwit-opentelemetry",
   "quickwit-proto",
   "quickwit-query",
