@@ -545,28 +545,17 @@ async fn start_control_plane(
     Ok(control_plane_mailbox)
 }
 
-async fn setup_indexing_scheduler(
-    universe: &Universe,
-    cluster_id: String,
-    self_node_id: String,
+fn setup_indexer_pool(
     cluster_change_stream: impl Stream<Item = ClusterChange> + Send + 'static,
     indexing_service: Option<Mailbox<IndexingService>>,
-    metastore: Arc<dyn Metastore>,
-) -> anyhow::Result<Mailbox<IndexingScheduler>> {
+) -> IndexerPool {
     let indexer_pool = IndexerPool::default();
-    let indexing_scheduler = start_indexing_scheduler(
-        cluster_id,
-        self_node_id,
-        universe,
-        indexer_pool.clone(),
-        metastore,
-    )
-    .await?;
+
     let indexer_change_stream = cluster_change_stream.filter_map(move |cluster_change| {
         let indexing_service_clone = indexing_service.clone();
         Box::pin(async move {
             match cluster_change {
-                ClusterChange::Add(node)
+                ClusterChange::Add(node) | ClusterChange::Update(node)
                     if node.enabled_services().contains(&QuickwitService::Indexer) =>
                 {
                     let node_id = node.node_id().to_string();
@@ -598,6 +587,26 @@ async fn setup_indexing_scheduler(
         })
     });
     indexer_pool.listen_for_changes(indexer_change_stream);
+    indexer_pool
+}
+
+async fn setup_indexing_scheduler(
+    universe: &Universe,
+    cluster_id: String,
+    self_node_id: String,
+    cluster_change_stream: impl Stream<Item = ClusterChange> + Send + 'static,
+    indexing_service: Option<Mailbox<IndexingService>>,
+    metastore: Arc<dyn Metastore>,
+) -> anyhow::Result<Mailbox<IndexingScheduler>> {
+    let indexer_pool = setup_indexer_pool(cluster_change_stream, indexing_service);
+    let indexing_scheduler = start_indexing_scheduler(
+        cluster_id,
+        self_node_id,
+        universe,
+        indexer_pool.clone(),
+        metastore,
+    )
+    .await?;
     Ok(indexing_scheduler)
 }
 
@@ -704,9 +713,10 @@ mod tests {
     use quickwit_cluster::{create_cluster_for_test, ClusterNode};
     use quickwit_common::uri::Uri;
     use quickwit_metastore::{metastore_for_test, IndexMetadata, MockMetastore};
+    use quickwit_proto::IndexingTask;
     use quickwit_search::Job;
     use tokio::sync::{mpsc, watch};
-    use tokio_stream::wrappers::UnboundedReceiverStream;
+    use tokio_stream::wrappers::{ReceiverStream, UnboundedReceiverStream};
 
     use super::*;
 
@@ -771,6 +781,64 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_setup_indexer_pool() {
+        let universe = Universe::with_accelerated_time();
+        let (indexing_service_mailbox, _indexing_service_inbox) =
+            universe.create_test_mailbox::<IndexingService>();
+
+        let (indexer_change_stream_tx, indexer_change_stream_rx) = mpsc::channel(3);
+        let indexer_change_stream = ReceiverStream::new(indexer_change_stream_rx);
+        let indexer_pool =
+            setup_indexer_pool(indexer_change_stream, Some(indexing_service_mailbox));
+
+        let new_indexer_node =
+            ClusterNode::for_test("test-indexer-node", 1, true, &["indexer"], &[]).await;
+        indexer_change_stream_tx
+            .send(ClusterChange::Add(new_indexer_node))
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(1)).await;
+
+        assert_eq!(indexer_pool.len().await, 1);
+
+        let new_indexer_node_info = indexer_pool.get("test-indexer-node").await.unwrap();
+        assert!(new_indexer_node_info.indexing_tasks.is_empty());
+
+        let new_indexing_task = IndexingTask {
+            index_uid: "test-index:0".to_string(),
+            source_id: "test-source".to_string(),
+        };
+        let updated_indexer_node = ClusterNode::for_test(
+            "test-indexer-node",
+            1,
+            true,
+            &["indexer"],
+            &[new_indexing_task.clone()],
+        )
+        .await;
+        indexer_change_stream_tx
+            .send(ClusterChange::Update(updated_indexer_node.clone()))
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(1)).await;
+
+        let updated_indexer_node_info = indexer_pool.get("test-indexer-node").await.unwrap();
+        assert_eq!(updated_indexer_node_info.indexing_tasks.len(), 1);
+        assert_eq!(
+            updated_indexer_node_info.indexing_tasks[0],
+            new_indexing_task
+        );
+
+        indexer_change_stream_tx
+            .send(ClusterChange::Remove(updated_indexer_node))
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(1)).await;
+
+        assert!(indexer_pool.is_empty().await);
+    }
+
+    #[tokio::test]
     async fn test_setup_searcher() {
         let searcher_config = SearcherConfig::default();
         let metastore = metastore_for_test();
@@ -798,7 +866,7 @@ mod tests {
             .await
             .unwrap_err();
 
-        let self_node = ClusterNode::for_test("node-1", 1337, true, &["searcher"]).await;
+        let self_node = ClusterNode::for_test("node-1", 1337, true, &["searcher"], &[]).await;
         change_stream_tx
             .send(ClusterChange::Add(self_node.clone()))
             .unwrap();
@@ -814,7 +882,7 @@ mod tests {
             .send(ClusterChange::Remove(self_node))
             .unwrap();
 
-        let node = ClusterNode::for_test("node-1", 1337, false, &["searcher"]).await;
+        let node = ClusterNode::for_test("node-1", 1337, false, &["searcher"], &[]).await;
         change_stream_tx.send(ClusterChange::Add(node)).unwrap();
         tokio::time::sleep(Duration::from_millis(1)).await;
 

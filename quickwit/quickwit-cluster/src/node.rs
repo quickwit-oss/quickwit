@@ -64,10 +64,12 @@ impl ClusterNode {
         port: u16,
         is_self_node: bool,
         enabled_services: &[&str],
+        indexing_tasks: &[IndexingTask],
     ) -> Self {
+        use itertools::Itertools;
         use quickwit_common::tower::make_channel;
 
-        use crate::member::{ENABLED_SERVICES_KEY, GRPC_ADVERTISE_ADDR_KEY};
+        use crate::member::{ENABLED_SERVICES_KEY, GRPC_ADVERTISE_ADDR_KEY, INDEXING_TASK_PREFIX};
 
         let gossip_advertise_addr = ([127, 0, 0, 1], port).into();
         let grpc_advertise_addr = ([127, 0, 0, 1], port + 1).into();
@@ -76,6 +78,13 @@ impl ClusterNode {
         let mut node_state = NodeState::default();
         node_state.set(ENABLED_SERVICES_KEY, enabled_services.join(","));
         node_state.set(GRPC_ADVERTISE_ADDR_KEY, grpc_advertise_addr.to_string());
+
+        for (indexing_task, indexing_tasks_group) in
+            indexing_tasks.iter().group_by(|&task| task).into_iter()
+        {
+            let key = format!("{INDEXING_TASK_PREFIX}:{}", indexing_task.to_string());
+            node_state.set(key, indexing_tasks_group.count().to_string());
+        }
         Self::try_new(chitchat_id, &node_state, channel, is_self_node).unwrap()
     }
 
