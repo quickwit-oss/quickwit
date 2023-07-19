@@ -23,7 +23,7 @@ mod rest_handler;
 pub use self::grpc_adapter::GrpcSearchAdapter;
 pub use self::rest_handler::{
     search_get_handler, search_post_handler, search_stream_handler, SearchApi,
-    SearchRequestQueryString, SortByField,
+    SearchRequestQueryString, SortBy,
 };
 
 #[cfg(test)]

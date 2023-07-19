@@ -23,7 +23,7 @@ use std::sync::Arc;
 use futures::stream::StreamExt;
 use hyper::header::HeaderValue;
 use hyper::HeaderMap;
-use quickwit_proto::{OutputFormat, ServiceError, SortOrder};
+use quickwit_proto::{OutputFormat, ServiceError, SortField, SortOrder};
 use quickwit_query::query_ast::query_ast_from_user_text;
 use quickwit_search::{SearchError, SearchResponseRest, SearchService};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
@@ -43,7 +43,8 @@ use crate::{with_arg, BodyFormat};
     components(schemas(
         SearchRequestQueryString,
         SearchResponseRest,
-        SortByField,
+        SortBy,
+        SortField,
         SortOrder,
         OutputFormat,
         BodyFormat,
@@ -51,41 +52,67 @@ use crate::{with_arg, BodyFormat};
 )]
 pub struct SearchApi;
 
-#[derive(Debug, Eq, PartialEq, Deserialize, utoipa::ToSchema)]
-pub struct SortByField {
-    /// Name of the field to sort by.
-    pub field_name: String,
-    /// Order to sort by. A usual top-k search implies a descending order.
-    pub order: SortOrder,
+#[derive(Debug, Default, Eq, PartialEq, Deserialize, utoipa::ToSchema)]
+pub struct SortBy {
+    /// Fields to sort on.
+    pub sort_fields: Vec<SortField>,
 }
 
-impl From<String> for SortByField {
-    fn from(string: String) -> Self {
-        let (field_name, order) = if let Some(rest) = string.strip_prefix('+') {
-            (rest.trim().to_string(), SortOrder::Asc)
-        } else if let Some(rest) = string.strip_prefix('-') {
-            (rest.trim().to_string(), SortOrder::Desc)
-        } else {
-            (string.trim().to_string(), SortOrder::Asc)
-        };
-        SortByField { field_name, order }
+impl SortBy {
+    pub fn is_empty(&self) -> bool {
+        self.sort_fields.is_empty()
     }
 }
 
-pub fn sort_by_field_mini_dsl<'de, D>(deserializer: D) -> Result<Option<SortByField>, D::Error>
-where D: Deserializer<'de> {
-    let string = String::deserialize(deserializer)?;
-    Ok(Some(SortByField::from(string)))
+impl From<String> for SortBy {
+    fn from(sort_by: String) -> Self {
+        let mut sort_fields = Vec::new();
+
+        for field_name in sort_by.split(',') {
+            if field_name.is_empty() {
+                continue;
+            }
+            let (field_name, sort_order) = if let Some(tail) = field_name.strip_prefix('+') {
+                (tail.trim().to_string(), SortOrder::Asc)
+            } else if let Some(tail) = field_name.strip_prefix('-') {
+                (tail.trim().to_string(), SortOrder::Desc)
+            } else {
+                let trimmed_field_name = field_name.trim().to_string();
+
+                if trimmed_field_name == "_score" {
+                    (trimmed_field_name, SortOrder::Desc)
+                } else {
+                    (trimmed_field_name, SortOrder::Asc)
+                }
+            };
+            let sort_field = SortField {
+                field_name,
+                sort_order: sort_order as i32,
+            };
+            sort_fields.push(sort_field);
+        }
+        SortBy { sort_fields }
+    }
 }
 
-impl Serialize for SortByField {
+pub fn sort_by_mini_dsl<'de, D>(deserializer: D) -> Result<SortBy, D::Error>
+where D: Deserializer<'de> {
+    let sort_by_mini_dsl = String::deserialize(deserializer)?;
+    Ok(SortBy::from(sort_by_mini_dsl))
+}
+
+impl Serialize for SortBy {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where S: Serializer {
-        let sort_str = match self.order {
-            SortOrder::Desc => "-",
-            SortOrder::Asc => "",
-        };
-        serializer.serialize_str(&format!("{}{}", sort_str, self.field_name))
+        let mut sort_by_mini_dsl = String::new();
+
+        for sort_field in &self.sort_fields {
+            if sort_field.sort_order() == SortOrder::Desc {
+                sort_by_mini_dsl.push('-');
+            }
+            sort_by_mini_dsl.push_str(&sort_field.field_name);
+        }
+        serializer.serialize_str(&sort_by_mini_dsl)
     }
 }
 
@@ -164,24 +191,12 @@ pub struct SearchRequestQueryString {
     #[serde(default)]
     pub format: BodyFormat,
     /// Specifies how documents are sorted.
-    #[param(value_type = Option<String>)]
-    #[serde(deserialize_with = "sort_by_field_mini_dsl")]
+    #[serde(alias = "sort_by_field")]
+    #[serde(deserialize_with = "sort_by_mini_dsl")]
     #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub sort_by_field: Option<SortByField>,
-}
-
-fn get_proto_sort_by(search_request: &SearchRequestQueryString) -> Vec<quickwit_proto::SortField> {
-    search_request
-        .sort_by_field
-        .as_ref()
-        .map(|sort_by| {
-            vec![quickwit_proto::SortField {
-                field_name: sort_by.field_name.to_string(),
-                sort_order: sort_by.order as i32,
-            }]
-        })
-        .unwrap_or_default()
+    #[serde(skip_serializing_if = "SortBy::is_empty")]
+    #[param(value_type = String)]
+    pub sort_by: SortBy,
 }
 
 async fn search_endpoint(
@@ -189,7 +204,6 @@ async fn search_endpoint(
     search_request: SearchRequestQueryString,
     search_service: &dyn SearchService,
 ) -> Result<SearchResponseRest, SearchError> {
-    let sort_fields = get_proto_sort_by(&search_request);
     // The query ast below may still contain user input query. The actual
     // parsing of the user query will happen in the root service, and might require
     // the user of the docmapper default fields (which we do not have at this point).
@@ -206,7 +220,7 @@ async fn search_endpoint(
         aggregation_request: search_request
             .aggs
             .map(|agg| serde_json::to_string(&agg).expect("could not serialize JsonValue")),
-        sort_fields,
+        sort_fields: search_request.sort_by.sort_fields,
     };
     let search_response = search_service.root_search(search_request).await?;
     let search_response_rest = SearchResponseRest::try_from(search_response)?;
@@ -494,7 +508,7 @@ mod tests {
                 start_timestamp: None,
                 max_hits: 10,
                 format: BodyFormat::default(),
-                sort_by_field: None,
+                sort_by: SortBy::default(),
                 aggs: Some(json!({"range":[]})),
                 ..Default::default()
             }
@@ -523,7 +537,7 @@ mod tests {
                 max_hits: 10,
                 start_offset: 22,
                 format: BodyFormat::default(),
-                sort_by_field: None,
+                sort_by: SortBy::default(),
                 ..Default::default()
             }
         );
@@ -551,7 +565,7 @@ mod tests {
                 max_hits: 20,
                 start_offset: 0,
                 format: BodyFormat::default(),
-                sort_by_field: None,
+                sort_by: SortBy::default(),
                 ..Default::default()
             }
         );
@@ -576,7 +590,7 @@ mod tests {
                 start_offset: 0,
                 format: BodyFormat::Json,
                 search_fields: None,
-                sort_by_field: None,
+                sort_by: SortBy::default(),
                 ..Default::default()
             }
         );
@@ -584,76 +598,115 @@ mod tests {
 
     #[tokio::test]
     async fn test_rest_search_api_route_sort_by() {
-        let rest_search_api_filter = search_get_filter();
-        let (_, req) = warp::test::request()
-            .path("/quickwit-demo-index/search?query=*&format=json&sort_by_field=field")
-            .filter(&rest_search_api_filter)
-            .await
-            .unwrap();
-        assert_eq!(
-            &req,
-            &super::SearchRequestQueryString {
-                query: "*".to_string(),
-                start_timestamp: None,
-                end_timestamp: None,
-                max_hits: 20,
-                start_offset: 0,
-                format: BodyFormat::Json,
-                search_fields: None,
-                sort_by_field: Some(SortByField {
-                    field_name: "field".to_string(),
-                    order: SortOrder::Asc
-                }),
-                ..Default::default()
-            }
-        );
+        for (sort_by_query_param, expected_sort_fields) in [
+            ("", Vec::new()),
+            (",", Vec::new()),
+            (
+                "field1",
+                vec![SortField {
+                    field_name: "field1".to_string(),
+                    sort_order: SortOrder::Asc as i32,
+                }],
+            ),
+            (
+                "+field1",
+                vec![SortField {
+                    field_name: "field1".to_string(),
+                    sort_order: SortOrder::Asc as i32,
+                }],
+            ),
+            (
+                "-field1",
+                vec![SortField {
+                    field_name: "field1".to_string(),
+                    sort_order: SortOrder::Desc as i32,
+                }],
+            ),
+            (
+                "_score",
+                vec![SortField {
+                    field_name: "_score".to_string(),
+                    sort_order: SortOrder::Desc as i32,
+                }],
+            ),
+            (
+                "-_score",
+                vec![SortField {
+                    field_name: "_score".to_string(),
+                    sort_order: SortOrder::Desc as i32,
+                }],
+            ),
+            (
+                "field1,field2",
+                vec![
+                    SortField {
+                        field_name: "field1".to_string(),
+                        sort_order: SortOrder::Asc as i32,
+                    },
+                    SortField {
+                        field_name: "field2".to_string(),
+                        sort_order: SortOrder::Asc as i32,
+                    },
+                ],
+            ),
+            (
+                "+field1,-field2",
+                vec![
+                    SortField {
+                        field_name: "field1".to_string(),
+                        sort_order: SortOrder::Asc as i32,
+                    },
+                    SortField {
+                        field_name: "field2".to_string(),
+                        sort_order: SortOrder::Desc as i32,
+                    },
+                ],
+            ),
+            (
+                "-field1,+field2",
+                vec![
+                    SortField {
+                        field_name: "field1".to_string(),
+                        sort_order: SortOrder::Desc as i32,
+                    },
+                    SortField {
+                        field_name: "field2".to_string(),
+                        sort_order: SortOrder::Asc as i32,
+                    },
+                ],
+            ),
+        ] {
+            let path = format!(
+                "/quickwit-demo-index/search?query=*&format=json&sort_by={}",
+                sort_by_query_param
+            );
+            let rest_search_api_filter = search_get_filter();
+            let (_, req) = warp::test::request()
+                .path(&path)
+                .filter(&rest_search_api_filter)
+                .await
+                .unwrap();
+
+            assert_eq!(
+                &req.sort_by.sort_fields, &expected_sort_fields,
+                "Expected sort fields `{:?}` for query param `{sort_by_query_param}`, got: {:?}",
+                expected_sort_fields, req.sort_by.sort_fields
+            );
+        }
 
         let rest_search_api_filter = search_get_filter();
         let (_, req) = warp::test::request()
-            .path("/quickwit-demo-index/search?query=*&format=json&sort_by_field=+field")
+            .path("/quickwit-demo-index/search?query=*&format=json&sort_by_field=fiel1")
             .filter(&rest_search_api_filter)
             .await
             .unwrap();
-        assert_eq!(
-            &req,
-            &super::SearchRequestQueryString {
-                query: "*".to_string(),
-                start_timestamp: None,
-                end_timestamp: None,
-                max_hits: 20,
-                start_offset: 0,
-                format: BodyFormat::Json,
-                search_fields: None,
-                sort_by_field: Some(SortByField {
-                    field_name: "field".to_string(),
-                    order: SortOrder::Asc
-                }),
-                ..Default::default()
-            }
-        );
 
-        let rest_search_api_filter = search_get_filter();
-        let (_, req) = warp::test::request()
-            .path("/quickwit-demo-index/search?query=*&format=json&sort_by_field=-field")
-            .filter(&rest_search_api_filter)
-            .await
-            .unwrap();
         assert_eq!(
-            &req,
-            &SearchRequestQueryString {
-                query: "*".to_string(),
-                start_timestamp: None,
-                end_timestamp: None,
-                max_hits: 20,
-                start_offset: 0,
-                format: BodyFormat::Json,
-                search_fields: None,
-                sort_by_field: Some(SortByField {
-                    field_name: "field".to_string(),
-                    order: SortOrder::Desc
-                }),
-                ..Default::default()
-            }
+            &req.sort_by.sort_fields,
+            &[SortField {
+                field_name: "fiel1".to_string(),
+                sort_order: SortOrder::Asc as i32,
+            }],
         );
     }
 
@@ -666,7 +719,7 @@ mod tests {
         assert_eq!(resp.status(), 400);
         let resp_json: JsonValue = serde_json::from_slice(resp.body())?;
         let exp_resp_json = serde_json::json!({
-            "message": "unknown field `end_unix_timestamp`, expected one of `query`, `aggs`, `search_field`, `snippet_fields`, `start_timestamp`, `end_timestamp`, `max_hits`, `start_offset`, `format`, `sort_by_field`"
+            "message": "unknown field `end_unix_timestamp`, expected one of `query`, `aggs`, `search_field`, `snippet_fields`, `start_timestamp`, `end_timestamp`, `max_hits`, `start_offset`, `format`, `sort_by_field`, `sort_by`"
         });
         assert_eq!(resp_json, exp_resp_json);
         Ok(())
