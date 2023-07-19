@@ -238,17 +238,14 @@ impl IndexingService {
         source_config: SourceConfig,
         pipeline_ord: usize,
     ) -> Result<IndexingPipelineId, IndexingServiceError> {
-        let index_metadata = self.metastore.index_metadata(index_id.as_str()).await?;
+        let index_metadata = self.index_metadata(ctx, &index_id).await?;
         let pipeline_id = IndexingPipelineId {
-            index_uid: index_metadata.index_uid,
+            index_uid: index_metadata.index_uid.clone(),
             source_id: source_config.source_id.clone(),
             node_id: self.node_id.clone(),
             pipeline_ord,
         };
-        let index_config = self
-            .index_metadata(ctx, pipeline_id.index_uid.index_id())
-            .await?
-            .into_index_config();
+        let index_config = index_metadata.into_index_config();
         self.spawn_pipeline_inner(ctx, pipeline_id.clone(), index_config, source_config)
             .await?;
         Ok(pipeline_id)
