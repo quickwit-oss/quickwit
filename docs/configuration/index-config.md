@@ -187,7 +187,19 @@ fast: true
 
 #### `datetime` type
 
-The `datetime` type handles dates and datetimes. Each `datetime` field can be configured to support multiple input formats.
+The `datetime` type handles dates and datetimes. Since JSON doesn’t have a date type, the `datetime` field support multiple input types and formats. The supported input types are:
+- floating-point or integer numbers representing a Unix timestamp
+- strings containing a formatted date, datetime, or Unix timestamp
+
+The `input_formats` field parameter specifies the accepted date formats. The following input formats are natively supported:
+- `iso8601`
+- `rfc2822`
+- `rfc3339`
+- `strptime`
+- `unix_timestamp`
+
+**Input formats**
+
 When specifying multiple input formats, the corresponding parsers are attempted in the order they are declared. The following formats are natively supported:
 - `iso8601`, `rfc2822`, `rfc3339`: parse dates using standard ISO and RFC formats.
 - `strptime`: parse dates using the Unix [strptime](https://man7.org/linux/man-pages/man3/strptime.3.html) format with some variations:
@@ -195,23 +207,23 @@ When specifying multiple input formats, the corresponding parsers are attempted 
   - `%f` for milliseconds precision support.
   - `%z` timezone offsets can be specified as `(+|-)hhmm` or `(+|-)hh:mm`.
 
-- `unix_timestamp`: parse float and integer numbers to Unix timestamps. Floating-point values are converted to timestamps expressed in seconds. Integer values are converted to Unix timestamps whose precision determined in `seconds`, `milliseconds`, `microseconds`, or `nanoseconds` is inferred from the number of input digits. Internally, datetimes are stored as `i64`, and Quickwit only supports timestamp values ranging from `Apr 13, 1972 23:59:55` to `Mar 16, 2242 12:56:31` as a result.
-
 :::warning
-We discourage ingesting decimal timestamps because the conversion occurs with a loss of precision in some cases. Prefer integer values instead.
+The timezone name format specifier (`%Z`) is not supported currently.
 :::
 
-When a `datetime` field is stored as a fast field, the `precision` parameter indicates the precision used to truncate the values before encoding, which improves compression (truncation here means zeroing). The `precision` parameter can take the following values: `seconds`, `milliseconds`, `microseconds`, or `nanoseconds`. It only affects what is stored in fast fields when a `datetime` field is marked as fast field. Finally, operations on `datetime` fastfields, e.g. via aggregations, need to be done at the nanosecond level.
+- `unix_timestamp`: parse float and integer numbers to Unix timestamps. Floating-point values are converted to timestamps expressed in seconds. Integer values are converted to Unix timestamps whose precision, determined in `seconds`, `milliseconds`, `microseconds`, or `nanoseconds`, is inferred from the number of input digits. Internally, datetimes are converted to UTC (if the time zone is specified) and stored as *i64* integers. As a result, Quickwit only supports timestamp values ranging from `Apr 13, 1972 23:59:55` to `Mar 16, 2242 12:56:31`.
+
+:::warning
+Converting timestamps from float to integer values may occurs with a loss of precision.
+:::
+
+When a `datetime` field is stored as a fast field, the `precision` parameter indicates the precision used to truncate the values before encoding, which improves compression (truncation here means zeroing). The `precision` parameter can take the following values: `seconds`, `milliseconds`, `microseconds`, or `nanoseconds`. It only affects what is stored in fast fields when a `datetime` field is marked as "fast". Finally, operations on `datetime` fast fields, e.g. via aggregations, need to be done at the nanosecond level.
 
 :::info
 Internally `datetime` is stored in `nanoseconds` in fast fields and in the docstore, and in `seconds` in the term dictionary.
 :::
 
-:::warning
-The timezone name format specifier (`%Z`) is not currently supported in `strptime` format.
-:::
-
-In addition, Quickwit supports the `output_format` field option to specify with which precision datetimes are deserialized. This options supports the same value as input formats except for `unix_timestamp` which is replaced by the following formats:
+In addition, Quickwit supports the `output_format` field parameter to specify with which precision datetimes are deserialized. This parameter supports the same value as input formats except for `unix_timestamp` which is replaced by the following formats:
 - `unix_timestamp_secs`: displays timestamps in seconds.
 - `unix_timestamp_millis`: displays timestamps in milliseconds.
 - `unix_timestamp_micros`: displays timestamps in microseconds.
