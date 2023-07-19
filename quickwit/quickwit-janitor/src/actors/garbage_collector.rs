@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashSet;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -134,7 +135,7 @@ impl GarbageCollector {
             let deleted_file_entries = match gc_res {
                 Ok(removal_info) => {
                     self.counters.num_successful_gc_run_on_index += 1;
-                    self.counters.num_failed_splits += removal_info.failed_split_ids.len();
+                    self.counters.num_failed_splits += removal_info.failed_splits.len();
                     removal_info.removed_split_entries
                 }
                 Err(error) => {
@@ -145,9 +146,9 @@ impl GarbageCollector {
             };
             if !deleted_file_entries.is_empty() {
                 let num_deleted_splits = deleted_file_entries.len();
-                let deleted_files: HashSet<&str> = deleted_file_entries
+                let deleted_files: HashSet<&Path> = deleted_file_entries
                     .iter()
-                    .map(|deleted_entry| deleted_entry.file_name.as_str())
+                    .map(|deleted_entry| deleted_entry.file_name.as_path())
                     .take(5)
                     .collect();
                 info!(
@@ -160,7 +161,7 @@ impl GarbageCollector {
                 self.counters.num_deleted_files += deleted_file_entries.len();
                 self.counters.num_deleted_bytes += deleted_file_entries
                     .iter()
-                    .map(|entry| entry.file_size_in_bytes as usize)
+                    .map(|entry| entry.file_size_bytes.get_bytes() as usize)
                     .sum::<usize>();
             }
         }

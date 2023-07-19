@@ -891,8 +891,8 @@ pub async fn delete_index_cli(args: DeleteIndexArgs) -> anyhow::Result<()> {
             "The following files will be removed from the index `{}`",
             args.index_id
         );
-        for file_entry in affected_files {
-            println!(" - {}", file_entry.file_name);
+        for split_info in affected_files {
+            println!(" - {}", split_info.file_name.display());
         }
         return Ok(());
     }
