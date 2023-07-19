@@ -39,11 +39,11 @@ use quickwit_config::{ConfigFormat, IndexConfig};
 use quickwit_indexing::models::IndexingStatistics;
 use quickwit_indexing::IndexingPipeline;
 use quickwit_metastore::{IndexMetadata, Split, SplitState};
-use quickwit_proto::SortOrder;
+use quickwit_proto::{SortField, SortOrder};
 use quickwit_rest_client::models::IngestSource;
 use quickwit_rest_client::rest_client::{CommitType, IngestEvent};
 use quickwit_search::SearchResponseRest;
-use quickwit_serve::{ListSplitsQueryParams, SearchRequestQueryString, SortByField};
+use quickwit_serve::{ListSplitsQueryParams, SearchRequestQueryString, SortBy};
 use quickwit_storage::{load_file, StorageResolver};
 use tabled::object::{Columns, Segment};
 use tabled::{Alignment, Concat, Format, Modify, Panel, Rotate, Style, Table, Tabled};
@@ -837,10 +837,15 @@ pub async fn search_index(args: SearchIndexArgs) -> anyhow::Result<SearchRespons
             serde_json::from_str(&aggs_string).context("Failed to deserialize aggregations.")
         })
         .transpose()?;
-    let sort_by_field = args.sort_by_score.then_some(SortByField {
-        field_name: "_score".to_string(),
-        order: SortOrder::Desc,
-    });
+    let sort_by = args
+        .sort_by_score
+        .then_some(SortBy {
+            sort_fields: vec![SortField {
+                field_name: "_score".to_string(),
+                sort_order: SortOrder::Desc as i32,
+            }],
+        })
+        .unwrap_or_default();
     let search_request = SearchRequestQueryString {
         query: args.query,
         aggs,
@@ -850,7 +855,7 @@ pub async fn search_index(args: SearchIndexArgs) -> anyhow::Result<SearchRespons
         end_timestamp: args.end_timestamp,
         max_hits: args.max_hits as u64,
         start_offset: args.start_offset as u64,
-        sort_by_field,
+        sort_by,
         ..Default::default()
     };
     let qw_client = args.client_args.search_client();

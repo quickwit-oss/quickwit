@@ -96,7 +96,7 @@ pub use crate::index_api::ListSplitsQueryParams;
 pub use crate::metrics::SERVE_METRICS;
 #[cfg(test)]
 use crate::rest::recover_fn;
-pub use crate::search_api::{SearchRequestQueryString, SortByField};
+pub use crate::search_api::{SearchRequestQueryString, SortBy};
 
 const READINESS_REPORTING_INTERVAL: Duration = if cfg!(any(test, feature = "testsuite")) {
     Duration::from_millis(25)
