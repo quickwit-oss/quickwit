@@ -22,7 +22,6 @@
 mod coolid;
 
 pub mod binary_heap;
-mod file_entry;
 pub mod fs;
 pub mod io;
 mod kill_switch;
@@ -49,7 +48,6 @@ use std::ops::{Range, RangeInclusive};
 use std::str::FromStr;
 
 pub use coolid::new_coolid;
-pub use file_entry::FileEntry;
 pub use kill_switch::KillSwitch;
 pub use progress::{Progress, ProtectedZoneGuard};
 pub use stream_utils::{BoxStream, ServiceStream};

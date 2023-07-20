@@ -36,8 +36,10 @@ use thiserror::Error;
 use tokio::io::AsyncWriteExt;
 use tracing::error;
 
-use crate::storage::{BulkDeleteError, SendableAsync};
-use crate::{OwnedBytes, Storage, StorageError, StorageResult, VersionedComponent};
+use crate::storage::SendableAsync;
+use crate::{
+    BulkDeleteError, OwnedBytes, Storage, StorageError, StorageResult, VersionedComponent,
+};
 
 /// BundleStorage bundles together multiple files into a single file.
 /// with some metadata

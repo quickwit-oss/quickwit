@@ -23,19 +23,15 @@ use std::num::NonZeroUsize;
 use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
-use anyhow::{bail, Context};
 use bytes::Bytes;
+use quickwit_common::is_false;
 use quickwit_common::uri::Uri;
-use quickwit_common::{is_false, no_color};
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value as JsonValue;
 pub use serialize::load_source_config_from_user_config;
 // For backward compatibility.
 use serialize::VersionedSourceConfig;
-use tracing::warn;
-use vrl::compiler::{CompilationResult, Program, TimeZone};
-use vrl::diagnostic::Formatter;
 
 use crate::TestableForRegression;
 
@@ -409,14 +405,14 @@ fn default_consumer_name() -> String {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct TransformConfig {
-    /// [VRL] source code of the transform compiled to a VRL [`Program`].
+    /// [VRL] source code of the transform compiled to a VRL [`Program`](vrl::compiler::Program).
     ///
     /// [VRL]: https://vector.dev/docs/reference/vrl/
     #[serde(rename = "script")]
     vrl_script: String,
 
-    /// Timezone used in the VRL [`Program`] for date and time manipulations.
-    /// Defaults to `UTC` if not timezone is specified.
+    /// Timezone used in the VRL [`Program`](vrl::compiler::Program) for date and time
+    /// manipulations. Defaults to `UTC` if not timezone is specified.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "timezone")]
     timezone_opt: Option<String>,
@@ -432,10 +428,30 @@ impl TransformConfig {
         }
     }
 
-    /// Compiles the VRL script to a VRL [`Program`] and returns it along with the timezone.
-    pub fn compile_vrl_script(&self) -> anyhow::Result<(Program, TimeZone)> {
+    #[cfg(feature = "vrl")]
+    pub(crate) fn validate_vrl_script(&self) -> anyhow::Result<()> {
+        self.compile_vrl_script()?;
+        Ok(())
+    }
+
+    #[cfg(not(feature = "vrl"))]
+    pub(crate) fn validate_vrl_script(&self) -> anyhow::Result<()> {
+        // If we are missing the VRL feature we do not return an error here,
+        // to avoid breaking unit tests.
+        //
+        // We do return an explicit error on instanciation of the program however.
+        Ok(())
+    }
+
+    #[cfg(feature = "vrl")]
+    /// Compiles the VRL script to a VRL [`Program`](vrl::compiler::Program) and returns it along
+    /// with the timezone.
+    pub fn compile_vrl_script(
+        &self,
+    ) -> anyhow::Result<(vrl::compiler::Program, vrl::compiler::TimeZone)> {
+        use anyhow::Context;
         let timezone_str = self.timezone_opt.as_deref().unwrap_or("UTC");
-        let timezone = TimeZone::parse(timezone_str).with_context(|| {
+        let timezone = vrl::compiler::TimeZone::parse(timezone_str).with_context(|| {
             format!(
                 "Failed to parse timezone: `{timezone_str}`. Timezone must be a valid name \
             in the TZ database: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones"
@@ -449,20 +465,20 @@ impl TransformConfig {
         let compilation_res = match vrl::compiler::compile(&vrl_script, &functions) {
             Ok(compilation_res) => compilation_res,
             Err(diagnostics) => {
-                let mut formatter = Formatter::new(&vrl_script, diagnostics);
-                formatter.enable_colors(!no_color());
-                bail!("Failed to compile VRL script:\n {formatter}")
+                let mut formatter = vrl::diagnostic::Formatter::new(&vrl_script, diagnostics);
+                formatter.enable_colors(!quickwit_common::no_color());
+                anyhow::bail!("Failed to compile VRL script:\n {formatter}")
             }
         };
 
-        let CompilationResult {
+        let vrl::compiler::CompilationResult {
             program, warnings, ..
         } = compilation_res;
 
         if !warnings.is_empty() {
-            let mut formatter = Formatter::new(&vrl_script, warnings);
-            formatter.enable_colors(!no_color());
-            warn!("VRL program compiled with some warnings: {formatter}");
+            let mut formatter = vrl::diagnostic::Formatter::new(&vrl_script, warnings);
+            formatter.enable_colors(!quickwit_common::no_color());
+            tracing::warn!("VRL program compiled with some warnings: {formatter}");
         }
         Ok((program, timezone))
     }
@@ -1002,6 +1018,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "vrl")]
     #[tokio::test]
     async fn test_load_ingest_api_source_config() {
         let source_config_filepath = get_source_config_filepath("ingest-api-source.json");
@@ -1080,6 +1097,7 @@ mod tests {
         }
     }
 
+    #[cfg(feature = "vrl")]
     #[test]
     fn test_transform_config_compile_vrl_script() {
         {

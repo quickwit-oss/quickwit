@@ -28,7 +28,7 @@ use quickwit_metastore::{Metastore, SplitMetadata};
 use quickwit_proto::{
     FetchDocsRequest, FetchDocsResponse, Hit, LeafHit, LeafListTermsRequest, LeafListTermsResponse,
     LeafSearchRequest, LeafSearchResponse, ListTermsRequest, ListTermsResponse, PartialHit,
-    SearchRequest, SearchResponse, SplitIdAndFooterOffsets,
+    SearchRequest, SearchResponse, SortField, SplitIdAndFooterOffsets,
 };
 use quickwit_query::query_ast::{
     BoolQuery, QueryAst, QueryAstVisitor, RangeQuery, TermQuery, TermSetQuery,
@@ -145,6 +145,22 @@ fn validate_requested_snippet_fields(
     Ok(())
 }
 
+fn validate_sort_by_fields(sort_fields: &[SortField], schema: &Schema) -> crate::Result<()> {
+    if sort_fields.is_empty() {
+        return Ok(());
+    }
+    if sort_fields.len() > 2 {
+        return Err(SearchError::InvalidArgument(format!(
+            "Sort by field must be up to 2 fields {:?}.",
+            sort_fields
+        )));
+    }
+    for sort in sort_fields {
+        validate_sort_by_field(&sort.field_name, schema)?;
+    }
+
+    Ok(())
+}
 fn validate_sort_by_field(field_name: &str, schema: &Schema) -> crate::Result<()> {
     if field_name == "_score" {
         return Ok(());
@@ -178,9 +194,7 @@ pub(crate) fn validate_request(
 
     validate_requested_snippet_fields(&schema, &search_request.snippet_fields)?;
 
-    if let Some(sort_by_field) = &search_request.sort_by_field {
-        validate_sort_by_field(sort_by_field, &schema)?;
-    }
+    validate_sort_by_fields(&search_request.sort_fields, &schema)?;
 
     if let Some(agg) = search_request.aggregation_request.as_ref() {
         let _aggs: QuickwitAggregations = serde_json::from_str(agg).map_err(|_err| {
@@ -770,7 +784,8 @@ mod tests {
     use quickwit_config::SearcherConfig;
     use quickwit_indexing::mock_split;
     use quickwit_metastore::{IndexMetadata, MockMetastore};
-    use quickwit_proto::{qast_helper, SortOrder, SortValue, SplitSearchError};
+    use quickwit_proto::{SortOrder, SortValue, SplitSearchError};
+    use quickwit_query::query_ast::qast_helper;
     use tantivy::schema::{FAST, STORED, TEXT};
 
     use super::*;
@@ -815,7 +830,8 @@ mod tests {
         doc_id: u32,
     ) -> quickwit_proto::PartialHit {
         quickwit_proto::PartialHit {
-            sort_value: Some(SortValue::U64(sort_value)),
+            sort_value: Some(SortValue::U64(sort_value).into()),
+            sort_value2: None,
             split_id: split_id.to_string(),
             segment_ord: 1,
             doc_id,
@@ -1076,7 +1092,9 @@ mod tests {
             max_hits: 10,
             ..Default::default()
         };
-        search_request.set_sort_order(SortOrder::Asc);
+        if let Some(sort_field) = search_request.sort_fields.get_mut(0) {
+            sort_field.set_sort_order(SortOrder::Asc);
+        }
         let mut metastore = MockMetastore::new();
         metastore
             .expect_index_metadata()
@@ -1096,13 +1114,15 @@ mod tests {
                     num_hits: 2,
                     partial_hits: vec![
                         quickwit_proto::PartialHit {
-                            sort_value: Some(SortValue::U64(2u64)),
+                            sort_value: Some(SortValue::U64(2u64).into()),
+                            sort_value2: None,
                             split_id: "split1".to_string(),
                             segment_ord: 0,
                             doc_id: 0,
                         },
                         quickwit_proto::PartialHit {
                             sort_value: None,
+                            sort_value2: None,
                             split_id: "split1".to_string(),
                             segment_ord: 0,
                             doc_id: 1,
@@ -1128,19 +1148,22 @@ mod tests {
                     num_hits: 3,
                     partial_hits: vec![
                         quickwit_proto::PartialHit {
-                            sort_value: Some(SortValue::I64(-1i64)),
+                            sort_value: Some(SortValue::I64(-1i64).into()),
+                            sort_value2: None,
                             split_id: "split2".to_string(),
                             segment_ord: 0,
                             doc_id: 1,
                         },
                         quickwit_proto::PartialHit {
-                            sort_value: Some(SortValue::I64(1i64)),
+                            sort_value: Some(SortValue::I64(1i64).into()),
+                            sort_value2: None,
                             split_id: "split2".to_string(),
                             segment_ord: 0,
                             doc_id: 0,
                         },
                         quickwit_proto::PartialHit {
                             sort_value: None,
+                            sort_value2: None,
                             split_id: "split2".to_string(),
                             segment_ord: 0,
                             doc_id: 2,
@@ -1181,7 +1204,8 @@ mod tests {
                 split_id: "split2".to_string(),
                 segment_ord: 0,
                 doc_id: 1,
-                sort_value: Some(SortValue::I64(-1i64)),
+                sort_value: Some(SortValue::I64(-1i64).into()),
+                sort_value2: None,
             }
         );
         assert_eq!(
@@ -1190,7 +1214,8 @@ mod tests {
                 split_id: "split2".to_string(),
                 segment_ord: 0,
                 doc_id: 0,
-                sort_value: Some(SortValue::I64(1i64)),
+                sort_value: Some(SortValue::I64(1i64).into()),
+                sort_value2: None,
             }
         );
         assert_eq!(
@@ -1199,7 +1224,8 @@ mod tests {
                 split_id: "split1".to_string(),
                 segment_ord: 0,
                 doc_id: 0,
-                sort_value: Some(SortValue::U64(2u64)),
+                sort_value: Some(SortValue::U64(2u64).into()),
+                sort_value2: None,
             }
         );
         assert_eq!(
@@ -1209,6 +1235,7 @@ mod tests {
                 segment_ord: 0,
                 doc_id: 1,
                 sort_value: None,
+                sort_value2: None,
             }
         );
         assert_eq!(
@@ -1218,6 +1245,7 @@ mod tests {
                 segment_ord: 0,
                 doc_id: 2,
                 sort_value: None,
+                sort_value2: None,
             }
         );
         Ok(())
@@ -1251,13 +1279,15 @@ mod tests {
                     num_hits: 2,
                     partial_hits: vec![
                         quickwit_proto::PartialHit {
-                            sort_value: Some(SortValue::U64(2u64)),
+                            sort_value: Some(SortValue::U64(2u64).into()),
+                            sort_value2: None,
                             split_id: "split1".to_string(),
                             segment_ord: 0,
                             doc_id: 0,
                         },
                         quickwit_proto::PartialHit {
                             sort_value: None,
+                            sort_value2: None,
                             split_id: "split1".to_string(),
                             segment_ord: 0,
                             doc_id: 1,
@@ -1283,19 +1313,22 @@ mod tests {
                     num_hits: 3,
                     partial_hits: vec![
                         quickwit_proto::PartialHit {
-                            sort_value: Some(SortValue::I64(1i64)),
+                            sort_value: Some(SortValue::I64(1i64).into()),
+                            sort_value2: None,
                             split_id: "split2".to_string(),
                             segment_ord: 0,
                             doc_id: 0,
                         },
                         quickwit_proto::PartialHit {
-                            sort_value: Some(SortValue::I64(-1i64)),
+                            sort_value: Some(SortValue::I64(-1i64).into()),
+                            sort_value2: None,
                             split_id: "split2".to_string(),
                             segment_ord: 0,
                             doc_id: 1,
                         },
                         quickwit_proto::PartialHit {
                             sort_value: None,
+                            sort_value2: None,
                             split_id: "split2".to_string(),
                             segment_ord: 0,
                             doc_id: 2,
@@ -1336,7 +1369,8 @@ mod tests {
                 split_id: "split1".to_string(),
                 segment_ord: 0,
                 doc_id: 0,
-                sort_value: Some(SortValue::U64(2u64)),
+                sort_value: Some(SortValue::U64(2u64).into()),
+                sort_value2: None,
             }
         );
         assert_eq!(
@@ -1345,7 +1379,8 @@ mod tests {
                 split_id: "split2".to_string(),
                 segment_ord: 0,
                 doc_id: 0,
-                sort_value: Some(SortValue::I64(1i64)),
+                sort_value: Some(SortValue::I64(1i64).into()),
+                sort_value2: None,
             }
         );
         assert_eq!(
@@ -1354,7 +1389,8 @@ mod tests {
                 split_id: "split2".to_string(),
                 segment_ord: 0,
                 doc_id: 1,
-                sort_value: Some(SortValue::I64(-1i64)),
+                sort_value: Some(SortValue::I64(-1i64).into()),
+                sort_value2: None,
             }
         );
         assert_eq!(
@@ -1364,6 +1400,7 @@ mod tests {
                 segment_ord: 0,
                 doc_id: 2,
                 sort_value: None,
+                sort_value2: None,
             }
         );
         assert_eq!(
@@ -1373,6 +1410,7 @@ mod tests {
                 segment_ord: 0,
                 doc_id: 1,
                 sort_value: None,
+                sort_value2: None,
             }
         );
         Ok(())

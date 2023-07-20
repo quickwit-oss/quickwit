@@ -122,7 +122,8 @@ mod tests {
 
     use quickwit_indexing::mock_split;
     use quickwit_metastore::{IndexMetadata, MockMetastore};
-    use quickwit_proto::{qast_helper, OutputFormat};
+    use quickwit_proto::OutputFormat;
+    use quickwit_query::query_ast::qast_helper;
     use tokio_stream::wrappers::UnboundedReceiverStream;
 
     use super::*;

@@ -19,8 +19,8 @@
 
 use async_trait::async_trait;
 use quickwit_actors::Mailbox;
-use quickwit_proto::indexing_api::indexing_service_server::{self as grpc};
-use quickwit_proto::indexing_api::{ApplyIndexingPlanRequest, ApplyIndexingPlanResponse};
+use quickwit_proto::indexing::indexing_service_server::{self as grpc};
+use quickwit_proto::indexing::{ApplyIndexingPlanRequest, ApplyIndexingPlanResponse};
 use quickwit_proto::tonic;
 
 use crate::IndexingService;

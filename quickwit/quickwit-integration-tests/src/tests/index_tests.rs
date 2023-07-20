@@ -179,7 +179,7 @@ async fn test_restarting_standalone_server() {
         .node_configs
         .first()
         .unwrap()
-        .quickwit_config
+        .node_config
         .data_dir_path
         .clone();
     let delete_service_path = path.join(DELETE_SERVICE_TASK_DIR_NAME);

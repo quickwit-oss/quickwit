@@ -37,7 +37,7 @@ use quickwit_config::{
 };
 use quickwit_ingest::{DropQueueRequest, IngestApiService, ListQueuesRequest, QUEUES_DIR_NAME};
 use quickwit_metastore::{IndexMetadata, Metastore, MetastoreError};
-use quickwit_proto::indexing_api::{ApplyIndexingPlanRequest, IndexingTask};
+use quickwit_proto::indexing::{ApplyIndexingPlanRequest, IndexingTask};
 use quickwit_proto::{IndexUid, ServiceError, ServiceErrorCode};
 use quickwit_storage::{StorageError, StorageResolver, StorageResolverError};
 use serde::{Deserialize, Serialize};
@@ -238,17 +238,14 @@ impl IndexingService {
         source_config: SourceConfig,
         pipeline_ord: usize,
     ) -> Result<IndexingPipelineId, IndexingServiceError> {
-        let index_metadata = self.metastore.index_metadata(index_id.as_str()).await?;
+        let index_metadata = self.index_metadata(ctx, &index_id).await?;
         let pipeline_id = IndexingPipelineId {
-            index_uid: index_metadata.index_uid,
+            index_uid: index_metadata.index_uid.clone(),
             source_id: source_config.source_id.clone(),
             node_id: self.node_id.clone(),
             pipeline_ord,
         };
-        let index_config = self
-            .index_metadata(ctx, pipeline_id.index_uid.index_id())
-            .await?
-            .into_index_config();
+        let index_config = index_metadata.into_index_config();
         self.spawn_pipeline_inner(ctx, pipeline_id.clone(), index_config, source_config)
             .await?;
         Ok(pipeline_id)
@@ -800,7 +797,7 @@ mod tests {
     };
     use quickwit_ingest::{init_ingest_api, CreateQueueIfNotExistsRequest};
     use quickwit_metastore::{metastore_for_test, MockMetastore};
-    use quickwit_proto::indexing_api::IndexingTask;
+    use quickwit_proto::indexing::IndexingTask;
 
     use super::*;
 

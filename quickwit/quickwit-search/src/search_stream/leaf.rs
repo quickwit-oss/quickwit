@@ -171,7 +171,10 @@ async fn leaf_search_stream_single_split(
             search_request.end_timestamp,
         );
 
-    let requires_scoring = search_request.sort_by_field.as_deref() == Some("_score");
+    let requires_scoring = search_request
+        .sort_fields
+        .iter()
+        .any(|sort| sort.field_name == "_score");
 
     // TODO no test fail if this line get removed
     warmup_info.field_norms |= requires_scoring;
@@ -457,7 +460,7 @@ mod tests {
     use itertools::Itertools;
     use quickwit_config::SearcherConfig;
     use quickwit_indexing::TestSandbox;
-    use quickwit_proto::qast_helper;
+    use quickwit_query::query_ast::qast_helper;
     use serde_json::json;
     use tantivy::time::{Duration, OffsetDateTime};
 

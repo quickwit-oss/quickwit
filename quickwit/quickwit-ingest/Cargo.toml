@@ -44,6 +44,7 @@ quickwit-actors = { workspace = true, features = ["testsuite"] }
 
 [build-dependencies]
 quickwit-codegen = { workspace = true }
+prost-build = { workspace = true }
 
 [features]
 testsuite = ["mockall"]

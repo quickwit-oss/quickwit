@@ -61,10 +61,15 @@ use quickwit_common::tower::{
     Rate, RateLimitLayer, SmaRateEstimator,
 };
 use quickwit_config::service::QuickwitService;
-use quickwit_config::{QuickwitConfig, SearcherConfig};
-use quickwit_control_plane::{start_control_plane_service, ControlPlaneServiceClient};
+use quickwit_config::{NodeConfig, SearcherConfig};
+use quickwit_control_plane::control_plane::ControlPlane;
+use quickwit_control_plane::scheduler::IndexingScheduler;
+use quickwit_control_plane::{
+    start_indexing_scheduler, ControlPlaneServiceClient, IndexerNodeInfo, IndexerPool,
+};
 use quickwit_core::{IndexService, IndexServiceError};
 use quickwit_indexing::actors::IndexingService;
+use quickwit_indexing::indexing_client::IndexingServiceClient;
 use quickwit_indexing::start_indexing_service;
 use quickwit_ingest::{
     start_ingest_api_service, GetMemoryCapacity, IngestRequest, IngestServiceClient, MemoryCapacity,
@@ -91,7 +96,7 @@ pub use crate::index_api::ListSplitsQueryParams;
 pub use crate::metrics::SERVE_METRICS;
 #[cfg(test)]
 use crate::rest::recover_fn;
-pub use crate::search_api::{SearchRequestQueryString, SortByField};
+pub use crate::search_api::{SearchRequestQueryString, SortBy};
 
 const READINESS_REPORTING_INTERVAL: Duration = if cfg!(any(test, feature = "testsuite")) {
     Duration::from_millis(25)
@@ -100,7 +105,7 @@ const READINESS_REPORTING_INTERVAL: Duration = if cfg!(any(test, feature = "test
 };
 
 struct QuickwitServices {
-    pub config: Arc<QuickwitConfig>,
+    pub config: Arc<NodeConfig>,
     pub cluster: Cluster,
     pub metastore: Arc<dyn Metastore>,
     pub control_plane_service: Option<ControlPlaneServiceClient>,
@@ -147,7 +152,7 @@ async fn balance_channel_for_service(
 }
 
 pub async fn serve_quickwit(
-    config: QuickwitConfig,
+    config: NodeConfig,
     runtimes_config: RuntimesConfig,
     storage_resolver: StorageResolver,
     metastore_resolver: MetastoreResolver,
@@ -202,33 +207,6 @@ pub async fn serve_quickwit(
         metastore.clone(),
         storage_resolver.clone(),
     ));
-
-    // Instantiate the control plane service if enabled.
-    // If not and metastore service is enabled, we need to instantiate the control plane client
-    // so the metastore can notify the control plane.
-    let control_plane_service: Option<ControlPlaneServiceClient> = if config
-        .enabled_services
-        .contains(&QuickwitService::ControlPlane)
-    {
-        let control_plane_mailbox =
-            start_control_plane_service(&universe, cluster.clone(), metastore.clone()).await?;
-        Some(ControlPlaneServiceClient::from_mailbox(
-            control_plane_mailbox,
-        ))
-    } else if config
-        .enabled_services
-        .contains(&QuickwitService::Metastore)
-    {
-        let balance_channel =
-            balance_channel_for_service(&cluster, QuickwitService::ControlPlane).await;
-        Some(ControlPlaneServiceClient::from_channel(balance_channel))
-    } else {
-        None
-    };
-    let control_plane_subscription_handle =
-        control_plane_service.as_ref().map(|scheduler_service| {
-            event_broker.subscribe::<MetastoreEvent>(scheduler_service.clone())
-        });
 
     let (ingest_service, indexing_service) = if config
         .enabled_services
@@ -288,6 +266,41 @@ pub async fn serve_quickwit(
         let ingest_service = IngestServiceClient::from_channel(balance_channel);
         (ingest_service, None)
     };
+
+    // Instantiate the control plane service if enabled.
+    // If not and metastore service is enabled, we need to instantiate the control plane client
+    // so the metastore can notify the control plane.
+    let control_plane_service: Option<ControlPlaneServiceClient> = if config
+        .enabled_services
+        .contains(&QuickwitService::ControlPlane)
+    {
+        let cluster_change_stream = cluster.ready_nodes_change_stream().await;
+        let control_plane_mailbox = start_control_plane(
+            &universe,
+            cluster.cluster_id().to_string(),
+            cluster.self_node_id().to_string(),
+            cluster_change_stream,
+            indexing_service.clone(),
+            metastore.clone(),
+        )
+        .await?;
+        Some(ControlPlaneServiceClient::from_mailbox(
+            control_plane_mailbox,
+        ))
+    } else if config
+        .enabled_services
+        .contains(&QuickwitService::Metastore)
+    {
+        let balance_channel =
+            balance_channel_for_service(&cluster, QuickwitService::ControlPlane).await;
+        Some(ControlPlaneServiceClient::from_channel(balance_channel))
+    } else {
+        None
+    };
+    let control_plane_subscription_handle =
+        control_plane_service.as_ref().map(|scheduler_service| {
+            event_broker.subscribe::<MetastoreEvent>(scheduler_service.clone())
+        });
 
     let searcher_config = config.searcher_config.clone();
     let cluster_change_stream = cluster.ready_nodes_change_stream().await;
@@ -510,6 +523,93 @@ async fn setup_searcher(
     Ok((search_job_placer, search_service))
 }
 
+async fn start_control_plane(
+    universe: &Universe,
+    cluster_id: String,
+    self_node_id: String,
+    cluster_change_stream: impl Stream<Item = ClusterChange> + Send + 'static,
+    indexing_service: Option<Mailbox<IndexingService>>,
+    metastore: Arc<dyn Metastore>,
+) -> anyhow::Result<Mailbox<ControlPlane>> {
+    let scheduler = setup_indexing_scheduler(
+        universe,
+        cluster_id,
+        self_node_id,
+        cluster_change_stream,
+        indexing_service,
+        metastore,
+    )
+    .await?;
+    let control_plane = ControlPlane::new(scheduler);
+    let (control_plane_mailbox, _) = universe.spawn_builder().spawn(control_plane);
+    Ok(control_plane_mailbox)
+}
+
+fn setup_indexer_pool(
+    cluster_change_stream: impl Stream<Item = ClusterChange> + Send + 'static,
+    indexing_service: Option<Mailbox<IndexingService>>,
+) -> IndexerPool {
+    let indexer_pool = IndexerPool::default();
+
+    let indexer_change_stream = cluster_change_stream.filter_map(move |cluster_change| {
+        let indexing_service_clone = indexing_service.clone();
+        Box::pin(async move {
+            match cluster_change {
+                ClusterChange::Add(node) | ClusterChange::Update(node)
+                    if node.enabled_services().contains(&QuickwitService::Indexer) =>
+                {
+                    let node_id = node.node_id().to_string();
+                    let grpc_addr = node.grpc_advertise_addr();
+                    let indexing_tasks = node.indexing_tasks().to_vec();
+
+                    if node.is_self_node() {
+                        if let Some(indexing_service_clone) = indexing_service_clone {
+                            let client =
+                            IndexingServiceClient::from_service(indexing_service_clone, grpc_addr);
+                            Some(Change::Insert(node_id, IndexerNodeInfo { client, indexing_tasks }))
+                        } else {
+                            // That means that cluster thinks we are supposed to have an indexer, but we actually don't.
+                            None
+                        }
+                    } else {
+                        let grpc_client =
+                        quickwit_proto::indexing::indexing_service_client::IndexingServiceClient::new(
+                            node.channel(),
+                        );
+                        let client =
+                            IndexingServiceClient::from_grpc_client(grpc_client, grpc_addr);
+                        Some(Change::Insert(node_id, IndexerNodeInfo { client, indexing_tasks }))
+                    }
+                }
+                ClusterChange::Remove(node) => Some(Change::Remove(node.node_id().to_string())),
+                _ => None,
+            }
+        })
+    });
+    indexer_pool.listen_for_changes(indexer_change_stream);
+    indexer_pool
+}
+
+async fn setup_indexing_scheduler(
+    universe: &Universe,
+    cluster_id: String,
+    self_node_id: String,
+    cluster_change_stream: impl Stream<Item = ClusterChange> + Send + 'static,
+    indexing_service: Option<Mailbox<IndexingService>>,
+    metastore: Arc<dyn Metastore>,
+) -> anyhow::Result<Mailbox<IndexingScheduler>> {
+    let indexer_pool = setup_indexer_pool(cluster_change_stream, indexing_service);
+    let indexing_scheduler = start_indexing_scheduler(
+        cluster_id,
+        self_node_id,
+        universe,
+        indexer_pool.clone(),
+        metastore,
+    )
+    .await?;
+    Ok(indexing_scheduler)
+}
+
 fn require<T: Clone + Send>(
     val_opt: Option<T>,
 ) -> impl Filter<Extract = (T,), Error = Rejection> + Clone {
@@ -613,9 +713,10 @@ mod tests {
     use quickwit_cluster::{create_cluster_for_test, ClusterNode};
     use quickwit_common::uri::Uri;
     use quickwit_metastore::{metastore_for_test, IndexMetadata, MockMetastore};
+    use quickwit_proto::IndexingTask;
     use quickwit_search::Job;
     use tokio::sync::{mpsc, watch};
-    use tokio_stream::wrappers::UnboundedReceiverStream;
+    use tokio_stream::wrappers::{ReceiverStream, UnboundedReceiverStream};
 
     use super::*;
 
@@ -680,6 +781,64 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_setup_indexer_pool() {
+        let universe = Universe::with_accelerated_time();
+        let (indexing_service_mailbox, _indexing_service_inbox) =
+            universe.create_test_mailbox::<IndexingService>();
+
+        let (indexer_change_stream_tx, indexer_change_stream_rx) = mpsc::channel(3);
+        let indexer_change_stream = ReceiverStream::new(indexer_change_stream_rx);
+        let indexer_pool =
+            setup_indexer_pool(indexer_change_stream, Some(indexing_service_mailbox));
+
+        let new_indexer_node =
+            ClusterNode::for_test("test-indexer-node", 1, true, &["indexer"], &[]).await;
+        indexer_change_stream_tx
+            .send(ClusterChange::Add(new_indexer_node))
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(1)).await;
+
+        assert_eq!(indexer_pool.len().await, 1);
+
+        let new_indexer_node_info = indexer_pool.get("test-indexer-node").await.unwrap();
+        assert!(new_indexer_node_info.indexing_tasks.is_empty());
+
+        let new_indexing_task = IndexingTask {
+            index_uid: "test-index:0".to_string(),
+            source_id: "test-source".to_string(),
+        };
+        let updated_indexer_node = ClusterNode::for_test(
+            "test-indexer-node",
+            1,
+            true,
+            &["indexer"],
+            &[new_indexing_task.clone()],
+        )
+        .await;
+        indexer_change_stream_tx
+            .send(ClusterChange::Update(updated_indexer_node.clone()))
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(1)).await;
+
+        let updated_indexer_node_info = indexer_pool.get("test-indexer-node").await.unwrap();
+        assert_eq!(updated_indexer_node_info.indexing_tasks.len(), 1);
+        assert_eq!(
+            updated_indexer_node_info.indexing_tasks[0],
+            new_indexing_task
+        );
+
+        indexer_change_stream_tx
+            .send(ClusterChange::Remove(updated_indexer_node))
+            .await
+            .unwrap();
+        tokio::time::sleep(Duration::from_millis(1)).await;
+
+        assert!(indexer_pool.is_empty().await);
+    }
+
+    #[tokio::test]
     async fn test_setup_searcher() {
         let searcher_config = SearcherConfig::default();
         let metastore = metastore_for_test();
@@ -707,7 +866,7 @@ mod tests {
             .await
             .unwrap_err();
 
-        let self_node = ClusterNode::for_test("node-1", 1337, true, &["searcher"]).await;
+        let self_node = ClusterNode::for_test("node-1", 1337, true, &["searcher"], &[]).await;
         change_stream_tx
             .send(ClusterChange::Add(self_node.clone()))
             .unwrap();
@@ -723,7 +882,7 @@ mod tests {
             .send(ClusterChange::Remove(self_node))
             .unwrap();
 
-        let node = ClusterNode::for_test("node-1", 1337, false, &["searcher"]).await;
+        let node = ClusterNode::for_test("node-1", 1337, false, &["searcher"], &[]).await;
         change_stream_tx.send(ClusterChange::Add(node)).unwrap();
         tokio::time::sleep(Duration::from_millis(1)).await;
 

@@ -26,22 +26,25 @@ pub struct SearchRequest {
     /// The results with rank [start_offset..start_offset + max_hits) are returned.
     #[prost(uint64, tag = "7")]
     pub start_offset: u64,
-    /// Sort order
-    #[prost(enumeration = "SortOrder", optional, tag = "9")]
-    pub sort_order: ::core::option::Option<i32>,
-    /// Sort by fast field. If unset sort by docid
-    /// sort_by_field can be:
-    /// - a field name
-    /// - _score
-    /// - None, in which case the hits will be sorted by (SplitId, doc_id).
-    #[prost(string, optional, tag = "10")]
-    pub sort_by_field: ::core::option::Option<::prost::alloc::string::String>,
     /// json serialized aggregation_request
     #[prost(string, optional, tag = "11")]
     pub aggregation_request: ::core::option::Option<::prost::alloc::string::String>,
     /// Fields to extract snippet on
     #[prost(string, repeated, tag = "12")]
     pub snippet_fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Optional sort by one or more fields (limited to 2 at the moment).
+    #[prost(message, repeated, tag = "14")]
+    pub sort_fields: ::prost::alloc::vec::Vec<SortField>,
+}
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Eq, Hash)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SortField {
+    #[prost(string, tag = "1")]
+    pub field_name: ::prost::alloc::string::String,
+    #[prost(enumeration = "SortOrder", tag = "2")]
+    pub sort_order: i32,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -164,10 +167,25 @@ pub struct Hit {
 /// Instead, it holds a document_uri which is enough information to
 /// go and fetch the actual document data, by performing a `get_doc(...)`
 /// request.
+///
+/// Value of the sorting key for the given document.
+///
+/// Quickwit only computes top-K of this sorting field.
+/// If the user requested for a bottom-K of a given fast field, then quickwit simply
+/// emits an decreasing mapping of this fast field.
+///
+/// In case of a tie, quickwit uses the increasing order of
+/// - the split_id,
+/// - the segment_ord,
+/// - the doc id.
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PartialHit {
+    #[prost(message, optional, tag = "10")]
+    pub sort_value: ::core::option::Option<SortByValue>,
+    #[prost(message, optional, tag = "11")]
+    pub sort_value2: ::core::option::Option<SortByValue>,
     #[prost(string, tag = "2")]
     pub split_id: ::prost::alloc::string::String,
     /// (segment_ord, doc) form a tantivy DocAddress, which is sufficient to identify a document
@@ -177,43 +195,28 @@ pub struct PartialHit {
     /// The DocId identifies a unique document at the scale of a tantivy segment.
     #[prost(uint32, tag = "4")]
     pub doc_id: u32,
-    /// Value of the sorting key for the given document.
-    ///
-    /// Quickwit only computes top-K of this sorting field.
-    /// If the user requested for a bottom-K of a given fast field, then quickwit simply
-    /// emits an decreasing mapping of this fast field.
-    ///
-    /// In case of a tie, quickwit uses the increasing order of
-    /// - the split_id,
-    /// - the segment_ord,
-    /// - the doc id.
-    #[prost(oneof = "partial_hit::SortValue", tags = "5, 6, 7, 8")]
-    pub sort_value: ::core::option::Option<partial_hit::SortValue>,
 }
-/// Nested message and enum types in `PartialHit`.
-pub mod partial_hit {
-    /// Value of the sorting key for the given document.
-    ///
-    /// Quickwit only computes top-K of this sorting field.
-    /// If the user requested for a bottom-K of a given fast field, then quickwit simply
-    /// emits an decreasing mapping of this fast field.
-    ///
-    /// In case of a tie, quickwit uses the increasing order of
-    /// - the split_id,
-    /// - the segment_ord,
-    /// - the doc id.
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Ord, PartialOrd)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct SortByValue {
+    #[prost(oneof = "sort_by_value::SortValue", tags = "1, 2, 3, 4")]
+    pub sort_value: ::core::option::Option<sort_by_value::SortValue>,
+}
+/// Nested message and enum types in `SortByValue`.
+pub mod sort_by_value {
     #[derive(Serialize, Deserialize, utoipa::ToSchema)]
-    #[derive(Copy)]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum SortValue {
-        #[prost(uint64, tag = "5")]
+        #[prost(uint64, tag = "1")]
         U64(u64),
-        #[prost(int64, tag = "6")]
+        #[prost(int64, tag = "2")]
         I64(i64),
-        #[prost(double, tag = "7")]
+        #[prost(double, tag = "3")]
         F64(f64),
-        #[prost(bool, tag = "8")]
+        #[prost(bool, tag = "4")]
         Boolean(bool),
     }
 }
@@ -581,11 +584,11 @@ pub mod search_service_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/quickwit.SearchService/RootSearch",
+                "/quickwit.search.SearchService/RootSearch",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("quickwit.SearchService", "RootSearch"));
+                .insert(GrpcMethod::new("quickwit.search.SearchService", "RootSearch"));
             self.inner.unary(req, path, codec).await
         }
         /// Perform a leaf search on a given set of splits.
@@ -613,11 +616,11 @@ pub mod search_service_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/quickwit.SearchService/LeafSearch",
+                "/quickwit.search.SearchService/LeafSearch",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("quickwit.SearchService", "LeafSearch"));
+                .insert(GrpcMethod::new("quickwit.search.SearchService", "LeafSearch"));
             self.inner.unary(req, path, codec).await
         }
         /// / Fetches the documents contents from the document store.
@@ -640,11 +643,11 @@ pub mod search_service_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/quickwit.SearchService/FetchDocs",
+                "/quickwit.search.SearchService/FetchDocs",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("quickwit.SearchService", "FetchDocs"));
+                .insert(GrpcMethod::new("quickwit.search.SearchService", "FetchDocs"));
             self.inner.unary(req, path, codec).await
         }
         /// Perform a leaf stream on a given set of splits.
@@ -666,11 +669,13 @@ pub mod search_service_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/quickwit.SearchService/LeafSearchStream",
+                "/quickwit.search.SearchService/LeafSearchStream",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("quickwit.SearchService", "LeafSearchStream"));
+                .insert(
+                    GrpcMethod::new("quickwit.search.SearchService", "LeafSearchStream"),
+                );
             self.inner.server_streaming(req, path, codec).await
         }
         /// Root list terms API.
@@ -696,11 +701,13 @@ pub mod search_service_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/quickwit.SearchService/RootListTerms",
+                "/quickwit.search.SearchService/RootListTerms",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("quickwit.SearchService", "RootListTerms"));
+                .insert(
+                    GrpcMethod::new("quickwit.search.SearchService", "RootListTerms"),
+                );
             self.inner.unary(req, path, codec).await
         }
         /// Perform a leaf list terms on a given set of splits.
@@ -727,11 +734,13 @@ pub mod search_service_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/quickwit.SearchService/LeafListTerms",
+                "/quickwit.search.SearchService/LeafListTerms",
             );
             let mut req = request.into_request();
             req.extensions_mut()
-                .insert(GrpcMethod::new("quickwit.SearchService", "LeafListTerms"));
+                .insert(
+                    GrpcMethod::new("quickwit.search.SearchService", "LeafListTerms"),
+                );
             self.inner.unary(req, path, codec).await
         }
     }
@@ -897,7 +906,7 @@ pub mod search_service_server {
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
             let inner = self.inner.clone();
             match req.uri().path() {
-                "/quickwit.SearchService/RootSearch" => {
+                "/quickwit.search.SearchService/RootSearch" => {
                     #[allow(non_camel_case_types)]
                     struct RootSearchSvc<T: SearchService>(pub Arc<T>);
                     impl<
@@ -941,7 +950,7 @@ pub mod search_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/quickwit.SearchService/LeafSearch" => {
+                "/quickwit.search.SearchService/LeafSearch" => {
                     #[allow(non_camel_case_types)]
                     struct LeafSearchSvc<T: SearchService>(pub Arc<T>);
                     impl<
@@ -985,7 +994,7 @@ pub mod search_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/quickwit.SearchService/FetchDocs" => {
+                "/quickwit.search.SearchService/FetchDocs" => {
                     #[allow(non_camel_case_types)]
                     struct FetchDocsSvc<T: SearchService>(pub Arc<T>);
                     impl<
@@ -1029,7 +1038,7 @@ pub mod search_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/quickwit.SearchService/LeafSearchStream" => {
+                "/quickwit.search.SearchService/LeafSearchStream" => {
                     #[allow(non_camel_case_types)]
                     struct LeafSearchStreamSvc<T: SearchService>(pub Arc<T>);
                     impl<
@@ -1077,7 +1086,7 @@ pub mod search_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/quickwit.SearchService/RootListTerms" => {
+                "/quickwit.search.SearchService/RootListTerms" => {
                     #[allow(non_camel_case_types)]
                     struct RootListTermsSvc<T: SearchService>(pub Arc<T>);
                     impl<
@@ -1123,7 +1132,7 @@ pub mod search_service_server {
                     };
                     Box::pin(fut)
                 }
-                "/quickwit.SearchService/LeafListTerms" => {
+                "/quickwit.search.SearchService/LeafListTerms" => {
                     #[allow(non_camel_case_types)]
                     struct LeafListTermsSvc<T: SearchService>(pub Arc<T>);
                     impl<
@@ -1207,6 +1216,6 @@ pub mod search_service_server {
         }
     }
     impl<T: SearchService> tonic::server::NamedService for SearchServiceServer<T> {
-        const NAME: &'static str = "quickwit.SearchService";
+        const NAME: &'static str = "quickwit.search.SearchService";
     }
 }

@@ -37,23 +37,24 @@ pub fn parse_date_time_str(
     date_time_formats: &[DateTimeInputFormat],
 ) -> Result<TantivyDateTime, String> {
     for date_time_format in date_time_formats {
-        let date_time_res = match date_time_format {
-            DateTimeInputFormat::Iso8601 => {
-                parse_iso8601(date_time_str).map(TantivyDateTime::from_utc)
-            }
-            DateTimeInputFormat::Rfc2822 => {
-                parse_rfc2822(date_time_str).map(TantivyDateTime::from_utc)
-            }
-            DateTimeInputFormat::Rfc3339 => {
-                parse_rfc3339(date_time_str).map(TantivyDateTime::from_utc)
-            }
+        let date_time_opt = match date_time_format {
+            DateTimeInputFormat::Iso8601 => parse_iso8601(date_time_str)
+                .map(TantivyDateTime::from_utc)
+                .ok(),
+            DateTimeInputFormat::Rfc2822 => parse_rfc2822(date_time_str)
+                .map(TantivyDateTime::from_utc)
+                .ok(),
+            DateTimeInputFormat::Rfc3339 => parse_rfc3339(date_time_str)
+                .map(TantivyDateTime::from_utc)
+                .ok(),
             DateTimeInputFormat::Strptime(parser) => parser
                 .parse_date_time(date_time_str)
-                .map(TantivyDateTime::from_utc),
-            _ => continue,
+                .map(TantivyDateTime::from_utc)
+                .ok(),
+            DateTimeInputFormat::Timestamp => parse_timestamp_str(date_time_str),
         };
-        if date_time_res.is_ok() {
-            return date_time_res;
+        if let Some(date_time) = date_time_opt {
+            return Ok(date_time);
         }
     }
     Err(format!(
@@ -65,7 +66,7 @@ pub fn parse_date_time_str(
     ))
 }
 
-pub fn parse_date_time_float(
+pub fn parse_timestamp_float(
     timestamp: f64,
     date_time_formats: &[DateTimeInputFormat],
 ) -> Result<TantivyDateTime, String> {
@@ -84,7 +85,7 @@ pub fn parse_date_time_float(
     Ok(TantivyDateTime::from_timestamp_nanos(timestamp_nanos))
 }
 
-pub fn parse_date_time_int(
+pub fn parse_timestamp_int(
     timestamp: i64,
     date_time_formats: &[DateTimeInputFormat],
 ) -> Result<TantivyDateTime, String> {
@@ -98,6 +99,31 @@ pub fn parse_date_time_int(
         ));
     }
     parse_timestamp(timestamp)
+}
+
+pub fn parse_timestamp_str(timestamp_str: &str) -> Option<TantivyDateTime> {
+    if let Ok(timestamp) = timestamp_str.parse::<i64>() {
+        return parse_timestamp(timestamp).ok();
+    }
+    if let Some((timestamp_secs_str, subsecond_digits_str)) = timestamp_str.split_once('.') {
+        if subsecond_digits_str.is_empty() {
+            return parse_timestamp_str(timestamp_secs_str);
+        }
+        if let Ok(timestamp_secs) = timestamp_secs_str.parse::<i64>() {
+            if (MIN_TIMESTAMP_SECONDS..=MAX_TIMESTAMP_SECONDS).contains(&timestamp_secs) {
+                let num_subsecond_digits = subsecond_digits_str.len().min(9);
+
+                if let Ok(subsecond_digits) =
+                    subsecond_digits_str[..num_subsecond_digits].parse::<i64>()
+                {
+                    let nanos = subsecond_digits * 10i64.pow(9 - num_subsecond_digits as u32);
+                    let timestamp_nanos = timestamp_secs * 1_000_000_000 + nanos;
+                    return Some(TantivyDateTime::from_timestamp_nanos(timestamp_nanos));
+                }
+            }
+        }
+    }
+    None
 }
 
 /// Parses a ISO8601 date.
@@ -242,6 +268,8 @@ mod tests {
             "2012-05-21 12:09:14",
             "2012/05/21 12:09:14",
             "2012/05/21 12:09:14 +00:00",
+            "1337602154",
+            "1337602154.0",
         ] {
             let date_time = parse_date_time_str(
                 date_time_str,
@@ -258,6 +286,7 @@ mod tests {
                     DateTimeInputFormat::Strptime(
                         StrptimeParser::from_str("%Y/%m/%d %H:%M:%S %z").unwrap(),
                     ),
+                    DateTimeInputFormat::Timestamp,
                 ],
             )
             .unwrap();
@@ -278,10 +307,10 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_date_time_float() {
+    fn test_parse_timestamp_float() {
         let unix_ts_secs = OffsetDateTime::now_utc().unix_timestamp();
         {
-            let date_time = parse_date_time_float(
+            let date_time = parse_timestamp_float(
                 unix_ts_secs as f64,
                 &[DateTimeInputFormat::Iso8601, DateTimeInputFormat::Timestamp],
             )
@@ -289,7 +318,7 @@ mod tests {
             assert_eq!(date_time.into_timestamp_millis(), unix_ts_secs * 1_000);
         }
         {
-            let date_time = parse_date_time_float(
+            let date_time = parse_timestamp_float(
                 unix_ts_secs as f64 + 0.1230,
                 &[DateTimeInputFormat::Iso8601, DateTimeInputFormat::Timestamp],
             )
@@ -297,7 +326,7 @@ mod tests {
             assert!((date_time.into_timestamp_millis() - (unix_ts_secs * 1_000 + 123)).abs() <= 1);
         }
         {
-            let date_time = parse_date_time_float(
+            let date_time = parse_timestamp_float(
                 unix_ts_secs as f64 + 0.1234560,
                 &[DateTimeInputFormat::Iso8601, DateTimeInputFormat::Timestamp],
             )
@@ -308,7 +337,7 @@ mod tests {
             );
         }
         {
-            let date_time = parse_date_time_float(
+            let date_time = parse_timestamp_float(
                 unix_ts_secs as f64 + 0.123456789,
                 &[DateTimeInputFormat::Iso8601, DateTimeInputFormat::Timestamp],
             )
@@ -320,7 +349,7 @@ mod tests {
             );
         }
         {
-            let error = parse_date_time_float(
+            let error = parse_timestamp_float(
                 1668730394917.01,
                 &[DateTimeInputFormat::Iso8601, DateTimeInputFormat::Rfc2822],
             )
@@ -334,10 +363,10 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_date_time_int() {
+    fn test_parse_timestamp_int() {
         {
             let unix_ts_secs = OffsetDateTime::now_utc().unix_timestamp();
-            let date_time = parse_date_time_int(
+            let date_time = parse_timestamp_int(
                 unix_ts_secs,
                 &[DateTimeInputFormat::Iso8601, DateTimeInputFormat::Timestamp],
             )
@@ -345,7 +374,7 @@ mod tests {
             assert_eq!(date_time.into_timestamp_secs(), unix_ts_secs);
         }
         {
-            let error = parse_date_time_int(
+            let error = parse_timestamp_int(
                 1668730394917,
                 &[DateTimeInputFormat::Iso8601, DateTimeInputFormat::Rfc2822],
             )
@@ -356,6 +385,27 @@ mod tests {
                  `rfc2822`."
             );
         }
+    }
+
+    #[test]
+    fn test_parse_timestamp_str() {
+        let date_time = parse_timestamp_str("123456789").unwrap();
+        assert_eq!(date_time.into_timestamp_secs(), 123456789);
+
+        let date_time = parse_timestamp_str("123456789.").unwrap();
+        assert_eq!(date_time.into_timestamp_secs(), 123456789);
+
+        let date_time = parse_timestamp_str("123456789.0").unwrap();
+        assert_eq!(date_time.into_timestamp_secs(), 123456789);
+
+        let date_time = parse_timestamp_str("123456789.1").unwrap();
+        assert_eq!(date_time.into_timestamp_millis(), 123456789100);
+
+        let date_time = parse_timestamp_str("123456789.100000001").unwrap();
+        assert_eq!(date_time.into_timestamp_nanos(), 123456789100000001);
+
+        let date_time = parse_timestamp_str("123456789.1000000011").unwrap();
+        assert_eq!(date_time.into_timestamp_nanos(), 123456789100000001);
     }
 
     #[test]

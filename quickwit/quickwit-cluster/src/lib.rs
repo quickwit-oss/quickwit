@@ -31,7 +31,7 @@ pub use chitchat::transport::ChannelTransport;
 use chitchat::transport::UdpTransport;
 use chitchat::FailureDetectorConfig;
 use quickwit_config::service::QuickwitService;
-use quickwit_config::QuickwitConfig as NodeConfig;
+use quickwit_config::NodeConfig;
 use time::OffsetDateTime;
 
 pub use crate::change::ClusterChange;

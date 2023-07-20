@@ -224,7 +224,8 @@ mod tests {
             partial_hits: vec![PartialHit {
                 doc_id: 1,
                 segment_ord: 0,
-                sort_value: Some(SortValue::U64(0u64)),
+                sort_value: Some(SortValue::U64(0u64).into()),
+                sort_value2: None,
                 split_id: "split_1".to_string(),
             }],
         };
@@ -309,7 +310,8 @@ mod tests {
             partial_hits: vec![PartialHit {
                 doc_id: 1,
                 segment_ord: 0,
-                sort_value: Some(SortValue::U64(0)),
+                sort_value: Some(SortValue::U64(0).into()),
+                sort_value2: None,
                 split_id: "split_1".to_string(),
             }],
         };

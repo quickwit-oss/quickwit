@@ -48,7 +48,25 @@ fn main() {
 }
 ```
 
-5. If any parts of the protocol should be serialized as `bytes::Bytes` instead of `Vec[u8]` list paths to these elements in the last argument.
+5. If additional prost settings need to be configured they can be provided the following way:
+
+```rust
+use quickwit_codegen::Codegen;
+
+fn main() {
+    let mut config = prost_build::Config::default();
+    config.bytes(["PingRequest.name", "PingResponse.name"]);
+    Codegen::run_with_config(
+        "src/hello.proto",
+        "src/",
+        "crate::HelloResult",
+        "crate::HelloError"
+        &[],
+        config
+    ).unwrap();
+}
+```
+
 
 6. Import and implement the generated service trait and use the various generated adapters to instantiate a gRPC server, or use a local or remote gRPC implementation with the same client interface.
 

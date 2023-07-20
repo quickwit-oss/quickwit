@@ -203,7 +203,7 @@ impl Handler<UpdatePipelines> for DeleteTaskService {
 #[cfg(test)]
 mod tests {
     use quickwit_indexing::TestSandbox;
-    use quickwit_proto::metastore_api::DeleteQuery;
+    use quickwit_proto::metastore::DeleteQuery;
     use quickwit_search::{searcher_pool_for_test, MockSearchService, SearchJobPlacer};
     use quickwit_storage::StorageResolver;
 

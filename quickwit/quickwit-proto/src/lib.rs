@@ -23,27 +23,40 @@
 
 use anyhow::anyhow;
 use ulid::Ulid;
-mod quickwit;
-mod quickwit_indexing_api;
-mod quickwit_metastore_api;
-pub use partial_hit::SortValue;
 use std::cmp::Ordering;
+use std::convert::Infallible;
+use std::fmt;
+use ::opentelemetry::global;
+use ::opentelemetry::propagation::Extractor;
+use ::opentelemetry::propagation::Injector;
+use tonic::codegen::http;
+use tonic::service::Interceptor;
+use tonic::Status;
+use tracing::Span;
+use tracing_opentelemetry::OpenTelemetrySpanExt;
 
-pub mod indexing_api {
-    pub use crate::quickwit_indexing_api::*;
-}
+pub use tonic;
 
-pub mod metastore_api {
-    pub use crate::quickwit_metastore_api::*;
-}
+#[path = "quickwit/quickwit.indexing.rs"]
+pub mod indexing;
+#[path = "quickwit/quickwit.metastore.rs"]
+pub mod metastore;
+#[path = "quickwit/quickwit.search.rs"]
+pub mod search;
+
+pub use indexing::*;
+pub use metastore::*;
+pub use search::*;
+
+pub use search::sort_by_value::SortValue;
 
 pub mod jaeger {
     pub mod api_v2 {
-        include!("jaeger.api_v2.rs");
+        include!("jaeger/jaeger.api_v2.rs");
     }
     pub mod storage {
         pub mod v1 {
-            include!("jaeger.storage.v1.rs");
+            include!("jaeger/jaeger.storage.v1.rs");
         }
     }
 }
@@ -55,46 +68,46 @@ pub mod opentelemetry {
         pub mod collector {
             pub mod logs {
                 pub mod v1 {
-                    include!("opentelemetry.proto.collector.logs.v1.rs");
+                    include!("opentelemetry/opentelemetry.proto.collector.logs.v1.rs");
                 }
             }
             // pub mod metrics {
             //     pub mod v1 {
-            //         include!("opentelemetry.proto.collector.metrics.v1.rs");
+            //         include!("opentelemetry/opentelemetry.proto.collector.metrics.v1.rs");
             //     }
             // }
             pub mod trace {
                 pub mod v1 {
-                    include!("opentelemetry.proto.collector.trace.v1.rs");
+                    include!("opentelemetry/opentelemetry.proto.collector.trace.v1.rs");
                 }
             }
         }
         pub mod common {
             pub mod v1 {
-                include!("opentelemetry.proto.common.v1.rs");
+                include!("opentelemetry/opentelemetry.proto.common.v1.rs");
             }
         }
         pub mod logs {
             pub mod v1 {
-                include!("opentelemetry.proto.logs.v1.rs");
+                include!("opentelemetry/opentelemetry.proto.logs.v1.rs");
             }
         }
         // pub mod metrics {
         //     pub mod experimental {
-        //         include!("opentelemetry.proto.metrics.experimental.rs");
+        //         include!("opentelemetry/opentelemetry.proto.metrics.experimental.rs");
         //     }
         //     pub mod v1 {
-        //         tonic::include_proto!("opentelemetry.proto.metrics.v1");
+        //         tonic::include_proto!("opentelemetry/opentelemetry.proto.metrics.v1");
         //     }
         // }
         pub mod resource {
             pub mod v1 {
-                include!("opentelemetry.proto.resource.v1.rs");
+                include!("opentelemetry/opentelemetry.proto.resource.v1.rs");
             }
         }
         pub mod trace {
             pub mod v1 {
-                include!("opentelemetry.proto.trace.v1.rs");
+                include!("opentelemetry/opentelemetry.proto.trace.v1.rs");
             }
         }
     }
@@ -102,23 +115,6 @@ pub mod opentelemetry {
 
 #[macro_use]
 extern crate serde;
-
-use std::convert::Infallible;
-use std::fmt;
-
-use ::opentelemetry::global;
-use ::opentelemetry::propagation::Extractor;
-use ::opentelemetry::propagation::Injector;
-pub use quickwit::*;
-use quickwit_indexing_api::IndexingTask;
-use quickwit_metastore_api::DeleteQuery;
-use quickwit_query::query_ast::QueryAst;
-pub use tonic;
-use tonic::codegen::http;
-use tonic::service::Interceptor;
-use tonic::Status;
-use tracing::Span;
-use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 /// This enum serves as a Rosetta stone of
 /// gRPC and Http status code.
@@ -187,7 +183,6 @@ pub fn convert_to_grpc_result<T, E: ServiceError>(
 }
 
 impl TryFrom<SearchStreamRequest> for SearchRequest {
-
     type Error = anyhow::Error;
 
     fn try_from(search_stream_req: SearchStreamRequest) -> Result<Self, Self::Error> {
@@ -197,7 +192,7 @@ impl TryFrom<SearchStreamRequest> for SearchRequest {
             snippet_fields: search_stream_req.snippet_fields,
             start_timestamp: search_stream_req.start_timestamp,
             end_timestamp: search_stream_req.end_timestamp,
-            .. Default::default()
+            ..Default::default()
         })
     }
 }
@@ -212,7 +207,7 @@ impl TryFrom<DeleteQuery> for SearchRequest {
             query_ast: delete_query.query_ast,
             start_timestamp: delete_query.start_timestamp,
             end_timestamp: delete_query.end_timestamp,
-            .. Default::default()
+            ..Default::default()
         })
     }
 }
@@ -418,53 +413,22 @@ impl TryFrom<&str> for IndexingTask {
     }
 }
 
-/// Parses a user query and returns a JSON query AST.
-///
-/// The resulting query does not include `UserInputQuery` nodes.
-/// The resolution assumes that there are no default search fields
-/// in the doc mapper.
-///
-/// # Panics
-///
-/// Panics if the user text is invalid.
-pub fn qast_helper(user_text: &str, default_fields: &[&'static str]) -> String {
-    let default_fields: Vec<String> = default_fields
-        .iter()
-        .map(|default_field| default_field.to_string())
-        .collect();
-    let ast: QueryAst = query_ast_from_user_text(user_text, Some(default_fields))
-        .parse_user_query(&[])
-        .expect("The user query should be valid.");
-    serde_json::to_string(&ast).expect("The query AST should be JSON serializable.")
-}
-
-/// Creates a QueryAST with a single UserInputQuery node.
-///
-/// Disclaimer:
-/// At this point the query has not been parsed.
-///
-/// The actual parsing is meant to happen on a root node,
-/// `default_fields` can be passed to decide which field should be search
-/// if not specified specifically in the user query (e.g. hello as opposed to "body:hello").
-///
-/// If it is not supplied, the docmapper search fields are meant to be used.
-///
-/// If no boolean operator is specified, the default is `AND` (contrary to the Elasticsearch default).
-pub fn query_ast_from_user_text(user_text: &str, default_fields: Option<Vec<String>>) -> QueryAst {
-    quickwit_query::query_ast::UserInputQuery {
-        user_text: user_text.to_string(),
-        default_fields,
-        default_operator: quickwit_query::BooleanOperand::And,
-    }
-    .into()
-}
-
 // !!! Disclaimer !!!
 //
 // Prost imposes the PartialEq derived implementation.
 // This is terrible because this means Eq, PartialEq are not really in line with Ord's implementation.
 // if in presence of NaN.
+impl Eq for SortByValue {}
+impl Copy for SortByValue {}
+impl From<SortValue> for SortByValue {
+    fn from(sort_value: SortValue) -> Self {
+        SortByValue {
+            sort_value: Some(sort_value),
+        }
+    }
+}
 
+impl Copy for SortValue {}
 impl Eq for SortValue {}
 
 impl Ord for SortValue {
@@ -585,13 +549,4 @@ mod tests {
         index_uid_from_parts.to_string()
     }
 
-    #[test]
-    fn test_query_ast_from_user_text_default_as_and() {
-        let ast = query_ast_from_user_text("hello you", None);
-        let QueryAst::UserInput(input_query) = ast else { panic!() };
-        assert_eq!(
-            input_query.default_operator,
-            quickwit_query::BooleanOperand::And
-        );
-    }
 }

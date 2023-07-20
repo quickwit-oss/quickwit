@@ -25,14 +25,14 @@ use async_trait::async_trait;
 use quickwit_actors::Mailbox;
 use quickwit_config::service::QuickwitService;
 use quickwit_grpc_clients::service_client_pool::ServiceClient;
-use quickwit_proto::indexing_api::ApplyIndexingPlanRequest;
+use quickwit_proto::indexing::ApplyIndexingPlanRequest;
 use quickwit_proto::tonic::transport::{Channel, Endpoint, Uri};
 
 use crate::IndexingService;
 
 #[derive(Clone)]
 enum IndexingServiceClientImpl {
-    Grpc(quickwit_proto::indexing_api::indexing_service_client::IndexingServiceClient<Channel>),
+    Grpc(quickwit_proto::indexing::indexing_service_client::IndexingServiceClient<Channel>),
     Local(Mailbox<IndexingService>),
 }
 
@@ -72,9 +72,7 @@ impl ServiceClient for IndexingServiceClient {
 
 impl IndexingServiceClient {
     pub fn from_grpc_client(
-        client: quickwit_proto::indexing_api::indexing_service_client::IndexingServiceClient<
-            Channel,
-        >,
+        client: quickwit_proto::indexing::indexing_service_client::IndexingServiceClient<Channel>,
         grpc_addr: SocketAddr,
     ) -> Self {
         Self {
@@ -123,7 +121,7 @@ pub async fn create_indexing_service_client(
         .connect_timeout(Duration::from_secs(5))
         .connect_lazy();
     let client = IndexingServiceClient::from_grpc_client(
-        quickwit_proto::indexing_api::indexing_service_client::IndexingServiceClient::new(channel),
+        quickwit_proto::indexing::indexing_service_client::IndexingServiceClient::new(channel),
         grpc_addr,
     );
     Ok(client)
@@ -133,8 +131,8 @@ pub async fn create_indexing_service_client(
 mod tests {
     use quickwit_actors::Universe;
     use quickwit_grpc_clients::create_channel_from_duplex_stream;
-    use quickwit_proto::indexing_api::indexing_service_server::IndexingServiceServer;
-    use quickwit_proto::indexing_api::ApplyIndexingPlanRequest;
+    use quickwit_proto::indexing::indexing_service_server::IndexingServiceServer;
+    use quickwit_proto::indexing::ApplyIndexingPlanRequest;
     use quickwit_proto::tonic::transport::Server;
 
     use super::IndexingServiceClient;
@@ -172,9 +170,7 @@ mod tests {
         let channel = create_channel_from_duplex_stream(client).await.unwrap();
         let grpc_addr = ([127, 0, 0, 1], 1).into();
         let grpc_client =
-            quickwit_proto::indexing_api::indexing_service_client::IndexingServiceClient::new(
-                channel,
-            );
+            quickwit_proto::indexing::indexing_service_client::IndexingServiceClient::new(channel);
         let mut client = IndexingServiceClient::from_grpc_client(grpc_client, grpc_addr);
         client
             .apply_indexing_plan(ApplyIndexingPlanRequest {

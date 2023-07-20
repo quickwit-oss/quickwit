@@ -149,7 +149,6 @@ impl StorageResolver {
 
     /// Returns a [`StorageResolver`] for testing purposes. Unlike
     /// [`StorageResolver::unconfigured`], this resolver does not return a singleton.
-    #[cfg(any(test, feature = "testsuite"))]
     pub fn ram_for_test() -> Self {
         use quickwit_config::RamStorageConfig;
 

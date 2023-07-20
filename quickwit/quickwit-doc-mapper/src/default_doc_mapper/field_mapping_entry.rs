@@ -277,16 +277,53 @@ pub struct QuickwitTextOptions {
     pub fast: FastFieldOptions,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
-#[serde(untagged)]
+#[derive(Default, Clone, Debug, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(
+    into = "FastFieldOptionsForSerialization",
+    from = "FastFieldOptionsForSerialization"
+)]
 pub enum FastFieldOptions {
+    #[default]
+    Disabled,
+    EnabledWithNormalizer {
+        normalizer: QuickwitTextNormalizer,
+    },
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(untagged)]
+enum FastFieldOptionsForSerialization {
     IsEnabled(bool),
     EnabledWithNormalizer { normalizer: QuickwitTextNormalizer },
 }
 
-impl Default for FastFieldOptions {
-    fn default() -> Self {
-        FastFieldOptions::IsEnabled(false)
+impl From<FastFieldOptionsForSerialization> for FastFieldOptions {
+    fn from(fast_field_options: FastFieldOptionsForSerialization) -> Self {
+        match fast_field_options {
+            FastFieldOptionsForSerialization::IsEnabled(is_enabled) => {
+                if is_enabled {
+                    FastFieldOptions::EnabledWithNormalizer {
+                        normalizer: QuickwitTextNormalizer::Raw,
+                    }
+                } else {
+                    FastFieldOptions::Disabled
+                }
+            }
+            FastFieldOptionsForSerialization::EnabledWithNormalizer { normalizer } => {
+                FastFieldOptions::EnabledWithNormalizer { normalizer }
+            }
+        }
+    }
+}
+
+impl From<FastFieldOptions> for FastFieldOptionsForSerialization {
+    fn from(fast_field_options: FastFieldOptions) -> Self {
+        match fast_field_options {
+            FastFieldOptions::Disabled => FastFieldOptionsForSerialization::IsEnabled(false),
+            FastFieldOptions::EnabledWithNormalizer { normalizer } => {
+                FastFieldOptionsForSerialization::EnabledWithNormalizer { normalizer }
+            }
+        }
     }
 }
 
@@ -311,13 +348,10 @@ impl From<QuickwitTextOptions> for TextOptions {
             text_options = text_options.set_stored();
         }
         match &quickwit_text_options.fast {
-            FastFieldOptions::IsEnabled(true) => {
-                text_options = text_options.set_fast(None);
-            }
             FastFieldOptions::EnabledWithNormalizer { normalizer } => {
                 text_options = text_options.set_fast(Some(normalizer.get_name()));
             }
-            FastFieldOptions::IsEnabled(false) => {}
+            FastFieldOptions::Disabled => {}
         }
         if quickwit_text_options.indexed {
             let index_record_option = quickwit_text_options
@@ -427,13 +461,10 @@ impl From<QuickwitJsonOptions> for JsonObjectOptions {
             json_options = json_options.set_expand_dots_enabled();
         }
         match &quickwit_json_options.fast {
-            FastFieldOptions::IsEnabled(true) => {
-                json_options = json_options.set_fast(None);
-            }
             FastFieldOptions::EnabledWithNormalizer { normalizer } => {
                 json_options = json_options.set_fast(Some(normalizer.get_name()));
             }
-            FastFieldOptions::IsEnabled(false) => {}
+            FastFieldOptions::Disabled => {}
         }
         json_options
     }
@@ -1409,7 +1440,7 @@ mod tests {
             tokenizer: None,
             record: None,
             stored: true,
-            fast: FastFieldOptions::IsEnabled(false),
+            fast: FastFieldOptions::Disabled,
             expand_dots: true,
         };
         assert_eq!(&field_mapping_entry.name, "my_json_field");
@@ -1452,7 +1483,7 @@ mod tests {
             record: None,
             stored: false,
             expand_dots: true,
-            fast: FastFieldOptions::IsEnabled(false),
+            fast: FastFieldOptions::Disabled,
         };
         assert_eq!(&field_mapping_entry.name, "my_json_field_multi");
         assert!(

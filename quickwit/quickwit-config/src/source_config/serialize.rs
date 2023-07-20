@@ -107,9 +107,11 @@ impl SourceConfigForSerialization {
                 }
             }
         }
+
         if let Some(transform_config) = &self.transform {
-            transform_config.compile_vrl_script()?;
+            transform_config.validate_vrl_script()?;
         }
+
         Ok(SourceConfig {
             source_id: self.source_id,
             max_num_pipelines_per_indexer,

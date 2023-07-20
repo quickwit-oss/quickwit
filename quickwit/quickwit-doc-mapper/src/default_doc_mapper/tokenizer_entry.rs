@@ -18,7 +18,9 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use anyhow::Context;
-use quickwit_query::DEFAULT_REMOVE_TOKEN_LENGTH;
+#[cfg(feature = "multilang")]
+use quickwit_query::MultiLangTokenizer;
+use quickwit_query::{CodeTokenizer, DEFAULT_REMOVE_TOKEN_LENGTH};
 use serde::{Deserialize, Serialize};
 use tantivy::tokenizer::{
     AsciiFoldingFilter, LowerCaser, NgramTokenizer, RegexTokenizer, RemoveLongFilter,
@@ -39,9 +41,9 @@ pub struct TokenizerEntry {
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq, utoipa::ToSchema)]
 pub struct TokenizerConfig {
     #[serde(flatten)]
-    tokenizer_type: TokenizerType,
+    pub(crate) tokenizer_type: TokenizerType,
     #[serde(default)]
-    filters: Vec<TokenFilterType>,
+    pub(crate) filters: Vec<TokenFilterType>,
 }
 
 impl TokenizerConfig {
@@ -49,6 +51,11 @@ impl TokenizerConfig {
     pub fn text_analyzer(&self) -> anyhow::Result<TextAnalyzer> {
         let mut text_analyzer_builder = match &self.tokenizer_type {
             TokenizerType::Simple => TextAnalyzer::builder(SimpleTokenizer::default()).dynamic(),
+            #[cfg(feature = "multilang")]
+            TokenizerType::Multilang => {
+                TextAnalyzer::builder(MultiLangTokenizer::default()).dynamic()
+            }
+            TokenizerType::SourceCode => TextAnalyzer::builder(CodeTokenizer::default()).dynamic(),
             TokenizerType::Ngram(options) => {
                 let tokenizer =
                     NgramTokenizer::new(options.min_gram, options.max_gram, options.prefix_only)
@@ -120,9 +127,12 @@ impl TokenFilterType {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum TokenizerType {
-    Simple,
+    #[cfg(feature = "multilang")]
+    Multilang,
     Ngram(NgramTokenizerOption),
     Regex(RegexTokenizerOption),
+    Simple,
+    SourceCode,
 }
 
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq, utoipa::ToSchema)]

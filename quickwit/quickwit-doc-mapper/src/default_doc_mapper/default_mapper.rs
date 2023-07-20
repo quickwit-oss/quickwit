@@ -503,7 +503,7 @@ impl DocMapper for DefaultDocMapper {
 mod tests {
     use std::collections::HashMap;
 
-    use quickwit_proto::query_ast_from_user_text;
+    use quickwit_query::query_ast::query_ast_from_user_text;
     use serde_json::{self, json, Value as JsonValue};
     use tantivy::schema::{FieldType, IndexRecordOption, Type, Value as TantivyValue};
 

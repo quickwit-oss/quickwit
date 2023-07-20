@@ -35,7 +35,7 @@ pub use index_metadata::IndexMetadata;
 use quickwit_common::uri::Uri;
 use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
-use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
+use quickwit_proto::metastore::{DeleteQuery, DeleteTask};
 use quickwit_proto::IndexUid;
 use time::OffsetDateTime;
 

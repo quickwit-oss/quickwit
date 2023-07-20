@@ -19,72 +19,15 @@
 
 use std::str::CharIndices;
 
-use once_cell::sync::Lazy;
-use tantivy::tokenizer::{
-    LowerCaser, RawTokenizer, RemoveLongFilter, TextAnalyzer, Token, TokenStream, Tokenizer,
-    TokenizerManager,
-};
-
-pub const DEFAULT_REMOVE_TOKEN_LENGTH: usize = 255;
-
-pub fn create_default_quickwit_tokenizer_manager() -> TokenizerManager {
-    let raw_tokenizer = TextAnalyzer::builder(RawTokenizer::default())
-        .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
-        .build();
-
-    let chinese_tokenizer = TextAnalyzer::builder(ChineseTokenizer)
-        .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
-        .filter(LowerCaser)
-        .build();
-
-    let tokenizer_manager = TokenizerManager::new();
-    tokenizer_manager.register("raw", raw_tokenizer);
-    tokenizer_manager.register("chinese_compatible", chinese_tokenizer);
-
-    tokenizer_manager.register(
-        "default",
-        TextAnalyzer::builder(tantivy::tokenizer::SimpleTokenizer::default())
-            .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
-            .filter(LowerCaser)
-            .build(),
-    );
-    tokenizer_manager.register(
-        "en_stem",
-        TextAnalyzer::builder(tantivy::tokenizer::SimpleTokenizer::default())
-            .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
-            .filter(LowerCaser)
-            .filter(tantivy::tokenizer::Stemmer::new(
-                tantivy::tokenizer::Language::English,
-            ))
-            .build(),
-    );
-
-    tokenizer_manager
-}
-
-fn create_quickwit_fastfield_normalizer_manager() -> TokenizerManager {
-    let raw_tokenizer = TextAnalyzer::builder(RawTokenizer::default())
-        .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
-        .build();
-
-    let lower_case_tokenizer = TextAnalyzer::builder(RawTokenizer::default())
-        .filter(LowerCaser)
-        .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
-        .build();
-
-    let tokenizer_manager = TokenizerManager::new();
-    tokenizer_manager.register("raw", raw_tokenizer);
-    tokenizer_manager.register("lowercase", lower_case_tokenizer);
-    tokenizer_manager
-}
+use tantivy::tokenizer::{Token, TokenStream, Tokenizer};
 
 #[derive(Clone)]
-struct ChineseTokenizer;
+pub(crate) struct ChineseTokenizer;
 
 impl Tokenizer for ChineseTokenizer {
     type TokenStream<'a> = ChineseTokenStream<'a>;
 
-    fn token_stream<'a>(&mut self, text: &'a str) -> Self::TokenStream<'a> {
+    fn token_stream<'a>(&'a mut self, text: &'a str) -> Self::TokenStream<'a> {
         ChineseTokenStream {
             text,
             last_char: None,
@@ -94,7 +37,7 @@ impl Tokenizer for ChineseTokenizer {
     }
 }
 
-struct ChineseTokenStream<'a> {
+pub(crate) struct ChineseTokenStream<'a> {
     text: &'a str,
     last_char: Option<(usize, char)>,
     chars: CharIndices<'a>,
@@ -184,51 +127,15 @@ impl<'a> TokenStream for ChineseTokenStream<'a> {
     }
 }
 
-pub fn get_quickwit_fastfield_normalizer_manager() -> &'static TokenizerManager {
-    static QUICKWIT_FAST_FIELD_NORMALIZER_MANAGER: Lazy<TokenizerManager> =
-        Lazy::new(create_quickwit_fastfield_normalizer_manager);
-    &QUICKWIT_FAST_FIELD_NORMALIZER_MANAGER
-}
-
 #[cfg(test)]
 mod tests {
-    use tantivy::tokenizer::Token;
-
-    use super::create_default_quickwit_tokenizer_manager;
-
-    #[test]
-    fn test_raw_tokenizer() {
-        let my_haiku = r#"
-        white sandy beach
-        a strong wind is coming
-        sand in my face
-        "#;
-
-        let mut tokenizer = create_default_quickwit_tokenizer_manager()
-            .get("raw")
-            .unwrap();
-        {
-            let mut haiku_stream = tokenizer.token_stream(my_haiku);
-            assert!(haiku_stream.advance());
-            assert!(!haiku_stream.advance());
-        }
-        {
-            let my_too_long_text = vec!["a".repeat(255)].join("");
-            assert!(!tokenizer.token_stream(&my_too_long_text).advance());
-        }
-        {
-            let my_long_text = vec!["a".repeat(254)].join("");
-            assert!(tokenizer.token_stream(&my_long_text).advance());
-        }
-    }
+    use tantivy::tokenizer::{Token, TokenStream};
 
     #[test]
     fn test_chinese_tokenizer() {
         let text = "Hello world, 你好世界, bonjour monde";
-
-        let mut tokenizer = create_default_quickwit_tokenizer_manager()
-            .get("chinese_compatible")
-            .unwrap();
+        let tokenizer_manager = crate::create_default_quickwit_tokenizer_manager();
+        let mut tokenizer = tokenizer_manager.get("chinese_compatible").unwrap();
         let mut text_stream = tokenizer.token_stream(text);
 
         let mut res = Vec::new();
@@ -296,16 +203,14 @@ mod tests {
             },
         ];
 
-        assert_eq!(res, expected);
+        assert_eq!(dbg!(res), dbg!(expected));
     }
 
     #[test]
     fn test_chinese_tokenizer_no_space() {
         let text = "Hello你好bonjour";
-
-        let mut tokenizer = create_default_quickwit_tokenizer_manager()
-            .get("chinese_compatible")
-            .unwrap();
+        let tokenizer_manager = crate::create_default_quickwit_tokenizer_manager();
+        let mut tokenizer = tokenizer_manager.get("chinese_compatible").unwrap();
         let mut text_stream = tokenizer.token_stream(text);
 
         let mut res = Vec::new();
@@ -350,8 +255,9 @@ mod tests {
     proptest::proptest! {
         #[test]
         fn test_proptest_ascii_default_chinese_equal(text in "[ -~]{0,64}") {
-            let mut cn_tok = create_default_quickwit_tokenizer_manager().get("chinese_compatible").unwrap();
-            let mut default_tok = create_default_quickwit_tokenizer_manager().get("default").unwrap();
+            let tokenizer_manager = crate::create_default_quickwit_tokenizer_manager();
+            let mut cn_tok = tokenizer_manager.get("chinese_compatible").unwrap();
+            let mut default_tok = tokenizer_manager.get("default").unwrap();
 
             let mut text_stream = cn_tok.token_stream(&text);
 

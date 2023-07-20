@@ -35,14 +35,14 @@ use crate::storage_config::StorageConfigs;
 use crate::templating::render_config;
 use crate::{
     validate_identifier, validate_node_id, ConfigFormat, IndexerConfig, IngestApiConfig,
-    JaegerConfig, MetastoreConfigs, QuickwitConfig, SearcherConfig,
+    JaegerConfig, MetastoreConfigs, NodeConfig, SearcherConfig,
 };
 
 pub const DEFAULT_CLUSTER_ID: &str = "quickwit-default-cluster";
 
 pub const DEFAULT_DATA_DIR_PATH: &str = "qwdata";
 
-// Default config values in the order they appear in [`QuickwitConfigBuilder`].
+// Default config values in the order they appear in [`NodeConfigBuilder`].
 fn default_cluster_id() -> ConfigValue<String, QW_CLUSTER_ID> {
     ConfigValue::with_default(DEFAULT_CLUSTER_ID.to_string())
 }
@@ -124,33 +124,33 @@ fn default_index_root_uri(data_dir_uri: &Uri) -> Uri {
     data_dir_uri.join("indexes").expect("Failed to create default index root URI. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.")
 }
 
-pub async fn load_quickwit_config_with_env(
+pub async fn load_node_config_with_env(
     config_format: ConfigFormat,
     config_content: &[u8],
     env_vars: &HashMap<String, String>,
-) -> anyhow::Result<QuickwitConfig> {
+) -> anyhow::Result<NodeConfig> {
     let rendered_config_content = render_config(config_content)?;
-    let versioned_quickwit_config: VersionedQuickwitConfig =
+    let versioned_node_config: VersionedNodeConfig =
         config_format.parse(rendered_config_content.as_bytes())?;
-    let quickwit_config_builder: QuickwitConfigBuilder = versioned_quickwit_config.into();
-    let config = quickwit_config_builder.build_and_validate(env_vars).await?;
+    let node_config_builder: NodeConfigBuilder = versioned_node_config.into();
+    let config = node_config_builder.build_and_validate(env_vars).await?;
     Ok(config)
 }
 
 #[derive(Debug, Deserialize)]
 #[serde(tag = "version")]
-enum VersionedQuickwitConfig {
+enum VersionedNodeConfig {
     #[serde(rename = "0.6")]
     // Retro compatibility.
     #[serde(alias = "0.5")]
     #[serde(alias = "0.4")]
-    V0_6(QuickwitConfigBuilder),
+    V0_6(NodeConfigBuilder),
 }
 
-impl From<VersionedQuickwitConfig> for QuickwitConfigBuilder {
-    fn from(versioned_quickwit_config: VersionedQuickwitConfig) -> Self {
-        match versioned_quickwit_config {
-            VersionedQuickwitConfig::V0_6(quickwit_config_builder) => quickwit_config_builder,
+impl From<VersionedNodeConfig> for NodeConfigBuilder {
+    fn from(versioned_node_config: VersionedNodeConfig) -> Self {
+        match versioned_node_config {
+            VersionedNodeConfig::V0_6(node_config_builder) => node_config_builder,
         }
     }
 }
@@ -158,7 +158,7 @@ impl From<VersionedQuickwitConfig> for QuickwitConfigBuilder {
 #[serde_with::serde_as]
 #[derive(Debug, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
-struct QuickwitConfigBuilder {
+struct NodeConfigBuilder {
     #[serde(default = "default_cluster_id")]
     cluster_id: ConfigValue<String, QW_CLUSTER_ID>,
     #[serde(default = "default_node_id")]
@@ -202,11 +202,11 @@ struct QuickwitConfigBuilder {
     jaeger_config: JaegerConfig,
 }
 
-impl QuickwitConfigBuilder {
+impl NodeConfigBuilder {
     pub async fn build_and_validate(
         mut self,
         env_vars: &HashMap<String, String>,
-    ) -> anyhow::Result<QuickwitConfig> {
+    ) -> anyhow::Result<NodeConfig> {
         let enabled_services = self
             .enabled_services
             .resolve(env_vars)?
@@ -267,7 +267,7 @@ impl QuickwitConfigBuilder {
         self.storage_configs.validate()?;
         self.storage_configs.apply_flavors();
 
-        let quickwit_config = QuickwitConfig {
+        let node_config = NodeConfig {
             cluster_id: self.cluster_id.resolve(env_vars)?,
             node_id: self.node_id.resolve(env_vars)?,
             enabled_services,
@@ -289,29 +289,29 @@ impl QuickwitConfigBuilder {
             jaeger_config: self.jaeger_config,
         };
 
-        validate(&quickwit_config)?;
-        Ok(quickwit_config)
+        validate(&node_config)?;
+        Ok(node_config)
     }
 }
 
-fn validate(quickwit_config: &QuickwitConfig) -> anyhow::Result<()> {
-    validate_identifier("Cluster ID", &quickwit_config.cluster_id)?;
-    validate_node_id(&quickwit_config.node_id)?;
+fn validate(node_config: &NodeConfig) -> anyhow::Result<()> {
+    validate_identifier("Cluster ID", &node_config.cluster_id)?;
+    validate_node_id(&node_config.node_id)?;
 
-    if quickwit_config.cluster_id == DEFAULT_CLUSTER_ID {
+    if node_config.cluster_id == DEFAULT_CLUSTER_ID {
         warn!(
             "Cluster ID is not set, falling back to default value: `{}`.",
             DEFAULT_CLUSTER_ID
         );
     }
-    if quickwit_config.peer_seeds.is_empty() {
+    if node_config.peer_seeds.is_empty() {
         warn!("Peer seed list is empty.");
     }
     Ok(())
 }
 
 #[cfg(test)]
-impl Default for QuickwitConfigBuilder {
+impl Default for NodeConfigBuilder {
     fn default() -> Self {
         Self {
             cluster_id: default_cluster_id(),
@@ -338,7 +338,7 @@ impl Default for QuickwitConfigBuilder {
 }
 
 #[cfg(any(test, feature = "testsuite"))]
-pub fn quickwit_config_for_test() -> QuickwitConfig {
+pub fn node_config_for_test() -> NodeConfig {
     let enabled_services = QuickwitService::supported_services();
 
     let listen_address = Host::default();
@@ -367,7 +367,7 @@ pub fn quickwit_config_for_test() -> QuickwitConfig {
     let metastore_uri = default_metastore_uri(&data_dir_uri);
     let default_index_root_uri = default_index_root_uri(&data_dir_uri);
 
-    QuickwitConfig {
+    NodeConfig {
         cluster_id: default_cluster_id().unwrap(),
         node_id: default_node_id().unwrap(),
         enabled_services,
@@ -411,13 +411,12 @@ mod tests {
         )
     }
 
-    async fn test_quickwit_config_parse_aux(config_format: ConfigFormat) -> anyhow::Result<()> {
+    async fn test_node_config_parse_aux(config_format: ConfigFormat) -> anyhow::Result<()> {
         let config_filepath =
             get_config_filepath(&format!("quickwit.{config_format:?}").to_lowercase());
         let file = std::fs::read_to_string(&config_filepath).unwrap();
         let env_vars = HashMap::default();
-        let config =
-            load_quickwit_config_with_env(config_format, file.as_bytes(), &env_vars).await?;
+        let config = load_node_config_with_env(config_format, file.as_bytes(), &env_vars).await?;
         assert_eq!(config.cluster_id, "quickwit-cluster");
         assert_eq!(config.enabled_services.len(), 2);
 
@@ -514,22 +513,22 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_quickwit_config_parse_json() {
-        test_quickwit_config_parse_aux(ConfigFormat::Json)
+    async fn test_node_config_parse_json() {
+        test_node_config_parse_aux(ConfigFormat::Json)
             .await
             .unwrap();
     }
 
     #[tokio::test]
-    async fn test_quickwit_config_parse_toml() {
-        test_quickwit_config_parse_aux(ConfigFormat::Toml)
+    async fn test_node_config_parse_toml() {
+        test_node_config_parse_aux(ConfigFormat::Toml)
             .await
             .unwrap();
     }
 
     #[tokio::test]
-    async fn test_quickwit_config_parse_yaml() {
-        test_quickwit_config_parse_aux(ConfigFormat::Yaml)
+    async fn test_node_config_parse_yaml() {
+        test_node_config_parse_aux(ConfigFormat::Yaml)
             .await
             .unwrap();
     }
@@ -538,7 +537,7 @@ mod tests {
     async fn test_config_contains_wrong_values() {
         let config_filepath = get_config_filepath("quickwit.wrongkey.yaml");
         let config_str = std::fs::read_to_string(&config_filepath).unwrap();
-        let parsing_error = super::load_quickwit_config_with_env(
+        let parsing_error = super::load_node_config_with_env(
             ConfigFormat::Yaml,
             config_str.as_bytes(),
             &Default::default(),
@@ -550,9 +549,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_quickwit_config_default_values_minimal() {
+    async fn test_node_config_default_values_minimal() {
         let config_yaml = "version: 0.6";
-        let config = load_quickwit_config_with_env(
+        let config = load_node_config_with_env(
             ConfigFormat::Yaml,
             config_yaml.as_bytes(),
             &Default::default(),
@@ -598,7 +597,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_quickwit_config_env_var_override() {
+    async fn test_node_config_env_var_override() {
         let config_yaml = "version: 0.6";
         let mut env_vars = HashMap::new();
         env_vars.insert("QW_CLUSTER_ID".to_string(), "test-cluster".to_string());
@@ -626,7 +625,7 @@ mod tests {
             "s3://quickwit-indexes/prod".to_string(),
         );
         let config =
-            load_quickwit_config_with_env(ConfigFormat::Yaml, config_yaml.as_bytes(), &env_vars)
+            load_node_config_with_env(ConfigFormat::Yaml, config_yaml.as_bytes(), &env_vars)
                 .await
                 .unwrap();
         assert_eq!(config.cluster_id, "test-cluster");
@@ -685,7 +684,7 @@ mod tests {
             node_id: "node-1"
             metastore_uri: postgres://username:password@host:port/db
         "#;
-        let config = load_quickwit_config_with_env(
+        let config = load_node_config_with_env(
             ConfigFormat::Yaml,
             config_yaml.as_bytes(),
             &Default::default(),
@@ -701,13 +700,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_quickwit_config_config_default_values_default_indexer_searcher_config() {
+    async fn test_node_config_config_default_values_default_indexer_searcher_config() {
         let config_yaml = r#"
             version: 0.6
             metastore_uri: postgres://username:password@host:port/db
             data_dir: /opt/quickwit/data
         "#;
-        let config = load_quickwit_config_with_env(
+        let config = load_node_config_with_env(
             ConfigFormat::Yaml,
             config_yaml.as_bytes(),
             &Default::default(),
@@ -725,7 +724,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_quickwit_config_validate() {
+    async fn test_node_config_validate() {
         let config_filepath = get_config_filepath("quickwit.toml");
         let file_content = std::fs::read_to_string(&config_filepath).unwrap();
 
@@ -735,29 +734,27 @@ mod tests {
             "QW_DATA_DIR".to_string(),
             data_dir_path.to_string_lossy().to_string(),
         );
-        assert!(load_quickwit_config_with_env(
-            ConfigFormat::Toml,
-            file_content.as_bytes(),
-            &env_vars,
-        )
-        .await
-        .is_ok());
+        assert!(
+            load_node_config_with_env(ConfigFormat::Toml, file_content.as_bytes(), &env_vars,)
+                .await
+                .is_ok()
+        );
     }
 
     #[tokio::test]
     async fn test_peer_socket_addrs() {
         {
-            let quickwit_config = QuickwitConfigBuilder {
+            let node_config = NodeConfigBuilder {
                 rest_listen_port: ConfigValue::for_test(1789),
                 ..Default::default()
             }
             .build_and_validate(&HashMap::new())
             .await
             .unwrap();
-            assert!(quickwit_config.peer_seed_addrs().await.unwrap().is_empty());
+            assert!(node_config.peer_seed_addrs().await.unwrap().is_empty());
         }
         {
-            let quickwit_config = QuickwitConfigBuilder {
+            let node_config = NodeConfigBuilder {
                 rest_listen_port: ConfigValue::for_test(1789),
                 peer_seeds: ConfigValue::for_test(List(vec!["unresolvable-host".to_string()])),
                 ..Default::default()
@@ -765,10 +762,10 @@ mod tests {
             .build_and_validate(&HashMap::new())
             .await
             .unwrap();
-            assert!(quickwit_config.peer_seed_addrs().await.is_err());
+            assert!(node_config.peer_seed_addrs().await.is_err());
         }
         {
-            let quickwit_config = QuickwitConfigBuilder {
+            let node_config = NodeConfigBuilder {
                 rest_listen_port: ConfigValue::for_test(1789),
                 peer_seeds: ConfigValue::for_test(List(vec![
                     "unresolvable-host".to_string(),
@@ -783,7 +780,7 @@ mod tests {
             .await
             .unwrap();
             assert_eq!(
-                quickwit_config.peer_seed_addrs().await.unwrap(),
+                node_config.peer_seed_addrs().await.unwrap(),
                 vec![
                     "localhost:1789".to_string(),
                     "localhost:1337".to_string(),
@@ -797,28 +794,19 @@ mod tests {
     #[tokio::test]
     async fn test_socket_addr_ports() {
         {
-            let quickwit_config = QuickwitConfigBuilder {
+            let node_config = NodeConfigBuilder {
                 listen_address: default_listen_address(),
                 ..Default::default()
             }
             .build_and_validate(&HashMap::new())
             .await
             .unwrap();
-            assert_eq!(
-                quickwit_config.rest_listen_addr.to_string(),
-                "127.0.0.1:7280"
-            );
-            assert_eq!(
-                quickwit_config.gossip_listen_addr.to_string(),
-                "127.0.0.1:7280"
-            );
-            assert_eq!(
-                quickwit_config.grpc_listen_addr.to_string(),
-                "127.0.0.1:7281"
-            );
+            assert_eq!(node_config.rest_listen_addr.to_string(), "127.0.0.1:7280");
+            assert_eq!(node_config.gossip_listen_addr.to_string(), "127.0.0.1:7280");
+            assert_eq!(node_config.grpc_listen_addr.to_string(), "127.0.0.1:7281");
         }
         {
-            let quickwit_config = QuickwitConfigBuilder {
+            let node_config = NodeConfigBuilder {
                 listen_address: default_listen_address(),
                 rest_listen_port: ConfigValue::for_test(1789),
                 ..Default::default()
@@ -826,21 +814,12 @@ mod tests {
             .build_and_validate(&HashMap::new())
             .await
             .unwrap();
-            assert_eq!(
-                quickwit_config.rest_listen_addr.to_string(),
-                "127.0.0.1:1789"
-            );
-            assert_eq!(
-                quickwit_config.gossip_listen_addr.to_string(),
-                "127.0.0.1:1789"
-            );
-            assert_eq!(
-                quickwit_config.grpc_listen_addr.to_string(),
-                "127.0.0.1:1790"
-            );
+            assert_eq!(node_config.rest_listen_addr.to_string(), "127.0.0.1:1789");
+            assert_eq!(node_config.gossip_listen_addr.to_string(), "127.0.0.1:1789");
+            assert_eq!(node_config.grpc_listen_addr.to_string(), "127.0.0.1:1790");
         }
         {
-            let quickwit_config = QuickwitConfigBuilder {
+            let node_config = NodeConfigBuilder {
                 listen_address: default_listen_address(),
                 rest_listen_port: ConfigValue::for_test(1789),
                 gossip_listen_port: ConfigValue::for_test(1889),
@@ -850,18 +829,9 @@ mod tests {
             .build_and_validate(&HashMap::new())
             .await
             .unwrap();
-            assert_eq!(
-                quickwit_config.rest_listen_addr.to_string(),
-                "127.0.0.1:1789"
-            );
-            assert_eq!(
-                quickwit_config.gossip_listen_addr.to_string(),
-                "127.0.0.1:1889"
-            );
-            assert_eq!(
-                quickwit_config.grpc_listen_addr.to_string(),
-                "127.0.0.1:1989"
-            );
+            assert_eq!(node_config.rest_listen_addr.to_string(), "127.0.0.1:1789");
+            assert_eq!(node_config.gossip_listen_addr.to_string(), "127.0.0.1:1889");
+            assert_eq!(node_config.grpc_listen_addr.to_string(), "127.0.0.1:1989");
         }
     }
 
@@ -869,7 +839,7 @@ mod tests {
     async fn test_load_config_with_validation_error() {
         let config_filepath = get_config_filepath("quickwit.yaml");
         let file = std::fs::read_to_string(&config_filepath).unwrap();
-        let error = QuickwitConfig::load(ConfigFormat::Yaml, file.as_bytes())
+        let error = NodeConfig::load(ConfigFormat::Yaml, file.as_bytes())
             .await
             .unwrap_err();
         assert!(error.to_string().contains("Data dir"));
@@ -883,7 +853,7 @@ mod tests {
             node_id: 1
             metastore_uri: ''
         "#;
-            assert!(load_quickwit_config_with_env(
+            assert!(load_node_config_with_env(
                 ConfigFormat::Yaml,
                 config_yaml.as_bytes(),
                 &Default::default()
@@ -898,7 +868,7 @@ mod tests {
             metastore_uri: postgres://username:password@host:port/db
             default_index_root_uri: ''
         "#;
-            assert!(load_quickwit_config_with_env(
+            assert!(load_node_config_with_env(
                 ConfigFormat::Yaml,
                 config_yaml.as_bytes(),
                 &Default::default()
@@ -909,13 +879,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_quickwit_config_data_dir_accepts_both_file_uris_and_file_paths() {
+    async fn test_node_config_data_dir_accepts_both_file_uris_and_file_paths() {
         {
             let config_yaml = r#"
                 version: 0.6
                 data_dir: /opt/quickwit/data
             "#;
-            let config = load_quickwit_config_with_env(
+            let config = load_node_config_with_env(
                 ConfigFormat::Yaml,
                 config_yaml.as_bytes(),
                 &HashMap::default(),
@@ -929,7 +899,7 @@ mod tests {
                 version: 0.6
                 data_dir: file:///opt/quickwit/data
             "#;
-            let config = load_quickwit_config_with_env(
+            let config = load_node_config_with_env(
                 ConfigFormat::Yaml,
                 config_yaml.as_bytes(),
                 &HashMap::default(),
@@ -943,7 +913,7 @@ mod tests {
                 version: 0.6
                 data_dir: s3://indexes/foo
             "#;
-            let error = load_quickwit_config_with_env(
+            let error = load_node_config_with_env(
                 ConfigFormat::Yaml,
                 config_yaml.as_bytes(),
                 &HashMap::default(),
@@ -972,7 +942,7 @@ mod tests {
             version: 0.6
             rest_cors_allow_origins: '*'
         "#;
-        let config = load_quickwit_config_with_env(
+        let config = load_node_config_with_env(
             ConfigFormat::Yaml,
             rest_config_yaml.as_bytes(),
             &Default::default(),
@@ -988,7 +958,7 @@ mod tests {
             version: 0.6
             rest_cors_allow_origins: https://www.my-domain.com
         "#;
-        let config = load_quickwit_config_with_env(
+        let config = load_node_config_with_env(
             ConfigFormat::Yaml,
             rest_config_yaml.as_bytes(),
             &Default::default(),
@@ -1004,7 +974,7 @@ mod tests {
             version: 0.6
             rest_cors_allow_origins: http://192.168.0.108:7280
         "#;
-        let config = load_quickwit_config_with_env(
+        let config = load_node_config_with_env(
             ConfigFormat::Yaml,
             rest_config_yaml.as_bytes(),
             &Default::default(),
@@ -1024,7 +994,7 @@ mod tests {
             rest_cors_allow_origins:
                 - https://www.my-domain.com
         "#;
-        let config = load_quickwit_config_with_env(
+        let config = load_node_config_with_env(
             ConfigFormat::Yaml,
             rest_config_yaml.as_bytes(),
             &Default::default(),
@@ -1042,7 +1012,7 @@ mod tests {
                 - https://www.my-domain.com
                 - https://www.my-other-domain.com
         "#;
-        let config = load_quickwit_config_with_env(
+        let config = load_node_config_with_env(
             ConfigFormat::Yaml,
             rest_config_yaml.as_bytes(),
             &Default::default(),
@@ -1061,7 +1031,7 @@ mod tests {
             version: 0.6
             rest_cors_allow_origins:
         "#;
-        load_quickwit_config_with_env(
+        load_node_config_with_env(
             ConfigFormat::Yaml,
             rest_config_yaml.as_bytes(),
             &Default::default(),
@@ -1074,7 +1044,7 @@ mod tests {
             rest_cors_allow_origins:
                 -
         "#;
-        load_quickwit_config_with_env(
+        load_node_config_with_env(
             ConfigFormat::Yaml,
             rest_config_yaml.as_bytes(),
             &Default::default(),

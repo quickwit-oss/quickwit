@@ -20,10 +20,11 @@
 use std::collections::BTreeSet;
 use std::fmt;
 use std::ops::{Range, RangeInclusive};
+use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Duration;
 
-use quickwit_common::FileEntry;
+use byte_unit::Byte;
 use quickwit_proto::IndexUid;
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, DurationMilliSeconds};
@@ -179,15 +180,37 @@ impl SplitMetadata {
             ..Default::default()
         }
     }
-}
 
-impl From<&SplitMetadata> for FileEntry {
-    fn from(split: &SplitMetadata) -> Self {
-        FileEntry {
-            file_name: quickwit_common::split_file(split.split_id()),
-            file_size_in_bytes: split.footer_offsets.end,
+    /// Converts the split metadata into a [`SplitInfo`].
+    pub fn as_split_info(&self) -> SplitInfo {
+        let file_name = quickwit_common::split_file(self.split_id());
+
+        SplitInfo {
+            uncompressed_docs_size_bytes: Byte::from_bytes(self.uncompressed_docs_size_in_bytes),
+            file_name: PathBuf::from(file_name),
+            file_size_bytes: Byte::from_bytes(self.footer_offsets.end),
+            split_id: self.split_id.clone(),
+            num_docs: self.num_docs,
         }
     }
+}
+
+/// A summarized version of the split metadata for display purposes.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+pub struct SplitInfo {
+    /// The split ID.
+    pub split_id: String,
+    /// The number of documents in the split.
+    pub num_docs: usize,
+    /// The sum of the sizes of the original JSON payloads in bytes.
+    #[schema(value_type = u64)]
+    pub uncompressed_docs_size_bytes: Byte,
+    /// The name of the split file on disk.
+    #[schema(value_type = String)]
+    pub file_name: PathBuf,
+    /// The size of the split file on disk in bytes.
+    #[schema(value_type = u64)]
+    pub file_size_bytes: Byte,
 }
 
 #[cfg(any(test, feature = "testsuite"))]

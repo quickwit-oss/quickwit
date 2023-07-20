@@ -20,13 +20,15 @@
 use quickwit_codegen::Codegen;
 
 fn main() {
-    Codegen::run(
+    let mut config = prost_build::Config::default();
+    config.bytes(["DocBatch.doc_buffer"]);
+    Codegen::run_with_config(
         &["src/ingest_service.proto"],
         "src/codegen/",
         "crate::Result",
         "crate::IngestServiceError",
-        &["DocBatch.doc_buffer"],
         &[],
+        config,
     )
     .unwrap();
 }

@@ -29,7 +29,7 @@ use futures_util::StreamExt;
 use hyper::StatusCode;
 use itertools::Itertools;
 use quickwit_common::truncate_str;
-use quickwit_config::QuickwitConfig;
+use quickwit_config::NodeConfig;
 use quickwit_proto::{SearchResponse, ServiceErrorCode};
 use quickwit_query::query_ast::{QueryAst, UserInputQuery};
 use quickwit_query::BooleanOperand;
@@ -45,21 +45,20 @@ use super::model::{
     ElasticSearchError, MultiSearchHeader, MultiSearchQueryParams, MultiSearchResponse,
     MultiSearchSingleResponse, SearchBody, SearchQueryParams,
 };
-use crate::elastic_search_api::model::SortField;
 use crate::format::BodyFormat;
 use crate::json_api_response::{make_json_api_response, ApiError, JsonApiResponse};
 use crate::{with_arg, BuildInfo};
 
 /// Elastic compatible cluster info handler.
 pub fn es_compat_cluster_info_handler(
-    quickwit_config: Arc<QuickwitConfig>,
+    node_config: Arc<NodeConfig>,
     build_info: &'static BuildInfo,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     elastic_cluster_info_filter()
-        .and(with_arg(quickwit_config))
+        .and(with_arg(node_config))
         .and(with_arg(build_info))
         .then(
-            |config: Arc<QuickwitConfig>, build_info: &'static BuildInfo| async move {
+            |config: Arc<NodeConfig>, build_info: &'static BuildInfo| async move {
                 warp::reply::json(&json!({
                     "name" : config.node_id,
                     "cluster_name" : config.cluster_id,
@@ -147,22 +146,21 @@ fn build_request_for_es_api(
     let max_hits = search_params.size.or(search_body.size).unwrap_or(10);
     let start_offset = search_params.from.or(search_body.from).unwrap_or(0);
 
-    let sort_fields: Vec<SortField> = search_params
+    let sort_fields: Vec<quickwit_proto::SortField> = search_params
         .sort_fields()?
         .or_else(|| search_body.sort.clone())
-        .unwrap_or_default();
-
-    if sort_fields.len() >= 2 {
+        .unwrap_or_default()
+        .iter()
+        .map(|sort_field| quickwit_proto::SortField {
+            field_name: sort_field.field.to_string(),
+            sort_order: sort_field.order as i32,
+        })
+        .collect();
+    if sort_fields.len() >= 3 {
         return Err(ElasticSearchError::from(SearchError::InvalidArgument(
-            format!("Only one search field is supported at the moment. Got {sort_fields:?}"),
+            format!("Only up to two sort fields supported at the moment. Got {sort_fields:?}"),
         )));
     }
-
-    let (sort_by_field, sort_order) = if let Some(sort_field) = sort_fields.into_iter().next() {
-        (Some(sort_field.field), Some(sort_field.order as i32))
-    } else {
-        (None, None)
-    };
 
     Ok(quickwit_proto::SearchRequest {
         index_id,
@@ -170,8 +168,7 @@ fn build_request_for_es_api(
         max_hits,
         start_offset,
         aggregation_request,
-        sort_by_field,
-        sort_order,
+        sort_fields,
         ..Default::default()
     })
 }
