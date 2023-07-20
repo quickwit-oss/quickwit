@@ -152,6 +152,7 @@ pub(crate) const BATCH_NUM_BYTES_LIMIT: u64 = 5_000_000u64;
 async fn read_lines(
     uri: &str,
 ) -> anyhow::Result<Lines<BufReader<Box<dyn AsyncRead + Send + Unpin>>>> {
+    info!("Reading lines from uri: {:?}", uri);
     let client = reqwest::ClientBuilder::new()
         .connect_timeout(Duration::from_secs(10))
         .timeout(Duration::from_secs(15))
@@ -187,9 +188,9 @@ impl Source for HttpSource {
             .find(|(_, partition_counters)| partition_counters.current_offset < u64::MAX)
         else {
             info!("No more partitions to read from, stopping source.");
-            info!("Resetting failing URIs and retrying in 1h");
+            info!("Resetting failing URIs and retrying in 1min");
             self.uri_with_errors.clear();
-            return Ok(Duration::from_secs(3600));
+            return Ok(Duration::from_secs(60));
         };
         let uri = partition.0.as_str();
         let lines_result: anyhow::Result<Lines<BufReader<Box<dyn AsyncRead + Send + Unpin>>>> =
