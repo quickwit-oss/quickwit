@@ -24,10 +24,12 @@ use std::collections::{BTreeMap, HashMap};
 
 use quickwit_common::uri::Uri;
 use quickwit_config::{IndexConfig, SourceConfig, TestableForRegression};
+use quickwit_proto::metastore::IndexMetadataResponse;
 use quickwit_proto::IndexUid;
 use serde::{Deserialize, Serialize};
 use serialize::VersionedIndexMetadata;
 use time::OffsetDateTime;
+use tracing::error;
 
 use crate::checkpoint::{
     IndexCheckpoint, PartitionId, Position, SourceCheckpoint, SourceCheckpointDelta,
@@ -90,16 +92,17 @@ impl IndexMetadata {
     }
 
     /// Adds a source to the index. Returns an error if the source_id already exists.
-    pub fn add_source(&mut self, source: SourceConfig) -> MetastoreResult<()> {
-        let entry = self.sources.entry(source.source_id.clone());
-        let source_id = source.source_id.clone();
+    pub fn add_source(&mut self, source_config: SourceConfig) -> MetastoreResult<()> {
+        let entry = self.sources.entry(source_config.source_id.clone());
+        let source_id = source_config.source_id.clone();
+
         if let Entry::Occupied(_) = entry {
             return Err(MetastoreError::SourceAlreadyExists {
                 source_id: source_id.clone(),
-                source_type: source.source_type().to_string(),
+                source_type: source_config.source_type().to_string(),
             });
         }
-        entry.or_insert(source);
+        entry.or_insert(source_config);
         self.checkpoint.add_source(&source_id);
         Ok(())
     }
@@ -125,6 +128,23 @@ impl IndexMetadata {
             })?;
         self.checkpoint.remove_source(source_id);
         Ok(true)
+    }
+}
+
+impl TryFrom<IndexMetadataResponse> for IndexMetadata {
+    type Error = MetastoreError;
+
+    fn try_from(response: IndexMetadataResponse) -> Result<Self, Self::Error> {
+        let index_metadata = serde_json::from_str::<IndexMetadata>(&response.index_metadata_json)
+            .map_err(|error| {
+            error!(error=?error, "Failed to deserialize index metadata.");
+
+            MetastoreError::JsonDeserializeError {
+                struct_name: "IndexMetadata".to_string(),
+                message: error.to_string(),
+            }
+        })?;
+        Ok(index_metadata)
     }
 }
 

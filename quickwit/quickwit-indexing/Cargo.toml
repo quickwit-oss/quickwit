@@ -73,6 +73,7 @@ testsuite = [
   "quickwit-actors/testsuite",
   "quickwit-cluster/testsuite",
   "quickwit-common/testsuite",
+  "quickwit-metastore/testsuite",
 ]
 
 [dev-dependencies]

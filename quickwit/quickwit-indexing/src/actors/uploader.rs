@@ -30,7 +30,8 @@ use itertools::Itertools;
 use once_cell::sync::OnceCell;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
-use quickwit_metastore::{Metastore, SplitMetadata};
+use quickwit_metastore::{Metastore, SplitMetadata, StageSplitsRequestExt};
+use quickwit_proto::metastore::StageSplitsRequest;
 use quickwit_proto::IndexUid;
 use quickwit_storage::SplitPayloadBuilder;
 use serde::Serialize;
@@ -300,7 +301,8 @@ impl Handler<PackagedSplitBatch> for Uploader {
             async move {
                 fail_point!("uploader:intask:before");
 
-                let mut split_metadata_list = Vec::with_capacity(batch.splits.len());
+                let mut splits_metadata = Vec::with_capacity(batch.splits.len());
+
                 for packaged_split in batch.splits.iter() {
                     if batch.publish_lock.is_dead() {
                         // TODO: Remove the junk right away?
@@ -320,16 +322,18 @@ impl Handler<PackagedSplitBatch> for Uploader {
                         split_streamer.footer_range.start..split_streamer.footer_range.end,
                     );
 
-                    split_metadata_list.push(split_metadata);
+                    splits_metadata.push(split_metadata);
                 }
 
+                let stage_splits_request = StageSplitsRequest::try_from_splits_metadata(index_uid.clone(), splits_metadata.clone())?;
                 metastore
-                    .stage_splits(index_uid.clone(), split_metadata_list.clone())
+                    .stage_splits(stage_splits_request)
                     .await?;
-                counters.num_staged_splits.fetch_add(split_metadata_list.len() as u64, Ordering::SeqCst);
+                counters.num_staged_splits.fetch_add(splits_metadata.len() as u64, Ordering::Relaxed);
 
                 let mut packaged_splits_and_metadata = Vec::with_capacity(batch.splits.len());
-                for (packaged_split, metadata) in batch.splits.into_iter().zip(split_metadata_list) {
+
+                for (packaged_split, metadata) in batch.splits.into_iter().zip(splits_metadata) {
                     let upload_result = upload_split(
                         &packaged_split,
                         &metadata,

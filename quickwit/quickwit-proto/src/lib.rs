@@ -32,19 +32,20 @@ use tonic::service::Interceptor;
 use tonic::Status;
 use tracing::Span;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
-use ulid::Ulid;
+
+use crate::metastore::DeleteQuery;
 
 pub mod control_plane;
 pub mod indexing;
-#[path = "codegen/quickwit/quickwit.metastore.rs"]
 pub mod metastore;
 #[path = "codegen/quickwit/quickwit.search.rs"]
 pub mod search;
+pub mod types;
 
-pub use metastore::*;
+pub use search::sort_by_value::SortValue;
 pub use search::*;
-pub use sort_by_value::SortValue;
 pub use tonic;
+pub use types::{IndexUid, SourceId, SplitId};
 
 pub mod jaeger {
     pub mod api_v2 {
@@ -317,63 +318,6 @@ pub fn set_parent_span_from_request_metadata(request_metadata: &tonic::metadata:
     Span::current().set_parent(parent_cx);
 }
 
-/// Index identifiers that uniquely identify not only the index, but also
-/// its incarnation allowing to distinguish between deleted and recreated indexes.
-/// It is represented as a stiring in index_id:incarnation_id format.
-#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq, Ord, PartialOrd, Hash)]
-pub struct IndexUid(String);
-
-impl IndexUid {
-    /// Creates a new index uid form index_id and incarnation_id
-    pub fn new(index_id: impl Into<String>) -> Self {
-        Self::from_parts(index_id, Ulid::new().to_string())
-    }
-
-    pub fn from_parts(index_id: impl Into<String>, incarnation_id: impl Into<String>) -> Self {
-        let incarnation_id = incarnation_id.into();
-        let index_id = index_id.into();
-        if incarnation_id.is_empty() {
-            Self(index_id)
-        } else {
-            Self(format!("{index_id}:{incarnation_id}"))
-        }
-    }
-
-    pub fn index_id(&self) -> &str {
-        self.0.split(':').next().unwrap()
-    }
-
-    pub fn incarnation_id(&self) -> &str {
-        if let Some(incarnation_id) = self.0.split(':').nth(1) {
-            incarnation_id
-        } else {
-            ""
-        }
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-}
-
-impl From<IndexUid> for String {
-    fn from(val: IndexUid) -> Self {
-        val.0
-    }
-}
-
-impl fmt::Display for IndexUid {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl From<String> for IndexUid {
-    fn from(index_uid: String) -> Self {
-        IndexUid(index_uid)
-    }
-}
-
 // !!! Disclaimer !!!
 //
 // Prost imposes the PartialEq derived implementation.
@@ -447,41 +391,5 @@ impl<E: fmt::Debug + ServiceError> ServiceError for quickwit_actors::AskError<E>
             quickwit_actors::AskError::ProcessMessageError => ServiceErrorCode::Internal,
             quickwit_actors::AskError::ErrorReply(err) => err.status_code(),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_index_uid_parsing() {
-        assert_eq!("foo", IndexUid::from("foo".to_string()).index_id());
-        assert_eq!("foo", IndexUid::from("foo:bar".to_string()).index_id());
-        assert_eq!("", IndexUid::from("foo".to_string()).incarnation_id());
-        assert_eq!(
-            "bar",
-            IndexUid::from("foo:bar".to_string()).incarnation_id()
-        );
-    }
-
-    #[test]
-    fn test_index_uid_roundtrip() {
-        assert_eq!("foo", IndexUid::from("foo".to_string()).to_string());
-        assert_eq!("foo:bar", IndexUid::from("foo:bar".to_string()).to_string());
-    }
-
-    #[test]
-    fn test_index_uid_roundtrip_using_parts() {
-        assert_eq!("foo", index_uid_roundtrip_using_parts("foo"));
-        assert_eq!("foo:bar", index_uid_roundtrip_using_parts("foo:bar"));
-    }
-
-    fn index_uid_roundtrip_using_parts(index_uid: &str) -> String {
-        let index_uid = IndexUid::from(index_uid.to_string());
-        let index_id = index_uid.index_id();
-        let incarnation_id = index_uid.incarnation_id();
-        let index_uid_from_parts = IndexUid::from_parts(index_id, incarnation_id);
-        index_uid_from_parts.to_string()
     }
 }

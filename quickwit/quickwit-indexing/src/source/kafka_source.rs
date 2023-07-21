@@ -32,6 +32,8 @@ use quickwit_config::KafkaSourceParams;
 use quickwit_metastore::checkpoint::{
     PartitionId, Position, SourceCheckpoint, SourceCheckpointDelta,
 };
+use quickwit_metastore::IndexMetadataResponseExt;
+use quickwit_proto::metastore::IndexMetadataRequest;
 use quickwit_proto::IndexUid;
 use rdkafka::config::{ClientConfig, RDKafkaLogLevel};
 use rdkafka::consumer::{
@@ -345,12 +347,9 @@ impl KafkaSource {
         partitions: &[i32],
         assignment_tx: oneshot::Sender<Vec<(i32, Offset)>>,
     ) -> anyhow::Result<()> {
-        let index_metadata = ctx
-            .protect_future(
-                self.ctx
-                    .metastore
-                    .index_metadata_strict(&self.ctx.index_uid),
-            )
+        let index_metadata_request = IndexMetadataRequest::strict(self.ctx.index_uid.clone());
+        let index_metadata_response = ctx
+            .protect_future(self.ctx.metastore.index_metadata(index_metadata_request))
             .await
             .with_context(|| {
                 format!(
@@ -358,6 +357,7 @@ impl KafkaSource {
                     self.ctx.index_uid.index_id()
                 )
             })?;
+        let index_metadata = index_metadata_response.deserialize_index_metadata()?;
         let checkpoint = index_metadata
             .checkpoint
             .source_checkpoint(&self.ctx.source_config.source_id)
@@ -769,8 +769,9 @@ mod kafka_broker_tests {
     use quickwit_common::rand::append_random_suffix;
     use quickwit_config::{IndexConfig, SourceConfig, SourceInputFormat, SourceParams};
     use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
+    use quickwit_metastore::metastore::StageSplitsRequestExt;
     use quickwit_metastore::{metastore_for_test, Metastore, SplitMetadata};
-    use quickwit_proto::IndexUid;
+    use quickwit_proto::{IndexUid, PublishSplitsRequest, StageSplitsRequest};
     use rdkafka::admin::{AdminClient, AdminOptions, NewTopic, TopicReplication};
     use rdkafka::client::DefaultClientContext;
     use rdkafka::message::ToBytes;
@@ -915,12 +916,11 @@ mod kafka_broker_tests {
         }
         let split_id = new_split_id();
         let split_metadata = SplitMetadata::for_test(split_id.clone());
-        metastore
-            .stage_splits(index_uid.clone(), vec![split_metadata])
-            .await
-            .unwrap();
+        let stage_splits_request =
+            StageSplitsRequest::try_from_split_metadata(index_uid.clone(), split_metadata);
+        metastore.stage_splits(stage_splits_request).await.unwrap();
 
-        let mut source_delta = SourceCheckpointDelta::default();
+        let mut checkpoint_delta = SourceCheckpointDelta::default();
         for (partition_id, from_position, to_position) in partition_deltas {
             source_delta
                 .record_partition_delta(
@@ -936,12 +936,10 @@ mod kafka_broker_tests {
                 )
                 .unwrap();
         }
-        let index_delta = IndexCheckpointDelta {
-            source_id: source_id.to_string(),
-            source_delta,
-        };
+        let publish_splits_request =
+            PublishSplitsRequest::new(index_uid, &[split_id], &[], Some(checkpoint_delta));
         metastore
-            .publish_splits(index_uid.clone(), &[&split_id], &[], Some(index_delta))
+            .publish_splits(publish_splits_request)
             .await
             .unwrap();
         index_uid

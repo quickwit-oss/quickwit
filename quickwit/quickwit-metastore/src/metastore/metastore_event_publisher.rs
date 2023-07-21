@@ -24,12 +24,19 @@ use async_trait::async_trait;
 use quickwit_common::pubsub::{Event, EventBroker};
 use quickwit_common::uri::Uri;
 use quickwit_config::{IndexConfig, SourceConfig};
-use quickwit_proto::metastore::{DeleteQuery, DeleteTask};
+use quickwit_proto::metastore::{
+    AddSourceRequest, CreateIndexRequest, CreateIndexResponse, DeleteIndexRequest, DeleteQuery,
+    DeleteSourceRequest, DeleteSplitsRequest, DeleteTask, EmptyResponse, IndexMetadataRequest,
+    IndexMetadataResponse, ListDeleteTasksRequest, ListDeleteTasksResponse, ListIndexesRequest,
+    ListIndexesResponse, ListSplitsRequest, ListSplitsResponse, MarkSplitsForDeletionRequest,
+    PublishSplitsRequest, ResetSourceCheckpointRequest, StageSplitsRequest, ToggleSourceRequest,
+    UpdateSplitsDeleteOpstampRequest,
+};
 use quickwit_proto::IndexUid;
 use tracing::info;
 
-use crate::checkpoint::IndexCheckpointDelta;
-use crate::{IndexMetadata, ListSplitsQuery, Metastore, MetastoreResult, Split, SplitMetadata};
+use super::AddSourceRequestExt;
+use crate::{ListSplitsQuery, Metastore, MetastoreResult, Split};
 
 /// Metastore events dispatched to subscribers.
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -101,135 +108,104 @@ impl Metastore for MetastoreEventPublisher {
     }
 
     // Index API
-    async fn create_index(&self, index_config: IndexConfig) -> MetastoreResult<IndexUid> {
-        self.underlying.create_index(index_config).await
+
+    async fn create_index(
+        &self,
+        request: CreateIndexRequest,
+    ) -> MetastoreResult<CreateIndexResponse> {
+        self.underlying.create_index(request).await
     }
 
-    async fn index_exists(&self, index_id: &str) -> MetastoreResult<bool> {
-        self.underlying.index_exists(index_id).await
+    async fn index_metadata(
+        &self,
+        request: IndexMetadataRequest,
+    ) -> MetastoreResult<IndexMetadataResponse> {
+        self.underlying.index_metadata(request).await
     }
 
-    async fn index_metadata(&self, index_id: &str) -> MetastoreResult<IndexMetadata> {
-        self.underlying.index_metadata(index_id).await
+    async fn list_indexes(
+        &self,
+        request: ListIndexesRequest,
+    ) -> MetastoreResult<ListIndexesResponse> {
+        self.underlying.list_indexes(request).await
     }
 
-    async fn list_indexes_metadatas(&self) -> MetastoreResult<Vec<IndexMetadata>> {
-        self.underlying.list_indexes_metadatas().await
-    }
-
-    async fn delete_index(&self, index_uid: IndexUid) -> MetastoreResult<()> {
+    async fn delete_index(&self, request: DeleteIndexRequest) -> MetastoreResult<EmptyResponse> {
         let event = MetastoreEvent::DeleteIndex {
-            index_uid: index_uid.clone(),
+            index_uid: request.index_uid.clone().into(),
         };
-        self.underlying.delete_index(index_uid).await?;
+        let response = self.underlying.delete_index(request).await?;
         self.event_broker.publish(event);
-        Ok(())
+        Ok(response)
     }
 
     // Split API
 
-    async fn stage_splits(
+    async fn stage_splits(&self, request: StageSplitsRequest) -> MetastoreResult<EmptyResponse> {
+        self.underlying.stage_splits(request).await
+    }
+
+    async fn publish_splits(
         &self,
-        index_uid: IndexUid,
-        split_metadata_list: Vec<SplitMetadata>,
-    ) -> MetastoreResult<()> {
-        self.underlying
-            .stage_splits(index_uid, split_metadata_list)
-            .await
+        request: PublishSplitsRequest,
+    ) -> MetastoreResult<EmptyResponse> {
+        self.underlying.publish_splits(request).await
     }
 
-    async fn publish_splits<'a>(
+    async fn list_splits(&self, request: ListSplitsRequest) -> MetastoreResult<ListSplitsResponse> {
+        self.underlying.list_splits(request).await
+    }
+
+    async fn mark_splits_for_deletion(
         &self,
-        index_uid: IndexUid,
-        split_ids: &[&'a str],
-        replaced_split_ids: &[&'a str],
-        checkpoint_delta_opt: Option<IndexCheckpointDelta>,
-    ) -> MetastoreResult<()> {
-        self.underlying
-            .publish_splits(
-                index_uid,
-                split_ids,
-                replaced_split_ids,
-                checkpoint_delta_opt,
-            )
-            .await
+        request: MarkSplitsForDeletionRequest,
+    ) -> MetastoreResult<EmptyResponse> {
+        self.underlying.mark_splits_for_deletion(request).await
     }
 
-    async fn list_splits(&self, query: ListSplitsQuery) -> MetastoreResult<Vec<Split>> {
-        self.underlying.list_splits(query).await
-    }
-
-    async fn list_all_splits(&self, index_uid: IndexUid) -> MetastoreResult<Vec<Split>> {
-        self.underlying.list_all_splits(index_uid).await
-    }
-
-    async fn mark_splits_for_deletion<'a>(
-        &self,
-        index_uid: IndexUid,
-        split_ids: &[&'a str],
-    ) -> MetastoreResult<()> {
-        self.underlying
-            .mark_splits_for_deletion(index_uid, split_ids)
-            .await
-    }
-
-    async fn delete_splits<'a>(
-        &self,
-        index_uid: IndexUid,
-        split_ids: &[&'a str],
-    ) -> MetastoreResult<()> {
-        self.underlying.delete_splits(index_uid, split_ids).await
+    async fn delete_splits(&self, request: DeleteSplitsRequest) -> MetastoreResult<EmptyResponse> {
+        self.underlying.delete_splits(request).await
     }
 
     // Source API
 
-    async fn add_source(&self, index_uid: IndexUid, source: SourceConfig) -> MetastoreResult<()> {
+    async fn add_source(&self, request: AddSourceRequest) -> MetastoreResult<EmptyResponse> {
+        let source_config = request.deserialize_source_config()?;
         let event = MetastoreEvent::AddSource {
-            index_uid: index_uid.clone(),
-            source_config: source.clone(),
+            index_uid: request.index_uid.clone().into(),
+            source_config,
         };
-        info!("add source {0}, {source:?}", index_uid.index_id());
-        self.underlying.add_source(index_uid, source).await?;
+        let response = self.underlying.add_source(request).await?;
         self.event_broker.publish(event);
-        Ok(())
+        Ok(response)
     }
 
-    async fn toggle_source(
-        &self,
-        index_uid: IndexUid,
-        source_id: &str,
-        enable: bool,
-    ) -> MetastoreResult<()> {
+    async fn toggle_source(&self, request: ToggleSourceRequest) -> MetastoreResult<EmptyResponse> {
         let event = MetastoreEvent::ToggleSource {
-            index_uid: index_uid.clone(),
-            source_id: source_id.to_string(),
-            enabled: enable,
+            index_uid: request.index_uid.clone().into(),
+            source_id: request.source_id.clone(),
+            enabled: request.enable,
         };
-        self.underlying
-            .toggle_source(index_uid, source_id, enable)
-            .await?;
+        let response = self.underlying.toggle_source(request).await?;
         self.event_broker.publish(event);
-        Ok(())
+        Ok(response)
     }
 
     async fn reset_source_checkpoint(
         &self,
-        index_uid: IndexUid,
-        source_id: &str,
-    ) -> MetastoreResult<()> {
-        self.underlying
-            .reset_source_checkpoint(index_uid, source_id)
-            .await
+        request: ResetSourceCheckpointRequest,
+    ) -> MetastoreResult<EmptyResponse> {
+        self.underlying.reset_source_checkpoint(request).await
     }
 
-    async fn delete_source(&self, index_uid: IndexUid, source_id: &str) -> MetastoreResult<()> {
+    async fn delete_source(&self, request: DeleteSourceRequest) -> MetastoreResult<EmptyResponse> {
         let event = MetastoreEvent::DeleteSource {
-            index_uid: index_uid.clone(),
-            source_id: source_id.to_string(),
+            index_uid: request.index_uid.clone().into(),
+            source_id: request.source_id.clone(),
         };
-        self.underlying.delete_source(index_uid, source_id).await?;
+        let response = self.underlying.delete_source(request).await?;
         self.event_broker.publish(event);
-        Ok(())
+        Ok(response)
     }
 
     // Delete task API
@@ -239,38 +215,20 @@ impl Metastore for MetastoreEventPublisher {
 
     async fn list_delete_tasks(
         &self,
-        index_uid: IndexUid,
-        opstamp_start: u64,
-    ) -> MetastoreResult<Vec<DeleteTask>> {
-        self.underlying
-            .list_delete_tasks(index_uid, opstamp_start)
-            .await
+        request: ListDeleteTasksRequest,
+    ) -> MetastoreResult<ListDeleteTasksResponse> {
+        self.underlying.list_delete_tasks(request).await
     }
 
     async fn last_delete_opstamp(&self, index_uid: IndexUid) -> MetastoreResult<u64> {
         self.underlying.last_delete_opstamp(index_uid).await
     }
 
-    async fn update_splits_delete_opstamp<'a>(
+    async fn update_splits_delete_opstamp(
         &self,
-        index_uid: IndexUid,
-        split_ids: &[&'a str],
-        delete_opstamp: u64,
-    ) -> MetastoreResult<()> {
-        self.underlying
-            .update_splits_delete_opstamp(index_uid, split_ids, delete_opstamp)
-            .await
-    }
-
-    async fn list_stale_splits(
-        &self,
-        index_uid: IndexUid,
-        delete_opstamp: u64,
-        num_splits: usize,
-    ) -> MetastoreResult<Vec<Split>> {
-        self.underlying
-            .list_stale_splits(index_uid, delete_opstamp, num_splits)
-            .await
+        request: UpdateSplitsDeleteOpstampRequest,
+    ) -> MetastoreResult<EmptyResponse> {
+        self.underlying.update_splits_delete_opstamp(request).await
     }
 }
 
@@ -279,8 +237,10 @@ mod tests {
 
     use quickwit_common::pubsub::EventSubscriber;
     use quickwit_config::SourceParams;
+    use quickwit_proto::DeleteIndexRequest;
 
     use super::*;
+    use crate::metastore::CreateIndexRequestExt;
     use crate::metastore_for_test;
     use crate::tests::test_suite::DefaultForTest;
 
@@ -313,32 +273,42 @@ mod tests {
         let (tx, mut rx) = tokio::sync::mpsc::channel(1);
         let subscription = metastore.event_broker.subscribe(TxSubscriber(tx));
 
-        let index_uid = IndexUid::new("test-index");
+        let index_id = "test-index";
         let index_uri = "ram:///indexes/test-index";
+        let index_config = IndexConfig::for_test(index_id, index_uri);
+
+        let create_index_request = CreateIndexRequest::try_from_index_config(index_config).unwrap();
+        let create_index_response = metastore.create_index(create_index_request).await.unwrap();
+        let index_uid: IndexUid = create_index_response.index_uid.into();
+
         let source_id = "test-source";
         let source_config = SourceConfig::for_test(source_id, SourceParams::void());
+        let add_source_request =
+            AddSourceRequest::try_from_source_config(index_uid.clone(), source_config).unwrap();
 
-        let index_uid = metastore
-            .create_index(IndexConfig::for_test(index_uid.index_id(), index_uri))
+        metastore.add_source(add_source_request).await.unwrap();
+
+        let toggle_source_request = ToggleSourceRequest {
+            index_uid: index_uid.clone().into(),
+            source_id: source_id.to_string(),
+            enable: false,
+        };
+        metastore
+            .toggle_source(toggle_source_request)
             .await
             .unwrap();
 
+        let delete_source_request = DeleteSourceRequest {
+            index_uid: index_uid.clone().into(),
+            source_id: source_id.to_string(),
+        };
         metastore
-            .add_source(
-                index_uid.clone(),
-                SourceConfig::for_test(source_id, SourceParams::void()),
-            )
+            .delete_source(delete_source_request)
             .await
             .unwrap();
-        metastore
-            .toggle_source(index_uid.clone(), source_id, false)
-            .await
-            .unwrap();
-        metastore
-            .delete_source(index_uid.clone(), source_id)
-            .await
-            .unwrap();
-        metastore.delete_index(index_uid.clone()).await.unwrap();
+
+        let delete_request = DeleteIndexRequest::new(index_uid.clone());
+        metastore.delete_index(delete_request).await.unwrap();
 
         assert_eq!(
             rx.recv().await.unwrap(),

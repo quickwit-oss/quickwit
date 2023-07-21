@@ -19,12 +19,13 @@
 
 use std::cmp::Ordering;
 use std::collections::btree_map::Entry;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fmt;
 use std::iter::FromIterator;
 use std::ops::Range;
 use std::sync::Arc;
 
+use quickwit_proto::metastore::SourceCheckpointDelta as ProtoSourceCheckpointDelta;
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -382,6 +383,7 @@ impl fmt::Debug for SourceCheckpoint {
     }
 }
 
+// TODO: Remove `PartitionDelta` and generalize use of `quickwit_proto::PartitionDelta` instead.
 /// A partition delta represents an interval (from, to] over a partition of a source.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 struct PartitionDelta {
@@ -389,6 +391,8 @@ struct PartitionDelta {
     pub to: Position,
 }
 
+// TODO: Remove `SourceCheckpointDelta` and generalize use of `quickwit_proto::PartitionDelta`
+// instead.
 /// A checkpoint delta represents a checkpoint update.
 ///
 /// It is shipped as part of a split to convey the update
@@ -404,6 +408,8 @@ pub struct SourceCheckpointDelta {
     per_partition: BTreeMap<PartitionId, PartitionDelta>,
 }
 
+// TODO: Remove `IndexCheckpointDelta` and generalize use of `quickwit_proto::SourceCheckpointDelta`
+// instead.
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct IndexCheckpointDelta {
     pub source_id: String,
@@ -428,6 +434,43 @@ impl fmt::Debug for IndexCheckpointDelta {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}:{:?}", &self.source_id, self.source_delta)?;
         Ok(())
+    }
+}
+
+impl From<ProtoSourceCheckpointDelta> for IndexCheckpointDelta {
+    fn from(delta: ProtoSourceCheckpointDelta) -> Self {
+        let mut per_partition = BTreeMap::new();
+
+        for (partition_id, partition_delta) in delta.partition_deltas {
+            let partition_id = PartitionId::from(partition_id);
+            let partition_delta = PartitionDelta {
+                from: Position::from(partition_delta.from_position_exclusive),
+                to: Position::from(partition_delta.to_position_inclusive),
+            };
+            per_partition.insert(partition_id, partition_delta);
+        }
+        let source_delta = SourceCheckpointDelta { per_partition };
+        Self {
+            source_id: delta.source_id,
+            source_delta,
+        }
+    }
+}
+
+impl Into<ProtoSourceCheckpointDelta> for IndexCheckpointDelta {
+    fn into(self) -> ProtoSourceCheckpointDelta {
+        let mut partition_deltas = HashMap::with_capacity(self.source_delta.per_partition.len());
+        for (partition_id, partition_delta) in self.source_delta.per_partition {
+            let partition_delta = quickwit_proto::metastore::PartitionDelta {
+                from_position_exclusive: partition_delta.from.as_str().to_string(),
+                to_position_inclusive: partition_delta.to.as_str().to_string(),
+            };
+            partition_deltas.insert(partition_id.0.to_string(), partition_delta);
+        }
+        ProtoSourceCheckpointDelta {
+            source_id: self.source_id,
+            partition_deltas,
+        }
     }
 }
 

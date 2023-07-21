@@ -28,6 +28,8 @@ use crate::{IndexUid, ServiceError, ServiceErrorCode};
 #[path = "../codegen/quickwit/quickwit.indexing.rs"]
 mod codegen;
 
+pub use codegen::indexing_service_grpc_client::IndexingServiceGrpcClient;
+pub use codegen::indexing_service_grpc_server::IndexingServiceGrpcServer;
 pub use codegen::*;
 
 pub type Result<T> = std::result::Result<T, IndexingError>;

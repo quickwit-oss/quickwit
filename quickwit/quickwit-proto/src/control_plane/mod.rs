@@ -23,6 +23,8 @@ use thiserror;
 #[path = "../codegen/quickwit/quickwit.control_plane.rs"]
 mod codegen;
 
+pub use codegen::control_plane_service_grpc_client::ControlPlaneServiceGrpcClient;
+pub use codegen::control_plane_service_grpc_server::ControlPlaneServiceGrpcServer;
 pub use codegen::*;
 
 pub type Result<T> = std::result::Result<T, ControlPlaneError>;

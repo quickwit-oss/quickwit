@@ -22,7 +22,11 @@ use std::sync::Arc;
 use quickwit_actors::ActorContext;
 use quickwit_common::PrettySample;
 use quickwit_config::RetentionPolicy;
-use quickwit_metastore::{ListSplitsQuery, Metastore, SplitMetadata, SplitState};
+use quickwit_metastore::{
+    ListSplitsQuery, ListSplitsRequestExt, ListSplitsResponseExt, Metastore, SplitMetadata,
+    SplitState,
+};
+use quickwit_proto::metastore::{ListSplitsRequest, MarkSplitsForDeletionRequest};
 use quickwit_proto::IndexUid;
 use time::OffsetDateTime;
 use tracing::{info, warn};
@@ -47,16 +51,20 @@ pub async fn run_execute_retention_policy(
     let retention_period = retention_policy.retention_period()?;
     let current_timestamp = OffsetDateTime::now_utc().unix_timestamp();
     let max_retention_timestamp = current_timestamp - retention_period.as_secs() as i64;
-    let query = ListSplitsQuery::for_index(index_uid.clone())
+    let list_splits_query = ListSplitsQuery::default()
         .with_split_state(SplitState::Published)
         .with_time_range_end_lte(max_retention_timestamp);
+    let list_splits_request =
+        ListSplitsRequest::try_from_list_splits_query(index_uid.clone(), list_splits_query)?;
+    let list_splits_response = ctx
+        .protect_future(metastore.list_splits(list_splits_request))
+        .await?;
 
-    let (expired_splits, ignored_splits): (Vec<SplitMetadata>, Vec<SplitMetadata>) = ctx
-        .protect_future(metastore.list_splits(query))
-        .await?
-        .into_iter()
-        .map(|split| split.split_metadata)
-        .partition(|split_metadata| split_metadata.time_range.is_some());
+    let (expired_splits, ignored_splits): (Vec<SplitMetadata>, Vec<SplitMetadata>) =
+        list_splits_response
+            .deserialize_splits_metadata()?
+            .into_iter()
+            .partition(|split_metadata| split_metadata.time_range.is_some());
 
     if !ignored_splits.is_empty() {
         let ignored_split_ids: Vec<String> = ignored_splits
@@ -74,9 +82,9 @@ pub async fn run_execute_retention_policy(
         return Ok(expired_splits);
     }
     // Mark the expired splits for deletion.
-    let expired_split_ids: Vec<&str> = expired_splits
+    let expired_split_ids: Vec<String> = expired_splits
         .iter()
-        .map(|split_metadata| split_metadata.split_id())
+        .map(|split_metadata| split_metadata.split_id.clone())
         .collect();
     info!(
         index_id=%index_uid.index_id(),
@@ -84,7 +92,8 @@ pub async fn run_execute_retention_policy(
         "Marking {} splits for deletion based on retention policy.",
         expired_split_ids.len()
     );
-    ctx.protect_future(metastore.mark_splits_for_deletion(index_uid, &expired_split_ids))
+    let mark_splits_request = MarkSplitsForDeletionRequest::new(index_uid, expired_split_ids);
+    ctx.protect_future(metastore.mark_splits_for_deletion(mark_splits_request))
         .await?;
     Ok(expired_splits)
 }

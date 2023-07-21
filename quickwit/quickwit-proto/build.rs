@@ -30,7 +30,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .collect();
 
     let mut prost_config = prost_build::Config::default();
-    prost_config.protoc_arg("--experimental_allow_proto3_optional");
+    prost_config
+        .bytes(&[
+            "IndexMetadataResponse.index_metadata_json",
+            "ListIndexesResponse.indexes_metadata_json",
+            "StageSplitsRequest.splits_metadata_json",
+        ])
+        .protoc_arg("--experimental_allow_proto3_optional");
 
     tonic_build::configure()
         .type_attribute(".", "#[derive(Serialize, Deserialize, utoipa::ToSchema)]")

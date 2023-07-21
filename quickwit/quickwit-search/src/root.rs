@@ -24,7 +24,11 @@ use futures::future::try_join_all;
 use itertools::Itertools;
 use quickwit_config::{build_doc_mapper, IndexConfig};
 use quickwit_doc_mapper::{DocMapper, DYNAMIC_FIELD_NAME};
-use quickwit_metastore::{Metastore, SplitMetadata};
+use quickwit_metastore::{
+    IndexMetadataResponseExt, ListSplitsQuery, ListSplitsRequestExt, ListSplitsResponseExt,
+    Metastore, SplitMetadata, SplitState,
+};
+use quickwit_proto::metastore::{IndexMetadataRequest, ListSplitsRequest};
 use quickwit_proto::{
     FetchDocsRequest, FetchDocsResponse, Hit, LeafHit, LeafListTermsRequest, LeafListTermsResponse,
     LeafSearchRequest, LeafSearchResponse, ListTermsRequest, ListTermsResponse, PartialHit,
@@ -235,7 +239,9 @@ pub async fn root_search(
 ) -> crate::Result<SearchResponse> {
     let start_instant = tokio::time::Instant::now();
 
-    let index_metadata = metastore.index_metadata(&search_request.index_id).await?;
+    let index_metadata_request = IndexMetadataRequest::new(&search_request.index_id);
+    let index_metadata_response = metastore.index_metadata(index_metadata_request).await?;
+    let index_metadata = index_metadata_response.deserialize_index_metadata()?;
     let index_uid = index_metadata.index_uid.clone();
     let index_config = index_metadata.into_index_config();
 
@@ -270,10 +276,10 @@ pub async fn root_search(
         SearchError::InternalError(format!("Failed to serialize doc mapper: Cause {err}"))
     })?;
 
-    let split_metadatas: Vec<SplitMetadata> =
+    let splits_metadata: Vec<SplitMetadata> =
         list_relevant_splits(index_uid, &search_request, metastore).await?;
 
-    let split_offsets_map: HashMap<String, SplitIdAndFooterOffsets> = split_metadatas
+    let split_offsets_map: HashMap<String, SplitIdAndFooterOffsets> = splits_metadata
         .iter()
         .map(|metadata| {
             (
@@ -285,7 +291,7 @@ pub async fn root_search(
 
     let index_uri = &index_config.index_uri;
 
-    let jobs: Vec<SearchJob> = split_metadatas.iter().map(SearchJob::from).collect();
+    let jobs: Vec<SearchJob> = splits_metadata.iter().map(SearchJob::from).collect();
 
     let assigned_leaf_search_jobs = cluster_client
         .search_job_placer
@@ -610,9 +616,9 @@ pub async fn root_list_terms(
 ) -> crate::Result<ListTermsResponse> {
     let start_instant = tokio::time::Instant::now();
 
-    let index_metadata = metastore
-        .index_metadata(&list_terms_request.index_id)
-        .await?;
+    let index_metadata_request = IndexMetadataRequest::new(&list_terms_request.index_id);
+    let index_metadata_response = metastore.index_metadata(index_metadata_request).await?;
+    let index_metadata = index_metadata_response.deserialize_index_metadata()?;
     let index_uid = index_metadata.index_uid.clone();
     let index_config: IndexConfig = index_metadata.into_index_config();
 
@@ -635,28 +641,22 @@ pub async fn root_list_terms(
             "Trying to list terms on field which isn't indexed".to_string(),
         ));
     }
-
-    let mut query = quickwit_metastore::ListSplitsQuery::for_index(index_uid)
-        .with_split_state(quickwit_metastore::SplitState::Published);
+    let mut query = ListSplitsQuery::default().with_split_state(SplitState::Published);
 
     if let Some(start_ts) = list_terms_request.start_timestamp {
         query = query.with_time_range_start_gte(start_ts);
     }
-
     if let Some(end_ts) = list_terms_request.end_timestamp {
         query = query.with_time_range_end_lt(end_ts);
     }
-
-    let split_metadatas = metastore
-        .list_splits(query)
-        .await?
-        .into_iter()
-        .map(|metadata| metadata.split_metadata)
-        .collect::<Vec<_>>();
+    let list_splits_request =
+        ListSplitsRequest::try_from_list_splits_query(index_uid.clone(), query)?;
+    let list_splits_response = metastore.list_splits(list_splits_request).await?;
+    let splits_metadata = list_splits_response.deserialize_splits_metadata()?;
 
     let index_uri = &index_config.index_uri;
 
-    let jobs: Vec<SearchJob> = split_metadatas.iter().map(SearchJob::from).collect();
+    let jobs: Vec<SearchJob> = splits_metadata.iter().map(SearchJob::from).collect();
     let assigned_leaf_search_jobs = cluster_client
         .search_job_placer
         .assign_jobs(jobs, &HashSet::default())

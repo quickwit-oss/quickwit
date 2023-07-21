@@ -21,16 +21,18 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 
 use async_trait::async_trait;
 use quickwit_common::uri::Uri;
-use quickwit_config::{IndexConfig, SourceConfig};
-use quickwit_proto::metastore::{DeleteQuery, DeleteTask};
+use quickwit_proto::metastore::{
+    AddSourceRequest, CreateIndexRequest, CreateIndexResponse, DeleteIndexRequest, DeleteQuery,
+    DeleteSourceRequest, DeleteSplitsRequest, DeleteTask, EmptyResponse, IndexMetadataRequest,
+    IndexMetadataResponse, ListDeleteTasksRequest, ListDeleteTasksResponse, ListIndexesRequest,
+    ListIndexesResponse, ListSplitsRequest, ListSplitsResponse, MarkSplitsForDeletionRequest,
+    PublishSplitsRequest, ResetSourceCheckpointRequest, StageSplitsRequest, ToggleSourceRequest,
+    UpdateSplitsDeleteOpstampRequest,
+};
 use quickwit_proto::IndexUid;
 
 use super::retry::RetryParams;
-use crate::checkpoint::IndexCheckpointDelta;
-use crate::{
-    IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, MetastoreResult, RetryingMetastore,
-    Split, SplitMetadata,
-};
+use crate::{Metastore, MetastoreError, MetastoreResult, RetryingMetastore};
 
 struct RetryTestMetastore {
     retry_count: AtomicUsize,
@@ -81,99 +83,90 @@ impl Metastore for RetryTestMetastore {
         self.try_success().map_err(anyhow::Error::from)
     }
 
-    async fn create_index(&self, _index_config: IndexConfig) -> MetastoreResult<IndexUid> {
-        let result = self.try_success();
-        match result {
-            Ok(_) => Ok(IndexUid::new("")),
-            Err(err) => Err(err),
-        }
-    }
-
-    async fn index_metadata(&self, index_id: &str) -> MetastoreResult<IndexMetadata> {
-        let result = self.try_success();
-        match result {
-            Ok(_) => Ok(IndexMetadata::for_test(index_id, "")),
-            Err(err) => Err(err),
-        }
-    }
-
-    async fn list_indexes_metadatas(&self) -> MetastoreResult<Vec<IndexMetadata>> {
-        let result = self.try_success();
-        match result {
-            Ok(_) => Ok(Vec::new()),
-            Err(err) => Err(err),
-        }
-    }
-
-    async fn delete_index(&self, _index_uid: IndexUid) -> MetastoreResult<()> {
-        self.try_success()
-    }
-
-    async fn stage_splits(
+    async fn create_index(
         &self,
-        _index_uid: IndexUid,
-        _split_metadata_list: Vec<SplitMetadata>,
-    ) -> MetastoreResult<()> {
-        self.try_success()
+        _request: CreateIndexRequest,
+    ) -> MetastoreResult<CreateIndexResponse> {
+        self.try_success()?;
+        Ok(CreateIndexResponse::default())
     }
 
-    async fn publish_splits<'a>(
+    async fn index_metadata(
         &self,
-        _index_uid: IndexUid,
-        _split_ids: &[&'a str],
-        _replaced_split_ids: &[&'a str],
-        _checkpoint_delta_opt: Option<IndexCheckpointDelta>,
-    ) -> MetastoreResult<()> {
-        self.try_success()
+        _request: IndexMetadataRequest,
+    ) -> MetastoreResult<IndexMetadataResponse> {
+        self.try_success()?;
+        Ok(IndexMetadataResponse::default())
     }
 
-    async fn list_splits(&self, _query: ListSplitsQuery) -> MetastoreResult<Vec<Split>> {
-        let result = self.try_success();
-        match result {
-            Ok(_) => Ok(Vec::new()),
-            Err(err) => Err(err),
-        }
-    }
-
-    async fn mark_splits_for_deletion<'a>(
+    async fn list_indexes(
         &self,
-        _index_uid: IndexUid,
-        _split_ids: &[&'a str],
-    ) -> MetastoreResult<()> {
-        self.try_success()
+        _request: ListIndexesRequest,
+    ) -> MetastoreResult<ListIndexesResponse> {
+        self.try_success()?;
+        Ok(ListIndexesResponse::default())
     }
 
-    async fn delete_splits<'a>(
+    async fn delete_index(&self, _request: DeleteIndexRequest) -> MetastoreResult<EmptyResponse> {
+        self.try_success()?;
+        Ok(EmptyResponse {})
+    }
+
+    async fn stage_splits(&self, request: StageSplitsRequest) -> MetastoreResult<EmptyResponse> {
+        self.try_success()?;
+        Ok(EmptyResponse {})
+    }
+
+    async fn publish_splits(
         &self,
-        _index_uid: IndexUid,
-        _split_ids: &[&'a str],
-    ) -> MetastoreResult<()> {
-        self.try_success()
+        _request: PublishSplitsRequest,
+    ) -> MetastoreResult<EmptyResponse> {
+        self.try_success()?;
+        Ok(EmptyResponse {})
     }
 
-    async fn add_source(&self, _index_uid: IndexUid, _source: SourceConfig) -> MetastoreResult<()> {
-        self.try_success()
-    }
-
-    async fn toggle_source(
+    async fn list_splits(
         &self,
-        _index_uid: IndexUid,
-        _source_id: &str,
-        _enable: bool,
-    ) -> MetastoreResult<()> {
-        self.try_success()
+        _request: ListSplitsRequest,
+    ) -> MetastoreResult<ListSplitsResponse> {
+        self.try_success()?;
+        Ok(ListSplitsResponse::default())
+    }
+
+    async fn mark_splits_for_deletion(
+        &self,
+        _request: MarkSplitsForDeletionRequest,
+    ) -> MetastoreResult<EmptyResponse> {
+        self.try_success()?;
+        Ok(EmptyResponse {})
+    }
+
+    async fn delete_splits(&self, request: DeleteSplitsRequest) -> MetastoreResult<EmptyResponse> {
+        self.try_success()?;
+        Ok(EmptyResponse {})
+    }
+
+    async fn add_source(&self, _request: AddSourceRequest) -> MetastoreResult<EmptyResponse> {
+        self.try_success()?;
+        Ok(EmptyResponse {})
+    }
+
+    async fn toggle_source(&self, _request: ToggleSourceRequest) -> MetastoreResult<EmptyResponse> {
+        self.try_success()?;
+        Ok(EmptyResponse {})
     }
 
     async fn reset_source_checkpoint(
         &self,
-        _index_uid: IndexUid,
-        _source_id: &str,
-    ) -> MetastoreResult<()> {
-        self.try_success()
+        _request: ResetSourceCheckpointRequest,
+    ) -> MetastoreResult<EmptyResponse> {
+        self.try_success()?;
+        Ok(EmptyResponse {})
     }
 
-    async fn delete_source(&self, _index_uid: IndexUid, _source_id: &str) -> MetastoreResult<()> {
-        self.try_success()
+    async fn delete_source(&self, _request: DeleteSourceRequest) -> MetastoreResult<EmptyResponse> {
+        self.try_success()?;
+        Ok(EmptyResponse {})
     }
 
     async fn create_delete_task(&self, _delete_query: DeleteQuery) -> MetastoreResult<DeleteTask> {
@@ -196,25 +189,20 @@ impl Metastore for RetryTestMetastore {
         }
     }
 
-    async fn update_splits_delete_opstamp<'a>(
+    async fn update_splits_delete_opstamp(
         &self,
-        _index_uid: IndexUid,
-        _split_ids: &[&'a str],
-        _delete_opstamp: u64,
-    ) -> MetastoreResult<()> {
-        self.try_success()
+        _request: UpdateSplitsDeleteOpstampRequest,
+    ) -> MetastoreResult<EmptyResponse> {
+        self.try_success()?;
+        Ok(EmptyResponse {})
     }
 
     async fn list_delete_tasks(
         &self,
-        _index_uid: IndexUid,
-        _opstamp_start: u64,
-    ) -> MetastoreResult<Vec<DeleteTask>> {
-        let result = self.try_success();
-        match result {
-            Ok(_) => Ok(Vec::new()),
-            Err(err) => Err(err),
-        }
+        _request: ListDeleteTasksRequest,
+    ) -> MetastoreResult<ListDeleteTasksResponse> {
+        self.try_success()?;
+        Ok(ListDeleteTasksResponse::default())
     }
 }
 
@@ -241,7 +229,7 @@ async fn test_retryable_metastore_errors() {
 
     // On retryable errors, if max retry count is not achieved, RetryingMetastore should retry until
     // success
-    assert!(metastore.list_indexes_metadatas().await.is_ok());
+    assert!(metastore.list_indexes(ListIndexesRequest {}).await.is_ok());
 
     let metastore: RetryingMetastore = RetryTestMetastore::new_retrying_with_errors(
         5,
@@ -251,7 +239,7 @@ async fn test_retryable_metastore_errors() {
     );
 
     // On non-retryable errors, RetryingMetastore should exit with an error.
-    assert!(metastore.list_indexes_metadatas().await.is_err());
+    assert!(metastore.list_indexes(ListIndexesRequest {}).await.is_err());
 }
 
 #[tokio::test]
@@ -267,7 +255,10 @@ async fn test_retryable_more_than_max_retry() {
             .collect::<Vec<_>>(),
     );
 
-    let error = metastore.list_indexes_metadatas().await.unwrap_err();
+    let error = metastore
+        .list_indexes(ListIndexesRequest {})
+        .await
+        .unwrap_err();
     assert_eq!(
         error,
         MetastoreError::ConnectionError {
@@ -299,7 +290,10 @@ async fn test_mixed_retryable_metastore_errors() {
         ],
     );
 
-    let error = metastore.list_indexes_metadatas().await.unwrap_err();
+    let error = metastore
+        .list_indexes(ListIndexesRequest {})
+        .await
+        .unwrap_err();
 
     assert_eq!(
         error,

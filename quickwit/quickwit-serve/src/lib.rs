@@ -75,12 +75,13 @@ use quickwit_ingest::{
 };
 use quickwit_janitor::{start_janitor_service, JanitorService};
 use quickwit_metastore::{
-    Metastore, MetastoreError, MetastoreEvent, MetastoreEventPublisher, MetastoreGrpcClient,
-    MetastoreResolver, RetryingMetastore,
+    ListIndexesResponseExt, Metastore, MetastoreError, MetastoreEvent, MetastoreEventPublisher,
+    MetastoreGrpcClient, MetastoreResolver, RetryingMetastore,
 };
 use quickwit_opentelemetry::otlp::{OtlpGrpcLogsService, OtlpGrpcTracesService};
 use quickwit_proto::control_plane::ControlPlaneServiceClient;
 use quickwit_proto::indexing::IndexingServiceClient;
+use quickwit_proto::metastore::ListIndexesRequest;
 use quickwit_search::{
     create_search_client_from_channel, start_searcher_service, SearchJobPlacer, SearchService,
     SearchServiceClient, SearcherPool,
@@ -693,8 +694,9 @@ async fn check_cluster_configuration(
         );
     }
     let file_backed_indexes = metastore
-        .list_indexes_metadatas()
+        .list_indexes(ListIndexesRequest {})
         .await?
+        .deserialize_indexes_metadata()?
         .into_iter()
         .filter(|index_metadata| index_metadata.index_uri().protocol().is_file_storage())
         .collect::<Vec<_>>();

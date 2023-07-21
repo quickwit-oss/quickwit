@@ -27,6 +27,7 @@ use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, Qu
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::{SourceInputFormat, TransformConfig};
 use quickwit_doc_mapper::{DocMapper, DocParsingError, JsonObject};
+use quickwit_proto::IndexUid;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 use tantivy::schema::{Field, Value};
@@ -107,7 +108,7 @@ impl From<FromUtf8Error> for DocProcessorError {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct DocProcessorCounters {
-    index_id: String,
+    index_uid: IndexUid,
     source_id: String,
     /// Overall number of documents received, partitioned
     /// into 4 categories:
@@ -129,9 +130,9 @@ pub struct DocProcessorCounters {
 }
 
 impl DocProcessorCounters {
-    pub fn new(index_id: String, source_id: String) -> Self {
+    pub fn new(index_uid: IndexUid, source_id: String) -> Self {
         Self {
-            index_id,
+            index_uid,
             source_id,
             num_parse_errors: 0,
             num_transform_errors: 0,
@@ -162,7 +163,7 @@ impl DocProcessorCounters {
         crate::metrics::INDEXER_METRICS
             .processed_docs_total
             .with_label_values([
-                self.index_id.as_str(),
+                self.index_uid.index_id(),
                 self.source_id.as_str(),
                 "parsing_error",
             ])
@@ -170,7 +171,7 @@ impl DocProcessorCounters {
         crate::metrics::INDEXER_METRICS
             .processed_bytes
             .with_label_values([
-                self.index_id.as_str(),
+                self.index_uid.index_id(),
                 self.source_id.as_str(),
                 "parsing_error",
             ])
@@ -183,7 +184,7 @@ impl DocProcessorCounters {
         crate::metrics::INDEXER_METRICS
             .processed_docs_total
             .with_label_values([
-                self.index_id.as_str(),
+                self.index_uid.index_id(),
                 self.source_id.as_str(),
                 "transform_error",
             ])
@@ -191,7 +192,7 @@ impl DocProcessorCounters {
         crate::metrics::INDEXER_METRICS
             .processed_bytes
             .with_label_values([
-                self.index_id.as_str(),
+                self.index_uid.index_id(),
                 self.source_id.as_str(),
                 "transform_error",
             ])
@@ -204,7 +205,7 @@ impl DocProcessorCounters {
         crate::metrics::INDEXER_METRICS
             .processed_docs_total
             .with_label_values([
-                self.index_id.as_str(),
+                self.index_uid.index_id(),
                 self.source_id.as_str(),
                 "missing_field",
             ])
@@ -212,7 +213,7 @@ impl DocProcessorCounters {
         crate::metrics::INDEXER_METRICS
             .processed_bytes
             .with_label_values([
-                self.index_id.as_str(),
+                self.index_uid.index_id(),
                 self.source_id.as_str(),
                 "missing_field",
             ])
@@ -224,11 +225,11 @@ impl DocProcessorCounters {
         self.overall_num_bytes += num_bytes;
         crate::metrics::INDEXER_METRICS
             .processed_docs_total
-            .with_label_values([self.index_id.as_str(), self.source_id.as_str(), "valid"])
+            .with_label_values([self.index_uid.index_id(), self.source_id.as_str(), "valid"])
             .inc();
         crate::metrics::INDEXER_METRICS
             .processed_bytes
-            .with_label_values([self.index_id.as_str(), self.source_id.as_str(), "valid"])
+            .with_label_values([self.index_uid.index_id(), self.source_id.as_str(), "valid"])
             .inc_by(num_bytes);
     }
 }
@@ -246,7 +247,7 @@ pub struct DocProcessor {
 
 impl DocProcessor {
     pub fn try_new(
-        index_id: String,
+        index_uid: IndexUid,
         source_id: String,
         doc_mapper: Arc<dyn DocMapper>,
         indexer_mailbox: Mailbox<Indexer>,
@@ -261,7 +262,7 @@ impl DocProcessor {
             doc_mapper,
             indexer_mailbox,
             timestamp_field_opt,
-            counters: DocProcessorCounters::new(index_id, source_id),
+            counters: DocProcessorCounters::new(index_uid, source_id),
             publish_lock: PublishLock::default(),
             #[cfg(feature = "vrl")]
             transform_opt: transform_config_opt

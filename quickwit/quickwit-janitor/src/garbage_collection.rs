@@ -26,7 +26,11 @@ use futures::Future;
 use quickwit_actors::ActorContext;
 use quickwit_common::PrettySample;
 use quickwit_metastore::{
-    ListSplitsQuery, Metastore, MetastoreError, SplitInfo, SplitMetadata, SplitState,
+    ListSplitsQuery, ListSplitsRequestExt, ListSplitsResponseExt, Metastore, MetastoreError,
+    SplitInfo, SplitMetadata, SplitState,
+};
+use quickwit_proto::metastore::{
+    DeleteSplitsRequest, ListSplitsRequest, MarkSplitsForDeletionRequest,
 };
 use quickwit_proto::IndexUid;
 use quickwit_storage::{BulkDeleteError, Storage};
@@ -97,31 +101,29 @@ pub async fn run_garbage_collect(
     let grace_period_timestamp =
         OffsetDateTime::now_utc().unix_timestamp() - staged_grace_period.as_secs() as i64;
 
-    let query = ListSplitsQuery::for_index(index_uid.clone())
+    let list_splits_query = ListSplitsQuery::default()
         .with_split_state(SplitState::Staged)
         .with_update_timestamp_lte(grace_period_timestamp);
-
-    let deletable_staged_splits: Vec<SplitMetadata> =
-        protect_future(ctx_opt, metastore.list_splits(query))
-            .await?
-            .into_iter()
-            .map(|meta| meta.split_metadata)
-            .collect();
+    let list_splits_request =
+        ListSplitsRequest::try_from_list_splits_query(index_uid.clone(), list_splits_query)?;
+    let list_splits_response =
+        protect_future(ctx_opt, metastore.list_splits(list_splits_request)).await?;
+    let deletable_staged_splits = list_splits_response.deserialize_splits_metadata()?;
 
     if dry_run {
-        let query = ListSplitsQuery::for_index(index_uid.clone())
-            .with_split_state(SplitState::MarkedForDeletion);
+        let list_splits_query =
+            ListSplitsQuery::default().with_split_state(SplitState::MarkedForDeletion);
+        let list_splits_request =
+            ListSplitsRequest::try_from_list_splits_query(index_uid.clone(), list_splits_query)?;
+        let list_splits_response =
+            protect_future(ctx_opt, metastore.list_splits(list_splits_request)).await?;
+        let mut splits_marked_for_deletion = list_splits_response.deserialize_splits_metadata()?;
 
-        let mut splits_marked_for_deletion = protect_future(ctx_opt, metastore.list_splits(query))
-            .await?
-            .into_iter()
-            .map(|split| split.split_metadata)
-            .collect::<Vec<_>>();
         splits_marked_for_deletion.extend(deletable_staged_splits);
 
         let candidate_entries: Vec<SplitInfo> = splits_marked_for_deletion
             .into_iter()
-            .map(|split| split.as_split_info())
+            .map(|split_metadata| split_metadata.as_split_info())
             .collect();
         return Ok(SplitRemovalInfo {
             removed_split_entries: candidate_entries,
@@ -130,18 +132,18 @@ pub async fn run_garbage_collect(
     }
 
     // Schedule all eligible staged splits for delete
-    let split_ids: Vec<&str> = deletable_staged_splits
-        .iter()
-        .map(|split| split.split_id())
+    let split_ids: Vec<String> = deletable_staged_splits
+        .into_iter()
+        .map(|split_metadata| split_metadata.split_id)
         .collect();
     if !split_ids.is_empty() {
+        let mark_splits_request = MarkSplitsForDeletionRequest::new(index_uid.clone(), split_ids);
         protect_future(
             ctx_opt,
-            metastore.mark_splits_for_deletion(index_uid.clone(), &split_ids),
+            metastore.mark_splits_for_deletion(mark_splits_request),
         )
         .await?;
     }
-
     // We delete splits marked for deletion that have an update timestamp anterior
     // to `now - deletion_grace_period`.
     let updated_before_timestamp =
@@ -176,25 +178,38 @@ async fn delete_splits_marked_for_deletion(
     let mut failed_splits = Vec::new();
 
     loop {
-        let query = ListSplitsQuery::for_index(index_uid.clone())
+        let list_splits_query = ListSplitsQuery::default()
             .with_split_state(SplitState::MarkedForDeletion)
             .with_update_timestamp_lte(updated_before_timestamp)
             .with_limit(DELETE_SPLITS_BATCH_SIZE);
 
-        let list_splits_result = protect_future(ctx_opt, metastore.list_splits(query)).await;
-
-        let splits_to_delete = match list_splits_result {
-            Ok(splits) => splits,
+        let list_splits_request = match ListSplitsRequest::try_from_list_splits_query(
+            index_uid.clone(),
+            list_splits_query,
+        ) {
+            Ok(list_splits_request) => list_splits_request,
             Err(error) => {
-                error!(error = ?error, "Failed to fetch deletable splits.");
+                error!(error=?error, "Failed to serialize list splits query.");
                 break;
             }
         };
-        let splits_to_delete = splits_to_delete
-            .into_iter()
-            .map(|split| split.split_metadata)
-            .collect::<Vec<_>>();
+        let list_splits_result =
+            protect_future(ctx_opt, metastore.list_splits(list_splits_request)).await;
 
+        let list_splits_response = match list_splits_result {
+            Ok(list_splits_response) => list_splits_response,
+            Err(error) => {
+                error!(error=?error, "Failed to list splits marked for deletion.");
+                break;
+            }
+        };
+        let splits_to_delete = match list_splits_response.deserialize_splits_metadata() {
+            Ok(splits_metadata) => splits_metadata,
+            Err(error) => {
+                error!(error=?error, "Failed to deserialize splits metadata.");
+                break;
+            }
+        };
         let num_splits_to_delete = splits_to_delete.len();
 
         if num_splits_to_delete == 0 {
@@ -287,22 +302,24 @@ pub async fn delete_splits_from_storage_and_metastore(
         }
     };
     if !successes.is_empty() {
-        let split_ids: Vec<&str> = successes
+        let split_ids: Vec<String> = successes
             .iter()
-            .map(|split_info| split_info.split_id.as_str())
+            .map(|split_info| split_info.split_id.clone())
             .collect();
-        let metastore_result = protect_future(
-            ctx_opt,
-            metastore.delete_splits(index_uid.clone(), &split_ids),
-        )
-        .await;
+        let delete_splits_request = DeleteSplitsRequest::new(index_uid.clone(), split_ids);
+        let metastore_result =
+            protect_future(ctx_opt, metastore.delete_splits(delete_splits_request)).await;
 
         if let Err(metastore_error) = metastore_result {
+            let failed_split_ids: Vec<&String> = successes
+                .iter()
+                .map(|split_info| &split_info.split_id)
+                .collect();
             error!(
                 error=?metastore_error,
                 index_id=index_uid.index_id(),
                 "Failed to delete split(s) {:?} from metastore.",
-                PrettySample::new(&split_ids, 5),
+                PrettySample::new(&failed_split_ids, 5),
             );
             let delete_splits_error = DeleteSplitsError {
                 successes: Vec::new(),

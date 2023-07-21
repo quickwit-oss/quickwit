@@ -29,7 +29,13 @@ use quickwit_config::{
 use quickwit_core::{IndexService, IndexServiceError};
 use quickwit_doc_mapper::{analyze_text, TokenizerConfig};
 use quickwit_metastore::{
-    IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, Split, SplitInfo, SplitState,
+    IndexMetadata, IndexMetadataResponseExt, ListIndexesResponseExt, ListSplitsQuery,
+    ListSplitsRequestExt, ListSplitsResponseExt, Metastore, MetastoreError, Split, SplitInfo,
+    SplitMetadata, SplitState,
+};
+use quickwit_proto::metastore::{
+    DeleteSourceRequest, IndexMetadataRequest, ListIndexesRequest, ListSplitsRequest,
+    MarkSplitsForDeletionRequest, ResetSourceCheckpointRequest, ToggleSourceRequest,
 };
 use quickwit_proto::IndexUid;
 use serde::de::DeserializeOwned;
@@ -49,7 +55,7 @@ use crate::with_arg;
         create_index,
         clear_index,
         delete_index,
-        get_indexes_metadatas,
+        get_indexes_metadata,
         list_splits,
         describe_index,
         mark_splits_for_deletion,
@@ -68,7 +74,7 @@ pub fn index_management_handlers(
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     // Indexes handlers.
     get_index_metadata_handler(index_service.metastore())
-        .or(get_indexes_metadatas_handler(index_service.metastore()))
+        .or(get_indexes_metadata_handler(index_service.metastore()))
         .or(create_index_handler(index_service.clone(), node_config))
         .or(clear_index_handler(index_service.clone()))
         .or(delete_index_handler(index_service.clone()))
@@ -80,7 +86,7 @@ pub fn index_management_handlers(
         .or(reset_source_checkpoint_handler(index_service.metastore()))
         .or(toggle_source_handler(index_service.metastore()))
         .or(create_source_handler(index_service.clone()))
-        .or(get_source_handler(index_service.metastore()))
+        .or(get_source_handler(index_service.clone()))
         .or(delete_source_handler(index_service.metastore()))
         // Tokenizer handlers.
         .or(analyze_request_handler())
@@ -133,17 +139,20 @@ async fn get_index_metadata(
     index_id: String,
     metastore: Arc<dyn Metastore>,
 ) -> Result<IndexMetadata, MetastoreError> {
-    info!(index_id = %index_id, "get-index-metadata");
-    metastore.index_metadata(&index_id).await
+    info!(index_id=%index_id, "get-index-metadata");
+    let index_metadata_request = IndexMetadataRequest::new(index_id);
+    let index_metadata_response = metastore.index_metadata(index_metadata_request).await?;
+    let index_metadata = index_metadata_response.deserialize_index_metadata()?;
+    Ok(index_metadata)
 }
 
-fn get_indexes_metadatas_handler(
+fn get_indexes_metadata_handler(
     metastore: Arc<dyn Metastore>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     warp::path!("indexes")
         .and(warp::get())
         .and(with_arg(metastore))
-        .then(get_indexes_metadatas)
+        .then(get_indexes_metadata)
         .and(extract_format_from_qs())
         .map(make_json_api_response)
 }
@@ -180,25 +189,29 @@ async fn describe_index(
     index_id: String,
     metastore: Arc<dyn Metastore>,
 ) -> Result<IndexStats, MetastoreError> {
-    let index_metadata = metastore.index_metadata(&index_id).await?;
-    let query = ListSplitsQuery::for_index(index_metadata.index_uid.clone());
-    let splits = metastore.list_splits(query).await?;
-    let published_splits: Vec<Split> = splits
-        .into_iter()
-        .filter(|split| split.split_state == SplitState::Published)
-        .collect();
+    let index_metadata_request = IndexMetadataRequest::new(&index_id);
+    let index_metadata_response = metastore.index_metadata(index_metadata_request).await?;
+    let index_metadata = index_metadata_response.deserialize_index_metadata()?;
+    let index_uid: IndexUid = index_metadata.index_uid.clone().into();
+
+    let list_splits_query = ListSplitsQuery::default().with_split_state(SplitState::Published);
+    let list_splits_request =
+        ListSplitsRequest::try_from_list_splits_query(index_uid, list_splits_query)?;
+    let list_splits_response = metastore.list_splits(list_splits_request).await?;
+    let published_splits = list_splits_response.deserialize_splits_metadata()?;
+
     let mut total_num_docs = 0;
     let mut total_num_bytes = 0;
     let mut total_uncompressed_num_bytes = 0;
     let mut min_timestamp: Option<i64> = None;
     let mut max_timestamp: Option<i64> = None;
 
-    for split in &published_splits {
-        total_num_docs += split.split_metadata.num_docs as u64;
-        total_num_bytes += split.split_metadata.footer_offsets.end;
-        total_uncompressed_num_bytes += split.split_metadata.uncompressed_docs_size_in_bytes;
+    for published_split in &published_splits {
+        total_num_docs += published_split.num_docs as u64;
+        total_num_bytes += published_split.footer_offsets.end;
+        total_uncompressed_num_bytes += published_split.uncompressed_docs_size_in_bytes;
 
-        if let Some(time_range) = &split.split_metadata.time_range {
+        if let Some(time_range) = &published_split.time_range {
             min_timestamp = min_timestamp
                 .min(Some(*time_range.start()))
                 .or(Some(*time_range.start()));
@@ -207,11 +220,10 @@ async fn describe_index(
                 .or(Some(*time_range.end()));
         }
     }
-
     let index_config = index_metadata.into_index_config();
     let index_stats = IndexStats {
         index_id,
-        index_uri: index_config.index_uri.clone(),
+        index_uri: index_config.index_uri,
         num_published_splits: published_splits.len(),
         size_published_splits: total_num_bytes,
         num_published_docs: total_num_docs,
@@ -278,25 +290,35 @@ pub struct ListSplitsQueryParams {
 /// Get splits.
 async fn list_splits(
     index_id: String,
-    list_split_query: ListSplitsQueryParams,
+    list_splits_query_params: ListSplitsQueryParams,
     metastore: Arc<dyn Metastore>,
-) -> Result<Vec<Split>, MetastoreError> {
-    let index_uid: IndexUid = metastore.index_metadata(&index_id).await?.index_uid;
-    info!(index_id = %index_id, list_split_query = ?list_split_query, "get-splits");
-    let mut query = ListSplitsQuery::for_index(index_uid);
-    if let Some(split_states) = list_split_query.split_states {
-        query = query.with_split_states(split_states);
+) -> Result<Vec<SplitMetadata>, MetastoreError> {
+    let index_metadata_request = IndexMetadataRequest::new(&index_id);
+    let index_metadata_response = metastore.index_metadata(index_metadata_request).await?;
+    let index_metadata = index_metadata_response.deserialize_index_metadata()?;
+    let index_uid: IndexUid = index_metadata.index_uid.into();
+
+    info!(index_id=%index_id, list_splits_query=?list_splits_query_params, "list-splits");
+
+    let mut list_splits_query = ListSplitsQuery::default();
+
+    if let Some(split_states) = list_splits_query_params.split_states {
+        list_splits_query = list_splits_query.with_split_states(split_states);
     }
-    if let Some(start_timestamp) = list_split_query.start_timestamp {
-        query = query.with_time_range_start_gte(start_timestamp);
+    if let Some(start_timestamp) = list_splits_query_params.start_timestamp {
+        list_splits_query = list_splits_query.with_time_range_start_gte(start_timestamp);
     }
-    if let Some(end_timestamp) = list_split_query.end_timestamp {
-        query = query.with_time_range_end_lt(end_timestamp);
+    if let Some(end_timestamp) = list_splits_query_params.end_timestamp {
+        list_splits_query = list_splits_query.with_time_range_end_lt(end_timestamp);
     }
-    if let Some(end_created_timestamp) = list_split_query.end_create_timestamp {
-        query = query.with_create_timestamp_lt(end_created_timestamp);
+    if let Some(end_created_timestamp) = list_splits_query_params.end_create_timestamp {
+        list_splits_query = list_splits_query.with_create_timestamp_lt(end_created_timestamp);
     }
-    metastore.list_splits(query).await
+    let list_splits_request =
+        ListSplitsRequest::try_from_list_splits_query(index_uid, list_splits_query)?;
+    let list_splits_response = metastore.list_splits(list_splits_request).await?;
+    let splits_metadata = list_splits_response.deserialize_splits_metadata()?;
+    Ok(splits_metadata)
 }
 
 fn list_splits_handler(
@@ -335,16 +357,18 @@ async fn mark_splits_for_deletion(
     splits_for_deletion: SplitsForDeletion,
     metastore: Arc<dyn Metastore>,
 ) -> Result<(), MetastoreError> {
-    let index_uid: IndexUid = metastore.index_metadata(&index_id).await?.index_uid;
-    info!(index_id = %index_id, splits_ids = ?splits_for_deletion.split_ids, "mark-splits-for-deletion");
-    let split_ids: Vec<&str> = splits_for_deletion
-        .split_ids
-        .iter()
-        .map(|split_id| split_id.as_ref())
-        .collect();
+    let index_metadata_request = IndexMetadataRequest::new(&index_id);
+    let index_metadata_response = metastore.index_metadata(index_metadata_request).await?;
+    let index_metadata = index_metadata_response.deserialize_index_metadata()?;
+    let index_uid: IndexUid = index_metadata.index_uid.clone().into();
+    info!(index_id=%index_id, splits_ids=?splits_for_deletion.split_ids, "mark-splits-for-deletion");
+
+    let mark_splits_request =
+        MarkSplitsForDeletionRequest::new(index_uid, splits_for_deletion.split_ids);
     metastore
-        .mark_splits_for_deletion(index_uid, &split_ids)
-        .await
+        .mark_splits_for_deletion(mark_splits_request)
+        .await?;
+    Ok(())
 }
 
 fn mark_splits_for_deletion_handler(
@@ -369,11 +393,13 @@ fn mark_splits_for_deletion_handler(
     ),
 )]
 /// Gets indexes metadata.
-async fn get_indexes_metadatas(
+async fn get_indexes_metadata(
     metastore: Arc<dyn Metastore>,
 ) -> Result<Vec<IndexMetadata>, MetastoreError> {
     info!("get-indexes-metadatas");
-    metastore.list_indexes_metadatas().await
+    let list_indexes_response = metastore.list_indexes(ListIndexesRequest {}).await?;
+    let indexes_metadata = list_indexes_response.deserialize_indexes_metadata()?;
+    Ok(indexes_metadata)
 }
 
 #[derive(Deserialize, utoipa::IntoParams, utoipa::ToSchema)]
@@ -553,21 +579,16 @@ async fn create_source(
                 .to_string(),
         ));
     }
-    let index_uid: IndexUid = index_service
-        .metastore()
-        .index_metadata(&index_id)
-        .await?
-        .index_uid;
-    info!(index_id = %index_id, source_id = %source_config.source_id, "create-source");
-    index_service.create_source(index_uid, source_config).await
+    info!(index_id=%index_id, source_id=%source_config.source_id, "create-source");
+    index_service.create_source(&index_id, source_config).await
 }
 
 fn get_source_handler(
-    metastore: Arc<dyn Metastore>,
+    index_service: Arc<IndexService>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     warp::path!("indexes" / String / "sources" / String)
         .and(warp::get())
-        .and(with_arg(metastore))
+        .and(with_arg(index_service))
         .then(get_source)
         .and(extract_format_from_qs())
         .map(make_json_api_response)
@@ -576,19 +597,10 @@ fn get_source_handler(
 async fn get_source(
     index_id: String,
     source_id: String,
-    metastore: Arc<dyn Metastore>,
-) -> Result<SourceConfig, MetastoreError> {
-    info!(index_id = %index_id, source_id = %source_id, "get-source");
-    let source_config = metastore
-        .index_metadata(&index_id)
-        .await?
-        .sources
-        .get(&source_id)
-        .ok_or_else(|| MetastoreError::SourceDoesNotExist {
-            source_id: source_id.to_string(),
-        })?
-        .clone();
-    Ok(source_config)
+    index_service: Arc<IndexService>,
+) -> Result<SourceConfig, IndexServiceError> {
+    info!(index_id=%index_id, source_id=%source_id, "get-source");
+    index_service.get_source(&index_id, &source_id).await
 }
 
 fn reset_source_checkpoint_handler(
@@ -620,11 +632,18 @@ async fn reset_source_checkpoint(
     source_id: String,
     metastore: Arc<dyn Metastore>,
 ) -> Result<(), MetastoreError> {
-    let index_uid: IndexUid = metastore.index_metadata(&index_id).await?.index_uid;
     info!(index_id = %index_id, source_id = %source_id, "reset-checkpoint");
+
+    let index_metadata_request = IndexMetadataRequest::new(index_id);
+    let index_metadata_response = metastore.index_metadata(index_metadata_request).await?;
+    let index_metadata = index_metadata_response.deserialize_index_metadata()?;
+    let index_uid: IndexUid = index_metadata.index_uid.into();
+
+    let reset_source_checkpoint_request = ResetSourceCheckpointRequest::new(index_uid, source_id);
     metastore
-        .reset_source_checkpoint(index_uid, &source_id)
-        .await
+        .reset_source_checkpoint(reset_source_checkpoint_request)
+        .await?;
+    Ok(())
 }
 
 fn toggle_source_handler(
@@ -665,17 +684,21 @@ async fn toggle_source(
     toggle_source: ToggleSource,
     metastore: Arc<dyn Metastore>,
 ) -> Result<(), IndexServiceError> {
-    info!(index_id = %index_id, source_id = %source_id, enable = toggle_source.enable, "toggle-source");
-    let index_uid: IndexUid = metastore.index_metadata(&index_id).await?.index_uid;
+    info!(index_id=%index_id, source_id=%source_id, enable=toggle_source.enable, "toggle-source");
     if [CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID].contains(&source_id.as_str()) {
         return Err(IndexServiceError::OperationNotAllowed(format!(
             "Source `{source_id}` is managed by Quickwit, you cannot enable or disable a source \
              managed by Quickwit."
         )));
     }
-    metastore
-        .toggle_source(index_uid, &source_id, toggle_source.enable)
-        .await?;
+    let index_metadata_request = IndexMetadataRequest::new(index_id);
+    let index_metadata_response = metastore.index_metadata(index_metadata_request).await?;
+    let index_metadata = index_metadata_response.deserialize_index_metadata()?;
+    let index_uid: IndexUid = index_metadata.index_uid.into();
+
+    let toggle_source_request =
+        ToggleSourceRequest::new(index_uid, source_id, toggle_source.enable);
+    metastore.toggle_source(toggle_source_request).await?;
     Ok(())
 }
 
@@ -708,15 +731,20 @@ async fn delete_source(
     source_id: String,
     metastore: Arc<dyn Metastore>,
 ) -> Result<(), IndexServiceError> {
-    info!(index_id = %index_id, source_id = %source_id, "delete-source");
-    let index_uid: IndexUid = metastore.index_metadata(&index_id).await?.index_uid;
+    info!(index_id=%index_id, source_id=%source_id, "delete-source");
+
     if [INGEST_API_SOURCE_ID, CLI_INGEST_SOURCE_ID].contains(&source_id.as_str()) {
         return Err(IndexServiceError::OperationNotAllowed(format!(
-            "Source `{source_id}` is managed by Quickwit, you cannot delete a source managed by \
-             Quickwit."
+            "Source `{source_id}` is managed by Quickwit and cannot be deleted."
         )));
     }
-    metastore.delete_source(index_uid, &source_id).await?;
+    let index_metadata_request = IndexMetadataRequest::new(index_id);
+    let index_metadata_response = metastore.index_metadata(index_metadata_request).await?;
+    let index_metadata = index_metadata_response.deserialize_index_metadata()?;
+    let index_uid: IndexUid = index_metadata.index_uid.into();
+
+    let delete_source_request = DeleteSourceRequest::new(index_uid, source_id);
+    metastore.delete_source(delete_source_request).await?;
     Ok(())
 }
 

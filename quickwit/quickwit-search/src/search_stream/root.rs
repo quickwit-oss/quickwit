@@ -23,7 +23,8 @@ use bytes::Bytes;
 use futures::{StreamExt, TryStreamExt};
 use quickwit_common::uri::Uri;
 use quickwit_config::build_doc_mapper;
-use quickwit_metastore::Metastore;
+use quickwit_metastore::{IndexMetadataResponseExt, Metastore};
+use quickwit_proto::metastore::IndexMetadataRequest;
 use quickwit_proto::{LeafSearchStreamRequest, SearchRequest, SearchStreamRequest};
 use quickwit_query::query_ast::QueryAst;
 use tokio_stream::StreamMap;
@@ -43,19 +44,19 @@ pub async fn root_search_stream(
     // TODO: building a search request should not be necessary for listing splits.
     // This needs some refactoring: relevant splits, metadata_map, jobs...
 
-    let index_metadata = metastore
-        .index_metadata(&search_stream_request.index_id)
-        .await?;
+    let index_metadata_request = IndexMetadataRequest::new(&search_stream_request.index_id);
+    let index_metadata_response = metastore.index_metadata(index_metadata_request).await?;
+    let index_metadata = index_metadata_response.deserialize_index_metadata()?;
     let index_uid = index_metadata.index_uid.clone();
     let index_config = index_metadata.into_index_config();
 
     let doc_mapper = build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)
-        .map_err(|err| {
-            SearchError::InternalError(format!("Failed to build doc mapper. Cause: {err}"))
+        .map_err(|error| {
+            SearchError::InternalError(format!("Failed to build doc mapper. Cause: {error}"))
         })?;
 
     let query_ast: QueryAst = serde_json::from_str(&search_stream_request.query_ast)
-        .map_err(|err| SearchError::InvalidQuery(err.to_string()))?;
+        .map_err(|error| SearchError::InvalidQuery(error.to_string()))?;
     let query_ast_resolved = query_ast.parse_user_query(doc_mapper.default_search_fields())?;
 
     if let Some(timestamp_field) = doc_mapper.timestamp_field_name() {
@@ -66,20 +67,19 @@ pub async fn root_search_stream(
             &mut search_stream_request.end_timestamp,
         );
     }
-
     // Validates the query by effectively building it against the current schema.
     doc_mapper.query(doc_mapper.schema(), &query_ast_resolved, true)?;
     search_stream_request.query_ast = serde_json::to_string(&query_ast_resolved)?;
 
     let search_request = SearchRequest::try_from(search_stream_request.clone())?;
-    let split_metadatas = list_relevant_splits(index_uid, &search_request, metastore).await?;
+    let splits_metadata = list_relevant_splits(index_uid, &search_request, metastore).await?;
 
-    let doc_mapper_str = serde_json::to_string(&doc_mapper).map_err(|err| {
-        SearchError::InternalError(format!("Failed to serialize doc mapper: Cause {err}"))
+    let doc_mapper_str = serde_json::to_string(&doc_mapper).map_err(|error| {
+        SearchError::InternalError(format!("Failed to serialize doc mapper: Cause {error}"))
     })?;
 
     let index_uri: &Uri = &index_config.index_uri;
-    let leaf_search_jobs: Vec<SearchJob> = split_metadatas.iter().map(SearchJob::from).collect();
+    let leaf_search_jobs: Vec<SearchJob> = splits_metadata.iter().map(SearchJob::from).collect();
     let assigned_leaf_search_jobs = cluster_client
         .search_job_placer
         .assign_jobs(leaf_search_jobs, &HashSet::default())

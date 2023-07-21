@@ -33,7 +33,10 @@ use quickwit_config::{
 };
 use quickwit_doc_mapper::DocMapper;
 use quickwit_ingest::{init_ingest_api, QUEUES_DIR_NAME};
-use quickwit_metastore::{Metastore, MetastoreResolver, Split, SplitMetadata, SplitState};
+use quickwit_metastore::{
+    CreateIndexRequestExt, Metastore, MetastoreResolver, Split, SplitMetadata, SplitState,
+};
+use quickwit_proto::metastore::CreateIndexRequest;
 use quickwit_proto::IndexUid;
 use quickwit_storage::{Storage, StorageResolver};
 use serde_json::Value as JsonValue;
@@ -97,7 +100,9 @@ impl TestSandbox {
         let metastore = metastore_resolver
             .resolve(&Uri::from_well_formed(METASTORE_URI))
             .await?;
-        let index_uid = metastore.create_index(index_config.clone()).await?;
+        let create_index_request = CreateIndexRequest::try_from_index_config(index_config)?;
+        let create_index_response = metastore.create_index(create_index_request).await?;
+        let index_uid: IndexUid = create_index_response.index_uid.into();
         let storage = storage_resolver.resolve(&index_uri).await?;
         let universe = Universe::with_accelerated_time();
         let queues_dir_path = temp_dir.path().join(QUEUES_DIR_NAME);
@@ -159,7 +164,7 @@ impl TestSandbox {
         let pipeline_id = self
             .indexing_service
             .ask_for_res(SpawnPipeline {
-                index_id: self.index_uid.index_id().to_string(),
+                index_uid: self.index_uid.clone(),
                 source_config,
                 pipeline_ord: 0,
             })

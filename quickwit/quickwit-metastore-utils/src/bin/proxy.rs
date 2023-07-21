@@ -142,7 +142,7 @@ impl MetastoreService for MetastoreProxyService {
     async fn stage_splits(
         &self,
         request: Request<StageSplitsRequest>,
-    ) -> Result<Response<SplitResponse>, Status> {
+    ) -> Result<Response<EmptyResponse>, Status> {
         let mut lock = self.inner.lock().await;
         lock.record(request.get_ref().clone()).await.unwrap();
         let resp = lock.client.stage_splits(request).await?;
@@ -152,7 +152,7 @@ impl MetastoreService for MetastoreProxyService {
     async fn publish_splits(
         &self,
         request: tonic::Request<PublishSplitsRequest>,
-    ) -> Result<tonic::Response<SplitResponse>, tonic::Status> {
+    ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
         let mut lock = self.inner.lock().await;
         lock.record(request.get_ref().clone()).await.unwrap();
         let resp = lock.client.publish_splits(request).await?;
@@ -162,7 +162,7 @@ impl MetastoreService for MetastoreProxyService {
     async fn mark_splits_for_deletion(
         &self,
         request: tonic::Request<MarkSplitsForDeletionRequest>,
-    ) -> Result<tonic::Response<SplitResponse>, tonic::Status> {
+    ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
         let mut lock = self.inner.lock().await;
         lock.record(request.get_ref().clone()).await.unwrap();
         let resp = lock.client.mark_splits_for_deletion(request).await?;
@@ -172,7 +172,7 @@ impl MetastoreService for MetastoreProxyService {
     async fn delete_splits(
         &self,
         request: tonic::Request<DeleteSplitsRequest>,
-    ) -> Result<tonic::Response<SplitResponse>, tonic::Status> {
+    ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
         let mut lock = self.inner.lock().await;
         lock.record(request.get_ref().clone()).await.unwrap();
         let resp = lock.client.delete_splits(request).await?;
@@ -182,7 +182,7 @@ impl MetastoreService for MetastoreProxyService {
     async fn add_source(
         &self,
         request: tonic::Request<AddSourceRequest>,
-    ) -> Result<tonic::Response<SourceResponse>, tonic::Status> {
+    ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
         let mut lock = self.inner.lock().await;
         lock.record(request.get_ref().clone()).await.unwrap();
         let resp = lock.client.add_source(request).await?;
@@ -192,7 +192,7 @@ impl MetastoreService for MetastoreProxyService {
     async fn toggle_source(
         &self,
         request: tonic::Request<ToggleSourceRequest>,
-    ) -> Result<tonic::Response<SourceResponse>, tonic::Status> {
+    ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
         let mut lock = self.inner.lock().await;
         lock.record(request.get_ref().clone()).await.unwrap();
         let resp = lock.client.toggle_source(request).await?;
@@ -202,7 +202,7 @@ impl MetastoreService for MetastoreProxyService {
     async fn delete_source(
         &self,
         request: tonic::Request<DeleteSourceRequest>,
-    ) -> Result<tonic::Response<SourceResponse>, tonic::Status> {
+    ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
         let mut lock = self.inner.lock().await;
         lock.record(request.get_ref().clone()).await.unwrap();
         let resp = lock.client.delete_source(request).await?;
@@ -212,7 +212,7 @@ impl MetastoreService for MetastoreProxyService {
     async fn reset_source_checkpoint(
         &self,
         request: tonic::Request<ResetSourceCheckpointRequest>,
-    ) -> Result<tonic::Response<SourceResponse>, tonic::Status> {
+    ) -> Result<tonic::Response<EmptyResponse>, tonic::Status> {
         let mut lock = self.inner.lock().await;
         lock.record(request.get_ref().clone()).await.unwrap();
         let resp = lock.client.reset_source_checkpoint(request).await?;

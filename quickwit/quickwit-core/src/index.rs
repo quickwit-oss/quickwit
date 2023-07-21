@@ -29,10 +29,17 @@ use quickwit_janitor::{
     SplitRemovalInfo,
 };
 use quickwit_metastore::{
-    IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, SplitInfo, SplitMetadata, SplitState,
+    AddSourceRequestExt, CreateIndexRequestExt, IndexMetadata, IndexMetadataResponseExt,
+    ListSplitsQuery, ListSplitsRequestExt, ListSplitsResponseExt, Metastore, MetastoreError,
+    SplitInfo, SplitMetadata, SplitState,
+};
+use quickwit_proto::metastore::{
+    AddSourceRequest, CreateIndexRequest, DeleteIndexRequest, IndexMetadataRequest,
+    ListSplitsRequest, MarkSplitsForDeletionRequest, ResetSourceCheckpointRequest,
 };
 use quickwit_proto::{IndexUid, ServiceError, ServiceErrorCode};
 use quickwit_storage::{StorageResolver, StorageResolverError};
+use serde_json::value::Index;
 use thiserror::Error;
 use tracing::{error, info};
 
@@ -111,17 +118,29 @@ impl IndexService {
                 }
             }
         }
-
         // Add default ingest-api & cli-ingest sources config.
-        let index_id = index_config.index_id.clone();
-        let index_uid = self.metastore.create_index(index_config).await?;
-        self.metastore
-            .add_source(index_uid.clone(), SourceConfig::ingest_api_default())
+        let create_index_request = CreateIndexRequest::try_from_index_config(index_config)?;
+        let create_index_response = self.metastore.create_index(create_index_request).await?;
+        let index_uid: IndexUid = create_index_response.index_uid.into();
+
+        let add_source_request = AddSourceRequest::try_from_source_config(
+            index_uid.clone(),
+            SourceConfig::ingest_api_default(),
+        )?;
+        self.metastore.add_source(add_source_request).await?;
+
+        let add_source_request = AddSourceRequest::try_from_source_config(
+            index_uid.clone(),
+            SourceConfig::cli_ingest_source(),
+        )?;
+        self.metastore.add_source(add_source_request).await?;
+
+        let index_metadata_request = IndexMetadataRequest::strict(index_uid);
+        let index_metadata_response = self
+            .metastore
+            .index_metadata(index_metadata_request)
             .await?;
-        self.metastore
-            .add_source(index_uid, SourceConfig::cli_ingest_source())
-            .await?;
-        let index_metadata = self.metastore.index_metadata(&index_id).await?;
+        let index_metadata = index_metadata_response.deserialize_index_metadata()?;
         Ok(index_metadata)
     }
 
@@ -136,43 +155,50 @@ impl IndexService {
         index_id: &str,
         dry_run: bool,
     ) -> Result<Vec<SplitInfo>, IndexServiceError> {
-        let index_metadata = self.metastore.index_metadata(index_id).await?;
-        let index_uid = index_metadata.index_uid.clone();
-        let index_uri = index_metadata.into_index_config().index_uri.clone();
-        let storage = self.storage_resolver.resolve(&index_uri).await?;
+        let index_metadata_request = IndexMetadataRequest::new(index_id);
+        let index_metadata_response = self
+            .metastore
+            .index_metadata(index_metadata_request)
+            .await?;
+        let index_metadata = index_metadata_response.deserialize_index_metadata()?;
+        let index_uri = index_metadata.index_uri();
+        let storage = self.storage_resolver.resolve(index_uri).await?;
+
+        let index_uid: IndexUid = index_metadata.index_uid.into();
 
         if dry_run {
-            let splits_to_delete = self
-                .metastore
-                .list_all_splits(index_uid.clone())
-                .await?
+            let list_splits_request = ListSplitsRequest::all(index_uid);
+            let list_splits_response = self.metastore.list_splits(list_splits_request).await?;
+            let split_infos = list_splits_response
+                .deserialize_splits_metadata()?
                 .into_iter()
-                .map(|split| split.split_metadata.as_split_info())
+                .map(|split_metadata| split_metadata.as_split_info())
                 .collect::<Vec<_>>();
-            return Ok(splits_to_delete);
+            return Ok(split_infos);
         }
         // Schedule staged and published splits for deletion.
-        let query = ListSplitsQuery::for_index(index_uid.clone())
+        let list_splits_query = ListSplitsQuery::default()
             .with_split_states([SplitState::Staged, SplitState::Published]);
-        let splits = self.metastore.list_splits(query).await?;
-        let split_ids = splits
-            .iter()
-            .map(|split| split.split_id())
+        let list_splits_request =
+            ListSplitsRequest::try_from_list_splits_query(index_uid.clone(), list_splits_query)?;
+        let list_splits_response = self.metastore.list_splits(list_splits_request).await?;
+        let split_ids = list_splits_response
+            .deserialize_splits_metadata()?
+            .into_iter()
+            .map(|split_metadata| split_metadata.split_id)
             .collect::<Vec<_>>();
+        let mark_splits_request = MarkSplitsForDeletionRequest::new(index_uid.clone(), split_ids);
         self.metastore
-            .mark_splits_for_deletion(index_uid.clone(), &split_ids)
+            .mark_splits_for_deletion(mark_splits_request)
             .await?;
 
         // Select splits to delete
-        let query = ListSplitsQuery::for_index(index_uid.clone())
-            .with_split_state(SplitState::MarkedForDeletion);
-        let splits_to_delete = self
-            .metastore
-            .list_splits(query)
-            .await?
-            .into_iter()
-            .map(|split| split.split_metadata)
-            .collect::<Vec<_>>();
+        let list_splits_query =
+            ListSplitsQuery::default().with_split_state(SplitState::MarkedForDeletion);
+        let list_splits_request =
+            ListSplitsRequest::try_from_list_splits_query(index_uid.clone(), list_splits_query)?;
+        let list_splits_response = self.metastore.list_splits(list_splits_request).await?;
+        let splits_to_delete = list_splits_response.deserialize_splits_metadata()?;
 
         let deleted_splits = delete_splits_from_storage_and_metastore(
             index_uid.clone(),
@@ -182,7 +208,9 @@ impl IndexService {
             None,
         )
         .await?;
-        self.metastore.delete_index(index_uid).await?;
+
+        let delete_index_request = DeleteIndexRequest::new(index_uid);
+        self.metastore.delete_index(delete_index_request).await?;
 
         Ok(deleted_splits)
     }
@@ -198,13 +226,15 @@ impl IndexService {
         grace_period: Duration,
         dry_run: bool,
     ) -> anyhow::Result<SplitRemovalInfo> {
-        let index_metadata = self.metastore.index_metadata(index_id).await?;
-        let index_uid = index_metadata.index_uid.clone();
-        let index_config = index_metadata.into_index_config();
-        let storage = self
-            .storage_resolver
-            .resolve(&index_config.index_uri)
+        let index_metadata_request = IndexMetadataRequest::new(index_id);
+        let index_metadata_response = self
+            .metastore
+            .index_metadata(index_metadata_request)
             .await?;
+        let index_metadata = index_metadata_response.deserialize_index_metadata()?;
+        let index_uri = index_metadata.index_uri();
+        let storage = self.storage_resolver.resolve(index_uri).await?;
+        let index_uid: IndexUid = index_metadata.index_uid.into();
 
         let deleted_entries = run_garbage_collect(
             index_uid,
@@ -232,27 +262,33 @@ impl IndexService {
     /// * `index_id` - The target index Id.
     /// * `storage_resolver` - A storage resolver object to access the storage.
     pub async fn clear_index(&self, index_id: &str) -> Result<(), IndexServiceError> {
-        let index_metadata = self.metastore.index_metadata(index_id).await?;
-        let index_uid = index_metadata.index_uid.clone();
-        let storage = self
-            .storage_resolver
-            .resolve(index_metadata.index_uri())
+        let index_metadata_request = IndexMetadataRequest::new(index_id);
+        let index_metadata_response = self
+            .metastore
+            .index_metadata(index_metadata_request)
             .await?;
-        let splits = self.metastore.list_all_splits(index_uid.clone()).await?;
-        let split_ids: Vec<&str> = splits.iter().map(|split| split.split_id()).collect();
+        let index_metadata = index_metadata_response.deserialize_index_metadata()?;
+        let index_uri = index_metadata.index_uri();
+        let storage = self.storage_resolver.resolve(index_uri).await?;
+
+        let index_uid: IndexUid = index_metadata.index_uid.into();
+        let list_splits_request = ListSplitsRequest::all(index_uid.clone());
+        let list_splits_response = self.metastore.list_splits(list_splits_request).await?;
+        let splits_metadata = list_splits_response.deserialize_splits_metadata()?;
+        let split_ids = splits_metadata
+            .iter()
+            .map(|split_metadata| split_metadata.split_id.clone())
+            .collect::<Vec<_>>();
+        let mark_splits_request = MarkSplitsForDeletionRequest::new(index_uid.clone(), split_ids);
         self.metastore
-            .mark_splits_for_deletion(index_uid.clone(), &split_ids)
+            .mark_splits_for_deletion(mark_splits_request)
             .await?;
-        let split_metas: Vec<SplitMetadata> = splits
-            .into_iter()
-            .map(|split| split.split_metadata)
-            .collect();
         // FIXME: return an error.
         if let Err(err) = delete_splits_from_storage_and_metastore(
             index_uid.clone(),
             storage,
             self.metastore.clone(),
-            split_metas,
+            splits_metadata,
             None,
         )
         .await
@@ -260,8 +296,10 @@ impl IndexService {
             error!(metastore_uri=%self.metastore.uri(), index_id=%index_id, error=?err, "Failed to delete all the split files during garbage collection.");
         }
         for source_id in index_metadata.sources.keys() {
+            let reset_source_checkpoint_request =
+                ResetSourceCheckpointRequest::new(index_uid.clone(), source_id);
             self.metastore
-                .reset_source_checkpoint(index_uid.clone(), source_id)
+                .reset_source_checkpoint(reset_source_checkpoint_request)
                 .await?;
         }
         Ok(())
@@ -270,7 +308,7 @@ impl IndexService {
     /// Creates a source config for index `index_id`.
     pub async fn create_source(
         &self,
-        index_uid: IndexUid,
+        index_id: &str,
         source_config: SourceConfig,
     ) -> Result<SourceConfig, IndexServiceError> {
         let source_id = source_config.source_id.clone();
@@ -283,28 +321,20 @@ impl IndexService {
         check_source_connectivity(&source_config)
             .await
             .map_err(IndexServiceError::InvalidConfig)?;
-        self.metastore
-            .add_source(index_uid.clone(), source_config)
-            .await?;
-        info!(
-            "Source `{}` successfully created for index `{}`.",
-            source_id,
-            index_uid.index_id()
-        );
-        let source = self
+
+        let index_metadata_request = IndexMetadataRequest::new(index_id);
+        let index_metadata_response = self
             .metastore
-            .index_metadata(index_uid.index_id())
-            .await?
-            .sources
-            .get(&source_id)
-            .ok_or_else(|| {
-                IndexServiceError::Internal(
-                    "Created source is not in index metadata, this should never happen."
-                        .to_string(),
-                )
-            })?
-            .clone();
-        Ok(source)
+            .index_metadata(index_metadata_request)
+            .await?;
+        let index_metadata = index_metadata_response.deserialize_index_metadata()?;
+        let index_uid: IndexUid = index_metadata.index_uid.into();
+
+        let add_source_request =
+            AddSourceRequest::try_from_source_config(index_uid, source_config.clone())?;
+        self.metastore.add_source(add_source_request).await?;
+        info!("Source `{source_id}` successfully added to index `{index_id}`.",);
+        Ok(source_config)
     }
 
     pub async fn get_source(
@@ -312,19 +342,17 @@ impl IndexService {
         index_id: &str,
         source_id: &str,
     ) -> Result<SourceConfig, IndexServiceError> {
-        let source_config = self
+        let index_metadata_request = IndexMetadataRequest::new(index_id);
+        let index_metadata_response = self
             .metastore
-            .index_metadata(index_id)
-            .await?
-            .sources
-            .get(source_id)
-            .ok_or_else(|| {
-                IndexServiceError::MetastoreError(MetastoreError::SourceDoesNotExist {
-                    source_id: source_id.to_string(),
-                })
-            })?
-            .clone();
-
+            .index_metadata(index_metadata_request)
+            .await?;
+        let mut index_metadata = index_metadata_response.deserialize_index_metadata()?;
+        let source_config = index_metadata.sources.remove(source_id).ok_or_else(|| {
+            IndexServiceError::MetastoreError(MetastoreError::SourceDoesNotExist {
+                source_id: source_id.to_string(),
+            })
+        })?;
         Ok(source_config)
     }
 }

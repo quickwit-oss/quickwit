@@ -34,8 +34,9 @@ use quickwit_indexing::actors::{
 };
 use quickwit_indexing::merge_policy::merge_policy_from_settings;
 use quickwit_indexing::{IndexingSplitStore, PublisherType, SplitsUpdateMailbox};
-use quickwit_metastore::Metastore;
+use quickwit_metastore::{IndexMetadataResponseExt, Metastore};
 use quickwit_proto::indexing::IndexingPipelineId;
+use quickwit_proto::metastore::IndexMetadataRequest;
 use quickwit_proto::IndexUid;
 use quickwit_search::SearchJobPlacer;
 use quickwit_storage::Storage;
@@ -148,10 +149,12 @@ impl DeleteTaskPipeline {
             root_dir=%self.delete_service_task_dir.to_str().unwrap(),
             "Spawning delete tasks pipeline.",
         );
-        let index_metadata = self
+        let index_metadata_request = IndexMetadataRequest::strict(self.index_uid.clone());
+        let index_metadata_response = self
             .metastore
-            .index_metadata_strict(&self.index_uid)
+            .index_metadata(index_metadata_request)
             .await?;
+        let index_metadata = index_metadata_response.deserialize_index_metadata()?;
         let index_config = index_metadata.into_index_config();
         let publisher = Publisher::new(
             PublisherType::MergePublisher,

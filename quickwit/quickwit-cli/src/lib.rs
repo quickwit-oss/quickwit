@@ -34,7 +34,8 @@ use quickwit_config::{
     DEFAULT_QW_CONFIG_PATH,
 };
 use quickwit_indexing::check_source_connectivity;
-use quickwit_metastore::{Metastore, MetastoreResolver};
+use quickwit_metastore::{IndexMetadataResponseExt, Metastore, MetastoreResolver};
+use quickwit_proto::metastore::IndexMetadataRequest;
 use quickwit_rest_client::models::Timeout;
 use quickwit_rest_client::rest_client::{QuickwitClient, QuickwitClientBuilder, DEFAULT_BASE_URL};
 use quickwit_storage::{load_file, StorageResolver};
@@ -273,7 +274,9 @@ pub async fn run_index_checklist(
         ));
     }
     checks.push(("metastore", metastore.check_connectivity().await));
-    let index_metadata = metastore.index_metadata(index_id).await?;
+    let index_metadata_request = IndexMetadataRequest::new(index_id);
+    let index_metadata_response = metastore.index_metadata(index_metadata_request).await?;
+    let index_metadata = index_metadata_response.deserialize_index_metadata()?;
     let index_storage = storage_resolver.resolve(index_metadata.index_uri()).await?;
     checks.push(("index storage", index_storage.check_connectivity().await));
 

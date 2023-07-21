@@ -51,7 +51,11 @@ pub use metastore::postgresql_metastore::PostgresqlMetastore;
 pub use metastore::retrying_metastore::RetryingMetastore;
 #[cfg(any(test, feature = "testsuite"))]
 pub use metastore::MockMetastore;
-pub use metastore::{file_backed_metastore, IndexMetadata, ListSplitsQuery, Metastore};
+pub use metastore::{
+    file_backed_metastore, AddSourceRequestExt, CreateIndexRequestExt, IndexMetadata,
+    IndexMetadataResponseExt, ListIndexesResponseExt, ListSplitsQuery, ListSplitsRequestExt,
+    ListSplitsResponseExt, Metastore, StageSplitsRequestExt,
+};
 pub use metastore_factory::{MetastoreFactory, UnsupportedMetastore};
 pub use metastore_resolver::MetastoreResolver;
 use quickwit_common::is_disjoint;
@@ -73,8 +77,11 @@ pub struct MetastoreApiSchemas;
 
 /// Returns `true` if the split time range is included in `time_range_opt`.
 /// If `time_range_opt` is None, returns always true.
-pub fn split_time_range_filter(split: &Split, time_range_opt: Option<&Range<i64>>) -> bool {
-    match (time_range_opt, split.split_metadata.time_range.as_ref()) {
+pub fn split_time_range_filter(
+    split_metadata: &SplitMetadata,
+    time_range_opt: Option<&Range<i64>>,
+) -> bool {
+    match (time_range_opt, split_metadata.time_range.as_ref()) {
         (Some(filter_time_range), Some(split_time_range)) => {
             !is_disjoint(filter_time_range, split_time_range)
         }
@@ -84,9 +91,12 @@ pub fn split_time_range_filter(split: &Split, time_range_opt: Option<&Range<i64>
 
 /// Returns `true` if the tags filter evaluation is true.
 /// If `tags_filter_opt` is None, returns always true.
-pub fn split_tag_filter(split: &Split, tags_filter_opt: Option<&TagFilterAst>) -> bool {
+pub fn split_tag_filter(
+    split_metadata: &SplitMetadata,
+    tags_filter_opt: Option<&TagFilterAst>,
+) -> bool {
     tags_filter_opt
-        .map(|tags_filter_ast| tags_filter_ast.evaluate(&split.split_metadata.tags))
+        .map(|tags_filter_ast| tags_filter_ast.evaluate(&split_metadata.tags))
         .unwrap_or(true)
 }
 

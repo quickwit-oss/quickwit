@@ -60,7 +60,11 @@ use std::sync::Arc;
 pub use find_trace_ids_collector::FindTraceIdsCollector;
 use quickwit_config::SearcherConfig;
 use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
-use quickwit_metastore::{ListSplitsQuery, Metastore, SplitMetadata, SplitState};
+use quickwit_metastore::{
+    ListSplitsQuery, ListSplitsRequestExt, ListSplitsResponseExt, Metastore, SplitMetadata,
+    SplitState,
+};
+use quickwit_proto::metastore::ListSplitsRequest;
 use quickwit_proto::{IndexUid, PartialHit, SearchRequest, SplitIdAndFooterOffsets};
 use quickwit_storage::StorageResolver;
 use tantivy::DocAddress;
@@ -124,16 +128,14 @@ async fn list_relevant_splits(
     search_request: &SearchRequest,
     metastore: &dyn Metastore,
 ) -> crate::Result<Vec<SplitMetadata>> {
-    let mut query = ListSplitsQuery::for_index(index_uid).with_split_state(SplitState::Published);
+    let mut list_splits_query = ListSplitsQuery::default().with_split_state(SplitState::Published);
 
     if let Some(start_ts) = search_request.start_timestamp {
-        query = query.with_time_range_start_gte(start_ts);
+        list_splits_query = list_splits_query.with_time_range_start_gte(start_ts);
     }
-
     if let Some(end_ts) = search_request.end_timestamp {
-        query = query.with_time_range_end_lt(end_ts);
+        list_splits_query = list_splits_query.with_time_range_end_lt(end_ts);
     }
-
     let query_ast: QueryAst = serde_json::from_str(&search_request.query_ast).map_err(|_| {
         SearchError::InternalError(format!(
             "Failed to deserialize query_ast: `{}`",
@@ -141,14 +143,13 @@ async fn list_relevant_splits(
         ))
     })?;
     if let Some(tags_filter) = extract_tags_from_query(query_ast) {
-        query = query.with_tags_filter(tags_filter);
+        list_splits_query = list_splits_query.with_tags_filter(tags_filter);
     }
-
-    let split_metas = metastore.list_splits(query).await?;
-    Ok(split_metas
-        .into_iter()
-        .map(|metadata| metadata.split_metadata)
-        .collect::<Vec<_>>())
+    let list_splits_request =
+        ListSplitsRequest::try_from_list_splits_query(index_uid, list_splits_query)?;
+    let list_splits_response = metastore.list_splits(list_splits_request).await?;
+    let splits_metadata = list_splits_response.deserialize_splits_metadata()?;
+    Ok(splits_metadata)
 }
 
 /// Converts a Tantivy `NamedFieldDocument` into a json string using the

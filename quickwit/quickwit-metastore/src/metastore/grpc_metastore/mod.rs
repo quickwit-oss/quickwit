@@ -25,16 +25,14 @@ use std::net::SocketAddr;
 use anyhow::bail;
 use async_trait::async_trait;
 pub use grpc_adapter::GrpcMetastoreAdapter;
-use itertools::Itertools;
 use quickwit_common::tower::BalanceChannel;
 use quickwit_common::uri::Uri as QuickwitUri;
-use quickwit_config::{IndexConfig, SourceConfig};
-use quickwit_proto::metastore::metastore_service_client::MetastoreServiceClient;
 use quickwit_proto::metastore::{
-    AddSourceRequest, CreateIndexRequest, DeleteIndexRequest, DeleteQuery, DeleteSourceRequest,
-    DeleteSplitsRequest, DeleteTask, IndexMetadataRequest, LastDeleteOpstampRequest,
-    ListAllSplitsRequest, ListDeleteTasksRequest, ListIndexesMetadatasRequest, ListSplitsRequest,
-    ListStaleSplitsRequest, MarkSplitsForDeletionRequest, PublishSplitsRequest,
+    AddSourceRequest, CreateIndexRequest, CreateIndexResponse, DeleteIndexRequest, DeleteQuery,
+    DeleteSourceRequest, DeleteSplitsRequest, DeleteTask, EmptyResponse, IndexMetadataRequest,
+    IndexMetadataResponse, LastDeleteOpstampRequest, ListDeleteTasksRequest,
+    ListDeleteTasksResponse, ListIndexesRequest, ListIndexesResponse, ListSplitsRequest,
+    ListSplitsResponse, MarkSplitsForDeletionRequest, MetastoreServiceClient, PublishSplitsRequest,
     ResetSourceCheckpointRequest, StageSplitsRequest, ToggleSourceRequest,
     UpdateSplitsDeleteOpstampRequest,
 };
@@ -43,11 +41,7 @@ use quickwit_proto::tonic::Status;
 use quickwit_proto::{IndexUid, SpanContextInterceptor};
 use tower::timeout::error::Elapsed;
 
-use crate::checkpoint::IndexCheckpointDelta;
-use crate::{
-    IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, MetastoreResult, Split,
-    SplitMetadata,
-};
+use crate::{Metastore, MetastoreError, MetastoreResult};
 
 // URI describing in a generic way the metastore services resource present in the cluster (=
 // discovered by Quickwit gossip). This value is used to build the URI of `MetastoreGrpcClient` and
@@ -136,305 +130,151 @@ impl Metastore for MetastoreGrpcClient {
     }
 
     /// Creates an index.
-    async fn create_index(&self, index_config: IndexConfig) -> MetastoreResult<IndexUid> {
-        let index_config_serialized_json =
-            serde_json::to_string(&index_config).map_err(|error| {
-                MetastoreError::JsonSerializeError {
-                    struct_name: "IndexConfig".to_string(),
-                    message: error.to_string(),
-                }
-            })?;
-        let request = CreateIndexRequest {
-            index_config_serialized_json,
-        };
-        let inner_response = self
-            .underlying
+    async fn create_index(
+        &self,
+        request: CreateIndexRequest,
+    ) -> MetastoreResult<CreateIndexResponse> {
+        self.underlying
             .clone()
             .create_index(request)
             .await
-            .map_err(|tonic_error| parse_grpc_error(&tonic_error))?
-            .into_inner();
-        let index_uid = inner_response.index_uid.into();
-        Ok(index_uid)
+            .map(|tonic_response| tonic_response.into_inner())
+            .map_err(|tonic_error| parse_grpc_error(&tonic_error))
     }
 
     /// List indexes.
-    async fn list_indexes_metadatas(&self) -> MetastoreResult<Vec<IndexMetadata>> {
-        let response = self
-            .underlying
+    async fn list_indexes(
+        &self,
+        request: ListIndexesRequest,
+    ) -> MetastoreResult<ListIndexesResponse> {
+        self.underlying
             .clone()
-            .list_indexes_metadatas(ListIndexesMetadatasRequest {})
+            .list_indexes(request)
             .await
-            .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
-        let indexes_metadatas =
-            serde_json::from_str(&response.into_inner().indexes_metadatas_serialized_json)
-                .map_err(|error| MetastoreError::JsonDeserializeError {
-                    struct_name: "Vec<IndexMetadata>".to_string(),
-                    message: error.to_string(),
-                })?;
-        Ok(indexes_metadatas)
+            .map(|tonic_response| tonic_response.into_inner())
+            .map_err(|tonic_error| parse_grpc_error(&tonic_error))
     }
 
     /// Returns the [`IndexMetadata`] for a given index.
-    async fn index_metadata(&self, index_id: &str) -> MetastoreResult<IndexMetadata> {
-        let request = IndexMetadataRequest {
-            index_id: index_id.to_string(),
-        };
-        let response = self
-            .underlying
+    async fn index_metadata(
+        &self,
+        request: IndexMetadataRequest,
+    ) -> MetastoreResult<IndexMetadataResponse> {
+        self.underlying
             .clone()
             .index_metadata(request)
             .await
-            .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
-        let index_metadata = serde_json::from_str(
-            &response.into_inner().index_metadata_serialized_json,
-        )
-        .map_err(|error| MetastoreError::JsonDeserializeError {
-            struct_name: "IndexMetadata".to_string(),
-            message: error.to_string(),
-        })?;
-        Ok(index_metadata)
+            .map(|tonic_response| tonic_response.into_inner())
+            .map_err(|tonic_error| parse_grpc_error(&tonic_error))
     }
 
     /// Deletes an index.
-    async fn delete_index(&self, index_uid: IndexUid) -> MetastoreResult<()> {
-        let request = DeleteIndexRequest {
-            index_uid: index_uid.to_string(),
-        };
+    async fn delete_index(&self, request: DeleteIndexRequest) -> MetastoreResult<EmptyResponse> {
         self.underlying
             .clone()
             .delete_index(request)
             .await
             .map(|tonic_response| tonic_response.into_inner())
-            .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
-        Ok(())
+            .map_err(|tonic_error| parse_grpc_error(&tonic_error))
     }
 
     /// Stages several splits.
-    async fn stage_splits(
-        &self,
-        index_uid: IndexUid,
-        split_metadata_list: Vec<SplitMetadata>,
-    ) -> MetastoreResult<()> {
-        let split_metadata_list_serialized_json = serde_json::to_string(&split_metadata_list)
-            .map_err(|error| MetastoreError::JsonSerializeError {
-                struct_name: "Vec<SplitMetadata>".to_string(),
-                message: error.to_string(),
-            })?;
-        let tonic_request = StageSplitsRequest {
-            index_uid: index_uid.to_string(),
-            split_metadata_list_serialized_json,
-        };
+    async fn stage_splits(&self, request: StageSplitsRequest) -> MetastoreResult<EmptyResponse> {
         self.underlying
             .clone()
-            .stage_splits(tonic_request)
+            .stage_splits(request)
             .await
-            .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
-        Ok(())
+            .map(|tonic_response| tonic_response.into_inner())
+            .map_err(|tonic_error| parse_grpc_error(&tonic_error))
     }
 
     /// Publishes a list of splits.
-    async fn publish_splits<'a>(
+    async fn publish_splits(
         &self,
-        index_uid: IndexUid,
-        split_ids: &[&'a str],
-        replaced_split_ids: &[&'a str],
-        checkpoint_delta_opt: Option<IndexCheckpointDelta>,
-    ) -> MetastoreResult<()> {
-        let split_ids_vec: Vec<String> = split_ids.iter().map(|split| split.to_string()).collect();
-        let replaced_split_ids_vec: Vec<String> = replaced_split_ids
-            .iter()
-            .map(|split_id| split_id.to_string())
-            .collect();
-        let index_checkpoint_delta_serialized_json = checkpoint_delta_opt
-            .map(|checkpoint_delta| serde_json::to_string(&checkpoint_delta))
-            .transpose()
-            .map_err(|error| MetastoreError::JsonSerializeError {
-                struct_name: "IndexCheckpointDelta".to_string(),
-                message: error.to_string(),
-            })?;
-        let request = PublishSplitsRequest {
-            index_uid: index_uid.into(),
-            split_ids: split_ids_vec,
-            replaced_split_ids: replaced_split_ids_vec,
-            index_checkpoint_delta_serialized_json,
-        };
+        request: PublishSplitsRequest,
+    ) -> MetastoreResult<EmptyResponse> {
         self.underlying
             .clone()
             .publish_splits(request)
             .await
             .map(|tonic_response| tonic_response.into_inner())
-            .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
-        Ok(())
+            .map_err(|tonic_error| parse_grpc_error(&tonic_error))
     }
 
     /// Lists the splits.
-    async fn list_splits(&self, query: ListSplitsQuery) -> MetastoreResult<Vec<Split>> {
-        let filter_json =
-            serde_json::to_string(&query).map_err(|error| MetastoreError::JsonSerializeError {
-                struct_name: "ListSplitsQuery".to_string(),
-                message: error.to_string(),
-            })?;
-
-        let request = ListSplitsRequest { filter_json };
-        let response = self
-            .underlying
+    async fn list_splits(&self, request: ListSplitsRequest) -> MetastoreResult<ListSplitsResponse> {
+        self.underlying
             .clone()
             .list_splits(request)
             .await
             .map(|tonic_response| tonic_response.into_inner())
-            .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
-        let splits: Vec<Split> =
-            serde_json::from_str(&response.splits_serialized_json).map_err(|error| {
-                MetastoreError::JsonDeserializeError {
-                    struct_name: "Vec<Split>".to_string(),
-                    message: error.to_string(),
-                }
-            })?;
-        Ok(splits)
-    }
-
-    /// Lists all the splits without filtering.
-    async fn list_all_splits(&self, index_uid: IndexUid) -> MetastoreResult<Vec<Split>> {
-        let request = ListAllSplitsRequest {
-            index_uid: index_uid.into(),
-        };
-        let response = self
-            .underlying
-            .clone()
-            .list_all_splits(request)
-            .await
-            .map(|tonic_response| tonic_response.into_inner())
-            .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
-        let splits: Vec<Split> =
-            serde_json::from_str(&response.splits_serialized_json).map_err(|error| {
-                MetastoreError::JsonDeserializeError {
-                    struct_name: "Vec<Split>".to_string(),
-                    message: error.to_string(),
-                }
-            })?;
-        Ok(splits)
+            .map_err(|tonic_error| parse_grpc_error(&tonic_error))
     }
 
     /// Marks a list of splits for deletion.
-    async fn mark_splits_for_deletion<'a>(
+    async fn mark_splits_for_deletion(
         &self,
-        index_uid: IndexUid,
-        split_ids: &[&'a str],
-    ) -> MetastoreResult<()> {
-        let split_ids_vec: Vec<String> = split_ids
-            .iter()
-            .map(|split_id| split_id.to_string())
-            .collect();
-        let request = MarkSplitsForDeletionRequest {
-            index_uid: index_uid.into(),
-            split_ids: split_ids_vec,
-        };
+        request: MarkSplitsForDeletionRequest,
+    ) -> MetastoreResult<EmptyResponse> {
         self.underlying
             .clone()
             .mark_splits_for_deletion(request)
             .await
             .map(|tonic_response| tonic_response.into_inner())
-            .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
-        Ok(())
+            .map_err(|tonic_error| parse_grpc_error(&tonic_error))
     }
 
     /// Deletes a list of splits.
-    async fn delete_splits<'a>(
-        &self,
-        index_uid: IndexUid,
-        split_ids: &[&'a str],
-    ) -> MetastoreResult<()> {
-        let split_ids_vec: Vec<String> = split_ids
-            .iter()
-            .map(|split_id| split_id.to_string())
-            .collect();
-        let request = DeleteSplitsRequest {
-            index_uid: index_uid.into(),
-            split_ids: split_ids_vec,
-        };
+    async fn delete_splits(&self, request: DeleteSplitsRequest) -> MetastoreResult<EmptyResponse> {
         self.underlying
             .clone()
             .delete_splits(request)
             .await
             .map(|tonic_response| tonic_response.into_inner())
-            .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
-        Ok(())
+            .map_err(|tonic_error| parse_grpc_error(&tonic_error))
     }
 
     /// Adds a source to a given index.
-    async fn add_source(&self, index_uid: IndexUid, source: SourceConfig) -> MetastoreResult<()> {
-        let source_config_serialized_json =
-            serde_json::to_string(&source).map_err(|error| MetastoreError::JsonSerializeError {
-                struct_name: "SourceConfig".to_string(),
-                message: error.to_string(),
-            })?;
-        let request = AddSourceRequest {
-            index_uid: index_uid.into(),
-            source_config_serialized_json,
-        };
+    async fn add_source(&self, request: AddSourceRequest) -> MetastoreResult<EmptyResponse> {
         self.underlying
             .clone()
             .add_source(request)
             .await
             .map(|tonic_response| tonic_response.into_inner())
-            .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
-        Ok(())
+            .map_err(|tonic_error| parse_grpc_error(&tonic_error))
     }
 
     /// Toggles the source `enabled` field value.
-    async fn toggle_source(
-        &self,
-        index_uid: IndexUid,
-        source_id: &str,
-        enable: bool,
-    ) -> MetastoreResult<()> {
-        let request = ToggleSourceRequest {
-            index_uid: index_uid.into(),
-            source_id: source_id.to_string(),
-            enable,
-        };
+    async fn toggle_source(&self, request: ToggleSourceRequest) -> MetastoreResult<EmptyResponse> {
         self.underlying
             .clone()
             .toggle_source(request)
             .await
             .map(|tonic_response| tonic_response.into_inner())
-            .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
-        Ok(())
+            .map_err(|tonic_error| parse_grpc_error(&tonic_error))
     }
 
     /// Removes a source from a given index.
-    async fn delete_source(&self, index_uid: IndexUid, source_id: &str) -> MetastoreResult<()> {
-        let request = DeleteSourceRequest {
-            index_uid: index_uid.into(),
-            source_id: source_id.to_string(),
-        };
+    async fn delete_source(&self, request: DeleteSourceRequest) -> MetastoreResult<EmptyResponse> {
         self.underlying
             .clone()
             .delete_source(request)
             .await
             .map(|tonic_response| tonic_response.into_inner())
-            .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
-        Ok(())
+            .map_err(|tonic_error| parse_grpc_error(&tonic_error))
     }
 
     /// Resets a source checkpoint.
     async fn reset_source_checkpoint(
         &self,
-        index_uid: IndexUid,
-        source_id: &str,
-    ) -> MetastoreResult<()> {
-        let request = ResetSourceCheckpointRequest {
-            index_uid: index_uid.into(),
-            source_id: source_id.to_string(),
-        };
+        request: ResetSourceCheckpointRequest,
+    ) -> MetastoreResult<EmptyResponse> {
         self.underlying
             .clone()
             .reset_source_checkpoint(request)
             .await
             .map(|tonic_response| tonic_response.into_inner())
-            .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
-        Ok(())
+            .map_err(|tonic_error| parse_grpc_error(&tonic_error))
     }
 
     async fn last_delete_opstamp(&self, index_uid: IndexUid) -> MetastoreResult<u64> {
@@ -462,80 +302,28 @@ impl Metastore for MetastoreGrpcClient {
         Ok(response)
     }
 
-    async fn update_splits_delete_opstamp<'a>(
+    async fn update_splits_delete_opstamp(
         &self,
-        index_uid: IndexUid,
-        split_ids: &[&'a str],
-        delete_opstamp: u64,
-    ) -> MetastoreResult<()> {
-        let split_ids_vec: Vec<String> = split_ids
-            .iter()
-            .map(|split_id| split_id.to_string())
-            .collect();
-        let request = UpdateSplitsDeleteOpstampRequest {
-            index_uid: index_uid.into(),
-            split_ids: split_ids_vec,
-            delete_opstamp,
-        };
+        request: UpdateSplitsDeleteOpstampRequest,
+    ) -> MetastoreResult<EmptyResponse> {
         self.underlying
             .clone()
             .update_splits_delete_opstamp(request)
             .await
             .map(|tonic_response| tonic_response.into_inner())
-            .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
-        Ok(())
+            .map_err(|tonic_error| parse_grpc_error(&tonic_error))
     }
 
     async fn list_delete_tasks(
         &self,
-        index_uid: IndexUid,
-        opstamp_start: u64,
-    ) -> MetastoreResult<Vec<DeleteTask>> {
-        let request = ListDeleteTasksRequest {
-            index_uid: index_uid.into(),
-            opstamp_start,
-        };
-        let response = self
-            .underlying
+        request: ListDeleteTasksRequest,
+    ) -> MetastoreResult<ListDeleteTasksResponse> {
+        self.underlying
             .clone()
             .list_delete_tasks(request)
             .await
             .map(|tonic_response| tonic_response.into_inner())
-            .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
-        let delete_tasks: Vec<DeleteTask> = response
-            .delete_tasks
-            .into_iter()
-            .map(DeleteTask::from)
-            .collect_vec();
-        Ok(delete_tasks)
-    }
-
-    async fn list_stale_splits(
-        &self,
-        index_uid: IndexUid,
-        delete_opstamp: u64,
-        num_splits: usize,
-    ) -> MetastoreResult<Vec<Split>> {
-        let request = ListStaleSplitsRequest {
-            index_uid: index_uid.into(),
-            delete_opstamp,
-            num_splits: num_splits as u64,
-        };
-        let response = self
-            .underlying
-            .clone()
-            .list_stale_splits(request)
-            .await
-            .map(|tonic_response| tonic_response.into_inner())
-            .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
-        let splits: Vec<Split> =
-            serde_json::from_str(&response.splits_serialized_json).map_err(|error| {
-                MetastoreError::JsonDeserializeError {
-                    struct_name: "Vec<Split>".to_string(),
-                    message: error.to_string(),
-                }
-            })?;
-        Ok(splits)
+            .map_err(|tonic_error| parse_grpc_error(&tonic_error))
     }
 }
 

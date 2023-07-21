@@ -20,18 +20,15 @@
 use std::convert::TryInto;
 use std::str::FromStr;
 
-use quickwit_proto::metastore::{DeleteQuery, DeleteTask as QuickwitDeleteTask};
+use quickwit_proto::metastore::{DeleteQuery, DeleteTask};
 use quickwit_proto::IndexUid;
 use tracing::error;
 
-use crate::{
-    IndexMetadata, MetastoreError, MetastoreResult, Split as QuickwitSplit, SplitMetadata,
-    SplitState,
-};
+use crate::{IndexMetadata, MetastoreError, MetastoreResult, Split, SplitMetadata, SplitState};
 
 /// A model structure for handling index metadata in a database.
 #[derive(sqlx::FromRow)]
-pub struct Index {
+pub(super) struct PgIndex {
     /// Index UID. The index UID identifies the index when querying the metastore from the
     /// application.
     #[sqlx(try_from = "String")]
@@ -44,9 +41,7 @@ pub struct Index {
     pub create_timestamp: sqlx::types::time::PrimitiveDateTime,
 }
 
-impl Index {
-    /// Deserializes index metadata from JSON string stored in column and sets appropriate
-    /// timestamps.
+impl PgIndex {
     pub fn index_metadata(&self) -> MetastoreResult<IndexMetadata> {
         let mut index_metadata = serde_json::from_str::<IndexMetadata>(&self.index_metadata_json)
             .map_err(|error| {
@@ -57,9 +52,6 @@ impl Index {
                 message: error.to_string(),
             }
         })?;
-        // `create_timestamp` and `update_timestamp` are stored in dedicated columns but are also
-        // duplicated in [`IndexMetadata`]. We must override the duplicates with the authentic
-        // values upon deserialization.
         index_metadata.create_timestamp = self.create_timestamp.assume_utc().unix_timestamp();
         Ok(index_metadata)
     }
@@ -67,7 +59,7 @@ impl Index {
 
 /// A model structure for handling split metadata in a database.
 #[derive(sqlx::FromRow)]
-pub struct Split {
+pub(super) struct PgSplit {
     /// Split ID.
     pub split_id: String,
     /// The state of the split. With `update_timestamp`, this is the only mutable attribute of the
@@ -97,17 +89,23 @@ pub struct Split {
     pub delete_opstamp: i64,
 }
 
-impl Split {
+impl PgSplit {
     /// Deserializes and returns the split's metadata.
-    fn split_metadata(&self) -> MetastoreResult<SplitMetadata> {
-        serde_json::from_str::<SplitMetadata>(&self.split_metadata_json).map_err(|error| {
+    pub fn split_metadata(&self) -> MetastoreResult<SplitMetadata> {
+        let mut split_metadata = serde_json::from_str::<SplitMetadata>(&self.split_metadata_json).map_err(|error| {
             error!(index_id=%self.index_uid.index_id(), split_id=%self.split_id, error=?error, "Failed to deserialize split metadata.");
 
             MetastoreError::JsonDeserializeError {
                 struct_name: "SplitMetadata".to_string(),
                 message: error.to_string(),
             }
-        })
+        })?;
+        // `create_timestamp` and `delete_opstamp` are duplicated in `SplitMetadata` and needs to be
+        // overridden with the "true" value stored in a column.
+        split_metadata.create_timestamp = self.create_timestamp.assume_utc().unix_timestamp();
+        split_metadata.delete_opstamp = self.delete_opstamp as u64;
+
+        Ok(split_metadata)
     }
 
     /// Deserializes and returns the split's state.
@@ -123,33 +121,29 @@ impl Split {
     }
 }
 
-impl TryInto<QuickwitSplit> for Split {
+impl TryInto<Split> for PgSplit {
     type Error = MetastoreError;
 
-    fn try_into(self) -> Result<QuickwitSplit, Self::Error> {
+    fn try_into(self) -> Result<Split, Self::Error> {
         let mut split_metadata = self.split_metadata()?;
-        // `create_timestamp` and `delete_opstamp` are duplicated in `SplitMetadata` and needs to be
-        // overridden with the "true" value stored in a column.
-        split_metadata.create_timestamp = self.create_timestamp.assume_utc().unix_timestamp();
         let split_state = self.split_state()?;
         let update_timestamp = self.update_timestamp.assume_utc().unix_timestamp();
         let publish_timestamp = self
             .publish_timestamp
             .map(|publish_timestamp| publish_timestamp.assume_utc().unix_timestamp());
-        split_metadata.index_uid = self.index_uid;
-        split_metadata.delete_opstamp = self.delete_opstamp as u64;
-        Ok(QuickwitSplit {
+        let split = Split {
             split_metadata,
             split_state,
             update_timestamp,
             publish_timestamp,
-        })
+        };
+        Ok(split)
     }
 }
 
 /// A model structure for handling split metadata in a database.
 #[derive(sqlx::FromRow)]
-pub struct DeleteTask {
+pub(super) struct PgDeleteTask {
     /// Create timestamp.
     pub create_timestamp: sqlx::types::time::PrimitiveDateTime,
     /// Monotonic increasing unique opstamp.
@@ -161,7 +155,7 @@ pub struct DeleteTask {
     pub delete_query_json: String,
 }
 
-impl DeleteTask {
+impl PgDeleteTask {
     /// Deserializes and returns the split's metadata.
     fn delete_query(&self) -> MetastoreResult<DeleteQuery> {
         serde_json::from_str::<DeleteQuery>(&self.delete_query_json).map_err(|error| {
@@ -175,15 +169,16 @@ impl DeleteTask {
     }
 }
 
-impl TryInto<QuickwitDeleteTask> for DeleteTask {
+impl TryInto<DeleteTask> for PgDeleteTask {
     type Error = MetastoreError;
 
-    fn try_into(self) -> Result<QuickwitDeleteTask, Self::Error> {
+    fn try_into(self) -> Result<DeleteTask, Self::Error> {
         let delete_query = self.delete_query()?;
-        Ok(QuickwitDeleteTask {
+        let delete_task = DeleteTask {
             create_timestamp: self.create_timestamp.assume_utc().unix_timestamp(),
             opstamp: self.opstamp as u64,
             delete_query: Some(delete_query),
-        })
+        };
+        Ok(delete_task)
     }
 }

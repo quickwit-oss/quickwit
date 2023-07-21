@@ -46,6 +46,9 @@ use quickwit_indexing::models::{
     DetachIndexingPipeline, DetachMergePipeline, IndexingStatistics, SpawnPipeline,
 };
 use quickwit_indexing::IndexingPipeline;
+use quickwit_metastore::IndexMetadataResponseExt;
+use quickwit_proto::metastore::IndexMetadataRequest;
+use quickwit_proto::IndexUid;
 use quickwit_storage::{BundleStorage, Storage};
 use thousands::Separable;
 use tracing::{debug, info};
@@ -340,6 +343,11 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
         runtimes_config,
         &HashSet::from_iter([QuickwitService::Indexer]),
     )?;
+    let index_metadata_request = IndexMetadataRequest::new(&args.index_id);
+    let index_metadata_response = metastore.index_metadata(index_metadata_request).await?;
+    let index_metadata = index_metadata_response.deserialize_index_metadata()?;
+    let index_uid: IndexUid = index_metadata.index_uid.into();
+
     let indexing_server = IndexingService::new(
         config.node_id.clone(),
         config.data_dir_path.clone(),
@@ -356,7 +364,7 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
         universe.spawn_builder().spawn(indexing_server);
     let pipeline_id = indexing_server_mailbox
         .ask_for_res(SpawnPipeline {
-            index_id: args.index_id.clone(),
+            index_uid,
             source_config,
             pipeline_ord: 0,
         })
@@ -434,6 +442,11 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
     let indexer_config = IndexerConfig {
         ..Default::default()
     };
+    let index_metadata_request = IndexMetadataRequest::new(args.index_id);
+    let index_metadata_response = metastore.index_metadata(index_metadata_request).await?;
+    let index_metadata = index_metadata_response.deserialize_index_metadata()?;
+    let index_uid: IndexUid = index_metadata.index_uid.into();
+
     let indexing_server = IndexingService::new(
         config.node_id,
         config.data_dir_path,
@@ -449,7 +462,7 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
         universe.spawn_builder().spawn(indexing_server);
     let pipeline_id = indexing_service_mailbox
         .ask_for_res(SpawnPipeline {
-            index_id: args.index_id,
+            index_uid,
             source_config: SourceConfig {
                 source_id: args.source_id,
                 max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
@@ -570,7 +583,9 @@ async fn extract_split_cli(args: ExtractSplitArgs) -> anyhow::Result<()> {
     let (storage_resolver, metastore_resolver) =
         get_resolvers(&config.storage_configs, &config.metastore_configs);
     let metastore = metastore_resolver.resolve(&config.metastore_uri).await?;
-    let index_metadata = metastore.index_metadata(&args.index_id).await?;
+    let index_metadata_request = IndexMetadataRequest::new(args.index_id);
+    let index_metadata_response = metastore.index_metadata(index_metadata_request).await?;
+    let index_metadata = index_metadata_response.deserialize_index_metadata()?;
     let index_storage = storage_resolver.resolve(index_metadata.index_uri()).await?;
     let split_file = PathBuf::from(format!("{}.split", args.split_id));
     let split_data = index_storage.get_all(split_file.as_path()).await?;

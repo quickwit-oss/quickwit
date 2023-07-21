@@ -37,11 +37,14 @@ use quickwit_config::{
     build_doc_mapper, IndexConfig, IndexerConfig, SourceConfig, INGEST_API_SOURCE_ID,
 };
 use quickwit_ingest::{DropQueueRequest, IngestApiService, ListQueuesRequest, QUEUES_DIR_NAME};
-use quickwit_metastore::{IndexMetadata, Metastore};
+use quickwit_metastore::{
+    IndexMetadata, IndexMetadataResponseExt, ListIndexesResponseExt, Metastore,
+};
 use quickwit_proto::indexing::{
     ApplyIndexingPlanRequest, ApplyIndexingPlanResponse, IndexingError, IndexingPipelineId,
     IndexingTask,
 };
+use quickwit_proto::metastore::{IndexMetadataRequest, ListIndexesRequest};
 use quickwit_proto::IndexUid;
 use quickwit_storage::StorageResolver;
 use serde::{Deserialize, Serialize};
@@ -208,11 +211,11 @@ impl IndexingService {
     async fn spawn_pipeline(
         &mut self,
         ctx: &ActorContext<Self>,
-        index_id: String,
+        index_uid: IndexUid,
         source_config: SourceConfig,
         pipeline_ord: usize,
     ) -> Result<IndexingPipelineId, IndexingError> {
-        let index_metadata = self.index_metadata(ctx, &index_id).await?;
+        let index_metadata = self.index_metadata(ctx, index_uid).await?;
         let pipeline_id = IndexingPipelineId {
             index_uid: index_metadata.index_uid.clone(),
             source_id: source_config.source_id.clone(),
@@ -308,14 +311,18 @@ impl IndexingService {
     async fn index_metadata(
         &self,
         ctx: &ActorContext<Self>,
-        index_id: &str,
+        index_uid: IndexUid,
     ) -> Result<IndexMetadata, IndexingError> {
         let _protect_guard = ctx.protect_zone();
-        let index_metadata = self
+        let index_metadata_request = IndexMetadataRequest::strict(index_uid);
+        let index_metadata_response = self
             .metastore
-            .index_metadata(index_id)
+            .index_metadata(index_metadata_request)
             .await
-            .map_err(|err| IndexingError::MetastoreError(err.to_string()))?;
+            .map_err(|error| IndexingError::MetastoreError(error.to_string()))?;
+        let index_metadata = index_metadata_response
+            .deserialize_index_metadata()
+            .map_err(|error| IndexingError::MetastoreError(error.to_string()))?;
         Ok(index_metadata)
     }
 
@@ -477,7 +484,7 @@ impl IndexingService {
             .iter()
             // No need to emit two request for the same `index_uid`
             .unique_by(|pipeline_id| pipeline_id.index_uid.clone())
-            .map(|pipeline_id| self.index_metadata(ctx, pipeline_id.index_uid.index_id()));
+            .map(|pipeline_id| self.index_metadata(ctx, pipeline_id.index_uid.clone()));
         let indexes_metadata = try_join_all(indexes_metadata_futures).await?;
         let indexes_metadata_by_index_id: HashMap<IndexUid, IndexMetadata> = indexes_metadata
             .into_iter()
@@ -602,9 +609,10 @@ impl IndexingService {
 
         let index_ids: HashSet<String> = self
             .metastore
-            .list_indexes_metadatas()
+            .list_indexes(ListIndexesRequest {})
             .await
             .context("Failed to list queues")?
+            .deserialize_indexes_metadata()?
             .into_iter()
             .map(|index_metadata| index_metadata.index_id().to_string())
             .collect();
@@ -714,7 +722,7 @@ impl Handler<SpawnPipeline> for IndexingService {
         Ok(self
             .spawn_pipeline(
                 ctx,
-                message.index_id,
+                message.index_uid,
                 message.source_config,
                 message.pipeline_ord,
             )
@@ -775,8 +783,11 @@ mod tests {
         IngestApiConfig, SourceConfig, SourceInputFormat, SourceParams, VecSourceParams,
     };
     use quickwit_ingest::{init_ingest_api, CreateQueueIfNotExistsRequest};
-    use quickwit_metastore::{metastore_for_test, MockMetastore};
+    use quickwit_metastore::{
+        metastore_for_test, AddSourceRequestExt, CreateIndexRequestExt, MockMetastore,
+    };
     use quickwit_proto::indexing::IndexingTask;
+    use quickwit_proto::{AddSourceRequest, CreateIndexRequest, DeleteIndexRequest};
 
     use super::*;
 
@@ -969,11 +980,16 @@ mod tests {
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
-        let index_uid = metastore.create_index(index_config).await.unwrap();
-        metastore
-            .add_source(index_uid.clone(), SourceConfig::ingest_api_default())
-            .await
-            .unwrap();
+        let create_index_request =
+            CreateIndexRequest::try_from_index_config(index_uid.clone(), index_config).unwrap();
+        let create_index_response = metastore.create_index(create_index_request).await.unwrap();
+        let index_uid: IndexUid = create_index_response.index_uid.into();
+
+        let source_config = SourceConfig::ingest_api_default();
+        let add_source_request =
+            AddSourceRequest::try_from_source_config(index_uid.clone(), source_config).unwrap();
+        metastore.add_source(add_source_request).await.unwrap();
+
         let universe = Universe::new();
         let temp_dir = tempfile::tempdir().unwrap();
         let (indexing_service, indexing_service_handle) = spawn_indexing_service(
@@ -994,18 +1010,17 @@ mod tests {
             transform_config: None,
             input_format: SourceInputFormat::Json,
         };
-        metastore
-            .add_source(index_uid.clone(), source_config_1.clone())
-            .await
-            .unwrap();
-        let metadata = metastore.index_metadata(index_id.as_str()).await.unwrap();
+        let add_source_request =
+            AddSourceRequest::try_from_source_config(index_uid.clone(), source_config_1).unwrap();
+        metastore.add_source(add_source_request).await.unwrap();
+
         let indexing_tasks = vec![
             IndexingTask {
-                index_uid: metadata.index_uid.to_string(),
+                index_uid: index_uid.clone().into(),
                 source_id: "test-indexing-service--source-1".to_string(),
             },
             IndexingTask {
-                index_uid: metadata.index_uid.to_string(),
+                index_uid: index_uid.clone().into(),
                 source_id: "test-indexing-service--source-1".to_string(),
             },
         ];
@@ -1030,26 +1045,25 @@ mod tests {
             transform_config: None,
             input_format: SourceInputFormat::Json,
         };
-        metastore
-            .add_source(index_uid.clone(), source_config_2.clone())
-            .await
-            .unwrap();
+        let add_source_request =
+            AddSourceRequest::try_from_source_config(index_uid.clone(), source_config_2).unwrap();
+        metastore.add_source(add_source_request).await.unwrap();
 
         let indexing_tasks = vec![
             IndexingTask {
-                index_uid: metadata.index_uid.to_string(),
+                index_uid: index_uid.clone().into(),
                 source_id: INGEST_API_SOURCE_ID.to_string(),
             },
             IndexingTask {
-                index_uid: metadata.index_uid.to_string(),
+                index_uid: index_uid.clone().into(),
                 source_id: "test-indexing-service--source-1".to_string(),
             },
             IndexingTask {
-                index_uid: metadata.index_uid.to_string(),
+                index_uid: index_uid.clone().into(),
                 source_id: "test-indexing-service--source-1".to_string(),
             },
             IndexingTask {
-                index_uid: metadata.index_uid.to_string(),
+                index_uid: index_uid.clone().into(),
                 source_id: source_config_2.source_id.clone(),
             },
         ];
@@ -1087,15 +1101,15 @@ mod tests {
         );
         let indexing_tasks = vec![
             IndexingTask {
-                index_uid: metadata.index_uid.to_string(),
+                index_uid: index_uid.clone().into(),
                 source_id: INGEST_API_SOURCE_ID.to_string(),
             },
             IndexingTask {
-                index_uid: metadata.index_uid.to_string(),
+                index_uid: index_uid.clone().into(),
                 source_id: "test-indexing-service--source-1".to_string(),
             },
             IndexingTask {
-                index_uid: metadata.index_uid.to_string(),
+                index_uid: index_uid.clone().into(),
                 source_id: source_config_2.source_id.clone(),
             },
         ];
@@ -1130,15 +1144,17 @@ mod tests {
             HashSet::<_>::from_iter(self_member.indexing_tasks.iter()),
             HashSet::from_iter(indexing_tasks.iter())
         );
-
         // Delete index and apply empty plan
-        metastore.delete_index(index_uid).await.unwrap();
+        let delete_request = DeleteIndexRequest::new(index_uid);
+        metastore.delete_index(delete_request).await.unwrap();
+
         indexing_service
             .ask_for_res(ApplyIndexingPlanRequest {
                 indexing_tasks: Vec::new(),
             })
             .await
             .unwrap();
+
         let indexing_service_obs = indexing_service_handle.observe().await;
         assert_eq!(indexing_service_obs.num_running_pipelines, 0);
         assert_eq!(indexing_service_obs.num_deleted_queues, 1);
@@ -1383,7 +1399,8 @@ mod tests {
         indexing_server.run_ingest_api_queues_gc().await.unwrap();
         assert_eq!(indexing_server.counters.num_deleted_queues, 0);
 
-        metastore.delete_index(index_uid).await.unwrap();
+        let delete_request = DeleteIndexRequest::new(index_uid);
+        metastore.delete_index(delete_request).await.unwrap();
 
         indexing_server.run_ingest_api_queues_gc().await.unwrap();
         assert_eq!(indexing_server.counters.num_deleted_queues, 1);

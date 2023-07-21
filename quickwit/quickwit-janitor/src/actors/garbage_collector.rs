@@ -26,7 +26,8 @@ use async_trait::async_trait;
 use futures::{stream, StreamExt};
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, Handler};
-use quickwit_metastore::Metastore;
+use quickwit_metastore::{ListIndexesResponseExt, Metastore};
+use quickwit_proto::metastore::ListIndexesRequest;
 use quickwit_storage::StorageResolver;
 use serde::Serialize;
 use tracing::{error, info};
@@ -93,39 +94,55 @@ impl GarbageCollector {
         info!("garbage-collect-operation");
         self.counters.num_passes += 1;
 
-        let indexes = match self.metastore.list_indexes_metadatas().await {
-            Ok(metadatas) => metadatas,
+        let list_indexes_response = match self.metastore.list_indexes(ListIndexesRequest {}).await {
+            Ok(list_indexes_response) => list_indexes_response,
             Err(error) => {
-                error!(error=?error, "Failed to list indexes from the metastore.");
+                error!(error=?error, "Failed to list indexes from metastore.");
                 return;
             }
         };
-        info!(index_ids=%indexes.iter().map(|im| im.index_id()).join(", "), "Garbage collecting indexes.");
+        let indexes_metadata = match list_indexes_response.deserialize_indexes_metadata() {
+            Ok(indexes_metadata) => indexes_metadata,
+            Err(error) => {
+                error!(error=?error, "Failed to deserialize indexes metadata.");
+                return;
+            }
+        };
+        info!(index_ids=%indexes_metadata.iter().map(|index_metadata| index_metadata.index_id()).join(", "), "Garbage collecting indexes.");
 
-        let mut gc_futures = stream::iter(indexes).map(|index| {
-            let metastore = self.metastore.clone();
-            let storage_resolver = self.storage_resolver.clone();
-            async move {
-            let index_uri = index.index_uri();
-            let storage = match storage_resolver.resolve(index_uri).await {
-                Ok(storage) => storage,
-                Err(error) => {
-                    error!(index=%index.index_id(), error=?error, "Failed to resolve the index storage Uri.");
-                    return None;
+        let mut gc_futures = stream::iter(indexes_metadata)
+            .map(|index_metadata| {
+                let metastore = self.metastore.clone();
+                let storage_resolver = self.storage_resolver.clone();
+                async move {
+                    let index_uri = index_metadata.index_uri();
+                    let storage = match storage_resolver.resolve(index_uri).await {
+                        Ok(storage) => storage,
+                        Err(error) => {
+                            error!(
+                                index_id=%index_metadata.index_id(),
+                                index_uri=%index_uri,
+                                error=?error,
+                                "Failed to resolve index storage URI."
+                            );
+                            return None;
+                        }
+                    };
+                    let index_uid = index_metadata.index_uid;
+                    let gc_res = run_garbage_collect(
+                        index_uid.clone(),
+                        storage,
+                        metastore,
+                        STAGED_GRACE_PERIOD,
+                        DELETION_GRACE_PERIOD,
+                        false,
+                        Some(ctx),
+                    )
+                    .await;
+                    Some((index_uid, gc_res))
                 }
-            };
-            let index_uid = index.index_uid;
-            let gc_res = run_garbage_collect(
-                index_uid.clone(),
-                storage,
-                metastore,
-                STAGED_GRACE_PERIOD,
-                DELETION_GRACE_PERIOD,
-                false,
-                Some(ctx),
-            ).await;
-            Some((index_uid, gc_res))
-        }}).buffer_unordered(MAX_CONCURRENT_GC_TASKS);
+            })
+            .buffer_unordered(MAX_CONCURRENT_GC_TASKS);
 
         while let Some(gc_future_res) = gc_futures.next().await {
             let Some((index_uid, gc_res)) = gc_future_res else {

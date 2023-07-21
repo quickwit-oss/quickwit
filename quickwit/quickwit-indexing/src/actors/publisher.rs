@@ -24,6 +24,7 @@ use async_trait::async_trait;
 use fail::fail_point;
 use quickwit_actors::{Actor, ActorContext, Handler, Mailbox, QueueCapacity};
 use quickwit_metastore::Metastore;
+use quickwit_proto::metastore::PublishSplitsRequest;
 use serde::Serialize;
 use tracing::{info, instrument};
 
@@ -121,29 +122,32 @@ impl Handler<SplitsUpdate> for Publisher {
             parent_span: _,
         } = split_update;
 
-        let split_ids: Vec<&str> = new_splits.iter().map(|split| split.split_id()).collect();
-
-        let replaced_split_ids_ref_vec: Vec<&str> =
-            replaced_split_ids.iter().map(String::as_str).collect();
+        let new_split_ids: Vec<String> = new_splits
+            .iter()
+            .map(|split| split.split_id().to_string())
+            .collect();
 
         if let Some(_guard) = publish_lock.acquire().await {
-            ctx.protect_future(self.metastore.publish_splits(
+            let publish_splits_request = PublishSplitsRequest::new(
                 index_uid,
-                &split_ids[..],
-                &replaced_split_ids_ref_vec,
-                checkpoint_delta_opt.clone(),
-            ))
-            .await
-            .context("Failed to publish splits.")?;
+                &new_split_ids,
+                &replaced_split_ids,
+                checkpoint_delta_opt
+                    .clone()
+                    .map(|checkpoint_delta| checkpoint_delta.into()),
+            );
+            ctx.protect_future(self.metastore.publish_splits(publish_splits_request))
+                .await
+                .context("Failed to publish splits.")?;
         } else {
             // TODO: Remove the junk right away?
             info!(
-                split_ids=?split_ids,
+                split_ids=?new_split_ids,
                 "Splits' publish lock is dead."
             );
             return Ok(());
         }
-        info!(new_splits=?split_ids, checkpoint_delta=?checkpoint_delta_opt, "publish-new-splits");
+        info!(new_splits=?new_split_ids, checkpoint_delta=?checkpoint_delta_opt, "publish-new-splits");
         if let Some(source_mailbox) = self.source_mailbox_opt.as_ref() {
             if let Some(checkpoint) = checkpoint_delta_opt {
                 // We voluntarily do not log anything here.

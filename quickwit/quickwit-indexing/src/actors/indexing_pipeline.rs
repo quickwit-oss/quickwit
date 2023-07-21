@@ -30,8 +30,9 @@ use quickwit_common::temp_dir::TempDirectory;
 use quickwit_common::KillSwitch;
 use quickwit_config::{IndexingSettings, SourceConfig};
 use quickwit_doc_mapper::DocMapper;
-use quickwit_metastore::{Metastore, MetastoreError};
+use quickwit_metastore::{IndexMetadataResponseExt, Metastore, MetastoreError};
 use quickwit_proto::indexing::IndexingPipelineId;
+use quickwit_proto::metastore::IndexMetadataRequest;
 use quickwit_storage::Storage;
 use tokio::join;
 use tokio::sync::Semaphore;
@@ -254,11 +255,12 @@ impl IndexingPipeline {
             .await
             .expect("The semaphore should not be closed.");
         self.statistics.num_spawn_attempts += 1;
-        let index_id = self.params.pipeline_id.index_uid.index_id();
+        let index_uid = self.params.pipeline_id.index_uid.clone();
+        let index_id = index_uid.index_id();
         let source_id = self.params.pipeline_id.source_id.as_str();
         self.kill_switch = ctx.kill_switch().child();
         info!(
-            index_id=%index_id,
+            index_id=%index_uid.index_id(),
             source_id=%source_id,
             pipeline_ord=%self.params.pipeline_id.pipeline_ord,
             root_dir=%self.params.indexing_directory.path().display(),
@@ -351,7 +353,7 @@ impl IndexingPipeline {
             .spawn(indexer);
 
         let doc_processor = DocProcessor::try_new(
-            index_id.to_string(),
+            index_uid.clone(),
             source_id.to_string(),
             self.params.doc_mapper.clone(),
             indexer_mailbox,
@@ -369,9 +371,11 @@ impl IndexingPipeline {
             .spawn(doc_processor);
 
         // Fetch index_metadata to be sure to have the last updated checkpoint.
-        let index_metadata = ctx
-            .protect_future(self.params.metastore.index_metadata(index_id))
+        let index_metadata_request = IndexMetadataRequest::strict(index_uid.clone());
+        let index_metadata_response = ctx
+            .protect_future(self.params.metastore.index_metadata(index_metadata_request))
             .await?;
+        let index_metadata = index_metadata_response.deserialize_index_metadata()?;
         let source_checkpoint = index_metadata
             .checkpoint
             .source_checkpoint(source_id)
@@ -381,7 +385,7 @@ impl IndexingPipeline {
             .protect_future(quickwit_supported_sources().load_source(
                 Arc::new(SourceExecutionContext {
                     metastore: self.params.metastore.clone(),
-                    index_uid: self.params.pipeline_id.index_uid.clone(),
+                    index_uid,
                     queues_dir_path: self.params.queues_dir_path.clone(),
                     source_config: self.params.source_config.clone(),
                 }),

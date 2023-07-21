@@ -30,8 +30,12 @@ use quickwit_common::io::IoControls;
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_common::KillSwitch;
 use quickwit_doc_mapper::DocMapper;
-use quickwit_metastore::{ListSplitsQuery, Metastore, MetastoreError, SplitState};
+use quickwit_metastore::{
+    ListSplitsQuery, ListSplitsRequestExt, ListSplitsResponseExt, Metastore, MetastoreError,
+    SplitState,
+};
 use quickwit_proto::indexing::IndexingPipelineId;
+use quickwit_proto::metastore::ListSplitsRequest;
 use time::OffsetDateTime;
 use tokio::join;
 use tracing::{debug, error, info, instrument};
@@ -200,15 +204,17 @@ impl MergePipeline {
             merge_policy=?self.params.merge_policy,
             "Spawning merge pipeline.",
         );
-        let query = ListSplitsQuery::for_index(self.params.pipeline_id.index_uid.clone())
+        let list_splits_query = ListSplitsQuery::default()
             .with_split_state(SplitState::Published)
             .retain_immature(OffsetDateTime::now_utc());
-        let published_splits = ctx
-            .protect_future(self.params.metastore.list_splits(query))
-            .await?
-            .into_iter()
-            .map(|split| split.split_metadata)
-            .collect::<Vec<_>>();
+        let list_splits_request = ListSplitsRequest::try_from_list_splits_query(
+            self.params.pipeline_id.index_uid.clone(),
+            list_splits_query,
+        )?;
+        let list_splits_response = ctx
+            .protect_future(self.params.metastore.list_splits(list_splits_request))
+            .await?;
+        let published_splits = list_splits_response.deserialize_splits_metadata()?;
 
         // Merge publisher
         let merge_publisher = Publisher::new(

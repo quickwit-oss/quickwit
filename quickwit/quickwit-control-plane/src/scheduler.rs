@@ -28,9 +28,10 @@ use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler};
 use quickwit_config::SourceConfig;
-use quickwit_metastore::Metastore;
+use quickwit_metastore::{ListIndexesResponseExt, Metastore};
 use quickwit_proto::control_plane::{NotifyIndexChangeRequest, NotifyIndexChangeResponse};
 use quickwit_proto::indexing::{ApplyIndexingPlanRequest, IndexingService, IndexingTask};
+use quickwit_proto::metastore::ListIndexesRequest;
 use serde::Serialize;
 use tracing::{debug, error, info, warn};
 
@@ -191,8 +192,9 @@ impl IndexingScheduler {
     }
 
     async fn fetch_source_configs(&self) -> anyhow::Result<HashMap<IndexSourceId, SourceConfig>> {
-        let indexes_metadatas = self.metastore.list_indexes_metadatas().await?;
-        let source_configs: HashMap<IndexSourceId, SourceConfig> = indexes_metadatas
+        let list_indexes_response = self.metastore.list_indexes(ListIndexesRequest {}).await?;
+        let indexes_metadata = list_indexes_response.deserialize_indexes_metadata()?;
+        let source_configs: HashMap<IndexSourceId, SourceConfig> = indexes_metadata
             .into_iter()
             .flat_map(|index_metadata| {
                 index_metadata

@@ -35,7 +35,7 @@ use quickwit_directories::UnionDirectory;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::{Metastore, SplitMetadata};
 use quickwit_proto::indexing::IndexingPipelineId;
-use quickwit_proto::metastore::DeleteTask;
+use quickwit_proto::metastore::{DeleteTask, ListDeleteTasksRequest, MarkSplitsForDeletionRequest};
 use quickwit_query::get_quickwit_fastfield_normalizer_manager;
 use quickwit_query::query_ast::QueryAst;
 use tantivy::directory::{DirectoryClone, MmapDirectory, RamDirectory};
@@ -331,12 +331,13 @@ impl MergeExecutor {
         merge_scratch_directory: TempDirectory,
         ctx: &ActorContext<Self>,
     ) -> anyhow::Result<Option<IndexedSplit>> {
-        let delete_tasks = ctx
-            .protect_future(
-                self.metastore
-                    .list_delete_tasks(split.index_uid.clone(), split.delete_opstamp),
-            )
+        let list_delete_tasks_request =
+            ListDeleteTasksRequest::new(split.index_uid.clone(), split.delete_opstamp);
+        let list_delete_tasks_response = ctx
+            .protect_future(self.metastore.list_delete_tasks(list_delete_tasks_request))
             .await?;
+        let delete_tasks = list_delete_tasks_response.delete_tasks;
+
         if delete_tasks.is_empty() {
             warn!(
                 "No delete task found for split `{}` with `delete_optamp` = `{}`.",
@@ -345,7 +346,6 @@ impl MergeExecutor {
             );
             return Ok(None);
         }
-
         let last_delete_opstamp = delete_tasks
             .iter()
             .map(|delete_task| delete_task.opstamp)
@@ -355,7 +355,6 @@ impl MergeExecutor {
             delete_opstamp_start = split.delete_opstamp,
             num_delete_tasks = delete_tasks.len()
         );
-
         let (union_index_meta, split_directories) =
             open_split_directories(&tantivy_dirs, self.doc_mapper.tokenizer_manager())?;
         let controlled_directory = self
@@ -386,8 +385,10 @@ impl MergeExecutor {
                     "All documents from split `{}` were deleted.",
                     split.split_id()
                 );
+                let mark_splits_for_deletion_request =
+                    MarkSplitsForDeletionRequest::new(split.index_uid, [split.split_id]);
                 self.metastore
-                    .mark_splits_for_deletion(split.index_uid.clone(), &[split.split_id()])
+                    .mark_splits_for_deletion(mark_splits_for_deletion_request)
                     .await?;
                 return Ok(None);
             };
@@ -406,12 +407,11 @@ impl MergeExecutor {
         } else {
             None
         };
-
         let index_pipeline_id = IndexingPipelineId {
-            index_uid: split.index_uid,
             node_id: split.node_id.clone(),
-            pipeline_ord: 0,
+            index_uid: split.index_uid,
             source_id: split.source_id.clone(),
+            pipeline_ord: 0,
         };
         let indexed_split = IndexedSplit {
             split_attrs: SplitAttrs {
@@ -530,8 +530,9 @@ fn open_index<T: Into<Box<dyn Directory>>>(
 mod tests {
     use quickwit_actors::Universe;
     use quickwit_common::split_file;
-    use quickwit_metastore::SplitMetadata;
+    use quickwit_metastore::{SplitMetadata, StageSplitsRequestExt};
     use quickwit_proto::metastore::DeleteQuery;
+    use quickwit_proto::{PublishSplitsRequest, StageSplitsRequest};
     use serde_json::Value as JsonValue;
     use tantivy::{Inventory, ReloadPolicy};
 
@@ -706,17 +707,21 @@ mod tests {
         let mut new_split_metadata = split_metadata.clone();
         new_split_metadata.split_id = new_split_id();
         new_split_metadata.num_merge_ops = 1;
+
+        let stage_splits_request = StageSplitsRequest::try_from_split_metadata(
+            index_uid.clone(),
+            new_split_metadata.clone(),
+        );
+        metastore.stage_splits(stage_splits_request).await.unwrap();
+
+        let publish_splits_request = PublishSplitsRequest::new(
+            index_uid.clone(),
+            [new_split_metadata.split_id()],
+            [split_metadata.split_id()],
+            None,
+        );
         metastore
-            .stage_splits(index_uid.clone(), vec![new_split_metadata.clone()])
-            .await
-            .unwrap();
-        metastore
-            .publish_splits(
-                index_uid.clone(),
-                &[new_split_metadata.split_id()],
-                &[split_metadata.split_id()],
-                None,
-            )
+            .publish_splits(publish_splits_request)
             .await
             .unwrap();
         let expected_uncompressed_docs_size_in_bytes =

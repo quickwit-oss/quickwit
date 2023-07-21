@@ -21,8 +21,10 @@ use std::sync::Arc;
 
 use quickwit_config::build_doc_mapper;
 use quickwit_janitor::error::JanitorError;
-use quickwit_metastore::{Metastore, MetastoreError};
-use quickwit_proto::metastore::{DeleteQuery, DeleteTask};
+use quickwit_metastore::{IndexMetadataResponseExt, Metastore, MetastoreError};
+use quickwit_proto::metastore::{
+    DeleteQuery, DeleteTask, IndexMetadataRequest, ListDeleteTasksRequest,
+};
 use quickwit_proto::{IndexUid, SearchRequest};
 use quickwit_query::query_ast::{query_ast_from_user_text, QueryAst};
 use serde::Deserialize;
@@ -95,8 +97,16 @@ pub async fn get_delete_tasks(
     index_id: String,
     metastore: Arc<dyn Metastore>,
 ) -> Result<Vec<DeleteTask>, MetastoreError> {
-    let index_uid: IndexUid = metastore.index_metadata(&index_id).await?.index_uid;
-    let delete_tasks = metastore.list_delete_tasks(index_uid, 0).await?;
+    let index_metadata_request = IndexMetadataRequest::new(index_id);
+    let index_metadata_response = metastore.index_metadata(index_metadata_request).await?;
+    let index_metadata = index_metadata_response.deserialize_index_metadata()?;
+    let index_uid: IndexUid = index_metadata.index_uid;
+
+    let list_delete_tasks_request = ListDeleteTasksRequest::new(index_uid.clone(), 0);
+    let list_delete_tasks_response = metastore
+        .list_delete_tasks(list_delete_tasks_request)
+        .await?;
+    let delete_tasks = list_delete_tasks_response.delete_tasks;
     Ok(delete_tasks)
 }
 
@@ -133,8 +143,11 @@ pub async fn post_delete_request(
     delete_request: DeleteQueryRequest,
     metastore: Arc<dyn Metastore>,
 ) -> Result<DeleteTask, JanitorError> {
-    let metadata = metastore.index_metadata(&index_id).await?;
-    let index_uid: IndexUid = metadata.index_uid.clone();
+    let index_metadata_request = IndexMetadataRequest::new(index_id);
+    let index_metadata_response = metastore.index_metadata(index_metadata_request).await?;
+    let index_metadata = index_metadata_response.deserialize_index_metadata()?;
+    let index_uid: IndexUid = index_metadata.index_uid.clone();
+
     let query_ast = query_ast_from_user_text(&delete_request.query, Some(Vec::new()))
         .parse_user_query(&[])
         .map_err(|err| JanitorError::InvalidDeleteQuery(err.to_string()))?;
@@ -142,12 +155,12 @@ pub async fn post_delete_request(
         JanitorError::InternalError("Failed to serialized delete query ast".to_string())
     })?;
     let delete_query = DeleteQuery {
-        index_uid: index_uid.to_string(),
+        index_uid: index_uid.into(),
         start_timestamp: delete_request.start_timestamp,
         end_timestamp: delete_request.end_timestamp,
         query_ast: query_ast_json,
     };
-    let index_config = metadata.into_index_config();
+    let index_config = index_metadata.into_index_config();
     // TODO should it be something else than a JanitorError?
     let doc_mapper = build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)
         .map_err(|error| JanitorError::InternalError(error.to_string()))?;
@@ -160,6 +173,7 @@ pub async fn post_delete_request(
     doc_mapper
         .query(doc_mapper.schema(), &query_ast, true)
         .map_err(|error| JanitorError::InvalidDeleteQuery(error.to_string()))?;
+
     let delete_task = metastore.create_delete_task(delete_query).await?;
     Ok(delete_task)
 }

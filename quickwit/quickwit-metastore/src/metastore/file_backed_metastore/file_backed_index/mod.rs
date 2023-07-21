@@ -27,16 +27,16 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::ops::Bound;
 
+use itertools::Itertools;
 use quickwit_common::PrettySample;
 use quickwit_config::SourceConfig;
-use quickwit_proto::metastore::{DeleteQuery, DeleteTask};
+use quickwit_proto::metastore::{DeleteQuery, DeleteTask, SourceCheckpointDelta};
 use quickwit_proto::IndexUid;
 use serde::{Deserialize, Serialize};
 use serialize::VersionedFileBackedIndex;
 use time::OffsetDateTime;
 use tracing::{info, warn};
 
-use crate::checkpoint::IndexCheckpointDelta;
 use crate::{
     split_tag_filter, IndexMetadata, ListSplitsQuery, MetastoreError, MetastoreResult, Split,
     SplitMetadata, SplitState,
@@ -210,8 +210,8 @@ impl FileBackedIndex {
     /// Marks the splits for deletion. Returns whether a mutation occurred.
     pub(crate) fn mark_splits_for_deletion(
         &mut self,
-        split_ids: &[&str],
-        deletable_states: &[SplitState],
+        split_ids: impl IntoIterator<Item = impl AsRef<str>>,
+        deletable_split_states: &[SplitState],
         return_error_on_splits_not_found: bool,
     ) -> MetastoreResult<bool> {
         let mut mutation_occurred = false;
@@ -219,24 +219,24 @@ impl FileBackedIndex {
         let mut non_deletable_split_ids = Vec::new();
         let now_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
-        for &split_id in split_ids {
+        for split_id in split_ids {
+            let split_id_ref = split_id.as_ref();
             // Check for the existence of split.
-            let metadata = match self.splits.get_mut(split_id) {
+            let metadata = match self.splits.get_mut(split_id_ref) {
                 Some(metadata) => metadata,
                 None => {
-                    split_not_found_ids.push(split_id.to_string());
+                    split_not_found_ids.push(split_id_ref.to_string());
                     continue;
                 }
             };
-            if !deletable_states.contains(&metadata.split_state) {
-                non_deletable_split_ids.push(split_id.to_string());
+            if !deletable_split_states.contains(&metadata.split_state) {
+                non_deletable_split_ids.push(split_id_ref.to_string());
                 continue;
             };
             if metadata.split_state == SplitState::MarkedForDeletion {
                 // If the split is already marked for deletion, This is fine, we just skip it.
                 continue;
             }
-
             metadata.split_state = SplitState::MarkedForDeletion;
             metadata.update_timestamp = now_timestamp;
             mutation_occurred = true;
@@ -265,14 +265,20 @@ impl FileBackedIndex {
 
     /// Helper to mark a list of splits as published.
     /// This function however does not update the checkpoint.
-    fn mark_splits_as_published_helper(&mut self, split_ids: &[&str]) -> MetastoreResult<()> {
+    fn mark_splits_as_published_helper(
+        &mut self,
+        staged_split_ids: impl IntoIterator<Item = impl AsRef<str>>,
+    ) -> MetastoreResult<()> {
         let mut split_not_found_ids = Vec::new();
         let mut split_not_staged_ids = Vec::new();
+
         let now_timestamp = OffsetDateTime::now_utc().unix_timestamp();
-        for &split_id in split_ids {
+
+        for staged_plit_id in staged_split_ids {
+            let staged_split_id_ref = staged_plit_id.as_ref();
             // Check for the existence of split.
-            let Some(metadata) = self.splits.get_mut(split_id) else {
-                split_not_found_ids.push(split_id.to_string());
+            let Some(metadata) = self.splits.get_mut(staged_split_id_ref) else {
+                split_not_found_ids.push(staged_split_id_ref.to_string());
                 continue;
             };
             if metadata.split_state == SplitState::Staged {
@@ -280,36 +286,35 @@ impl FileBackedIndex {
                 metadata.update_timestamp = now_timestamp;
                 metadata.publish_timestamp = Some(now_timestamp);
             } else {
-                split_not_staged_ids.push(split_id.to_string());
+                split_not_staged_ids.push(staged_split_id_ref.to_string());
             }
         }
-
         if !split_not_found_ids.is_empty() {
             return Err(MetastoreError::SplitsDoNotExist {
                 split_ids: split_not_found_ids,
             });
         }
-
         if !split_not_staged_ids.is_empty() {
             return Err(MetastoreError::SplitsNotStaged {
                 split_ids: split_not_staged_ids,
             });
         }
-
         Ok(())
     }
 
     /// Publishes splits.
-    pub(crate) fn publish_splits<'a>(
+    pub(crate) fn publish_splits(
         &mut self,
-        split_ids: &[&'a str],
-        replaced_split_ids: &[&'a str],
-        checkpoint_delta_opt: Option<IndexCheckpointDelta>,
+        staged_split_ids: impl IntoIterator<Item = impl AsRef<str>>,
+        replaced_split_ids: impl IntoIterator<Item = impl AsRef<str>>,
+        checkpoint_delta_opt: Option<SourceCheckpointDelta>,
     ) -> MetastoreResult<()> {
         if let Some(checkpoint_delta) = checkpoint_delta_opt {
-            self.metadata.checkpoint.try_apply_delta(checkpoint_delta)?;
+            self.metadata
+                .checkpoint
+                .try_apply_delta(checkpoint_delta.into())?;
         }
-        self.mark_splits_as_published_helper(split_ids)?;
+        self.mark_splits_as_published_helper(staged_split_ids)?;
         self.mark_splits_for_deletion(replaced_split_ids, &[SplitState::Published], true)?;
         Ok(())
     }
@@ -319,15 +324,34 @@ impl FileBackedIndex {
         let limit = query.limit.unwrap_or(usize::MAX);
         let offset = query.offset.unwrap_or_default();
 
-        let splits: Vec<Split> = self
-            .splits
-            .values()
-            .filter(|split| split_query_predicate(split, &query))
-            .skip(offset)
-            .take(limit)
-            .cloned()
-            .collect();
-
+        let splits: Vec<Split> = if query.sort_by_staleness {
+            self.splits
+                .values()
+                .filter(|split| split_query_predicate(split, &query))
+                .sorted_unstable_by(|left_split, right_split| {
+                    left_split
+                        .split_metadata
+                        .delete_opstamp
+                        .cmp(&right_split.split_metadata.delete_opstamp)
+                        .then_with(|| {
+                            left_split
+                                .publish_timestamp
+                                .cmp(&right_split.publish_timestamp)
+                        })
+                })
+                .skip(offset)
+                .take(limit)
+                .cloned()
+                .collect()
+        } else {
+            self.splits
+                .values()
+                .filter(|split| split_query_predicate(split, &query))
+                .skip(offset)
+                .take(limit)
+                .cloned()
+                .collect()
+        };
         Ok(splits)
     }
 
@@ -344,18 +368,26 @@ impl FileBackedIndex {
     }
 
     /// Deletes multiple splits.
-    pub(crate) fn delete_splits(&mut self, split_ids: &[&str]) -> MetastoreResult<()> {
+    pub(crate) fn delete_splits(
+        &mut self,
+        split_ids: impl IntoIterator<Item = impl AsRef<str>>,
+    ) -> MetastoreResult<()> {
+        let mut num_deleted_splits = 0;
         let mut split_not_found_ids = Vec::new();
         let mut split_not_deletable_ids = Vec::new();
 
-        for &split_id in split_ids {
-            match self.delete_split(split_id) {
-                DeleteSplitOutcome::Success => {}
+        for split_id in split_ids {
+            let split_id_ref = split_id.as_ref();
+
+            match self.delete_split(split_id_ref) {
+                DeleteSplitOutcome::Success => {
+                    num_deleted_splits += 1;
+                }
                 DeleteSplitOutcome::SplitNotFound => {
-                    split_not_found_ids.push(split_id);
+                    split_not_found_ids.push(split_id_ref.to_string());
                 }
                 DeleteSplitOutcome::Forbidden => {
-                    split_not_deletable_ids.push(split_id.to_string());
+                    split_not_deletable_ids.push(split_id_ref.to_string());
                 }
             }
         }
@@ -364,7 +396,7 @@ impl FileBackedIndex {
                 split_ids: split_not_deletable_ids,
             });
         }
-        info!(index_id=%self.index_id(), "Deleted {} splits from index.", split_ids.len());
+        info!(index_id=%self.index_id(), "Deleted {num_deleted_splits} splits from index.");
 
         if !split_not_found_ids.is_empty() {
             warn!(
@@ -378,8 +410,8 @@ impl FileBackedIndex {
     }
 
     /// Adds a source.
-    pub(crate) fn add_source(&mut self, source: SourceConfig) -> MetastoreResult<()> {
-        self.metadata.add_source(source)
+    pub(crate) fn add_source(&mut self, source_config: SourceConfig) -> MetastoreResult<()> {
+        self.metadata.add_source(source_config)
     }
 
     pub(crate) fn toggle_source(&mut self, source_id: &str, enable: bool) -> MetastoreResult<bool> {
@@ -423,16 +455,16 @@ impl FileBackedIndex {
     /// Updates splits delete opstamp. Returns that a mutation occurred (true).
     pub(crate) fn update_splits_delete_opstamp(
         &mut self,
-        split_ids: &[&str],
+        split_ids: impl IntoIterator<Item = impl AsRef<str>>,
         delete_opstamp: u64,
     ) -> MetastoreResult<bool> {
         for split_id in split_ids {
-            let split =
-                self.splits
-                    .get_mut(*split_id)
-                    .ok_or_else(|| MetastoreError::SplitsDoNotExist {
-                        split_ids: vec![split_id.to_string()],
-                    })?;
+            let split_id_ref = split_id.as_ref();
+            let split = self.splits.get_mut(split_id_ref).ok_or_else(|| {
+                MetastoreError::SplitsDoNotExist {
+                    split_ids: vec![split_id_ref.to_string()],
+                }
+            })?;
             split.split_metadata.delete_opstamp = delete_opstamp;
         }
         Ok(true)
@@ -475,32 +507,27 @@ impl Debug for Stamper {
 }
 
 fn split_query_predicate(split: &&Split, query: &ListSplitsQuery) -> bool {
-    if !split_tag_filter(split, query.tags.as_ref()) {
+    if !split_tag_filter(&split.split_metadata, query.tags.as_ref()) {
         return false;
     }
-
     if !query.split_states.is_empty() && !query.split_states.contains(&split.split_state) {
         return false;
     }
-
     if !query
         .delete_opstamp
         .contains(&split.split_metadata.delete_opstamp)
     {
         return false;
     }
-
     if !query.update_timestamp.contains(&split.update_timestamp) {
         return false;
     }
-
     if !query
         .create_timestamp
         .contains(&split.split_metadata.create_timestamp)
     {
         return false;
     }
-
     match &query.mature {
         Bound::Included(evaluation_datetime) => {
             return split.split_metadata.is_mature(*evaluation_datetime);
@@ -510,13 +537,11 @@ fn split_query_predicate(split: &&Split, query: &ListSplitsQuery) -> bool {
         }
         Bound::Unbounded => {}
     }
-
-    if let Some(range) = split.split_metadata.time_range.as_ref() {
+    if let Some(range) = &split.split_metadata.time_range {
         if !query.time_range.overlaps_with(range.clone()) {
             return false;
         }
     }
-
     true
 }
 

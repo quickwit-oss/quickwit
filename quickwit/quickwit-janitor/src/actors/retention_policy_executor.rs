@@ -25,7 +25,8 @@ use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, Handler};
 use quickwit_config::IndexConfig;
-use quickwit_metastore::Metastore;
+use quickwit_metastore::{ListIndexesResponseExt, Metastore};
+use quickwit_proto::metastore::ListIndexesRequest;
 use quickwit_proto::IndexUid;
 use serde::Serialize;
 use tracing::{debug, error, info};
@@ -81,18 +82,25 @@ impl RetentionPolicyExecutor {
         debug!("retention-policy-refresh-indexes-operation");
         self.counters.num_refresh_passes += 1;
 
-        let index_metadatas = match self.metastore.list_indexes_metadatas().await {
-            Ok(metadatas) => metadatas,
+        let list_indexes_response = match self.metastore.list_indexes(ListIndexesRequest {}).await {
+            Ok(list_indexes_response) => list_indexes_response,
             Err(error) => {
-                error!(error=?error, "Failed to list indexes from the metastore.");
+                error!(error=?error, "Failed to list indexes from metastore.");
                 return;
             }
         };
-        debug!(index_ids=%index_metadatas.iter().map(|im| im.index_id()).join(", "), "Retention policy refresh.");
+        let indexes_metadata = match list_indexes_response.deserialize_indexes_metadata() {
+            Ok(indexes_metadata) => indexes_metadata,
+            Err(error) => {
+                error!(error=?error, "Failed to deserialize indexes metadata.");
+                return;
+            }
+        };
+        debug!(index_ids=%indexes_metadata.iter().map(|index_metadata| index_metadata.index_id()).join(", "), "Refresh retention policies.");
 
         let deleted_indexes = compute_deleted_indexes(
             self.index_configs.keys().map(String::as_str),
-            index_metadatas
+            indexes_metadata
                 .iter()
                 .map(|index_metadata| index_metadata.index_id()),
         );
@@ -102,8 +110,7 @@ impl RetentionPolicyExecutor {
                 self.index_configs.remove(&index_id);
             }
         }
-
-        for index_metadata in index_metadatas {
+        for index_metadata in indexes_metadata {
             let index_uid = index_metadata.index_uid.clone();
             let index_config = index_metadata.into_index_config();
             // We only care about indexes with a retention policy configured.
