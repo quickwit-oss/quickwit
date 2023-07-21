@@ -38,7 +38,6 @@ static CMN_TOKENIZER: Lazy<LinderaTokenizer> = Lazy::new(|| {
     };
     let cmn_dictionary = load_dictionary_from_config(cmn_dictionary_config)
         .expect("Lindera `CcCedict` dictionary must be present");
-    info!("loading dict");
     LinderaTokenizer::new(cmn_dictionary, None, Mode::Normal)
 });
 
@@ -50,7 +49,6 @@ static JPN_TOKENIZER: Lazy<LinderaTokenizer> = Lazy::new(|| {
     };
     let jpn_dictionary = load_dictionary_from_config(jpn_dictionary_config)
         .expect("Lindera `IPAD` dictionary must be present");
-    info!("loading dict");
     LinderaTokenizer::new(jpn_dictionary, None, Mode::Normal)
 });
 
@@ -62,7 +60,6 @@ static KOR_TOKENIZER: Lazy<LinderaTokenizer> = Lazy::new(|| {
     };
     let kor_dictionary = load_dictionary_from_config(kor_dictionary_config)
         .expect("Lindera `KoDic` dictionary must be present");
-    info!("loading dict");
     LinderaTokenizer::new(kor_dictionary, None, Mode::Normal)
 });
 
