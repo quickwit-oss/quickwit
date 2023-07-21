@@ -23,7 +23,6 @@ use lindera_tokenizer::token::Token as LinderaToken;
 use lindera_tokenizer::tokenizer::Tokenizer as LinderaTokenizer;
 use once_cell::sync::Lazy;
 use tantivy::tokenizer::{SimpleTokenStream, SimpleTokenizer, Token, TokenStream, Tokenizer};
-use tracing::info;
 use whichlang::{detect_language, Lang};
 
 // Note(fmassot): we use `lindera_tokenizer::tokenizer::Tokenizer` and not
