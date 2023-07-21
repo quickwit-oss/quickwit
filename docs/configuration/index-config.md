@@ -503,9 +503,9 @@ This section describes indexing settings for a given index.
 | Variable      | Description   | Default value |
 | ------------- | ------------- | ------------- |
 | `commit_timeout_secs`      | Maximum number of seconds before committing a split since its creation.   | `60` |
-| `split_num_docs_target` | Target number of docs per split.   | `10_000_000` |
+| `split_num_docs_target` | Target number of docs per split.   | `10000000` |
 | `merge_policy` | Describes the strategy used to trigger split merge operations (see [Merge policies](#merge-policies) section below). |
-| `resources.heap_size`      | Indexer heap size per source per index.   | `2_000_000_000` |
+| `resources.heap_size`      | Indexer heap size per source per index.   | `2000000000` |
 
 ### Merge policies
 
@@ -528,9 +528,10 @@ index_id: "hdfs"
 indexing_settings:
   merge_policy:
     type: "stable_log"
-    min_level_num_docs: 100_000
+    min_level_num_docs: 100000
     merge_factor: 10
     max_merge_factor: 12
+    maturation_period: 48h
 ```
 
 
@@ -538,8 +539,8 @@ indexing_settings:
 | ------------- | ------------- | ------------- |
 | `merge_factor`      | *(advanced)* Number of splits to merge together in a single merge operation.   | `10` |
 | `max_merge_factor` | *(advanced)* Maximum number of splits that can be merged together in a single merge operation.  | `12` |
-| `min_level_num_docs` |  *(advanced)* Number of docs below which all splits are considered as belonging to the same level.   | `100_000` |
-
+| `min_level_num_docs` |  *(advanced)* Number of docs below which all splits are considered as belonging to the same level.   | `100000` |
+| `maturation_period` | Duration after which a split is considered mature, and won't be considered for merges anymore. May impact the completion time of pending delete tasks. | `48h` |
 
 #### "Limit Merge" merge policy
 
@@ -559,7 +560,7 @@ indexing_settings:
     max_merge_ops: 5
     merge_factor: 10
     max_merge_factor: 12
-
+    maturation_period: 48h
 ```
 
 
@@ -568,6 +569,7 @@ indexing_settings:
 | `max_merge_ops`   |  Maximum number of merges that a given split should undergo. | `4` |
 | `merge_factor`      | *(advanced)* Number of splits to merge together in a single merge operation.   | `10` |
 | `max_merge_factor` | *(advanced)* Maximum number of splits that can be merged together in a single merge operation.  | `12` |
+| `maturation_period` | Duration after which a split is considered mature, and won't be considered for merges anymore. May impact the completion time of pending delete tasks. | `48h` |
 
 #### No merge
 
