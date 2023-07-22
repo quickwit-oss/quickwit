@@ -336,13 +336,14 @@ mod tests {
 
     use quickwit_actors::{ObservationType, Universe};
     use quickwit_metastore::checkpoint::IndexCheckpointDelta;
+    use quickwit_proto::indexing_api::IndexingPipelineId;
     use quickwit_proto::IndexUid;
     use tantivy::schema::{NumericOptions, Schema, FAST, STRING, TEXT};
     use tantivy::{doc, DateTime, Index};
     use tracing::Span;
 
     use super::*;
-    use crate::models::{IndexingPipelineId, PublishLock, SplitAttrs};
+    use crate::models::{PublishLock, SplitAttrs};
 
     fn make_indexed_split_for_test(
         segment_timestamps: &[DateTime],

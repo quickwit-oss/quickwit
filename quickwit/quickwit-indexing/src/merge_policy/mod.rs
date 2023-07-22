@@ -169,6 +169,7 @@ pub mod tests {
 
     use proptest::prelude::*;
     use quickwit_actors::Universe;
+    use quickwit_proto::indexing_api::IndexingPipelineId;
     use quickwit_proto::IndexUid;
     use rand::seq::SliceRandom;
     use tantivy::TrackedObject;
@@ -176,7 +177,7 @@ pub mod tests {
 
     use super::*;
     use crate::actors::{merge_split_attrs, MergePlanner, MergeSplitDownloader};
-    use crate::models::{create_split_metadata, IndexingPipelineId, NewSplits};
+    use crate::models::{create_split_metadata, NewSplits};
 
     fn pow_of_10(n: usize) -> usize {
         10usize.pow(n as u32)

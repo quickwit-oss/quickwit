@@ -39,8 +39,6 @@ pub use crate::split_store::{get_tantivy_directory_from_split_bundle, IndexingSp
 
 pub mod actors;
 mod controlled_directory;
-pub mod grpc_adapter;
-pub mod indexing_client;
 pub mod merge_policy;
 mod metrics;
 pub mod models;

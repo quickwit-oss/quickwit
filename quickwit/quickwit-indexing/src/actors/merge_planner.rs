@@ -26,6 +26,7 @@ use itertools::Itertools;
 use quickwit_actors::channel_with_priority::TrySendError;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_metastore::SplitMetadata;
+use quickwit_proto::indexing_api::IndexingPipelineId;
 use serde::Serialize;
 use tantivy::Inventory;
 use time::OffsetDateTime;
@@ -34,7 +35,7 @@ use tracing::info;
 use crate::actors::MergeSplitDownloader;
 use crate::merge_policy::MergeOperation;
 use crate::metrics::INDEXER_METRICS;
-use crate::models::{IndexingPipelineId, NewSplits};
+use crate::models::NewSplits;
 use crate::MergePolicy;
 
 /// The merge planner decides when to start a merge task.
@@ -307,6 +308,7 @@ mod tests {
     };
     use quickwit_config::IndexingSettings;
     use quickwit_metastore::{SplitMaturity, SplitMetadata};
+    use quickwit_proto::indexing_api::IndexingPipelineId;
     use quickwit_proto::IndexUid;
     use tantivy::TrackedObject;
     use time::OffsetDateTime;
@@ -315,7 +317,7 @@ mod tests {
     use crate::merge_policy::{
         merge_policy_from_settings, MergeOperation, MergePolicy, StableLogMergePolicy,
     };
-    use crate::models::{IndexingPipelineId, NewSplits};
+    use crate::models::NewSplits;
 
     fn split_metadata_for_test(
         split_id: &str,

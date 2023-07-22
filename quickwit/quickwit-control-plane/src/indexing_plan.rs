@@ -313,8 +313,8 @@ pub(crate) fn build_indexing_plan(
 #[cfg(test)]
 mod tests {
     use std::collections::HashMap;
-    use std::net::SocketAddr;
     use std::num::NonZeroUsize;
+    use std::time::Duration;
 
     use itertools::Itertools;
     use proptest::prelude::*;
@@ -324,11 +324,12 @@ mod tests {
         FileSourceParams, KafkaSourceParams, SourceConfig, SourceInputFormat, SourceParams,
         CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID,
     };
-    use quickwit_indexing::indexing_client::create_indexing_service_client;
     use quickwit_proto::indexing::IndexingTask;
-    use quickwit_proto::IndexUid;
+    use quickwit_proto::{IndexUid, IndexingServiceClient};
     use rand::seq::SliceRandom;
     use serde_json::json;
+    use tonic::transport::Endpoint;
+    use tower::timeout::Timeout;
 
     use super::{build_physical_indexing_plan, IndexSourceId};
     use crate::indexing_plan::build_indexing_plan;
@@ -351,8 +352,11 @@ mod tests {
     ) -> Vec<(String, IndexerNodeInfo)> {
         let mut members = Vec::new();
         for idx in 0..num_members {
-            let addr: SocketAddr = ([127, 0, 0, 1], 10).into();
-            let client = create_indexing_service_client(addr).await.unwrap();
+            let channel = Timeout::new(
+                Endpoint::from_static("http://127.0.0.1:10").connect_lazy(),
+                Duration::from_secs(1),
+            );
+            let client = IndexingServiceClient::from_channel(channel);
             members.push((
                 (1 + idx).to_string(),
                 IndexerNodeInfo {

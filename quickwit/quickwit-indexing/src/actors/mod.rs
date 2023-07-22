@@ -31,9 +31,9 @@ mod uploader;
 
 pub use indexing_pipeline::{IndexingPipeline, IndexingPipelineHandles, IndexingPipelineParams};
 pub use indexing_service::{
-    IndexingService, IndexingServiceCounters, IndexingServiceError, MergePipelineId,
-    INDEXING_DIR_NAME,
+    IndexingService, IndexingServiceCounters, MergePipelineId, INDEXING_DIR_NAME,
 };
+pub use quickwit_proto::indexing_api::IndexingServiceError;
 pub use sequencer::Sequencer;
 mod merge_executor;
 mod merge_planner;
