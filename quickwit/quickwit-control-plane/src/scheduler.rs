@@ -285,7 +285,7 @@ impl IndexingScheduler {
                         .apply_indexing_plan(ApplyIndexingPlanRequest { indexing_tasks })
                         .await
                     {
-                        error!(indexer_node_id=%indexer.0, err=?error, "Error occurred when appling indexing plan to indexer.");
+                        error!(indexer_node_id=%indexer.0, err=?error, "Error occurred when applying indexing plan to indexer.");
                     }
                 }
             });
