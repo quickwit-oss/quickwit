@@ -106,7 +106,7 @@ pub mod indexing_api {
                 IndexingServiceError::Internal(string) => tonic::Status::internal(string),
                 IndexingServiceError::MetastoreError(string) => tonic::Status::internal(string),
                 IndexingServiceError::StorageResolverError(string) => tonic::Status::internal(string),
-                IndexingServiceError::Unavailable => tonic::Status::unavailable("Service is unavailable."),
+                IndexingServiceError::Unavailable => tonic::Status::unavailable("Indexing service is unavailable."),
             }
         }
     }
