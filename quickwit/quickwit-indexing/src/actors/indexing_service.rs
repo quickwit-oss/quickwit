@@ -109,7 +109,7 @@ impl Debug for IndexingService {
             .debug_struct("IndexingService")
             .field("cluster_id", &self.cluster.cluster_id())
             .field("self_node_id", &self.node_id)
-            // TODO: add other stuff
+            .field("indexing_root_directory", &self.indexing_root_directory)
             .finish()
     }
 }

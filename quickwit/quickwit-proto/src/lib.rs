@@ -116,7 +116,8 @@ pub mod indexing_api {
             match status.code() {
                 tonic::Code::InvalidArgument => IndexingServiceError::InvalidParams(anyhow!(status.message().to_string())),
                 tonic::Code::NotFound => IndexingServiceError::MissingPipeline { index_id: "".to_string(), source_id: "".to_string() },
-                tonic::Code::AlreadyExists => todo!(),
+                tonic::Code::AlreadyExists => IndexingServiceError::PipelineAlreadyExists { index_id: "".to_string(), source_id: "".to_string(), pipeline_ord: 0 },
+                tonic::Code::Unavailable => IndexingServiceError::Unavailable,
                 _ => IndexingServiceError::InvalidParams(anyhow!(status.message().to_string())),
             }
         }
