@@ -23,6 +23,7 @@
 
 use anyhow::anyhow;
 use ulid::Ulid;
+pub use sort_by_value::SortValue;
 use std::cmp::Ordering;
 use std::convert::Infallible;
 use std::fmt;
@@ -47,8 +48,109 @@ pub mod search;
 pub use indexing::*;
 pub use metastore::*;
 pub use search::*;
+pub mod indexing_api {
+    use crate::IndexUid;
+    use crate::{ServiceError, ServiceErrorCode};
+    use std::io;
+    use anyhow::anyhow;
+    use thiserror::Error;
+    use quickwit_actors::AskError;
 
-pub use search::sort_by_value::SortValue;
+    #[derive(Clone, Debug, Hash, Eq, PartialEq)]
+    pub struct IndexingPipelineId {
+        pub index_uid: IndexUid,
+        pub source_id: String,
+        pub node_id: String,
+        pub pipeline_ord: usize,
+    }
+    pub type Result<T> = std::result::Result<T, IndexingServiceError>;
+
+    #[derive(Error, Debug)]
+    pub enum IndexingServiceError {
+        #[error("Indexing pipeline `{index_id}` for source `{source_id}` does not exist.")]
+        MissingPipeline { index_id: String, source_id: String },
+        #[error(
+            "Pipeline #{pipeline_ord} for index `{index_id}` and source `{source_id}` already exists."
+        )]
+        PipelineAlreadyExists {
+            index_id: String,
+            source_id: String,
+            pipeline_ord: usize,
+        },
+        #[error("I/O Error `{0}`.")]
+        Io(io::Error),
+        #[error("Invalid params `{0}`.")]
+        InvalidParams(anyhow::Error),
+        #[error("Spanw pipelines errors `{pipeline_ids:?}`.")]
+        SpawnPipelinesError {
+            pipeline_ids: Vec<IndexingPipelineId>,
+        },
+        #[error("A metastore error occurred: {0}.")]
+        MetastoreError(String),
+        #[error("A storage resolver error occurred: {0}.")]
+        StorageResolverError(String),
+        #[error("An internal error occurred: {0}.")]
+        Internal(String),        
+        #[error("The ingest service is unavailable.")]
+        Unavailable,
+    }
+    
+    impl From<IndexingServiceError> for tonic::Status {
+        fn from(error: IndexingServiceError) -> Self {
+            match error {
+                IndexingServiceError::MissingPipeline { index_id, source_id } => tonic::Status::not_found(format!("Missing pipeline {index_id}/{source_id}")),
+                IndexingServiceError::PipelineAlreadyExists { index_id, source_id, pipeline_ord } => tonic::Status::already_exists(format!("Pipeline {index_id}/{source_id} {pipeline_ord} already exists ")),
+                IndexingServiceError::Io(error) => tonic::Status::internal(error.to_string()),
+                IndexingServiceError::InvalidParams(error) => tonic::Status::invalid_argument(error.to_string()),
+                IndexingServiceError::SpawnPipelinesError { pipeline_ids } => tonic::Status::internal(format!("Error spawning pipelines {:?}", pipeline_ids)),
+                IndexingServiceError::Internal(string) => tonic::Status::internal(string),
+                IndexingServiceError::MetastoreError(string) => tonic::Status::internal(string),
+                IndexingServiceError::StorageResolverError(string) => tonic::Status::internal(string),
+                IndexingServiceError::Unavailable => tonic::Status::unavailable("Indexing service is unavailable."),
+            }
+        }
+    }
+    
+    impl From<tonic::Status> for IndexingServiceError {
+        fn from(status: tonic::Status) -> Self {
+            match status.code() {
+                tonic::Code::InvalidArgument => IndexingServiceError::InvalidParams(anyhow!(status.message().to_string())),
+                tonic::Code::NotFound => IndexingServiceError::MissingPipeline { index_id: "".to_string(), source_id: "".to_string() },
+                tonic::Code::AlreadyExists => IndexingServiceError::PipelineAlreadyExists { index_id: "".to_string(), source_id: "".to_string(), pipeline_ord: 0 },
+                tonic::Code::Unavailable => IndexingServiceError::Unavailable,
+                _ => IndexingServiceError::InvalidParams(anyhow!(status.message().to_string())),
+            }
+        }
+    }
+    
+    impl ServiceError for IndexingServiceError {
+        fn status_code(&self) -> ServiceErrorCode {
+            match self {
+                Self::MissingPipeline { .. } => ServiceErrorCode::NotFound,
+                Self::PipelineAlreadyExists { .. } => ServiceErrorCode::BadRequest,
+                Self::InvalidParams(_) => ServiceErrorCode::BadRequest,
+                Self::SpawnPipelinesError { .. } => ServiceErrorCode::Internal,
+                Self::Io(_) => ServiceErrorCode::Internal,
+                Self::Internal(_) => ServiceErrorCode::Internal,
+                Self::MetastoreError(_) => ServiceErrorCode::Internal,
+                Self::StorageResolverError(_) => ServiceErrorCode::Internal,
+                Self::Unavailable => ServiceErrorCode::Unavailable,
+            }
+        }
+    }
+
+    impl From<AskError<IndexingServiceError>> for IndexingServiceError {
+        fn from(error: AskError<IndexingServiceError>) -> Self {
+            match error {
+                AskError::ErrorReply(error) => error,
+                AskError::MessageNotDelivered => IndexingServiceError::Unavailable,
+                AskError::ProcessMessageError => IndexingServiceError::Internal(
+                    "An error occurred while processing the request".to_string(),
+                ),
+            }
+        }
+    }
+}
 
 pub mod jaeger {
     pub mod api_v2 {
@@ -476,6 +578,16 @@ impl Ord for SortValue {
 impl PartialOrd for SortValue {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
+    }
+}
+
+impl<E: fmt::Debug + ServiceError> ServiceError for quickwit_actors::AskError<E> {
+    fn status_code(&self) -> ServiceErrorCode {
+        match self {
+            quickwit_actors::AskError::MessageNotDelivered => ServiceErrorCode::Internal,
+            quickwit_actors::AskError::ProcessMessageError => ServiceErrorCode::Internal,
+            quickwit_actors::AskError::ErrorReply(err) => err.status_code(),
+        }
     }
 }
 

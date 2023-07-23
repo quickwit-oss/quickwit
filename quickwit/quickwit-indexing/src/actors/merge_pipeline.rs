@@ -31,6 +31,7 @@ use quickwit_common::temp_dir::TempDirectory;
 use quickwit_common::KillSwitch;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::{ListSplitsQuery, Metastore, MetastoreError, SplitState};
+use quickwit_proto::indexing_api::IndexingPipelineId;
 use time::OffsetDateTime;
 use tokio::join;
 use tracing::{debug, error, info, instrument};
@@ -40,7 +41,7 @@ use crate::actors::merge_split_downloader::MergeSplitDownloader;
 use crate::actors::publisher::PublisherType;
 use crate::actors::{MergeExecutor, MergePlanner, Packager, Publisher, Uploader, UploaderType};
 use crate::merge_policy::MergePolicy;
-use crate::models::{IndexingPipelineId, MergeStatistics, Observe};
+use crate::models::{MergeStatistics, Observe};
 use crate::split_store::IndexingSplitStore;
 
 pub struct MergePipelineHandles {
@@ -448,12 +449,12 @@ mod tests {
     use quickwit_common::temp_dir::TempDirectory;
     use quickwit_doc_mapper::default_doc_mapper_for_test;
     use quickwit_metastore::MockMetastore;
+    use quickwit_proto::indexing_api::IndexingPipelineId;
     use quickwit_proto::IndexUid;
     use quickwit_storage::RamStorage;
 
     use crate::actors::merge_pipeline::{MergePipeline, MergePipelineParams};
     use crate::merge_policy::default_merge_policy;
-    use crate::models::IndexingPipelineId;
     use crate::IndexingSplitStore;
 
     #[tokio::test]

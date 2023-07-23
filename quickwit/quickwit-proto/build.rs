@@ -20,17 +20,20 @@
 use std::path::PathBuf;
 
 use glob::glob;
+use quickwit_codegen::Codegen;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Quickwit proto
-    let protos = find_protos("protos/quickwit");
+    let protos: Vec<PathBuf> = find_protos("protos/quickwit")
+        .into_iter()
+        .filter(|path| !path.ends_with("protos/quickwit/indexing.proto"))
+        .collect();
 
     let mut prost_config = prost_build::Config::default();
     prost_config.protoc_arg("--experimental_allow_proto3_optional");
 
     tonic_build::configure()
         .type_attribute(".", "#[derive(Serialize, Deserialize, utoipa::ToSchema)]")
-        .type_attribute("IndexingTask", "#[derive(Eq, Hash)]")
         .type_attribute("SearchRequest", "#[derive(Eq, Hash)]")
         .type_attribute("SortField", "#[derive(Eq, Hash)]")
         .type_attribute("SortByValue", "#[derive(Ord, PartialOrd)]")
@@ -48,6 +51,19 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .type_attribute("SortOrder", "#[serde(rename_all = \"lowercase\")]")
         .out_dir("src/quickwit")
         .compile_with_config(prost_config, &protos, &["protos/quickwit"])?;
+
+    // Indexing Service
+    let mut index_api_config = prost_build::Config::default();
+    index_api_config.type_attribute("IndexingTask", "#[derive(Eq, Hash)]");
+    Codegen::run_with_config(
+        &["protos/quickwit/indexing.proto"],
+        "src/quickwit/",
+        "crate::indexing_api::Result",
+        "crate::indexing_api::IndexingServiceError",
+        &[],
+        index_api_config,
+    )
+    .unwrap();
 
     // Jaeger proto
     let protos = find_protos("protos/third-party/jaeger");

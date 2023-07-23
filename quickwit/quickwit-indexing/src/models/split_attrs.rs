@@ -23,11 +23,11 @@ use std::ops::{Range, RangeInclusive};
 use std::sync::Arc;
 
 use quickwit_metastore::SplitMetadata;
+use quickwit_proto::indexing_api::IndexingPipelineId;
 use tantivy::DateTime;
 use time::OffsetDateTime;
 
 use crate::merge_policy::MergePolicy;
-use crate::models::IndexingPipelineId;
 
 pub struct SplitAttrs {
     /// Split ID. Joined with the index URI (<index URI>/<split ID>), this ID
