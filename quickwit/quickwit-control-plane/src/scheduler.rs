@@ -272,7 +272,7 @@ impl IndexingScheduler {
             // We don't want to block on a slow indexer so we apply this change asynchronously
             tokio::spawn({
                 let indexer = indexers
-                    .iter_mut()
+                    .iter()
                     .find(|indexer| &indexer.0 == node_id)
                     .expect("This should never happen as the plan was built from these indexers.")
                     .clone();
