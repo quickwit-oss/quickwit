@@ -22,11 +22,8 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
-use async_trait::async_trait;
 use futures::{StreamExt, TryStreamExt};
 use http::Uri;
-use quickwit_config::service::QuickwitService;
-use quickwit_grpc_clients::service_client_pool::ServiceClient;
 use quickwit_proto::tonic::codegen::InterceptedService;
 use quickwit_proto::tonic::transport::Endpoint;
 use quickwit_proto::{tonic, LeafSearchStreamResponse, SpanContextInterceptor};
@@ -69,21 +66,6 @@ impl fmt::Debug for SearchServiceClient {
                 write!(formatter, "Grpc({:?})", self.grpc_addr)
             }
         }
-    }
-}
-
-#[async_trait]
-impl ServiceClient for SearchServiceClient {
-    fn service() -> QuickwitService {
-        QuickwitService::Searcher
-    }
-
-    async fn build_client(grpc_addr: SocketAddr) -> anyhow::Result<Self> {
-        Ok(create_search_client_from_grpc_addr(grpc_addr))
-    }
-
-    fn grpc_addr(&self) -> SocketAddr {
-        self.grpc_addr
     }
 }
 
