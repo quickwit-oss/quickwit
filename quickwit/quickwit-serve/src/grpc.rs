@@ -25,20 +25,19 @@ use quickwit_common::tower::BoxFutureInfaillible;
 use quickwit_config::service::QuickwitService;
 use quickwit_control_plane::control_plane_service_grpc_server::ControlPlaneServiceGrpcServer;
 use quickwit_control_plane::ControlPlaneServiceGrpcServerAdapter;
-use quickwit_indexing::grpc_adapter::GrpcIndexingAdapter;
 use quickwit_ingest::ingest_service_grpc_server::IngestServiceGrpcServer;
 use quickwit_ingest::IngestServiceGrpcServerAdapter;
 use quickwit_jaeger::JaegerService;
 use quickwit_metastore::GrpcMetastoreAdapter;
 use quickwit_opentelemetry::otlp::{OtlpGrpcLogsService, OtlpGrpcTracesService};
-use quickwit_proto::indexing::indexing_service_server::IndexingServiceServer;
+use quickwit_proto::indexing_service_grpc_server::IndexingServiceGrpcServer;
 use quickwit_proto::jaeger::storage::v1::span_reader_plugin_server::SpanReaderPluginServer;
 use quickwit_proto::metastore::metastore_service_server::MetastoreServiceServer;
 use quickwit_proto::opentelemetry::proto::collector::logs::v1::logs_service_server::LogsServiceServer;
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::trace_service_server::TraceServiceServer;
 use quickwit_proto::search_service_server::SearchServiceServer;
-use quickwit_proto::tonic;
 use quickwit_proto::tonic::codegen::CompressionEncoding;
+use quickwit_proto::{tonic, IndexingServiceClient, IndexingServiceGrpcServerAdapter};
 use tonic::transport::Server;
 use tracing::*;
 
@@ -66,10 +65,11 @@ pub(crate) async fn start_grpc_server(
     };
     // Mount gRPC indexing service if `QuickwitService::Indexer` is enabled on node.
     let indexing_grpc_service = if services.services.contains(&QuickwitService::Indexer) {
-        if let Some(indexing_service) = services.indexing_service.as_ref() {
+        if let Some(indexing_service) = services.indexing_service.clone() {
             enabled_grpc_services.insert("indexing");
-            let grpc_indexing = GrpcIndexingAdapter::from(indexing_service.clone());
-            Some(IndexingServiceServer::new(grpc_indexing))
+            let indexing_service = IndexingServiceClient::from_mailbox(indexing_service);
+            let indexing_service_adapter = IndexingServiceGrpcServerAdapter::new(indexing_service);
+            Some(IndexingServiceGrpcServer::new(indexing_service_adapter))
         } else {
             None
         }

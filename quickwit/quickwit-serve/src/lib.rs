@@ -69,7 +69,6 @@ use quickwit_control_plane::{
 };
 use quickwit_core::{IndexService, IndexServiceError};
 use quickwit_indexing::actors::IndexingService;
-use quickwit_indexing::indexing_client::IndexingServiceClient;
 use quickwit_indexing::start_indexing_service;
 use quickwit_ingest::{
     start_ingest_api_service, GetMemoryCapacity, IngestRequest, IngestServiceClient, MemoryCapacity,
@@ -80,6 +79,7 @@ use quickwit_metastore::{
     MetastoreResolver, RetryingMetastore,
 };
 use quickwit_opentelemetry::otlp::{OtlpGrpcLogsService, OtlpGrpcTracesService};
+use quickwit_proto::IndexingServiceClient;
 use quickwit_search::{
     create_search_client_from_channel, start_searcher_service, SearchJobPlacer, SearchService,
     SearchServiceClient, SearcherPool,
@@ -559,26 +559,34 @@ fn setup_indexer_pool(
                     if node.enabled_services().contains(&QuickwitService::Indexer) =>
                 {
                     let node_id = node.node_id().to_string();
-                    let grpc_addr = node.grpc_advertise_addr();
                     let indexing_tasks = node.indexing_tasks().to_vec();
 
                     if node.is_self_node() {
                         if let Some(indexing_service_clone) = indexing_service_clone {
                             let client =
-                            IndexingServiceClient::from_service(indexing_service_clone, grpc_addr);
-                            Some(Change::Insert(node_id, IndexerNodeInfo { client, indexing_tasks }))
+                                IndexingServiceClient::from_mailbox(indexing_service_clone);
+                            Some(Change::Insert(
+                                node_id,
+                                IndexerNodeInfo {
+                                    client,
+                                    indexing_tasks,
+                                },
+                            ))
                         } else {
-                            // That means that cluster thinks we are supposed to have an indexer, but we actually don't.
+                            // That means that cluster thinks we are supposed to have an indexer,
+                            // but we actually don't.
                             None
                         }
                     } else {
-                        let grpc_client =
-                        quickwit_proto::indexing::indexing_service_client::IndexingServiceClient::new(
-                            node.channel(),
-                        );
-                        let client =
-                            IndexingServiceClient::from_grpc_client(grpc_client, grpc_addr);
-                        Some(Change::Insert(node_id, IndexerNodeInfo { client, indexing_tasks }))
+                        let timeout_channel = Timeout::new(node.channel(), Duration::from_secs(30));
+                        let client = IndexingServiceClient::from_channel(timeout_channel);
+                        Some(Change::Insert(
+                            node_id,
+                            IndexerNodeInfo {
+                                client,
+                                indexing_tasks,
+                            },
+                        ))
                     }
                 }
                 ClusterChange::Remove(node) => Some(Change::Remove(node.node_id().to_string())),

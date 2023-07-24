@@ -23,6 +23,7 @@ use std::path::Path;
 use quickwit_common::io::IoControls;
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
+use quickwit_proto::indexing_api::IndexingPipelineId;
 use quickwit_proto::IndexUid;
 use tantivy::directory::MmapDirectory;
 use tantivy::{IndexBuilder, TrackedObject};
@@ -30,7 +31,7 @@ use tracing::{instrument, Span};
 
 use crate::controlled_directory::ControlledDirectory;
 use crate::merge_policy::MergeOperation;
-use crate::models::{IndexingPipelineId, PublishLock, SplitAttrs};
+use crate::models::{PublishLock, SplitAttrs};
 use crate::new_split_id;
 
 pub struct IndexedSplitBuilder {

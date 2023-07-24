@@ -34,6 +34,7 @@ use quickwit_common::temp_dir::TempDirectory;
 use quickwit_directories::UnionDirectory;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::{Metastore, SplitMetadata};
+use quickwit_proto::indexing_api::IndexingPipelineId;
 use quickwit_proto::metastore::DeleteTask;
 use quickwit_query::get_quickwit_fastfield_normalizer_manager;
 use quickwit_query::query_ast::QueryAst;
@@ -46,9 +47,7 @@ use tracing::{debug, info, instrument, warn};
 use crate::actors::Packager;
 use crate::controlled_directory::ControlledDirectory;
 use crate::merge_policy::MergeOperationType;
-use crate::models::{
-    IndexedSplit, IndexedSplitBatch, IndexingPipelineId, MergeScratch, PublishLock, SplitAttrs,
-};
+use crate::models::{IndexedSplit, IndexedSplitBatch, MergeScratch, PublishLock, SplitAttrs};
 
 #[derive(Clone)]
 pub struct MergeExecutor {
@@ -538,7 +537,6 @@ mod tests {
 
     use super::*;
     use crate::merge_policy::MergeOperation;
-    use crate::models::IndexingPipelineId;
     use crate::{get_tantivy_directory_from_split_bundle, new_split_id, TestSandbox};
 
     #[tokio::test]

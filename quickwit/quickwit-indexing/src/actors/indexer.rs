@@ -39,6 +39,7 @@ use quickwit_config::IndexingSettings;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
 use quickwit_metastore::Metastore;
+use quickwit_proto::indexing_api::IndexingPipelineId;
 use quickwit_query::get_quickwit_fastfield_normalizer_manager;
 use serde::Serialize;
 use tantivy::schema::Schema;
@@ -52,8 +53,8 @@ use ulid::Ulid;
 
 use crate::actors::IndexSerializer;
 use crate::models::{
-    CommitTrigger, EmptySplit, IndexedSplitBatchBuilder, IndexedSplitBuilder, IndexingPipelineId,
-    NewPublishLock, ProcessedDoc, ProcessedDocBatch, PublishLock,
+    CommitTrigger, EmptySplit, IndexedSplitBatchBuilder, IndexedSplitBuilder, NewPublishLock,
+    ProcessedDoc, ProcessedDocBatch, PublishLock,
 };
 
 // Random partition id used to gather partitions exceeding the maximum number of partitions.

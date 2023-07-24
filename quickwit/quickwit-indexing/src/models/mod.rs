@@ -20,7 +20,6 @@
 #![allow(rustdoc::invalid_html_tags)]
 
 mod indexed_split;
-mod indexing_pipeline_id;
 mod indexing_service_message;
 mod indexing_statistics;
 mod merge_planner_message;
@@ -37,7 +36,6 @@ pub use indexed_split::{
     CommitTrigger, EmptySplit, IndexedSplit, IndexedSplitBatch, IndexedSplitBatchBuilder,
     IndexedSplitBuilder,
 };
-pub use indexing_pipeline_id::IndexingPipelineId;
 pub use indexing_service_message::{
     DetachIndexingPipeline, DetachMergePipeline, ObservePipeline, SpawnPipeline,
 };

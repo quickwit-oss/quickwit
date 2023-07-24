@@ -465,13 +465,14 @@ mod tests {
     use quickwit_common::temp_dir::TempDirectory;
     use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
     use quickwit_metastore::MockMetastore;
+    use quickwit_proto::indexing_api::IndexingPipelineId;
     use quickwit_storage::RamStorage;
     use tantivy::DateTime;
     use tokio::sync::oneshot;
 
     use super::*;
     use crate::merge_policy::{default_merge_policy, NopMergePolicy};
-    use crate::models::{IndexingPipelineId, SplitAttrs, SplitsUpdate};
+    use crate::models::{SplitAttrs, SplitsUpdate};
 
     #[tokio::test]
     async fn test_uploader_with_sequencer() -> anyhow::Result<()> {

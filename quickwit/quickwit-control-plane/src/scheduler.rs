@@ -30,6 +30,7 @@ use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler};
 use quickwit_config::SourceConfig;
 use quickwit_metastore::Metastore;
 use quickwit_proto::indexing::{ApplyIndexingPlanRequest, IndexingTask};
+use quickwit_proto::IndexingService;
 use serde::Serialize;
 use tracing::{debug, error, info, warn};
 
@@ -268,20 +269,26 @@ impl IndexingScheduler {
     ) {
         debug!("Apply physical indexing plan: {:?}", new_physical_plan);
         for (node_id, indexing_tasks) in new_physical_plan.indexing_tasks_per_node() {
-            let indexer = indexers
-                .iter_mut()
-                .find(|indexer| &indexer.0 == node_id)
-                .expect("This should never happen as the plan was built from these indexers.");
-            if let Err(error) = indexer
-                .1
-                .client
-                .apply_indexing_plan(ApplyIndexingPlanRequest {
-                    indexing_tasks: indexing_tasks.clone(),
-                })
-                .await
-            {
-                error!(indexer_node_id=%indexer.0, err=?error, "Error occurred when appling indexing plan to indexer.");
-            }
+            // We don't want to block on a slow indexer so we apply this change asynchronously
+            tokio::spawn({
+                let indexer = indexers
+                    .iter()
+                    .find(|indexer| &indexer.0 == node_id)
+                    .expect("This should never happen as the plan was built from these indexers.")
+                    .clone();
+                let indexing_tasks = indexing_tasks.clone();
+                async move {
+                    if let Err(error) = indexer
+                        .1
+                        .client
+                        .clone()
+                        .apply_indexing_plan(ApplyIndexingPlanRequest { indexing_tasks })
+                        .await
+                    {
+                        error!(indexer_node_id=%indexer.0, err=?error, "Error occurred when applying indexing plan to indexer.");
+                    }
+                }
+            });
         }
         self.state.num_applied_physical_indexing_plan += 1;
         self.state.last_applied_plan_timestamp = Some(Instant::now());
@@ -522,10 +529,10 @@ mod tests {
     use quickwit_common::tower::{Change, Pool};
     use quickwit_config::service::QuickwitService;
     use quickwit_config::{KafkaSourceParams, SourceConfig, SourceInputFormat, SourceParams};
-    use quickwit_indexing::indexing_client::IndexingServiceClient;
     use quickwit_indexing::IndexingService;
     use quickwit_metastore::{IndexMetadata, MockMetastore};
     use quickwit_proto::indexing::{ApplyIndexingPlanRequest, IndexingTask};
+    use quickwit_proto::IndexingServiceClient;
     use serde_json::json;
 
     use super::{IndexingScheduler, CONTROL_PLAN_LOOP_INTERVAL};
@@ -576,10 +583,9 @@ mod tests {
                         if node.enabled_services().contains(&QuickwitService::Indexer) =>
                     {
                         let node_id = node.node_id().to_string();
-                        let grpc_addr = node.grpc_advertise_addr();
                         let indexing_tasks = node.indexing_tasks().to_vec();
                         let client_mailbox = indexing_clients.get(&node_id).unwrap().clone();
-                        let client = IndexingServiceClient::from_service(client_mailbox, grpc_addr);
+                        let client = IndexingServiceClient::from_mailbox(client_mailbox);
                         Some(Change::Insert(
                             node_id,
                             IndexerNodeInfo {
