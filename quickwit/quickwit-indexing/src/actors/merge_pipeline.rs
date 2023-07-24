@@ -31,7 +31,7 @@ use quickwit_common::temp_dir::TempDirectory;
 use quickwit_common::KillSwitch;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::{ListSplitsQuery, Metastore, MetastoreError, SplitState};
-use quickwit_proto::indexing_api::IndexingPipelineId;
+use quickwit_proto::indexing::IndexingPipelineId;
 use time::OffsetDateTime;
 use tokio::join;
 use tracing::{debug, error, info, instrument};
@@ -449,7 +449,7 @@ mod tests {
     use quickwit_common::temp_dir::TempDirectory;
     use quickwit_doc_mapper::default_doc_mapper_for_test;
     use quickwit_metastore::MockMetastore;
-    use quickwit_proto::indexing_api::IndexingPipelineId;
+    use quickwit_proto::indexing::IndexingPipelineId;
     use quickwit_proto::IndexUid;
     use quickwit_storage::RamStorage;
 

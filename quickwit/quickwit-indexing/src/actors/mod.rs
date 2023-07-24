@@ -33,7 +33,7 @@ pub use indexing_pipeline::{IndexingPipeline, IndexingPipelineHandles, IndexingP
 pub use indexing_service::{
     IndexingService, IndexingServiceCounters, MergePipelineId, INDEXING_DIR_NAME,
 };
-pub use quickwit_proto::indexing_api::IndexingServiceError;
+pub use quickwit_proto::indexing::IndexingError;
 pub use sequencer::Sequencer;
 mod merge_executor;
 mod merge_planner;

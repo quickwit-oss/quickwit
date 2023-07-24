@@ -30,7 +30,7 @@ use quickwit_storage::StorageResolver;
 use tracing::info;
 
 pub use crate::actors::{
-    IndexingPipeline, IndexingPipelineParams, IndexingService, IndexingServiceError, PublisherType,
+    IndexingError, IndexingPipeline, IndexingPipelineParams, IndexingService, PublisherType,
     Sequencer, SplitsUpdateMailbox,
 };
 pub use crate::controlled_directory::ControlledDirectory;

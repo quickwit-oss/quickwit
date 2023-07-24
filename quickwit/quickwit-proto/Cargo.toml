@@ -42,3 +42,6 @@ prost-build = { workspace = true }
 tonic-build = { workspace = true }
 
 quickwit-codegen = { workspace = true }
+
+[features]
+testsuite = [ "mockall" ]

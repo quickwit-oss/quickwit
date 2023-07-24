@@ -1,6 +1,5 @@
 ignore = [
-   "quickwit-proto/src/**/*.rs",
-   "**/codegen/*.rs",
+   "**/codegen/**/*.rs",
 ]
 
 comment_width = 120

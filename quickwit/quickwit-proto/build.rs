@@ -23,10 +23,10 @@ use glob::glob;
 use quickwit_codegen::Codegen;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Quickwit proto
+    // "Classic" prost + tonic codegen for metastore and search services.
     let protos: Vec<PathBuf> = find_protos("protos/quickwit")
         .into_iter()
-        .filter(|path| !path.ends_with("protos/quickwit/indexing.proto"))
+        .filter(|path| !path.ends_with("control_pane.proto") || !path.ends_with("indexing.proto"))
         .collect();
 
     let mut prost_config = prost_build::Config::default();
@@ -49,17 +49,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .type_attribute("OutputFormat", "#[serde(rename_all = \"snake_case\")]")
         .type_attribute("PartialHit.sort_value", "#[derive(Copy)]")
         .type_attribute("SortOrder", "#[serde(rename_all = \"lowercase\")]")
-        .out_dir("src/quickwit")
+        .out_dir("src/codegen/quickwit")
         .compile_with_config(prost_config, &protos, &["protos/quickwit"])?;
+
+    // Prost + tonic + Quickwit codegen for control plane and indexing services.
+    //
+    // Control plane
+    Codegen::run(
+        &["protos/quickwit/control_plane.proto"],
+        "src/codegen/quickwit",
+        "crate::control_plane::Result",
+        "crate::control_plane::ControlPlaneError",
+        &[],
+    )
+    .unwrap();
 
     // Indexing Service
     let mut index_api_config = prost_build::Config::default();
     index_api_config.type_attribute("IndexingTask", "#[derive(Eq, Hash)]");
+
     Codegen::run_with_config(
         &["protos/quickwit/indexing.proto"],
-        "src/quickwit/",
-        "crate::indexing_api::Result",
-        "crate::indexing_api::IndexingServiceError",
+        "src/codegen/quickwit",
+        "crate::indexing::Result",
+        "crate::indexing::IndexingError",
         &[],
         index_api_config,
     )
@@ -72,7 +85,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     prost_config.type_attribute("Operation", "#[derive(Eq, Ord, PartialOrd)]");
 
     tonic_build::configure()
-        .out_dir("src/jaeger")
+        .out_dir("src/codegen/jaeger")
         .compile_with_config(
             prost_config,
             &protos,
@@ -87,7 +100,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     tonic_build::configure()
         .type_attribute(".", "#[derive(Serialize, Deserialize)]")
         .type_attribute("StatusCode", r#"#[serde(rename_all = "snake_case")]"#)
-        .out_dir("src/opentelemetry")
+        .out_dir("src/codegen/opentelemetry")
         .compile_with_config(prost_config, &protos, &["protos/third-party"])?;
     Ok(())
 }

@@ -40,7 +40,6 @@ time = { workspace = true }
 quickwit-actors = { workspace = true }
 quickwit-common = { workspace = true, features = ["testsuite"] }
 quickwit-cluster = { workspace = true }
-quickwit-grpc-clients = { workspace = true }
 quickwit-indexing = { workspace = true, features = ["testsuite"] }
 quickwit-ingest = { workspace = true }
 quickwit-metastore = { workspace = true, features = ["testsuite"] }

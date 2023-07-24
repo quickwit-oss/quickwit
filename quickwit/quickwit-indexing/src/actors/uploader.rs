@@ -465,7 +465,7 @@ mod tests {
     use quickwit_common::temp_dir::TempDirectory;
     use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
     use quickwit_metastore::MockMetastore;
-    use quickwit_proto::indexing_api::IndexingPipelineId;
+    use quickwit_proto::indexing::IndexingPipelineId;
     use quickwit_storage::RamStorage;
     use tantivy::DateTime;
     use tokio::sync::oneshot;

@@ -14,7 +14,7 @@ pub trait ControlPlaneService: std::fmt::Debug + dyn_clone::DynClone + Send + Sy
     async fn notify_index_change(
         &mut self,
         request: NotifyIndexChangeRequest,
-    ) -> crate::Result<NotifyIndexChangeResponse>;
+    ) -> crate::control_plane::Result<NotifyIndexChangeResponse>;
 }
 dyn_clone::clone_trait_object!(ControlPlaneService);
 #[cfg(any(test, feature = "testsuite"))]
@@ -78,7 +78,7 @@ impl ControlPlaneService for ControlPlaneServiceClient {
     async fn notify_index_change(
         &mut self,
         request: NotifyIndexChangeRequest,
-    ) -> crate::Result<NotifyIndexChangeResponse> {
+    ) -> crate::control_plane::Result<NotifyIndexChangeResponse> {
         self.inner.notify_index_change(request).await
     }
 }
@@ -94,7 +94,7 @@ pub mod mock {
         async fn notify_index_change(
             &mut self,
             request: NotifyIndexChangeRequest,
-        ) -> crate::Result<NotifyIndexChangeResponse> {
+        ) -> crate::control_plane::Result<NotifyIndexChangeResponse> {
             self.inner.lock().await.notify_index_change(request).await
         }
     }
@@ -112,7 +112,7 @@ pub type BoxFuture<T, E> = std::pin::Pin<
 >;
 impl tower::Service<NotifyIndexChangeRequest> for Box<dyn ControlPlaneService> {
     type Response = NotifyIndexChangeResponse;
-    type Error = crate::ControlPlaneError;
+    type Error = crate::control_plane::ControlPlaneError;
     type Future = BoxFuture<Self::Response, Self::Error>;
     fn poll_ready(
         &mut self,
@@ -132,7 +132,7 @@ struct ControlPlaneServiceTowerBlock {
     notify_index_change_svc: quickwit_common::tower::BoxService<
         NotifyIndexChangeRequest,
         NotifyIndexChangeResponse,
-        crate::ControlPlaneError,
+        crate::control_plane::ControlPlaneError,
     >,
 }
 impl Clone for ControlPlaneServiceTowerBlock {
@@ -147,7 +147,7 @@ impl ControlPlaneService for ControlPlaneServiceTowerBlock {
     async fn notify_index_change(
         &mut self,
         request: NotifyIndexChangeRequest,
-    ) -> crate::Result<NotifyIndexChangeResponse> {
+    ) -> crate::control_plane::Result<NotifyIndexChangeResponse> {
         self.notify_index_change_svc.ready().await?.call(request).await
     }
 }
@@ -159,7 +159,7 @@ pub struct ControlPlaneServiceTowerBlockBuilder {
             Box<dyn ControlPlaneService>,
             NotifyIndexChangeRequest,
             NotifyIndexChangeResponse,
-            crate::ControlPlaneError,
+            crate::control_plane::ControlPlaneError,
         >,
     >,
 }
@@ -170,7 +170,7 @@ impl ControlPlaneServiceTowerBlockBuilder {
         L::Service: tower::Service<
                 NotifyIndexChangeRequest,
                 Response = NotifyIndexChangeResponse,
-                Error = crate::ControlPlaneError,
+                Error = crate::control_plane::ControlPlaneError,
             > + Clone + Send + Sync + 'static,
         <L::Service as tower::Service<NotifyIndexChangeRequest>>::Future: Send + 'static,
     {
@@ -186,7 +186,7 @@ impl ControlPlaneServiceTowerBlockBuilder {
         L::Service: tower::Service<
                 NotifyIndexChangeRequest,
                 Response = NotifyIndexChangeResponse,
-                Error = crate::ControlPlaneError,
+                Error = crate::control_plane::ControlPlaneError,
             > + Clone + Send + Sync + 'static,
         <L::Service as tower::Service<NotifyIndexChangeRequest>>::Future: Send + 'static,
     {
@@ -262,7 +262,7 @@ where
 }
 #[derive(Debug)]
 pub struct ControlPlaneServiceMailbox<A: quickwit_actors::Actor> {
-    inner: MailboxAdapter<A, crate::ControlPlaneError>,
+    inner: MailboxAdapter<A, crate::control_plane::ControlPlaneError>,
 }
 impl<A: quickwit_actors::Actor> ControlPlaneServiceMailbox<A> {
     pub fn new(instance: quickwit_actors::Mailbox<A>) -> Self {
@@ -290,10 +290,10 @@ where
     M: std::fmt::Debug + Send + 'static,
     T: Send + 'static,
     E: std::fmt::Debug + Send + 'static,
-    crate::ControlPlaneError: From<quickwit_actors::AskError<E>>,
+    crate::control_plane::ControlPlaneError: From<quickwit_actors::AskError<E>>,
 {
     type Response = T;
-    type Error = crate::ControlPlaneError;
+    type Error = crate::control_plane::ControlPlaneError;
     type Future = BoxFuture<Self::Response, Self::Error>;
     fn poll_ready(
         &mut self,
@@ -321,14 +321,17 @@ where
     >: tower::Service<
         NotifyIndexChangeRequest,
         Response = NotifyIndexChangeResponse,
-        Error = crate::ControlPlaneError,
-        Future = BoxFuture<NotifyIndexChangeResponse, crate::ControlPlaneError>,
+        Error = crate::control_plane::ControlPlaneError,
+        Future = BoxFuture<
+            NotifyIndexChangeResponse,
+            crate::control_plane::ControlPlaneError,
+        >,
     >,
 {
     async fn notify_index_change(
         &mut self,
         request: NotifyIndexChangeRequest,
-    ) -> crate::Result<NotifyIndexChangeResponse> {
+    ) -> crate::control_plane::Result<NotifyIndexChangeResponse> {
         self.call(request).await
     }
 }
@@ -357,7 +360,7 @@ where
     async fn notify_index_change(
         &mut self,
         request: NotifyIndexChangeRequest,
-    ) -> crate::Result<NotifyIndexChangeResponse> {
+    ) -> crate::control_plane::Result<NotifyIndexChangeResponse> {
         self.inner
             .notify_index_change(request)
             .await
@@ -503,13 +506,13 @@ pub mod control_plane_service_grpc_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/control_plane_service.ControlPlaneService/notifyIndexChange",
+                "/quickwit.control_plane.ControlPlaneService/notifyIndexChange",
             );
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(
                     GrpcMethod::new(
-                        "control_plane_service.ControlPlaneService",
+                        "quickwit.control_plane.ControlPlaneService",
                         "notifyIndexChange",
                     ),
                 );
@@ -618,7 +621,7 @@ pub mod control_plane_service_grpc_server {
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
             let inner = self.inner.clone();
             match req.uri().path() {
-                "/control_plane_service.ControlPlaneService/notifyIndexChange" => {
+                "/quickwit.control_plane.ControlPlaneService/notifyIndexChange" => {
                     #[allow(non_camel_case_types)]
                     struct notifyIndexChangeSvc<T: ControlPlaneServiceGrpc>(pub Arc<T>);
                     impl<
@@ -703,6 +706,6 @@ pub mod control_plane_service_grpc_server {
     }
     impl<T: ControlPlaneServiceGrpc> tonic::server::NamedService
     for ControlPlaneServiceGrpcServer<T> {
-        const NAME: &'static str = "control_plane_service.ControlPlaneService";
+        const NAME: &'static str = "quickwit.control_plane.ControlPlaneService";
     }
 }
