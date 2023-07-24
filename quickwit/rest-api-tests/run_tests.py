@@ -54,6 +54,18 @@ def load_data(path):
     else:
         return open(path, 'rb').read()
 
+def run_request_with_retry(run_req, expected_status_code=None, num_retries=10, wait_time=0.5):
+    for try_number in range(num_retries + 1):
+        r = run_req()
+        if expected_status_code is None or r.status_code == expected_status_code:
+            return r
+        print("Failed with", r.text, r.status_code)
+        if try_number < num_retries:
+            print("Retrying...")
+            time.sleep(wait_time)
+    raise Exception("Wrong status code. Got %s, expected %s" % (r.status_code, expected_status_code))
+
+
 def run_request_step(method, step):
     assert method in {"GET", "POST", "PUT", "DELETE"}
     if "headers" not in step:
@@ -74,12 +86,10 @@ def run_request_step(method, step):
     if ndjson is not None:
         kvargs["data"] = "\n".join([json.dumps(doc) for doc in ndjson])
         kvargs.setdefault("headers")["Content-Type"] = "application/json"
-    r = method_req(url, **kvargs)
-    expected_status_code = step.get("status_code", 200)
-    if expected_status_code is not None:
-        if r.status_code != expected_status_code:
-            print(r.text)
-            raise Exception("Wrong status code. Got %s, expected %s" % (r.status_code, expected_status_code))
+    expected_status_code = step.get("status_code", None)
+    num_retries = step.get("num_retries", 0)
+    run_req = lambda : method_req(url, **kvargs)
+    r = run_request_with_retry(run_req, expected_status_code, num_retries)
     expected_resp = step.get("expected", None)
     if expected_resp is not None:
         try:
@@ -255,10 +265,9 @@ class QuickwitRunner:
         print('created temporary directory', self.quickwit_dir, self.quickwit_dir.name)
         qwdata = osp.join(self.quickwit_dir.name, "qwdata")
         config = osp.join(self.quickwit_dir.name, "config")
-        print("config", config)
         mkdir(qwdata)
         mkdir(config)
-        shutil.copy("../config/quickwit.yaml", config)
+        shutil.copy("../../config/quickwit.yaml", config)
         shutil.copy(quickwit_bin_path, self.quickwit_dir.name)
         self.proc = subprocess.Popen(["./quickwit", "run"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, cwd=self.quickwit_dir.name)
         for i in range(100):
@@ -267,7 +276,7 @@ class QuickwitRunner:
                 res = requests.get("http://localhost:7280/health/readyz")
                 if res.status_code == 200 and res.text.strip() == "true":
                     print("Quickwit started")
-                    time.sleep(4)
+                    time.sleep(6)
                     break
             except:
                 pass
