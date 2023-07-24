@@ -5112,25 +5112,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "quickwit-grpc-clients"
-version = "0.6.2"
-dependencies = [
- "anyhow",
- "async-trait",
- "futures",
- "itertools 0.11.0",
- "quickwit-cluster",
- "quickwit-common",
- "quickwit-config",
- "quickwit-proto",
- "tokio",
- "tokio-stream",
- "tonic 0.9.2",
- "tower",
- "tracing",
-]
-
-[[package]]
 name = "quickwit-indexing"
 version = "0.6.2"
 dependencies = [
@@ -5510,7 +5491,6 @@ dependencies = [
  "quickwit-config",
  "quickwit-directories",
  "quickwit-doc-mapper",
- "quickwit-grpc-clients",
  "quickwit-indexing",
  "quickwit-metastore",
  "quickwit-opentelemetry",
