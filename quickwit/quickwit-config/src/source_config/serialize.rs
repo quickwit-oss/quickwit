@@ -186,6 +186,7 @@ pub struct SourceConfigV0_6 {
     pub source_params: SourceParams,
 
     #[serde(skip_serializing_if = "Option::is_none")]
+    // TODO 1686 really optional
     pub transform: Option<TransformConfig>,
 
     // Denotes the input data format.

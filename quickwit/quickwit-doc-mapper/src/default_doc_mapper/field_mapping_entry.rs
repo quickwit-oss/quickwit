@@ -88,6 +88,7 @@ pub(crate) struct FieldMappingEntryForSerialization {
 pub struct QuickwitNumericOptions {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    // TODO 1686 really optional
     pub description: Option<String>,
     #[serde(default = "default_as_true")]
     pub stored: bool,
@@ -113,6 +114,7 @@ impl Default for QuickwitNumericOptions {
 pub struct QuickwitBytesOptions {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    // TODO 1686 really optional
     pub description: Option<String>,
     #[serde(default = "default_as_true")]
     pub stored: bool,
@@ -192,6 +194,7 @@ impl BinaryFormat {
 pub struct QuickwitIpAddrOptions {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    // TODO 1686 really optional
     pub description: Option<String>,
     #[serde(default = "default_as_true")]
     pub stored: bool,
@@ -259,15 +262,18 @@ pub struct QuickwitTextOptions {
     #[schema(value_type = String)]
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    // TODO 1686 really optional
     pub description: Option<String>,
     #[serde(default = "default_as_true")]
     pub indexed: bool,
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    // TODO 1686 should merge with indexed: and parse/validate through other struct
     pub tokenizer: Option<QuickwitTextTokenizer>,
     #[schema(value_type = IndexRecordOptionSchema)]
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    // TODO 1686 should merge with indexed: and parse/validate through other struct
     pub record: Option<IndexRecordOption>,
     #[serde(default)]
     pub fieldnorms: bool,
@@ -397,6 +403,7 @@ pub struct QuickwitJsonOptions {
     /// Optional description of JSON object.
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    // TODO 1686 really optional
     pub description: Option<String>,
     /// If true, all of the element in the json object will be indexed.
     #[serde(default = "default_as_true")]
@@ -405,6 +412,7 @@ pub struct QuickwitJsonOptions {
     /// json object.
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    // TODO 1686 should merge with indexed: and parse/validate through other struct
     pub tokenizer: Option<QuickwitTextTokenizer>,
     /// Sets how much information should be added in the index
     /// with each token.
@@ -413,6 +421,7 @@ pub struct QuickwitJsonOptions {
     #[schema(value_type = IndexRecordOptionSchema)]
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    // TODO 1686 should merge with indexed: and parse/validate through other struct
     pub record: Option<IndexRecordOption>,
     /// If true, the field will be stored in the doc store.
     #[serde(default = "default_as_true")]

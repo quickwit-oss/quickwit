@@ -32,6 +32,7 @@ use super::default_as_true;
 pub struct QuickwitDateTimeOptions {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    // TODO 1686 should merge with indexed: and parse/validate through other struct
     pub description: Option<String>,
 
     /// Accepted input formats.

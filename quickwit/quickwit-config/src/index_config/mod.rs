@@ -44,9 +44,10 @@ use crate::TestableForRegression;
 
 // Note(fmassot): `DocMapping` is a struct only used for
 // serialization/deserialization of `DocMapper` parameters.
-// This is partly a duplicate of the `DocMapper` and can
-// be viewed as a temporary hack for 0.2 release before
+// This is partly a duplicate of the `DefaultDocMapper` and
+// can be viewed as a temporary hack for 0.2 release before
 // refactoring.
+#[quickwit_procmacro::serde_multikey]
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DocMapping {
@@ -66,12 +67,25 @@ pub struct DocMapping {
     pub store_source: bool,
     #[serde(default)]
     pub timestamp_field: Option<String>,
+    // #[serde_multikey(
+    // deserializer = parse_dynamic_mapping,
+    // serializer = serialize_dynamic_mapping,
+    // fields = (
+    // #[serde(default)]
+    // mode: ModeType,
+    // #[serde(skip_serializing_if = "Option::is_none")]
+    // dynamic_mapping: Option<QuickwitJsonOptions>
+    // ),
+    // )]
+    // pub dynamic_mapping: Mode,
     #[serde(default)]
     pub mode: ModeType,
     #[serde(skip_serializing_if = "Option::is_none")]
+    // TODO 1686 should merge with mode: and parse/validate as a Mode::Dynamic
     pub dynamic_mapping: Option<QuickwitJsonOptions>,
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    // TODO 1686 really optional
     pub partition_key: Option<String>,
     #[schema(value_type = u32)]
     #[serde(default = "DefaultDocMapper::default_max_num_partitions")]
@@ -93,6 +107,7 @@ pub struct IndexingResources {
     #[schema(value_type = String)]
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    // TODO 1686 really optional
     pub max_merge_write_throughput: Option<Byte>,
 }
 

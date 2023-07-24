@@ -74,6 +74,7 @@ pub struct SourceConfig {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "transform")]
+    // TODO 1686 really optional
     pub transform_config: Option<TransformConfig>,
 
     // Denotes the input data format.
@@ -240,6 +241,7 @@ pub struct FileSourceParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     #[serde(deserialize_with = "absolute_filepath_from_str")]
+    // TODO 1686 really optional
     pub filepath: Option<PathBuf>, //< If None read from stdin.
 }
 
@@ -275,15 +277,18 @@ pub struct KafkaSourceParams {
     /// Kafka client log level. Possible values are `debug`, `info`, `warn`, and `error`.
     #[schema(value_type = String)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    // TODO 1686 newtype arround RDKafkaLogLevel
     pub client_log_level: Option<String>,
     /// Kafka client configuration parameters.
     #[schema(value_type = Object)]
     #[serde(default = "serde_json::Value::default")]
     #[serde(skip_serializing_if = "serde_json::Value::is_null")]
+    // TODO 1686 should it do something?
     pub client_params: JsonValue,
     /// When backfill mode is enabled, the source exits after reaching the end of the topic.
     #[serde(default)]
     #[serde(skip_serializing_if = "is_false")]
+    // TODO 1686 really optional
     pub enable_backfill_mode: bool,
 }
 
@@ -302,6 +307,7 @@ pub struct KinesisSourceParams {
     pub region_or_endpoint: Option<RegionOrEndpoint>,
     /// When backfill mode is enabled, the source exits after reaching the end of the stream.
     #[serde(skip_serializing_if = "is_false")]
+    // TODO 1686 really optional
     pub enable_backfill_mode: bool,
 }
 
@@ -415,6 +421,7 @@ pub struct TransformConfig {
     /// manipulations. Defaults to `UTC` if not timezone is specified.
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "timezone")]
+    // TODO 1686 UTC is a pretty stable default, should we really encode it?
     timezone_opt: Option<String>,
 }
 

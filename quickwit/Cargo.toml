@@ -26,6 +26,7 @@ members = [
   # We can reenable it when we need it.
   # "quickwit-metastore-utils",
   "quickwit-opentelemetry",
+  "quickwit-procmacro",
   "quickwit-proto",
   "quickwit-query",
   "quickwit-rest-client",

@@ -1,0 +1,22 @@
+[package]
+name = "quickwit-procmacro"
+version = "0.6.2"
+authors = ["Quickwit, Inc. <hello@quickwit.io>"]
+edition = "2021"
+license = "AGPL-3.0-or-later"                           # For a commercial license, contact hello@quickwit.io
+description = "Quickwit procmacros"
+repository = "https://github.com/quickwit-oss/quickwit"
+homepage = "https://quickwit.io/"
+documentation = "https://quickwit.io/docs/"
+
+[lib]
+proc-macro = true
+
+[dependencies]
+proc-macro2 = "1.0.1"
+quote = "1.0.0"
+syn = { version = "2.0.0", features = [ "extra-traits", "full", "parsing" ]}
+
+[dev-dependencies]
+
+[features]

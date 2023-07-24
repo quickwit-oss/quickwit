@@ -46,6 +46,7 @@ pub struct DefaultDocMapperBuilder {
     /// Name of the field storing the timestamp of the event for time series data.
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
+    // TODO 1686 really optional
     pub timestamp_field: Option<String>,
     /// Describes which fields are indexed and how.
     #[serde(default)]
