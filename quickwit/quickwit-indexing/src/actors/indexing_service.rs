@@ -38,8 +38,10 @@ use quickwit_config::{
 };
 use quickwit_ingest::{DropQueueRequest, IngestApiService, ListQueuesRequest, QUEUES_DIR_NAME};
 use quickwit_metastore::{IndexMetadata, Metastore};
-use quickwit_proto::indexing::{ApplyIndexingPlanRequest, ApplyIndexingPlanResponse, IndexingTask};
-use quickwit_proto::indexing_api::{IndexingPipelineId, IndexingServiceError};
+use quickwit_proto::indexing::{
+    ApplyIndexingPlanRequest, ApplyIndexingPlanResponse, IndexingError, IndexingPipelineId,
+    IndexingTask,
+};
 use quickwit_proto::IndexUid;
 use quickwit_storage::StorageResolver;
 use serde::{Deserialize, Serialize};
@@ -161,11 +163,11 @@ impl IndexingService {
     async fn detach_pipeline(
         &mut self,
         pipeline_id: &IndexingPipelineId,
-    ) -> Result<ActorHandle<IndexingPipeline>, IndexingServiceError> {
+    ) -> Result<ActorHandle<IndexingPipeline>, IndexingError> {
         let pipeline_handle = self
             .indexing_pipeline_handles
             .remove(pipeline_id)
-            .ok_or_else(|| IndexingServiceError::MissingPipeline {
+            .ok_or_else(|| IndexingError::MissingPipeline {
                 index_id: pipeline_id.index_uid.index_id().to_string(),
                 source_id: pipeline_id.source_id.clone(),
             })?;
@@ -176,11 +178,11 @@ impl IndexingService {
     async fn detach_merge_pipeline(
         &mut self,
         pipeline_id: &MergePipelineId,
-    ) -> Result<ActorHandle<MergePipeline>, IndexingServiceError> {
+    ) -> Result<ActorHandle<MergePipeline>, IndexingError> {
         let pipeline_handle = self
             .merge_pipeline_handles
             .remove(pipeline_id)
-            .ok_or_else(|| IndexingServiceError::MissingPipeline {
+            .ok_or_else(|| IndexingError::MissingPipeline {
                 index_id: pipeline_id.index_uid.index_id().to_string(),
                 source_id: pipeline_id.source_id.clone(),
             })?;
@@ -191,11 +193,11 @@ impl IndexingService {
     async fn observe_pipeline(
         &mut self,
         pipeline_id: &IndexingPipelineId,
-    ) -> Result<Observation<IndexingStatistics>, IndexingServiceError> {
+    ) -> Result<Observation<IndexingStatistics>, IndexingError> {
         let pipeline_handle = self
             .indexing_pipeline_handles
             .get(pipeline_id)
-            .ok_or_else(|| IndexingServiceError::MissingPipeline {
+            .ok_or_else(|| IndexingError::MissingPipeline {
                 index_id: pipeline_id.index_uid.index_id().to_string(),
                 source_id: pipeline_id.source_id.clone(),
             })?;
@@ -209,7 +211,7 @@ impl IndexingService {
         index_id: String,
         source_config: SourceConfig,
         pipeline_ord: usize,
-    ) -> Result<IndexingPipelineId, IndexingServiceError> {
+    ) -> Result<IndexingPipelineId, IndexingError> {
         let index_metadata = self.index_metadata(ctx, &index_id).await?;
         let pipeline_id = IndexingPipelineId {
             index_uid: index_metadata.index_uid.clone(),
@@ -229,9 +231,9 @@ impl IndexingService {
         pipeline_id: IndexingPipelineId,
         index_config: IndexConfig,
         source_config: SourceConfig,
-    ) -> Result<(), IndexingServiceError> {
+    ) -> Result<(), IndexingError> {
         if self.indexing_pipeline_handles.contains_key(&pipeline_id) {
-            return Err(IndexingServiceError::PipelineAlreadyExists {
+            return Err(IndexingError::PipelineAlreadyExists {
                 index_id: pipeline_id.index_uid.index_id().to_string(),
                 source_id: pipeline_id.source_id,
                 pipeline_ord: pipeline_id.pipeline_ord,
@@ -243,18 +245,18 @@ impl IndexingService {
             .join(&pipeline_id.source_id)
             .join(&pipeline_id.pipeline_ord.to_string())
             .tempdir_in(&self.indexing_root_directory)
-            .map_err(IndexingServiceError::Io)?;
+            .map_err(IndexingError::Io)?;
         let storage = self
             .storage_resolver
             .resolve(&index_config.index_uri)
             .await
-            .map_err(|err| IndexingServiceError::StorageResolverError(err.to_string()))?;
+            .map_err(|err| IndexingError::StorageResolverError(err.to_string()))?;
         let merge_policy =
             crate::merge_policy::merge_policy_from_settings(&index_config.indexing_settings);
         let split_store = IndexingSplitStore::new(storage.clone(), self.local_split_store.clone());
 
         let doc_mapper = build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)
-            .map_err(IndexingServiceError::InvalidParams)?;
+            .map_err(IndexingError::InvalidParams)?;
 
         let merge_pipeline_params = MergePipelineParams {
             pipeline_id: pipeline_id.clone(),
@@ -307,13 +309,13 @@ impl IndexingService {
         &self,
         ctx: &ActorContext<Self>,
         index_id: &str,
-    ) -> Result<IndexMetadata, IndexingServiceError> {
+    ) -> Result<IndexMetadata, IndexingError> {
         let _protect_guard = ctx.protect_zone();
         let index_metadata = self
             .metastore
             .index_metadata(index_id)
             .await
-            .map_err(|err| IndexingServiceError::MetastoreError(err.to_string()))?;
+            .map_err(|err| IndexingError::MetastoreError(err.to_string()))?;
         Ok(index_metadata)
     }
 
@@ -387,7 +389,7 @@ impl IndexingService {
         &mut self,
         merge_pipeline_params: MergePipelineParams,
         ctx: &ActorContext<Self>,
-    ) -> Result<Mailbox<MergePlanner>, IndexingServiceError> {
+    ) -> Result<Mailbox<MergePlanner>, IndexingError> {
         let merge_pipeline_id = MergePipelineId::from(&merge_pipeline_params.pipeline_id);
         if let Some(merge_pipeline_mailbox_handle) =
             self.merge_pipeline_handles.get(&merge_pipeline_id)
@@ -417,7 +419,7 @@ impl IndexingService {
         &mut self,
         ctx: &ActorContext<Self>,
         physical_indexing_plan_request: ApplyIndexingPlanRequest,
-    ) -> Result<ApplyIndexingPlanResponse, IndexingServiceError> {
+    ) -> Result<ApplyIndexingPlanResponse, IndexingError> {
         let mut updated_pipeline_ids: HashSet<IndexingPipelineId> = HashSet::new();
         let mut pipeline_ordinals: HashMap<&IndexingTask, usize> = HashMap::new();
         for indexing_task in physical_indexing_plan_request.indexing_tasks.iter() {
@@ -456,7 +458,7 @@ impl IndexingService {
         self.update_cluster_running_indexing_tasks().await;
 
         if !failed_spawning_pipeline_ids.is_empty() {
-            return Err(IndexingServiceError::SpawnPipelinesError {
+            return Err(IndexingError::SpawnPipelinesError {
                 pipeline_ids: failed_spawning_pipeline_ids,
             });
         }
@@ -469,7 +471,7 @@ impl IndexingService {
         &mut self,
         ctx: &ActorContext<Self>,
         added_pipeline_ids: Vec<&IndexingPipelineId>,
-    ) -> Result<Vec<IndexingPipelineId>, IndexingServiceError> {
+    ) -> Result<Vec<IndexingPipelineId>, IndexingError> {
         // We fetch the new indexes metadata.
         let indexes_metadata_futures = added_pipeline_ids
             .iter()
@@ -630,7 +632,7 @@ impl IndexingService {
 
 #[async_trait]
 impl Handler<ObservePipeline> for IndexingService {
-    type Reply = Result<Observation<IndexingStatistics>, IndexingServiceError>;
+    type Reply = Result<Observation<IndexingStatistics>, IndexingError>;
 
     async fn handle(
         &mut self,
@@ -644,7 +646,7 @@ impl Handler<ObservePipeline> for IndexingService {
 
 #[async_trait]
 impl Handler<DetachIndexingPipeline> for IndexingService {
-    type Reply = Result<ActorHandle<IndexingPipeline>, IndexingServiceError>;
+    type Reply = Result<ActorHandle<IndexingPipeline>, IndexingError>;
 
     async fn handle(
         &mut self,
@@ -657,7 +659,7 @@ impl Handler<DetachIndexingPipeline> for IndexingService {
 
 #[async_trait]
 impl Handler<DetachMergePipeline> for IndexingService {
-    type Reply = Result<ActorHandle<MergePipeline>, IndexingServiceError>;
+    type Reply = Result<ActorHandle<MergePipeline>, IndexingError>;
 
     async fn handle(
         &mut self,
@@ -703,12 +705,12 @@ impl Actor for IndexingService {
 
 #[async_trait]
 impl Handler<SpawnPipeline> for IndexingService {
-    type Reply = Result<IndexingPipelineId, IndexingServiceError>;
+    type Reply = Result<IndexingPipelineId, IndexingError>;
     async fn handle(
         &mut self,
         message: SpawnPipeline,
         ctx: &ActorContext<Self>,
-    ) -> Result<Result<IndexingPipelineId, IndexingServiceError>, ActorExitStatus> {
+    ) -> Result<Result<IndexingPipelineId, IndexingError>, ActorExitStatus> {
         Ok(self
             .spawn_pipeline(
                 ctx,
@@ -734,7 +736,7 @@ impl Handler<Observe> for IndexingService {
 
 #[async_trait]
 impl Handler<ApplyIndexingPlanRequest> for IndexingService {
-    type Reply = Result<ApplyIndexingPlanResponse, IndexingServiceError>;
+    type Reply = Result<ApplyIndexingPlanResponse, IndexingError>;
 
     async fn handle(
         &mut self,

@@ -324,8 +324,8 @@ mod tests {
         FileSourceParams, KafkaSourceParams, SourceConfig, SourceInputFormat, SourceParams,
         CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID,
     };
-    use quickwit_proto::indexing::IndexingTask;
-    use quickwit_proto::{IndexUid, IndexingServiceClient};
+    use quickwit_proto::indexing::{IndexingServiceClient, IndexingTask};
+    use quickwit_proto::IndexUid;
     use rand::seq::SliceRandom;
     use serde_json::json;
     use tonic::transport::Endpoint;

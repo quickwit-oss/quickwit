@@ -23,7 +23,7 @@ use std::path::Path;
 use quickwit_common::io::IoControls;
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
-use quickwit_proto::indexing_api::IndexingPipelineId;
+use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::IndexUid;
 use tantivy::directory::MmapDirectory;
 use tantivy::{IndexBuilder, TrackedObject};

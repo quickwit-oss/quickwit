@@ -19,7 +19,7 @@
 
 syntax = "proto3";
 
-package control_plane_service;
+package quickwit.control_plane;
 
 service ControlPlaneService {
   /// Notify the Control Plane that a change on an index occurred. The change

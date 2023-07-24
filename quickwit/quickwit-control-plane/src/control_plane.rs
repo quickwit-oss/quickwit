@@ -20,10 +20,10 @@
 use anyhow::Context;
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox};
+use quickwit_proto::control_plane::{NotifyIndexChangeRequest, NotifyIndexChangeResponse};
 use tracing::debug;
 
 use crate::scheduler::IndexingScheduler;
-use crate::{NotifyIndexChangeRequest, NotifyIndexChangeResponse};
 
 #[derive(Debug)]
 pub struct ControlPlane {
@@ -51,7 +51,7 @@ impl ControlPlane {
 
 #[async_trait]
 impl Handler<NotifyIndexChangeRequest> for ControlPlane {
-    type Reply = crate::Result<NotifyIndexChangeResponse>;
+    type Reply = quickwit_proto::control_plane::Result<NotifyIndexChangeResponse>;
 
     async fn handle(
         &mut self,

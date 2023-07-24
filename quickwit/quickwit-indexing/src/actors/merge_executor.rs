@@ -34,7 +34,7 @@ use quickwit_common::temp_dir::TempDirectory;
 use quickwit_directories::UnionDirectory;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::{Metastore, SplitMetadata};
-use quickwit_proto::indexing_api::IndexingPipelineId;
+use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::metastore::DeleteTask;
 use quickwit_query::get_quickwit_fastfield_normalizer_manager;
 use quickwit_query::query_ast::QueryAst;

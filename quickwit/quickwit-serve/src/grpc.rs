@@ -23,22 +23,22 @@ use std::sync::Arc;
 
 use quickwit_common::tower::BoxFutureInfaillible;
 use quickwit_config::service::QuickwitService;
-use quickwit_control_plane::control_plane_service_grpc_server::ControlPlaneServiceGrpcServer;
-use quickwit_control_plane::ControlPlaneServiceGrpcServerAdapter;
 use quickwit_ingest::ingest_service_grpc_server::IngestServiceGrpcServer;
 use quickwit_ingest::IngestServiceGrpcServerAdapter;
 use quickwit_jaeger::JaegerService;
 use quickwit_metastore::GrpcMetastoreAdapter;
 use quickwit_opentelemetry::otlp::{OtlpGrpcLogsService, OtlpGrpcTracesService};
-use quickwit_proto::indexing_service_grpc_server::IndexingServiceGrpcServer;
+use quickwit_proto::control_plane::control_plane_service_grpc_server::ControlPlaneServiceGrpcServer;
+use quickwit_proto::control_plane::ControlPlaneServiceGrpcServerAdapter;
+use quickwit_proto::indexing::indexing_service_grpc_server::IndexingServiceGrpcServer;
+use quickwit_proto::indexing::{IndexingServiceClient, IndexingServiceGrpcServerAdapter};
 use quickwit_proto::jaeger::storage::v1::span_reader_plugin_server::SpanReaderPluginServer;
 use quickwit_proto::metastore::metastore_service_server::MetastoreServiceServer;
 use quickwit_proto::opentelemetry::proto::collector::logs::v1::logs_service_server::LogsServiceServer;
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::trace_service_server::TraceServiceServer;
 use quickwit_proto::search_service_server::SearchServiceServer;
 use quickwit_proto::tonic::codegen::CompressionEncoding;
-use quickwit_proto::{tonic, IndexingServiceClient, IndexingServiceGrpcServerAdapter};
-use tonic::transport::Server;
+use quickwit_proto::tonic::transport::Server;
 use tracing::*;
 
 use crate::search_api::GrpcSearchAdapter;

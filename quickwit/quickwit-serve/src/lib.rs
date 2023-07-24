@@ -65,7 +65,7 @@ use quickwit_config::{NodeConfig, SearcherConfig};
 use quickwit_control_plane::control_plane::ControlPlane;
 use quickwit_control_plane::scheduler::IndexingScheduler;
 use quickwit_control_plane::{
-    start_indexing_scheduler, ControlPlaneServiceClient, IndexerNodeInfo, IndexerPool,
+    start_indexing_scheduler, ControlPlaneEventSubscriber, IndexerNodeInfo, IndexerPool,
 };
 use quickwit_core::{IndexService, IndexServiceError};
 use quickwit_indexing::actors::IndexingService;
@@ -79,7 +79,8 @@ use quickwit_metastore::{
     MetastoreResolver, RetryingMetastore,
 };
 use quickwit_opentelemetry::otlp::{OtlpGrpcLogsService, OtlpGrpcTracesService};
-use quickwit_proto::IndexingServiceClient;
+use quickwit_proto::control_plane::ControlPlaneServiceClient;
+use quickwit_proto::indexing::IndexingServiceClient;
 use quickwit_search::{
     create_search_client_from_channel, start_searcher_service, SearchJobPlacer, SearchService,
     SearchServiceClient, SearcherPool,
@@ -298,8 +299,8 @@ pub async fn serve_quickwit(
         None
     };
     let control_plane_subscription_handle =
-        control_plane_service.as_ref().map(|scheduler_service| {
-            event_broker.subscribe::<MetastoreEvent>(scheduler_service.clone())
+        control_plane_service.clone().map(|scheduler_service| {
+            event_broker.subscribe::<MetastoreEvent>(ControlPlaneEventSubscriber(scheduler_service))
         });
 
     let searcher_config = config.searcher_config.clone();
@@ -721,7 +722,7 @@ mod tests {
     use quickwit_cluster::{create_cluster_for_test, ClusterNode};
     use quickwit_common::uri::Uri;
     use quickwit_metastore::{metastore_for_test, IndexMetadata, MockMetastore};
-    use quickwit_proto::IndexingTask;
+    use quickwit_proto::indexing::IndexingTask;
     use quickwit_search::Job;
     use tokio::sync::{mpsc, watch};
     use tokio_stream::wrappers::{ReceiverStream, UnboundedReceiverStream};
