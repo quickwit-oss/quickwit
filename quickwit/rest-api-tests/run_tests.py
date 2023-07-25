@@ -6,9 +6,13 @@ import glob
 import yaml
 import sys
 from os import path as osp
+from os import mkdir
 import gzip
 import http
 import json
+import tempfile
+import shutil
+import time
 
 def debug_http():
     old_send = http.client.HTTPConnection.send
@@ -50,6 +54,18 @@ def load_data(path):
     else:
         return open(path, 'rb').read()
 
+def run_request_with_retry(run_req, expected_status_code=None, num_retries=10, wait_time=0.5):
+    for try_number in range(num_retries + 1):
+        r = run_req()
+        if expected_status_code is None or r.status_code == expected_status_code:
+            return r
+        print("Failed with", r.text, r.status_code)
+        if try_number < num_retries:
+            print("Retrying...")
+            time.sleep(wait_time)
+    raise Exception("Wrong status code. Got %s, expected %s" % (r.status_code, expected_status_code))
+
+
 def run_request_step(method, step):
     assert method in {"GET", "POST", "PUT", "DELETE"}
     if "headers" not in step:
@@ -70,12 +86,10 @@ def run_request_step(method, step):
     if ndjson is not None:
         kvargs["data"] = "\n".join([json.dumps(doc) for doc in ndjson])
         kvargs.setdefault("headers")["Content-Type"] = "application/json"
-    r = method_req(url, **kvargs)
-    expected_status_code = step.get("status_code", 200)
-    if expected_status_code is not None:
-        if r.status_code != expected_status_code:
-            print(r.text)
-            raise Exception("Wrong status code. Got %s, expected %s" % (r.status_code, expected_status_code))
+    expected_status_code = step.get("status_code", None)
+    num_retries = step.get("num_retries", 0)
+    run_req = lambda : method_req(url, **kvargs)
+    r = run_request_with_retry(run_req, expected_status_code, num_retries)
     expected_resp = step.get("expected", None)
     if expected_resp is not None:
         try:
@@ -140,13 +154,15 @@ class PathTree:
         path_tree.add_script(path_segs[-1])
 
     def visit_nodes(self, visitor, path=[]):
-        visitor.enter_directory(path)
+        success = True
+        success &= visitor.enter_directory(path)
         for script in self.scripts:
-            visitor.run_scenario(path, script)
+            success &= visitor.run_scenario(path, script)
         for k in sorted(self.children.keys()):
             child_path = path + [k]
-            self.children[k].visit_nodes(visitor, child_path)
-        visitor.exit_directory(path)
+            success &= self.children[k].visit_nodes(visitor, child_path)
+        success &= visitor.exit_directory(path)
+        return success
 
 # Returns a new dictionary without modifying the arguments.
 # The new dictionary is the result of merging the two dictionaries
@@ -164,10 +180,12 @@ class Visitor:
         self.context = {}
     def run_setup_teardown_scripts(self, script_name, path):
         cwd = "/".join(path)
+        success = True
         for file_name in [script_name + ".yaml", script_name + "." + self.engine + ".yaml"]:
             script_fullpath = cwd + "/" + file_name
             if osp.exists(script_fullpath):
-                self.run_scenario(path, file_name)
+                success &= self.run_scenario(path, file_name)
+        return success
     def load_context(self, path):
         context = {"cwd": "/".join(path)}
         for file_name in ["_ctx.yaml", "_ctx." + self.engine + ".yaml"]:
@@ -180,13 +198,14 @@ class Visitor:
     def enter_directory(self, path):
         print("============")
         self.load_context(path)
-        self.run_setup_teardown_scripts("_setup", path)
+        return self.run_setup_teardown_scripts("_setup", path)
     def exit_directory(self, path):
-        self.run_setup_teardown_scripts("_teardown", path)
+        success = self.run_setup_teardown_scripts("_teardown", path)
         self.context_stack.pop()
         self.context = {}
         for ctx in self.context_stack:
             self.context.update(ctx)
+        return success
     def run_scenario(self, path, script):
         scenario_path = "/".join(path + [script])
         steps = list(open_scenario(scenario_path))
@@ -208,9 +227,10 @@ class Visitor:
                 print(step)
                 print(e)
                 print("--------------")
-                break
+                return False
         else:
             print("🟢 %s: %d steps (%d skipped)" % (scenario_path, num_steps_executed, num_steps_skipped))
+        return True
 
 def build_path_tree(paths):
     paths.sort()
@@ -222,7 +242,7 @@ def build_path_tree(paths):
 def run(scenario_paths, engine):
     path_tree = build_path_tree(scenario_paths)
     visitor = Visitor(engine=engine)
-    path_tree.visit_nodes(visitor)
+    return path_tree.visit_nodes(visitor)
 
 def filter_test(prefixes, test_name):
     for prefix in prefixes:
@@ -239,6 +259,36 @@ def filter_tests(prefixes, test_names):
         if filter_test(prefixes, test_name)
     ]
 
+class QuickwitRunner:
+    def __init__(self, quickwit_bin_path):
+        self.quickwit_dir = tempfile.TemporaryDirectory()
+        print('created temporary directory', self.quickwit_dir, self.quickwit_dir.name)
+        qwdata = osp.join(self.quickwit_dir.name, "qwdata")
+        config = osp.join(self.quickwit_dir.name, "config")
+        mkdir(qwdata)
+        mkdir(config)
+        shutil.copy("../../config/quickwit.yaml", config)
+        shutil.copy(quickwit_bin_path, self.quickwit_dir.name)
+        self.proc = subprocess.Popen(["./quickwit", "run"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, cwd=self.quickwit_dir.name)
+        for i in range(100):
+            try:
+                print("Checking on quickwit")
+                res = requests.get("http://localhost:7280/health/readyz")
+                if res.status_code == 200 and res.text.strip() == "true":
+                    print("Quickwit started")
+                    time.sleep(6)
+                    break
+            except:
+                pass
+            print("Server not ready yet. Sleep and retry...")
+            time.sleep(1)
+        else:
+            print("Quickwit never started. Exiting.")
+            sys.exit(2)
+    def __del__(self):
+        print("Killing Quickwit")
+        subprocess.Popen.kill(self.proc)
+
 def main():
     import argparse
     arg_parser = argparse.ArgumentParser(
@@ -247,11 +297,28 @@ def main():
     )
     arg_parser.add_argument("--engine", help="Targetted engine (elastic/quickwit).", default="quickwit")
     arg_parser.add_argument("--test", help="Specific prefix to select the tests to run. If not specified, all tests are run.", nargs="*")
+    arg_parser.add_argument("--binary", help="Specific the quickwit binary to run.", nargs="?")
     parsed_args = arg_parser.parse_args()
+
+    print(parsed_args)
+
+    quickwit_process = None
+    if parsed_args.binary is not None:
+        if parsed_args.engine != "quickwit":
+            print("The --binary option is only supported for quickwit engine.")
+            sys.exit(3)
+        binary = parsed_args.binary
+        quickwit_process = QuickwitRunner(binary)
+    quickwit_process
+
     scenario_filepaths = glob.glob("scenarii/**/*.yaml", recursive=True)
     scenario_filepaths = list(filter_tests(parsed_args.test, scenario_filepaths))
-    run(scenario_filepaths, engine=parsed_args.engine)
+    return run(scenario_filepaths, engine=parsed_args.engine)
 
 if __name__ == "__main__":
-    main()
+    import sys
+    if main():
+        sys.exit(0)
+    else:
+        sys.exit(1)
 

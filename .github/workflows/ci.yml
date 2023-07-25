@@ -55,6 +55,7 @@ jobs:
               - quickwit/**.rs
               - quickwit/**.toml
               - quickwit/**.proto
+              - ./quickwit/rest-api-tests/**
       # The following step is just meant to install rustup actually.
       # The next one installs the correct toolchain.
       - name: Install rustup
@@ -79,8 +80,19 @@ jobs:
           tool: cargo-nextest
       - name: cargo nextest
         if: steps.modified.outputs.rust_src == 'true'
-        run: cargo nextest run --features=postgres --profile ci --retries 1
+        run: cargo nextest run --features=postgres --retries 1
         working-directory: ./quickwit
+      - name: cargo build
+        if: steps.modified.outputs.rust_src == 'true'
+        run: cargo build --features=postgres --bin quickwit
+        working-directory: ./quickwit
+      - name: Install python packages
+        run: sudo pip3 install pyaml requests
+        if: steps.modified.outputs.rust_src == 'true'
+      - name: run REST API tests
+        if: steps.modified.outputs.rust_src == 'true'
+        run: python3 ./run_tests.py --binary ../target/debug/quickwit
+        working-directory: ./quickwit/rest-api-tests
   lints:
     name: Lints
     runs-on: "ubuntu-latest"
