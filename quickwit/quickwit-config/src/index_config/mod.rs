@@ -47,7 +47,7 @@ use crate::TestableForRegression;
 // This is partly a duplicate of the `DefaultDocMapper` and
 // can be viewed as a temporary hack for 0.2 release before
 // refactoring.
-#[quickwit_procmacro::serde_multikey]
+#[quickwit_macros::serde_multikey]
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DocMapping {

@@ -50,7 +50,8 @@ pub enum Mode {
     Lenient,
     /// Strict mode: when parsing a document with an unmapped field, an error is yielded.
     Strict,
-    /// Dynamic mode: unmapped fields are captured and handled according to the provided configuration.
+    /// Dynamic mode: unmapped fields are captured and handled according to the provided
+    /// configuration.
     Dynamic(QuickwitJsonOptions),
 }
 
@@ -1559,8 +1560,8 @@ mod tests {
             .unwrap();
         match &field_mapping_type {
             super::FieldMappingType::Text(options, _) => {
-                assert!(options.tokenizer.is_some());
-                let tokenizer = options.tokenizer.as_ref().unwrap();
+                assert!(options.indexing_options.is_some());
+                let tokenizer = &options.indexing_options.as_ref().unwrap().tokenizer;
                 assert_eq!(tokenizer.name(), "my_tokenizer");
             }
             _ => panic!("Expected a text field"),

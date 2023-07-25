@@ -22,7 +22,9 @@
           "expand_dots": true,
           "fast": true,
           "indexed": true,
-          "stored": true
+          "record": "basic",
+          "stored": true,
+          "tokenizer": "raw"
         },
         "field_mappings": [
           {
@@ -50,6 +52,7 @@
             "fieldnorms": false,
             "indexed": true,
             "name": "log_level",
+            "record": "basic",
             "stored": true,
             "tokenizer": "raw",
             "type": "text"

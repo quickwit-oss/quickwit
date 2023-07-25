@@ -4962,7 +4962,7 @@ dependencies = [
  "once_cell",
  "quickwit-common",
  "quickwit-doc-mapper",
- "quickwit-procmacro",
+ "quickwit-macros",
  "regex",
  "serde",
  "serde_json",
@@ -5065,6 +5065,7 @@ dependencies = [
  "once_cell",
  "proptest",
  "quickwit-datetime",
+ "quickwit-macros",
  "quickwit-proto",
  "quickwit-query",
  "regex",
@@ -5314,6 +5315,8 @@ version = "0.6.3"
 dependencies = [
  "proc-macro2",
  "quickwit-macros-impl",
+ "quote",
+ "syn 2.0.26",
 ]
 
 [[package]]
@@ -5385,15 +5388,6 @@ dependencies = [
  "tokio",
  "tonic 0.9.2",
  "tracing",
-]
-
-[[package]]
-name = "quickwit-procmacro"
-version = "0.6.2"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.18",
 ]
 
 [[package]]
