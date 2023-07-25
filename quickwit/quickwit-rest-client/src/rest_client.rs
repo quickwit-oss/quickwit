@@ -255,7 +255,7 @@ impl QuickwitClient {
         index_id: &str,
         ingest_source: IngestSource,
         batch_size_limit_opt: Option<usize>,
-        on_ingest_event: Option<&dyn Fn(IngestEvent)>,
+        on_ingest_event: Option<&(dyn Fn(IngestEvent) + Sync)>,
         last_block_commit: CommitType,
     ) -> Result<(), Error> {
         let ingest_path = format!("{index_id}/ingest");
