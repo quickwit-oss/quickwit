@@ -35,7 +35,7 @@ mod routing_expression;
 pub mod tag_pruning;
 
 pub use default_doc_mapper::{
-    analyze_text, DefaultDocMapper, DefaultDocMapperBuilder, FieldMappingEntry, ModeType,
+    analyze_text, DefaultDocMapper, DefaultDocMapperBuilder, FieldMappingEntry, Mode, ModeType,
     QuickwitJsonOptions, TokenizerConfig, TokenizerEntry,
 };
 use default_doc_mapper::{

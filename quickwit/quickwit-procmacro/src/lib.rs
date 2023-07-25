@@ -39,8 +39,9 @@ fn serde_multikey_inner(_attr: TokenStream, item: TokenStream) -> Result<TokenSt
 
 /// Generate the main struct. It's a copy of the original struct, but with most
 /// ser/de attributes removed, and serde try_from/into `__MultiKey{}` added.
-fn generate_main_struct(mut input: ItemStruct) -> Result<ItemStruct, Error> {
+fn generate_main_struct(mut input: ItemStruct) -> Result<TokenStream2, Error> {
     let (serialize, deserialize) = get_ser_de(&input.attrs)?;
+    let has_utoipa_schema = get_and_remove_utoipa_schema(&mut input.attrs)?;
 
     if !deserialize && !serialize {
         return Err(Error::new(
@@ -49,7 +50,7 @@ fn generate_main_struct(mut input: ItemStruct) -> Result<ItemStruct, Error> {
         ));
     }
 
-    // remove serde attributes from fields
+    // remove serde and utoipa attributes from fields
     for field in input.fields.iter_mut() {
         let attrs = mem::take(&mut field.attrs);
         field.attrs = attrs
@@ -57,7 +58,8 @@ fn generate_main_struct(mut input: ItemStruct) -> Result<ItemStruct, Error> {
             .filter(|attr| {
                 !(attr.path().is_ident("serde_multikey")
                     || attr.path().is_ident("serde")
-                    || attr.path().is_ident("serde_as"))
+                    || attr.path().is_ident("serde_as")
+                    || attr.path().is_ident("schema"))
             })
             .collect();
     }
@@ -86,7 +88,33 @@ fn generate_main_struct(mut input: ItemStruct) -> Result<ItemStruct, Error> {
         input.attrs.append(&mut attr);
     }
 
-    Ok(input)
+    let utoipa = if has_utoipa_schema {
+        let main_ident = input.ident.clone();
+        let main_ident_str = main_ident.to_string();
+        let proxy_ident = Ident::new(&format!("__MultiKey{}", input.ident), input.ident.span());
+
+        Some(quote!(
+            impl<'__s> utoipa::ToSchema<'__s> for #main_ident {
+                fn schema() -> (
+                    &'__s str,
+                    utoipa::openapi::RefOr<utoipa::openapi::schema::Schema>,
+                ) {
+                    (
+                        #main_ident_str,
+                        <#proxy_ident as utoipa::ToSchema>::schema().1,
+                    )
+                }
+            }
+        ))
+    } else {
+        None
+    };
+
+    Ok(quote!(
+        #input
+
+        #utoipa
+    ))
 }
 
 /// Generate the proxy struct. It is a copy of the original struct, but fields marked
@@ -129,42 +157,42 @@ fn generate_proxy_struct(mut input: ItemStruct) -> Result<TokenStream2, Error> {
             let value = Ident::new("value", Span::call_site());
             for field in &field_config.proxy_fields {
                 final_fields.push(field.clone());
-                match (ser, field_config.get_into(&value)) {
-                    (true, Some((pre_conv, in_conv))) => {
-                        into_pre_conv.push(pre_conv);
-                        into_in_conv.push(in_conv);
-                    }
-                    (false, None) => (),
-                    (true, None) => {
-                        return Err(Error::new(
-                            field_name.span(),
-                            "Structure implement Serialize but no serializer defined",
-                        ));
-                    }
-                    (false, Some(_)) => {
-                        return Err(Error::new(
-                            field_name.span(),
-                            "Structure doesn't implement Serialize but a serializer is defined",
-                        ));
-                    }
+            }
+            match (ser, field_config.get_into(&value)) {
+                (true, Some((pre_conv, in_conv))) => {
+                    into_pre_conv.push(pre_conv);
+                    into_in_conv.push(in_conv);
                 }
-                match (de, field_config.get_try_from(&value)) {
-                    (true, Some(conv)) => {
-                        try_from_conv.push(conv);
-                    }
-                    (false, None) => (),
-                    (true, None) => {
-                        return Err(Error::new(
-                            field_name.span(),
-                            "Structure implement Deserialize but no deserializer defined",
-                        ));
-                    }
-                    (false, Some(_)) => {
-                        return Err(Error::new(
-                            field_name.span(),
-                            "Structure doesn't implement Deserialize but a deserializer is defined",
-                        ));
-                    }
+                (false, None) => (),
+                (true, None) => {
+                    return Err(Error::new(
+                        field_name.span(),
+                        "Structure implement Serialize but no serializer defined",
+                    ));
+                }
+                (false, Some(_)) => {
+                    return Err(Error::new(
+                        field_name.span(),
+                        "Structure doesn't implement Serialize but a serializer is defined",
+                    ));
+                }
+            }
+            match (de, field_config.get_try_from(&value)) {
+                (true, Some(conv)) => {
+                    try_from_conv.push(conv);
+                }
+                (false, None) => (),
+                (true, None) => {
+                    return Err(Error::new(
+                        field_name.span(),
+                        "Structure implement Deserialize but no deserializer defined",
+                    ));
+                }
+                (false, Some(_)) => {
+                    return Err(Error::new(
+                        field_name.span(),
+                        "Structure doesn't implement Deserialize but a deserializer is defined",
+                    ));
                 }
             }
         } else {
@@ -241,6 +269,32 @@ fn get_ser_de(attributes: &[Attribute]) -> Result<(bool, bool), Error> {
     Ok((ser, de))
 }
 
+fn get_and_remove_utoipa_schema(attributes: &mut [Attribute]) -> Result<bool, Error> {
+    let mut has_schema = false;
+    for attr in attributes {
+        if !attr.path().is_ident("derive") {
+            continue;
+        }
+        let Meta::List(ref mut derives) = attr.meta else {
+            continue;
+        };
+
+        let derive_list =
+            Punctuated::<Path, Token![,]>::parse_terminated.parse2(derives.tokens.clone())?;
+        let mut new_derives = Punctuated::<Path, Token![,]>::new();
+        for path in derive_list {
+            if path_equiv(&path, &["utoipa", "ToSchema"]) {
+                has_schema = true;
+            } else {
+                new_derives.push(path);
+            }
+        }
+        derives.tokens = quote!(#new_derives);
+    }
+
+    Ok(has_schema)
+}
+
 fn path_equiv(path: &Path, reference: &[&str]) -> bool {
     if path.segments.is_empty() || reference.is_empty() {
         return false;
@@ -255,6 +309,7 @@ fn path_equiv(path: &Path, reference: &[&str]) -> bool {
         })
 }
 
+#[derive(Debug)]
 struct MultiKeyOptions {
     main_field_name: Ident,
     deserializer: Option<Path>,

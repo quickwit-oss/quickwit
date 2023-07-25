@@ -94,6 +94,7 @@ impl Default for DefaultDocMapperBuilder {
     }
 }
 
+// TODO remove this after refactor, it should be handled in QuickwitJsonOptions or in Mode
 // By default, in dynamic mode, all fields are fast fields.
 fn default_dynamic_mapping() -> QuickwitJsonOptions {
     QuickwitJsonOptions {

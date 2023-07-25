@@ -32,7 +32,7 @@ use cron::Schedule;
 use humantime::parse_duration;
 use quickwit_common::uri::Uri;
 use quickwit_doc_mapper::{
-    DefaultDocMapper, DefaultDocMapperBuilder, DocMapper, FieldMappingEntry, ModeType,
+    DefaultDocMapper, DefaultDocMapperBuilder, DocMapper, FieldMappingEntry, Mode, ModeType,
     QuickwitJsonOptions, TokenizerEntry,
 };
 use serde::{Deserialize, Serialize};
@@ -67,22 +67,17 @@ pub struct DocMapping {
     pub store_source: bool,
     #[serde(default)]
     pub timestamp_field: Option<String>,
-    // #[serde_multikey(
-    // deserializer = parse_dynamic_mapping,
-    // serializer = serialize_dynamic_mapping,
-    // fields = (
-    // #[serde(default)]
-    // mode: ModeType,
-    // #[serde(skip_serializing_if = "Option::is_none")]
-    // dynamic_mapping: Option<QuickwitJsonOptions>
-    // ),
-    // )]
-    // pub dynamic_mapping: Mode,
-    #[serde(default)]
-    pub mode: ModeType,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    // TODO 1686 should merge with mode: and parse/validate as a Mode::Dynamic
-    pub dynamic_mapping: Option<QuickwitJsonOptions>,
+    #[serde_multikey(
+        deserializer = parse_dynamic_mapping,
+        serializer = serialize_dynamic_mapping,
+        fields = (
+            #[serde(default)]
+            mode: ModeType,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            dynamic_mapping: Option<QuickwitJsonOptions>
+        ),
+    )]
+    pub mode: Mode,
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     // TODO 1686 really optional
@@ -92,6 +87,30 @@ pub struct DocMapping {
     pub max_num_partitions: NonZeroU32,
     #[serde(default)]
     pub tokenizers: Vec<TokenizerEntry>,
+}
+
+fn parse_dynamic_mapping(
+    mode: ModeType,
+    dynamic_mapping: Option<QuickwitJsonOptions>,
+) -> anyhow::Result<Mode> {
+    Ok(match (mode, dynamic_mapping) {
+        (ModeType::Lenient, None) => Mode::Lenient,
+        (ModeType::Strict, None) => Mode::Strict,
+        (ModeType::Dynamic, Some(dynamic_mapping)) => Mode::Dynamic(dynamic_mapping),
+        (ModeType::Dynamic, None) => Mode::default(), // Dynamic with default options
+        (_, Some(_)) => anyhow::bail!(
+            "`dynamic_mapping` is only allowed with mode=dynamic. (Here mode=`{:?}`)",
+            mode
+        ),
+    })
+}
+
+fn serialize_dynamic_mapping(mode: Mode) -> (ModeType, Option<QuickwitJsonOptions>) {
+    match mode {
+        Mode::Lenient => (ModeType::Lenient, None),
+        Mode::Strict => (ModeType::Strict, None),
+        Mode::Dynamic(json_options) => (ModeType::Dynamic, Some(json_options)),
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
@@ -451,8 +470,7 @@ impl TestableForRegression for IndexConfig {
                 .map(|tag_field| tag_field.to_string())
                 .collect::<BTreeSet<String>>(),
             store_source: true,
-            mode: ModeType::Dynamic,
-            dynamic_mapping: None,
+            mode: Mode::default(),
             partition_key: Some("tenant_id".to_string()),
             max_num_partitions: NonZeroU32::new(100).unwrap(),
             timestamp_field: Some("timestamp".to_string()),
@@ -523,14 +541,16 @@ pub fn build_doc_mapper(
     doc_mapping: &DocMapping,
     search_settings: &SearchSettings,
 ) -> anyhow::Result<Arc<dyn DocMapper>> {
+    // TODO actually updating DefaultDocMapperBuilder would be better
+    let (mode, dynamic_mapping) = serialize_dynamic_mapping(doc_mapping.mode.clone());
     let builder = DefaultDocMapperBuilder {
         store_source: doc_mapping.store_source,
         default_search_fields: search_settings.default_search_fields.clone(),
         timestamp_field: doc_mapping.timestamp_field.clone(),
         field_mappings: doc_mapping.field_mappings.clone(),
         tag_fields: doc_mapping.tag_fields.iter().cloned().collect(),
-        mode: doc_mapping.mode,
-        dynamic_mapping: doc_mapping.dynamic_mapping.clone(),
+        mode,
+        dynamic_mapping,
         partition_key: doc_mapping.partition_key.clone(),
         max_num_partitions: doc_mapping.max_num_partitions,
         tokenizers: doc_mapping.tokenizers.clone(),
@@ -728,7 +748,10 @@ mod tests {
             &Uri::from_well_formed("s3://my-index"),
         )
         .unwrap();
-        assert_eq!(minimal_config.doc_mapping.mode, ModeType::Dynamic);
+        assert_eq!(
+            minimal_config.doc_mapping.mode.mode_type(),
+            ModeType::Dynamic
+        );
     }
 
     #[test]

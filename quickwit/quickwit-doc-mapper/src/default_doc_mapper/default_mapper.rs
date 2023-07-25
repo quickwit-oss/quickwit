@@ -39,20 +39,34 @@ use crate::doc_mapper::{JsonObject, Partition};
 use crate::query_builder::build_query;
 use crate::routing_expression::RoutingExpr;
 use crate::{
-    Cardinality, DocMapper, DocParsingError, ModeType, QueryParserError, TokenizerEntry,
-    WarmupInfo, DYNAMIC_FIELD_NAME, SOURCE_FIELD_NAME,
+    Cardinality, DocMapper, DocParsingError, FastFieldOptions, ModeType, QueryParserError,
+    TokenizerEntry, WarmupInfo, DYNAMIC_FIELD_NAME, SOURCE_FIELD_NAME,
 };
 
 /// Defines how an unmapped field should be handled.
-#[derive(Clone, Debug, Serialize, Deserialize, Default)]
-pub(crate) enum Mode {
-    #[default]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub enum Mode {
+    /// Lenient mode: unmapped fields are just ignored.
     Lenient,
+    /// Strict mode: when parsing a document with an unmapped field, an error is yielded.
     Strict,
+    /// Dynamic mode: unmapped fields are captured and handled according to the provided configuration.
     Dynamic(QuickwitJsonOptions),
 }
 
+impl Default for Mode {
+    fn default() -> Self {
+        // TODO arguably we should change QuickwitJsonOptions::default directly, or create a
+        // default_dynamic() method on it.
+        Mode::Dynamic(QuickwitJsonOptions {
+            fast: FastFieldOptions::IsEnabled(true),
+            ..Default::default()
+        })
+    }
+}
+
 impl Mode {
+    /// Extact the `ModeType` of this `Mode`
     pub fn mode_type(&self) -> ModeType {
         match self {
             Mode::Lenient => ModeType::Lenient,
