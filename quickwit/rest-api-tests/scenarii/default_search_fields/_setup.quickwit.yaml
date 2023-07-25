@@ -29,10 +29,10 @@ json:
 ---
 method: POST
 endpoint: defaultsearchfields/ingest
+num_retries: 10
 params:
   commit: force
 ndjson:
   - {"id": 1, "some_dynamic_field": "hello"}
   - {"id": 2, "inner_json": {"somefieldinjson": "allo"}}
   - {"id": 3, "regular_field": "bonjour"}
-num_retries: 10

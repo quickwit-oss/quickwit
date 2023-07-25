@@ -27,6 +27,7 @@ json:
 # Ingest documents
 method: POST
 endpoint: simple/ingest
+num_retries: 10
 params:
   commit: force
 ndjson:
