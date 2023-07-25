@@ -35,7 +35,7 @@ use quickwit_indexing::actors::{
 use quickwit_indexing::merge_policy::merge_policy_from_settings;
 use quickwit_indexing::{IndexingSplitStore, PublisherType, SplitsUpdateMailbox};
 use quickwit_metastore::Metastore;
-use quickwit_proto::indexing_api::IndexingPipelineId;
+use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::IndexUid;
 use quickwit_search::SearchJobPlacer;
 use quickwit_storage::Storage;

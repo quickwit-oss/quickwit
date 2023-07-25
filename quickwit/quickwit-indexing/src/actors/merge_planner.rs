@@ -26,7 +26,7 @@ use itertools::Itertools;
 use quickwit_actors::channel_with_priority::TrySendError;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_metastore::SplitMetadata;
-use quickwit_proto::indexing_api::IndexingPipelineId;
+use quickwit_proto::indexing::IndexingPipelineId;
 use serde::Serialize;
 use tantivy::Inventory;
 use time::OffsetDateTime;
@@ -308,7 +308,7 @@ mod tests {
     };
     use quickwit_config::IndexingSettings;
     use quickwit_metastore::{SplitMaturity, SplitMetadata};
-    use quickwit_proto::indexing_api::IndexingPipelineId;
+    use quickwit_proto::indexing::IndexingPipelineId;
     use quickwit_proto::IndexUid;
     use tantivy::TrackedObject;
     use time::OffsetDateTime;

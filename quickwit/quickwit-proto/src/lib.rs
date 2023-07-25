@@ -21,144 +21,38 @@
 #![deny(clippy::disallowed_methods)]
 #![allow(rustdoc::invalid_html_tags)]
 
-use anyhow::anyhow;
-use ulid::Ulid;
-pub use sort_by_value::SortValue;
 use std::cmp::Ordering;
 use std::convert::Infallible;
 use std::fmt;
+
 use ::opentelemetry::global;
-use ::opentelemetry::propagation::Extractor;
-use ::opentelemetry::propagation::Injector;
+use ::opentelemetry::propagation::{Extractor, Injector};
 use tonic::codegen::http;
 use tonic::service::Interceptor;
 use tonic::Status;
 use tracing::Span;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
+use ulid::Ulid;
 
-pub use tonic;
-
-#[path = "quickwit/quickwit.indexing.rs"]
+pub mod control_plane;
 pub mod indexing;
-#[path = "quickwit/quickwit.metastore.rs"]
+#[path = "codegen/quickwit/quickwit.metastore.rs"]
 pub mod metastore;
-#[path = "quickwit/quickwit.search.rs"]
+#[path = "codegen/quickwit/quickwit.search.rs"]
 pub mod search;
 
-pub use indexing::*;
 pub use metastore::*;
 pub use search::*;
-pub mod indexing_api {
-    use crate::IndexUid;
-    use crate::{ServiceError, ServiceErrorCode};
-    use std::io;
-    use anyhow::anyhow;
-    use thiserror::Error;
-    use quickwit_actors::AskError;
-
-    #[derive(Clone, Debug, Hash, Eq, PartialEq)]
-    pub struct IndexingPipelineId {
-        pub index_uid: IndexUid,
-        pub source_id: String,
-        pub node_id: String,
-        pub pipeline_ord: usize,
-    }
-    pub type Result<T> = std::result::Result<T, IndexingServiceError>;
-
-    #[derive(Error, Debug)]
-    pub enum IndexingServiceError {
-        #[error("Indexing pipeline `{index_id}` for source `{source_id}` does not exist.")]
-        MissingPipeline { index_id: String, source_id: String },
-        #[error(
-            "Pipeline #{pipeline_ord} for index `{index_id}` and source `{source_id}` already exists."
-        )]
-        PipelineAlreadyExists {
-            index_id: String,
-            source_id: String,
-            pipeline_ord: usize,
-        },
-        #[error("I/O Error `{0}`.")]
-        Io(io::Error),
-        #[error("Invalid params `{0}`.")]
-        InvalidParams(anyhow::Error),
-        #[error("Spanw pipelines errors `{pipeline_ids:?}`.")]
-        SpawnPipelinesError {
-            pipeline_ids: Vec<IndexingPipelineId>,
-        },
-        #[error("A metastore error occurred: {0}.")]
-        MetastoreError(String),
-        #[error("A storage resolver error occurred: {0}.")]
-        StorageResolverError(String),
-        #[error("An internal error occurred: {0}.")]
-        Internal(String),        
-        #[error("The ingest service is unavailable.")]
-        Unavailable,
-    }
-    
-    impl From<IndexingServiceError> for tonic::Status {
-        fn from(error: IndexingServiceError) -> Self {
-            match error {
-                IndexingServiceError::MissingPipeline { index_id, source_id } => tonic::Status::not_found(format!("Missing pipeline {index_id}/{source_id}")),
-                IndexingServiceError::PipelineAlreadyExists { index_id, source_id, pipeline_ord } => tonic::Status::already_exists(format!("Pipeline {index_id}/{source_id} {pipeline_ord} already exists ")),
-                IndexingServiceError::Io(error) => tonic::Status::internal(error.to_string()),
-                IndexingServiceError::InvalidParams(error) => tonic::Status::invalid_argument(error.to_string()),
-                IndexingServiceError::SpawnPipelinesError { pipeline_ids } => tonic::Status::internal(format!("Error spawning pipelines {:?}", pipeline_ids)),
-                IndexingServiceError::Internal(string) => tonic::Status::internal(string),
-                IndexingServiceError::MetastoreError(string) => tonic::Status::internal(string),
-                IndexingServiceError::StorageResolverError(string) => tonic::Status::internal(string),
-                IndexingServiceError::Unavailable => tonic::Status::unavailable("Indexing service is unavailable."),
-            }
-        }
-    }
-    
-    impl From<tonic::Status> for IndexingServiceError {
-        fn from(status: tonic::Status) -> Self {
-            match status.code() {
-                tonic::Code::InvalidArgument => IndexingServiceError::InvalidParams(anyhow!(status.message().to_string())),
-                tonic::Code::NotFound => IndexingServiceError::MissingPipeline { index_id: "".to_string(), source_id: "".to_string() },
-                tonic::Code::AlreadyExists => IndexingServiceError::PipelineAlreadyExists { index_id: "".to_string(), source_id: "".to_string(), pipeline_ord: 0 },
-                tonic::Code::Unavailable => IndexingServiceError::Unavailable,
-                _ => IndexingServiceError::InvalidParams(anyhow!(status.message().to_string())),
-            }
-        }
-    }
-    
-    impl ServiceError for IndexingServiceError {
-        fn status_code(&self) -> ServiceErrorCode {
-            match self {
-                Self::MissingPipeline { .. } => ServiceErrorCode::NotFound,
-                Self::PipelineAlreadyExists { .. } => ServiceErrorCode::BadRequest,
-                Self::InvalidParams(_) => ServiceErrorCode::BadRequest,
-                Self::SpawnPipelinesError { .. } => ServiceErrorCode::Internal,
-                Self::Io(_) => ServiceErrorCode::Internal,
-                Self::Internal(_) => ServiceErrorCode::Internal,
-                Self::MetastoreError(_) => ServiceErrorCode::Internal,
-                Self::StorageResolverError(_) => ServiceErrorCode::Internal,
-                Self::Unavailable => ServiceErrorCode::Unavailable,
-            }
-        }
-    }
-
-    impl From<AskError<IndexingServiceError>> for IndexingServiceError {
-        fn from(error: AskError<IndexingServiceError>) -> Self {
-            match error {
-                AskError::ErrorReply(error) => error,
-                AskError::MessageNotDelivered => IndexingServiceError::Unavailable,
-                AskError::ProcessMessageError => IndexingServiceError::Internal(
-                    "An error occurred while processing the request".to_string(),
-                ),
-            }
-        }
-    }
-}
+pub use sort_by_value::SortValue;
+pub use tonic;
 
 pub mod jaeger {
     pub mod api_v2 {
-        include!("jaeger/jaeger.api_v2.rs");
+        include!("codegen/jaeger/jaeger.api_v2.rs");
     }
     pub mod storage {
         pub mod v1 {
-            include!("jaeger/jaeger.storage.v1.rs");
+            include!("codegen/jaeger/jaeger.storage.v1.rs");
         }
     }
 }
@@ -170,46 +64,46 @@ pub mod opentelemetry {
         pub mod collector {
             pub mod logs {
                 pub mod v1 {
-                    include!("opentelemetry/opentelemetry.proto.collector.logs.v1.rs");
+                    include!("codegen/opentelemetry/opentelemetry.proto.collector.logs.v1.rs");
                 }
             }
             // pub mod metrics {
             //     pub mod v1 {
-            //         include!("opentelemetry/opentelemetry.proto.collector.metrics.v1.rs");
-            //     }
+            //         include!("codegen/opentelemetry/opentelemetry.proto.collector.metrics.v1.rs"
+            // );     }
             // }
             pub mod trace {
                 pub mod v1 {
-                    include!("opentelemetry/opentelemetry.proto.collector.trace.v1.rs");
+                    include!("codegen/opentelemetry/opentelemetry.proto.collector.trace.v1.rs");
                 }
             }
         }
         pub mod common {
             pub mod v1 {
-                include!("opentelemetry/opentelemetry.proto.common.v1.rs");
+                include!("codegen/opentelemetry/opentelemetry.proto.common.v1.rs");
             }
         }
         pub mod logs {
             pub mod v1 {
-                include!("opentelemetry/opentelemetry.proto.logs.v1.rs");
+                include!("codegen/opentelemetry/opentelemetry.proto.logs.v1.rs");
             }
         }
         // pub mod metrics {
         //     pub mod experimental {
-        //         include!("opentelemetry/opentelemetry.proto.metrics.experimental.rs");
+        //         include!("codegen/opentelemetry/opentelemetry.proto.metrics.experimental.rs");
         //     }
         //     pub mod v1 {
-        //         tonic::include_proto!("opentelemetry/opentelemetry.proto.metrics.v1");
+        //         tonic::include_proto!("codegen/opentelemetry/opentelemetry.proto.metrics.v1");
         //     }
         // }
         pub mod resource {
             pub mod v1 {
-                include!("opentelemetry/opentelemetry.proto.resource.v1.rs");
+                include!("codegen/opentelemetry/opentelemetry.proto.resource.v1.rs");
             }
         }
         pub mod trace {
             pub mod v1 {
-                include!("opentelemetry/opentelemetry.proto.trace.v1.rs");
+                include!("codegen/opentelemetry/opentelemetry.proto.trace.v1.rs");
             }
         }
     }
@@ -231,7 +125,8 @@ pub enum ServiceErrorCode {
     RateLimited,
     Unavailable,
     UnsupportedMediaType,
-    NotSupportedYet, //< Used for API that is available in elasticsearch but is not yet available in Quickwit.
+    NotSupportedYet, /* Used for API that is available in elasticsearch but is not yet
+                      * available in Quickwit. */
 }
 
 impl ServiceErrorCode {
@@ -375,7 +270,8 @@ impl<'a> Extractor for MutMetadataMap<'a> {
     }
 }
 
-/// [`tonic::service::interceptor::Interceptor`] which injects the span context into [`tonic::metadata::MetadataMap`].
+/// [`tonic::service::interceptor::Interceptor`] which injects the span context into
+/// [`tonic::metadata::MetadataMap`].
 #[derive(Clone, Debug)]
 pub struct SpanContextInterceptor;
 
@@ -478,48 +374,11 @@ impl From<String> for IndexUid {
     }
 }
 
-impl ToString for IndexingTask {
-    fn to_string(&self) -> String {
-        format!("{}:{}", self.index_uid, self.source_id)
-    }
-}
-
-impl TryFrom<&str> for IndexingTask {
-    type Error = anyhow::Error;
-
-    fn try_from(index_task_str: &str) -> anyhow::Result<IndexingTask> {
-        let mut iter = index_task_str.rsplit(':');
-        let source_id = iter.next().ok_or_else(|| {
-            anyhow!(
-                "Invalid index task format, cannot find source_id in `{}`",
-                index_task_str
-            )
-        })?;
-        let part1 = iter.next().ok_or_else(|| {
-            anyhow!(
-                "Invalid index task format, cannot find index_id in `{}`",
-                index_task_str
-            )
-        })?;
-        if let Some(part2) = iter.next() {
-            Ok(IndexingTask {
-                index_uid: format!("{part2}:{part1}"),
-                source_id: source_id.to_string(),
-            })
-        } else {
-            Ok(IndexingTask {
-                index_uid: part1.to_string(),
-                source_id: source_id.to_string(),
-            })
-        }
-    }
-}
-
 // !!! Disclaimer !!!
 //
 // Prost imposes the PartialEq derived implementation.
-// This is terrible because this means Eq, PartialEq are not really in line with Ord's implementation.
-// if in presence of NaN.
+// This is terrible because this means Eq, PartialEq are not really in line with Ord's
+// implementation. if in presence of NaN.
 impl Eq for SortByValue {}
 impl Copy for SortByValue {}
 impl From<SortValue> for SortByValue {
@@ -596,41 +455,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_indexing_task_serialization() {
-        let original = IndexingTask {
-            index_uid: "test-index:123456".to_string(),
-            source_id: "test-source".to_string(),
-        };
-
-        let serialized = original.to_string();
-        let deserialized: IndexingTask = serialized.as_str().try_into().unwrap();
-        assert_eq!(original, deserialized);
-    }
-
-    #[test]
-    fn test_indexing_task_serialization_bwc() {
-        assert_eq!(
-            IndexingTask::try_from("foo:bar").unwrap(),
-            IndexingTask {
-                index_uid: "foo".to_string(),
-                source_id: "bar".to_string(),
-            }
-        );
-    }
-
-    #[test]
-    fn test_indexing_task_serialization_errors() {
-        assert_eq!(
-            "Invalid index task format, cannot find index_id in ``",
-            IndexingTask::try_from("").unwrap_err().to_string()
-        );
-        assert_eq!(
-            "Invalid index task format, cannot find index_id in `foo`",
-            IndexingTask::try_from("foo").unwrap_err().to_string()
-        );
-    }
-
-    #[test]
     fn test_index_uid_parsing() {
         assert_eq!("foo", IndexUid::from("foo".to_string()).index_id());
         assert_eq!("foo", IndexUid::from("foo:bar".to_string()).index_id());
@@ -660,5 +484,4 @@ mod tests {
         let index_uid_from_parts = IndexUid::from_parts(index_id, incarnation_id);
         index_uid_from_parts.to_string()
     }
-
 }

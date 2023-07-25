@@ -29,15 +29,15 @@ use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler};
 use quickwit_config::SourceConfig;
 use quickwit_metastore::Metastore;
-use quickwit_proto::indexing::{ApplyIndexingPlanRequest, IndexingTask};
-use quickwit_proto::IndexingService;
+use quickwit_proto::control_plane::{NotifyIndexChangeRequest, NotifyIndexChangeResponse};
+use quickwit_proto::indexing::{ApplyIndexingPlanRequest, IndexingService, IndexingTask};
 use serde::Serialize;
 use tracing::{debug, error, info, warn};
 
 use crate::indexing_plan::{
     build_indexing_plan, build_physical_indexing_plan, IndexSourceId, PhysicalIndexingPlan,
 };
-use crate::{IndexerNodeInfo, IndexerPool, NotifyIndexChangeRequest, NotifyIndexChangeResponse};
+use crate::{IndexerNodeInfo, IndexerPool};
 
 /// Interval between two controls (or checks) of the desired plan VS running plan.
 const CONTROL_PLAN_LOOP_INTERVAL: Duration = if cfg!(any(test, feature = "testsuite")) {
@@ -298,7 +298,7 @@ impl IndexingScheduler {
 
 #[async_trait]
 impl Handler<NotifyIndexChangeRequest> for IndexingScheduler {
-    type Reply = crate::Result<NotifyIndexChangeResponse>;
+    type Reply = quickwit_proto::control_plane::Result<NotifyIndexChangeResponse>;
 
     async fn handle(
         &mut self,
@@ -531,8 +531,7 @@ mod tests {
     use quickwit_config::{KafkaSourceParams, SourceConfig, SourceInputFormat, SourceParams};
     use quickwit_indexing::IndexingService;
     use quickwit_metastore::{IndexMetadata, MockMetastore};
-    use quickwit_proto::indexing::{ApplyIndexingPlanRequest, IndexingTask};
-    use quickwit_proto::IndexingServiceClient;
+    use quickwit_proto::indexing::{ApplyIndexingPlanRequest, IndexingServiceClient, IndexingTask};
     use serde_json::json;
 
     use super::{IndexingScheduler, CONTROL_PLAN_LOOP_INTERVAL};

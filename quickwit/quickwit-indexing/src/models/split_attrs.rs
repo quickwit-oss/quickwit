@@ -23,7 +23,7 @@ use std::ops::{Range, RangeInclusive};
 use std::sync::Arc;
 
 use quickwit_metastore::SplitMetadata;
-use quickwit_proto::indexing_api::IndexingPipelineId;
+use quickwit_proto::indexing::IndexingPipelineId;
 use tantivy::DateTime;
 use time::OffsetDateTime;
 

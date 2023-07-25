@@ -49,7 +49,6 @@ quickwit-control-plane = { workspace = true }
 quickwit-core = { workspace = true }
 quickwit-directories = { workspace = true }
 quickwit-doc-mapper = { workspace = true }
-quickwit-grpc-clients = { workspace = true }
 quickwit-indexing = { workspace = true }
 quickwit-ingest = { workspace = true }
 quickwit-jaeger = { workspace = true }

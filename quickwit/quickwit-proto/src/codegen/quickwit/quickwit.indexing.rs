@@ -29,7 +29,7 @@ pub trait IndexingService: std::fmt::Debug + dyn_clone::DynClone + Send + Sync +
     async fn apply_indexing_plan(
         &mut self,
         request: ApplyIndexingPlanRequest,
-    ) -> crate::indexing_api::Result<ApplyIndexingPlanResponse>;
+    ) -> crate::indexing::Result<ApplyIndexingPlanResponse>;
 }
 dyn_clone::clone_trait_object!(IndexingService);
 #[cfg(any(test, feature = "testsuite"))]
@@ -91,7 +91,7 @@ impl IndexingService for IndexingServiceClient {
     async fn apply_indexing_plan(
         &mut self,
         request: ApplyIndexingPlanRequest,
-    ) -> crate::indexing_api::Result<ApplyIndexingPlanResponse> {
+    ) -> crate::indexing::Result<ApplyIndexingPlanResponse> {
         self.inner.apply_indexing_plan(request).await
     }
 }
@@ -107,7 +107,7 @@ pub mod mock {
         async fn apply_indexing_plan(
             &mut self,
             request: ApplyIndexingPlanRequest,
-        ) -> crate::indexing_api::Result<ApplyIndexingPlanResponse> {
+        ) -> crate::indexing::Result<ApplyIndexingPlanResponse> {
             self.inner.lock().await.apply_indexing_plan(request).await
         }
     }
@@ -125,7 +125,7 @@ pub type BoxFuture<T, E> = std::pin::Pin<
 >;
 impl tower::Service<ApplyIndexingPlanRequest> for Box<dyn IndexingService> {
     type Response = ApplyIndexingPlanResponse;
-    type Error = crate::indexing_api::IndexingServiceError;
+    type Error = crate::indexing::IndexingError;
     type Future = BoxFuture<Self::Response, Self::Error>;
     fn poll_ready(
         &mut self,
@@ -145,7 +145,7 @@ struct IndexingServiceTowerBlock {
     apply_indexing_plan_svc: quickwit_common::tower::BoxService<
         ApplyIndexingPlanRequest,
         ApplyIndexingPlanResponse,
-        crate::indexing_api::IndexingServiceError,
+        crate::indexing::IndexingError,
     >,
 }
 impl Clone for IndexingServiceTowerBlock {
@@ -160,7 +160,7 @@ impl IndexingService for IndexingServiceTowerBlock {
     async fn apply_indexing_plan(
         &mut self,
         request: ApplyIndexingPlanRequest,
-    ) -> crate::indexing_api::Result<ApplyIndexingPlanResponse> {
+    ) -> crate::indexing::Result<ApplyIndexingPlanResponse> {
         self.apply_indexing_plan_svc.ready().await?.call(request).await
     }
 }
@@ -172,7 +172,7 @@ pub struct IndexingServiceTowerBlockBuilder {
             Box<dyn IndexingService>,
             ApplyIndexingPlanRequest,
             ApplyIndexingPlanResponse,
-            crate::indexing_api::IndexingServiceError,
+            crate::indexing::IndexingError,
         >,
     >,
 }
@@ -183,7 +183,7 @@ impl IndexingServiceTowerBlockBuilder {
         L::Service: tower::Service<
                 ApplyIndexingPlanRequest,
                 Response = ApplyIndexingPlanResponse,
-                Error = crate::indexing_api::IndexingServiceError,
+                Error = crate::indexing::IndexingError,
             > + Clone + Send + Sync + 'static,
         <L::Service as tower::Service<ApplyIndexingPlanRequest>>::Future: Send + 'static,
     {
@@ -199,7 +199,7 @@ impl IndexingServiceTowerBlockBuilder {
         L::Service: tower::Service<
                 ApplyIndexingPlanRequest,
                 Response = ApplyIndexingPlanResponse,
-                Error = crate::indexing_api::IndexingServiceError,
+                Error = crate::indexing::IndexingError,
             > + Clone + Send + Sync + 'static,
         <L::Service as tower::Service<ApplyIndexingPlanRequest>>::Future: Send + 'static,
     {
@@ -275,7 +275,7 @@ where
 }
 #[derive(Debug)]
 pub struct IndexingServiceMailbox<A: quickwit_actors::Actor> {
-    inner: MailboxAdapter<A, crate::indexing_api::IndexingServiceError>,
+    inner: MailboxAdapter<A, crate::indexing::IndexingError>,
 }
 impl<A: quickwit_actors::Actor> IndexingServiceMailbox<A> {
     pub fn new(instance: quickwit_actors::Mailbox<A>) -> Self {
@@ -303,10 +303,10 @@ where
     M: std::fmt::Debug + Send + 'static,
     T: Send + 'static,
     E: std::fmt::Debug + Send + 'static,
-    crate::indexing_api::IndexingServiceError: From<quickwit_actors::AskError<E>>,
+    crate::indexing::IndexingError: From<quickwit_actors::AskError<E>>,
 {
     type Response = T;
-    type Error = crate::indexing_api::IndexingServiceError;
+    type Error = crate::indexing::IndexingError;
     type Future = BoxFuture<Self::Response, Self::Error>;
     fn poll_ready(
         &mut self,
@@ -334,17 +334,14 @@ where
     >: tower::Service<
         ApplyIndexingPlanRequest,
         Response = ApplyIndexingPlanResponse,
-        Error = crate::indexing_api::IndexingServiceError,
-        Future = BoxFuture<
-            ApplyIndexingPlanResponse,
-            crate::indexing_api::IndexingServiceError,
-        >,
+        Error = crate::indexing::IndexingError,
+        Future = BoxFuture<ApplyIndexingPlanResponse, crate::indexing::IndexingError>,
     >,
 {
     async fn apply_indexing_plan(
         &mut self,
         request: ApplyIndexingPlanRequest,
-    ) -> crate::indexing_api::Result<ApplyIndexingPlanResponse> {
+    ) -> crate::indexing::Result<ApplyIndexingPlanResponse> {
         self.call(request).await
     }
 }
@@ -373,7 +370,7 @@ where
     async fn apply_indexing_plan(
         &mut self,
         request: ApplyIndexingPlanRequest,
-    ) -> crate::indexing_api::Result<ApplyIndexingPlanResponse> {
+    ) -> crate::indexing::Result<ApplyIndexingPlanResponse> {
         self.inner
             .apply_indexing_plan(request)
             .await

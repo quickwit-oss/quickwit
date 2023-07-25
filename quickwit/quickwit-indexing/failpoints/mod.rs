@@ -50,7 +50,7 @@ use quickwit_indexing::merge_policy::MergeOperation;
 use quickwit_indexing::models::MergeScratch;
 use quickwit_indexing::{get_tantivy_directory_from_split_bundle, TestSandbox};
 use quickwit_metastore::{ListSplitsQuery, Split, SplitMetadata, SplitState};
-use quickwit_proto::indexing_api::IndexingPipelineId;
+use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::IndexUid;
 use serde_json::Value as JsonValue;
 use tantivy::{Directory, Inventory};

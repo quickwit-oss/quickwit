@@ -31,7 +31,7 @@ use quickwit_common::KillSwitch;
 use quickwit_config::{IndexingSettings, SourceConfig};
 use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::{Metastore, MetastoreError};
-use quickwit_proto::indexing_api::IndexingPipelineId;
+use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_storage::Storage;
 use tokio::join;
 use tokio::sync::Semaphore;
