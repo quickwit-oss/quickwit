@@ -26,7 +26,6 @@ json:
       - regular_field
       - some_dynamic_field
       - inner_json.somefieldinjson
-
 ---
 method: POST
 endpoint: defaultsearchfields/ingest
