@@ -66,6 +66,7 @@ impl Codegen {
                 "DocBatch.doc_buffer",
                 "#[schema(value_type = String, format = Binary)]",
             )
+            .enum_attribute(".", "#[serde(rename_all=\"snake_case\")]")
             .service_generator(service_generator)
             .out_dir(out_dir);
 

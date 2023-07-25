@@ -254,7 +254,7 @@ mod tests {
         }
         IngestRequest {
             doc_batches,
-            commit: commit_type as u32,
+            commit: commit_type.into(),
         }
     }
 

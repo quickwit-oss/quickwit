@@ -409,7 +409,7 @@ impl OtlpGrpcLogsService {
     async fn store_logs(&mut self, doc_batch: DocBatch) -> Result<(), tonic::Status> {
         let ingest_request = IngestRequest {
             doc_batches: vec![doc_batch],
-            commit: CommitType::Auto as u32,
+            commit: CommitType::Auto.into(),
         };
         self.ingest_service.ingest(ingest_request).await?;
         Ok(())

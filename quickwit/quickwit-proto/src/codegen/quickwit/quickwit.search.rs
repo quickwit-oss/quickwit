@@ -207,6 +207,7 @@ pub struct SortByValue {
 /// Nested message and enum types in `SortByValue`.
 pub mod sort_by_value {
     #[derive(Serialize, Deserialize, utoipa::ToSchema)]
+    #[serde(rename_all = "snake_case")]
     #[allow(clippy::derive_partial_eq_without_eq)]
     #[derive(Clone, PartialEq, ::prost::Oneof)]
     pub enum SortValue {
@@ -414,7 +415,7 @@ pub struct LeafSearchStreamResponse {
     pub split_id: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
-#[serde(rename_all = "lowercase")]
+#[serde(rename_all = "snake_case")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum SortOrder {
