@@ -74,23 +74,23 @@ jobs:
         with:
           workspaces: "./quickwit -> target"
       - name: Install nextest
-        if: steps.modified.outputs.rust_src == 'true'
+        if: always() && steps.modified.outputs.rust_src == 'true'
         uses: taiki-e/cache-cargo-install-action@v1
         with:
           tool: cargo-nextest
       - name: cargo nextest
-        if: steps.modified.outputs.rust_src == 'true'
+        if: always() && steps.modified.outputs.rust_src == 'true'
         run: cargo nextest run --features=postgres --retries 1
         working-directory: ./quickwit
       - name: cargo build
-        if: steps.modified.outputs.rust_src == 'true'
+        if: always() && steps.modified.outputs.rust_src == 'true'
         run: cargo build --features=postgres --bin quickwit
         working-directory: ./quickwit
       - name: Install python packages
         run: sudo pip3 install pyaml requests
-        if: steps.modified.outputs.rust_src == 'true'
+        if: always() && steps.modified.outputs.rust_src == 'true'
       - name: run REST API tests
-        if: steps.modified.outputs.rust_src == 'true'
+        if: always() && steps.modified.outputs.rust_src == 'true'
         run: python3 ./run_tests.py --binary ../target/debug/quickwit
         working-directory: ./quickwit/rest-api-tests
   lints:
@@ -125,20 +125,20 @@ jobs:
         with:
           workspaces: "./quickwit -> target"
       - name: Install cargo deny
-        if: steps.modified.outputs.rust_src == 'true'
+        if: always() && steps.modified.outputs.rust_src == 'true'
         uses: taiki-e/cache-cargo-install-action@v1
         with:
           tool: cargo-deny
       - name: cargo clippy
-        if: steps.modified.outputs.rust_src == 'true'
+        if: always() && steps.modified.outputs.rust_src == 'true'
         run: cargo clippy --workspace --tests --all-features
         working-directory: ./quickwit
       - name: cargo deny
-        if: steps.modified.outputs.rust_src == 'true'
+        if: always() && steps.modified.outputs.rust_src == 'true'
         run: cargo deny check licenses
         working-directory: ./quickwit
       - name: cargo doc
-        if: steps.modified.outputs.rust_src == 'true'
+        if: always() && steps.modified.outputs.rust_src == 'true'
         run: cargo doc
         working-directory: ./quickwit
       - name: License headers check
@@ -146,6 +146,6 @@ jobs:
         run: bash scripts/check_license_headers.sh
         working-directory: ./quickwit
       - name: rustfmt
-        if: steps.modified.outputs.rust_src == 'true'
+        if: always() && steps.modified.outputs.rust_src == 'true'
         run: cargo +nightly fmt --all -- --check
         working-directory: ./quickwit
