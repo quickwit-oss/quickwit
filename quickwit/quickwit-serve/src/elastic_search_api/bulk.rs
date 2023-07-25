@@ -120,7 +120,7 @@ async fn elastic_ingest_bulk(
     let commit_type: CommitType = ingest_options.refresh.into();
     let ingest_request = IngestRequest {
         doc_batches,
-        commit: commit_type as u32,
+        commit: commit_type.into(),
     };
     let ingest_response = ingest_service.ingest(ingest_request).await?;
     Ok(ingest_response)

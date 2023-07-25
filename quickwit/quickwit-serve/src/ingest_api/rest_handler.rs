@@ -107,13 +107,12 @@ async fn ingest(
     // The size of the body should be an upper bound of the size of the batch. The removal of the
     // end of line character for each doc compensates the addition of the `DocCommand` header.
     let mut doc_batch_builder = DocBatchBuilder::with_capacity(index_id, body.remaining());
-
     for line in lines(&body) {
         doc_batch_builder.ingest_doc(line);
     }
     let ingest_req = IngestRequest {
         doc_batches: vec![doc_batch_builder.build()],
-        commit: ingest_options.commit_type as u32,
+        commit: ingest_options.commit_type.into(),
     };
     let ingest_response = ingest_service.ingest(ingest_req).await?;
     Ok(ingest_response)

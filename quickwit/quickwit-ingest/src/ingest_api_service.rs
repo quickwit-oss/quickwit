@@ -182,7 +182,7 @@ impl IngestApiService {
                 .queues
                 .append_batch(&doc_batch.index_id, records_it, ctx)
                 .await?;
-            let commit = CommitType::from(request.commit);
+            let commit = request.commit();
             if let Some(max_position) = max_position {
                 if commit != CommitType::Auto {
                     if commit == CommitType::Force {
@@ -429,7 +429,7 @@ mod tests {
                     doc_lengths: vec![1, 3, 2],
                 },
             ],
-            commit: CommitType::Auto as u32,
+            commit: CommitType::Auto.into(),
         };
         assert_eq!(ingest_request.cost(), 9);
     }
@@ -458,7 +458,7 @@ mod tests {
 
         let ingest_request = IngestRequest {
             doc_batches: vec![batch.build()],
-            commit: CommitType::Force as u32,
+            commit: CommitType::Force.into(),
         };
         let ingest_response = ingest_api_service
             .send_message(ingest_request)
@@ -517,7 +517,7 @@ mod tests {
 
         let ingest_request = IngestRequest {
             doc_batches: vec![batch.build()],
-            commit: CommitType::WaitFor as u32,
+            commit: CommitType::WaitFor.into(),
         };
         let ingest_response = ingest_api_service
             .send_message(ingest_request)

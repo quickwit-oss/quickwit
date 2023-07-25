@@ -32,8 +32,8 @@ pub struct DropQueueRequest {
 pub struct IngestRequest {
     #[prost(message, repeated, tag = "1")]
     pub doc_batches: ::prost::alloc::vec::Vec<DocBatch>,
-    #[prost(uint32, tag = "2")]
-    pub commit: u32,
+    #[prost(enumeration = "CommitType", tag = "2")]
+    pub commit: i32,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -74,19 +74,19 @@ pub struct DocBatch {
     #[prost(uint32, repeated, tag = "3")]
     pub doc_lengths: ::prost::alloc::vec::Vec<u32>,
 }
-/// / Suggest to truncate the queue.
-/// /
-/// / This function allows the queue to remove all records up to and
-/// / including `up_to_offset_included`.
-/// /
-/// / The role of this truncation is to release memory and disk space.
-/// /
-/// / There are no guarantees that the record will effectively be removed.
-/// / Nothing might happen, or the truncation might be partial.
-/// /
-/// / In other words, truncating from a position, and fetching records starting
-/// / earlier than this position can yield undefined result:
-/// / the truncated records may or may not be returned.
+/// Suggest to truncate the queue.
+///
+/// This function allows the queue to remove all records up to and
+/// including `up_to_offset_included`.
+///
+/// The role of this truncation is to release memory and disk space.
+///
+/// There are no guarantees that the record will effectively be removed.
+/// Nothing might happen, or the truncation might be partial.
+///
+/// In other words, truncating from a position, and fetching records starting
+/// earlier than this position can yield undefined result:
+/// the truncated records may or may not be returned.
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -113,6 +113,42 @@ pub struct ListQueuesRequest {}
 pub struct ListQueuesResponse {
     #[prost(string, repeated, tag = "1")]
     pub queues: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+/// Specifies if the ingest request should block waiting for the records to be committed.
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum CommitType {
+    /// The request doesn't wait for commit
+    Auto = 0,
+    /// The request waits for the next scheduled commit to finish.
+    WaitFor = 1,
+    /// The request forces an immediate commit after the last document in the batch and waits for
+    /// it to finish.
+    Force = 2,
+}
+impl CommitType {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            CommitType::Auto => "Auto",
+            CommitType::WaitFor => "WaitFor",
+            CommitType::Force => "Force",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "Auto" => Some(Self::Auto),
+            "WaitFor" => Some(Self::WaitFor),
+            "Force" => Some(Self::Force),
+            _ => None,
+        }
+    }
 }
 /// BEGIN quickwit-codegen
 use tower::{Layer, Service, ServiceExt};
@@ -751,13 +787,13 @@ pub mod ingest_service_grpc_client {
             self.inner = self.inner.max_encoding_message_size(limit);
             self
         }
-        /// / Ingests document in a given queue.
-        /// /
-        /// / Upon any kind of error, the client should
-        /// / - retry to get at least once delivery.
-        /// / - not retry to get at most once delivery.
-        /// /
-        /// / Exactly once delivery is not supported yet.
+        /// Ingests document in a given queue.
+        ///
+        /// Upon any kind of error, the client should
+        /// - retry to get at least once delivery.
+        /// - not retry to get at most once delivery.
+        ///
+        /// Exactly once delivery is not supported yet.
         pub async fn ingest(
             &mut self,
             request: impl tonic::IntoRequest<super::IngestRequest>,
@@ -780,16 +816,16 @@ pub mod ingest_service_grpc_client {
                 .insert(GrpcMethod::new("ingest_service.IngestService", "Ingest"));
             self.inner.unary(req, path, codec).await
         }
-        /// / Fetches record from a given queue.
-        /// /
-        /// / Records are returned in order.
-        /// /
-        /// / The returned `FetchResponse` object is meant to be read with the
-        /// / `crate::iter_records` function.
-        /// /
-        /// / Fetching does not necessarily return all of the available records.
-        /// / If returning all records would exceed `FETCH_PAYLOAD_LIMIT` (2MB),
-        /// / the response will be partial.
+        /// Fetches record from a given queue.
+        ///
+        /// Records are returned in order.
+        ///
+        /// The returned `FetchResponse` object is meant to be read with the
+        /// `crate::iter_records` function.
+        ///
+        /// Fetching does not necessarily return all of the available records.
+        /// If returning all records would exceed `FETCH_PAYLOAD_LIMIT` (2MB),
+        /// the response will be partial.
         pub async fn fetch(
             &mut self,
             request: impl tonic::IntoRequest<super::FetchRequest>,
@@ -812,11 +848,11 @@ pub mod ingest_service_grpc_client {
                 .insert(GrpcMethod::new("ingest_service.IngestService", "Fetch"));
             self.inner.unary(req, path, codec).await
         }
-        /// / Returns a batch containing the last records.
-        /// /
-        /// / It returns the last documents, from the newest
-        /// / to the oldest, and stops as soon as `FETCH_PAYLOAD_LIMIT` (2MB)
-        /// / is exceeded.
+        /// Returns a batch containing the last records.
+        ///
+        /// It returns the last documents, from the newest
+        /// to the oldest, and stops as soon as `FETCH_PAYLOAD_LIMIT` (2MB)
+        /// is exceeded.
         pub async fn tail(
             &mut self,
             request: impl tonic::IntoRequest<super::TailRequest>,
@@ -848,36 +884,36 @@ pub mod ingest_service_grpc_server {
     /// Generated trait containing gRPC methods that should be implemented for use with IngestServiceGrpcServer.
     #[async_trait]
     pub trait IngestServiceGrpc: Send + Sync + 'static {
-        /// / Ingests document in a given queue.
-        /// /
-        /// / Upon any kind of error, the client should
-        /// / - retry to get at least once delivery.
-        /// / - not retry to get at most once delivery.
-        /// /
-        /// / Exactly once delivery is not supported yet.
+        /// Ingests document in a given queue.
+        ///
+        /// Upon any kind of error, the client should
+        /// - retry to get at least once delivery.
+        /// - not retry to get at most once delivery.
+        ///
+        /// Exactly once delivery is not supported yet.
         async fn ingest(
             &self,
             request: tonic::Request<super::IngestRequest>,
         ) -> std::result::Result<tonic::Response<super::IngestResponse>, tonic::Status>;
-        /// / Fetches record from a given queue.
-        /// /
-        /// / Records are returned in order.
-        /// /
-        /// / The returned `FetchResponse` object is meant to be read with the
-        /// / `crate::iter_records` function.
-        /// /
-        /// / Fetching does not necessarily return all of the available records.
-        /// / If returning all records would exceed `FETCH_PAYLOAD_LIMIT` (2MB),
-        /// / the response will be partial.
+        /// Fetches record from a given queue.
+        ///
+        /// Records are returned in order.
+        ///
+        /// The returned `FetchResponse` object is meant to be read with the
+        /// `crate::iter_records` function.
+        ///
+        /// Fetching does not necessarily return all of the available records.
+        /// If returning all records would exceed `FETCH_PAYLOAD_LIMIT` (2MB),
+        /// the response will be partial.
         async fn fetch(
             &self,
             request: tonic::Request<super::FetchRequest>,
         ) -> std::result::Result<tonic::Response<super::FetchResponse>, tonic::Status>;
-        /// / Returns a batch containing the last records.
-        /// /
-        /// / It returns the last documents, from the newest
-        /// / to the oldest, and stops as soon as `FETCH_PAYLOAD_LIMIT` (2MB)
-        /// / is exceeded.
+        /// Returns a batch containing the last records.
+        ///
+        /// It returns the last documents, from the newest
+        /// to the oldest, and stops as soon as `FETCH_PAYLOAD_LIMIT` (2MB)
+        /// is exceeded.
         async fn tail(
             &self,
             request: tonic::Request<super::TailRequest>,

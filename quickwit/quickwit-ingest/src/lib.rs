@@ -42,7 +42,6 @@ pub use position::Position;
 pub use queue::Queues;
 use quickwit_actors::{Mailbox, Universe};
 use quickwit_config::IngestApiConfig;
-use serde::Deserialize;
 use tokio::sync::Mutex;
 
 mod doc_batch;
@@ -112,33 +111,6 @@ pub async fn start_ingest_api_service(
 ) -> anyhow::Result<Mailbox<IngestApiService>> {
     let queues_dir_path = data_dir_path.join(QUEUES_DIR_NAME);
     init_ingest_api(universe, &queues_dir_path, config).await
-}
-
-/// Specifies if the ingest request should block waiting for the records to be committed.
-#[repr(u32)]
-#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, utoipa::ToSchema)]
-#[serde(rename_all(deserialize = "snake_case"))]
-#[derive(Default)]
-pub enum CommitType {
-    #[default]
-    /// The request doesn't wait for commit
-    Auto = 0,
-    /// The request waits for the next scheduled commit to finish.
-    WaitFor = 1,
-    /// The request forces an immediate commit after the last document in the batch and waits for
-    /// it to finish.
-    Force = 2,
-}
-
-impl From<u32> for CommitType {
-    fn from(value: u32) -> Self {
-        match value {
-            0 => CommitType::Auto,
-            1 => CommitType::WaitFor,
-            2 => CommitType::Force,
-            _ => panic!("Unknown commit type {value}"),
-        }
-    }
 }
 
 impl CommitType {
@@ -223,7 +195,7 @@ mod tests {
                     doc_lengths: vec![2],
                 },
             ],
-            commit: CommitType::Auto as u32,
+            commit: CommitType::Auto.into(),
         };
         let ingest_result = ingest_api_service.ask_for_res(ingest_request).await;
         assert!(ingest_result.is_err());
@@ -268,7 +240,7 @@ mod tests {
                 doc_buffer: vec![1; 600].into(),
                 doc_lengths: vec![30; 20],
             }],
-            commit: CommitType::Auto as u32,
+            commit: CommitType::Auto.into(),
         };
 
         ingest_api_service
