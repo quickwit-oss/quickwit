@@ -86,7 +86,7 @@ def run_request_step(method, step):
     if ndjson is not None:
         kvargs["data"] = "\n".join([json.dumps(doc) for doc in ndjson])
         kvargs.setdefault("headers")["Content-Type"] = "application/json"
-    expected_status_code = step.get("status_code", None)
+    expected_status_code = step.get("status_code", 200)
     num_retries = step.get("num_retries", 0)
     run_req = lambda : method_req(url, **kvargs)
     r = run_request_with_retry(run_req, expected_status_code, num_retries)
