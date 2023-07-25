@@ -28,6 +28,7 @@ json:
 # Ingest documents
 method: POST
 endpoint: _bulk
+num_retries: 10
 params:
   refresh: "true"
 headers: {"Content-Type": "application/json"}
