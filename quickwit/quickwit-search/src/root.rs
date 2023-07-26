@@ -95,9 +95,9 @@ impl Job for SearchJob {
     }
 }
 
-pub(crate) struct FetchDocsJob {
+struct FetchDocsJob {
     offsets: SplitIdAndFooterOffsets,
-    pub partial_hits: Vec<PartialHit>,
+    partial_hits: Vec<PartialHit>,
 }
 
 impl Job for FetchDocsJob {
@@ -186,7 +186,7 @@ fn validate_sort_by_field(field_name: &str, schema: &Schema) -> crate::Result<()
     Ok(())
 }
 
-pub(crate) fn validate_request(
+fn validate_request(
     doc_mapper: &dyn DocMapper,
     search_request: &SearchRequest,
 ) -> crate::Result<()> {
@@ -566,7 +566,7 @@ impl<'a, 'b> QueryAstVisitor<'b> for ExtractTimestampRange<'a> {
     }
 }
 
-pub fn finalize_aggregation(
+fn finalize_aggregation(
     intermediate_aggregation_result: Option<Vec<u8>>,
     aggregations: Option<QuickwitAggregations>,
     searcher_context: &SearcherContext,
