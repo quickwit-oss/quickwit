@@ -450,6 +450,25 @@ impl<E: fmt::Debug + ServiceError> ServiceError for quickwit_actors::AskError<E>
     }
 }
 
+impl SortOrder {
+    pub fn compare_opt<T: Ord>(&self, this: &Option<T>, other: &Option<T>) -> Ordering {
+        match (this, other) {
+            (Some(this), Some(other)) => self.compare(this, other),
+            (Some(_), None) => Ordering::Greater,
+            (None, Some(_)) => Ordering::Less,
+            (None, None) => Ordering::Equal,
+        }
+    }
+
+    pub fn compare<T: Ord>(&self, this: &T, other: &T) -> Ordering {
+        if self == &SortOrder::Desc {
+            this.cmp(other)
+        } else {
+            other.cmp(this)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

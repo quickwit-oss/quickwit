@@ -36,7 +36,6 @@ use quickwit_query::query_ast::QueryAst;
 use quickwit_storage::{
     wrap_storage_with_long_term_cache, BundleStorage, MemorySizedCache, OwnedBytes, Storage,
 };
-use tantivy::collector::Collector;
 use tantivy::directory::FileSlice;
 use tantivy::fastfield::FastFieldReaders;
 use tantivy::schema::{Field, FieldType};
@@ -514,14 +513,6 @@ impl CanSplitDoBetter {
         }
     }
 
-    /// Returns whether it is useful to iteratively merge instead of merging all at once.
-    pub fn iterative_merge(&self) -> bool {
-        !matches!(
-            *self.inner.read().unwrap(),
-            MutCanSplitDoBetter::Uninformative
-        )
-    }
-
     /// Whether we should wash score and rely only on document GlobalAddress.
     ///
     /// Currently, documents are sorted by (Score, SplitId, SegmentId, DocId),
@@ -639,83 +630,43 @@ pub async fn leaf_search(
         make_merge_collector(&request, &searcher_context.get_aggregation_limits())?;
 
     let wash_score = split_filter.should_wash_score();
-    if split_filter.iterative_merge() {
-        // TODO we know splits processed and pending, and the current worst-best result.
-        // If !run_all_splits, we could cancel pending tasks based on that.
-        let mut incremental_merge_collector = IncrementalCollector::new(merge_collector);
-        while let Some(split_search_res) = leaf_search_single_split_futures.next().await {
-            match split_search_res {
-                Ok(Ok(mut split_search_res)) => {
-                    if wash_score {
-                        for hit in &mut split_search_res.partial_hits {
-                            hit.sort_value = None;
-                            hit.sort_value2 = None;
-                        }
+    // TODO we know splits processed and pending, and the current worst-best result.
+    // If !run_all_splits, we could cancel pending tasks based on that.
+    let mut incremental_merge_collector = IncrementalCollector::new(merge_collector);
+    while let Some(split_search_res) = leaf_search_single_split_futures.next().await {
+        match split_search_res {
+            Ok(Ok(mut split_search_res)) => {
+                if wash_score {
+                    for hit in &mut split_search_res.partial_hits {
+                        hit.sort_value = None;
+                        hit.sort_value2 = None;
                     }
+                }
 
-                    incremental_merge_collector.add_split(split_search_res);
-                }
-                Ok(Err((split_id, err))) => {
-                    incremental_merge_collector.add_failed_split(SplitSearchError {
-                        split_id,
-                        error: format!("{err}"),
-                        retryable_error: true,
-                    })
-                }
-                Err(e) => incremental_merge_collector.add_failed_split(SplitSearchError {
-                    split_id: "unknown".to_string(),
-                    error: format!("{}", SearchError::from(e)),
+                incremental_merge_collector.add_split(split_search_res);
+            }
+            Ok(Err((split_id, err))) => {
+                incremental_merge_collector.add_failed_split(SplitSearchError {
+                    split_id,
+                    error: format!("{err}"),
                     retryable_error: true,
-                }),
+                })
             }
-
-            if let Some(last_hit) = incremental_merge_collector.peek_worst_hit() {
-                split_filter.record_new_worst_hit(last_hit);
-            }
+            Err(e) => incremental_merge_collector.add_failed_split(SplitSearchError {
+                split_id: "unknown".to_string(),
+                error: format!("{}", SearchError::from(e)),
+                retryable_error: true,
+            }),
         }
 
-        crate::run_cpu_intensive(|| incremental_merge_collector.finalize().map_err(Into::into))
-            .await
-            .context("Failed to merge split search responses.")?
-    } else {
-        // not by doc_id inside a split.
-        let split_search_results = leaf_search_single_split_futures.collect::<Vec<_>>().await;
-
-        // the result wrapping is only for the collector api merge_fruits
-        // (Vec<tantivy::Result<LeafSearchResponse>>)
-        let (split_search_responses, errors): (
-            Vec<tantivy::Result<LeafSearchResponse>>,
-            Vec<(String, SearchError)>,
-        ) = split_search_results.into_iter().partition_map(
-            |split_search_res| match split_search_res {
-                Ok(Ok(split_search_resp)) => Either::Left(Ok(split_search_resp)),
-                Ok(Err(err)) => Either::Right(err),
-                Err(e) => {
-                    warn!("A leaf_search_single_split panicked");
-                    Either::Right(("unknown".to_string(), e.into()))
-                }
-            },
-        );
-
-        // Merging is a cpu-bound task.
-        // It should be executed by Tokio's blocking threads.
-        let span = info_span!("merge_search_responses");
-        let mut merged_search_response = crate::run_cpu_intensive(move || {
-            let _span_guard = span.enter();
-            merge_collector.merge_fruits(split_search_responses)
-        })
-        .await
-        .context("Failed to merge split search responses.")??;
-
-        merged_search_response
-            .failed_splits
-            .extend(errors.into_iter().map(|(split_id, err)| SplitSearchError {
-                split_id,
-                error: format!("{err}"),
-                retryable_error: true,
-            }));
-        Ok(merged_search_response)
+        if let Some(last_hit) = incremental_merge_collector.peek_worst_hit() {
+            split_filter.record_new_worst_hit(last_hit);
+        }
     }
+
+    crate::run_cpu_intensive(|| incremental_merge_collector.finalize().map_err(Into::into))
+        .await
+        .context("Failed to merge split search responses.")?
 }
 
 /// Apply a leaf list terms on a single split.
