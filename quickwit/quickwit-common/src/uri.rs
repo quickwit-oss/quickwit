@@ -486,6 +486,12 @@ mod tests {
             Uri::from_str("azure://account/container/homer/docs/../dognuts").unwrap(),
             "azure://account/container/homer/docs/../dognuts"
         );
+
+        assert_eq!(
+            Uri::from_str("http://localhost:9000/quickwit").unwrap_err().to_string(),
+            "Unknown URI protocol `http`."
+        );
+
     }
 
     #[test]
