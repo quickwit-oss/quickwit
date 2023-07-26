@@ -52,10 +52,10 @@ jobs:
         with:
           filters: |
             rust_src:
-              - quickwit/**.rs
-              - quickwit/**.toml
-              - quickwit/**.proto
-              - ./quickwit/rest-api-tests/**
+              - quickwit/**/*.rs
+              - quickwit/**/*.toml
+              - quickwit/**/*.proto
+              - quickwit/rest-api-tests/**
       # The following step is just meant to install rustup actually.
       # The next one installs the correct toolchain.
       - name: Install rustup
@@ -103,11 +103,11 @@ jobs:
         with:
           filters: |
             rust_src:
-              - quickwit/**.rs
-              - quickwit/**.toml
-              - quickwit/**.proto
+              - quickwit/**/*.rs
+              - quickwit/**/*.toml
+              - quickwit/**/*.proto
       - name: Install Ubuntu packages
-        if: steps.modified.outputs.rust_src == 'true'
+        if: always() && steps.modified.outputs.rust_src == 'true'
         run: sudo apt-get -y install protobuf-compiler python3 python3-pip
       - name: Setup nightly Rust Toolchain (for rustfmt)
         uses: actions-rs/toolchain@v1
