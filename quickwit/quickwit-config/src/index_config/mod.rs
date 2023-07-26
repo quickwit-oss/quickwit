@@ -68,8 +68,8 @@ pub struct DocMapping {
     #[serde(default)]
     pub timestamp_field: Option<String>,
     #[serde_multikey(
-        deserializer = parse_dynamic_mapping,
-        serializer = serialize_dynamic_mapping,
+        deserializer = Mode::from_parts,
+        serializer = Mode::into_parts,
         fields = (
             #[serde(default)]
             mode: ModeType,
@@ -86,30 +86,6 @@ pub struct DocMapping {
     pub max_num_partitions: NonZeroU32,
     #[serde(default)]
     pub tokenizers: Vec<TokenizerEntry>,
-}
-
-fn parse_dynamic_mapping(
-    mode: ModeType,
-    dynamic_mapping: Option<QuickwitJsonOptions>,
-) -> anyhow::Result<Mode> {
-    Ok(match (mode, dynamic_mapping) {
-        (ModeType::Lenient, None) => Mode::Lenient,
-        (ModeType::Strict, None) => Mode::Strict,
-        (ModeType::Dynamic, Some(dynamic_mapping)) => Mode::Dynamic(dynamic_mapping),
-        (ModeType::Dynamic, None) => Mode::default(), // Dynamic with default options
-        (_, Some(_)) => anyhow::bail!(
-            "`dynamic_mapping` is only allowed with mode=dynamic. (Here mode=`{:?}`)",
-            mode
-        ),
-    })
-}
-
-fn serialize_dynamic_mapping(mode: Mode) -> (ModeType, Option<QuickwitJsonOptions>) {
-    match mode {
-        Mode::Lenient => (ModeType::Lenient, None),
-        Mode::Strict => (ModeType::Strict, None),
-        Mode::Dynamic(json_options) => (ModeType::Dynamic, Some(json_options)),
-    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
@@ -539,16 +515,13 @@ pub fn build_doc_mapper(
     doc_mapping: &DocMapping,
     search_settings: &SearchSettings,
 ) -> anyhow::Result<Arc<dyn DocMapper>> {
-    // TODO actually updating DefaultDocMapperBuilder would be better
-    let (mode, dynamic_mapping) = serialize_dynamic_mapping(doc_mapping.mode.clone());
     let builder = DefaultDocMapperBuilder {
         store_source: doc_mapping.store_source,
         default_search_fields: search_settings.default_search_fields.clone(),
         timestamp_field: doc_mapping.timestamp_field.clone(),
         field_mappings: doc_mapping.field_mappings.clone(),
         tag_fields: doc_mapping.tag_fields.iter().cloned().collect(),
-        mode,
-        dynamic_mapping,
+        mode: doc_mapping.mode.clone(),
         partition_key: doc_mapping.partition_key.clone(),
         max_num_partitions: doc_mapping.max_num_partitions,
         tokenizers: doc_mapping.tokenizers.clone(),

@@ -29,8 +29,8 @@ use anyhow::bail;
 use once_cell::sync::Lazy;
 use regex::Regex;
 
-pub use self::default_mapper::{DefaultDocMapper, Mode};
-pub use self::default_mapper_builder::{DefaultDocMapperBuilder, ModeType};
+pub use self::default_mapper::DefaultDocMapper;
+pub use self::default_mapper_builder::{DefaultDocMapperBuilder, Mode, ModeType};
 pub use self::field_mapping_entry::{
     FastFieldOptions, FieldMappingEntry, QuickwitBytesOptions, QuickwitJsonOptions,
     QuickwitNumericOptions, QuickwitTextNormalizer, QuickwitTextOptions, TextIndexingOptions,

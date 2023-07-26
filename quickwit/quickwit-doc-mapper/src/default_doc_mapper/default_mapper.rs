@@ -39,38 +39,9 @@ use crate::doc_mapper::{JsonObject, Partition};
 use crate::query_builder::build_query;
 use crate::routing_expression::RoutingExpr;
 use crate::{
-    Cardinality, DocMapper, DocParsingError, ModeType, QueryParserError, TokenizerEntry,
-    WarmupInfo, DYNAMIC_FIELD_NAME, SOURCE_FIELD_NAME,
+    Cardinality, DocMapper, DocParsingError, Mode, QueryParserError, TokenizerEntry, WarmupInfo,
+    DYNAMIC_FIELD_NAME, SOURCE_FIELD_NAME,
 };
-
-/// Defines how an unmapped field should be handled.
-#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-pub enum Mode {
-    /// Lenient mode: unmapped fields are just ignored.
-    Lenient,
-    /// Strict mode: when parsing a document with an unmapped field, an error is yielded.
-    Strict,
-    /// Dynamic mode: unmapped fields are captured and handled according to the provided
-    /// configuration.
-    Dynamic(QuickwitJsonOptions),
-}
-
-impl Default for Mode {
-    fn default() -> Self {
-        Mode::Dynamic(QuickwitJsonOptions::default_dynamic())
-    }
-}
-
-impl Mode {
-    /// Extact the `ModeType` of this `Mode`
-    pub fn mode_type(&self) -> ModeType {
-        match self {
-            Mode::Lenient => ModeType::Lenient,
-            Mode::Strict => ModeType::Strict,
-            Mode::Dynamic(_) => ModeType::Dynamic,
-        }
-    }
-}
 
 /// Default [`DocMapper`] implementation
 /// which defines a set of rules to map json fields
@@ -159,7 +130,6 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
     type Error = anyhow::Error;
 
     fn try_from(builder: DefaultDocMapperBuilder) -> anyhow::Result<DefaultDocMapper> {
-        let mode = builder.mode()?;
         let mut schema_builder = Schema::builder();
         let field_mappings = build_mapping_tree(&builder.field_mappings, &mut schema_builder)?;
         let source_field = if builder.store_source {
@@ -172,7 +142,7 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
             validate_timestamp_field(timestamp_field_path, &field_mappings)?;
         };
 
-        let dynamic_field = if let Mode::Dynamic(json_options) = &mode {
+        let dynamic_field = if let Mode::Dynamic(json_options) = &builder.mode {
             Some(schema_builder.add_json_field(DYNAMIC_FIELD_NAME, json_options.clone()))
         } else {
             None
@@ -265,7 +235,7 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
             required_fields,
             partition_key,
             max_num_partitions: builder.max_num_partitions,
-            mode,
+            mode: builder.mode,
             tokenizer_entries: builder.tokenizers,
             tokenizer_manager,
         })
@@ -348,11 +318,6 @@ fn validate_fields_tokenizers(
 
 impl From<DefaultDocMapper> for DefaultDocMapperBuilder {
     fn from(default_doc_mapper: DefaultDocMapper) -> Self {
-        let mode = default_doc_mapper.mode.mode_type();
-        let dynamic_mapping: Option<QuickwitJsonOptions> = match &default_doc_mapper.mode {
-            Mode::Dynamic(mapping_options) => Some(mapping_options.clone()),
-            _ => None,
-        };
         let partition_key_str = default_doc_mapper.partition_key.to_string();
         let partition_key_opt: Option<String> = if partition_key_str.is_empty() {
             None
@@ -367,8 +332,7 @@ impl From<DefaultDocMapper> for DefaultDocMapperBuilder {
             field_mappings: default_doc_mapper.field_mappings.into(),
             tag_fields: default_doc_mapper.tag_field_names.into_iter().collect(),
             default_search_fields: default_doc_mapper.default_search_field_names,
-            mode,
-            dynamic_mapping,
+            mode: default_doc_mapper.mode,
             partition_key: partition_key_opt,
             max_num_partitions: default_doc_mapper.max_num_partitions,
             tokenizers: default_doc_mapper.tokenizer_entries,
