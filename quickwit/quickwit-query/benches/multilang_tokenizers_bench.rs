@@ -59,6 +59,9 @@ const KOR_LONG: &str = r#"
 山도 山도 靑山도 안끼어 드는 소리
 "#;
 
+const WIKI_TEXT_CMN: &str = include_str!("wiki-cmn.txt");
+const WIKI_TEXT_ENG: &str = include_str!("wiki-eng.txt");
+
 fn process_tokens(analyzer: &mut TextAnalyzer, text: &str) -> Vec<Token> {
     let mut token_stream = analyzer.token_stream(text);
     let mut tokens: Vec<Token> = vec![];
@@ -70,97 +73,102 @@ pub fn tokenizers_throughput_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("multilang");
     let tokenizer_manager = create_default_quickwit_tokenizer_manager();
     let mut default_tokenizer = tokenizer_manager.get("default").unwrap();
-    let mut multilang_tokenizer = tokenizer_manager.get("multilang").unwrap();
+    let mut multilang_tokenizer = tokenizer_manager.get("multilang_default").unwrap();
     let mut chinese_tokenizer = tokenizer_manager.get("chinese_compatible").unwrap();
 
+    // group
+    //     .throughput(Throughput::Bytes(ASCII_SHORT.len() as u64))
+    //     .bench_with_input("default-tokenize-short", ASCII_SHORT, |b, text| {
+    //         b.iter(|| process_tokens(&mut default_tokenizer, black_box(text)));
+    //     });
+    // group
+    //     .throughput(Throughput::Bytes(ASCII_LONG.len() as u64))
+    //     .bench_with_input("default-tokenize-long", ASCII_LONG, |b, text| {
+    //         b.iter(|| process_tokens(&mut default_tokenizer, black_box(text)));
+    //     });
+    // group
+    //     .throughput(Throughput::Bytes(ASCII_SHORT.len() as u64))
+    //     .bench_with_input("multilang-eng-tokenize-short", ASCII_SHORT, |b, text| {
+    //         b.iter(|| process_tokens(&mut multilang_tokenizer, black_box(text)));
+    //     });
+    // group
+    //     .throughput(Throughput::Bytes(ASCII_LONG.len() as u64))
+    //     .bench_with_input("multilang-eng-tokenize-long", ASCII_LONG, |b, text| {
+    //         b.iter(|| process_tokens(&mut multilang_tokenizer, black_box(text)));
+    //     });
+    // let short_with_prefix = "ENG:".to_string() + ASCII_SHORT;
+    // group
+    //     .throughput(Throughput::Bytes(ASCII_SHORT.len() as u64))
+    //     .bench_with_input(
+    //         "multilang-tokenize-short-with-prefix",
+    //         &short_with_prefix,
+    //         |b, text| {
+    //             b.iter(|| process_tokens(&mut multilang_tokenizer, black_box(text)));
+    //         },
+    //     );
+    // let long_with_prefix = "ENG:".to_string() + ASCII_LONG;
+    // group
+    //     .throughput(Throughput::Bytes(ASCII_LONG.len() as u64))
+    //     .bench_with_input(
+    //         "multilang-tokenize-long-with-prefix",
+    //         &long_with_prefix,
+    //         |b, text| {
+    //             b.iter(|| process_tokens(&mut multilang_tokenizer, black_box(text)));
+    //         },
+    //     );
+    // group
+    //     .throughput(Throughput::Bytes(JPN_SHORT.len() as u64))
+    //     .bench_with_input("multilang-tokenize-jpn-short", JPN_SHORT, |b, text| {
+    //         b.iter(|| process_tokens(&mut multilang_tokenizer, black_box(text)));
+    //     });
+    // group
+    //     .throughput(Throughput::Bytes(JPN_LONG.len() as u64))
+    //     .bench_with_input("multilang-tokenize-jpn-long", JPN_LONG, |b, text| {
+    //         b.iter(|| process_tokens(&mut multilang_tokenizer, black_box(text)));
+    //     });
+    // group
+    //     .throughput(Throughput::Bytes(CMN_SHORT.len() as u64))
+    //     .bench_with_input("multilang-tokenize-cmn-short", CMN_SHORT, |b, text| {
+    //         b.iter(|| process_tokens(&mut multilang_tokenizer, black_box(text)));
+    //     });
     group
-        .throughput(Throughput::Bytes(ASCII_SHORT.len() as u64))
-        .bench_with_input("default-tokenize-short", ASCII_SHORT, |b, text| {
-            b.iter(|| process_tokens(&mut default_tokenizer, black_box(text)));
-        });
-    group
-        .throughput(Throughput::Bytes(ASCII_LONG.len() as u64))
-        .bench_with_input("default-tokenize-long", ASCII_LONG, |b, text| {
-            b.iter(|| process_tokens(&mut default_tokenizer, black_box(text)));
-        });
-    group
-        .throughput(Throughput::Bytes(ASCII_SHORT.len() as u64))
-        .bench_with_input("multilang-eng-tokenize-short", ASCII_SHORT, |b, text| {
+        .throughput(Throughput::Bytes(WIKI_TEXT_CMN.len() as u64))
+        .bench_with_input("multilang-tokenize-cmn-long", WIKI_TEXT_CMN, |b, text| {
             b.iter(|| process_tokens(&mut multilang_tokenizer, black_box(text)));
         });
     group
-        .throughput(Throughput::Bytes(ASCII_LONG.len() as u64))
-        .bench_with_input("multilang-eng-tokenize-long", ASCII_LONG, |b, text| {
+        .throughput(Throughput::Bytes(WIKI_TEXT_ENG.len() as u64))
+        .bench_with_input("multilang-tokenize-eng-long", WIKI_TEXT_ENG, |b, text| {
             b.iter(|| process_tokens(&mut multilang_tokenizer, black_box(text)));
         });
-    let short_with_prefix = "ENG:".to_string() + ASCII_SHORT;
-    group
-        .throughput(Throughput::Bytes(ASCII_SHORT.len() as u64))
-        .bench_with_input(
-            "multilang-tokenize-short-with-prefix",
-            &short_with_prefix,
-            |b, text| {
-                b.iter(|| process_tokens(&mut multilang_tokenizer, black_box(text)));
-            },
-        );
-    let long_with_prefix = "ENG:".to_string() + ASCII_LONG;
-    group
-        .throughput(Throughput::Bytes(ASCII_LONG.len() as u64))
-        .bench_with_input(
-            "multilang-tokenize-long-with-prefix",
-            &long_with_prefix,
-            |b, text| {
-                b.iter(|| process_tokens(&mut multilang_tokenizer, black_box(text)));
-            },
-        );
-    group
-        .throughput(Throughput::Bytes(JPN_SHORT.len() as u64))
-        .bench_with_input("multilang-tokenize-jpn-short", JPN_SHORT, |b, text| {
-            b.iter(|| process_tokens(&mut multilang_tokenizer, black_box(text)));
-        });
-    group
-        .throughput(Throughput::Bytes(JPN_LONG.len() as u64))
-        .bench_with_input("multilang-tokenize-jpn-long", JPN_LONG, |b, text| {
-            b.iter(|| process_tokens(&mut multilang_tokenizer, black_box(text)));
-        });
-    group
-        .throughput(Throughput::Bytes(CMN_SHORT.len() as u64))
-        .bench_with_input("multilang-tokenize-cmn-short", CMN_SHORT, |b, text| {
-            b.iter(|| process_tokens(&mut multilang_tokenizer, black_box(text)));
-        });
-    group
-        .throughput(Throughput::Bytes(CMN_LONG.len() as u64))
-        .bench_with_input("multilang-tokenize-cmn-long", CMN_LONG, |b, text| {
-            b.iter(|| process_tokens(&mut multilang_tokenizer, black_box(text)));
-        });
-    group
-        .throughput(Throughput::Bytes(KOR_SHORT.len() as u64))
-        .bench_with_input("multilang-tokenize-kor-short", KOR_SHORT, |b, text| {
-            b.iter(|| process_tokens(&mut multilang_tokenizer, black_box(text)));
-        });
-    group
-        .throughput(Throughput::Bytes(KOR_LONG.len() as u64))
-        .bench_with_input("multilang-tokenize-kor-long", KOR_LONG, |b, text| {
-            b.iter(|| process_tokens(&mut multilang_tokenizer, black_box(text)));
-        });
-    group
-        .throughput(Throughput::Bytes(CMN_SHORT.len() as u64))
-        .bench_with_input(
-            "chinese-compatible-tokenize-cmn-short",
-            CMN_SHORT,
-            |b, text| {
-                b.iter(|| process_tokens(&mut chinese_tokenizer, black_box(text)));
-            },
-        );
-    group
-        .throughput(Throughput::Bytes(CMN_LONG.len() as u64))
-        .bench_with_input(
-            "chinese-compatible-tokenize-cmn-long",
-            CMN_LONG,
-            |b, text| {
-                b.iter(|| process_tokens(&mut chinese_tokenizer, black_box(text)));
-            },
-        );
+    // group
+    //     .throughput(Throughput::Bytes(KOR_SHORT.len() as u64))
+    //     .bench_with_input("multilang-tokenize-kor-short", KOR_SHORT, |b, text| {
+    //         b.iter(|| process_tokens(&mut multilang_tokenizer, black_box(text)));
+    //     });
+    // group
+    //     .throughput(Throughput::Bytes(KOR_LONG.len() as u64))
+    //     .bench_with_input("multilang-tokenize-kor-long", KOR_LONG, |b, text| {
+    //         b.iter(|| process_tokens(&mut multilang_tokenizer, black_box(text)));
+    //     });
+    // group
+    //     .throughput(Throughput::Bytes(CMN_SHORT.len() as u64))
+    //     .bench_with_input(
+    //         "chinese-compatible-tokenize-cmn-short",
+    //         CMN_SHORT,
+    //         |b, text| {
+    //             b.iter(|| process_tokens(&mut chinese_tokenizer, black_box(text)));
+    //         },
+    //     );
+    // group
+    //     .throughput(Throughput::Bytes(CMN_LONG.len() as u64))
+    //     .bench_with_input(
+    //         "chinese-compatible-tokenize-cmn-long",
+    //         CMN_LONG,
+    //         |b, text| {
+    //             b.iter(|| process_tokens(&mut chinese_tokenizer, black_box(text)));
+    //         },
+    //     );
 }
 
 criterion_group!(
