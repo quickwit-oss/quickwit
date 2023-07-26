@@ -905,18 +905,17 @@ impl Ord for PartialHitSortingKey {
             self.sort_order2, other.sort_order2,
             "comparing two PartialHitSortingKey of different ordering"
         );
-        let mut order = self.sort_value.cmp(&other.sort_value);
-        if self.sort_order == SortOrder::Asc {
-            order = order.reverse();
-        };
-        let mut order2 = self.sort_value2.cmp(&other.sort_value2);
-        if self.sort_order2 == SortOrder::Asc {
-            order2 = order2.reverse();
-        };
-        let mut order_addr = self.address.cmp(&other.address);
-        if self.sort_order == SortOrder::Asc {
-            order_addr = order_addr.reverse();
-        };
+
+        let order = self
+            .sort_order
+            .compare_opt(&self.sort_value, &other.sort_value);
+
+        let order2 = self
+            .sort_order2
+            .compare_opt(&self.sort_value2, &other.sort_value2);
+
+        let order_addr = self.sort_order.compare(&self.address, &other.address);
+
         order.then(order2).then(order_addr)
     }
 }
