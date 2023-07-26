@@ -80,7 +80,6 @@ pub struct DocMapping {
     pub mode: Mode,
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    // TODO 1686 really optional
     pub partition_key: Option<String>,
     #[schema(value_type = u32)]
     #[serde(default = "DefaultDocMapper::default_max_num_partitions")]
@@ -126,7 +125,6 @@ pub struct IndexingResources {
     #[schema(value_type = String)]
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    // TODO 1686 really optional
     pub max_merge_write_throughput: Option<Byte>,
 }
 

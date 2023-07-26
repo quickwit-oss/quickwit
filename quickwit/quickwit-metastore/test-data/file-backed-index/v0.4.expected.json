@@ -20,7 +20,9 @@
       "doc_mapping": {
         "dynamic_mapping": {
           "expand_dots": true,
-          "fast": true,
+          "fast": {
+            "normalizer": "raw"
+          },
           "indexed": true,
           "record": "basic",
           "stored": true,

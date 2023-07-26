@@ -9,7 +9,9 @@
     "doc_mapping": {
       "dynamic_mapping": {
         "expand_dots": true,
-        "fast": true,
+        "fast": {
+          "normalizer": "raw"
+        },
         "indexed": true,
         "record": "basic",
         "stored": true,
@@ -111,7 +113,8 @@
       "source_id": "kafka-source",
       "source_type": "kafka",
       "transform": {
-        "script": ".message = downcase(string!(.message))"
+        "script": ".message = downcase(string!(.message))",
+        "timezone": "UTC"
       },
       "version": "0.6"
     }

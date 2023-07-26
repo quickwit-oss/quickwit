@@ -74,7 +74,6 @@ pub struct SourceConfig {
 
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(rename = "transform")]
-    // TODO 1686 really optional
     pub transform_config: Option<TransformConfig>,
 
     // Denotes the input data format.
@@ -166,7 +165,7 @@ impl TestableForRegression for SourceConfig {
             }),
             transform_config: Some(TransformConfig {
                 vrl_script: ".message = downcase(string!(.message))".to_string(),
-                timezone_opt: None,
+                timezone: default_timezone(),
             }),
             input_format: SourceInputFormat::Json,
         }
@@ -241,7 +240,6 @@ pub struct FileSourceParams {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     #[serde(deserialize_with = "absolute_filepath_from_str")]
-    // TODO 1686 really optional
     pub filepath: Option<PathBuf>, //< If None read from stdin.
 }
 
@@ -277,18 +275,15 @@ pub struct KafkaSourceParams {
     /// Kafka client log level. Possible values are `debug`, `info`, `warn`, and `error`.
     #[schema(value_type = String)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    // TODO 1686 newtype arround RDKafkaLogLevel
     pub client_log_level: Option<String>,
     /// Kafka client configuration parameters.
     #[schema(value_type = Object)]
     #[serde(default = "serde_json::Value::default")]
     #[serde(skip_serializing_if = "serde_json::Value::is_null")]
-    // TODO 1686 should it do something?
     pub client_params: JsonValue,
     /// When backfill mode is enabled, the source exits after reaching the end of the topic.
     #[serde(default)]
     #[serde(skip_serializing_if = "is_false")]
-    // TODO 1686 really optional
     pub enable_backfill_mode: bool,
 }
 
@@ -307,7 +302,6 @@ pub struct KinesisSourceParams {
     pub region_or_endpoint: Option<RegionOrEndpoint>,
     /// When backfill mode is enabled, the source exits after reaching the end of the stream.
     #[serde(skip_serializing_if = "is_false")]
-    // TODO 1686 really optional
     pub enable_backfill_mode: bool,
 }
 
@@ -419,10 +413,12 @@ pub struct TransformConfig {
 
     /// Timezone used in the VRL [`Program`](vrl::compiler::Program) for date and time
     /// manipulations. Defaults to `UTC` if not timezone is specified.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    #[serde(rename = "timezone")]
-    // TODO 1686 UTC is a pretty stable default, should we really encode it?
-    timezone_opt: Option<String>,
+    #[serde(default = "default_timezone")]
+    timezone: String,
+}
+
+fn default_timezone() -> String {
+    "UTC".to_string()
 }
 
 impl TransformConfig {
@@ -431,7 +427,7 @@ impl TransformConfig {
     pub fn new(vrl_script: String, timezone_opt: Option<String>) -> Self {
         Self {
             vrl_script,
-            timezone_opt,
+            timezone: timezone_opt.unwrap_or_else(default_timezone),
         }
     }
 
@@ -457,11 +453,11 @@ impl TransformConfig {
         &self,
     ) -> anyhow::Result<(vrl::compiler::Program, vrl::compiler::TimeZone)> {
         use anyhow::Context;
-        let timezone_str = self.timezone_opt.as_deref().unwrap_or("UTC");
-        let timezone = vrl::compiler::TimeZone::parse(timezone_str).with_context(|| {
+        let timezone = vrl::compiler::TimeZone::parse(&self.timezone).with_context(|| {
             format!(
-                "Failed to parse timezone: `{timezone_str}`. Timezone must be a valid name \
-            in the TZ database: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones"
+                "Failed to parse timezone: `{}`. Timezone must be a valid name \
+            in the TZ database: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones",
+                self.timezone,
             )
         })?;
         // Append "\n." to the script to return the entire document and not only the modified
@@ -494,7 +490,7 @@ impl TransformConfig {
     pub fn for_test(vrl_script: &str) -> Self {
         Self {
             vrl_script: vrl_script.to_string(),
-            timezone_opt: None,
+            timezone: default_timezone(),
         }
     }
 }
@@ -539,7 +535,7 @@ mod tests {
             }),
             transform_config: Some(TransformConfig {
                 vrl_script: ".message = downcase(string!(.message))".to_string(),
-                timezone_opt: Some("local".to_string()),
+                timezone: "local".to_string(),
             }),
             input_format: SourceInputFormat::Json,
         };
@@ -635,7 +631,7 @@ mod tests {
             }),
             transform_config: Some(TransformConfig {
                 vrl_script: ".message = downcase(string!(.message))".to_string(),
-                timezone_opt: Some("local".to_string()),
+                timezone: "local".to_string(),
             }),
             input_format: SourceInputFormat::Json,
         };
@@ -1039,7 +1035,7 @@ mod tests {
             source_params: SourceParams::IngestApi,
             transform_config: Some(TransformConfig {
                 vrl_script: ".message = downcase(string!(.message))".to_string(),
-                timezone_opt: None,
+                timezone: default_timezone(),
             }),
             input_format: SourceInputFormat::Json,
         };
@@ -1052,7 +1048,7 @@ mod tests {
         {
             let transform_config = TransformConfig {
                 vrl_script: ".message = downcase(string!(.message))".to_string(),
-                timezone_opt: Some("local".to_string()),
+                timezone: "local".to_string(),
             };
             let transform_config_yaml = serde_yaml::to_string(&transform_config).unwrap();
             assert_eq!(
@@ -1063,7 +1059,7 @@ mod tests {
         {
             let transform_config = TransformConfig {
                 vrl_script: ".message = downcase(string!(.message))".to_string(),
-                timezone_opt: None,
+                timezone: default_timezone(),
             };
             let transform_config_yaml = serde_yaml::to_string(&transform_config).unwrap();
             assert_eq!(
@@ -1084,7 +1080,7 @@ mod tests {
 
             let expected_transform_config = TransformConfig {
                 vrl_script: ".message = downcase(string!(.message))".to_string(),
-                timezone_opt: None,
+                timezone: default_timezone(),
             };
             assert_eq!(transform_config, expected_transform_config);
         }
@@ -1098,7 +1094,7 @@ mod tests {
 
             let expected_transform_config = TransformConfig {
                 vrl_script: ".message = downcase(string!(.message))".to_string(),
-                timezone_opt: Some("Turkey".to_string()),
+                timezone: "Turkey".to_string(),
             };
             assert_eq!(transform_config, expected_transform_config);
         }
@@ -1110,7 +1106,7 @@ mod tests {
         {
             let transform_config = TransformConfig {
                 vrl_script: ".message = downcase(string!(.message))".to_string(),
-                timezone_opt: Some("Turkey".to_string()),
+                timezone: "Turkey".to_string(),
             };
             transform_config.compile_vrl_script().unwrap();
         }
@@ -1123,14 +1119,14 @@ mod tests {
                 .message = downcase(string!(.message))
                 "#
                 .to_string(),
-                timezone_opt: None,
+                timezone: default_timezone(),
             };
             transform_config.compile_vrl_script().unwrap();
         }
         {
             let transform_config = TransformConfig {
                 vrl_script: ".message = downcase(string!(.message))".to_string(),
-                timezone_opt: Some("foo".to_string()),
+                timezone: "foo".to_string(),
             };
             let error = transform_config.compile_vrl_script().unwrap_err();
             assert!(error.to_string().starts_with("Failed to parse timezone"));
@@ -1138,7 +1134,7 @@ mod tests {
         {
             let transform_config = TransformConfig {
                 vrl_script: "foo".to_string(),
-                timezone_opt: Some("Turkey".to_string()),
+                timezone: "Turkey".to_string(),
             };
             let error = transform_config.compile_vrl_script().unwrap_err();
             assert!(error.to_string().starts_with("Failed to compile"));

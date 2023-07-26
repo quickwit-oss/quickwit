@@ -88,7 +88,6 @@ pub(crate) struct FieldMappingEntryForSerialization {
 pub struct QuickwitNumericOptions {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    // TODO 1686 really optional
     pub description: Option<String>,
     #[serde(default = "default_as_true")]
     pub stored: bool,
@@ -114,7 +113,6 @@ impl Default for QuickwitNumericOptions {
 pub struct QuickwitBytesOptions {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    // TODO 1686 really optional
     pub description: Option<String>,
     #[serde(default = "default_as_true")]
     pub stored: bool,
@@ -194,7 +192,6 @@ impl BinaryFormat {
 pub struct QuickwitIpAddrOptions {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    // TODO 1686 really optional
     pub description: Option<String>,
     #[serde(default = "default_as_true")]
     pub stored: bool,
@@ -362,7 +359,6 @@ pub struct QuickwitTextOptions {
     #[schema(value_type = String)]
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    // TODO 1686 really optional
     pub description: Option<String>,
     #[serde_multikey(
         deserializer = TextIndexingOptions::from_parts_text,
@@ -401,6 +397,14 @@ pub enum FastFieldOptions {
     },
 }
 
+impl FastFieldOptions {
+    pub fn default_enabled() -> Self {
+        FastFieldOptions::EnabledWithNormalizer {
+            normalizer: QuickwitTextNormalizer::Raw,
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 #[serde(untagged)]
 enum FastFieldOptionsForSerialization {
@@ -413,9 +417,7 @@ impl From<FastFieldOptionsForSerialization> for FastFieldOptions {
         match fast_field_options {
             FastFieldOptionsForSerialization::IsEnabled(is_enabled) => {
                 if is_enabled {
-                    FastFieldOptions::EnabledWithNormalizer {
-                        normalizer: QuickwitTextNormalizer::Raw,
-                    }
+                    FastFieldOptions::default_enabled()
                 } else {
                     FastFieldOptions::Disabled
                 }
@@ -500,7 +502,6 @@ pub struct QuickwitJsonOptions {
     /// Optional description of JSON object.
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    // TODO 1686 really optional
     pub description: Option<String>,
     #[serde_multikey(
         deserializer = TextIndexingOptions::from_parts_json,
@@ -535,6 +536,16 @@ pub struct QuickwitJsonOptions {
     /// If true, the json object will be stored in columnar format.
     #[serde(default)]
     pub fast: FastFieldOptions,
+}
+
+impl QuickwitJsonOptions {
+    /// Build a default QuickwitJsonOptions for dynamic fields.
+    pub fn default_dynamic() -> Self {
+        QuickwitJsonOptions {
+            fast: FastFieldOptions::default_enabled(),
+            ..Default::default()
+        }
+    }
 }
 
 impl Default for QuickwitJsonOptions {

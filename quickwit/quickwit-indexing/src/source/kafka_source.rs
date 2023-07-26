@@ -703,6 +703,9 @@ fn parse_client_log_level(client_log_level: Option<String>) -> anyhow::Result<RD
         Some("info") | None => RDKafkaLogLevel::Info,
         Some("warn") | Some("warning") => RDKafkaLogLevel::Warning,
         Some("error") => RDKafkaLogLevel::Error,
+        Some("critical") => RDKafkaLogLevel::Critical,
+        Some("alert") => RDKafkaLogLevel::Alert,
+        Some("emerg") => RDKafkaLogLevel::Emerg,
         Some(level) => bail!(
             "Failed to parse Kafka client log level. Value `{}` is not supported.",
             level

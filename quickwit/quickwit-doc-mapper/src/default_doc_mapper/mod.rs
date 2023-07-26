@@ -33,7 +33,7 @@ pub use self::default_mapper::{DefaultDocMapper, Mode};
 pub use self::default_mapper_builder::{DefaultDocMapperBuilder, ModeType};
 pub use self::field_mapping_entry::{
     FastFieldOptions, FieldMappingEntry, QuickwitBytesOptions, QuickwitJsonOptions,
-    QuickwitNumericOptions, QuickwitTextNormalizer, QuickwitTextOptions,
+    QuickwitNumericOptions, QuickwitTextNormalizer, QuickwitTextOptions, TextIndexingOptions,
 };
 pub(crate) use self::field_mapping_entry::{
     FieldMappingEntryForSerialization, IndexRecordOptionSchema, QuickwitTextTokenizer,

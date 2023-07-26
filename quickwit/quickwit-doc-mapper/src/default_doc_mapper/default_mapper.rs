@@ -39,8 +39,8 @@ use crate::doc_mapper::{JsonObject, Partition};
 use crate::query_builder::build_query;
 use crate::routing_expression::RoutingExpr;
 use crate::{
-    Cardinality, DocMapper, DocParsingError, FastFieldOptions, ModeType, QueryParserError,
-    TokenizerEntry, WarmupInfo, DYNAMIC_FIELD_NAME, SOURCE_FIELD_NAME,
+    Cardinality, DocMapper, DocParsingError, ModeType, QueryParserError, TokenizerEntry,
+    WarmupInfo, DYNAMIC_FIELD_NAME, SOURCE_FIELD_NAME,
 };
 
 /// Defines how an unmapped field should be handled.
@@ -57,12 +57,7 @@ pub enum Mode {
 
 impl Default for Mode {
     fn default() -> Self {
-        // TODO arguably we should change QuickwitJsonOptions::default directly, or create a
-        // default_dynamic() method on it.
-        Mode::Dynamic(QuickwitJsonOptions {
-            fast: FastFieldOptions::IsEnabled(true),
-            ..Default::default()
-        })
+        Mode::Dynamic(QuickwitJsonOptions::default_dynamic())
     }
 }
 

@@ -238,11 +238,9 @@ pub struct AzureStorageConfig {
     #[serde(default)]
     #[serde(rename = "account")]
     #[serde(skip_serializing_if = "Option::is_none")]
-    // TODO 1686 really optional
     pub account_name: Option<String>,
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    // TODO 1686 really optional
     pub access_key: Option<String>,
 }
 
@@ -292,7 +290,6 @@ impl fmt::Debug for AzureStorageConfig {
 pub struct S3StorageConfig {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    // TODO 1686 really optional
     pub flavor: Option<StorageBackendFlavor>,
     #[serde(default)]
     pub access_key_id: Option<String>,

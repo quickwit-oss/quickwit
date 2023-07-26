@@ -32,7 +32,6 @@ use super::default_as_true;
 pub struct QuickwitDateTimeOptions {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    // TODO 1686 really optional
     pub description: Option<String>,
 
     /// Accepted input formats.
