@@ -497,7 +497,7 @@ impl CanSplitDoBetter {
                     // if we get a timestamp of, says 1.5s, we need to check up to 2s to make
                     // sure we don't throw away something like 1.2s, so we should round up while
                     // dividing.
-                    *timestamp = Some(quickwit_common::ceil_div(timestamp_ns, 1_000_000_000));
+                    *timestamp = Some(quickwit_common::div_ceil(timestamp_ns, 1_000_000_000));
                 }
             }
             MutCanSplitDoBetter::SplitTimestampLower(timestamp) => {

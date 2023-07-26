@@ -173,13 +173,14 @@ where T: Debug
 }
 
 #[inline]
-pub fn ceil_div(n: i64, q: i64) -> i64 {
-    assert!(q != 0i64);
-    // TODO trinity-1686a: i'm unsure about this assertion, i64::MIN makes more sense to me,
-    // and we would be better of using checked operation, q - 1 rarely underflow, but n+q-1
-    // can overflow a quitilion ways.
-    assert!(q != i64::MAX);
-    (n + (q - 1)) / q
+pub const fn div_ceil(lhs: i64, rhs: i64) -> i64 {
+    let d = lhs / rhs;
+    let r = lhs % rhs;
+    if (r > 0 && rhs > 0) || (r < 0 && rhs < 0) {
+        d + 1
+    } else {
+        d
+    }
 }
 
 #[cfg(test)]
@@ -239,10 +240,21 @@ mod tests {
     }
 
     #[test]
-    fn test_ceil_div() {
-        assert_eq!(ceil_div(5, 1), 5);
-        assert_eq!(ceil_div(5, 2), 3);
-        assert_eq!(ceil_div(6, 2), 3);
-        // we could also test negative numbers
+    fn test_div_ceil() {
+        assert_eq!(div_ceil(5, 1), 5);
+        assert_eq!(div_ceil(5, 2), 3);
+        assert_eq!(div_ceil(6, 2), 3);
+
+        assert_eq!(div_ceil(-5, 1), -5);
+        assert_eq!(div_ceil(-5, 2), -2);
+        assert_eq!(div_ceil(-6, 2), -3);
+
+        assert_eq!(div_ceil(5, -1), -5);
+        assert_eq!(div_ceil(5, -2), -2);
+        assert_eq!(div_ceil(6, -2), -3);
+
+        assert_eq!(div_ceil(-5, -1), 5);
+        assert_eq!(div_ceil(-5, -2), 3);
+        assert_eq!(div_ceil(-6, -2), 3);
     }
 }
