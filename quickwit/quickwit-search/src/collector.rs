@@ -326,8 +326,8 @@ impl PartialOrd for PartialHitHeapItem {
 impl Ord for PartialHitHeapItem {
     #[inline]
     fn cmp(&self, other: &Self) -> Ordering {
-        let by_sorting_field1 = other.sort_value_opt1.cmp(&self.sort_value_opt1);
-        let by_sorting_field2 = other.sort_value_opt2.cmp(&self.sort_value_opt2);
+        let by_sorting_field1 = self.sort_value_opt1.cmp(&other.sort_value_opt1);
+        let by_sorting_field2 = self.sort_value_opt2.cmp(&other.sort_value_opt2);
 
         let lazy_order_by_doc_id = || {
             self.doc_id
@@ -1043,17 +1043,33 @@ mod tests {
     #[test]
     fn test_partial_hit_ordered_by_sorting_field() {
         let lesser_score = PartialHitHeapItem {
-            doc_id: 1u32,
             sort_value_opt1: Some(1u64),
             sort_value_opt2: None,
+            doc_id: 1u32,
         };
         let higher_score = PartialHitHeapItem {
             sort_value_opt1: Some(2u64),
             sort_value_opt2: None,
             doc_id: 1u32,
         };
-        assert_eq!(lesser_score.cmp(&higher_score), Ordering::Greater);
+        assert_eq!(lesser_score.cmp(&higher_score), Ordering::Less);
     }
+
+    #[test]
+    fn test_partial_hit_ordered_by_doc_id() {
+        let lesser_score = PartialHitHeapItem {
+            sort_value_opt1: Some(1u64),
+            sort_value_opt2: None,
+            doc_id: 1u32,
+        };
+        let higher_score = PartialHitHeapItem {
+            sort_value_opt1: Some(1u64),
+            sort_value_opt2: None,
+            doc_id: 2u32,
+        };
+        assert_eq!(lesser_score.cmp(&higher_score), Ordering::Less);
+    }
+
     #[test]
     fn test_partial_hit_ordered_by_sorting_field_2() {
         let get_el = |val1, val2, docid| PartialHitHeapItem {
@@ -1073,12 +1089,12 @@ mod tests {
         assert_eq!(
             data,
             vec![
-                get_el(Some(2u64), Some(2u64), 1u32),
-                get_el(Some(2u64), Some(1u64), 1u32),
-                get_el(Some(2u64), None, 1u32),
-                get_el(Some(1u64), None, 1u32),
-                get_el(None, Some(1u64), 1u32),
                 get_el(None, None, 1u32),
+                get_el(None, Some(1u64), 1u32),
+                get_el(Some(1u64), None, 1u32),
+                get_el(Some(2u64), None, 1u32),
+                get_el(Some(2u64), Some(1u64), 1u32),
+                get_el(Some(2u64), Some(2u64), 1u32),
             ]
         );
     }
