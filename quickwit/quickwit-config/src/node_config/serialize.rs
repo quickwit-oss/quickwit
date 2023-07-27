@@ -455,7 +455,7 @@ mod tests {
         assert_eq!(config.data_dir_path, Path::new("/opt/quickwit/data"));
         assert_eq!(
             config.metastore_uri,
-            "postgres://username:password@host:port/db"
+            "postgresql://username:password@host:port/db"
         );
         assert_eq!(config.default_index_root_uri, "s3://quickwit-indexes");
 
@@ -618,7 +618,7 @@ mod tests {
         env_vars.insert("QW_DATA_DIR".to_string(), "test-data-dir".to_string());
         env_vars.insert(
             "QW_METASTORE_URI".to_string(),
-            "postgres://test-user:test-password@test-host:4321/test-db".to_string(),
+            "postgresql://test-user:test-password@test-host:4321/test-db".to_string(),
         );
         env_vars.insert(
             "QW_DEFAULT_INDEX_ROOT_URI".to_string(),
@@ -672,7 +672,7 @@ mod tests {
         );
         assert_eq!(
             config.metastore_uri,
-            "postgres://test-user:test-password@test-host:4321/test-db"
+            "postgresql://test-user:test-password@test-host:4321/test-db"
         );
         assert_eq!(config.default_index_root_uri, "s3://quickwit-indexes/prod");
     }
@@ -695,7 +695,7 @@ mod tests {
         assert_eq!(config.node_id, "node-1");
         assert_eq!(
             config.metastore_uri,
-            "postgres://username:password@host:port/db"
+            "postgresql://username:password@host:port/db"
         );
     }
 
@@ -715,7 +715,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             config.metastore_uri,
-            "postgres://username:password@host:port/db"
+            "postgresql://username:password@host:port/db"
         );
         assert_eq!(config.indexer_config, IndexerConfig::default());
         assert_eq!(config.searcher_config, SearcherConfig::default());
