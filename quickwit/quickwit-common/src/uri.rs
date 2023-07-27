@@ -488,10 +488,11 @@ mod tests {
         );
 
         assert_eq!(
-            Uri::from_str("http://localhost:9000/quickwit").unwrap_err().to_string(),
+            Uri::from_str("http://localhost:9000/quickwit")
+                .unwrap_err()
+                .to_string(),
             "Unknown URI protocol `http`."
         );
-
     }
 
     #[test]
