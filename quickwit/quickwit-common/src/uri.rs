@@ -275,10 +275,10 @@ impl Uri {
             bail!("Failed to parse empty URI.");
         }
         let (protocol, mut path) = match uri_str.split_once(PROTOCOL_SEPARATOR) {
-            None => (Protocol::File.as_str(), uri_str.to_string()),
-            Some((protocol, path)) => (protocol, path.to_string()),
+            None => (Protocol::File, uri_str.to_string()),
+            Some((protocol, path)) => (Protocol::from_str(protocol)?, path.to_string()),
         };
-        if protocol == Protocol::File.as_str() {
+        if protocol == Protocol::File {
             if path.starts_with('~') {
                 // We only accept `~` (alias to the home directory) and `~/path/to/something`.
                 // If there is something following the `~` that is not `/`, we bail.
@@ -306,7 +306,7 @@ impl Uri {
         }
         Ok(Self {
             uri: format!("{protocol}{PROTOCOL_SEPARATOR}{path}"),
-            protocol_idx: protocol.len(),
+            protocol_idx: protocol.as_str().len(),
         })
     }
 }
@@ -485,6 +485,13 @@ mod tests {
         assert_eq!(
             Uri::from_str("azure://account/container/homer/docs/../dognuts").unwrap(),
             "azure://account/container/homer/docs/../dognuts"
+        );
+
+        assert_eq!(
+            Uri::from_str("http://localhost:9000/quickwit")
+                .unwrap_err()
+                .to_string(),
+            "Unknown URI protocol `http`."
         );
     }
 
