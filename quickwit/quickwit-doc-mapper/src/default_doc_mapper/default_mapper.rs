@@ -127,6 +127,12 @@ fn validate_timestamp_field(
     timestamp_field_path: &str,
     mapping_root_node: &MappingNode,
 ) -> anyhow::Result<()> {
+    if timestamp_field_path.starts_with(".") {
+        bail!("Timestamp field `{timestamp_field_path}` should not start with a `.`.");
+    }
+    if timestamp_field_path.ends_with(".") {
+        bail!("Timestamp field `{timestamp_field_path}` should not end with a `.`.");
+    }
     let Some(timestamp_field_type) =
         mapping_root_node.find_field_mapping_type(timestamp_field_path)
     else {
@@ -269,6 +275,12 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
 /// - if str, the field must use the `raw` tokenizer for indexing.
 /// - the field must be indexed.
 fn validate_tag(tag_field_name: &str, schema: &Schema) -> Result<(), anyhow::Error> {
+    if tag_field_name.starts_with(".") {
+        bail!("Tag field `{tag_field_name}` should not start with a `.`.");
+    }
+    if tag_field_name.ends_with(".") {
+        bail!("Tag field `{tag_field_name}` should not end with a `.`.");
+    }
     let field = schema
         .get_field(tag_field_name)
         .with_context(|| format!("Unknown tag field: `{tag_field_name}`"))?;
@@ -719,6 +731,18 @@ mod tests {
         )
         .unwrap();
     }
+
+    #[test]
+    fn test_timestamp_field_that_start_with_dot_is_invalid() {}
+
+    #[test]
+    fn test_timestamp_field_that_ends_with_dot_is_invalid() {}
+
+    #[test]
+    fn test_tag_field_name_that_starts_with_dot_is_invalid() {}
+
+    #[test]
+    fn test_tag_field_name_that_ends_with_dot_is_invalid() {}
 
     #[test]
     fn test_fail_to_build_doc_mapper_with_timestamp_field_with_multivalues_cardinality() {
