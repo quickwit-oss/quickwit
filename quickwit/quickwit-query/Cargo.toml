@@ -25,6 +25,7 @@ thiserror = { workspace = true }
 tracing = { workspace = true }
 whichlang = { workspace = true, optional = true }
 
+quickwit-common = { workspace = true }
 quickwit-datetime = { workspace = true }
 
 [dev-dependencies]

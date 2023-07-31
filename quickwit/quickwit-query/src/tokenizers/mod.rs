@@ -21,6 +21,7 @@ mod chinese_compatible;
 mod code_tokenizer;
 #[cfg(feature = "multilang")]
 mod multilang;
+mod zero_separated;
 
 use once_cell::sync::Lazy;
 use tantivy::tokenizer::{
@@ -37,11 +38,16 @@ pub const DEFAULT_REMOVE_TOKEN_LENGTH: usize = 255;
 /// Quickwit's tokenizer/analyzer manager.
 pub fn create_default_quickwit_tokenizer_manager() -> TokenizerManager {
     let tokenizer_manager = TokenizerManager::default();
+
+    // This tokenizer is only useful for the field presence field.
+    let zero_separated =
+        TextAnalyzer::builder(zero_separated::ZeroSeparatedTokenizer::default()).build();
+    tokenizer_manager.register("_zero_separated", zero_separated);
+
     let raw_tokenizer = TextAnalyzer::builder(RawTokenizer::default())
         .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
         .build();
     tokenizer_manager.register("raw", raw_tokenizer);
-
     let chinese_tokenizer = TextAnalyzer::builder(ChineseTokenizer)
         .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
         .filter(LowerCaser)
