@@ -19,7 +19,7 @@ FILTER = {
 	"quickwit-serve",
 	"quickwit-storage",
 	"quickwit-cluster",
-	"quickwit-core",
+	"quickwit-index-management",
     "tantivy"
 }
 

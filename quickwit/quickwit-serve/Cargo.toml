@@ -46,7 +46,7 @@ quickwit-cluster = { workspace = true }
 quickwit-common = { workspace = true }
 quickwit-config = { workspace = true }
 quickwit-control-plane = { workspace = true }
-quickwit-core = { workspace = true }
+quickwit-index-management = { workspace = true }
 quickwit-directories = { workspace = true }
 quickwit-doc-mapper = { workspace = true }
 quickwit-indexing = { workspace = true }
