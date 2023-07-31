@@ -109,6 +109,7 @@ fn extract_unsimplified_tags_filter_ast(query_ast: QueryAst) -> UnsimplifiedTagF
         QueryAst::UserInput(_user_text_query) => {
             panic!("Extract unsimplified should only be called on AST without UserInputQuery.");
         }
+        QueryAst::FieldPresence(_) => UnsimplifiedTagFilterAst::Uninformative,
     }
 }
 

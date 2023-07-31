@@ -66,6 +66,8 @@ pub struct DocMapping {
     #[serde(default)]
     pub store_source: bool,
     #[serde(default)]
+    pub index_field_presence: bool,
+    #[serde(default)]
     pub timestamp_field: Option<String>,
     #[serde_multikey(
         deserializer = Mode::from_parts,
@@ -433,6 +435,7 @@ impl TestableForRegression for IndexConfig {
         )
         .unwrap();
         let doc_mapping = DocMapping {
+            index_field_presence: true,
             field_mappings: vec![
                 tenant_id_mapping,
                 timestamp_mapping,
@@ -517,6 +520,7 @@ pub fn build_doc_mapper(
 ) -> anyhow::Result<Arc<dyn DocMapper>> {
     let builder = DefaultDocMapperBuilder {
         store_source: doc_mapping.store_source,
+        index_field_presence: doc_mapping.index_field_presence,
         default_search_fields: search_settings.default_search_fields.clone(),
         timestamp_field: doc_mapping.timestamp_field.clone(),
         field_mappings: doc_mapping.field_mappings.clone(),

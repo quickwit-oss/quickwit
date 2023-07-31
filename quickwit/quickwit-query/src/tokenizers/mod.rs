@@ -37,11 +37,11 @@ pub const DEFAULT_REMOVE_TOKEN_LENGTH: usize = 255;
 /// Quickwit's tokenizer/analyzer manager.
 pub fn create_default_quickwit_tokenizer_manager() -> TokenizerManager {
     let tokenizer_manager = TokenizerManager::default();
+
     let raw_tokenizer = TextAnalyzer::builder(RawTokenizer::default())
         .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
         .build();
     tokenizer_manager.register("raw", raw_tokenizer);
-
     let chinese_tokenizer = TextAnalyzer::builder(ChineseTokenizer)
         .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
         .filter(LowerCaser)

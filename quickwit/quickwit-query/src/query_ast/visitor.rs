@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use crate::not_nan_f32::NotNaNf32;
+use crate::query_ast::field_presence::FieldPresenceQuery;
 use crate::query_ast::user_input_query::UserInputQuery;
 use crate::query_ast::{
     BoolQuery, FullTextQuery, PhrasePrefixQuery, QueryAst, RangeQuery, TermQuery, TermSetQuery,
@@ -41,6 +42,7 @@ pub trait QueryAstVisitor<'a> {
             QueryAst::MatchNone => self.visit_match_none(),
             QueryAst::Boost { underlying, boost } => self.visit_boost(underlying, *boost),
             QueryAst::UserInput(user_text_query) => self.visit_user_text(user_text_query),
+            QueryAst::FieldPresence(exists) => self.visit_exists(exists),
         }
     }
 
@@ -97,6 +99,10 @@ pub trait QueryAstVisitor<'a> {
     }
 
     fn visit_user_text(&mut self, _user_text_query: &'a UserInputQuery) -> Result<(), Self::Err> {
+        Ok(())
+    }
+
+    fn visit_exists(&mut self, _exists_query: &'a FieldPresenceQuery) -> Result<(), Self::Err> {
         Ok(())
     }
 }

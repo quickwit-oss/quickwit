@@ -16,6 +16,7 @@ async-trait = { workspace = true }
 byte-unit = { workspace = true }
 dyn-clone = { workspace = true }
 env_logger = { workspace = true }
+fnv = { workspace = true }
 futures = { workspace = true }
 home = { workspace = true }
 hostname = { workspace = true }

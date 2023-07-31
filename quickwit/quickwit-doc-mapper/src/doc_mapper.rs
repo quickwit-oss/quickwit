@@ -359,7 +359,7 @@ mod tests {
         let (query, _) = doc_mapper.query(schema, &query_ast, true).unwrap();
         assert_eq!(
             format!("{query:?}"),
-            r#"TermQuery(Term(field=0, type=Json, path=toto.titi, type=Str, "hello"))"#
+            r#"TermQuery(Term(field=2, type=Json, path=toto.titi, type=Str, "hello"))"#
         );
     }
 
@@ -378,7 +378,7 @@ mod tests {
         let (query, _) = doc_mapper.query(schema, &query_ast, true).unwrap();
         assert_eq!(
             format!("{query:?}"),
-            r#"TermQuery(Term(field=0, type=Json, path=toto.titi, type=Str, "hello"))"#
+            r#"TermQuery(Term(field=1, type=Json, path=toto.titi, type=Str, "hello"))"#
         );
     }
 
@@ -397,7 +397,7 @@ mod tests {
         let (query, _) = doc_mapper.query(schema, &query_ast, true).unwrap();
         assert_eq!(
             format!("{query:?}"),
-            r#"BooleanQuery { subqueries: [(Should, TermQuery(Term(field=0, type=Json, path=toto, type=I64, 5))), (Should, TermQuery(Term(field=0, type=Json, path=toto, type=Str, "5")))] }"#
+            r#"BooleanQuery { subqueries: [(Should, TermQuery(Term(field=1, type=Json, path=toto, type=I64, 5))), (Should, TermQuery(Term(field=1, type=Json, path=toto, type=Str, "5")))] }"#
         );
     }
 
@@ -567,7 +567,7 @@ mod tests {
         let (query, _) = doc_mapper.query(schema, &query_ast, false).unwrap();
         assert_eq!(
             format!("{query:?}"),
-            r#"TermQuery(Term(field=0, type=Str, "JPN:す"))"#
+            r#"TermQuery(Term(field=2, type=Str, "JPN:す"))"#
         );
     }
 }
