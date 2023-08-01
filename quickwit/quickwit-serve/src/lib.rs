@@ -67,7 +67,7 @@ use quickwit_control_plane::scheduler::IndexingScheduler;
 use quickwit_control_plane::{
     start_indexing_scheduler, ControlPlaneEventSubscriber, IndexerNodeInfo, IndexerPool,
 };
-use quickwit_core::{IndexService, IndexServiceError};
+use quickwit_index_management::{IndexService, IndexServiceError};
 use quickwit_indexing::actors::IndexingService;
 use quickwit_indexing::start_indexing_service;
 use quickwit_ingest::{

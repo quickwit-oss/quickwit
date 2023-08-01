@@ -26,8 +26,8 @@ use quickwit_config::{
     load_source_config_from_user_config, ConfigFormat, NodeConfig, SourceConfig, SourceParams,
     CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID,
 };
-use quickwit_core::{IndexService, IndexServiceError};
 use quickwit_doc_mapper::{analyze_text, TokenizerConfig};
+use quickwit_index_management::{IndexService, IndexServiceError};
 use quickwit_metastore::{
     IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, Split, SplitInfo, SplitState,
 };

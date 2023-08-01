@@ -40,7 +40,7 @@ use quickwit_config::{
     IndexerConfig, NodeConfig, SourceConfig, SourceInputFormat, SourceParams, TransformConfig,
     VecSourceParams, CLI_INGEST_SOURCE_ID,
 };
-use quickwit_core::{clear_cache_directory, IndexService};
+use quickwit_index_management::{clear_cache_directory, IndexService};
 use quickwit_indexing::actors::{IndexingService, MergePipeline, MergePipelineId};
 use quickwit_indexing::models::{
     DetachIndexingPipeline, DetachMergePipeline, IndexingStatistics, SpawnPipeline,

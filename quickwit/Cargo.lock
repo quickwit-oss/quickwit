@@ -4813,9 +4813,9 @@ dependencies = [
  "quickwit-cluster",
  "quickwit-common",
  "quickwit-config",
- "quickwit-core",
  "quickwit-directories",
  "quickwit-doc-mapper",
+ "quickwit-index-management",
  "quickwit-indexing",
  "quickwit-metastore",
  "quickwit-proto",
@@ -5013,38 +5013,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "quickwit-core"
-version = "0.6.3"
-dependencies = [
- "anyhow",
- "async-trait",
- "byte-unit",
- "futures",
- "futures-util",
- "mockall",
- "quickwit-common",
- "quickwit-config",
- "quickwit-directories",
- "quickwit-doc-mapper",
- "quickwit-indexing",
- "quickwit-janitor",
- "quickwit-metastore",
- "quickwit-proto",
- "quickwit-storage",
- "rand 0.8.5",
- "serde",
- "serde_json",
- "serde_yaml 0.9.24",
- "tantivy",
- "tempfile",
- "thiserror",
- "tokio",
- "tokio-stream",
- "tokio-util",
- "tracing",
-]
-
-[[package]]
 name = "quickwit-datetime"
 version = "0.6.3"
 dependencies = [
@@ -5109,6 +5077,38 @@ dependencies = [
  "tracing",
  "typetag",
  "utoipa",
+]
+
+[[package]]
+name = "quickwit-index-management"
+version = "0.6.3"
+dependencies = [
+ "anyhow",
+ "async-trait",
+ "byte-unit",
+ "futures",
+ "futures-util",
+ "mockall",
+ "quickwit-common",
+ "quickwit-config",
+ "quickwit-directories",
+ "quickwit-doc-mapper",
+ "quickwit-indexing",
+ "quickwit-janitor",
+ "quickwit-metastore",
+ "quickwit-proto",
+ "quickwit-storage",
+ "rand 0.8.5",
+ "serde",
+ "serde_json",
+ "serde_yaml 0.9.24",
+ "tantivy",
+ "tempfile",
+ "thiserror",
+ "tokio",
+ "tokio-stream",
+ "tokio-util",
+ "tracing",
 ]
 
 [[package]]
@@ -5539,9 +5539,9 @@ dependencies = [
  "quickwit-common",
  "quickwit-config",
  "quickwit-control-plane",
- "quickwit-core",
  "quickwit-directories",
  "quickwit-doc-mapper",
+ "quickwit-index-management",
  "quickwit-indexing",
  "quickwit-ingest",
  "quickwit-jaeger",

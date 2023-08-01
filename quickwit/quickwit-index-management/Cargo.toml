@@ -1,5 +1,5 @@
 [package]
-name = "quickwit-core"
+name = "quickwit-index-management"
 version = "0.6.3"
 authors = ["Quickwit, Inc. <hello@quickwit.io>"]
 edition = "2021"
