@@ -18,7 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::cmp::{Ordering, Reverse};
-use std::collections::{BinaryHeap, HashSet};
+use std::collections::HashSet;
 
 use itertools::Itertools;
 use quickwit_common::binary_heap::{top_k, SortKeyMapper, TopK};
@@ -75,13 +75,13 @@ impl SortByPair {
     }
 }
 impl SortByComponent {
-    fn to_sorting_field_computer_component(
+    fn to_sorting_field_extractor_component(
         &self,
         segment_reader: &SegmentReader,
-    ) -> tantivy::Result<SortingFieldComputerComponent> {
+    ) -> tantivy::Result<SortingFieldExtractorComponent> {
         match self {
-            SortByComponent::DocId => Ok(SortingFieldComputerComponent::DocId),
-            SortByComponent::FastField { field_name, order } => {
+            SortByComponent::DocId => Ok(SortingFieldExtractorComponent::DocId),
+            SortByComponent::FastField { field_name, .. } => {
                 let sort_column_opt: Option<(Column<u64>, ColumnType)> =
                     segment_reader.fast_fields().u64_lenient(field_name)?;
                 let (sort_column, column_type) = sort_column_opt.unwrap_or_else(|| {
@@ -91,15 +91,12 @@ impl SortByComponent {
                     )
                 });
                 let sort_field_type = SortFieldType::try_from(column_type)?;
-                Ok(SortingFieldComputerComponent::FastField {
+                Ok(SortingFieldExtractorComponent::FastField {
                     sort_column,
                     sort_field_type,
-                    order: *order,
                 })
             }
-            SortByComponent::Score { order } => {
-                Ok(SortingFieldComputerComponent::Score { order: *order })
-            }
+            SortByComponent::Score { .. } => Ok(SortingFieldExtractorComponent::Score),
         }
     }
     pub fn requires_scoring(&self) -> bool {
@@ -136,89 +133,47 @@ enum SortFieldType {
     Bool,
 }
 
-/// The `SortingFieldComputer` can be seen as the specialization of `SortBy` applied to a specific
-/// `SegmentReader`. Its role is to compute the sorting field given a `DocId`.
-enum SortingFieldComputerComponent {
+/// The `SortingFieldExtractor` is used to extract a score, which can either be a true score,
+/// a value from a fast field, or nothing (sort by doc-id).
+enum SortingFieldExtractorComponent {
     /// If undefined, we simply sort by DocIds.
     DocId,
     FastField {
         sort_column: Column<u64>,
         sort_field_type: SortFieldType,
-        order: SortOrder,
     },
-    Score {
-        order: SortOrder,
-    },
+    Score,
 }
 
-impl SortingFieldComputerComponent {
-    fn recover_typed_sort_value(&self, sort_value: Option<u64>) -> Option<SortValue> {
-        let recover_from_fast_field = |sort_value: u64, order: SortOrder, sort_field_type| {
-            let sort_value = match order {
-                SortOrder::Asc => u64::MAX - sort_value,
-                SortOrder::Desc => sort_value,
-            };
-            match sort_field_type {
-                SortFieldType::U64 => SortValue::U64(sort_value),
-                SortFieldType::I64 => SortValue::I64(i64::from_u64(sort_value)),
-                SortFieldType::F64 => SortValue::F64(f64::from_u64(sort_value)),
-                SortFieldType::DateTime => SortValue::I64(i64::from_u64(sort_value)),
-                SortFieldType::Bool => SortValue::Boolean(sort_value == 1u64),
-            }
+impl SortingFieldExtractorComponent {
+    /// Returns the sort value for the given element
+    ///
+    /// The function returns None if the sort key is a fast field, for which we have no value
+    /// for the given doc_id, or we sort by doc_id.
+    fn extract_typed_sort_value_opt(&self, doc_id: DocId, score: Score) -> Option<SortValue> {
+        let map_fast_field_to_value = |fast_field_value, field_type| match field_type {
+            SortFieldType::U64 => SortValue::U64(fast_field_value),
+            SortFieldType::I64 => SortValue::I64(i64::from_u64(fast_field_value)),
+            SortFieldType::F64 => SortValue::F64(f64::from_u64(fast_field_value)),
+            SortFieldType::DateTime => SortValue::I64(i64::from_u64(fast_field_value)),
+            SortFieldType::Bool => SortValue::Boolean(fast_field_value != 0u64),
         };
-        if let Some(sort_value) = sort_value {
-            match self {
-                SortingFieldComputerComponent::DocId => Some(SortValue::U64(sort_value)),
-                SortingFieldComputerComponent::FastField {
-                    sort_column: _,
-                    sort_field_type,
-                    order,
-                } => Some(recover_from_fast_field(
-                    sort_value,
-                    *order,
-                    *sort_field_type,
-                )),
-                SortingFieldComputerComponent::Score { order: _ } => Some(SortValue::F64(
-                    MonotonicallyMappableToU64::from_u64(sort_value),
-                )),
-            }
-        } else {
-            None
-        }
-    }
 
-    /// Returns the ranking key for the given element
-    ///
-    /// The functions return None if the sort key is a fast field, for which we have no value
-    /// for the given doc_id.
-    /// All value are mapped using a monotonic mapping.
-    /// If the sort ord is ascending, we use the mapping `val -> u64::MAX - val` to
-    /// artificially invert the order.
-    ///
-    /// Given the u64 value, it is possible to recover the original value using
-    /// `Self::recover_typed_sort_value`.
-    fn compute_u64_sort_value_opt(&self, doc_id: DocId, score: Score) -> Option<u64> {
-        let apply_sort = |order, field_val| match order {
-            SortOrder::Desc => field_val,
-            SortOrder::Asc => u64::MAX - field_val,
-        };
         match self {
-            SortingFieldComputerComponent::DocId => Some(doc_id as u64),
-            SortingFieldComputerComponent::FastField {
-                sort_column, order, ..
+            SortingFieldExtractorComponent::DocId => None,
+            SortingFieldExtractorComponent::FastField {
+                sort_column,
+                sort_field_type,
+                ..
             } => sort_column
                 .first(doc_id)
-                .map(|field_val| apply_sort(*order, field_val)),
-            SortingFieldComputerComponent::Score { order } => {
-                let u64_score = (score as f64).to_u64();
-                let u64_score = apply_sort(*order, u64_score);
-                Some(u64_score)
-            }
+                .map(|field_val| map_fast_field_to_value(field_val, *sort_field_type)),
+            SortingFieldExtractorComponent::Score { .. } => Some(SortValue::F64(score as f64)),
         }
     }
 }
-impl From<SortingFieldComputerComponent> for SortingFieldComputerPair {
-    fn from(value: SortingFieldComputerComponent) -> Self {
+impl From<SortingFieldExtractorComponent> for SortingFieldExtractorPair {
+    fn from(value: SortingFieldExtractorComponent) -> Self {
         Self {
             first: value,
             second: None,
@@ -226,48 +181,26 @@ impl From<SortingFieldComputerComponent> for SortingFieldComputerPair {
     }
 }
 
-pub(crate) struct SortingFieldComputerPair {
-    first: SortingFieldComputerComponent,
-    second: Option<SortingFieldComputerComponent>,
+pub(crate) struct SortingFieldExtractorPair {
+    first: SortingFieldExtractorComponent,
+    second: Option<SortingFieldExtractorComponent>,
 }
 
-impl SortingFieldComputerPair {
-    fn recover_typed_sort_value(
-        &self,
-        sort_value1: Option<u64>,
-        sort_value2: Option<u64>,
-    ) -> (Option<SortValue>, Option<SortValue>) {
-        let first_sort = sort_value1
-            .and_then(|sort_value1| self.first.recover_typed_sort_value(Some(sort_value1)));
-        let second_sort = sort_value2.and_then(|sort_value2| {
-            self.second
-                .as_ref()
-                .expect("no second sort field, but got second sort value")
-                .recover_typed_sort_value(Some(sort_value2))
-        });
-        (first_sort, second_sort)
-    }
-
-    /// Returns the ranking key for the given element
+impl SortingFieldExtractorPair {
+    /// Returns the list of sort values for the given element
     ///
-    /// The functions return None if the sort key is a fast field, for which we have no value
-    /// for the given doc_id.
-    /// All value are mapped using a monotonic mapping.
-    /// If the sort ord is ascending, we use the mapping `val -> u64::MAX - val` to
-    /// artificially invert the order.
-    ///
-    /// Given the u64 value, it is possible to recover the original value using
-    /// `Self::recover_typed_sort_value`.
-    fn compute_u64_sort_value_opt(
+    /// See also [`SortingFieldExtractorComponent::extract_typed_sort_value_opt`] for more
+    /// information.
+    fn extract_typed_sort_value(
         &self,
         doc_id: DocId,
         score: Score,
-    ) -> (Option<u64>, Option<u64>) {
-        let first = self.first.compute_u64_sort_value_opt(doc_id, score);
+    ) -> (Option<SortValue>, Option<SortValue>) {
+        let first = self.first.extract_typed_sort_value_opt(doc_id, score);
         let second = self
             .second
             .as_ref()
-            .and_then(|second| second.compute_u64_sort_value_opt(doc_id, score));
+            .and_then(|second| second.extract_typed_sort_value_opt(doc_id, score));
         (first, second)
     }
 }
@@ -291,64 +224,22 @@ impl TryFrom<ColumnType> for SortFieldType {
 }
 
 /// Takes a user-defined sorting criteria and resolves it to a
-/// segment specific `SortFieldComputer`.
-fn resolve_sort_by(
+/// segment specific `SortingFieldExtractorPair`.
+fn get_score_extractor(
     sort_by: &SortByPair,
     segment_reader: &SegmentReader,
-) -> tantivy::Result<SortingFieldComputerPair> {
-    Ok(SortingFieldComputerPair {
+) -> tantivy::Result<SortingFieldExtractorPair> {
+    Ok(SortingFieldExtractorPair {
         first: sort_by
             .first
-            .to_sorting_field_computer_component(segment_reader)?,
+            .to_sorting_field_extractor_component(segment_reader)?,
         second: sort_by
             .second
             .as_ref()
-            .map(|first| first.to_sorting_field_computer_component(segment_reader))
+            .map(|first| first.to_sorting_field_extractor_component(segment_reader))
             .transpose()?,
     })
 }
-
-/// PartialHitHeapItem order is the inverse of the natural order
-/// so that we actually have a min-heap.
-#[derive(Clone, Copy, Debug)]
-struct PartialHitHeapItem {
-    sort_value_opt1: Option<u64>,
-    sort_value_opt2: Option<u64>,
-    doc_id: DocId,
-}
-
-impl PartialOrd for PartialHitHeapItem {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
-impl Ord for PartialHitHeapItem {
-    #[inline]
-    fn cmp(&self, other: &Self) -> Ordering {
-        let by_sorting_field1 = other.sort_value_opt1.cmp(&self.sort_value_opt1);
-        let by_sorting_field2 = other.sort_value_opt2.cmp(&self.sort_value_opt2);
-
-        let lazy_order_by_doc_id = || {
-            self.doc_id
-                .partial_cmp(&other.doc_id)
-                .unwrap_or(Ordering::Equal)
-        };
-
-        // In case of a tie on the feature, we sort by ascending `DocId`.
-        by_sorting_field1
-            .then_with(|| by_sorting_field2)
-            .then_with(lazy_order_by_doc_id)
-    }
-}
-
-impl PartialEq for PartialHitHeapItem {
-    fn eq(&self, other: &Self) -> bool {
-        self.cmp(other) == Ordering::Equal
-    }
-}
-
-impl Eq for PartialHitHeapItem {}
 
 enum AggregationSegmentCollectors {
     FindTraceIdsSegmentCollector(Box<FindTraceIdsSegmentCollector>),
@@ -359,9 +250,9 @@ enum AggregationSegmentCollectors {
 pub struct QuickwitSegmentCollector {
     num_hits: u64,
     split_id: String,
-    sort_by: SortingFieldComputerPair,
-    hits: BinaryHeap<PartialHitHeapItem>,
-    max_hits: usize,
+    score_extractor: SortingFieldExtractorPair,
+    // PartialHit in this heap does not contain a split_id yet.
+    top_k_hits: TopK<PartialHit, PartialHitSortingKey, HitSortingMapper>,
     segment_ord: u32,
     timestamp_filter_opt: Option<TimestampFilter>,
     aggregation: Option<AggregationSegmentCollectors>,
@@ -369,38 +260,19 @@ pub struct QuickwitSegmentCollector {
 
 impl QuickwitSegmentCollector {
     #[inline]
-    fn at_capacity(&self) -> bool {
-        self.hits.len() >= self.max_hits
-    }
-
-    #[inline]
     fn collect_top_k(&mut self, doc_id: DocId, score: Score) {
-        let (sorting_field_value_opt1, sorting_field_value_opt2): (Option<u64>, Option<u64>) =
-            self.sort_by.compute_u64_sort_value_opt(doc_id, score);
-        if self.at_capacity() {
-            if let Some(sorting_field_value) = sorting_field_value_opt1 {
-                if let Some(limit_sorting_field) =
-                    self.hits.peek().and_then(|head| head.sort_value_opt1)
-                {
-                    // In case of a tie, we keep the document with a lower `DocId`.
-                    if limit_sorting_field < sorting_field_value {
-                        if let Some(mut head) = self.hits.peek_mut() {
-                            head.sort_value_opt1 = Some(sorting_field_value);
-                            head.sort_value_opt2 = sorting_field_value_opt2;
-                            head.doc_id = doc_id;
-                        }
-                    }
-                }
-            }
-        } else {
-            // we have not reached capacity yet, so we can just push the
-            // element.
-            self.hits.push(PartialHitHeapItem {
-                sort_value_opt1: sorting_field_value_opt1,
-                sort_value_opt2: sorting_field_value_opt2,
-                doc_id,
-            });
-        }
+        let (sort_value, sort_value2) =
+            self.score_extractor.extract_typed_sort_value(doc_id, score);
+        let hit = PartialHit {
+            sort_value: sort_value.map(Into::into),
+            sort_value2: sort_value2.map(Into::into),
+            // we actually know the split_id, but the hit is likely to be discarded, so clonning it
+            // would cause a probably useless allocation. TODO use an Arc<str> instead?
+            split_id: String::new(),
+            segment_ord: self.segment_ord,
+            doc_id,
+        };
+        self.top_k_hits.add_entry(hit);
     }
 
     #[inline]
@@ -436,29 +308,15 @@ impl SegmentCollector for QuickwitSegmentCollector {
     }
 
     fn harvest(self) -> Self::Fruit {
-        let segment_ord = self.segment_ord;
         // TODO use into_iter_sorted() once it gets stable.
         let split_id = self.split_id;
-        let sort_by = self.sort_by;
         let partial_hits: Vec<PartialHit> = self
-            .hits
-            .into_sorted_vec()
+            .top_k_hits
+            .finalize()
             .into_iter()
-            .map(|hit| {
-                let (sort_value1, sort_value2) =
-                    sort_by.recover_typed_sort_value(hit.sort_value_opt1, hit.sort_value_opt2);
-
-                PartialHit {
-                    sort_value: Some(quickwit_proto::SortByValue {
-                        sort_value: sort_value1,
-                    }),
-                    sort_value2: Some(quickwit_proto::SortByValue {
-                        sort_value: sort_value2,
-                    }),
-                    segment_ord,
-                    doc_id: hit.doc_id,
-                    split_id: split_id.clone(),
-                }
+            .map(|mut hit| {
+                hit.split_id = split_id.clone();
+                hit
             })
             .collect();
 
@@ -559,7 +417,6 @@ impl Collector for QuickwitCollector {
         segment_ord: SegmentOrdinal,
         segment_reader: &SegmentReader,
     ) -> tantivy::Result<Self::Child> {
-        let sort_by = resolve_sort_by(&self.sort_by, segment_reader)?;
         // Regardless of the start_offset, we need to collect top-K
         // starting from 0 for every leaves.
         let leaf_max_hits = self.max_hits + self.start_offset;
@@ -585,13 +442,15 @@ impl Collector for QuickwitCollector {
             ),
             None => None,
         };
+        let score_extractor = get_score_extractor(&self.sort_by, segment_reader)?;
+        let (order1, order2) = self.sort_by.sort_orders();
+        let sort_key_mapper = HitSortingMapper { order1, order2 };
         Ok(QuickwitSegmentCollector {
             num_hits: 0u64,
             split_id: self.split_id.clone(),
-            sort_by,
-            hits: BinaryHeap::with_capacity(leaf_max_hits),
+            score_extractor,
+            top_k_hits: TopK::new(leaf_max_hits, sort_key_mapper),
             segment_ord,
-            max_hits: leaf_max_hits,
             timestamp_filter_opt,
             aggregation,
         })
@@ -1029,59 +888,14 @@ impl IncrementalCollector {
 
 #[cfg(test)]
 mod tests {
-    use std::cmp::Ordering;
-
     use quickwit_proto::{
         LeafSearchResponse, PartialHit, SearchRequest, SortField, SortOrder, SortValue,
         SplitSearchError,
     };
     use tantivy::collector::Collector;
 
-    use super::{make_merge_collector, IncrementalCollector, PartialHitHeapItem};
+    use super::{make_merge_collector, IncrementalCollector};
     use crate::collector::top_k_partial_hits;
-
-    #[test]
-    fn test_partial_hit_ordered_by_sorting_field() {
-        let lesser_score = PartialHitHeapItem {
-            doc_id: 1u32,
-            sort_value_opt1: Some(1u64),
-            sort_value_opt2: None,
-        };
-        let higher_score = PartialHitHeapItem {
-            sort_value_opt1: Some(2u64),
-            sort_value_opt2: None,
-            doc_id: 1u32,
-        };
-        assert_eq!(lesser_score.cmp(&higher_score), Ordering::Greater);
-    }
-    #[test]
-    fn test_partial_hit_ordered_by_sorting_field_2() {
-        let get_el = |val1, val2, docid| PartialHitHeapItem {
-            doc_id: docid,
-            sort_value_opt1: val1,
-            sort_value_opt2: val2,
-        };
-        let mut data = vec![
-            get_el(Some(1u64), None, 1u32),
-            get_el(Some(2u64), Some(2u64), 1u32),
-            get_el(Some(2u64), Some(1u64), 1u32),
-            get_el(Some(2u64), None, 1u32),
-            get_el(None, Some(1u64), 1u32),
-            get_el(None, None, 1u32),
-        ];
-        data.sort();
-        assert_eq!(
-            data,
-            vec![
-                get_el(Some(2u64), Some(2u64), 1u32),
-                get_el(Some(2u64), Some(1u64), 1u32),
-                get_el(Some(2u64), None, 1u32),
-                get_el(Some(1u64), None, 1u32),
-                get_el(None, Some(1u64), 1u32),
-                get_el(None, None, 1u32),
-            ]
-        );
-    }
 
     #[test]
     fn test_merge_partial_hits_no_tie() {

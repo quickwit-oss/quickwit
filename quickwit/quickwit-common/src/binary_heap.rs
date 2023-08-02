@@ -172,6 +172,10 @@ where
         }
     }
 
+    pub fn add_entry(&mut self, item: T) {
+        self.add_entries(std::iter::once(item))
+    }
+
     /// Get a reference to the worst entry.
     pub fn peek_worst(&self) -> Option<&T> {
         self.heap.peek().map(|entry| &entry.0.item)

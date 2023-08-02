@@ -512,20 +512,6 @@ impl CanSplitDoBetter {
             }
         }
     }
-
-    /// Whether we should wash score and rely only on document GlobalAddress.
-    ///
-    /// Currently, documents are sorted by (Score, SplitId, SegmentId, DocId),
-    /// for "unsorted" queries, the Score is the DocId, which sadly prevent optimising
-    /// by skipping entire splits. In case of "unsorted" query, we should then "wash away"
-    /// the Score, so data is sorted by (SplitId, SegmentId, DocId), which allows us to
-    /// skip entire splits if we have enough results just from splits with higher Ids.
-    pub fn should_wash_score(&self) -> bool {
-        matches!(
-            *self.inner.read().unwrap(),
-            MutCanSplitDoBetter::SplitIdHigher(_)
-        )
-    }
 }
 
 /// `leaf` step of search.
@@ -629,20 +615,12 @@ pub async fn leaf_search(
     let merge_collector =
         make_merge_collector(&request, &searcher_context.get_aggregation_limits())?;
 
-    let wash_score = split_filter.should_wash_score();
     // TODO we know splits processed and pending, and the current worst-best result.
     // If !run_all_splits, we could cancel pending tasks based on that.
     let mut incremental_merge_collector = IncrementalCollector::new(merge_collector);
     while let Some(split_search_res) = leaf_search_single_split_futures.next().await {
         match split_search_res {
-            Ok(Ok(mut split_search_res)) => {
-                if wash_score {
-                    for hit in &mut split_search_res.partial_hits {
-                        hit.sort_value = None;
-                        hit.sort_value2 = None;
-                    }
-                }
-
+            Ok(Ok(split_search_res)) => {
                 incremental_merge_collector.add_split(split_search_res);
             }
             Ok(Err((split_id, err))) => {
