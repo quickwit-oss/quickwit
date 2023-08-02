@@ -95,9 +95,40 @@ pub struct QuickwitNumericOptions {
     pub indexed: bool,
     #[serde(default)]
     pub fast: bool,
+    #[serde(default = "default_as_true")]
+    pub coerce: bool,
+    #[serde(default)]
+    pub output_format: NumericOutputFormat,
 }
 
 impl Default for QuickwitNumericOptions {
+    fn default() -> Self {
+        Self {
+            description: None,
+            indexed: true,
+            stored: true,
+            fast: false,
+            coerce: true,
+            output_format: NumericOutputFormat::default(),
+        }
+    }
+}
+
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct QuickwitBoolOptions {
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    #[serde(default = "default_as_true")]
+    pub stored: bool,
+    #[serde(default = "default_as_true")]
+    pub indexed: bool,
+    #[serde(default)]
+    pub fast: bool,
+}
+
+impl Default for QuickwitBoolOptions {
     fn default() -> Self {
         Self {
             description: None,
@@ -150,15 +181,15 @@ pub enum BinaryFormat {
 impl BinaryFormat {
     pub fn as_str(&self) -> &str {
         match self {
-            BinaryFormat::Base64 => "base64",
-            BinaryFormat::Hex => "hex",
+            Self::Base64 => "base64",
+            Self::Hex => "hex",
         }
     }
 
     pub fn format_to_json(&self, value: &[u8]) -> JsonValue {
         match self {
-            BinaryFormat::Base64 => BASE64_STANDARD.encode(value).into(),
-            BinaryFormat::Hex => hex::encode(value).into(),
+            Self::Base64 => BASE64_STANDARD.encode(value).into(),
+            Self::Hex => hex::encode(value).into(),
         }
     }
 
@@ -172,19 +203,25 @@ impl BinaryFormat {
             ));
         };
         let payload = match self {
-            BinaryFormat::Base64 => {
-                BASE64_STANDARD
-                    .decode(&byte_str)
-                    .map_err(|base64_decode_err| {
-                        format!("Expected base64 string, got `{byte_str}`: {base64_decode_err}")
-                    })?
-            }
-            BinaryFormat::Hex => hex::decode(&byte_str).map_err(|hex_decode_err| {
+            Self::Base64 => BASE64_STANDARD
+                .decode(&byte_str)
+                .map_err(|base64_decode_err| {
+                    format!("Expected base64 string, got `{byte_str}`: {base64_decode_err}")
+                })?,
+            Self::Hex => hex::decode(&byte_str).map_err(|hex_decode_err| {
                 format!("Expected hex string, got `{byte_str}`: {hex_decode_err}")
             })?,
         };
         Ok(TantivyValue::Bytes(payload))
     }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Default, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NumericOutputFormat {
+    #[default]
+    Number,
+    String,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
@@ -618,8 +655,8 @@ fn deserialize_mapping_type(
             Ok(FieldMappingType::F64(numeric_options, cardinality))
         }
         Type::Bool => {
-            let numeric_options: QuickwitNumericOptions = serde_json::from_value(json)?;
-            Ok(FieldMappingType::Bool(numeric_options, cardinality))
+            let bool_options: QuickwitBoolOptions = serde_json::from_value(json)?;
+            Ok(FieldMappingType::Bool(bool_options, cardinality))
         }
         Type::IpAddr => {
             let ip_addr_options: QuickwitIpAddrOptions = serde_json::from_value(json)?;
@@ -685,8 +722,8 @@ fn typed_mapping_to_json_params(
         FieldMappingType::Text(text_options, _) => serialize_to_map(&text_options),
         FieldMappingType::U64(options, _)
         | FieldMappingType::I64(options, _)
-        | FieldMappingType::F64(options, _)
-        | FieldMappingType::Bool(options, _) => serialize_to_map(&options),
+        | FieldMappingType::F64(options, _) => serialize_to_map(&options),
+        FieldMappingType::Bool(options, _) => serialize_to_map(&options),
         FieldMappingType::Bytes(options, _) => serialize_to_map(&options),
         FieldMappingType::IpAddr(options, _) => serialize_to_map(&options),
         FieldMappingType::DateTime(date_time_options, _) => serialize_to_map(&date_time_options),
@@ -1062,7 +1099,7 @@ mod tests {
 
     #[test]
     fn test_deserialize_i64_parsing_error_with_text_options() {
-        let result = serde_json::from_str::<FieldMappingEntry>(
+        let error = serde_json::from_str::<FieldMappingEntry>(
             r#"
             {
                 "name": "my_field_name",
@@ -1070,12 +1107,13 @@ mod tests {
                 "tokenizer": "basic"
             }
             "#,
-        );
-        let error = result.unwrap_err();
+        )
+        .unwrap_err();
+
         assert_eq!(
             error.to_string(),
             "Error while parsing field `my_field_name`: unknown field `tokenizer`, expected one \
-             of `description`, `stored`, `indexed`, `fast`"
+             of `description`, `stored`, `indexed`, `fast`, `coerce`, `output_format`"
         );
     }
 
@@ -1146,6 +1184,8 @@ mod tests {
                 "stored": true,
                 "fast": false,
                 "indexed": true,
+                "coerce": true,
+                "output_format": "number"
             })
         );
         Ok(())
@@ -1165,7 +1205,7 @@ mod tests {
             .unwrap_err()
             .to_string(),
             "Error while parsing field `my_field_name`: unknown field `tokenizer`, expected one \
-             of `description`, `stored`, `indexed`, `fast`"
+             of `description`, `stored`, `indexed`, `fast`, `coerce`, `output_format`"
         );
     }
 
@@ -1232,6 +1272,8 @@ mod tests {
                 "stored": true,
                 "fast": false,
                 "indexed": true,
+                "coerce": true,
+                "output_format": "number"
             })
         );
     }
@@ -1256,6 +1298,8 @@ mod tests {
                 "stored": true,
                 "fast": false,
                 "indexed": true,
+                "coerce": true,
+                "output_format": "number"
             })
         );
     }
@@ -1616,6 +1660,8 @@ mod tests {
                 "stored": true,
                 "fast": false,
                 "indexed": true,
+                "coerce": true,
+                "output_format": "number"
             })
         );
     }

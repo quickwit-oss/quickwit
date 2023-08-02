@@ -19,9 +19,11 @@
       },
       "field_mappings": [
         {
+          "coerce": true,
           "fast": true,
           "indexed": true,
           "name": "tenant_id",
+          "output_format": "number",
           "stored": true,
           "type": "u64"
         },
