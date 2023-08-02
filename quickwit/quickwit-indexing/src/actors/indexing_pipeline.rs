@@ -23,8 +23,8 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use quickwit_actors::{
-    Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, Mailbox, QueueCapacity,
-    Supervisable,
+    Actor, ActorContext, ActorExitStatus, ActorHandle, ActorState, Handler, Health, Mailbox,
+    QueueCapacity, Supervisable,
 };
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_common::KillSwitch;
@@ -454,6 +454,10 @@ impl Handler<Observe> for IndexingPipeline {
                 )
                 .set_generation(self.statistics.generation)
                 .set_num_spawn_attempts(self.statistics.num_spawn_attempts);
+            if handles.publisher.state() == ActorState::Success {
+                // The publisher has exited successfully. We can exit.
+                return Err(ActorExitStatus::Success);
+            }
         }
         ctx.schedule_self_msg(OBSERVE_INTERVAL, Observe).await;
         Ok(())
