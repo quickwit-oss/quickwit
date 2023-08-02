@@ -127,10 +127,10 @@ fn validate_timestamp_field(
     timestamp_field_path: &str,
     mapping_root_node: &MappingNode,
 ) -> anyhow::Result<()> {
-    if timestamp_field_path.starts_with(".") {
+    if timestamp_field_path.starts_with(".") || timestamp_field_path.starts_with(['\\', '.']) {
         bail!("Timestamp field `{timestamp_field_path}` should not start with a `.`.");
     }
-    if timestamp_field_path.ends_with(".") {
+    if timestamp_field_path.ends_with(".") || timestamp_field_path.ends_with(['\\', '.']) {
         bail!("Timestamp field `{timestamp_field_path}` should not end with a `.`.");
     }
     let Some(timestamp_field_type) =
@@ -275,10 +275,10 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
 /// - if str, the field must use the `raw` tokenizer for indexing.
 /// - the field must be indexed.
 fn validate_tag(tag_field_name: &str, schema: &Schema) -> Result<(), anyhow::Error> {
-    if tag_field_name.starts_with(".") {
+    if tag_field_name.starts_with(".") || tag_field_name.starts_with(['\\', '.']) {
         bail!("Tag field `{tag_field_name}` should not start with a `.`.");
     }
-    if tag_field_name.ends_with(".") {
+    if tag_field_name.ends_with(".") || tag_field_name.ends_with(['\\', '.']) {
         bail!("Tag field `{tag_field_name}` should not end with a `.`.");
     }
     let field = schema
@@ -733,7 +733,43 @@ mod tests {
     }
 
     #[test]
-    fn test_timestamp_field_that_start_with_dot_is_invalid() {}
+    fn test_timestamp_field_that_start_with_dot_is_invalid() {
+        assert_eq!(
+            serde_json::from_str::<DefaultDocMapper>(
+                r#"{
+                "field_mappings": [
+                    {
+                        "name": "my.timestamp",
+                        "type": "datetime",
+                        "fast": true
+                    }
+                ],
+                "timestamp_field": ".my.timestamp"
+            }"#,
+            )
+            .unwrap_err()
+            .to_string(),
+            "Timestamp field `.my.timestamp` should not start with a `.`.",
+        );
+
+        assert_eq!(
+            serde_json::from_str::<DefaultDocMapper>(
+                r#"{
+                "field_mappings": [
+                    {
+                        "name": "my.timestamp",
+                        "type": "datetime",
+                        "fast": true
+                    }
+                ],
+                "timestamp_field": "\\.my\\.timestamp"
+            }"#,
+            )
+            .unwrap_err()
+            .to_string(),
+            "Timestamp field `\\.my\\.timestamp` should not start with a `.`.",
+        )
+    }
 
     #[test]
     fn test_timestamp_field_that_ends_with_dot_is_invalid() {}
