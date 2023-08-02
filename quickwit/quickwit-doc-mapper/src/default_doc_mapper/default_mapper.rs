@@ -772,13 +772,79 @@ mod tests {
     }
 
     #[test]
-    fn test_timestamp_field_that_ends_with_dot_is_invalid() {}
+    fn test_timestamp_field_that_ends_with_dot_is_invalid() {
+        assert_eq!(
+            serde_json::from_str::<DefaultDocMapper>(
+                r#"{
+                    "timestamp_field": "my.timestamp."
+                }"#,
+            )
+            .unwrap_err()
+            .to_string(),
+            "Timestamp field `my.timestamp.` should not end with a `.`.",
+        );
+
+        assert_eq!(
+            serde_json::from_str::<DefaultDocMapper>(
+                r#"{
+                    "timestamp_field": "my\\.timestamp\\."
+                }"#,
+            )
+            .unwrap_err()
+            .to_string(),
+            "Timestamp field `my\\.timestamp\\.` should not end with a `.`.",
+        )
+    }
 
     #[test]
-    fn test_tag_field_name_that_starts_with_dot_is_invalid() {}
+    fn test_tag_field_name_that_starts_with_dot_is_invalid() {
+        assert_eq!(
+            serde_json::from_str::<DefaultDocMapper>(
+                r#"{
+                    "tag_fields": [".my.tag"]
+                }"#,
+            )
+            .unwrap_err()
+            .to_string(),
+            "Tag field `.my.tag` should not start with a `.`.",
+        );
+
+        assert_eq!(
+            serde_json::from_str::<DefaultDocMapper>(
+                r#"{
+                    "tag_fields": ["\\.my\\.tag"]
+                }"#,
+            )
+            .unwrap_err()
+            .to_string(),
+            "Tag field `\\.my\\.tag` should not start with a `.`.",
+        )
+    }
 
     #[test]
-    fn test_tag_field_name_that_ends_with_dot_is_invalid() {}
+    fn test_tag_field_name_that_ends_with_dot_is_invalid() {
+        assert_eq!(
+            serde_json::from_str::<DefaultDocMapper>(
+                r#"{
+                    "tag_fields": ["my.tag."]
+                }"#,
+            )
+            .unwrap_err()
+            .to_string(),
+            "Tag field `my.tag.` should not end with a `.`.",
+        );
+
+        assert_eq!(
+            serde_json::from_str::<DefaultDocMapper>(
+                r#"{
+                    "tag_fields": ["my\\.tag\\."]
+                }"#,
+            )
+            .unwrap_err()
+            .to_string(),
+            "Tag field `my\\.tag\\.` should not end with a `.`.",
+        )
+    }
 
     #[test]
     fn test_fail_to_build_doc_mapper_with_timestamp_field_with_multivalues_cardinality() {
