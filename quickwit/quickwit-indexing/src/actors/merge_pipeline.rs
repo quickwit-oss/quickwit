@@ -18,13 +18,13 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use byte_unit::Byte;
 use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, Inbox, Mailbox,
-    SpawnContext, Supervisable,
+    SpawnContext, Supervisable, HEARTBEAT,
 };
 use quickwit_common::io::IoControls;
 use quickwit_common::temp_dir::TempDirectory;
@@ -41,21 +41,36 @@ use crate::actors::merge_split_downloader::MergeSplitDownloader;
 use crate::actors::publisher::PublisherType;
 use crate::actors::{MergeExecutor, MergePlanner, Packager, Publisher, Uploader, UploaderType};
 use crate::merge_policy::MergePolicy;
-use crate::models::{MergeStatistics, Observe};
+use crate::models::MergeStatistics;
 use crate::split_store::IndexingSplitStore;
 
-pub struct MergePipelineHandles {
-    pub merge_planner: ActorHandle<MergePlanner>,
-    pub merge_split_downloader: ActorHandle<MergeSplitDownloader>,
-    pub merge_executor: ActorHandle<MergeExecutor>,
-    pub merge_packager: ActorHandle<Packager>,
-    pub merge_uploader: ActorHandle<Uploader>,
-    pub merge_publisher: ActorHandle<Publisher>,
+#[derive(Debug)]
+struct ObserveLoop;
+
+struct MergePipelineHandles {
+    merge_planner: ActorHandle<MergePlanner>,
+    merge_split_downloader: ActorHandle<MergeSplitDownloader>,
+    merge_executor: ActorHandle<MergeExecutor>,
+    merge_packager: ActorHandle<Packager>,
+    merge_uploader: ActorHandle<Uploader>,
+    merge_publisher: ActorHandle<Publisher>,
+    next_check_for_progress: Instant,
+}
+
+impl MergePipelineHandles {
+    fn should_check_for_progress(&mut self) -> bool {
+        let now = Instant::now();
+        let check_for_progress = now > self.next_check_for_progress;
+        if check_for_progress {
+            self.next_check_for_progress = now + *HEARTBEAT;
+        }
+        check_for_progress
+    }
 }
 
 // Messages
-#[derive(Clone, Copy, Debug)]
-struct Supervise;
+#[derive(Debug)]
+struct SuperviseLoop;
 
 #[derive(Clone, Copy, Debug, Default)]
 struct Spawn {
@@ -68,7 +83,7 @@ pub struct MergePipeline {
     merge_planner_inbox: Inbox<MergePlanner>,
     previous_generations_statistics: MergeStatistics,
     statistics: MergeStatistics,
-    handles: Option<MergePipelineHandles>,
+    handles_opt: Option<MergePipelineHandles>,
     kill_switch: KillSwitch,
 }
 
@@ -86,8 +101,7 @@ impl Actor for MergePipeline {
 
     async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
         self.handle(Spawn::default(), ctx).await?;
-        self.handle(Observe, ctx).await?;
-        self.handle(Supervise, ctx).await?;
+        self.handle(SuperviseLoop, ctx).await?;
         Ok(())
     }
 }
@@ -101,7 +115,7 @@ impl MergePipeline {
         Self {
             params,
             previous_generations_statistics: Default::default(),
-            handles: None,
+            handles_opt: None,
             kill_switch: KillSwitch::default(),
             statistics: MergeStatistics::default(),
             merge_planner_inbox,
@@ -114,7 +128,7 @@ impl MergePipeline {
     }
 
     fn supervisables(&self) -> Vec<&dyn Supervisable> {
-        if let Some(handles) = &self.handles {
+        if let Some(handles) = &self.handles_opt {
             let supervisables: Vec<&dyn Supervisable> = vec![
                 &handles.merge_planner,
                 &handles.merge_split_downloader,
@@ -131,12 +145,12 @@ impl MergePipeline {
 
     /// Performs healthcheck on all of the actors in the pipeline,
     /// and consolidates the result.
-    fn healthcheck(&self) -> Health {
+    fn healthcheck(&self, check_for_progress: bool) -> Health {
         let mut healthy_actors: Vec<&str> = Default::default();
         let mut failure_or_unhealthy_actors: Vec<&str> = Default::default();
         let mut success_actors: Vec<&str> = Default::default();
         for supervisable in self.supervisables() {
-            match supervisable.harvest_health() {
+            match supervisable.check_health(check_for_progress) {
                 Health::Healthy => {
                     // At least one other actor is running.
                     healthy_actors.push(supervisable.name());
@@ -313,20 +327,21 @@ impl MergePipeline {
 
         self.previous_generations_statistics = self.statistics.clone();
         self.statistics.generation += 1;
-        self.handles = Some(MergePipelineHandles {
+        self.handles_opt = Some(MergePipelineHandles {
             merge_planner: merge_planner_handler,
             merge_split_downloader: merge_split_downloader_handler,
             merge_executor: merge_executor_handler,
             merge_packager: merge_packager_handler,
             merge_uploader: merge_uploader_handler,
             merge_publisher: merge_publisher_handler,
+            next_check_for_progress: Instant::now() + *HEARTBEAT,
         });
         Ok(())
     }
 
     async fn terminate(&mut self) {
         self.kill_switch.kill();
-        if let Some(handlers) = self.handles.take() {
+        if let Some(handlers) = self.handles_opt.take() {
             tokio::join!(
                 handlers.merge_planner.kill(),
                 handlers.merge_split_downloader.kill(),
@@ -337,58 +352,63 @@ impl MergePipeline {
             );
         }
     }
-}
 
-#[async_trait]
-impl Handler<Observe> for MergePipeline {
-    type Reply = ();
-    async fn handle(
+    async fn perform_observe(&mut self) {
+        let Some(handles) = &self.handles_opt else {
+            return;
+        };
+        let (merge_planner_state, merge_uploader_counters, merge_publisher_counters) = join!(
+            handles.merge_planner.observe(),
+            handles.merge_uploader.observe(),
+            handles.merge_publisher.observe(),
+        );
+        self.statistics = self
+            .previous_generations_statistics
+            .clone()
+            .add_actor_counters(&merge_uploader_counters, &merge_publisher_counters)
+            .set_generation(self.statistics.generation)
+            .set_num_spawn_attempts(self.statistics.num_spawn_attempts)
+            .set_ongoing_merges(merge_planner_state.ongoing_merge_operations.len());
+    }
+
+    async fn perform_health_check(
         &mut self,
-        _: Observe,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        if let Some(handles) = &self.handles {
-            let (merge_planner_state, merge_uploader_counters, merge_publisher_counters) = join!(
-                handles.merge_planner.observe(),
-                handles.merge_uploader.observe(),
-                handles.merge_publisher.observe(),
-            );
-            self.statistics = self
-                .previous_generations_statistics
-                .clone()
-                .add_actor_counters(&merge_uploader_counters, &merge_publisher_counters)
-                .set_generation(self.statistics.generation)
-                .set_num_spawn_attempts(self.statistics.num_spawn_attempts)
-                .set_ongoing_merges(merge_planner_state.ongoing_merge_operations.len());
+        let Some(handles) = self.handles_opt.as_mut() else {
+            return Ok(());
+        };
+        // While we check if the actor has terminated or not, we do not check for progress
+        // at every single loop. Instead, we wait for the `HEARTBEAT` duration to have elapsed,
+        // since our last check.
+        let check_for_progress = handles.should_check_for_progress();
+        let health = self.healthcheck(check_for_progress);
+        match health {
+            Health::Healthy => {}
+            Health::FailureOrUnhealthy => {
+                self.terminate().await;
+                ctx.schedule_self_msg(*quickwit_actors::HEARTBEAT, Spawn { retry_count: 0 })
+                    .await;
+            }
+            Health::Success => {
+                return Err(ActorExitStatus::Success);
+            }
         }
-        ctx.schedule_self_msg(Duration::from_secs(1), Observe).await;
         Ok(())
     }
 }
 
 #[async_trait]
-impl Handler<Supervise> for MergePipeline {
+impl Handler<SuperviseLoop> for MergePipeline {
     type Reply = ();
-
     async fn handle(
         &mut self,
-        _: Supervise,
+        supervise_loop_token: SuperviseLoop,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        if self.handles.is_some() {
-            match self.healthcheck() {
-                Health::Healthy => {}
-                Health::FailureOrUnhealthy => {
-                    self.terminate().await;
-                    ctx.schedule_self_msg(*quickwit_actors::HEARTBEAT, Spawn { retry_count: 0 })
-                        .await;
-                }
-                Health::Success => {
-                    return Err(ActorExitStatus::Success);
-                }
-            }
-        }
-        ctx.schedule_self_msg(*quickwit_actors::HEARTBEAT, Supervise)
+        self.perform_observe().await;
+        self.perform_health_check(ctx).await?;
+        ctx.schedule_self_msg(Duration::from_secs(1), supervise_loop_token)
             .await;
         Ok(())
     }
@@ -403,7 +423,7 @@ impl Handler<Spawn> for MergePipeline {
         spawn: Spawn,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        if self.handles.is_some() {
+        if self.handles_opt.is_some() {
             return Ok(());
         }
         self.previous_generations_statistics.num_spawn_attempts = 1 + spawn.retry_count;
