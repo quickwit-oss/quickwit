@@ -19,12 +19,10 @@
 
 use std::num::NonZeroU32;
 
-use anyhow::bail;
 use serde::{Deserialize, Serialize};
 
 use super::tokenizer_entry::TokenizerEntry;
 use super::FieldMappingEntry;
-use crate::default_doc_mapper::default_mapper::Mode;
 use crate::default_doc_mapper::QuickwitJsonOptions;
 use crate::DefaultDocMapper;
 
@@ -34,6 +32,7 @@ use crate::DefaultDocMapper;
 /// It is also used to serialize/deserialize a DocMapper.
 /// note that this is not the way is the DocMapping is deserialized
 /// from the configuration.
+#[quickwit_macros::serde_multikey]
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct DefaultDocMapperBuilder {
@@ -60,16 +59,79 @@ pub struct DefaultDocMapperBuilder {
     /// Maximum number of partitions.
     #[serde(default = "DefaultDocMapper::default_max_num_partitions")]
     pub max_num_partitions: NonZeroU32,
-    /// Defines the indexing mode.
-    #[serde(default)]
-    pub mode: ModeType,
-    /// If mode is set to dynamic, `dynamic_mapping` defines
-    /// how the unmapped fields should be handled.
-    #[serde(default)]
-    pub dynamic_mapping: Option<QuickwitJsonOptions>,
+    #[serde_multikey(
+        deserializer = Mode::from_parts,
+        serializer = Mode::into_parts,
+        fields = (
+            /// Defines the indexing mode.
+            #[serde(default)]
+            mode: ModeType,
+            /// If mode is set to dynamic, `dynamic_mapping` defines
+            /// how the unmapped fields should be handled.
+            #[serde(default)]
+            dynamic_mapping: Option<QuickwitJsonOptions>,
+        ),
+    )]
+    /// Defines how the unmapped fields should be handled.
+    pub mode: Mode,
     /// User-defined tokenizers.
     #[serde(default)]
     pub tokenizers: Vec<TokenizerEntry>,
+}
+
+/// Defines how an unmapped field should be handled.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+pub enum Mode {
+    /// Lenient mode: unmapped fields are just ignored.
+    Lenient,
+    /// Strict mode: when parsing a document with an unmapped field, an error is yielded.
+    Strict,
+    /// Dynamic mode: unmapped fields are captured and handled according to the provided
+    /// configuration.
+    Dynamic(QuickwitJsonOptions),
+}
+
+impl Mode {
+    /// Extact the `ModeType` of this `Mode`
+    pub fn mode_type(&self) -> ModeType {
+        match self {
+            Mode::Lenient => ModeType::Lenient,
+            Mode::Strict => ModeType::Strict,
+            Mode::Dynamic(_) => ModeType::Dynamic,
+        }
+    }
+
+    /// Build a Mode from its type and optional dynamic mapping options
+    pub fn from_parts(
+        mode: ModeType,
+        dynamic_mapping: Option<QuickwitJsonOptions>,
+    ) -> anyhow::Result<Mode> {
+        Ok(match (mode, dynamic_mapping) {
+            (ModeType::Lenient, None) => Mode::Lenient,
+            (ModeType::Strict, None) => Mode::Strict,
+            (ModeType::Dynamic, Some(dynamic_mapping)) => Mode::Dynamic(dynamic_mapping),
+            (ModeType::Dynamic, None) => Mode::default(), // Dynamic with default options
+            (_, Some(_)) => anyhow::bail!(
+                "`dynamic_mapping` is only allowed with mode=dynamic. (Here mode=`{:?}`)",
+                mode
+            ),
+        })
+    }
+
+    /// Obtain the mode type and dynamic options from a Mode
+    pub fn into_parts(self) -> (ModeType, Option<QuickwitJsonOptions>) {
+        match self {
+            Mode::Lenient => (ModeType::Lenient, None),
+            Mode::Strict => (ModeType::Strict, None),
+            Mode::Dynamic(json_options) => (ModeType::Dynamic, Some(json_options)),
+        }
+    }
+}
+
+impl Default for Mode {
+    fn default() -> Self {
+        Mode::Dynamic(QuickwitJsonOptions::default_dynamic())
+    }
 }
 
 /// `Mode` describing how the unmapped field should be handled.
@@ -93,35 +155,7 @@ impl Default for DefaultDocMapperBuilder {
     }
 }
 
-// By default, in dynamic mode, all fields are fast fields.
-fn default_dynamic_mapping() -> QuickwitJsonOptions {
-    QuickwitJsonOptions {
-        fast: super::FastFieldOptions::EnabledWithNormalizer {
-            normalizer: super::QuickwitTextNormalizer::Raw,
-        },
-        ..Default::default()
-    }
-}
-
 impl DefaultDocMapperBuilder {
-    pub(crate) fn mode(&self) -> anyhow::Result<Mode> {
-        if self.mode != ModeType::Dynamic && self.dynamic_mapping.is_some() {
-            bail!(
-                "`dynamic_mapping` is only allowed with mode=dynamic. (Here mode=`{:?}`)",
-                self.mode
-            );
-        }
-        Ok(match self.mode {
-            ModeType::Lenient => Mode::Lenient,
-            ModeType::Strict => Mode::Strict,
-            ModeType::Dynamic => Mode::Dynamic(
-                self.dynamic_mapping
-                    .clone()
-                    .unwrap_or_else(default_dynamic_mapping),
-            ),
-        })
-    }
-
     /// Build a valid `DefaultDocMapper`.
     /// This will consume your `DefaultDocMapperBuilder`.
     pub fn try_build(self) -> anyhow::Result<DefaultDocMapper> {
@@ -140,8 +174,7 @@ mod tests {
         assert!(default_mapper_builder.default_search_fields.is_empty());
         assert!(default_mapper_builder.field_mappings.is_empty());
         assert!(default_mapper_builder.tag_fields.is_empty());
-        assert_eq!(default_mapper_builder.mode, ModeType::Dynamic);
-        assert!(default_mapper_builder.dynamic_mapping.is_none());
+        assert_eq!(default_mapper_builder.mode.mode_type(), ModeType::Dynamic);
         assert_eq!(default_mapper_builder.store_source, false);
         assert!(default_mapper_builder.timestamp_field.is_none());
     }
