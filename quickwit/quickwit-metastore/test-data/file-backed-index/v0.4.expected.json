@@ -18,6 +18,16 @@
     "create_timestamp": 1789,
     "index_config": {
       "doc_mapping": {
+        "dynamic_mapping": {
+          "expand_dots": true,
+          "fast": {
+            "normalizer": "raw"
+          },
+          "indexed": true,
+          "record": "basic",
+          "stored": true,
+          "tokenizer": "raw"
+        },
         "field_mappings": [
           {
             "fast": true,
@@ -44,6 +54,7 @@
             "fieldnorms": false,
             "indexed": true,
             "name": "log_level",
+            "record": "basic",
             "stored": true,
             "tokenizer": "raw",
             "type": "text"

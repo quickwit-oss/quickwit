@@ -7,6 +7,16 @@
   "create_timestamp": 1789,
   "index_config": {
     "doc_mapping": {
+      "dynamic_mapping": {
+        "expand_dots": true,
+        "fast": {
+          "normalizer": "raw"
+        },
+        "indexed": true,
+        "record": "basic",
+        "stored": true,
+        "tokenizer": "raw"
+      },
       "field_mappings": [
         {
           "fast": true,
@@ -33,6 +43,7 @@
           "fieldnorms": false,
           "indexed": true,
           "name": "log_level",
+          "record": "basic",
           "stored": true,
           "tokenizer": "raw",
           "type": "text"
@@ -109,7 +120,8 @@
       "source_id": "kafka-source",
       "source_type": "kafka",
       "transform": {
-        "script": ".message = downcase(string!(.message))"
+        "script": ".message = downcase(string!(.message))",
+        "timezone": "UTC"
       },
       "version": "0.6"
     }

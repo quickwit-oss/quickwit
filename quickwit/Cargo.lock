@@ -4962,6 +4962,7 @@ dependencies = [
  "once_cell",
  "quickwit-common",
  "quickwit-doc-mapper",
+ "quickwit-macros",
  "regex",
  "serde",
  "serde_json",
@@ -5064,6 +5065,7 @@ dependencies = [
  "once_cell",
  "proptest",
  "quickwit-datetime",
+ "quickwit-macros",
  "quickwit-proto",
  "quickwit-query",
  "regex",
@@ -5313,6 +5315,8 @@ version = "0.6.3"
 dependencies = [
  "proc-macro2",
  "quickwit-macros-impl",
+ "quote",
+ "syn 2.0.26",
 ]
 
 [[package]]

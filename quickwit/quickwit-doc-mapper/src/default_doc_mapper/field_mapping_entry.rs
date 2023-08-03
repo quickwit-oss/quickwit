@@ -253,6 +253,106 @@ impl QuickwitTextNormalizer {
     }
 }
 
+#[derive(Clone, PartialEq, Debug)]
+pub struct TextIndexingOptions {
+    pub tokenizer: QuickwitTextTokenizer,
+    pub record: IndexRecordOption,
+    pub fieldnorms: bool,
+}
+
+impl TextIndexingOptions {
+    fn from_parts_text(
+        indexed: bool,
+        tokenizer: Option<QuickwitTextTokenizer>,
+        record: Option<IndexRecordOption>,
+        fieldnorms: bool,
+    ) -> anyhow::Result<Option<Self>> {
+        if indexed {
+            Ok(Some(TextIndexingOptions {
+                tokenizer: tokenizer.unwrap_or_default(),
+                record: record.unwrap_or(IndexRecordOption::Basic),
+                fieldnorms,
+            }))
+        } else {
+            if tokenizer.is_some() || record.is_some() || fieldnorms {
+                bail!(
+                    "`record`, `tokenizer`, and `fieldnorms` parameters are allowed only if \
+                     indexed is true."
+                )
+            }
+            Ok(None)
+        }
+    }
+
+    fn from_parts_json(
+        indexed: bool,
+        tokenizer: Option<QuickwitTextTokenizer>,
+        record: Option<IndexRecordOption>,
+    ) -> anyhow::Result<Option<Self>> {
+        if indexed {
+            Ok(Some(TextIndexingOptions {
+                tokenizer: tokenizer.unwrap_or_else(QuickwitTextTokenizer::raw),
+                record: record.unwrap_or(IndexRecordOption::Basic),
+                fieldnorms: false,
+            }))
+        } else {
+            if tokenizer.is_some() || record.is_some() {
+                bail!("`record` and `tokenizer` parameters are allowed only if indexed is true.")
+            }
+            Ok(None)
+        }
+    }
+
+    fn to_parts_text(
+        this: Option<Self>,
+    ) -> (
+        bool, // indexed
+        Option<QuickwitTextTokenizer>,
+        Option<IndexRecordOption>,
+        bool, // fieldnorms
+    ) {
+        match this {
+            Some(this) => (
+                true,
+                Some(this.tokenizer),
+                Some(this.record),
+                this.fieldnorms,
+            ),
+            None => (false, None, None, false),
+        }
+    }
+
+    fn to_parts_json(
+        this: Option<Self>,
+    ) -> (
+        bool, // indexed
+        Option<QuickwitTextTokenizer>,
+        Option<IndexRecordOption>,
+    ) {
+        let (indexed, tokenizer, record, _fieldorm) = TextIndexingOptions::to_parts_text(this);
+        (indexed, tokenizer, record)
+    }
+
+    fn default_json() -> Self {
+        TextIndexingOptions {
+            tokenizer: QuickwitTextTokenizer::raw(),
+            record: IndexRecordOption::Basic,
+            fieldnorms: false,
+        }
+    }
+}
+
+impl Default for TextIndexingOptions {
+    fn default() -> Self {
+        TextIndexingOptions {
+            tokenizer: QuickwitTextTokenizer::default(),
+            record: IndexRecordOption::Basic,
+            fieldnorms: false,
+        }
+    }
+}
+
+#[quickwit_macros::serde_multikey]
 #[derive(Clone, PartialEq, Serialize, Deserialize, Debug, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct QuickwitTextOptions {
@@ -260,17 +360,24 @@ pub struct QuickwitTextOptions {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    #[serde(default = "default_as_true")]
-    pub indexed: bool,
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tokenizer: Option<QuickwitTextTokenizer>,
-    #[schema(value_type = IndexRecordOptionSchema)]
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub record: Option<IndexRecordOption>,
-    #[serde(default)]
-    pub fieldnorms: bool,
+    #[serde_multikey(
+        deserializer = TextIndexingOptions::from_parts_text,
+        serializer = TextIndexingOptions::to_parts_text,
+        fields = (
+            #[serde(default = "default_as_true")]
+            pub indexed: bool,
+            #[serde(default)]
+            #[serde(skip_serializing_if = "Option::is_none")]
+            pub tokenizer: Option<QuickwitTextTokenizer>,
+            #[schema(value_type = IndexRecordOptionSchema)]
+            #[serde(default)]
+            #[serde(skip_serializing_if = "Option::is_none")]
+            pub record: Option<IndexRecordOption>,
+            #[serde(default)]
+            pub fieldnorms: bool,
+        ),
+    )]
+    pub indexing_options: Option<TextIndexingOptions>,
     #[serde(default = "default_as_true")]
     pub stored: bool,
     #[serde(default)]
@@ -290,6 +397,14 @@ pub enum FastFieldOptions {
     },
 }
 
+impl FastFieldOptions {
+    pub fn default_enabled() -> Self {
+        FastFieldOptions::EnabledWithNormalizer {
+            normalizer: QuickwitTextNormalizer::Raw,
+        }
+    }
+}
+
 #[derive(Serialize, Deserialize)]
 #[serde(untagged)]
 enum FastFieldOptionsForSerialization {
@@ -302,9 +417,7 @@ impl From<FastFieldOptionsForSerialization> for FastFieldOptions {
         match fast_field_options {
             FastFieldOptionsForSerialization::IsEnabled(is_enabled) => {
                 if is_enabled {
-                    FastFieldOptions::EnabledWithNormalizer {
-                        normalizer: QuickwitTextNormalizer::Raw,
-                    }
+                    FastFieldOptions::default_enabled()
                 } else {
                     FastFieldOptions::Disabled
                 }
@@ -331,10 +444,7 @@ impl Default for QuickwitTextOptions {
     fn default() -> Self {
         Self {
             description: None,
-            indexed: true,
-            tokenizer: None,
-            record: None,
-            fieldnorms: false,
+            indexing_options: Some(TextIndexingOptions::default()),
             stored: true,
             fast: FastFieldOptions::default(),
         }
@@ -353,17 +463,11 @@ impl From<QuickwitTextOptions> for TextOptions {
             }
             FastFieldOptions::Disabled => {}
         }
-        if quickwit_text_options.indexed {
-            let index_record_option = quickwit_text_options
-                .record
-                .unwrap_or(IndexRecordOption::Basic);
-            let tokenizer = quickwit_text_options
-                .tokenizer
-                .unwrap_or(QuickwitTextTokenizer::default());
+        if let Some(indexing_options) = quickwit_text_options.indexing_options {
             let text_field_indexing = TextFieldIndexing::default()
-                .set_index_option(index_record_option)
-                .set_fieldnorms(quickwit_text_options.fieldnorms)
-                .set_tokenizer(tokenizer.name());
+                .set_index_option(indexing_options.record)
+                .set_fieldnorms(indexing_options.fieldnorms)
+                .set_tokenizer(indexing_options.tokenizer.name());
 
             text_options = text_options.set_indexing_options(text_field_indexing);
         }
@@ -391,6 +495,7 @@ pub enum IndexRecordOptionSchema {
 ///
 /// `QuickwitJsonOptions` is also used to configure
 /// the dynamic mapping.
+#[quickwit_macros::serde_multikey]
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct QuickwitJsonOptions {
@@ -398,22 +503,30 @@ pub struct QuickwitJsonOptions {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    /// If true, all of the element in the json object will be indexed.
-    #[serde(default = "default_as_true")]
-    pub indexed: bool,
-    /// Sets the tokenize that should be used with the text fields in the
-    /// json object.
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub tokenizer: Option<QuickwitTextTokenizer>,
-    /// Sets how much information should be added in the index
-    /// with each token.
-    ///
-    /// Setting `record` is only allowed if indexed == true.
-    #[schema(value_type = IndexRecordOptionSchema)]
-    #[serde(default)]
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub record: Option<IndexRecordOption>,
+    #[serde_multikey(
+        deserializer = TextIndexingOptions::from_parts_json,
+        serializer = TextIndexingOptions::to_parts_json,
+        fields = (
+            /// If true, all of the element in the json object will be indexed.
+            #[serde(default = "default_as_true")]
+            pub indexed: bool,
+            /// Sets the tokenize that should be used with the text fields in the
+            /// json object.
+            #[serde(default)]
+            #[serde(skip_serializing_if = "Option::is_none")]
+            pub tokenizer: Option<QuickwitTextTokenizer>,
+            /// Sets how much information should be added in the index
+            /// with each token.
+            ///
+            /// Setting `record` is only allowed if indexed == true.
+            #[schema(value_type = IndexRecordOptionSchema)]
+            #[serde(default)]
+            #[serde(skip_serializing_if = "Option::is_none")]
+            pub record: Option<IndexRecordOption>,
+        ),
+    )]
+    /// Options for indexing text in a Json field.
+    pub indexing_options: Option<TextIndexingOptions>,
     /// If true, the field will be stored in the doc store.
     #[serde(default = "default_as_true")]
     pub stored: bool,
@@ -425,13 +538,21 @@ pub struct QuickwitJsonOptions {
     pub fast: FastFieldOptions,
 }
 
+impl QuickwitJsonOptions {
+    /// Build a default QuickwitJsonOptions for dynamic fields.
+    pub fn default_dynamic() -> Self {
+        QuickwitJsonOptions {
+            fast: FastFieldOptions::default_enabled(),
+            ..Default::default()
+        }
+    }
+}
+
 impl Default for QuickwitJsonOptions {
     fn default() -> Self {
         QuickwitJsonOptions {
             description: None,
-            indexed: true,
-            tokenizer: None,
-            record: None,
+            indexing_options: Some(TextIndexingOptions::default_json()),
             stored: true,
             expand_dots: true,
             fast: FastFieldOptions::default(),
@@ -445,16 +566,10 @@ impl From<QuickwitJsonOptions> for JsonObjectOptions {
         if quickwit_json_options.stored {
             json_options = json_options.set_stored();
         }
-        if quickwit_json_options.indexed {
-            let index_record_option = quickwit_json_options
-                .record
-                .unwrap_or(IndexRecordOption::Basic);
-            let tokenizer = quickwit_json_options
-                .tokenizer
-                .unwrap_or(QuickwitTextTokenizer::raw());
+        if let Some(indexing_options) = quickwit_json_options.indexing_options {
             let text_field_indexing = TextFieldIndexing::default()
-                .set_tokenizer(tokenizer.name())
-                .set_index_option(index_record_option);
+                .set_tokenizer(indexing_options.tokenizer.name())
+                .set_index_option(indexing_options.record);
             json_options = json_options.set_indexing_options(text_field_indexing);
         }
         if quickwit_json_options.expand_dots {
@@ -488,18 +603,6 @@ fn deserialize_mapping_type(
     match typ {
         Type::Str => {
             let text_options: QuickwitTextOptions = serde_json::from_value(json)?;
-            #[allow(clippy::collapsible_if)]
-            if !text_options.indexed {
-                if text_options.tokenizer.is_some()
-                    || text_options.record.is_some()
-                    || text_options.fieldnorms
-                {
-                    bail!(
-                        "`record`, `tokenizer`, and `fieldnorms` parameters are allowed only if \
-                         indexed is true."
-                    );
-                }
-            }
             Ok(FieldMappingType::Text(text_options, cardinality))
         }
         Type::U64 => {
@@ -536,14 +639,6 @@ fn deserialize_mapping_type(
         }
         Type::Json => {
             let json_options: QuickwitJsonOptions = serde_json::from_value(json)?;
-            #[allow(clippy::collapsible_if)]
-            if !json_options.indexed {
-                if json_options.tokenizer.is_some() || json_options.record.is_some() {
-                    bail!(
-                        "`record` and `tokenizer` parameters are allowed only if indexed is true."
-                    );
-                }
-            }
             Ok(FieldMappingType::Json(json_options, cardinality))
         }
     }
@@ -625,7 +720,7 @@ mod tests {
 
     use super::FieldMappingEntry;
     use crate::default_doc_mapper::field_mapping_entry::{
-        QuickwitJsonOptions, QuickwitTextOptions, QuickwitTextTokenizer,
+        QuickwitJsonOptions, QuickwitTextOptions, TextIndexingOptions,
     };
     use crate::default_doc_mapper::{FastFieldOptions, FieldMappingType};
     use crate::Cardinality;
@@ -681,8 +776,7 @@ mod tests {
         match mapping_entry.mapping_type {
             FieldMappingType::Text(options, _) => {
                 assert_eq!(options.stored, true);
-                assert_eq!(options.indexed, false);
-                assert_eq!(options.record.is_some(), false);
+                assert!(options.indexing_options.is_none());
             }
             _ => panic!("wrong property type"),
         }
@@ -725,8 +819,7 @@ mod tests {
         match mapping_entry.mapping_type {
             FieldMappingType::Json(options, _) => {
                 assert_eq!(options.stored, true);
-                assert_eq!(options.indexed, false);
-                assert_eq!(options.record.is_some(), false);
+                assert!(options.indexing_options.is_none());
             }
             _ => panic!("wrong property type"),
         }
@@ -812,9 +905,9 @@ mod tests {
         match mapping_entry.mapping_type {
             FieldMappingType::Text(options, _) => {
                 assert_eq!(options.stored, true);
-                assert_eq!(options.indexed, true);
-                assert_eq!(options.tokenizer.unwrap().name(), "en_stem");
-                assert_eq!(options.record.unwrap(), IndexRecordOption::Basic);
+                let indexing_options = options.indexing_options.unwrap();
+                assert_eq!(indexing_options.tokenizer.name(), "en_stem");
+                assert_eq!(indexing_options.record, IndexRecordOption::Basic);
             }
             _ => panic!("wrong property type"),
         }
@@ -838,8 +931,8 @@ mod tests {
         match result.unwrap().mapping_type {
             FieldMappingType::Text(options, _) => {
                 assert_eq!(options.stored, true);
-                assert_eq!(options.indexed, true);
-                assert_eq!(options.fieldnorms, true);
+                let indexing_options = options.indexing_options.unwrap();
+                assert_eq!(indexing_options.fieldnorms, true);
             }
             _ => panic!("wrong property type"),
         }
@@ -1237,6 +1330,8 @@ mod tests {
                 "fast": false,
                 "stored": true,
                 "indexed": true,
+                "record": "basic",
+                "tokenizer": "default",
                 "fieldnorms": false,
             })
         );
@@ -1263,6 +1358,8 @@ mod tests {
                 "fast": {"normalizer": "lowercase"},
                 "stored": true,
                 "indexed": true,
+                "record": "basic",
+                "tokenizer": "default",
                 "fieldnorms": false,
             })
         );
@@ -1287,6 +1384,8 @@ mod tests {
                 "type": "array<text>",
                 "stored": true,
                 "indexed": true,
+                "record": "basic",
+                "tokenizer": "default",
                 "fieldnorms": false,
                 "fast": false,
             })
@@ -1436,9 +1535,7 @@ mod tests {
         .unwrap();
         let expected_json_options = QuickwitJsonOptions {
             description: None,
-            indexed: true,
-            tokenizer: None,
-            record: None,
+            indexing_options: Some(TextIndexingOptions::default_json()),
             stored: true,
             fast: FastFieldOptions::Disabled,
             expand_dots: true,
@@ -1453,7 +1550,14 @@ mod tests {
     #[test]
     fn test_quickwit_json_options_default_tokenizer_is_default() {
         let quickwit_json_options = QuickwitJsonOptions::default();
-        assert_eq!(quickwit_json_options.tokenizer, None);
+        assert_eq!(
+            quickwit_json_options
+                .indexing_options
+                .unwrap()
+                .tokenizer
+                .name(),
+            "raw"
+        );
     }
 
     #[test]
@@ -1478,9 +1582,7 @@ mod tests {
         .unwrap();
         let expected_json_options = QuickwitJsonOptions {
             description: None,
-            indexed: true,
-            tokenizer: Some(QuickwitTextTokenizer::raw()),
-            record: None,
+            indexing_options: Some(TextIndexingOptions::default_json()),
             stored: false,
             expand_dots: true,
             fast: FastFieldOptions::Disabled,
@@ -1540,6 +1642,8 @@ mod tests {
                 "fast": false,
                 "stored": true,
                 "indexed": true,
+                "record": "basic",
+                "tokenizer": "default",
                 "fieldnorms": false,
             })
         );
@@ -1565,6 +1669,8 @@ mod tests {
                 "type": "json",
                 "stored": true,
                 "indexed": true,
+                "tokenizer": "raw",
+                "record": "basic",
                 "fast": false,
                 "expand_dots": true,
             })

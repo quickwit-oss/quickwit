@@ -149,7 +149,7 @@ sqlx = { version = "0.7", features = [
   "migrate",
   "time",
 ] }
-syn = "2.0.11"
+syn = { version = "2.0.11", features = [ "extra-traits", "full", "parsing" ]}
 sync_wrapper = "0.1.2"
 tabled = { version = "0.8", features = ["color"] }
 tempfile = "3"
