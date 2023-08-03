@@ -306,10 +306,10 @@ impl TextIndexingOptions {
     fn to_parts_text(
         this: Option<Self>,
     ) -> (
-        bool,
+        bool, // indexed
         Option<QuickwitTextTokenizer>,
         Option<IndexRecordOption>,
-        bool,
+        bool, // fieldnorms
     ) {
         match this {
             Some(this) => (
@@ -325,7 +325,7 @@ impl TextIndexingOptions {
     fn to_parts_json(
         this: Option<Self>,
     ) -> (
-        bool,
+        bool, // indexed
         Option<QuickwitTextTokenizer>,
         Option<IndexRecordOption>,
     ) {
