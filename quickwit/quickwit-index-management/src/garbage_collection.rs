@@ -23,8 +23,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use futures::Future;
-use quickwit_actors::ActorContext;
-use quickwit_common::PrettySample;
+use quickwit_common::{PrettySample, Progress};
 use quickwit_metastore::{
     ListSplitsQuery, Metastore, MetastoreError, SplitInfo, SplitMetadata, SplitState,
 };
@@ -33,8 +32,6 @@ use quickwit_storage::{BulkDeleteError, Storage};
 use thiserror::Error;
 use time::OffsetDateTime;
 use tracing::{error, instrument};
-
-use crate::actors::GarbageCollector;
 
 /// The maximum number of splits that the GC should delete per attempt.
 const DELETE_SPLITS_BATCH_SIZE: usize = 1000;
@@ -51,17 +48,14 @@ pub struct DeleteSplitsError {
     metastore_failures: Vec<SplitInfo>,
 }
 
-async fn protect_future<Fut, T>(
-    ctx_opt: Option<&ActorContext<GarbageCollector>>,
-    future: Fut,
-) -> T
-where
-    Fut: Future<Output = T>,
-{
-    if let Some(ctx) = ctx_opt {
-        ctx.protect_future(future).await
-    } else {
-        future.await
+async fn protect_future<Fut, T>(progress: Option<&Progress>, future: Fut) -> T
+where Fut: Future<Output = T> {
+    match progress {
+        None => future.await,
+        Some(progress) => {
+            let _guard = progress.protect_zone();
+            future.await
+        }
     }
 }
 
@@ -83,7 +77,7 @@ pub struct SplitRemovalInfo {
 /// * `deletion_grace_period` -  Threshold period after which a marked as deleted split can be
 ///   safely deleted.
 /// * `dry_run` - Should this only return a list of affected files without performing deletion.
-/// * `ctx_opt` - A context for reporting progress (only useful within quickwit actor).
+/// * `progress` - For reporting progress (useful when called from within a quickwit actor).
 pub async fn run_garbage_collect(
     index_uid: IndexUid,
     storage: Arc<dyn Storage>,
@@ -91,7 +85,7 @@ pub async fn run_garbage_collect(
     staged_grace_period: Duration,
     deletion_grace_period: Duration,
     dry_run: bool,
-    ctx_opt: Option<&ActorContext<GarbageCollector>>,
+    progress_opt: Option<&Progress>,
 ) -> anyhow::Result<SplitRemovalInfo> {
     // Select staged splits with staging timestamp older than grace period timestamp.
     let grace_period_timestamp =
@@ -102,7 +96,7 @@ pub async fn run_garbage_collect(
         .with_update_timestamp_lte(grace_period_timestamp);
 
     let deletable_staged_splits: Vec<SplitMetadata> =
-        protect_future(ctx_opt, metastore.list_splits(query))
+        protect_future(progress_opt, metastore.list_splits(query))
             .await?
             .into_iter()
             .map(|meta| meta.split_metadata)
@@ -112,11 +106,12 @@ pub async fn run_garbage_collect(
         let query = ListSplitsQuery::for_index(index_uid.clone())
             .with_split_state(SplitState::MarkedForDeletion);
 
-        let mut splits_marked_for_deletion = protect_future(ctx_opt, metastore.list_splits(query))
-            .await?
-            .into_iter()
-            .map(|split| split.split_metadata)
-            .collect::<Vec<_>>();
+        let mut splits_marked_for_deletion =
+            protect_future(progress_opt, metastore.list_splits(query))
+                .await?
+                .into_iter()
+                .map(|split| split.split_metadata)
+                .collect::<Vec<_>>();
         splits_marked_for_deletion.extend(deletable_staged_splits);
 
         let candidate_entries: Vec<SplitInfo> = splits_marked_for_deletion
@@ -136,7 +131,7 @@ pub async fn run_garbage_collect(
         .collect();
     if !split_ids.is_empty() {
         protect_future(
-            ctx_opt,
+            progress_opt,
             metastore.mark_splits_for_deletion(index_uid.clone(), &split_ids),
         )
         .await?;
@@ -152,14 +147,13 @@ pub async fn run_garbage_collect(
         updated_before_timestamp,
         storage,
         metastore,
-        ctx_opt,
+        progress_opt,
     )
     .await;
 
     Ok(deleted_splits)
 }
-
-#[instrument(skip(storage, metastore, ctx_opt))]
+#[instrument(skip(storage, metastore, progress_opt))]
 /// Removes any splits marked for deletion which haven't been
 /// updated after `updated_before_timestamp` in batches of 1000 splits.
 ///
@@ -170,7 +164,7 @@ async fn delete_splits_marked_for_deletion(
     updated_before_timestamp: i64,
     storage: Arc<dyn Storage>,
     metastore: Arc<dyn Metastore>,
-    ctx_opt: Option<&ActorContext<GarbageCollector>>,
+    progress_opt: Option<&Progress>,
 ) -> SplitRemovalInfo {
     let mut removed_splits = Vec::new();
     let mut failed_splits = Vec::new();
@@ -181,7 +175,7 @@ async fn delete_splits_marked_for_deletion(
             .with_update_timestamp_lte(updated_before_timestamp)
             .with_limit(DELETE_SPLITS_BATCH_SIZE);
 
-        let list_splits_result = protect_future(ctx_opt, metastore.list_splits(query)).await;
+        let list_splits_result = protect_future(progress_opt, metastore.list_splits(query)).await;
 
         let splits_to_delete = match list_splits_result {
             Ok(splits) => splits,
@@ -205,7 +199,7 @@ async fn delete_splits_marked_for_deletion(
             storage.clone(),
             metastore.clone(),
             splits_to_delete,
-            ctx_opt,
+            progress_opt,
         )
         .await;
 
@@ -234,13 +228,13 @@ async fn delete_splits_marked_for_deletion(
 /// * `storage - The storage managing the target index.
 /// * `metastore` - The metastore managing the target index.
 /// * `splits`  - The list of splits to delete.
-/// * `ctx_opt` - A context for reporting progress (only useful within quickwit actor).
+/// * `progress` - For reporting progress (useful when called from within a quickwit actor).
 pub async fn delete_splits_from_storage_and_metastore(
     index_uid: IndexUid,
     storage: Arc<dyn Storage>,
     metastore: Arc<dyn Metastore>,
     splits: Vec<SplitMetadata>,
-    ctx_opt: Option<&ActorContext<GarbageCollector>>,
+    progress_opt: Option<&Progress>,
 ) -> anyhow::Result<Vec<SplitInfo>, DeleteSplitsError> {
     let mut split_infos: HashMap<PathBuf, SplitInfo> = HashMap::with_capacity(splits.len());
 
@@ -252,10 +246,10 @@ pub async fn delete_splits_from_storage_and_metastore(
         .keys()
         .map(|split_path_buf| split_path_buf.as_path())
         .collect::<Vec<&Path>>();
-    let delete_result = protect_future(ctx_opt, storage.bulk_delete(&split_paths)).await;
+    let delete_result = protect_future(progress_opt, storage.bulk_delete(&split_paths)).await;
 
-    if let Some(ctx) = ctx_opt {
-        ctx.record_progress();
+    if let Some(progress) = progress_opt {
+        progress.record_progress();
     }
     let mut successes = Vec::with_capacity(split_infos.len());
     let mut storage_error: Option<BulkDeleteError> = None;
@@ -292,7 +286,7 @@ pub async fn delete_splits_from_storage_and_metastore(
             .map(|split_info| split_info.split_id.as_str())
             .collect();
         let metastore_result = protect_future(
-            ctx_opt,
+            progress_opt,
             metastore.delete_splits(index_uid.clone(), &split_ids),
         )
         .await;

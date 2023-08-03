@@ -30,17 +30,12 @@ use tracing::info;
 
 pub mod actors;
 pub mod error;
-mod garbage_collection;
 mod janitor_service;
 mod metrics;
 mod retention_policy_execution;
 
 pub use janitor_service::JanitorService;
 
-pub use self::garbage_collection::{
-    delete_splits_from_storage_and_metastore, run_garbage_collect, DeleteSplitsError,
-    SplitRemovalInfo,
-};
 use crate::actors::{DeleteTaskService, GarbageCollector, RetentionPolicyExecutor};
 
 #[derive(utoipa::OpenApi)]

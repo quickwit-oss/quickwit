@@ -17,6 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+mod garbage_collection;
 mod index;
 
+pub use garbage_collection::run_garbage_collect;
 pub use index::{clear_cache_directory, validate_storage_uri, IndexService, IndexServiceError};

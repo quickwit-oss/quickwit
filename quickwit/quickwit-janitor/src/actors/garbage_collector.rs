@@ -26,12 +26,11 @@ use async_trait::async_trait;
 use futures::{stream, StreamExt};
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, Handler};
+use quickwit_index_management::run_garbage_collect;
 use quickwit_metastore::Metastore;
 use quickwit_storage::StorageResolver;
 use serde::Serialize;
 use tracing::{error, info};
-
-use crate::garbage_collection::run_garbage_collect;
 
 const RUN_INTERVAL: Duration = Duration::from_secs(10 * 60); // 10 minutes
 
@@ -122,7 +121,7 @@ impl GarbageCollector {
                 STAGED_GRACE_PERIOD,
                 DELETION_GRACE_PERIOD,
                 false,
-                Some(ctx),
+                Some(ctx.progress()),
             ).await;
             Some((index_uid, gc_res))
         }}).buffer_unordered(MAX_CONCURRENT_GC_TASKS);
