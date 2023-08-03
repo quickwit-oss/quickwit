@@ -18,10 +18,8 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 mod index;
-mod utils;
 
 pub use index::{
     clear_cache_directory, run_garbage_collect, validate_storage_uri, IndexService,
     IndexServiceError,
 };
-pub use utils::ExternalCallDelegate;

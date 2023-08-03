@@ -23,10 +23,10 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use futures::{stream, Future, StreamExt};
+use futures::{stream, StreamExt};
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, Handler};
-use quickwit_index_management::{run_garbage_collect, ExternalCallDelegate};
+use quickwit_index_management::run_garbage_collect;
 use quickwit_metastore::Metastore;
 use quickwit_storage::StorageResolver;
 use serde::Serialize;
@@ -77,19 +77,6 @@ pub struct GarbageCollector {
     counters: GarbageCollectorCounters,
 }
 
-#[derive(Clone, Copy)]
-struct ActorAwareCallDelegate<'a> {
-    ctx: &'a ActorContext<GarbageCollector>,
-}
-
-#[async_trait]
-impl ExternalCallDelegate for ActorAwareCallDelegate<'_> {
-    async fn delegate<Fut, T>(&self, future: Fut) -> T
-    where Fut: Future<Output = T> + Send {
-        self.ctx.protect_future(future).await
-    }
-}
-
 impl GarbageCollector {
     pub fn new(metastore: Arc<dyn Metastore>, storage_resolver: StorageResolver) -> Self {
         Self {
@@ -126,7 +113,6 @@ impl GarbageCollector {
                     return None;
                 }
             };
-            let ctx_aware_delegate = ActorAwareCallDelegate { ctx };
             let index_uid = index.index_uid;
             let gc_res = run_garbage_collect(
                 index_uid.clone(),
@@ -135,7 +121,7 @@ impl GarbageCollector {
                 STAGED_GRACE_PERIOD,
                 DELETION_GRACE_PERIOD,
                 false,
-                ctx_aware_delegate,
+                Some(ctx.progress()),
             ).await;
             Some((index_uid, gc_res))
         }}).buffer_unordered(MAX_CONCURRENT_GC_TASKS);
@@ -333,7 +319,7 @@ mod tests {
             STAGED_GRACE_PERIOD,
             DELETION_GRACE_PERIOD,
             false,
-            (),
+            None,
         )
         .await;
         assert!(result.is_ok());
