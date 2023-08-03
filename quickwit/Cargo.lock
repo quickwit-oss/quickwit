@@ -5105,6 +5105,7 @@ dependencies = [
  "tantivy",
  "tempfile",
  "thiserror",
+ "time 0.3.23",
  "tokio",
  "tokio-stream",
  "tokio-util",
