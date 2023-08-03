@@ -248,9 +248,9 @@ pub async fn delete_splits_from_storage_and_metastore(
         .collect::<Vec<&Path>>();
     let delete_result = protect_future(progress_opt, storage.bulk_delete(&split_paths)).await;
 
-    // if let Some(ctx) = ctx_opt {
-    //     ctx.record_progress();
-    // }
+    if let Some(progress) = progress_opt {
+        progress.record_progress();
+    }
     let mut successes = Vec::with_capacity(split_infos.len());
     let mut storage_error: Option<BulkDeleteError> = None;
     let mut storage_failures = Vec::new();

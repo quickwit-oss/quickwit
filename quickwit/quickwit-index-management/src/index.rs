@@ -32,7 +32,10 @@ use quickwit_storage::{StorageResolver, StorageResolverError};
 use thiserror::Error;
 use tracing::{error, info};
 
-use crate::garbage_collection::*;
+use crate::garbage_collection::{
+    delete_splits_from_storage_and_metastore, run_garbage_collect, DeleteSplitsError,
+    SplitRemovalInfo,
+};
 
 #[derive(Error, Debug)]
 pub enum IndexServiceError {
