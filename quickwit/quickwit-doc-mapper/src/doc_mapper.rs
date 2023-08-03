@@ -230,9 +230,9 @@ mod tests {
 
     use quickwit_query::query_ast::{query_ast_from_user_text, UserInputQuery};
     use quickwit_query::BooleanOperand;
-    use tantivy::schema::{Field, FieldType, IndexRecordOption, Term};
+    use tantivy::schema::{Field, FieldType, Term};
 
-    use crate::default_doc_mapper::{FieldMappingType, QuickwitJsonOptions, TextIndexingOptions};
+    use crate::default_doc_mapper::{FieldMappingType, QuickwitJsonOptions};
     use crate::{
         Cardinality, DefaultDocMapper, DefaultDocMapperBuilder, DocMapper, DocParsingError,
         FieldMappingEntry, Mode, TermRange, WarmupInfo, DYNAMIC_FIELD_NAME,
@@ -530,9 +530,10 @@ mod tests {
     #[cfg(feature = "testsuite")]
     fn test_doc_mapper_query_with_multilang_field() {
         use quickwit_query::query_ast::TermQuery;
+        use tantivy::schema::IndexRecordOption;
 
         use crate::default_doc_mapper::{
-            QuickwitTextOptions, QuickwitTextTokenizer, TokenizerType,
+            QuickwitTextOptions, QuickwitTextTokenizer, TextIndexingOptions, TokenizerType,
         };
         use crate::{TokenizerConfig, TokenizerEntry};
         let mut doc_mapper_builder = DefaultDocMapperBuilder::default();

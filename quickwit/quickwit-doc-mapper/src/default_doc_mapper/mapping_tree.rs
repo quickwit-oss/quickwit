@@ -33,6 +33,7 @@ use tantivy::{DateOptions, Document};
 use tracing::warn;
 
 use super::date_time_type::QuickwitDateTimeOptions;
+use super::field_mapping_entry::{NumericOutputFormat, QuickwitBoolOptions};
 use crate::default_doc_mapper::field_mapping_entry::{
     QuickwitBytesOptions, QuickwitIpAddrOptions, QuickwitNumericOptions, QuickwitObjectOptions,
     QuickwitTextOptions,
@@ -42,15 +43,15 @@ use crate::{Cardinality, DocParsingError, FieldMappingEntry, ModeType};
 
 #[derive(Clone, Debug)]
 pub enum LeafType {
-    Text(QuickwitTextOptions),
+    Bool(QuickwitBoolOptions),
+    Bytes(QuickwitBytesOptions),
+    DateTime(QuickwitDateTimeOptions),
+    F64(QuickwitNumericOptions),
     I64(QuickwitNumericOptions),
     U64(QuickwitNumericOptions),
-    F64(QuickwitNumericOptions),
-    Bool(QuickwitNumericOptions),
     IpAddr(QuickwitIpAddrOptions),
-    DateTime(QuickwitDateTimeOptions),
-    Bytes(QuickwitBytesOptions),
     Json(QuickwitJsonOptions),
+    Text(QuickwitTextOptions),
 }
 
 impl LeafType {
@@ -63,9 +64,9 @@ impl LeafType {
                     Err(format!("Expected JSON string, got `{json_val}`."))
                 }
             }
-            LeafType::I64(_) => i64::from_json(json_val),
-            LeafType::U64(_) => u64::from_json(json_val),
-            LeafType::F64(_) => f64::from_json(json_val),
+            LeafType::I64(numeric_options) => i64::from_json(json_val, numeric_options.coerce),
+            LeafType::U64(numeric_options) => u64::from_json(json_val, numeric_options.coerce),
+            LeafType::F64(numeric_options) => f64::from_json(json_val, numeric_options.coerce),
             LeafType::Bool(_) => {
                 if let JsonValue::Bool(val) = json_val {
                     Ok(TantivyValue::Bool(val))
@@ -181,9 +182,6 @@ fn extract_json_val(
 fn value_to_json(value: TantivyValue, leaf_type: &LeafType) -> Option<JsonValue> {
     match (&value, leaf_type) {
         (TantivyValue::Str(_), LeafType::Text(_))
-        | (TantivyValue::I64(_), LeafType::I64(_))
-        | (TantivyValue::U64(_), LeafType::U64(_))
-        | (TantivyValue::F64(_), LeafType::F64(_))
         | (TantivyValue::Bool(_), LeafType::Bool(_))
         | (TantivyValue::IpAddr(_), LeafType::IpAddr(_))
         | (TantivyValue::JsonObject(_), LeafType::Json(_)) => {
@@ -201,6 +199,15 @@ fn value_to_json(value: TantivyValue, leaf_type: &LeafType) -> Option<JsonValue>
                 .format_to_json(*date_time)
                 .expect("Invalid datetime is not allowed.");
             Some(json_value)
+        }
+        (TantivyValue::F64(f64_val), LeafType::F64(numeric_options)) => {
+            f64_val.to_json(numeric_options.output_format)
+        }
+        (TantivyValue::I64(i64_val), LeafType::I64(numeric_options)) => {
+            i64_val.to_json(numeric_options.output_format)
+        }
+        (TantivyValue::U64(u64_val), LeafType::U64(numeric_options)) => {
+            u64_val.to_json(numeric_options.output_format)
         }
         _ => {
             warn!(
@@ -231,29 +238,61 @@ fn insert_json_val(
     doc_json.insert(last_field_name.to_string(), json_val);
 }
 
-trait NumVal: Sized + Into<TantivyValue> {
+trait NumVal: Sized + FromStr + ToString + Into<TantivyValue> {
     fn from_json_number(num: &serde_json::Number) -> Option<Self>;
 
-    fn from_json(json_val: JsonValue) -> Result<TantivyValue, String> {
-        if let JsonValue::Number(num_val) = json_val {
-            Ok(Self::from_json_number(&num_val)
+    fn from_json(json_val: JsonValue, coerce: bool) -> Result<TantivyValue, String> {
+        match json_val {
+            JsonValue::Number(num_val) => Self::from_json_number(&num_val)
+                .map(Self::into)
                 .ok_or_else(|| {
                     format!(
                         "Expected {}, got inconvertible JSON number `{}`.",
                         type_name::<Self>(),
                         num_val
                     )
-                })?
-                .into())
-        } else {
-            Err(format!("Expected JSON number, got `{json_val}`.",))
+                }),
+            JsonValue::String(str_val) => {
+                if coerce {
+                    str_val.parse::<Self>().map(Self::into).map_err(|_| {
+                        format!(
+                            "Failed to coerce JSON string `\"{str_val}\"` to {}.",
+                            type_name::<Self>()
+                        )
+                    })
+                } else {
+                    Err(format!(
+                        "Expected JSON number, got string `\"{str_val}\"`. Enable coercion to {} \
+                         with the `coerce` parameter in the field mapping.",
+                        type_name::<Self>()
+                    ))
+                }
+            }
+            _ => {
+                let message = if coerce {
+                    format!("Expected JSON number or string, got `{json_val}`.")
+                } else {
+                    format!("Expected JSON number, got `{json_val}`.")
+                };
+                Err(message)
+            }
         }
     }
+
+    fn to_json(&self, output_format: NumericOutputFormat) -> Option<JsonValue>;
 }
 
 impl NumVal for u64 {
     fn from_json_number(num: &serde_json::Number) -> Option<Self> {
         num.as_u64()
+    }
+
+    fn to_json(&self, output_format: NumericOutputFormat) -> Option<JsonValue> {
+        let json_value = match output_format {
+            NumericOutputFormat::String => JsonValue::String(self.to_string()),
+            NumericOutputFormat::Number => JsonValue::Number(serde_json::Number::from(*self)),
+        };
+        Some(json_value)
     }
 }
 
@@ -261,10 +300,27 @@ impl NumVal for i64 {
     fn from_json_number(num: &serde_json::Number) -> Option<Self> {
         num.as_i64()
     }
+
+    fn to_json(&self, output_format: NumericOutputFormat) -> Option<JsonValue> {
+        let json_value = match output_format {
+            NumericOutputFormat::String => JsonValue::String(self.to_string()),
+            NumericOutputFormat::Number => JsonValue::Number(serde_json::Number::from(*self)),
+        };
+        Some(json_value)
+    }
 }
 impl NumVal for f64 {
     fn from_json_number(num: &serde_json::Number) -> Option<Self> {
         num.as_f64()
+    }
+
+    fn to_json(&self, output_format: NumericOutputFormat) -> Option<JsonValue> {
+        match output_format {
+            NumericOutputFormat::String => Some(JsonValue::String(self.to_string())),
+            NumericOutputFormat::Number => {
+                serde_json::Number::from_f64(*self).map(JsonValue::Number)
+            }
+        }
     }
 }
 
@@ -496,7 +552,25 @@ fn build_mapping_tree_from_entries<'a>(
     Ok(mapping_node)
 }
 
-fn get_numeric_options(quickwit_numeric_options: &QuickwitNumericOptions) -> NumericOptions {
+fn get_numeric_options_for_bool_field(
+    quickwit_bool_options: &QuickwitBoolOptions,
+) -> NumericOptions {
+    let mut numeric_options = NumericOptions::default();
+    if quickwit_bool_options.stored {
+        numeric_options = numeric_options.set_stored();
+    }
+    if quickwit_bool_options.indexed {
+        numeric_options = numeric_options.set_indexed();
+    }
+    if quickwit_bool_options.fast {
+        numeric_options = numeric_options.set_fast();
+    }
+    numeric_options
+}
+
+fn get_numeric_options_for_numeric_field(
+    quickwit_numeric_options: &QuickwitNumericOptions,
+) -> NumericOptions {
     let mut numeric_options = NumericOptions::default();
     if quickwit_numeric_options.stored {
         numeric_options = numeric_options.set_stored();
@@ -621,7 +695,7 @@ fn build_mapping_from_field_type<'a>(
             Ok(MappingTree::Leaf(mapping_leaf))
         }
         FieldMappingType::I64(options, cardinality) => {
-            let numeric_options = get_numeric_options(options);
+            let numeric_options = get_numeric_options_for_numeric_field(options);
             let field = schema_builder.add_i64_field(&field_name, numeric_options);
             let mapping_leaf = MappingLeaf {
                 field,
@@ -631,7 +705,7 @@ fn build_mapping_from_field_type<'a>(
             Ok(MappingTree::Leaf(mapping_leaf))
         }
         FieldMappingType::U64(options, cardinality) => {
-            let numeric_options = get_numeric_options(options);
+            let numeric_options = get_numeric_options_for_numeric_field(options);
             let field = schema_builder.add_u64_field(&field_name, numeric_options);
             let mapping_leaf = MappingLeaf {
                 field,
@@ -641,7 +715,7 @@ fn build_mapping_from_field_type<'a>(
             Ok(MappingTree::Leaf(mapping_leaf))
         }
         FieldMappingType::F64(options, cardinality) => {
-            let numeric_options = get_numeric_options(options);
+            let numeric_options = get_numeric_options_for_numeric_field(options);
             let field = schema_builder.add_f64_field(&field_name, numeric_options);
             let mapping_leaf = MappingLeaf {
                 field,
@@ -651,7 +725,7 @@ fn build_mapping_from_field_type<'a>(
             Ok(MappingTree::Leaf(mapping_leaf))
         }
         FieldMappingType::Bool(options, cardinality) => {
-            let numeric_options = get_numeric_options(options);
+            let numeric_options = get_numeric_options_for_bool_field(options);
             let field = schema_builder.add_bool_field(&field_name, numeric_options);
             let mapping_leaf = MappingLeaf {
                 field,
@@ -723,8 +797,8 @@ mod tests {
     use super::{value_to_json, LeafType, MappingLeaf};
     use crate::default_doc_mapper::date_time_type::QuickwitDateTimeOptions;
     use crate::default_doc_mapper::field_mapping_entry::{
-        BinaryFormat, QuickwitBytesOptions, QuickwitIpAddrOptions, QuickwitNumericOptions,
-        QuickwitTextOptions,
+        BinaryFormat, NumericOutputFormat, QuickwitBoolOptions, QuickwitBytesOptions,
+        QuickwitIpAddrOptions, QuickwitNumericOptions, QuickwitTextOptions,
     };
     use crate::Cardinality;
 
@@ -819,10 +893,34 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_u64_coercion() {
+        let leaf = LeafType::U64(QuickwitNumericOptions::default());
+        assert_eq!(
+            leaf.value_from_json(json!("20")).unwrap(),
+            TantivyValue::U64(20u64)
+        );
+        assert_eq!(
+            leaf.value_from_json(json!("foo")).unwrap_err(),
+            "Failed to coerce JSON string `\"foo\"` to u64."
+        );
+
+        let numeric_options = QuickwitNumericOptions {
+            coerce: false,
+            ..Default::default()
+        };
+        let leaf = LeafType::U64(numeric_options);
+        assert_eq!(
+            leaf.value_from_json(json!("20")).unwrap_err(),
+            "Expected JSON number, got string `\"20\"`. Enable coercion to u64 with the `coerce` \
+             parameter in the field mapping."
+        );
+    }
+
+    #[test]
     fn test_parse_u64_negative_should_error() {
         let leaf = LeafType::U64(QuickwitNumericOptions::default());
         assert_eq!(
-            leaf.value_from_json(json!(-20i64)).err().unwrap(),
+            leaf.value_from_json(json!(-20i64)).unwrap_err(),
             "Expected u64, got inconvertible JSON number `-20`."
         );
     }
@@ -840,7 +938,7 @@ mod tests {
     fn test_parse_i64_from_f64_should_error() {
         let leaf = LeafType::I64(QuickwitNumericOptions::default());
         assert_eq!(
-            leaf.value_from_json(json!(20.2f64)).err().unwrap(),
+            leaf.value_from_json(json!(20.2f64)).unwrap_err(),
             "Expected i64, got inconvertible JSON number `20.2`."
         );
     }
@@ -866,7 +964,7 @@ mod tests {
 
     #[test]
     fn test_parse_bool_mapping() {
-        let leaf = LeafType::Bool(QuickwitNumericOptions::default());
+        let leaf = LeafType::Bool(QuickwitBoolOptions::default());
         assert_eq!(
             leaf.value_from_json(json!(true)).unwrap(),
             TantivyValue::Bool(true)
@@ -875,7 +973,7 @@ mod tests {
 
     #[test]
     fn test_parse_bool_multivalued() {
-        let typ = LeafType::Bool(QuickwitNumericOptions::default());
+        let typ = LeafType::Bool(QuickwitBoolOptions::default());
         let field = Field::from_field_id(10);
         let leaf_entry = MappingLeaf {
             field,
@@ -1001,7 +1099,8 @@ mod tests {
             .unwrap_err();
         assert_eq!(
             parse_err.to_string(),
-            "The field `root.my_field` could not be parsed: Expected JSON number, got `[1,2]`."
+            "The field `root.my_field` could not be parsed: Expected JSON number or string, got \
+             `[1,2]`."
         );
     }
 
@@ -1158,20 +1257,90 @@ mod tests {
     }
 
     #[test]
-    fn test_serialize_bytes() {
-        let base64 = QuickwitBytesOptions::default();
-        let hex = QuickwitBytesOptions {
-            output_format: BinaryFormat::Hex,
-            ..QuickwitBytesOptions::default()
-        };
-
+    fn test_tantivy_value_to_json_value_bytes() {
+        let bytes_options_base64 = QuickwitBytesOptions::default();
         assert_eq!(
-            value_to_json(TantivyValue::Bytes(vec![1, 2, 3]), &LeafType::Bytes(base64)).unwrap(),
+            value_to_json(
+                TantivyValue::Bytes(vec![1, 2, 3]),
+                &LeafType::Bytes(bytes_options_base64)
+            )
+            .unwrap(),
             serde_json::json!("AQID")
         );
+
+        let bytes_options_hex = QuickwitBytesOptions {
+            output_format: BinaryFormat::Hex,
+            ..Default::default()
+        };
         assert_eq!(
-            value_to_json(TantivyValue::Bytes(vec![1, 2, 3]), &LeafType::Bytes(hex)).unwrap(),
+            value_to_json(
+                TantivyValue::Bytes(vec![1, 2, 3]),
+                &LeafType::Bytes(bytes_options_hex)
+            )
+            .unwrap(),
             serde_json::json!("010203")
+        );
+    }
+
+    #[test]
+    fn test_tantivy_value_to_json_value_f64() {
+        let numeric_options_number = QuickwitNumericOptions::default();
+        assert_eq!(
+            value_to_json(
+                TantivyValue::F64(0.1),
+                &LeafType::F64(numeric_options_number)
+            )
+            .unwrap(),
+            serde_json::json!(0.1)
+        );
+
+        let numeric_options_str = QuickwitNumericOptions {
+            output_format: NumericOutputFormat::String,
+            ..Default::default()
+        };
+        assert_eq!(
+            value_to_json(TantivyValue::F64(0.1), &LeafType::F64(numeric_options_str)).unwrap(),
+            serde_json::json!("0.1")
+        );
+    }
+
+    #[test]
+    fn test_tantivy_value_to_json_value_i64() {
+        let numeric_options_number = QuickwitNumericOptions::default();
+        assert_eq!(
+            value_to_json(
+                TantivyValue::I64(-1),
+                &LeafType::I64(numeric_options_number)
+            )
+            .unwrap(),
+            serde_json::json!(-1)
+        );
+
+        let numeric_options_str = QuickwitNumericOptions {
+            output_format: NumericOutputFormat::String,
+            ..Default::default()
+        };
+        assert_eq!(
+            value_to_json(TantivyValue::I64(-1), &LeafType::I64(numeric_options_str)).unwrap(),
+            serde_json::json!("-1")
+        );
+    }
+
+    #[test]
+    fn test_tantivy_value_to_json_value_u64() {
+        let numeric_options_number = QuickwitNumericOptions::default();
+        assert_eq!(
+            value_to_json(TantivyValue::U64(1), &LeafType::U64(numeric_options_number)).unwrap(),
+            serde_json::json!(1u64)
+        );
+
+        let numeric_options_str = QuickwitNumericOptions {
+            output_format: NumericOutputFormat::String,
+            ..Default::default()
+        };
+        assert_eq!(
+            value_to_json(TantivyValue::U64(1), &LeafType::U64(numeric_options_str)).unwrap(),
+            serde_json::json!("1")
         );
     }
 

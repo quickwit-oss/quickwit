@@ -38,10 +38,11 @@ quickwit-query = { workspace = true }
 criterion = { workspace = true }
 matches = { workspace = true }
 proptest = { workspace = true }
-quickwit-proto = { workspace = true }
-quickwit-query = { workspace = true, features = ["testsuite"] }
 serde_yaml = { workspace = true }
 time = { workspace = true }
+
+quickwit-proto = { workspace = true }
+quickwit-query = { workspace = true, features = ["testsuite"] }
 
 [features]
 multilang = ["quickwit-query/multilang"]

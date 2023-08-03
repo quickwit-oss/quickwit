@@ -20,6 +20,7 @@
 use tantivy::schema::Type;
 
 use super::date_time_type::QuickwitDateTimeOptions;
+use super::field_mapping_entry::QuickwitBoolOptions;
 use crate::default_doc_mapper::field_mapping_entry::{
     QuickwitBytesOptions, QuickwitIpAddrOptions, QuickwitJsonOptions, QuickwitNumericOptions,
     QuickwitObjectOptions, QuickwitTextOptions,
@@ -41,7 +42,7 @@ pub(crate) enum FieldMappingType {
     /// 64-bit float mapping type configuration.
     F64(QuickwitNumericOptions, Cardinality),
     /// Bool mapping type configuration.
-    Bool(QuickwitNumericOptions, Cardinality),
+    Bool(QuickwitBoolOptions, Cardinality),
     /// IP Address mapping type configuration.
     IpAddr(QuickwitIpAddrOptions, Cardinality),
     /// Bytes mapping type configuration.
