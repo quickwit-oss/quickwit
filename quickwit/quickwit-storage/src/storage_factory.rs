@@ -26,7 +26,7 @@ use quickwit_config::StorageBackend;
 use crate::{Storage, StorageResolverError};
 
 /// A storage factory builds a [`Storage`] object for a target [`StorageBackend`] from a
-/// [`StorageConfig`] and a [`Uri`].
+/// [`Uri`].
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait]
 pub trait StorageFactory: Send + Sync + 'static {
