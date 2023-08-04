@@ -60,7 +60,7 @@ pub struct AzureBlobStorageFactory {
 }
 
 impl AzureBlobStorageFactory {
-    /// Create a new Azure blob storage factory
+    /// Creates a new Azure blob storage factory.
     pub fn new(storage_config: StorageConfig) -> Self {
         Self { storage_config }
     }
