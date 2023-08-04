@@ -95,8 +95,7 @@ impl StorageResolver {
                 storage_configs
                     .find_s3()
                     .cloned()
-                    .unwrap_or_default()
-                    .into(),
+                    .unwrap_or_default(),
             ));
         #[cfg(feature = "azure")]
         {
@@ -104,8 +103,7 @@ impl StorageResolver {
                 storage_configs
                     .find_azure()
                     .cloned()
-                    .unwrap_or_default()
-                    .into(),
+                    .unwrap_or_default(),
             ));
         }
         #[cfg(not(feature = "azure"))]

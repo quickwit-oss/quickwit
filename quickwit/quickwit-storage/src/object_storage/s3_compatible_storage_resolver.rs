@@ -21,7 +21,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use quickwit_common::uri::Uri;
-use quickwit_config::{StorageBackend, StorageConfig};
+use quickwit_config::{S3StorageConfig, StorageBackend};
 
 use crate::{
     DebouncedStorage, S3CompatibleObjectStorage, Storage, StorageFactory, StorageResolverError,
@@ -29,12 +29,12 @@ use crate::{
 
 /// S3 compatible object storage resolver.
 pub struct S3CompatibleObjectStorageFactory {
-    storage_config: StorageConfig,
+    storage_config: S3StorageConfig,
 }
 
 impl S3CompatibleObjectStorageFactory {
     /// Creates a new S3-compatible storage factory.
-    pub fn new(storage_config: StorageConfig) -> Self {
+    pub fn new(storage_config: S3StorageConfig) -> Self {
         Self { storage_config }
     }
 }
@@ -46,14 +46,7 @@ impl StorageFactory for S3CompatibleObjectStorageFactory {
     }
 
     async fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
-        let s3_storage_config = self.storage_config.as_s3().ok_or_else(|| {
-            let message = format!(
-                "Expected S3 storage config, got `{:?}`.",
-                self.storage_config.backend()
-            );
-            StorageResolverError::InvalidConfig(message)
-        })?;
-        let storage = S3CompatibleObjectStorage::from_uri(s3_storage_config, uri).await?;
+        let storage = S3CompatibleObjectStorage::from_uri(&self.storage_config, uri).await?;
         Ok(Arc::new(DebouncedStorage::new(storage)))
     }
 }
