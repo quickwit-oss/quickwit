@@ -110,8 +110,6 @@ impl StorageResolver {
         }
         #[cfg(not(feature = "azure"))]
         {
-            use quickwit_config::AzureStorageConfig;
-
             use crate::storage_factory::UnsupportedStorage;
 
             builder = builder.register(UnsupportedStorage::new(
