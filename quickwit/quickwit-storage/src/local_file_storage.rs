@@ -29,7 +29,7 @@ use futures::future::{BoxFuture, FutureExt};
 use futures::StreamExt;
 use quickwit_common::ignore_error_kind;
 use quickwit_common::uri::Uri;
-use quickwit_config::{StorageBackend, StorageConfig};
+use quickwit_config::StorageBackend;
 use tokio::fs;
 use tokio::io::AsyncWriteExt;
 use tracing::warn;
@@ -345,11 +345,7 @@ impl StorageFactory for LocalFileStorageFactory {
         StorageBackend::File
     }
 
-    async fn resolve(
-        &self,
-        _storage_config: &StorageConfig,
-        uri: &Uri,
-    ) -> Result<Arc<dyn Storage>, StorageResolverError> {
+    async fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
         let storage = LocalFileStorage::from_uri(uri)?;
         Ok(Arc::new(DebouncedStorage::new(storage)))
     }
@@ -359,8 +355,6 @@ impl StorageFactory for LocalFileStorageFactory {
 mod tests {
 
     use std::str::FromStr;
-
-    use quickwit_config::FileStorageConfig;
 
     use super::*;
     use crate::test_suite::storage_test_suite;
@@ -395,25 +389,22 @@ mod tests {
 
     #[tokio::test]
     async fn test_local_file_storage_factory() -> anyhow::Result<()> {
-        let storage_config = FileStorageConfig::default().into();
         let temp_dir = tempfile::tempdir()?;
         let index_uri =
             Uri::from_well_formed(format!("file://{}/foo/bar", temp_dir.path().display()));
         let local_file_storage_factory = LocalFileStorageFactory::default();
-        let local_file_storage = local_file_storage_factory
-            .resolve(&storage_config, &index_uri)
-            .await?;
+        let local_file_storage = local_file_storage_factory.resolve(&index_uri).await?;
         assert_eq!(local_file_storage.uri(), &index_uri);
 
         let err = local_file_storage_factory
-            .resolve(&storage_config, &Uri::from_well_formed("s3://foo/bar"))
+            .resolve(&Uri::from_well_formed("s3://foo/bar"))
             .await
             .err()
             .unwrap();
         assert!(matches!(err, StorageResolverError::InvalidUri { .. }));
 
         let err = local_file_storage_factory
-            .resolve(&storage_config, &Uri::from_well_formed("s3://"))
+            .resolve(&Uri::from_well_formed("s3://"))
             .await
             .err()
             .unwrap();

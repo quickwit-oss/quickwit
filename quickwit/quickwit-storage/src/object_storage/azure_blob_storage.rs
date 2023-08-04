@@ -55,8 +55,16 @@ use crate::{
 };
 
 /// Azure object storage resolver.
-#[derive(Default)]
-pub struct AzureBlobStorageFactory;
+pub struct AzureBlobStorageFactory {
+    storage_config: StorageConfig,
+}
+
+impl AzureBlobStorageFactory {
+    /// Create a new Azure blob storage factory
+    pub fn new(storage_config: StorageConfig) -> Self {
+        Self { storage_config }
+    }
+}
 
 #[async_trait]
 impl StorageFactory for AzureBlobStorageFactory {
@@ -64,15 +72,11 @@ impl StorageFactory for AzureBlobStorageFactory {
         StorageBackend::Azure
     }
 
-    async fn resolve(
-        &self,
-        storage_config: &StorageConfig,
-        uri: &Uri,
-    ) -> Result<Arc<dyn Storage>, StorageResolverError> {
-        let azure_storage_config = storage_config.as_azure().ok_or_else(|| {
+    async fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
+        let azure_storage_config = self.storage_config.as_azure().ok_or_else(|| {
             let message = format!(
                 "Expected Azure storage config, got `{:?}`.",
-                storage_config.backend()
+                self.storage_config.backend()
             );
             StorageResolverError::InvalidConfig(message)
         })?;

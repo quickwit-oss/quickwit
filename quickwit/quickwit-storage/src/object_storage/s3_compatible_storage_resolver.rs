@@ -28,8 +28,16 @@ use crate::{
 };
 
 /// S3 compatible object storage resolver.
-#[derive(Default)]
-pub struct S3CompatibleObjectStorageFactory;
+pub struct S3CompatibleObjectStorageFactory {
+    storage_config: StorageConfig,
+}
+
+impl S3CompatibleObjectStorageFactory {
+    /// Create a new S3 compatible storage factory
+    pub fn new(storage_config: StorageConfig) -> Self {
+        Self { storage_config }
+    }
+}
 
 #[async_trait]
 impl StorageFactory for S3CompatibleObjectStorageFactory {
@@ -37,15 +45,11 @@ impl StorageFactory for S3CompatibleObjectStorageFactory {
         StorageBackend::S3
     }
 
-    async fn resolve(
-        &self,
-        storage_config: &StorageConfig,
-        uri: &Uri,
-    ) -> Result<Arc<dyn Storage>, StorageResolverError> {
-        let s3_storage_config = storage_config.as_s3().ok_or_else(|| {
+    async fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
+        let s3_storage_config = self.storage_config.as_s3().ok_or_else(|| {
             let message = format!(
                 "Expected S3 storage config, got `{:?}`.",
-                storage_config.backend()
+                self.storage_config.backend()
             );
             StorageResolverError::InvalidConfig(message)
         })?;

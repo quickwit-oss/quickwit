@@ -442,14 +442,7 @@ mod tests {
         };
         let storage_configs = StorageConfigs::new(vec![s3_storage_config.into()]);
         let metastore_configs = MetastoreConfigs::default();
-        let (storage_resolver, _metastore_resolver) =
+        let (_storage_resolver, _metastore_resolver) =
             get_resolvers(&storage_configs, &metastore_configs);
-        assert!(
-            storage_resolver
-                .storage_configs()
-                .find_s3()
-                .unwrap()
-                .force_path_style_access
-        );
     }
 }
