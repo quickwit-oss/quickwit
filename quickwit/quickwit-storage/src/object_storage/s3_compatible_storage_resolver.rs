@@ -33,7 +33,7 @@ pub struct S3CompatibleObjectStorageFactory {
 }
 
 impl S3CompatibleObjectStorageFactory {
-    /// Create a new S3 compatible storage factory
+    /// Creates a new S3-compatible storage factory.
     pub fn new(storage_config: StorageConfig) -> Self {
         Self { storage_config }
     }
