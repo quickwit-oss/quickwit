@@ -92,18 +92,12 @@ impl StorageResolver {
             .register(LocalFileStorageFactory)
             .register(RamStorageFactory::default())
             .register(S3CompatibleObjectStorageFactory::new(
-                storage_configs
-                    .find_s3()
-                    .cloned()
-                    .unwrap_or_default(),
+                storage_configs.find_s3().cloned().unwrap_or_default(),
             ));
         #[cfg(feature = "azure")]
         {
             builder = builder.register(AzureBlobStorageFactory::new(
-                storage_configs
-                    .find_azure()
-                    .cloned()
-                    .unwrap_or_default(),
+                storage_configs.find_azure().cloned().unwrap_or_default(),
             ));
         }
         #[cfg(not(feature = "azure"))]
