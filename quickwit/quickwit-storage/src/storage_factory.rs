@@ -21,12 +21,12 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use quickwit_common::uri::Uri;
-use quickwit_config::{StorageBackend, StorageConfig};
+use quickwit_config::StorageBackend;
 
 use crate::{Storage, StorageResolverError};
 
 /// A storage factory builds a [`Storage`] object for a target [`StorageBackend`] from a
-/// [`StorageConfig`] and a [`Uri`].
+/// [`Uri`].
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait]
 pub trait StorageFactory: Send + Sync + 'static {
@@ -34,11 +34,7 @@ pub trait StorageFactory: Send + Sync + 'static {
     fn backend(&self) -> StorageBackend;
 
     /// Returns the appropriate [`Storage`] object for the URI.
-    async fn resolve(
-        &self,
-        storage_config: &StorageConfig,
-        uri: &Uri,
-    ) -> Result<Arc<dyn Storage>, StorageResolverError>;
+    async fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError>;
 }
 
 /// A storage factory for handling unsupported or unavailable storage backends.
@@ -61,11 +57,7 @@ impl StorageFactory for UnsupportedStorage {
         self.backend
     }
 
-    async fn resolve(
-        &self,
-        _storage_config: &StorageConfig,
-        _uri: &Uri,
-    ) -> Result<Arc<dyn Storage>, StorageResolverError> {
+    async fn resolve(&self, _uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
         Err(StorageResolverError::UnsupportedBackend(
             self.message.to_string(),
         ))
