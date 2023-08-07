@@ -31,16 +31,19 @@ typetag = { workspace = true }
 utoipa = { workspace = true }
 
 quickwit-datetime = { workspace = true }
+quickwit-macros = { workspace = true }
+quickwit-common = { workspace = true }
 quickwit-query = { workspace = true }
 
 [dev-dependencies]
 criterion = { workspace = true }
 matches = { workspace = true }
 proptest = { workspace = true }
-quickwit-proto = { workspace = true }
-quickwit-query = { workspace = true, features = ["testsuite"] }
 serde_yaml = { workspace = true }
 time = { workspace = true }
+
+quickwit-proto = { workspace = true }
+quickwit-query = { workspace = true, features = ["testsuite"] }
 
 [features]
 multilang = ["quickwit-query/multilang"]

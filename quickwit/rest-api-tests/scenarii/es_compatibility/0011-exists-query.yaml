@@ -1,0 +1,33 @@
+json:
+  query:
+    exists:
+      field: type
+expected:
+  hits:
+    total:
+      value: 100
+---
+json:
+  query:
+    exists:
+      field: thisfielddoesnotexists
+expected:
+  hits:
+    total:
+      value: 0
+---
+json:
+  query:
+    exists:
+      field: payload.size
+expected:
+  hits:
+    total:
+      value: 60
+---
+# Fortunately, ES does not accept this quirky syntax in the
+# case of exists query.
+json:
+  query:
+    exists: payload.size
+status_code: 400

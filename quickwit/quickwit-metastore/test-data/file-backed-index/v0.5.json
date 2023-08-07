@@ -25,7 +25,9 @@
             "indexed": true,
             "name": "tenant_id",
             "stored": true,
-            "type": "u64"
+            "type": "u64",
+            "coerce": true,
+            "output_format": "number"
           },
           {
             "fast": true,

@@ -122,14 +122,12 @@ pub use for_test::storage_for_test;
 mod tests {
     use std::str::FromStr;
 
-    use quickwit_config::FileStorageConfig;
-
     use super::*;
 
     #[tokio::test]
     async fn test_load_file() {
         let storage_resolver = StorageResolver::builder()
-            .register(LocalFileStorageFactory, FileStorageConfig::default().into())
+            .register(LocalFileStorageFactory)
             .build()
             .unwrap();
         let expected_bytes = tokio::fs::read_to_string("Cargo.toml").await.unwrap();

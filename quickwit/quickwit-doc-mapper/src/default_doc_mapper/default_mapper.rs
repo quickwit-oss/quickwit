@@ -21,12 +21,16 @@ use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::num::NonZeroU32;
 
 use anyhow::{bail, Context};
+use fnv::FnvHashSet;
+use quickwit_common::PathHasher;
 use quickwit_query::create_default_quickwit_tokenizer_manager;
 use quickwit_query::query_ast::QueryAst;
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value as JsonValue};
 use tantivy::query::Query;
-use tantivy::schema::{Field, FieldType, Schema, Value as TantivyValue, STORED};
+use tantivy::schema::{
+    Field, FieldType, FieldValue, Schema, Value as TantivyValue, INDEXED, STORED,
+};
 use tantivy::tokenizer::TokenizerManager;
 use tantivy::Document;
 
@@ -39,30 +43,12 @@ use crate::doc_mapper::{JsonObject, Partition};
 use crate::query_builder::build_query;
 use crate::routing_expression::RoutingExpr;
 use crate::{
-    Cardinality, DocMapper, DocParsingError, ModeType, QueryParserError, TokenizerEntry,
-    WarmupInfo, DYNAMIC_FIELD_NAME, SOURCE_FIELD_NAME,
+    Cardinality, DocMapper, DocParsingError, Mode, QueryParserError, TokenizerEntry, WarmupInfo,
+    DYNAMIC_FIELD_NAME, FIELD_PRESENCE_FIELD_NAME, SOURCE_FIELD_NAME,
 };
 
-/// Defines how an unmapped field should be handled.
-#[derive(Clone, Debug, Serialize, Deserialize, Default)]
-pub(crate) enum Mode {
-    #[default]
-    Lenient,
-    Strict,
-    Dynamic(QuickwitJsonOptions),
-}
+const FIELD_PRESENCE_FIELD: Field = Field::from_field_id(0u32);
 
-impl Mode {
-    pub fn mode_type(&self) -> ModeType {
-        match self {
-            Mode::Lenient => ModeType::Lenient,
-            Mode::Strict => ModeType::Strict,
-            Mode::Dynamic(_) => ModeType::Dynamic,
-        }
-    }
-}
-
-/// Default [`DocMapper`] implementation
 /// which defines a set of rules to map json fields
 /// to tantivy index fields.
 ///
@@ -74,6 +60,9 @@ pub struct DefaultDocMapper {
     /// This field is only valid when using the schema associated with the default
     /// doc mapper, and therefore cannot be used in the `query` method.
     source_field: Option<Field>,
+    /// Indexes field presence. It is necessary to enable this in order to run exists
+    /// queries.
+    index_field_presence: bool,
     /// Field in which the dynamically mapped fields should be stored.
     /// This field is only valid when using the schema associated with the default
     /// doc mapper, and therefore cannot be used in the `query` method.
@@ -155,8 +144,17 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
     type Error = anyhow::Error;
 
     fn try_from(builder: DefaultDocMapperBuilder) -> anyhow::Result<DefaultDocMapper> {
-        let mode = builder.mode()?;
         let mut schema_builder = Schema::builder();
+        let field_presence_field = schema_builder.add_u64_field(FIELD_PRESENCE_FIELD_NAME, INDEXED);
+        assert_eq!(field_presence_field, FIELD_PRESENCE_FIELD);
+
+        let dynamic_field = if let Mode::Dynamic(json_options) = &builder.mode {
+            Some(schema_builder.add_json_field(DYNAMIC_FIELD_NAME, json_options.clone()))
+        } else {
+            None
+        };
+
+        // Adding regular fields.
         let field_mappings = build_mapping_tree(&builder.field_mappings, &mut schema_builder)?;
         let source_field = if builder.store_source {
             Some(schema_builder.add_json_field(SOURCE_FIELD_NAME, STORED))
@@ -166,12 +164,6 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
 
         if let Some(timestamp_field_path) = builder.timestamp_field.as_ref() {
             validate_timestamp_field(timestamp_field_path, &field_mappings)?;
-        };
-
-        let dynamic_field = if let Mode::Dynamic(json_options) = &mode {
-            Some(schema_builder.add_json_field(DYNAMIC_FIELD_NAME, json_options.clone()))
-        } else {
-            None
         };
 
         let schema = schema_builder.build();
@@ -252,6 +244,7 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
         let required_fields = Vec::new();
         Ok(DefaultDocMapper {
             schema,
+            index_field_presence: builder.index_field_presence,
             source_field,
             dynamic_field,
             default_search_field_names,
@@ -261,7 +254,7 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
             required_fields,
             partition_key,
             max_num_partitions: builder.max_num_partitions,
-            mode,
+            mode: builder.mode,
             tokenizer_entries: builder.tokenizers,
             tokenizer_manager,
         })
@@ -350,11 +343,6 @@ fn validate_fields_tokenizers(
 
 impl From<DefaultDocMapper> for DefaultDocMapperBuilder {
     fn from(default_doc_mapper: DefaultDocMapper) -> Self {
-        let mode = default_doc_mapper.mode.mode_type();
-        let dynamic_mapping: Option<QuickwitJsonOptions> = match &default_doc_mapper.mode {
-            Mode::Dynamic(mapping_options) => Some(mapping_options.clone()),
-            _ => None,
-        };
         let partition_key_str = default_doc_mapper.partition_key.to_string();
         let partition_key_opt: Option<String> = if partition_key_str.is_empty() {
             None
@@ -363,14 +351,14 @@ impl From<DefaultDocMapper> for DefaultDocMapperBuilder {
         };
         Self {
             store_source: default_doc_mapper.source_field.is_some(),
+            index_field_presence: default_doc_mapper.index_field_presence,
             timestamp_field: default_doc_mapper
                 .timestamp_field_name()
                 .map(ToString::to_string),
             field_mappings: default_doc_mapper.field_mappings.into(),
             tag_fields: default_doc_mapper.tag_field_names.into_iter().collect(),
             default_search_fields: default_doc_mapper.default_search_field_names,
-            mode,
-            dynamic_mapping,
+            mode: default_doc_mapper.mode,
             partition_key: partition_key_opt,
             max_num_partitions: default_doc_mapper.max_num_partitions,
             tokenizers: default_doc_mapper.tokenizer_entries,
@@ -416,6 +404,63 @@ fn extract_single_obj(
     }
 }
 
+#[inline]
+fn populate_field_presence_for_json_value(
+    json_value: &JsonValue,
+    path_hasher: &PathHasher,
+    is_expand_dots_enabled: bool,
+    output: &mut FnvHashSet<u64>,
+) {
+    match json_value {
+        JsonValue::Null => {}
+        JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::String(_) => {
+            output.insert(path_hasher.finish());
+        }
+        JsonValue::Array(items) => {
+            for item in items {
+                populate_field_presence_for_json_value(
+                    item,
+                    path_hasher,
+                    is_expand_dots_enabled,
+                    output,
+                );
+            }
+        }
+        JsonValue::Object(json_obj) => {
+            populate_field_presence_for_json_obj(
+                json_obj,
+                path_hasher.clone(),
+                is_expand_dots_enabled,
+                output,
+            );
+        }
+    }
+}
+
+fn populate_field_presence_for_json_obj(
+    json_obj: &JsonObject,
+    path_hasher: PathHasher,
+    is_expand_dots_enabled: bool,
+    output: &mut FnvHashSet<u64>,
+) {
+    for (field_key, field_value) in json_obj {
+        let mut child_path_hasher = path_hasher.clone();
+        if is_expand_dots_enabled {
+            for segment in field_key.split('.') {
+                child_path_hasher.append(segment.as_bytes());
+            }
+        } else {
+            child_path_hasher.append(field_key.as_bytes());
+        };
+        populate_field_presence_for_json_value(
+            field_value,
+            &child_path_hasher,
+            is_expand_dots_enabled,
+            output,
+        );
+    }
+}
+
 #[typetag::serde(name = "default")]
 impl DocMapper for DefaultDocMapper {
     fn doc_from_json_obj(
@@ -444,6 +489,42 @@ impl DocMapper for DefaultDocMapper {
         if let Some(dynamic_field) = self.dynamic_field {
             if !dynamic_json_obj.is_empty() {
                 document.add_json_object(dynamic_field, dynamic_json_obj);
+            }
+        }
+
+        // The capacity is inexact here.
+
+        if self.index_field_presence {
+            let mut field_presence_hashes: FnvHashSet<u64> = FnvHashSet::with_capacity_and_hasher(
+                document.field_values().len(),
+                Default::default(),
+            );
+            for FieldValue { field, value } in document.field_values() {
+                let field_entry = self.schema.get_field_entry(*field);
+                if !field_entry.is_indexed() {
+                    continue;
+                }
+                let mut path_hasher: PathHasher = PathHasher::default();
+                path_hasher.append(&field.field_id().to_le_bytes()[..]);
+                if let tantivy::schema::Value::JsonObject(json_obj) = value {
+                    let is_expand_dots_enabled: bool =
+                        if let FieldType::JsonObject(json_options) = field_entry.field_type() {
+                            json_options.is_expand_dots_enabled()
+                        } else {
+                            false
+                        };
+                    populate_field_presence_for_json_obj(
+                        json_obj,
+                        path_hasher,
+                        is_expand_dots_enabled,
+                        &mut field_presence_hashes,
+                    );
+                } else {
+                    field_presence_hashes.insert(path_hasher.finish());
+                }
+            }
+            for field_presence_hash in field_presence_hashes {
+                document.add_field_value(FIELD_PRESENCE_FIELD, field_presence_hash);
             }
         }
 
@@ -513,8 +594,9 @@ impl DocMapper for DefaultDocMapper {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
+    use std::collections::{HashMap, HashSet};
 
+    use quickwit_common::PathHasher;
     use quickwit_query::query_ast::query_ast_from_user_text;
     use serde_json::{self, json, Value as JsonValue};
     use tantivy::schema::{FieldType, IndexRecordOption, Type, Value as TantivyValue};
@@ -522,7 +604,8 @@ mod tests {
     use super::DefaultDocMapper;
     use crate::default_doc_mapper::field_mapping_entry::DEFAULT_TOKENIZER_NAME;
     use crate::{
-        DefaultDocMapperBuilder, DocMapper, DocParsingError, DYNAMIC_FIELD_NAME, SOURCE_FIELD_NAME,
+        DefaultDocMapperBuilder, DocMapper, DocParsingError, DYNAMIC_FIELD_NAME,
+        FIELD_PRESENCE_FIELD_NAME, SOURCE_FIELD_NAME,
     };
 
     fn example_json_doc_value() -> JsonValue {
@@ -583,10 +666,12 @@ mod tests {
         let schema = doc_mapper.schema();
         // 8 property entry + 1 field "_source" + two fields values for "tags" field
         // + 2 values inf "server.status" field + 2 values in "server.payload" field
-        assert_eq!(document.len(), 16);
+        // + 12 values for field presence.
+        assert_eq!(document.len(), 28);
         let expected_json_paths_and_values: HashMap<String, JsonValue> =
             serde_json::from_str(EXPECTED_JSON_PATHS_AND_VALUES).unwrap();
-        document.field_values().iter().for_each(|field_value| {
+        let mut field_presences: HashSet<u64> = HashSet::new();
+        for field_value in document.field_values() {
             let field_name = schema.get_field_name(field_value.field());
             if field_name == SOURCE_FIELD_NAME {
                 assert_eq!(field_value.value().as_json(), json_doc.as_object());
@@ -595,6 +680,9 @@ mod tests {
                     field_value.value().as_json(),
                     json!({"response_date2": "2021-12-19T16:39:57+00:00"}).as_object()
                 );
+            } else if field_name == FIELD_PRESENCE_FIELD_NAME {
+                let field_presence_u64 = field_value.value().as_u64().unwrap();
+                field_presences.insert(field_presence_u64);
             } else {
                 let value = serde_json::to_string(field_value.value()).unwrap();
                 let is_value_in_expected_values = expected_json_paths_and_values
@@ -609,7 +697,20 @@ mod tests {
                     panic!("Could not find: {value:?} in {expected_json_paths_and_values:?}");
                 }
             }
-        });
+        }
+        assert_eq!(field_presences.len(), 12);
+        let timestamp_field = schema.get_field("timestamp").unwrap();
+        let attributes_field = schema.get_field("attributes.server").unwrap();
+        assert!(
+            field_presences.contains(&PathHasher::hash_path(&[&timestamp_field
+                .field_id()
+                .to_le_bytes()[..]]))
+        );
+        assert!(
+            field_presences.contains(&PathHasher::hash_path(&[&attributes_field
+                .field_id()
+                .to_le_bytes()[..]]))
+        );
     }
 
     #[test]
@@ -1006,6 +1107,7 @@ mod tests {
     fn test_parse_document_with_tag_fields() {
         let doc_mapper = r#"{
             "default_search_fields": [],
+            "index_field_presence": true,
             "timestamp_field": null,
             "tag_fields": ["city"],
             "store_source": true,
@@ -1035,8 +1137,8 @@ mod tests {
             .doc_from_json_obj(json_doc_value.as_object().unwrap().clone())
             .unwrap();
 
-        // 2 properties, + 1 value for "_source"
-        assert_eq!(document.len(), 3);
+        // 2 properties, + 1 value for "_source" + 2 for field presence.
+        assert_eq!(document.len(), 5);
         let expected_json_paths_and_values: HashMap<String, JsonValue> = serde_json::from_str(
             r#"{
                 "city": ["tokio"],
@@ -1044,10 +1146,14 @@ mod tests {
             }"#,
         )
         .unwrap();
+        let mut field_presences: HashSet<u64> = HashSet::default();
         document.field_values().iter().for_each(|field_value| {
             let field_name = schema.get_field_name(field_value.field());
             if field_name == SOURCE_FIELD_NAME {
                 assert_eq!(field_value.value().as_json(), json_doc_value.as_object());
+            } else if field_name == FIELD_PRESENCE_FIELD_NAME {
+                let field_value_hash = field_value.value().as_u64().unwrap();
+                field_presences.insert(field_value_hash);
             } else {
                 let value = serde_json::to_string(field_value.value()).unwrap();
                 let is_value_in_expected_values = expected_json_paths_and_values
@@ -1061,6 +1167,19 @@ mod tests {
                 assert!(is_value_in_expected_values);
             }
         });
+        assert_eq!(field_presences.len(), 2);
+        let city_field = schema.get_field("city").unwrap();
+        let image_field = schema.get_field("image").unwrap();
+        assert!(
+            field_presences.contains(&PathHasher::hash_path(&[&city_field
+                .field_id()
+                .to_le_bytes()]))
+        );
+        assert!(
+            field_presences.contains(&PathHasher::hash_path(&[&image_field
+                .field_id()
+                .to_le_bytes()]))
+        );
     }
 
     #[test]
@@ -1237,16 +1356,16 @@ mod tests {
         let default_doc_mapper: DefaultDocMapper =
             serde_json::from_str(r#"{ "mode": "lenient" }"#).unwrap();
         let schema = default_doc_mapper.schema();
-        assert_eq!(schema.num_fields(), 0);
+        assert_eq!(schema.num_fields(), 1);
         assert!(default_doc_mapper.default_search_field_names.is_empty());
     }
 
     #[test]
-    fn test_dymamic_mode_schema() {
+    fn test_dynamic_mode_schema() {
         let default_doc_mapper: DefaultDocMapper =
             serde_json::from_str(r#"{ "mode": "dynamic" }"#).unwrap();
         let schema = default_doc_mapper.schema();
-        assert_eq!(schema.num_fields(), 1);
+        assert_eq!(schema.num_fields(), 2);
         let dynamic_field = schema.get_field(DYNAMIC_FIELD_NAME).unwrap();
         let dynamic_field_entry = schema.get_field_entry(dynamic_field);
         assert_eq!(dynamic_field_entry.field_type().value_type(), Type::Json);
@@ -1255,7 +1374,7 @@ mod tests {
     }
 
     #[test]
-    fn test_dymamic_mode_schema_not_indexed() {
+    fn test_dynamic_mode_schema_not_indexed() {
         let default_doc_mapper: DefaultDocMapper = serde_json::from_str(
             r#"{
             "mode": "dynamic",
@@ -1267,14 +1386,13 @@ mod tests {
         )
         .unwrap();
         let schema = default_doc_mapper.schema();
-        assert_eq!(schema.num_fields(), 1);
+        assert_eq!(schema.num_fields(), 2);
         let dynamic_field = schema.get_field(DYNAMIC_FIELD_NAME).unwrap();
         let dynamic_field_entry = schema.get_field_entry(dynamic_field);
-        if let FieldType::JsonObject(json_opt) = dynamic_field_entry.field_type() {
-            assert_eq!(json_opt.is_indexed(), false);
-        } else {
+        let FieldType::JsonObject(json_opt) = dynamic_field_entry.field_type() else {
             panic!("Expected a json object");
-        }
+        };
+        assert_eq!(json_opt.is_indexed(), false);
         default_doc_mapper.default_search_field_names.is_empty();
     }
 
@@ -1488,7 +1606,7 @@ mod tests {
         assert_eq!(
             default_doc_mapper_query_aux(&doc_mapper, "body.dynamic_field:hello"),
             Ok(
-                r#"TermQuery(Term(field=0, type=Json, path=dynamic_field, type=Str, "hello"))"#
+                r#"TermQuery(Term(field=2, type=Json, path=dynamic_field, type=Str, "hello"))"#
                     .to_string()
             )
         );
@@ -1511,11 +1629,11 @@ mod tests {
         .unwrap();
         assert_eq!(
             default_doc_mapper_query_aux(&doc_mapper, "identity.username:toto").unwrap(),
-            r#"TermQuery(Term(field=0, type=Str, "toto"))"#
+            r#"TermQuery(Term(field=2, type=Str, "toto"))"#
         );
         assert_eq!(
             default_doc_mapper_query_aux(&doc_mapper, r#"identity\.username:toto"#).unwrap(),
-            r#"TermQuery(Term(field=1, type=Str, "toto"))"#
+            r#"TermQuery(Term(field=3, type=Str, "toto"))"#
         );
     }
 
@@ -1532,11 +1650,11 @@ mod tests {
         .unwrap();
         assert_eq!(
             default_doc_mapper_query_aux(&doc_mapper, "identity.username:toto").unwrap(),
-            r#"TermQuery(Term(field=0, type=Json, path=username, type=Str, "toto"))"#
+            r#"TermQuery(Term(field=2, type=Json, path=username, type=Str, "toto"))"#
         );
         assert_eq!(
             default_doc_mapper_query_aux(&doc_mapper, r#"identity\.username:toto"#).unwrap(),
-            r#"TermQuery(Term(field=1, type=Str, "toto"))"#
+            r#"TermQuery(Term(field=3, type=Str, "toto"))"#
         );
     }
 
@@ -1671,8 +1789,8 @@ mod tests {
             .unwrap();
         match &field_mapping_type {
             super::FieldMappingType::Text(options, _) => {
-                assert!(options.tokenizer.is_some());
-                let tokenizer = options.tokenizer.as_ref().unwrap();
+                assert!(options.indexing_options.is_some());
+                let tokenizer = &options.indexing_options.as_ref().unwrap().tokenizer;
                 assert_eq!(tokenizer.name(), "my_tokenizer");
             }
             _ => panic!("Expected a text field"),

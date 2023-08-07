@@ -127,6 +127,7 @@ fast:
 | ------------- | ------------- | ------------- |
 | `description` | Optional description for the field. | `None` |
 | `stored`    | Whether value is stored in the document store | `true` |
+| `indexed`   | Whether value should be indexed so it can be searhced | `true` |
 | `tokenizer` | Name of the `Tokenizer`. ([See tokenizers](#description-of-available-tokenizers)) for a list of available tokenizers.  | `default` |
 | `record`    | Describes the amount of information indexed, choices between `basic`, `freq` and `position` | `basic` |
 | `fieldnorms` | Whether to store fieldnorms for the field. Fieldnorms are required to calculate the BM25 Score of the document. | `false` |
@@ -163,7 +164,7 @@ Indexing with position is required to run phrase queries.
 
 Quickwit handles three numeric types: `i64`, `u64`, and `f64`.
 
-Numeric values can be stored in a fast field (the equivalent of Lucene's `DocValues`) which is a column-oriented storage.
+Numeric values can be stored in a fast field (the equivalent of Lucene's `DocValues`), which is a column-oriented storage used for range queries and aggregations.
 
 Example of a mapping for an u64 field:
 
@@ -178,12 +179,14 @@ fast: true
 
 **Parameters for i64, u64 and f64 field**
 
-| Variable      | Description   | Default value |
-| ------------- | ------------- | ------------- |
-| `description` | Optional description for the field. | `None` |
-| `stored`    | Whether the field values are stored in the document store | `true` |
-| `indexed`   | Whether the field values are indexed | `true` |
-| `fast`      | Whether the field values are stored in a fast field | `false` |
+| Variable        | Description   | Default value |
+| --------------- | ------------- | ------------- |
+| `description`   | Optional description for the field. | `None` |
+| `stored`        | Whether the field values are stored in the document store. | `true` |
+| `indexed`       | Whether the field values are indexed. | `true` |
+| `fast`          | Whether the field values are stored in a fast field. | `false` |
+| `coerce`        | Whether to convert numbers passed as strings to integers or floats. | `true` |
+| `output_format` | JSON type used to return numbers in search results. Possible values are `number` or `string`. | `number` |
 
 #### `datetime` type
 

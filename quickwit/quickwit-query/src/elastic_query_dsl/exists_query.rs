@@ -17,8 +17,20 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-mod garbage_collection;
-mod index;
+use serde::{Deserialize, Serialize};
 
-pub use garbage_collection::run_garbage_collect;
-pub use index::{clear_cache_directory, validate_storage_uri, IndexService, IndexServiceError};
+use crate::elastic_query_dsl::ConvertableToQueryAst;
+use crate::query_ast::{self, QueryAst};
+
+#[derive(Serialize, Deserialize, Clone, Eq, PartialEq, Debug)]
+pub struct ExistsQuery {
+    field: String,
+}
+
+impl ConvertableToQueryAst for ExistsQuery {
+    fn convert_to_query_ast(self) -> anyhow::Result<crate::query_ast::QueryAst> {
+        Ok(QueryAst::FieldPresence(query_ast::FieldPresenceQuery {
+            field: self.field,
+        }))
+    }
+}

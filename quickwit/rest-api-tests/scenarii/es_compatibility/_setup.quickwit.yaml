@@ -12,6 +12,7 @@ json:
   version: "0.6"
   index_id: gharchive
   doc_mapping:
+    index_field_presence: true
     timestamp_field: created_at
     mode: dynamic
     field_mappings:

@@ -24,10 +24,6 @@ use std::time::Duration;
 use quickwit_common::fs::{empty_dir, get_cache_directory_path};
 use quickwit_config::{validate_identifier, IndexConfig, SourceConfig};
 use quickwit_indexing::check_source_connectivity;
-use quickwit_janitor::{
-    delete_splits_from_storage_and_metastore, run_garbage_collect, DeleteSplitsError,
-    SplitRemovalInfo,
-};
 use quickwit_metastore::{
     IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, SplitInfo, SplitMetadata, SplitState,
 };
@@ -35,6 +31,11 @@ use quickwit_proto::{IndexUid, ServiceError, ServiceErrorCode};
 use quickwit_storage::{StorageResolver, StorageResolverError};
 use thiserror::Error;
 use tracing::{error, info};
+
+use crate::garbage_collection::{
+    delete_splits_from_storage_and_metastore, run_garbage_collect, DeleteSplitsError,
+    SplitRemovalInfo,
+};
 
 #[derive(Error, Debug)]
 pub enum IndexServiceError {
@@ -351,8 +352,10 @@ pub async fn validate_storage_uri(
 
 #[cfg(test)]
 mod tests {
+
     use quickwit_common::uri::Uri;
-    use quickwit_metastore::metastore_for_test;
+    use quickwit_config::IndexConfig;
+    use quickwit_metastore::{metastore_for_test, SplitMetadata};
     use quickwit_storage::PutPayload;
 
     use super::*;

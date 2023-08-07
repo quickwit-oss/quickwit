@@ -140,7 +140,7 @@ rust-embed = "6.8.1"
 serde = { version = "1.0", features = ["derive", "rc"] }
 serde_json = "1.0"
 serde_qs = { version = "0.12", features = ["warp"] }
-serde_with = "3.1.0"
+serde_with = "3.2.0"
 serde_yaml = "0.9"
 siphasher = "0.3"
 sqlx = { version = "0.7", features = [
@@ -149,7 +149,7 @@ sqlx = { version = "0.7", features = [
   "migrate",
   "time",
 ] }
-syn = "2.0.11"
+syn = { version = "2.0.11", features = [ "extra-traits", "full", "parsing" ]}
 sync_wrapper = "0.1.2"
 tabled = { version = "0.8", features = ["color"] }
 tempfile = "3"

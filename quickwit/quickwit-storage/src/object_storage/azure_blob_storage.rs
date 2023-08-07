@@ -39,7 +39,7 @@ use once_cell::sync::OnceCell;
 use quickwit_aws::retry::{retry, RetryParams, Retryable};
 use quickwit_common::uri::Uri;
 use quickwit_common::{chunk_range, ignore_error_kind, into_u64_range};
-use quickwit_config::{AzureStorageConfig, StorageBackend, StorageConfig};
+use quickwit_config::{AzureStorageConfig, StorageBackend};
 use regex::Regex;
 use tantivy::directory::OwnedBytes;
 use thiserror::Error;
@@ -55,8 +55,16 @@ use crate::{
 };
 
 /// Azure object storage resolver.
-#[derive(Default)]
-pub struct AzureBlobStorageFactory;
+pub struct AzureBlobStorageFactory {
+    storage_config: AzureStorageConfig,
+}
+
+impl AzureBlobStorageFactory {
+    /// Creates a new Azure blob storage factory.
+    pub fn new(storage_config: AzureStorageConfig) -> Self {
+        Self { storage_config }
+    }
+}
 
 #[async_trait]
 impl StorageFactory for AzureBlobStorageFactory {
@@ -64,19 +72,8 @@ impl StorageFactory for AzureBlobStorageFactory {
         StorageBackend::Azure
     }
 
-    async fn resolve(
-        &self,
-        storage_config: &StorageConfig,
-        uri: &Uri,
-    ) -> Result<Arc<dyn Storage>, StorageResolverError> {
-        let azure_storage_config = storage_config.as_azure().ok_or_else(|| {
-            let message = format!(
-                "Expected Azure storage config, got `{:?}`.",
-                storage_config.backend()
-            );
-            StorageResolverError::InvalidConfig(message)
-        })?;
-        let storage = AzureBlobStorage::from_uri(azure_storage_config, uri)?;
+    async fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
+        let storage = AzureBlobStorage::from_uri(&self.storage_config, uri)?;
         Ok(Arc::new(DebouncedStorage::new(storage)))
     }
 }

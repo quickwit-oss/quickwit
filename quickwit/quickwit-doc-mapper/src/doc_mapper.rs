@@ -235,7 +235,7 @@ mod tests {
     use crate::default_doc_mapper::{FieldMappingType, QuickwitJsonOptions};
     use crate::{
         Cardinality, DefaultDocMapper, DefaultDocMapperBuilder, DocMapper, DocParsingError,
-        FieldMappingEntry, ModeType, TermRange, WarmupInfo, DYNAMIC_FIELD_NAME,
+        FieldMappingEntry, Mode, TermRange, WarmupInfo, DYNAMIC_FIELD_NAME,
     };
 
     const JSON_DEFAULT_DOC_MAPPER: &str = r#"
@@ -359,14 +359,14 @@ mod tests {
         let (query, _) = doc_mapper.query(schema, &query_ast, true).unwrap();
         assert_eq!(
             format!("{query:?}"),
-            r#"TermQuery(Term(field=0, type=Json, path=toto.titi, type=Str, "hello"))"#
+            r#"TermQuery(Term(field=2, type=Json, path=toto.titi, type=Str, "hello"))"#
         );
     }
 
     #[test]
     fn test_doc_mapper_query_with_json_field_default_search_fields() {
         let doc_mapper: DefaultDocMapper = DefaultDocMapperBuilder {
-            mode: ModeType::Dynamic,
+            mode: Mode::default(),
             ..Default::default()
         }
         .try_build()
@@ -378,14 +378,14 @@ mod tests {
         let (query, _) = doc_mapper.query(schema, &query_ast, true).unwrap();
         assert_eq!(
             format!("{query:?}"),
-            r#"TermQuery(Term(field=0, type=Json, path=toto.titi, type=Str, "hello"))"#
+            r#"TermQuery(Term(field=1, type=Json, path=toto.titi, type=Str, "hello"))"#
         );
     }
 
     #[test]
     fn test_doc_mapper_query_with_json_field_ambiguous_term() {
         let doc_mapper: DefaultDocMapper = DefaultDocMapperBuilder {
-            mode: ModeType::Dynamic,
+            mode: Mode::default(),
             ..Default::default()
         }
         .try_build()
@@ -397,7 +397,7 @@ mod tests {
         let (query, _) = doc_mapper.query(schema, &query_ast, true).unwrap();
         assert_eq!(
             format!("{query:?}"),
-            r#"BooleanQuery { subqueries: [(Should, TermQuery(Term(field=0, type=Json, path=toto, type=I64, 5))), (Should, TermQuery(Term(field=0, type=Json, path=toto, type=Str, "5")))] }"#
+            r#"BooleanQuery { subqueries: [(Should, TermQuery(Term(field=1, type=Json, path=toto, type=I64, 5))), (Should, TermQuery(Term(field=1, type=Json, path=toto, type=Str, "5")))] }"#
         );
     }
 
@@ -530,9 +530,10 @@ mod tests {
     #[cfg(feature = "testsuite")]
     fn test_doc_mapper_query_with_multilang_field() {
         use quickwit_query::query_ast::TermQuery;
+        use tantivy::schema::IndexRecordOption;
 
         use crate::default_doc_mapper::{
-            QuickwitTextOptions, QuickwitTextTokenizer, TokenizerType,
+            QuickwitTextOptions, QuickwitTextTokenizer, TextIndexingOptions, TokenizerType,
         };
         use crate::{TokenizerConfig, TokenizerEntry};
         let mut doc_mapper_builder = DefaultDocMapperBuilder::default();
@@ -540,7 +541,11 @@ mod tests {
             name: "multilang".to_string(),
             mapping_type: FieldMappingType::Text(
                 QuickwitTextOptions {
-                    tokenizer: Some(QuickwitTextTokenizer::from_static("multilang")),
+                    indexing_options: Some(TextIndexingOptions {
+                        tokenizer: QuickwitTextTokenizer::from_static("multilang"),
+                        record: IndexRecordOption::Basic,
+                        fieldnorms: false,
+                    }),
                     ..Default::default()
                 },
                 Cardinality::SingleValue,
@@ -562,7 +567,7 @@ mod tests {
         let (query, _) = doc_mapper.query(schema, &query_ast, false).unwrap();
         assert_eq!(
             format!("{query:?}"),
-            r#"TermQuery(Term(field=0, type=Str, "JPN:す"))"#
+            r#"TermQuery(Term(field=2, type=Str, "JPN:す"))"#
         );
     }
 }

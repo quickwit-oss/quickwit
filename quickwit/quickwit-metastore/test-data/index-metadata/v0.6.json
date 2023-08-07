@@ -7,11 +7,24 @@
   "create_timestamp": 1789,
   "index_config": {
     "doc_mapping": {
+      "dynamic_mapping": {
+        "expand_dots": true,
+        "fast": {
+          "normalizer": "raw"
+        },
+        "indexed": true,
+        "record": "basic",
+        "stored": true,
+        "tokenizer": "raw"
+      },
+      "index_field_presence": true,
       "field_mappings": [
         {
+          "coerce": true,
           "fast": true,
           "indexed": true,
           "name": "tenant_id",
+          "output_format": "number",
           "stored": true,
           "type": "u64"
         },
@@ -33,6 +46,7 @@
           "fieldnorms": false,
           "indexed": true,
           "name": "log_level",
+          "record": "basic",
           "stored": true,
           "tokenizer": "raw",
           "type": "text"
@@ -109,7 +123,8 @@
       "source_id": "kafka-source",
       "source_type": "kafka",
       "transform": {
-        "script": ".message = downcase(string!(.message))"
+        "script": ".message = downcase(string!(.message))",
+        "timezone": "UTC"
       },
       "version": "0.6"
     }
