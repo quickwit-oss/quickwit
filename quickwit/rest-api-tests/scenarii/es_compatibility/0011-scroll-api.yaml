@@ -1,0 +1,167 @@
+params:
+  size: 1
+  scroll: 30m
+json:
+  query:
+    match_all: {}
+  sort:
+    - actor.id:
+        order: desc
+  aggs:
+    mytypeagg:
+      terms:
+        field: type
+        size: 5
+store:
+  scroll_id: _scroll_id
+expected:
+  _scroll_id:
+    $expect: "len(val) > 4"
+  aggregations:
+    mytypeagg: {}
+  hits:
+    hits:
+      - _source: {actor: {login: "miyuotsuki"}}
+    total:
+      value: 100
+      relation: "eq"
+---
+method: GET
+endpoint: "_search/scroll"
+params:
+  scroll: 30m
+json:
+  scroll_id:
+    $previous: "val[\"_scroll_id\"]"
+expected:
+  _scroll_id:
+    $expect: "len(val) > 4"
+  hits:
+    hits:
+      - _source: {actor: {login: "ScottThiessen"}}
+    total:
+      value: 100
+---
+method: GET
+endpoint: "_search/scroll"
+params:
+  scroll: 30m
+json:
+  scroll_id:
+    $previous: "val[\"_scroll_id\"]"
+expected:
+  _scroll_id:
+    $expect: "len(val) > 4"
+  hits:
+    hits:
+      - _source: {actor: {login: "seenajon"}}
+    total:
+      value: 100
+---
+engines: ["quickwit"]
+params:
+  size: 1
+  scroll: 31m
+json:
+  query:
+    match_all: {}
+  sort:
+    - actor.id:
+        order: desc
+status_code: 400
+expected:
+  status: 400
+  error:
+    reason: "Invalid argument: Quickwit only supports scroll TTL period up to 1800 secs."
+---
+params:
+  size: 40
+  scroll: 30m
+json:
+  query:
+    match_all: {}
+  sort:
+    - actor.id:
+        order: desc
+  aggs:
+    mytypeagg:
+      terms:
+        field: type
+        size: 5
+store:
+  scroll_id: _scroll_id
+expected:
+  _scroll_id:
+    $expect: "len(val) > 4"
+  aggregations:
+    mytypeagg: {}
+  hits:
+    hits:
+      $expect: "len(val) == 40"
+    total:
+      value: 100
+      relation: "eq"
+---
+method: GET
+endpoint: "_search/scroll"
+params:
+  scroll: 30m
+json:
+  scroll_id:
+    $previous: "val[\"_scroll_id\"]"
+expected:
+  _scroll_id:
+    $expect: "len(val) > 4"
+  hits:
+    hits:
+      $expect: len(val) == 40
+    total:
+      value: 100
+---
+method: GET
+endpoint: "_search/scroll"
+params:
+  scroll: 30m
+json:
+  scroll_id:
+    $previous: "val[\"_scroll_id\"]"
+expected:
+  _scroll_id:
+    $expect: "len(val) > 4"
+  hits:
+    hits:
+      $expect: len(val) == 20
+    total:
+      value: 100
+---
+method: GET
+endpoint: "_search/scroll"
+params:
+  scroll: 30m
+json:
+  scroll_id:
+    $previous: "val[\"_scroll_id\"]"
+expected:
+  _scroll_id:
+    $expect: "len(val) > 4"
+  hits:
+    hits:
+      $expect: len(val) == 0
+    total:
+      value: 100
+---
+method: GET
+endpoint: "_search/scroll"
+params:
+  scroll: 30m
+json:
+  scroll_id:
+    $previous: "val[\"_scroll_id\"]"
+expected:
+  _scroll_id:
+    $expect: "len(val) > 4"
+  hits:
+    hits:
+      $expect: len(val) == 0
+    total:
+      value: 100

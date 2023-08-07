@@ -24,7 +24,9 @@ use warp::reject::LengthRequired;
 use warp::{Filter, Rejection};
 
 use super::model::MultiSearchQueryParams;
-use crate::elastic_search_api::model::{ElasticIngestOptions, SearchBody, SearchQueryParams};
+use crate::elastic_search_api::model::{
+    ElasticIngestOptions, ScrollQueryParams, SearchBody, SearchQueryParams,
+};
 
 const BODY_LENGTH_LIMIT: Byte = byte_unit::Byte::from_bytes(1_000_000);
 const CONTENT_LENGTH_LIMIT: Byte = byte_unit::Byte::from_bytes(10 * 1024 * 1024); // 10MiB
@@ -156,4 +158,31 @@ pub(crate) fn elastic_multi_search_filter(
         .and(warp::body::bytes())
         .and(warp::post())
         .and(serde_qs::warp::query(serde_qs::Config::default()))
+}
+
+fn merge_scroll_body_params(
+    from_query_string: ScrollQueryParams,
+    from_body: ScrollQueryParams,
+) -> ScrollQueryParams {
+    ScrollQueryParams {
+        scroll: from_query_string.scroll.or(from_body.scroll),
+        scroll_id: from_query_string.scroll_id.or(from_body.scroll_id),
+    }
+}
+
+#[utoipa::path(post, tag = "Search", path = "/_search/scroll")]
+pub(crate) fn elastic_scroll_filter(
+) -> impl Filter<Extract = (ScrollQueryParams,), Error = Rejection> + Clone {
+    warp::path!("_elastic" / "_search" / "scroll")
+        .and(warp::body::content_length_limit(
+            BODY_LENGTH_LIMIT.get_bytes(),
+        ))
+        .and(warp::get().or(warp::post()).unify())
+        .and(serde_qs::warp::query(serde_qs::Config::default()))
+        .and(json_or_empty())
+        .map(
+            |scroll_query_params: ScrollQueryParams, scroll_body: ScrollQueryParams| {
+                merge_scroll_body_params(scroll_query_params, scroll_body)
+            },
+        )
 }

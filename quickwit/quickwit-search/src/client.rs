@@ -26,7 +26,9 @@ use futures::{StreamExt, TryStreamExt};
 use http::Uri;
 use quickwit_proto::tonic::codegen::InterceptedService;
 use quickwit_proto::tonic::transport::Endpoint;
-use quickwit_proto::{tonic, LeafSearchStreamResponse, SpanContextInterceptor};
+use quickwit_proto::{
+    tonic, GetKvRequest, LeafSearchStreamResponse, PutKvRequest, SpanContextInterceptor,
+};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tonic::transport::Channel;
 use tonic::Request;
@@ -226,6 +228,44 @@ impl SearchServiceClient {
             }
             SearchServiceClientImpl::Local(service) => service.leaf_list_terms(request).await,
         }
+    }
+
+    /// Gets the value associated to a key stored locally in the targetted node.
+    /// This call is not "distributed".
+    /// If the key is not present on the targetted search `None` is simply returned.
+    pub async fn get_kv(&mut self, get_kv_req: GetKvRequest) -> crate::Result<Option<Vec<u8>>> {
+        match &mut self.client_impl {
+            SearchServiceClientImpl::Local(service) => {
+                let search_after_context_opt = service.get_kv(get_kv_req).await;
+                Ok(search_after_context_opt)
+            }
+            SearchServiceClientImpl::Grpc(grpc_client) => {
+                let grpc_resp: tonic::Response<quickwit_proto::GetKvResponse> = grpc_client
+                    .get_kv(get_kv_req)
+                    .await
+                    .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
+                let get_search_after_context_resp = grpc_resp.into_inner();
+                Ok(get_search_after_context_resp.payload)
+            }
+        }
+    }
+
+    /// Gets the value associated to a key stored locally in the targetted node.
+    /// This call is not "distributed". It is up to the client to put the K,V pair
+    /// on several nodes.
+    pub async fn put_kv(&mut self, put_kv_req: PutKvRequest) -> crate::Result<()> {
+        match &mut self.client_impl {
+            SearchServiceClientImpl::Local(service) => {
+                service.put_kv(put_kv_req).await;
+            }
+            SearchServiceClientImpl::Grpc(grpc_client) => {
+                grpc_client
+                    .put_kv(put_kv_req)
+                    .await
+                    .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
+            }
+        }
+        Ok(())
     }
 }
 

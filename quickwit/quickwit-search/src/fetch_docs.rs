@@ -24,7 +24,7 @@ use anyhow::{Context, Ok};
 use futures::{StreamExt, TryStreamExt};
 use itertools::Itertools;
 use quickwit_doc_mapper::DocMapper;
-use quickwit_proto::{FetchDocsResponse, PartialHit, SearchRequest, SplitIdAndFooterOffsets};
+use quickwit_proto::{FetchDocsResponse, PartialHit, SnippetRequest, SplitIdAndFooterOffsets};
 use quickwit_storage::Storage;
 use tantivy::query::Query;
 use tantivy::schema::{Field, Value};
@@ -45,7 +45,7 @@ async fn fetch_docs_to_map(
     index_storage: Arc<dyn Storage>,
     splits: &[SplitIdAndFooterOffsets],
     doc_mapper: Arc<dyn DocMapper>,
-    search_request_opt: Option<&SearchRequest>,
+    snippet_request_opt: Option<&SnippetRequest>,
 ) -> anyhow::Result<HashMap<GlobalDocAddress, Document>> {
     let mut split_fetch_docs_futures = Vec::new();
 
@@ -72,7 +72,7 @@ async fn fetch_docs_to_map(
             index_storage.clone(),
             split_and_offset,
             doc_mapper.clone(),
-            search_request_opt,
+            snippet_request_opt,
         ));
     }
 
@@ -112,7 +112,7 @@ pub async fn fetch_docs(
     index_storage: Arc<dyn Storage>,
     splits: &[SplitIdAndFooterOffsets],
     doc_mapper: Arc<dyn DocMapper>,
-    search_request_opt: Option<&SearchRequest>,
+    snippet_request_opt: Option<&SnippetRequest>,
 ) -> anyhow::Result<FetchDocsResponse> {
     let global_doc_addrs: Vec<GlobalDocAddress> = partial_hits
         .iter()
@@ -125,7 +125,7 @@ pub async fn fetch_docs(
         index_storage,
         splits,
         doc_mapper,
-        search_request_opt,
+        snippet_request_opt,
     )
     .await?;
 
@@ -159,14 +159,13 @@ struct Document {
 }
 
 /// Fetching docs from a specific split.
-#[tracing::instrument(skip(global_doc_addrs, index_storage, split, searcher_context))]
 async fn fetch_docs_in_split(
     searcher_context: Arc<SearcherContext>,
     mut global_doc_addrs: Vec<GlobalDocAddress>,
     index_storage: Arc<dyn Storage>,
     split: &SplitIdAndFooterOffsets,
     doc_mapper: Arc<dyn DocMapper>,
-    search_request_opt: Option<&SearchRequest>,
+    snippet_request_opt: Option<&SnippetRequest>,
 ) -> anyhow::Result<Vec<(GlobalDocAddress, Document)>> {
     global_doc_addrs.sort_by_key(|doc| doc.doc_addr);
     // Opens the index without the ephemeral unbounded cache, this cache is indeed not useful
@@ -187,8 +186,8 @@ async fn fetch_docs_in_split(
         .reload_policy(ReloadPolicy::Manual)
         .try_into()?;
     let searcher = Arc::new(index_reader.searcher());
-    let fields_snippet_generator_opt = if let Some(search_request) = search_request_opt {
-        Some(create_fields_snippet_generator(&searcher, doc_mapper.clone(), search_request).await?)
+    let fields_snippet_generator_opt = if let Some(snippet_request) = snippet_request_opt {
+        Some(create_fields_snippet_generator(&searcher, doc_mapper.clone(), snippet_request).await?)
     } else {
         None
     };
@@ -296,14 +295,14 @@ impl FieldsSnippetGenerator {
 async fn create_fields_snippet_generator(
     searcher: &Searcher,
     doc_mapper: Arc<dyn DocMapper>,
-    search_request: &SearchRequest,
+    snippet_request: &SnippetRequest,
 ) -> anyhow::Result<FieldsSnippetGenerator> {
     let schema = searcher.schema();
-    let query_ast =
-        serde_json::from_str(&search_request.query_ast).context("Invalid query ast Json")?;
-    let (query, _) = doc_mapper.query(schema.clone(), &query_ast, false)?;
+    let query_ast_resolved = serde_json::from_str(&snippet_request.query_ast_resolved)
+        .context("Failed to deserialize QueryAst.")?;
+    let (query, _) = doc_mapper.query(schema.clone(), &query_ast_resolved, false)?;
     let mut snippet_generators = HashMap::new();
-    for field_name in &search_request.snippet_fields {
+    for field_name in &snippet_request.snippet_fields {
         let field = schema.get_field(field_name)?;
         let snippet_generator = create_snippet_generator(searcher, &query, field).await?;
         snippet_generators.insert(field_name.clone(), snippet_generator);

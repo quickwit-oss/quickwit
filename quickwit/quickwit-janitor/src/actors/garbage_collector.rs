@@ -26,6 +26,8 @@ use async_trait::async_trait;
 use futures::{stream, StreamExt};
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, Handler};
+// use quickwit_index_management::run_garbage_collect;
+use quickwit_common::shared_consts::DELETION_GRACE_PERIOD;
 use quickwit_index_management::run_garbage_collect;
 use quickwit_metastore::Metastore;
 use quickwit_storage::StorageResolver;
@@ -38,14 +40,6 @@ const RUN_INTERVAL: Duration = Duration::from_secs(10 * 60); // 10 minutes
 /// TODO ideally we want clean up all staged splits every time we restart the indexing pipeline, but
 /// the grace period strategy should do the job for the moment.
 const STAGED_GRACE_PERIOD: Duration = Duration::from_secs(60 * 60 * 24); // 24 hours
-
-/// We cannot safely delete splits right away as a in-flight queries could actually
-/// have selected this split.
-/// We deal this probably by introducing a grace period. A split is first marked as delete,
-/// and hence won't be selected for search. After a few minutes, once it reasonably safe to assume
-/// that all queries involving this split have terminated, we effectively delete the split.
-/// This duration is controlled by `DELETION_GRACE_PERIOD`.
-const DELETION_GRACE_PERIOD: Duration = Duration::from_secs(120); // 2 min
 
 const MAX_CONCURRENT_GC_TASKS: usize = if cfg!(test) { 2 } else { 10 };
 
@@ -209,6 +203,7 @@ mod tests {
     use std::path::Path;
 
     use quickwit_actors::Universe;
+    use quickwit_common::shared_consts::DELETION_GRACE_PERIOD;
     use quickwit_metastore::{
         IndexMetadata, ListSplitsQuery, MetastoreError, MockMetastore, Split, SplitMetadata,
         SplitState,

@@ -52,13 +52,47 @@ service SearchService {
   // It is also in charge of merging back the results.
   rpc RootListTerms(ListTermsRequest) returns (ListTermsResponse);
 
-  // Perform a leaf list terms on a given set of splits.
+  // Performs a leaf list terms on a given set of splits.
   //
   // It is like a regular list term except that:
   // - the node should perform the listing locally instead of dispatching
   // it to other nodes.
   // - it should be applied on the given subset of splits
   rpc LeafListTerms(LeafListTermsRequest) returns (LeafListTermsResponse);
+
+  // Performs a scroll request.
+  rpc Scroll(ScrollRequest) returns (SearchResponse);
+
+  // gRPC request used to store a key in the local storage of the targetted node.
+  // This RPC is used in the mini distributed immutable KV store embedded in quickwit.
+  rpc PutKV(PutKVRequest) returns (PutKVResponse);
+
+  // Gets a key from the local storage of the targetted node.
+  // This RPC is used in the mini distributed immutable KV store embedded in quickwit.
+  rpc GetKV(GetKVRequest) returns (GetKVResponse);
+}
+
+/// Scroll Request
+message ScrollRequest {
+    /// The `scroll_id` is the given in the response of a search request including a scroll.
+    string scroll_id = 1;
+    optional uint32 scroll_ttl_secs = 2;
+}
+
+message PutKVRequest {
+  bytes key = 1;
+  bytes payload = 2;
+  uint32 ttl_secs = 3;
+}
+
+message PutKVResponse {}
+
+message GetKVRequest {
+    bytes key = 1;
+}
+
+message GetKVResponse {
+    optional bytes payload = 1;
 }
 
 // -- Search -------------------
@@ -109,6 +143,11 @@ message SearchRequest {
 
   // Optional sort by one or more fields (limited to 2 at the moment).
   repeated SortField sort_fields = 14;
+
+  // If set, the search response will include a search id
+  // that will make it possible to paginate through the results
+  // in a consistent manner.
+  optional uint32 scroll_ttl_secs = 15;
 }
 
 message SortField {
@@ -117,9 +156,9 @@ message SortField {
 }
 
 enum SortOrder {
-    /// Ascending order.
+    // Ascending order.
     ASC = 0;
-    /// Descending order.
+    // Descending order.
     DESC = 1; //< This will be the default value;
 }
 
@@ -138,6 +177,8 @@ message SearchResponse {
   // Serialized aggregation response
   optional string aggregation = 5;
 
+  // Scroll Id (only set if scroll_secs was set in the request)
+  optional string scroll_id = 6;
 }
 
 message SplitSearchError {
@@ -183,19 +224,19 @@ message SplitIdAndFooterOffsets {
   optional int64 timestamp_end = 5;
 }
 
-/// Hits returned by a FetchDocRequest.
-///
-/// The json that is joined is the raw tantivy json doc.
-/// It is very different from a quickwit json doc.
-///
-/// For instance:
-/// - it may contain a _source and a _dynamic field.
-/// - since tantivy has no notion of cardinality,
-/// all fields is  are arrays.
-/// - since tantivy has no notion of object, the object is
-/// flattened by concatenating the path to the root.
-///
-/// See  `quickwit_search::convert_leaf_hit`
+// Hits returned by a FetchDocRequest.
+//
+// The json that is joined is the raw tantivy json doc.
+// It is very different from a quickwit json doc.
+//
+// For instance:
+// - it may contain a _source and a _dynamic field.
+// - since tantivy has no notion of cardinality,
+// all fields is  are arrays.
+// - since tantivy has no notion of object, the object is
+// flattened by concatenating the path to the root.
+//
+// See  `quickwit_search::convert_leaf_hit`
 message LeafHit {
   // The actual content of the hit/
   string leaf_json = 1;
@@ -280,6 +321,11 @@ message LeafSearchResponse {
   optional bytes intermediate_aggregation_result = 6;
 }
 
+message SnippetRequest {
+  repeated string snippet_fields = 1;
+  string query_ast_resolved = 2;
+}
+
 message FetchDocsRequest {
   // Request fetching the content of a given list of partial_hits.
   repeated PartialHit partial_hits = 1;
@@ -296,12 +342,12 @@ message FetchDocsRequest {
   // split files.
   string index_uri = 4;
 
-  // Search request. This is a perfect copy of the original search request,
-  // that was sent to root apart from the start_offset & max_hits params.
-  SearchRequest search_request = 5;
+  optional SnippetRequest snippet_request = 7;
 
   // `DocMapper` as json serialized trait.
   string doc_mapper = 6;
+
+  reserved 5;
 }
 
 message FetchDocsResponse {
@@ -372,11 +418,11 @@ message LeafListTermsResponse {
 // -- Stream -------------------
 
 enum OutputFormat {
-    /// Comma Separated Values format (https://datatracker.ietf.org/doc/html/rfc4180).
-    /// The delimiter is `,`.
+    // Comma Separated Values format (https://datatracker.ietf.org/doc/html/rfc4180).
+    // The delimiter is `,`.
     CSV = 0; //< This will be the default value
-    /// Format data by row in ClickHouse binary format.
-    /// https://clickhouse.tech/docs/en/interfaces/formats/#rowbinary
+    // Format data by row in ClickHouse binary format.
+    // https://clickhouse.tech/docs/en/interfaces/formats/#rowbinary
     CLICK_HOUSE_ROW_BINARY = 1;
 }
 
@@ -409,7 +455,7 @@ message SearchStreamRequest {
   optional string partition_by_field = 9;
 
   // Fields to extract snippet on.
-  repeated string  snippet_fields = 10;
+  repeated string snippet_fields = 10;
 }
 
 message LeafSearchStreamRequest {

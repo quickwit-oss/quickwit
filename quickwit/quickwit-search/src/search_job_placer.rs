@@ -66,8 +66,41 @@ impl SearchJobPlacer {
     }
 }
 
+struct SocketAddrAndClient {
+    socket_addr: SocketAddr,
+    client: SearchServiceClient,
+}
+
+impl Hash for SocketAddrAndClient {
+    fn hash<H: Hasher>(&self, hasher: &mut H) {
+        self.socket_addr.hash(hasher);
+    }
+}
+
 impl SearchJobPlacer {
-    /// Assign the given job to the clients.
+    /// Returns an iterator over the search nodes, ordered by their affinity
+    /// with the `affinity_key`, as defined by rendez-vous hashing.
+    pub async fn best_nodes_per_affinity(
+        &self,
+        affinity_key: &[u8],
+    ) -> impl Iterator<Item = SearchServiceClient> {
+        let mut nodes: Vec<SocketAddrAndClient> = self
+            .searcher_pool
+            .all()
+            .await
+            .into_iter()
+            .map(|(socket_addr, client)| SocketAddrAndClient {
+                socket_addr,
+                client,
+            })
+            .collect();
+        sort_by_rendez_vous_hash(&mut nodes[..], affinity_key);
+        nodes
+            .into_iter()
+            .map(|socket_addr_and_client| socket_addr_and_client.client)
+    }
+
+    /// Assign the given job to the clients
     /// Returns a list of pair (SocketAddr, `Vec<Job>`)
     ///
     /// When exclude_addresses filters all clients it is ignored.
