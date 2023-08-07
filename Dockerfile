@@ -16,12 +16,12 @@ RUN echo "Adding Node.js PPA" \
 
 RUN apt-get -y update \
     && apt-get -y install ca-certificates \
-    clang \
-    cmake \
-    libssl-dev \
-    llvm \
-    nodejs \
-    protobuf-compiler \
+                          clang \
+                          cmake \
+                          libssl-dev \
+                          llvm \
+                          nodejs \
+                          protobuf-compiler \
     && rm -rf /var/lib/apt/lists/*
 
 # Required by tonic
@@ -44,8 +44,8 @@ WORKDIR /quickwit
 
 RUN echo "Building workspace with feature(s) '$CARGO_FEATURES' and profile '$CARGO_PROFILE'" \
     && cargo build \
-    --features $CARGO_FEATURES \
-    $(test "$CARGO_PROFILE" = "release" && echo "--release") \
+        --features $CARGO_FEATURES \
+        $(test "$CARGO_PROFILE" = "release" && echo "--release") \
     && echo "Copying binaries to /quickwit/bin" \
     && mkdir -p /quickwit/bin \
     && find target/$CARGO_PROFILE -maxdepth 1 -perm /a+x -type f -exec mv {} /quickwit/bin \;
@@ -62,7 +62,7 @@ LABEL org.opencontainers.image.licenses="AGPL-3.0"
 
 RUN apt-get -y update \
     && apt-get -y install ca-certificates \
-    libssl1.1 \
+                          libssl1.1 \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /quickwit

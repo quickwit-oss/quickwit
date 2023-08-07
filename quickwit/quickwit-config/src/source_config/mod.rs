@@ -86,7 +86,7 @@ impl SourceConfig {
         match self.source_params {
             SourceParams::File(_) => "file",
             SourceParams::Kafka(_) => "kafka",
-            SourceParams::PubSub(_) => "pubsub",
+            SourceParams::GcpPubSub(_) => "gcp-pubsub",
             SourceParams::Kinesis(_) => "kinesis",
             SourceParams::Vec(_) => "vec",
             SourceParams::Void(_) => "void",
@@ -101,7 +101,7 @@ impl SourceConfig {
         match &self.source_params {
             SourceParams::File(params) => serde_json::to_value(params),
             SourceParams::Kafka(params) => serde_json::to_value(params),
-            SourceParams::PubSub(params) => serde_json::to_value(params),
+            SourceParams::GcpPubSub(params) => serde_json::to_value(params),
             SourceParams::Kinesis(params) => serde_json::to_value(params),
             SourceParams::Vec(params) => serde_json::to_value(params),
             SourceParams::Void(params) => serde_json::to_value(params),
@@ -206,8 +206,8 @@ pub enum SourceParams {
     File(FileSourceParams),
     #[serde(rename = "kafka")]
     Kafka(KafkaSourceParams),
-    #[serde(rename = "pubsub")]
-    PubSub(PubSubSourceParams),
+    #[serde(rename = "gcp-pubsub")]
+    GcpPubSub(GcpPubSubSourceParams),
     #[serde(rename = "kinesis")]
     Kinesis(KinesisSourceParams),
     #[serde(rename = "pulsar")]
@@ -249,9 +249,7 @@ pub struct FileSourceParams {
 
 // Deserializing a filepath string into an absolute filepath.
 fn absolute_filepath_from_str<'de, D>(deserializer: D) -> Result<Option<PathBuf>, D::Error>
-where
-    D: Deserializer<'de>,
-{
+where D: Deserializer<'de> {
     let filepath_opt: Option<String> = Deserialize::deserialize(deserializer)?;
     if let Some(filepath) = filepath_opt {
         let uri = Uri::from_str(&filepath).map_err(D::Error::custom)?;
@@ -295,7 +293,7 @@ pub struct KafkaSourceParams {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
-pub struct PubSubSourceParams {
+pub struct GcpPubSubSourceParams {
     /// Name of the subscription that the source consumes.
     pub subscription: String,
     /// When backfill mode is enabled, the source exits after reaching the end of the topic.
@@ -409,9 +407,7 @@ pub enum PulsarSourceAuth {
 
 // Deserializing a string into an pulsar uri.
 fn pulsar_uri<'de, D>(deserializer: D) -> Result<String, D::Error>
-where
-    D: Deserializer<'de>,
-{
+where D: Deserializer<'de> {
     let uri: String = Deserialize::deserialize(deserializer)?;
 
     if uri.strip_prefix("pulsar://").is_none() {

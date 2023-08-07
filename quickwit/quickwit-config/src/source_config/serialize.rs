@@ -98,11 +98,11 @@ impl SourceConfigForSerialization {
             | SourceParams::Void(_)
             | SourceParams::IngestApi
             | SourceParams::IngestCli => {}
-            SourceParams::PubSub(_) => {}
+            SourceParams::GcpPubSub(_) => {}
         }
         match &self.source_params {
             SourceParams::Kafka(_) => {}
-            SourceParams::PubSub(_) => {}
+            SourceParams::GcpPubSub(_) => {}
             _ => {
                 if self.desired_num_pipelines > 1 || self.max_num_pipelines_per_indexer > 1 {
                     bail!("Quickwit currently supports multiple pipelines only for Kafka sources. Open an issue https://github.com/quickwit-oss/quickwit/issues if you need the feature for other source types.");
