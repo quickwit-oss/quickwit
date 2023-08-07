@@ -45,6 +45,7 @@ use default_doc_mapper::{
 };
 pub use doc_mapper::{DocMapper, JsonObject, NamedField, TermRange, WarmupInfo};
 pub use error::{DocParsingError, QueryParserError};
+use quickwit_common::shared_consts::FIELD_PRESENCE_FIELD_NAME;
 
 /// Field name reserved for storing the source document.
 pub const SOURCE_FIELD_NAME: &str = "_source";
@@ -53,7 +54,11 @@ pub const SOURCE_FIELD_NAME: &str = "_source";
 pub const DYNAMIC_FIELD_NAME: &str = "_dynamic";
 
 /// Quickwit reserved field names.
-const QW_RESERVED_FIELD_NAMES: &[&str] = &[SOURCE_FIELD_NAME, DYNAMIC_FIELD_NAME];
+const QW_RESERVED_FIELD_NAMES: &[&str] = &[
+    SOURCE_FIELD_NAME,
+    DYNAMIC_FIELD_NAME,
+    FIELD_PRESENCE_FIELD_NAME,
+];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) enum Cardinality {
@@ -86,6 +91,7 @@ pub fn default_doc_mapper_for_test() -> DefaultDocMapper {
     const JSON_CONFIG_VALUE: &str = r#"
         {
             "store_source": true,
+            "index_field_presence": true,
             "default_search_fields": [
                 "body", "attributes.server", "attributes.server\\.status"
             ],

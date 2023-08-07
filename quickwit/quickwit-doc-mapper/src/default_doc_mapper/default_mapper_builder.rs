@@ -39,6 +39,9 @@ pub struct DefaultDocMapperBuilder {
     /// Stores the original source document when set to true.
     #[serde(default)]
     pub store_source: bool,
+    /// Indexes field presence.
+    #[serde(default)]
+    pub index_field_presence: bool,
     /// Name of the fields that are searched by default, unless overridden.
     #[serde(default)]
     pub default_search_fields: Vec<String>,

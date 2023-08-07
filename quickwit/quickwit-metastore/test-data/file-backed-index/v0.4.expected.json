@@ -28,6 +28,7 @@
           "stored": true,
           "tokenizer": "raw"
         },
+        "index_field_presence": false,
         "field_mappings": [
           {
             "coerce": true,
