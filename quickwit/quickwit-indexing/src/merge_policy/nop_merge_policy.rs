@@ -19,6 +19,8 @@
 
 use std::fmt;
 
+use quickwit_metastore::SplitMaturity;
+
 use crate::merge_policy::MergePolicy;
 
 /// The NopMergePolicy, as the name suggests, is no-op and does not perform any merges.
@@ -40,29 +42,29 @@ impl MergePolicy for NopMergePolicy {
         Vec::new()
     }
 
-    fn is_mature(&self, _split: &quickwit_metastore::SplitMetadata) -> bool {
-        // With the no merge policy, all splits are mature as they will never undergo any merge.
-        true
+    fn split_maturity(&self, _split_num_docs: usize, _split_num_merge_ops: usize) -> SplitMaturity {
+        // With the no merge policy, all splits are mature immediately as they will never undergo
+        // any merge.
+        SplitMaturity::Mature
     }
 }
 
 #[cfg(test)]
 mod tests {
+
+    use quickwit_metastore::SplitMaturity;
+
     use crate::merge_policy::{MergePolicy, NopMergePolicy};
 
     #[test]
-    pub fn test_no_merge_policy_is_mature() {
-        let split = super::super::tests::create_splits(vec![1])
-            .into_iter()
-            .next()
-            .unwrap();
+    pub fn test_no_merge_policy_maturity_timestamp() {
         // All splits are always mature for `NopMergePolicy`.
-        assert!(NopMergePolicy.is_mature(&split));
+        assert_eq!(NopMergePolicy.split_maturity(10, 0), SplitMaturity::Mature);
     }
 
     #[test]
     pub fn test_no_merge_policy_operations() {
-        let mut splits = super::super::tests::create_splits(vec![1; 100]);
+        let mut splits = super::super::tests::create_splits(&NopMergePolicy, vec![1; 100]);
         assert!(NopMergePolicy.operations(&mut splits).is_empty());
         assert_eq!(splits.len(), 100);
     }

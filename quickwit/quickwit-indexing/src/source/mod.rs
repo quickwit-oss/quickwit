@@ -153,7 +153,7 @@ pub type SourceContext = ActorContext<SourceActor>;
 /// # }
 /// ```
 #[async_trait]
-pub trait Source: Send + Sync + 'static {
+pub trait Source: Send + 'static {
     /// This method will be called before any calls to `emit_batches`.
     async fn initialize(
         &mut self,

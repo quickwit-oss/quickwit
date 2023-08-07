@@ -12,6 +12,7 @@ json:
   version: "0.6"
   index_id: gharchive
   doc_mapping:
+    index_field_presence: true
     timestamp_field: created_at
     mode: dynamic
     field_mappings:
@@ -28,6 +29,7 @@ json:
 # Ingest documents
 method: POST
 endpoint: _bulk
+num_retries: 10
 params:
   refresh: "true"
 headers: {"Content-Type": "application/json"}

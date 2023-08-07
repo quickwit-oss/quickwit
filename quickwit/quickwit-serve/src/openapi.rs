@@ -30,10 +30,12 @@ use utoipa::OpenApi;
 
 use crate::cluster_api::ClusterApi;
 use crate::delete_task_api::DeleteTaskApi;
+use crate::elastic_search_api::ElasticCompatibleApi;
 use crate::health_check_api::HealthCheckApi;
 use crate::index_api::IndexApi;
 use crate::indexing_api::IndexingApi;
 use crate::ingest_api::{IngestApi, IngestApiSchemas};
+use crate::node_info_handler::NodeInfoApi;
 use crate::search_api::SearchApi;
 
 /// Builds the OpenApi docs structure using the registered/merged docs.
@@ -69,6 +71,7 @@ pub fn build_docs() -> utoipa::openapi::OpenApi {
         Tag::new("Sources"),
         Tag::new("Get Metrics"),
         Tag::new("Cluster Info"),
+        Tag::new("Node Info"),
         Tag::new("Indexing"),
         Tag::new("Splits"),
     ];
@@ -83,6 +86,9 @@ pub fn build_docs() -> utoipa::openapi::OpenApi {
     docs_base.merge_components_and_paths(IndexingApi::openapi().with_path_prefix("/api/v1"));
     docs_base.merge_components_and_paths(IngestApi::openapi().with_path_prefix("/api/v1"));
     docs_base.merge_components_and_paths(SearchApi::openapi().with_path_prefix("/api/v1"));
+    docs_base
+        .merge_components_and_paths(ElasticCompatibleApi::openapi().with_path_prefix("/api/v1"));
+    docs_base.merge_components_and_paths(NodeInfoApi::openapi().with_path_prefix("/api/v1"));
 
     // Schemas
     docs_base.merge_components_and_paths(MetastoreApiSchemas::openapi());

@@ -6,6 +6,10 @@
     "start": 1000
   },
   "index_uid": "my-index:11111111111111111111111111",
+  "maturity": {
+    "maturation_period_millis": 4000,
+    "type": "immature"
+  },
   "node_id": "node",
   "num_docs": 12303,
   "num_merge_ops": 3,

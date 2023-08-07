@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use quickwit_proto::metastore_api::*;
+use quickwit_proto::metastore::*;
 
 // The macros below are generating a req enum of the form
 //

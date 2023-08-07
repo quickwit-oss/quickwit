@@ -180,7 +180,14 @@ mod tests {
             },
         };
         let ast = match_query.convert_to_query_ast().unwrap();
-        let QueryAst::FullText(FullTextQuery { field, text, params }) = ast else { panic!() } ;
+        let QueryAst::FullText(FullTextQuery {
+            field,
+            text,
+            params,
+        }) = ast
+        else {
+            panic!()
+        };
         assert_eq!(field, "body");
         assert_eq!(text, "hello");
         assert_eq!(

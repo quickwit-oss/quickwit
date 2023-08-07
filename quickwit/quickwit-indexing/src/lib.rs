@@ -23,14 +23,14 @@ use std::sync::Arc;
 
 use quickwit_actors::{Mailbox, Universe};
 use quickwit_cluster::Cluster;
-use quickwit_config::QuickwitConfig;
+use quickwit_config::NodeConfig;
 use quickwit_ingest::IngestApiService;
 use quickwit_metastore::Metastore;
 use quickwit_storage::StorageResolver;
 use tracing::info;
 
 pub use crate::actors::{
-    IndexingPipeline, IndexingPipelineParams, IndexingService, IndexingServiceError, PublisherType,
+    IndexingError, IndexingPipeline, IndexingPipelineParams, IndexingService, PublisherType,
     Sequencer, SplitsUpdateMailbox,
 };
 pub use crate::controlled_directory::ControlledDirectory;
@@ -39,8 +39,6 @@ pub use crate::split_store::{get_tantivy_directory_from_split_bundle, IndexingSp
 
 pub mod actors;
 mod controlled_directory;
-pub mod grpc_adapter;
-pub mod indexing_client;
 pub mod merge_policy;
 mod metrics;
 pub mod models;
@@ -66,7 +64,7 @@ pub fn new_split_id() -> String {
 
 pub async fn start_indexing_service(
     universe: &Universe,
-    config: &QuickwitConfig,
+    config: &NodeConfig,
     num_blocking_threads: usize,
     cluster: Cluster,
     metastore: Arc<dyn Metastore>,

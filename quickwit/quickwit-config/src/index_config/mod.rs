@@ -32,8 +32,8 @@ use cron::Schedule;
 use humantime::parse_duration;
 use quickwit_common::uri::Uri;
 use quickwit_doc_mapper::{
-    DefaultDocMapper, DefaultDocMapperBuilder, DocMapper, FieldMappingEntry, ModeType,
-    QuickwitJsonOptions,
+    DefaultDocMapper, DefaultDocMapperBuilder, DocMapper, FieldMappingEntry, Mode, ModeType,
+    QuickwitJsonOptions, TokenizerEntry,
 };
 use serde::{Deserialize, Serialize};
 pub use serialize::load_index_config_from_user_config;
@@ -44,9 +44,10 @@ use crate::TestableForRegression;
 
 // Note(fmassot): `DocMapping` is a struct only used for
 // serialization/deserialization of `DocMapper` parameters.
-// This is partly a duplicate of the `DocMapper` and can
-// be viewed as a temporary hack for 0.2 release before
+// This is partly a duplicate of the `DefaultDocMapper` and
+// can be viewed as a temporary hack for 0.2 release before
 // refactoring.
+#[quickwit_macros::serde_multikey]
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct DocMapping {
@@ -65,17 +66,28 @@ pub struct DocMapping {
     #[serde(default)]
     pub store_source: bool,
     #[serde(default)]
-    pub timestamp_field: Option<String>,
+    pub index_field_presence: bool,
     #[serde(default)]
-    pub mode: ModeType,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub dynamic_mapping: Option<QuickwitJsonOptions>,
+    pub timestamp_field: Option<String>,
+    #[serde_multikey(
+        deserializer = Mode::from_parts,
+        serializer = Mode::into_parts,
+        fields = (
+            #[serde(default)]
+            mode: ModeType,
+            #[serde(skip_serializing_if = "Option::is_none")]
+            dynamic_mapping: Option<QuickwitJsonOptions>
+        ),
+    )]
+    pub mode: Mode,
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub partition_key: Option<String>,
     #[schema(value_type = u32)]
     #[serde(default = "DefaultDocMapper::default_max_num_partitions")]
     pub max_num_partitions: NonZeroU32,
+    #[serde(default)]
+    pub tokenizers: Vec<TokenizerEntry>,
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
@@ -414,7 +426,16 @@ impl TestableForRegression for IndexConfig {
         }"#,
         )
         .unwrap();
+        let tokenizer = serde_json::from_str(
+            r#"{
+                "name": "custom_tokenizer",
+                "type": "regex",
+                "pattern": "[^\\p{L}\\p{N}]+"
+            }"#,
+        )
+        .unwrap();
         let doc_mapping = DocMapping {
+            index_field_presence: true,
             field_mappings: vec![
                 tenant_id_mapping,
                 timestamp_mapping,
@@ -426,11 +447,11 @@ impl TestableForRegression for IndexConfig {
                 .map(|tag_field| tag_field.to_string())
                 .collect::<BTreeSet<String>>(),
             store_source: true,
-            mode: ModeType::Dynamic,
-            dynamic_mapping: None,
+            mode: Mode::default(),
             partition_key: Some("tenant_id".to_string()),
             max_num_partitions: NonZeroU32::new(100).unwrap(),
             timestamp_field: Some("timestamp".to_string()),
+            tokenizers: vec![tokenizer],
         };
         let retention_policy = Some(RetentionPolicy::new(
             "90 days".to_string(),
@@ -499,14 +520,15 @@ pub fn build_doc_mapper(
 ) -> anyhow::Result<Arc<dyn DocMapper>> {
     let builder = DefaultDocMapperBuilder {
         store_source: doc_mapping.store_source,
+        index_field_presence: doc_mapping.index_field_presence,
         default_search_fields: search_settings.default_search_fields.clone(),
         timestamp_field: doc_mapping.timestamp_field.clone(),
         field_mappings: doc_mapping.field_mappings.clone(),
         tag_fields: doc_mapping.tag_fields.iter().cloned().collect(),
-        mode: doc_mapping.mode,
-        dynamic_mapping: doc_mapping.dynamic_mapping.clone(),
+        mode: doc_mapping.mode.clone(),
         partition_key: doc_mapping.partition_key.clone(),
         max_num_partitions: doc_mapping.max_num_partitions,
+        tokenizers: doc_mapping.tokenizers.clone(),
     };
     Ok(Arc::new(builder.try_build()?))
 }
@@ -539,6 +561,8 @@ mod tests {
             &Uri::from_well_formed("s3://defaultbucket/"),
         )
         .unwrap();
+        assert_eq!(index_config.doc_mapping.tokenizers.len(), 1);
+        assert_eq!(index_config.doc_mapping.tokenizers[0].name, "service_regex");
         assert_eq!(index_config.doc_mapping.field_mappings.len(), 5);
         assert_eq!(index_config.doc_mapping.field_mappings[0].name, "tenant_id");
         assert_eq!(index_config.doc_mapping.field_mappings[1].name, "timestamp");
@@ -699,7 +723,10 @@ mod tests {
             &Uri::from_well_formed("s3://my-index"),
         )
         .unwrap();
-        assert_eq!(minimal_config.doc_mapping.mode, ModeType::Dynamic);
+        assert_eq!(
+            minimal_config.doc_mapping.mode.mode_type(),
+            ModeType::Dynamic
+        );
     }
 
     #[test]

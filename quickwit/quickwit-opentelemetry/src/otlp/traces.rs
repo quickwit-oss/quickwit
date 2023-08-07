@@ -743,7 +743,7 @@ impl OtlpGrpcTracesService {
     async fn store_spans(&mut self, doc_batch: DocBatch) -> Result<(), tonic::Status> {
         let ingest_request = IngestRequest {
             doc_batches: vec![doc_batch],
-            commit: self.commit_type as u32,
+            commit: self.commit_type.into(),
         };
         self.ingest_service.ingest(ingest_request).await?;
         Ok(())

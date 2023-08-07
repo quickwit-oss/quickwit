@@ -21,5 +21,7 @@ mod date_time_format;
 mod date_time_parsing;
 
 pub use date_time_format::{DateTimeInputFormat, DateTimeOutputFormat, StrptimeParser};
-pub use date_time_parsing::{parse_date_time_int, parse_date_time_str, parse_timestamp};
+pub use date_time_parsing::{
+    parse_date_time_str, parse_timestamp, parse_timestamp_float, parse_timestamp_int,
+};
 pub use tantivy::DateTime as TantivyDateTime;

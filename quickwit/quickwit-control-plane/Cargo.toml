@@ -1,6 +1,6 @@
 [package]
 name = "quickwit-control-plane"
-version = "0.6.1"
+version = "0.6.3"
 authors = ["Quickwit, Inc. <hello@quickwit.io>"]
 edition = "2021"
 license = "AGPL-3.0-or-later"                           # For a commercial, license, contact hello@quickwit.io
@@ -34,12 +34,12 @@ quickwit-actors = { workspace = true }
 quickwit-cluster = { workspace = true }
 quickwit-common = { workspace = true }
 quickwit-config = { workspace = true }
-quickwit-grpc-clients = { workspace = true }
 quickwit-indexing = { workspace = true }
 quickwit-metastore = { workspace = true }
 quickwit-proto = { workspace = true }
 
 [dev-dependencies]
+futures = { workspace = true }
 mockall = { workspace = true }
 proptest = { workspace = true }
 rand = { workspace = true }
@@ -49,6 +49,7 @@ quickwit-cluster = { workspace = true, features = ["testsuite"] }
 quickwit-common = { workspace = true, features = ["testsuite"] }
 quickwit-config = { workspace = true, features = ["testsuite"] }
 quickwit-metastore = { workspace = true, features = ["testsuite"] }
+quickwit-proto = { workspace = true, features = ["testsuite"] }
 quickwit-storage = { workspace = true, features = ["testsuite"] }
 
 [build-dependencies]

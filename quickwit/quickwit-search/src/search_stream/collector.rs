@@ -223,8 +223,12 @@ impl<Item: HasAssociatedColumnType, PartitionItem: HasAssociatedColumnType + Has
     type Fruit = HashMap<PartitionItem, Vec<Item>>;
 
     fn collect(&mut self, doc_id: DocId, _score: Score) {
-        let Some(column) = self.fast_field_reader.as_ref() else { return };
-        let Some(partition_column) = self.partition_by_fast_field_reader.as_ref() else { return };
+        let Some(column) = self.fast_field_reader.as_ref() else {
+            return;
+        };
+        let Some(partition_column) = self.partition_by_fast_field_reader.as_ref() else {
+            return;
+        };
         if !self.accept_document(doc_id) {
             return;
         }

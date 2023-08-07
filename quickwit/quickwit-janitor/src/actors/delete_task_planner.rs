@@ -28,11 +28,11 @@ use quickwit_common::extract_time_range;
 use quickwit_common::uri::Uri;
 use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
 use quickwit_indexing::actors::MergeSplitDownloader;
-use quickwit_indexing::merge_policy::{MergeOperation, MergePolicy};
+use quickwit_indexing::merge_policy::MergeOperation;
 use quickwit_metastore::{
     split_tag_filter, split_time_range_filter, Metastore, MetastoreResult, Split,
 };
-use quickwit_proto::metastore_api::DeleteTask;
+use quickwit_proto::metastore::DeleteTask;
 use quickwit_proto::{IndexUid, SearchRequest};
 use quickwit_search::{jobs_to_leaf_request, SearchJob, SearchJobPlacer};
 use serde::Serialize;
@@ -53,9 +53,9 @@ const NUM_STALE_SPLITS_TO_FETCH: usize = 1000;
 ///
 /// Pseudo-algorithm for a given index:
 /// 1. Fetches the delete tasks and deduce the last `opstamp`.
-/// 2. Fetches the last `N` stale splits ordered by their `delete_opstamp`.
-///    A stale split is a split a `delete_opstamp` inferior to the last `opstamp`
-///    In theory, this works but... there is one difficulty:
+/// 2. Fetches the last `N` stale splits ordered by their `delete_opstamp`. A stale split is a split
+///    a `delete_opstamp` inferior to the last `opstamp` In theory, this works but... there is one
+///    difficulty:
 ///    - Delete operations do not run on immature splits and they are excluded after fetching stale
 ///      splits from the metastore as the metastore has no knowledge about the merge policy. If
 ///      there are more than `N` immature stale splits, the planner will plan no operations.
@@ -79,7 +79,6 @@ pub struct DeleteTaskPlanner {
     doc_mapper_str: String,
     metastore: Arc<dyn Metastore>,
     search_job_placer: SearchJobPlacer,
-    merge_policy: Arc<dyn MergePolicy>,
     merge_split_downloader_mailbox: Mailbox<MergeSplitDownloader>,
     /// Inventory of ongoing delete operations. If everything goes well,
     /// a merge operation is dropped after the publish of the split that underwent
@@ -124,7 +123,6 @@ impl DeleteTaskPlanner {
         doc_mapper_str: String,
         metastore: Arc<dyn Metastore>,
         search_job_placer: SearchJobPlacer,
-        merge_policy: Arc<dyn MergePolicy>,
         merge_split_downloader_mailbox: Mailbox<MergeSplitDownloader>,
     ) -> Self {
         Self {
@@ -133,7 +131,6 @@ impl DeleteTaskPlanner {
             doc_mapper_str,
             metastore,
             search_job_placer,
-            merge_policy,
             merge_split_downloader_mailbox,
             ongoing_delete_operations_inventory: Inventory::new(),
         }
@@ -338,12 +335,9 @@ impl DeleteTaskPlanner {
             last_delete_opstamp = last_delete_opstamp,
             num_stale_splits_from_metastore = stale_splits.len()
         );
-        // Keep only mature splits and splits that are not already part of ongoing delete
-        // operations.
         let ongoing_delete_operations = self.ongoing_delete_operations_inventory.list();
         let filtered_splits = stale_splits
             .into_iter()
-            .filter(|stale_split| self.merge_policy.is_mature(&stale_split.split_metadata))
             .filter(|stale_split| {
                 !ongoing_delete_operations.iter().any(|operation| {
                     operation
@@ -403,10 +397,10 @@ impl Handler<PlanDeleteLoop> for DeleteTaskPlanner {
 #[cfg(test)]
 mod tests {
     use quickwit_config::build_doc_mapper;
-    use quickwit_indexing::merge_policy::{MergeOperation, NopMergePolicy};
+    use quickwit_indexing::merge_policy::MergeOperation;
     use quickwit_indexing::TestSandbox;
     use quickwit_metastore::SplitMetadata;
-    use quickwit_proto::metastore_api::DeleteQuery;
+    use quickwit_proto::metastore::DeleteQuery;
     use quickwit_proto::{LeafSearchRequest, LeafSearchResponse};
     use quickwit_search::{searcher_pool_for_test, MockSearchService};
     use tantivy::TrackedObject;
@@ -425,7 +419,17 @@ mod tests {
                 type: i64
                 fast: true
         "#;
-        let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "{}", &["body"]).await?;
+        let indexing_settings_yaml = r#"
+            merge_policy:
+                type: no_merge
+        "#;
+        let test_sandbox = TestSandbox::create(
+            index_id,
+            doc_mapping_yaml,
+            indexing_settings_yaml,
+            &["body"],
+        )
+        .await?;
         let docs = [
             serde_json::json!({"body": "info", "ts": 0 }),
             serde_json::json!({"body": "info", "ts": 0 }),
@@ -453,8 +457,8 @@ mod tests {
         // Creates 2 delete tasks, one that will match 1 document,
         // the other that will match no document.
 
-        let body_delete_ast = quickwit_proto::qast_helper("body:delete", &[]);
-        let match_nothing_ast = quickwit_proto::qast_helper("body:matchnothing", &[]);
+        let body_delete_ast = quickwit_query::query_ast::qast_helper("body:delete", &[]);
+        let match_nothing_ast = quickwit_query::query_ast::qast_helper("body:matchnothing", &[]);
         metastore
             .create_delete_task(DeleteQuery {
                 index_uid: index_uid.to_string(),
@@ -503,7 +507,6 @@ mod tests {
             doc_mapper_str,
             metastore.clone(),
             search_job_placer,
-            Arc::new(NopMergePolicy),
             downloader_mailbox,
         );
         let (delete_planner_mailbox, delete_planner_handle) = test_sandbox

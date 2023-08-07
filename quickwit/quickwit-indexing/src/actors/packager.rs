@@ -336,13 +336,14 @@ mod tests {
 
     use quickwit_actors::{ObservationType, Universe};
     use quickwit_metastore::checkpoint::IndexCheckpointDelta;
+    use quickwit_proto::indexing::IndexingPipelineId;
     use quickwit_proto::IndexUid;
     use tantivy::schema::{NumericOptions, Schema, FAST, STRING, TEXT};
     use tantivy::{doc, DateTime, Index};
     use tracing::Span;
 
     use super::*;
-    use crate::models::{IndexingPipelineId, PublishLock, SplitAttrs};
+    use crate::models::{PublishLock, SplitAttrs};
 
     fn make_indexed_split_for_test(
         segment_timestamps: &[DateTime],
@@ -363,7 +364,7 @@ mod tests {
             schema_builder.add_bool_field("tag_bool", NumericOptions::default().set_indexed());
         let schema = schema_builder.build();
         let mut index = Index::create_in_dir(split_scratch_directory.path(), schema)?;
-        index.set_tokenizers(quickwit_query::get_quickwit_tokenizer_manager().clone());
+        index.set_tokenizers(quickwit_query::create_default_quickwit_tokenizer_manager());
         index.set_fast_field_tokenizers(
             quickwit_query::get_quickwit_fastfield_normalizer_manager().clone(),
         );

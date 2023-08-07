@@ -1,6 +1,6 @@
 [package]
 name = "quickwit-janitor"
-version = "0.6.1"
+version = "0.6.3"
 authors = ["Quickwit, Inc. <hello@quickwit.io>"]
 edition = "2021"
 license = "AGPL-3.0-or-later"                           # For a commercial, license, contact hello@quickwit.io
@@ -30,10 +30,10 @@ utoipa = { workspace = true }
 quickwit-actors = { workspace = true }
 quickwit-cluster = { workspace = true }
 quickwit-common = { workspace = true }
+quickwit-index-management = { workspace = true }
 quickwit-config = { workspace = true }
 quickwit-directories = { workspace = true }
 quickwit-doc-mapper = { workspace = true }
-quickwit-grpc-clients = { workspace = true }
 quickwit-indexing = { workspace = true }
 quickwit-metastore = { workspace = true }
 quickwit-proto = { workspace = true }

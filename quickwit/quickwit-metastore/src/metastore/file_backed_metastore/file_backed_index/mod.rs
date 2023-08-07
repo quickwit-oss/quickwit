@@ -25,10 +25,11 @@ mod serialize;
 
 use std::collections::HashMap;
 use std::fmt::Debug;
+use std::ops::Bound;
 
 use quickwit_common::PrettySample;
 use quickwit_config::SourceConfig;
-use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask};
+use quickwit_proto::metastore::{DeleteQuery, DeleteTask};
 use quickwit_proto::IndexUid;
 use serde::{Deserialize, Serialize};
 use serialize::VersionedFileBackedIndex;
@@ -87,7 +88,7 @@ impl quickwit_config::TestableForRegression for FileBackedIndex {
                 index_uid: "index:11111111111111111111111111".to_string(),
                 start_timestamp: None,
                 end_timestamp: None,
-                query_ast: quickwit_proto::qast_helper("Harry Potter", &["body"]),
+                query_ast: quickwit_query::query_ast::qast_helper("Harry Potter", &["body"]),
             }),
         };
         FileBackedIndex::new(index_metadata, splits, vec![delete_task])
@@ -271,9 +272,9 @@ impl FileBackedIndex {
         for &split_id in split_ids {
             // Check for the existence of split.
             let Some(metadata) = self.splits.get_mut(split_id) else {
-                    split_not_found_ids.push(split_id.to_string());
-                    continue;
-                };
+                split_not_found_ids.push(split_id.to_string());
+                continue;
+            };
             if metadata.split_state == SplitState::Staged {
                 metadata.split_state = SplitState::Published;
                 metadata.update_timestamp = now_timestamp;
@@ -500,6 +501,16 @@ fn split_query_predicate(split: &&Split, query: &ListSplitsQuery) -> bool {
         return false;
     }
 
+    match &query.mature {
+        Bound::Included(evaluation_datetime) => {
+            return split.split_metadata.is_mature(*evaluation_datetime);
+        }
+        Bound::Excluded(evaluation_datetime) => {
+            return !split.split_metadata.is_mature(*evaluation_datetime);
+        }
+        Bound::Unbounded => {}
+    }
+
     if let Some(range) = split.split_metadata.time_range.as_ref() {
         if !query.time_range.overlaps_with(range.clone()) {
             return false;
@@ -558,7 +569,7 @@ mod tests {
                 },
                 split_state: SplitState::Published,
                 update_timestamp: 0i64,
-                publish_timestamp: None,
+                publish_timestamp: Some(10i64),
             },
         ]
     }

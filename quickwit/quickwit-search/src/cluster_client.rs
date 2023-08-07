@@ -17,28 +17,42 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use futures::StreamExt;
+use std::time::Duration;
+
+use base64::Engine;
+use futures::future::ready;
+use futures::{Future, StreamExt};
 use quickwit_proto::{
-    FetchDocsRequest, FetchDocsResponse, LeafListTermsRequest, LeafListTermsResponse,
+    FetchDocsRequest, FetchDocsResponse, GetKvRequest, LeafListTermsRequest, LeafListTermsResponse,
     LeafSearchRequest, LeafSearchResponse, LeafSearchStreamRequest, LeafSearchStreamResponse,
+    PutKvRequest,
 };
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
 use tokio::sync::mpsc::error::SendError;
 use tokio::sync::mpsc::{unbounded_channel, UnboundedSender};
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tracing::debug;
+use tracing::{debug, error, info, warn};
 
 use crate::retry::search::LeafSearchRetryPolicy;
 use crate::retry::search_stream::{LeafSearchStreamRetryPolicy, SuccessfulSplitIds};
 use crate::retry::{retry_client, DefaultRetryPolicy, RetryPolicy};
 use crate::{SearchError, SearchJobPlacer, SearchServiceClient};
 
+/// Maximum number of put requests emitted to perform a replicated given PUT KV.
+const MAX_PUT_KV_ATTEMPTS: usize = 6;
+
+/// Maximum number of get requests emitted to perform a GET KV request.
+const MAX_GET_KV_ATTEMPTS: usize = 6;
+
+/// We attempt to store our KVs on two nodes.
+const TARGET_NUM_REPLICATION: usize = 2;
+
 /// Client that executes placed requests (Request, `SearchServiceClient`) and provides
 /// retry policies for `FetchDocsRequest`, `LeafSearchRequest` and `LeafSearchStreamRequest`
 /// to retry on other `SearchServiceClient`.
 #[derive(Clone)]
 pub struct ClusterClient {
-    search_job_placer: SearchJobPlacer,
+    pub(crate) search_job_placer: SearchJobPlacer,
 }
 
 impl ClusterClient {
@@ -157,47 +171,141 @@ impl ClusterClient {
         // TODO: implement retry
         client.leaf_list_terms(request.clone()).await
     }
+
+    /// Attempts to store a given search context within the cluster.
+    ///
+    /// This function may fail silently, if no clients was available.
+    pub async fn put_kv(&self, key: &[u8], payload: &[u8], ttl: Duration) {
+        let clients: Vec<SearchServiceClient> = self
+            .search_job_placer
+            .best_nodes_per_affinity(key)
+            .await
+            .take(MAX_PUT_KV_ATTEMPTS)
+            .collect();
+
+        if clients.is_empty() {
+            // We only log a warning as it might be that we are just running in a
+            // single node cluster.
+            // (That's odd though, the node running this code should be in the pool too)
+            warn!("No other node available to replicate scroll context.");
+            return;
+        }
+
+        // We run the put requests concurrently.
+        // Our target is a replication over TARGET_NUM_REPLICATION nodes, we therefore try to avoid
+        // replicating on more than TARGET_NUM_REPLICATION nodes at the same time. Of
+        // course, this may still result in the replication over more nodes, but this is not
+        // a problem.
+        //
+        // The requests are made in a concurrent manner, up to two at a time. As soon as 2 requests
+        // are successful, we stop.
+        let put_kv_futs = clients
+            .into_iter()
+            .map(|client| replicate_kv_to_one_server(client, key, payload, ttl));
+        let successful_replication = futures::stream::iter(put_kv_futs)
+            .buffer_unordered(TARGET_NUM_REPLICATION)
+            .filter(|put_kv_successful| ready(*put_kv_successful))
+            .take(TARGET_NUM_REPLICATION)
+            .count()
+            .await;
+
+        if successful_replication == 0 {
+            error!(successful_replication=%successful_replication,"failed-to-replicate-scroll-context");
+        }
+    }
+
+    /// Returns a search_after context
+    pub async fn get_kv(&self, key: &[u8]) -> Option<Vec<u8>> {
+        let clients = self.search_job_placer.best_nodes_per_affinity(key).await;
+        // On the read side, we attempt to contact up to 6 nodes.
+        for mut client in clients.take(MAX_GET_KV_ATTEMPTS) {
+            let get_request = GetKvRequest { key: key.to_vec() };
+            if let Ok(Some(search_after_resp)) = client.get_kv(get_request.clone()).await {
+                return Some(search_after_resp);
+            } else {
+                let base64_key: String = base64::prelude::BASE64_STANDARD.encode(key);
+                info!(destination=?client, key=base64_key, "Failed to get KV");
+            }
+        }
+        None
+    }
+}
+
+fn replicate_kv_to_one_server(
+    mut client: SearchServiceClient,
+    key: &[u8],
+    payload: &[u8],
+    ttl: Duration,
+) -> impl Future<Output = bool> {
+    let put_kv_request = PutKvRequest {
+        key: key.to_vec(),
+        payload: payload.to_vec(),
+        ttl_secs: ttl.as_secs() as u32,
+    };
+    let base64_key: String = base64::prelude::BASE64_STANDARD.encode(key);
+    async move {
+        if client.put_kv(put_kv_request).await.is_ok() {
+            true
+        } else {
+            warn!(destination=?client, key=base64_key, "Failed to replicate KV");
+            false
+        }
+    }
+}
+
+/// Takes two intermediate aggregation results serialized using postcard,
+/// merge them and returns the merged serialized result.
+fn merge_intermediate_aggregation(left: &[u8], right: &[u8]) -> crate::Result<Vec<u8>> {
+    let mut intermediate_aggregation_results_left: IntermediateAggregationResults =
+        postcard::from_bytes(left)?;
+    let intermediate_aggregation_results_right: IntermediateAggregationResults =
+        postcard::from_bytes(right)?;
+    intermediate_aggregation_results_left.merge_fruits(intermediate_aggregation_results_right)?;
+    let serialized = postcard::to_allocvec(&intermediate_aggregation_results_left)?;
+    Ok(serialized)
+}
+
+fn merge_leaf_search_response(
+    mut left_response: LeafSearchResponse,
+    right_response: LeafSearchResponse,
+) -> crate::Result<LeafSearchResponse> {
+    left_response
+        .partial_hits
+        .extend(right_response.partial_hits);
+    let intermediate_aggregation_result: Option<Vec<u8>> = match (
+        left_response.intermediate_aggregation_result,
+        right_response.intermediate_aggregation_result,
+    ) {
+        (Some(left_agg_bytes), Some(right_agg_bytes)) => {
+            let intermediate_aggregation_bytes: Vec<u8> =
+                merge_intermediate_aggregation(&left_agg_bytes[..], &right_agg_bytes[..])?;
+            Some(intermediate_aggregation_bytes)
+        }
+        (None, Some(right)) => Some(right),
+        (Some(left), None) => Some(left),
+        (None, None) => None,
+    };
+    Ok(LeafSearchResponse {
+        intermediate_aggregation_result,
+        num_hits: left_response.num_hits + right_response.num_hits,
+        num_attempted_splits: left_response.num_attempted_splits
+            + right_response.num_attempted_splits,
+        failed_splits: right_response.failed_splits,
+        partial_hits: left_response.partial_hits,
+    })
 }
 
 // Merge initial leaf search results with results obtained from a retry.
 fn merge_leaf_search_results(
-    initial_response_result: crate::Result<LeafSearchResponse>,
-    retry_response_result: crate::Result<LeafSearchResponse>,
+    left_search_response_result: crate::Result<LeafSearchResponse>,
+    right_search_response_result: crate::Result<LeafSearchResponse>,
 ) -> crate::Result<LeafSearchResponse> {
-    match (initial_response_result, retry_response_result) {
-        (Ok(mut initial_response), Ok(mut retry_response)) => {
-            initial_response
-                .partial_hits
-                .append(&mut retry_response.partial_hits);
-            let intermediate_aggregation_result = initial_response
-                .intermediate_aggregation_result
-                .map::<crate::Result<_>, _>(|res1_bytes| {
-                    if let Some(res2_str) = retry_response.intermediate_aggregation_result.as_ref()
-                    {
-                        let mut res1: IntermediateAggregationResults =
-                            postcard::from_bytes(res1_bytes.as_slice())?;
-                        let res2: IntermediateAggregationResults =
-                            postcard::from_bytes(res2_str.as_slice())?;
-                        res1.merge_fruits(res2)?;
-                        let serialized = postcard::to_allocvec(&res1)?;
-                        Ok(serialized)
-                    } else {
-                        Ok(res1_bytes)
-                    }
-                })
-                .transpose()?;
-            let merged_response = LeafSearchResponse {
-                intermediate_aggregation_result,
-                num_hits: initial_response.num_hits + retry_response.num_hits,
-                num_attempted_splits: initial_response.num_attempted_splits
-                    + retry_response.num_attempted_splits,
-                failed_splits: retry_response.failed_splits,
-                partial_hits: initial_response.partial_hits,
-            };
-            Ok(merged_response)
+    match (left_search_response_result, right_search_response_result) {
+        (Ok(left_response), Ok(right_response)) => {
+            merge_leaf_search_response(left_response, right_response)
         }
-        (Ok(initial_response), Err(_)) => Ok(initial_response),
-        (Err(_), Ok(retry_response)) => Ok(retry_response),
+        (Ok(single_valid_response), Err(_)) => Ok(single_valid_response),
+        (Err(_), Ok(single_valid_response)) => Ok(single_valid_response),
         (Err(error), Err(_)) => Err(error),
     }
 }
@@ -234,9 +342,10 @@ mod tests {
     use std::net::SocketAddr;
 
     use quickwit_proto::{
-        qast_helper, PartialHit, SearchRequest, SearchStreamRequest, SortValue,
-        SplitIdAndFooterOffsets, SplitSearchError,
+        PartialHit, SearchRequest, SearchStreamRequest, SortValue, SplitIdAndFooterOffsets,
+        SplitSearchError,
     };
+    use quickwit_query::query_ast::qast_helper;
 
     use super::*;
     use crate::root::SearchJob;
@@ -244,7 +353,8 @@ mod tests {
 
     fn mock_partial_hit(split_id: &str, sort_value: u64, doc_id: u32) -> PartialHit {
         PartialHit {
-            sort_value: Some(SortValue::U64(sort_value)),
+            sort_value: Some(SortValue::U64(sort_value).into()),
+            sort_value2: None,
             split_id: split_id.to_string(),
             segment_ord: 1,
             doc_id,
@@ -588,5 +698,98 @@ mod tests {
         let results: Vec<_> = result.collect().await;
         assert_eq!(results.len(), 2);
         assert!(results[0].is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_put_kv_happy_path() {
+        // 3 servers 1, 2, 3
+        // Targetted key has affinity [1, 2, 3].
+        //
+        // Put on 1 and 2 is successful
+        // Get succeeds on 1.
+        let mut mock_search_service_1 = MockSearchService::new();
+        mock_search_service_1
+            .expect_put_kv()
+            .once()
+            .returning(|_put_req: quickwit_proto::PutKvRequest| {});
+        mock_search_service_1
+            .expect_get_kv()
+            .once()
+            .returning(|_get_req: quickwit_proto::GetKvRequest| Some(b"my_payload".to_vec()));
+        let mut mock_search_service_2 = MockSearchService::new();
+        mock_search_service_2
+            .expect_put_kv()
+            .once()
+            .returning(|_put_req: quickwit_proto::PutKvRequest| {});
+        let mut mock_search_service_3 = MockSearchService::new();
+        // Due to the buffered call it is possible for the
+        // put request to 3 to be emitted too.
+        mock_search_service_3
+            .expect_put_kv()
+            .returning(|_put_req: quickwit_proto::PutKvRequest| {});
+        let searcher_pool = searcher_pool_for_test([
+            ("127.0.0.1:1001", mock_search_service_1),
+            ("127.0.0.1:1002", mock_search_service_2),
+            ("127.0.0.1:1003", mock_search_service_3),
+        ]);
+        let search_job_placer = SearchJobPlacer::new(searcher_pool);
+        let cluster_client = ClusterClient::new(search_job_placer);
+        cluster_client
+            .put_kv(
+                &b"my_key"[..],
+                &b"my_payload"[..],
+                Duration::from_secs(10 * 60),
+            )
+            .await;
+        let result = cluster_client.get_kv(&b"my_key"[..]).await;
+        assert_eq!(result, Some(b"my_payload".to_vec()))
+    }
+
+    #[tokio::test]
+    async fn test_put_kv_failing_get() {
+        // 3 servers 1, 2, 3
+        // Targetted key has affinity [1, 2, 3].
+        //
+        // Put on 1 and 2 is successful
+        // Get fails on 1.
+        // Get succeeds on 2.
+        let mut mock_search_service_1 = MockSearchService::new();
+        mock_search_service_1
+            .expect_put_kv()
+            .once()
+            .returning(|_put_req: quickwit_proto::PutKvRequest| {});
+        mock_search_service_1
+            .expect_get_kv()
+            .once()
+            .returning(|_get_req: quickwit_proto::GetKvRequest| None);
+        let mut mock_search_service_2 = MockSearchService::new();
+        mock_search_service_2
+            .expect_put_kv()
+            .once()
+            .returning(|_put_req: quickwit_proto::PutKvRequest| {});
+        mock_search_service_2
+            .expect_get_kv()
+            .once()
+            .returning(|_get_req: quickwit_proto::GetKvRequest| Some(b"my_payload".to_vec()));
+        let mut mock_search_service_3 = MockSearchService::new();
+        mock_search_service_3
+            .expect_put_kv()
+            .returning(|_leaf_search_req: quickwit_proto::PutKvRequest| {});
+        let searcher_pool = searcher_pool_for_test([
+            ("127.0.0.1:1001", mock_search_service_1),
+            ("127.0.0.1:1002", mock_search_service_2),
+            ("127.0.0.1:1003", mock_search_service_3),
+        ]);
+        let search_job_placer = SearchJobPlacer::new(searcher_pool);
+        let cluster_client = ClusterClient::new(search_job_placer);
+        cluster_client
+            .put_kv(
+                &b"my_key"[..],
+                &b"my_payload"[..],
+                Duration::from_secs(10 * 60),
+            )
+            .await;
+        let result = cluster_client.get_kv(&b"my_key"[..]).await;
+        assert_eq!(result, Some(b"my_payload".to_vec()))
     }
 }

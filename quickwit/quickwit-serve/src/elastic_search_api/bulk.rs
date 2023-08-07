@@ -120,7 +120,7 @@ async fn elastic_ingest_bulk(
     let commit_type: CommitType = ingest_options.refresh.into();
     let ingest_request = IngestRequest {
         doc_batches,
-        commit: commit_type as u32,
+        commit: commit_type.into(),
     };
     let ingest_response = ingest_service.ingest(ingest_request).await?;
     Ok(ingest_response)
@@ -131,7 +131,7 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
-    use quickwit_config::IngestApiConfig;
+    use quickwit_config::{IngestApiConfig, NodeConfig};
     use quickwit_ingest::{
         FetchRequest, IngestResponse, IngestServiceClient, SuggestTruncateRequest,
     };
@@ -142,10 +142,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_bulk_api_returns_404_if_index_id_does_not_exist() {
+        let config = Arc::new(NodeConfig::for_test());
         let search_service = Arc::new(MockSearchService::new());
         let (universe, _temp_dir, ingest_service, _) =
             setup_ingest_service(&["my-index"], &IngestApiConfig::default()).await;
-        let elastic_api_handlers = elastic_api_handlers(search_service, ingest_service);
+        let elastic_api_handlers = elastic_api_handlers(config, search_service, ingest_service);
         let payload = r#"
             { "create" : { "_index" : "my-index", "_id" : "1"} }
             {"id": 1, "message": "push"}
@@ -163,10 +164,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_bulk_api_returns_200() {
+        let config = Arc::new(NodeConfig::for_test());
         let search_service = Arc::new(MockSearchService::new());
         let (universe, _temp_dir, ingest_service, _) =
             setup_ingest_service(&["my-index-1", "my-index-2"], &IngestApiConfig::default()).await;
-        let elastic_api_handlers = elastic_api_handlers(search_service, ingest_service);
+        let elastic_api_handlers = elastic_api_handlers(config, search_service, ingest_service);
         let payload = r#"
             { "create" : { "_index" : "my-index-1", "_id" : "1"} }
             {"id": 1, "message": "push"}
@@ -188,10 +190,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_bulk_index_api_returns_200() {
+        let config = Arc::new(NodeConfig::for_test());
         let search_service = Arc::new(MockSearchService::new());
         let (universe, _temp_dir, ingest_service, _) =
             setup_ingest_service(&["my-index-1", "my-index-2"], &IngestApiConfig::default()).await;
-        let elastic_api_handlers = elastic_api_handlers(search_service, ingest_service);
+        let elastic_api_handlers = elastic_api_handlers(config, search_service, ingest_service);
         let payload = r#"
             { "create" : { "_index" : "my-index-1", "_id" : "1"} }
             {"id": 1, "message": "push"}
@@ -213,10 +216,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_bulk_api_blocks_when_refresh_wait_for_is_specified() {
+        let config = Arc::new(NodeConfig::for_test());
         let search_service = Arc::new(MockSearchService::new());
         let (universe, _temp_dir, ingest_service, ingest_service_mailbox) =
             setup_ingest_service(&["my-index-1", "my-index-2"], &IngestApiConfig::default()).await;
-        let elastic_api_handlers = elastic_api_handlers(search_service, ingest_service);
+        let elastic_api_handlers = elastic_api_handlers(config, search_service, ingest_service);
         let payload = r#"
             { "create" : { "_index" : "my-index-1", "_id" : "1"} }
             {"id": 1, "message": "push"}
@@ -289,10 +293,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_bulk_api_blocks_when_refresh_true_is_specified() {
+        let config = Arc::new(NodeConfig::for_test());
         let search_service = Arc::new(MockSearchService::new());
         let (universe, _temp_dir, ingest_service, ingest_service_mailbox) =
             setup_ingest_service(&["my-index-1", "my-index-2"], &IngestApiConfig::default()).await;
-        let elastic_api_handlers = elastic_api_handlers(search_service, ingest_service);
+        let elastic_api_handlers = elastic_api_handlers(config, search_service, ingest_service);
         let payload = r#"
             { "create" : { "_index" : "my-index-1", "_id" : "1"} }
             {"id": 1, "message": "push"}
@@ -364,9 +369,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_bulk_ingest_request_returns_400_if_action_is_malformed() {
+        let config = Arc::new(NodeConfig::for_test());
         let search_service = Arc::new(MockSearchService::new());
         let ingest_service = IngestServiceClient::new(IngestServiceClient::mock());
-        let elastic_api_handlers = elastic_api_handlers(search_service, ingest_service);
+        let elastic_api_handlers = elastic_api_handlers(config, search_service, ingest_service);
         let payload = r#"
             {"create": {"_index": "my-index", "_id": "1"},}
             {"id": 1, "message": "my-doc"}"#;

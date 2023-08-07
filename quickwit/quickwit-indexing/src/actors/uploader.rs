@@ -41,7 +41,7 @@ use tracing::{info, instrument, warn, Instrument, Span};
 
 use crate::actors::sequencer::{Sequencer, SequencerCommand};
 use crate::actors::Publisher;
-use crate::merge_policy::MergeOperation;
+use crate::merge_policy::{MergeOperation, MergePolicy};
 use crate::metrics::INDEXER_METRICS;
 use crate::models::{
     create_split_metadata, EmptySplit, PackagedSplit, PackagedSplitBatch, PublishLock, SplitsUpdate,
@@ -70,13 +70,12 @@ pub enum UploaderType {
 ///
 /// This is useful as we have different requirements between the indexing pipeline and
 /// the merge/delete task pipelines.
-/// 1. In the indexing pipeline, we want to publish splits in the same order as they
-///    are produced by the indexer/packager to ensure we are publishing splits without
-///    "holes" in checkpoints. We thus send [`SplitsUpdate`] to the [`Sequencer`]
-///    to keep the right ordering.
-/// 2. In the merge pipeline and the delete task pipeline, we are merging splits and in
-///    in this case, publishing order does not matter. In this case, we can just
-///    send [`SplitsUpdate`] directly to the [`Publisher`].
+/// 1. In the indexing pipeline, we want to publish splits in the same order as they are produced by
+///    the indexer/packager to ensure we are publishing splits without "holes" in checkpoints. We
+///    thus send [`SplitsUpdate`] to the [`Sequencer`] to keep the right ordering.
+/// 2. In the merge pipeline and the delete task pipeline, we are merging splits and in in this
+///    case, publishing order does not matter. In this case, we can just send [`SplitsUpdate`]
+///    directly to the [`Publisher`].
 #[derive(Clone, Debug)]
 pub enum SplitsUpdateMailbox {
     Sequencer(Mailbox<Sequencer<Publisher>>),
@@ -164,6 +163,7 @@ impl SplitsUpdateSender {
 pub struct Uploader {
     uploader_type: UploaderType,
     metastore: Arc<dyn Metastore>,
+    merge_policy: Arc<dyn MergePolicy>,
     split_store: IndexingSplitStore,
     split_update_mailbox: SplitsUpdateMailbox,
     max_concurrent_split_uploads: usize,
@@ -174,6 +174,7 @@ impl Uploader {
     pub fn new(
         uploader_type: UploaderType,
         metastore: Arc<dyn Metastore>,
+        merge_policy: Arc<dyn MergePolicy>,
         split_store: IndexingSplitStore,
         split_update_mailbox: SplitsUpdateMailbox,
         max_concurrent_split_uploads: usize,
@@ -181,6 +182,7 @@ impl Uploader {
         Uploader {
             uploader_type,
             metastore,
+            merge_policy,
             split_store,
             split_update_mailbox,
             max_concurrent_split_uploads,
@@ -292,6 +294,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
         let counters = self.counters.clone();
         let index_uid = batch.index_uid();
         let ctx_clone = ctx.clone();
+        let merge_policy = self.merge_policy.clone();
         info!(split_ids=?split_ids, "start-stage-and-store-splits");
         tokio::spawn(
             async move {
@@ -311,6 +314,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
                         &packaged_split.hotcache_bytes,
                     )?;
                     let split_metadata = create_split_metadata(
+                        &merge_policy,
                         &packaged_split.split_attrs,
                         packaged_split.tags.clone(),
                         split_streamer.footer_range.start..split_streamer.footer_range.end,
@@ -461,15 +465,18 @@ mod tests {
     use quickwit_common::temp_dir::TempDirectory;
     use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
     use quickwit_metastore::MockMetastore;
+    use quickwit_proto::indexing::IndexingPipelineId;
     use quickwit_storage::RamStorage;
     use tantivy::DateTime;
     use tokio::sync::oneshot;
 
     use super::*;
-    use crate::models::{IndexingPipelineId, SplitAttrs, SplitsUpdate};
+    use crate::merge_policy::{default_merge_policy, NopMergePolicy};
+    use crate::models::{SplitAttrs, SplitsUpdate};
 
     #[tokio::test]
     async fn test_uploader_with_sequencer() -> anyhow::Result<()> {
+        quickwit_common::setup_logging_for_tests();
         let universe = Universe::new();
         let pipeline_id = IndexingPipelineId {
             index_uid: IndexUid::new("test-index"),
@@ -493,9 +500,11 @@ mod tests {
         let ram_storage = RamStorage::default();
         let split_store =
             IndexingSplitStore::create_without_local_store(Arc::new(ram_storage.clone()));
+        let merge_policy = Arc::new(NopMergePolicy);
         let uploader = Uploader::new(
             UploaderType::IndexUploader,
             Arc::new(mock_metastore),
+            merge_policy,
             split_store,
             SplitsUpdateMailbox::Sequencer(sequencer_mailbox),
             4,
@@ -601,9 +610,11 @@ mod tests {
         let ram_storage = RamStorage::default();
         let split_store =
             IndexingSplitStore::create_without_local_store(Arc::new(ram_storage.clone()));
+        let merge_policy = Arc::new(NopMergePolicy);
         let uploader = Uploader::new(
             UploaderType::IndexUploader,
             Arc::new(mock_metastore),
+            merge_policy,
             split_store,
             SplitsUpdateMailbox::Sequencer(sequencer_mailbox),
             4,
@@ -737,9 +748,11 @@ mod tests {
         let ram_storage = RamStorage::default();
         let split_store =
             IndexingSplitStore::create_without_local_store(Arc::new(ram_storage.clone()));
+        let merge_policy = Arc::new(NopMergePolicy);
         let uploader = Uploader::new(
             UploaderType::IndexUploader,
             Arc::new(mock_metastore),
+            merge_policy,
             split_store,
             SplitsUpdateMailbox::Publisher(publisher_mailbox),
             4,
@@ -806,6 +819,7 @@ mod tests {
         let uploader = Uploader::new(
             UploaderType::IndexUploader,
             Arc::new(mock_metastore),
+            default_merge_policy(),
             split_store,
             SplitsUpdateMailbox::Sequencer(sequencer_mailbox),
             4,

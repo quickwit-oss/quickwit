@@ -25,13 +25,13 @@ use opentelemetry::sdk::propagation::TraceContextPropagator;
 use opentelemetry::sdk::{trace, Resource};
 use opentelemetry::{global, KeyValue};
 use opentelemetry_otlp::WithExportConfig;
+use quickwit_cli::checklist::RED_COLOR;
 use quickwit_cli::cli::{build_cli, CliCommand};
 #[cfg(feature = "jemalloc")]
 use quickwit_cli::jemalloc::start_jemalloc_metrics_loop;
 use quickwit_cli::{
     busy_detector, QW_ENABLE_JAEGER_EXPORTER_ENV_KEY, QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY,
 };
-use quickwit_common::RED_COLOR;
 use quickwit_serve::BuildInfo;
 use tracing::Level;
 use tracing_subscriber::fmt::time::UtcTime;
@@ -58,7 +58,6 @@ fn setup_logging_and_tracing(
     let registry = tracing_subscriber::registry().with(env_filter);
     let event_format = tracing_subscriber::fmt::format()
         .with_target(true)
-        .with_ansi(ansi)
         .with_timer(
             // We do not rely on the Rfc3339 implementation, because it has a nanosecond precision.
             // See discussion here: https://github.com/time-rs/time/discussions/418
@@ -69,6 +68,8 @@ fn setup_logging_and_tracing(
                 .expect("Time format invalid."),
             ),
         );
+    // Note on disabling ANSI characters: setting the ansi boolean on event format is insufficient.
+    // It is thus set on layers, see https://github.com/tokio-rs/tracing/issues/1817
     if std::env::var_os(QW_ENABLE_JAEGER_EXPORTER_ENV_KEY).is_some() {
         let tracer = opentelemetry_jaeger::new_agent_pipeline()
             .with_service_name("quickwit")
@@ -77,7 +78,11 @@ fn setup_logging_and_tracing(
             .context("Failed to initialize Jaeger exporter.")?;
         registry
             .with(tracing_opentelemetry::layer().with_tracer(tracer))
-            .with(tracing_subscriber::fmt::layer().event_format(event_format))
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .event_format(event_format)
+                    .with_ansi(ansi),
+            )
             .try_init()
             .context("Failed to set up tracing.")?;
     } else if std::env::var_os(QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY).is_some() {
@@ -94,12 +99,20 @@ fn setup_logging_and_tracing(
             .context("Failed to initialize OpenTelemetry OTLP exporter.")?;
         registry
             .with(tracing_opentelemetry::layer().with_tracer(tracer))
-            .with(tracing_subscriber::fmt::layer().event_format(event_format))
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .event_format(event_format)
+                    .with_ansi(ansi),
+            )
             .try_init()
             .context("Failed to set up tracing.")?;
     } else {
         registry
-            .with(tracing_subscriber::fmt::layer().event_format(event_format))
+            .with(
+                tracing_subscriber::fmt::layer()
+                    .event_format(event_format)
+                    .with_ansi(ansi),
+            )
             .try_init()
             .context("Failed to set up tracing.")?;
     }

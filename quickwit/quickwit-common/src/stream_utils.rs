@@ -17,37 +17,52 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::any::TypeId;
+use std::fmt;
 use std::pin::Pin;
 
-use futures::{Stream, TryStreamExt};
+use futures::{Stream, StreamExt, TryStreamExt};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::{ReceiverStream, UnboundedReceiverStream};
+use tracing::warn;
 
 pub type BoxStream<T> = Pin<Box<dyn Stream<Item = T> + Send + Unpin + 'static>>;
 
 /// A stream impl for code-generated services with streaming endpoints.
-pub struct ServiceStream<T, E> {
-    inner: BoxStream<Result<T, E>>,
+pub struct ServiceStream<T> {
+    inner: BoxStream<T>,
 }
 
-impl<T, E> Unpin for ServiceStream<T, E> {}
-
-impl<T, E> ServiceStream<T, E>
-where
-    T: Send + 'static,
-    E: Send + 'static,
+impl<T> fmt::Debug for ServiceStream<T>
+where T: 'static
 {
-    pub fn new_bounded(capacity: usize) -> (mpsc::Sender<Result<T, E>>, Self) {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "ServiceStream<{:?}>", TypeId::of::<T>())
+    }
+}
+
+impl<T> Unpin for ServiceStream<T> {}
+
+impl<T> ServiceStream<T>
+where T: Send + 'static
+{
+    pub fn new_bounded(capacity: usize) -> (mpsc::Sender<T>, Self) {
         let (sender, receiver) = mpsc::channel(capacity);
         (sender, receiver.into())
     }
 
-    pub fn new_unbounded() -> (mpsc::UnboundedSender<Result<T, E>>, Self) {
+    pub fn new_unbounded() -> (mpsc::UnboundedSender<T>, Self) {
         let (sender, receiver) = mpsc::unbounded_channel();
         (sender, receiver.into())
     }
+}
 
-    pub fn map_err<F, U>(self, f: F) -> ServiceStream<T, U>
+impl<T, E> ServiceStream<Result<T, E>>
+where
+    T: Send + 'static,
+    E: Send + 'static,
+{
+    pub fn map_err<F, U>(self, f: F) -> ServiceStream<Result<T, U>>
     where
         F: FnMut(E) -> U + Send + 'static,
         U: Send + 'static,
@@ -58,8 +73,8 @@ where
     }
 }
 
-impl<T, E> Stream for ServiceStream<T, E> {
-    type Item = Result<T, E>;
+impl<T> Stream for ServiceStream<T> {
+    type Item = T;
 
     fn poll_next(
         mut self: std::pin::Pin<&mut Self>,
@@ -69,36 +84,58 @@ impl<T, E> Stream for ServiceStream<T, E> {
     }
 }
 
-impl<T, E> From<mpsc::Receiver<Result<T, E>>> for ServiceStream<T, E>
-where
-    T: Send + 'static,
-    E: Send + 'static,
+impl<T> From<mpsc::Receiver<T>> for ServiceStream<T>
+where T: Send + 'static
 {
-    fn from(receiver: mpsc::Receiver<Result<T, E>>) -> Self {
+    fn from(receiver: mpsc::Receiver<T>) -> Self {
         Self {
             inner: Box::pin(ReceiverStream::new(receiver)),
         }
     }
 }
 
-impl<T, E> From<mpsc::UnboundedReceiver<Result<T, E>>> for ServiceStream<T, E>
-where
-    T: Send + 'static,
-    E: Send + 'static,
+impl<T> From<mpsc::UnboundedReceiver<T>> for ServiceStream<T>
+where T: Send + 'static
 {
-    fn from(receiver: mpsc::UnboundedReceiver<Result<T, E>>) -> Self {
+    fn from(receiver: mpsc::UnboundedReceiver<T>) -> Self {
         Self {
             inner: Box::pin(UnboundedReceiverStream::new(receiver)),
         }
     }
 }
 
-impl<T> From<tonic::Streaming<T>> for ServiceStream<T, tonic::Status>
+/// Adapts a server-side tonic::Streaming into a ServiceStream of `Result<T, tonic::Status>`. Once
+/// an error is encountered, the stream will be closed and subsequent calls to `poll_next` will
+/// return `None`.
+impl<T> From<tonic::Streaming<T>> for ServiceStream<Result<T, tonic::Status>>
 where T: Send + 'static
 {
     fn from(streaming: tonic::Streaming<T>) -> Self {
         Self {
             inner: Box::pin(streaming),
+        }
+    }
+}
+
+/// Adapts a client-side tonic::Streaming into a ServiceStream of `T`. Once an error is encountered,
+/// the stream will be closed and subsequent calls to `poll_next` will return `None`.
+impl<T> From<tonic::Streaming<T>> for ServiceStream<T>
+where T: Send + 'static
+{
+    fn from(streaming: tonic::Streaming<T>) -> Self {
+        let ok_streaming = streaming.filter_map(|message| {
+            Box::pin(async move {
+                message
+                    .map_err(|status| {
+                        warn!(status=?status, "gRPC transport error.");
+                        status
+                    })
+                    .ok()
+            })
+        });
+
+        Self {
+            inner: Box::pin(ok_streaming),
         }
     }
 }

@@ -243,7 +243,7 @@ impl<A: Actor> ActorContext<A> {
     ) -> Result<oneshot::Receiver<DestActor::Reply>, SendError>
     where
         DestActor: DeferableReplyHandler<M>,
-        M: 'static + Send + Sync + fmt::Debug,
+        M: fmt::Debug + Send + 'static,
     {
         let _guard = self.protect_zone();
         debug!(from=%self.self_mailbox.actor_instance_id(), send=%mailbox.actor_instance_id(), msg=?msg);
@@ -262,7 +262,7 @@ impl<A: Actor> ActorContext<A> {
     ) -> Result<T, AskError<Infallible>>
     where
         DestActor: DeferableReplyHandler<M, Reply = T>,
-        M: 'static + Send + Sync + fmt::Debug,
+        M: fmt::Debug + Send + 'static,
     {
         let _guard = self.protect_zone();
         debug!(from=%self.self_mailbox.actor_instance_id(), send=%mailbox.actor_instance_id(), msg=?msg, "ask");

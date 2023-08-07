@@ -74,15 +74,23 @@ version: 0.6
 #
 # -------------------------------- Storage settings --------------------------------
 #
+# Hardcoding credentials into configuration files is not secure and strongly
+# discouraged. Prefer the alternative authentication methods that your storage
+# backend may provide.
+#
 # storage:
 #   azure:
 #     account: ${QW_AZURE_STORAGE_ACCOUNT}
 #     access_key: ${QW_AZURE_STORAGE_ACCESS_KEY}
 #
 #   s3:
+#     access_key_id: ${AWS_ACCESS_KEY_ID}
+#     secret_access_key: ${AWS_SECRET_ACCESS_KEY}
+#     region: ${AWS_REGION}
 #     endpoint: ${QW_S3_ENDPOINT}
-#     force_path_style_access: ${QW_S3_FORCE_PATH_STYLE_ACCESS:-true}
-#     disable_multi_object_delete_requests: true
+#     force_path_style_access: ${QW_S3_FORCE_PATH_STYLE_ACCESS:-false}
+#     disable_multi_object_delete: false
+#     disable_multipart_upload: false
 #
 # -------------------------------- Metastore settings --------------------------------
 #

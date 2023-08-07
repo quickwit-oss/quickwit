@@ -1,6 +1,6 @@
 [package]
 name = "quickwit-cli"
-version = "0.6.1"
+version = "0.6.3"
 authors = ["Quickwit, Inc. <hello@quickwit.io>"]
 edition = "2021"
 license = "AGPL-3.0-or-later"                               # For a commercial, license, contact hello@quickwit.io
@@ -21,7 +21,6 @@ path = "src/generate_markdown.rs"
 [dependencies]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
-atty = { workspace = true }
 byte-unit = { workspace = true }
 bytes = { workspace = true }
 chitchat = { workspace = true }
@@ -43,6 +42,7 @@ reqwest = { workspace = true }
 serde_json = { workspace = true }
 tabled = { workspace = true }
 tempfile = { workspace = true }
+thiserror = { workspace = true }
 thousands = { workspace = true }
 tikv-jemalloc-ctl = { workspace = true, optional = true }
 tikv-jemallocator = { workspace = true, optional = true }
@@ -59,7 +59,7 @@ quickwit-actors = { workspace = true }
 quickwit-cluster = { workspace = true }
 quickwit-common = { workspace = true }
 quickwit-config = { workspace = true }
-quickwit-core = { workspace = true }
+quickwit-index-management = { workspace = true }
 quickwit-directories = { workspace = true }
 quickwit-doc-mapper = { workspace = true }
 quickwit-indexing = { workspace = true }
@@ -79,6 +79,7 @@ quickwit-actors = { workspace = true, features = ["testsuite"] }
 quickwit-common = { workspace = true, features = ["testsuite"] }
 quickwit-config = { workspace = true, features = ["testsuite"] }
 quickwit-metastore = { workspace = true, features = ["testsuite"] }
+quickwit-storage = { workspace = true, features = ["testsuite"] }
 
 [features]
 jemalloc = ["dep:tikv-jemalloc-ctl", "dep:tikv-jemallocator"]
@@ -91,24 +92,30 @@ release-feature-set = [
   "quickwit-indexing/kafka",
   "quickwit-indexing/kinesis",
   "quickwit-indexing/pulsar",
+  "quickwit-indexing/vrl",
   "quickwit-metastore/azure",
   "quickwit-metastore/postgres",
+  "quickwit-doc-mapper/multilang",
 ]
 release-feature-vendored-set = [
   "jemalloc",
   "openssl-support",
   "quickwit-indexing/kinesis",
   "quickwit-indexing/pulsar",
+  "quickwit-indexing/vrl",
   "quickwit-indexing/vendored-kafka",
   "quickwit-metastore/azure",
   "quickwit-metastore/postgres",
+  "quickwit-doc-mapper/multilang",
 ]
 release-macos-feature-vendored-set = [
   "jemalloc",
   "openssl-support",
   "quickwit-indexing/kinesis",
   "quickwit-indexing/pulsar",
+  "quickwit-indexing/vrl",
   "quickwit-indexing/vendored-kafka-macos",
   "quickwit-metastore/azure",
   "quickwit-metastore/postgres",
+  "quickwit-doc-mapper/multilang",
 ]

@@ -1,6 +1,6 @@
 [package]
 name = "quickwit-common"
-version = "0.6.1"
+version = "0.6.3"
 authors = ["Quickwit, Inc. <hello@quickwit.io>"]
 edition = "2021"
 license = "AGPL-3.0-or-later"                           # For a commercial, license, contact hello@quickwit.io
@@ -14,9 +14,9 @@ anyhow = { workspace = true }
 async-speed-limit = { workspace = true }
 async-trait = { workspace = true }
 byte-unit = { workspace = true }
-colored = { workspace = true }
 dyn-clone = { workspace = true }
 env_logger = { workspace = true }
+fnv = { workspace = true }
 futures = { workspace = true }
 home = { workspace = true }
 hostname = { workspace = true }

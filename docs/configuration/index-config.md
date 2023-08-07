@@ -127,6 +127,7 @@ fast:
 | ------------- | ------------- | ------------- |
 | `description` | Optional description for the field. | `None` |
 | `stored`    | Whether value is stored in the document store | `true` |
+| `indexed`   | Whether value should be indexed so it can be searhced | `true` |
 | `tokenizer` | Name of the `Tokenizer`. ([See tokenizers](#description-of-available-tokenizers)) for a list of available tokenizers.  | `default` |
 | `record`    | Describes the amount of information indexed, choices between `basic`, `freq` and `position` | `basic` |
 | `fieldnorms` | Whether to store fieldnorms for the field. Fieldnorms are required to calculate the BM25 Score of the document. | `false` |
@@ -163,7 +164,7 @@ Indexing with position is required to run phrase queries.
 
 Quickwit handles three numeric types: `i64`, `u64`, and `f64`.
 
-Numeric values can be stored in a fast field (the equivalent of Lucene's `DocValues`) which is a column-oriented storage.
+Numeric values can be stored in a fast field (the equivalent of Lucene's `DocValues`), which is a column-oriented storage used for range queries and aggregations.
 
 Example of a mapping for an u64 field:
 
@@ -178,36 +179,54 @@ fast: true
 
 **Parameters for i64, u64 and f64 field**
 
-| Variable      | Description   | Default value |
-| ------------- | ------------- | ------------- |
-| `description` | Optional description for the field. | `None` |
-| `stored`    | Whether the field values are stored in the document store | `true` |
-| `indexed`   | Whether the field values are indexed | `true` |
-| `fast`      | Whether the field values are stored in a fast field | `false` |
+| Variable        | Description   | Default value |
+| --------------- | ------------- | ------------- |
+| `description`   | Optional description for the field. | `None` |
+| `stored`        | Whether the field values are stored in the document store. | `true` |
+| `indexed`       | Whether the field values are indexed. | `true` |
+| `fast`          | Whether the field values are stored in a fast field. | `false` |
+| `coerce`        | Whether to convert numbers passed as strings to integers or floats. | `true` |
+| `output_format` | JSON type used to return numbers in search results. Possible values are `number` or `string`. | `number` |
 
 #### `datetime` type
 
-The `datetime` type handles dates and datetimes. Each `datetime` field can be configured to support multiple input formats.
+The `datetime` type handles dates and datetimes. Since JSON doesn’t have a date type, the `datetime` field support multiple input types and formats. The supported input types are:
+- floating-point or integer numbers representing a Unix timestamp
+- strings containing a formatted date, datetime, or Unix timestamp
+
+The `input_formats` field parameter specifies the accepted date formats. The following input formats are natively supported:
+- `iso8601`
+- `rfc2822`
+- `rfc3339`
+- `strptime`
+- `unix_timestamp`
+
+**Input formats**
+
 When specifying multiple input formats, the corresponding parsers are attempted in the order they are declared. The following formats are natively supported:
 - `iso8601`, `rfc2822`, `rfc3339`: parse dates using standard ISO and RFC formats.
-- `strptime`: parse dates using the Unix [strptime](https://man7.org/linux/man-pages/man3/strptime.3.html) format with few changes:
+- `strptime`: parse dates using the Unix [strptime](https://man7.org/linux/man-pages/man3/strptime.3.html) format with some variations:
   - `strptime` format specifiers: `%C`, `%d`, `%D`, `%e`, `%F`, `%g`, `%G`, `%h`, `%H`, `%I`, `%j`, `%k`, `%l`, `%m`, `%M`, `%n`, `%R`, `%S`, `%t`, `%T`, `%u`, `%U`, `%V`, `%w`, `%W`, `%y`, `%Y`, `%%`.
   - `%f` for milliseconds precision support.
   - `%z` timezone offsets can be specified as `(+|-)hhmm` or `(+|-)hh:mm`.
 
-- `unix_timestamp`: parse Unix timestamp values. Timestamps can be provided with different precisions, namely: `seconds`, `milliseconds`, `microseconds`, or `nanoseconds`. Quickwit is able to infer the precision from the value. Because internally, datetimes are stored as `i64`, Quickwit only supports timestamp values ranging from `13 Apr 1972 23:59:55` to `16 Mar 2242 12:56:31`.
+:::warning
+The timezone name format specifier (`%Z`) is not supported currently.
+:::
 
-When a `datetime` field is stored as a fast field, the `precision` parameter indicates the precision used to truncate the values before encoding, which improves compression (truncation here means zeroing). The `precision` parameter can take the following values: `seconds`, `milliseconds`, `microseconds`, or `nanoseconds`. It only affects what is stored in fast fields when a `datetime` field is marked as fast field. Finally, operations on `datetime` fastfields, e.g. via aggregations, need to be done at the nanosecond level.
+- `unix_timestamp`: parse float and integer numbers to Unix timestamps. Floating-point values are converted to timestamps expressed in seconds. Integer values are converted to Unix timestamps whose precision, determined in `seconds`, `milliseconds`, `microseconds`, or `nanoseconds`, is inferred from the number of input digits. Internally, datetimes are converted to UTC (if the time zone is specified) and stored as *i64* integers. As a result, Quickwit only supports timestamp values ranging from `Apr 13, 1972 23:59:55` to `Mar 16, 2242 12:56:31`.
+
+:::warning
+Converting timestamps from float to integer values may occurs with a loss of precision.
+:::
+
+When a `datetime` field is stored as a fast field, the `precision` parameter indicates the precision used to truncate the values before encoding, which improves compression (truncation here means zeroing). The `precision` parameter can take the following values: `seconds`, `milliseconds`, `microseconds`, or `nanoseconds`. It only affects what is stored in fast fields when a `datetime` field is marked as "fast". Finally, operations on `datetime` fast fields, e.g. via aggregations, need to be done at the nanosecond level.
 
 :::info
 Internally `datetime` is stored in `nanoseconds` in fast fields and in the docstore, and in `seconds` in the term dictionary.
 :::
 
-:::warning
-The timezone name format specifier (`%Z`) is not currently supported in `strptime` format.
-:::
-
-In addition, Quickwit supports the `output_format` field option to specify with which precision datetimes are deserialized. This options supports the same value as input formats except for `unix_timestamp` which is replaced by the following formats:
+In addition, Quickwit supports the `output_format` field parameter to specify with which precision datetimes are deserialized. This parameter supports the same value as input formats except for `unix_timestamp` which is replaced by the following formats:
 - `unix_timestamp_secs`: displays timestamps in seconds.
 - `unix_timestamp_millis`: displays timestamps in milliseconds.
 - `unix_timestamp_micros`: displays timestamps in microseconds.
@@ -321,9 +340,9 @@ name: parameters
 type: json
 stored: true
 indexed: true
-tokenizer: "default"
+tokenizer: raw
 expand_dots: false
-fast: 
+fast:
   normalizer: lowercase
 ```
 
@@ -335,7 +354,7 @@ fast:
 | `stored`    | Whether value is stored in the document store | `true` |
 | `indexed`   | Whether value is indexed | `true` |
 | `fast`     | Whether value is stored in a fast field. The default behaviour for text in the JSON is to store the text unchanged. An normalizer can be configured via `normalizer: lowercase`. ([See normalizers](#description-of-available-normalizers)) for a list of available normalizers. | `true` |
-| `tokenizer` | **Only affects strings in the json object**. Name of the `Tokenizer`, choices between `raw`, `default`, `en_stem` and `chinese_compatible` | `default` |
+| `tokenizer` | **Only affects strings in the json object**. Name of the `Tokenizer`, choices between `raw`, `default`, `en_stem` and `chinese_compatible` | `raw` |
 | `record`    | **Only affects strings in the json object**. Describes the amount of information indexed, choices between `basic`, `freq` and `position` | `basic` |
 | `expand_dots`    | If true, json keys containing a `.` should be expanded. For instance, if `expand_dots` is set to true, `{"k8s.node.id": "node-2"}` will be indexed as if it was `{"k8s": {"node": {"id": "node2"}}}`. The benefit is that escaping the `.` will not be required at query time. In other words, `k8s.node.id:node2` will match the document. This does not impact the way the document is stored.  | `true` |
 
@@ -487,9 +506,9 @@ This section describes indexing settings for a given index.
 | Variable      | Description   | Default value |
 | ------------- | ------------- | ------------- |
 | `commit_timeout_secs`      | Maximum number of seconds before committing a split since its creation.   | `60` |
-| `split_num_docs_target` | Target number of docs per split.   | `10_000_000` |
+| `split_num_docs_target` | Target number of docs per split.   | `10000000` |
 | `merge_policy` | Describes the strategy used to trigger split merge operations (see [Merge policies](#merge-policies) section below). |
-| `resources.heap_size`      | Indexer heap size per source per index.   | `2_000_000_000` |
+| `resources.heap_size`      | Indexer heap size per source per index.   | `2000000000` |
 
 ### Merge policies
 
@@ -512,9 +531,10 @@ index_id: "hdfs"
 indexing_settings:
   merge_policy:
     type: "stable_log"
-    min_level_num_docs: 100_000
+    min_level_num_docs: 100000
     merge_factor: 10
     max_merge_factor: 12
+    maturation_period: 48h
 ```
 
 
@@ -522,8 +542,8 @@ indexing_settings:
 | ------------- | ------------- | ------------- |
 | `merge_factor`      | *(advanced)* Number of splits to merge together in a single merge operation.   | `10` |
 | `max_merge_factor` | *(advanced)* Maximum number of splits that can be merged together in a single merge operation.  | `12` |
-| `min_level_num_docs` |  *(advanced)* Number of docs below which all splits are considered as belonging to the same level.   | `100_000` |
-
+| `min_level_num_docs` |  *(advanced)* Number of docs below which all splits are considered as belonging to the same level.   | `100000` |
+| `maturation_period` | Duration after which a split is considered mature, and won't be considered for merges anymore. May impact the completion time of pending delete tasks. | `48h` |
 
 #### "Limit Merge" merge policy
 
@@ -543,7 +563,7 @@ indexing_settings:
     max_merge_ops: 5
     merge_factor: 10
     max_merge_factor: 12
-
+    maturation_period: 48h
 ```
 
 
@@ -552,6 +572,7 @@ indexing_settings:
 | `max_merge_ops`   |  Maximum number of merges that a given split should undergo. | `4` |
 | `merge_factor`      | *(advanced)* Number of splits to merge together in a single merge operation.   | `10` |
 | `max_merge_factor` | *(advanced)* Maximum number of splits that can be merged together in a single merge operation.  | `12` |
+| `maturation_period` | Duration after which a split is considered mature, and won't be considered for merges anymore. May impact the completion time of pending delete tasks. | `48h` |
 
 #### No merge
 

@@ -20,7 +20,7 @@
 use std::convert::TryInto;
 use std::str::FromStr;
 
-use quickwit_proto::metastore_api::{DeleteQuery, DeleteTask as QuickwitDeleteTask};
+use quickwit_proto::metastore::{DeleteQuery, DeleteTask as QuickwitDeleteTask};
 use quickwit_proto::IndexUid;
 use tracing::error;
 
@@ -83,6 +83,9 @@ pub struct Split {
     pub update_timestamp: sqlx::types::time::PrimitiveDateTime,
     /// Timestamp for tracking when the split was published.
     pub publish_timestamp: Option<sqlx::types::time::PrimitiveDateTime>,
+    /// Timestamp for tracking when the split becomes mature.
+    /// If a split is already mature, this timestamp is set to 0.
+    pub maturity_timestamp: sqlx::types::time::PrimitiveDateTime,
     /// A list of tags for categorizing and searching group of splits.
     pub tags: Vec<String>,
     // The split's metadata serialized as a JSON string.

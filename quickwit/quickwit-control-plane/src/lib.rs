@@ -17,81 +17,49 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-#[path = "codegen/control_plane_service.rs"]
-mod control_plane_service;
+pub mod control_plane;
 pub mod indexing_plan;
 pub mod scheduler;
 
 use std::sync::Arc;
 
 use async_trait::async_trait;
-pub use control_plane_service::*;
-use quickwit_actors::{AskError, Mailbox, Universe};
-use quickwit_cluster::Cluster;
+use quickwit_actors::{Mailbox, Universe};
 use quickwit_common::pubsub::EventSubscriber;
+use quickwit_common::tower::Pool;
 use quickwit_config::SourceParams;
-use quickwit_grpc_clients::service_client_pool::ServiceClientPool;
 use quickwit_metastore::{Metastore, MetastoreEvent};
+use quickwit_proto::control_plane::{
+    ControlPlaneService, ControlPlaneServiceClient, NotifyIndexChangeRequest,
+};
+use quickwit_proto::indexing::{IndexingServiceClient, IndexingTask};
 use scheduler::IndexingScheduler;
 use tracing::error;
 
-pub type Result<T> = std::result::Result<T, ControlPlaneError>;
-
-#[derive(Debug, Clone, thiserror::Error)]
-pub enum ControlPlaneError {
-    #[error("An internal error occurred: {0}.")]
-    Internal(String),
-    #[error("Control plane is unavailable: {0}.")]
-    Unavailable(String),
+/// Indexer-node specific information stored in the pool of available indexer nodes
+#[derive(Debug, Clone)]
+pub struct IndexerNodeInfo {
+    pub client: IndexingServiceClient,
+    pub indexing_tasks: Vec<IndexingTask>,
 }
 
-impl From<ControlPlaneError> for tonic::Status {
-    fn from(error: ControlPlaneError) -> Self {
-        match error {
-            ControlPlaneError::Internal(message) => tonic::Status::internal(message),
-            ControlPlaneError::Unavailable(message) => tonic::Status::unavailable(message),
-        }
-    }
-}
-
-impl From<tonic::Status> for ControlPlaneError {
-    fn from(status: tonic::Status) -> Self {
-        match status.code() {
-            tonic::Code::Unavailable => {
-                ControlPlaneError::Unavailable(status.message().to_string())
-            }
-            _ => ControlPlaneError::Internal(status.message().to_string()),
-        }
-    }
-}
-
-impl From<AskError<ControlPlaneError>> for ControlPlaneError {
-    fn from(error: AskError<ControlPlaneError>) -> Self {
-        match error {
-            AskError::ErrorReply(error) => error,
-            AskError::MessageNotDelivered => {
-                ControlPlaneError::Unavailable("Request not delivered".to_string())
-            }
-            AskError::ProcessMessageError => ControlPlaneError::Internal(
-                "An error occurred while processing the request".to_string(),
-            ),
-        }
-    }
-}
+pub type IndexerPool = Pool<String, IndexerNodeInfo>;
 
 /// Starts the Control Plane.
-pub async fn start_control_plane_service(
+pub async fn start_indexing_scheduler(
+    cluster_id: String,
+    self_node_id: String,
     universe: &Universe,
-    cluster: Cluster,
+    indexer_pool: IndexerPool,
     metastore: Arc<dyn Metastore>,
 ) -> anyhow::Result<Mailbox<IndexingScheduler>> {
-    let ready_members_watcher = cluster.ready_members_watcher().await;
-    let indexing_service_client_pool =
-        ServiceClientPool::create_and_update_members(ready_members_watcher).await?;
-    let scheduler = IndexingScheduler::new(cluster, metastore, indexing_service_client_pool);
+    let scheduler = IndexingScheduler::new(cluster_id, self_node_id, metastore, indexer_pool);
     let (scheduler_mailbox, _) = universe.spawn_builder().spawn(scheduler);
     Ok(scheduler_mailbox)
 }
+
+#[derive(Debug, Clone)]
+pub struct ControlPlaneEventSubscriber(pub ControlPlaneServiceClient);
 
 /// Notify the control plane when one of the following event occurs:
 /// - an index is deleted.
@@ -104,7 +72,7 @@ pub async fn start_control_plane_service(
 // - We don't sent any data to the Control Plane. It could be nice to send the relevant data to the
 //   control plane and let it decide to schedule or not indexing tasks.
 #[async_trait]
-impl EventSubscriber<MetastoreEvent> for ControlPlaneServiceClient {
+impl EventSubscriber<MetastoreEvent> for ControlPlaneEventSubscriber {
     async fn handle_event(&mut self, event: MetastoreEvent) {
         let event = match event {
             MetastoreEvent::DeleteIndex { .. } => "delete-index",
@@ -120,7 +88,11 @@ impl EventSubscriber<MetastoreEvent> for ControlPlaneServiceClient {
             MetastoreEvent::ToggleSource { .. } => "toggle-source",
             MetastoreEvent::DeleteSource { .. } => "delete-source",
         };
-        if let Err(error) = self.notify_index_change(NotifyIndexChangeRequest {}).await {
+        if let Err(error) = self
+            .0
+            .notify_index_change(NotifyIndexChangeRequest {})
+            .await
+        {
             error!(error=?error, event=event, "Failed to notify control plane of index change.");
         }
     }
@@ -129,6 +101,7 @@ impl EventSubscriber<MetastoreEvent> for ControlPlaneServiceClient {
 #[cfg(test)]
 mod tests {
     use quickwit_config::SourceConfig;
+    use quickwit_proto::control_plane::NotifyIndexChangeResponse;
     use quickwit_proto::IndexUid;
 
     use super::*;
@@ -139,7 +112,8 @@ mod tests {
         mock.expect_notify_index_change()
             .return_once(|_| Ok(NotifyIndexChangeResponse {}));
 
-        let mut control_plane = ControlPlaneServiceClient::new(mock);
+        let mut control_plane_event_subscriber =
+            ControlPlaneEventSubscriber(ControlPlaneServiceClient::new(mock));
 
         let index_uid = IndexUid::new("test-index");
 
@@ -147,18 +121,18 @@ mod tests {
             index_uid: index_uid.clone(),
             source_config: SourceConfig::for_test("test-source", SourceParams::IngestApi),
         };
-        control_plane.handle_event(event).await;
+        control_plane_event_subscriber.handle_event(event).await;
 
         let event = MetastoreEvent::AddSource {
             index_uid: index_uid.clone(),
             source_config: SourceConfig::for_test("test-source", SourceParams::file("test-file")),
         };
-        control_plane.handle_event(event).await;
+        control_plane_event_subscriber.handle_event(event).await;
 
         let event = MetastoreEvent::AddSource {
             index_uid: index_uid.clone(),
             source_config: SourceConfig::for_test("test-source", SourceParams::IngestCli),
         };
-        control_plane.handle_event(event).await;
+        control_plane_event_subscriber.handle_event(event).await;
     }
 }

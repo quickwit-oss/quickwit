@@ -167,7 +167,6 @@ impl DeleteTaskService {
             index_metadata.index_uid.clone(),
             self.metastore.clone(),
             self.search_job_placer.clone(),
-            index_config.indexing_settings,
             index_storage,
             self.delete_service_task_dir.clone(),
             self.max_concurrent_split_uploads,
@@ -204,7 +203,7 @@ impl Handler<UpdatePipelines> for DeleteTaskService {
 #[cfg(test)]
 mod tests {
     use quickwit_indexing::TestSandbox;
-    use quickwit_proto::metastore_api::DeleteQuery;
+    use quickwit_proto::metastore::DeleteQuery;
     use quickwit_search::{searcher_pool_for_test, MockSearchService, SearchJobPlacer};
     use quickwit_storage::StorageResolver;
 

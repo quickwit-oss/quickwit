@@ -105,9 +105,9 @@ impl From<SendError> for ActorExitStatus {
 /// - update its state;
 /// - emits one or more messages to other actors.
 #[async_trait]
-pub trait Actor: Send + Sync + Sized + 'static {
+pub trait Actor: Send + Sized + 'static {
     /// Piece of state that can be copied for assert in unit test, admin, etc.
-    type ObservableState: Send + Sync + Clone + serde::Serialize + fmt::Debug;
+    type ObservableState: fmt::Debug + serde::Serialize + Send + Sync + Clone;
     /// A name identifying the type of actor.
     ///
     /// Ideally respect the `CamelCase` convention.
@@ -205,7 +205,7 @@ pub trait DeferableReplyHandler<M>: Actor {
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus>
     where
-        M: Send + Sync + 'static;
+        M: Send + 'static;
 }
 
 /// Message handler that requires actor to provide immediate response
@@ -238,7 +238,7 @@ where H: Handler<M>
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus>
     where
-        M: Send + 'static + Send + Sync,
+        M: Send + 'static,
     {
         self.handle(message, ctx).await.map(reply)
     }

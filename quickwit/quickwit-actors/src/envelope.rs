@@ -75,7 +75,7 @@ impl<A: Actor> fmt::Debug for Envelope<A> {
 }
 
 #[async_trait]
-trait EnvelopeT<A: Actor>: Send + Sync {
+trait EnvelopeT<A: Actor>: Send {
     fn debug_msg(&self) -> String;
 
     /// Returns the message as a boxed any.
@@ -95,7 +95,7 @@ trait EnvelopeT<A: Actor>: Send + Sync {
 impl<A, M> EnvelopeT<A> for Option<(oneshot::Sender<A::Reply>, M)>
 where
     A: DeferableReplyHandler<M>,
-    M: 'static + Send + Sync + fmt::Debug,
+    M: fmt::Debug + Send + 'static,
 {
     fn debug_msg(&self) -> String {
         #[allow(clippy::needless_option_take)]
@@ -143,7 +143,7 @@ pub(crate) fn wrap_in_envelope<A, M>(
 ) -> (Envelope<A>, oneshot::Receiver<A::Reply>)
 where
     A: DeferableReplyHandler<M>,
-    M: 'static + Send + Sync + fmt::Debug,
+    M: fmt::Debug + Send + 'static,
 {
     let (response_tx, response_rx) = oneshot::channel();
     let handler_envelope = Some((response_tx, msg));

@@ -31,11 +31,11 @@ use quickwit_metastore::SplitMetadata;
 use quickwit_storage::{PutPayload, Storage, StorageResult};
 use tantivy::directory::MmapDirectory;
 use tantivy::{Advice, Directory};
+use time::OffsetDateTime;
 use tracing::{info, info_span, instrument, Instrument};
 
 use super::LocalSplitStore;
-use crate::merge_policy::NopMergePolicy;
-use crate::{get_tantivy_directory_from_split_bundle, MergePolicy};
+use crate::get_tantivy_directory_from_split_bundle;
 
 /// IndexingSplitStore is a wrapper around a regular `Storage` to upload and
 /// download splits while allowing for efficient caching.
@@ -66,11 +66,6 @@ struct InnerIndexingSplitStore {
     remote_storage: Arc<dyn Storage>,
 
     local_split_store: Arc<LocalSplitStore>,
-
-    /// The merge policy is useful to identify whether a split
-    /// should be stored in the local storage or not.
-    /// (mature splits do not need to be stored).
-    merge_policy: Arc<dyn MergePolicy>,
 }
 
 pub struct WeakIndexingSplitStore {
@@ -89,15 +84,10 @@ impl IndexingSplitStore {
     /// Creates an instance of [`IndexingSplitStore`]
     ///
     /// It needs the remote storage to work with.
-    pub fn new(
-        remote_storage: Arc<dyn Storage>,
-        merge_policy: Arc<dyn MergePolicy>,
-        local_split_store: Arc<LocalSplitStore>,
-    ) -> Self {
+    pub fn new(remote_storage: Arc<dyn Storage>, local_split_store: Arc<LocalSplitStore>) -> Self {
         let inner = InnerIndexingSplitStore {
             remote_storage,
             local_split_store,
-            merge_policy,
         };
         Self {
             inner: Arc::new(inner),
@@ -110,7 +100,6 @@ impl IndexingSplitStore {
         let inner = InnerIndexingSplitStore {
             remote_storage,
             local_split_store: Arc::new(LocalSplitStore::no_caching()),
-            merge_policy: Arc::new(NopMergePolicy),
         };
         IndexingSplitStore {
             inner: Arc::new(inner),
@@ -137,7 +126,7 @@ impl IndexingSplitStore {
         let split_num_bytes = put_payload.len();
 
         let key = PathBuf::from(quickwit_common::split_file(split.split_id()));
-        let is_mature = self.inner.merge_policy.is_mature(split);
+        let is_mature = split.is_mature(OffsetDateTime::now_utc());
         self.inner
             .remote_storage
             .put(&key, put_payload)
@@ -246,10 +235,11 @@ impl IndexingSplitStore {
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
+    use std::time::Duration;
 
     use byte_unit::Byte;
     use quickwit_common::io::IoControls;
-    use quickwit_metastore::SplitMetadata;
+    use quickwit_metastore::{SplitMaturity, SplitMetadata};
     use quickwit_storage::{RamStorage, SplitPayloadBuilder};
     use tempfile::tempdir;
     use time::OffsetDateTime;
@@ -257,13 +247,15 @@ mod tests {
     use ulid::Ulid;
 
     use super::IndexingSplitStore;
-    use crate::merge_policy::default_merge_policy;
     use crate::split_store::{LocalSplitStore, SplitStoreQuota};
 
     fn create_test_split_metadata(split_id: &str) -> SplitMetadata {
         SplitMetadata {
             split_id: split_id.to_string(),
             create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
+            maturity: SplitMaturity::Immature {
+                maturation_period: Duration::from_secs(3600),
+            },
             ..Default::default()
         }
     }
@@ -279,11 +271,7 @@ mod tests {
         )
         .await?;
         let remote_storage = Arc::new(RamStorage::default());
-        let split_store = IndexingSplitStore::new(
-            remote_storage,
-            default_merge_policy(),
-            Arc::new(local_split_store),
-        );
+        let split_store = IndexingSplitStore::new(remote_storage, Arc::new(local_split_store));
 
         let split_id1 = Ulid::new().to_string();
         let split_id2 = Ulid::new().to_string();
@@ -349,11 +337,7 @@ mod tests {
         .await?;
 
         let remote_storage = Arc::new(RamStorage::default());
-        let split_store = IndexingSplitStore::new(
-            remote_storage,
-            default_merge_policy(),
-            Arc::new(local_split_store),
-        );
+        let split_store = IndexingSplitStore::new(remote_storage, Arc::new(local_split_store));
 
         let split_id1 = Ulid::new().to_string();
         let split_id2 = Ulid::new().to_string();

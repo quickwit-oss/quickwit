@@ -19,21 +19,21 @@
 
 #![deny(clippy::disallowed_methods)]
 
-mod checklist;
 mod coolid;
 
 pub mod binary_heap;
-mod file_entry;
 pub mod fs;
 pub mod io;
 mod kill_switch;
 pub mod metrics;
 pub mod net;
+mod path_hasher;
 mod progress;
 pub mod pubsub;
 pub mod rand;
 pub mod rendezvous_hasher;
 pub mod runtimes;
+pub mod shared_consts;
 pub mod sorted_iter;
 
 pub mod stream_utils;
@@ -49,12 +49,9 @@ use std::fmt::Debug;
 use std::ops::{Range, RangeInclusive};
 use std::str::FromStr;
 
-pub use checklist::{
-    print_checklist, run_checklist, ChecklistError, BLUE_COLOR, GREEN_COLOR, RED_COLOR,
-};
 pub use coolid::new_coolid;
-pub use file_entry::FileEntry;
 pub use kill_switch::KillSwitch;
+pub use path_hasher::PathHasher;
 pub use progress::{Progress, ProtectedZoneGuard};
 pub use stream_utils::{BoxStream, ServiceStream};
 use tracing::{error, info};

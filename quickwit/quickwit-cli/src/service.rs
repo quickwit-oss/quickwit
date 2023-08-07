@@ -25,7 +25,7 @@ use itertools::Itertools;
 use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::uri::Uri;
 use quickwit_config::service::QuickwitService;
-use quickwit_config::QuickwitConfig;
+use quickwit_config::NodeConfig;
 use quickwit_serve::serve_quickwit;
 use quickwit_telemetry::payload::{QuickwitFeature, QuickwitTelemetryInfo, TelemetryEvent};
 use tokio::signal;
@@ -76,7 +76,8 @@ impl RunCliCommand {
     pub async fn execute(&self) -> anyhow::Result<()> {
         debug!(args = ?self, "run-service");
         let mut config = load_node_config(&self.config_uri).await?;
-        let (storage_resolver, metastore_resolver) = get_resolvers(&config).await;
+        let (storage_resolver, metastore_resolver) =
+            get_resolvers(&config.storage_configs, &config.metastore_configs);
         crate::busy_detector::set_enabled(true);
 
         if let Some(services) = &self.services {
@@ -115,7 +116,7 @@ impl RunCliCommand {
     }
 }
 
-fn quickwit_telemetry_info(config: &QuickwitConfig) -> QuickwitTelemetryInfo {
+fn quickwit_telemetry_info(config: &NodeConfig) -> QuickwitTelemetryInfo {
     let mut features = HashSet::new();
     if config.indexer_config.enable_otlp_endpoint {
         features.insert(QuickwitFeature::Otlp);

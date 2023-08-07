@@ -26,14 +26,16 @@ use itertools::Itertools;
 use quickwit_actors::channel_with_priority::TrySendError;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_metastore::SplitMetadata;
+use quickwit_proto::indexing::IndexingPipelineId;
 use serde::Serialize;
 use tantivy::Inventory;
+use time::OffsetDateTime;
 use tracing::info;
 
 use crate::actors::MergeSplitDownloader;
 use crate::merge_policy::MergeOperation;
 use crate::metrics::INDEXER_METRICS;
-use crate::models::{IndexingPipelineId, NewSplits};
+use crate::models::NewSplits;
 use crate::MergePolicy;
 
 /// The merge planner decides when to start a merge task.
@@ -148,7 +150,7 @@ impl MergePlanner {
     }
 
     fn record_split(&mut self, new_split: SplitMetadata) {
-        if self.merge_policy.is_mature(&new_split) {
+        if new_split.is_mature(OffsetDateTime::now_utc()) {
             return;
         }
         let splits_for_partition: &mut Vec<SplitMetadata> = self
@@ -305,7 +307,8 @@ mod tests {
         ConstWriteAmplificationMergePolicyConfig, MergePolicyConfig, StableLogMergePolicyConfig,
     };
     use quickwit_config::IndexingSettings;
-    use quickwit_metastore::SplitMetadata;
+    use quickwit_metastore::{SplitMaturity, SplitMetadata};
+    use quickwit_proto::indexing::IndexingPipelineId;
     use quickwit_proto::IndexUid;
     use tantivy::TrackedObject;
     use time::OffsetDateTime;
@@ -314,7 +317,7 @@ mod tests {
     use crate::merge_policy::{
         merge_policy_from_settings, MergeOperation, MergePolicy, StableLogMergePolicy,
     };
-    use crate::models::{IndexingPipelineId, NewSplits};
+    use crate::models::NewSplits;
 
     fn split_metadata_for_test(
         split_id: &str,
@@ -331,6 +334,9 @@ mod tests {
             partition_id,
             num_merge_ops,
             create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
+            maturity: SplitMaturity::Immature {
+                maturation_period: Duration::from_secs(3600),
+            },
             ..Default::default()
         }
     }

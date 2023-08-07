@@ -39,7 +39,7 @@ use once_cell::sync::OnceCell;
 use quickwit_aws::retry::{retry, RetryParams, Retryable};
 use quickwit_common::uri::Uri;
 use quickwit_common::{chunk_range, ignore_error_kind, into_u64_range};
-use quickwit_config::{AzureStorageConfig, StorageBackend, StorageConfig};
+use quickwit_config::{AzureStorageConfig, StorageBackend};
 use regex::Regex;
 use tantivy::directory::OwnedBytes;
 use thiserror::Error;
@@ -48,15 +48,23 @@ use tokio_util::compat::FuturesAsyncReadCompatExt;
 use tracing::{instrument, warn};
 
 use crate::debouncer::DebouncedStorage;
-use crate::storage::{BulkDeleteError, DeleteFailure, SendableAsync};
+use crate::storage::SendableAsync;
 use crate::{
-    MultiPartPolicy, PutPayload, Storage, StorageError, StorageErrorKind, StorageFactory,
-    StorageResolverError, StorageResult, STORAGE_METRICS,
+    BulkDeleteError, DeleteFailure, MultiPartPolicy, PutPayload, Storage, StorageError,
+    StorageErrorKind, StorageFactory, StorageResolverError, StorageResult, STORAGE_METRICS,
 };
 
 /// Azure object storage resolver.
-#[derive(Default)]
-pub struct AzureBlobStorageFactory;
+pub struct AzureBlobStorageFactory {
+    storage_config: AzureStorageConfig,
+}
+
+impl AzureBlobStorageFactory {
+    /// Creates a new Azure blob storage factory.
+    pub fn new(storage_config: AzureStorageConfig) -> Self {
+        Self { storage_config }
+    }
+}
 
 #[async_trait]
 impl StorageFactory for AzureBlobStorageFactory {
@@ -64,19 +72,8 @@ impl StorageFactory for AzureBlobStorageFactory {
         StorageBackend::Azure
     }
 
-    async fn resolve(
-        &self,
-        storage_config: &StorageConfig,
-        uri: &Uri,
-    ) -> Result<Arc<dyn Storage>, StorageResolverError> {
-        let azure_storage_config = storage_config.as_azure().ok_or_else(|| {
-            let message = format!(
-                "Expected Azure storage config, got `{:?}`.",
-                storage_config.backend()
-            );
-            StorageResolverError::InvalidConfig(message)
-        })?;
-        let storage = AzureBlobStorage::from_uri(azure_storage_config, uri)?;
+    async fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
+        let storage = AzureBlobStorage::from_uri(&self.storage_config, uri)?;
         Ok(Arc::new(DebouncedStorage::new(storage)))
     }
 }
@@ -228,7 +225,7 @@ impl AzureBlobStorage {
             .inc_by(payload.len());
         retry(&self.retry_params, || async {
             let data = Bytes::from(payload.read_all().await?.to_vec());
-            let hash = md5::compute(&data[..]);
+            let hash = azure_storage_blobs::prelude::Hash::from(md5::compute(&data[..]).0);
             self.container_client
                 .blob_client(name)
                 .put_block_blob(data)
@@ -265,9 +262,10 @@ impl AzureBlobStorage {
                 async move {
                     retry(&self.retry_params, || async {
                         let block_id = format!("block:{num}");
-                        let (data, hash) =
+                        let (data, hash_digest) =
                             extract_range_data_and_hash(moved_payload.box_clone(), range.clone())
                                 .await?;
+                        let hash = azure_storage_blobs::prelude::Hash::from(hash_digest.0);
                         moved_blob_client
                             .put_block(block_id.clone(), data)
                             .hash(hash)

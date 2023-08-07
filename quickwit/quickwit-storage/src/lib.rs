@@ -82,7 +82,10 @@ pub use self::test_suite::{
     storage_test_multi_part_upload, storage_test_single_part_upload, storage_test_suite,
     test_write_and_bulk_delete,
 };
-pub use crate::error::{StorageError, StorageErrorKind, StorageResolverError, StorageResult};
+pub use crate::error::{
+    BulkDeleteError, DeleteFailure, StorageError, StorageErrorKind, StorageResolverError,
+    StorageResult,
+};
 
 /// Loads an entire local or remote file into memory.
 pub async fn load_file(
@@ -119,14 +122,12 @@ pub use for_test::storage_for_test;
 mod tests {
     use std::str::FromStr;
 
-    use quickwit_config::FileStorageConfig;
-
     use super::*;
 
     #[tokio::test]
     async fn test_load_file() {
         let storage_resolver = StorageResolver::builder()
-            .register(LocalFileStorageFactory, FileStorageConfig::default().into())
+            .register(LocalFileStorageFactory)
             .build()
             .unwrap();
         let expected_bytes = tokio::fs::read_to_string("Cargo.toml").await.unwrap();

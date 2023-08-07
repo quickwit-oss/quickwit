@@ -24,6 +24,7 @@ use tantivy::query::{
     FastFieldRangeWeight as TantivyFastFieldRangeQuery, RangeQuery as TantivyRangeQuery,
 };
 use tantivy::schema::Schema as TantivySchema;
+use tantivy::tokenizer::TokenizerManager;
 
 use super::QueryAst;
 use crate::json_literal::InterpretUserInput;
@@ -222,6 +223,7 @@ impl BuildTantivyAst for RangeQuery {
     fn build_tantivy_ast_impl(
         &self,
         schema: &TantivySchema,
+        _tokenizer_manager: &TokenizerManager,
         _search_fields: &[String],
         _with_validation: bool,
     ) -> Result<TantivyQueryAst, InvalidQuery> {
@@ -340,7 +342,9 @@ mod tests {
     use super::RangeQuery;
     use crate::query_ast::tantivy_query_ast::TantivyBoolQuery;
     use crate::query_ast::BuildTantivyAst;
-    use crate::{InvalidQuery, JsonLiteral, MatchAllOrNone};
+    use crate::{
+        create_default_quickwit_tokenizer_manager, InvalidQuery, JsonLiteral, MatchAllOrNone,
+    };
 
     fn make_schema(dynamic_mode: bool) -> Schema {
         let mut schema_builder = Schema::builder();
@@ -363,7 +367,12 @@ mod tests {
             upper_bound: Bound::Included(JsonLiteral::String("1989".to_string())),
         };
         let tantivy_ast = range_query
-            .build_tantivy_ast_call(&schema, &[], true)
+            .build_tantivy_ast_call(
+                &schema,
+                &create_default_quickwit_tokenizer_manager(),
+                &[],
+                true,
+            )
             .unwrap()
             .simplify();
         let leaf = tantivy_ast.as_leaf().unwrap();
@@ -402,7 +411,12 @@ mod tests {
         };
         // with validation
         let invalid_query: InvalidQuery = range_query
-            .build_tantivy_ast_call(&schema, &[], true)
+            .build_tantivy_ast_call(
+                &schema,
+                &create_default_quickwit_tokenizer_manager(),
+                &[],
+                true,
+            )
             .unwrap_err();
         assert!(
             matches!(invalid_query, InvalidQuery::FieldDoesNotExist { full_path } if full_path == "missing_field.toto")
@@ -410,7 +424,12 @@ mod tests {
         // without validation
         assert_eq!(
             range_query
-                .build_tantivy_ast_call(&schema, &[], false)
+                .build_tantivy_ast_call(
+                    &schema,
+                    &create_default_quickwit_tokenizer_manager(),
+                    &[],
+                    false
+                )
                 .unwrap()
                 .const_predicate(),
             Some(MatchAllOrNone::MatchNone)
@@ -427,7 +446,12 @@ mod tests {
         };
         // with validation
         let invalid_query: InvalidQuery = range_query
-            .build_tantivy_ast_call(&schema, &[], true)
+            .build_tantivy_ast_call(
+                &schema,
+                &create_default_quickwit_tokenizer_manager(),
+                &[],
+                true,
+            )
             .unwrap_err();
         assert!(matches!(
             invalid_query,
@@ -436,7 +460,12 @@ mod tests {
         // without validation
         assert_eq!(
             range_query
-                .build_tantivy_ast_call(&schema, &[], false)
+                .build_tantivy_ast_call(
+                    &schema,
+                    &create_default_quickwit_tokenizer_manager(),
+                    &[],
+                    false
+                )
                 .unwrap()
                 .const_predicate(),
             Some(MatchAllOrNone::MatchNone)
@@ -452,7 +481,12 @@ mod tests {
         };
         let schema = make_schema(true);
         let tantivy_ast = range_query
-            .build_tantivy_ast_call(&schema, &[], true)
+            .build_tantivy_ast_call(
+                &schema,
+                &create_default_quickwit_tokenizer_manager(),
+                &[],
+                true,
+            )
             .unwrap();
         let TantivyBoolQuery {
             must,
@@ -495,7 +529,12 @@ mod tests {
         };
         let schema = make_schema(false);
         let err = range_query
-            .build_tantivy_ast_call(&schema, &[], true)
+            .build_tantivy_ast_call(
+                &schema,
+                &create_default_quickwit_tokenizer_manager(),
+                &[],
+                true,
+            )
             .unwrap_err();
         assert!(matches!(err, InvalidQuery::SchemaError { .. }));
     }

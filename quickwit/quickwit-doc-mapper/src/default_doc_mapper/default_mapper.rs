@@ -17,18 +17,24 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::num::NonZeroU32;
 
 use anyhow::{bail, Context};
+use fnv::FnvHashSet;
+use quickwit_common::PathHasher;
+use quickwit_query::create_default_quickwit_tokenizer_manager;
 use quickwit_query::query_ast::QueryAst;
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value as JsonValue};
 use tantivy::query::Query;
-use tantivy::schema::{Field, FieldType, Schema, Value as TantivyValue, STORED};
+use tantivy::schema::{
+    Field, FieldType, FieldValue, Schema, Value as TantivyValue, INDEXED, STORED,
+};
+use tantivy::tokenizer::TokenizerManager;
 use tantivy::Document;
 
-use super::field_mapping_entry::QuickwitTextTokenizer;
+use super::field_mapping_entry::RAW_TOKENIZER_NAME;
 use super::DefaultDocMapperBuilder;
 use crate::default_doc_mapper::mapping_tree::{build_mapping_tree, MappingNode};
 use crate::default_doc_mapper::FieldMappingType;
@@ -37,30 +43,12 @@ use crate::doc_mapper::{JsonObject, Partition};
 use crate::query_builder::build_query;
 use crate::routing_expression::RoutingExpr;
 use crate::{
-    Cardinality, DocMapper, DocParsingError, ModeType, QueryParserError, WarmupInfo,
-    DYNAMIC_FIELD_NAME, SOURCE_FIELD_NAME,
+    Cardinality, DocMapper, DocParsingError, Mode, QueryParserError, TokenizerEntry, WarmupInfo,
+    DYNAMIC_FIELD_NAME, FIELD_PRESENCE_FIELD_NAME, SOURCE_FIELD_NAME,
 };
 
-/// Defines how an unmapped field should be handled.
-#[derive(Clone, Debug, Serialize, Deserialize, Default)]
-pub(crate) enum Mode {
-    #[default]
-    Lenient,
-    Strict,
-    Dynamic(QuickwitJsonOptions),
-}
+const FIELD_PRESENCE_FIELD: Field = Field::from_field_id(0u32);
 
-impl Mode {
-    pub fn mode_type(&self) -> ModeType {
-        match self {
-            Mode::Lenient => ModeType::Lenient,
-            Mode::Strict => ModeType::Strict,
-            Mode::Dynamic(_) => ModeType::Dynamic,
-        }
-    }
-}
-
-/// Default [`DocMapper`] implementation
 /// which defines a set of rules to map json fields
 /// to tantivy index fields.
 ///
@@ -72,6 +60,9 @@ pub struct DefaultDocMapper {
     /// This field is only valid when using the schema associated with the default
     /// doc mapper, and therefore cannot be used in the `query` method.
     source_field: Option<Field>,
+    /// Indexes field presence. It is necessary to enable this in order to run exists
+    /// queries.
+    index_field_presence: bool,
     /// Field in which the dynamically mapped fields should be stored.
     /// This field is only valid when using the schema associated with the default
     /// doc mapper, and therefore cannot be used in the `query` method.
@@ -96,6 +87,10 @@ pub struct DefaultDocMapper {
     required_fields: Vec<Field>,
     /// Defines how unmapped fields should be handle.
     mode: Mode,
+    /// User-defined tokenizers.
+    tokenizer_entries: Vec<TokenizerEntry>,
+    /// Tokenizer manager.
+    tokenizer_manager: TokenizerManager,
 }
 
 impl DefaultDocMapper {
@@ -121,7 +116,15 @@ fn validate_timestamp_field(
     timestamp_field_path: &str,
     mapping_root_node: &MappingNode,
 ) -> anyhow::Result<()> {
-    let Some(timestamp_field_type) = mapping_root_node.find_field_mapping_type(timestamp_field_path) else {
+    if timestamp_field_path.starts_with('.') || timestamp_field_path.starts_with("\\.") {
+        bail!("Timestamp field `{timestamp_field_path}` should not start with a `.`.");
+    }
+    if timestamp_field_path.ends_with('.') {
+        bail!("Timestamp field `{timestamp_field_path}` should not end with a `.`.");
+    }
+    let Some(timestamp_field_type) =
+        mapping_root_node.find_field_mapping_type(timestamp_field_path)
+    else {
         bail!("Could not find timestamp field `{timestamp_field_path}` in field mappings.");
     };
     if let FieldMappingType::DateTime(date_time_option, cardinality) = &timestamp_field_type {
@@ -141,8 +144,17 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
     type Error = anyhow::Error;
 
     fn try_from(builder: DefaultDocMapperBuilder) -> anyhow::Result<DefaultDocMapper> {
-        let mode = builder.mode()?;
         let mut schema_builder = Schema::builder();
+        let field_presence_field = schema_builder.add_u64_field(FIELD_PRESENCE_FIELD_NAME, INDEXED);
+        assert_eq!(field_presence_field, FIELD_PRESENCE_FIELD);
+
+        let dynamic_field = if let Mode::Dynamic(json_options) = &builder.mode {
+            Some(schema_builder.add_json_field(DYNAMIC_FIELD_NAME, json_options.clone()))
+        } else {
+            None
+        };
+
+        // Adding regular fields.
         let field_mappings = build_mapping_tree(&builder.field_mappings, &mut schema_builder)?;
         let source_field = if builder.store_source {
             Some(schema_builder.add_json_field(SOURCE_FIELD_NAME, STORED))
@@ -154,13 +166,41 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
             validate_timestamp_field(timestamp_field_path, &field_mappings)?;
         };
 
-        let dynamic_field = if let Mode::Dynamic(json_options) = &mode {
-            Some(schema_builder.add_json_field(DYNAMIC_FIELD_NAME, json_options.clone()))
-        } else {
-            None
-        };
-
         let schema = schema_builder.build();
+
+        let tokenizer_manager = create_default_quickwit_tokenizer_manager();
+        let mut custom_tokenizer_names = HashSet::new();
+        for tokenizer_config_entry in builder.tokenizers.iter() {
+            if custom_tokenizer_names.contains(&tokenizer_config_entry.name) {
+                bail!(
+                    "Duplicated custom tokenizer: `{}`",
+                    tokenizer_config_entry.name
+                );
+            }
+            if tokenizer_manager
+                .get(&tokenizer_config_entry.name)
+                .is_some()
+            {
+                bail!(
+                    "Custom tokenizer name `{}` should be different from built-in tokenizer's \
+                     names.",
+                    tokenizer_config_entry.name
+                );
+            }
+            let tokenizer = tokenizer_config_entry
+                .config
+                .text_analyzer()
+                .map_err(|error| {
+                    anyhow::anyhow!(
+                        "Failed to build tokenizer `{}`: {:?}",
+                        tokenizer_config_entry.name,
+                        error
+                    )
+                })?;
+            tokenizer_manager.register(&tokenizer_config_entry.name, tokenizer);
+            custom_tokenizer_names.insert(&tokenizer_config_entry.name);
+        }
+        validate_fields_tokenizers(&schema, &tokenizer_manager)?;
 
         // Resolve default search fields
         let mut default_search_field_names = Vec::new();
@@ -204,6 +244,7 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
         let required_fields = Vec::new();
         Ok(DefaultDocMapper {
             schema,
+            index_field_presence: builder.index_field_presence,
             source_field,
             dynamic_field,
             default_search_field_names,
@@ -213,7 +254,9 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
             required_fields,
             partition_key,
             max_num_partitions: builder.max_num_partitions,
-            mode,
+            mode: builder.mode,
+            tokenizer_entries: builder.tokenizers,
+            tokenizer_manager,
         })
     }
 }
@@ -225,6 +268,12 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
 /// - if str, the field must use the `raw` tokenizer for indexing.
 /// - the field must be indexed.
 fn validate_tag(tag_field_name: &str, schema: &Schema) -> Result<(), anyhow::Error> {
+    if tag_field_name.starts_with('.') || tag_field_name.starts_with("\\.") {
+        bail!("Tag field `{tag_field_name}` should not start with a `.`.");
+    }
+    if tag_field_name.ends_with('.') {
+        bail!("Tag field `{tag_field_name}` should not end with a `.`.");
+    }
     let field = schema
         .get_field(tag_field_name)
         .with_context(|| format!("Unknown tag field: `{tag_field_name}`"))?;
@@ -233,8 +282,8 @@ fn validate_tag(tag_field_name: &str, schema: &Schema) -> Result<(), anyhow::Err
         FieldType::Str(options) => {
             let tokenizer_opt = options
                 .get_indexing_options()
-                .map(|text_options| text_options.tokenizer());
-            if tokenizer_opt != Some(QuickwitTextTokenizer::Raw.get_name()) {
+                .map(|text_options: &tantivy::schema::TextFieldIndexing| text_options.tokenizer());
+            if tokenizer_opt != Some(RAW_TOKENIZER_NAME) {
                 bail!("Tags collection is only allowed on text fields with the `raw` tokenizer.");
             }
         }
@@ -264,13 +313,36 @@ fn validate_tag(tag_field_name: &str, schema: &Schema) -> Result<(), anyhow::Err
     Ok(())
 }
 
-impl From<DefaultDocMapper> for DefaultDocMapperBuilder {
-    fn from(default_doc_mapper: DefaultDocMapper) -> Self {
-        let mode = default_doc_mapper.mode.mode_type();
-        let dynamic_mapping: Option<QuickwitJsonOptions> = match &default_doc_mapper.mode {
-            Mode::Dynamic(mapping_options) => Some(mapping_options.clone()),
+/// Checks that a given text/json field name has a registered tokenizer.
+fn validate_fields_tokenizers(
+    schema: &Schema,
+    tokenizer_manager: &TokenizerManager,
+) -> Result<(), anyhow::Error> {
+    for (_, field_entry) in schema.fields() {
+        let tokenizer_name_opt = match field_entry.field_type() {
+            FieldType::Str(options) => options
+                .get_indexing_options()
+                .map(|text_options: &tantivy::schema::TextFieldIndexing| text_options.tokenizer()),
+            FieldType::JsonObject(options) => options
+                .get_text_indexing_options()
+                .map(|text_options: &tantivy::schema::TextFieldIndexing| text_options.tokenizer()),
             _ => None,
         };
+        if let Some(tokenizer_name) = tokenizer_name_opt {
+            if tokenizer_manager.get(tokenizer_name).is_none() {
+                bail!(
+                    "Unknown tokenizer `{}` for field `{}`.",
+                    tokenizer_name,
+                    field_entry.name()
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+impl From<DefaultDocMapper> for DefaultDocMapperBuilder {
+    fn from(default_doc_mapper: DefaultDocMapper) -> Self {
         let partition_key_str = default_doc_mapper.partition_key.to_string();
         let partition_key_opt: Option<String> = if partition_key_str.is_empty() {
             None
@@ -279,16 +351,17 @@ impl From<DefaultDocMapper> for DefaultDocMapperBuilder {
         };
         Self {
             store_source: default_doc_mapper.source_field.is_some(),
+            index_field_presence: default_doc_mapper.index_field_presence,
             timestamp_field: default_doc_mapper
                 .timestamp_field_name()
                 .map(ToString::to_string),
             field_mappings: default_doc_mapper.field_mappings.into(),
             tag_fields: default_doc_mapper.tag_field_names.into_iter().collect(),
             default_search_fields: default_doc_mapper.default_search_field_names,
-            mode,
-            dynamic_mapping,
+            mode: default_doc_mapper.mode,
             partition_key: partition_key_opt,
             max_num_partitions: default_doc_mapper.max_num_partitions,
+            tokenizers: default_doc_mapper.tokenizer_entries,
         }
     }
 }
@@ -331,6 +404,63 @@ fn extract_single_obj(
     }
 }
 
+#[inline]
+fn populate_field_presence_for_json_value(
+    json_value: &JsonValue,
+    path_hasher: &PathHasher,
+    is_expand_dots_enabled: bool,
+    output: &mut FnvHashSet<u64>,
+) {
+    match json_value {
+        JsonValue::Null => {}
+        JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::String(_) => {
+            output.insert(path_hasher.finish());
+        }
+        JsonValue::Array(items) => {
+            for item in items {
+                populate_field_presence_for_json_value(
+                    item,
+                    path_hasher,
+                    is_expand_dots_enabled,
+                    output,
+                );
+            }
+        }
+        JsonValue::Object(json_obj) => {
+            populate_field_presence_for_json_obj(
+                json_obj,
+                path_hasher.clone(),
+                is_expand_dots_enabled,
+                output,
+            );
+        }
+    }
+}
+
+fn populate_field_presence_for_json_obj(
+    json_obj: &JsonObject,
+    path_hasher: PathHasher,
+    is_expand_dots_enabled: bool,
+    output: &mut FnvHashSet<u64>,
+) {
+    for (field_key, field_value) in json_obj {
+        let mut child_path_hasher = path_hasher.clone();
+        if is_expand_dots_enabled {
+            for segment in field_key.split('.') {
+                child_path_hasher.append(segment.as_bytes());
+            }
+        } else {
+            child_path_hasher.append(field_key.as_bytes());
+        };
+        populate_field_presence_for_json_value(
+            field_value,
+            &child_path_hasher,
+            is_expand_dots_enabled,
+            output,
+        );
+    }
+}
+
 #[typetag::serde(name = "default")]
 impl DocMapper for DefaultDocMapper {
     fn doc_from_json_obj(
@@ -359,6 +489,42 @@ impl DocMapper for DefaultDocMapper {
         if let Some(dynamic_field) = self.dynamic_field {
             if !dynamic_json_obj.is_empty() {
                 document.add_json_object(dynamic_field, dynamic_json_obj);
+            }
+        }
+
+        // The capacity is inexact here.
+
+        if self.index_field_presence {
+            let mut field_presence_hashes: FnvHashSet<u64> = FnvHashSet::with_capacity_and_hasher(
+                document.field_values().len(),
+                Default::default(),
+            );
+            for FieldValue { field, value } in document.field_values() {
+                let field_entry = self.schema.get_field_entry(*field);
+                if !field_entry.is_indexed() {
+                    continue;
+                }
+                let mut path_hasher: PathHasher = PathHasher::default();
+                path_hasher.append(&field.field_id().to_le_bytes()[..]);
+                if let tantivy::schema::Value::JsonObject(json_obj) = value {
+                    let is_expand_dots_enabled: bool =
+                        if let FieldType::JsonObject(json_options) = field_entry.field_type() {
+                            json_options.is_expand_dots_enabled()
+                        } else {
+                            false
+                        };
+                    populate_field_presence_for_json_obj(
+                        json_obj,
+                        path_hasher,
+                        is_expand_dots_enabled,
+                        &mut field_presence_hashes,
+                    );
+                } else {
+                    field_presence_hashes.insert(path_hasher.finish());
+                }
+            }
+            for field_presence_hash in field_presence_hashes {
+                document.add_field_value(FIELD_PRESENCE_FIELD, field_presence_hash);
             }
         }
 
@@ -395,6 +561,7 @@ impl DocMapper for DefaultDocMapper {
         build_query(
             query_ast,
             split_schema,
+            self.tokenizer_manager(),
             &self.default_search_field_names[..],
             with_validation,
         )
@@ -419,19 +586,26 @@ impl DocMapper for DefaultDocMapper {
     fn max_num_partitions(&self) -> NonZeroU32 {
         self.max_num_partitions
     }
+
+    fn tokenizer_manager(&self) -> &TokenizerManager {
+        &self.tokenizer_manager
+    }
 }
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
+    use std::collections::{HashMap, HashSet};
 
-    use quickwit_proto::query_ast_from_user_text;
+    use quickwit_common::PathHasher;
+    use quickwit_query::query_ast::query_ast_from_user_text;
     use serde_json::{self, json, Value as JsonValue};
     use tantivy::schema::{FieldType, IndexRecordOption, Type, Value as TantivyValue};
 
     use super::DefaultDocMapper;
+    use crate::default_doc_mapper::field_mapping_entry::DEFAULT_TOKENIZER_NAME;
     use crate::{
-        DefaultDocMapperBuilder, DocMapper, DocParsingError, DYNAMIC_FIELD_NAME, SOURCE_FIELD_NAME,
+        DefaultDocMapperBuilder, DocMapper, DocParsingError, DYNAMIC_FIELD_NAME,
+        FIELD_PRESENCE_FIELD_NAME, SOURCE_FIELD_NAME,
     };
 
     fn example_json_doc_value() -> JsonValue {
@@ -492,10 +666,12 @@ mod tests {
         let schema = doc_mapper.schema();
         // 8 property entry + 1 field "_source" + two fields values for "tags" field
         // + 2 values inf "server.status" field + 2 values in "server.payload" field
-        assert_eq!(document.len(), 16);
+        // + 12 values for field presence.
+        assert_eq!(document.len(), 28);
         let expected_json_paths_and_values: HashMap<String, JsonValue> =
             serde_json::from_str(EXPECTED_JSON_PATHS_AND_VALUES).unwrap();
-        document.field_values().iter().for_each(|field_value| {
+        let mut field_presences: HashSet<u64> = HashSet::new();
+        for field_value in document.field_values() {
             let field_name = schema.get_field_name(field_value.field());
             if field_name == SOURCE_FIELD_NAME {
                 assert_eq!(field_value.value().as_json(), json_doc.as_object());
@@ -504,6 +680,9 @@ mod tests {
                     field_value.value().as_json(),
                     json!({"response_date2": "2021-12-19T16:39:57+00:00"}).as_object()
                 );
+            } else if field_name == FIELD_PRESENCE_FIELD_NAME {
+                let field_presence_u64 = field_value.value().as_u64().unwrap();
+                field_presences.insert(field_presence_u64);
             } else {
                 let value = serde_json::to_string(field_value.value()).unwrap();
                 let is_value_in_expected_values = expected_json_paths_and_values
@@ -518,7 +697,20 @@ mod tests {
                     panic!("Could not find: {value:?} in {expected_json_paths_and_values:?}");
                 }
             }
-        });
+        }
+        assert_eq!(field_presences.len(), 12);
+        let timestamp_field = schema.get_field("timestamp").unwrap();
+        let attributes_field = schema.get_field("attributes.server").unwrap();
+        assert!(
+            field_presences.contains(&PathHasher::hash_path(&[&timestamp_field
+                .field_id()
+                .to_le_bytes()[..]]))
+        );
+        assert!(
+            field_presences.contains(&PathHasher::hash_path(&[&attributes_field
+                .field_id()
+                .to_le_bytes()[..]]))
+        );
     }
 
     #[test]
@@ -639,6 +831,120 @@ mod tests {
         "#,
         )
         .unwrap();
+    }
+
+    #[test]
+    fn test_timestamp_field_that_start_with_dot_is_invalid() {
+        assert_eq!(
+            serde_json::from_str::<DefaultDocMapper>(
+                r#"{
+                "field_mappings": [
+                    {
+                        "name": "my.timestamp",
+                        "type": "datetime",
+                        "fast": true
+                    }
+                ],
+                "timestamp_field": ".my.timestamp"
+            }"#,
+            )
+            .unwrap_err()
+            .to_string(),
+            "Timestamp field `.my.timestamp` should not start with a `.`.",
+        );
+
+        assert_eq!(
+            serde_json::from_str::<DefaultDocMapper>(
+                r#"{
+                "field_mappings": [
+                    {
+                        "name": "my.timestamp",
+                        "type": "datetime",
+                        "fast": true
+                    }
+                ],
+                "timestamp_field": "\\.my\\.timestamp"
+            }"#,
+            )
+            .unwrap_err()
+            .to_string(),
+            "Timestamp field `\\.my\\.timestamp` should not start with a `.`.",
+        )
+    }
+
+    #[test]
+    fn test_timestamp_field_that_ends_with_dot_is_invalid() {
+        assert_eq!(
+            serde_json::from_str::<DefaultDocMapper>(
+                r#"{
+                    "timestamp_field": "my.timestamp."
+                }"#,
+            )
+            .unwrap_err()
+            .to_string(),
+            "Timestamp field `my.timestamp.` should not end with a `.`.",
+        );
+
+        assert_eq!(
+            serde_json::from_str::<DefaultDocMapper>(
+                r#"{
+                    "timestamp_field": "my\\.timestamp\\."
+                }"#,
+            )
+            .unwrap_err()
+            .to_string(),
+            "Timestamp field `my\\.timestamp\\.` should not end with a `.`.",
+        )
+    }
+
+    #[test]
+    fn test_tag_field_name_that_starts_with_dot_is_invalid() {
+        assert_eq!(
+            serde_json::from_str::<DefaultDocMapper>(
+                r#"{
+                    "tag_fields": [".my.tag"]
+                }"#,
+            )
+            .unwrap_err()
+            .to_string(),
+            "Tag field `.my.tag` should not start with a `.`.",
+        );
+
+        assert_eq!(
+            serde_json::from_str::<DefaultDocMapper>(
+                r#"{
+                    "tag_fields": ["\\.my\\.tag"]
+                }"#,
+            )
+            .unwrap_err()
+            .to_string(),
+            "Tag field `\\.my\\.tag` should not start with a `.`.",
+        )
+    }
+
+    #[test]
+    fn test_tag_field_name_that_ends_with_dot_is_invalid() {
+        assert_eq!(
+            serde_json::from_str::<DefaultDocMapper>(
+                r#"{
+                    "tag_fields": ["my.tag."]
+                }"#,
+            )
+            .unwrap_err()
+            .to_string(),
+            "Tag field `my.tag.` should not end with a `.`.",
+        );
+
+        assert_eq!(
+            serde_json::from_str::<DefaultDocMapper>(
+                r#"{
+                    "tag_fields": ["my\\.tag\\."]
+                }"#,
+            )
+            .unwrap_err()
+            .to_string(),
+            "Tag field `my\\.tag\\.` should not end with a `.`.",
+        )
     }
 
     #[test]
@@ -801,6 +1107,7 @@ mod tests {
     fn test_parse_document_with_tag_fields() {
         let doc_mapper = r#"{
             "default_search_fields": [],
+            "index_field_presence": true,
             "timestamp_field": null,
             "tag_fields": ["city"],
             "store_source": true,
@@ -830,8 +1137,8 @@ mod tests {
             .doc_from_json_obj(json_doc_value.as_object().unwrap().clone())
             .unwrap();
 
-        // 2 properties, + 1 value for "_source"
-        assert_eq!(document.len(), 3);
+        // 2 properties, + 1 value for "_source" + 2 for field presence.
+        assert_eq!(document.len(), 5);
         let expected_json_paths_and_values: HashMap<String, JsonValue> = serde_json::from_str(
             r#"{
                 "city": ["tokio"],
@@ -839,10 +1146,14 @@ mod tests {
             }"#,
         )
         .unwrap();
+        let mut field_presences: HashSet<u64> = HashSet::default();
         document.field_values().iter().for_each(|field_value| {
             let field_name = schema.get_field_name(field_value.field());
             if field_name == SOURCE_FIELD_NAME {
                 assert_eq!(field_value.value().as_json(), json_doc_value.as_object());
+            } else if field_name == FIELD_PRESENCE_FIELD_NAME {
+                let field_value_hash = field_value.value().as_u64().unwrap();
+                field_presences.insert(field_value_hash);
             } else {
                 let value = serde_json::to_string(field_value.value()).unwrap();
                 let is_value_in_expected_values = expected_json_paths_and_values
@@ -856,6 +1167,19 @@ mod tests {
                 assert!(is_value_in_expected_values);
             }
         });
+        assert_eq!(field_presences.len(), 2);
+        let city_field = schema.get_field("city").unwrap();
+        let image_field = schema.get_field("image").unwrap();
+        assert!(
+            field_presences.contains(&PathHasher::hash_path(&[&city_field
+                .field_id()
+                .to_le_bytes()]))
+        );
+        assert!(
+            field_presences.contains(&PathHasher::hash_path(&[&image_field
+                .field_id()
+                .to_le_bytes()]))
+        );
     }
 
     #[test]
@@ -1032,16 +1356,16 @@ mod tests {
         let default_doc_mapper: DefaultDocMapper =
             serde_json::from_str(r#"{ "mode": "lenient" }"#).unwrap();
         let schema = default_doc_mapper.schema();
-        assert_eq!(schema.num_fields(), 0);
+        assert_eq!(schema.num_fields(), 1);
         assert!(default_doc_mapper.default_search_field_names.is_empty());
     }
 
     #[test]
-    fn test_dymamic_mode_schema() {
+    fn test_dynamic_mode_schema() {
         let default_doc_mapper: DefaultDocMapper =
             serde_json::from_str(r#"{ "mode": "dynamic" }"#).unwrap();
         let schema = default_doc_mapper.schema();
-        assert_eq!(schema.num_fields(), 1);
+        assert_eq!(schema.num_fields(), 2);
         let dynamic_field = schema.get_field(DYNAMIC_FIELD_NAME).unwrap();
         let dynamic_field_entry = schema.get_field_entry(dynamic_field);
         assert_eq!(dynamic_field_entry.field_type().value_type(), Type::Json);
@@ -1050,7 +1374,7 @@ mod tests {
     }
 
     #[test]
-    fn test_dymamic_mode_schema_not_indexed() {
+    fn test_dynamic_mode_schema_not_indexed() {
         let default_doc_mapper: DefaultDocMapper = serde_json::from_str(
             r#"{
             "mode": "dynamic",
@@ -1062,14 +1386,13 @@ mod tests {
         )
         .unwrap();
         let schema = default_doc_mapper.schema();
-        assert_eq!(schema.num_fields(), 1);
+        assert_eq!(schema.num_fields(), 2);
         let dynamic_field = schema.get_field(DYNAMIC_FIELD_NAME).unwrap();
         let dynamic_field_entry = schema.get_field_entry(dynamic_field);
-        if let FieldType::JsonObject(json_opt) = dynamic_field_entry.field_type() {
-            assert_eq!(json_opt.is_indexed(), false);
-        } else {
+        let FieldType::JsonObject(json_opt) = dynamic_field_entry.field_type() else {
             panic!("Expected a json object");
-        }
+        };
+        assert_eq!(json_opt.is_indexed(), false);
         default_doc_mapper.default_search_field_names.is_empty();
     }
 
@@ -1283,7 +1606,7 @@ mod tests {
         assert_eq!(
             default_doc_mapper_query_aux(&doc_mapper, "body.dynamic_field:hello"),
             Ok(
-                r#"TermQuery(Term(field=0, type=Json, path=dynamic_field, type=Str, "hello"))"#
+                r#"TermQuery(Term(field=2, type=Json, path=dynamic_field, type=Str, "hello"))"#
                     .to_string()
             )
         );
@@ -1306,11 +1629,11 @@ mod tests {
         .unwrap();
         assert_eq!(
             default_doc_mapper_query_aux(&doc_mapper, "identity.username:toto").unwrap(),
-            r#"TermQuery(Term(field=0, type=Str, "toto"))"#
+            r#"TermQuery(Term(field=2, type=Str, "toto"))"#
         );
         assert_eq!(
             default_doc_mapper_query_aux(&doc_mapper, r#"identity\.username:toto"#).unwrap(),
-            r#"TermQuery(Term(field=1, type=Str, "toto"))"#
+            r#"TermQuery(Term(field=3, type=Str, "toto"))"#
         );
     }
 
@@ -1327,11 +1650,11 @@ mod tests {
         .unwrap();
         assert_eq!(
             default_doc_mapper_query_aux(&doc_mapper, "identity.username:toto").unwrap(),
-            r#"TermQuery(Term(field=0, type=Json, path=username, type=Str, "toto"))"#
+            r#"TermQuery(Term(field=2, type=Json, path=username, type=Str, "toto"))"#
         );
         assert_eq!(
             default_doc_mapper_query_aux(&doc_mapper, r#"identity\.username:toto"#).unwrap(),
-            r#"TermQuery(Term(field=1, type=Str, "toto"))"#
+            r#"TermQuery(Term(field=3, type=Str, "toto"))"#
         );
     }
 
@@ -1350,13 +1673,13 @@ mod tests {
 
         {
             let json_field = schema.get_field("json_field").unwrap();
-            let FieldType::JsonObject(json_options) = schema.get_field_entry(json_field).field_type()
-        else { panic!() };
+            let FieldType::JsonObject(json_options) =
+                schema.get_field_entry(json_field).field_type()
+            else {
+                panic!()
+            };
             let text_indexing_options = json_options.get_text_indexing_options().unwrap();
-            assert_eq!(
-                text_indexing_options.tokenizer(),
-                super::QuickwitTextTokenizer::Raw.get_name()
-            );
+            assert_eq!(text_indexing_options.tokenizer(), super::RAW_TOKENIZER_NAME);
             assert_eq!(
                 text_indexing_options.index_option(),
                 IndexRecordOption::Basic
@@ -1366,10 +1689,12 @@ mod tests {
         {
             let text_field = schema.get_field("text_field").unwrap();
             let FieldType::Str(text_options) = schema.get_field_entry(text_field).field_type()
-        else { panic!() };
+            else {
+                panic!()
+            };
             assert_eq!(
                 text_options.get_indexing_options().unwrap().tokenizer(),
-                super::QuickwitTextTokenizer::Default.get_name()
+                DEFAULT_TOKENIZER_NAME
             );
         }
     }
@@ -1433,5 +1758,155 @@ mod tests {
             .field_mappings
             .find_field_mapping_type("my\\.timestamp")
             .unwrap();
+    }
+
+    #[test]
+    fn test_build_doc_mapper_with_custom_ngram_tokenizer() {
+        let mapper = serde_json::from_str::<DefaultDocMapper>(
+            r#"{
+            "tokenizers": [
+                {
+                    "name": "my_tokenizer",
+                    "filters": ["lower_caser", "ascii_folding", "remove_long"],
+                    "type": "ngram",
+                    "min_gram": 3,
+                    "max_gram": 5
+                }
+            ],
+            "field_mappings": [
+                {
+                    "name": "my_text",
+                    "type": "text",
+                    "tokenizer": "my_tokenizer"
+                }
+            ]
+        }"#,
+        )
+        .unwrap();
+        let field_mapping_type = mapper
+            .field_mappings
+            .find_field_mapping_type("my_text")
+            .unwrap();
+        match &field_mapping_type {
+            super::FieldMappingType::Text(options, _) => {
+                assert!(options.indexing_options.is_some());
+                let tokenizer = &options.indexing_options.as_ref().unwrap().tokenizer;
+                assert_eq!(tokenizer.name(), "my_tokenizer");
+            }
+            _ => panic!("Expected a text field"),
+        }
+        assert!(mapper.tokenizer_manager().get("my_tokenizer").is_some());
+    }
+
+    #[test]
+    fn test_build_doc_mapper_should_fail_with_unknown_tokenizer() {
+        let mapper_builder = serde_json::from_str::<DefaultDocMapperBuilder>(
+            r#"{
+            "field_mappings": [
+                {
+                    "name": "my_text",
+                    "type": "text",
+                    "tokenizer": "my_tokenizer"
+                }
+            ]
+        }"#,
+        )
+        .unwrap();
+        let mapper = mapper_builder.try_build();
+        let error_msg = mapper.unwrap_err().to_string();
+        assert!(error_msg.contains("Unknown tokenizer"));
+    }
+
+    #[test]
+    fn test_build_doc_mapper_tokenizer_manager_with_custom_tokenizer() {
+        let mapper = serde_json::from_str::<DefaultDocMapper>(
+            r#"{
+            "tokenizers": [
+                {
+                    "name": "my_tokenizer",
+                    "filters": ["lower_caser"],
+                    "type": "ngram",
+                    "min_gram": 3,
+                    "max_gram": 5
+                }
+            ],
+            "field_mappings": [
+                {
+                    "name": "my_text",
+                    "type": "text",
+                    "tokenizer": "my_tokenizer"
+                }
+            ]
+        }"#,
+        )
+        .unwrap();
+        let mut tokenizer = mapper.tokenizer_manager().get("my_tokenizer").unwrap();
+        let mut token_stream = tokenizer.token_stream("HELLO WORLD");
+        assert_eq!(token_stream.next().unwrap().text, "hel");
+        assert_eq!(token_stream.next().unwrap().text, "hell");
+        assert_eq!(token_stream.next().unwrap().text, "hello");
+    }
+
+    #[test]
+    fn test_build_doc_mapper_with_custom_invalid_regex_tokenizer() {
+        let mapper_builder = serde_json::from_str::<DefaultDocMapperBuilder>(
+            r#"{
+            "tokenizers": [
+                {
+                    "name": "my_tokenizer",
+                    "type": "regex",
+                    "pattern": "(my_pattern"
+                }
+            ],
+            "field_mappings": [
+                {
+                    "name": "my_text",
+                    "type": "text",
+                    "tokenizer": "my_tokenizer"
+                }
+            ]
+        }"#,
+        )
+        .unwrap();
+        let mapper = mapper_builder.try_build();
+        assert!(mapper.is_err());
+        let error_mesg = mapper.unwrap_err().to_string();
+        assert!(error_mesg.contains("Invalid regex tokenizer"));
+    }
+
+    #[test]
+    fn test_doc_mapper_with_custom_tokenizer_equivalent_to_default() {
+        let mapper = serde_json::from_str::<DefaultDocMapper>(
+            r#"{
+            "tokenizers": [
+                {
+                    "name": "my_tokenizer",
+                    "filters": ["remove_long", "lower_caser"],
+                    "type": "simple",
+                    "min_gram": 3,
+                    "max_gram": 5
+                }
+            ],
+            "field_mappings": [
+                {
+                    "name": "my_text",
+                    "type": "text",
+                    "tokenizer": "my_tokenizer"
+                }
+            ]
+        }"#,
+        )
+        .unwrap();
+        let mut default_tokenizer = mapper.tokenizer_manager().get("default").unwrap();
+        let mut tokenizer = mapper.tokenizer_manager().get("my_tokenizer").unwrap();
+        let text = "I've seen things... seen things you little people wouldn't believe.";
+        let mut default_token_stream = default_tokenizer.token_stream(text);
+        let mut token_stream = tokenizer.token_stream(text);
+        for _ in 0..10 {
+            assert_eq!(
+                default_token_stream.next().unwrap().text,
+                token_stream.next().unwrap().text
+            );
+        }
     }
 }

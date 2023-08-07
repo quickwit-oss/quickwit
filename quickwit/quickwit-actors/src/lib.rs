@@ -31,7 +31,6 @@ use std::fmt;
 use std::num::NonZeroU64;
 
 use once_cell::sync::Lazy;
-use quickwit_proto::{ServiceError, ServiceErrorCode};
 use tokio::time::Duration;
 mod actor;
 mod actor_context;
@@ -128,14 +127,4 @@ pub enum AskError<E: fmt::Debug> {
     ProcessMessageError,
     #[error("The handler returned an error: `{0:?}`.")]
     ErrorReply(#[from] E),
-}
-
-impl<E: fmt::Debug + ServiceError> ServiceError for AskError<E> {
-    fn status_code(&self) -> ServiceErrorCode {
-        match self {
-            AskError::MessageNotDelivered => ServiceErrorCode::Internal,
-            AskError::ProcessMessageError => ServiceErrorCode::Internal,
-            AskError::ErrorReply(err) => err.status_code(),
-        }
-    }
 }

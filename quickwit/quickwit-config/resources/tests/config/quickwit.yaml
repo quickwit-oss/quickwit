@@ -21,6 +21,7 @@ storage:
   azure:
     account: quickwit-dev
   s3:
+    flavor: gcs
     endpoint: http://localhost:4566
     force_path_style_access: true
 

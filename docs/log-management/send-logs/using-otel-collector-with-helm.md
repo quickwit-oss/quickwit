@@ -174,23 +174,23 @@ After a few seconds, you should see logs on your indexer that show indexing has 
 2022-11-30T18:27:52.733Z  INFO index_batch{index_id=otel-log-v0 source_id=_ingest-api-source pipeline_ord=0}:uploader:stage_and_upload{split=01GK4WPTXK8GH3AGTRNBN9A8YG}:store_split: quickwit_indexing::split_store::indexing_split_store: store-split-remote-success split_size_in_megabytes=0.018351 num_docs=22 elapsed_secs=0.07654519 throughput_mb_s=0.23974074 is_mature=false
 ```
 
-If you see some errors there, it's probably coming from a misconfiguration of your object storage. If you need some help, please open an issue on [GitHub](https://github.com/quickwit-oss/quickwit) or come on our [discord server](https://discord.gg/MT27AG5EVE).  
+If you see some errors there, it's probably coming from a misconfiguration of your object storage. If you need some help, please open an issue on [GitHub](https://github.com/quickwit-oss/quickwit) or come on our [discord server](https://discord.gg/MT27AG5EVE).
 
 
 ### Ready to search logs
 
-You are now ready to search, wait 30 seconds and you will see the first indexed logs: just [open the UI](http://localhost:7280/ui/search?query=*&index_id=otel-logs-v0&max_hits=10&sort_by_field=-timestamp_secs) and play with it. Funny thing you will see quickwit logs in it :).
+You are now ready to search, wait 30 seconds and you will see the first indexed logs: just [open the UI](http://localhost:7280/ui/search?query=*&index_id=otel-logs-v0&max_hits=10&sort_by=-timestamp_secs) and play with it. Funny thing you will see quickwit logs in it :).
 
 Example of queries:
 
-- [body.message:quickwit](http://localhost:7280/ui/search?query=body.message:quickwit&index_id=otel-logs-v0&max_hits=10&sort_by_field=-timestamp_secs)
-- [resource_attributes.k8s.container.name:quickwit](http://localhost:7280/ui/search?query=resource_attributes.k8s.container.name%3Aquickwit&index_id=otel-logs-v0&max_hits=10&sort_by_field=-timestamp_secs)
-- [resource_attributes.k8s.container.restart_count:1](http://localhost:7280/ui/search?query=resource_attributes.k8s.container.restart_count%3A1&index_id=otel-logs-v0&max_hits=10&sort_by_field=-timestamp_secs)
+- [body.message:quickwit](http://localhost:7280/ui/search?query=body.message:quickwit&index_id=otel-logs-v0&max_hits=10&sort_by=-timestamp_secs)
+- [resource_attributes.k8s.container.name:quickwit](http://localhost:7280/ui/search?query=resource_attributes.k8s.container.name%3Aquickwit&index_id=otel-logs-v0&max_hits=10&sort_by=-timestamp_secs)
+- [resource_attributes.k8s.container.restart_count:1](http://localhost:7280/ui/search?query=resource_attributes.k8s.container.restart_count%3A1&index_id=otel-logs-v0&max_hits=10&sort_by=-timestamp_secs)
 
- 
+
 ![UI screenshot](../../assets/screenshot-ui-otel-logs.png)
 
-And that's all folks!
+That's all, folks!
 
 ### Clean up
 

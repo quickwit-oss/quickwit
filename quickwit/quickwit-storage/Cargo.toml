@@ -1,6 +1,6 @@
 [package]
 name = "quickwit-storage"
-version = "0.6.1"
+version = "0.6.3"
 authors = ["Quickwit, Inc. <hello@quickwit.io>"]
 edition = "2021"
 license = "AGPL-3.0-or-later"                           # For a commercial, license, contact hello@quickwit.io
@@ -34,6 +34,7 @@ tokio-util = { workspace = true }
 tracing = { workspace = true }
 
 aws-config = { workspace = true }
+aws-credential-types = { workspace = true }
 aws-sdk-s3 = { workspace = true }
 aws-smithy-http = { workspace = true }
 aws-smithy-types = { workspace = true }
@@ -70,7 +71,6 @@ ci-test = []
 testsuite = [
   "azure",
   "azure_core/azurite_workaround",
-  "azure_storage/azurite_workaround",
   "azure_storage_blobs/azurite_workaround",
   "mockall",
 ]

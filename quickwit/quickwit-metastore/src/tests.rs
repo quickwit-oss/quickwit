@@ -30,8 +30,9 @@ pub mod test_suite {
     use quickwit_common::rand::append_random_suffix;
     use quickwit_config::{IndexConfig, SourceConfig, SourceInputFormat, SourceParams};
     use quickwit_doc_mapper::tag_pruning::{no_tag, tag, TagFilterAst};
-    use quickwit_proto::metastore_api::DeleteQuery;
-    use quickwit_proto::{qast_helper, IndexUid};
+    use quickwit_proto::metastore::DeleteQuery;
+    use quickwit_proto::IndexUid;
+    use quickwit_query::query_ast::qast_helper;
     use time::OffsetDateTime;
     use tokio::time::sleep;
     use tracing::{error, info};
@@ -39,7 +40,9 @@ pub mod test_suite {
     use crate::checkpoint::{
         IndexCheckpointDelta, PartitionId, Position, SourceCheckpoint, SourceCheckpointDelta,
     };
-    use crate::{ListSplitsQuery, Metastore, MetastoreError, Split, SplitMetadata, SplitState};
+    use crate::{
+        ListSplitsQuery, Metastore, MetastoreError, Split, SplitMaturity, SplitMetadata, SplitState,
+    };
 
     #[async_trait]
     pub trait DefaultForTest {
@@ -1661,6 +1664,9 @@ pub mod test_suite {
             index_uid: index_uid.clone(),
             time_range: Some(0..=99),
             create_timestamp: current_timestamp,
+            maturity: SplitMaturity::Immature {
+                maturation_period: Duration::from_secs(0),
+            },
             tags: to_btree_set(&["tag!", "tag:foo", "tag:bar"]),
             delete_opstamp: 3,
             ..Default::default()
@@ -1672,6 +1678,9 @@ pub mod test_suite {
             index_uid: index_uid.clone(),
             time_range: Some(100..=199),
             create_timestamp: current_timestamp,
+            maturity: SplitMaturity::Immature {
+                maturation_period: Duration::from_secs(10),
+            },
             tags: to_btree_set(&["tag!", "tag:bar"]),
             delete_opstamp: 1,
             ..Default::default()
@@ -1683,6 +1692,9 @@ pub mod test_suite {
             index_uid: index_uid.clone(),
             time_range: Some(200..=299),
             create_timestamp: current_timestamp,
+            maturity: SplitMaturity::Immature {
+                maturation_period: Duration::from_secs(20),
+            },
             tags: to_btree_set(&["tag!", "tag:foo", "tag:baz"]),
             delete_opstamp: 5,
             ..Default::default()
@@ -2069,6 +2081,24 @@ pub mod test_suite {
                 &[&split_id_1, &split_id_2, &split_id_3, &split_id_6,]
             );
 
+            // Test maturity filter
+            let maturity_evaluation_timestamp =
+                OffsetDateTime::from_unix_timestamp(current_timestamp).unwrap();
+            let query = ListSplitsQuery::for_index(index_uid.clone())
+                .retain_mature(maturity_evaluation_timestamp);
+            let splits = metastore.list_splits(query.clone()).await.unwrap();
+            let split_ids = collect_split_ids(&splits);
+            assert_eq!(
+                split_ids,
+                &[&split_id_1, &split_id_4, &split_id_5, &split_id_6,]
+            );
+
+            let query = ListSplitsQuery::for_index(index_uid.clone())
+                .retain_immature(maturity_evaluation_timestamp);
+            let splits = metastore.list_splits(query.clone()).await.unwrap();
+            let split_ids = collect_split_ids(&splits);
+            assert_eq!(split_ids, &[&split_id_2, &split_id_3]);
+
             cleanup_index(&metastore, index_uid).await;
         }
     }
@@ -2392,6 +2422,18 @@ pub mod test_suite {
             delete_opstamp: 20,
             ..Default::default()
         };
+        // immature split
+        let split_id_5 = format!("{index_id}--split-5");
+        let split_metadata_5 = SplitMetadata {
+            split_id: split_id_5.clone(),
+            index_uid: index_uid.clone(),
+            create_timestamp: current_timestamp,
+            maturity: SplitMaturity::Immature {
+                maturation_period: Duration::from_secs(100),
+            },
+            delete_opstamp: 0,
+            ..Default::default()
+        };
 
         let error = metastore
             .list_stale_splits(IndexUid::new("index-not-found"), 0, 10)
@@ -2410,6 +2452,7 @@ pub mod test_suite {
                         split_metadata_1.clone(),
                         split_metadata_2.clone(),
                         split_metadata_3.clone(),
+                        split_metadata_5.clone(),
                     ],
                 )
                 .await
@@ -2429,7 +2472,12 @@ pub mod test_suite {
             // Sleep for 1 second to have different publish timestamps.
             tokio::time::sleep(Duration::from_secs(1)).await;
             metastore
-                .publish_splits(index_uid.clone(), &[&split_id_1, &split_id_2], &[], None)
+                .publish_splits(
+                    index_uid.clone(),
+                    &[&split_id_1, &split_id_2, &split_id_5],
+                    &[],
+                    None,
+                )
                 .await
                 .unwrap();
             let splits = metastore

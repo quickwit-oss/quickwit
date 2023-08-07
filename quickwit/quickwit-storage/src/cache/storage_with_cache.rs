@@ -26,8 +26,8 @@ use async_trait::async_trait;
 use quickwit_common::uri::Uri;
 
 use crate::cache::Cache;
-use crate::storage::{BulkDeleteError, SendableAsync};
-use crate::{OwnedBytes, Storage, StorageResult};
+use crate::storage::SendableAsync;
+use crate::{BulkDeleteError, OwnedBytes, Storage, StorageResult};
 
 /// Use with care, StorageWithCache is read-only.
 pub struct StorageWithCache {

@@ -22,14 +22,14 @@ use std::sync::Arc;
 use bytes::Bytes;
 use hyper::header::CONTENT_TYPE;
 use quickwit_common::uri::Uri;
-use quickwit_common::FileEntry;
 use quickwit_config::{
-    load_source_config_from_user_config, ConfigFormat, QuickwitConfig, SourceConfig, SourceParams,
+    load_source_config_from_user_config, ConfigFormat, NodeConfig, SourceConfig, SourceParams,
     CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID,
 };
-use quickwit_core::{IndexService, IndexServiceError};
+use quickwit_doc_mapper::{analyze_text, TokenizerConfig};
+use quickwit_index_management::{IndexService, IndexServiceError};
 use quickwit_metastore::{
-    IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, Split, SplitState,
+    IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, Split, SplitInfo, SplitState,
 };
 use quickwit_proto::IndexUid;
 use serde::de::DeserializeOwned;
@@ -64,12 +64,12 @@ pub struct IndexApi;
 
 pub fn index_management_handlers(
     index_service: Arc<IndexService>,
-    quickwit_config: Arc<QuickwitConfig>,
+    node_config: Arc<NodeConfig>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     // Indexes handlers.
     get_index_metadata_handler(index_service.metastore())
         .or(get_indexes_metadatas_handler(index_service.metastore()))
-        .or(create_index_handler(index_service.clone(), quickwit_config))
+        .or(create_index_handler(index_service.clone(), node_config))
         .or(clear_index_handler(index_service.clone()))
         .or(delete_index_handler(index_service.clone()))
         // Splits handlers
@@ -82,6 +82,8 @@ pub fn index_management_handlers(
         .or(create_source_handler(index_service.clone()))
         .or(get_source_handler(index_service.metastore()))
         .or(delete_source_handler(index_service.metastore()))
+        // Tokenizer handlers.
+        .or(analyze_request_handler())
 }
 
 fn json_body<T: DeserializeOwned + Send>(
@@ -383,7 +385,7 @@ struct CreateIndexQueryParams {
 
 fn create_index_handler(
     index_service: Arc<IndexService>,
-    quickwit_config: Arc<QuickwitConfig>,
+    node_config: Arc<NodeConfig>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     warp::path!("indexes")
         .and(warp::post())
@@ -392,7 +394,7 @@ fn create_index_handler(
         .and(warp::body::content_length_limit(1024 * 1024))
         .and(warp::filters::body::bytes())
         .and(with_arg(index_service))
-        .and(with_arg(quickwit_config))
+        .and(with_arg(node_config))
         .then(create_index)
         .and(extract_format_from_qs())
         .map(make_json_api_response)
@@ -417,12 +419,12 @@ async fn create_index(
     config_format: ConfigFormat,
     index_config_bytes: Bytes,
     index_service: Arc<IndexService>,
-    quickwit_config: Arc<QuickwitConfig>,
+    node_config: Arc<NodeConfig>,
 ) -> Result<IndexMetadata, IndexServiceError> {
     let index_config = quickwit_config::load_index_config_from_user_config(
         config_format,
         &index_config_bytes,
-        &quickwit_config.default_index_root_uri,
+        &node_config.default_index_root_uri,
     )
     .map_err(IndexServiceError::InvalidConfig)?;
     info!(index_id = %index_config.index_id, overwrite = create_index_query_params.overwrite, "create-index");
@@ -500,7 +502,7 @@ async fn delete_index(
     index_id: String,
     delete_index_query_param: DeleteIndexQueryParam,
     index_service: Arc<IndexService>,
-) -> Result<Vec<FileEntry>, IndexServiceError> {
+) -> Result<Vec<SplitInfo>, IndexServiceError> {
     info!(index_id = %index_id, dry_run = delete_index_query_param.dry_run, "delete-index");
     index_service
         .delete_index(&index_id, delete_index_query_param.dry_run)
@@ -718,6 +720,47 @@ async fn delete_source(
     Ok(())
 }
 
+#[derive(Debug, Deserialize, utoipa::IntoParams, utoipa::ToSchema)]
+struct AnalyzeRequest {
+    /// The tokenizer to use.
+    #[serde(flatten)]
+    pub tokenizer_config: TokenizerConfig,
+    /// The text to analyze.
+    pub text: String,
+}
+
+fn analyze_request_filter() -> impl Filter<Extract = (AnalyzeRequest,), Error = Rejection> + Clone {
+    warp::path!("analyze")
+        .and(warp::post())
+        .and(warp::body::json())
+}
+
+fn analyze_request_handler() -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone
+{
+    analyze_request_filter()
+        .then(analyze_request)
+        .and(extract_format_from_qs())
+        .map(make_json_api_response)
+}
+
+/// Analyzes text with given tokenizer config and returns the list of tokens.
+#[utoipa::path(
+    post,
+    tag = "analyze",
+    path = "/analyze",
+    request_body = AnalyzeRequest,
+    responses(
+        (status = 200, description = "Successfully analyze text.")
+    ),
+)]
+async fn analyze_request(request: AnalyzeRequest) -> Result<serde_json::Value, IndexServiceError> {
+    let tokens = analyze_text(&request.text, &request.tokenizer_config)
+        .map_err(|err| IndexServiceError::Internal(format!("{err:?}")))?;
+    let json_value = serde_json::to_value(tokens)
+        .map_err(|err| IndexServiceError::Internal(format!("Cannot serialize tokens: {err}")))?;
+    Ok(json_value)
+}
+
 #[cfg(test)]
 mod tests {
     use std::ops::{Bound, RangeInclusive};
@@ -748,7 +791,7 @@ mod tests {
         let index_service = IndexService::new(Arc::new(metastore), StorageResolver::unconfigured());
         let index_management_handler = super::index_management_handlers(
             Arc::new(index_service),
-            Arc::new(QuickwitConfig::for_test()),
+            Arc::new(NodeConfig::for_test()),
         )
         .recover(recover_fn);
         let resp = warp::test::request()
@@ -774,7 +817,7 @@ mod tests {
         let index_service = IndexService::new(metastore, StorageResolver::unconfigured());
         let index_management_handler = super::index_management_handlers(
             Arc::new(index_service),
-            Arc::new(QuickwitConfig::for_test()),
+            Arc::new(NodeConfig::for_test()),
         )
         .recover(recover_fn);
         let resp = warp::test::request()
@@ -817,7 +860,7 @@ mod tests {
         let index_service = IndexService::new(Arc::new(metastore), StorageResolver::unconfigured());
         let index_management_handler = super::index_management_handlers(
             Arc::new(index_service),
-            Arc::new(QuickwitConfig::for_test()),
+            Arc::new(NodeConfig::for_test()),
         )
         .recover(recover_fn);
         {
@@ -884,7 +927,7 @@ mod tests {
         let index_service = IndexService::new(Arc::new(metastore), StorageResolver::unconfigured());
         let index_management_handler = super::index_management_handlers(
             Arc::new(index_service),
-            Arc::new(QuickwitConfig::for_test()),
+            Arc::new(NodeConfig::for_test()),
         )
         .recover(recover_fn);
         let resp = warp::test::request()
@@ -939,7 +982,7 @@ mod tests {
         let index_service = IndexService::new(Arc::new(metastore), StorageResolver::unconfigured());
         let index_management_handler = super::index_management_handlers(
             Arc::new(index_service),
-            Arc::new(QuickwitConfig::for_test()),
+            Arc::new(NodeConfig::for_test()),
         )
         .recover(recover_fn);
         let resp = warp::test::request()
@@ -978,7 +1021,7 @@ mod tests {
         let index_service = IndexService::new(Arc::new(metastore), StorageResolver::unconfigured());
         let index_management_handler = super::index_management_handlers(
             Arc::new(index_service),
-            Arc::new(QuickwitConfig::for_test()),
+            Arc::new(NodeConfig::for_test()),
         )
         .recover(recover_fn);
         let resp = warp::test::request()
@@ -1012,7 +1055,7 @@ mod tests {
         let index_service = IndexService::new(Arc::new(metastore), StorageResolver::unconfigured());
         let index_management_handler = super::index_management_handlers(
             Arc::new(index_service),
-            Arc::new(QuickwitConfig::for_test()),
+            Arc::new(NodeConfig::for_test()),
         )
         .recover(recover_fn);
         let resp = warp::test::request()
@@ -1061,7 +1104,7 @@ mod tests {
         let index_service = IndexService::new(Arc::new(metastore), StorageResolver::unconfigured());
         let index_management_handler = super::index_management_handlers(
             Arc::new(index_service),
-            Arc::new(QuickwitConfig::for_test()),
+            Arc::new(NodeConfig::for_test()),
         )
         .recover(recover_fn);
         let resp = warp::test::request()
@@ -1104,7 +1147,7 @@ mod tests {
         let index_service = IndexService::new(Arc::new(metastore), StorageResolver::unconfigured());
         let index_management_handler = super::index_management_handlers(
             Arc::new(index_service),
-            Arc::new(QuickwitConfig::for_test()),
+            Arc::new(NodeConfig::for_test()),
         )
         .recover(recover_fn);
         {
@@ -1118,7 +1161,7 @@ mod tests {
             let resp_json: serde_json::Value = serde_json::from_slice(resp.body()).unwrap();
             let expected_response_json = serde_json::json!([{
                 "file_name": "split_1.split",
-                "file_size_in_bytes": 800,
+                "file_size_bytes": 800,
             }]);
             assert_json_include!(actual: resp_json, expected: expected_response_json);
         }
@@ -1132,7 +1175,7 @@ mod tests {
             let resp_json: serde_json::Value = serde_json::from_slice(resp.body()).unwrap();
             let expected_response_json = serde_json::json!([{
                 "file_name": "split_1.split",
-                "file_size_in_bytes": 800,
+                "file_size_bytes": 800,
             }]);
             assert_json_include!(actual: resp_json, expected: expected_response_json);
         }
@@ -1144,7 +1187,7 @@ mod tests {
         let index_service = IndexService::new(metastore, StorageResolver::unconfigured());
         let index_management_handler = super::index_management_handlers(
             Arc::new(index_service),
-            Arc::new(QuickwitConfig::for_test()),
+            Arc::new(NodeConfig::for_test()),
         )
         .recover(recover_fn);
         let resp = warp::test::request()
@@ -1159,11 +1202,11 @@ mod tests {
     async fn test_create_index_with_overwrite() {
         let metastore = metastore_for_test();
         let index_service = IndexService::new(metastore.clone(), StorageResolver::unconfigured());
-        let mut quickwit_config = QuickwitConfig::for_test();
-        quickwit_config.default_index_root_uri =
+        let mut node_config = NodeConfig::for_test();
+        node_config.default_index_root_uri =
             Uri::from_well_formed("file:///default-index-root-uri");
         let index_management_handler =
-            super::index_management_handlers(Arc::new(index_service), Arc::new(quickwit_config));
+            super::index_management_handlers(Arc::new(index_service), Arc::new(node_config));
         {
             let resp = warp::test::request()
                 .path("/indexes?overwrite=true")
@@ -1200,11 +1243,11 @@ mod tests {
     async fn test_create_delete_index_and_source() {
         let metastore = metastore_for_test();
         let index_service = IndexService::new(metastore.clone(), StorageResolver::unconfigured());
-        let mut quickwit_config = QuickwitConfig::for_test();
-        quickwit_config.default_index_root_uri =
+        let mut node_config = NodeConfig::for_test();
+        node_config.default_index_root_uri =
             Uri::from_well_formed("file:///default-index-root-uri");
         let index_management_handler =
-            super::index_management_handlers(Arc::new(index_service), Arc::new(quickwit_config));
+            super::index_management_handlers(Arc::new(index_service), Arc::new(node_config));
         let resp = warp::test::request()
             .path("/indexes")
             .method("POST")
@@ -1308,11 +1351,11 @@ mod tests {
     async fn test_create_file_source_returns_405() {
         let metastore = metastore_for_test();
         let index_service = IndexService::new(metastore.clone(), StorageResolver::unconfigured());
-        let mut quickwit_config = QuickwitConfig::for_test();
-        quickwit_config.default_index_root_uri =
+        let mut node_config = NodeConfig::for_test();
+        node_config.default_index_root_uri =
             Uri::from_well_formed("file:///default-index-root-uri");
         let index_management_handler =
-            super::index_management_handlers(Arc::new(index_service), Arc::new(quickwit_config))
+            super::index_management_handlers(Arc::new(index_service), Arc::new(node_config))
                 .recover(recover_fn);
         let source_config_body = r#"{"version": "0.6", "source_id": "file-source", "source_type": "file", "params": {"filepath": "FILEPATH"}}"#;
         let resp = warp::test::request()
@@ -1330,11 +1373,11 @@ mod tests {
     async fn test_create_index_with_yaml() {
         let metastore = metastore_for_test();
         let index_service = IndexService::new(metastore.clone(), StorageResolver::unconfigured());
-        let mut quickwit_config = QuickwitConfig::for_test();
-        quickwit_config.default_index_root_uri =
+        let mut node_config = NodeConfig::for_test();
+        node_config.default_index_root_uri =
             Uri::from_well_formed("file:///default-index-root-uri");
         let index_management_handler =
-            super::index_management_handlers(Arc::new(index_service), Arc::new(quickwit_config))
+            super::index_management_handlers(Arc::new(index_service), Arc::new(node_config))
                 .recover(recover_fn);
         let resp = warp::test::request()
             .path("/indexes")
@@ -1369,11 +1412,11 @@ mod tests {
     async fn test_create_index_and_source_with_toml() {
         let metastore = metastore_for_test();
         let index_service = IndexService::new(metastore.clone(), StorageResolver::unconfigured());
-        let mut quickwit_config = QuickwitConfig::for_test();
-        quickwit_config.default_index_root_uri =
+        let mut node_config = NodeConfig::for_test();
+        node_config.default_index_root_uri =
             Uri::from_well_formed("file:///default-index-root-uri");
         let index_management_handler =
-            super::index_management_handlers(Arc::new(index_service), Arc::new(quickwit_config))
+            super::index_management_handlers(Arc::new(index_service), Arc::new(node_config))
                 .recover(recover_fn);
         let resp = warp::test::request()
             .path("/indexes")
@@ -1406,11 +1449,11 @@ mod tests {
     async fn test_create_index_with_wrong_content_type() {
         let metastore = metastore_for_test();
         let index_service = IndexService::new(metastore.clone(), StorageResolver::unconfigured());
-        let mut quickwit_config = QuickwitConfig::for_test();
-        quickwit_config.default_index_root_uri =
+        let mut node_config = NodeConfig::for_test();
+        node_config.default_index_root_uri =
             Uri::from_well_formed("file:///default-index-root-uri");
         let index_management_handler =
-            super::index_management_handlers(Arc::new(index_service), Arc::new(quickwit_config))
+            super::index_management_handlers(Arc::new(index_service), Arc::new(node_config))
                 .recover(recover_fn);
         let resp = warp::test::request()
             .path("/indexes")
@@ -1430,7 +1473,7 @@ mod tests {
         let index_service = IndexService::new(Arc::new(metastore), StorageResolver::unconfigured());
         let index_management_handler = super::index_management_handlers(
             Arc::new(index_service),
-            Arc::new(QuickwitConfig::for_test()),
+            Arc::new(NodeConfig::for_test()),
         )
         .recover(recover_fn);
         let resp = warp::test::request()
@@ -1456,7 +1499,7 @@ mod tests {
         let index_service = IndexService::new(metastore, StorageResolver::unconfigured());
         let index_management_handler = super::index_management_handlers(
             Arc::new(index_service),
-            Arc::new(QuickwitConfig::for_test()),
+            Arc::new(NodeConfig::for_test()),
         )
         .recover(recover_fn);
         {
@@ -1513,7 +1556,7 @@ mod tests {
         let index_service = IndexService::new(Arc::new(metastore), StorageResolver::unconfigured());
         let index_management_handler = super::index_management_handlers(
             Arc::new(index_service),
-            Arc::new(QuickwitConfig::for_test()),
+            Arc::new(NodeConfig::for_test()),
         )
         .recover(recover_fn);
         let resp = warp::test::request()
@@ -1551,7 +1594,7 @@ mod tests {
         let index_service = IndexService::new(Arc::new(metastore), StorageResolver::unconfigured());
         let index_management_handler = super::index_management_handlers(
             Arc::new(index_service),
-            Arc::new(QuickwitConfig::for_test()),
+            Arc::new(NodeConfig::for_test()),
         )
         .recover(recover_fn);
         let resp = warp::test::request()
@@ -1598,7 +1641,7 @@ mod tests {
         let index_service = IndexService::new(Arc::new(metastore), StorageResolver::unconfigured());
         let index_management_handler = super::index_management_handlers(
             Arc::new(index_service),
-            Arc::new(QuickwitConfig::for_test()),
+            Arc::new(NodeConfig::for_test()),
         )
         .recover(recover_fn);
         // Check server returns 405 if sources root path is used.
@@ -1641,5 +1684,46 @@ mod tests {
             .await;
         assert_eq!(resp.status(), 405);
         Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_analyze_request() {
+        let mut metastore = MockMetastore::new();
+        metastore
+            .expect_index_metadata()
+            .return_once(|_index_id: &str| {
+                Ok(IndexMetadata::for_test(
+                    "test-index",
+                    "ram:///indexes/test-index",
+                ))
+            });
+        let index_service = IndexService::new(Arc::new(metastore), StorageResolver::unconfigured());
+        let index_management_handler = super::index_management_handlers(
+            Arc::new(index_service),
+            Arc::new(NodeConfig::for_test()),
+        )
+        .recover(recover_fn);
+        let resp = warp::test::request()
+            .path("/analyze")
+            .method("POST")
+            .json(&true)
+            .body(r#"{"type": "ngram", "min_gram": 3, "max_gram": 3, "text": "Hel", "filters": ["lower_caser"]}"#)
+            .reply(&index_management_handler)
+            .await;
+        assert_eq!(resp.status(), 200);
+        let actual_response_json: JsonValue = serde_json::from_slice(resp.body()).unwrap();
+        let expected_response_json = serde_json::json!([
+            {
+                "offset_from": 0,
+                "offset_to": 3,
+                "position": 0,
+                "position_length": 1,
+                "text": "hel"
+            }
+        ]);
+        assert_json_include!(
+            actual: actual_response_json,
+            expected: expected_response_json
+        );
     }
 }

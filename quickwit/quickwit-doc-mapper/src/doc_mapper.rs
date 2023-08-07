@@ -28,6 +28,7 @@ use quickwit_query::query_ast::QueryAst;
 use serde_json::Value as JsonValue;
 use tantivy::query::Query;
 use tantivy::schema::{Field, FieldType, Schema, Value};
+use tantivy::tokenizer::TokenizerManager;
 use tantivy::{Document, Term};
 
 pub type Partition = u64;
@@ -143,6 +144,9 @@ pub trait DocMapper: Send + Sync + Debug + DynClone + 'static {
 
     /// Returns the maximum number of partitions.
     fn max_num_partitions(&self) -> NonZeroU32;
+
+    /// Returns the tokenizer manager.
+    fn tokenizer_manager(&self) -> &TokenizerManager;
 }
 
 /// A struct to wrap a tantivy field with its name.
@@ -224,15 +228,14 @@ mod tests {
     use std::collections::{HashMap, HashSet};
     use std::ops::Bound;
 
-    use quickwit_proto::query_ast_from_user_text;
-    use quickwit_query::query_ast::UserInputQuery;
+    use quickwit_query::query_ast::{query_ast_from_user_text, UserInputQuery};
     use quickwit_query::BooleanOperand;
     use tantivy::schema::{Field, FieldType, Term};
 
     use crate::default_doc_mapper::{FieldMappingType, QuickwitJsonOptions};
     use crate::{
         Cardinality, DefaultDocMapper, DefaultDocMapperBuilder, DocMapper, DocParsingError,
-        FieldMappingEntry, ModeType, TermRange, WarmupInfo, DYNAMIC_FIELD_NAME,
+        FieldMappingEntry, Mode, TermRange, WarmupInfo, DYNAMIC_FIELD_NAME,
     };
 
     const JSON_DEFAULT_DOC_MAPPER: &str = r#"
@@ -249,7 +252,10 @@ mod tests {
         let json_doc = br#"{"title": "hello", "body": "world"}"#;
         doc_mapper.doc_from_json_bytes(json_doc).unwrap();
 
-        let DocParsingError::NotJsonObject(json_doc_sample) = doc_mapper.doc_from_json_bytes(br#"Not a JSON object"#).unwrap_err() else {
+        let DocParsingError::NotJsonObject(json_doc_sample) = doc_mapper
+            .doc_from_json_bytes(br#"Not a JSON object"#)
+            .unwrap_err()
+        else {
             panic!("Expected `DocParsingError::NotJsonObject` error");
         };
         assert_eq!(json_doc_sample, "Not a JSON object...");
@@ -261,7 +267,10 @@ mod tests {
         let json_doc = r#"{"title": "hello", "body": "world"}"#;
         doc_mapper.doc_from_json_str(json_doc).unwrap();
 
-        let DocParsingError::NotJsonObject(json_doc_sample) = doc_mapper.doc_from_json_str(r#"Not a JSON object"#).unwrap_err() else {
+        let DocParsingError::NotJsonObject(json_doc_sample) = doc_mapper
+            .doc_from_json_str(r#"Not a JSON object"#)
+            .unwrap_err()
+        else {
             panic!("Expected `DocParsingError::NotJsonObject` error");
         };
         assert_eq!(json_doc_sample, "Not a JSON object...");
@@ -350,14 +359,14 @@ mod tests {
         let (query, _) = doc_mapper.query(schema, &query_ast, true).unwrap();
         assert_eq!(
             format!("{query:?}"),
-            r#"TermQuery(Term(field=0, type=Json, path=toto.titi, type=Str, "hello"))"#
+            r#"TermQuery(Term(field=2, type=Json, path=toto.titi, type=Str, "hello"))"#
         );
     }
 
     #[test]
     fn test_doc_mapper_query_with_json_field_default_search_fields() {
         let doc_mapper: DefaultDocMapper = DefaultDocMapperBuilder {
-            mode: ModeType::Dynamic,
+            mode: Mode::default(),
             ..Default::default()
         }
         .try_build()
@@ -369,14 +378,14 @@ mod tests {
         let (query, _) = doc_mapper.query(schema, &query_ast, true).unwrap();
         assert_eq!(
             format!("{query:?}"),
-            r#"TermQuery(Term(field=0, type=Json, path=toto.titi, type=Str, "hello"))"#
+            r#"TermQuery(Term(field=1, type=Json, path=toto.titi, type=Str, "hello"))"#
         );
     }
 
     #[test]
     fn test_doc_mapper_query_with_json_field_ambiguous_term() {
         let doc_mapper: DefaultDocMapper = DefaultDocMapperBuilder {
-            mode: ModeType::Dynamic,
+            mode: Mode::default(),
             ..Default::default()
         }
         .try_build()
@@ -388,7 +397,7 @@ mod tests {
         let (query, _) = doc_mapper.query(schema, &query_ast, true).unwrap();
         assert_eq!(
             format!("{query:?}"),
-            r#"BooleanQuery { subqueries: [(Should, TermQuery(Term(field=0, type=Json, path=toto, type=I64, 5))), (Should, TermQuery(Term(field=0, type=Json, path=toto, type=Str, "5")))] }"#
+            r#"BooleanQuery { subqueries: [(Should, TermQuery(Term(field=1, type=Json, path=toto, type=I64, 5))), (Should, TermQuery(Term(field=1, type=Json, path=toto, type=Str, "5")))] }"#
         );
     }
 
@@ -515,5 +524,50 @@ mod tests {
         let mut wi_cloned = wi_base.clone();
         wi_cloned.merge(wi_2);
         assert_eq!(wi_cloned, wi_base);
+    }
+
+    #[test]
+    #[cfg(feature = "testsuite")]
+    fn test_doc_mapper_query_with_multilang_field() {
+        use quickwit_query::query_ast::TermQuery;
+        use tantivy::schema::IndexRecordOption;
+
+        use crate::default_doc_mapper::{
+            QuickwitTextOptions, QuickwitTextTokenizer, TextIndexingOptions, TokenizerType,
+        };
+        use crate::{TokenizerConfig, TokenizerEntry};
+        let mut doc_mapper_builder = DefaultDocMapperBuilder::default();
+        doc_mapper_builder.field_mappings.push(FieldMappingEntry {
+            name: "multilang".to_string(),
+            mapping_type: FieldMappingType::Text(
+                QuickwitTextOptions {
+                    indexing_options: Some(TextIndexingOptions {
+                        tokenizer: QuickwitTextTokenizer::from_static("multilang"),
+                        record: IndexRecordOption::Basic,
+                        fieldnorms: false,
+                    }),
+                    ..Default::default()
+                },
+                Cardinality::SingleValue,
+            ),
+        });
+        doc_mapper_builder.tokenizers.push(TokenizerEntry {
+            name: "multilang".to_string(),
+            config: TokenizerConfig {
+                tokenizer_type: TokenizerType::Multilang,
+                filters: vec![],
+            },
+        });
+        let doc_mapper = doc_mapper_builder.try_build().unwrap();
+        let schema = doc_mapper.schema();
+        let query_ast = quickwit_query::query_ast::QueryAst::Term(TermQuery {
+            field: "multilang".to_string(),
+            value: "JPN:す".to_string(),
+        });
+        let (query, _) = doc_mapper.query(schema, &query_ast, false).unwrap();
+        assert_eq!(
+            format!("{query:?}"),
+            r#"TermQuery(Term(field=2, type=Str, "JPN:す"))"#
+        );
     }
 }

@@ -17,9 +17,10 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::BTreeMap;
 use std::str::from_utf8;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use bytes::Bytes;
 use elasticsearch_dsl::search::{Hit as ElasticHit, SearchResponse as ElasticSearchResponse};
@@ -28,28 +29,55 @@ use futures_util::StreamExt;
 use hyper::StatusCode;
 use itertools::Itertools;
 use quickwit_common::truncate_str;
-use quickwit_proto::{SearchResponse, ServiceErrorCode};
+use quickwit_config::NodeConfig;
+use quickwit_proto::{ScrollRequest, SearchResponse, ServiceErrorCode};
 use quickwit_query::query_ast::{QueryAst, UserInputQuery};
 use quickwit_query::BooleanOperand;
 use quickwit_search::{SearchError, SearchService};
+use serde_json::json;
 use warp::{Filter, Rejection};
 
-use super::filter::elastic_multi_search_filter;
+use super::filter::{
+    elastic_cluster_info_filter, elastic_index_search_filter, elastic_multi_search_filter,
+    elastic_scroll_filter, elastic_search_filter,
+};
 use super::model::{
     ElasticSearchError, MultiSearchHeader, MultiSearchQueryParams, MultiSearchResponse,
-    MultiSearchSingleResponse, SearchBody, SearchQueryParams,
+    MultiSearchSingleResponse, ScrollQueryParams, SearchBody, SearchQueryParams,
 };
-use crate::elastic_search_api::filter::elastic_index_search_filter;
-use crate::elastic_search_api::model::SortField;
 use crate::format::BodyFormat;
 use crate::json_api_response::{make_json_api_response, ApiError, JsonApiResponse};
-use crate::with_arg;
+use crate::{with_arg, BuildInfo};
+
+/// Elastic compatible cluster info handler.
+pub fn es_compat_cluster_info_handler(
+    node_config: Arc<NodeConfig>,
+    build_info: &'static BuildInfo,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    elastic_cluster_info_filter()
+        .and(with_arg(node_config))
+        .and(with_arg(build_info))
+        .then(
+            |config: Arc<NodeConfig>, build_info: &'static BuildInfo| async move {
+                warp::reply::json(&json!({
+                    "name" : config.node_id,
+                    "cluster_name" : config.cluster_id,
+                    "version" : {
+                        "distribution" : "quickwit",
+                        "number" : build_info.version,
+                        "build_hash" : build_info.commit_hash,
+                        "build_date" : build_info.build_date,
+                    }
+                }))
+            },
+        )
+}
 
 /// GET or POST _elastic/_search
 pub fn es_compat_search_handler(
     _search_service: Arc<dyn SearchService>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    super::filter::elastic_search_filter().then(|_params: SearchQueryParams| async move {
+    elastic_search_filter().then(|_params: SearchQueryParams| async move {
         // TODO
         let api_error = ApiError {
             service_code: ServiceErrorCode::NotSupportedYet,
@@ -71,7 +99,17 @@ pub fn es_compat_index_search_handler(
         .map(make_elastic_api_response)
 }
 
-/// POST _elastic/_msearch
+/// GET or POST _elastic/_search/scroll
+pub fn es_compat_scroll_handler(
+    search_service: Arc<dyn SearchService>,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    elastic_scroll_filter()
+        .and(with_arg(search_service))
+        .then(es_scroll)
+        .map(make_elastic_api_response)
+}
+
+/// POST _elastic/_search
 pub fn es_compat_index_multi_search_handler(
     search_service: Arc<dyn SearchService>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
@@ -118,22 +156,24 @@ fn build_request_for_es_api(
     let max_hits = search_params.size.or(search_body.size).unwrap_or(10);
     let start_offset = search_params.from.or(search_body.from).unwrap_or(0);
 
-    let sort_fields: Vec<SortField> = search_params
+    let sort_fields: Vec<quickwit_proto::SortField> = search_params
         .sort_fields()?
         .or_else(|| search_body.sort.clone())
-        .unwrap_or_default();
-
-    if sort_fields.len() >= 2 {
+        .unwrap_or_default()
+        .iter()
+        .map(|sort_field| quickwit_proto::SortField {
+            field_name: sort_field.field.to_string(),
+            sort_order: sort_field.order as i32,
+        })
+        .collect();
+    if sort_fields.len() >= 3 {
         return Err(ElasticSearchError::from(SearchError::InvalidArgument(
-            format!("Only one search field is supported at the moment. Got {sort_fields:?}"),
+            format!("Only up to two sort fields supported at the moment. Got {sort_fields:?}"),
         )));
     }
 
-    let (sort_by_field, sort_order) = if let Some(sort_field) = sort_fields.into_iter().next() {
-        (Some(sort_field.field), Some(sort_field.order as i32))
-    } else {
-        (None, None)
-    };
+    let scroll_duration: Option<Duration> = search_params.parse_scroll_ttl()?;
+    let scroll_ttl_secs: Option<u32> = scroll_duration.map(|duration| duration.as_secs() as u32);
 
     Ok(quickwit_proto::SearchRequest {
         index_id,
@@ -141,9 +181,11 @@ fn build_request_for_es_api(
         max_hits,
         start_offset,
         aggregation_request,
-        sort_by_field,
-        sort_order,
-        ..Default::default()
+        sort_fields,
+        start_timestamp: None,
+        end_timestamp: None,
+        snippet_fields: Vec::new(),
+        scroll_ttl_secs,
     })
 }
 
@@ -164,7 +206,7 @@ async fn es_compat_index_search(
 }
 
 fn convert_hit(hit: quickwit_proto::Hit) -> ElasticHit {
-    let fields: elasticsearch_dsl::Map<String, serde_json::Value> =
+    let fields: BTreeMap<String, serde_json::Value> =
         serde_json::from_str(&hit.json).unwrap_or_default();
     ElasticHit {
         fields,
@@ -259,6 +301,32 @@ async fn es_compat_index_multi_search(
     Ok(multi_search_response)
 }
 
+async fn es_scroll(
+    scroll_query_params: ScrollQueryParams,
+    search_service: Arc<dyn SearchService>,
+) -> Result<ElasticSearchResponse, ElasticSearchError> {
+    let start_instant = Instant::now();
+    let Some(scroll_id) = scroll_query_params.scroll_id.clone() else {
+        return Err(SearchError::InvalidArgument("Missing scroll_id".to_string()).into());
+    };
+    let scroll_ttl_secs: Option<u32> = if let Some(scroll_ttl) = scroll_query_params.scroll {
+        let scroll_ttl_duration = humantime::parse_duration(&scroll_ttl)
+            .map_err(|_| SearchError::InvalidArgument(format!("Scroll invalid: {}", scroll_ttl)))?;
+        Some(scroll_ttl_duration.as_secs() as u32)
+    } else {
+        None
+    };
+    let scroll_request = ScrollRequest {
+        scroll_id,
+        scroll_ttl_secs,
+    };
+    let search_response: SearchResponse = search_service.scroll(scroll_request).await?;
+    let mut search_response_rest: ElasticSearchResponse =
+        convert_to_es_search_response(search_response);
+    search_response_rest.took = start_instant.elapsed().as_millis() as u32;
+    Ok(search_response_rest)
+}
+
 fn convert_to_es_search_response(resp: SearchResponse) -> ElasticSearchResponse {
     let hits: Vec<ElasticHit> = resp.hits.into_iter().map(convert_hit).collect();
     let aggregations: Option<serde_json::Value> = if let Some(aggregation_json) = resp.aggregation {
@@ -277,6 +345,7 @@ fn convert_to_es_search_response(resp: SearchResponse) -> ElasticSearchResponse 
             hits,
         },
         aggregations,
+        scroll_id: resp.scroll_id,
         ..Default::default()
     }
 }

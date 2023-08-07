@@ -48,5 +48,5 @@ message PingResponse {
 service Hello {
     rpc Hello(HelloRequest) returns (HelloResponse);
     rpc Goodbye(GoodbyeRequest) returns (GoodbyeResponse);
-    rpc Ping(PingRequest) returns (stream PingResponse);
+    rpc Ping(stream PingRequest) returns (stream PingResponse);
 }

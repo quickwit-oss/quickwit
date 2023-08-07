@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashSet;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -25,12 +26,13 @@ use async_trait::async_trait;
 use futures::{stream, StreamExt};
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, Handler};
+// use quickwit_index_management::run_garbage_collect;
+use quickwit_common::shared_consts::DELETION_GRACE_PERIOD;
+use quickwit_index_management::run_garbage_collect;
 use quickwit_metastore::Metastore;
 use quickwit_storage::StorageResolver;
 use serde::Serialize;
 use tracing::{error, info};
-
-use crate::garbage_collection::run_garbage_collect;
 
 const RUN_INTERVAL: Duration = Duration::from_secs(10 * 60); // 10 minutes
 
@@ -38,14 +40,6 @@ const RUN_INTERVAL: Duration = Duration::from_secs(10 * 60); // 10 minutes
 /// TODO ideally we want clean up all staged splits every time we restart the indexing pipeline, but
 /// the grace period strategy should do the job for the moment.
 const STAGED_GRACE_PERIOD: Duration = Duration::from_secs(60 * 60 * 24); // 24 hours
-
-/// We cannot safely delete splits right away as a in-flight queries could actually
-/// have selected this split.
-/// We deal this probably by introducing a grace period. A split is first marked as delete,
-/// and hence won't be selected for search. After a few minutes, once it reasonably safe to assume
-/// that all queries involving this split have terminated, we effectively delete the split.
-/// This duration is controlled by `DELETION_GRACE_PERIOD`.
-const DELETION_GRACE_PERIOD: Duration = Duration::from_secs(120); // 2 min
 
 const MAX_CONCURRENT_GC_TASKS: usize = if cfg!(test) { 2 } else { 10 };
 
@@ -121,7 +115,7 @@ impl GarbageCollector {
                 STAGED_GRACE_PERIOD,
                 DELETION_GRACE_PERIOD,
                 false,
-                Some(ctx),
+                Some(ctx.progress()),
             ).await;
             Some((index_uid, gc_res))
         }}).buffer_unordered(MAX_CONCURRENT_GC_TASKS);
@@ -134,7 +128,7 @@ impl GarbageCollector {
             let deleted_file_entries = match gc_res {
                 Ok(removal_info) => {
                     self.counters.num_successful_gc_run_on_index += 1;
-                    self.counters.num_failed_splits += removal_info.failed_split_ids.len();
+                    self.counters.num_failed_splits += removal_info.failed_splits.len();
                     removal_info.removed_split_entries
                 }
                 Err(error) => {
@@ -145,9 +139,9 @@ impl GarbageCollector {
             };
             if !deleted_file_entries.is_empty() {
                 let num_deleted_splits = deleted_file_entries.len();
-                let deleted_files: HashSet<&str> = deleted_file_entries
+                let deleted_files: HashSet<&Path> = deleted_file_entries
                     .iter()
-                    .map(|deleted_entry| deleted_entry.file_name.as_str())
+                    .map(|deleted_entry| deleted_entry.file_name.as_path())
                     .take(5)
                     .collect();
                 info!(
@@ -160,7 +154,7 @@ impl GarbageCollector {
                 self.counters.num_deleted_files += deleted_file_entries.len();
                 self.counters.num_deleted_bytes += deleted_file_entries
                     .iter()
-                    .map(|entry| entry.file_size_in_bytes as usize)
+                    .map(|entry| entry.file_size_bytes.get_bytes() as usize)
                     .sum::<usize>();
             }
         }
@@ -209,6 +203,7 @@ mod tests {
     use std::path::Path;
 
     use quickwit_actors::Universe;
+    use quickwit_common::shared_consts::DELETION_GRACE_PERIOD;
     use quickwit_metastore::{
         IndexMetadata, ListSplitsQuery, MetastoreError, MockMetastore, Split, SplitMetadata,
         SplitState,

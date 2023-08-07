@@ -21,29 +21,31 @@
 
 use std::collections::HashSet;
 use std::str::FromStr;
-use std::time::Duration;
 
-use anyhow::{bail, Context};
+use anyhow::Context;
 use clap::{arg, Arg, ArgMatches};
 use dialoguer::theme::ColorfulTheme;
 use dialoguer::Confirm;
-use once_cell::sync::Lazy;
-use quickwit_common::run_checklist;
 use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::uri::Uri;
 use quickwit_config::service::QuickwitService;
-use quickwit_config::{ConfigFormat, QuickwitConfig, SourceConfig, DEFAULT_QW_CONFIG_PATH};
+use quickwit_config::{
+    ConfigFormat, MetastoreConfigs, NodeConfig, SourceConfig, StorageConfigs,
+    DEFAULT_QW_CONFIG_PATH,
+};
 use quickwit_indexing::check_source_connectivity;
 use quickwit_metastore::{Metastore, MetastoreResolver};
 use quickwit_rest_client::models::Timeout;
 use quickwit_rest_client::rest_client::{QuickwitClient, QuickwitClientBuilder, DEFAULT_BASE_URL};
 use quickwit_storage::{load_file, StorageResolver};
-use regex::Regex;
 use reqwest::Url;
 use tabled::object::Rows;
 use tabled::{Alignment, Header, Modify, Style, Table, Tabled};
 use tracing::info;
 
+use crate::checklist::run_checklist;
+
+pub mod checklist;
 pub mod cli;
 pub mod index;
 #[cfg(feature = "jemalloc")]
@@ -64,9 +66,6 @@ pub const QW_ENABLE_TOKIO_CONSOLE_ENV_KEY: &str = "QW_ENABLE_TOKIO_CONSOLE";
 
 pub const QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY: &str =
     "QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER";
-
-/// Regular expression representing a valid duration with unit.
-pub const DURATION_WITH_UNIT_PATTERN: &str = r#"^(\d{1,3})(s|m|h|d)$"#;
 
 fn config_cli_arg() -> Arg {
     Arg::new("config")
@@ -199,32 +198,13 @@ impl ClientArgs {
     }
 }
 
-/// Parse duration with unit like `1s`, `2m`, `3h`, `5d`.
-pub fn parse_duration_with_unit(duration_with_unit_str: &str) -> anyhow::Result<Duration> {
-    static DURATION_WITH_UNIT_RE: Lazy<Regex> =
-        Lazy::new(|| Regex::new(DURATION_WITH_UNIT_PATTERN).unwrap());
-    let captures = DURATION_WITH_UNIT_RE
-        .captures(duration_with_unit_str)
-        .ok_or_else(|| anyhow::anyhow!("Invalid duration format: `[0-9]+[smhd]`"))?;
-    let value = captures.get(1).unwrap().as_str().parse::<u64>().unwrap();
-    let unit = captures.get(2).unwrap().as_str();
-
-    match unit {
-        "s" => Ok(Duration::from_secs(value)),
-        "m" => Ok(Duration::from_secs(value * 60)),
-        "h" => Ok(Duration::from_secs(value * 60 * 60)),
-        "d" => Ok(Duration::from_secs(value * 60 * 60 * 24)),
-        _ => bail!("Invalid duration format: `[0-9]+[smhd]`"),
-    }
-}
-
 pub fn parse_duration_or_none(duration_with_unit_str: &str) -> anyhow::Result<Timeout> {
     if duration_with_unit_str == "none" {
         Ok(Timeout::none())
     } else {
-        parse_duration_with_unit(duration_with_unit_str)
+        humantime::parse_duration(duration_with_unit_str)
             .map(Timeout::new)
-            .map_err(|_| anyhow::anyhow!("Invalid duration format: `[0-9]+[smhd]|none`"))
+            .context("Failed to parse timeout.")
     }
 }
 
@@ -243,31 +223,33 @@ pub fn start_actor_runtimes(
 }
 
 /// Loads a node config located at `config_uri` with the default storage configuration.
-async fn load_node_config(config_uri: &Uri) -> anyhow::Result<QuickwitConfig> {
+async fn load_node_config(config_uri: &Uri) -> anyhow::Result<NodeConfig> {
     let config_content = load_file(&StorageResolver::unconfigured(), config_uri)
         .await
         .context("Failed to load node config.")?;
     let config_format = ConfigFormat::sniff_from_uri(config_uri)?;
-    let config = QuickwitConfig::load(config_format, config_content.as_slice())
+    let config = NodeConfig::load(config_format, config_content.as_slice())
         .await
         .with_context(|| format!("Failed to parse node config `{config_uri}`."))?;
     info!(config_uri=%config_uri, config=?config, "Loaded node config.");
     Ok(config)
 }
 
-async fn get_resolvers(config: &QuickwitConfig) -> (StorageResolver, MetastoreResolver) {
+fn get_resolvers(
+    storage_configs: &StorageConfigs,
+    metastore_configs: &MetastoreConfigs,
+) -> (StorageResolver, MetastoreResolver) {
     // The CLI tests rely on the unconfigured singleton resolvers, so it's better to return them if
     // the storage and metastore configs are not set.
-    let storage_resolver = if config.storage_configs.is_empty() {
-        StorageResolver::unconfigured()
-    } else {
-        StorageResolver::configured(&config.storage_configs)
-    };
-    let metastore_resolver = if config.metastore_configs.is_empty() {
-        MetastoreResolver::unconfigured()
-    } else {
-        MetastoreResolver::configured(storage_resolver.clone(), &config.metastore_configs)
-    };
+    if storage_configs.is_empty() && metastore_configs.is_empty() {
+        return (
+            StorageResolver::unconfigured(),
+            MetastoreResolver::unconfigured(),
+        );
+    }
+    let storage_resolver = StorageResolver::configured(storage_configs);
+    let metastore_resolver =
+        MetastoreResolver::configured(storage_resolver.clone(), metastore_configs);
     (storage_resolver, metastore_resolver)
 }
 
@@ -435,32 +417,11 @@ pub mod busy_detector {
 
 #[cfg(test)]
 mod tests {
-    use std::time::Duration;
-
+    use quickwit_config::{S3StorageConfig, StorageConfigs};
     use quickwit_rest_client::models::Timeout;
 
-    use super::{parse_duration_or_none, parse_duration_with_unit};
-
-    #[test]
-    fn test_parse_duration_with_unit() -> anyhow::Result<()> {
-        assert_eq!(parse_duration_with_unit("8s")?, Duration::from_secs(8));
-        assert_eq!(parse_duration_with_unit("5m")?, Duration::from_secs(5 * 60));
-        assert_eq!(
-            parse_duration_with_unit("2h")?,
-            Duration::from_secs(2 * 60 * 60)
-        );
-        assert_eq!(
-            parse_duration_with_unit("3d")?,
-            Duration::from_secs(3 * 60 * 60 * 24)
-        );
-
-        assert!(parse_duration_with_unit("").is_err());
-        assert!(parse_duration_with_unit("a2d").is_err());
-        assert!(parse_duration_with_unit("3 d").is_err());
-        assert!(parse_duration_with_unit("3").is_err());
-        assert!(parse_duration_with_unit("1h30").is_err());
-        Ok(())
-    }
+    use super::*;
+    use crate::parse_duration_or_none;
 
     #[test]
     fn test_parse_duration_or_none() -> anyhow::Result<()> {
@@ -471,5 +432,17 @@ mod tests {
         assert_eq!(parse_duration_or_none("none")?, Timeout::none());
         assert!(parse_duration_or_none("something").is_err());
         Ok(())
+    }
+
+    #[test]
+    fn test_get_resolvers() {
+        let s3_storage_config = S3StorageConfig {
+            force_path_style_access: true,
+            ..Default::default()
+        };
+        let storage_configs = StorageConfigs::new(vec![s3_storage_config.into()]);
+        let metastore_configs = MetastoreConfigs::default();
+        let (_storage_resolver, _metastore_resolver) =
+            get_resolvers(&storage_configs, &metastore_configs);
     }
 }

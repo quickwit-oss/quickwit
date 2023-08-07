@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::{BTreeMap, BTreeSet};
+use std::net::Ipv4Addr;
 
 use assert_json_diff::{assert_json_eq, assert_json_include};
 use quickwit_config::SearcherConfig;
@@ -25,9 +26,10 @@ use quickwit_doc_mapper::DefaultDocMapper;
 use quickwit_indexing::TestSandbox;
 use quickwit_opentelemetry::otlp::TraceId;
 use quickwit_proto::{
-    qast_helper, query_ast_from_user_text, LeafListTermsResponse, SearchRequest, SortOrder,
+    LeafListTermsResponse, SearchRequest, SearchResponse, SortByValue, SortField, SortOrder,
     SortValue,
 };
+use quickwit_query::query_ast::{qast_helper, query_ast_from_user_text};
 use serde_json::{json, Value as JsonValue};
 use tantivy::schema::Value as TantivyValue;
 use tantivy::time::OffsetDateTime;
@@ -35,7 +37,7 @@ use tantivy::Term;
 
 use super::*;
 use crate::find_trace_ids_collector::Span;
-use crate::single_node_search;
+use crate::service::SearcherContext;
 
 #[tokio::test]
 async fn test_single_node_simple() -> anyhow::Result<()> {
@@ -65,7 +67,7 @@ async fn test_single_node_simple() -> anyhow::Result<()> {
     };
     let single_node_result = single_node_search(
         search_request,
-        &*test_sandbox.metastore(),
+        test_sandbox.metastore(),
         test_sandbox.storage_resolver(),
     )
     .await?;
@@ -111,7 +113,7 @@ async fn test_single_node_termset() -> anyhow::Result<()> {
     };
     let single_node_result = single_node_search(
         search_request,
-        &*test_sandbox.metastore(),
+        test_sandbox.metastore(),
         test_sandbox.storage_resolver(),
     )
     .await?;
@@ -152,7 +154,7 @@ async fn test_single_search_with_snippet() -> anyhow::Result<()> {
     };
     let single_node_result = single_node_search(
         search_request,
-        &*test_sandbox.metastore(),
+        test_sandbox.metastore(),
         test_sandbox.storage_resolver(),
     )
     .await?;
@@ -191,7 +193,7 @@ async fn slop_search_and_check(
     };
     let single_node_result = single_node_search(
         search_request,
-        &*test_sandbox.metastore(),
+        test_sandbox.metastore(),
         test_sandbox.storage_resolver(),
     )
     .await?;
@@ -276,6 +278,39 @@ where E: Ord {
     true
 }
 
+/// Performs a search on the current node.
+/// See also `[distributed_search]`.
+async fn single_node_search(
+    search_request: SearchRequest,
+    metastore: Arc<dyn Metastore>,
+    storage_resolver: StorageResolver,
+) -> crate::Result<SearchResponse> {
+    let socket_addr = SocketAddr::new(Ipv4Addr::new(127, 0, 0, 1).into(), 7280u16);
+    let searcher_pool = SearcherPool::default();
+    let search_job_placer = SearchJobPlacer::new(searcher_pool.clone());
+    let cluster_client = ClusterClient::new(search_job_placer);
+    let search_service = Arc::new(SearchServiceImpl::new(
+        metastore.clone(),
+        storage_resolver,
+        cluster_client.clone(),
+        SearcherConfig::default(),
+    ));
+    let search_service_client =
+        SearchServiceClient::from_service(search_service.clone(), socket_addr);
+    searcher_pool
+        .insert(socket_addr, search_service_client)
+        .await;
+    let searcher_config = SearcherConfig::default();
+    let searcher_context = SearcherContext::new(searcher_config);
+    root_search(
+        &searcher_context,
+        search_request,
+        &*metastore,
+        &cluster_client,
+    )
+    .await
+}
+
 #[tokio::test]
 #[cfg_attr(not(feature = "ci-test"), ignore)]
 async fn test_single_node_several_splits() -> anyhow::Result<()> {
@@ -311,7 +346,7 @@ async fn test_single_node_several_splits() -> anyhow::Result<()> {
     };
     let single_node_result = single_node_search(
         search_request,
-        &*test_sandbox.metastore(),
+        test_sandbox.metastore(),
         test_sandbox.storage_resolver(),
     )
     .await?;
@@ -378,13 +413,15 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
         start_timestamp: Some(start_timestamp + 10),
         end_timestamp: Some(start_timestamp + 20),
         max_hits: 15,
-        sort_by_field: Some("ts".to_string()),
-        sort_order: Some(SortOrder::Desc as i32),
+        sort_fields: vec![SortField {
+            field_name: "ts".to_string(),
+            sort_order: SortOrder::Desc as i32,
+        }],
         ..Default::default()
     };
     let single_node_response = single_node_search(
         search_request,
-        &*test_sandbox.metastore(),
+        test_sandbox.metastore(),
         test_sandbox.storage_resolver(),
     )
     .await?;
@@ -399,13 +436,15 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
         query_ast: qast_helper("info", &["body"]),
         end_timestamp: Some(start_timestamp + 20),
         max_hits: 25,
-        sort_by_field: Some("ts".to_string()),
-        sort_order: Some(SortOrder::Desc as i32),
+        sort_fields: vec![SortField {
+            field_name: "ts".to_string(),
+            sort_order: SortOrder::Desc as i32,
+        }],
         ..Default::default()
     };
     let single_node_response = single_node_search(
         search_request,
-        &*test_sandbox.metastore(),
+        test_sandbox.metastore(),
         test_sandbox.storage_resolver(),
     )
     .await?;
@@ -419,13 +458,15 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
         index_id: index_id.to_string(),
         query_ast: qast_helper("tag:foo AND info", &["body"]),
         max_hits: 25,
-        sort_by_field: Some("ts".to_string()),
-        sort_order: Some(SortOrder::Desc as i32),
+        sort_fields: vec![SortField {
+            field_name: "ts".to_string(),
+            sort_order: SortOrder::Desc as i32,
+        }],
         ..Default::default()
     };
     let single_node_response = single_node_search(
         search_request,
-        &*test_sandbox.metastore(),
+        test_sandbox.metastore(),
         test_sandbox.storage_resolver(),
     )
     .await;
@@ -502,14 +543,16 @@ async fn single_node_search_sort_by_field(
         index_id: index_id.to_string(),
         query_ast: qast_helper("city", &["description"]),
         max_hits: 15,
-        sort_by_field: Some(sort_by_field.to_string()),
-        sort_order: Some(SortOrder::Desc as i32),
+        sort_fields: vec![SortField {
+            field_name: sort_by_field.to_string(),
+            sort_order: SortOrder::Desc as i32,
+        }],
         ..Default::default()
     };
 
     match single_node_search(
         search_request,
-        &*test_sandbox.metastore(),
+        test_sandbox.metastore(),
         test_sandbox.storage_resolver(),
     )
     .await
@@ -585,21 +628,28 @@ async fn test_sort_bm25() {
             index_id: index_id.to_string(),
             query_ast: query_ast_json,
             max_hits: 1_000,
-            sort_by_field: Some("_score".to_string()),
-            sort_order: Some(SortOrder::Desc as i32),
+            sort_fields: vec![SortField {
+                field_name: "_score".to_string(),
+                sort_order: SortOrder::Desc as i32,
+            }],
             ..Default::default()
         };
         let metastore = test_sandbox.metastore();
         let storage_resolver = test_sandbox.storage_resolver();
         async move {
-            single_node_search(search_request, &*metastore, storage_resolver)
+            single_node_search(search_request, metastore, storage_resolver)
                 .await
                 .unwrap()
                 .hits
                 .into_iter()
                 .map(|hit| {
                     let partial_hit = hit.partial_hit.unwrap();
-                    let Some(SortValue::F64(score)) = partial_hit.sort_value else { panic!()};
+                    let Some(SortByValue {
+                        sort_value: Some(SortValue::F64(score)),
+                    }) = partial_hit.sort_value
+                    else {
+                        panic!()
+                    };
                     (score as f32, partial_hit.doc_id)
                 })
                 .collect()
@@ -670,14 +720,16 @@ async fn test_sort_by_static_and_dynamic_field() {
             index_id: index_id.to_string(),
             query_ast: query_ast_json,
             max_hits: 1_000,
-            sort_by_field: Some(sort_field.to_string()),
-            sort_order: Some(order as i32),
+            sort_fields: vec![SortField {
+                field_name: sort_field.to_string(),
+                sort_order: order as i32,
+            }],
             ..Default::default()
         };
         let metastore = test_sandbox.metastore();
         let storage_resolver = test_sandbox.storage_resolver();
         async move {
-            let search_resp = single_node_search(search_request, &*metastore, storage_resolver)
+            let search_resp = single_node_search(search_request, metastore, storage_resolver)
                 .await
                 .unwrap();
             assert_eq!(search_resp.num_hits, 4);
@@ -727,6 +779,102 @@ async fn test_sort_by_static_and_dynamic_field() {
 }
 
 #[tokio::test]
+async fn test_sort_by_2_field() {
+    let index_id = "sort_by_dynamic_field".to_string();
+    // In this test, we will try sorting docs by several fields.
+    // - static_u64
+    // - dynamic_u64
+    let doc_mapping_yaml = r#"
+            mode: dynamic
+            field_mappings:
+              - name: static_u64
+                type: u64
+                fast: true
+            dynamic_mapping:
+                fast: true
+                stored: true
+            "#;
+    let test_sandbox = TestSandbox::create(&index_id, doc_mapping_yaml, "{}", &[])
+        .await
+        .unwrap();
+    let docs = vec![
+        // 0
+        json!({"static_u64": 3u64, "dynamic_u64": 3u64}),
+        // 1
+        json!({"static_u64": 3u64, "dynamic_u64": 2u64}),
+        // 2
+        json!({}),
+        // 3
+        json!({"dynamic_u64": 2u64}),
+        // 4
+        json!({"static_u64": 4u64, "dynamic_u64": (i64::MAX as u64) + 1}),
+    ];
+    test_sandbox.add_documents(docs).await.unwrap();
+    let search_hits =
+        |sort_field1: &str, order1: SortOrder, sort_field2: &str, order2: SortOrder| {
+            let query_ast_json = serde_json::to_string(&QueryAst::MatchAll).unwrap();
+            let search_request = SearchRequest {
+                index_id: index_id.to_string(),
+                query_ast: query_ast_json,
+                max_hits: 1_000,
+                sort_fields: vec![
+                    SortField {
+                        field_name: sort_field1.to_string(),
+                        sort_order: order1 as i32,
+                    },
+                    SortField {
+                        field_name: sort_field2.to_string(),
+                        sort_order: order2 as i32,
+                    },
+                ],
+                ..Default::default()
+            };
+            let metastore = test_sandbox.metastore();
+            let storage_resolver = test_sandbox.storage_resolver();
+            async move {
+                let search_resp = single_node_search(search_request, metastore, storage_resolver)
+                    .await
+                    .unwrap();
+                assert_eq!(search_resp.num_hits, 5);
+                search_resp
+                    .hits
+                    .into_iter()
+                    .map(|hit| {
+                        let partial_hit = hit.partial_hit.unwrap();
+                        partial_hit.doc_id
+                    })
+                    .collect::<Vec<u32>>()
+            }
+        };
+    {
+        let ordered_docs: Vec<u32> = search_hits(
+            "static_u64",
+            SortOrder::Desc,
+            "dynamic_u64",
+            SortOrder::Desc,
+        )
+        .await;
+        assert_eq!(&ordered_docs[..], &[4, 0, 1, 3, 2]);
+    }
+    {
+        let ordered_docs: Vec<u32> =
+            search_hits("static_u64", SortOrder::Desc, "dynamic_u64", SortOrder::Asc).await;
+        assert_eq!(&ordered_docs[..], &[4, 1, 0, 3, 2]);
+    }
+    {
+        let ordered_docs: Vec<u32> =
+            search_hits("static_u64", SortOrder::Asc, "dynamic_u64", SortOrder::Desc).await;
+        assert_eq!(&ordered_docs[..], &[0, 1, 4, 3, 2]);
+    }
+    {
+        let ordered_docs: Vec<u32> =
+            search_hits("static_u64", SortOrder::Asc, "dynamic_u64", SortOrder::Asc).await;
+        assert_eq!(&ordered_docs[..], &[1, 0, 4, 3, 2]);
+    }
+    test_sandbox.assert_quit().await;
+}
+
+#[tokio::test]
 async fn test_single_node_invalid_sorting_with_query() {
     let index_id = "single-node-invalid-sorting";
     let doc_mapping_yaml = r#"
@@ -752,13 +900,15 @@ async fn test_single_node_invalid_sorting_with_query() {
         index_id: index_id.to_string(),
         query_ast: qast_helper("city", &["description"]),
         max_hits: 15,
-        sort_by_field: Some("description".to_string()),
-        sort_order: Some(SortOrder::Desc as i32),
+        sort_fields: vec![SortField {
+            field_name: "description".to_string(),
+            sort_order: SortOrder::Desc as i32,
+        }],
         ..Default::default()
     };
     let single_node_response = single_node_search(
         search_request,
-        &*test_sandbox.metastore(),
+        test_sandbox.metastore(),
         test_sandbox.storage_resolver(),
     )
     .await;
@@ -850,7 +1000,7 @@ async fn test_single_node_split_pruning_by_tags() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn test_search_dynamic_util(test_sandbox: &TestSandbox, query: &str) -> Vec<u32> {
+async fn test_search_util(test_sandbox: &TestSandbox, query: &str) -> Vec<u32> {
     let splits = test_sandbox
         .metastore()
         .list_all_splits(test_sandbox.index_uid())
@@ -906,11 +1056,11 @@ async fn test_search_dynamic_mode() -> anyhow::Result<()> {
     ];
     test_sandbox.add_documents(docs).await.unwrap();
     {
-        let docs = test_search_dynamic_util(&test_sandbox, "body:hello").await;
+        let docs = test_search_util(&test_sandbox, "body:hello").await;
         assert_eq!(&docs[..], &[1u32, 0u32]);
     }
     {
-        let docs = test_search_dynamic_util(&test_sandbox, "body_dynamic:hello").await;
+        let docs = test_search_util(&test_sandbox, "body_dynamic:hello").await;
         assert_eq!(&docs[..], &[3u32]); // 1 is not matched due to the raw tokenizer
     }
     test_sandbox.assert_quit().await;
@@ -936,12 +1086,11 @@ async fn test_search_dynamic_mode_expand_dots() -> anyhow::Result<()> {
     let docs = vec![json!({"k8s.component.name": "quickwit"})];
     test_sandbox.add_documents(docs).await.unwrap();
     {
-        let docs = test_search_dynamic_util(&test_sandbox, "k8s.component.name:quickwit").await;
+        let docs = test_search_util(&test_sandbox, "k8s.component.name:quickwit").await;
         assert_eq!(&docs[..], &[0u32]);
     }
     {
-        let docs =
-            test_search_dynamic_util(&test_sandbox, r#"k8s\.component\.name:quickwit"#).await;
+        let docs = test_search_util(&test_sandbox, r#"k8s\.component\.name:quickwit"#).await;
         assert_eq!(&docs[..], &[0u32]);
     }
     test_sandbox.assert_quit().await;
@@ -967,12 +1116,11 @@ async fn test_search_dynamic_mode_do_not_expand_dots() -> anyhow::Result<()> {
     let docs = vec![json!({"k8s.component.name": "quickwit"})];
     test_sandbox.add_documents(docs).await.unwrap();
     {
-        let docs =
-            test_search_dynamic_util(&test_sandbox, r#"k8s\.component\.name:quickwit"#).await;
+        let docs = test_search_util(&test_sandbox, r#"k8s\.component\.name:quickwit"#).await;
         assert_eq!(&docs[..], &[0u32]);
     }
     {
-        let docs = test_search_dynamic_util(&test_sandbox, r#"k8s.component.name:quickwit"#).await;
+        let docs = test_search_util(&test_sandbox, r#"k8s.component.name:quickwit"#).await;
         assert!(docs.is_empty());
     }
     test_sandbox.assert_quit().await;
@@ -1191,7 +1339,7 @@ async fn test_single_node_aggregation() -> anyhow::Result<()> {
     };
     let single_node_result = single_node_search(
         search_request,
-        &*test_sandbox.metastore(),
+        test_sandbox.metastore(),
         test_sandbox.storage_resolver(),
     )
     .await?;
@@ -1262,18 +1410,17 @@ async fn test_single_node_aggregation_missing_fast_field() {
         aggregation_request: Some(agg_req.to_string()),
         ..Default::default()
     };
-    let single_node_result = single_node_search(
+    let single_node_error = single_node_search(
         search_request,
-        &*test_sandbox.metastore(),
+        test_sandbox.metastore(),
         test_sandbox.storage_resolver(),
     )
     .await
-    .unwrap();
-    assert_eq!(single_node_result.num_hits, 0);
-    assert_eq!(single_node_result.errors.len(), 1);
-    assert!(single_node_result.errors[0].contains("color"));
-    assert!(single_node_result.errors[0].contains("is not configured as"));
-    assert!(single_node_result.errors[0].contains("fast field"));
+    .unwrap_err();
+    let SearchError::InternalError(error_msg) = single_node_error else {
+        panic!();
+    };
+    assert!(error_msg.contains("Field \"color\" is not configured as fast field"));
     test_sandbox.assert_quit().await;
 }
 
@@ -1306,7 +1453,7 @@ async fn test_single_node_with_ip_field() -> anyhow::Result<()> {
         };
         let single_node_result = single_node_search(
             search_request,
-            &*test_sandbox.metastore(),
+            test_sandbox.metastore(),
             test_sandbox.storage_resolver(),
         )
         .await?;
@@ -1322,7 +1469,7 @@ async fn test_single_node_with_ip_field() -> anyhow::Result<()> {
         };
         let single_node_result = single_node_search(
             search_request,
-            &*test_sandbox.metastore(),
+            test_sandbox.metastore(),
             test_sandbox.storage_resolver(),
         )
         .await?;
@@ -1381,7 +1528,7 @@ async fn test_single_node_range_queries() -> anyhow::Result<()> {
         };
         let single_node_result = single_node_search(
             search_request,
-            &*test_sandbox.metastore(),
+            test_sandbox.metastore(),
             test_sandbox.storage_resolver(),
         )
         .await?;
@@ -1397,7 +1544,7 @@ async fn test_single_node_range_queries() -> anyhow::Result<()> {
         };
         let single_node_result = single_node_search(
             search_request,
-            &*test_sandbox.metastore(),
+            test_sandbox.metastore(),
             test_sandbox.storage_resolver(),
         )
         .await?;
@@ -1413,7 +1560,7 @@ async fn test_single_node_range_queries() -> anyhow::Result<()> {
         };
         let single_node_result = single_node_search(
             search_request,
-            &*test_sandbox.metastore(),
+            test_sandbox.metastore(),
             test_sandbox.storage_resolver(),
         )
         .await?;
@@ -1429,7 +1576,7 @@ async fn test_single_node_range_queries() -> anyhow::Result<()> {
         };
         let single_node_result = single_node_search(
             search_request,
-            &*test_sandbox.metastore(),
+            test_sandbox.metastore(),
             test_sandbox.storage_resolver(),
         )
         .await?;
@@ -1445,7 +1592,7 @@ async fn test_single_node_range_queries() -> anyhow::Result<()> {
         };
         let single_node_result = single_node_search(
             search_request,
-            &*test_sandbox.metastore(),
+            test_sandbox.metastore(),
             test_sandbox.storage_resolver(),
         )
         .await?;
@@ -1635,7 +1782,7 @@ async fn test_single_node_find_trace_ids_collector() {
         };
         let single_node_result = single_node_search(
             search_request,
-            &*test_sandbox.metastore(),
+            test_sandbox.metastore(),
             test_sandbox.storage_resolver(),
         )
         .await
@@ -1661,4 +1808,36 @@ async fn test_single_node_find_trace_ids_collector() {
         );
     }
     test_sandbox.assert_quit().await;
+}
+
+#[tokio::test]
+async fn test_search_in_text_field_with_custom_tokenizer() -> anyhow::Result<()> {
+    let doc_mapping_yaml = r#"
+            tokenizers:
+              - name: custom_tokenizer
+                type: ngram
+                min_gram: 3
+                max_gram: 5
+                prefix_only: true
+            field_mappings:
+              - name: body
+                type: text
+                tokenizer: custom_tokenizer
+                indexed: true
+        "#;
+    let test_sandbox = TestSandbox::create("search_custom_tokenizer", doc_mapping_yaml, "{}", &[])
+        .await
+        .unwrap();
+    let docs = vec![json!({"body": "hellohappy"})];
+    test_sandbox.add_documents(docs).await.unwrap();
+    {
+        let docs = test_search_util(&test_sandbox, "body:happy").await;
+        assert!(&docs.is_empty());
+    }
+    {
+        let docs = test_search_util(&test_sandbox, "body:hel").await;
+        assert_eq!(&docs[..], &[0u32]);
+    }
+    test_sandbox.assert_quit().await;
+    Ok(())
 }

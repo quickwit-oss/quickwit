@@ -117,7 +117,7 @@ fn test_suite_on_s3_storage_virtual_hosted_style_access() {
 #[cfg_attr(not(feature = "ci-test"), ignore)]
 fn test_suite_on_s3_storage_bulk_delete_single_object_delete_api() {
     let s3_storage_config = S3StorageConfig {
-        disable_multi_object_delete_requests: true,
+        disable_multi_object_delete: true,
         ..Default::default()
     };
     let bucket_uri = append_random_suffix(

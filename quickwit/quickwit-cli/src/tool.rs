@@ -18,7 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::{HashSet, VecDeque};
-use std::io::{stdout, Stdout, Write};
+use std::io::{stdout, IsTerminal, Stdout, Write};
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::str::FromStr;
@@ -35,13 +35,12 @@ use quickwit_actors::{ActorExitStatus, ActorHandle, ObservationType, Universe};
 use quickwit_cluster::{Cluster, ClusterMember};
 use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::uri::Uri;
-use quickwit_common::{GREEN_COLOR, RED_COLOR};
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{
-    IndexerConfig, QuickwitConfig, SourceConfig, SourceInputFormat, SourceParams, TransformConfig,
+    IndexerConfig, NodeConfig, SourceConfig, SourceInputFormat, SourceParams, TransformConfig,
     VecSourceParams, CLI_INGEST_SOURCE_ID,
 };
-use quickwit_core::{clear_cache_directory, IndexService};
+use quickwit_index_management::{clear_cache_directory, IndexService};
 use quickwit_indexing::actors::{IndexingService, MergePipeline, MergePipelineId};
 use quickwit_indexing::models::{
     DetachIndexingPipeline, DetachMergePipeline, IndexingStatistics, SpawnPipeline,
@@ -51,9 +50,10 @@ use quickwit_storage::{BundleStorage, Storage};
 use thousands::Separable;
 use tracing::{debug, info};
 
+use crate::checklist::{GREEN_COLOR, RED_COLOR};
 use crate::{
-    config_cli_arg, get_resolvers, load_node_config, parse_duration_with_unit, run_index_checklist,
-    start_actor_runtimes, THROUGHPUT_WINDOW_SIZE,
+    config_cli_arg, get_resolvers, load_node_config, run_index_checklist, start_actor_runtimes,
+    THROUGHPUT_WINDOW_SIZE,
 };
 
 pub fn build_tool_command() -> Command {
@@ -238,15 +238,15 @@ impl ToolCliCommand {
 
     fn parse_garbage_collect_args(mut matches: ArgMatches) -> anyhow::Result<Self> {
         let config_uri = matches
-            .remove_one::<String>("config")
-            .map(|uri_str| Uri::from_str(&uri_str))
+            .get_one("config")
+            .map(|uri_str: &String| Uri::from_str(uri_str))
             .expect("`config` should be a required arg.")?;
         let index_id = matches
             .remove_one::<String>("index")
             .expect("`index` should be a required arg.");
         let grace_period = matches
-            .remove_one::<String>("grace-period")
-            .map(|duration| parse_duration_with_unit(&duration))
+            .get_one("grace-period")
+            .map(|duration_str: &String| humantime::parse_duration(duration_str))
             .expect("`grace-period` should have a default value.")?;
         let dry_run = matches.get_flag("dry-run");
         Ok(Self::GarbageCollect(GarbageCollectIndexArgs {
@@ -295,7 +295,8 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
     println!("❯ Ingesting documents locally...");
 
     let config = load_node_config(&args.config_uri).await?;
-    let (storage_resolver, metastore_resolver) = get_resolvers(&config).await;
+    let (storage_resolver, metastore_resolver) =
+        get_resolvers(&config.storage_configs, &config.metastore_configs);
     let metastore = metastore_resolver.resolve(&config.metastore_uri).await?;
 
     let source_params = if let Some(filepath) = args.input_path_opt.as_ref() {
@@ -369,8 +370,7 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
         .ask_for_res(DetachIndexingPipeline { pipeline_id })
         .await?;
 
-    let is_stdin_atty = atty::is(atty::Stream::Stdin);
-    if args.input_path_opt.is_none() && is_stdin_atty {
+    if args.input_path_opt.is_none() && io::stdin().is_terminal() {
         let eof_shortcut = match env::consts::OS {
             "windows" => "CTRL+Z",
             _ => "CTRL+D",
@@ -417,7 +417,8 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
     debug!(args=?args, "run-merge-operations");
     println!("❯ Merging splits locally...");
     let config = load_node_config(&args.config_uri).await?;
-    let (storage_resolver, metastore_resolver) = get_resolvers(&config).await;
+    let (storage_resolver, metastore_resolver) =
+        get_resolvers(&config.storage_configs, &config.metastore_configs);
     let metastore = metastore_resolver.resolve(&config.metastore_uri).await?;
     run_index_checklist(&*metastore, &storage_resolver, &args.index_id, None).await?;
     // The indexing service needs to update its cluster chitchat state so that the control plane is
@@ -501,53 +502,54 @@ pub async fn garbage_collect_index_cli(args: GarbageCollectIndexArgs) -> anyhow:
     println!("❯ Garbage collecting index...");
 
     let config = load_node_config(&args.config_uri).await?;
-    let (storage_resolver, metastore_resolver) = get_resolvers(&config).await;
+    let (storage_resolver, metastore_resolver) =
+        get_resolvers(&config.storage_configs, &config.metastore_configs);
     let metastore = metastore_resolver.resolve(&config.metastore_uri).await?;
     let index_service = IndexService::new(metastore, storage_resolver);
     let removal_info = index_service
         .garbage_collect_index(&args.index_id, args.grace_period, args.dry_run)
         .await?;
-    if removal_info.removed_split_entries.is_empty() && removal_info.failed_split_ids.is_empty() {
+    if removal_info.removed_split_entries.is_empty() && removal_info.failed_splits.is_empty() {
         println!("No dangling files to garbage collect.");
         return Ok(());
     }
 
     if args.dry_run {
         println!("The following files will be garbage collected.");
-        for file_entry in removal_info.removed_split_entries {
-            println!(" - {}", file_entry.file_name);
+        for split_info in removal_info.removed_split_entries {
+            println!(" - {}", split_info.file_name.display());
         }
         return Ok(());
     }
 
-    if !removal_info.failed_split_ids.is_empty() {
+    if !removal_info.failed_splits.is_empty() {
         println!("The following splits were attempted to be removed, but failed.");
-        for split_id in removal_info.failed_split_ids.iter() {
-            println!(" - {split_id}");
+        for split_info in &removal_info.failed_splits {
+            println!(" - {}", split_info.split_id);
         }
         println!(
             "{} Splits were unable to be removed.",
-            removal_info.failed_split_ids.len()
+            removal_info.failed_splits.len()
         );
     }
 
     let deleted_bytes: u64 = removal_info
         .removed_split_entries
         .iter()
-        .map(|entry| entry.file_size_in_bytes)
+        .map(|split_info| split_info.file_size_bytes.get_bytes())
         .sum();
     println!(
         "{}MB of storage garbage collected.",
         deleted_bytes / 1_000_000
     );
 
-    if removal_info.failed_split_ids.is_empty() {
+    if removal_info.failed_splits.is_empty() {
         println!(
             "{} Index successfully garbage collected.",
             "✔".color(GREEN_COLOR)
         );
     } else if removal_info.removed_split_entries.is_empty()
-        && !removal_info.failed_split_ids.is_empty()
+        && !removal_info.failed_splits.is_empty()
     {
         println!("{} Failed to garbage collect index.", "✘".color(RED_COLOR));
     } else {
@@ -565,7 +567,8 @@ async fn extract_split_cli(args: ExtractSplitArgs) -> anyhow::Result<()> {
     println!("❯ Extracting split...");
 
     let config = load_node_config(&args.config_uri).await?;
-    let (storage_resolver, metastore_resolver) = get_resolvers(&config).await;
+    let (storage_resolver, metastore_resolver) =
+        get_resolvers(&config.storage_configs, &config.metastore_configs);
     let metastore = metastore_resolver.resolve(&config.metastore_uri).await?;
     let index_metadata = metastore.index_metadata(&args.index_id).await?;
     let index_storage = storage_resolver.resolve(index_metadata.index_uri()).await?;
@@ -771,7 +774,7 @@ impl ThroughputCalculator {
     }
 }
 
-async fn create_empty_cluster(config: &QuickwitConfig) -> anyhow::Result<Cluster> {
+async fn create_empty_cluster(config: &NodeConfig) -> anyhow::Result<Cluster> {
     let self_node = ClusterMember::new(
         config.node_id.clone(),
         quickwit_cluster::GenerationId::now(),

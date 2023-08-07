@@ -23,32 +23,32 @@ syntax = "proto3";
 package ingest_service;
 
 service IngestService {
-  /// Ingests document in a given queue.
-  ///
-  /// Upon any kind of error, the client should
-  /// - retry to get at least once delivery.
-  /// - not retry to get at most once delivery.
-  ///
-  /// Exactly once delivery is not supported yet.
+  // Ingests document in a given queue.
+  //
+  // Upon any kind of error, the client should
+  // - retry to get at least once delivery.
+  // - not retry to get at most once delivery.
+  //
+  // Exactly once delivery is not supported yet.
   rpc Ingest(IngestRequest) returns (IngestResponse);
 
-  /// Fetches record from a given queue.
-  ///
-  /// Records are returned in order.
-  ///
-  /// The returned `FetchResponse` object is meant to be read with the
-  /// `crate::iter_records` function.
-  ///
-  /// Fetching does not necessarily return all of the available records.
-  /// If returning all records would exceed `FETCH_PAYLOAD_LIMIT` (2MB),
-  /// the response will be partial.
+  // Fetches record from a given queue.
+  //
+  // Records are returned in order.
+  //
+  // The returned `FetchResponse` object is meant to be read with the
+  // `crate::iter_records` function.
+  //
+  // Fetching does not necessarily return all of the available records.
+  // If returning all records would exceed `FETCH_PAYLOAD_LIMIT` (2MB),
+  // the response will be partial.
   rpc Fetch(FetchRequest) returns (FetchResponse);
 
-  /// Returns a batch containing the last records.
-  ///
-  /// It returns the last documents, from the newest
-  /// to the oldest, and stops as soon as `FETCH_PAYLOAD_LIMIT` (2MB)
-  /// is exceeded.
+  // Returns a batch containing the last records.
+  //
+  // It returns the last documents, from the newest
+  // to the oldest, and stops as soon as `FETCH_PAYLOAD_LIMIT` (2MB)
+  // is exceeded.
   rpc Tail(TailRequest) returns (FetchResponse);
 }
 
@@ -68,9 +68,20 @@ message DropQueueRequest {
     string queue_id = 1;
 }
 
+// Specifies if the ingest request should block waiting for the records to be committed.
+enum CommitType {
+    // The request doesn't wait for commit
+    Auto = 0;
+    // The request waits for the next scheduled commit to finish.
+    WaitFor = 1;
+    // The request forces an immediate commit after the last document in the batch and waits for
+    // it to finish.
+    Force = 2;
+}
+
 message IngestRequest {
     repeated DocBatch doc_batches = 1;
-    uint32 commit = 2;
+    CommitType commit = 2;
 }
 
 message IngestResponse {
@@ -94,19 +105,19 @@ message DocBatch {
     repeated uint32 doc_lengths = 3;
 }
 
-/// Suggest to truncate the queue.
-///
-/// This function allows the queue to remove all records up to and
-/// including `up_to_offset_included`.
-///
-/// The role of this truncation is to release memory and disk space.
-///
-/// There are no guarantees that the record will effectively be removed.
-/// Nothing might happen, or the truncation might be partial.
-///
-/// In other words, truncating from a position, and fetching records starting
-/// earlier than this position can yield undefined result:
-/// the truncated records may or may not be returned.
+// Suggest to truncate the queue.
+//
+// This function allows the queue to remove all records up to and
+// including `up_to_offset_included`.
+//
+// The role of this truncation is to release memory and disk space.
+//
+// There are no guarantees that the record will effectively be removed.
+// Nothing might happen, or the truncation might be partial.
+//
+// In other words, truncating from a position, and fetching records starting
+// earlier than this position can yield undefined result:
+// the truncated records may or may not be returned.
 message SuggestTruncateRequest {
     string index_id = 1;
     uint64 up_to_position_included = 2;
@@ -115,7 +126,6 @@ message SuggestTruncateRequest {
 message TailRequest {
     string index_id = 1;
 }
-
 
 message ListQueuesRequest {
 }

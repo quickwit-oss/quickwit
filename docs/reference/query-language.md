@@ -54,7 +54,13 @@ Quickwit supports parenthesis to group multiple clauses:
 
 ### Slop Operator
 
-Quickwit also supports phrase queries with a slop parameter using the slop operator `~` followed by the value of the slop. For instance, the query `body:"small bike"~2` will match documents containing the word `small`, followed by one or two words immediately followed by the word `bike`.
+Quickwit also supports phrase queries with a slop parameter using the slop operator `~` followed by the value of the slop. 
+The query will match phrases if its terms are separated by slop terms at most. 
+
+The slop can be considered a budget between all terms. E.g. `"A B C"~1` matches `"A X B C"`, `"A B X C"`, but not `"A X B X C"`.
+
+Transposition costs 2, e.g. `"A B"~1` will not match `"B A"` but it would with `"A B"~2`. 
+Transposition is not a special case, in the example above A is moved 1 position and B is moved 1 position, so the slop is 2.
 
 :::caution
 Slop queries can only be used on field indexed with the [record option](./../configuration/index-config.md#text-type) set to `position` value.

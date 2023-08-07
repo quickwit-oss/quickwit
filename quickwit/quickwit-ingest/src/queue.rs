@@ -165,7 +165,9 @@ impl Queues {
         let records = self
             .record_log
             .range(&real_queue_id, (starting_bound, Bound::Unbounded))
-            .ok_or_else(|| crate::IngestServiceError::IndexNotFound {
+            .map_err(|_| crate::IngestServiceError::IndexNotFound {
+                // we want to return the queue_id, not the real_queue_id, so we can't just
+                // implement From<MissingQueue>
                 index_id: queue_id.to_string(),
             })?;
 

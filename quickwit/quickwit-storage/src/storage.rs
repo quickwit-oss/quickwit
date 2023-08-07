@@ -17,16 +17,15 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::HashMap;
 use std::fmt;
 use std::ops::Range;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use async_trait::async_trait;
 use quickwit_common::uri::Uri;
 use tokio::io::AsyncWrite;
 
-use crate::{OwnedBytes, PutPayload, StorageError, StorageErrorKind, StorageResult};
+use crate::{BulkDeleteError, OwnedBytes, PutPayload, StorageErrorKind, StorageResult};
 
 /// This trait is only used to make it build trait object with `AsyncWrite + Send + Unpin`.
 pub trait SendableAsync: AsyncWrite + Send + Unpin {}
@@ -125,52 +124,4 @@ pub trait Storage: fmt::Debug + Send + Sync + 'static {
 
     /// Returns an URI identifying the storage
     fn uri(&self) -> &Uri;
-}
-
-/// Error returned by `bulk_delete`. Under the hood, `bulk_delete` groups the files to
-/// delete into multiple batches of fixed size and issues one delete objects request per batch. The
-/// whole operation can fail in multiples ways, which is reflected by the quirckiness of the API of
-/// [`BulkDeleteError`]. First, a batch can fail partially, i.e. some objects are deleted while
-/// others are not. The `successes` and `failures` attributes of the error will be populated
-/// accordingly. Second, a batch can fail completely, in which case the `error` field will be set.
-/// Because a batch failing entirely usually indicates a systemic error, for instance, a connection
-/// or credentials issue, `bulk_delete` does not attempt to delete the remaining batches and
-/// populates the `unattempted` attribute. Consequently, the attributes of this error are not
-/// "mutually exclusive": there exists a path where all those fields are not empty. The caller is
-/// expected to handle this error carefully and inspect the instance thoroughly before any retry
-/// attempt.
-#[must_use]
-#[derive(Debug, Default, thiserror::Error)]
-pub struct BulkDeleteError {
-    /// Error that occurred for a whole batch and caused the entire deletion operation to be
-    /// aborted.
-    pub error: Option<StorageError>,
-    /// List of files that were successfully deleted, including non-existing files.
-    pub successes: Vec<PathBuf>,
-    /// List of files that failed to be deleted along with the corresponding failure descriptions.
-    pub failures: HashMap<PathBuf, DeleteFailure>,
-    /// List of remaining files to delete before the operation was aborted.
-    pub unattempted: Vec<PathBuf>,
-}
-
-#[derive(Debug, Default)]
-pub struct DeleteFailure {
-    pub error: Option<StorageError>,
-    /// The failure code is a string that uniquely identifies an error condition. It is meant to be
-    /// read and understood by programs that detect and handle errors by type.
-    pub code: Option<String>,
-    pub message: Option<String>,
-}
-
-impl fmt::Display for BulkDeleteError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(
-            f,
-            "Bulk delete error ({} success(es),  {} failure(s), {} unattempted)",
-            self.successes.len(),
-            self.failures.len(),
-            self.unattempted.len()
-        )?;
-        Ok(())
-    }
 }

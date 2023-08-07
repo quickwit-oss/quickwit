@@ -21,7 +21,7 @@ use once_cell::sync::OnceCell;
 use quickwit_common::runtimes::RuntimesConfig;
 use serde::Serialize;
 
-#[derive(Debug, Eq, PartialEq, Serialize)]
+#[derive(Debug, Eq, PartialEq, Serialize, utoipa::ToSchema)]
 pub struct BuildInfo {
     pub build_date: &'static str,
     pub build_profile: &'static str,
@@ -83,7 +83,7 @@ impl BuildInfo {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Serialize)]
+#[derive(Debug, Eq, PartialEq, Serialize, utoipa::ToSchema)]
 pub struct RuntimeInfo {
     pub num_cpus_logical: usize,
     pub num_cpus_physical: usize,
