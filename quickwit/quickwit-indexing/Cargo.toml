@@ -46,6 +46,10 @@ ulid = { workspace = true }
 utoipa = { workspace = true }
 vrl = { workspace = true, optional = true }
 vrl-stdlib = { workspace = true, optional = true }
+google-cloud-pubsub = "0.15.0"
+google-cloud-default = { version = "0.3.0", features = ["pubsub"] }
+google-cloud-googleapis = { version = "0.9.0", features = ["pubsub"] }
+uuid = { workspace = true }
 
 quickwit-actors = { workspace = true }
 quickwit-aws = { workspace = true }
@@ -69,11 +73,7 @@ kinesis-localstack-tests = []
 vrl = ["dep:vrl", "vrl-stdlib", "quickwit-config/vrl"]
 pulsar = ["dep:pulsar"]
 pulsar-broker-tests = []
-testsuite = [
-  "quickwit-actors/testsuite",
-  "quickwit-cluster/testsuite",
-  "quickwit-common/testsuite",
-]
+testsuite = ["quickwit-actors/testsuite", "quickwit-cluster/testsuite", "quickwit-common/testsuite"]
 
 [dev-dependencies]
 bytes = { workspace = true }
