@@ -232,10 +232,6 @@ impl CacheStorageFactory {
     }
 }
 
-struct SendableAsyncStorage {
-    storage: Arc<dyn Storage>,
-}
-
 #[derive(Clone)]
 enum SplitState {
     Loading,
@@ -333,17 +329,15 @@ mod tests {
             .unwrap();
         assert!(matches!(err, StorageResolverError::InvalidUri { .. }));
 
-        let data_uri = Uri::from_well_formed("cache:///");
+        let data_uri = Uri::from_well_formed("cache://ram://");
         let data_storage = cache_storage_factory
             .resolve(&storage_resolver, &data_uri)
             .await
-            .ok()
             .unwrap();
 
         let data_storage_two = cache_storage_factory
             .resolve(&storage_resolver, &data_uri)
             .await
-            .ok()
             .unwrap();
         assert_eq!(data_storage.uri(), data_storage_two.uri());
     }
