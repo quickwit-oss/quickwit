@@ -53,6 +53,7 @@ doc_mapping:
           tokenizer: raw
   tag_fields: ["resource.service"]
   timestamp_field: timestamp
+  index_field_presence: true
 
 search_settings:
   default_search_fields: [severity_text, body]
@@ -93,6 +94,7 @@ The doc mapping defines how a document and the fields it contains are stored and
 | `timestamp_field`      | Timestamp field* used for sharding documents in splits. The field has to be of type `datetime`. [Learn more about time sharding](./../overview/architecture.md).  | `None` |
  `partition_key`   |  If set, quickwit will route documents into different splits depending on the field name declared as the `partition_key`. | `null` |
 | `max_num_partitions`  | Limits the number of splits created through partitioning. (See [Partitioning](../overview/concepts/querying.md#partitioning))  |    `200` |
+| `index_field_presence` | Enabling index field presence is required to allow for exists queries. Enabling it can have a significant CPU-cost on indexing.  |  false |
 
 *: tags fields and timestamp field are expressed as a path from the root of the JSON object to the given field. If a field name contains a `.` character, it needs to be escaped with a `\` character.
 
