@@ -29,13 +29,12 @@ use itertools::Itertools;
 use quickwit_common::tower::BalanceChannel;
 use quickwit_common::uri::Uri as QuickwitUri;
 use quickwit_config::{IndexConfig, SourceConfig};
-use quickwit_proto::metastore::metastore_service_client::MetastoreServiceClient;
 use quickwit_proto::metastore::{
     AddSourceRequest, CreateIndexRequest, DeleteIndexRequest, DeleteQuery, DeleteSourceRequest,
     DeleteSplitsRequest, DeleteTask, IndexMetadataRequest, LastDeleteOpstampRequest,
     ListAllSplitsRequest, ListDeleteTasksRequest, ListIndexesMetadatasRequest, ListSplitsRequest,
-    ListStaleSplitsRequest, MarkSplitsForDeletionRequest, PublishSplitsRequest,
-    ResetSourceCheckpointRequest, StageSplitsRequest, ToggleSourceRequest,
+    ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreServiceGrpcClient,
+    PublishSplitsRequest, ResetSourceCheckpointRequest, StageSplitsRequest, ToggleSourceRequest,
     UpdateSplitsDeleteOpstampRequest,
 };
 use quickwit_proto::tonic::codegen::InterceptedService;
@@ -55,7 +54,7 @@ use crate::{
 const GRPC_METASTORE_BASE_URI: &str = "grpc://metastore.service.cluster";
 
 type Transport = InterceptedService<BalanceChannel<SocketAddr>, SpanContextInterceptor>;
-type MetastoreGrpcClientImpl = MetastoreServiceClient<Transport>;
+type MetastoreGrpcClientImpl = MetastoreServiceGrpcClient<Transport>;
 
 /// The [`MetastoreGrpcClient`] sends gRPC requests to cluster members running a [`Metastore`]
 /// service, those nodes will execute the queries on the metastore.
@@ -79,7 +78,7 @@ impl MetastoreGrpcClient {
     pub async fn from_balance_channel(
         balance_channel: BalanceChannel<SocketAddr>,
     ) -> anyhow::Result<Self> {
-        let underlying = MetastoreServiceClient::with_interceptor(
+        let underlying = MetastoreServiceGrpcClient::with_interceptor(
             balance_channel.clone(),
             SpanContextInterceptor,
         );
@@ -110,7 +109,7 @@ impl MetastoreGrpcClient {
             .await?;
         let dummy_addr = "127.0.0.1:1234".parse::<SocketAddr>()?;
         let balance_channel = BalanceChannel::from_channel(dummy_addr, channel);
-        let underlying = MetastoreServiceClient::with_interceptor(
+        let underlying = MetastoreServiceGrpcClient::with_interceptor(
             balance_channel.clone(),
             SpanContextInterceptor,
         );
@@ -241,7 +240,8 @@ impl Metastore for MetastoreGrpcClient {
         replaced_split_ids: &[&'a str],
         checkpoint_delta_opt: Option<IndexCheckpointDelta>,
     ) -> MetastoreResult<()> {
-        let split_ids_vec: Vec<String> = split_ids.iter().map(|split| split.to_string()).collect();
+        let staged_split_ids: Vec<String> =
+            split_ids.iter().map(|split| split.to_string()).collect();
         let replaced_split_ids_vec: Vec<String> = replaced_split_ids
             .iter()
             .map(|split_id| split_id.to_string())
@@ -255,7 +255,7 @@ impl Metastore for MetastoreGrpcClient {
             })?;
         let request = PublishSplitsRequest {
             index_uid: index_uid.into(),
-            split_ids: split_ids_vec,
+            staged_split_ids,
             replaced_split_ids: replaced_split_ids_vec,
             index_checkpoint_delta_serialized_json,
         };
@@ -569,7 +569,7 @@ impl crate::tests::test_suite::DefaultForTest for MetastoreGrpcClient {
     async fn default_for_test() -> Self {
         use std::sync::Arc;
 
-        use quickwit_proto::metastore::metastore_service_server::MetastoreServiceServer;
+        use quickwit_proto::metastore::MetastoreServiceGrpcServer;
         use quickwit_proto::tonic::transport::Server;
         use quickwit_storage::RamStorage;
 
@@ -582,7 +582,7 @@ impl crate::tests::test_suite::DefaultForTest for MetastoreGrpcClient {
         let grpc_adapter = GrpcMetastoreAdapter::from(Arc::new(metastore) as Arc<dyn Metastore>);
         tokio::spawn(async move {
             Server::builder()
-                .add_service(MetastoreServiceServer::new(grpc_adapter))
+                .add_service(MetastoreServiceGrpcServer::new(grpc_adapter))
                 .serve_with_incoming(futures::stream::iter(vec![Ok::<_, std::io::Error>(server)]))
                 .await
         });

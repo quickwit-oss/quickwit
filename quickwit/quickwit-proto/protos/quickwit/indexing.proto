@@ -23,18 +23,20 @@ package quickwit.indexing;
 
 service IndexingService {
   /// Apply an indexing plan on the node.
-  rpc applyIndexingPlan(ApplyIndexingPlanRequest) returns (ApplyIndexingPlanResponse);
+  rpc ApplyIndexingPlan(ApplyIndexingPlanRequest) returns (ApplyIndexingPlanResponse);
 }
 
 message ApplyIndexingPlanRequest {
   repeated IndexingTask indexing_tasks = 1;
 }
 
-message ApplyIndexingPlanResponse {}
-
 message IndexingTask {
-  /// Index UID of the task.
+  /// The tasks's index UID.
   string index_uid = 1;
-  /// Source ID of the task.
+  /// The task's source ID.
   string source_id = 2;
+  /// The shards assigned to the indexer.
+  // repeated uint64 shard_ids = 3;
 }
+
+message ApplyIndexingPlanResponse {}

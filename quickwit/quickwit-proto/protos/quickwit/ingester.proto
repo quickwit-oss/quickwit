@@ -1,0 +1,180 @@
+// Copyright (C) 2023 Quickwit, Inc.
+//
+// Quickwit is offered under the AGPL v3.0 and as commercial software.
+// For commercial licensing, contact us at hello@quickwit.io.
+//
+// AGPL:
+// This program is free software: you can redistribute it and/or modify
+// it under the terms of the GNU Affero General Public License as
+// published by the Free Software Foundation, either version 3 of the
+// License, or (at your option) any later version.
+//
+// This program is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+// GNU Affero General Public License for more details.
+//
+// You should have received a copy of the GNU Affero General Public License
+// along with this program. If not, see <http://www.gnu.org/licenses/>.
+
+syntax = "proto3";
+
+package quickwit.ingest.ingester;
+
+import "quickwit/ingest.proto";
+
+
+service IngesterService {
+    /// Persists batches of documents to primary shards owned by a leader.
+    rpc Persist(PersistRequest) returns (PersistResponse);
+
+    /// Opens a replication stream from a leader to a follower.
+    rpc OpenReplicationStream(stream SynReplicationMessage) returns (stream AckReplicationMessage);
+
+    /// Streams records from a leader or a follower. The client can optionally specify a range of positions to fetch.
+    rpc OpenFetchStream(OpenFetchStreamRequest) returns (stream FetchResponseV2);
+
+    // rpc OpenWatchStream(OpenWatchStreamRequest) returns (stream WatchMessage);
+
+    /// Pings an ingester to check if it is ready to host shards and serve requests.
+    rpc Ping(PingRequest) returns (PingResponse);
+
+    /// Truncates the shards at the given positions. Callers should this RPC on leaders and they will forward to followers.
+    rpc Truncate(TruncateRequest) returns (TruncateResponse);
+}
+
+message PersistRequest {
+    string leader_id = 1;
+    quickwit.ingest.CommitTypeV2 commit_type = 3;
+    repeated PersistSubrequest subrequests = 4;
+}
+
+message PersistSubrequest {
+    string index_uid = 1;
+    string source_id = 2;
+    uint64 shard_id = 3;
+    optional string follower_id = 4;
+    quickwit.ingest.DocBatchV2 doc_batch = 5;
+}
+
+message PersistResponse {
+    string leader_id = 1;
+    repeated PersistSuccess successes = 2;
+    repeated PersistFailure failures = 3;
+}
+
+message PersistSuccess {
+    string index_uid = 1;
+    string source_id = 2;
+    uint64 shard_id = 3;
+    optional uint64 replication_position_inclusive = 4;
+}
+
+message PersistFailure {
+    string index_uid = 1;
+    string source_id = 2;
+    uint64 shard_id = 3;
+    // ingest.DocBatchV2 doc_batch = 4;
+    // ingest.IngestError error = 5;
+}
+
+message SynReplicationMessage {
+    oneof message {
+        OpenReplicationStreamRequest open_request = 1;
+        ReplicateRequest replicate_request = 2;
+        TruncateRequest truncate_request = 3;
+    }
+}
+
+message AckReplicationMessage {
+    oneof message {
+        OpenReplicationStreamResponse open_response = 1;
+        ReplicateResponse replicate_response = 3;
+        TruncateResponse truncate_response = 4;
+    }
+}
+
+message OpenReplicationStreamRequest {
+    string leader_id = 1;
+    string follower_id = 2;
+}
+
+message OpenReplicationStreamResponse {
+}
+
+message ReplicateRequest {
+    string leader_id = 1;
+    string follower_id = 2;
+    quickwit.ingest.CommitTypeV2 commit_type = 3;
+    repeated ReplicateSubrequest subrequests = 4;
+}
+
+message ReplicateSubrequest {
+    string index_uid = 1;
+    string source_id = 2;
+    uint64 shard_id = 3;
+    optional uint64 from_position_exclusive = 4;
+    ingest.DocBatchV2 doc_batch = 6;
+}
+
+message ReplicateResponse {
+    string follower_id = 1;
+    repeated ReplicateSuccess successes = 2;
+    repeated ReplicateFailure failures = 3;
+}
+
+message ReplicateSuccess {
+    string index_uid = 1;
+    string source_id = 2;
+    uint64 shard_id = 3;
+    optional uint64 replica_position_inclusive = 4;
+}
+
+message ReplicateFailure {
+    string index_uid = 1;
+    string source_id = 2;
+    uint64 shard_id = 3;
+    // ingest.DocBatchV2 doc_batch = 4;
+    // ingest.IngestError error = 5;
+}
+
+message TruncateRequest {
+    string leader_id = 1;
+    repeated TruncateSubrequest subrequests = 2;
+}
+
+message TruncateSubrequest {
+    string index_uid = 1;
+    string source_id = 2;
+    uint64 shard_id = 3;
+    uint64 to_position_inclusive = 4;
+}
+
+message TruncateResponse {
+    // TODO
+}
+
+message OpenFetchStreamRequest {
+    string client_id = 1;
+    string index_uid = 2;
+    string source_id = 3;
+    uint64 shard_id = 4;
+    optional uint64 from_position_exclusive = 5;
+    optional uint64 to_position_inclusive = 6;
+}
+
+message FetchResponseV2 {
+    string index_uid = 1;
+    string source_id = 2;
+    uint64 shard_id = 3;
+    uint64 from_position_inclusive = 4;
+    ingest.DocBatchV2 doc_batch = 5;
+}
+
+message PingRequest {
+    string leader_id = 1;
+    optional string follower_id = 2;
+}
+
+message PingResponse {
+}

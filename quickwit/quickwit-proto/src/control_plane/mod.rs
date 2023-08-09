@@ -20,12 +20,9 @@
 use quickwit_actors::AskError;
 use thiserror;
 
-#[path = "../codegen/quickwit/quickwit.control_plane.rs"]
-mod codegen;
+include!("../codegen/quickwit/quickwit.control_plane.rs");
 
-pub use codegen::*;
-
-pub type Result<T> = std::result::Result<T, ControlPlaneError>;
+pub type ControlPlaneResult<T> = std::result::Result<T, ControlPlaneError>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ControlPlaneError {

@@ -24,7 +24,7 @@ use futures::{StreamExt, TryStreamExt};
 use quickwit_common::uri::Uri;
 use quickwit_config::build_doc_mapper;
 use quickwit_metastore::Metastore;
-use quickwit_proto::{LeafSearchStreamRequest, SearchRequest, SearchStreamRequest};
+use quickwit_proto::search::{LeafSearchStreamRequest, SearchRequest, SearchStreamRequest};
 use quickwit_query::query_ast::QueryAst;
 use tokio_stream::StreamMap;
 use tracing::*;
@@ -122,7 +122,7 @@ mod tests {
 
     use quickwit_indexing::mock_split;
     use quickwit_metastore::{IndexMetadata, MockMetastore};
-    use quickwit_proto::OutputFormat;
+    use quickwit_proto::search::OutputFormat;
     use quickwit_query::query_ast::qast_helper;
     use tokio_stream::wrappers::UnboundedReceiverStream;
 
@@ -131,7 +131,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_root_search_stream_single_split() -> anyhow::Result<()> {
-        let request = quickwit_proto::SearchStreamRequest {
+        let request = quickwit_proto::search::SearchStreamRequest {
             index_id: "test-index".to_string(),
             query_ast: qast_helper("test", &["body"]),
             fast_field: "timestamp".to_string(),
@@ -152,16 +152,16 @@ mod tests {
             .returning(|_filter| Ok(vec![mock_split("split1")]));
         let mut mock_search_service = MockSearchService::new();
         let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
-        result_sender.send(Ok(quickwit_proto::LeafSearchStreamResponse {
+        result_sender.send(Ok(quickwit_proto::search::LeafSearchStreamResponse {
             data: b"123".to_vec(),
             split_id: "split_1".to_string(),
         }))?;
-        result_sender.send(Ok(quickwit_proto::LeafSearchStreamResponse {
+        result_sender.send(Ok(quickwit_proto::search::LeafSearchStreamResponse {
             data: b"456".to_vec(),
             split_id: "split_1".to_string(),
         }))?;
         mock_search_service.expect_leaf_search_stream().return_once(
-            |_leaf_search_req: quickwit_proto::LeafSearchStreamRequest| {
+            |_leaf_search_req: quickwit_proto::search::LeafSearchStreamRequest| {
                 Ok(UnboundedReceiverStream::new(result_receiver))
             },
         );
@@ -183,7 +183,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_root_search_stream_single_split_partitionned() -> anyhow::Result<()> {
-        let request = quickwit_proto::SearchStreamRequest {
+        let request = quickwit_proto::search::SearchStreamRequest {
             index_id: "test-index".to_string(),
             query_ast: qast_helper("test", &["body"]),
             fast_field: "timestamp".to_string(),
@@ -205,16 +205,16 @@ mod tests {
             .returning(|_filter| Ok(vec![mock_split("split1")]));
         let mut mock_search_service = MockSearchService::new();
         let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
-        result_sender.send(Ok(quickwit_proto::LeafSearchStreamResponse {
+        result_sender.send(Ok(quickwit_proto::search::LeafSearchStreamResponse {
             data: b"123".to_vec(),
             split_id: "1".to_string(),
         }))?;
-        result_sender.send(Ok(quickwit_proto::LeafSearchStreamResponse {
+        result_sender.send(Ok(quickwit_proto::search::LeafSearchStreamResponse {
             data: b"456".to_vec(),
             split_id: "2".to_string(),
         }))?;
         mock_search_service.expect_leaf_search_stream().return_once(
-            |_leaf_search_req: quickwit_proto::LeafSearchStreamRequest| {
+            |_leaf_search_req: quickwit_proto::search::LeafSearchStreamRequest| {
                 Ok(UnboundedReceiverStream::new(result_receiver))
             },
         );
@@ -234,7 +234,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_root_search_stream_single_split_with_error() -> anyhow::Result<()> {
-        let request = quickwit_proto::SearchStreamRequest {
+        let request = quickwit_proto::search::SearchStreamRequest {
             index_id: "test-index".to_string(),
             query_ast: qast_helper("test", &["body"]),
             fast_field: "timestamp".to_string(),
@@ -255,7 +255,7 @@ mod tests {
             .returning(|_filter| Ok(vec![mock_split("split1"), mock_split("split2")]));
         let mut mock_search_service = MockSearchService::new();
         let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
-        result_sender.send(Ok(quickwit_proto::LeafSearchStreamResponse {
+        result_sender.send(Ok(quickwit_proto::search::LeafSearchStreamResponse {
             data: b"123".to_vec(),
             split_id: "split1".to_string(),
         }))?;
@@ -264,7 +264,7 @@ mod tests {
             .expect_leaf_search_stream()
             .withf(|request| request.split_offsets.len() == 2) // First request.
             .return_once(
-                |_leaf_search_req: quickwit_proto::LeafSearchStreamRequest| {
+                |_leaf_search_req: quickwit_proto::search::LeafSearchStreamRequest| {
                     Ok(UnboundedReceiverStream::new(result_receiver))
                 },
             );
@@ -272,7 +272,7 @@ mod tests {
             .expect_leaf_search_stream()
             .withf(|request| request.split_offsets.len() == 1) // Retry request on the failed split.
             .return_once(
-                |_leaf_search_req: quickwit_proto::LeafSearchStreamRequest| {
+                |_leaf_search_req: quickwit_proto::search::LeafSearchStreamRequest| {
                     Err(SearchError::InternalError("error".to_string()))
                 },
             );
@@ -308,7 +308,7 @@ mod tests {
         let search_job_placer = SearchJobPlacer::new(searcher_pool);
 
         assert!(root_search_stream(
-            quickwit_proto::SearchStreamRequest {
+            quickwit_proto::search::SearchStreamRequest {
                 index_id: "test-index".to_string(),
                 query_ast: qast_helper(r#"invalid_field:"test""#, &[]),
                 fast_field: "timestamp".to_string(),
@@ -323,7 +323,7 @@ mod tests {
         .is_err());
 
         assert!(root_search_stream(
-            quickwit_proto::SearchStreamRequest {
+            quickwit_proto::search::SearchStreamRequest {
                 index_id: "test-index".to_string(),
                 query_ast: qast_helper("test", &["invalid_field"]),
                 fast_field: "timestamp".to_string(),

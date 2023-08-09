@@ -29,7 +29,7 @@ use quickwit_common::uri::Uri;
 use quickwit_config::{build_doc_mapper, IndexConfig};
 use quickwit_doc_mapper::{DocMapper, DYNAMIC_FIELD_NAME};
 use quickwit_metastore::{Metastore, SplitMetadata};
-use quickwit_proto::{
+use quickwit_proto::search::{
     FetchDocsRequest, FetchDocsResponse, Hit, LeafHit, LeafListTermsRequest, LeafListTermsResponse,
     LeafSearchRequest, LeafSearchResponse, ListTermsRequest, ListTermsResponse, PartialHit,
     SearchRequest, SearchResponse, SnippetRequest, SortField, SplitIdAndFooterOffsets,
@@ -987,7 +987,7 @@ mod tests {
     use quickwit_config::SearcherConfig;
     use quickwit_indexing::mock_split;
     use quickwit_metastore::{IndexMetadata, MockMetastore};
-    use quickwit_proto::{ScrollRequest, SortOrder, SortValue, SplitSearchError};
+    use quickwit_proto::search::{ScrollRequest, SortOrder, SortValue, SplitSearchError};
     use quickwit_query::query_ast::qast_helper;
     use tantivy::schema::{FAST, STORED, TEXT};
 
@@ -1031,8 +1031,8 @@ mod tests {
         split_id: &str,
         sort_value: u64,
         doc_id: u32,
-    ) -> quickwit_proto::PartialHit {
-        quickwit_proto::PartialHit {
+    ) -> quickwit_proto::search::PartialHit {
+        quickwit_proto::search::PartialHit {
             sort_value: Some(SortValue::U64(sort_value).into()),
             sort_value2: None,
             split_id: split_id.to_string(),
@@ -1042,12 +1042,12 @@ mod tests {
     }
 
     fn get_doc_for_fetch_req(
-        fetch_docs_req: quickwit_proto::FetchDocsRequest,
-    ) -> Vec<quickwit_proto::LeafHit> {
+        fetch_docs_req: quickwit_proto::search::FetchDocsRequest,
+    ) -> Vec<quickwit_proto::search::LeafHit> {
         fetch_docs_req
             .partial_hits
             .into_iter()
-            .map(|req| quickwit_proto::LeafHit {
+            .map(|req| quickwit_proto::search::LeafHit {
                 leaf_json: serde_json::to_string_pretty(&serde_json::json!({
                     "title": [req.doc_id.to_string()],
                     "body": ["test 1"],
@@ -1062,7 +1062,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_root_search_offset_out_of_bounds_1085() -> anyhow::Result<()> {
-        let search_request = quickwit_proto::SearchRequest {
+        let search_request = quickwit_proto::search::SearchRequest {
             index_id: "test-index".to_string(),
             query_ast: qast_helper("test", &["body"]),
             max_hits: 10,
@@ -1083,8 +1083,8 @@ mod tests {
             .returning(|_filter| Ok(vec![mock_split("split1"), mock_split("split2")]));
         let mut mock_search_service_2 = MockSearchService::new();
         mock_search_service_2.expect_leaf_search().returning(
-            |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
-                Ok(quickwit_proto::LeafSearchResponse {
+            |_leaf_search_req: quickwit_proto::search::LeafSearchRequest| {
+                Ok(quickwit_proto::search::LeafSearchResponse {
                     num_hits: 3,
                     partial_hits: vec![
                         mock_partial_hit("split1", 3, 1),
@@ -1098,16 +1098,16 @@ mod tests {
             },
         );
         mock_search_service_2.expect_fetch_docs().returning(
-            |fetch_docs_req: quickwit_proto::FetchDocsRequest| {
-                Ok(quickwit_proto::FetchDocsResponse {
+            |fetch_docs_req: quickwit_proto::search::FetchDocsRequest| {
+                Ok(quickwit_proto::search::FetchDocsResponse {
                     hits: get_doc_for_fetch_req(fetch_docs_req),
                 })
             },
         );
         let mut mock_search_service_1 = MockSearchService::new();
         mock_search_service_1.expect_leaf_search().returning(
-            |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
-                Ok(quickwit_proto::LeafSearchResponse {
+            |_leaf_search_req: quickwit_proto::search::LeafSearchRequest| {
+                Ok(quickwit_proto::search::LeafSearchResponse {
                     num_hits: 2,
                     partial_hits: vec![
                         mock_partial_hit("split2", 3, 1),
@@ -1120,8 +1120,8 @@ mod tests {
             },
         );
         mock_search_service_1.expect_fetch_docs().returning(
-            |fetch_docs_req: quickwit_proto::FetchDocsRequest| {
-                Ok(quickwit_proto::FetchDocsResponse {
+            |fetch_docs_req: quickwit_proto::search::FetchDocsRequest| {
+                Ok(quickwit_proto::search::FetchDocsResponse {
                     hits: get_doc_for_fetch_req(fetch_docs_req),
                 })
             },
@@ -1148,7 +1148,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_root_search_single_split() -> anyhow::Result<()> {
-        let search_request = quickwit_proto::SearchRequest {
+        let search_request = quickwit_proto::search::SearchRequest {
             index_id: "test-index".to_string(),
             query_ast: qast_helper("test", &["body"]),
             max_hits: 10,
@@ -1168,8 +1168,8 @@ mod tests {
             .returning(|_filter| Ok(vec![mock_split("split1")]));
         let mut mock_search_service = MockSearchService::new();
         mock_search_service.expect_leaf_search().returning(
-            |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
-                Ok(quickwit_proto::LeafSearchResponse {
+            |_leaf_search_req: quickwit_proto::search::LeafSearchRequest| {
+                Ok(quickwit_proto::search::LeafSearchResponse {
                     num_hits: 3,
                     partial_hits: vec![
                         mock_partial_hit("split1", 3, 1),
@@ -1183,8 +1183,8 @@ mod tests {
             },
         );
         mock_search_service.expect_fetch_docs().returning(
-            |fetch_docs_req: quickwit_proto::FetchDocsRequest| {
-                Ok(quickwit_proto::FetchDocsResponse {
+            |fetch_docs_req: quickwit_proto::search::FetchDocsRequest| {
+                Ok(quickwit_proto::search::FetchDocsResponse {
                     hits: get_doc_for_fetch_req(fetch_docs_req),
                 })
             },
@@ -1208,7 +1208,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_root_search_multiple_splits() -> anyhow::Result<()> {
-        let search_request = quickwit_proto::SearchRequest {
+        let search_request = quickwit_proto::search::SearchRequest {
             index_id: "test-index".to_string(),
             query_ast: qast_helper("test", &["body"]),
             max_hits: 10,
@@ -1228,8 +1228,8 @@ mod tests {
             .returning(|_filter| Ok(vec![mock_split("split1"), mock_split("split2")]));
         let mut mock_search_service_1 = MockSearchService::new();
         mock_search_service_1.expect_leaf_search().returning(
-            |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
-                Ok(quickwit_proto::LeafSearchResponse {
+            |_leaf_search_req: quickwit_proto::search::LeafSearchRequest| {
+                Ok(quickwit_proto::search::LeafSearchResponse {
                     num_hits: 2,
                     partial_hits: vec![
                         mock_partial_hit("split1", 3, 1),
@@ -1242,16 +1242,16 @@ mod tests {
             },
         );
         mock_search_service_1.expect_fetch_docs().returning(
-            |fetch_docs_req: quickwit_proto::FetchDocsRequest| {
-                Ok(quickwit_proto::FetchDocsResponse {
+            |fetch_docs_req: quickwit_proto::search::FetchDocsRequest| {
+                Ok(quickwit_proto::search::FetchDocsResponse {
                     hits: get_doc_for_fetch_req(fetch_docs_req),
                 })
             },
         );
         let mut mock_search_service_2 = MockSearchService::new();
         mock_search_service_2.expect_leaf_search().returning(
-            |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
-                Ok(quickwit_proto::LeafSearchResponse {
+            |_leaf_search_req: quickwit_proto::search::LeafSearchRequest| {
+                Ok(quickwit_proto::search::LeafSearchResponse {
                     num_hits: 1,
                     partial_hits: vec![mock_partial_hit("split2", 2, 2)],
                     failed_splits: Vec::new(),
@@ -1261,8 +1261,8 @@ mod tests {
             },
         );
         mock_search_service_2.expect_fetch_docs().returning(
-            |fetch_docs_req: quickwit_proto::FetchDocsRequest| {
-                Ok(quickwit_proto::FetchDocsResponse {
+            |fetch_docs_req: quickwit_proto::search::FetchDocsRequest| {
+                Ok(quickwit_proto::search::FetchDocsResponse {
                     hits: get_doc_for_fetch_req(fetch_docs_req),
                 })
             },
@@ -1289,7 +1289,7 @@ mod tests {
     #[tokio::test]
     async fn test_root_search_multiple_splits_sort_heteregeneous_field_ascending(
     ) -> anyhow::Result<()> {
-        let mut search_request = quickwit_proto::SearchRequest {
+        let mut search_request = quickwit_proto::search::SearchRequest {
             index_id: "test-index".to_string(),
             query_ast: qast_helper("test", &["body"]),
             max_hits: 10,
@@ -1312,18 +1312,18 @@ mod tests {
             .returning(|_filter| Ok(vec![mock_split("split1"), mock_split("split2")]));
         let mut mock_search_service_1 = MockSearchService::new();
         mock_search_service_1.expect_leaf_search().returning(
-            |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
-                Ok(quickwit_proto::LeafSearchResponse {
+            |_leaf_search_req: quickwit_proto::search::LeafSearchRequest| {
+                Ok(quickwit_proto::search::LeafSearchResponse {
                     num_hits: 2,
                     partial_hits: vec![
-                        quickwit_proto::PartialHit {
+                        quickwit_proto::search::PartialHit {
                             sort_value: Some(SortValue::U64(2u64).into()),
                             sort_value2: None,
                             split_id: "split1".to_string(),
                             segment_ord: 0,
                             doc_id: 0,
                         },
-                        quickwit_proto::PartialHit {
+                        quickwit_proto::search::PartialHit {
                             sort_value: None,
                             sort_value2: None,
                             split_id: "split1".to_string(),
@@ -1338,33 +1338,33 @@ mod tests {
             },
         );
         mock_search_service_1.expect_fetch_docs().returning(
-            |fetch_docs_req: quickwit_proto::FetchDocsRequest| {
-                Ok(quickwit_proto::FetchDocsResponse {
+            |fetch_docs_req: quickwit_proto::search::FetchDocsRequest| {
+                Ok(quickwit_proto::search::FetchDocsResponse {
                     hits: get_doc_for_fetch_req(fetch_docs_req),
                 })
             },
         );
         let mut mock_search_service_2 = MockSearchService::new();
         mock_search_service_2.expect_leaf_search().returning(
-            |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
-                Ok(quickwit_proto::LeafSearchResponse {
+            |_leaf_search_req: quickwit_proto::search::LeafSearchRequest| {
+                Ok(quickwit_proto::search::LeafSearchResponse {
                     num_hits: 3,
                     partial_hits: vec![
-                        quickwit_proto::PartialHit {
+                        quickwit_proto::search::PartialHit {
                             sort_value: Some(SortValue::I64(-1i64).into()),
                             sort_value2: None,
                             split_id: "split2".to_string(),
                             segment_ord: 0,
                             doc_id: 1,
                         },
-                        quickwit_proto::PartialHit {
+                        quickwit_proto::search::PartialHit {
                             sort_value: Some(SortValue::I64(1i64).into()),
                             sort_value2: None,
                             split_id: "split2".to_string(),
                             segment_ord: 0,
                             doc_id: 0,
                         },
-                        quickwit_proto::PartialHit {
+                        quickwit_proto::search::PartialHit {
                             sort_value: None,
                             sort_value2: None,
                             split_id: "split2".to_string(),
@@ -1379,8 +1379,8 @@ mod tests {
             },
         );
         mock_search_service_2.expect_fetch_docs().returning(
-            |fetch_docs_req: quickwit_proto::FetchDocsRequest| {
-                Ok(quickwit_proto::FetchDocsResponse {
+            |fetch_docs_req: quickwit_proto::search::FetchDocsRequest| {
+                Ok(quickwit_proto::search::FetchDocsResponse {
                     hits: get_doc_for_fetch_req(fetch_docs_req),
                 })
             },
@@ -1457,7 +1457,7 @@ mod tests {
     #[tokio::test]
     async fn test_root_search_multiple_splits_sort_heteregeneous_field_descending(
     ) -> anyhow::Result<()> {
-        let search_request = quickwit_proto::SearchRequest {
+        let search_request = quickwit_proto::search::SearchRequest {
             index_id: "test-index".to_string(),
             query_ast: qast_helper("test", &["body"]),
             max_hits: 10,
@@ -1477,18 +1477,18 @@ mod tests {
             .returning(|_filter| Ok(vec![mock_split("split1"), mock_split("split2")]));
         let mut mock_search_service_1 = MockSearchService::new();
         mock_search_service_1.expect_leaf_search().returning(
-            |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
-                Ok(quickwit_proto::LeafSearchResponse {
+            |_leaf_search_req: quickwit_proto::search::LeafSearchRequest| {
+                Ok(quickwit_proto::search::LeafSearchResponse {
                     num_hits: 2,
                     partial_hits: vec![
-                        quickwit_proto::PartialHit {
+                        quickwit_proto::search::PartialHit {
                             sort_value: Some(SortValue::U64(2u64).into()),
                             sort_value2: None,
                             split_id: "split1".to_string(),
                             segment_ord: 0,
                             doc_id: 0,
                         },
-                        quickwit_proto::PartialHit {
+                        quickwit_proto::search::PartialHit {
                             sort_value: None,
                             sort_value2: None,
                             split_id: "split1".to_string(),
@@ -1503,33 +1503,33 @@ mod tests {
             },
         );
         mock_search_service_1.expect_fetch_docs().returning(
-            |fetch_docs_req: quickwit_proto::FetchDocsRequest| {
-                Ok(quickwit_proto::FetchDocsResponse {
+            |fetch_docs_req: quickwit_proto::search::FetchDocsRequest| {
+                Ok(quickwit_proto::search::FetchDocsResponse {
                     hits: get_doc_for_fetch_req(fetch_docs_req),
                 })
             },
         );
         let mut mock_search_service_2 = MockSearchService::new();
         mock_search_service_2.expect_leaf_search().returning(
-            |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
-                Ok(quickwit_proto::LeafSearchResponse {
+            |_leaf_search_req: quickwit_proto::search::LeafSearchRequest| {
+                Ok(quickwit_proto::search::LeafSearchResponse {
                     num_hits: 3,
                     partial_hits: vec![
-                        quickwit_proto::PartialHit {
+                        quickwit_proto::search::PartialHit {
                             sort_value: Some(SortValue::I64(1i64).into()),
                             sort_value2: None,
                             split_id: "split2".to_string(),
                             segment_ord: 0,
                             doc_id: 0,
                         },
-                        quickwit_proto::PartialHit {
+                        quickwit_proto::search::PartialHit {
                             sort_value: Some(SortValue::I64(-1i64).into()),
                             sort_value2: None,
                             split_id: "split2".to_string(),
                             segment_ord: 0,
                             doc_id: 1,
                         },
-                        quickwit_proto::PartialHit {
+                        quickwit_proto::search::PartialHit {
                             sort_value: None,
                             sort_value2: None,
                             split_id: "split2".to_string(),
@@ -1544,8 +1544,8 @@ mod tests {
             },
         );
         mock_search_service_2.expect_fetch_docs().returning(
-            |fetch_docs_req: quickwit_proto::FetchDocsRequest| {
-                Ok(quickwit_proto::FetchDocsResponse {
+            |fetch_docs_req: quickwit_proto::search::FetchDocsRequest| {
+                Ok(quickwit_proto::search::FetchDocsResponse {
                     hits: get_doc_for_fetch_req(fetch_docs_req),
                 })
             },
@@ -1621,7 +1621,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_root_search_multiple_splits_retry_on_other_node() -> anyhow::Result<()> {
-        let search_request = quickwit_proto::SearchRequest {
+        let search_request = quickwit_proto::search::SearchRequest {
             index_id: "test-index".to_string(),
             query_ast: qast_helper("test", &["body"]),
             max_hits: 10,
@@ -1644,23 +1644,25 @@ mod tests {
         mock_search_service_1
             .expect_leaf_search()
             .times(1)
-            .returning(|_leaf_search_req: quickwit_proto::LeafSearchRequest| {
-                Ok(quickwit_proto::LeafSearchResponse {
-                    // requests from split 2 arrive here - simulate failure
-                    num_hits: 0,
-                    partial_hits: Vec::new(),
-                    failed_splits: vec![SplitSearchError {
-                        error: "mock_error".to_string(),
-                        split_id: "split2".to_string(),
-                        retryable_error: true,
-                    }],
-                    num_attempted_splits: 1,
-                    ..Default::default()
-                })
-            });
+            .returning(
+                |_leaf_search_req: quickwit_proto::search::LeafSearchRequest| {
+                    Ok(quickwit_proto::search::LeafSearchResponse {
+                        // requests from split 2 arrive here - simulate failure
+                        num_hits: 0,
+                        partial_hits: Vec::new(),
+                        failed_splits: vec![SplitSearchError {
+                            error: "mock_error".to_string(),
+                            split_id: "split2".to_string(),
+                            retryable_error: true,
+                        }],
+                        num_attempted_splits: 1,
+                        ..Default::default()
+                    })
+                },
+            );
         mock_search_service_1.expect_fetch_docs().returning(
-            |fetch_docs_req: quickwit_proto::FetchDocsRequest| {
-                Ok(quickwit_proto::FetchDocsResponse {
+            |fetch_docs_req: quickwit_proto::search::FetchDocsRequest| {
+                Ok(quickwit_proto::search::FetchDocsResponse {
                     hits: get_doc_for_fetch_req(fetch_docs_req),
                 })
             },
@@ -1669,39 +1671,41 @@ mod tests {
         mock_search_service_2
             .expect_leaf_search()
             .times(2)
-            .returning(|leaf_search_req: quickwit_proto::LeafSearchRequest| {
-                let split_ids: Vec<&str> = leaf_search_req
-                    .split_offsets
-                    .iter()
-                    .map(|metadata| metadata.split_id.as_str())
-                    .collect();
-                if split_ids == ["split1"] {
-                    Ok(quickwit_proto::LeafSearchResponse {
-                        num_hits: 2,
-                        partial_hits: vec![
-                            mock_partial_hit("split1", 3, 1),
-                            mock_partial_hit("split1", 1, 3),
-                        ],
-                        failed_splits: Vec::new(),
-                        num_attempted_splits: 1,
-                        ..Default::default()
-                    })
-                } else if split_ids == ["split2"] {
-                    // RETRY REQUEST!
-                    Ok(quickwit_proto::LeafSearchResponse {
-                        num_hits: 1,
-                        partial_hits: vec![mock_partial_hit("split2", 2, 2)],
-                        failed_splits: Vec::new(),
-                        num_attempted_splits: 1,
-                        ..Default::default()
-                    })
-                } else {
-                    panic!("unexpected request in test {split_ids:?}");
-                }
-            });
+            .returning(
+                |leaf_search_req: quickwit_proto::search::LeafSearchRequest| {
+                    let split_ids: Vec<&str> = leaf_search_req
+                        .split_offsets
+                        .iter()
+                        .map(|metadata| metadata.split_id.as_str())
+                        .collect();
+                    if split_ids == ["split1"] {
+                        Ok(quickwit_proto::search::LeafSearchResponse {
+                            num_hits: 2,
+                            partial_hits: vec![
+                                mock_partial_hit("split1", 3, 1),
+                                mock_partial_hit("split1", 1, 3),
+                            ],
+                            failed_splits: Vec::new(),
+                            num_attempted_splits: 1,
+                            ..Default::default()
+                        })
+                    } else if split_ids == ["split2"] {
+                        // RETRY REQUEST!
+                        Ok(quickwit_proto::search::LeafSearchResponse {
+                            num_hits: 1,
+                            partial_hits: vec![mock_partial_hit("split2", 2, 2)],
+                            failed_splits: Vec::new(),
+                            num_attempted_splits: 1,
+                            ..Default::default()
+                        })
+                    } else {
+                        panic!("unexpected request in test {split_ids:?}");
+                    }
+                },
+            );
         mock_search_service_2.expect_fetch_docs().returning(
-            |fetch_docs_req: quickwit_proto::FetchDocsRequest| {
-                Ok(quickwit_proto::FetchDocsResponse {
+            |fetch_docs_req: quickwit_proto::search::FetchDocsRequest| {
+                Ok(quickwit_proto::search::FetchDocsResponse {
                     hits: get_doc_for_fetch_req(fetch_docs_req),
                 })
             },
@@ -1727,7 +1731,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_root_search_multiple_splits_retry_on_all_nodes() -> anyhow::Result<()> {
-        let search_request = quickwit_proto::SearchRequest {
+        let search_request = quickwit_proto::search::SearchRequest {
             index_id: "test-index".to_string(),
             query_ast: qast_helper("test", &["body"]),
             max_hits: 10,
@@ -1752,7 +1756,7 @@ mod tests {
             .return_once(|_| {
                 // requests from split 2 arrive here - simulate failure.
                 // a retry will be made on the second service.
-                Ok(quickwit_proto::LeafSearchResponse {
+                Ok(quickwit_proto::search::LeafSearchResponse {
                     num_hits: 0,
                     partial_hits: Vec::new(),
                     failed_splits: vec![SplitSearchError {
@@ -1769,7 +1773,7 @@ mod tests {
             .withf(|leaf_search_req| leaf_search_req.split_offsets[0].split_id == "split1")
             .return_once(|_| {
                 // RETRY REQUEST from split1
-                Ok(quickwit_proto::LeafSearchResponse {
+                Ok(quickwit_proto::search::LeafSearchResponse {
                     num_hits: 2,
                     partial_hits: vec![
                         mock_partial_hit("split1", 3, 1),
@@ -1781,8 +1785,8 @@ mod tests {
                 })
             });
         mock_search_service_1.expect_fetch_docs().returning(
-            |fetch_docs_req: quickwit_proto::FetchDocsRequest| {
-                Ok(quickwit_proto::FetchDocsResponse {
+            |fetch_docs_req: quickwit_proto::search::FetchDocsRequest| {
+                Ok(quickwit_proto::search::FetchDocsResponse {
                     hits: get_doc_for_fetch_req(fetch_docs_req),
                 })
             },
@@ -1793,7 +1797,7 @@ mod tests {
             .withf(|leaf_search_req| leaf_search_req.split_offsets[0].split_id == "split2")
             .return_once(|_| {
                 // retry for split 2 arrive here, simulate success.
-                Ok(quickwit_proto::LeafSearchResponse {
+                Ok(quickwit_proto::search::LeafSearchResponse {
                     num_hits: 1,
                     partial_hits: vec![mock_partial_hit("split2", 2, 2)],
                     failed_splits: Vec::new(),
@@ -1806,7 +1810,7 @@ mod tests {
             .withf(|leaf_search_req| leaf_search_req.split_offsets[0].split_id == "split1")
             .return_once(|_| {
                 // requests from split 1 arrive here - simulate failure, then success.
-                Ok(quickwit_proto::LeafSearchResponse {
+                Ok(quickwit_proto::search::LeafSearchResponse {
                     // requests from split 2 arrive here - simulate failure
                     num_hits: 0,
                     partial_hits: Vec::new(),
@@ -1820,8 +1824,8 @@ mod tests {
                 })
             });
         mock_search_service_2.expect_fetch_docs().returning(
-            |fetch_docs_req: quickwit_proto::FetchDocsRequest| {
-                Ok(quickwit_proto::FetchDocsResponse {
+            |fetch_docs_req: quickwit_proto::search::FetchDocsRequest| {
+                Ok(quickwit_proto::search::FetchDocsResponse {
                     hits: get_doc_for_fetch_req(fetch_docs_req),
                 })
             },
@@ -1847,7 +1851,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_root_search_single_split_retry_single_node() -> anyhow::Result<()> {
-        let search_request = quickwit_proto::SearchRequest {
+        let search_request = quickwit_proto::search::SearchRequest {
             index_id: "test-index".to_string(),
             query_ast: qast_helper("test", &["body"]),
             max_hits: 10,
@@ -1868,11 +1872,11 @@ mod tests {
         let mut first_call = true;
         let mut mock_search_service = MockSearchService::new();
         mock_search_service.expect_leaf_search().times(2).returning(
-            move |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
+            move |_leaf_search_req: quickwit_proto::search::LeafSearchRequest| {
                 // requests from split 2 arrive here - simulate failure, then success
                 if first_call {
                     first_call = false;
-                    Ok(quickwit_proto::LeafSearchResponse {
+                    Ok(quickwit_proto::search::LeafSearchResponse {
                         num_hits: 0,
                         partial_hits: Vec::new(),
                         failed_splits: vec![SplitSearchError {
@@ -1884,7 +1888,7 @@ mod tests {
                         ..Default::default()
                     })
                 } else {
-                    Ok(quickwit_proto::LeafSearchResponse {
+                    Ok(quickwit_proto::search::LeafSearchResponse {
                         num_hits: 1,
                         partial_hits: vec![mock_partial_hit("split1", 2, 2)],
                         failed_splits: Vec::new(),
@@ -1895,8 +1899,8 @@ mod tests {
             },
         );
         mock_search_service.expect_fetch_docs().returning(
-            |fetch_docs_req: quickwit_proto::FetchDocsRequest| {
-                Ok(quickwit_proto::FetchDocsResponse {
+            |fetch_docs_req: quickwit_proto::search::FetchDocsRequest| {
+                Ok(quickwit_proto::search::FetchDocsResponse {
                     hits: get_doc_for_fetch_req(fetch_docs_req),
                 })
             },
@@ -1919,7 +1923,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_root_search_single_split_retry_single_node_fails() -> anyhow::Result<()> {
-        let search_request = quickwit_proto::SearchRequest {
+        let search_request = quickwit_proto::search::SearchRequest {
             index_id: "test-index".to_string(),
             query_ast: qast_helper("test", &["body"]),
             max_hits: 10,
@@ -1940,8 +1944,8 @@ mod tests {
 
         let mut mock_search_service = MockSearchService::new();
         mock_search_service.expect_leaf_search().times(2).returning(
-            move |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
-                Ok(quickwit_proto::LeafSearchResponse {
+            move |_leaf_search_req: quickwit_proto::search::LeafSearchRequest| {
+                Ok(quickwit_proto::search::LeafSearchResponse {
                     num_hits: 0,
                     partial_hits: Vec::new(),
                     failed_splits: vec![SplitSearchError {
@@ -1955,7 +1959,7 @@ mod tests {
             },
         );
         mock_search_service.expect_fetch_docs().returning(
-            |_fetch_docs_req: quickwit_proto::FetchDocsRequest| {
+            |_fetch_docs_req: quickwit_proto::search::FetchDocsRequest| {
                 Err(SearchError::InternalError("mockerr docs".to_string()))
             },
         );
@@ -1976,7 +1980,7 @@ mod tests {
     #[tokio::test]
     async fn test_root_search_one_splits_two_nodes_but_one_is_failing_for_split(
     ) -> anyhow::Result<()> {
-        let search_request = quickwit_proto::SearchRequest {
+        let search_request = quickwit_proto::search::SearchRequest {
             index_id: "test-index".to_string(),
             query_ast: qast_helper("test", &["body"]),
             max_hits: 10,
@@ -1997,9 +2001,9 @@ mod tests {
         // Service1 - broken node.
         let mut mock_search_service_1 = MockSearchService::new();
         mock_search_service_1.expect_leaf_search().returning(
-            move |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
+            move |_leaf_search_req: quickwit_proto::search::LeafSearchRequest| {
                 // retry requests from split 1 arrive here
-                Ok(quickwit_proto::LeafSearchResponse {
+                Ok(quickwit_proto::search::LeafSearchResponse {
                     num_hits: 1,
                     partial_hits: vec![mock_partial_hit("split1", 2, 2)],
                     failed_splits: Vec::new(),
@@ -2009,8 +2013,8 @@ mod tests {
             },
         );
         mock_search_service_1.expect_fetch_docs().returning(
-            |fetch_docs_req: quickwit_proto::FetchDocsRequest| {
-                Ok(quickwit_proto::FetchDocsResponse {
+            |fetch_docs_req: quickwit_proto::search::FetchDocsRequest| {
+                Ok(quickwit_proto::search::FetchDocsResponse {
                     hits: get_doc_for_fetch_req(fetch_docs_req),
                 })
             },
@@ -2018,8 +2022,8 @@ mod tests {
         // Service2 - working node.
         let mut mock_search_service_2 = MockSearchService::new();
         mock_search_service_2.expect_leaf_search().returning(
-            move |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
-                Ok(quickwit_proto::LeafSearchResponse {
+            move |_leaf_search_req: quickwit_proto::search::LeafSearchRequest| {
+                Ok(quickwit_proto::search::LeafSearchResponse {
                     num_hits: 0,
                     partial_hits: Vec::new(),
                     failed_splits: vec![SplitSearchError {
@@ -2033,7 +2037,7 @@ mod tests {
             },
         );
         mock_search_service_2.expect_fetch_docs().returning(
-            |_fetch_docs_req: quickwit_proto::FetchDocsRequest| {
+            |_fetch_docs_req: quickwit_proto::search::FetchDocsRequest| {
                 Err(SearchError::InternalError("mockerr docs".to_string()))
             },
         );
@@ -2059,7 +2063,7 @@ mod tests {
     #[tokio::test]
     async fn test_root_search_one_splits_two_nodes_but_one_is_failing_completely(
     ) -> anyhow::Result<()> {
-        let search_request = quickwit_proto::SearchRequest {
+        let search_request = quickwit_proto::search::SearchRequest {
             index_id: "test-index".to_string(),
             query_ast: qast_helper("test", &["body"]),
             max_hits: 10,
@@ -2081,8 +2085,8 @@ mod tests {
         // Service1 - working node.
         let mut mock_search_service_1 = MockSearchService::new();
         mock_search_service_1.expect_leaf_search().returning(
-            move |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
-                Ok(quickwit_proto::LeafSearchResponse {
+            move |_leaf_search_req: quickwit_proto::search::LeafSearchRequest| {
+                Ok(quickwit_proto::search::LeafSearchResponse {
                     num_hits: 1,
                     partial_hits: vec![mock_partial_hit("split1", 2, 2)],
                     failed_splits: Vec::new(),
@@ -2092,8 +2096,8 @@ mod tests {
             },
         );
         mock_search_service_1.expect_fetch_docs().returning(
-            |fetch_docs_req: quickwit_proto::FetchDocsRequest| {
-                Ok(quickwit_proto::FetchDocsResponse {
+            |fetch_docs_req: quickwit_proto::search::FetchDocsRequest| {
+                Ok(quickwit_proto::search::FetchDocsResponse {
                     hits: get_doc_for_fetch_req(fetch_docs_req),
                 })
             },
@@ -2101,12 +2105,12 @@ mod tests {
         // Service2 - broken node.
         let mut mock_search_service_2 = MockSearchService::new();
         mock_search_service_2.expect_leaf_search().returning(
-            move |_leaf_search_req: quickwit_proto::LeafSearchRequest| {
+            move |_leaf_search_req: quickwit_proto::search::LeafSearchRequest| {
                 Err(SearchError::InternalError("mockerr search".to_string()))
             },
         );
         mock_search_service_2.expect_fetch_docs().returning(
-            |_fetch_docs_req: quickwit_proto::FetchDocsRequest| {
+            |_fetch_docs_req: quickwit_proto::search::FetchDocsRequest| {
                 Err(SearchError::InternalError("mockerr docs".to_string()))
             },
         );
@@ -2150,7 +2154,7 @@ mod tests {
 
         assert!(root_search(
             &SearcherContext::new(SearcherConfig::default()),
-            quickwit_proto::SearchRequest {
+            quickwit_proto::search::SearchRequest {
                 index_id: "test-index".to_string(),
                 query_ast: qast_helper("invalid_field:\"test\"", &["body"]),
                 max_hits: 10,
@@ -2164,7 +2168,7 @@ mod tests {
 
         assert!(root_search(
             &SearcherContext::new(SearcherConfig::default()),
-            quickwit_proto::SearchRequest {
+            quickwit_proto::search::SearchRequest {
                 index_id: "test-index".to_string(),
                 query_ast: qast_helper("test", &["invalid_field"]),
                 max_hits: 10,
@@ -2200,7 +2204,7 @@ mod tests {
                 }
             }"#;
 
-        let search_request = quickwit_proto::SearchRequest {
+        let search_request = quickwit_proto::search::SearchRequest {
             index_id: "test-index".to_string(),
             query_ast: qast_helper("test", &["body"]),
             max_hits: 10,
@@ -2240,7 +2244,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_root_search_invalid_request() -> anyhow::Result<()> {
-        let search_request = quickwit_proto::SearchRequest {
+        let search_request = quickwit_proto::search::SearchRequest {
             index_id: "test-index".to_string(),
             query_ast: qast_helper("test", &["body"]),
             max_hits: 10,
@@ -2275,7 +2279,7 @@ mod tests {
             "Invalid argument: max value for start_offset is 10_000, but got 20000",
         );
 
-        let search_request = quickwit_proto::SearchRequest {
+        let search_request = quickwit_proto::search::SearchRequest {
             index_id: "test-index".to_string(),
             query_ast: qast_helper("test", &["body"]),
             max_hits: 20_000,
@@ -2412,7 +2416,7 @@ mod tests {
 
     fn create_search_resp(hit_range: Range<usize>) -> LeafSearchResponse {
         let truncate_range = hit_range.start.min(TOTAL_NUM_HITS)..hit_range.end.min(TOTAL_NUM_HITS);
-        quickwit_proto::LeafSearchResponse {
+        quickwit_proto::search::LeafSearchResponse {
             num_hits: TOTAL_NUM_HITS as u64,
             partial_hits: truncate_range
                 .map(|doc_id| mock_partial_hit("split1", u64::MAX - doc_id as u64, doc_id as u32))
@@ -2441,7 +2445,7 @@ mod tests {
             .returning(|_filter| Ok(vec![mock_split("split1")]));
         let mut mock_search_service = MockSearchService::new();
         mock_search_service.expect_leaf_search().once().returning(
-            |req: quickwit_proto::LeafSearchRequest| {
+            |req: quickwit_proto::search::LeafSearchRequest| {
                 let search_req: &SearchRequest = req.search_request.as_ref().unwrap();
                 // the leaf request does not need to know about the scroll_ttl.
                 assert_eq!(search_req.start_offset, 0u64);
@@ -2454,7 +2458,7 @@ mod tests {
             },
         );
         mock_search_service.expect_leaf_search().once().returning(
-            |req: quickwit_proto::LeafSearchRequest| {
+            |req: quickwit_proto::search::LeafSearchRequest| {
                 let search_req: &SearchRequest = req.search_request.as_ref().unwrap();
                 // the leaf request does not need to know about the scroll_ttl.
                 assert_eq!(search_req.start_offset, 0u64);
@@ -2467,7 +2471,7 @@ mod tests {
             },
         );
         mock_search_service.expect_leaf_search().once().returning(
-            |req: quickwit_proto::LeafSearchRequest| {
+            |req: quickwit_proto::search::LeafSearchRequest| {
                 let search_req: &SearchRequest = req.search_request.as_ref().unwrap();
                 // the leaf request does not need to know about the scroll_ttl.
                 assert_eq!(search_req.start_offset, 0u64);
@@ -2493,9 +2497,9 @@ mod tests {
             .expect_get_kv()
             .returning(move |get_kv_req| kv.read().unwrap().get(&get_kv_req.key).cloned());
         mock_search_service.expect_fetch_docs().returning(
-            |fetch_docs_req: quickwit_proto::FetchDocsRequest| {
+            |fetch_docs_req: quickwit_proto::search::FetchDocsRequest| {
                 assert!(fetch_docs_req.partial_hits.len() <= MAX_HITS_PER_PAGE);
-                Ok(quickwit_proto::FetchDocsResponse {
+                Ok(quickwit_proto::search::FetchDocsResponse {
                     hits: get_doc_for_fetch_req(fetch_docs_req),
                 })
             },
@@ -2508,7 +2512,7 @@ mod tests {
         let mut count_seen_hits = 0;
 
         let mut scroll_id: String = {
-            let search_request = quickwit_proto::SearchRequest {
+            let search_request = quickwit_proto::search::SearchRequest {
                 index_id: "test-index".to_string(),
                 query_ast: qast_helper("test", &["body"]),
                 max_hits: MAX_HITS_PER_PAGE as u64,

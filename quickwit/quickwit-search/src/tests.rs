@@ -25,9 +25,9 @@ use quickwit_config::SearcherConfig;
 use quickwit_doc_mapper::DefaultDocMapper;
 use quickwit_indexing::TestSandbox;
 use quickwit_opentelemetry::otlp::TraceId;
-use quickwit_proto::{
-    LeafListTermsResponse, SearchRequest, SearchResponse, SortByValue, SortField, SortOrder,
-    SortValue,
+use quickwit_proto::search::{
+    LeafListTermsResponse, ListTermsRequest, SearchRequest, SearchResponse, SortByValue, SortField,
+    SortOrder, SortValue,
 };
 use quickwit_query::query_ast::{qast_helper, query_ast_from_user_text};
 use serde_json::{json, Value as JsonValue};
@@ -1010,7 +1010,7 @@ async fn test_search_util(test_sandbox: &TestSandbox, query: &str) -> Vec<u32> {
         .into_iter()
         .map(|split_meta| extract_split_and_footer_offsets(&split_meta.split_metadata))
         .collect();
-    let request = quickwit_proto::SearchRequest {
+    let request = SearchRequest {
         index_id: test_sandbox.index_uid().index_id().to_string(),
         query_ast: qast_helper(query, &[]),
         max_hits: 100,
@@ -1644,7 +1644,7 @@ async fn test_single_node_list_terms() -> anyhow::Result<()> {
     let searcher_context = Arc::new(SearcherContext::new(SearcherConfig::default()));
 
     {
-        let request = quickwit_proto::ListTermsRequest {
+        let request = ListTermsRequest {
             index_id: test_sandbox.index_uid().index_id().to_string(),
             field: "title".to_string(),
             start_key: None,
@@ -1665,7 +1665,7 @@ async fn test_single_node_list_terms() -> anyhow::Result<()> {
         assert_eq!(terms, &["beagle", "snoopy",]);
     }
     {
-        let request = quickwit_proto::ListTermsRequest {
+        let request = ListTermsRequest {
             index_id: test_sandbox.index_uid().index_id().to_string(),
             field: "title".to_string(),
             start_key: None,
@@ -1686,7 +1686,7 @@ async fn test_single_node_list_terms() -> anyhow::Result<()> {
         assert_eq!(terms, &["beagle"]);
     }
     {
-        let request = quickwit_proto::ListTermsRequest {
+        let request = ListTermsRequest {
             index_id: test_sandbox.index_uid().index_id().to_string(),
             field: "title".to_string(),
             start_key: Some("casper".as_bytes().to_vec()),
@@ -1707,7 +1707,7 @@ async fn test_single_node_list_terms() -> anyhow::Result<()> {
         assert_eq!(terms, &["snoopy"]);
     }
     {
-        let request = quickwit_proto::ListTermsRequest {
+        let request = ListTermsRequest {
             index_id: test_sandbox.index_uid().index_id().to_string(),
             field: "title".to_string(),
             start_key: None,

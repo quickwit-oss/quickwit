@@ -31,7 +31,7 @@ pub use error::ElasticSearchError;
 pub use multi_search::{
     MultiSearchHeader, MultiSearchQueryParams, MultiSearchResponse, MultiSearchSingleResponse,
 };
-use quickwit_proto::SortOrder;
+use quickwit_proto::search::SortOrder;
 pub use scroll::ScrollQueryParams;
 pub use search_body::SearchBody;
 pub use search_query_params::SearchQueryParams;

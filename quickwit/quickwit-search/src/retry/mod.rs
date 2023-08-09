@@ -85,7 +85,7 @@ mod tests {
     use std::net::SocketAddr;
     use std::sync::Arc;
 
-    use quickwit_proto::{FetchDocsResponse, SplitIdAndFooterOffsets};
+    use quickwit_proto::search::{FetchDocsResponse, SplitIdAndFooterOffsets};
 
     use crate::retry::{retry_client, DefaultRetryPolicy, RetryPolicy};
     use crate::{
