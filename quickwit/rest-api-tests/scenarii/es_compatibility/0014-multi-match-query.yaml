@@ -1,0 +1,124 @@
+json:
+  engines:
+    - quickwit
+  query:
+    multi_match:
+      query: sign decoration
+      fields: []
+status_code:
+  400
+expected:
+---
+json:
+  query:
+    multi_match:
+      query: sign decoration
+      fields: ["payload.commits.message"]
+expected:
+  hits:
+    total:
+      value: 1
+---
+json:
+  query:
+    multi_match:
+      query: sign decoration
+      # Apparently elasticsearch accepts a string here.
+      fields: "payload.commits.message"
+expected:
+  hits:
+    total:
+      value: 1
+---
+json:
+  query:
+    multi_match:
+      query: sign decoration
+      fields:
+        - inexistent_field
+        - payload.commits.message
+expected:
+  hits:
+    total:
+      value: 1
+---
+json:
+  query:
+    multi_match:
+      type: phrase
+      query: sign decoration
+      fields: ["payload.commits.message"]
+expected:
+  hits:
+    total:
+      value: 1
+---
+json:
+  query:
+    multi_match:
+      type: phrase
+      query: zone explosion
+      fields: ["payload.commits.message"]
+expected:
+  hits:
+    total:
+      value: 0
+---
+json:
+  query:
+    multi_match:
+      type: phrase
+      query: zone explosion
+      slop: 1
+      fields: ["payload.commits.message"]
+expected:
+  hits:
+    total:
+      value: 1
+---
+json:
+  query:
+    multi_match:
+      type: most_fields
+      query: the pomle missingtoken
+      fields: ["payload.commits.message", "actor.login"]
+expected:
+  hits:
+    total:
+      value: 4
+---
+# This query fails on elasticsearch, with an error message
+# explaining position are missing for one of the fields.
+#
+# Todo: Somehow we accept it on quickwit.
+engines:
+  - elasticsearch
+json:
+  query:
+    multi_match:
+      type: phrase
+      query: the pomle missingtoken
+      fields: ["payload.commits.message", "actor.login"]
+status_code: 400
+---
+json:
+  query:
+    multi_match:
+      type: phrase
+      query: zone of expl
+      fields: ["payload.commits.message"]
+expected:
+  hits:
+    total:
+      value: 0
+---
+json:
+  query:
+    multi_match:
+      type: phrase_prefix
+      query: zone of expl
+      fields: ["payload.commits.message"]
+expected:
+  hits:
+    total:
+      value: 1

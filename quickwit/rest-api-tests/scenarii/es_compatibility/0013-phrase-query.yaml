@@ -1,0 +1,42 @@
+json:
+  query:
+    match_phrase:
+      payload.commits.message: sign decoration
+expected:
+  hits:
+    total:
+      value: 1
+---
+json:
+  query:
+    match_phrase:
+      payload.commits.message:
+        query: sign decoration
+expected:
+  hits:
+    total:
+      value: 1
+---
+json:
+  query:
+    match_phrase:
+      # There is a "zone of explosion" message.
+      # Without slop no matches!
+      payload.commits.message: zone explosion
+expected:
+  hits:
+    total:
+      value: 0
+---
+json:
+  query:
+    match_phrase:
+      # There is a "zone of explosion" message.
+      # Without slop no matches!
+      payload.commits.message:
+        query: zone explosion
+        slop: 1
+expected:
+  hits:
+    total:
+      value: 1
