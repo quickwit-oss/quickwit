@@ -29,7 +29,9 @@ use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler};
 use quickwit_config::SourceConfig;
 use quickwit_metastore::Metastore;
-use quickwit_proto::control_plane::{NotifyIndexChangeRequest, NotifyIndexChangeResponse};
+use quickwit_proto::control_plane::{
+    ControlPlaneResult, NotifyIndexChangeRequest, NotifyIndexChangeResponse,
+};
 use quickwit_proto::indexing::{ApplyIndexingPlanRequest, IndexingService, IndexingTask};
 use serde::Serialize;
 use tracing::{debug, error, info, warn};
@@ -298,7 +300,7 @@ impl IndexingScheduler {
 
 #[async_trait]
 impl Handler<NotifyIndexChangeRequest> for IndexingScheduler {
-    type Reply = quickwit_proto::control_plane::Result<NotifyIndexChangeResponse>;
+    type Reply = ControlPlaneResult<NotifyIndexChangeResponse>;
 
     async fn handle(
         &mut self,

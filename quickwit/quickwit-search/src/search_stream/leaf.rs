@@ -24,7 +24,7 @@ use std::sync::Arc;
 
 use futures::{FutureExt, StreamExt};
 use quickwit_doc_mapper::DocMapper;
-use quickwit_proto::{
+use quickwit_proto::search::{
     LeafSearchStreamResponse, OutputFormat, SearchRequest, SearchStreamRequest,
     SplitIdAndFooterOffsets,
 };

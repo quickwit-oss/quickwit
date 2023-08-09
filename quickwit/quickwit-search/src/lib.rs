@@ -62,9 +62,8 @@ pub use find_trace_ids_collector::FindTraceIdsCollector;
 use quickwit_config::SearcherConfig;
 use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
 use quickwit_metastore::{ListSplitsQuery, Metastore, SplitMetadata, SplitState};
-use quickwit_proto::{
-    IndexUid, PartialHit, SearchRequest, SearchResponse, SplitIdAndFooterOffsets,
-};
+use quickwit_proto::search::{PartialHit, SearchRequest, SearchResponse, SplitIdAndFooterOffsets};
+use quickwit_proto::IndexUid;
 use quickwit_storage::StorageResolver;
 use tantivy::DocAddress;
 

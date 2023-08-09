@@ -22,7 +22,6 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_config::IndexConfig;
-use quickwit_proto::metastore::metastore_service_server::{self as grpc};
 use quickwit_proto::metastore::{
     AddSourceRequest, CreateIndexRequest, CreateIndexResponse, DeleteIndexRequest,
     DeleteIndexResponse, DeleteQuery, DeleteSourceRequest, DeleteSplitsRequest, DeleteTask,
@@ -30,8 +29,8 @@ use quickwit_proto::metastore::{
     LastDeleteOpstampResponse, ListAllSplitsRequest, ListDeleteTasksRequest,
     ListDeleteTasksResponse, ListIndexesMetadatasRequest, ListIndexesMetadatasResponse,
     ListSplitsRequest, ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest,
-    PublishSplitsRequest, ResetSourceCheckpointRequest, SourceResponse, SplitResponse,
-    StageSplitsRequest, ToggleSourceRequest, UpdateSplitsDeleteOpstampRequest,
+    MetastoreService, PublishSplitsRequest, ResetSourceCheckpointRequest, SourceResponse,
+    SplitResponse, StageSplitsRequest, ToggleSourceRequest, UpdateSplitsDeleteOpstampRequest,
     UpdateSplitsDeleteOpstampResponse,
 };
 use quickwit_proto::tonic::{Request, Response, Status};
@@ -51,7 +50,7 @@ impl From<Arc<dyn Metastore>> for GrpcMetastoreAdapter {
 }
 
 #[async_trait]
-impl grpc::MetastoreService for GrpcMetastoreAdapter {
+impl MetastoreService for GrpcMetastoreAdapter {
     #[instrument(skip(self, request))]
     async fn create_index(
         &self,
@@ -206,7 +205,7 @@ impl grpc::MetastoreService for GrpcMetastoreAdapter {
         set_parent_span_from_request_metadata(request.metadata());
         let publish_request = request.into_inner();
         let split_ids = publish_request
-            .split_ids
+            .staged_split_ids
             .iter()
             .map(|split_id| split_id.as_str())
             .collect_vec();

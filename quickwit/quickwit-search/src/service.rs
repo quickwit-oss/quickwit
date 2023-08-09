@@ -28,7 +28,7 @@ use quickwit_common::uri::Uri;
 use quickwit_config::SearcherConfig;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::Metastore;
-use quickwit_proto::{
+use quickwit_proto::search::{
     FetchDocsRequest, FetchDocsResponse, GetKvRequest, Hit, LeafListTermsRequest,
     LeafListTermsResponse, LeafSearchRequest, LeafSearchResponse, LeafSearchStreamRequest,
     LeafSearchStreamResponse, ListTermsRequest, ListTermsResponse, PutKvRequest, ScrollRequest,

@@ -17,18 +17,20 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use quickwit_codegen::Codegen;
+use quickwit_codegen::{Codegen, ProstConfig};
 
 fn main() {
-    let mut config = prost_build::Config::default();
-    config.bytes(["DocBatch.doc_buffer"]);
+    // Legacy ingest codegen
+    let mut prost_config = ProstConfig::default();
+    prost_config.bytes(["DocBatch.doc_buffer"]);
+
     Codegen::run_with_config(
         &["src/ingest_service.proto"],
         "src/codegen/",
         "crate::Result",
         "crate::IngestServiceError",
         &[],
-        config,
+        prost_config,
     )
     .unwrap();
 }

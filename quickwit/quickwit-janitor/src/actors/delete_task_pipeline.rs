@@ -292,7 +292,7 @@ mod tests {
     use quickwit_indexing::TestSandbox;
     use quickwit_metastore::SplitState;
     use quickwit_proto::metastore::DeleteQuery;
-    use quickwit_proto::{LeafSearchRequest, LeafSearchResponse};
+    use quickwit_proto::search::{LeafSearchRequest, LeafSearchResponse};
     use quickwit_search::{
         searcher_pool_for_test, MockSearchService, SearchError, SearchJobPlacer,
     };

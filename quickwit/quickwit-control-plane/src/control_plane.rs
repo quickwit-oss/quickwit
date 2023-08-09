@@ -20,7 +20,10 @@
 use anyhow::Context;
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox};
-use quickwit_proto::control_plane::{NotifyIndexChangeRequest, NotifyIndexChangeResponse};
+use quickwit_proto::control_plane::{
+    CloseShardsRequest, CloseShardsResponse, ControlPlaneResult, GetOpenShardsRequest,
+    GetOpenShardsResponse, NotifyIndexChangeRequest, NotifyIndexChangeResponse,
+};
 use tracing::debug;
 
 use crate::scheduler::IndexingScheduler;
@@ -51,7 +54,7 @@ impl ControlPlane {
 
 #[async_trait]
 impl Handler<NotifyIndexChangeRequest> for ControlPlane {
-    type Reply = quickwit_proto::control_plane::Result<NotifyIndexChangeResponse>;
+    type Reply = ControlPlaneResult<NotifyIndexChangeResponse>;
 
     async fn handle(
         &mut self,
@@ -64,5 +67,31 @@ impl Handler<NotifyIndexChangeRequest> for ControlPlane {
             .await
             .context("Error sending index change notification to index scheduler.")?;
         Ok(Ok(NotifyIndexChangeResponse {}))
+    }
+}
+
+#[async_trait]
+impl Handler<GetOpenShardsRequest> for ControlPlane {
+    type Reply = ControlPlaneResult<GetOpenShardsResponse>;
+
+    async fn handle(
+        &mut self,
+        _request: GetOpenShardsRequest,
+        _: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        unimplemented!()
+    }
+}
+
+#[async_trait]
+impl Handler<CloseShardsRequest> for ControlPlane {
+    type Reply = ControlPlaneResult<CloseShardsResponse>;
+
+    async fn handle(
+        &mut self,
+        _request: CloseShardsRequest,
+        _: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        unimplemented!()
     }
 }

@@ -19,6 +19,7 @@ mockall = { workspace = true, optional = true }
 mrecordlog = { workspace = true }
 once_cell = { workspace = true }
 prost = { workspace = true }
+rand = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
@@ -41,10 +42,11 @@ rand_distr = { workspace = true }
 tempfile = { workspace = true }
 
 quickwit-actors = { workspace = true, features = ["testsuite"] }
+quickwit-common = { workspace = true, features = ["testsuite"] }
+quickwit-proto = { workspace = true, features = ["testsuite"] }
 
 [build-dependencies]
 quickwit-codegen = { workspace = true }
-prost-build = { workspace = true }
 
 [features]
 testsuite = ["mockall"]

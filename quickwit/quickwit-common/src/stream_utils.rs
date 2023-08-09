@@ -21,7 +21,7 @@ use std::any::TypeId;
 use std::fmt;
 use std::pin::Pin;
 
-use futures::{Stream, StreamExt, TryStreamExt};
+use futures::{stream, Stream, TryStreamExt};
 use tokio::sync::mpsc;
 use tokio_stream::wrappers::{ReceiverStream, UnboundedReceiverStream};
 use tracing::warn;
@@ -123,19 +123,20 @@ impl<T> From<tonic::Streaming<T>> for ServiceStream<T>
 where T: Send + 'static
 {
     fn from(streaming: tonic::Streaming<T>) -> Self {
-        let ok_streaming = streaming.filter_map(|message| {
-            Box::pin(async move {
-                message
-                    .map_err(|status| {
-                        warn!(status=?status, "gRPC transport error.");
-                        status
-                    })
-                    .ok()
+        let message_stream = stream::unfold(streaming, |mut streaming| {
+            Box::pin(async {
+                match streaming.message().await {
+                    Ok(Some(message)) => Some((message, streaming)),
+                    Ok(None) => None,
+                    Err(error) => {
+                        warn!(error=?error, "gRPC transport error.");
+                        None
+                    }
+                }
             })
         });
-
         Self {
-            inner: Box::pin(ok_streaming),
+            inner: Box::pin(message_stream),
         }
     }
 }

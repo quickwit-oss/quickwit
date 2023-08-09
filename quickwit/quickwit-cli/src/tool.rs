@@ -48,7 +48,7 @@ use quickwit_indexing::models::{
 };
 use quickwit_indexing::IndexingPipeline;
 use quickwit_metastore::Metastore;
-use quickwit_proto::SearchResponse;
+use quickwit_proto::search::SearchResponse;
 use quickwit_search::{single_node_search, SearchResponseRest};
 use quickwit_serve::{
     search_request_from_api_request, BodyFormat, SearchRequestQueryString, SortBy,

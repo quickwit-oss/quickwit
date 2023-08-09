@@ -20,3 +20,4 @@
 mod codegen;
 
 pub use codegen::Codegen;
+pub use prost_build::Config as ProstConfig;

@@ -24,7 +24,9 @@ use anyhow::{Context, Ok};
 use futures::{StreamExt, TryStreamExt};
 use itertools::Itertools;
 use quickwit_doc_mapper::DocMapper;
-use quickwit_proto::{FetchDocsResponse, PartialHit, SnippetRequest, SplitIdAndFooterOffsets};
+use quickwit_proto::search::{
+    FetchDocsResponse, PartialHit, SnippetRequest, SplitIdAndFooterOffsets,
+};
 use quickwit_storage::Storage;
 use tantivy::query::Query;
 use tantivy::schema::{Field, Value};
@@ -129,13 +131,13 @@ pub async fn fetch_docs(
     )
     .await?;
 
-    let hits: Vec<quickwit_proto::LeafHit> = partial_hits
+    let hits: Vec<quickwit_proto::search::LeafHit> = partial_hits
         .iter()
         .flat_map(|partial_hit| {
             let global_doc_addr = GlobalDocAddress::from_partial_hit(partial_hit);
             if let Some((_, document)) = global_doc_addr_to_doc_json.remove_entry(&global_doc_addr)
             {
-                Some(quickwit_proto::LeafHit {
+                Some(quickwit_proto::search::LeafHit {
                     leaf_json: document.content_json,
                     partial_hit: Some(partial_hit.clone()),
                     leaf_snippet_json: document.snippet_json,

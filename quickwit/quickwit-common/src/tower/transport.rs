@@ -38,7 +38,8 @@ use tower::discover::Change as TowerChange;
 use tower::load::{CompleteOnResponse, PendingRequestsDiscover};
 use tower::{BoxError, Service, ServiceExt};
 
-use super::{BoxFuture, BoxStream, Change};
+use super::{BoxFuture, Change};
+use crate::BoxStream;
 
 // Transforms a boxed stream of `Change<K, Channel>` into a stream of `Result<TowerChange<K,
 // Channel>, Infallible>>` while keeping track of the number of connections.
