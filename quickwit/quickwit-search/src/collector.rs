@@ -23,7 +23,7 @@ use std::collections::{BinaryHeap, HashSet};
 use itertools::Itertools;
 use quickwit_common::binary_heap::top_k;
 use quickwit_doc_mapper::{DocMapper, WarmupInfo};
-use quickwit_proto::{LeafSearchResponse, PartialHit, SearchRequest, SortOrder, SortValue};
+use quickwit_proto::search::{LeafSearchResponse, PartialHit, SearchRequest, SortOrder, SortValue};
 use serde::Deserialize;
 use tantivy::aggregation::agg_req::{get_fast_field_names, Aggregations};
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
@@ -446,10 +446,10 @@ impl SegmentCollector for QuickwitSegmentCollector {
                     sort_by.recover_typed_sort_value(hit.sort_value_opt1, hit.sort_value_opt2);
 
                 PartialHit {
-                    sort_value: Some(quickwit_proto::SortByValue {
+                    sort_value: Some(quickwit_proto::search::SortByValue {
                         sort_value: sort_value1,
                     }),
-                    sort_value2: Some(quickwit_proto::SortByValue {
+                    sort_value2: Some(quickwit_proto::search::SortByValue {
                         sort_value: sort_value2,
                     }),
                     segment_ord,
@@ -885,7 +885,7 @@ pub(crate) fn make_merge_collector(
 mod tests {
     use std::cmp::Ordering;
 
-    use quickwit_proto::{PartialHit, SortOrder, SortValue};
+    use quickwit_proto::search::{PartialHit, SortOrder, SortValue};
 
     use super::PartialHitHeapItem;
     use crate::collector::top_k_partial_hits;

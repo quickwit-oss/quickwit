@@ -24,14 +24,12 @@ use std::time::Duration;
 
 use futures::{StreamExt, TryStreamExt};
 use http::Uri;
+use quickwit_proto::search::{GetKvRequest, LeafSearchStreamResponse, PutKvRequest};
 use quickwit_proto::tonic::codegen::InterceptedService;
-use quickwit_proto::tonic::transport::Endpoint;
-use quickwit_proto::{
-    tonic, GetKvRequest, LeafSearchStreamResponse, PutKvRequest, SpanContextInterceptor,
-};
+use quickwit_proto::tonic::transport::{Channel, Endpoint};
+use quickwit_proto::tonic::Request;
+use quickwit_proto::{tonic, SpanContextInterceptor};
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tonic::transport::Channel;
-use tonic::Request;
 use tower::timeout::Timeout;
 use tracing::*;
 
@@ -43,7 +41,7 @@ use crate::SearchService;
 enum SearchServiceClientImpl {
     Local(Arc<dyn SearchService>),
     Grpc(
-        quickwit_proto::search_service_client::SearchServiceClient<
+        quickwit_proto::search::search_service_client::SearchServiceClient<
             InterceptedService<Timeout<Channel>, SpanContextInterceptor>,
         >,
     ),
@@ -74,7 +72,7 @@ impl fmt::Debug for SearchServiceClient {
 impl SearchServiceClient {
     /// Create a search service client instance given a gRPC client and gRPC address.
     pub fn from_grpc_client(
-        client: quickwit_proto::search_service_client::SearchServiceClient<
+        client: quickwit_proto::search::search_service_client::SearchServiceClient<
             InterceptedService<Timeout<Channel>, SpanContextInterceptor>,
         >,
         grpc_addr: SocketAddr,
@@ -107,8 +105,8 @@ impl SearchServiceClient {
     /// Perform root search.
     pub async fn root_search(
         &mut self,
-        request: quickwit_proto::SearchRequest,
-    ) -> crate::Result<quickwit_proto::SearchResponse> {
+        request: quickwit_proto::search::SearchRequest,
+    ) -> crate::Result<quickwit_proto::search::SearchResponse> {
         match &mut self.client_impl {
             SearchServiceClientImpl::Grpc(grpc_client) => {
                 let tonic_request = Request::new(request);
@@ -125,8 +123,8 @@ impl SearchServiceClient {
     /// Perform leaf search.
     pub async fn leaf_search(
         &mut self,
-        request: quickwit_proto::LeafSearchRequest,
-    ) -> crate::Result<quickwit_proto::LeafSearchResponse> {
+        request: quickwit_proto::search::LeafSearchRequest,
+    ) -> crate::Result<quickwit_proto::search::LeafSearchResponse> {
         match &mut self.client_impl {
             SearchServiceClientImpl::Grpc(grpc_client) => {
                 let tonic_request = Request::new(request);
@@ -143,7 +141,7 @@ impl SearchServiceClient {
     /// Perform leaf stream.
     pub async fn leaf_search_stream(
         &mut self,
-        request: quickwit_proto::LeafSearchStreamRequest,
+        request: quickwit_proto::search::LeafSearchStreamRequest,
     ) -> UnboundedReceiverStream<crate::Result<LeafSearchStreamResponse>> {
         match &mut self.client_impl {
             SearchServiceClientImpl::Grpc(grpc_client) => {
@@ -197,8 +195,8 @@ impl SearchServiceClient {
     /// Perform fetch docs.
     pub async fn fetch_docs(
         &mut self,
-        request: quickwit_proto::FetchDocsRequest,
-    ) -> crate::Result<quickwit_proto::FetchDocsResponse> {
+        request: quickwit_proto::search::FetchDocsRequest,
+    ) -> crate::Result<quickwit_proto::search::FetchDocsResponse> {
         match &mut self.client_impl {
             SearchServiceClientImpl::Grpc(grpc_client) => {
                 let tonic_request = Request::new(request);
@@ -215,8 +213,8 @@ impl SearchServiceClient {
     /// Perform leaf list terms.
     pub async fn leaf_list_terms(
         &mut self,
-        request: quickwit_proto::LeafListTermsRequest,
-    ) -> crate::Result<quickwit_proto::LeafListTermsResponse> {
+        request: quickwit_proto::search::LeafListTermsRequest,
+    ) -> crate::Result<quickwit_proto::search::LeafListTermsResponse> {
         match &mut self.client_impl {
             SearchServiceClientImpl::Grpc(grpc_client) => {
                 let tonic_request = Request::new(request);
@@ -240,7 +238,7 @@ impl SearchServiceClient {
                 Ok(search_after_context_opt)
             }
             SearchServiceClientImpl::Grpc(grpc_client) => {
-                let grpc_resp: tonic::Response<quickwit_proto::GetKvResponse> = grpc_client
+                let grpc_resp: tonic::Response<quickwit_proto::search::GetKvResponse> = grpc_client
                     .get_kv(get_kv_req)
                     .await
                     .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
@@ -281,10 +279,11 @@ pub fn create_search_client_from_grpc_addr(grpc_addr: SocketAddr) -> SearchServi
         .expect("The URI should be well-formed.");
     let channel = Endpoint::from(uri).connect_lazy();
     let timeout_channel = Timeout::new(channel, Duration::from_secs(5));
-    let client = quickwit_proto::search_service_client::SearchServiceClient::with_interceptor(
-        timeout_channel,
-        SpanContextInterceptor,
-    );
+    let client =
+        quickwit_proto::search::search_service_client::SearchServiceClient::with_interceptor(
+            timeout_channel,
+            SpanContextInterceptor,
+        );
     SearchServiceClient::from_grpc_client(client, grpc_addr)
 }
 
@@ -293,9 +292,10 @@ pub fn create_search_client_from_channel(
     grpc_addr: SocketAddr,
     channel: Timeout<Channel>,
 ) -> SearchServiceClient {
-    let client = quickwit_proto::search_service_client::SearchServiceClient::with_interceptor(
-        channel,
-        SpanContextInterceptor,
-    );
+    let client =
+        quickwit_proto::search::search_service_client::SearchServiceClient::with_interceptor(
+            channel,
+            SpanContextInterceptor,
+        );
     SearchServiceClient::from_grpc_client(client, grpc_addr)
 }

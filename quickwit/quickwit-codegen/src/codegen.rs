@@ -23,6 +23,8 @@ use prost_build::{Method, Service, ServiceGenerator};
 use quote::{quote, ToTokens};
 use syn::Ident;
 
+use crate::ProstConfig;
+
 pub struct Codegen;
 
 impl Codegen {
@@ -39,7 +41,7 @@ impl Codegen {
             result_type_path,
             error_type_path,
             includes,
-            prost_build::Config::default(),
+            ProstConfig::default(),
         )
     }
 
@@ -49,7 +51,7 @@ impl Codegen {
         result_type_path: &str,
         error_type_path: &str,
         includes: &[&str],
-        mut prost_config: prost_build::Config,
+        mut prost_config: ProstConfig,
     ) -> anyhow::Result<()> {
         let service_generator = Box::new(QuickwitServiceGenerator::new(
             result_type_path,

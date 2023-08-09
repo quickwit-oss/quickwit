@@ -30,7 +30,8 @@ use hyper::StatusCode;
 use itertools::Itertools;
 use quickwit_common::truncate_str;
 use quickwit_config::NodeConfig;
-use quickwit_proto::{ScrollRequest, SearchResponse, ServiceErrorCode};
+use quickwit_proto::search::{ScrollRequest, SearchResponse};
+use quickwit_proto::ServiceErrorCode;
 use quickwit_query::query_ast::{QueryAst, UserInputQuery};
 use quickwit_query::BooleanOperand;
 use quickwit_search::{SearchError, SearchService};
@@ -129,7 +130,7 @@ fn build_request_for_es_api(
     index_id: String,
     search_params: SearchQueryParams,
     search_body: SearchBody,
-) -> Result<quickwit_proto::SearchRequest, ElasticSearchError> {
+) -> Result<quickwit_proto::search::SearchRequest, ElasticSearchError> {
     let default_operator = search_params.default_operator.unwrap_or(BooleanOperand::Or);
     // The query string, if present, takes priority over what can be in the request
     // body.
@@ -156,12 +157,12 @@ fn build_request_for_es_api(
     let max_hits = search_params.size.or(search_body.size).unwrap_or(10);
     let start_offset = search_params.from.or(search_body.from).unwrap_or(0);
 
-    let sort_fields: Vec<quickwit_proto::SortField> = search_params
+    let sort_fields: Vec<quickwit_proto::search::SortField> = search_params
         .sort_fields()?
         .or_else(|| search_body.sort.clone())
         .unwrap_or_default()
         .iter()
-        .map(|sort_field| quickwit_proto::SortField {
+        .map(|sort_field| quickwit_proto::search::SortField {
             field_name: sort_field.field.to_string(),
             sort_order: sort_field.order as i32,
         })
@@ -175,7 +176,7 @@ fn build_request_for_es_api(
     let scroll_duration: Option<Duration> = search_params.parse_scroll_ttl()?;
     let scroll_ttl_secs: Option<u32> = scroll_duration.map(|duration| duration.as_secs() as u32);
 
-    Ok(quickwit_proto::SearchRequest {
+    Ok(quickwit_proto::search::SearchRequest {
         index_id,
         query_ast: serde_json::to_string(&query_ast).expect("Failed to serialize QueryAst"),
         max_hits,
@@ -205,7 +206,7 @@ async fn es_compat_index_search(
     Ok(search_response_rest)
 }
 
-fn convert_hit(hit: quickwit_proto::Hit) -> ElasticHit {
+fn convert_hit(hit: quickwit_proto::search::Hit) -> ElasticHit {
     let fields: BTreeMap<String, serde_json::Value> =
         serde_json::from_str(&hit.json).unwrap_or_default();
     ElasticHit {

@@ -5,22 +5,25 @@ pub struct ApplyIndexingPlanRequest {
     #[prost(message, repeated, tag = "1")]
     pub indexing_tasks: ::prost::alloc::vec::Vec<IndexingTask>,
 }
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ApplyIndexingPlanResponse {}
 #[derive(Eq, Hash)]
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IndexingTask {
-    /// / Index UID of the task.
+    /// / The tasks's index UID.
     #[prost(string, tag = "1")]
     pub index_uid: ::prost::alloc::string::String,
-    /// / Source ID of the task.
+    /// / The task's source ID.
+    ///
+    /// / The shards assigned to the indexer.
+    /// repeated uint64 shard_ids = 3;
     #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,
 }
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ApplyIndexingPlanResponse {}
 /// BEGIN quickwit-codegen
 use tower::{Layer, Service, ServiceExt};
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
@@ -29,7 +32,7 @@ pub trait IndexingService: std::fmt::Debug + dyn_clone::DynClone + Send + Sync +
     async fn apply_indexing_plan(
         &mut self,
         request: ApplyIndexingPlanRequest,
-    ) -> crate::indexing::Result<ApplyIndexingPlanResponse>;
+    ) -> crate::indexing::IndexingResult<ApplyIndexingPlanResponse>;
 }
 dyn_clone::clone_trait_object!(IndexingService);
 #[cfg(any(test, feature = "testsuite"))]
@@ -91,7 +94,7 @@ impl IndexingService for IndexingServiceClient {
     async fn apply_indexing_plan(
         &mut self,
         request: ApplyIndexingPlanRequest,
-    ) -> crate::indexing::Result<ApplyIndexingPlanResponse> {
+    ) -> crate::indexing::IndexingResult<ApplyIndexingPlanResponse> {
         self.inner.apply_indexing_plan(request).await
     }
 }
@@ -107,7 +110,7 @@ pub mod mock {
         async fn apply_indexing_plan(
             &mut self,
             request: ApplyIndexingPlanRequest,
-        ) -> crate::indexing::Result<ApplyIndexingPlanResponse> {
+        ) -> crate::indexing::IndexingResult<ApplyIndexingPlanResponse> {
             self.inner.lock().await.apply_indexing_plan(request).await
         }
     }
@@ -160,7 +163,7 @@ impl IndexingService for IndexingServiceTowerBlock {
     async fn apply_indexing_plan(
         &mut self,
         request: ApplyIndexingPlanRequest,
-    ) -> crate::indexing::Result<ApplyIndexingPlanResponse> {
+    ) -> crate::indexing::IndexingResult<ApplyIndexingPlanResponse> {
         self.apply_indexing_plan_svc.ready().await?.call(request).await
     }
 }
@@ -341,7 +344,7 @@ where
     async fn apply_indexing_plan(
         &mut self,
         request: ApplyIndexingPlanRequest,
-    ) -> crate::indexing::Result<ApplyIndexingPlanResponse> {
+    ) -> crate::indexing::IndexingResult<ApplyIndexingPlanResponse> {
         self.call(request).await
     }
 }
@@ -370,7 +373,7 @@ where
     async fn apply_indexing_plan(
         &mut self,
         request: ApplyIndexingPlanRequest,
-    ) -> crate::indexing::Result<ApplyIndexingPlanResponse> {
+    ) -> crate::indexing::IndexingResult<ApplyIndexingPlanResponse> {
         self.inner
             .apply_indexing_plan(request)
             .await
@@ -509,14 +512,14 @@ pub mod indexing_service_grpc_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/quickwit.indexing.IndexingService/applyIndexingPlan",
+                "/quickwit.indexing.IndexingService/ApplyIndexingPlan",
             );
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(
                     GrpcMethod::new(
                         "quickwit.indexing.IndexingService",
-                        "applyIndexingPlan",
+                        "ApplyIndexingPlan",
                     ),
                 );
             self.inner.unary(req, path, codec).await
@@ -618,13 +621,13 @@ pub mod indexing_service_grpc_server {
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
             let inner = self.inner.clone();
             match req.uri().path() {
-                "/quickwit.indexing.IndexingService/applyIndexingPlan" => {
+                "/quickwit.indexing.IndexingService/ApplyIndexingPlan" => {
                     #[allow(non_camel_case_types)]
-                    struct applyIndexingPlanSvc<T: IndexingServiceGrpc>(pub Arc<T>);
+                    struct ApplyIndexingPlanSvc<T: IndexingServiceGrpc>(pub Arc<T>);
                     impl<
                         T: IndexingServiceGrpc,
                     > tonic::server::UnaryService<super::ApplyIndexingPlanRequest>
-                    for applyIndexingPlanSvc<T> {
+                    for ApplyIndexingPlanSvc<T> {
                         type Response = super::ApplyIndexingPlanResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
@@ -648,7 +651,7 @@ pub mod indexing_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
-                        let method = applyIndexingPlanSvc(inner);
+                        let method = ApplyIndexingPlanSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

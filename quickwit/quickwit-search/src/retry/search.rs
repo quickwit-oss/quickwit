@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use quickwit_proto::{LeafSearchRequest, LeafSearchResponse};
+use quickwit_proto::search::{LeafSearchRequest, LeafSearchResponse};
 
 use super::RetryPolicy;
 use crate::SearchError;
@@ -54,7 +54,7 @@ impl RetryPolicy<LeafSearchRequest, LeafSearchResponse, SearchError> for LeafSea
 
 #[cfg(test)]
 mod tests {
-    use quickwit_proto::{
+    use quickwit_proto::search::{
         LeafSearchRequest, LeafSearchResponse, SearchRequest, SplitIdAndFooterOffsets,
         SplitSearchError,
     };

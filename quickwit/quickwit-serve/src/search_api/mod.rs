@@ -34,8 +34,9 @@ mod tests {
     use futures::TryStreamExt;
     use quickwit_indexing::mock_split;
     use quickwit_metastore::{IndexMetadata, MockMetastore};
-    use quickwit_proto::search_service_server::SearchServiceServer;
-    use quickwit_proto::{tonic, OutputFormat};
+    use quickwit_proto::search::search_service_server::SearchServiceServer;
+    use quickwit_proto::search::OutputFormat;
+    use quickwit_proto::tonic;
     use quickwit_query::query_ast::qast_helper;
     use quickwit_search::{
         create_search_client_from_grpc_addr, root_search_stream, ClusterClient, MockSearchService,
@@ -64,7 +65,7 @@ mod tests {
     #[tokio::test]
     async fn test_serve_search_stream_with_a_leaf_error_on_leaf_node() -> anyhow::Result<()> {
         // This test aims at checking the client gRPC implementation.
-        let request = quickwit_proto::SearchStreamRequest {
+        let request = quickwit_proto::search::SearchStreamRequest {
             index_id: "test-index".to_string(),
             query_ast: qast_helper("test", &["body"]),
             snippet_fields: Vec::new(),
@@ -88,7 +89,7 @@ mod tests {
             .returning(|_filter| Ok(vec![mock_split("split_1"), mock_split("split_2")]));
         let mut mock_search_service = MockSearchService::new();
         let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
-        result_sender.send(Ok(quickwit_proto::LeafSearchStreamResponse {
+        result_sender.send(Ok(quickwit_proto::search::LeafSearchStreamResponse {
             data: b"123".to_vec(),
             split_id: "split_1".to_string(),
         }))?;
@@ -99,7 +100,7 @@ mod tests {
             .expect_leaf_search_stream()
             .withf(|request| request.split_offsets.len() == 2) // First request.
             .return_once(
-                |_leaf_search_req: quickwit_proto::LeafSearchStreamRequest| {
+                |_leaf_search_req: quickwit_proto::search::LeafSearchStreamRequest| {
                     Ok(UnboundedReceiverStream::new(result_receiver))
                 },
             );
@@ -107,7 +108,7 @@ mod tests {
             .expect_leaf_search_stream()
             .withf(|request| request.split_offsets.len() == 1) // Retry request on the failing split.
             .return_once(
-                |_leaf_search_req: quickwit_proto::LeafSearchStreamRequest| {
+                |_leaf_search_req: quickwit_proto::search::LeafSearchStreamRequest| {
                     Err(SearchError::InternalError(
                         "Error again on `split2`".to_string(),
                     ))
