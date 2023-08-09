@@ -125,5 +125,3 @@ indexer:
 
 jaeger:
   enable_endpoint: ${QW_ENABLE_JAEGER_ENDPOINT:-true}
-
-
