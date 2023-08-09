@@ -274,13 +274,8 @@ pub async fn serve_quickwit(
         (ingest_service, None)
     };
 
-    let cache_storage_service = start_cache_storage_service(
-        &universe,
-        &config,
-        metastore.clone(),
-        storage_resolver.clone(),
-    )
-    .await?;
+    let cache_storage_service =
+        start_cache_storage_service(&universe, &config, storage_resolver.clone()).await?;
 
     // Instantiate the control plane service if enabled.
     // If not and metastore service is enabled, we need to instantiate the control plane client
@@ -293,7 +288,7 @@ pub async fn serve_quickwit(
             &universe,
             &cluster,
             indexing_service.clone(),
-            Some(cache_storage_service.clone()),
+            cache_storage_service.clone(),
             metastore.clone(),
         )
         .await?;
@@ -354,7 +349,7 @@ pub async fn serve_quickwit(
         janitor_service,
         ingest_service,
         index_service,
-        cache_storage_service: Some(cache_storage_service),
+        cache_storage_service,
         services,
     });
     // Setup and start gRPC server.

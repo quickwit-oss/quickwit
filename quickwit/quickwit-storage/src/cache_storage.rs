@@ -27,6 +27,7 @@ use async_trait::async_trait;
 use quickwit_common::uri::Uri;
 use quickwit_config::{CacheStorageConfig, StorageBackend};
 use quickwit_proto::cache_storage::SplitsChangeNotification;
+use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
 use crate::{
@@ -130,8 +131,14 @@ impl CacheStorageFactory {
             inner: Arc::new(InnerCacheStorageFactory {
                 storage_config,
                 splits: Arc::new(RwLock::new(HashMap::new())),
+                counters: CacheStorageCounters::default(),
             }),
         }
+    }
+
+    /// Returns the cache storage stats
+    pub fn counters(&self) -> CacheStorageCounters {
+        self.inner.counters.clone()
     }
 
     /// Update all split caches on the node
@@ -244,6 +251,19 @@ enum SplitState {
     Deleted,
 }
 
+/// Cache storage stats
+#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+pub struct CacheStorageCounters {
+    /// number of splits that should be cached
+    pub num_cached_splits: usize,
+    /// number of splits that are downloaded
+    pub num_downloaded_splits: usize,
+    /// number of cache hits
+    pub num_hits: usize,
+    /// number of cache misses
+    pub num_misses: usize,
+}
+
 /// Storage resolver for [`CacheStorage`].
 #[derive(Clone)]
 pub struct CacheStorageFactory {
@@ -253,6 +273,7 @@ pub struct CacheStorageFactory {
 /// Storage resolver for [`CacheStorage`].
 pub struct InnerCacheStorageFactory {
     storage_config: CacheStorageConfig,
+    counters: CacheStorageCounters,
     splits: Arc<RwLock<HashMap<String, (SplitState, Uri)>>>,
 }
 

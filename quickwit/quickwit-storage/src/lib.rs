@@ -64,7 +64,7 @@ pub use self::cache::MockCache;
 pub use self::cache::{
     wrap_storage_with_long_term_cache, ByteRangeCache, Cache, MemorySizedCache, QuickwitCache,
 };
-pub use self::cache_storage::CacheStorageFactory;
+pub use self::cache_storage::{CacheStorageCounters, CacheStorageFactory};
 pub use self::local_file_storage::{LocalFileStorage, LocalFileStorageFactory};
 #[cfg(feature = "azure")]
 pub use self::object_storage::{AzureBlobStorage, AzureBlobStorageFactory};
