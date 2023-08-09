@@ -55,7 +55,7 @@ impl fmt::Debug for CacheStorage {
 
 impl CacheStorage {
     /// Create a resolver that can uses ram storage for both cache and the upstream storage
-    #[cfg(any(test, feature = "testsuite"))]
+    #[cfg(test)]
     pub fn for_test() -> CacheStorage {
         use crate::RamStorage;
 
@@ -124,21 +124,25 @@ impl Storage for CacheStorage {
 }
 
 impl CacheStorageFactory {
+    /// Create a new storage factory
     pub fn new(storage_config: CacheStorageConfig) -> Self {
         Self {
-            storage_config,
-            splits: Arc::new(RwLock::new(HashMap::new())),
+            inner: Arc::new(InnerCacheStorageFactory {
+                storage_config,
+                splits: Arc::new(RwLock::new(HashMap::new())),
+            }),
         }
     }
 
+    /// Update all split caches on the node
     pub async fn update_split_cache(
         &self,
         storage_resolver: &StorageResolver,
         splits: Vec<SplitsChangeNotification>,
     ) -> StorageResult<()> {
-        let mut splits_guard = self.splits.write().await;
+        let mut splits_guard = self.inner.splits.write().await;
         let new_splits: HashSet<String> = splits.iter().map(|rec| rec.split_id.clone()).collect();
-        let old_splits: HashSet<String> = splits_guard.keys().into_iter().cloned().collect();
+        let old_splits: HashSet<String> = splits_guard.keys().cloned().collect();
         let deleted = old_splits.difference(&new_splits);
         for split in splits {
             if !splits_guard.contains_key(&split.split_id) {
@@ -177,6 +181,7 @@ impl CacheStorageFactory {
         let cache = storage_resolver
             .resolve(
                 &self
+                    .inner
                     .storage_config
                     .cache_uri
                     .clone()
@@ -186,7 +191,7 @@ impl CacheStorageFactory {
             )
             .await
             .unwrap();
-        let splits = self.splits.clone();
+        let splits = self.inner.splits.clone();
         tokio::spawn({
             async move {
                 // TODO: Need to figure out a better way to translate between paths and ids
@@ -208,7 +213,7 @@ impl CacheStorageFactory {
                     match state {
                         SplitState::Loading => {
                             let uri = uri.clone();
-                            splits_guard.insert(split_id, (SplitState::Ready, uri.clone()));
+                            splits_guard.insert(split_id, (SplitState::Ready, uri));
                         }
                         SplitState::Ready => {
                             // TODO: Shouldn't be here?
@@ -240,7 +245,13 @@ enum SplitState {
 }
 
 /// Storage resolver for [`CacheStorage`].
+#[derive(Clone)]
 pub struct CacheStorageFactory {
+    inner: Arc<InnerCacheStorageFactory>,
+}
+
+/// Storage resolver for [`CacheStorage`].
+pub struct InnerCacheStorageFactory {
     storage_config: CacheStorageConfig,
     splits: Arc<RwLock<HashMap<String, (SplitState, Uri)>>>,
 }
@@ -258,6 +269,7 @@ impl StorageFactory for CacheStorageFactory {
     ) -> Result<Arc<dyn Storage>, StorageResolverError> {
         if uri.protocol().is_cache() {
             let cache_uri = self
+                .inner
                 .storage_config
                 .cache_uri()
                 .ok_or_else(|| {
@@ -287,7 +299,7 @@ impl StorageFactory for CacheStorageFactory {
                 uri: uri.clone(),
                 storage,
                 cache,
-                cache_splits: self.splits.clone(),
+                cache_splits: self.inner.splits.clone(),
             };
             Ok(Arc::new(cache_storage))
         } else {
@@ -296,8 +308,8 @@ impl StorageFactory for CacheStorageFactory {
         }
     }
 
-    fn as_cache_storage_factory<'a>(&'a self) -> Option<&'a CacheStorageFactory> {
-        Some(self)
+    fn as_cache_storage_factory(&self) -> Option<CacheStorageFactory> {
+        Some(self.clone())
     }
 }
 
@@ -319,7 +331,7 @@ mod tests {
     #[tokio::test]
     async fn test_cache_storage_factory() {
         let storage_resolver = StorageResolver::ram_for_test();
-        let storage_config = CacheStorageConfig::for_test().into();
+        let storage_config = CacheStorageConfig::for_test();
         let cache_storage_factory = CacheStorageFactory::new(storage_config);
         let cache_uri = Uri::from_well_formed("s3:///foo");
         let err = cache_storage_factory

@@ -99,11 +99,11 @@ impl CacheStorageController {
     fn find_nodes(
         split_id: &str,
         _index_metadata: &IndexMetadata,
-        nodes: &Vec<String>,
+        nodes: &[String],
     ) -> Vec<String> {
         // This is a temporary implementation that always returns 1 node and doesn't support weights
         // for now
-        let mut node_ids = nodes.clone();
+        let mut node_ids = nodes.to_owned();
         sort_by_rendez_vous_hash(&mut node_ids, split_id);
         node_ids.truncate(1);
         node_ids
@@ -252,7 +252,8 @@ impl CacheStorageServicePool {
                                         local_cache_storage_service_clone,
                                     );
                                     if services.write().await.insert(node_id, client).is_none() {
-                                        cache_storage_contoller
+                                        // TODO: Error handling
+                                        let _res = cache_storage_contoller
                                             .send_message(CacheUpdateRequest {})
                                             .await;
                                     }
@@ -263,7 +264,8 @@ impl CacheStorageServicePool {
                                 let client =
                                     CacheStorageServiceClient::from_channel(timeout_channel);
                                 if services.write().await.insert(node_id, client).is_none() {
-                                    cache_storage_contoller
+                                    // TODO: Error handling
+                                    let _res = cache_storage_contoller
                                         .send_message(CacheUpdateRequest {})
                                         .await;
                                 }
@@ -272,7 +274,8 @@ impl CacheStorageServicePool {
                         ClusterChange::Remove(node) => {
                             let node_id = node.node_id().to_string();
                             services.write().await.remove(&node_id);
-                            cache_storage_contoller
+                            // TODO: Error handling
+                            let _res = cache_storage_contoller
                                 .send_message(CacheUpdateRequest {})
                                 .await;
                         }

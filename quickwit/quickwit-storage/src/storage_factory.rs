@@ -42,7 +42,7 @@ pub trait StorageFactory: Send + Sync + 'static {
     ) -> Result<Arc<dyn Storage>, StorageResolverError>;
 
     /// TODO: This is ugly. I will need to replace it when I refactor storage.
-    fn as_cache_storage_factory<'a>(&'a self) -> Option<&'a CacheStorageFactory> {
+    fn as_cache_storage_factory(&self) -> Option<CacheStorageFactory> {
         None
     }
 }

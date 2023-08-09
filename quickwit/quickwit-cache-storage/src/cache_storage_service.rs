@@ -23,8 +23,8 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, Universe};
-use quickwit_common::fs::get_cache_directory_path;
-use quickwit_common::temp_dir;
+// use quickwit_common::fs::get_cache_directory_path;
+// use quickwit_common::temp_dir;
 use quickwit_config::{CacheStorageConfig, NodeConfig};
 use quickwit_metastore::{Metastore, MetastoreError};
 use quickwit_proto::cache_storage::{
@@ -37,7 +37,7 @@ use thiserror::Error;
 use tracing::{debug, error, info};
 
 /// Name of the cache directory, usually located at `<data_dir_path>/searching`.
-pub const CACHE_DIR_NAME: &str = "searching";
+// pub const CACHE_DIR_NAME: &str = "searching";
 
 #[derive(Error, Debug)]
 pub enum CacheStorageServiceError {
@@ -47,6 +47,7 @@ pub enum CacheStorageServiceError {
     StorageError(#[from] StorageError),
     #[error("Metastore error `{0}`.")]
     MetastoreError(#[from] MetastoreError),
+    #[allow(dead_code)] // temporary
     #[error("Invalid params `{0}`.")]
     InvalidParams(anyhow::Error),
 }
@@ -71,37 +72,38 @@ pub struct CacheStorageServiceCounters {
 
 pub struct CacheStorageService {
     node_id: String,
-    cache_root_directory: PathBuf,
-    metastore: Arc<dyn Metastore>,
+    // cache_root_directory: PathBuf,
+    // metastore: Arc<dyn Metastore>,
     counters: CacheStorageServiceCounters,
-    // local_split_store: Arc<LocalSplitStore>,
-    max_concurrent_split_downloads: usize,
+    // // local_split_store: Arc<LocalSplitStore>,
+    // max_concurrent_split_downloads: usize,
     storage_resolver: StorageResolver,
 }
 
 impl CacheStorageService {
     pub async fn new(
         node_id: String,
-        data_dir_path: PathBuf,
+        _data_dir_path: PathBuf,
         _cache_storage_config: CacheStorageConfig,
-        metastore: Arc<dyn Metastore>,
+        _metastore: Arc<dyn Metastore>,
         storage_resolver: StorageResolver,
     ) -> anyhow::Result<CacheStorageService> {
         // let split_store_space_quota = SplitStoreQuota::new(
         //     usize::MAX, // no limits for the number of splits
         //     cache_storage_config.max_cache_storage_disk_usage,
         // );
-        let _split_cache_dir_path = get_cache_directory_path(&data_dir_path);
+        // let split_cache_dir_path = get_cache_directory_path(&data_dir_path);
         // let local_split_store =
         //     LocalSplitStore::open(split_cache_dir_path, split_store_space_quota).await?;
-        let cache_root_directory =
-            temp_dir::create_or_purge_directory(&data_dir_path.join(CACHE_DIR_NAME)).await?;
+        // let cache_root_directory =
+        //     temp_dir::create_or_purge_directory(&data_dir_path.join(CACHE_DIR_NAME)).await?;
         Ok(Self {
             node_id,
-            cache_root_directory,
-            metastore,
+            // cache_root_directory,
+            // metastore,
             counters: Default::default(),
-            max_concurrent_split_downloads: 5, // TODO: replace with cache_storage_config.something
+            // max_concurrent_split_downloads: 5, // TODO: replace with
+            // cache_storage_config.something
             storage_resolver,
         })
     }
