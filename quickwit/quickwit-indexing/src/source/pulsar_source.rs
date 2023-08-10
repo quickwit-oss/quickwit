@@ -33,18 +33,15 @@ use pulsar::{
 };
 use quickwit_actors::{ActorContext, ActorExitStatus, Mailbox};
 use quickwit_config::{PulsarSourceAuth, PulsarSourceParams};
-use quickwit_metastore::checkpoint::{
-    PartitionId, Position, SourceCheckpoint, SourceCheckpointDelta,
-};
+use quickwit_metastore::checkpoint::{PartitionId, Position, SourceCheckpoint};
 use quickwit_proto::IndexUid;
 use serde_json::{json, Value as JsonValue};
 use tokio::time;
 use tracing::{debug, info, warn};
 
 use crate::actors::DocProcessor;
-use crate::models::RawDocBatch;
 use crate::source::{
-    Source, SourceActor, SourceContext, SourceExecutionContext, TypedSourceFactory,
+    BatchBuilder, Source, SourceActor, SourceContext, SourceExecutionContext, TypedSourceFactory,
 };
 
 /// Number of bytes after which we cut a new batch.
@@ -307,28 +304,6 @@ impl DeserializeMessage for PulsarMessage {
     }
 }
 
-#[derive(Debug, Default)]
-struct BatchBuilder {
-    docs: Vec<Bytes>,
-    num_bytes: u64,
-    checkpoint_delta: SourceCheckpointDelta,
-}
-
-impl BatchBuilder {
-    fn build(self) -> RawDocBatch {
-        RawDocBatch {
-            docs: self.docs,
-            checkpoint_delta: self.checkpoint_delta,
-            force_commit: false,
-        }
-    }
-
-    fn push(&mut self, doc: Bytes, num_bytes: u64) {
-        self.docs.push(doc);
-        self.num_bytes += num_bytes;
-    }
-}
-
 #[tracing::instrument(name = "pulsar-consumer", skip(pulsar))]
 /// Creates a new pulsar consumer
 async fn create_pulsar_consumer(
@@ -476,7 +451,7 @@ mod pulsar_broker_tests {
     use super::*;
     use crate::new_split_id;
     use crate::source::pulsar_source::{msg_id_from_position, msg_id_to_position};
-    use crate::source::{quickwit_supported_sources, SuggestTruncate};
+    use crate::source::{quickwit_supported_sources, RawDocBatch, SuggestTruncate};
 
     static PULSAR_URI: &str = "pulsar://localhost:6650";
     static PULSAR_ADMIN_URI: &str = "http://localhost:8081";

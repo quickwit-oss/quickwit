@@ -5308,7 +5308,6 @@ dependencies = [
  "tracing",
  "ulid",
  "utoipa",
- "uuid",
  "vrl",
  "vrl-stdlib",
 ]

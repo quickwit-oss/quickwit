@@ -86,7 +86,7 @@ impl SourceConfig {
         match self.source_params {
             SourceParams::File(_) => "file",
             SourceParams::Kafka(_) => "kafka",
-            SourceParams::GcpPubSub(_) => "gcp-pubsub",
+            SourceParams::GcpPubSub(_) => "gcp_pubsub",
             SourceParams::Kinesis(_) => "kinesis",
             SourceParams::Vec(_) => "vec",
             SourceParams::Void(_) => "void",
@@ -200,21 +200,14 @@ impl FromStr for SourceInputFormat {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
-#[serde(tag = "source_type", content = "params")]
+#[serde(tag = "source_type", content = "params", rename_all = "snake_case")]
 pub enum SourceParams {
-    #[serde(rename = "file")]
     File(FileSourceParams),
-    #[serde(rename = "kafka")]
     Kafka(KafkaSourceParams),
-    #[serde(rename = "gcp-pubsub")]
     GcpPubSub(GcpPubSubSourceParams),
-    #[serde(rename = "kinesis")]
     Kinesis(KinesisSourceParams),
-    #[serde(rename = "pulsar")]
     Pulsar(PulsarSourceParams),
-    #[serde(rename = "vec")]
     Vec(VecSourceParams),
-    #[serde(rename = "void")]
     Void(VoidSourceParams),
     #[serde(rename = "ingest-api")]
     IngestApi,

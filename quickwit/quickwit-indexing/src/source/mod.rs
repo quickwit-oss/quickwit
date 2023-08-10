@@ -58,7 +58,7 @@
 //! - the kafka source: the partition id is a kafka topic partition id, and the position is a kafka
 //!   offset.
 mod file_source;
-#[cfg(feature = "gcp-pubsub")]
+#[cfg(feature = "gcp_pubsub")]
 mod gcp_pubsub_source;
 mod ingest_api_source;
 #[cfg(feature = "kafka")]
@@ -77,8 +77,9 @@ use std::time::Duration;
 
 use anyhow::bail;
 use async_trait::async_trait;
+use bytes::Bytes;
 pub use file_source::{FileSource, FileSourceFactory};
-#[cfg(feature = "gcp-pubsub")]
+#[cfg(feature = "gcp_pubsub")]
 pub use gcp_pubsub_source::{GcpPubSubSource, GcpPubSubSourceFactory};
 #[cfg(feature = "kafka")]
 pub use kafka_source::{KafkaSource, KafkaSourceFactory};
@@ -90,7 +91,7 @@ pub use pulsar_source::{PulsarSource, PulsarSourceFactory};
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox};
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::{SourceConfig, SourceParams};
-use quickwit_metastore::checkpoint::SourceCheckpoint;
+use quickwit_metastore::checkpoint::{SourceCheckpoint, SourceCheckpointDelta};
 use quickwit_metastore::Metastore;
 use quickwit_proto::IndexUid;
 use serde_json::Value as JsonValue;
@@ -101,6 +102,7 @@ pub use vec_source::{VecSource, VecSourceFactory};
 pub use void_source::{VoidSource, VoidSourceFactory};
 
 use crate::actors::DocProcessor;
+use crate::models::RawDocBatch;
 use crate::source::ingest_api_source::IngestApiSourceFactory;
 
 /// Runtime configuration used during execution of a source actor.
@@ -291,8 +293,8 @@ pub fn quickwit_supported_sources() -> &'static SourceLoader {
     SOURCE_LOADER.get_or_init(|| {
         let mut source_factory = SourceLoader::default();
         source_factory.add_source("file", FileSourceFactory);
-        #[cfg(feature = "gcp-pubsub")]
-        source_factory.add_source("gcp-pubsub", GcpPubSubSourceFactory);
+        #[cfg(feature = "gcp_pubsub")]
+        source_factory.add_source("gcp_pubsub", GcpPubSubSourceFactory);
         #[cfg(feature = "kafka")]
         source_factory.add_source("kafka", KafkaSourceFactory);
         #[cfg(feature = "kinesis")]
@@ -372,6 +374,35 @@ impl Handler<SuggestTruncate> for SourceActor {
             error!(err=?err, "suggest-truncate-error");
         }
         Ok(())
+    }
+}
+
+#[derive(Debug, Default)]
+struct BatchBuilder {
+    docs: Vec<Bytes>,
+    num_bytes: u64,
+    checkpoint_delta: SourceCheckpointDelta,
+}
+
+impl BatchBuilder {
+    fn build(self) -> RawDocBatch {
+        RawDocBatch {
+            docs: self.docs,
+            checkpoint_delta: self.checkpoint_delta,
+            force_commit: false,
+        }
+    }
+    fn build_force(self) -> RawDocBatch {
+        RawDocBatch {
+            docs: self.docs,
+            checkpoint_delta: self.checkpoint_delta,
+            force_commit: true,
+        }
+    }
+
+    fn push(&mut self, doc: Bytes, num_bytes: u64) {
+        self.docs.push(doc);
+        self.num_bytes += num_bytes;
     }
 }
 
