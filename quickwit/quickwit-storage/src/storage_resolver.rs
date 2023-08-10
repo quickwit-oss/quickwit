@@ -130,7 +130,7 @@ pub struct StorageResolverBuilder {
 }
 
 impl StorageResolverBuilder {
-    /// Registers a [`StorageFactory`] and a [`StorageConfig`].
+    /// Registers a [`StorageFactory`].
     pub fn register<S: StorageFactory>(mut self, storage_factory: S) -> Self {
         self.per_backend_factories
             .insert(storage_factory.backend(), Box::new(storage_factory));
