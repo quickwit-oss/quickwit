@@ -72,10 +72,14 @@ pub async fn start_cache_storage_controller(
     local_cache_storage_service: Option<Mailbox<CacheStorageService>>,
     metastore: Arc<dyn Metastore>,
 ) -> anyhow::Result<Mailbox<CacheStorageController>> {
-    let service_pool = CacheStorageServicePool::new(local_cache_storage_service);
+    let service_pool = CacheStorageServicePool::default();
     let controller = CacheStorageController::new(metastore, service_pool.clone());
     let (controller_mailbox, _) = universe.spawn_builder().spawn(controller);
-    service_pool.listen_for_changes(controller_mailbox.clone(), cluster_change_stream);
+    service_pool.listen_for_changes(
+        local_cache_storage_service,
+        controller_mailbox.clone(),
+        cluster_change_stream,
+    );
     Ok(controller_mailbox)
 }
 
