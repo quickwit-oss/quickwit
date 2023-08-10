@@ -171,7 +171,7 @@ It is also possible to not supply an order and rely on the default order using t
 ```
 
 The default order is `asc`, except for `_score` for which it is `desc`.
-When sorting by a fast field, if the doc is associated to several values, only the first one is considered.
+When sorting by a fast field and this field contains several values in a single document, only the first value is used for sorting.
 
 ### `_msearch` &nbsp; Multi search API
 
@@ -197,7 +197,7 @@ The payload is expected to alternate:
 - a `search request body` as defined in the [`_search` endpoint section].
 
 
-### `_scroll` &nbsp; Scroll API
+### `_search/scroll` &nbsp; Scroll API
 
 ```
 GET api/v1/_elastic/_search/scroll
@@ -213,7 +213,7 @@ GET api/v1/_elastic/_search/scroll
 The `_scroll`, in combination with the `_search` API makes it possible successive pages of search results.
 First, the client needs to call the `search api` with a `scroll` query parameter, and then pass the `scroll_id` returned in the response payload to  `_scroll` endpoint.
 
-Each subsequent call to the `_scroll` endpoint will return a new `_scroll_id` pointing to the next page.
+Each subsequent call to the `_search/scroll` endpoint will return a new `scroll_id` pointing to the next page.
 
 :::caution
 
@@ -413,7 +413,7 @@ The following query types are supported.
 
 [Elasticsearch reference documentation](https://www.elastic.co/guide/en/elasticsearch/reference/8.8/query-dsl-exists-query.html)
 
-Query matching only documents containing a value for a given field.
+Query matching only documents containing a non-null value for a given field.
 
 #### Example
 
