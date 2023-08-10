@@ -3,43 +3,33 @@ title: Deployment modes
 sidebar_position: 1
 ---
 
+As an application, Quickwit is built out of multiple services and is designed to run as a horizontally-scalable distributed system. Currently, Quickwit supports four core services (indexer, searcher, metastore, control plane) and one maintenance service (janitor):
 
-Quickwit distributed search engine relies on 4 major services and one maintenance service:
+- Indexers ingest documents from data sources and build indexes.
+- Searchers execute search queries submitted via the REST API.
+- The Metastore stores index metadata in a PostgreSQL-compatible database or cloud-hosted file.
+- The Control Plane distributes and coordinates indexing workloads on indexers.
+- The Janitor performs periodic maintenance tasks.
 
-- The Searchers for executing search queries from the REST API.
-- The Indexers that index data from data sources.
-- The Metastore that stores the index metadata in a PostgreSQL-like database or in a cloud storage file.
-- The Control plane that schedules indexing tasks to the indexers.
-- The Janitor that executes periodic maintenance tasks.
+Quickwit is distributed as a single binary or Docker image. The behavior of that executable file or image is controlled with the `--service` option of the `quickwit run` command and defines which services run on a node. You may start one service, multiple, or all of them. Nodes always serve the REST API and the search and admin UI. In addition, they will redirect requests that they cannot satisfy to the appropriate nodes in the cluster. Finally, each service can run on one or several nodes depending on the expected load on the system.
 
-Quickwit is compiled as a single binary or Docker image, and you can choose to start one, several services or all of them. Each node also always serves the UI static assets required by the UI React app.
+## Standalone mode (single node)
 
-You can deploy Quickwit on a single node or multiple nodes.
+This deployment mode is the simplest way to get started with Quickwit. Launch all the services with the `quickwit run` [command](../reference/cli.md), and you are now ready to ingest data and search your indexes.
 
-## Single-node
+## Cluster mode (multi-node)
 
-This is the simplest way to get started with Quickwit. First, launch all the services with the `quickwit run` [command](../reference/cli.md), and then you're ready to ingest and search data.
-
-## Multi nodes
-
-You can deploy Quickwit on multiple nodes. We provide a [helm-chart](kubernetes.md) to help you deploy Quickwit on Kubernetes.
-
-As soon as you are running at least 2 nodes, there are several restrictions:
-- you have to use a distributed data store such as Amazon S3 or MinIO for storing your index; a local file system storage will not work;
-- if you use the [Ingest API](../reference/rest-api.md), you must send your queries directly to the indexer. When sent to a searcher, you will get a 404 response. Note that when search queries are addressed to an indexer, it acts as a root searcher node and dispatches leaf requests to searchers;
+You can deploy Quickwit on multiple nodes. We provide a [Helm chart](kubernetes.md) to help you deploy Quickwit on Kubernetes. In cluster mode, you must store your index data on a shared storage backend such as Amazon S3 or MinIO.
 
 ## One indexer, multiple searchers
 
-One Quickwit node running on a decent instance can ingest data at speeds up to 40 MB/sec from Kafka. A deployment with one indexer is thus a good start. However, you may need several searchers for handling large datasets or serving many resource-intensive queries such as aggregation queries.
+One indexer running on a small instance (4 vCPUs) can ingest documents at a throughput of 20-40MB/s (1-3+ TB/day). A deployment with one indexer is thus an excellent place to start. However, you may need several searchers to handle large datasets or serve many resource-intensive requests such as aggregation queries.
 
 ## Multiple indexers, multiple searchers
 
-Indexing a single [data source](../configuration/source-config.md) on several indexers is currently only possible with a [Kafka source](../configuration/source-config.md#kafka-source).
-Support distributed indexing for Pulsar and the Ingest API sources is planned for Q2, stay tuned!
+Indexing a single [data source](../configuration/source-config.md) on several indexers is only possible with a [Kafka source](../configuration/source-config.md#kafka-source).
+Support for native distributed indexing is planned for Quickwit 0.7 (Q4). Stay tuned!
 
 ## File-backed metastore limitations
 
-The file-backed metastore is mainly useful for testing purposes. Though it may be convenient for some specific use cases, we strongly encourage you to use a PostgreSQL metastore in production.
-The main limitations of the file-backed metastore are:
-- it does not support concurrent writes;
-- it caches metastore data and polls files regularly to update its cache. Thus it has a delayed view on the metastore.
+The file-backed metastore is a good fit for standalone and small deployments. However, it does not support multiple instances running at the same time. As long as you can guarantee that no more than one metastore is running at any given time, the file-backed metastore is safe to use. For heavy workloads, we recommend using a PostgreSQL metastore.
