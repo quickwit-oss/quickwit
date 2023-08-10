@@ -21,6 +21,7 @@ use std::borrow::Borrow;
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::fmt;
+use std::ops::RangeInclusive;
 use std::sync::Arc;
 
 use futures::StreamExt;
@@ -37,22 +38,25 @@ use tracing::{debug, error, warn};
 use super::ingester::ShardStatus;
 use crate::{ClientId, DocBatchBuilderV2, IngesterPool};
 
+/// A fetch task is in charge of awaiting for documents for a given shard and push
+/// that data to the `fetch_reponse_tx` channel.
 pub(super) struct FetchTask {
     client_id: ClientId,
     index_uid: IndexUid,
     source_id: SourceId,
     shard_id: ShardId,
     queue_id: QueueId,
-    from_position_inclusive: u64,
-    to_position_inclusive: u64,
+    position_range: RangeInclusive<u64>,
     mrecordlog: Arc<RwLock<MultiRecordLog>>,
     fetch_response_tx: mpsc::Sender<IngestV2Result<FetchResponseV2>>,
+    /// This watch channel makes it possible to await
+    /// for updates with capturing the lock on the mrecordlog.
     shard_status_rx: watch::Receiver<ShardStatus>,
     batch_num_bytes: usize,
 }
 
 impl fmt::Debug for FetchTask {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("FetchTask")
             .field("client_id", &self.client_id)
             .field("index_uid", &self.index_uid)
@@ -60,6 +64,11 @@ impl fmt::Debug for FetchTask {
             .field("shard_id", &self.shard_id)
             .finish()
     }
+}
+
+/// TODO Drop when `Iterator::advance_by()` is stabilized.
+fn advance_by(range: &mut RangeInclusive<u64>, len: u64) {
+    *range = *range.start() + len..=*range.end();
 }
 
 impl FetchTask {
@@ -85,16 +94,28 @@ impl FetchTask {
             index_uid: open_fetch_stream_request.index_uid.into(),
             source_id: open_fetch_stream_request.source_id,
             shard_id: open_fetch_stream_request.shard_id,
-            from_position_inclusive,
-            to_position_inclusive,
+            position_range: from_position_inclusive..=to_position_inclusive,
             mrecordlog,
             fetch_response_tx,
             shard_status_rx,
             batch_num_bytes,
         };
-        let future = async move { fetch_task.run().await };
-        tokio::spawn(future);
+        let fetch_task_future = async move { fetch_task.run().await };
+        tokio::spawn(fetch_task_future);
         fetch_stream
+    }
+
+    /// Waits for more data. Returns false if the ingester was dropped.
+    async fn wait_for_data(&mut self) -> bool {
+        while self.shard_status_rx.borrow().replication_position_inclusive
+            < *self.position_range.start()
+        {
+            if self.shard_status_rx.changed().await.is_err() {
+                // The ingester was dropped.
+                return false;
+            }
+        }
+        true
     }
 
     async fn run(&mut self) {
@@ -103,23 +124,17 @@ impl FetchTask {
             index_uid=%self.index_uid,
             source_id=%self.source_id,
             shard_id=%self.shard_id,
-            from_position_exclusive=%self.from_position_inclusive,
-            to_position_inclusive=%self.to_position_inclusive,
+            position=?self.position_range,
             "Spawning fetch task."
         );
-        'outer: while self.from_position_inclusive <= self.to_position_inclusive {
-            while self.shard_status_rx.borrow().replication_position_inclusive
-                < self.from_position_inclusive
-            {
-                if self.shard_status_rx.changed().await.is_err() {
-                    // The ingester was dropped.
-                    break 'outer;
-                }
+        while !self.position_range.is_empty() {
+            if !self.wait_for_data().await {
+                break;
             }
-            let fetch_range = self.from_position_inclusive..=self.to_position_inclusive;
+            // let fetch_range = self.position_range.clone();
             let mrecordlog_guard = self.mrecordlog.read().await;
 
-            let Ok(docs) = mrecordlog_guard.range(&self.queue_id, fetch_range) else {
+            let Ok(docs) = mrecordlog_guard.range(&self.queue_id, self.position_range.clone()) else {
                 // The queue no longer exists.
                 break;
             };
@@ -142,9 +157,10 @@ impl FetchTask {
                 source_id: self.source_id.clone(),
                 shard_id: self.shard_id,
                 doc_batch: Some(doc_batch),
-                from_position_inclusive: self.from_position_inclusive,
+                from_position_inclusive: *self.position_range.start(),
             };
-            self.from_position_inclusive += num_docs;
+
+            advance_by(&mut self.position_range, num_docs);
 
             if self
                 .fetch_response_tx
@@ -161,7 +177,7 @@ impl FetchTask {
             index_uid=%self.index_uid,
             source_id=%self.source_id,
             shard_id=%self.shard_id,
-            to_position_inclusive=%self.to_position_inclusive,
+            to_position_inclusive=%self.position_range.end(),
             "Fetch task completed."
         )
     }
@@ -176,6 +192,26 @@ pub struct MultiFetchStream {
     fetch_task_handles: HashMap<QueueId, JoinHandle<()>>,
     fetch_response_rx: mpsc::Receiver<IngestV2Result<FetchResponseV2>>,
     fetch_response_tx: mpsc::Sender<IngestV2Result<FetchResponseV2>>,
+}
+
+fn select_preferred_and_failover(
+    self_node_id: &NodeId,
+    leader_id: NodeId,
+    follower_id_opt: Option<NodeId>,
+) -> (NodeId, Option<NodeId>) {
+    // We only have one node.
+    let Some(follower_id) = follower_id_opt else {
+        return (leader_id, None);
+    };
+    if &leader_id == self_node_id {
+        (leader_id, Some(follower_id))
+    } else if &follower_id == self_node_id {
+        (follower_id, Some(leader_id))
+    } else if rand::random::<bool>() {
+        (leader_id, Some(follower_id))
+    } else {
+        (follower_id, Some(leader_id))
+    }
 }
 
 impl MultiFetchStream {
@@ -195,11 +231,11 @@ impl MultiFetchStream {
     pub async fn subscribe(
         &mut self,
         leader_id: NodeId,
-        follower_id: Option<NodeId>,
+        follower_id_opt: Option<NodeId>,
         index_uid: IndexUid,
         source_id: SourceId,
         shard_id: ShardId,
-        mut from_position_exclusive: Option<u64>,
+        from_position_exclusive: Option<u64>,
         to_position_inclusive: Option<u64>,
     ) -> IngestV2Result<()> {
         let queue_id = queue_id(index_uid.as_str(), &source_id, shard_id);
@@ -211,20 +247,8 @@ impl MultiFetchStream {
             )));
         }
         let (mut preferred_ingester_id, mut failover_ingester_id) =
-            if let Some(follower_id) = follower_id {
-                if leader_id == self.node_id {
-                    (leader_id, Some(follower_id))
-                } else if follower_id == self.node_id {
-                    (follower_id, Some(leader_id))
-                } else if rand::random::<bool>() {
-                    (leader_id, Some(follower_id))
-                } else {
-                    (follower_id, Some(leader_id))
-                }
-            } else {
-                (leader_id, None)
-            };
-        let mut fetch_stream = loop {
+            select_preferred_and_failover(&self.node_id, leader_id, follower_id_opt);
+        let fetch_stream = loop {
             let Some(mut ingester) = self.ingester_pool.get(&preferred_ingester_id).await else {
                 if let Some(failover_ingester_id) = failover_ingester_id.take() {
                     warn!(
@@ -284,60 +308,20 @@ impl MultiFetchStream {
         let ingester_pool = self.ingester_pool.clone();
         let fetch_response_tx = self.fetch_response_tx.clone();
 
-        let fetch_task = async move {
-            while let Some(fetch_response_result) = fetch_stream.next().await {
-                match fetch_response_result {
-                    Ok(fetch_response) => {
-                        from_position_exclusive = fetch_response.to_position_inclusive();
-
-                        if fetch_response_tx.send(Ok(fetch_response)).await.is_err() {
-                            // The stream was dropped.
-                            break;
-                        }
-                    }
-                    Err(ingest_error) => {
-                        if let Some(failover_ingester_id) = failover_ingester_id.take() {
-                            warn!(
-                                client_id=%client_id,
-                                index_uid=%index_uid,
-                                source_id=%source_id,
-                                shard_id=%shard_id,
-                                error=?ingest_error,
-                                "Error fetching from `{preferred_ingester_id}`. Failing over to ingester `{failover_ingester_id}`."
-                            );
-                            let mut ingester = ingester_pool
-                                .get(&preferred_ingester_id)
-                                .await
-                                .expect("FIXME: handle error");
-                            let open_fetch_stream_request = OpenFetchStreamRequest {
-                                client_id: client_id.clone(),
-                                index_uid: index_uid.clone().into(),
-                                source_id: source_id.clone(),
-                                shard_id,
-                                from_position_exclusive,
-                                to_position_inclusive,
-                            };
-                            fetch_stream = ingester
-                                .open_fetch_stream(open_fetch_stream_request)
-                                .await
-                                .expect("FIXME:");
-                            continue;
-                        }
-                        error!(
-                            client_id=%client_id,
-                            index_uid=%index_uid,
-                            source_id=%source_id,
-                            shard_id=%shard_id,
-                            error=?ingest_error,
-                            "Error fetching from `{preferred_ingester_id}`."
-                        );
-                        let _ = fetch_response_tx.send(Err(ingest_error)).await;
-                        break;
-                    }
-                }
-            }
-        };
-        let fetch_task_handle = tokio::spawn(fetch_task);
+        let fetch_task_fut = fetch_task(
+            client_id,
+            index_uid,
+            source_id,
+            shard_id,
+            from_position_exclusive,
+            to_position_inclusive,
+            preferred_ingester_id,
+            failover_ingester_id,
+            ingester_pool,
+            fetch_stream,
+            fetch_response_tx,
+        );
+        let fetch_task_handle = tokio::spawn(fetch_task_fut);
         self.fetch_task_handles.insert(queue_id, fetch_task_handle);
         Ok(())
     }
@@ -358,6 +342,74 @@ impl MultiFetchStream {
 
     pub async fn next(&mut self) -> Option<IngestV2Result<FetchResponseV2>> {
         self.fetch_response_rx.recv().await
+    }
+}
+
+async fn fetch_task(
+    client_id: String,
+    index_uid: IndexUid,
+    source_id: SourceId,
+    shard_id: ShardId,
+    mut from_position_exclusive: Option<u64>,
+    to_position_inclusive: Option<u64>,
+
+    preferred_ingester_id: NodeId,
+    mut failover_ingester_id: Option<NodeId>,
+
+    ingester_pool: IngesterPool,
+
+    mut fetch_stream: ServiceStream<IngestV2Result<FetchResponseV2>>,
+    fetch_response_tx: mpsc::Sender<IngestV2Result<FetchResponseV2>>,
+) {
+    while let Some(fetch_response_result) = fetch_stream.next().await {
+        match fetch_response_result {
+            Ok(fetch_response) => {
+                from_position_exclusive = fetch_response.to_position_inclusive();
+                if fetch_response_tx.send(Ok(fetch_response)).await.is_err() {
+                    // The stream was dropped.
+                    break;
+                }
+            }
+            Err(ingest_error) => {
+                if let Some(failover_ingester_id) = failover_ingester_id.take() {
+                    warn!(
+                        client_id=%client_id,
+                        index_uid=%index_uid,
+                        source_id=%source_id,
+                        shard_id=%shard_id,
+                        error=?ingest_error,
+                        "Error fetching from `{preferred_ingester_id}`. Failing over to ingester `{failover_ingester_id}`."
+                    );
+                    let mut ingester = ingester_pool
+                        .get(&preferred_ingester_id)
+                        .await
+                        .expect("FIXME: handle error");
+                    let open_fetch_stream_request = OpenFetchStreamRequest {
+                        client_id: client_id.clone(),
+                        index_uid: index_uid.clone().into(),
+                        source_id: source_id.clone(),
+                        shard_id,
+                        from_position_exclusive,
+                        to_position_inclusive,
+                    };
+                    fetch_stream = ingester
+                        .open_fetch_stream(open_fetch_stream_request)
+                        .await
+                        .expect("FIXME:");
+                    continue;
+                }
+                error!(
+                    client_id=%client_id,
+                    index_uid=%index_uid,
+                    source_id=%source_id,
+                    shard_id=%shard_id,
+                    error=?ingest_error,
+                    "Error fetching from `{preferred_ingester_id}`."
+                );
+                let _ = fetch_response_tx.send(Err(ingest_error)).await;
+                break;
+            }
+        }
     }
 }
 
