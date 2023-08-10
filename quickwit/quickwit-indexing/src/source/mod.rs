@@ -378,21 +378,21 @@ impl Handler<SuggestTruncate> for SourceActor {
 }
 
 #[derive(Debug, Default)]
-struct BatchBuilder {
+pub struct BatchBuilder {
     docs: Vec<Bytes>,
     num_bytes: u64,
     checkpoint_delta: SourceCheckpointDelta,
 }
 
 impl BatchBuilder {
-    fn build(self) -> RawDocBatch {
+    pub fn build(self) -> RawDocBatch {
         RawDocBatch {
             docs: self.docs,
             checkpoint_delta: self.checkpoint_delta,
             force_commit: false,
         }
     }
-    fn build_force(self) -> RawDocBatch {
+    pub fn build_force(self) -> RawDocBatch {
         RawDocBatch {
             docs: self.docs,
             checkpoint_delta: self.checkpoint_delta,
@@ -400,7 +400,7 @@ impl BatchBuilder {
         }
     }
 
-    fn push(&mut self, doc: Bytes, num_bytes: u64) {
+    pub fn push(&mut self, doc: Bytes, num_bytes: u64) {
         self.docs.push(doc);
         self.num_bytes += num_bytes;
     }
