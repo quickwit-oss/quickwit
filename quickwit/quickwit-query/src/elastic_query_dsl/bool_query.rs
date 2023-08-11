@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 use serde_with::formats::PreferMany;
 use serde_with::{serde_as, OneOrMany};
 
@@ -29,7 +29,7 @@ use crate::query_ast::{self, QueryAst};
 /// - minimum_should_match
 /// - named queries
 #[serde_as]
-#[derive(Serialize, Deserialize, Debug, PartialEq, Eq, Clone)]
+#[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct BoolQuery {
     #[serde_as(deserialize_as = "OneOrMany<_, PreferMany>")]
@@ -48,6 +48,19 @@ pub struct BoolQuery {
     pub boost: Option<NotNaNf32>,
 }
 
+impl BoolQuery {
+    // Combines a list of children queries into a boolean union.
+    pub(crate) fn union(children: Vec<ElasticQueryDslInner>) -> BoolQuery {
+        BoolQuery {
+            must: Vec::new(),
+            must_not: Vec::new(),
+            should: children,
+            filter: Vec::new(),
+            boost: None,
+        }
+    }
+}
+
 fn convert_vec(query_dsls: Vec<ElasticQueryDslInner>) -> anyhow::Result<Vec<QueryAst>> {
     query_dsls
         .into_iter()
@@ -64,6 +77,12 @@ impl ConvertableToQueryAst for BoolQuery {
             filter: convert_vec(self.filter)?,
         };
         Ok(bool_query_ast.into())
+    }
+}
+
+impl From<BoolQuery> for ElasticQueryDslInner {
+    fn from(bool_query: BoolQuery) -> Self {
+        ElasticQueryDslInner::Bool(bool_query)
     }
 }
 

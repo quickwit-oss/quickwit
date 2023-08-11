@@ -624,7 +624,11 @@ pub async fn root_search(
 
     let query_ast: QueryAst = serde_json::from_str(&search_request.query_ast)
         .map_err(|err| SearchError::InvalidQuery(err.to_string()))?;
-    let query_ast_resolved = query_ast.parse_user_query(doc_mapper.default_search_fields())?;
+
+    let query_ast_resolved = query_ast
+        .parse_user_query(doc_mapper.default_search_fields())
+        // We convert the error to return a 400 to the user (and not a 500).
+        .map_err(|err| SearchError::InvalidQuery(err.to_string()))?;
 
     if let Some(timestamp_field) = doc_mapper.timestamp_field_name() {
         refine_start_end_timestamp_from_ast(

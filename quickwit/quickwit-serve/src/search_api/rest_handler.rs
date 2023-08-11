@@ -720,7 +720,7 @@ mod tests {
         assert_eq!(resp.status(), 400);
         let resp_json: JsonValue = serde_json::from_slice(resp.body())?;
         let exp_resp_json = serde_json::json!({
-            "message": "unknown field `end_unix_timestamp`, expected one of `query`, `aggs`, `search_field`, `snippet_fields`, `start_timestamp`, `end_timestamp`, `max_hits`, `start_offset`, `format`, `sort_by_field`, `sort_by`"
+            "message": "unknown field `end_unix_timestamp`, expected one of `query`, `aggs`, `search_field`, `snippet_fields`, `start_timestamp`, `end_timestamp`, `max_hits`, `start_offset`, `format`, `sort_by`, `sort_by_field`"
         });
         assert_eq!(resp_json, exp_resp_json);
         Ok(())

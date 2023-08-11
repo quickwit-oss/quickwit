@@ -17,22 +17,22 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 use crate::elastic_query_dsl::one_field_map::OneFieldMap;
 use crate::elastic_query_dsl::{ConvertableToQueryAst, ElasticQueryDslInner};
 use crate::query_ast::{self, FullTextMode, FullTextParams, QueryAst};
 use crate::MatchAllOrNone;
 
-pub type MatchPhrasePrefix = OneFieldMap<PhrasePrefixValue>;
+pub(crate) type MatchPhrasePrefixQuery = OneFieldMap<MatchPhrasePrefixQueryParams>;
 
 fn default_max_expansions() -> u32 {
     50
 }
 
-#[derive(PartialEq, Eq, Debug, Serialize, Deserialize, Clone)]
+#[derive(PartialEq, Eq, Debug, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
-pub struct PhrasePrefixValue {
+pub(crate) struct MatchPhrasePrefixQueryParams {
     pub query: String,
     #[serde(default)]
     pub analyzer: Option<String>,
@@ -44,15 +44,15 @@ pub struct PhrasePrefixValue {
     pub zero_terms_query: MatchAllOrNone,
 }
 
-impl From<MatchPhrasePrefix> for ElasticQueryDslInner {
-    fn from(term_query: MatchPhrasePrefix) -> Self {
+impl From<MatchPhrasePrefixQuery> for ElasticQueryDslInner {
+    fn from(term_query: MatchPhrasePrefixQuery) -> Self {
         Self::MatchPhrasePrefix(term_query)
     }
 }
 
-impl ConvertableToQueryAst for MatchPhrasePrefix {
+impl ConvertableToQueryAst for MatchPhrasePrefixQuery {
     fn convert_to_query_ast(self) -> anyhow::Result<QueryAst> {
-        let PhrasePrefixValue {
+        let MatchPhrasePrefixQueryParams {
             query,
             analyzer,
             max_expansions,
@@ -76,15 +76,16 @@ impl ConvertableToQueryAst for MatchPhrasePrefix {
 
 #[cfg(test)]
 mod tests {
-    use super::{MatchAllOrNone, MatchPhrasePrefix, PhrasePrefixValue};
+    use super::{MatchAllOrNone, MatchPhrasePrefixQuery, MatchPhrasePrefixQueryParams};
 
     #[test]
     fn test_term_query_simple() {
         let phrase_prefix_json = r#"{ "message": { "query": "quick brown f" } }"#;
-        let phrase_prefix: MatchPhrasePrefix = serde_json::from_str(phrase_prefix_json).unwrap();
-        let expected = MatchPhrasePrefix {
+        let phrase_prefix: MatchPhrasePrefixQuery =
+            serde_json::from_str(phrase_prefix_json).unwrap();
+        let expected = MatchPhrasePrefixQuery {
             field: "message".to_string(),
-            value: PhrasePrefixValue {
+            value: MatchPhrasePrefixQueryParams {
                 query: "quick brown f".to_string(),
                 analyzer: None,
                 max_expansions: 50,

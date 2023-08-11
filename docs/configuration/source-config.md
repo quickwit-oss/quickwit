@@ -1,6 +1,6 @@
 ---
 title: Source configuration
-sidebar_position: 4
+sidebar_position: 5
 ---
 
 Quickwit can insert data into an index from one or multiple sources.

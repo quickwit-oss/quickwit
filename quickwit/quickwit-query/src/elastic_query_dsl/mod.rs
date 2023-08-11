@@ -21,7 +21,9 @@ use serde::{Deserialize, Serialize};
 
 mod bool_query;
 mod exists_query;
+mod match_phrase_query;
 mod match_query;
+mod multi_match;
 mod one_field_map;
 mod phrase_prefix_query;
 mod query_string_query;
@@ -30,39 +32,43 @@ mod term_query;
 
 use bool_query::BoolQuery;
 pub use one_field_map::OneFieldMap;
-use phrase_prefix_query::MatchPhrasePrefix;
+use phrase_prefix_query::MatchPhrasePrefixQuery;
 pub(crate) use query_string_query::QueryStringQuery;
 use range_query::RangeQuery;
 use term_query::TermQuery;
 
 use crate::elastic_query_dsl::exists_query::ExistsQuery;
+use crate::elastic_query_dsl::match_phrase_query::MatchPhraseQuery;
 use crate::elastic_query_dsl::match_query::MatchQuery;
+use crate::elastic_query_dsl::multi_match::MultiMatchQuery;
 use crate::not_nan_f32::NotNaNf32;
 use crate::query_ast::QueryAst;
 
 #[derive(Serialize, Deserialize, Debug, Eq, PartialEq, Clone, Copy, Default)]
-struct MatchAllQuery {
+pub(crate) struct MatchAllQuery {
     pub boost: Option<NotNaNf32>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Eq, PartialEq, Clone, Copy)]
-struct MatchNoneQuery;
+pub(crate) struct MatchNoneQuery;
 
-#[derive(Serialize, Deserialize, Debug, Eq, PartialEq, Clone)]
+#[derive(Deserialize, Debug, Eq, PartialEq, Clone)]
 #[serde(rename_all = "snake_case", deny_unknown_fields)]
-enum ElasticQueryDslInner {
+pub(crate) enum ElasticQueryDslInner {
     QueryString(QueryStringQuery),
     Bool(BoolQuery),
     Term(TermQuery),
     MatchAll(MatchAllQuery),
     MatchNone(MatchNoneQuery),
     Match(MatchQuery),
-    MatchPhrasePrefix(MatchPhrasePrefix),
+    MatchPhrase(MatchPhraseQuery),
+    MatchPhrasePrefix(MatchPhrasePrefixQuery),
+    MultiMatch(MultiMatchQuery),
     Range(RangeQuery),
     Exists(ExistsQuery),
 }
 
-#[derive(Serialize, Deserialize, Debug, Eq, PartialEq, Clone)]
+#[derive(Deserialize, Debug, Eq, PartialEq, Clone)]
 #[serde(transparent)]
 pub struct ElasticQueryDsl(ElasticQueryDslInner);
 
@@ -95,12 +101,14 @@ impl ConvertableToQueryAst for ElasticQueryDslInner {
                 }
             }
             Self::MatchNone(_) => Ok(QueryAst::MatchNone),
+            Self::MatchPhrase(match_phrase_query) => match_phrase_query.convert_to_query_ast(),
             Self::MatchPhrasePrefix(match_phrase_prefix) => {
                 match_phrase_prefix.convert_to_query_ast()
             }
             Self::Range(range_query) => range_query.convert_to_query_ast(),
             Self::Match(match_query) => match_query.convert_to_query_ast(),
             Self::Exists(exists_query) => exists_query.convert_to_query_ast(),
+            Self::MultiMatch(multi_match_query) => multi_match_query.convert_to_query_ast(),
         }
     }
 }

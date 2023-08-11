@@ -1,6 +1,6 @@
 ---
 title: Index configuration
-sidebar_position: 2
+sidebar_position: 3
 ---
 
 This page describes how to configure an index.

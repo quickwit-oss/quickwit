@@ -163,10 +163,10 @@ impl Uri {
         if self.protocol().is_database() {
             static DATABASE_URI_PATTERN: OnceCell<Regex> = OnceCell::new();
             DATABASE_URI_PATTERN
-                .get_or_init(||
+                .get_or_init(|| {
                     Regex::new("(?P<before>^.*://.*)(?P<password>:.*@)(?P<after>.*)")
-                        .expect("Failed to compile regular expression. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.")
-                )
+                        .expect("The regular expression should compile.")
+                })
                 .replace(&self.uri, "$before:***redacted***@$after")
         } else {
             Cow::Borrowed(&self.uri)
@@ -287,7 +287,7 @@ impl Uri {
                 }
 
                 let home_dir_path = home::home_dir()
-                    .context("Failed normalize URI: could not resolve home directory.")?
+                    .context("Failed to normalize URI: could not resolve home directory.")?
                     .to_string_lossy()
                     .to_string();
 
@@ -296,7 +296,7 @@ impl Uri {
             if Path::new(&path).is_relative() {
                 let current_dir = env::current_dir().context(
                     "Failed to normalize URI: could not resolve current working directory. The \
-                     directory does not exist or insufficient permissions.",
+                     directory does not exist or user has insufficient permissions.",
                 )?;
                 path = current_dir.join(path).to_string_lossy().to_string();
             }
