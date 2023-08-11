@@ -121,7 +121,8 @@ If a parameter appears both as a query string parameter and in the JSON payload,
 | `from`     | `Integer`   |  The rank of the first hit to return. This is useful for pagination.  |  0  |
 | `q` | `String` | The search query. | (Optional) |
 | `size` | `Integer` | Number of hits to return. |  10 |
-| `sort` | `String` | (Optional) |
+| `sort` | `String` | Describes how documents should be ranked. See [Sort order](#sort-order) | `[]` | (Optional) |
+| `scroll` | `Duration` | Creates a scroll context for "time to live". See [Scroll](#_scroll--scroll-api). | (Optional)
 
 #### Supported Request Body parameters
 
@@ -131,9 +132,46 @@ If a parameter appears both as a query string parameter and in the JSON payload,
 | `from`     | `Integer`   |  The rank of the first hit to return. This is useful for pagination.  |  0  |
 | `query` | `Json object` | Describe the search query. See [Query DSL](#query-dsl) | (Optional) |
 | `size` | `Integer` | Number of hits to return. |  10 |
-| `sort` | `JsonObject[]` | Describes how documents should be ranked. | `[]` |
+| `sort` | `JsonObject[]` | Describes how documents should be ranked. See [Sort order](#sort-order) | `[]` |
 | `aggs` | `Json object` | Aggregation definition. See [Aggregations](aggregation.md). | `{}` | `
 
+
+#### Sort order
+
+You can define up to two criteria on which to apply sort.
+The second criterion will only be used in presence of a tie for the first criterion.
+
+A given criterion can either be
+- the name of a fast field (explicitly defined in the schema or captured by the dynamic mode)
+- `_score` to sort by BM25.
+
+By default, the sort order is `ascending` for fast fields and descending for `_score`.
+
+When sorting by a fast field and this field contains several values in a single document, only the first value is used for sorting.
+
+The sort order can be set as descending/ascending using the
+following syntax.
+
+```json
+{
+  // ...
+  "sort" : [
+    { "timestamp" : {"order" : "asc"}},
+    { "serial_number" : "desc" }
+  ]
+  // ...
+}
+
+```
+
+It is also possible to not supply an order and rely on the default order using the following syntax.
+
+```json
+{ //...
+  "sort" : ["_score", "timestamp"]
+  // ...
+}
+```
 
 ### `_msearch` &nbsp; Multi search API
 
@@ -157,6 +195,31 @@ Runs several search requests at once.
 The payload is expected to alternate:
 - a `header` json object, containing the targetted index id.
 - a `search request body` as defined in the [`_search` endpoint section].
+
+
+### `_search/scroll` &nbsp; Scroll API
+
+```
+GET api/v1/_elastic/_search/scroll
+```
+
+#### Supported Request Body parameters
+
+| Variable      | Type       | Description                                                      | Default value |
+|---------------|------------|------------------------------------------------------------------|---------------|
+| `scroll_id`     | Scroll id (obtained from a search response)  | Required
+
+
+The `_search/scroll` endpoint, in combination with the `_search` API makes it possible to request successive pages of search results.
+First, the client needs to call the `search api` with a `scroll` query parameter, and then pass the `scroll_id` returned in the response payload to  `_search/scroll` endpoint.
+
+Each subsequent call to the `_search/scroll` endpoint will return a new `scroll_id` pointing to the next page.
+
+:::caution
+
+The scroll API should not be used to fetch above the 10,000th result.
+
+:::
 
 ## Query DSL
 
@@ -346,4 +409,25 @@ The following query types are supported.
 ```
 
 
+### `exists`
+
+[Elasticsearch reference documentation](https://www.elastic.co/guide/en/elasticsearch/reference/8.8/query-dsl-exists-query.html)
+
+Query matching only documents containing a non-null value for a given field.
+
+#### Example
+
+```json
+{
+    "exists": {
+        "field": "author.login"
+    }
+}
+```
+
+#### Supported Parameters
+
+| Variable          | Type       | Description                                                      | Default |
+|-------------------|------------|------------------------------------------------------------------|---------|
+| `field`           | String     |  Only documents with a value for field will be returned.  | -    |
 
