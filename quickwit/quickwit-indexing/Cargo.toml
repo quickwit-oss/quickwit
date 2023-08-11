@@ -25,6 +25,9 @@ fail = { workspace = true }
 flume = { workspace = true }
 fnv = { workspace = true }
 futures = { workspace = true }
+google-cloud-default = { workspace = true, optional = true }
+google-cloud-googleapis = { workspace = true, optional = true }
+google-cloud-pubsub = { workspace = true, optional = true }
 itertools = { workspace = true }
 libz-sys = { workspace = true, optional = true }
 once_cell = { workspace = true }
@@ -60,6 +63,7 @@ quickwit-proto = { workspace = true }
 quickwit-storage = { workspace = true }
 
 [features]
+gcp-pubsub = ["dep:google-cloud-pubsub", "dep:google-cloud-default", "dep:google-cloud-googleapis"]
 kafka = ["rdkafka", "backoff"]
 kafka-broker-tests = []
 vendored-kafka = ["kafka", "libz-sys/static", "openssl/vendored", "rdkafka/gssapi-vendored"]

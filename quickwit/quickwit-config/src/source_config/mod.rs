@@ -85,13 +85,14 @@ impl SourceConfig {
     pub fn source_type(&self) -> &str {
         match self.source_params {
             SourceParams::File(_) => "file",
-            SourceParams::Kafka(_) => "kafka",
-            SourceParams::Kinesis(_) => "kinesis",
-            SourceParams::Vec(_) => "vec",
-            SourceParams::Void(_) => "void",
+            SourceParams::GcpPubSub(_) => "gcp_pubsub",
             SourceParams::IngestApi => "ingest-api",
             SourceParams::IngestCli => "ingest-cli",
+            SourceParams::Kafka(_) => "kafka",
+            SourceParams::Kinesis(_) => "kinesis",
             SourceParams::Pulsar(_) => "pulsar",
+            SourceParams::Vec(_) => "vec",
+            SourceParams::Void(_) => "void",
         }
     }
 
@@ -99,13 +100,14 @@ impl SourceConfig {
     pub fn params(&self) -> JsonValue {
         match &self.source_params {
             SourceParams::File(params) => serde_json::to_value(params),
-            SourceParams::Kafka(params) => serde_json::to_value(params),
-            SourceParams::Kinesis(params) => serde_json::to_value(params),
-            SourceParams::Vec(params) => serde_json::to_value(params),
-            SourceParams::Void(params) => serde_json::to_value(params),
+            SourceParams::GcpPubSub(params) => serde_json::to_value(params),
             SourceParams::IngestApi => serde_json::to_value(()),
             SourceParams::IngestCli => serde_json::to_value(()),
+            SourceParams::Kafka(params) => serde_json::to_value(params),
+            SourceParams::Kinesis(params) => serde_json::to_value(params),
             SourceParams::Pulsar(params) => serde_json::to_value(params),
+            SourceParams::Vec(params) => serde_json::to_value(params),
+            SourceParams::Void(params) => serde_json::to_value(params),
         }
         .unwrap()
     }
@@ -198,24 +200,19 @@ impl FromStr for SourceInputFormat {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
-#[serde(tag = "source_type", content = "params")]
+#[serde(tag = "source_type", content = "params", rename_all = "snake_case")]
 pub enum SourceParams {
-    #[serde(rename = "file")]
     File(FileSourceParams),
-    #[serde(rename = "kafka")]
-    Kafka(KafkaSourceParams),
-    #[serde(rename = "kinesis")]
-    Kinesis(KinesisSourceParams),
-    #[serde(rename = "pulsar")]
-    Pulsar(PulsarSourceParams),
-    #[serde(rename = "vec")]
-    Vec(VecSourceParams),
-    #[serde(rename = "void")]
-    Void(VoidSourceParams),
+    GcpPubSub(GcpPubSubSourceParams),
     #[serde(rename = "ingest-api")]
     IngestApi,
     #[serde(rename = "ingest-cli")]
     IngestCli,
+    Kafka(KafkaSourceParams),
+    Kinesis(KinesisSourceParams),
+    Pulsar(PulsarSourceParams),
+    Vec(VecSourceParams),
+    Void(VoidSourceParams),
 }
 
 impl SourceParams {
@@ -285,6 +282,24 @@ pub struct KafkaSourceParams {
     #[serde(default)]
     #[serde(skip_serializing_if = "is_false")]
     pub enable_backfill_mode: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(deny_unknown_fields)]
+pub struct GcpPubSubSourceParams {
+    /// Name of the subscription that the source consumes.
+    pub subscription: String,
+    /// When backfill mode is enabled, the source exits after reaching the end of the topic.
+    #[serde(default)]
+    #[serde(skip_serializing_if = "is_false")]
+    pub enable_backfill_mode: bool,
+    /// GCP service account credentials (`None` will use default via
+    /// GOOGLE_APPLICATION_CREDENTIALS)
+    pub credentials: Option<String>,
+    /// Number of pull requests issued in parallel by the source (default 1)
+    pub pull_parallelism: Option<u64>,
+    /// Maximum number of messages returned by a pull request (default 1,000)
+    pub max_messages_per_pull: Option<i32>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
