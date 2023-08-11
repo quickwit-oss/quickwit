@@ -29,9 +29,7 @@ use itertools::Itertools;
 use oneshot;
 use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_config::KafkaSourceParams;
-use quickwit_metastore::checkpoint::{
-    PartitionId, Position, SourceCheckpoint, SourceCheckpointDelta,
-};
+use quickwit_metastore::checkpoint::{PartitionId, Position, SourceCheckpoint};
 use quickwit_proto::IndexUid;
 use rdkafka::config::{ClientConfig, RDKafkaLogLevel};
 use rdkafka::consumer::{
@@ -48,8 +46,10 @@ use tokio::time;
 use tracing::{debug, info, warn};
 
 use crate::actors::DocProcessor;
-use crate::models::{NewPublishLock, PublishLock, RawDocBatch};
-use crate::source::{Source, SourceContext, SourceExecutionContext, TypedSourceFactory};
+use crate::models::{NewPublishLock, PublishLock};
+use crate::source::{
+    BatchBuilder, Source, SourceContext, SourceExecutionContext, TypedSourceFactory,
+};
 
 /// Number of bytes after which we cut a new batch.
 ///
@@ -446,34 +446,6 @@ impl KafkaSource {
     }
 }
 
-#[derive(Debug, Default)]
-struct BatchBuilder {
-    docs: Vec<Bytes>,
-    num_bytes: u64,
-    checkpoint_delta: SourceCheckpointDelta,
-}
-
-impl BatchBuilder {
-    fn build(self) -> RawDocBatch {
-        RawDocBatch {
-            docs: self.docs,
-            checkpoint_delta: self.checkpoint_delta,
-            force_commit: false,
-        }
-    }
-
-    fn clear(&mut self) {
-        self.docs.clear();
-        self.num_bytes = 0;
-        self.checkpoint_delta = SourceCheckpointDelta::default();
-    }
-
-    fn push(&mut self, doc: Bytes, num_bytes: u64) {
-        self.docs.push(doc);
-        self.num_bytes += num_bytes;
-    }
-}
-
 #[async_trait]
 impl Source for KafkaSource {
     async fn initialize(
@@ -782,7 +754,7 @@ mod kafka_broker_tests {
 
     use super::*;
     use crate::new_split_id;
-    use crate::source::{quickwit_supported_sources, SourceActor};
+    use crate::source::{quickwit_supported_sources, RawDocBatch, SourceActor};
 
     fn create_admin_client() -> anyhow::Result<AdminClient<DefaultClientContext>> {
         let admin_client = ClientConfig::new()

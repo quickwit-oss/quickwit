@@ -27,6 +27,7 @@ use google_cloud_default::WithAuthExt;
 use google_cloud_pubsub::client::{Client, ClientConfig};
 use google_cloud_pubsub::subscription::Subscription;
 use quickwit_actors::{ActorContext, ActorExitStatus, Mailbox};
+use quickwit_common::rand::append_random_suffix;
 use quickwit_config::GcpPubSubSourceParams;
 use quickwit_metastore::checkpoint::{PartitionId, Position, SourceCheckpoint};
 use serde_json::Value as JsonValue;
@@ -116,8 +117,8 @@ impl GcpPubSubSource {
             state: GcpPubSubSourceState::default(),
             subscription_source,
             backfill_mode_enabled,
-            // TODO: get the real value
-            partition_id: "<node_id>/<pipeline_ord>".to_string(),
+            // TODO: replace with "<node_id>/<pipeline_ord>"
+            partition_id: append_random_suffix("gcp_pubsub"),
             // pull_parallelism,
             max_messages_per_pull,
         })
@@ -158,11 +159,9 @@ impl Source for GcpPubSubSource {
             ctx.record_progress();
         }
 
+        // TODO: need to wait for all the id to be ack for at_least_once
         if self.should_exit() {
             info!(subscription = %self.subscription, "Reached end of subscription.");
-            ctx.ask(doc_processor_mailbox, batch.build_force())
-                .await
-                .context("Failed to force commit last batch!")?;
             ctx.send_exit_with_success(doc_processor_mailbox).await?;
             return Err(ActorExitStatus::Success);
         }

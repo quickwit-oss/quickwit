@@ -392,12 +392,11 @@ impl BatchBuilder {
             force_commit: false,
         }
     }
-    pub fn build_force(self) -> RawDocBatch {
-        RawDocBatch {
-            docs: self.docs,
-            checkpoint_delta: self.checkpoint_delta,
-            force_commit: true,
-        }
+
+    pub fn clear(&mut self) {
+        self.docs.clear();
+        self.num_bytes = 0;
+        self.checkpoint_delta = SourceCheckpointDelta::default();
     }
 
     pub fn push(&mut self, doc: Bytes, num_bytes: u64) {
