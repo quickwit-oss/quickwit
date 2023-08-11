@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use quickwit_proto::ingest::Shard;
 use quickwit_proto::types::SourceId;
@@ -27,26 +28,28 @@ use quickwit_proto::IndexId;
 #[derive(Debug, Default)]
 pub(crate) struct ShardTableEntry {
     shards: Vec<Shard>,
+    round_robbin_state: AtomicUsize,
 }
 
 impl ShardTableEntry {
     /// Creates a new entry and ensures that the shards are open and unique.
+    ///
+    /// A shard table entry may not be empty.
     pub fn new(mut shards: Vec<Shard>) -> Self {
+        assert!(!shards.is_empty());
         shards.retain(|shard| shard.is_open());
         shards.sort_unstable_by_key(|shard| shard.shard_id);
         shards.dedup_by_key(|shard| shard.shard_id);
-
-        Self { shards }
+        Self {
+            shards,
+            round_robbin_state: AtomicUsize::default(),
+        }
     }
 
-    /// Returns the number of shards that make up the entry.
-    pub fn len(&self) -> usize {
-        self.shards.len()
-    }
-
-    /// Returns the shards that make up the entry.
-    pub fn shards(&self) -> &[Shard] {
-        &self.shards
+    /// Returns a shard to send documents to using round robbin.
+    pub fn next_round_robbin(&self) -> &Shard {
+        let idx = self.round_robbin_state.fetch_add(1, Ordering::Relaxed);
+        &self.shards[idx % self.shards.len()]
     }
 }
 
@@ -66,13 +69,14 @@ impl ShardTable {
         self.table.contains_key(&key)
     }
 
-    pub fn find_entry(
+    pub fn select_shard_with_round_robbin(
         &self,
         index_id: impl Into<IndexId>,
         source_id: impl Into<SourceId>,
-    ) -> Option<&ShardTableEntry> {
+    ) -> Option<&Shard> {
         let key = (index_id.into(), source_id.into());
-        self.table.get(&key)
+        let shard_table_entry = self.table.get(&key)?;
+        Some(shard_table_entry.next_round_robbin())
     }
 
     pub fn update_entry(

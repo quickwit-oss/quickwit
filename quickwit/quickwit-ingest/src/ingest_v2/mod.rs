@@ -66,12 +66,9 @@ impl DocBatchBuilderV2 {
         }
     }
 
+    /// Returns the capacity of the underlying buffer, expressed in bytes.
     pub fn capacity(&self) -> usize {
         self.doc_buffer.capacity()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.doc_lengths.is_empty()
     }
 
     fn num_bytes(&self) -> usize {

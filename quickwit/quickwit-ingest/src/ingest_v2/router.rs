@@ -17,7 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
@@ -27,16 +26,19 @@ use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use quickwit_proto::control_plane::{
     ControlPlaneService, ControlPlaneServiceClient, GetOpenShardsRequest, GetOpenShardsSubrequest,
+    GetOpenShardsSubresponse,
 };
 use quickwit_proto::ingest::ingester::{IngesterService, PersistRequest, PersistSubrequest};
-use quickwit_proto::ingest::router::{IngestRequestV2, IngestResponseV2, IngestRouterService};
+use quickwit_proto::ingest::router::{
+    IngestRequestV2, IngestResponseV2, IngestRouterService, IngestSubrequest,
+};
 use quickwit_proto::ingest::IngestV2Result;
 use quickwit_proto::types::NodeId;
 use quickwit_proto::IndexUid;
 use tokio::sync::RwLock;
 
 use super::shard_table::ShardTable;
-use super::{DocBatchBuilderV2, IngesterPool};
+use super::IngesterPool;
 
 type LeaderId = String;
 
@@ -54,7 +56,7 @@ struct RouterState {
 }
 
 impl fmt::Debug for IngestRouter {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("IngestRouter")
             .field("self_node_id", &self.self_node_id)
             .field("replication_factor", &self.replication_factor)
@@ -81,18 +83,19 @@ impl IngestRouter {
         }
     }
 
-    async fn refresh_shard_table(
-        &mut self,
-        ingest_request: &IngestRequestV2,
-    ) -> IngestV2Result<()> {
+    /// Identifies the (index, source), for which we (the router) do not know about
+    /// any open shard, and returns a GetOpen requests to the control plane.
+    async fn create_get_open_shards_subrequests_for_missing_shards(
+        &self,
+        ingest_sub_requests: &[IngestSubrequest],
+    ) -> Vec<GetOpenShardsSubrequest> {
         let state_guard = self.state.read().await;
-
         let shard_table = &state_guard.shard_table;
         let mut get_open_shards_subrequests = Vec::new();
 
-        for ingest_subrequest in &ingest_request.subrequests {
+        for ingest_subrequest in ingest_sub_requests {
             if !shard_table
-                .contains_entry(&*ingest_subrequest.index_id, &ingest_subrequest.source_id)
+                .contains_entry(&ingest_subrequest.index_id, &ingest_subrequest.source_id)
             {
                 let subrequest = GetOpenShardsSubrequest {
                     index_id: ingest_subrequest.index_id.clone(),
@@ -101,20 +104,12 @@ impl IngestRouter {
                 get_open_shards_subrequests.push(subrequest);
             }
         }
-        if get_open_shards_subrequests.is_empty() {
-            return Ok(());
-        }
-        drop(state_guard);
+        get_open_shards_subrequests
+    }
 
-        let request = GetOpenShardsRequest {
-            subrequests: get_open_shards_subrequests,
-            unavailable_ingesters: Vec::new(),
-        };
-        let response = self.control_plane.get_open_shards(request).await?;
-
+    async fn update_shard_table(&mut self, subresponses: Vec<GetOpenShardsSubresponse>) {
         let mut state_guard = self.state.write().await;
-
-        for subresponse in response.subresponses {
+        for subresponse in subresponses {
             let index_uid: IndexUid = subresponse.index_uid.into();
             let index_id = index_uid.index_id().to_string();
             state_guard.shard_table.update_entry(
@@ -123,6 +118,28 @@ impl IngestRouter {
                 subresponse.open_shards,
             );
         }
+    }
+
+    async fn refresh_shard_table(
+        &mut self,
+        ingest_request: &IngestRequestV2,
+    ) -> IngestV2Result<()> {
+        let get_open_shards_subrequests = self
+            .create_get_open_shards_subrequests_for_missing_shards(&ingest_request.subrequests)
+            .await;
+
+        if get_open_shards_subrequests.is_empty() {
+            return Ok(());
+        }
+
+        let request = GetOpenShardsRequest {
+            subrequests: get_open_shards_subrequests,
+            unavailable_ingesters: Vec::new(),
+        };
+
+        let response = self.control_plane.get_open_shards(request).await?;
+        self.update_shard_table(response.subresponses).await;
+
         Ok(())
     }
 }
@@ -133,9 +150,19 @@ impl IngestRouterService for IngestRouter {
         &mut self,
         ingest_request: IngestRequestV2,
     ) -> IngestV2Result<IngestResponseV2> {
+        // First, we ensure we have shards for all of the requested `(Index, Source)`.
+        // If we have never heard of a given `(Index, Source)` a request will
+        // be made to the control plane.
+        //
+        // The control plane will either tell us about an existing open shard or
+        // open one for us.
         self.refresh_shard_table(&ingest_request).await?;
 
-        let mut doc_batch_builders: Vec<DocBatchBuilderV2> = Vec::new();
+        // Our ingest request may target several source, and might issue requests
+        // to more than one ingesters.
+        //
+        // We want however to emit one RPC per ingester. The code here is precisely
+        // dispatching requests accordingly.
         let mut persist_subrequests: HashMap<&LeaderId, Vec<PersistSubrequest>> = HashMap::new();
 
         let state_guard = self.state.read().await;
@@ -144,53 +171,27 @@ impl IngestRouterService for IngestRouter {
         // lines, validate, transform and then pack the docs into compressed batches routed
         // to the right shards.
         for ingest_subrequest in ingest_request.subrequests {
-            let table_entry = state_guard
+            let shard = state_guard
                 .shard_table
-                .find_entry(&*ingest_subrequest.index_id, &ingest_subrequest.source_id)
+                .select_shard_with_round_robbin(
+                    &*ingest_subrequest.index_id,
+                    &ingest_subrequest.source_id,
+                )
                 .expect("TODO");
 
-            if table_entry.len() == 1 {
-                let shard = &table_entry.shards()[0];
-                let persist_subrequest = PersistSubrequest {
-                    index_uid: shard.index_uid.clone(),
-                    source_id: ingest_subrequest.source_id,
-                    shard_id: shard.shard_id,
-                    follower_id: shard.follower_id.clone(),
-                    doc_batch: ingest_subrequest.doc_batch,
-                };
-                persist_subrequests
-                    .entry(&shard.leader_id)
-                    .or_default()
-                    .push(persist_subrequest);
-                continue;
-            }
-            doc_batch_builders.resize_with(table_entry.len(), DocBatchBuilderV2::default);
-
-            for (i, doc) in ingest_subrequest.docs().enumerate() {
-                let shard_idx = i % table_entry.len();
-                doc_batch_builders[shard_idx].add_doc(doc.borrow());
-            }
-            for (shard, doc_batch_builder) in table_entry
-                .shards()
-                .iter()
-                .zip(doc_batch_builders.drain(..))
-            {
-                if !doc_batch_builder.is_empty() {
-                    let doc_batch = doc_batch_builder.build();
-                    let persist_subrequest = PersistSubrequest {
-                        index_uid: shard.index_uid.clone(),
-                        source_id: ingest_subrequest.source_id.clone(),
-                        shard_id: shard.shard_id,
-                        follower_id: shard.follower_id.clone(),
-                        doc_batch: Some(doc_batch),
-                    };
-                    persist_subrequests
-                        .entry(&shard.leader_id)
-                        .or_default()
-                        .push(persist_subrequest);
-                }
-            }
+            let persist_subrequest = PersistSubrequest {
+                index_uid: shard.index_uid.clone(),
+                source_id: ingest_subrequest.source_id,
+                shard_id: shard.shard_id,
+                follower_id: shard.follower_id.clone(),
+                doc_batch: ingest_subrequest.doc_batch,
+            };
+            persist_subrequests
+                .entry(&shard.leader_id)
+                .or_default()
+                .push(persist_subrequest);
         }
+
         let mut persist_futures = FuturesUnordered::new();
 
         for (leader_id, subrequests) in persist_subrequests {
