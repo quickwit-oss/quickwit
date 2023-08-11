@@ -1,0 +1,15 @@
+# This docker-compose file is useful to start up
+# a single node elasticsearch to test our rest api tests
+# against.
+version: '3.7'
+
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.9.0
+    container_name: elasticsearch
+    environment:
+      - xpack.security.enabled=false
+      - discovery.type=single-node
+    ports:
+      - 9200:9200
+      - 9300:9300
