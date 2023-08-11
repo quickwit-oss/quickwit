@@ -139,14 +139,17 @@ If a parameter appears both as a query string parameter and in the JSON payload,
 #### Sort order
 
 You can define up to two criteria on which to apply sort.
-If two criteria are supplied, the lexicographical order is applied.
-In other words, the second criterion will only be used in presence of a tie for the first criterion.
+The second criterion will only be used in presence of a tie for the first criterion.
 
 A given criterion can either be
 - the name of a fast field (explicitly defined in the schema or captured by the dynamic mode)
 - `_score` to sort by BM25.
 
-It is also possible to define whether the different component should be taken as descending/ascending using the
+By default, the sort order is `ascending` for fast fields and descending for `_score`.
+
+When sorting by a fast field and this field contains several values in a single document, only the first value is used for sorting.
+
+The sort order can be set as descending/ascending using the
 following syntax.
 
 ```json
@@ -169,9 +172,6 @@ It is also possible to not supply an order and rely on the default order using t
   // ...
 }
 ```
-
-The default order is `asc`, except for `_score` for which it is `desc`.
-When sorting by a fast field and this field contains several values in a single document, only the first value is used for sorting.
 
 ### `_msearch` &nbsp; Multi search API
 
@@ -210,8 +210,8 @@ GET api/v1/_elastic/_search/scroll
 | `scroll_id`     | Scroll id (obtained from a search response)  | Required
 
 
-The `_scroll`, in combination with the `_search` API makes it possible successive pages of search results.
-First, the client needs to call the `search api` with a `scroll` query parameter, and then pass the `scroll_id` returned in the response payload to  `_scroll` endpoint.
+The `_search/scroll` endpoint, in combination with the `_search` API makes it possible to request successive pages of search results.
+First, the client needs to call the `search api` with a `scroll` query parameter, and then pass the `scroll_id` returned in the response payload to  `_search/scroll` endpoint.
 
 Each subsequent call to the `_search/scroll` endpoint will return a new `scroll_id` pointing to the next page.
 
