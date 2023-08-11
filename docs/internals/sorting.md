@@ -19,10 +19,9 @@ The special value `_score` means sorting by score, with a sort that is then Desc
 In case of equality between two documents, the GlobalDocId, composed of (SplitId, SegmentId, DocId)
 is used as a tie breaker. It is always used in Ascending order *inside a split*. It is used in the
 same order as the first field *when merging results*
-// TODO is this really the case? That's at least what my own tests seems to show.
 
 If a document doesn't have a value for a sorting field, that document is considered to go after any
-document which has a value, independantly of sort order. That is, when sorting the value 1,2 and
+document which has a value, independently of sort order. That is, when sorting the value 1,2 and
 None, ascending sort would give `[1, 2, None]`, and descending sort would give `[2, 1, None]`.
 
 If the client does not request sorting, documents are sorted using (DocId, SplitId, SegmentId), in
@@ -46,24 +45,21 @@ merged using the same logic as merging splits inside a leaf node, executed on th
 ## Behavior
 
 Sorting is controlled by the `sort_by` query parameter. It accepts a comma separated list of fields
-to use for sorting. Sorting is Ascending by default. The sorting order can be reversed by prefixing
+to use for sorting. Sorting is Descending by default. The sorting order can be reversed by prefixing
 a field name with a hyphen `-`.
-The special value `_score` means sorting by score, with a sort that is then Descending by default
-(documents matching better goes first).
+The special value `_score` means sorting by score, it is also Descending by default.
 
 In case of equality between two documents, the GlobalDocId, composed of (SplitId, SegmentId, DocId)
 is used as a tie breaker. It is used to sort in the same order as the first field being sorted by.
-This means it is in Ascending order by default, except when the first field being sorted by is
-`_score` .
-// TODO or should it always be Ascending by default? I don't think it matters much, but would require
-some more special handling of `_score`.
+This means it is in Descending order by default.
 
 If a document doesn't have a value for a sorting field, that document is considered to go after any
-document which has a value, independantly of sort order. That is, when sorting the value 1,2 and
+document which has a value, independently of sort order. That is, when sorting the value 1,2 and
 None, ascending sort would give `[1, 2, None]`, and descending sort would give `[2, 1, None]`.
 
 If a client does not request sorting, documents are sorted using (SplitId, SegmentId, DocId), on
-Ascending order.
+Descending order. In other words, everything happens as if documents were sorted by a constant
+value.
 // TODO we could also say "it's not sorted" and add a special `_doc_id` for that. See optimizations
 
 # Code
@@ -88,6 +84,6 @@ without even looking at other splits metadata. Argument can be made in favor of 
 GlobalDocId is not stable, and can change during a merge, so order is not guaranteed anyway,
 at least not until Quickwit has support for a Point In Time mechanism.
 
-None of these optimization described has any impact if we give an exact count of matching
+None of these optimization described have any impact if we give an exact count of matching
 documents, an option to request only a lower bound would be required for these optimizations to
 make sense.
