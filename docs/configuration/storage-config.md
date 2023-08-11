@@ -19,7 +19,7 @@ Storage URIs refer to different storage providers identified by a URI "protocol"
 
 In general, you can use a storage URI or a file path anywhere you would intuitively expect a file path. For instance:
 - when setting the `index_uri` of an index to specify the storage provider and location;
-_ when setting the `metastore_uri` in a node config to set up a file-backed metastore;
+- when setting the `metastore_uri` in a node config to set up a file-backed metastore;
 - when passing a file path as a command line argument.
 
 ### Local file storage URIs
@@ -138,7 +138,7 @@ storage:
 
 ### MinIO
 
-[MinIO](https://min.io/) is a high-performance object.
+[MinIO](https://min.io/) is a high-performance object storage.
 
 ```yaml
 storage:
