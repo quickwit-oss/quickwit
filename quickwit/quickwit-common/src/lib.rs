@@ -48,6 +48,7 @@ pub mod uri;
 use std::env;
 use std::fmt::Debug;
 use std::ops::{Range, RangeInclusive};
+use std::path::Path;
 use std::str::FromStr;
 
 pub use coolid::new_coolid;
@@ -74,6 +75,18 @@ pub fn setup_logging_for_tests() {
 
 pub fn split_file(split_id: &str) -> String {
     format!("{split_id}.split")
+}
+
+pub fn is_split_file(path: &Path) -> bool {
+    path.ends_with(".split")
+}
+
+pub fn split_id(split_file: &Path) -> Option<&str> {
+    if is_split_file(split_file) {
+        split_file.file_name()?.to_str()
+    } else {
+        None
+    }
 }
 
 pub fn get_from_env<T: FromStr + Debug>(key: &str, default_value: T) -> T {

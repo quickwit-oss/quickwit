@@ -297,7 +297,8 @@ impl NodeConfig {
     /// Returns true is cache storage is enabled for this node and false overwise
     /// TODO: Maybe this should be handled with a special enabled service?
     pub fn is_cache_storage_enabled(&self) -> bool {
-        self.enabled_services.contains(&QuickwitService::Searcher) && self.max_cache_storage_disk_usage().is_some()
+        self.enabled_services.contains(&QuickwitService::Searcher)
+            && self.max_cache_storage_disk_usage().is_some()
     }
 
     pub fn redact(&mut self) {

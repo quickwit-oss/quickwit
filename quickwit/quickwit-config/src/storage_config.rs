@@ -176,6 +176,7 @@ impl StorageConfig {
     pub fn redact(&mut self) {
         match self {
             Self::Azure(azure_storage_config) => azure_storage_config.redact(),
+            // TODO: We might want to reduct child of cache
             Self::File(_) | Self::Ram(_) | Self::Cache(_) => {}
             Self::S3(s3_storage_config) => s3_storage_config.redact(),
         }

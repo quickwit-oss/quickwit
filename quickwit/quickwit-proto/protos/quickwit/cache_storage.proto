@@ -35,6 +35,8 @@ message NotifySplitsChangeResponse {}
 message SplitsChangeNotification {
   /// Storage uri.
   string storage_uri = 1;
+  /// Index id.
+  string index_id = 2;
   /// Split ID.
-  string split_id = 2;
+  string split_id = 3;
 }

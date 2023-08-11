@@ -16,8 +16,11 @@ pub struct SplitsChangeNotification {
     /// / Storage uri.
     #[prost(string, tag = "1")]
     pub storage_uri: ::prost::alloc::string::String,
-    /// / Split ID.
+    /// / Index id.
     #[prost(string, tag = "2")]
+    pub index_id: ::prost::alloc::string::String,
+    /// / Split ID.
+    #[prost(string, tag = "3")]
     pub split_id: ::prost::alloc::string::String,
 }
 /// BEGIN quickwit-codegen

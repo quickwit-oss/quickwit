@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::fmt;
+use std::{fmt, sync::Arc};
 use std::ops::Range;
 use std::path::Path;
 
@@ -88,6 +88,27 @@ pub trait Storage: fmt::Debug + Send + Sync + 'static {
     async fn copy_to_file(&self, path: &Path, output_path: &Path) -> StorageResult<()> {
         let mut file = tokio::fs::File::create(output_path).await?;
         self.copy_to(path, &mut file).await?;
+        Ok(())
+    }
+
+    /// Downloads an entire file and uploads it to another storage.
+    /// `output_path` is expected to be a file path (not a directory path)
+    /// without any existing file yet.
+    ///
+    /// If the call is successful, the file will be copied.
+    /// If not, the file may or may not have been created.
+    ///
+    /// See also `copy_to`.
+    async fn copy_to_storage(
+        &self,
+        path: &Path,
+        output_storage: Arc<dyn Storage>,
+        output_path: &Path,
+    ) -> StorageResult<()> {
+        // TODO: Replace with real async copy
+        let mut buf = Vec::new();
+        self.copy_to(path, &mut buf).await?;
+        output_storage.put(output_path, Box::new(buf)).await?;
         Ok(())
     }
 

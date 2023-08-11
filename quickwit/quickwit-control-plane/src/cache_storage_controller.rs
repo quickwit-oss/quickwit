@@ -36,6 +36,7 @@ use quickwit_proto::cache_storage::{
     CacheStorageServiceClient, NotifySplitsChangeRequest, SplitsChangeNotification,
 };
 use quickwit_proto::control_plane::ControlPlaneResult;
+use quickwit_proto::IndexUid;
 use serde::Serialize;
 use tokio::sync::RwLock;
 use tower::timeout::Timeout;
@@ -106,14 +107,14 @@ impl CacheStorageController {
             HashSet::from_iter(self.split_to_node_map.keys().cloned());
         let mut updated_nodes = HashSet::new();
         let available_nodes = self.pool.available_nodes().await;
-        let mut node_to_split_map: HashMap<String, Vec<(String, Uri)>> = HashMap::new();
+        let mut node_to_split_map: HashMap<String, Vec<(String, IndexUid, Uri)>> = HashMap::new();
         for index_metadata in self.metastore.list_indexes_metadatas().await? {
             let index_uid = index_metadata.index_uid.clone();
             let storage_uri = index_metadata.index_uri();
             if storage_uri.protocol() != Protocol::Cache {
                 continue;
             }
-            let splits_query = ListSplitsQuery::for_index(index_uid)
+            let splits_query = ListSplitsQuery::for_index(index_uid.clone())
                 .with_split_state(quickwit_metastore::SplitState::Published);
             for split in self.metastore.list_splits(splits_query).await? {
                 let split_id = split.split_id().to_string();
@@ -140,10 +141,12 @@ impl CacheStorageController {
                 }
                 for node in allocated_nodes.iter() {
                     if let Some(splits) = node_to_split_map.get_mut(node) {
-                        splits.push((split_id.clone(), storage_uri.clone()));
+                        splits.push((split_id.clone(), index_uid.clone(), storage_uri.clone()));
                     } else {
-                        node_to_split_map
-                            .insert(node.clone(), vec![(split_id.clone(), storage_uri.clone())]);
+                        node_to_split_map.insert(
+                            node.clone(),
+                            vec![(split_id.clone(), index_uid.clone(), storage_uri.clone())],
+                        );
                     }
                 }
                 self.split_to_node_map.insert(split_id, allocated_nodes);
@@ -161,7 +164,7 @@ impl CacheStorageController {
 
     async fn notify_split_change(
         &self,
-        node_to_split_map: &HashMap<String, Vec<(String, Uri)>>,
+        node_to_split_map: &HashMap<String, Vec<(String, IndexUid, Uri)>>,
         node: String,
     ) -> anyhow::Result<()> {
         let splits = node_to_split_map.get(&node).expect("Not possible.");
@@ -169,10 +172,13 @@ impl CacheStorageController {
             let request = NotifySplitsChangeRequest {
                 splits_change: splits
                     .iter()
-                    .map(|(split_id, storage_uri)| SplitsChangeNotification {
-                        storage_uri: storage_uri.to_string(),
-                        split_id: split_id.clone(),
-                    })
+                    .map(
+                        |(split_id, index_uid, storage_uri)| SplitsChangeNotification {
+                            storage_uri: storage_uri.to_string(),
+                            index_id: index_uid.index_id().to_string(),
+                            split_id: split_id.clone(),
+                        },
+                    )
                     .collect(),
             };
             quickwit_proto::cache_storage::CacheStorageService::notify_split_change(

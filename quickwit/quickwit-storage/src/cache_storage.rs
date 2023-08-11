@@ -25,10 +25,12 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use quickwit_common::uri::Uri;
+use quickwit_common::{split_file, split_id};
 use quickwit_config::{CacheStorageConfig, StorageBackend};
 use quickwit_proto::cache_storage::SplitsChangeNotification;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
+use tracing::error;
 
 use crate::{
     BulkDeleteError, OwnedBytes, PutPayload, SendableAsync, Storage, StorageFactory,
@@ -86,16 +88,12 @@ impl Storage for CacheStorage {
 
     async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
         let guard = self.cache_splits.read().await;
-        let split_id = path.to_str().unwrap();
-        let split_id = &split_id[..split_id.len() - ".split".len()];
-        if let Some(split) = guard.get(split_id) {
-            match split.0 {
-                SplitState::Loading => {
-                    // TODO: Slice is not ready
-                }
-                SplitState::Ready => return self.cache.get_slice(path, range).await,
-                SplitState::Deleted => {
-                    // TODO: Slice is deleted
+        if let Some(split_id) = split_id(path) {
+            if let Some(split) = guard.get(split_id) {
+                if matches!(split.0, SplitState::Ready) {
+                    // Only return cache if it is ready
+                    // TODO: Ths 
+                    return self.cache.get_slice(path, range).await
                 }
             }
         }
@@ -154,8 +152,13 @@ impl CacheStorageFactory {
         for split in splits {
             if !splits_guard.contains_key(&split.split_id) {
                 let uri: Uri = split.storage_uri.parse().expect("Shouldn't happen");
-                self.load(storage_resolver, &uri, split.split_id.clone())
-                    .await;
+                self.load(
+                    storage_resolver,
+                    &uri,
+                    split.index_id,
+                    split.split_id.clone(),
+                )
+                .await;
                 splits_guard.insert(split.split_id.clone(), (SplitState::Loading, uri));
             }
         }
@@ -179,7 +182,13 @@ impl CacheStorageFactory {
         Ok(())
     }
 
-    async fn load(&self, storage_resolver: &StorageResolver, storage_uri: &Uri, split_id: String) {
+    async fn load(
+        &self,
+        storage_resolver: &StorageResolver,
+        storage_uri: &Uri,
+        index_id: String,
+        split_id: String,
+    ) {
         let storage = storage_resolver
             .resolve(storage_uri)
             .await
@@ -201,35 +210,26 @@ impl CacheStorageFactory {
         let splits = self.inner.splits.clone();
         tokio::spawn({
             async move {
-                // TODO: Need to figure out a better way to translate between paths and ids
-                let path_str = split_id.clone() + ".split";
-                let path = Path::new(&path_str);
-                // TODO: Replace with real async copy
-                let mut buf = Vec::new();
-                // TODO: Need some error hanlding here
-                storage
-                    .copy_to(path, &mut buf)
-                    .await
-                    .expect("Need real error handling");
-                cache
-                    .put(path, Box::new(buf))
-                    .await
-                    .expect("Need real error handling");
-                let mut splits_guard = splits.write().await;
-                if let Some((state, uri)) = splits_guard.get(&split_id) {
-                    match state {
-                        SplitState::Loading => {
-                            let uri = uri.clone();
-                            splits_guard.insert(split_id, (SplitState::Ready, uri));
+                let path = Path::new(&index_id).join(split_file(&split_id));
+                if let Err(err) = storage.copy_to_storage(&path, cache.clone(), &path).await {
+                    error!(error=?err, "Failed to copy split to cache.");
+                } else {
+                    let mut splits_guard = splits.write().await;
+                    if let Some((state, uri)) = splits_guard.get(&split_id) {
+                        match state {
+                            SplitState::Loading | SplitState::Ready => {
+                                let uri = uri.clone();
+                                splits_guard.insert(split_id, (SplitState::Ready, uri));
+                            }
+                            SplitState::Deleted => {
+                                // The split has been deleted during upload
+                                if let Err(err) = cache.delete(&path).await {
+                                    error!(error=?err, "Failed to copy split to cache.");
+                                }
+                            }
                         }
-                        SplitState::Ready => {
-                            // TODO: Shouldn't be here?
-                        }
-                        SplitState::Deleted => {
-                            // TODO: Delete split
-                        }
-                    };
-                };
+                    }
+                }
             }
         });
     }
