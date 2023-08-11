@@ -34,93 +34,33 @@ A commented example is available here: [quickwit.yaml](https://github.com/quickw
 | `default_index_root_uri` | Default index root URI that defines the location where index data (splits) is stored. The index URI is built following the scheme: `{default_index_root_uri}/{index-id}` | `QW_DEFAULT_INDEX_ROOT_URI` | `{data_dir}/indexes` |
 | `rest_cors_allow_origins` | Configure the CORS origins which are allowed to access the API. [Read more](#configuring-cors-cross-origin-resource-sharing) | |
 
-
-There are also other parameters that can be only defined by env variables:
-
-| Env variable | Description |
-| --- | --- |
-| `QW_S3_ENDPOINT` | Custom S3 endpoint. |
-| `QW_S3_MAX_CONCURRENCY` | Limit the number of concurent requests to S3 |
-| `QW_ENABLE_JAEGER_EXPORTER` | Enable trace export to Jaeger. |
-| `QW_AZURE_STORAGE_ACCOUNT` | Azure Blob Storage account name. |
-| `QW_AZURE_STORAGE_ACCESS_KEY` | Azure Blob Storage account access key. |
-
-More details about [storage configuration](../reference/storage-uri.md).
-
 ## Storage configuration
 
-This section may contain one configuration subsection per storage provider. The specific configuration parameters for each provider may vary. Currently, the supported storage providers are:
-- Azure
-- Amazon S3 or S3-compatible providers
+Here is a minimal example of how to configure Quickwit with Amazon S3 or Alibaba OSS:
 
-If a storage configuration is not explicitly set, Quickwit will rely on the default settings provided by the SDK ([Azure SDK for Rust](https://github.com/Azure/azure-sdk-for-rust), [AWS SDK for Rust](https://github.com/awslabs/aws-sdk-rust)) of each storage provider.
-
-### Azure storage configuration
-
-| Property | Description | Default value |
-| --- | --- | --- |
-| `account` | The Azure storage account name. | |
-| `access_key` | The Azure storage account access key. | |
-
-Example of a storage configuration for Azure in YAML format:
-
-```yaml
-storage:
-  azure:
-    account: your-azure-account-name
-    access_key: your-azure-access-key
+```bash
+AWS_ACCESS_KEY_ID=<your access key ID>
+AWS_SECRET_ACCESS_KEY=<your secret access key>
 ```
 
-### S3 storage configuration
-
-| Property | Description | Default value |
-| --- | --- | --- |
-| `flavor` |  The optional storage flavor to use. Available flavors are `digital_ocean`, `garage`, `gcs`, and `minio`. | |
-| `access_key_id` | The AWS access key ID. | |
-| `secret_access_key` | The AWS secret access key. | |
-| `region` | The AWS region to send requests to. | `us-east-1` (SDK default) |
-| `endpoint` | Custom endpoint for use with S3-compatible providers. | SDK default |
-| `force_path_style_access` | Disables [virtual-hosted–style](https://docs.aws.amazon.com/AmazonS3/latest/userguide/VirtualHosting.html) requests. Required by some S3-compatible providers (Ceph, MinIO). | `false` |
-| `disable_multi_object_delete` | Disables [Multi-Object Delete](https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteObjects.html) requests. Required by some S3-compatible providers (GCS). | `false` |
-| `disable_multipart_upload` | Disables [multipart upload](https://docs.aws.amazon.com/AmazonS3/latest/userguide/mpuoverview.html) of objects. Required by some S3-compatible providers (GCS). | `false` |
-
-:::warning
-Hardcoding credentials into configuration files is not secure and strongly discouraged. Prefer the alternative authentication methods that your storage backend may provide.
-:::
-
-**Storage flavors**
-
-Storage flavors ensure that Quickwit works correctly with storage providers that deviate from the S3 API by automatically configuring the appropriate settings. The available flavors are:
-- `digital_ocean`
-- `garage`
-- `gcs`
-- `minio`
-
-*Digital Ocean*
-
-The Digital Ocean flavor (`digital_ocean`) forces path-style access and turns off multi-object delete requests.
-
-*Garage flavor*
-
-The Garage flavor (`garage`) overrides the `region` parameter to `garage` and forces path-style access.
-
-*Google Cloud Storage*
-
-The Google Cloud Storage flavor (`gcs`) turns off multi-object delete requests and multipart uploads.
-
-*MinIO flavor*
-
-The MinIO flavor (`minio`) forces path-style access.
-
-Example of a storage configuration for Google Cloud Storage in YAML format:
+*Amazon S3*
 
 ```yaml
 storage:
   s3:
-    flavor: gcs
-    region: us-east1
-    endpoint: https://storage.googleapis.com
+    region: us-east-1
 ```
+
+*Alibaba*
+
+```yaml
+storage:
+  s3:
+    region: us-east-1
+    endpoint: https://oss-us-east-1.aliyuncs.com
+```
+
+Please refer to the dedicated [storage configuration](./storage-config.md) page to learn more about configuring Quickwit for various storage providers and setting additional parameters.
 
 ## Metastore configuration
 

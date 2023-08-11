@@ -1,6 +1,6 @@
 ---
 title: Metastore configuration
-sidebar_position: 3
+sidebar_position: 4
 ---
 
 Quickwit needs a place to store meta-information about its indexes.
@@ -50,9 +50,9 @@ For convenience, Quickwit also makes it possible to store its metadata in files 
 
 The metastore is then configured by passing a [Storage URI](../reference/storage-uri.md) that will serve as the root of the metastore storage.
 
-The metadata file associated with a given index will then be stored under 
+The metadata file associated with a given index will then be stored under
 
-  `[storage_uri]/[index_id]/metastore.json`  
+  `[storage_uri]/[index_id]/metastore.json`
 
 For the moment, Quickwit supports two types of storage types:
 
@@ -87,8 +87,5 @@ file:///local/indices#polling_interval=30s
 ```
 
 :::caution
-The file-backed metastore does not allow concurrent writes. For this reason, it should not be used in distributed settings. 
-Running several indexer services on the same file-backed metastore can lead to the corruption of the metastore.
-Running several search services, on the other hand, is perfectly safe.
-
+The file-backed metastore does not support multiple instances running at the same time because it does not implement any locking mechanism to prevent concurrent writes from overwriting each other. Ensure that only one file-backed metastore instance is running at all times.
 :::

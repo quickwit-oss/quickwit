@@ -141,9 +141,9 @@ The script detects the architecture and then downloads the correct binary archiv
 curl -L https://install.quickwit.io | sh
 ```
 
-All this script does is download the correct binary archive for your machine and extract it in the current working directory. This means you can download any desired archive from [github](https://github.com/quickwit-oss/quickwit/releases) that match your OS architecture and manually extract it anywhere.
+All this script does is download the correct binary archive for your machine and extracts it in the current working directory. This means you can download any desired archive from [github](https://github.com/quickwit-oss/quickwit/releases) that matches your OS architecture and manually extract it anywhere.
 
-Once installed or extracted, all Quickwit's installation files can be found in a directory named `quickwit-{version}` where `version` is the corresponding version of Quickwit. This directory has the following layout:
+Once installed or extracted, all of Quickwit's installation files can be found in a directory named `quickwit-{version}` where `version` is the corresponding version of Quickwit. This directory has the following layout:
 
 ```bash
 quickwit-{version}
