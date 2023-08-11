@@ -306,7 +306,7 @@ impl KafkaSource {
         } = message;
 
         if let Some(doc) = doc_opt {
-            batch.push(doc, payload_len);
+            batch.push(doc);
         } else {
             self.state.num_invalid_messages += 1;
         }
@@ -1144,7 +1144,7 @@ mod kafka_broker_tests {
         let (ack_tx, ack_rx) = oneshot::channel();
 
         let mut batch = BatchBuilder::default();
-        batch.push(Bytes::from_static(b"test-doc"), 8);
+        batch.push(Bytes::from_static(b"test-doc"));
 
         let publish_lock = kafka_source.publish_lock.clone();
         assert!(publish_lock.is_alive());

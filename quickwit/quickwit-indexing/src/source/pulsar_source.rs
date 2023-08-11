@@ -173,7 +173,7 @@ impl PulsarSource {
         }
 
         let partition = PartitionId::from(topic);
-        let num_bytes = doc.len();
+        let num_bytes = doc.len() as u64;
 
         if let Some(current_position) = self.current_positions.get(&partition) {
             // We skip messages older or equal to the current recorded position.
@@ -195,9 +195,9 @@ impl PulsarSource {
             .checkpoint_delta
             .record_partition_delta(partition, current_position, msg_position)
             .context("Failed to record partition delta.")?;
-        batch.push(doc, num_bytes as u64);
+        batch.push(doc);
 
-        self.state.num_bytes_processed += num_bytes as u64;
+        self.state.num_bytes_processed += num_bytes;
         self.state.num_messages_processed += 1;
 
         Ok(())
