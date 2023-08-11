@@ -31,3 +31,101 @@ json:
       query: "PushEvent"
       fields: "type"
 status_code: 400
+---
+params:
+  size: 10
+json:
+  query:
+    query_string:
+      query: "type:PushEvent OR"
+      fields: []
+status_code: 400
+---
+params:
+  size: 10
+json:
+  query:
+    query_string:
+      query: "type:PushEvent OR"
+      fields: ["body"]
+      lenient: true
+# Lenient is not about the syntax.
+status_code: 400
+---
+params:
+  size: 10
+json:
+  query:
+    query_string:
+      query: "type:PushEvent"
+      fields: []
+      lenient: true
+expected:
+  hits:
+    total:
+      value: 60
+---
+params:
+  size: 10
+json:
+  query:
+    query_string:
+      query: "type:PushEvent"
+      fields: []
+      lenient: true
+expected:
+  hits:
+    total:
+      value: 60
+---
+params:
+  size: 10
+json:
+  query:
+    query_string:
+      query: "actor.id:1315639"
+      fields: []
+expected:
+  hits:
+    total:
+      value: 1
+---
+# This test does not work on quickwit.
+# Quickwit always act like elasticsearch's lenient mode.
+engines: [elasticsearch]
+params:
+  size: 10
+json:
+  query:
+    query_string:
+      query: "type:PushEvent OR actor.id:shouldhavebeenanumber"
+      fields: []
+      lenient: false
+status_code: 400
+---
+params:
+  size: 10
+json:
+  query:
+    query_string:
+      query: "type:PushEvent OR actor.id:shouldhavebeenanumber"
+      fields: []
+      lenient: true
+expected:
+  hits:
+    total:
+      value: 60
+---
+params:
+  size: 10
+json:
+  query:
+    query_string:
+      query: "type:PushEvent AND actor.id:shouldhavebeenanumber"
+      fields: []
+      lenient: true
+expected:
+  hits:
+    total:
+      value: 0
+

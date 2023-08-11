@@ -47,6 +47,11 @@ struct MultiMatchQueryForDeserialization {
     #[serde_as(deserialize_as = "OneOrMany<_, PreferMany>")]
     #[serde(default)]
     fields: Vec<String>,
+    // Regardless of this option Quickwit behaves in elasticsearch definition of
+    // lenient. We include this property here just to accept user queries containing
+    // this option.
+    #[serde(default, rename = "lenient")]
+    _lenient: bool,
 }
 
 fn deserialize_match_query_for_one_field(
@@ -180,6 +185,7 @@ mod tests {
                         query: "quick brown fox".to_string(),
                         operator: crate::BooleanOperand::Or,
                         zero_terms_query: Default::default(),
+                        _lenient: false,
                     },
                 }
                 .into(),
@@ -189,6 +195,7 @@ mod tests {
                         query: "quick brown fox".to_string(),
                         operator: crate::BooleanOperand::Or,
                         zero_terms_query: Default::default(),
+                        _lenient: false,
                     },
                 }
                 .into(),

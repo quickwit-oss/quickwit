@@ -20,7 +20,7 @@
 use std::fmt;
 
 use serde::de::{self, MapAccess, Visitor};
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer};
 
 use crate::elastic_query_dsl::{ConvertableToQueryAst, ElasticQueryDslInner};
 use crate::query_ast::{FullTextParams, FullTextQuery, QueryAst};
@@ -28,7 +28,7 @@ use crate::{BooleanOperand, MatchAllOrNone, OneFieldMap};
 
 /// `MatchQuery` as defined in
 /// <https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-match-query.html>
-#[derive(Serialize, Deserialize, Clone, Eq, PartialEq, Debug)]
+#[derive(Deserialize, Clone, Eq, PartialEq, Debug)]
 #[serde(
     from = "OneFieldMap<MatchQueryParamsForDeserialization>",
     into = "OneFieldMap<MatchQueryParams>"
@@ -38,7 +38,7 @@ pub struct MatchQuery {
     pub(crate) params: MatchQueryParams,
 }
 
-#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Debug)]
+#[derive(Clone, Deserialize, PartialEq, Eq, Debug)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct MatchQueryParams {
     pub(crate) query: String,
@@ -46,6 +46,11 @@ pub(crate) struct MatchQueryParams {
     pub(crate) operator: BooleanOperand,
     #[serde(default)]
     pub(crate) zero_terms_query: MatchAllOrNone,
+    // Regardless of this option Quickwit behaves in elasticsearch definition of
+    // lenient. We include this property here just to accept user queries containing
+    // this option.
+    #[serde(default, rename = "lenient")]
+    pub(crate) _lenient: bool,
 }
 
 impl ConvertableToQueryAst for MatchQuery {
@@ -71,7 +76,7 @@ impl From<MatchQuery> for ElasticQueryDslInner {
 
 // --------------
 //
-// Below is the Serialization/Deserialization code
+// Below is the Deserialization code
 // The difficulty here is to support the two following formats:
 //
 // `{"field": {"query": "my query", "default_operator": "OR"}}`
@@ -81,7 +86,7 @@ impl From<MatchQuery> for ElasticQueryDslInner {
 //
 // The code below is adapted from solution described here: https://serde.rs/string-or-struct.html
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 #[serde(transparent)]
 struct MatchQueryParamsForDeserialization {
     #[serde(deserialize_with = "string_or_struct")]
@@ -122,6 +127,7 @@ impl<'de> Visitor<'de> for MatchQueryParamsStringOrStructVisitor {
             query: query.to_string(),
             zero_terms_query: Default::default(),
             operator: Default::default(),
+            _lenient: false,
         })
     }
 
@@ -180,6 +186,7 @@ mod tests {
                 query: "hello".to_string(),
                 operator: BooleanOperand::And,
                 zero_terms_query: crate::MatchAllOrNone::MatchAll,
+                _lenient: false,
             },
         };
         let ast = match_query.convert_to_query_ast().unwrap();
