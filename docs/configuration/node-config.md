@@ -36,7 +36,9 @@ A commented example is available here: [quickwit.yaml](https://github.com/quickw
 
 ## Storage configuration
 
-Here is a minimal example of how to configure Quickwit with Amazon S3 or Alibaba OSS:
+Please refer to the dedicated [storage configuration](storage-config) page to learn more about configuring Quickwit for various storage providers.
+
+Here are also some minimal examples of how to configure Quickwit with Amazon S3 or Alibaba OSS:
 
 ```bash
 AWS_ACCESS_KEY_ID=<your access key ID>
@@ -59,8 +61,6 @@ storage:
     region: us-east-1
     endpoint: https://oss-us-east-1.aliyuncs.com
 ```
-
-Please refer to the dedicated [storage configuration](./storage-config.md) page to learn more about configuring Quickwit for various storage providers and setting additional parameters.
 
 ## Metastore configuration
 
