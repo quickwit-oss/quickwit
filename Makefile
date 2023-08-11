@@ -88,9 +88,9 @@ archive:
 workspace-deps-tree:
 	$(MAKE) -C $(QUICKWIT_SRC) workspace-deps-tree
 
-.PHONY: build-docs
-build-docs:
-	$(MAKE) -C $(QUICKWIT_SRC) build-docs
+.PHONY: build-rustdoc
+build-rustdoc:
+	$(MAKE) -C $(QUICKWIT_SRC) build-rustdoc
 
 .PHONY: build-ui
 build-ui:

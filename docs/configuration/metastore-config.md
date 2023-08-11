@@ -48,7 +48,7 @@ Likewise, if you upgrade Quickwit to a version that includes some changes in the
 
 For convenience, Quickwit also makes it possible to store its metadata in files using a file-backed metastore. In that case, Quickwit will write one file per index.
 
-The metastore is then configured by passing a [storage URI](./storage-config.md#storage-uris) that will serve as the root of the metastore storage.
+The metastore is then configured by passing a [storage URI](storage-config#storage-uris) that will serve as the root of the metastore storage.
 
 The metadata file associated with a given index will then be stored under
 
@@ -57,7 +57,7 @@ The metadata file associated with a given index will then be stored under
 For the moment, Quickwit supports two types of storage types:
 
 - a local file system URI (e.g., `file:///opt/toto`). It is also valid to pass a file path directly (without file://). `/var/quickwit`. Relative paths will be resolved with respect to the current working directory.
-- S3-compatible storage URI (e.g., `s3://my-bucket/some-path`). See the [storage config](./storage-config.md) documentation to configure S3 or S3-compatible storage providers.
+- S3-compatible storage URI (e.g., `s3://my-bucket/some-path`). See the [storage config](storage-config) documentation to configure S3 or S3-compatible storage providers.
 
 ### Polling configuration
 

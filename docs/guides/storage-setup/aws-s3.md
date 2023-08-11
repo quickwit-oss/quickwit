@@ -3,7 +3,7 @@ title: AWS S3
 sidebar_position: 1
 ---
 
-In this guide, you will learn how to configure a Quickwit [storage](/docs/reference/storage-uri) for Amazon S3.
+In this guide, you will learn how to configure a Quickwit [storage](../../configuration/storage-config) for Amazon S3.
 
 ## Set your AWS credentials
 
@@ -11,7 +11,7 @@ A simple way to do it is to declare the environment variables `AWS_ACCESS_KEY_ID
 
 ## Set the Metastore URI and default index URI
 
-Here is an example of how to set up your [node config file](/docs/configuration/node-config) with S3:
+Here is an example of how to set up your [node config file](../../configuration/node-config) with S3:
 
 ```yaml
 metastore_uri: s3://{my-bucket}/indexes
@@ -20,7 +20,7 @@ default_index_uri: s3://{my-bucket}/indexes
 
 ## Set the Index URI
 
-Here is an example of how to setup your index URI in the [index config file](/docs/configuration/index-config):
+Here is an example of how to set up your index URI in the [index config file](../../configuration/index-config):
 ```yaml
 index_uri: s3://{my-bucket}/indexes/{my-index-id}
 ```

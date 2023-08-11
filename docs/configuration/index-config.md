@@ -70,7 +70,7 @@ The index ID is a string that uniquely identifies the index within the metastore
 ## Index uri
 
 The index-uri defines where the index files (also called splits) should be stored.
-This parameter expects a [storage uri](../reference/storage-uri).
+This parameter expects a [storage uri](storage-config#storage-uris).
 
 The `index-uri` parameter is optional.
 By default, the `index-uri` will be computed by concatenating the `index-id` with the

@@ -46,8 +46,8 @@ build: build-ui
 workspace-deps-tree:
 	cargo tree --all-features --workspace -f "{p}" --prefix depth | cut -f 1 -d ' ' | python3 scripts/dep-tree.py
 
-.PHONY: build-docs
-build-docs:
+.PHONY: build-rustdoc
+build-rustdoc:
 	RUSTDOCFLAGS="-Dwarnings -Arustdoc::private_intra_doc_links" cargo doc --no-deps --all-features --document-private-items
 
 .PHONY: build-ui
