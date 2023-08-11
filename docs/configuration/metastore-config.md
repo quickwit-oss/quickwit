@@ -48,7 +48,7 @@ Likewise, if you upgrade Quickwit to a version that includes some changes in the
 
 For convenience, Quickwit also makes it possible to store its metadata in files using a file-backed metastore. In that case, Quickwit will write one file per index.
 
-The metastore is then configured by passing a [Storage URI](../reference/storage-uri.md) that will serve as the root of the metastore storage.
+The metastore is then configured by passing a [storage URI](./storage-config.md#storage-uris) that will serve as the root of the metastore storage.
 
 The metadata file associated with a given index will then be stored under
 
@@ -57,19 +57,18 @@ The metadata file associated with a given index will then be stored under
 For the moment, Quickwit supports two types of storage types:
 
 - a local file system URI (e.g., `file:///opt/toto`). It is also valid to pass a file path directly (without file://). `/var/quickwit`. Relative paths will be resolved with respect to the current working directory.
-- S3-compatible storage URI (e.g. `s3://my-bucket/some-path`] ). See the [Storage URI](../reference/storage-uri.md) documentation to configure S3 or S3-compatible storage.
+- S3-compatible storage URI (e.g., `s3://my-bucket/some-path`). See the [storage config](./storage-config.md) documentation to configure S3 or S3-compatible storage providers.
 
 ### Polling configuration
 
-By default, the File-Backed Metastore is only read once when you start a Quickwit process (searcher, indexer,...).
+By default, the File-Backed Metastore is only read once when you start a Quickwit process (searcher, indexer, ...).
 
 You can also configure it to poll the File-Backed Metastore periodically to keep a fresh view of it. This is useful for a Searcher instance that needs to be aware of new splits published by an Indexer running in parallel.
 
 To configure the polling interval (in seconds only), add a URI fragment to the storage URI like this: `s3://quickwit/my-indexes#polling_interval=30s`
 
 :::tip
-Amazon S3 charges $0.0004 per 1000 GET requests. Polling a metastore every 30 seconds will induce a cost of $0.04 per month and per index.
-
+Amazon S3 charges $0.0004 per 1000 GET requests. Polling a metastore every 30 seconds costs $0.04 per month and index.
 :::
 
 ### Examples
