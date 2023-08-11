@@ -31,7 +31,6 @@ use quickwit_cache_storage::CacheStorageService;
 use quickwit_cluster::ClusterChange;
 use quickwit_common::rendezvous_hasher::sort_by_rendez_vous_hash;
 use quickwit_common::uri::{Protocol, Uri};
-use quickwit_config::service::QuickwitService;
 use quickwit_metastore::{IndexMetadata, ListSplitsQuery, Metastore};
 use quickwit_proto::cache_storage::{
     CacheStorageServiceClient, NotifySplitsChangeRequest, SplitsChangeNotification,
@@ -233,8 +232,7 @@ impl CacheStorageServicePool {
                 .for_each(|change| async {
                     match change {
                         ClusterChange::Add(node) | ClusterChange::Update(node)
-                            if node.enabled_services().contains(&QuickwitService::Searcher)
-                                && node.max_cache_storage_disk_usage().is_some() =>
+                            if node.is_cache_storage_enabled() =>
                         {
                             let node_id = node.node_id().to_string();
                             if node.is_self_node() {

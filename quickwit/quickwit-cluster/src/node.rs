@@ -118,6 +118,13 @@ impl ClusterNode {
         self.inner.max_cache_storage_disk_usage
     }
 
+    pub fn is_cache_storage_enabled(&self) -> bool {
+        self.inner
+            .enabled_services
+            .contains(&QuickwitService::Searcher)
+            && self.inner.max_cache_storage_disk_usage.is_some()
+    }
+
     pub fn is_ready(&self) -> bool {
         self.inner.is_ready
     }

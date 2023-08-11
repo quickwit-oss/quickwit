@@ -89,18 +89,14 @@ impl CacheStorageService {
         Ok(())
     }
 
-    async fn update_split_cache(
+    pub async fn update_split_cache(
         &self,
         splits: Vec<SplitsChangeNotification>,
     ) -> Result<(), ActorExitStatus> {
-        if let Err(_err) = self
-            .cache_storage_factory
+        self.cache_storage_factory
             .update_split_cache(&self.storage_resolver, splits)
             .await
-        {
-            // TODO: log this
-        }
-        Ok(())
+            .map_err(|e| ActorExitStatus::from(anyhow!("Failed to update split cache: {:?}", e)))
     }
 }
 
@@ -160,20 +156,12 @@ impl Actor for CacheStorageService {
     }
 }
 
-fn is_cache_storage_enabled(config: &NodeConfig) -> bool {
-    if let Some(cache_config) = config.storage_configs.find_cache() {
-        cache_config.max_cache_storage_disk_usage.is_some()
-    } else {
-        false
-    }
-}
-
 pub async fn start_cache_storage_service(
     universe: &Universe,
     config: &NodeConfig,
     storage_resolver: StorageResolver,
 ) -> anyhow::Result<Option<Mailbox<CacheStorageService>>> {
-    if is_cache_storage_enabled(config) {
+    if config.is_cache_storage_enabled() {
         info!("Starting cache storage service.");
         // Spawn indexing service.
         let cache_storage_service =

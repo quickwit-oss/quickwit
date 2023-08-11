@@ -285,12 +285,19 @@ impl NodeConfig {
         Ok(peer_seed_addrs)
     }
 
+    /// Returns max cache storage config set for this node
     pub fn max_cache_storage_disk_usage(&self) -> Option<Byte> {
         if let Some(config) = self.storage_configs.find_cache() {
             config.max_cache_storage_disk_usage
         } else {
             None
         }
+    }
+
+    /// Returns true is cache storage is enabled for this node and false overwise
+    /// TODO: Maybe this should be handled with a special enabled service?
+    pub fn is_cache_storage_enabled(&self) -> bool {
+        self.enabled_services.contains(&QuickwitService::Searcher) && self.max_cache_storage_disk_usage().is_some()
     }
 
     pub fn redact(&mut self) {
