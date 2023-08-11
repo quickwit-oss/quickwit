@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 use crate::elastic_query_dsl::one_field_map::OneFieldMap;
 use crate::elastic_query_dsl::{ConvertableToQueryAst, ElasticQueryDslInner};
@@ -26,7 +26,7 @@ use crate::query_ast::{self, QueryAst};
 
 pub type TermQuery = OneFieldMap<TermQueryValue>;
 
-#[derive(PartialEq, Eq, Debug, Serialize, Deserialize, Clone)]
+#[derive(PartialEq, Eq, Debug, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct TermQueryValue {
     pub value: String,

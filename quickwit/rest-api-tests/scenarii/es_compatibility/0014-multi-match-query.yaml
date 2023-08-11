@@ -122,3 +122,20 @@ expected:
   hits:
     total:
       value: 1
+---
+json:
+  query:
+    multi_match:
+      type: phrase_prefix
+      query: zone of expl
+      # Yeah it makes no sense at all, but elastic accepts it.
+      lenient: true
+      fields: ["payload.commits.message"]
+---
+json:
+  query:
+    multi_match:
+      type: most_fields
+      query: the
+      lenient: false
+      fields: ["payload.commits.message", "hello"]

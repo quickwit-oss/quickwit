@@ -17,12 +17,12 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use serde::{Deserialize, Serialize};
+use serde::Deserialize;
 
 use crate::elastic_query_dsl::ConvertableToQueryAst;
 use crate::query_ast::{self, QueryAst};
 
-#[derive(Serialize, Deserialize, Clone, Eq, PartialEq, Debug)]
+#[derive(Deserialize, Clone, Eq, PartialEq, Debug)]
 pub struct ExistsQuery {
     field: String,
 }

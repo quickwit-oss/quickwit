@@ -20,7 +20,7 @@
 use std::fmt;
 
 use serde::de::{self, MapAccess, Visitor};
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Deserializer};
 
 use crate::elastic_query_dsl::ConvertableToQueryAst;
 use crate::query_ast::{FullTextMode, FullTextParams, FullTextQuery, QueryAst};
@@ -28,7 +28,7 @@ use crate::{MatchAllOrNone, OneFieldMap};
 
 /// `MatchQuery` as defined in
 /// <https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-match-query.html>
-#[derive(Serialize, Deserialize, Clone, Eq, PartialEq, Debug)]
+#[derive(Deserialize, Clone, Eq, PartialEq, Debug)]
 #[serde(
     from = "OneFieldMap<MatchPhraseQueryParamsForDeserialization>",
     into = "OneFieldMap<MatchPhraseQueryParams>"
@@ -38,7 +38,7 @@ pub(crate) struct MatchPhraseQuery {
     pub(crate) params: MatchPhraseQueryParams,
 }
 
-#[derive(Clone, Serialize, Deserialize, PartialEq, Eq, Debug)]
+#[derive(Clone, Deserialize, PartialEq, Eq, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct MatchPhraseQueryParams {
     query: String,
@@ -69,7 +69,7 @@ impl ConvertableToQueryAst for MatchPhraseQuery {
 
 // --------------
 //
-// Below is the Serialization/Deserialization code
+// Below is the Deserialization code
 // The difficulty here is to support the two following formats:
 //
 // `{"field": {"query": "my query", "default_operator": "OR"}}`
@@ -79,7 +79,7 @@ impl ConvertableToQueryAst for MatchPhraseQuery {
 //
 // The code below is adapted from solution described here: https://serde.rs/string-or-struct.html
 
-#[derive(Serialize, Deserialize)]
+#[derive(Deserialize)]
 #[serde(transparent)]
 struct MatchPhraseQueryParamsForDeserialization {
     #[serde(deserialize_with = "string_or_struct")]
