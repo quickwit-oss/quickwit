@@ -46,7 +46,7 @@ use tracing::{debug, error};
 pub struct CacheStorageControllerState {}
 
 /// Resides in the control plane. Responsible for receiving notification about the changes in
-/// published splits and forwarding these notification to CacheStorageServices that resides on
+/// published splits and forwarding these notifications to CacheStorageServices that resides on
 /// search nodes, that in turn are responsible for maintaining the local cache.
 pub struct CacheStorageController {
     metastore: Arc<dyn Metastore>,
