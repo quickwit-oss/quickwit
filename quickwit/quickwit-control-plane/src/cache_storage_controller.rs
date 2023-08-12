@@ -45,7 +45,7 @@ use tracing::{debug, error};
 #[derive(Debug, Clone, Default, Serialize)]
 pub struct CacheStorageControllerState {}
 
-/// Resides in the control plane. Responsible for recieving notification about the changes in
+/// Resides in the control plane. Responsible for receiving notification about the changes in
 /// published splits and forwarding these notification to CacheStorageServices that resides on
 /// search nodes, that in turn are responsible for maintaining the local cache.
 pub struct CacheStorageController {
