@@ -17,9 +17,10 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::{fmt, sync::Arc};
+use std::fmt;
 use std::ops::Range;
 use std::path::Path;
+use std::sync::Arc;
 
 use async_trait::async_trait;
 use quickwit_common::uri::Uri;

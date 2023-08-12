@@ -92,8 +92,7 @@ impl Storage for CacheStorage {
             if let Some(split) = guard.get(split_id) {
                 if matches!(split.0, SplitState::Ready) {
                     // Only return cache if it is ready
-                    // TODO: Ths 
-                    return self.cache.get_slice(path, range).await
+                    return self.cache.get_slice(path, range).await;
                 }
             }
         }
