@@ -56,7 +56,7 @@ pub struct CacheStorageController {
 }
 
 impl fmt::Debug for CacheStorageController {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("CacheStorageController")
             .field("metastore_uri", &self.metastore.uri())
             .finish()
