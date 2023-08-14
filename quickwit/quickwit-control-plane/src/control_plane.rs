@@ -82,6 +82,24 @@ impl Handler<NotifyIndexChangeRequest> for ControlPlane {
 }
 
 #[async_trait]
+impl Handler<NotifySplitsChangeRequest> for ControlPlane {
+    type Reply = ControlPlaneResult<NotifySplitsChangeResponse>;
+
+    async fn handle(
+        &mut self,
+        _request: NotifySplitsChangeRequest,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        debug!("Split change notification: notifying availalbe cache storage clients.");
+        self.cache_storage_manager_mailbox
+            .send_message(CacheUpdateRequest {})
+            .await
+            .context("Error sending index change notification to index scheduler.")?;
+        Ok(Ok(NotifySplitsChangeResponse {}))
+    }
+}
+
+#[async_trait]
 impl Handler<GetOpenShardsRequest> for ControlPlane {
     type Reply = ControlPlaneResult<GetOpenShardsResponse>;
 
@@ -104,23 +122,5 @@ impl Handler<CloseShardsRequest> for ControlPlane {
         _: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
         unimplemented!()
-    }
-}
-
-#[async_trait]
-impl Handler<NotifySplitsChangeRequest> for ControlPlane {
-    type Reply = ControlPlaneResult<NotifySplitsChangeResponse>;
-
-    async fn handle(
-        &mut self,
-        _request: NotifySplitsChangeRequest,
-        _ctx: &ActorContext<Self>,
-    ) -> Result<Self::Reply, ActorExitStatus> {
-        debug!("Split change notification: notifying availalbe cache storage clients.");
-        self.cache_storage_manager_mailbox
-            .send_message(CacheUpdateRequest {})
-            .await
-            .context("Error sending index change notification to index scheduler.")?;
-        Ok(Ok(NotifySplitsChangeResponse {}))
     }
 }
