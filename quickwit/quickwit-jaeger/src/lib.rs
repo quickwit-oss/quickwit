@@ -43,7 +43,7 @@ use quickwit_proto::jaeger::storage::v1::{
     SpansResponseChunk, TraceQueryParameters,
 };
 use quickwit_proto::opentelemetry::proto::trace::v1::status::StatusCode as OtlpStatusCode;
-use quickwit_proto::{ListTermsRequest, SearchRequest};
+use quickwit_proto::search::{ListTermsRequest, SearchRequest};
 use quickwit_query::query_ast::{BoolQuery, QueryAst, RangeQuery, TermQuery};
 use quickwit_search::{FindTraceIdsCollector, SearchService};
 use serde::Deserialize;
@@ -2381,7 +2381,7 @@ mod tests {
                     && req.start_timestamp.is_some()
             })
             .return_once(|_| {
-                Ok(quickwit_proto::ListTermsResponse {
+                Ok(quickwit_proto::search::ListTermsResponse {
                     num_hits: 3,
                     terms: vec![
                         encode_term_for_test!("service1"),

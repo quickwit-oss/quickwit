@@ -27,7 +27,7 @@ use std::io::Write;
 
 pub use collector::FastFieldCollector;
 pub use leaf::leaf_search_stream;
-use quickwit_proto::OutputFormat;
+use quickwit_proto::search::OutputFormat;
 pub use root::root_search_stream;
 use tantivy::columnar::MonotonicallyMappableToU64;
 

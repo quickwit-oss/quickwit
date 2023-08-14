@@ -20,7 +20,7 @@
 use std::ops::Bound;
 
 use prost::Message;
-use quickwit_proto::{LeafSearchResponse, SearchRequest, SplitIdAndFooterOffsets};
+use quickwit_proto::search::{LeafSearchResponse, SearchRequest, SplitIdAndFooterOffsets};
 use quickwit_storage::{MemorySizedCache, OwnedBytes};
 
 /// A cache to memoize `leaf_search_single_split` results.
@@ -170,7 +170,7 @@ impl std::ops::RangeBounds<i64> for Range {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_proto::{
+    use quickwit_proto::search::{
         LeafSearchResponse, PartialHit, SearchRequest, SortValue, SplitIdAndFooterOffsets,
     };
 

@@ -79,7 +79,7 @@ impl From<FileBackedIndexV0_6> for FileBackedIndex {
     fn from(mut index: FileBackedIndexV0_6) -> Self {
         // Override split index_id to support old SplitMetadata format.
         for split in index.splits.iter_mut() {
-            if split.split_metadata.index_uid.to_string().is_empty() {
+            if split.split_metadata.index_uid.is_empty() {
                 split.split_metadata.index_uid = index.metadata.index_uid.clone();
             }
         }

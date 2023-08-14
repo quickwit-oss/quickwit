@@ -72,7 +72,7 @@ where T: Buf + Default
     }
 
     /// Copies the command to the end of bytes::BufMut while returning the number of bytes copied
-    pub fn write(self, buf: &mut impl BufMut) -> usize {
+    pub fn write(self, mut buf: impl BufMut) -> usize {
         let self_buf = self.into_buf();
         let len = self_buf.remaining();
         buf.put(self_buf);

@@ -20,7 +20,7 @@
 use std::convert::TryFrom;
 
 use quickwit_common::truncate_str;
-use quickwit_proto::SearchResponse;
+use quickwit_proto::search::SearchResponse;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 

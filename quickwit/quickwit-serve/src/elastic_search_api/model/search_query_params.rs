@@ -20,7 +20,7 @@
 use std::str::FromStr;
 use std::time::Duration;
 
-use quickwit_proto::SortOrder;
+use quickwit_proto::search::SortOrder;
 use quickwit_query::BooleanOperand;
 use quickwit_search::SearchError;
 use serde::{Deserialize, Serialize};

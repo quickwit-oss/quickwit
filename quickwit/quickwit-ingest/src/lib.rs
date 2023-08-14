@@ -19,10 +19,12 @@
 
 #![deny(clippy::disallowed_methods)]
 
+mod doc_batch;
 mod errors;
 mod ingest_api_service;
 #[path = "codegen/ingest_service.rs"]
 mod ingest_service;
+mod ingest_v2;
 mod memory_capacity;
 mod metrics;
 mod notifications;
@@ -33,9 +35,11 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context};
+pub use doc_batch::*;
 pub use errors::IngestServiceError;
 pub use ingest_api_service::{GetMemoryCapacity, GetPartitionId, IngestApiService};
 pub use ingest_service::*;
+pub use ingest_v2::*;
 pub use memory_capacity::MemoryCapacity;
 use once_cell::sync::OnceCell;
 pub use position::Position;
@@ -43,9 +47,6 @@ pub use queue::Queues;
 use quickwit_actors::{Mailbox, Universe};
 use quickwit_config::IngestApiConfig;
 use tokio::sync::Mutex;
-
-mod doc_batch;
-pub use doc_batch::*;
 
 pub const QUEUES_DIR_NAME: &str = "queues";
 
