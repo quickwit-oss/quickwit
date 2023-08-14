@@ -295,9 +295,10 @@ pub struct GcpPubSubSourceParams {
     pub enable_backfill_mode: bool,
     /// GCP service account credentials (`None` will use default via
     /// GOOGLE_APPLICATION_CREDENTIALS)
-    pub credentials: Option<String>,
-    /// Number of pull requests issued in parallel by the source (default 1)
-    pub pull_parallelism: Option<u64>,
+    /// https://github.com/yoshidan/google-cloud-rust/tree/main/pubsub#automatically
+    pub credentials_file_path: Option<String>,
+    /// GCP project id. (`None` will use default like credentials_file_path)
+    pub project_id: Option<String>,
     /// Maximum number of messages returned by a pull request (default 1,000)
     pub max_messages_per_pull: Option<i32>,
 }

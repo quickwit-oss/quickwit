@@ -65,9 +65,11 @@ flume = "0.10"
 fnv = "1"
 futures = "0.3"
 futures-util = { version = "0.3.25", default-features = false }
-google-cloud-pubsub = "0.15.0"
+google-cloud-pubsub = "0.18.0"
+google-cloud-auth = "0.12.0"
+google-cloud-gax = "0.15.0"
 google-cloud-default = { version = "0.3.0", features = ["pubsub"] }
-google-cloud-googleapis = { version = "0.9.0", features = ["pubsub"] }
+google-cloud-googleapis = { version = "0.10.0", features = ["pubsub"] }
 heck = "0.4.1"
 hex = "0.4.3"
 home = "0.5.4"
