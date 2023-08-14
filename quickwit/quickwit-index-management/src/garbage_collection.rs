@@ -24,9 +24,8 @@ use std::time::Duration;
 
 use futures::Future;
 use quickwit_common::{PrettySample, Progress};
-use quickwit_metastore::{
-    ListSplitsQuery, Metastore, MetastoreError, SplitInfo, SplitMetadata, SplitState,
-};
+use quickwit_metastore::{ListSplitsQuery, Metastore, SplitInfo, SplitMetadata, SplitState};
+use quickwit_proto::metastore::MetastoreError;
 use quickwit_proto::IndexUid;
 use quickwit_storage::{BulkDeleteError, Storage};
 use thiserror::Error;
@@ -330,6 +329,7 @@ mod tests {
     use quickwit_metastore::{
         metastore_for_test, ListSplitsQuery, MockMetastore, SplitMetadata, SplitState,
     };
+    use quickwit_proto::metastore::EntityKind;
     use quickwit_proto::IndexUid;
     use quickwit_storage::{
         storage_for_test, BulkDeleteError, DeleteFailure, MockStorage, PutPayload,
@@ -652,9 +652,9 @@ mod tests {
 
         let mut mock_metastore = MockMetastore::new();
         mock_metastore.expect_delete_splits().return_once(|_, _| {
-            Err(MetastoreError::IndexesDoNotExist {
-                index_ids: vec![index_id.to_string()],
-            })
+            Err(MetastoreError::NotFound(EntityKind::Index {
+                index_id: index_id.to_string(),
+            }))
         });
         let metastore = Arc::new(mock_metastore);
 

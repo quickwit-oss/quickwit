@@ -469,7 +469,7 @@ mod tests {
         let mut mock_search_service_1 = MockSearchService::new();
         mock_search_service_1.expect_fetch_docs().return_once(
             |_: quickwit_proto::search::FetchDocsRequest| {
-                Err(SearchError::InternalError("error".to_string()))
+                Err(SearchError::Internal("error".to_string()))
             },
         );
         let mut mock_search_service_2 = MockSearchService::new();
@@ -499,7 +499,7 @@ mod tests {
         let mut mock_search_service = MockSearchService::new();
         mock_search_service.expect_fetch_docs().returning(
             |_: quickwit_proto::search::FetchDocsRequest| {
-                Err(SearchError::InternalError("error".to_string()))
+                Err(SearchError::Internal("error".to_string()))
             },
         );
         let searcher_pool = searcher_pool_for_test([("127.0.0.1:1001", mock_search_service)]);
@@ -511,7 +511,7 @@ mod tests {
             .fetch_docs(request, first_client)
             .await
             .unwrap_err();
-        assert!(matches!(search_error, SearchError::InternalError(_)));
+        assert!(matches!(search_error, SearchError::Internal(_)));
     }
 
     #[tokio::test]
@@ -632,7 +632,7 @@ mod tests {
             ..Default::default()
         };
         let merged_result = merge_leaf_search_results(
-            Err(SearchError::InternalError("error".to_string())),
+            Err(SearchError::Internal("error".to_string())),
             Ok(leaf_response),
         )
         .unwrap();
@@ -646,8 +646,8 @@ mod tests {
     #[test]
     fn test_merge_leaf_search_retry_error_on_error() -> anyhow::Result<()> {
         let merge_error = merge_leaf_search_results(
-            Err(SearchError::InternalError("error".to_string())),
-            Err(SearchError::InternalError("retry error".to_string())),
+            Err(SearchError::Internal("error".to_string())),
+            Err(SearchError::Internal("retry error".to_string())),
         )
         .unwrap_err();
         assert_eq!(merge_error.to_string(), "Internal error: `error`.");
@@ -661,7 +661,7 @@ mod tests {
         let mut mock_search_service_1 = MockSearchService::new();
         mock_search_service_1
             .expect_leaf_search_stream()
-            .return_once(|_| Err(SearchError::InternalError("error".to_string())));
+            .return_once(|_| Err(SearchError::Internal("error".to_string())));
 
         let mut mock_search_service_2 = MockSearchService::new();
         let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
@@ -683,9 +683,7 @@ mod tests {
             }))
             .unwrap();
         result_sender
-            .send(Err(SearchError::InternalError(
-                "last split error".to_string(),
-            )))
+            .send(Err(SearchError::Internal("last split error".to_string())))
             .unwrap();
         drop(result_sender);
 

@@ -29,15 +29,15 @@ use quickwit_proto::metastore::{
     LastDeleteOpstampResponse, ListAllSplitsRequest, ListDeleteTasksRequest,
     ListDeleteTasksResponse, ListIndexesMetadatasRequest, ListIndexesMetadatasResponse,
     ListSplitsRequest, ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest,
-    MetastoreService, PublishSplitsRequest, ResetSourceCheckpointRequest, SourceResponse,
-    SplitResponse, StageSplitsRequest, ToggleSourceRequest, UpdateSplitsDeleteOpstampRequest,
-    UpdateSplitsDeleteOpstampResponse,
+    MetastoreError, MetastoreService, PublishSplitsRequest, ResetSourceCheckpointRequest,
+    SourceResponse, SplitResponse, StageSplitsRequest, ToggleSourceRequest,
+    UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
 };
 use quickwit_proto::tonic::{Request, Response, Status};
 use quickwit_proto::{set_parent_span_from_request_metadata, tonic};
 use tracing::instrument;
 
-use crate::{ListSplitsQuery, Metastore, MetastoreError};
+use crate::{ListSplitsQuery, Metastore};
 
 #[allow(missing_docs)]
 #[derive(Clone)]
@@ -102,7 +102,7 @@ impl MetastoreService for GrpcMetastoreAdapter {
         request: tonic::Request<ListIndexesMetadatasRequest>,
     ) -> Result<tonic::Response<ListIndexesMetadatasResponse>, tonic::Status> {
         set_parent_span_from_request_metadata(request.metadata());
-        let query = serde_json::from_str(&request.into_inner().filter_json).map_err(|error| {
+        let query = serde_json::from_str(&request.into_inner().query_json).map_err(|error| {
             MetastoreError::JsonSerializeError {
                 struct_name: "ListIndexesQuery".to_string(),
                 message: error.to_string(),
@@ -166,7 +166,7 @@ impl MetastoreService for GrpcMetastoreAdapter {
     ) -> Result<tonic::Response<ListSplitsResponse>, tonic::Status> {
         set_parent_span_from_request_metadata(request.metadata());
         let list_splits_request = request.into_inner();
-        let query: ListSplitsQuery = serde_json::from_str(&list_splits_request.filter_json)
+        let query: ListSplitsQuery = serde_json::from_str(&list_splits_request.query_json)
             .map_err(|error| MetastoreError::JsonDeserializeError {
                 struct_name: "ListSplitsQuery".to_string(),
                 message: error.to_string(),

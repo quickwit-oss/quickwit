@@ -22,12 +22,12 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
+use quickwit_proto::metastore::{EntityKind, MetastoreError, MetastoreResult};
 use quickwit_storage::{Storage, StorageError, StorageErrorKind};
 use serde::{Deserialize, Serialize};
 
 use super::{IndexState, LazyFileBackedIndex};
 use crate::metastore::file_backed_metastore::file_backed_index::FileBackedIndex;
-use crate::{MetastoreError, MetastoreResult};
 
 /// Indexes states file managed by [`FileBackedMetastore`](crate::FileBackedMetastore).
 const INDEXES_STATES_FILENAME: &str = "indexes_states.json";
@@ -60,13 +60,13 @@ pub(crate) fn meta_path(index_id: &str) -> PathBuf {
 
 fn convert_error(index_id: &str, storage_err: StorageError) -> MetastoreError {
     match storage_err.kind() {
-        StorageErrorKind::NotFound => MetastoreError::IndexesDoNotExist {
-            index_ids: vec![index_id.to_string()],
-        },
+        StorageErrorKind::NotFound => MetastoreError::NotFound(EntityKind::Index {
+            index_id: index_id.to_string(),
+        }),
         StorageErrorKind::Unauthorized => MetastoreError::Forbidden {
             message: "The request credentials do not allow for this operation.".to_string(),
         },
-        _ => MetastoreError::InternalError {
+        _ => MetastoreError::Internal {
             message: "Failed to get index files.".to_string(),
             cause: storage_err.to_string(),
         },
@@ -99,14 +99,15 @@ pub(crate) async fn fetch_or_init_indexes_states(
     let content = storage
         .get_all(indexes_list_path)
         .await
-        .map_err(|storage_err| MetastoreError::InternalError {
+        .map_err(|storage_err| MetastoreError::Internal {
             message: format!("Failed to get `{INDEXES_STATES_FILENAME}` file."),
             cause: storage_err.to_string(),
         })?;
     let indexes_states_deserialized: HashMap<String, IndexStateValue> =
-        serde_json::from_slice(&content[..]).map_err(|serde_err| {
-            MetastoreError::InvalidManifest {
-                message: serde_err.to_string(),
+        serde_json::from_slice(&content[..]).map_err(|error| {
+            MetastoreError::JsonDeserializeError {
+                struct_name: "IndexManifest".to_string(),
+                message: error.to_string(),
             }
         })?;
     Ok(indexes_states_deserialized
@@ -138,7 +139,7 @@ pub(crate) async fn put_indexes_states(
     let indexes_list_path = Path::new(INDEXES_STATES_FILENAME);
     let content: Vec<u8> =
         serde_json::to_vec_pretty(&indexes_states_serializable).map_err(|serde_err| {
-            MetastoreError::InternalError {
+            MetastoreError::Internal {
                 message: "Failed to serialize indexes map".to_string(),
                 cause: serde_err.to_string(),
             }
@@ -146,7 +147,7 @@ pub(crate) async fn put_indexes_states(
     storage
         .put(indexes_list_path, Box::new(content))
         .await
-        .map_err(|storage_err| MetastoreError::InternalError {
+        .map_err(|storage_err| MetastoreError::Internal {
             message: format!("Failed to put `{INDEXES_STATES_FILENAME}` file."),
             cause: storage_err.to_string(),
         })?;
@@ -163,14 +164,15 @@ pub(crate) async fn fetch_index(
         .await
         .map_err(|storage_err| convert_error(index_id, storage_err))?;
 
-    let index: FileBackedIndex = serde_json::from_slice(&content[..]).map_err(|serde_err| {
-        MetastoreError::InvalidManifest {
-            message: serde_err.to_string(),
+    let index: FileBackedIndex = serde_json::from_slice(&content[..]).map_err(|serde_error| {
+        MetastoreError::JsonDeserializeError {
+            struct_name: "FileBackedIndex".to_string(),
+            message: serde_error.to_string(),
         }
     })?;
 
     if index.index_id() != index_id {
-        return Err(MetastoreError::InternalError {
+        return Err(MetastoreError::Internal {
             message: "Inconsistent manifest: index_id mismatch.".to_string(),
             cause: format!(
                 "Expected index_id `{}`, but found `{}`",
@@ -202,7 +204,7 @@ pub(crate) async fn put_index_given_index_id(
 ) -> MetastoreResult<()> {
     // Serialize Index.
     let content: Vec<u8> =
-        serde_json::to_vec_pretty(&index).map_err(|serde_err| MetastoreError::InternalError {
+        serde_json::to_vec_pretty(&index).map_err(|serde_err| MetastoreError::Internal {
             message: "Failed to serialize Metadata set".to_string(),
             cause: serde_err.to_string(),
         })?;
@@ -234,11 +236,10 @@ pub(crate) async fn delete_index(storage: &dyn Storage, index_id: &str) -> Metas
         .map_err(|storage_err| convert_error(index_id, storage_err))?;
 
     if !file_exists {
-        return Err(MetastoreError::IndexesDoNotExist {
-            index_ids: vec![index_id.to_string()],
-        });
+        return Err(MetastoreError::NotFound(EntityKind::Index {
+            index_id: index_id.to_string(),
+        }));
     }
-
     // Put data back into storage.
     storage
         .delete(&metadata_path)
@@ -247,7 +248,7 @@ pub(crate) async fn delete_index(storage: &dyn Storage, index_id: &str) -> Metas
             StorageErrorKind::Unauthorized => MetastoreError::Forbidden {
                 message: "The request credentials do not allow for this operation.".to_string(),
             },
-            _ => MetastoreError::InternalError {
+            _ => MetastoreError::Internal {
                 message: format!(
                     "Failed to write metastore file to `{}`.",
                     metadata_path.display()

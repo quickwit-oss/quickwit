@@ -95,7 +95,7 @@ mod tests {
     #[test]
     fn test_should_retry_on_error() {
         let retry_policy = DefaultRetryPolicy {};
-        let response_res = crate::Result::<()>::Err(SearchError::InternalError("test".to_string()));
+        let response_res = crate::Result::<()>::Err(SearchError::Internal("test".to_string()));
         retry_policy.retry_request((), &response_res).unwrap()
     }
 

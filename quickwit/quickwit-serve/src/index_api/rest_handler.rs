@@ -29,9 +29,9 @@ use quickwit_config::{
 use quickwit_doc_mapper::{analyze_text, TokenizerConfig};
 use quickwit_index_management::{IndexService, IndexServiceError};
 use quickwit_metastore::{
-    IndexMetadata, ListIndexesQuery, ListSplitsQuery, Metastore, MetastoreError, Split, SplitInfo,
-    SplitState,
+    IndexMetadata, ListIndexesQuery, ListSplitsQuery, Metastore, Split, SplitInfo, SplitState,
 };
+use quickwit_proto::metastore::{EntityKind, MetastoreError, MetastoreResult};
 use quickwit_proto::IndexUid;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -133,7 +133,7 @@ fn get_index_metadata_handler(
 async fn get_index_metadata(
     index_id: String,
     metastore: Arc<dyn Metastore>,
-) -> Result<IndexMetadata, MetastoreError> {
+) -> MetastoreResult<IndexMetadata> {
     info!(index_id = %index_id, "get-index-metadata");
     metastore.index_metadata(&index_id).await
 }
@@ -180,7 +180,7 @@ struct IndexStats {
 async fn describe_index(
     index_id: String,
     metastore: Arc<dyn Metastore>,
-) -> Result<IndexStats, MetastoreError> {
+) -> MetastoreResult<IndexStats> {
     let index_metadata = metastore.index_metadata(&index_id).await?;
     let query = ListSplitsQuery::for_index(index_metadata.index_uid.clone());
     let splits = metastore.list_splits(query).await?;
@@ -281,7 +281,7 @@ async fn list_splits(
     index_id: String,
     list_split_query: ListSplitsQueryParams,
     metastore: Arc<dyn Metastore>,
-) -> Result<Vec<Split>, MetastoreError> {
+) -> MetastoreResult<Vec<Split>> {
     let index_uid: IndexUid = metastore.index_metadata(&index_id).await?.index_uid;
     info!(index_id = %index_id, list_split_query = ?list_split_query, "get-splits");
     let mut query = ListSplitsQuery::for_index(index_uid);
@@ -335,7 +335,7 @@ async fn mark_splits_for_deletion(
     index_id: String,
     splits_for_deletion: SplitsForDeletion,
     metastore: Arc<dyn Metastore>,
-) -> Result<(), MetastoreError> {
+) -> MetastoreResult<()> {
     let index_uid: IndexUid = metastore.index_metadata(&index_id).await?.index_uid;
     info!(index_id = %index_id, splits_ids = ?splits_for_deletion.split_ids, "mark-splits-for-deletion");
     let split_ids: Vec<&str> = splits_for_deletion
@@ -372,7 +372,7 @@ fn mark_splits_for_deletion_handler(
 /// Gets indexes metadata.
 async fn get_indexes_metadatas(
     metastore: Arc<dyn Metastore>,
-) -> Result<Vec<IndexMetadata>, MetastoreError> {
+) -> MetastoreResult<Vec<IndexMetadata>> {
     info!("get-indexes-metadatas");
     metastore
         .list_indexes_metadatas(ListIndexesQuery::All)
@@ -580,15 +580,17 @@ async fn get_source(
     index_id: String,
     source_id: String,
     metastore: Arc<dyn Metastore>,
-) -> Result<SourceConfig, MetastoreError> {
+) -> MetastoreResult<SourceConfig> {
     info!(index_id = %index_id, source_id = %source_id, "get-source");
     let source_config = metastore
         .index_metadata(&index_id)
         .await?
         .sources
         .get(&source_id)
-        .ok_or_else(|| MetastoreError::SourceDoesNotExist {
-            source_id: source_id.to_string(),
+        .ok_or_else(|| {
+            MetastoreError::NotFound(EntityKind::Source {
+                source_id: source_id.to_string(),
+            })
         })?
         .clone();
     Ok(source_config)
@@ -622,7 +624,7 @@ async fn reset_source_checkpoint(
     index_id: String,
     source_id: String,
     metastore: Arc<dyn Metastore>,
-) -> Result<(), MetastoreError> {
+) -> MetastoreResult<()> {
     let index_uid: IndexUid = metastore.index_metadata(&index_id).await?.index_uid;
     info!(index_id = %index_id, source_id = %source_id, "reset-checkpoint");
     metastore
@@ -772,11 +774,8 @@ mod tests {
     use quickwit_common::uri::Uri;
     use quickwit_config::{SourceParams, VecSourceParams};
     use quickwit_indexing::{mock_split, MockSplitBuilder};
-    use quickwit_metastore::{
-        metastore_for_test, IndexMetadata, ListIndexesQuery, MetastoreError, MockMetastore,
-    };
+    use quickwit_metastore::{metastore_for_test, IndexMetadata, ListIndexesQuery, MockMetastore};
     use quickwit_storage::StorageResolver;
-    use serde::__private::from_utf8_lossy;
     use serde_json::Value as JsonValue;
 
     use super::*;
@@ -856,7 +855,7 @@ mod tests {
                         .with_index_uid(&index_uid)
                         .build()]);
                 }
-                Err(MetastoreError::InternalError {
+                Err(MetastoreError::Internal {
                     message: "".to_string(),
                     cause: "".to_string(),
                 })
@@ -925,7 +924,7 @@ mod tests {
                 if list_split_query.index_uids.contains(&index_uid) {
                     return Ok(vec![split_1, split_2]);
                 }
-                Err(MetastoreError::InternalError {
+                Err(MetastoreError::Internal {
                     message: "".to_string(),
                     cause: "".to_string(),
                 })
@@ -979,7 +978,7 @@ mod tests {
                 {
                     return Ok(Vec::new());
                 }
-                Err(MetastoreError::InternalError {
+                Err(MetastoreError::Internal {
                     message: "".to_string(),
                     cause: "".to_string(),
                 })
@@ -1017,7 +1016,7 @@ mod tests {
                 {
                     return Ok(());
                 }
-                Err(MetastoreError::InternalError {
+                Err(MetastoreError::Internal {
                     message: "".to_string(),
                     cause: "".to_string(),
                 })
@@ -1473,7 +1472,7 @@ mod tests {
             .reply(&index_management_handler)
             .await;
         assert_eq!(resp.status(), 415);
-        let body = from_utf8_lossy(resp.body());
+        let body = std::str::from_utf8(resp.body()).unwrap();
         assert!(body.contains("Unsupported content-type header. Choices are"));
     }
 
@@ -1498,7 +1497,7 @@ mod tests {
             .reply(&index_management_handler)
             .await;
         assert_eq!(resp.status(), 400);
-        let body = from_utf8_lossy(resp.body());
+        let body = std::str::from_utf8(resp.body()).unwrap();
         assert!(body.contains("Field `timestamp` has an unknown type"));
         Ok(())
     }
@@ -1522,7 +1521,7 @@ mod tests {
                 .reply(&index_management_handler)
                 .await;
             assert_eq!(resp.status(), 400);
-            let body = from_utf8_lossy(resp.body());
+            let body = std::str::from_utf8(resp.body()).unwrap();
             assert!(body.contains("invalid type: floating point `0.4`"));
         }
         {
@@ -1535,7 +1534,7 @@ mod tests {
                 .reply(&index_management_handler)
                 .await;
             assert_eq!(resp.status(), 400);
-            let body = from_utf8_lossy(resp.body());
+            let body = std::str::from_utf8(resp.body()).unwrap();
             assert!(body.contains(
                 "Quickwit currently supports multiple pipelines only for GCP PubSub or Kafka \
                  sources"
@@ -1561,9 +1560,9 @@ mod tests {
             .expect_delete_source()
             .return_once(|index_uid, source_id| {
                 assert_eq!(index_uid.index_id(), "quickwit-demo-index");
-                Err(MetastoreError::SourceDoesNotExist {
+                Err(MetastoreError::NotFound(EntityKind::Source {
                     source_id: source_id.to_string(),
-                })
+                }))
             });
         let index_service = IndexService::new(Arc::new(metastore), StorageResolver::unconfigured());
         let index_management_handler = super::index_management_handlers(
@@ -1597,7 +1596,7 @@ mod tests {
                 if index_uid.index_id() == "quickwit-demo-index" && source_id == "source-to-reset" {
                     return Ok(());
                 }
-                Err(MetastoreError::InternalError {
+                Err(MetastoreError::Internal {
                     message: "".to_string(),
                     cause: "".to_string(),
                 })
@@ -1644,7 +1643,7 @@ mod tests {
                 {
                     return Ok(());
                 }
-                Err(MetastoreError::InternalError {
+                Err(MetastoreError::Internal {
                     message: "".to_string(),
                     cause: "".to_string(),
                 })

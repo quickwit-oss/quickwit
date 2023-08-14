@@ -25,8 +25,9 @@ use quickwit_common::fs::{empty_dir, get_cache_directory_path};
 use quickwit_config::{validate_identifier, IndexConfig, SourceConfig};
 use quickwit_indexing::check_source_connectivity;
 use quickwit_metastore::{
-    IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, SplitInfo, SplitMetadata, SplitState,
+    IndexMetadata, ListSplitsQuery, Metastore, SplitInfo, SplitMetadata, SplitState,
 };
+use quickwit_proto::metastore::{EntityKind, MetastoreError};
 use quickwit_proto::{IndexUid, ServiceError, ServiceErrorCode};
 use quickwit_storage::{StorageResolver, StorageResolverError};
 use thiserror::Error;
@@ -40,11 +41,11 @@ use crate::garbage_collection::{
 #[derive(Error, Debug)]
 pub enum IndexServiceError {
     #[error("Failed to resolve the storage `{0}`.")]
-    StorageError(#[from] StorageResolverError),
+    Storage(#[from] StorageResolverError),
     #[error("Metastore error `{0}`.")]
-    MetastoreError(#[from] MetastoreError),
+    Metastore(#[from] MetastoreError),
     #[error("Split deletion error `{0}`.")]
-    SplitDeletionError(#[from] DeleteSplitsError),
+    SplitDeletion(#[from] DeleteSplitsError),
     #[error("Invalid config: {0:#}.")]
     InvalidConfig(anyhow::Error),
     #[error("Invalid identifier: {0}.")]
@@ -58,13 +59,13 @@ pub enum IndexServiceError {
 impl ServiceError for IndexServiceError {
     fn status_code(&self) -> ServiceErrorCode {
         match self {
-            Self::StorageError(_) => ServiceErrorCode::Internal,
-            Self::MetastoreError(error) => error.status_code(),
-            Self::SplitDeletionError(_) => ServiceErrorCode::Internal,
+            Self::Internal(_) => ServiceErrorCode::Internal,
             Self::InvalidConfig(_) => ServiceErrorCode::BadRequest,
             Self::InvalidIdentifier(_) => ServiceErrorCode::BadRequest,
+            Self::Metastore(error) => error.status_code(),
             Self::OperationNotAllowed(_) => ServiceErrorCode::MethodNotAllowed,
-            Self::Internal(_) => ServiceErrorCode::Internal,
+            Self::SplitDeletion(_) => ServiceErrorCode::Internal,
+            Self::Storage(_) => ServiceErrorCode::Internal,
         }
     }
 }
@@ -102,10 +103,10 @@ impl IndexService {
         if overwrite {
             match self.delete_index(&index_config.index_id, false).await {
                 Ok(_)
-                | Err(IndexServiceError::MetastoreError(MetastoreError::IndexesDoNotExist {
-                    index_ids: _,
-                })) => {
-                    // Ignore IndexesDoNotExist error.
+                | Err(IndexServiceError::Metastore(MetastoreError::NotFound(
+                    EntityKind::Index { .. },
+                ))) => {
+                    // Ignore index not found error.
                 }
                 Err(error) => {
                     return Err(error);
@@ -320,9 +321,9 @@ impl IndexService {
             .sources
             .get(source_id)
             .ok_or_else(|| {
-                IndexServiceError::MetastoreError(MetastoreError::SourceDoesNotExist {
+                IndexServiceError::Metastore(MetastoreError::NotFound(EntityKind::Source {
                     source_id: source_id.to_string(),
-                })
+                }))
             })?
             .clone();
 
@@ -380,11 +381,11 @@ mod tests {
             .create_index(index_config.clone(), false)
             .await
             .unwrap_err();
-        let IndexServiceError::MetastoreError(inner_error) = error else {
+        let IndexServiceError::Metastore(inner_error) = error else {
             panic!("Expected `MetastoreError` variant, got {:?}", error)
         };
         assert!(
-            matches!(inner_error, MetastoreError::IndexAlreadyExists { index_id } if index_id == index_metadata_0.index_id())
+            matches!(inner_error, MetastoreError::AlreadyExists(EntityKind::Index { index_id }) if index_id == index_metadata_0.index_id())
         );
 
         let index_metadata_1 = index_service
@@ -442,7 +443,7 @@ mod tests {
             .await
             .unwrap_err();
         assert!(
-            matches!(error, MetastoreError::IndexesDoNotExist { index_ids } if index_ids == vec![index_uid.index_id().to_string()])
+            matches!(error, MetastoreError::NotFound(EntityKind::Index { index_id }) if index_id == index_uid.index_id())
         );
         assert!(!storage.exists(split_path).await.unwrap());
     }

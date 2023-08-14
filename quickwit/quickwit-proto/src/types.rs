@@ -31,6 +31,8 @@ pub type IndexId = String;
 
 pub type SourceId = String;
 
+pub type SplitId = String;
+
 pub type ShardId = u64;
 
 /// Uniquely identifies a shard and its underlying mrecordlog queue.

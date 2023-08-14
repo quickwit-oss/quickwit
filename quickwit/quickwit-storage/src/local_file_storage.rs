@@ -184,7 +184,7 @@ impl Storage for LocalFileStorage {
         let full_path = self.full_path(path)?;
         let parent_dir = full_path.parent().ok_or_else(|| {
             let err = anyhow::anyhow!("No parent directory for {full_path:?}");
-            StorageErrorKind::InternalError.with_error(err)
+            StorageErrorKind::Internal.with_error(err)
         })?;
 
         fs::create_dir_all(parent_dir).await?;
@@ -227,7 +227,7 @@ impl Storage for LocalFileStorage {
         })
         .await
         .map_err(|_| {
-            StorageErrorKind::InternalError.with_error(anyhow::anyhow!("reading file panicked"))
+            StorageErrorKind::Internal.with_error(anyhow::anyhow!("reading file panicked"))
         })?
     }
 

@@ -22,9 +22,10 @@
 #![deny(clippy::disallowed_methods)]
 #![allow(rustdoc::invalid_html_tags)]
 
-//! `quickwit-metastore` is the abstraction used in quickwit to interface itself to different
+//! `quickwit-metastore` is the abstraction used in Quickwit to interface itself to different
 //! metastore:
 //! - file-backed metastore
+//! - PostgreSQL metastore
 //! etc.
 
 #[macro_use]
@@ -41,7 +42,7 @@ mod split_metadata_version;
 
 use std::ops::Range;
 
-pub use error::{MetastoreError, MetastoreResolverError, MetastoreResult};
+pub use error::MetastoreResolverError;
 pub use metastore::file_backed_metastore::FileBackedMetastore;
 pub use metastore::grpc_metastore::{GrpcMetastoreAdapter, MetastoreGrpcClient};
 pub(crate) use metastore::index_metadata::serialize::{IndexMetadataV0_6, VersionedIndexMetadata};

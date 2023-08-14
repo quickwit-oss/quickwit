@@ -25,15 +25,14 @@ use async_trait::async_trait;
 use once_cell::sync::OnceCell;
 use quickwit_common::uri::Uri;
 use quickwit_config::{MetastoreBackend, MetastoreConfig};
+use quickwit_proto::metastore::MetastoreError;
 use quickwit_storage::{StorageResolver, StorageResolverError};
 use regex::Regex;
 use tokio::sync::Mutex;
 use tracing::debug;
 
 use crate::metastore::instrumented_metastore::InstrumentedMetastore;
-use crate::{
-    FileBackedMetastore, Metastore, MetastoreError, MetastoreFactory, MetastoreResolverError,
-};
+use crate::{FileBackedMetastore, Metastore, MetastoreFactory, MetastoreResolverError};
 
 /// A file-backed metastore factory.
 ///
@@ -134,7 +133,7 @@ impl MetastoreFactory for FileBackedMetastoreFactory {
                     MetastoreResolverError::UnsupportedBackend(message)
                 }
                 StorageResolverError::FailedToOpenStorage { kind, message } => {
-                    MetastoreResolverError::FailedToOpenMetastore(MetastoreError::InternalError {
+                    MetastoreResolverError::Initialization(MetastoreError::Internal {
                         message: format!("Failed to open metastore file `{uri}`."),
                         cause: format!("StorageError {kind:?}: {message}."),
                     })
@@ -142,7 +141,7 @@ impl MetastoreFactory for FileBackedMetastoreFactory {
             })?;
         let file_backed_metastore = FileBackedMetastore::try_new(storage, polling_interval_opt)
             .await
-            .map_err(MetastoreResolverError::FailedToOpenMetastore)?;
+            .map_err(MetastoreResolverError::Initialization)?;
         let instrumented_metastore = InstrumentedMetastore::new(Box::new(file_backed_metastore));
         let unique_metastore_for_uri = self
             .cache_metastore(uri, Arc::new(instrumented_metastore))

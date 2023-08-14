@@ -320,7 +320,7 @@ impl S3CompatibleObjectStorage {
         .await?
         .upload_id
         .ok_or_else(|| {
-            StorageErrorKind::InternalError
+            StorageErrorKind::Internal
                 .with_error(anyhow!("The returned multipart upload id was null."))
         })?;
         Ok(MultipartUploadId(upload_id))

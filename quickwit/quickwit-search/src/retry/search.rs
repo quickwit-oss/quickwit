@@ -97,9 +97,9 @@ mod tests {
     fn test_should_retry_on_error() {
         let retry_policy = LeafSearchRetryPolicy {};
         let request = mock_leaf_search_request();
-        let response_res = Result::<LeafSearchResponse, SearchError>::Err(
-            SearchError::InternalError("test".to_string()),
-        );
+        let response_res = Result::<LeafSearchResponse, SearchError>::Err(SearchError::Internal(
+            "test".to_string(),
+        ));
         retry_policy.retry_request(request, &response_res).unwrap();
     }
 

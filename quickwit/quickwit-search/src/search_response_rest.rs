@@ -57,7 +57,7 @@ impl TryFrom<SearchResponse> for SearchResponseRest {
         let mut snippets = Vec::new();
         for hit in search_response.hits {
             let document: JsonValue = serde_json::from_str(&hit.json).map_err(|err| {
-                SearchError::InternalError(format!(
+                SearchError::Internal(format!(
                     "Failed to serialize document `{}` to JSON: `{}`.",
                     truncate_str(&hit.json, 100),
                     err
@@ -68,7 +68,7 @@ impl TryFrom<SearchResponse> for SearchResponseRest {
             if let Some(snippet_json) = hit.snippet {
                 let snippet_opt: JsonValue =
                     serde_json::from_str(&snippet_json).map_err(|err| {
-                        SearchError::InternalError(format!(
+                        SearchError::Internal(format!(
                             "Failed to serialize snippet `{snippet_json}` to JSON: `{err}`."
                         ))
                     })?;
@@ -84,7 +84,7 @@ impl TryFrom<SearchResponse> for SearchResponseRest {
 
         let aggregations_opt = if let Some(aggregation_json) = search_response.aggregation {
             let aggregation: JsonValue = serde_json::from_str(&aggregation_json)
-                .map_err(|err| SearchError::InternalError(err.to_string()))?;
+                .map_err(|err| SearchError::Internal(err.to_string()))?;
             Some(aggregation)
         } else {
             None

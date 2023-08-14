@@ -20,13 +20,13 @@
 use std::sync::{Arc, Weak};
 use std::time::Duration;
 
+use quickwit_proto::metastore::MetastoreResult;
 use quickwit_storage::Storage;
 use tokio::sync::{Mutex, OnceCell};
 use tracing::error;
 
 use super::file_backed_index::FileBackedIndex;
 use super::store_operations::fetch_index;
-use crate::MetastoreResult;
 
 /// Lazy [`FileBackedIndex`]. It loads a `FileBackedIndex`
 /// on demand and optionally spawns a task to poll

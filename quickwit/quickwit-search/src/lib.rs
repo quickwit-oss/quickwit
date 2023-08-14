@@ -135,19 +135,16 @@ async fn list_relevant_splits(
     if let Some(start_ts) = start_timestamp {
         query = query.with_time_range_start_gte(start_ts);
     }
-
     if let Some(end_ts) = end_timestamp {
         query = query.with_time_range_end_lt(end_ts);
     }
-
     if let Some(tags_filter) = tags_filter_opt {
         query = query.with_tags_filter(tags_filter);
     }
-
-    let split_metas = metastore.list_splits(query).await?;
-    Ok(split_metas
+    let splits = metastore.list_splits(query).await?;
+    Ok(splits
         .into_iter()
-        .map(|metadata| metadata.split_metadata)
+        .map(|split| split.split_metadata)
         .collect::<Vec<_>>())
 }
 

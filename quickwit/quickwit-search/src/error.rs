@@ -18,7 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use quickwit_doc_mapper::QueryParserError;
-use quickwit_metastore::MetastoreError;
+use quickwit_proto::metastore::{EntityKind, MetastoreError};
 use quickwit_proto::{tonic, ServiceError, ServiceErrorCode};
 use quickwit_storage::StorageResolverError;
 use serde::{Deserialize, Serialize};
@@ -26,33 +26,33 @@ use tantivy::TantivyError;
 use thiserror::Error;
 use tokio::task::JoinError;
 
-/// Possible SearchError.
+/// Possible SearchError
 #[allow(missing_docs)]
 #[derive(Error, Debug, Serialize, Deserialize, Clone)]
 pub enum SearchError {
-    #[error("Indexes IDs or index ID patterns `{index_id_patterns:?}` do not exist.")]
-    IndexesDoNotExist { index_id_patterns: Vec<String> },
+    #[error("Could not find indexes matching the IDs or patterns `{index_id_patterns:?}`.")]
+    IndexesNotFound { index_id_patterns: Vec<String> },
     #[error("Internal error: `{0}`.")]
-    InternalError(String),
-    #[error("Storage not found: `{0}`)")]
-    StorageResolverError(#[from] StorageResolverError),
+    Internal(String),
     #[error("Invalid aggregation request: {0}")]
     InvalidAggregationRequest(String),
     #[error("Invalid argument: {0}")]
     InvalidArgument(String),
     #[error("{0}")]
     InvalidQuery(String),
+    #[error("Storage not found: `{0}`)")]
+    StorageResolver(#[from] StorageResolverError),
 }
 
 impl ServiceError for SearchError {
     fn status_code(&self) -> ServiceErrorCode {
         match self {
-            SearchError::IndexesDoNotExist { .. } => ServiceErrorCode::NotFound,
-            SearchError::InternalError(_) => ServiceErrorCode::Internal,
-            SearchError::StorageResolverError(_) => ServiceErrorCode::BadRequest,
-            SearchError::InvalidQuery(_) => ServiceErrorCode::BadRequest,
-            SearchError::InvalidArgument(_) => ServiceErrorCode::BadRequest,
+            SearchError::IndexesNotFound { .. } => ServiceErrorCode::NotFound,
+            SearchError::Internal(_) => ServiceErrorCode::Internal,
             SearchError::InvalidAggregationRequest(_) => ServiceErrorCode::BadRequest,
+            SearchError::InvalidArgument(_) => ServiceErrorCode::BadRequest,
+            SearchError::InvalidQuery(_) => ServiceErrorCode::BadRequest,
+            SearchError::StorageResolver(_) => ServiceErrorCode::BadRequest,
         }
     }
 }
@@ -66,53 +66,60 @@ impl From<SearchError> for tonic::Status {
 /// Parse tonic error and returns `SearchError`.
 pub fn parse_grpc_error(grpc_error: &tonic::Status) -> SearchError {
     serde_json::from_str(grpc_error.message())
-        .unwrap_or_else(|_| SearchError::InternalError(grpc_error.message().to_string()))
+        .unwrap_or_else(|_| SearchError::Internal(grpc_error.message().to_string()))
 }
 
 impl From<TantivyError> for SearchError {
-    fn from(tantivy_err: TantivyError) -> Self {
-        SearchError::InternalError(format!("{tantivy_err}"))
+    fn from(tantivy_error: TantivyError) -> Self {
+        SearchError::Internal(format!("tantivy error: {tantivy_error}"))
     }
 }
 
 impl From<postcard::Error> for SearchError {
     fn from(error: postcard::Error) -> Self {
-        SearchError::InternalError(format!("Postcard error: {error}"))
+        SearchError::Internal(format!("Postcard error: {error}"))
     }
 }
 
 impl From<serde_json::Error> for SearchError {
     fn from(serde_error: serde_json::Error) -> Self {
-        SearchError::InternalError(format!("Serde error: {serde_error}"))
+        SearchError::Internal(format!("Serde error: {serde_error}"))
     }
 }
 
 impl From<anyhow::Error> for SearchError {
-    fn from(any_err: anyhow::Error) -> Self {
-        SearchError::InternalError(format!("{any_err}"))
+    fn from(any_error: anyhow::Error) -> Self {
+        SearchError::Internal(any_error.to_string())
     }
 }
 
 impl From<QueryParserError> for SearchError {
     fn from(query_parser_error: QueryParserError) -> Self {
-        SearchError::InvalidQuery(format!("{query_parser_error}"))
+        SearchError::InvalidQuery(query_parser_error.to_string())
     }
 }
 
 impl From<MetastoreError> for SearchError {
     fn from(metastore_error: MetastoreError) -> SearchError {
         match metastore_error {
-            MetastoreError::IndexesDoNotExist { index_ids } => SearchError::IndexesDoNotExist {
-                index_id_patterns: index_ids,
-            },
-            _ => SearchError::InternalError(format!("{metastore_error}")),
+            MetastoreError::NotFound(EntityKind::Index { index_id }) => {
+                SearchError::IndexesNotFound {
+                    index_id_patterns: vec![index_id],
+                }
+            }
+            MetastoreError::NotFound(EntityKind::Indexes { index_ids }) => {
+                SearchError::IndexesNotFound {
+                    index_id_patterns: index_ids,
+                }
+            }
+            _ => SearchError::Internal(metastore_error.to_string()),
         }
     }
 }
 
 impl From<JoinError> for SearchError {
     fn from(join_error: JoinError) -> SearchError {
-        SearchError::InternalError(format!("Spawned task in root join failed: {join_error}"))
+        SearchError::Internal(format!("Spawned task in root join failed: {join_error}"))
     }
 }
 
