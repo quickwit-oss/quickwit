@@ -199,11 +199,10 @@ pub struct SearchRequestQueryString {
     pub sort_by: SortBy,
 }
 
-async fn search_endpoint(
+pub fn search_request_from_api_request(
     index_id: String,
     search_request: SearchRequestQueryString,
-    search_service: &dyn SearchService,
-) -> Result<SearchResponseRest, SearchError> {
+) -> Result<quickwit_proto::SearchRequest, SearchError> {
     // The query ast below may still contain user input query. The actual
     // parsing of the user query will happen in the root service, and might require
     // the user of the docmapper default fields (which we do not have at this point).
@@ -223,6 +222,15 @@ async fn search_endpoint(
         sort_fields: search_request.sort_by.sort_fields,
         scroll_ttl_secs: None,
     };
+    Ok(search_request)
+}
+
+async fn search_endpoint(
+    index_id: String,
+    search_request: SearchRequestQueryString,
+    search_service: &dyn SearchService,
+) -> Result<SearchResponseRest, SearchError> {
+    let search_request = search_request_from_api_request(index_id, search_request)?;
     let search_response = search_service.root_search(search_request).await?;
     let search_response_rest = SearchResponseRest::try_from(search_response)?;
     Ok(search_response_rest)

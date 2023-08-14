@@ -22,6 +22,7 @@ use std::io::{stdout, IsTerminal, Stdout, Write};
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::{env, fmt, io};
 
@@ -46,6 +47,12 @@ use quickwit_indexing::models::{
     DetachIndexingPipeline, DetachMergePipeline, IndexingStatistics, SpawnPipeline,
 };
 use quickwit_indexing::IndexingPipeline;
+use quickwit_metastore::Metastore;
+use quickwit_proto::SearchResponse;
+use quickwit_search::{single_node_search, SearchResponseRest};
+use quickwit_serve::{
+    search_request_from_api_request, BodyFormat, SearchRequestQueryString, SortBy,
+};
 use quickwit_storage::{BundleStorage, Storage};
 use thousands::Separable;
 use tracing::{debug, info};
@@ -79,6 +86,40 @@ pub fn build_tool_command() -> Command {
                     arg!(--"transform-script" <SCRIPT> "VRL program to transform docs before ingesting.")
                         .required(false),
                     arg!(--"keep-cache" "Does not clear local cache directory upon completion.")
+                        .required(false),
+                ])
+            )
+        .subcommand(
+            Command::new("local-search")
+                .display_order(10)
+                .about("Searches an index locally.")
+                .long_about("Searchers an index directly on the configured storage without using a server.")
+                .args(&[
+                    arg!(--index <INDEX> "ID of the target index")
+                        .display_order(1)
+                        .required(true),
+                    arg!(--query <QUERY> "Query expressed in natural query language ((barack AND obama) OR \"president of united states\"). Learn more on https://quickwit.io/docs/reference/search-language.")
+                        .display_order(2)
+                        .required(true),
+                    arg!(--aggregation <AGG> "JSON serialized aggregation request in tantivy/elasticsearch format.")
+                        .required(false),
+                    arg!(--"max-hits" <MAX_HITS> "Maximum number of hits returned.")
+                        .default_value("20")
+                        .required(false),
+                    arg!(--"start-offset" <OFFSET> "Offset in the global result set of the first hit returned.")
+                        .default_value("0")
+                        .required(false),
+                    arg!(--"search-fields" <FIELD_NAME> "List of fields that Quickwit will search into if the user query does not explicitly target a field in the query. It overrides the default search fields defined in the index config. Space-separated list, e.g. \"field1 field2\". ")
+                        .num_args(1..)
+                        .required(false),
+                    arg!(--"snippet-fields" <FIELD_NAME> "List of fields that Quickwit will return snippet highlight on. Space-separated list, e.g. \"field1 field2\". ")
+                        .num_args(1..)
+                        .required(false),
+                    arg!(--"start-timestamp" <TIMESTAMP> "Filters out documents before that timestamp (time-series indexes only).")
+                        .required(false),
+                    arg!(--"end-timestamp" <TIMESTAMP> "Filters out documents after that timestamp (time-series indexes only).")
+                        .required(false),
+                    arg!(--"sort-by-field" <SORT_BY_FIELD> "Sort by field.")
                         .required(false),
                 ])
             )
@@ -138,6 +179,21 @@ pub struct LocalIngestDocsArgs {
 }
 
 #[derive(Debug, Eq, PartialEq)]
+pub struct LocalSearchArgs {
+    pub config_uri: Uri,
+    pub index_id: String,
+    pub query: String,
+    pub aggregation: Option<String>,
+    pub max_hits: usize,
+    pub start_offset: usize,
+    pub search_fields: Option<Vec<String>>,
+    pub snippet_fields: Option<Vec<String>>,
+    pub start_timestamp: Option<i64>,
+    pub end_timestamp: Option<i64>,
+    pub sort_by_field: Option<String>,
+}
+
+#[derive(Debug, Eq, PartialEq)]
 pub struct GarbageCollectIndexArgs {
     pub config_uri: Uri,
     pub index_id: String,
@@ -164,6 +220,7 @@ pub struct ExtractSplitArgs {
 pub enum ToolCliCommand {
     GarbageCollect(GarbageCollectIndexArgs),
     LocalIngest(LocalIngestDocsArgs),
+    LocalSearch(LocalSearchArgs),
     Merge(MergeArgs),
     ExtractSplit(ExtractSplitArgs),
 }
@@ -176,6 +233,7 @@ impl ToolCliCommand {
         match subcommand.as_str() {
             "gc" => Self::parse_garbage_collect_args(submatches),
             "local-ingest" => Self::parse_local_ingest_args(submatches),
+            "local-search" => Self::parse_local_search_args(submatches),
             "merge" => Self::parse_merge_args(submatches),
             "extract-split" => Self::parse_extract_split_args(submatches),
             _ => bail!("Unknown tool subcommand `{subcommand}`."),
@@ -215,6 +273,56 @@ impl ToolCliCommand {
             overwrite,
             vrl_script,
             clear_cache,
+        }))
+    }
+
+    fn parse_local_search_args(mut matches: ArgMatches) -> anyhow::Result<Self> {
+        let config_uri = matches
+            .remove_one::<String>("config")
+            .map(|uri_str| Uri::from_str(&uri_str))
+            .expect("`config` should be a required arg.")?;
+        let index_id = matches
+            .remove_one::<String>("index")
+            .expect("`index` should be a required arg.");
+        let query = matches
+            .remove_one::<String>("query")
+            .context("`query` should be a required arg.")?;
+        let aggregation = matches.remove_one::<String>("aggregation");
+        let max_hits = matches
+            .remove_one::<String>("max-hits")
+            .expect("`max-hits` should have a default value.")
+            .parse()?;
+        let start_offset = matches
+            .remove_one::<String>("start-offset")
+            .expect("`start-offset` should have a default value.")
+            .parse()?;
+        let search_fields = matches
+            .remove_many::<String>("search-fields")
+            .map(|values| values.collect());
+        let snippet_fields = matches
+            .remove_many::<String>("snippet-fields")
+            .map(|values| values.collect());
+        let sort_by_field = matches.remove_one::<String>("sort-by-field");
+        let start_timestamp = matches
+            .remove_one::<String>("start-timestamp")
+            .map(|ts| ts.parse())
+            .transpose()?;
+        let end_timestamp = matches
+            .remove_one::<String>("end-timestamp")
+            .map(|ts| ts.parse())
+            .transpose()?;
+        Ok(Self::LocalSearch(LocalSearchArgs {
+            config_uri,
+            index_id,
+            query,
+            aggregation,
+            max_hits,
+            start_offset,
+            search_fields,
+            snippet_fields,
+            start_timestamp,
+            end_timestamp,
+            sort_by_field,
         }))
     }
 
@@ -284,6 +392,7 @@ impl ToolCliCommand {
         match self {
             Self::GarbageCollect(args) => garbage_collect_index_cli(args).await,
             Self::LocalIngest(args) => local_ingest_docs_cli(args).await,
+            Self::LocalSearch(args) => local_search_cli(args).await,
             Self::Merge(args) => merge_cli(args).await,
             Self::ExtractSplit(args) => extract_split_cli(args).await,
         }
@@ -411,6 +520,41 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
         }
         _ => bail!("Failed to ingest all the documents."),
     }
+}
+
+pub async fn local_search_cli(args: LocalSearchArgs) -> anyhow::Result<()> {
+    debug!(args=?args, "local-search");
+    println!("❯ Searching directly on the index storage (without calling REST API)...");
+    let config = load_node_config(&args.config_uri).await?;
+    let (storage_resolver, metastore_resolver) =
+        get_resolvers(&config.storage_configs, &config.metastore_configs);
+    let metastore: Arc<dyn Metastore> = metastore_resolver.resolve(&config.metastore_uri).await?;
+    let aggs = args
+        .aggregation
+        .map(|agg_string| serde_json::from_str(&agg_string))
+        .transpose()?;
+    let sort_by: SortBy = args.sort_by_field.map(SortBy::from).unwrap_or_default();
+    let search_request_query_string = SearchRequestQueryString {
+        query: args.query,
+        start_offset: args.start_offset as u64,
+        max_hits: args.max_hits as u64,
+        search_fields: args.search_fields,
+        snippet_fields: args.snippet_fields,
+        start_timestamp: args.start_timestamp,
+        end_timestamp: args.end_timestamp,
+        aggs,
+        format: BodyFormat::Json,
+        sort_by,
+    };
+    let search_request =
+        search_request_from_api_request(args.index_id, search_request_query_string)?;
+    debug!(search_request=?search_request, "search-request");
+    let search_response: SearchResponse =
+        single_node_search(search_request, metastore, storage_resolver).await?;
+    let search_response_rest = SearchResponseRest::try_from(search_response)?;
+    let search_response_json = serde_json::to_string_pretty(&search_response_rest)?;
+    println!("{}", search_response_json);
+    Ok(())
 }
 
 pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
