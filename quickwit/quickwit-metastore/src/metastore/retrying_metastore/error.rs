@@ -17,7 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use super::retry::Retryable;
+use quickwit_common::retry::Retryable;
+
 use crate::MetastoreError;
 
 impl Retryable for MetastoreError {

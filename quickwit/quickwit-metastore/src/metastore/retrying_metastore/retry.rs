@@ -18,38 +18,10 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::fmt::Debug;
-use std::time::Duration;
 
 use futures::Future;
-use rand::Rng;
+use quickwit_common::retry::{RetryParams, Retryable};
 use tracing::{debug, warn};
-
-const DEFAULT_MAX_RETRY_ATTEMPTS: usize = 30;
-const DEFAULT_BASE_DELAY: Duration = Duration::from_millis(if cfg!(test) { 1 } else { 250 });
-const DEFAULT_MAX_DELAY: Duration = Duration::from_millis(if cfg!(test) { 1 } else { 20_000 });
-
-pub trait Retryable {
-    fn is_retryable(&self) -> bool {
-        false
-    }
-}
-
-#[derive(Clone)]
-pub struct RetryParams {
-    pub base_delay: Duration,
-    pub max_delay: Duration,
-    pub max_attempts: usize,
-}
-
-impl Default for RetryParams {
-    fn default() -> Self {
-        Self {
-            base_delay: DEFAULT_BASE_DELAY,
-            max_delay: DEFAULT_MAX_DELAY,
-            max_attempts: DEFAULT_MAX_RETRY_ATTEMPTS,
-        }
-    }
-}
 
 /// Retry with exponential backoff and full jitter. Implementation and default values originate from
 /// the Java SDK. See also: <https://aws.amazon.com/blogs/architecture/exponential-backoff-and-jitter/>.
@@ -59,12 +31,12 @@ where
     Fut: Future<Output = Result<U, E>>,
     E: Retryable + Debug + 'static,
 {
-    let mut attempt_count = 0;
+    let mut num_attempts = 0;
 
     loop {
         let response = f().await;
 
-        attempt_count += 1;
+        num_attempts += 1;
 
         match response {
             Ok(response) => {
@@ -74,26 +46,21 @@ where
                 if !error.is_retryable() {
                     return Err(error);
                 }
-                if attempt_count >= retry_params.max_attempts {
+                if num_attempts >= retry_params.max_attempts {
                     warn!(
-                        attempt_count = %attempt_count,
+                        num_attempts=%num_attempts,
                         "Request failed"
                     );
                     return Err(error);
                 }
-
-                let ceiling_ms = (retry_params.base_delay.as_millis() as u64
-                    * 2u64.pow(attempt_count as u32))
-                .min(retry_params.max_delay.as_millis() as u64);
-                let delay_ms = rand::thread_rng().gen_range(0..ceiling_ms);
+                let delay = retry_params.compute_delay(num_attempts);
                 debug!(
-                    attempt_count = %attempt_count,
-                    delay_ms = %delay_ms,
-                    error = ?error,
+                    num_attempts=%num_attempts,
+                    delay_millis=%delay.as_millis(),
+                    error=?error,
                     "Request failed, retrying"
                 );
-
-                tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+                tokio::time::sleep(delay).await;
             }
         }
     }
@@ -124,7 +91,7 @@ mod tests {
 
     async fn simulate_retries<T>(values: Vec<Result<T, Retry<usize>>>) -> Result<T, Retry<usize>> {
         let values_it = RwLock::new(values.into_iter());
-        retry(&RetryParams::default(), || {
+        retry(&RetryParams::for_test(), || {
             ready(values_it.write().unwrap().next().unwrap())
         })
         .await

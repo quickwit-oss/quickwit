@@ -32,6 +32,7 @@ mod progress;
 pub mod pubsub;
 pub mod rand;
 pub mod rendezvous_hasher;
+pub mod retry;
 pub mod runtimes;
 pub mod shared_consts;
 pub mod sorted_iter;

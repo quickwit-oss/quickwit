@@ -20,12 +20,12 @@
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use async_trait::async_trait;
+use quickwit_common::retry::RetryParams;
 use quickwit_common::uri::Uri;
 use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_proto::metastore::{DeleteQuery, DeleteTask};
 use quickwit_proto::IndexUid;
 
-use super::retry::RetryParams;
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{
     IndexMetadata, ListIndexesQuery, ListSplitsQuery, Metastore, MetastoreError, MetastoreResult,
