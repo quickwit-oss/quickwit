@@ -22,6 +22,7 @@ use std::io::{stdout, IsTerminal, Stdout, Write};
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::str::FromStr;
+use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::{env, fmt, io};
 
@@ -46,10 +47,11 @@ use quickwit_indexing::models::{
     DetachIndexingPipeline, DetachMergePipeline, IndexingStatistics, SpawnPipeline,
 };
 use quickwit_indexing::IndexingPipeline;
+use quickwit_metastore::Metastore;
 use quickwit_proto::SearchResponse;
 use quickwit_search::{single_node_search, SearchResponseRest};
 use quickwit_serve::{
-    search_request_from_api_request, BodyFormat, SearchRequestQueryString, SortByField,
+    search_request_from_api_request, BodyFormat, SearchRequestQueryString, SortBy,
 };
 use quickwit_storage::{BundleStorage, Storage};
 use thousands::Separable;
@@ -524,13 +526,14 @@ pub async fn local_search_cli(args: LocalSearchArgs) -> anyhow::Result<()> {
     debug!(args=?args, "local-search");
     println!("❯ Searching directly on the index storage (without calling REST API)...");
     let config = load_node_config(&args.config_uri).await?;
-    let (storage_resolver, metastore_resolver) = get_resolvers(&config).await;
-    let metastore = metastore_resolver.resolve(&config.metastore_uri).await?;
+    let (storage_resolver, metastore_resolver) =
+        get_resolvers(&config.storage_configs, &config.metastore_configs);
+    let metastore: Arc<dyn Metastore> = metastore_resolver.resolve(&config.metastore_uri).await?;
     let aggs = args
         .aggregation
         .map(|agg_string| serde_json::from_str(&agg_string))
         .transpose()?;
-    let sort_by_field = args.sort_by_field.map(SortByField::from);
+    let sort_by: SortBy = args.sort_by_field.map(SortBy::from).unwrap_or_default();
     let search_request_query_string = SearchRequestQueryString {
         query: args.query,
         start_offset: args.start_offset as u64,
@@ -541,13 +544,13 @@ pub async fn local_search_cli(args: LocalSearchArgs) -> anyhow::Result<()> {
         end_timestamp: args.end_timestamp,
         aggs,
         format: BodyFormat::Json,
-        sort_by_field,
+        sort_by,
     };
     let search_request =
         search_request_from_api_request(args.index_id, search_request_query_string)?;
     debug!(search_request=?search_request, "search-request");
     let search_response: SearchResponse =
-        single_node_search(search_request, &*metastore, storage_resolver).await?;
+        single_node_search(search_request, metastore, storage_resolver).await?;
     let search_response_rest = SearchResponseRest::try_from(search_response)?;
     let search_response_json = serde_json::to_string_pretty(&search_response_rest)?;
     println!("{}", search_response_json);

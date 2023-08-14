@@ -55,14 +55,16 @@ use tantivy::schema::NamedFieldDocument;
 /// Refer to this as `crate::Result<T>`.
 pub type Result<T> = std::result::Result<T, SearchError>;
 
-use std::net::SocketAddr;
+use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
 pub use find_trace_ids_collector::FindTraceIdsCollector;
 use quickwit_config::SearcherConfig;
 use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
 use quickwit_metastore::{ListSplitsQuery, Metastore, SplitMetadata, SplitState};
-use quickwit_proto::{IndexUid, PartialHit, SearchRequest, SplitIdAndFooterOffsets};
+use quickwit_proto::{
+    IndexUid, PartialHit, SearchRequest, SearchResponse, SplitIdAndFooterOffsets,
+};
 use quickwit_storage::StorageResolver;
 use tantivy::DocAddress;
 
@@ -77,6 +79,7 @@ pub use crate::root::{jobs_to_leaf_request, root_list_terms, root_search, Search
 pub use crate::search_job_placer::{Job, SearchJobPlacer};
 pub use crate::search_response_rest::SearchResponseRest;
 pub use crate::search_stream::root_search_stream;
+use crate::service::SearcherContext;
 pub use crate::service::{MockSearchService, SearchService, SearchServiceImpl};
 use crate::thread_pool::run_cpu_intensive;
 
@@ -183,6 +186,39 @@ pub async fn start_searcher_service(
         searcher_config,
     ));
     Ok(search_service)
+}
+
+/// Performs a search on the current node.
+/// See also `[distributed_search]`.
+pub async fn single_node_search(
+    search_request: SearchRequest,
+    metastore: Arc<dyn Metastore>,
+    storage_resolver: StorageResolver,
+) -> crate::Result<SearchResponse> {
+    let socket_addr = SocketAddr::new(Ipv4Addr::new(127, 0, 0, 1).into(), 7280u16);
+    let searcher_pool = SearcherPool::default();
+    let search_job_placer = SearchJobPlacer::new(searcher_pool.clone());
+    let cluster_client = ClusterClient::new(search_job_placer);
+    let search_service = Arc::new(SearchServiceImpl::new(
+        metastore.clone(),
+        storage_resolver,
+        cluster_client.clone(),
+        SearcherConfig::default(),
+    ));
+    let search_service_client =
+        SearchServiceClient::from_service(search_service.clone(), socket_addr);
+    searcher_pool
+        .insert(socket_addr, search_service_client)
+        .await;
+    let searcher_config = SearcherConfig::default();
+    let searcher_context = SearcherContext::new(searcher_config);
+    root_search(
+        &searcher_context,
+        search_request,
+        &*metastore,
+        &cluster_client,
+    )
+    .await
 }
 
 /// Creates a tantivy Term from a &str.

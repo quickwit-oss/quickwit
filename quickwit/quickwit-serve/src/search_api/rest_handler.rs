@@ -203,7 +203,6 @@ pub fn search_request_from_api_request(
     index_id: String,
     search_request: SearchRequestQueryString,
 ) -> Result<quickwit_proto::SearchRequest, SearchError> {
-    let (sort_order, sort_by_field) = get_proto_search_by(&search_request);
     // The query ast below may still contain user input query. The actual
     // parsing of the user query will happen in the root service, and might require
     // the user of the docmapper default fields (which we do not have at this point).
