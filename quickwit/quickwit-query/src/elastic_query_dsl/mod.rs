@@ -29,6 +29,7 @@ mod phrase_prefix_query;
 mod query_string_query;
 mod range_query;
 mod term_query;
+mod terms_query;
 
 use bool_query::BoolQuery;
 pub use one_field_map::OneFieldMap;
@@ -41,6 +42,7 @@ use crate::elastic_query_dsl::exists_query::ExistsQuery;
 use crate::elastic_query_dsl::match_phrase_query::MatchPhraseQuery;
 use crate::elastic_query_dsl::match_query::MatchQuery;
 use crate::elastic_query_dsl::multi_match::MultiMatchQuery;
+use crate::elastic_query_dsl::terms_query::TermsQuery;
 use crate::not_nan_f32::NotNaNf32;
 use crate::query_ast::QueryAst;
 
@@ -58,6 +60,7 @@ pub(crate) enum ElasticQueryDslInner {
     QueryString(QueryStringQuery),
     Bool(BoolQuery),
     Term(TermQuery),
+    Terms(TermsQuery),
     MatchAll(MatchAllQuery),
     MatchNone(MatchNoneQuery),
     Match(MatchQuery),
@@ -90,6 +93,7 @@ impl ConvertableToQueryAst for ElasticQueryDslInner {
             Self::QueryString(query_string_query) => query_string_query.convert_to_query_ast(),
             Self::Bool(bool_query) => bool_query.convert_to_query_ast(),
             Self::Term(term_query) => term_query.convert_to_query_ast(),
+            Self::Terms(terms_query) => terms_query.convert_to_query_ast(),
             Self::MatchAll(match_all_query) => {
                 if let Some(boost) = match_all_query.boost {
                     Ok(QueryAst::Boost {

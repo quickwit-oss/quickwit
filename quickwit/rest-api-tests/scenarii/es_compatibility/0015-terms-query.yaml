@@ -1,0 +1,21 @@
+json:
+  query:
+    terms:
+      type:
+        - PushEvent
+        - CommitCommentEvent
+expected:
+  hits:
+    total:
+      value: 0
+---
+json:
+  query:
+    terms:
+      type:
+        - pushevent
+        - commitcommentevent
+expected:
+  hits:
+    total:
+      value: 61
