@@ -277,14 +277,14 @@ async fn test_timeouting_actor() {
     );
     assert!(buggy_mailbox.send_message(Block).await.is_ok());
 
-    assert_eq!(buggy_handle.harvest_health(), Health::Healthy);
+    assert_eq!(buggy_handle.check_health(true), Health::Healthy);
     assert_eq!(
         buggy_handle.process_pending_and_observe().await.obs_type,
         ObservationType::Timeout
     );
-    assert_eq!(buggy_handle.harvest_health(), Health::Healthy);
+    assert_eq!(buggy_handle.check_health(true), Health::Healthy);
     universe.sleep(crate::HEARTBEAT.mul(2)).await;
-    assert_eq!(buggy_handle.harvest_health(), Health::FailureOrUnhealthy);
+    assert_eq!(buggy_handle.check_health(true), Health::FailureOrUnhealthy);
     buggy_handle.kill().await;
 }
 

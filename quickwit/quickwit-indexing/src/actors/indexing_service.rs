@@ -50,9 +50,7 @@ use tracing::{debug, error, info, warn};
 
 use super::merge_pipeline::{MergePipeline, MergePipelineParams};
 use super::MergePlanner;
-use crate::models::{
-    DetachIndexingPipeline, DetachMergePipeline, Observe, ObservePipeline, SpawnPipeline,
-};
+use crate::models::{DetachIndexingPipeline, DetachMergePipeline, ObservePipeline, SpawnPipeline};
 use crate::split_store::{LocalSplitStore, SplitStoreQuota};
 use crate::{IndexingPipeline, IndexingPipelineParams, IndexingSplitStore, IndexingStatistics};
 
@@ -723,18 +721,6 @@ impl Handler<SpawnPipeline> for IndexingService {
 }
 
 #[async_trait]
-impl Handler<Observe> for IndexingService {
-    type Reply = Self::ObservableState;
-    async fn handle(
-        &mut self,
-        _message: Observe,
-        _ctx: &ActorContext<Self>,
-    ) -> Result<Self::ObservableState, ActorExitStatus> {
-        Ok(self.observable_state())
-    }
-}
-
-#[async_trait]
 impl Handler<ApplyIndexingPlanRequest> for IndexingService {
     type Reply = Result<ApplyIndexingPlanResponse, IndexingError>;
 
@@ -1265,7 +1251,7 @@ mod tests {
                 .indexing_pipeline_handles
                 .get(&message.0)
                 .unwrap()
-                .harvest_health())
+                .check_health(true))
         }
     }
 

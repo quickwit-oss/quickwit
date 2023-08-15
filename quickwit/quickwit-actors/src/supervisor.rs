@@ -117,7 +117,7 @@ impl<A: Actor> Supervisor<A> {
             .handle_opt
             .as_ref()
             .expect("The actor handle should always be set.")
-            .harvest_health()
+            .check_health(true)
         {
             Health::Healthy => {
                 return Ok(());

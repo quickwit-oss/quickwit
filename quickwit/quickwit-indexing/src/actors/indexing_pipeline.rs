@@ -19,12 +19,12 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, Mailbox, QueueCapacity,
-    Supervisable,
+    Supervisable, HEARTBEAT,
 };
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_common::KillSwitch;
@@ -45,26 +45,29 @@ use crate::actors::sequencer::Sequencer;
 use crate::actors::uploader::UploaderType;
 use crate::actors::{Indexer, Packager, Publisher, Uploader};
 use crate::merge_policy::MergePolicy;
-use crate::models::{IndexingStatistics, Observe};
+use crate::models::IndexingStatistics;
 use crate::source::{quickwit_supported_sources, SourceActor, SourceExecutionContext};
 use crate::split_store::IndexingSplitStore;
 use crate::SplitsUpdateMailbox;
 
-const OBSERVE_INTERVAL: Duration = Duration::from_secs(1);
+const SUPERVISE_INTERVAL: Duration = Duration::from_secs(1);
 
 const MAX_RETRY_DELAY: Duration = Duration::from_secs(600); // 10 min.
 
+#[derive(Debug)]
+struct SuperviseLoop;
+
 /// Calculates the wait time based on retry count.
 // retry_count, wait_time
-// 0   2s
-// 1   4s
-// 2   8s
-// 3   16s
+// 0   1s
+// 1   2s
+// 2   4s
+// 3   8s
 // ...
 // >=8   5mn
 pub(crate) fn wait_duration_before_retry(retry_count: usize) -> Duration {
     // Protect against a `retry_count` that will lead to an overflow.
-    let max_power = (retry_count as u32 + 1).min(31);
+    let max_power = (retry_count as u32).min(31);
     Duration::from_secs(2u64.pow(max_power)).min(MAX_RETRY_DELAY)
 }
 
@@ -74,21 +77,30 @@ pub(crate) fn wait_duration_before_retry(retry_count: usize) -> Duration {
 /// See also <https://github.com/quickwit-oss/quickwit/issues/1638>.
 static SPAWN_PIPELINE_SEMAPHORE: Semaphore = Semaphore::const_new(10);
 
-pub struct IndexingPipelineHandles {
-    pub source: ActorHandle<SourceActor>,
-    pub doc_processor: ActorHandle<DocProcessor>,
-    pub indexer: ActorHandle<Indexer>,
-    pub index_serializer: ActorHandle<IndexSerializer>,
-    pub packager: ActorHandle<Packager>,
-    pub uploader: ActorHandle<Uploader>,
-    pub sequencer: ActorHandle<Sequencer<Publisher>>,
-    pub publisher: ActorHandle<Publisher>,
+struct IndexingPipelineHandles {
+    source: ActorHandle<SourceActor>,
+    doc_processor: ActorHandle<DocProcessor>,
+    indexer: ActorHandle<Indexer>,
+    index_serializer: ActorHandle<IndexSerializer>,
+    packager: ActorHandle<Packager>,
+    uploader: ActorHandle<Uploader>,
+    sequencer: ActorHandle<Sequencer<Publisher>>,
+    publisher: ActorHandle<Publisher>,
+    next_check_for_progress: Instant,
+}
+
+impl IndexingPipelineHandles {
+    fn should_check_for_progress(&mut self) -> bool {
+        let now = Instant::now();
+        let check_for_progress = now > self.next_check_for_progress;
+        if check_for_progress {
+            self.next_check_for_progress = now + *HEARTBEAT;
+        }
+        check_for_progress
+    }
 }
 
 // Messages
-
-#[derive(Clone, Copy, Debug)]
-pub struct Supervise;
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Spawn {
@@ -99,7 +111,7 @@ pub struct IndexingPipeline {
     params: IndexingPipelineParams,
     previous_generations_statistics: IndexingStatistics,
     statistics: IndexingStatistics,
-    handles: Option<IndexingPipelineHandles>,
+    handles_opt: Option<IndexingPipelineHandles>,
     // Killswitch used for the actors in the pipeline. This is not the supervisor killswitch.
     kill_switch: KillSwitch,
 }
@@ -118,8 +130,7 @@ impl Actor for IndexingPipeline {
 
     async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
         self.handle(Spawn::default(), ctx).await?;
-        self.handle(Observe, ctx).await?;
-        self.handle(Supervise, ctx).await?;
+        self.handle(SuperviseLoop, ctx).await?;
         Ok(())
     }
 
@@ -130,25 +141,7 @@ impl Actor for IndexingPipeline {
     ) -> anyhow::Result<()> {
         // We update the observation to ensure our last "black box" observation
         // is up to date.
-        if let Some(handles) = &self.handles {
-            let (doc_processor_counters, indexer_counters, uploader_counters, publisher_counters) = join!(
-                handles.doc_processor.observe(),
-                handles.indexer.observe(),
-                handles.uploader.observe(),
-                handles.publisher.observe(),
-            );
-            self.statistics = self
-                .previous_generations_statistics
-                .clone()
-                .add_actor_counters(
-                    &doc_processor_counters,
-                    &indexer_counters,
-                    &uploader_counters,
-                    &publisher_counters,
-                )
-                .set_generation(self.statistics.generation)
-                .set_num_spawn_attempts(self.statistics.num_spawn_attempts);
-        }
+        self.perform_observe().await;
         Ok(())
     }
 }
@@ -158,14 +151,14 @@ impl IndexingPipeline {
         Self {
             params,
             previous_generations_statistics: Default::default(),
-            handles: None,
+            handles_opt: None,
             kill_switch: KillSwitch::default(),
             statistics: IndexingStatistics::default(),
         }
     }
 
     fn supervisables(&self) -> Vec<&dyn Supervisable> {
-        if let Some(handles) = &self.handles {
+        if let Some(handles) = &self.handles_opt {
             let supervisables: Vec<&dyn Supervisable> = vec![
                 &handles.source,
                 &handles.doc_processor,
@@ -184,12 +177,12 @@ impl IndexingPipeline {
 
     /// Performs healthcheck on all of the actors in the pipeline,
     /// and consolidates the result.
-    fn healthcheck(&self) -> Health {
+    fn healthcheck(&self, check_for_progress: bool) -> Health {
         let mut healthy_actors: Vec<&str> = Default::default();
         let mut failure_or_unhealthy_actors: Vec<&str> = Default::default();
         let mut success_actors: Vec<&str> = Default::default();
         for supervisable in self.supervisables() {
-            match supervisable.harvest_health() {
+            match supervisable.check_health(check_for_progress) {
                 Health::Healthy => {
                     // At least one other actor is running.
                     healthy_actors.push(supervisable.name());
@@ -237,6 +230,58 @@ impl IndexingPipeline {
 
     fn generation(&self) -> usize {
         self.statistics.generation
+    }
+
+    async fn perform_observe(&mut self) {
+        let Some(handles) = &self.handles_opt else {
+            return;
+        };
+        let (doc_processor_counters, indexer_counters, uploader_counters, publisher_counters) = join!(
+            handles.doc_processor.observe(),
+            handles.indexer.observe(),
+            handles.uploader.observe(),
+            handles.publisher.observe(),
+        );
+        self.statistics = self
+            .previous_generations_statistics
+            .clone()
+            .add_actor_counters(
+                &doc_processor_counters,
+                &indexer_counters,
+                &uploader_counters,
+                &publisher_counters,
+            )
+            .set_generation(self.statistics.generation)
+            .set_num_spawn_attempts(self.statistics.num_spawn_attempts);
+    }
+
+    /// Checks if some actors have terminated.
+    async fn perform_health_check(
+        &mut self,
+        ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus> {
+        let Some(handles) = self.handles_opt.as_mut() else {
+            return Ok(());
+        };
+
+        // While we check if the actor has terminated or not, we do not check for progress
+        // at every single loop. Instead, we wait for the `HEARTBEAT` duration to have elapsed,
+        // since our last check.
+        let check_for_progress = handles.should_check_for_progress();
+        let health = self.healthcheck(check_for_progress);
+        match health {
+            Health::Healthy => {}
+            Health::FailureOrUnhealthy => {
+                self.terminate().await;
+                let first_retry_delay = wait_duration_before_retry(0);
+                ctx.schedule_self_msg(first_retry_delay, Spawn { retry_count: 0 })
+                    .await;
+            }
+            Health::Success => {
+                return Err(ActorExitStatus::Success);
+            }
+        }
+        Ok(())
     }
 
     // TODO this should return an error saying whether we can retry or not.
@@ -401,7 +446,7 @@ impl IndexingPipeline {
         // Increment generation once we are sure there will be no spawning error.
         self.previous_generations_statistics = self.statistics.clone();
         self.statistics.generation += 1;
-        self.handles = Some(IndexingPipelineHandles {
+        self.handles_opt = Some(IndexingPipelineHandles {
             source: source_handle,
             doc_processor: doc_processor_handle,
             indexer: indexer_handle,
@@ -410,13 +455,14 @@ impl IndexingPipeline {
             uploader: uploader_handle,
             sequencer: sequencer_handle,
             publisher: publisher_handle,
+            next_check_for_progress: Instant::now() + *HEARTBEAT,
         });
         Ok(())
     }
 
     async fn terminate(&mut self) {
         self.kill_switch.kill();
-        if let Some(handles) = self.handles.take() {
+        if let Some(handles) = self.handles_opt.take() {
             tokio::join!(
                 handles.source.kill(),
                 handles.indexer.kill(),
@@ -429,60 +475,16 @@ impl IndexingPipeline {
 }
 
 #[async_trait]
-impl Handler<Observe> for IndexingPipeline {
+impl Handler<SuperviseLoop> for IndexingPipeline {
     type Reply = ();
     async fn handle(
         &mut self,
-        _: Observe,
+        supervise_loop_token: SuperviseLoop,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        if let Some(handles) = &self.handles {
-            let (doc_processor_counters, indexer_counters, uploader_counters, publisher_counters) = join!(
-                handles.doc_processor.observe(),
-                handles.indexer.observe(),
-                handles.uploader.observe(),
-                handles.publisher.observe(),
-            );
-            self.statistics = self
-                .previous_generations_statistics
-                .clone()
-                .add_actor_counters(
-                    &doc_processor_counters,
-                    &indexer_counters,
-                    &uploader_counters,
-                    &publisher_counters,
-                )
-                .set_generation(self.statistics.generation)
-                .set_num_spawn_attempts(self.statistics.num_spawn_attempts);
-        }
-        ctx.schedule_self_msg(OBSERVE_INTERVAL, Observe).await;
-        Ok(())
-    }
-}
-
-#[async_trait]
-impl Handler<Supervise> for IndexingPipeline {
-    type Reply = ();
-
-    async fn handle(
-        &mut self,
-        _: Supervise,
-        ctx: &ActorContext<Self>,
-    ) -> Result<(), ActorExitStatus> {
-        if self.handles.is_some() {
-            match self.healthcheck() {
-                Health::Healthy => {}
-                Health::FailureOrUnhealthy => {
-                    self.terminate().await;
-                    ctx.schedule_self_msg(*quickwit_actors::HEARTBEAT, Spawn { retry_count: 0 })
-                        .await;
-                }
-                Health::Success => {
-                    return Err(ActorExitStatus::Success);
-                }
-            }
-        }
-        ctx.schedule_self_msg(*quickwit_actors::HEARTBEAT, Supervise)
+        self.perform_observe().await;
+        self.perform_health_check(ctx).await?;
+        ctx.schedule_self_msg(SUPERVISE_INTERVAL, supervise_loop_token)
             .await;
         Ok(())
     }
@@ -497,7 +499,7 @@ impl Handler<Spawn> for IndexingPipeline {
         spawn: Spawn,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        if self.handles.is_some() {
+        if self.handles_opt.is_some() {
             return Ok(());
         }
         self.previous_generations_statistics.num_spawn_attempts = 1 + spawn.retry_count;
@@ -508,7 +510,7 @@ impl Handler<Spawn> for IndexingPipeline {
                 info!(error = ?spawn_error, "Could not spawn pipeline, index might have been deleted.");
                 return Err(ActorExitStatus::Success);
             }
-            let retry_delay = wait_duration_before_retry(spawn.retry_count);
+            let retry_delay = wait_duration_before_retry(spawn.retry_count + 1);
             error!(error = ?spawn_error, retry_count = spawn.retry_count, retry_delay = ?retry_delay, "Error while spawning indexing pipeline, retrying after some time.");
             ctx.schedule_self_msg(
                 retry_delay,
@@ -558,12 +560,12 @@ mod tests {
 
     #[test]
     fn test_wait_duration() {
-        assert_eq!(wait_duration_before_retry(0), Duration::from_secs(2));
-        assert_eq!(wait_duration_before_retry(1), Duration::from_secs(4));
-        assert_eq!(wait_duration_before_retry(2), Duration::from_secs(8));
-        assert_eq!(wait_duration_before_retry(3), Duration::from_secs(16));
-        assert_eq!(wait_duration_before_retry(8), Duration::from_secs(512));
-        assert_eq!(wait_duration_before_retry(9), MAX_RETRY_DELAY);
+        assert_eq!(wait_duration_before_retry(0), Duration::from_secs(1));
+        assert_eq!(wait_duration_before_retry(1), Duration::from_secs(2));
+        assert_eq!(wait_duration_before_retry(2), Duration::from_secs(4));
+        assert_eq!(wait_duration_before_retry(3), Duration::from_secs(8));
+        assert_eq!(wait_duration_before_retry(9), Duration::from_secs(512));
+        assert_eq!(wait_duration_before_retry(10), MAX_RETRY_DELAY);
     }
 
     async fn test_indexing_pipeline_num_fails_before_success(
@@ -838,7 +840,7 @@ mod tests {
                 .process_pending_and_observe()
                 .await;
             if obs.generation == 2 {
-                assert_eq!(merge_pipeline_handler.harvest_health(), Health::Healthy);
+                assert_eq!(merge_pipeline_handler.check_health(true), Health::Healthy);
                 universe.quit().await;
                 return;
             }

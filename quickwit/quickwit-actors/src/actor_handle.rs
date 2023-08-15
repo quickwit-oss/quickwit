@@ -63,7 +63,12 @@ impl<A: Actor> fmt::Debug for ActorHandle<A> {
 
 pub trait Supervisable {
     fn name(&self) -> &str;
-    fn harvest_health(&self) -> Health;
+
+    /// Check for the ActorState (has it terminated?), and provided `check_for_progress`
+    /// is set to `true`, it will also check for the progress of the actor.
+    fn check_health(&self, check_for_progress: bool) -> Health;
+
+    fn state(&self) -> ActorState;
 }
 
 impl<A: Actor> Supervisable for ActorHandle<A> {
@@ -71,21 +76,31 @@ impl<A: Actor> Supervisable for ActorHandle<A> {
         self.actor_context.actor_instance_id()
     }
 
-    /// Harvests the health of the actor by checking its state (see [`ActorState`]) and/or progress
-    /// (see `Progress`). When the actor is running, calling this method resets its progress state
+    fn state(&self) -> ActorState {
+        self.actor_context.state()
+    }
+
+    /// Harvests the health of the actor by checking its state (see [`ActorState`]) and,
+    /// provided `check_for_progress` is set to true, it will check its progress too
+    /// (see `Progress`).
+    ///
+    /// When `check_for_progress` is set to true, calling this method resets its progress state
     /// to "no update" (see `ProgressState`). As a consequence, only one supervisor or probe
     /// should periodically invoke this method during the lifetime of the actor.
-    fn harvest_health(&self) -> Health {
+    fn check_health(&self, check_for_progress: bool) -> Health {
         let actor_state = self.state();
         if actor_state == ActorState::Success {
-            Health::Success
-        } else if actor_state == ActorState::Failure {
+            return Health::Success;
+        }
+        if actor_state == ActorState::Failure {
             error!(actor = self.name(), "actor-exit-without-success");
-            Health::FailureOrUnhealthy
-        } else if self
-            .actor_context
-            .progress()
-            .registered_activity_since_last_call()
+            return Health::FailureOrUnhealthy;
+        }
+        if !check_for_progress
+            || self
+                .actor_context
+                .progress()
+                .registered_activity_since_last_call()
         {
             Health::Healthy
         } else {

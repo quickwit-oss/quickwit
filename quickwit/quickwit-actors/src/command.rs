@@ -116,7 +116,7 @@ impl<A: Actor> Handler<Command> for A {
 /// The observation is then available using the `ActorHandler::last_observation()`
 /// method.
 #[derive(Debug)]
-pub(crate) struct Observe;
+pub struct Observe;
 
 #[async_trait]
 impl<A: Actor> Handler<Observe> for A {
@@ -126,7 +126,7 @@ impl<A: Actor> Handler<Observe> for A {
         &mut self,
         _observe: Observe,
         ctx: &ActorContext<Self>,
-    ) -> Result<Self::Reply, ActorExitStatus> {
+    ) -> Result<A::ObservableState, ActorExitStatus> {
         Ok(ctx.observe(self))
     }
 }
