@@ -34,7 +34,6 @@ pub struct TermQueryValue {
     pub boost: Option<NotNaNf32>,
 }
 
-#[cfg(test)]
 pub fn term_query_from_field_value(field: impl ToString, value: impl ToString) -> TermQuery {
     TermQuery {
         field: field.to_string(),
@@ -65,8 +64,7 @@ impl ConvertableToQueryAst for TermQuery {
 
 #[cfg(test)]
 mod tests {
-    use super::TermQuery;
-    use crate::elastic_query_dsl::term_query::term_query_from_field_value;
+    use super::*;
 
     #[test]
     fn test_term_query_simple() {
