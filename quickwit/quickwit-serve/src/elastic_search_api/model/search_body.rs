@@ -20,7 +20,7 @@
 use std::collections::BTreeSet;
 use std::fmt;
 
-use quickwit_proto::SortOrder;
+use quickwit_proto::search::SortOrder;
 use quickwit_query::{ElasticQueryDsl, OneFieldMap};
 use serde::de::{MapAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};

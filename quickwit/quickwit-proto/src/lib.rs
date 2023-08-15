@@ -21,7 +21,6 @@
 #![deny(clippy::disallowed_methods)]
 #![allow(rustdoc::invalid_html_tags)]
 
-use std::cmp::Ordering;
 use std::convert::Infallible;
 use std::fmt;
 
@@ -32,19 +31,16 @@ use tonic::service::Interceptor;
 use tonic::Status;
 use tracing::Span;
 use tracing_opentelemetry::OpenTelemetrySpanExt;
-use ulid::Ulid;
 
 pub mod control_plane;
+pub use {bytes, tonic};
 pub mod indexing;
-#[path = "codegen/quickwit/quickwit.metastore.rs"]
+pub mod ingest;
 pub mod metastore;
-#[path = "codegen/quickwit/quickwit.search.rs"]
 pub mod search;
+pub mod types;
 
-pub use metastore::*;
-pub use search::*;
-pub use sort_by_value::SortValue;
-pub use tonic;
+pub use types::*;
 
 pub mod jaeger {
     pub mod api_v2 {
@@ -179,10 +175,10 @@ pub fn convert_to_grpc_result<T, E: ServiceError>(
         .map_err(|error| error.grpc_error())
 }
 
-impl TryFrom<SearchStreamRequest> for SearchRequest {
+impl TryFrom<search::SearchStreamRequest> for search::SearchRequest {
     type Error = anyhow::Error;
 
-    fn try_from(search_stream_req: SearchStreamRequest) -> Result<Self, Self::Error> {
+    fn try_from(search_stream_req: search::SearchStreamRequest) -> Result<Self, Self::Error> {
         Ok(Self {
             index_id: search_stream_req.index_id,
             query_ast: search_stream_req.query_ast,
@@ -194,10 +190,10 @@ impl TryFrom<SearchStreamRequest> for SearchRequest {
     }
 }
 
-impl TryFrom<DeleteQuery> for SearchRequest {
+impl TryFrom<metastore::DeleteQuery> for search::SearchRequest {
     type Error = anyhow::Error;
 
-    fn try_from(delete_query: DeleteQuery) -> anyhow::Result<Self> {
+    fn try_from(delete_query: metastore::DeleteQuery) -> anyhow::Result<Self> {
         let index_uid: IndexUid = delete_query.index_uid.into();
         Ok(Self {
             index_id: index_uid.index_id().to_string(),
@@ -206,34 +202,6 @@ impl TryFrom<DeleteQuery> for SearchRequest {
             end_timestamp: delete_query.end_timestamp,
             ..Default::default()
         })
-    }
-}
-
-impl SearchRequest {
-    pub fn time_range(&self) -> impl std::ops::RangeBounds<i64> {
-        use std::ops::Bound;
-        (
-            self.start_timestamp
-                .map_or(Bound::Unbounded, Bound::Included),
-            self.end_timestamp.map_or(Bound::Unbounded, Bound::Excluded),
-        )
-    }
-}
-
-impl SplitIdAndFooterOffsets {
-    pub fn time_range(&self) -> impl std::ops::RangeBounds<i64> {
-        use std::ops::Bound;
-        (
-            self.timestamp_start
-                .map_or(Bound::Unbounded, Bound::Included),
-            self.timestamp_end.map_or(Bound::Unbounded, Bound::Included),
-        )
-    }
-}
-
-impl fmt::Display for SplitSearchError {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "({}, split_id: {})", self.error, self.split_id)
     }
 }
 
@@ -317,129 +285,6 @@ pub fn set_parent_span_from_request_metadata(request_metadata: &tonic::metadata:
     Span::current().set_parent(parent_cx);
 }
 
-/// Index identifiers that uniquely identify not only the index, but also
-/// its incarnation allowing to distinguish between deleted and recreated indexes.
-/// It is represented as a stiring in index_id:incarnation_id format.
-#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq, Ord, PartialOrd, Hash)]
-pub struct IndexUid(String);
-
-impl IndexUid {
-    /// Creates a new index uid form index_id and incarnation_id
-    pub fn new(index_id: impl Into<String>) -> Self {
-        Self::from_parts(index_id, Ulid::new().to_string())
-    }
-
-    pub fn from_parts(index_id: impl Into<String>, incarnation_id: impl Into<String>) -> Self {
-        let incarnation_id = incarnation_id.into();
-        let index_id = index_id.into();
-        if incarnation_id.is_empty() {
-            Self(index_id)
-        } else {
-            Self(format!("{index_id}:{incarnation_id}"))
-        }
-    }
-
-    pub fn index_id(&self) -> &str {
-        self.0.split(':').next().unwrap()
-    }
-
-    pub fn incarnation_id(&self) -> &str {
-        if let Some(incarnation_id) = self.0.split(':').nth(1) {
-            incarnation_id
-        } else {
-            ""
-        }
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.0.is_empty()
-    }
-}
-
-impl From<IndexUid> for String {
-    fn from(val: IndexUid) -> Self {
-        val.0
-    }
-}
-
-impl fmt::Display for IndexUid {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self.0)
-    }
-}
-
-impl From<String> for IndexUid {
-    fn from(index_uid: String) -> Self {
-        IndexUid(index_uid)
-    }
-}
-
-// !!! Disclaimer !!!
-//
-// Prost imposes the PartialEq derived implementation.
-// This is terrible because this means Eq, PartialEq are not really in line with Ord's
-// implementation. if in presence of NaN.
-impl Eq for SortByValue {}
-impl Copy for SortByValue {}
-impl From<SortValue> for SortByValue {
-    fn from(sort_value: SortValue) -> Self {
-        SortByValue {
-            sort_value: Some(sort_value),
-        }
-    }
-}
-
-impl Copy for SortValue {}
-impl Eq for SortValue {}
-
-impl Ord for SortValue {
-    fn cmp(&self, other: &Self) -> Ordering {
-        // We make sure to end up with a total order.
-        match (*self, *other) {
-            // Same types.
-            (SortValue::U64(left), SortValue::U64(right)) => left.cmp(&right),
-            (SortValue::I64(left), SortValue::I64(right)) => left.cmp(&right),
-            (SortValue::F64(left), SortValue::F64(right)) => {
-                if left.is_nan() {
-                    if right.is_nan() {
-                        Ordering::Equal
-                    } else {
-                        Ordering::Less
-                    }
-                } else if right.is_nan() {
-                    Ordering::Greater
-                } else {
-                    left.partial_cmp(&right).unwrap_or(Ordering::Less)
-                }
-            }
-            (SortValue::Boolean(left), SortValue::Boolean(right)) => left.cmp(&right),
-            // We half the logic by making sure we keep
-            // the "stronger" type on the left.
-            (SortValue::U64(left), SortValue::I64(right)) => {
-                if left > i64::MAX as u64 {
-                    return Ordering::Greater;
-                }
-                (left as i64).cmp(&right)
-            }
-            (SortValue::F64(left), _) if left.is_nan() => Ordering::Less,
-            (SortValue::F64(left), SortValue::U64(right)) => {
-                left.partial_cmp(&(right as f64)).unwrap_or(Ordering::Less)
-            }
-            (SortValue::F64(left), SortValue::I64(right)) => {
-                left.partial_cmp(&(right as f64)).unwrap_or(Ordering::Less)
-            }
-            (SortValue::Boolean(left), right) => SortValue::U64(left as u64).cmp(&right),
-            (left, right) => right.cmp(&left).reverse(),
-        }
-    }
-}
-
-impl PartialOrd for SortValue {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-
 impl<E: fmt::Debug + ServiceError> ServiceError for quickwit_actors::AskError<E> {
     fn status_code(&self) -> ServiceErrorCode {
         match self {
@@ -447,41 +292,5 @@ impl<E: fmt::Debug + ServiceError> ServiceError for quickwit_actors::AskError<E>
             quickwit_actors::AskError::ProcessMessageError => ServiceErrorCode::Internal,
             quickwit_actors::AskError::ErrorReply(err) => err.status_code(),
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_index_uid_parsing() {
-        assert_eq!("foo", IndexUid::from("foo".to_string()).index_id());
-        assert_eq!("foo", IndexUid::from("foo:bar".to_string()).index_id());
-        assert_eq!("", IndexUid::from("foo".to_string()).incarnation_id());
-        assert_eq!(
-            "bar",
-            IndexUid::from("foo:bar".to_string()).incarnation_id()
-        );
-    }
-
-    #[test]
-    fn test_index_uid_roundtrip() {
-        assert_eq!("foo", IndexUid::from("foo".to_string()).to_string());
-        assert_eq!("foo:bar", IndexUid::from("foo:bar".to_string()).to_string());
-    }
-
-    #[test]
-    fn test_index_uid_roundtrip_using_parts() {
-        assert_eq!("foo", index_uid_roundtrip_using_parts("foo"));
-        assert_eq!("foo:bar", index_uid_roundtrip_using_parts("foo:bar"));
-    }
-
-    fn index_uid_roundtrip_using_parts(index_uid: &str) -> String {
-        let index_uid = IndexUid::from(index_uid.to_string());
-        let index_id = index_uid.index_id();
-        let incarnation_id = index_uid.incarnation_id();
-        let index_uid_from_parts = IndexUid::from_parts(index_id, incarnation_id);
-        index_uid_from_parts.to_string()
     }
 }

@@ -37,7 +37,7 @@ pub use box_service::BoxService;
 pub use buffer::{Buffer, BufferError, BufferLayer};
 pub use change::Change;
 pub use estimate_rate::{EstimateRate, EstimateRateLayer};
-use futures::{Future, Stream};
+use futures::Future;
 pub use metrics::{PrometheusMetrics, PrometheusMetricsLayer};
 pub use pool::Pool;
 pub use rate::{ConstantRate, Rate};
@@ -50,8 +50,6 @@ pub type BoxError = Box<dyn error::Error + Send + Sync + 'static>;
 pub type BoxFuture<T, E> = Pin<Box<dyn Future<Output = Result<T, E>> + Send + 'static>>;
 
 pub type BoxFutureInfaillible<T> = Pin<Box<dyn Future<Output = T> + Send + 'static>>;
-
-pub type BoxStream<T> = Pin<Box<dyn Stream<Item = T> + Send + Unpin + 'static>>;
 
 pub trait Cost {
     fn cost(&self) -> u64;

@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use quickwit_proto::{LeafSearchStreamRequest, LeafSearchStreamResponse};
+use quickwit_proto::search::{LeafSearchStreamRequest, LeafSearchStreamResponse};
 use tokio::sync::mpsc::error::SendError;
 use tracing::warn;
 
@@ -75,7 +75,7 @@ impl
 
 #[cfg(test)]
 mod tests {
-    use quickwit_proto::{
+    use quickwit_proto::search::{
         LeafSearchStreamRequest, LeafSearchStreamResponse, SplitIdAndFooterOffsets,
     };
     use tokio::sync::mpsc::error::SendError;

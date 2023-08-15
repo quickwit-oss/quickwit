@@ -18,15 +18,14 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::{BTreeMap, BTreeSet};
-use std::net::Ipv4Addr;
 
 use assert_json_diff::{assert_json_eq, assert_json_include};
 use quickwit_config::SearcherConfig;
 use quickwit_doc_mapper::DefaultDocMapper;
 use quickwit_indexing::TestSandbox;
 use quickwit_opentelemetry::otlp::TraceId;
-use quickwit_proto::{
-    LeafListTermsResponse, SearchRequest, SearchResponse, SortByValue, SortField, SortOrder,
+use quickwit_proto::search::{
+    LeafListTermsResponse, ListTermsRequest, SearchRequest, SortByValue, SortField, SortOrder,
     SortValue,
 };
 use quickwit_query::query_ast::{qast_helper, query_ast_from_user_text};
@@ -38,6 +37,7 @@ use tantivy::Term;
 use super::*;
 use crate::find_trace_ids_collector::Span;
 use crate::service::SearcherContext;
+use crate::single_node_search;
 
 #[tokio::test]
 async fn test_single_node_simple() -> anyhow::Result<()> {
@@ -276,39 +276,6 @@ where E: Ord {
         previous_el = next_el;
     }
     true
-}
-
-/// Performs a search on the current node.
-/// See also `[distributed_search]`.
-async fn single_node_search(
-    search_request: SearchRequest,
-    metastore: Arc<dyn Metastore>,
-    storage_resolver: StorageResolver,
-) -> crate::Result<SearchResponse> {
-    let socket_addr = SocketAddr::new(Ipv4Addr::new(127, 0, 0, 1).into(), 7280u16);
-    let searcher_pool = SearcherPool::default();
-    let search_job_placer = SearchJobPlacer::new(searcher_pool.clone());
-    let cluster_client = ClusterClient::new(search_job_placer);
-    let search_service = Arc::new(SearchServiceImpl::new(
-        metastore.clone(),
-        storage_resolver,
-        cluster_client.clone(),
-        SearcherConfig::default(),
-    ));
-    let search_service_client =
-        SearchServiceClient::from_service(search_service.clone(), socket_addr);
-    searcher_pool
-        .insert(socket_addr, search_service_client)
-        .await;
-    let searcher_config = SearcherConfig::default();
-    let searcher_context = SearcherContext::new(searcher_config);
-    root_search(
-        &searcher_context,
-        search_request,
-        &*metastore,
-        &cluster_client,
-    )
-    .await
 }
 
 #[tokio::test]
@@ -1010,7 +977,7 @@ async fn test_search_util(test_sandbox: &TestSandbox, query: &str) -> Vec<u32> {
         .into_iter()
         .map(|split_meta| extract_split_and_footer_offsets(&split_meta.split_metadata))
         .collect();
-    let request = quickwit_proto::SearchRequest {
+    let request = SearchRequest {
         index_id: test_sandbox.index_uid().index_id().to_string(),
         query_ast: qast_helper(query, &[]),
         max_hits: 100,
@@ -1644,7 +1611,7 @@ async fn test_single_node_list_terms() -> anyhow::Result<()> {
     let searcher_context = Arc::new(SearcherContext::new(SearcherConfig::default()));
 
     {
-        let request = quickwit_proto::ListTermsRequest {
+        let request = ListTermsRequest {
             index_id: test_sandbox.index_uid().index_id().to_string(),
             field: "title".to_string(),
             start_key: None,
@@ -1665,7 +1632,7 @@ async fn test_single_node_list_terms() -> anyhow::Result<()> {
         assert_eq!(terms, &["beagle", "snoopy",]);
     }
     {
-        let request = quickwit_proto::ListTermsRequest {
+        let request = ListTermsRequest {
             index_id: test_sandbox.index_uid().index_id().to_string(),
             field: "title".to_string(),
             start_key: None,
@@ -1686,7 +1653,7 @@ async fn test_single_node_list_terms() -> anyhow::Result<()> {
         assert_eq!(terms, &["beagle"]);
     }
     {
-        let request = quickwit_proto::ListTermsRequest {
+        let request = ListTermsRequest {
             index_id: test_sandbox.index_uid().index_id().to_string(),
             field: "title".to_string(),
             start_key: Some("casper".as_bytes().to_vec()),
@@ -1707,7 +1674,7 @@ async fn test_single_node_list_terms() -> anyhow::Result<()> {
         assert_eq!(terms, &["snoopy"]);
     }
     {
-        let request = quickwit_proto::ListTermsRequest {
+        let request = ListTermsRequest {
             index_id: test_sandbox.index_uid().index_id().to_string(),
             field: "title".to_string(),
             start_key: None,

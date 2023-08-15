@@ -117,7 +117,7 @@ mod tests {
         mock_search_service
             .expect_root_search()
             .with(predicate::function(
-                |search_request: &quickwit_proto::SearchRequest| {
+                |search_request: &quickwit_proto::search::SearchRequest| {
                     (search_request.index_id == "index-1"
                         && search_request.start_offset == 5
                         && search_request.max_hits == 20)

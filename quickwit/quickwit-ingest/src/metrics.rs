@@ -23,6 +23,8 @@ use quickwit_common::metrics::{new_counter, new_gauge, IntCounter, IntGauge};
 pub struct IngestMetrics {
     pub ingested_num_bytes: IntCounter,
     pub ingested_num_docs: IntCounter,
+    pub replicated_num_bytes_total: IntCounter,
+    pub replicated_num_docs_total: IntCounter,
     pub queue_count: IntGauge,
 }
 
@@ -37,6 +39,16 @@ impl Default for IngestMetrics {
             ingested_num_docs: new_counter(
                 "ingested_num_docs",
                 "Number of docs received to be ingested",
+                "quickwit_ingest",
+            ),
+            replicated_num_bytes_total: new_counter(
+                "replicated_num_bytes_total",
+                "Total size in bytes of the replicated docs.",
+                "quickwit_ingest",
+            ),
+            replicated_num_docs_total: new_counter(
+                "replicated_num_docs_total",
+                "Total number of docs replicated.",
                 "quickwit_ingest",
             ),
             queue_count: new_gauge(

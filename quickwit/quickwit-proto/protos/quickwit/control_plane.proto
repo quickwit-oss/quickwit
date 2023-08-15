@@ -21,6 +21,9 @@ syntax = "proto3";
 
 package quickwit.control_plane;
 
+import "quickwit/ingest.proto";
+import "quickwit/metastore.proto";
+
 service ControlPlaneService {
   /// Notify the Control Plane that a change on an index occurred. The change
   /// can be an index creation, deletion, or update that includes a source creation/deletion/num pipeline update.
@@ -28,9 +31,54 @@ service ControlPlaneService {
   // This can be explicited in the attributes of `NotifyIndexChangeRequest` with an enum that describes the
   // type of change. The index ID and/or source ID could also be added.
   // However, these attributes will not be used by the Control Plane, at least at short term.
-  rpc notifyIndexChange(NotifyIndexChangeRequest) returns (NotifyIndexChangeResponse);
+  rpc NotifyIndexChange(NotifyIndexChangeRequest) returns (NotifyIndexChangeResponse);
+
+  /// Returns the list of open shards for one or several sources. If the control plane is not able to find any
+  /// for a source, it will pick a pair of leader-follower ingesters and will open a new shard.
+  rpc GetOpenShards(GetOpenShardsRequest) returns (GetOpenShardsResponse);
+
+  rpc CloseShards(CloseShardsRequest) returns (CloseShardsResponse);
 }
 
 message NotifyIndexChangeRequest {}
 
 message NotifyIndexChangeResponse {}
+
+///
+/// Shard API
+///
+
+message GetOpenShardsRequest {
+  repeated GetOpenShardsSubrequest subrequests = 1;
+  repeated string unavailable_ingesters = 2;
+}
+
+message GetOpenShardsSubrequest {
+    string index_id = 1;
+    string source_id = 2;
+}
+
+message GetOpenShardsResponse {
+  repeated GetOpenShardsSubresponse subresponses = 1;
+}
+
+message GetOpenShardsSubresponse {
+    string index_uid = 1;
+    string source_id = 2;
+    repeated quickwit.ingest.Shard open_shards = 3;
+}
+
+message CloseShardsRequest {
+  repeated CloseShardsSubrequest subrequests = 1;
+}
+
+message CloseShardsSubrequest {
+    string index_uid = 1;
+    string source_id = 2;
+    uint64 shard_id = 3;
+    quickwit.ingest.ShardState shard_state = 4;
+    optional uint64 replication_position_inclusive = 5;
+}
+
+message CloseShardsResponse {
+}

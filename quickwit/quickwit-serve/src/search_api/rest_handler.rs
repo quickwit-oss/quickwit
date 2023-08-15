@@ -23,7 +23,8 @@ use std::sync::Arc;
 use futures::stream::StreamExt;
 use hyper::header::HeaderValue;
 use hyper::HeaderMap;
-use quickwit_proto::{OutputFormat, ServiceError, SortField, SortOrder};
+use quickwit_proto::search::{OutputFormat, SortField, SortOrder};
+use quickwit_proto::ServiceError;
 use quickwit_query::query_ast::query_ast_from_user_text;
 use quickwit_search::{SearchError, SearchResponseRest, SearchService};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
@@ -199,17 +200,16 @@ pub struct SearchRequestQueryString {
     pub sort_by: SortBy,
 }
 
-async fn search_endpoint(
+pub fn search_request_from_api_request(
     index_id: String,
     search_request: SearchRequestQueryString,
-    search_service: &dyn SearchService,
-) -> Result<SearchResponseRest, SearchError> {
+) -> Result<quickwit_proto::search::SearchRequest, SearchError> {
     // The query ast below may still contain user input query. The actual
     // parsing of the user query will happen in the root service, and might require
     // the user of the docmapper default fields (which we do not have at this point).
     let query_ast = query_ast_from_user_text(&search_request.query, search_request.search_fields);
     let query_ast_json = serde_json::to_string(&query_ast)?;
-    let search_request = quickwit_proto::SearchRequest {
+    let search_request = quickwit_proto::search::SearchRequest {
         index_id,
         query_ast: query_ast_json,
         snippet_fields: search_request.snippet_fields.unwrap_or_default(),
@@ -223,6 +223,15 @@ async fn search_endpoint(
         sort_fields: search_request.sort_by.sort_fields,
         scroll_ttl_secs: None,
     };
+    Ok(search_request)
+}
+
+async fn search_endpoint(
+    index_id: String,
+    search_request: SearchRequestQueryString,
+    search_service: &dyn SearchService,
+) -> Result<SearchResponseRest, SearchError> {
+    let search_request = search_request_from_api_request(index_id, search_request)?;
     let search_response = search_service.root_search(search_request).await?;
     let search_response_rest = SearchResponseRest::try_from(search_response)?;
     Ok(search_response_rest)
@@ -363,7 +372,7 @@ async fn search_stream_endpoint(
 ) -> Result<hyper::Body, SearchError> {
     let query_ast = query_ast_from_user_text(&search_request.query, search_request.search_fields);
     let query_ast_json = serde_json::to_string(&query_ast)?;
-    let request = quickwit_proto::SearchStreamRequest {
+    let request = quickwit_proto::search::SearchStreamRequest {
         index_id,
         query_ast: query_ast_json,
         snippet_fields: search_request.snippet_fields.unwrap_or_default(),
@@ -745,7 +754,7 @@ mod tests {
     async fn test_rest_search_api_route_serialize_with_results() -> anyhow::Result<()> {
         let mut mock_search_service = MockSearchService::new();
         mock_search_service.expect_root_search().returning(|_| {
-            Ok(quickwit_proto::SearchResponse {
+            Ok(quickwit_proto::search::SearchResponse {
                 hits: Vec::new(),
                 num_hits: 10,
                 elapsed_time_micros: 16,
@@ -775,7 +784,7 @@ mod tests {
         mock_search_service
             .expect_root_search()
             .with(predicate::function(
-                |search_request: &quickwit_proto::SearchRequest| {
+                |search_request: &quickwit_proto::search::SearchRequest| {
                     search_request.start_offset == 5 && search_request.max_hits == 30
                 },
             ))
@@ -958,8 +967,8 @@ mod tests {
     async fn test_rest_search_api_route_serialize_results_with_snippet() -> anyhow::Result<()> {
         let mut mock_search_service = MockSearchService::new();
         mock_search_service.expect_root_search().returning(|_| {
-            Ok(quickwit_proto::SearchResponse {
-                hits: vec![quickwit_proto::Hit {
+            Ok(quickwit_proto::search::SearchResponse {
+                hits: vec![quickwit_proto::search::Hit {
                     json: r#"{"title": "foo", "body": "foo bar baz"}"#.to_string(),
                     partial_hit: None,
                     snippet: Some(r#"{"title": [], "body": ["foo <em>bar</em> baz"]}"#.to_string()),
