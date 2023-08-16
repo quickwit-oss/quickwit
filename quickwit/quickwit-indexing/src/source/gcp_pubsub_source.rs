@@ -17,9 +17,9 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::{mem, fmt};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
+use std::{fmt, mem};
 
 use anyhow::Context;
 use async_trait::async_trait;
@@ -338,11 +338,16 @@ mod gcp_pubsub_emulator_tests {
             project_id: Some(GCP_TEST_PROJECT.to_string()),
             ..Default::default()
         };
-        let client = Client::new(client_config.with_auth().await.unwrap()).await.unwrap();
+        let client = Client::new(client_config.with_auth().await.unwrap())
+            .await
+            .unwrap();
         let subscription_config = SubscriptionConfig::default();
 
         let created_topic = client.create_topic(topic, None, None).await.unwrap();
-        client.create_subscription(subscription, topic, subscription_config, None).await.unwrap();
+        client
+            .create_subscription(subscription, topic, subscription_config, None)
+            .await
+            .unwrap();
         created_topic.new_publisher(None)
     }
 
@@ -411,7 +416,8 @@ mod gcp_pubsub_emulator_tests {
                 ),
                 SourceCheckpoint::default(),
             )
-            .await.unwrap();
+            .await
+            .unwrap();
 
         let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
         let source_actor = SourceActor {
