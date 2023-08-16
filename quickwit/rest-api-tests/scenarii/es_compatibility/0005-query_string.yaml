@@ -128,4 +128,26 @@ expected:
   hits:
     total:
       value: 0
-
+---
+# Default field
+json:
+  query:
+    query_string:
+      default_field: payload.commits.message
+      lenient: true
+      query: "to AND the"
+expected:
+  hits:
+    total:
+      value: 3
+---
+# Default field + fields
+json:
+  query:
+    query_string:
+      default_field: payload.commits.message
+      fields:
+        - payload.comments.body
+      lenient: true
+      query: "to AND the"
+status_code: 400
