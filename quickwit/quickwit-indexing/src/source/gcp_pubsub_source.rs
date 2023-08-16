@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::mem;
+use std::{mem, fmt};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -85,6 +85,17 @@ pub struct GcpPubSubSource {
     max_messages_per_pull: i32,
 }
 
+impl fmt::Debug for GcpPubSubSource {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        formatter
+            .debug_struct("GcpPubSubSource")
+            .field("index_id", &self.ctx.index_uid.index_id())
+            .field("source_id", &self.ctx.source_config.source_id)
+            .field("subscription", &self.subscription)
+            .finish()
+    }
+}
+
 impl GcpPubSubSource {
     pub async fn try_new(
         ctx: Arc<SourceExecutionContext>,
@@ -96,15 +107,20 @@ impl GcpPubSubSource {
             .max_messages_per_pull
             .unwrap_or(DEFAULT_MAX_MESSAGES_PER_PULL);
 
-        let mut client_config: ClientConfig = match params.credentials_file_path {
-            Some(file_path) => {
-                let cred: CredentialsFile =
-                    CredentialsFile::new_from_file(file_path).await.unwrap();
-                ClientConfig::default().with_credentials(cred).await
+        let mut client_config: ClientConfig = match params.credentials_file {
+            Some(credentials_file) => {
+                let credentials = CredentialsFile::new_from_file(credentials_file.clone())
+                    .await
+                    .with_context(|| {
+                        format!(
+                            "Failed to load GCP PubSub credentials file from `{credentials_file}`."
+                        )
+                    })?;
+                ClientConfig::default().with_credentials(credentials).await
             }
             None => ClientConfig::default().with_auth().await,
         }
-        .context("Failed to create GCP PubSub client.")?;
+        .context("Failed to create GCP PubSub client config.")?;
 
         if params.project_id.is_some() {
             client_config.project_id = params.project_id
@@ -142,7 +158,7 @@ impl GcpPubSubSource {
     }
 
     fn should_exit(&self) -> bool {
-        self.backfill_mode_enabled && self.state.num_consecutive_empty_batch > 3
+        self.backfill_mode_enabled && self.state.num_consecutive_empty_batches > 3
     }
 }
 
@@ -163,7 +179,7 @@ impl Source for GcpPubSubSource {
             tokio::select! {
                 resp = self.pull_message_batch(&mut batch) => {
                     if let Err(err) = resp {
-                        warn!("Failed to pull messages from subscription `{}`: {:?}", self.state.subscription_name, err);
+                        warn!("Failed to pull messages from subscription `{}`: {:?}", self.subscription_name, err);
                     }
 
                     if batch.num_bytes >= BATCH_NUM_BYTES_LIMIT {
@@ -178,9 +194,9 @@ impl Source for GcpPubSubSource {
         }
 
         if batch.num_bytes > 0 {
-            self.state.num_consecutive_empty_batch = 0
+            self.state.num_consecutive_empty_batches = 0
         } else {
-            self.state.num_consecutive_empty_batch += 1
+            self.state.num_consecutive_empty_batches += 1
         }
 
         // TODO: need to wait for all the id to be ack for at_least_once
@@ -225,7 +241,7 @@ impl Source for GcpPubSubSource {
             "num_bytes_processed": self.state.num_bytes_processed,
             "num_messages_processed": self.state.num_messages_processed,
             "num_invalid_messages": self.state.num_invalid_messages,
-            "num_consecutive_empty_batch": self.state.num_consecutive_empty_batch,
+            "num_consecutive_empty_batches": self.state.num_consecutive_empty_batches,
         })
     }
 }
@@ -309,7 +325,7 @@ mod gcp_pubsub_emulator_tests {
                 project_id: Some(GCP_TEST_PROJECT.to_string()),
                 enable_backfill_mode: true,
                 subscription: subscription.to_string(),
-                credentials_file_path: None,
+                credentials_file: None,
                 max_messages_per_pull: None,
             }),
             transform_config: None,
@@ -317,22 +333,17 @@ mod gcp_pubsub_emulator_tests {
         }
     }
 
-    async fn create_topic_and_subscription(
-        topic: &str,
-        subscription: &str,
-    ) -> Publisher {
+    async fn create_topic_and_subscription(topic: &str, subscription: &str) -> Publisher {
         let client_config = google_cloud_pubsub::client::ClientConfig {
             project_id: Some(GCP_TEST_PROJECT.to_string()),
             ..Default::default()
         };
-        let client = Client::new(conf.with_auth().await?).await?;
+        let client = Client::new(client_config.with_auth().await.unwrap()).await.unwrap();
         let subscription_config = SubscriptionConfig::default();
 
-        let created_topic = c.create_topic(topic, None, None).await.unwrap();
-        c.create_subscription(subscription, topic, subscription_config, None)
-            .await?;
-
-        Ok(created_topic.new_publisher(None))
+        let created_topic = client.create_topic(topic, None, None).await.unwrap();
+        client.create_subscription(subscription, topic, subscription_config, None).await.unwrap();
+        created_topic.new_publisher(None)
     }
 
     #[tokio::test]
@@ -345,11 +356,10 @@ mod gcp_pubsub_emulator_tests {
         let index_uid = IndexUid::new(&index_id);
         let metastore = metastore_for_test();
         let SourceParams::GcpPubSub(params) = source_config.clone().source_params else {
-            panic!("Expected `SourceParams::GcpPubSub` source params, got {:?}", source_config.clone().source_params);
-        }
-            params
-        } else {
-            unreachable!()
+            panic!(
+                "Expected `SourceParams::GcpPubSub` source params, got {:?}",
+                source_config.clone().source_params
+            );
         };
         let ctx = SourceExecutionContext::for_test(
             metastore,
@@ -358,11 +368,6 @@ mod gcp_pubsub_emulator_tests {
             source_config,
         );
         GcpPubSubSource::try_new(ctx, params).await.unwrap_err();
-            Err(_) => anyhow::Ok(()),
-            _ => Err(anyhow::anyhow!(
-                "gcp pubsub should fail to create when subscription does not exist"
-            )),
-        }
     }
 
     #[tokio::test]
@@ -372,7 +377,7 @@ mod gcp_pubsub_emulator_tests {
 
         let topic = append_random_suffix("test-gcp-pubsub-source--topic");
         let subscription = append_random_suffix("test-gcp-pubsub-source--sub");
-        let publisher = create_topic_and_subscription(&topic, &subscription).await?;
+        let publisher = create_topic_and_subscription(&topic, &subscription).await;
 
         let source_config = get_source_config(&subscription);
         let source_id = source_config.source_id.clone();
@@ -393,7 +398,7 @@ mod gcp_pubsub_emulator_tests {
 
         let publish_resp = publisher.publish_bulk(msgs).await;
         for val in publish_resp {
-            val.get().await?;
+            val.get().await.unwrap();
         }
 
         let source = source_loader
@@ -406,7 +411,7 @@ mod gcp_pubsub_emulator_tests {
                 ),
                 SourceCheckpoint::default(),
             )
-            .await?;
+            .await.unwrap();
 
         let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
         let source_actor = SourceActor {
@@ -431,14 +436,12 @@ mod gcp_pubsub_emulator_tests {
         let expected_state: JsonValue = json!({
             "index_id": index_id,
             "source_id": source_id,
-            "subscription_name": subscription,
+            "subscription": subscription,
             "num_bytes_processed": 54,
             "num_messages_processed": 6,
             "num_invalid_messages": 0,
-            "num_consecutive_empty_batch": 4,
+            "num_consecutive_empty_batches": 4,
         });
         assert_eq!(exit_state, expected_state);
-
-        anyhow::Ok(())
     }
 }

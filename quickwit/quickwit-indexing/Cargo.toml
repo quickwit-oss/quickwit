@@ -66,7 +66,7 @@ quickwit-storage = { workspace = true }
 
 [features]
 gcp-pubsub = ["dep:google-cloud-pubsub", "dep:google-cloud-default", "dep:google-cloud-googleapis", "dep:google-cloud-auth", "dep:google-cloud-gax"]
-gcp-pubsub-broker-tests = []
+gcp-pubsub-emulator-tests = []
 kafka = ["rdkafka", "backoff"]
 kafka-broker-tests = []
 vendored-kafka = ["kafka", "libz-sys/static", "openssl/vendored", "rdkafka/gssapi-vendored"]
