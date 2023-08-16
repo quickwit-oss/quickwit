@@ -296,8 +296,8 @@ pub struct GcpPubSubSourceParams {
     /// GCP service account credentials (`None` will use default via
     /// GOOGLE_APPLICATION_CREDENTIALS)
     /// `<https://github.com/yoshidan/google-cloud-rust/tree/main/pubsub#automatically>`
-    pub credentials_file_path: Option<String>,
-    /// GCP project id. (`None` will use default like credentials_file_path)
+    pub credentials_file: Option<String>,
+    /// GCP project ID (Defaults to credentials file project ID).
     pub project_id: Option<String>,
     /// Maximum number of messages returned by a pull request (default 1,000)
     pub max_messages_per_pull: Option<i32>,

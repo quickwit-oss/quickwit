@@ -72,7 +72,7 @@ pub struct GcpPubSubSourceState {
     // Number of invalid messages, i.e., that were empty or could not be parsed.
     num_invalid_messages: u64,
     /// Number of time we looped without getting a single message
-    num_consecutive_empty_batch: u64,
+    num_consecutive_empty_batches: u64,
 }
 
 pub struct GcpPubSubSource {
@@ -127,7 +127,7 @@ impl GcpPubSubSource {
         );
 
         if !subscription.exists(Some(RetrySetting::default())).await? {
-            anyhow::bail!("gcp pubsub subscription {subscription_name} does not exist");
+            anyhow::bail!("GCP PubSub subscription `{subscription_name}` does not exist.");
         }
 
         Ok(Self {
@@ -163,7 +163,7 @@ impl Source for GcpPubSubSource {
             tokio::select! {
                 resp = self.pull_message_batch(&mut batch) => {
                     if let Err(err) = resp {
-                        warn!("failed to pull message {:?}", err);
+                        warn!("Failed to pull messages from subscription `{}`: {:?}", self.state.subscription_name, err);
                     }
 
                     if batch.num_bytes >= BATCH_NUM_BYTES_LIMIT {
@@ -221,7 +221,7 @@ impl Source for GcpPubSubSource {
         json!({
             "index_id": self.ctx.index_uid.index_id(),
             "source_id": self.ctx.source_config.source_id,
-            "subscription_name": self.subscription_name,
+            "subscription": self.subscription_name,
             "num_bytes_processed": self.state.num_bytes_processed,
             "num_messages_processed": self.state.num_messages_processed,
             "num_invalid_messages": self.state.num_invalid_messages,
@@ -276,8 +276,8 @@ impl GcpPubSubSource {
 
 // TODO: first implementation of the test
 // After we need to ensure at_least_once and concurrent pipeline
-#[cfg(all(test, feature = "gcp-pubsub-broker-tests"))]
-mod gcp_pubsub_broker_tests {
+#[cfg(all(test, feature = "gcp-pubsub-emulator-tests"))]
+mod gcp_pubsub_emulator_tests {
     use std::env::var;
     use std::num::NonZeroUsize;
     use std::path::PathBuf;
@@ -320,23 +320,23 @@ mod gcp_pubsub_broker_tests {
     async fn create_topic_and_subscription(
         topic: &str,
         subscription: &str,
-    ) -> anyhow::Result<Publisher> {
-        let conf = google_cloud_pubsub::client::ClientConfig {
+    ) -> Publisher {
+        let client_config = google_cloud_pubsub::client::ClientConfig {
             project_id: Some(GCP_TEST_PROJECT.to_string()),
             ..Default::default()
         };
-        let c = Client::new(conf.with_auth().await?).await?;
+        let client = Client::new(conf.with_auth().await?).await?;
         let subscription_config = SubscriptionConfig::default();
 
-        let created_topic = c.create_topic(topic, None, None).await?;
+        let created_topic = c.create_topic(topic, None, None).await.unwrap();
         c.create_subscription(subscription, topic, subscription_config, None)
             .await?;
 
-        anyhow::Ok(created_topic.new_publisher(None))
+        Ok(created_topic.new_publisher(None))
     }
 
     #[tokio::test]
-    async fn test_gcp_source_invalid_subscription() -> anyhow::Result<()> {
+    async fn test_gcp_source_invalid_subscription() {
         quickwit_common::setup_logging_for_tests();
         let sub = append_random_suffix("test-gcp-pubsub-source--sub");
         let source_config = get_source_config(&sub);
@@ -344,7 +344,9 @@ mod gcp_pubsub_broker_tests {
         let index_id = append_random_suffix("test-gcp-pubsub-source--process-message--index");
         let index_uid = IndexUid::new(&index_id);
         let metastore = metastore_for_test();
-        let params = if let SourceParams::GcpPubSub(params) = source_config.clone().source_params {
+        let SourceParams::GcpPubSub(params) = source_config.clone().source_params else {
+            panic!("Expected `SourceParams::GcpPubSub` source params, got {:?}", source_config.clone().source_params);
+        }
             params
         } else {
             unreachable!()
@@ -355,7 +357,7 @@ mod gcp_pubsub_broker_tests {
             PathBuf::from("./queues"),
             source_config,
         );
-        match GcpPubSubSource::try_new(ctx, params).await {
+        GcpPubSubSource::try_new(ctx, params).await.unwrap_err();
             Err(_) => anyhow::Ok(()),
             _ => Err(anyhow::anyhow!(
                 "gcp pubsub should fail to create when subscription does not exist"
@@ -364,7 +366,7 @@ mod gcp_pubsub_broker_tests {
     }
 
     #[tokio::test]
-    async fn test_gcp_source() -> anyhow::Result<()> {
+    async fn test_gcp_source() {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::with_accelerated_time();
 
