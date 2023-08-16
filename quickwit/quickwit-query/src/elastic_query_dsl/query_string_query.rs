@@ -35,6 +35,8 @@ pub(crate) struct QueryStringQuery {
     #[serde(default)]
     fields: Option<Vec<String>>,
     #[serde(default)]
+    default_field: Option<String>,
+    #[serde(default)]
     default_operator: BooleanOperand,
     #[serde(default)]
     boost: Option<NotNaNf32>,
@@ -47,9 +49,16 @@ pub(crate) struct QueryStringQuery {
 
 impl ConvertableToQueryAst for QueryStringQuery {
     fn convert_to_query_ast(self) -> anyhow::Result<crate::query_ast::QueryAst> {
+        if self.default_field.is_some() && self.fields.is_some() {
+            anyhow::bail!("Fields and default_field cannot be both set in `query_string` queries.");
+        }
+        let default_fields: Option<Vec<String>> = self
+            .default_field
+            .map(|default_field| vec![default_field])
+            .or(self.fields);
         let user_text_query = UserInputQuery {
             user_text: self.query,
-            default_fields: self.fields,
+            default_fields,
             default_operator: self.default_operator,
         };
         Ok(user_text_query.into())
@@ -63,11 +72,12 @@ mod tests {
     use crate::BooleanOperand;
 
     #[test]
-    fn test_build_query_string_query_with_default_field_non_empty() {
+    fn test_build_query_string_query_with_fields_non_empty() {
         let query_string_query = crate::elastic_query_dsl::QueryStringQuery {
             query: "hello world".to_string(),
             fields: Some(vec!["hello".to_string()]),
             default_operator: crate::BooleanOperand::Or,
+            default_field: None,
             boost: None,
             _lenient: false,
         };
@@ -84,10 +94,50 @@ mod tests {
     }
 
     #[test]
+    fn test_build_query_string_query_with_default_field_non_empty() {
+        let query_string_query = crate::elastic_query_dsl::QueryStringQuery {
+            query: "hello world".to_string(),
+            fields: None,
+            default_operator: crate::BooleanOperand::Or,
+            default_field: Some("hello".to_string()),
+            boost: None,
+            _lenient: false,
+        };
+        let QueryAst::UserInput(user_input_query) =
+            query_string_query.convert_to_query_ast().unwrap()
+        else {
+            panic!();
+        };
+        assert_eq!(user_input_query.default_operator, BooleanOperand::Or);
+        assert_eq!(
+            user_input_query.default_fields.unwrap(),
+            vec!["hello".to_string()]
+        );
+    }
+
+    #[test]
+    fn test_build_query_string_query_with_both_default_fields_and_field_yield_an_error() {
+        let query_string_query = crate::elastic_query_dsl::QueryStringQuery {
+            query: "hello world".to_string(),
+            fields: Some(vec!["hello".to_string()]),
+            default_operator: crate::BooleanOperand::Or,
+            default_field: Some("hello".to_string()),
+            boost: None,
+            _lenient: false,
+        };
+        let err_msg = query_string_query
+            .convert_to_query_ast()
+            .unwrap_err()
+            .to_string();
+        assert!(err_msg.contains("cannot be both set"));
+    }
+
+    #[test]
     fn test_build_query_string_query_with_default_operand_and() {
         let query_string_query = crate::elastic_query_dsl::QueryStringQuery {
             query: "hello world".to_string(),
             fields: Some(Vec::new()),
+            default_field: None,
             default_operator: crate::BooleanOperand::And,
             boost: None,
             _lenient: false,
@@ -105,6 +155,7 @@ mod tests {
         let query_string_query = crate::elastic_query_dsl::QueryStringQuery {
             query: "hello world".to_string(),
             fields: Some(Vec::new()),
+            default_field: None,
             default_operator: crate::BooleanOperand::Or,
             boost: None,
             _lenient: false,
@@ -123,6 +174,7 @@ mod tests {
         let query_string_query = crate::elastic_query_dsl::QueryStringQuery {
             query: "hello world".to_string(),
             fields: None,
+            default_field: None,
             default_operator: crate::BooleanOperand::Or,
             boost: None,
             _lenient: false,

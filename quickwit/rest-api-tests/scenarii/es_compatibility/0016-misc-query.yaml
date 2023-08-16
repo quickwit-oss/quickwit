@@ -1,0 +1,111 @@
+json:
+  query:
+    multi_match:
+      fields:
+        - payload.commits.message
+        - payload.description
+        - payload.comment.body
+      lenient: true
+      query: to be
+      type: phrase
+expected:
+  hits:
+    total:
+      value: 2
+---
+json:
+  query:
+    multi_match:
+      fields:
+        - payload.commits.message
+        - payload.description
+      lenient: true
+      query: to b
+      type: phrase
+expected:
+  hits:
+    total:
+      value: 0
+---
+json:
+  query:
+    multi_match:
+      fields:
+        - payload.commits.message
+        - payload.description
+        - payload.comment.body
+      lenient: true
+      query: to be
+      type: phrase_prefix
+expected:
+  hits:
+    total:
+      value: 2
+---
+json:
+  query:
+    multi_match:
+      fields:
+        - payload.commits.message
+        - payload.description
+        - payload.comment.body
+      lenient: true
+      query: to b
+      type: phrase_prefix
+expected:
+  hits:
+    total:
+      value: 3
+---
+json:
+  query:
+    query_string:
+      default_field: payload.commits.message
+      lenient: true
+      query: "to AND the"
+expected:
+  hits:
+    total:
+      value: 3
+---
+json:
+  query:
+    query_string:
+      fields:
+        - payload.commits.message
+      lenient: true
+      query: "to AND the"
+expected:
+  hits:
+    total:
+      value: 3
+---
+json:
+  query:
+    exists:
+      field: payload.commits.message
+expected:
+  hits:
+    total:
+      value: 60
+---
+json:
+  query:
+    match_all: {}
+expected:
+  hits:
+    total:
+      value: 100
+---
+json:
+  query:
+    terms:
+      payload.commits.message:
+        - fix
+        - bug
+        - problem
+        - closes
+expected:
+  hits:
+    total:
+      value: 3
