@@ -421,7 +421,7 @@ impl CacheStorageConfig {
     #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test() -> Self {
         CacheStorageConfig {
-            cache_uri: Some("ram:///".to_string()),
+            cache_uri: Some("ram://cache".to_string()),
             max_cache_storage_disk_usage: None,
         }
     }

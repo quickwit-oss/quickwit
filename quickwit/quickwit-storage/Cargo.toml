@@ -60,6 +60,7 @@ aws-sdk-s3 = { workspace = true, features = ["test-util"] }
 aws-smithy-client = { workspace = true, features = ["test-util"] }
 
 quickwit-common = { workspace = true, features = ["testsuite"] }
+quickwit-actors = { workspace = true, features = ["testsuite"] }
 quickwit-config = { workspace = true, features = ["testsuite"] }
 
 [features]

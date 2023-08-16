@@ -78,12 +78,16 @@ pub fn split_file(split_id: &str) -> String {
 }
 
 pub fn is_split_file(path: &Path) -> bool {
-    path.ends_with(".split")
+    if let Some(extension) = path.extension() {
+        extension.eq_ignore_ascii_case("split")
+    } else {
+        false
+    }
 }
 
 pub fn split_id(split_file: &Path) -> Option<&str> {
     if is_split_file(split_file) {
-        split_file.file_name()?.to_str()
+        split_file.file_stem()?.to_str()
     } else {
         None
     }
@@ -243,5 +247,18 @@ mod tests {
 
         let pretty_sample = PrettySample::new(&[1, 2, 3, 4], 2);
         assert_eq!(format!("{pretty_sample:?}"), "[1, 2, and 2 more]");
+    }
+
+    #[test]
+    fn test_split_file_support() {
+        assert!(is_split_file(Path::new("01H7Y21J0KAD6KQ6EX0E7C1D6P.split")));
+        assert!(is_split_file(Path::new(
+            "test/01H7Y21J0KAD6KQ6EX0E7C1D6P.split"
+        )));
+        assert!(!is_split_file(Path::new("01H7Y21J0KAD6KQ6EX0E7C1D6P")));
+        assert_eq!(
+            Some("01H7Y21J0KAD6KQ6EX0E7C1D6P"),
+            split_id(Path::new("test/01H7Y21J0KAD6KQ6EX0E7C1D6P.split"))
+        );
     }
 }

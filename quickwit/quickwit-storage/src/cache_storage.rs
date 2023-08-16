@@ -17,7 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::ops::Range;
 use std::path::Path;
@@ -25,13 +24,11 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use quickwit_common::uri::Uri;
-use quickwit_common::{split_file, split_id};
 use quickwit_config::{CacheStorageConfig, StorageBackend};
 use quickwit_proto::cache_storage::SplitsChangeNotification;
 use serde::{Deserialize, Serialize};
-use tokio::sync::RwLock;
-use tracing::error;
 
+use crate::async_cache_registry::CachedSplitRegistry;
 use crate::{
     BulkDeleteError, OwnedBytes, PutPayload, SendableAsync, Storage, StorageFactory,
     StorageResolver, StorageResolverError, StorageResult,
@@ -43,7 +40,7 @@ pub struct CacheStorage {
     uri: Uri,
     storage: Arc<dyn Storage>,
     cache: Arc<dyn Storage>,
-    cache_splits: Arc<RwLock<HashMap<String, (SplitState, Uri)>>>,
+    cache_split_registry: Arc<CachedSplitRegistry>,
 }
 
 impl fmt::Debug for CacheStorage {
@@ -59,14 +56,23 @@ impl fmt::Debug for CacheStorage {
 impl CacheStorage {
     /// Create a resolver that can uses ram storage for both cache and the upstream storage
     #[cfg(test)]
-    pub fn for_test() -> CacheStorage {
-        use crate::RamStorage;
-
-        CacheStorage {
-            uri: Uri::for_test("cache:///"),
-            storage: Arc::new(RamStorage::default()),
-            cache: Arc::new(RamStorage::default()),
-            cache_splits: Arc::new(RwLock::new(HashMap::new())),
+    pub async fn for_test() -> CacheStorage {
+        let storage_resolver = StorageResolver::for_test();
+        let storage_config = CacheStorageConfig::for_test();
+        let cache_split_registry = Arc::new(CachedSplitRegistry::new(storage_config));
+        let storage = storage_resolver
+            .resolve(&Uri::for_test("ram://data"))
+            .await
+            .unwrap();
+        let cache = storage_resolver
+            .resolve(&Uri::for_test("ram://cache"))
+            .await
+            .unwrap();
+        Self {
+            uri: Uri::for_test("cache://ram://cache"),
+            storage,
+            cache,
+            cache_split_registry,
         }
     }
 }
@@ -87,16 +93,15 @@ impl Storage for CacheStorage {
     }
 
     async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
-        let guard = self.cache_splits.read().await;
-        if let Some(split_id) = split_id(path) {
-            if let Some(split) = guard.get(split_id) {
-                if matches!(split.0, SplitState::Ready) {
-                    // Only return cache if it is ready
-                    return self.cache.get_slice(path, range).await;
-                }
-            }
+        if let Some(results) = self
+            .cache_split_registry
+            .get_slice(self.cache.clone(), path, range.clone())
+            .await
+        {
+            results
+        } else {
+            self.storage.get_slice(path, range).await
         }
-        self.storage.get_slice(path, range).await
     }
 
     async fn delete(&self, path: &Path) -> StorageResult<()> {
@@ -108,8 +113,15 @@ impl Storage for CacheStorage {
     }
 
     async fn get_all(&self, path: &Path) -> StorageResult<OwnedBytes> {
-        // TODO: Add caching logic
-        self.storage.get_all(path).await
+        if let Some(results) = self
+            .cache_split_registry
+            .get_all(self.cache.clone(), path)
+            .await
+        {
+            results
+        } else {
+            self.storage.get_all(path).await
+        }
     }
 
     fn uri(&self) -> &Uri {
@@ -119,135 +131,6 @@ impl Storage for CacheStorage {
     async fn file_num_bytes(&self, path: &Path) -> StorageResult<u64> {
         self.storage.file_num_bytes(path).await
     }
-}
-
-impl CacheStorageFactory {
-    /// Create a new storage factory
-    pub fn new(storage_config: CacheStorageConfig) -> Self {
-        Self {
-            inner: Arc::new(InnerCacheStorageFactory {
-                storage_config,
-                splits: Arc::new(RwLock::new(HashMap::new())),
-                counters: CacheStorageCounters::default(),
-            }),
-        }
-    }
-
-    /// Returns the cache storage stats
-    pub fn counters(&self) -> CacheStorageCounters {
-        self.inner.counters.clone()
-    }
-
-    /// Update all split caches on the node
-    pub async fn update_split_cache(
-        &self,
-        storage_resolver: &StorageResolver,
-        splits: Vec<SplitsChangeNotification>,
-    ) -> StorageResult<()> {
-        let mut splits_guard = self.inner.splits.write().await;
-        let new_splits: HashSet<String> = splits.iter().map(|rec| rec.split_id.clone()).collect();
-        let old_splits: HashSet<String> = splits_guard.keys().cloned().collect();
-        let deleted = old_splits.difference(&new_splits);
-        for split in splits {
-            if !splits_guard.contains_key(&split.split_id) {
-                let uri: Uri = split.storage_uri.parse().expect("Shouldn't happen");
-                self.load(
-                    storage_resolver,
-                    &uri,
-                    split.index_id,
-                    split.split_id.clone(),
-                )
-                .await;
-                splits_guard.insert(split.split_id.clone(), (SplitState::Loading, uri));
-            }
-        }
-        for delete in deleted {
-            let res = splits_guard.get(delete).expect("Should be there");
-            let status = res.0.clone();
-            let uri = res.1.clone();
-            match status {
-                SplitState::Loading => {
-                    splits_guard.insert(delete.clone(), (SplitState::Deleted, uri));
-                }
-                SplitState::Ready => {
-                    self.delete(storage_resolver, &uri, delete.clone()).await;
-                    splits_guard.remove(delete);
-                }
-                SplitState::Deleted => {
-                    // Don't need to do anything, delete is async and might take a while
-                }
-            };
-        }
-        Ok(())
-    }
-
-    async fn load(
-        &self,
-        storage_resolver: &StorageResolver,
-        storage_uri: &Uri,
-        index_id: String,
-        split_id: String,
-    ) {
-        let storage = storage_resolver
-            .resolve(storage_uri)
-            .await
-            .expect("Should be able to resolve");
-        // TODO: Error handling
-        let cache = storage_resolver
-            .resolve(
-                &self
-                    .inner
-                    .storage_config
-                    .cache_uri
-                    .clone()
-                    .unwrap()
-                    .parse::<Uri>()
-                    .unwrap(),
-            )
-            .await
-            .unwrap();
-        let splits = self.inner.splits.clone();
-        tokio::spawn({
-            async move {
-                let path = Path::new(&index_id).join(split_file(&split_id));
-                if let Err(err) = storage.copy_to_storage(&path, cache.clone(), &path).await {
-                    error!(error=?err, "Failed to copy split to cache.");
-                } else {
-                    let mut splits_guard = splits.write().await;
-                    if let Some((state, uri)) = splits_guard.get(&split_id) {
-                        match state {
-                            SplitState::Loading | SplitState::Ready => {
-                                let uri = uri.clone();
-                                splits_guard.insert(split_id, (SplitState::Ready, uri));
-                            }
-                            SplitState::Deleted => {
-                                // The split has been deleted during upload
-                                if let Err(err) = cache.delete(&path).await {
-                                    error!(error=?err, "Failed to copy split to cache.");
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-        });
-    }
-
-    async fn delete(
-        &self,
-        _storage_resolver: &StorageResolver,
-        _storage_uri: &Uri,
-        _split_id: String,
-    ) {
-        // TODO: implement cleanup
-    }
-}
-
-#[derive(Clone)]
-enum SplitState {
-    Loading,
-    Ready,
-    Deleted,
 }
 
 /// Cache storage stats
@@ -269,11 +152,49 @@ pub struct CacheStorageFactory {
     inner: Arc<InnerCacheStorageFactory>,
 }
 
-/// Storage resolver for [`CacheStorage`].
 pub struct InnerCacheStorageFactory {
     storage_config: CacheStorageConfig,
     counters: CacheStorageCounters,
-    splits: Arc<RwLock<HashMap<String, (SplitState, Uri)>>>,
+    cache_split_registry: Arc<CachedSplitRegistry>,
+}
+
+impl CacheStorageFactory {
+    /// Create a new storage factory
+    pub fn new(storage_config: CacheStorageConfig) -> Self {
+        Self {
+            inner: Arc::new(InnerCacheStorageFactory {
+                storage_config: storage_config.clone(),
+                cache_split_registry: Arc::new(CachedSplitRegistry::new(storage_config)),
+                counters: CacheStorageCounters::default(),
+            }),
+        }
+    }
+
+    /// Returns the cache storage stats
+    pub fn counters(&self) -> CacheStorageCounters {
+        self.inner.counters.clone()
+    }
+
+    /// Update all split caches on the node
+    pub async fn update_split_cache(
+        &self,
+        storage_resolver: &StorageResolver,
+        notifications: Vec<SplitsChangeNotification>,
+    ) -> anyhow::Result<()> {
+        let mut splits: Vec<(String, String, Uri)> = Vec::new();
+        for notification in notifications {
+            splits.push((
+                notification.split_id,
+                notification.index_id,
+                notification.storage_uri.parse()?,
+            ));
+        }
+        self.inner
+            .cache_split_registry
+            .bulk_update(storage_resolver, &splits)
+            .await;
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -319,7 +240,7 @@ impl StorageFactory for CacheStorageFactory {
                 uri: uri.clone(),
                 storage,
                 cache,
-                cache_splits: self.inner.splits.clone(),
+                cache_split_registry: self.inner.cache_split_registry.clone(),
             };
             Ok(Arc::new(cache_storage))
         } else {
@@ -343,7 +264,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_storage() -> anyhow::Result<()> {
-        let mut ram_storage = CacheStorage::for_test();
+        let mut ram_storage = CacheStorage::for_test().await;
         storage_test_suite(&mut ram_storage).await?;
         Ok(())
     }
