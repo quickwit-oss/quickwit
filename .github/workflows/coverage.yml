@@ -109,8 +109,8 @@ jobs:
         image: thekevjames/gcloud-pubsub-emulator:7555256f2c
         ports:
           - "8681:8681"
-        environment:
-          - PUBSUB_PROJECT1=quickwit-emulator,emulator_topic:emulator_subscription
+        env:
+          - PUBSUB_PROJECT1: "quickwit-emulator,emulator_topic:emulator_subscription"
 
     steps:
       - uses: actions/checkout@v3
