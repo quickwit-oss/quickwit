@@ -295,9 +295,13 @@ pub struct GcpPubSubSourceParams {
     pub enable_backfill_mode: bool,
     /// GCP service account credentials (`None` will use default via
     /// GOOGLE_APPLICATION_CREDENTIALS)
-    pub credentials: Option<String>,
-    /// Number of pull requests issued in parallel by the source (default 1)
-    pub pull_parallelism: Option<u64>,
+    /// Path to a google_cloud_auth::credentials::CredentialsFile serialized in JSON. See also
+    /// `<https://cloud.google.com/docs/authentication/application-default-credentials>` and
+    /// `<https://github.com/yoshidan/google-cloud-rust/tree/main/pubsub#automatically>` and
+    /// `<https://docs.rs/google-cloud-auth/0.12.0/google_cloud_auth/credentials/struct.CredentialsFile.html>`.
+    pub credentials_file: Option<String>,
+    /// GCP project ID (Defaults to credentials file project ID).
+    pub project_id: Option<String>,
     /// Maximum number of messages returned by a pull request (default 1,000)
     pub max_messages_per_pull: Option<i32>,
 }

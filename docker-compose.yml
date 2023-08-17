@@ -209,6 +209,17 @@ services:
     extra_hosts:
       - "host.docker.internal:host-gateway"
 
+  gcp-pubsub-emulator:
+    # It is not an official docker image
+    # if we prefer we can build a docker from the official docker image (gcloud cli)
+    # and install the pubsub emulator https://cloud.google.com/pubsub/docs/emulator
+    image: thekevjames/gcloud-pubsub-emulator:${GCLOUD_EMULATOR:-7555256f2c}
+    ports:
+      - "${MAP_HOST_GCLOUD_EMULATOR:-127.0.0.1}:8681:8681"
+    environment:
+      # create a fake gcp project and a topic / subscription
+      - PUBSUB_PROJECT1=quickwit-emulator,emulator_topic:emulator_subscription
+
 volumes:
   localstack_data:
   postgres_data:
