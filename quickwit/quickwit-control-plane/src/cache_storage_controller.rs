@@ -103,8 +103,7 @@ impl CacheStorageController {
     async fn update_cache(&mut self, ctx: &ActorContext<Self>) -> anyhow::Result<()> {
         let _protect_guard = ctx.protect_zone();
         //        let current_splits_vec = self.split_to_node_map.keys().collect_vec();
-        let mut current_splits: HashSet<String> =
-            HashSet::from_iter(self.split_to_node_map.keys().cloned());
+        let mut current_splits_to_node_map = self.split_to_node_map.clone();
         let mut updated_nodes = HashSet::new();
         let available_nodes = self.pool.available_nodes().await;
         let mut node_to_split_map: HashMap<String, Vec<(String, IndexUid, Uri)>> = HashMap::new();
@@ -123,7 +122,7 @@ impl CacheStorageController {
                         .iter()
                         .cloned(),
                 );
-                current_splits.remove(&split_id);
+                current_splits_to_node_map.remove(&split_id);
                 // Figure out which nodes were updated and have to be notified
                 if let Some(current_allocation) = self.split_to_node_map.get(&split_id) {
                     let diff = current_allocation.difference(&allocated_nodes);
@@ -152,6 +151,12 @@ impl CacheStorageController {
                 self.split_to_node_map.insert(split_id, allocated_nodes);
             }
         }
+        for nodes in current_splits_to_node_map.values() {
+            // Some splits were deleted, we need to notify nodes that these splits where on
+            for node in nodes {
+                updated_nodes.insert(node.clone());
+            }
+        }
         try_join_all(
             updated_nodes
                 .iter()
@@ -167,19 +172,24 @@ impl CacheStorageController {
         node_to_split_map: &HashMap<String, Vec<(String, IndexUid, Uri)>>,
         node: String,
     ) -> anyhow::Result<()> {
-        let splits = node_to_split_map.get(&node).expect("Not possible.");
         if let Some(mut service) = self.pool.service(&node).await {
-            let request = NotifySplitsChangeRequest {
-                splits_change: splits
-                    .iter()
-                    .map(
-                        |(split_id, index_uid, storage_uri)| SplitsChangeNotification {
-                            storage_uri: storage_uri.to_string(),
-                            index_id: index_uid.index_id().to_string(),
-                            split_id: split_id.clone(),
-                        },
-                    )
-                    .collect(),
+            let request = if let Some(splits) = node_to_split_map.get(&node) {
+                NotifySplitsChangeRequest {
+                    splits_change: splits
+                        .iter()
+                        .map(
+                            |(split_id, index_uid, storage_uri)| SplitsChangeNotification {
+                                storage_uri: storage_uri.to_string(),
+                                index_id: index_uid.index_id().to_string(),
+                                split_id: split_id.clone(),
+                            },
+                        )
+                        .collect(),
+                }
+            } else {
+                NotifySplitsChangeRequest {
+                    splits_change: Vec::new(),
+                }
             };
             quickwit_proto::cache_storage::CacheStorageService::notify_split_change(
                 &mut service,
