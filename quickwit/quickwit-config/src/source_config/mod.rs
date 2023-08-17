@@ -296,7 +296,9 @@ pub struct GcpPubSubSourceParams {
     /// GCP service account credentials (`None` will use default via
     /// GOOGLE_APPLICATION_CREDENTIALS)
     /// Path to a google_cloud_auth::credentials::CredentialsFile serialized in JSON. See also
-    /// `<https://github.com/yoshidan/google-cloud-rust/tree/main/pubsub#automatically>`.
+    /// `<https://cloud.google.com/docs/authentication/application-default-credentials>` and
+    /// `<https://github.com/yoshidan/google-cloud-rust/tree/main/pubsub#automatically>` and
+    /// `<https://docs.rs/google-cloud-auth/0.12.0/google_cloud_auth/credentials/struct.CredentialsFile.html>`.
     pub credentials_file: Option<String>,
     /// GCP project ID (Defaults to credentials file project ID).
     pub project_id: Option<String>,
