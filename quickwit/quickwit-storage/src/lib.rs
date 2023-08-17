@@ -41,9 +41,9 @@ pub use self::metrics::STORAGE_METRICS;
 pub use self::payload::PutPayload;
 pub use self::storage::{SendableAsync, Storage};
 
-mod async_cache_registry;
 mod bundle_storage;
 mod cache_storage;
+mod cached_splits_registry;
 mod error;
 mod local_file_storage;
 mod object_storage;

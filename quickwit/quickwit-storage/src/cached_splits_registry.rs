@@ -20,6 +20,7 @@
 use std::collections::{HashMap, HashSet};
 use std::ops::Range;
 use std::path::Path;
+use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use quickwit_common::uri::Uri;
@@ -29,6 +30,7 @@ use tantivy::directory::OwnedBytes;
 use tokio::sync::{RwLock, RwLockWriteGuard};
 use tracing::error;
 
+use crate::cache_storage::AtomicCacheStorageCounters;
 use crate::{Storage, StorageResolver, StorageResult};
 
 enum SplitState {
@@ -57,14 +59,19 @@ impl Clone for CachedSplitRegistry {
 
 pub struct InnerCachedSplitRegistry {
     storage_config: CacheStorageConfig,
+    counters: Arc<AtomicCacheStorageCounters>,
     splits: RwLock<HashMap<String, SplitInfo>>,
 }
 
 impl CachedSplitRegistry {
-    pub fn new(storage_config: CacheStorageConfig) -> Self {
+    pub(crate) fn new(
+        storage_config: CacheStorageConfig,
+        counters: Arc<AtomicCacheStorageCounters>,
+    ) -> Self {
         Self {
             inner: Arc::new(InnerCachedSplitRegistry {
                 storage_config,
+                counters,
                 splits: RwLock::new(HashMap::new()),
             }),
         }
@@ -127,11 +134,23 @@ impl CachedSplitRegistry {
                                 self_clone.inner.splits.write().await.remove(&split_id);
                             } else {
                                 *state_guard = SplitState::Ready;
+                                self_clone
+                                    .inner
+                                    .counters
+                                    .num_downloaded_splits
+                                    .fetch_add(1, Ordering::Relaxed);
                             }
                         }
                         SplitState::Deleting => {
                             // The resource was deleted while we were trying to initialize it
-                            self_clone.inner.splits.write().await.remove(&split_id);
+                            if self_clone
+                                .inner
+                                .splits
+                                .write()
+                                .await
+                                .remove(&split_id)
+                                .is_some()
+                            {}
                         }
                         _ => {
                             // Shouldn't be here.
@@ -176,6 +195,10 @@ impl CachedSplitRegistry {
             let mut state_guard = value.state_lock.write().await;
             if !matches!(*state_guard, SplitState::Deleting) {
                 *state_guard = SplitState::Deleting;
+                self.inner
+                    .counters
+                    .num_downloaded_splits
+                    .fetch_sub(1, Ordering::Relaxed);
                 tokio::spawn({
                     let self_clone = self.clone();
                     let split_id = split_id.clone();
@@ -284,14 +307,15 @@ mod tests {
 
     use quickwit_common::test_utils::wait_until_predicate;
 
-    use crate::async_cache_registry::*;
+    use crate::cached_splits_registry::*;
     use crate::*;
 
     #[tokio::test]
     async fn test_basic_workflow() {
         let storage_resolver = StorageResolver::ram_for_test();
         let config = CacheStorageConfig::for_test();
-        let registry = CachedSplitRegistry::new(config.clone());
+        let counters = Arc::new(AtomicCacheStorageCounters::default());
+        let registry = CachedSplitRegistry::new(config.clone(), counters.clone());
         let storage = storage_resolver
             .resolve(&Uri::for_test("ram://data"))
             .await
@@ -303,6 +327,7 @@ mod tests {
         let split_id = "abcd".to_string();
         let index_id = "my_index".to_string();
         let path = PathBuf::new().join("abcd.split");
+        assert_eq!(counters.as_counters().num_downloaded_splits, 0);
         storage
             .put(&path, Box::new(b"abcdefg"[..].to_vec()))
             .await
@@ -332,6 +357,8 @@ mod tests {
         .await
         .unwrap();
 
+        assert_eq!(counters.as_counters().num_downloaded_splits, 1);
+
         registry.delete(&storage_resolver, &split_id).await;
 
         let registry_clone = registry.clone();
@@ -353,6 +380,8 @@ mod tests {
         )
         .await
         .is_err());
+
+        assert_eq!(counters.as_counters().num_downloaded_splits, 0);
     }
 
     async fn test_get_all(

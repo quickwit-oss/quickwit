@@ -20,6 +20,7 @@
 use std::fmt;
 use std::ops::Range;
 use std::path::Path;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -28,7 +29,7 @@ use quickwit_config::{CacheStorageConfig, StorageBackend};
 use quickwit_proto::cache_storage::SplitsChangeNotification;
 use serde::{Deserialize, Serialize};
 
-use crate::async_cache_registry::CachedSplitRegistry;
+use crate::cached_splits_registry::CachedSplitRegistry;
 use crate::{
     BulkDeleteError, OwnedBytes, PutPayload, SendableAsync, Storage, StorageFactory,
     StorageResolver, StorageResolverError, StorageResult,
@@ -40,6 +41,7 @@ pub struct CacheStorage {
     uri: Uri,
     storage: Arc<dyn Storage>,
     cache: Arc<dyn Storage>,
+    counters: Arc<AtomicCacheStorageCounters>,
     cache_split_registry: Arc<CachedSplitRegistry>,
 }
 
@@ -59,7 +61,10 @@ impl CacheStorage {
     pub async fn for_test() -> CacheStorage {
         let storage_resolver = StorageResolver::for_test();
         let storage_config = CacheStorageConfig::for_test();
-        let cache_split_registry = Arc::new(CachedSplitRegistry::new(storage_config));
+        let cache_split_registry = Arc::new(CachedSplitRegistry::new(
+            storage_config,
+            Arc::new(AtomicCacheStorageCounters::default()),
+        ));
         let storage = storage_resolver
             .resolve(&Uri::for_test("ram://data"))
             .await
@@ -72,6 +77,7 @@ impl CacheStorage {
             uri: Uri::for_test("cache://ram://cache"),
             storage,
             cache,
+            counters: Arc::new(AtomicCacheStorageCounters::default()),
             cache_split_registry,
         }
     }
@@ -98,8 +104,10 @@ impl Storage for CacheStorage {
             .get_slice(self.cache.clone(), path, range.clone())
             .await
         {
+            self.counters.num_hits.fetch_add(1, Ordering::Relaxed);
             results
         } else {
+            self.counters.num_misses.fetch_add(1, Ordering::Relaxed);
             self.storage.get_slice(path, range).await
         }
     }
@@ -118,8 +126,10 @@ impl Storage for CacheStorage {
             .get_all(self.cache.clone(), path)
             .await
         {
+            self.counters.num_hits.fetch_add(1, Ordering::Relaxed);
             results
         } else {
+            self.counters.num_misses.fetch_add(1, Ordering::Relaxed);
             self.storage.get_all(path).await
         }
     }
@@ -146,33 +156,60 @@ pub struct CacheStorageCounters {
     pub num_misses: usize,
 }
 
+#[derive(Default)]
+pub(crate) struct AtomicCacheStorageCounters {
+    /// number of splits that should be cached
+    pub num_cached_splits: AtomicUsize,
+    /// number of splits that are downloaded
+    pub num_downloaded_splits: AtomicUsize,
+    /// number of cache hits
+    pub num_hits: AtomicUsize,
+    /// number of cache misses
+    pub num_misses: AtomicUsize,
+}
+
+impl AtomicCacheStorageCounters {
+    pub fn as_counters(&self) -> CacheStorageCounters {
+        CacheStorageCounters {
+            num_cached_splits: self.num_cached_splits.load(Ordering::Relaxed),
+            num_downloaded_splits: self.num_downloaded_splits.load(Ordering::Relaxed),
+            num_hits: self.num_hits.load(Ordering::Relaxed),
+            num_misses: self.num_misses.load(Ordering::Relaxed),
+        }
+    }
+}
+
 /// Storage resolver for [`CacheStorage`].
 #[derive(Clone)]
 pub struct CacheStorageFactory {
     inner: Arc<InnerCacheStorageFactory>,
 }
 
-pub struct InnerCacheStorageFactory {
+struct InnerCacheStorageFactory {
     storage_config: CacheStorageConfig,
-    counters: CacheStorageCounters,
+    counters: Arc<AtomicCacheStorageCounters>,
     cache_split_registry: Arc<CachedSplitRegistry>,
 }
 
 impl CacheStorageFactory {
     /// Create a new storage factory
     pub fn new(storage_config: CacheStorageConfig) -> Self {
+        let counters = Arc::new(AtomicCacheStorageCounters::default());
         Self {
             inner: Arc::new(InnerCacheStorageFactory {
                 storage_config: storage_config.clone(),
-                cache_split_registry: Arc::new(CachedSplitRegistry::new(storage_config)),
-                counters: CacheStorageCounters::default(),
+                cache_split_registry: Arc::new(CachedSplitRegistry::new(
+                    storage_config,
+                    counters.clone(),
+                )),
+                counters,
             }),
         }
     }
 
     /// Returns the cache storage stats
     pub fn counters(&self) -> CacheStorageCounters {
-        self.inner.counters.clone()
+        self.inner.counters.as_counters()
     }
 
     /// Update all split caches on the node
@@ -240,6 +277,7 @@ impl StorageFactory for CacheStorageFactory {
                 uri: uri.clone(),
                 storage,
                 cache,
+                counters: self.inner.counters.clone(),
                 cache_split_registry: self.inner.cache_split_registry.clone(),
             };
             Ok(Arc::new(cache_storage))
