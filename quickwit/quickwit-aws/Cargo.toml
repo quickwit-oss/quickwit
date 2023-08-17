@@ -11,10 +11,10 @@ documentation = "https://quickwit.io/docs/"
 
 [dependencies]
 aws-config = { workspace = true }
-aws-sdk-s3 = { workspace = true }
-aws-smithy-client = { workspace = true }
-aws-smithy-async = { workspace = true }
 aws-sdk-kinesis = { workspace = true, optional = true }
+aws-sdk-s3 = { workspace = true }
+aws-smithy-async = { workspace = true }
+aws-smithy-client = { workspace = true }
 aws-types = { workspace = true }
 
 anyhow = { workspace = true }
@@ -24,10 +24,10 @@ hyper = { workspace = true }
 hyper-rustls = { workspace = true }
 once_cell = { workspace = true }
 rand = { workspace = true }
-tokio = { workspace = true }
-tracing = { workspace = true }
-tower = { workspace = true }
 thiserror = { workspace = true }
+tokio = { workspace = true }
+tower = { workspace = true }
+tracing = { workspace = true }
 
 [dev-dependencies]
 quickwit-actors = { workspace = true, features = ["testsuite"] }

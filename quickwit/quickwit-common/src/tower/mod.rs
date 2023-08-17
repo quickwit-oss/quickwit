@@ -27,6 +27,7 @@ mod pool;
 mod rate;
 mod rate_estimator;
 mod rate_limit;
+mod retry;
 mod transport;
 
 use std::error;
