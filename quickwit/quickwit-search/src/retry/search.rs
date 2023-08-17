@@ -58,7 +58,7 @@ mod tests {
         LeafSearchRequest, LeafSearchResponse, SearchRequest, SplitIdAndFooterOffsets,
         SplitSearchError,
     };
-    use quickwit_query::query_ast::qast_helper;
+    use quickwit_query::query_ast::qast_json_helper;
 
     use crate::retry::search::LeafSearchRetryPolicy;
     use crate::retry::RetryPolicy;
@@ -67,8 +67,8 @@ mod tests {
     fn mock_leaf_search_request() -> LeafSearchRequest {
         LeafSearchRequest {
             search_request: Some(SearchRequest {
-                index_id: "test-idx".to_string(),
-                query_ast: qast_helper("test", &["body"]),
+                index_id_patterns: vec!["test-idx".to_string()],
+                query_ast: qast_json_helper("test", &["body"]),
                 max_hits: 10,
                 ..Default::default()
             }),

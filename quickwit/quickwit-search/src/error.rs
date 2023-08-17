@@ -26,12 +26,12 @@ use tantivy::TantivyError;
 use thiserror::Error;
 use tokio::task::JoinError;
 
-/// Possible SearchError
+/// Possible SearchError.
 #[allow(missing_docs)]
 #[derive(Error, Debug, Serialize, Deserialize, Clone)]
 pub enum SearchError {
-    #[error("Index `{index_id}` does not exist.")]
-    IndexDoesNotExist { index_id: String },
+    #[error("Indexes IDs or index ID patterns `{index_id_patterns:?}` do not exist.")]
+    IndexesDoNotExist { index_id_patterns: Vec<String> },
     #[error("Internal error: `{0}`.")]
     InternalError(String),
     #[error("Storage not found: `{0}`)")]
@@ -47,7 +47,7 @@ pub enum SearchError {
 impl ServiceError for SearchError {
     fn status_code(&self) -> ServiceErrorCode {
         match self {
-            SearchError::IndexDoesNotExist { .. } => ServiceErrorCode::NotFound,
+            SearchError::IndexesDoNotExist { .. } => ServiceErrorCode::NotFound,
             SearchError::InternalError(_) => ServiceErrorCode::Internal,
             SearchError::StorageResolverError(_) => ServiceErrorCode::BadRequest,
             SearchError::InvalidQuery(_) => ServiceErrorCode::BadRequest,
@@ -102,9 +102,9 @@ impl From<QueryParserError> for SearchError {
 impl From<MetastoreError> for SearchError {
     fn from(metastore_error: MetastoreError) -> SearchError {
         match metastore_error {
-            MetastoreError::IndexDoesNotExist { index_id } => {
-                SearchError::IndexDoesNotExist { index_id }
-            }
+            MetastoreError::IndexesDoNotExist { index_ids } => SearchError::IndexesDoNotExist {
+                index_id_patterns: index_ids,
+            },
             _ => SearchError::InternalError(format!("{metastore_error}")),
         }
     }

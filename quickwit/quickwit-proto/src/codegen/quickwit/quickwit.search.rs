@@ -43,9 +43,9 @@ pub struct GetKvResponse {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SearchRequest {
-    /// Index ID
-    #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
+    /// Index ID patterns
+    #[prost(string, repeated, tag = "1")]
+    pub index_id_patterns: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     /// Json object representing Quickwit's QueryAst.
     #[prost(string, tag = "13")]
     pub query_ast: ::prost::alloc::string::String,
@@ -308,9 +308,6 @@ pub struct FetchDocsRequest {
     /// Request fetching the content of a given list of partial_hits.
     #[prost(message, repeated, tag = "1")]
     pub partial_hits: ::prost::alloc::vec::Vec<PartialHit>,
-    /// Index ID
-    #[prost(string, tag = "2")]
-    pub index_id: ::prost::alloc::string::String,
     /// Split footer offsets. They are required for fetch docs to
     /// fetch the document content in two reads, when the footer is not
     /// cached.

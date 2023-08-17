@@ -109,7 +109,7 @@ pub trait Metastore: Send + Sync + 'static {
     async fn index_exists(&self, index_id: &str) -> MetastoreResult<bool> {
         match self.index_metadata(index_id).await {
             Ok(_) => Ok(true),
-            Err(MetastoreError::IndexDoesNotExist { .. }) => Ok(false),
+            Err(MetastoreError::IndexesDoNotExist { .. }) => Ok(false),
             Err(error) => Err(error),
         }
     }
@@ -129,8 +129,8 @@ pub trait Metastore: Send + Sync + 'static {
         let index_metadata = self.index_metadata(index_uid.index_id()).await?;
 
         if index_metadata.index_uid != *index_uid {
-            return Err(MetastoreError::IndexDoesNotExist {
-                index_id: index_uid.index_id().to_string(),
+            return Err(MetastoreError::IndexesDoNotExist {
+                index_ids: vec![index_uid.index_id().to_string()],
             });
         }
         Ok(index_metadata)
@@ -140,7 +140,10 @@ pub trait Metastore: Send + Sync + 'static {
     ///
     /// This API lists the indexes stored in the metastore and returns a collection of
     /// [`IndexMetadata`].
-    async fn list_indexes_metadatas(&self) -> MetastoreResult<Vec<IndexMetadata>>;
+    async fn list_indexes_metadatas(
+        &self,
+        list_indexes_query: ListIndexesQuery,
+    ) -> MetastoreResult<Vec<IndexMetadata>>;
 
     /// Deletes an index.
     ///
@@ -309,11 +312,21 @@ pub trait Metastore: Send + Sync + 'static {
     ) -> MetastoreResult<Vec<DeleteTask>>;
 }
 
+/// Query builder for listing indexes within the metastore.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub enum ListIndexesQuery {
+    /// List of index ID patterns.
+    /// A pattern can contain the wildcard character `*`.
+    IndexIdPatterns(Vec<String>),
+    /// Matches all indexes.
+    All,
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 /// A query builder for listing splits within the metastore.
 pub struct ListSplitsQuery {
-    /// The index to get splits from.
-    pub index_uid: IndexUid,
+    /// A non empty list of index UIDs to get splits from.
+    pub index_uids: Vec<IndexUid>,
 
     /// The maximum number of splits to retrieve.
     pub limit: Option<usize>,
@@ -348,7 +361,7 @@ impl ListSplitsQuery {
     /// Creates a new [ListSplitsQuery] for a specific index.
     pub fn for_index(index_uid: IndexUid) -> Self {
         Self {
-            index_uid,
+            index_uids: vec![index_uid],
             limit: None,
             offset: None,
             split_states: Vec::new(),
@@ -359,6 +372,29 @@ impl ListSplitsQuery {
             create_timestamp: Default::default(),
             mature: Bound::Unbounded,
         }
+    }
+
+    /// Creates a new [ListSplitsQuery] from a non-empty list of index Uids.
+    /// Returns an error if the list of index uids is empty.
+    pub fn try_from_index_uids(index_uids: Vec<IndexUid>) -> MetastoreResult<Self> {
+        if index_uids.is_empty() {
+            return Err(MetastoreError::InternalError {
+                message: "ListSplitQuery should define at least one index uid.".to_string(),
+                cause: "".to_string(),
+            });
+        }
+        Ok(Self {
+            index_uids,
+            limit: None,
+            offset: None,
+            split_states: Vec::new(),
+            tags: None,
+            time_range: Default::default(),
+            delete_opstamp: Default::default(),
+            update_timestamp: Default::default(),
+            create_timestamp: Default::default(),
+            mature: Bound::Unbounded,
+        })
     }
 
     /// Sets the maximum number of splits to retrieve.

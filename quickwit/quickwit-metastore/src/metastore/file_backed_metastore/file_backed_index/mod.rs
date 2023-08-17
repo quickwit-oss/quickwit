@@ -88,7 +88,7 @@ impl quickwit_config::TestableForRegression for FileBackedIndex {
                 index_uid: "index:11111111111111111111111111".to_string(),
                 start_timestamp: None,
                 end_timestamp: None,
-                query_ast: quickwit_query::query_ast::qast_helper("Harry Potter", &["body"]),
+                query_ast: quickwit_query::query_ast::qast_json_helper("Harry Potter", &["body"]),
             }),
         };
         FileBackedIndex::new(index_metadata, splits, vec![delete_task])
@@ -315,14 +315,14 @@ impl FileBackedIndex {
     }
 
     /// Lists splits.
-    pub(crate) fn list_splits(&self, query: ListSplitsQuery) -> MetastoreResult<Vec<Split>> {
+    pub(crate) fn list_splits(&self, query: &ListSplitsQuery) -> MetastoreResult<Vec<Split>> {
         let limit = query.limit.unwrap_or(usize::MAX);
         let offset = query.offset.unwrap_or_default();
 
         let splits: Vec<Split> = self
             .splits
             .values()
-            .filter(|split| split_query_predicate(split, &query))
+            .filter(|split| split_query_predicate(split, query))
             .skip(offset)
             .take(limit)
             .cloned()

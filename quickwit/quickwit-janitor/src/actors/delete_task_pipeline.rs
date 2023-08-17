@@ -356,7 +356,7 @@ mod tests {
                 index_uid: index_uid.to_string(),
                 start_timestamp: None,
                 end_timestamp: None,
-                query_ast: quickwit_query::query_ast::qast_helper("body:delete", &[]),
+                query_ast: quickwit_query::query_ast::qast_json_helper("body:delete", &[]),
             })
             .await
             .unwrap();
@@ -365,8 +365,12 @@ mod tests {
         mock_search_service
             .expect_leaf_search()
             .withf(|leaf_request| -> bool {
-                leaf_request.search_request.as_ref().unwrap().index_id
-                    == "test-delete-pipeline-simple"
+                leaf_request
+                    .search_request
+                    .as_ref()
+                    .unwrap()
+                    .index_id_patterns
+                    == vec!["test-delete-pipeline-simple".to_string()]
             })
             .times(2)
             .returning(move |_: LeafSearchRequest| {
@@ -441,8 +445,12 @@ mod tests {
         mock_search_service
             .expect_leaf_search()
             .withf(|leaf_request| -> bool {
-                leaf_request.search_request.as_ref().unwrap().index_id
-                    == "test-delete-pipeline-shut-down"
+                leaf_request
+                    .search_request
+                    .as_ref()
+                    .unwrap()
+                    .index_id_patterns
+                    == vec!["test-delete-pipeline-shut-down".to_string()]
             })
             .returning(move |_: LeafSearchRequest| {
                 Ok(LeafSearchResponse {

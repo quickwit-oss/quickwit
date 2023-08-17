@@ -32,11 +32,13 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::future::try_join_all;
+use itertools::Itertools;
 use quickwit_common::uri::Uri;
-use quickwit_config::{IndexConfig, SourceConfig};
+use quickwit_config::{validate_index_id_pattern, IndexConfig, SourceConfig};
 use quickwit_proto::metastore::{DeleteQuery, DeleteTask};
 use quickwit_proto::IndexUid;
 use quickwit_storage::Storage;
+use regex::RegexSet;
 use tokio::sync::{Mutex, OwnedMutexGuard, RwLock};
 
 use self::file_backed_index::FileBackedIndex;
@@ -46,6 +48,7 @@ use self::store_operations::{
     check_indexes_states_exist, delete_index, fetch_index, fetch_or_init_indexes_states,
     index_exists, put_index, put_indexes_states,
 };
+use super::ListIndexesQuery;
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{
     IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, MetastoreResult, Split,
@@ -163,8 +166,8 @@ impl FileBackedMetastore {
         let index_id = index_uid.index_id();
         let mut locked_index = self.get_locked_index(index_id).await?;
         if locked_index.index_uid() != index_uid {
-            return Err(MetastoreError::IndexDoesNotExist {
-                index_id: index_id.to_string(),
+            return Err(MetastoreError::IndexesDoNotExist {
+                index_ids: vec![index_id.to_string()],
             });
         }
         let mut index = locked_index.clone();
@@ -212,8 +215,8 @@ impl FileBackedMetastore {
         if locked_index.index_uid() == index_uid {
             view(&locked_index)
         } else {
-            Err(MetastoreError::IndexDoesNotExist {
-                index_id: index_id.to_string(),
+            Err(MetastoreError::IndexesDoNotExist {
+                index_ids: vec![index_id.to_string()],
             })
         }
     }
@@ -377,8 +380,8 @@ impl Metastore for FileBackedMetastore {
         if !per_index_metastores_wlock.contains_key(index_id)
             && !index_exists(&*self.storage, index_id).await?
         {
-            return Err(MetastoreError::IndexDoesNotExist {
-                index_id: index_id.to_string(),
+            return Err(MetastoreError::IndexesDoNotExist {
+                index_ids: vec![index_id.to_string()],
             });
         }
 
@@ -402,7 +405,7 @@ impl Metastore for FileBackedMetastore {
             Ok(()) |
             // If the index file does not exist, we still need to return an error,
             // but it makes sense to ensure that the index state is removed.
-            Err(MetastoreError::IndexDoesNotExist { .. }) => {
+            Err(MetastoreError::IndexesDoNotExist { .. }) => {
                 per_index_metastores_wlock.remove(index_id);
                 if let Err(error) = put_indexes_states(&*self.storage, &per_index_metastores_wlock).await {
                     per_index_metastores_wlock.insert(index_id.to_string(), IndexState::Deleting);
@@ -546,9 +549,14 @@ impl Metastore for FileBackedMetastore {
     /// Read-only accessors
 
     async fn list_splits(&self, query: ListSplitsQuery) -> MetastoreResult<Vec<Split>> {
-        let query_clone = query.clone();
-        self.read(query.index_uid, |index| index.list_splits(query_clone))
-            .await
+        let mut splits = Vec::new();
+        for index_uid in query.index_uids.iter() {
+            let index_splits = self
+                .read(index_uid.clone(), |index| index.list_splits(&query))
+                .await?;
+            splits.extend(index_splits);
+        }
+        Ok(splits)
     }
 
     async fn index_metadata(&self, index_id: &str) -> MetastoreResult<IndexMetadata> {
@@ -556,12 +564,25 @@ impl Metastore for FileBackedMetastore {
             .await
     }
 
-    async fn list_indexes_metadatas(&self) -> MetastoreResult<Vec<IndexMetadata>> {
+    async fn list_indexes_metadatas(
+        &self,
+        query: ListIndexesQuery,
+    ) -> MetastoreResult<Vec<IndexMetadata>> {
         // Done in two steps:
         // 1) Get index IDs and release the lock on `per_index_metastores`.
         // 2) Get each index metadata. Note that each get will take a read lock on
         // `per_index_metastores`. Lock is released in 1) to let a concurrent task/thread to
         // take a write lock on `per_index_metastores`.
+        let index_matcher_result = match query {
+            ListIndexesQuery::IndexIdPatterns(patterns) => build_regex_set_from_patterns(patterns),
+            ListIndexesQuery::All => build_regex_set_from_patterns(vec!["*".to_string()]),
+        };
+        let index_matcher =
+            index_matcher_result.map_err(|error| MetastoreError::InternalError {
+                message: "Failed to build RegexSet from index patterns`".to_string(),
+                cause: error.to_string(),
+            })?;
+
         let index_ids: Vec<String> = {
             let per_index_metastores_rlock = self.per_index_metastores.read().await;
             per_index_metastores_rlock
@@ -570,6 +591,7 @@ impl Metastore for FileBackedMetastore {
                     IndexState::Alive(_) => Some(index_id),
                     _ => None,
                 })
+                .filter(|index_id| index_matcher.is_match(index_id))
                 .cloned()
                 .collect()
         };
@@ -577,7 +599,7 @@ impl Metastore for FileBackedMetastore {
             try_join_all(index_ids.iter().map(|index_id| async move {
                 match self.index_metadata(index_id).await {
                     Ok(index_metadata) => Ok(Some(index_metadata)),
-                    Err(MetastoreError::IndexDoesNotExist { index_id: _ }) => Ok(None),
+                    Err(MetastoreError::IndexesDoNotExist { index_ids: _ }) => Ok(None),
                     Err(MetastoreError::InternalError { message, cause }) => {
                         // Indexes can be in a transition state `Creating` or `Deleting`.
                         // This is fine to ignore them.
@@ -676,6 +698,34 @@ async fn get_index_mutex(
     }
 }
 
+/// Returns a [`RegexSet`] built from the following rules:
+/// - If the given pattern does not contain a `*` char, it matches the exact pattern.
+/// - If the given pattern contains one or more `*`, it matches the regex built from a regex where
+///   `*` is replaced by `.*`. All other regular expression meta characters are escaped.
+fn build_regex_set_from_patterns(patterns: Vec<String>) -> anyhow::Result<RegexSet> {
+    // If there is a match all pattern, no need to go further.
+    if patterns.iter().any(|pattern| pattern == "*") {
+        return Ok(RegexSet::new([".*".to_string()]).expect("Regex compilation shouldn't fail"));
+    }
+    let regexes: Vec<String> = patterns
+        .iter()
+        .map(|index_pattern| build_regex_exprs_from_pattern(index_pattern))
+        .try_collect()?;
+    let regex_set = RegexSet::new(regexes)?;
+    Ok(regex_set)
+}
+
+/// Converts the tokens into a valid regex.
+fn build_regex_exprs_from_pattern(index_pattern: &str) -> anyhow::Result<String> {
+    // Note: consecutive '*' are not allowed in the pattern.
+    validate_index_id_pattern(index_pattern)?;
+    let mut re: String = String::new();
+    re.push('^');
+    re.push_str(&index_pattern.split('*').map(regex::escape).join(".*"));
+    re.push('$');
+    Ok(re)
+}
+
 #[cfg(test)]
 #[async_trait]
 impl crate::tests::test_suite::DefaultForTest for FileBackedMetastore {
@@ -699,7 +749,7 @@ mod tests {
     use futures::executor::block_on;
     use quickwit_config::IndexConfig;
     use quickwit_proto::metastore::DeleteQuery;
-    use quickwit_query::query_ast::qast_helper;
+    use quickwit_query::query_ast::qast_json_helper;
     use quickwit_storage::{MockStorage, RamStorage, Storage, StorageErrorKind};
     use rand::Rng;
     use time::OffsetDateTime;
@@ -768,7 +818,10 @@ mod tests {
         );
 
         // Check index is returned by list indexes.
-        let indexes = metastore.list_indexes_metadatas().await.unwrap();
+        let indexes = metastore
+            .list_indexes_metadatas(ListIndexesQuery::All)
+            .await
+            .unwrap();
         assert_eq!(indexes.len(), 1);
 
         // Open a non-existent index.
@@ -778,7 +831,7 @@ mod tests {
             .unwrap_err();
         assert!(matches!(
             metastore_error,
-            MetastoreError::IndexDoesNotExist { .. }
+            MetastoreError::IndexesDoNotExist { .. }
         ));
 
         // Open a index with a different incarnation_id.
@@ -788,7 +841,7 @@ mod tests {
             .unwrap_err();
         assert!(matches!(
             metastore_error,
-            MetastoreError::IndexDoesNotExist { .. }
+            MetastoreError::IndexesDoNotExist { .. }
         ));
     }
 
@@ -1064,7 +1117,10 @@ mod tests {
             {
                 let metastore = metastore.clone();
                 let handle = tokio::spawn(async move {
-                    metastore.list_indexes_metadatas().await.unwrap();
+                    metastore
+                        .list_indexes_metadatas(ListIndexesQuery::All)
+                        .await
+                        .unwrap();
                 });
                 handles.push(handle);
             }
@@ -1120,7 +1176,7 @@ mod tests {
             .unwrap_err();
         assert!(matches!(
             created_index_error,
-            MetastoreError::IndexDoesNotExist { .. }
+            MetastoreError::IndexesDoNotExist { .. }
         ));
     }
 
@@ -1182,7 +1238,7 @@ mod tests {
         let deleted_index_error = metastore.delete_index(index_uid.clone()).await.unwrap_err();
         assert!(matches!(
             deleted_index_error,
-            MetastoreError::IndexDoesNotExist { .. }
+            MetastoreError::IndexesDoNotExist { .. }
         ));
         let index_states = fetch_or_init_indexes_states(Arc::new(ram_storage_clone_2), None)
             .await
@@ -1192,7 +1248,7 @@ mod tests {
         let created_index_error = metastore.get_index(index_uid).await.unwrap_err();
         assert!(matches!(
             created_index_error,
-            MetastoreError::IndexDoesNotExist { .. }
+            MetastoreError::IndexesDoNotExist { .. }
         ));
     }
 
@@ -1392,7 +1448,10 @@ mod tests {
         let metastore = FileBackedMetastore::try_new(ram_storage.clone(), None)
             .await
             .unwrap();
-        let indexes_metadatas = metastore.list_indexes_metadatas().await.unwrap();
+        let indexes_metadatas = metastore
+            .list_indexes_metadatas(ListIndexesQuery::All)
+            .await
+            .unwrap();
         assert_eq!(indexes_metadatas.len(), 1);
 
         // Fetch the index metadata not registered in indexes states json.
@@ -1403,7 +1462,10 @@ mod tests {
 
         // Now list indexes return 2 indexes metadatas as the metastore is now aware of
         // 2 alive indexes.
-        let indexes_metadatas = metastore.list_indexes_metadatas().await.unwrap();
+        let indexes_metadatas = metastore
+            .list_indexes_metadatas(ListIndexesQuery::All)
+            .await
+            .unwrap();
         assert_eq!(indexes_metadatas.len(), 2);
 
         // Let's delete indexes.
@@ -1412,7 +1474,10 @@ mod tests {
             .delete_index(index_uid_unregistered)
             .await
             .unwrap();
-        let no_more_indexes = metastore.list_indexes_metadatas().await.unwrap();
+        let no_more_indexes = metastore
+            .list_indexes_metadatas(ListIndexesQuery::All)
+            .await
+            .unwrap();
         assert!(no_more_indexes.is_empty());
 
         Ok(())
@@ -1434,7 +1499,7 @@ mod tests {
             start_timestamp: None,
             end_timestamp: None,
             index_uid: index_uid.to_string(),
-            query_ast: qast_helper("harry potter", &["body"]),
+            query_ast: qast_json_helper("harry potter", &["body"]),
         };
 
         let delete_task_1 = metastore
@@ -1469,12 +1534,68 @@ mod tests {
             start_timestamp: None,
             end_timestamp: None,
             index_uid: index_uid.to_string(),
-            query_ast: qast_helper("harry potter", &["body"]),
+            query_ast: qast_json_helper("harry potter", &["body"]),
         };
         let delete_task_4 = metastore
             .create_delete_task(delete_query.clone())
             .await
             .unwrap();
         assert_eq!(delete_task_4.opstamp, 1);
+    }
+    #[test]
+    fn test_build_regexes_from_pattern() {
+        assert_eq!(build_regex_exprs_from_pattern("*").unwrap(), r"^.*$",);
+        assert_eq!(
+            build_regex_exprs_from_pattern("index-1").unwrap(),
+            r"^index\-1$",
+        );
+        assert_eq!(
+            build_regex_exprs_from_pattern("*-index-*-1").unwrap(),
+            r"^.*\-index\-.*\-1$",
+        );
+        assert_eq!(
+            build_regex_exprs_from_pattern("INDEX.2*-1").unwrap(),
+            r"^INDEX\.2.*\-1$",
+        );
+        // Tests with invalid pattern.
+        assert_eq!(
+            &build_regex_exprs_from_pattern("index-**-1")
+                .unwrap_err()
+                .to_string(),
+            "Index ID pattern `index-**-1` is invalid. Patterns must not contain multiple \
+             consecutive `*`.",
+        );
+        assert!(build_regex_exprs_from_pattern("-index-1").is_err());
+    }
+
+    #[test]
+    fn test_index_ids_patterns_matcher() {
+        {
+            let matcher = build_regex_set_from_patterns(vec![
+                "index-1".to_string(),
+                "index-2".to_string(),
+                "*-index-pattern-1-*".to_string(),
+                "*.index.pattern.*.2-*".to_string(),
+            ])
+            .unwrap();
+
+            assert!(matcher.is_match("index-1"));
+            assert!(matcher.is_match("index-2"));
+            assert!(matcher.is_match("abc-index-pattern-1-1"));
+            assert!(matcher.is_match("def-index-pattern-1-2"));
+            assert!(matcher.is_match("ghi.index.pattern.1.2-1"));
+            assert!(matcher.is_match("jkl.index.pattern.1.2-bignumber"));
+            assert!(!matcher.is_match("index-3"));
+            assert!(!matcher.is_match("index.pattern.1.2-1"));
+        }
+        {
+            let matcher =
+                build_regex_set_from_patterns(vec!["index-1".to_string(), "*".to_string()])
+                    .unwrap();
+
+            assert!(matcher.is_match("index-1"));
+            assert!(matcher.is_match("index-2"));
+            assert!(matcher.is_match("abc-index-pattern-1-1"));
+        }
     }
 }

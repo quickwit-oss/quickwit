@@ -23,6 +23,7 @@ use bytes::Bytes;
 use futures::{StreamExt, TryStreamExt};
 use quickwit_common::uri::Uri;
 use quickwit_config::build_doc_mapper;
+use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
 use quickwit_metastore::Metastore;
 use quickwit_proto::search::{LeafSearchStreamRequest, SearchRequest, SearchStreamRequest};
 use quickwit_query::query_ast::QueryAst;
@@ -57,6 +58,7 @@ pub async fn root_search_stream(
     let query_ast: QueryAst = serde_json::from_str(&search_stream_request.query_ast)
         .map_err(|err| SearchError::InvalidQuery(err.to_string()))?;
     let query_ast_resolved = query_ast.parse_user_query(doc_mapper.default_search_fields())?;
+    let tags_filter_ast = extract_tags_from_query(query_ast_resolved.clone());
 
     if let Some(timestamp_field) = doc_mapper.timestamp_field_name() {
         refine_start_end_timestamp_from_ast(
@@ -72,7 +74,14 @@ pub async fn root_search_stream(
     search_stream_request.query_ast = serde_json::to_string(&query_ast_resolved)?;
 
     let search_request = SearchRequest::try_from(search_stream_request.clone())?;
-    let split_metadatas = list_relevant_splits(index_uid, &search_request, metastore).await?;
+    let split_metadatas = list_relevant_splits(
+        vec![index_uid],
+        search_request.start_timestamp,
+        search_request.end_timestamp,
+        tags_filter_ast,
+        metastore,
+    )
+    .await?;
 
     let doc_mapper_str = serde_json::to_string(&doc_mapper).map_err(|err| {
         SearchError::InternalError(format!("Failed to serialize doc mapper: Cause {err}"))
@@ -120,10 +129,10 @@ fn jobs_to_leaf_request(
 #[cfg(test)]
 mod tests {
 
-    use quickwit_indexing::mock_split;
+    use quickwit_indexing::MockSplitBuilder;
     use quickwit_metastore::{IndexMetadata, MockMetastore};
     use quickwit_proto::search::OutputFormat;
-    use quickwit_query::query_ast::qast_helper;
+    use quickwit_query::query_ast::qast_json_helper;
     use tokio_stream::wrappers::UnboundedReceiverStream;
 
     use super::*;
@@ -133,23 +142,22 @@ mod tests {
     async fn test_root_search_stream_single_split() -> anyhow::Result<()> {
         let request = quickwit_proto::search::SearchStreamRequest {
             index_id: "test-index".to_string(),
-            query_ast: qast_helper("test", &["body"]),
+            query_ast: qast_json_helper("test", &["body"]),
             fast_field: "timestamp".to_string(),
             output_format: OutputFormat::Csv as i32,
             ..Default::default()
         };
         let mut metastore = MockMetastore::new();
+        let index_metadata = IndexMetadata::for_test("test-index", "ram:///test-index");
+        let index_uid = index_metadata.index_uid.clone();
         metastore
             .expect_index_metadata()
-            .returning(|_index_id: &str| {
-                Ok(IndexMetadata::for_test(
-                    "test-index",
-                    "ram:///indexes/test-index",
-                ))
-            });
-        metastore
-            .expect_list_splits()
-            .returning(|_filter| Ok(vec![mock_split("split1")]));
+            .returning(move |_index_id: &str| Ok(index_metadata.clone()));
+        metastore.expect_list_splits().returning(move |_filter| {
+            Ok(vec![MockSplitBuilder::new("split1")
+                .with_index_uid(&index_uid)
+                .build()])
+        });
         let mut mock_search_service = MockSearchService::new();
         let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
         result_sender.send(Ok(quickwit_proto::search::LeafSearchStreamResponse {
@@ -185,24 +193,23 @@ mod tests {
     async fn test_root_search_stream_single_split_partitionned() -> anyhow::Result<()> {
         let request = quickwit_proto::search::SearchStreamRequest {
             index_id: "test-index".to_string(),
-            query_ast: qast_helper("test", &["body"]),
+            query_ast: qast_json_helper("test", &["body"]),
             fast_field: "timestamp".to_string(),
             output_format: OutputFormat::Csv as i32,
             partition_by_field: Some("timestamp".to_string()),
             ..Default::default()
         };
         let mut metastore = MockMetastore::new();
+        let index_metadata = IndexMetadata::for_test("test-index", "ram:///test-index");
+        let index_uid = index_metadata.index_uid.clone();
         metastore
             .expect_index_metadata()
-            .returning(|_index_id: &str| {
-                Ok(IndexMetadata::for_test(
-                    "test-index",
-                    "ram:///indexes/test-index",
-                ))
-            });
-        metastore
-            .expect_list_splits()
-            .returning(|_filter| Ok(vec![mock_split("split1")]));
+            .returning(move |_index_id: &str| Ok(index_metadata.clone()));
+        metastore.expect_list_splits().returning(move |_filter| {
+            Ok(vec![MockSplitBuilder::new("split1")
+                .with_index_uid(&index_uid)
+                .build()])
+        });
         let mut mock_search_service = MockSearchService::new();
         let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
         result_sender.send(Ok(quickwit_proto::search::LeafSearchStreamResponse {
@@ -236,23 +243,27 @@ mod tests {
     async fn test_root_search_stream_single_split_with_error() -> anyhow::Result<()> {
         let request = quickwit_proto::search::SearchStreamRequest {
             index_id: "test-index".to_string(),
-            query_ast: qast_helper("test", &["body"]),
+            query_ast: qast_json_helper("test", &["body"]),
             fast_field: "timestamp".to_string(),
             output_format: OutputFormat::Csv as i32,
             ..Default::default()
         };
         let mut metastore = MockMetastore::new();
+        let index_metadata = IndexMetadata::for_test("test-index", "ram:///test-index");
+        let index_uid = index_metadata.index_uid.clone();
         metastore
             .expect_index_metadata()
-            .returning(|_index_id: &str| {
-                Ok(IndexMetadata::for_test(
-                    "test-index",
-                    "ram:///indexes/test-index",
-                ))
-            });
-        metastore
-            .expect_list_splits()
-            .returning(|_filter| Ok(vec![mock_split("split1"), mock_split("split2")]));
+            .returning(move |_index_id: &str| Ok(index_metadata.clone()));
+        metastore.expect_list_splits().returning(move |_filter| {
+            Ok(vec![
+                MockSplitBuilder::new("split1")
+                    .with_index_uid(&index_uid)
+                    .build(),
+                MockSplitBuilder::new("split2")
+                    .with_index_uid(&index_uid)
+                    .build(),
+            ])
+        });
         let mut mock_search_service = MockSearchService::new();
         let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
         result_sender.send(Ok(quickwit_proto::search::LeafSearchStreamResponse {
@@ -292,17 +303,16 @@ mod tests {
     #[tokio::test]
     async fn test_root_search_stream_with_invalid_query() -> anyhow::Result<()> {
         let mut metastore = MockMetastore::new();
+        let index_metadata = IndexMetadata::for_test("test-index", "ram:///test-index");
+        let index_uid = index_metadata.index_uid.clone();
         metastore
             .expect_index_metadata()
-            .returning(|_index_id: &str| {
-                Ok(IndexMetadata::for_test(
-                    "test-index",
-                    "ram:///indexes/test-index",
-                ))
-            });
-        metastore
-            .expect_list_splits()
-            .returning(|_filter| Ok(vec![mock_split("split")]));
+            .returning(move |_index_id: &str| Ok(index_metadata.clone()));
+        metastore.expect_list_splits().returning(move |_filter| {
+            Ok(vec![MockSplitBuilder::new("split")
+                .with_index_uid(&index_uid)
+                .build()])
+        });
 
         let searcher_pool = searcher_pool_for_test([("127.0.0.1:1001", MockSearchService::new())]);
         let search_job_placer = SearchJobPlacer::new(searcher_pool);
@@ -310,7 +320,7 @@ mod tests {
         assert!(root_search_stream(
             quickwit_proto::search::SearchStreamRequest {
                 index_id: "test-index".to_string(),
-                query_ast: qast_helper(r#"invalid_field:"test""#, &[]),
+                query_ast: qast_json_helper(r#"invalid_field:"test""#, &[]),
                 fast_field: "timestamp".to_string(),
                 output_format: OutputFormat::Csv as i32,
                 partition_by_field: Some("timestamp".to_string()),
@@ -325,7 +335,7 @@ mod tests {
         assert!(root_search_stream(
             quickwit_proto::search::SearchStreamRequest {
                 index_id: "test-index".to_string(),
-                query_ast: qast_helper("test", &["invalid_field"]),
+                query_ast: qast_json_helper("test", &["invalid_field"]),
                 fast_field: "timestamp".to_string(),
                 output_format: OutputFormat::Csv as i32,
                 partition_by_field: Some("timestamp".to_string()),

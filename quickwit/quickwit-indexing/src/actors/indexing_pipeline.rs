@@ -504,7 +504,7 @@ impl Handler<Spawn> for IndexingPipeline {
         }
         self.previous_generations_statistics.num_spawn_attempts = 1 + spawn.retry_count;
         if let Err(spawn_error) = self.spawn_pipeline(ctx).await {
-            if let Some(MetastoreError::IndexDoesNotExist { .. }) =
+            if let Some(MetastoreError::IndexesDoNotExist { .. }) =
                 spawn_error.downcast_ref::<MetastoreError>()
             {
                 info!(error = ?spawn_error, "Could not spawn pipeline, index might have been deleted.");

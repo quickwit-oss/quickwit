@@ -460,7 +460,7 @@ mod tests {
     use itertools::Itertools;
     use quickwit_config::SearcherConfig;
     use quickwit_indexing::TestSandbox;
-    use quickwit_query::query_ast::qast_helper;
+    use quickwit_query::query_ast::qast_json_helper;
     use serde_json::json;
     use tantivy::time::{Duration, OffsetDateTime};
 
@@ -497,7 +497,7 @@ mod tests {
 
         let request = SearchStreamRequest {
             index_id: index_id.to_string(),
-            query_ast: qast_helper("info", &["body"]),
+            query_ast: qast_json_helper("info", &["body"]),
             snippet_fields: Vec::new(),
             start_timestamp: None,
             end_timestamp: Some(end_timestamp),
@@ -573,7 +573,7 @@ mod tests {
             .unix_timestamp();
         let request = SearchStreamRequest {
             index_id: index_id.to_string(),
-            query_ast: qast_helper("info", &["body"]),
+            query_ast: qast_json_helper("info", &["body"]),
             snippet_fields: Vec::new(),
             start_timestamp: None,
             end_timestamp: Some(end_timestamp),
@@ -628,7 +628,7 @@ mod tests {
 
         let request = SearchStreamRequest {
             index_id: index_id.to_string(),
-            query_ast: qast_helper("info", &["body"]),
+            query_ast: qast_json_helper("info", &["body"]),
             snippet_fields: Vec::new(),
             start_timestamp: None,
             end_timestamp: None,
@@ -716,7 +716,7 @@ mod tests {
 
         let request = SearchStreamRequest {
             index_id: index_id.to_string(),
-            query_ast: qast_helper("info", &["body"]),
+            query_ast: qast_json_helper("info", &["body"]),
             snippet_fields: Vec::new(),
             start_timestamp: None,
             end_timestamp: Some(end_timestamp),

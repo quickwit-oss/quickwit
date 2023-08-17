@@ -272,15 +272,19 @@ fn parse_user_query_in_asts(
 /// # Panics
 ///
 /// Panics if the user text is invalid.
-pub fn qast_helper(user_text: &str, default_fields: &[&'static str]) -> String {
+pub fn qast_json_helper(user_text: &str, default_fields: &[&'static str]) -> String {
+    let ast = qast_helper(user_text, default_fields);
+    serde_json::to_string(&ast).expect("The query AST should be JSON serializable.")
+}
+
+pub fn qast_helper(user_text: &str, default_fields: &[&'static str]) -> QueryAst {
     let default_fields: Vec<String> = default_fields
         .iter()
         .map(|default_field| default_field.to_string())
         .collect();
-    let ast: QueryAst = query_ast_from_user_text(user_text, Some(default_fields))
+    query_ast_from_user_text(user_text, Some(default_fields))
         .parse_user_query(&[])
-        .expect("The user query should be valid.");
-    serde_json::to_string(&ast).expect("The query AST should be JSON serializable.")
+        .expect("The user query should be valid.")
 }
 
 /// Creates a QueryAST with a single UserInputQuery node.

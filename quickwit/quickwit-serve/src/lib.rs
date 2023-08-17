@@ -75,8 +75,8 @@ use quickwit_ingest::{
 };
 use quickwit_janitor::{start_janitor_service, JanitorService};
 use quickwit_metastore::{
-    Metastore, MetastoreError, MetastoreEvent, MetastoreEventPublisher, MetastoreGrpcClient,
-    MetastoreResolver, RetryingMetastore,
+    ListIndexesQuery, Metastore, MetastoreError, MetastoreEvent, MetastoreEventPublisher,
+    MetastoreGrpcClient, MetastoreResolver, RetryingMetastore,
 };
 use quickwit_opentelemetry::otlp::{OtlpGrpcLogsService, OtlpGrpcTracesService};
 use quickwit_proto::control_plane::ControlPlaneServiceClient;
@@ -693,7 +693,7 @@ async fn check_cluster_configuration(
         );
     }
     let file_backed_indexes = metastore
-        .list_indexes_metadatas()
+        .list_indexes_metadatas(ListIndexesQuery::All)
         .await?
         .into_iter()
         .filter(|index_metadata| index_metadata.index_uri().protocol().is_file_storage())
@@ -721,7 +721,7 @@ mod tests {
     use chitchat::transport::ChannelTransport;
     use quickwit_cluster::{create_cluster_for_test, ClusterNode};
     use quickwit_common::uri::Uri;
-    use quickwit_metastore::{metastore_for_test, IndexMetadata, MockMetastore};
+    use quickwit_metastore::{metastore_for_test, IndexMetadata, ListIndexesQuery, MockMetastore};
     use quickwit_proto::indexing::IndexingTask;
     use quickwit_search::Job;
     use tokio::sync::{mpsc, watch};
@@ -739,12 +739,14 @@ mod tests {
             .expect_uri()
             .return_const(Uri::for_test("file:///qwdata/indexes"));
 
-        metastore.expect_list_indexes_metadatas().return_once(|| {
-            Ok(vec![IndexMetadata::for_test(
-                "test-index",
-                "file:///qwdata/indexes/test-index",
-            )])
-        });
+        metastore.expect_list_indexes_metadatas().return_once(
+            |_list_indexes_query: ListIndexesQuery| {
+                Ok(vec![IndexMetadata::for_test(
+                    "test-index",
+                    "file:///qwdata/indexes/test-index",
+                )])
+            },
+        );
 
         check_cluster_configuration(&services, &peer_seeds, Arc::new(metastore))
             .await

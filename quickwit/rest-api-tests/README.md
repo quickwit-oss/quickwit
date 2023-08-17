@@ -1,8 +1,8 @@
 # Rest API tests
 
 This directory is meant to test quickwit at the Rest API level.
-It was originally meant to iterate over the elastic search compatibility API,
-but can also be used as a convenient way to create integration tests.
+It was initially meant to iterate over the elastic search compatibility API,
+but it can also be used as a convenient way to create integration tests.
 
 # Setting up the Python environment
 
@@ -25,19 +25,21 @@ pipenv install
 
 The test script is meant to target `elasticsearch` and `quickwit`.
 
-When targetting quickwit, the script expects a fresh quickwit instance
-to be running on `http://localhost:7280`. The data involved is small and
+When targeting quickwit, the script expects a fresh quickwit instance
+running on `http://localhost:7280`. The data involved is small, and
 running in DEBUG mode is fine.
 
-```./rest_api_test.py --engine quickwit```
+```bash
+./run_tests.py --engine quickwit
+```
 
-When targetting elasticsearch, the script expects elastic to be running on
+When targeting elasticsearch, the script expects elastic to be running on
 `http://localhost:9200`.
 
-In both case, the test will take care of setting up, ingesting and tearing down the
+In both cases, the test will take care of setting up, ingesting and tearing down the
 indexes involved.
 
-```./rest_api_test.py --engine elasticsearch```
+```./run_tests.py --engine elasticsearch```
 
 # Writing a new test suite
 

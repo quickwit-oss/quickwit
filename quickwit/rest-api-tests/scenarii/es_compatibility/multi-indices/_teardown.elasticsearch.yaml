@@ -1,0 +1,5 @@
+method: DELETE
+endpoint: gharchive-1
+---
+method: DELETE
+endpoint: gharchive-2

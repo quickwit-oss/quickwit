@@ -29,7 +29,7 @@ use quickwit_actors::{Actor, ActorContext, Handler};
 // use quickwit_index_management::run_garbage_collect;
 use quickwit_common::shared_consts::DELETION_GRACE_PERIOD;
 use quickwit_index_management::run_garbage_collect;
-use quickwit_metastore::Metastore;
+use quickwit_metastore::{ListIndexesQuery, Metastore};
 use quickwit_storage::StorageResolver;
 use serde::Serialize;
 use tracing::{error, info};
@@ -86,7 +86,11 @@ impl GarbageCollector {
         info!("garbage-collect-operation");
         self.counters.num_passes += 1;
 
-        let indexes = match self.metastore.list_indexes_metadatas().await {
+        let indexes = match self
+            .metastore
+            .list_indexes_metadatas(ListIndexesQuery::All)
+            .await
+        {
             Ok(metadatas) => metadatas,
             Err(error) => {
                 error!(error=?error, "Failed to list indexes from the metastore.");
@@ -254,7 +258,7 @@ mod tests {
             .times(2)
             .returning(|query: ListSplitsQuery| {
                 assert_eq!(
-                    query.index_uid.to_string(),
+                    query.index_uids[0].to_string(),
                     "test-index:11111111111111111111111111"
                 );
                 let splits = match query.split_states[0] {
@@ -327,7 +331,7 @@ mod tests {
         mock_metastore
             .expect_list_indexes_metadatas()
             .times(1)
-            .returning(|| {
+            .returning(move |_list_indexes_query: ListIndexesQuery| {
                 Ok(vec![IndexMetadata::for_test(
                     "test-index",
                     "ram://indexes/test-index",
@@ -337,7 +341,7 @@ mod tests {
             .expect_list_splits()
             .times(2)
             .returning(|query| {
-                assert_eq!(query.index_uid.index_id(), "test-index");
+                assert_eq!(query.index_uids[0].index_id(), "test-index");
                 let splits = match query.split_states[0] {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
                     SplitState::MarkedForDeletion => {
@@ -388,7 +392,7 @@ mod tests {
         mock_metastore
             .expect_list_indexes_metadatas()
             .times(3)
-            .returning(|| {
+            .returning(move |_list_indexes_query: ListIndexesQuery| {
                 Ok(vec![IndexMetadata::for_test(
                     "test-index",
                     "ram://indexes/test-index",
@@ -398,7 +402,7 @@ mod tests {
             .expect_list_splits()
             .times(6)
             .returning(|query| {
-                assert_eq!(query.index_uid.index_id(), "test-index");
+                assert_eq!(query.index_uids[0].index_id(), "test-index");
                 let splits = match query.split_states[0] {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
                     SplitState::MarkedForDeletion => {
@@ -474,7 +478,7 @@ mod tests {
         mock_metastore
             .expect_list_indexes_metadatas()
             .times(4)
-            .returning(|| {
+            .returning(move |_list_indexes_query: ListIndexesQuery| {
                 Err(MetastoreError::DbError {
                     message: "Fail to list indexes.".to_string(),
                 })
@@ -505,7 +509,7 @@ mod tests {
         mock_metastore
             .expect_list_indexes_metadatas()
             .times(1)
-            .returning(|| {
+            .returning(move |_list_indexes_query: ListIndexesQuery| {
                 Ok(vec![IndexMetadata::for_test(
                     "test-index",
                     "postgresql://indexes/test-index",
@@ -535,7 +539,7 @@ mod tests {
         mock_metastore
             .expect_list_indexes_metadatas()
             .times(1)
-            .returning(|| {
+            .returning(move |_list_indexes_query: ListIndexesQuery| {
                 Ok(vec![
                     IndexMetadata::for_test("test-index-1", "ram:///indexes/test-index-1"),
                     IndexMetadata::for_test("test-index-2", "ram:///indexes/test-index-2"),
@@ -545,9 +549,9 @@ mod tests {
             .expect_list_splits()
             .times(3)
             .returning(|query| {
-                assert!(["test-index-1", "test-index-2"].contains(&query.index_uid.index_id()));
+                assert!(["test-index-1", "test-index-2"].contains(&query.index_uids[0].index_id()));
 
-                if query.index_uid.index_id() == "test-index-2" {
+                if query.index_uids[0].index_id() == "test-index-2" {
                     return Err(MetastoreError::DbError {
                         message: "fail to delete".to_string(),
                     });
@@ -604,7 +608,7 @@ mod tests {
         mock_metastore
             .expect_list_indexes_metadatas()
             .times(1)
-            .returning(|| {
+            .returning(move |_list_indexes_query: ListIndexesQuery| {
                 Ok(vec![
                     IndexMetadata::for_test("test-index-1", "ram://indexes/test-index-1"),
                     IndexMetadata::for_test("test-index-2", "ram://indexes/test-index-2"),
@@ -614,7 +618,7 @@ mod tests {
             .expect_list_splits()
             .times(4)
             .returning(|query| {
-                assert!(["test-index-1", "test-index-2"].contains(&query.index_uid.index_id()));
+                assert!(["test-index-1", "test-index-2"].contains(&query.index_uids[0].index_id()));
                 let splits = match query.split_states[0] {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
                     SplitState::MarkedForDeletion => {

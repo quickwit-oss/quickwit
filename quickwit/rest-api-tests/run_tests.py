@@ -83,8 +83,6 @@ def resolve_previous_result(c, previous_result):
         ]
     return c
 
-print(resolve_previous_result({"hello": {"$previous": "val[\"scroll_id\"]"}}, {"scroll_id": "123"}))
-
 def run_request_step(method, step, previous_result):
     assert method in {"GET", "POST", "PUT", "DELETE"}
     if "headers" not in step:
@@ -104,7 +102,8 @@ def run_request_step(method, step, previous_result):
     kvargs = resolve_previous_result(kvargs, previous_result)
     ndjson = step.get("ndjson", None)
     if ndjson is not None:
-        kvargs["data"] = "\n".join([json.dumps(doc) for doc in ndjson])
+        # Add a newline at the end to please elasticsearch -> "The bulk request must be terminated by a newline [\\n]".
+        kvargs["data"] = "\n".join([json.dumps(doc) for doc in ndjson]) + "\n"
         kvargs.setdefault("headers")["Content-Type"] = "application/json"
     expected_status_code = step.get("status_code", 200)
     num_retries = step.get("num_retries", 0)

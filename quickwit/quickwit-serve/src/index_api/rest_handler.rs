@@ -29,7 +29,8 @@ use quickwit_config::{
 use quickwit_doc_mapper::{analyze_text, TokenizerConfig};
 use quickwit_index_management::{IndexService, IndexServiceError};
 use quickwit_metastore::{
-    IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, Split, SplitInfo, SplitState,
+    IndexMetadata, ListIndexesQuery, ListSplitsQuery, Metastore, MetastoreError, Split, SplitInfo,
+    SplitState,
 };
 use quickwit_proto::IndexUid;
 use serde::de::DeserializeOwned;
@@ -373,7 +374,9 @@ async fn get_indexes_metadatas(
     metastore: Arc<dyn Metastore>,
 ) -> Result<Vec<IndexMetadata>, MetastoreError> {
     info!("get-indexes-metadatas");
-    metastore.list_indexes_metadatas().await
+    metastore
+        .list_indexes_metadatas(ListIndexesQuery::All)
+        .await
 }
 
 #[derive(Deserialize, utoipa::IntoParams, utoipa::ToSchema)]
@@ -768,8 +771,10 @@ mod tests {
     use assert_json_diff::assert_json_include;
     use quickwit_common::uri::Uri;
     use quickwit_config::{SourceParams, VecSourceParams};
-    use quickwit_indexing::mock_split;
-    use quickwit_metastore::{metastore_for_test, IndexMetadata, MetastoreError, MockMetastore};
+    use quickwit_indexing::{mock_split, MockSplitBuilder};
+    use quickwit_metastore::{
+        metastore_for_test, IndexMetadata, ListIndexesQuery, MetastoreError, MockMetastore,
+    };
     use quickwit_storage::StorageResolver;
     use serde::__private::from_utf8_lossy;
     use serde_json::Value as JsonValue;
@@ -830,26 +835,26 @@ mod tests {
     #[tokio::test]
     async fn test_get_splits() {
         let mut metastore = MockMetastore::new();
+        let index_metadata =
+            IndexMetadata::for_test("quickwit-demo-index", "ram:///indexes/quickwit-demo-index");
+        let index_uid = index_metadata.index_uid.clone();
         metastore
             .expect_index_metadata()
-            .returning(|_index_id: &str| {
-                Ok(IndexMetadata::for_test(
-                    "quickwit-demo-index",
-                    "ram:///indexes/quickwit-demo-index",
-                ))
-            })
+            .returning(move |_index_id: &str| Ok(index_metadata.clone()))
             .times(2);
         metastore
             .expect_list_splits()
-            .returning(|list_split_query: ListSplitsQuery| {
-                if list_split_query.index_uid.index_id() == "quickwit-demo-index"
+            .returning(move |list_split_query: ListSplitsQuery| {
+                if list_split_query.index_uids.contains(&index_uid)
                     && list_split_query.split_states
                         == vec![SplitState::Published, SplitState::Staged]
                     && list_split_query.time_range.start == Bound::Included(10)
                     && list_split_query.time_range.end == Bound::Excluded(20)
                     && list_split_query.create_timestamp.end == Bound::Excluded(2)
                 {
-                    return Ok(vec![mock_split("split_1")]);
+                    return Ok(vec![MockSplitBuilder::new("split_1")
+                        .with_index_uid(&index_uid)
+                        .build()]);
                 }
                 Err(MetastoreError::InternalError {
                     message: "".to_string(),
@@ -897,25 +902,27 @@ mod tests {
     #[tokio::test]
     async fn test_describe_index() -> anyhow::Result<()> {
         let mut metastore = MockMetastore::new();
+        let index_metadata =
+            IndexMetadata::for_test("quickwit-demo-index", "ram:///indexes/quickwit-demo-index");
+        let index_uid = index_metadata.index_uid.clone();
         metastore
             .expect_index_metadata()
-            .return_once(|_index_id: &str| {
-                Ok(IndexMetadata::for_test(
-                    "test-index",
-                    "ram:///indexes/test-index",
-                ))
-            });
-        let split_1 = mock_split("split_1");
+            .return_once(move |_index_id: &str| Ok(index_metadata));
+        let split_1 = MockSplitBuilder::new("split_1")
+            .with_index_uid(&index_uid)
+            .build();
         let split_1_time_range = split_1.split_metadata.time_range.clone().unwrap();
-        let mut split_2 = mock_split("split_2");
+        let mut split_2 = MockSplitBuilder::new("split_2")
+            .with_index_uid(&index_uid)
+            .build();
         split_2.split_metadata.time_range = Some(RangeInclusive::new(
             split_1_time_range.start() - 10,
             split_1_time_range.end() + 10,
         ));
         metastore
             .expect_list_splits()
-            .return_once(|list_split_query: ListSplitsQuery| {
-                if list_split_query.index_uid.index_id() == "test-index" {
+            .return_once(move |list_split_query: ListSplitsQuery| {
+                if list_split_query.index_uids.contains(&index_uid) {
                     return Ok(vec![split_1, split_2]);
                 }
                 Err(MetastoreError::InternalError {
@@ -931,15 +938,15 @@ mod tests {
         )
         .recover(recover_fn);
         let resp = warp::test::request()
-            .path("/indexes/test-index/describe")
+            .path("/indexes/quickwit-demo-index/describe")
             .reply(&index_management_handler)
             .await;
         assert_eq!(resp.status(), 200);
 
         let actual_response_json: JsonValue = serde_json::from_slice(resp.body()).unwrap();
         let expected_response_json = serde_json::json!({
-            "index_id": "test-index",
-            "index_uri": "ram:///indexes/test-index",
+            "index_id": "quickwit-demo-index",
+            "index_uri": "ram:///indexes/quickwit-demo-index",
             "num_published_splits": 2,
             "size_published_splits": 1600,
             "num_published_docs": 20,
@@ -956,18 +963,16 @@ mod tests {
     #[tokio::test]
     async fn test_get_all_splits() {
         let mut metastore = MockMetastore::new();
+        let index_metadata =
+            IndexMetadata::for_test("quickwit-demo-index", "ram:///indexes/quickwit-demo-index");
+        let index_uid = index_metadata.index_uid.clone();
         metastore
             .expect_index_metadata()
-            .return_once(|_index_id: &str| {
-                Ok(IndexMetadata::for_test(
-                    "quickwit-demo-index",
-                    "ram:///indexes/quickwit-demo-index",
-                ))
-            });
+            .return_once(move |_index_id: &str| Ok(index_metadata));
         metastore
             .expect_list_splits()
-            .return_once(|list_split_query: ListSplitsQuery| {
-                if list_split_query.index_uid.index_id() == "quickwit-demo-index"
+            .return_once(move |list_split_query: ListSplitsQuery| {
+                if list_split_query.index_uids.contains(&index_uid)
                     && list_split_query.split_states.is_empty()
                     && list_split_query.time_range.is_unbounded()
                     && list_split_query.create_timestamp.is_unbounded()
@@ -1046,12 +1051,14 @@ mod tests {
     #[tokio::test]
     async fn test_get_list_indexes() -> anyhow::Result<()> {
         let mut metastore = MockMetastore::new();
-        metastore.expect_list_indexes_metadatas().return_once(|| {
-            Ok(vec![IndexMetadata::for_test(
-                "test-index",
-                "ram:///indexes/test-index",
-            )])
-        });
+        metastore.expect_list_indexes_metadatas().return_once(
+            |_list_indexes_query: ListIndexesQuery| {
+                Ok(vec![IndexMetadata::for_test(
+                    "test-index",
+                    "ram:///indexes/test-index",
+                )])
+            },
+        );
         let index_service = IndexService::new(Arc::new(metastore), StorageResolver::unconfigured());
         let index_management_handler = super::index_management_handlers(
             Arc::new(index_service),
@@ -1343,7 +1350,10 @@ mod tests {
             .reply(&index_management_handler)
             .await;
         assert_eq!(resp.status(), 200);
-        let indexes = metastore.list_indexes_metadatas().await.unwrap();
+        let indexes = metastore
+            .list_indexes_metadatas(ListIndexesQuery::All)
+            .await
+            .unwrap();
         assert!(indexes.is_empty());
     }
 

@@ -103,7 +103,9 @@ message CreateIndexResponse {
   string index_uid = 1;
 }
 
-message ListIndexesMetadatasRequest {}
+message ListIndexesMetadatasRequest {
+  string filter_json = 1;
+}
 
 message ListIndexesMetadatasResponse {
   string indexes_metadatas_serialized_json = 1;

@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt::{Display, Write};
 use std::ops::Bound;
 use std::str::FromStr;
@@ -29,7 +29,8 @@ use itertools::Itertools;
 use quickwit_common::uri::Uri;
 use quickwit_common::PrettySample;
 use quickwit_config::{
-    IndexConfig, MetastoreBackend, MetastoreConfig, PostgresMetastoreConfig, SourceConfig,
+    validate_index_id_pattern, IndexConfig, MetastoreBackend, MetastoreConfig,
+    PostgresMetastoreConfig, SourceConfig,
 };
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_proto::metastore::{DeleteQuery, DeleteTask};
@@ -48,7 +49,7 @@ use crate::metastore::postgresql_model::{
 };
 use crate::metastore::FilterRange;
 use crate::{
-    IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, MetastoreFactory,
+    IndexMetadata, ListIndexesQuery, ListSplitsQuery, Metastore, MetastoreError, MetastoreFactory,
     MetastoreResolverError, MetastoreResult, Split, SplitMaturity, SplitMetadata, SplitState,
 };
 
@@ -192,8 +193,8 @@ async fn index_metadata(
 ) -> MetastoreResult<IndexMetadata> {
     index_opt(tx.as_mut(), index_id)
         .await?
-        .ok_or_else(|| MetastoreError::IndexDoesNotExist {
-            index_id: index_id.to_string(),
+        .ok_or_else(|| MetastoreError::IndexesDoNotExist {
+            index_ids: vec![index_id.to_string()],
         })?
         .index_metadata()
 }
@@ -229,7 +230,13 @@ fn write_sql_filter<V: Display>(
 }
 
 fn build_query_filter(mut sql: String, query: &ListSplitsQuery) -> String {
-    sql.push_str(" WHERE index_uid = $1");
+    // Note: `ListSplitsQuery` builder enforces a non empty `index_uids` list.
+    let where_predicate: String = query
+        .index_uids
+        .iter()
+        .map(|index_uid| format!("index_uid = '{index_uid}'"))
+        .join(" OR ");
+    sql.push_str(&format!(" WHERE ({where_predicate})"));
 
     if !query.split_states.is_empty() {
         let params = query
@@ -342,8 +349,8 @@ fn convert_sqlx_err(index_id: &str, sqlx_err: sqlx::Error) -> MetastoreError {
             let pg_error_table = pg_db_error.table();
 
             match (pg_error_code, pg_error_table) {
-                (pg_error_code::FOREIGN_KEY_VIOLATION, _) => MetastoreError::IndexDoesNotExist {
-                    index_id: index_id.to_string(),
+                (pg_error_code::FOREIGN_KEY_VIOLATION, _) => MetastoreError::IndexesDoNotExist {
+                    index_ids: vec![index_id.to_string()],
                 },
                 (pg_error_code::UNIQUE_VIOLATION, Some(table)) if table.starts_with("indexes") => {
                     MetastoreError::IndexAlreadyExists {
@@ -410,8 +417,8 @@ where
     let index_id = index_uid.index_id();
     let mut index_metadata = index_metadata(tx, index_id).await?;
     if index_metadata.index_uid != index_uid {
-        return Err(MetastoreError::IndexDoesNotExist {
-            index_id: index_id.to_string(),
+        return Err(MetastoreError::IndexesDoNotExist {
+            index_ids: vec![index_id.to_string()],
         });
     }
     let mutation_occurred = mutate_fn(&mut index_metadata)?;
@@ -436,8 +443,8 @@ where
     .execute(tx.as_mut())
     .await?;
     if update_index_res.rows_affected() == 0 {
-        return Err(MetastoreError::IndexDoesNotExist {
-            index_id: index_id.to_string(),
+        return Err(MetastoreError::IndexesDoNotExist {
+            index_ids: vec![index_id.to_string()],
         });
     }
     Ok(mutation_occurred)
@@ -451,8 +458,22 @@ impl Metastore for PostgresqlMetastore {
     }
 
     #[instrument(skip(self))]
-    async fn list_indexes_metadatas(&self) -> MetastoreResult<Vec<IndexMetadata>> {
-        let pg_indexes = sqlx::query_as::<_, PgIndex>("SELECT * FROM indexes")
+    async fn list_indexes_metadatas(
+        &self,
+        query: ListIndexesQuery,
+    ) -> MetastoreResult<Vec<IndexMetadata>> {
+        let sql = match query {
+            ListIndexesQuery::All => "SELECT * FROM indexes".to_string(),
+            ListIndexesQuery::IndexIdPatterns(index_id_patterns) => {
+                build_index_id_patterns_sql_query(index_id_patterns).map_err(|error| {
+                    MetastoreError::InternalError {
+                        message: "Failed to build `list_indexes_metadatas` SQL query".to_string(),
+                        cause: error.to_string(),
+                    }
+                })?
+            }
+        };
+        let pg_indexes = sqlx::query_as::<_, PgIndex>(&sql)
             .fetch_all(&self.connection_pool)
             .await?;
         pg_indexes
@@ -489,8 +510,8 @@ impl Metastore for PostgresqlMetastore {
             .execute(&self.connection_pool)
             .await?;
         if delete_res.rows_affected() == 0 {
-            return Err(MetastoreError::IndexDoesNotExist {
-                index_id: index_uid.index_id().to_string(),
+            return Err(MetastoreError::IndexesDoNotExist {
+                index_ids: vec![index_uid.index_id().to_string()],
             });
         }
         Ok(())
@@ -607,8 +628,8 @@ impl Metastore for PostgresqlMetastore {
         run_with_tx!(self.connection_pool, tx, {
             let mut index_metadata = index_metadata(tx, index_uid.index_id()).await?;
             if index_metadata.index_uid != index_uid {
-                return Err(MetastoreError::IndexDoesNotExist {
-                    index_id: index_uid.index_id().to_string(),
+                return Err(MetastoreError::IndexesDoNotExist {
+                    index_ids: vec![index_uid.index_id().to_string()],
                 });
             }
             if let Some(checkpoint_delta) = checkpoint_delta_opt {
@@ -729,25 +750,40 @@ impl Metastore for PostgresqlMetastore {
         })
     }
 
-    #[instrument(skip(self), fields(index_id=query.index_uid.index_id()))]
+    #[instrument(skip(self), fields(index_uids=query.index_uids.iter().join(",")))]
     async fn list_splits(&self, query: ListSplitsQuery) -> MetastoreResult<Vec<Split>> {
         let sql_base = "SELECT * FROM splits".to_string();
         let sql = build_query_filter(sql_base, &query);
 
         let pg_splits = sqlx::query_as::<_, PgSplit>(&sql)
-            .bind(query.index_uid.to_string())
             .fetch_all(&self.connection_pool)
             .await?;
 
-        // If no splits were returned, maybe the index does not exist in the first place?
-        if pg_splits.is_empty()
-            && index_opt_for_uid(&self.connection_pool, query.index_uid.clone())
+        // If no splits were returned, maybe some indexes do not exist in the first place?
+        // TODO: the file-backed metastore is more accurate as it checks for index existence before
+        // returning splits. We could do the same here or remove index existence check `list_splits`
+        // for all metastore implementations.
+        if pg_splits.is_empty() {
+            let index_ids_str: Vec<String> = query
+                .index_uids
+                .iter()
+                .map(|index_uid| index_uid.index_id().to_string())
+                .collect();
+            let found_index_ids: HashSet<String> = self
+                .list_indexes_metadatas(ListIndexesQuery::IndexIdPatterns(index_ids_str.clone()))
                 .await?
-                .is_none()
-        {
-            return Err(MetastoreError::IndexDoesNotExist {
-                index_id: query.index_uid.index_id().to_string(),
-            });
+                .into_iter()
+                .map(|index_metadata| index_metadata.index_id().to_string())
+                .collect();
+            let missing_index_ids: Vec<String> = index_ids_str
+                .into_iter()
+                .filter(|index_id| !found_index_ids.contains(index_id))
+                .collect();
+            if !missing_index_ids.is_empty() {
+                return Err(MetastoreError::IndexesDoNotExist {
+                    index_ids: missing_index_ids,
+                });
+            }
         }
         pg_splits
             .into_iter()
@@ -809,8 +845,8 @@ impl Metastore for PostgresqlMetastore {
                 .await?
                 .is_none()
         {
-            return Err(MetastoreError::IndexDoesNotExist {
-                index_id: index_uid.index_id().to_string(),
+            return Err(MetastoreError::IndexesDoNotExist {
+                index_ids: vec![index_uid.index_id().to_string()],
             });
         }
         info!(
@@ -891,8 +927,8 @@ impl Metastore for PostgresqlMetastore {
                 .await?
                 .is_none()
         {
-            return Err(MetastoreError::IndexDoesNotExist {
-                index_id: index_uid.index_id().to_string(),
+            return Err(MetastoreError::IndexesDoNotExist {
+                index_ids: vec![index_uid.index_id().to_string()],
             });
         }
         if !not_deletable_split_ids.is_empty() {
@@ -917,8 +953,8 @@ impl Metastore for PostgresqlMetastore {
     async fn index_metadata(&self, index_id: &str) -> MetastoreResult<IndexMetadata> {
         index_opt(&self.connection_pool, index_id)
             .await?
-            .ok_or_else(|| MetastoreError::IndexDoesNotExist {
-                index_id: index_id.to_string(),
+            .ok_or_else(|| MetastoreError::IndexesDoNotExist {
+                index_ids: vec![index_id.to_string()],
             })?
             .index_metadata()
     }
@@ -1077,8 +1113,8 @@ impl Metastore for PostgresqlMetastore {
                 .await?
                 .is_none()
         {
-            return Err(MetastoreError::IndexDoesNotExist {
-                index_id: index_uid.index_id().to_string(),
+            return Err(MetastoreError::IndexesDoNotExist {
+                index_ids: vec![index_uid.index_id().to_string()],
             });
         }
         Ok(())
@@ -1145,8 +1181,8 @@ impl Metastore for PostgresqlMetastore {
                 .await?
                 .is_none()
         {
-            return Err(MetastoreError::IndexDoesNotExist {
-                index_id: index_uid.index_id().to_string(),
+            return Err(MetastoreError::IndexesDoNotExist {
+                index_ids: vec![index_uid.index_id().to_string()],
             });
         }
         pg_stale_splits
@@ -1210,6 +1246,35 @@ fn tags_filter_expression_helper(tags: &TagFilterAst) -> String {
             }
         }
     }
+}
+
+/// Builds a SQL query that returns indexes which match at least one pattern in
+/// `index_id_patterns`. For each pattern, we check if the pattern is valid and replace `*` by `%`
+/// to build a SQL `LIKE` query.
+fn build_index_id_patterns_sql_query(index_id_patterns: Vec<String>) -> anyhow::Result<String> {
+    assert!(!index_id_patterns.is_empty());
+    if index_id_patterns.iter().any(|pattern| pattern == "*") {
+        return Ok("SELECT * FROM indexes".to_string());
+    }
+    let mut where_like_query = String::new();
+    for (index_id_pattern_idx, index_id_pattern) in index_id_patterns.iter().enumerate() {
+        validate_index_id_pattern(index_id_pattern).map_err(|error| {
+            MetastoreError::InternalError {
+                message: "Failed to build list indexes query".to_string(),
+                cause: error.to_string(),
+            }
+        })?;
+        if index_id_pattern.contains('*') {
+            let sql_pattern = index_id_pattern.replace('*', "%");
+            let _ = write!(where_like_query, "index_id LIKE '{sql_pattern}'");
+        } else {
+            let _ = write!(where_like_query, "index_id = '{index_id_pattern}'");
+        }
+        if index_id_pattern_idx < index_id_patterns.len() - 1 {
+            where_like_query.push_str(" OR ");
+        }
+    }
+    Ok(format!("SELECT * FROM indexes WHERE {where_like_query}"))
 }
 
 /// A postgres metastore factory
@@ -1314,6 +1379,7 @@ mod tests {
     use time::OffsetDateTime;
 
     use super::{build_query_filter, tags_filter_expression_helper};
+    use crate::metastore::postgresql_metastore::build_index_id_patterns_sql_query;
     use crate::{ListSplitsQuery, SplitState};
 
     fn test_tags_filter_expression_helper(tags_ast: TagFilterAst, expected: &str) {
@@ -1375,20 +1441,24 @@ mod tests {
             "$Quickwit!$tag:$$;DELETE FROM something_evil$Quickwit!$ = ANY(tags)",
         );
     }
+
     #[test]
     fn test_single_sql_query_builder() {
         let index_uid = IndexUid::new("test-index");
         let query =
             ListSplitsQuery::for_index(index_uid.clone()).with_split_state(SplitState::Staged);
         let sql = build_query_filter(String::new(), &query);
-        assert_eq!(sql, " WHERE index_uid = $1 AND split_state IN ('Staged')");
+        assert_eq!(
+            sql,
+            format!(" WHERE (index_uid = '{index_uid}') AND split_state IN ('Staged')")
+        );
 
         let query =
             ListSplitsQuery::for_index(index_uid.clone()).with_split_state(SplitState::Published);
         let sql = build_query_filter(String::new(), &query);
         assert_eq!(
             sql,
-            " WHERE index_uid = $1 AND split_state IN ('Published')"
+            format!(" WHERE (index_uid = '{index_uid}') AND split_state IN ('Published')")
         );
 
         let query = ListSplitsQuery::for_index(index_uid.clone())
@@ -1396,21 +1466,24 @@ mod tests {
         let sql = build_query_filter(String::new(), &query);
         assert_eq!(
             sql,
-            " WHERE index_uid = $1 AND split_state IN ('Published', 'MarkedForDeletion')"
+            format!(
+                " WHERE (index_uid = '{index_uid}') AND split_state IN ('Published', \
+                 'MarkedForDeletion')"
+            )
         );
 
         let query = ListSplitsQuery::for_index(index_uid.clone()).with_update_timestamp_lt(51);
         let sql = build_query_filter(String::new(), &query);
         assert_eq!(
             sql,
-            " WHERE index_uid = $1 AND update_timestamp < to_timestamp(51)"
+            format!(" WHERE (index_uid = '{index_uid}') AND update_timestamp < to_timestamp(51)")
         );
 
         let query = ListSplitsQuery::for_index(index_uid.clone()).with_create_timestamp_lte(55);
         let sql = build_query_filter(String::new(), &query);
         assert_eq!(
             sql,
-            " WHERE index_uid = $1 AND create_timestamp <= to_timestamp(55)"
+            format!(" WHERE (index_uid = '{index_uid}') AND create_timestamp <= to_timestamp(55)")
         );
 
         let maturity_evaluation_datetime = OffsetDateTime::from_unix_timestamp(55).unwrap();
@@ -1419,8 +1492,10 @@ mod tests {
         let sql = build_query_filter(String::new(), &query);
         assert_eq!(
             sql,
-            " WHERE index_uid = $1 AND (maturity_timestamp = to_timestamp(0) OR to_timestamp(55) \
-             >= maturity_timestamp)"
+            format!(
+                " WHERE (index_uid = '{index_uid}') AND (maturity_timestamp = to_timestamp(0) OR \
+                 to_timestamp(55) >= maturity_timestamp)"
+            )
         );
 
         let query = ListSplitsQuery::for_index(index_uid.clone())
@@ -1428,35 +1503,45 @@ mod tests {
         let sql = build_query_filter(String::new(), &query);
         assert_eq!(
             sql,
-            " WHERE index_uid = $1 AND to_timestamp(55) < maturity_timestamp"
+            format!(" WHERE (index_uid = '{index_uid}') AND to_timestamp(55) < maturity_timestamp")
         );
 
         let query = ListSplitsQuery::for_index(index_uid.clone()).with_delete_opstamp_gte(4);
         let sql = build_query_filter(String::new(), &query);
-        assert_eq!(sql, " WHERE index_uid = $1 AND delete_opstamp >= 4");
+        assert_eq!(
+            sql,
+            format!(" WHERE (index_uid = '{index_uid}') AND delete_opstamp >= 4")
+        );
 
         let query = ListSplitsQuery::for_index(index_uid.clone()).with_time_range_start_gt(45);
         let sql = build_query_filter(String::new(), &query);
         assert_eq!(
             sql,
-            " WHERE index_uid = $1 AND (time_range_end > 45 OR time_range_end IS NULL)"
+            format!(
+                " WHERE (index_uid = '{index_uid}') AND (time_range_end > 45 OR time_range_end IS \
+                 NULL)"
+            )
         );
 
         let query = ListSplitsQuery::for_index(index_uid.clone()).with_time_range_end_lt(45);
         let sql = build_query_filter(String::new(), &query);
         assert_eq!(
             sql,
-            " WHERE index_uid = $1 AND (time_range_start < 45 OR time_range_start IS NULL)"
+            format!(
+                " WHERE (index_uid = '{index_uid}') AND (time_range_start < 45 OR \
+                 time_range_start IS NULL)"
+            )
         );
 
-        let query = ListSplitsQuery::for_index(index_uid).with_tags_filter(TagFilterAst::Tag {
-            is_present: false,
-            tag: "tag-2".to_string(),
-        });
+        let query =
+            ListSplitsQuery::for_index(index_uid.clone()).with_tags_filter(TagFilterAst::Tag {
+                is_present: false,
+                tag: "tag-2".to_string(),
+            });
         let sql = build_query_filter(String::new(), &query);
         assert_eq!(
             sql,
-            " WHERE index_uid = $1 AND (NOT ($$tag-2$$ = ANY(tags)))"
+            format!(" WHERE (index_uid = '{index_uid}') AND (NOT ($$tag-2$$ = ANY(tags)))")
         );
     }
 
@@ -1469,8 +1554,10 @@ mod tests {
         let sql = build_query_filter(String::new(), &query);
         assert_eq!(
             sql,
-            " WHERE index_uid = $1 AND (time_range_end > 0 OR time_range_end IS NULL) AND \
-             (time_range_start < 40 OR time_range_start IS NULL)"
+            format!(
+                " WHERE (index_uid = '{index_uid}') AND (time_range_end > 0 OR time_range_end IS \
+                 NULL) AND (time_range_start < 40 OR time_range_start IS NULL)"
+            )
         );
 
         let query = ListSplitsQuery::for_index(index_uid.clone())
@@ -1479,8 +1566,10 @@ mod tests {
         let sql = build_query_filter(String::new(), &query);
         assert_eq!(
             sql,
-            " WHERE index_uid = $1 AND (time_range_end > 45 OR time_range_end IS NULL) AND \
-             delete_opstamp > 0"
+            format!(
+                " WHERE (index_uid = '{index_uid}') AND (time_range_end > 45 OR time_range_end IS \
+                 NULL) AND delete_opstamp > 0"
+            )
         );
 
         let query = ListSplitsQuery::for_index(index_uid.clone())
@@ -1489,11 +1578,13 @@ mod tests {
         let sql = build_query_filter(String::new(), &query);
         assert_eq!(
             sql,
-            " WHERE index_uid = $1 AND update_timestamp < to_timestamp(51) AND create_timestamp \
-             <= to_timestamp(63)"
+            format!(
+                " WHERE (index_uid = '{index_uid}') AND update_timestamp < to_timestamp(51) AND \
+                 create_timestamp <= to_timestamp(63)"
+            )
         );
 
-        let query = ListSplitsQuery::for_index(index_uid)
+        let query = ListSplitsQuery::for_index(index_uid.clone())
             .with_time_range_start_gt(90)
             .with_tags_filter(TagFilterAst::Tag {
                 is_present: true,
@@ -1502,8 +1593,54 @@ mod tests {
         let sql = build_query_filter(String::new(), &query);
         assert_eq!(
             sql,
-            " WHERE index_uid = $1 AND ($$tag-1$$ = ANY(tags)) AND (time_range_end > 90 OR \
-             time_range_end IS NULL)"
+            format!(
+                " WHERE (index_uid = '{index_uid}') AND ($$tag-1$$ = ANY(tags)) AND \
+                 (time_range_end > 90 OR time_range_end IS NULL)"
+            )
+        );
+
+        let index_uid_2 = IndexUid::new("test-index-2");
+        let query =
+            ListSplitsQuery::try_from_index_uids(vec![index_uid.clone(), index_uid_2.clone()])
+                .unwrap();
+        let sql = build_query_filter(String::new(), &query);
+        assert_eq!(
+            sql,
+            format!(" WHERE (index_uid = '{index_uid}' OR index_uid = '{index_uid_2}')")
+        );
+    }
+
+    #[test]
+    fn test_index_id_pattern_like_query() {
+        assert_eq!(
+            &build_index_id_patterns_sql_query(vec!["*-index-*-last*".to_string()]).unwrap(),
+            "SELECT * FROM indexes WHERE index_id LIKE '%-index-%-last%'"
+        );
+        assert_eq!(
+            &build_index_id_patterns_sql_query(vec![
+                "*-index-*-last*".to_string(),
+                "another-index".to_string()
+            ])
+            .unwrap(),
+            "SELECT * FROM indexes WHERE index_id LIKE '%-index-%-last%' OR index_id = \
+             'another-index'"
+        );
+        assert_eq!(
+            &build_index_id_patterns_sql_query(vec![
+                "*-index-*-last**".to_string(),
+                "another-index".to_string(),
+                "*".to_string()
+            ])
+            .unwrap(),
+            "SELECT * FROM indexes"
+        );
+        assert_eq!(
+            build_index_id_patterns_sql_query(vec!["*-index-*-&-last**".to_string()])
+                .unwrap_err()
+                .to_string(),
+            "Internal error: `Failed to build list indexes query` Cause: `Index ID pattern \
+             `*-index-*-&-last**` is invalid. Patterns must match the following regular \
+             expression: `^[a-zA-Z\\*][a-zA-Z0-9-_\\.\\*]{0,254}$`.`."
         );
     }
 }

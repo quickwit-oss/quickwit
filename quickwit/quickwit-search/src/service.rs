@@ -178,7 +178,7 @@ impl SearchService for SearchServiceImpl {
         let search_request = leaf_search_request
             .search_request
             .ok_or_else(|| SearchError::InternalError("No search request.".to_string()))?;
-        info!(index=?search_request.index_id, splits=?leaf_search_request.split_offsets, "leaf_search");
+        info!(index=?search_request.index_id_patterns, splits=?leaf_search_request.split_offsets, "leaf_search");
         let storage = self
             .storage_resolver
             .resolve(&Uri::from_well_formed(leaf_search_request.index_uri))
@@ -370,11 +370,9 @@ pub(crate) async fn scroll(
 
     // Fetch the actual documents.
     let hits: Vec<Hit> = fetch_docs_phase(
+        &scroll_context.indexes_metas_for_leaf_search,
         &partial_hits[..],
         &scroll_context.split_metadatas[..],
-        &scroll_context.search_request.index_id,
-        &scroll_context.index_uri,
-        &scroll_context.doc_mapper_str,
         snippet_request,
         cluster_client,
     )

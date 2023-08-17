@@ -44,8 +44,8 @@ use tower::timeout::error::Elapsed;
 
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{
-    IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, MetastoreResult, Split,
-    SplitMetadata,
+    IndexMetadata, ListIndexesQuery, ListSplitsQuery, Metastore, MetastoreError, MetastoreResult,
+    Split, SplitMetadata,
 };
 
 // URI describing in a generic way the metastore services resource present in the cluster (=
@@ -157,12 +157,21 @@ impl Metastore for MetastoreGrpcClient {
         Ok(index_uid)
     }
 
-    /// List indexes.
-    async fn list_indexes_metadatas(&self) -> MetastoreResult<Vec<IndexMetadata>> {
+    /// Lists indexes.
+    async fn list_indexes_metadatas(
+        &self,
+        query: ListIndexesQuery,
+    ) -> MetastoreResult<Vec<IndexMetadata>> {
+        let filter_json = serde_json::to_string(&query).map_err(|error| {
+            MetastoreError::JsonDeserializeError {
+                struct_name: "ListIndexesQuery".to_string(),
+                message: error.to_string(),
+            }
+        })?;
         let response = self
             .underlying
             .clone()
-            .list_indexes_metadatas(ListIndexesMetadatasRequest {})
+            .list_indexes_metadatas(ListIndexesMetadatasRequest { filter_json })
             .await
             .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
         let indexes_metadatas =

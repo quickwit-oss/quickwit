@@ -28,8 +28,8 @@ use quickwit_proto::IndexUid;
 use super::retry::RetryParams;
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{
-    IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, MetastoreResult, RetryingMetastore,
-    Split, SplitMetadata,
+    IndexMetadata, ListIndexesQuery, ListSplitsQuery, Metastore, MetastoreError, MetastoreResult,
+    RetryingMetastore, Split, SplitMetadata,
 };
 
 struct RetryTestMetastore {
@@ -97,7 +97,10 @@ impl Metastore for RetryTestMetastore {
         }
     }
 
-    async fn list_indexes_metadatas(&self) -> MetastoreResult<Vec<IndexMetadata>> {
+    async fn list_indexes_metadatas(
+        &self,
+        _query: ListIndexesQuery,
+    ) -> MetastoreResult<Vec<IndexMetadata>> {
         let result = self.try_success();
         match result {
             Ok(_) => Ok(Vec::new()),
@@ -241,17 +244,23 @@ async fn test_retryable_metastore_errors() {
 
     // On retryable errors, if max retry count is not achieved, RetryingMetastore should retry until
     // success
-    assert!(metastore.list_indexes_metadatas().await.is_ok());
+    assert!(metastore
+        .list_indexes_metadatas(ListIndexesQuery::All)
+        .await
+        .is_ok());
 
     let metastore: RetryingMetastore = RetryTestMetastore::new_retrying_with_errors(
         5,
-        &[MetastoreError::IndexDoesNotExist {
-            index_id: "".to_string(),
+        &[MetastoreError::IndexesDoNotExist {
+            index_ids: vec!["".to_string()],
         }],
     );
 
     // On non-retryable errors, RetryingMetastore should exit with an error.
-    assert!(metastore.list_indexes_metadatas().await.is_err());
+    assert!(metastore
+        .list_indexes_metadatas(ListIndexesQuery::All)
+        .await
+        .is_err());
 }
 
 #[tokio::test]
@@ -267,7 +276,10 @@ async fn test_retryable_more_than_max_retry() {
             .collect::<Vec<_>>(),
     );
 
-    let error = metastore.list_indexes_metadatas().await.unwrap_err();
+    let error = metastore
+        .list_indexes_metadatas(ListIndexesQuery::All)
+        .await
+        .unwrap_err();
     assert_eq!(
         error,
         MetastoreError::ConnectionError {
@@ -299,7 +311,10 @@ async fn test_mixed_retryable_metastore_errors() {
         ],
     );
 
-    let error = metastore.list_indexes_metadatas().await.unwrap_err();
+    let error = metastore
+        .list_indexes_metadatas(ListIndexesQuery::All)
+        .await
+        .unwrap_err();
 
     assert_eq!(
         error,

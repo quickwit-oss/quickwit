@@ -652,8 +652,8 @@ mod tests {
 
         let mut mock_metastore = MockMetastore::new();
         mock_metastore.expect_delete_splits().return_once(|_, _| {
-            Err(MetastoreError::IndexDoesNotExist {
-                index_id: index_id.to_string(),
+            Err(MetastoreError::IndexesDoNotExist {
+                index_ids: vec![index_id.to_string()],
             })
         });
         let metastore = Arc::new(mock_metastore);

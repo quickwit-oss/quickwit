@@ -255,7 +255,7 @@ impl JaegerService {
         let aggregation_query = build_aggregations_query(trace_query.num_traces as usize);
         let max_hits = 0;
         let search_request = SearchRequest {
-            index_id,
+            index_id_patterns: vec![index_id],
             query_ast,
             aggregation_request: Some(aggregation_query),
             max_hits,
@@ -303,7 +303,7 @@ impl JaegerService {
             serde_json::to_string(&query_ast).map_err(|err| Status::internal(err.to_string()))?;
 
         let search_request = SearchRequest {
-            index_id: OTEL_TRACES_INDEX_ID.to_string(),
+            index_id_patterns: vec![OTEL_TRACES_INDEX_ID.to_string()],
             query_ast,
             start_timestamp: Some(*search_window.start()),
             end_timestamp: Some(*search_window.end()),

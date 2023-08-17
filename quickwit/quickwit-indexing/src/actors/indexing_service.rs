@@ -37,7 +37,7 @@ use quickwit_config::{
     build_doc_mapper, IndexConfig, IndexerConfig, SourceConfig, INGEST_API_SOURCE_ID,
 };
 use quickwit_ingest::{DropQueueRequest, IngestApiService, ListQueuesRequest, QUEUES_DIR_NAME};
-use quickwit_metastore::{IndexMetadata, Metastore};
+use quickwit_metastore::{IndexMetadata, ListIndexesQuery, Metastore};
 use quickwit_proto::indexing::{
     ApplyIndexingPlanRequest, ApplyIndexingPlanResponse, IndexingError, IndexingPipelineId,
     IndexingTask,
@@ -600,7 +600,7 @@ impl IndexingService {
 
         let index_ids: HashSet<String> = self
             .metastore
-            .list_indexes_metadatas()
+            .list_indexes_metadatas(ListIndexesQuery::All)
             .await
             .context("Failed to list queues")?
             .into_iter()
@@ -1279,9 +1279,9 @@ mod tests {
             .insert(source_config.source_id.clone(), source_config.clone());
         let mut metastore = MockMetastore::default();
         let index_metadata_clone = index_metadata.clone();
-        metastore
-            .expect_list_indexes_metadatas()
-            .returning(move || Ok(vec![index_metadata_clone.clone()]));
+        metastore.expect_list_indexes_metadatas().returning(
+            move |_list_indexes_query: ListIndexesQuery| Ok(vec![index_metadata_clone.clone()]),
+        );
         metastore
             .expect_index_metadata()
             .returning(move |_| Ok(index_metadata.clone()));

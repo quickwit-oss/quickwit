@@ -1,0 +1,88 @@
+# Delete possibly remaining index
+method: DELETE
+api_root: http://localhost:7280/api/v1/
+endpoint: indexes/gharchive-1
+status_code: null
+---
+method: DELETE
+api_root: http://localhost:7280/api/v1/
+endpoint: indexes/gharchive-2
+status_code: null
+---
+# Create index 1
+method: POST
+api_root: http://localhost:7280/api/v1/
+endpoint: indexes/
+json:
+  version: "0.6"
+  index_id: gharchive-1
+  doc_mapping:
+    index_field_presence: true
+    timestamp_field: created_at
+    mode: dynamic
+    field_mappings:
+        - name: created_at
+          type: datetime
+          fast: true
+    dynamic_mapping:
+      expand_dots: true
+      tokenizer: default
+      fast:
+        normalizer: lowercase
+      record: position
+---
+# Create index 2
+method: POST
+api_root: http://localhost:7280/api/v1/
+endpoint: indexes/
+json:
+  version: "0.6"
+  index_id: gharchive-2
+  doc_mapping:
+    index_field_presence: true
+    timestamp_field: created_at
+    mode: strict
+    field_mappings:
+      - name: created_at
+        type: datetime
+        fast: true
+      - name: id
+        type: u64
+        fast: true
+      - name: type
+        type: text
+        fast: true
+      - name: actor
+        type: object
+        fast: true
+        field_mappings:
+          - name: id
+            type: u64
+            fast: true
+          - name: login
+            type: text
+            fast: true
+
+---
+# Ingest documents in index 1
+method: POST
+api_root: http://localhost:7280/api/v1/
+endpoint: gharchive-1/ingest
+params:
+  commit: "force"
+headers: {"Content-Type": "application/json"}
+ndjson:
+  - {"id": 1, "created_at":"2015-02-01T00:00:14Z", "type": "CreateEvent", "actor": { "id": 1, "login": "fmassot" } }
+  - {"id": 2, "created_at":"2015-02-01T00:00:14Z", "type": "CreateEvent", "actor": { "id": 2, "login": "fulmicoton" } }
+
+---
+# Ingest documents in index 2
+method: POST
+api_root: http://localhost:7280/api/v1/
+endpoint: gharchive-2/ingest
+params:
+  commit: "force"
+headers: {"Content-Type": "application/json"}
+ndjson:
+  - {"id": 3, "created_at":"2015-02-01T00:00:14Z", "type": "CreateEvent", "actor": { "id": 3, "login": "guilload" } }
+  - {"id": 4, "created_at":"2015-02-01T00:00:14Z", "type": "CreateEvent", "actor": { "id": 4, "login": "trinity" } }

@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -35,7 +35,7 @@ use quickwit_metastore::{
 use quickwit_proto::metastore::DeleteTask;
 use quickwit_proto::search::SearchRequest;
 use quickwit_proto::IndexUid;
-use quickwit_search::{jobs_to_leaf_request, SearchJob, SearchJobPlacer};
+use quickwit_search::{jobs_to_leaf_requests, IndexMetasForLeafSearch, SearchJob, SearchJobPlacer};
 use serde::Serialize;
 use tantivy::Inventory;
 use tracing::{debug, info};
@@ -292,25 +292,35 @@ impl DeleteTaskPlanner {
                 .delete_query
                 .as_ref()
                 .expect("Delete task must have a delete query.");
+            // TODO: resolve with the default fields.
             let search_request = SearchRequest {
-                index_id: IndexUid::from(delete_query.index_uid.clone())
+                index_id_patterns: vec![IndexUid::from(delete_query.index_uid.clone())
                     .index_id()
-                    .to_string(),
+                    .to_string()],
                 query_ast: delete_query.query_ast.clone(),
                 start_timestamp: delete_query.start_timestamp,
                 end_timestamp: delete_query.end_timestamp,
                 ..Default::default()
             };
-            let leaf_search_request = jobs_to_leaf_request(
-                &search_request,
-                doc_mapper_str,
-                index_uri,
-                vec![search_job.clone()],
+            let mut search_indexes_metas = HashMap::new();
+            search_indexes_metas.insert(
+                IndexUid::from(delete_query.index_uid.clone()),
+                IndexMetasForLeafSearch {
+                    doc_mapper_str: doc_mapper_str.to_string(),
+                    index_uri: Uri::from_well_formed(index_uri),
+                },
             );
-            let response = search_client.leaf_search(leaf_search_request).await?;
-            ctx.record_progress();
-            if response.num_hits > 0 {
-                return Ok(true);
+            let leaf_search_request = jobs_to_leaf_requests(
+                &search_request,
+                &search_indexes_metas,
+                vec![search_job.clone()],
+            )?;
+            for leaf_request in leaf_search_request {
+                let response = search_client.leaf_search(leaf_request).await?;
+                ctx.record_progress();
+                if response.num_hits > 0 {
+                    return Ok(true);
+                }
             }
         }
         Ok(false)
@@ -458,8 +468,9 @@ mod tests {
         // Creates 2 delete tasks, one that will match 1 document,
         // the other that will match no document.
 
-        let body_delete_ast = quickwit_query::query_ast::qast_helper("body:delete", &[]);
-        let match_nothing_ast = quickwit_query::query_ast::qast_helper("body:matchnothing", &[]);
+        let body_delete_ast = quickwit_query::query_ast::qast_json_helper("body:delete", &[]);
+        let match_nothing_ast =
+            quickwit_query::query_ast::qast_json_helper("body:matchnothing", &[]);
         metastore
             .create_delete_task(DeleteQuery {
                 index_uid: index_uid.to_string(),

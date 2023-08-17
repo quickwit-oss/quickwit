@@ -18,13 +18,17 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use async_trait::async_trait;
+use itertools::Itertools;
 use quickwit_common::uri::Uri;
 use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_proto::metastore::{DeleteQuery, DeleteTask};
 use quickwit_proto::IndexUid;
 
 use crate::checkpoint::IndexCheckpointDelta;
-use crate::{IndexMetadata, ListSplitsQuery, Metastore, MetastoreResult, Split, SplitMetadata};
+use crate::{
+    IndexMetadata, ListIndexesQuery, ListSplitsQuery, Metastore, MetastoreResult, Split,
+    SplitMetadata,
+};
 
 macro_rules! instrument {
     ($expr:expr, [$operation:ident, $($label:expr),*]) => {
@@ -106,9 +110,12 @@ impl Metastore for InstrumentedMetastore {
         );
     }
 
-    async fn list_indexes_metadatas(&self) -> MetastoreResult<Vec<IndexMetadata>> {
+    async fn list_indexes_metadatas(
+        &self,
+        query: ListIndexesQuery,
+    ) -> MetastoreResult<Vec<IndexMetadata>> {
         instrument!(
-            self.underlying.list_indexes_metadatas().await,
+            self.underlying.list_indexes_metadatas(query).await,
             [list_indexes_metadatas, ""]
         );
     }
@@ -156,9 +163,14 @@ impl Metastore for InstrumentedMetastore {
     }
 
     async fn list_splits(&self, query: ListSplitsQuery) -> MetastoreResult<Vec<Split>> {
+        let index_uids = query
+            .index_uids
+            .iter()
+            .map(|index_uid| index_uid.to_string())
+            .join(",");
         instrument!(
             self.underlying.list_splits(query.clone()).await,
-            [list_splits, query.index_uid.index_id()]
+            [list_splits, &index_uids]
         );
     }
 

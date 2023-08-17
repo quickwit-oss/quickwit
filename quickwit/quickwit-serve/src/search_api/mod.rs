@@ -21,6 +21,7 @@ mod grpc_adapter;
 mod rest_handler;
 
 pub use self::grpc_adapter::GrpcSearchAdapter;
+pub(crate) use self::rest_handler::extract_index_id_patterns;
 pub use self::rest_handler::{
     search_get_handler, search_post_handler, search_request_from_api_request,
     search_stream_handler, SearchApi, SearchRequestQueryString, SortBy,
@@ -32,12 +33,12 @@ mod tests {
     use std::sync::Arc;
 
     use futures::TryStreamExt;
-    use quickwit_indexing::mock_split;
+    use quickwit_indexing::MockSplitBuilder;
     use quickwit_metastore::{IndexMetadata, MockMetastore};
     use quickwit_proto::search::search_service_server::SearchServiceServer;
     use quickwit_proto::search::OutputFormat;
     use quickwit_proto::tonic;
-    use quickwit_query::query_ast::qast_helper;
+    use quickwit_query::query_ast::qast_json_helper;
     use quickwit_search::{
         create_search_client_from_grpc_addr, root_search_stream, ClusterClient, MockSearchService,
         SearchError, SearchJobPlacer, SearchService, SearcherPool,
@@ -67,7 +68,7 @@ mod tests {
         // This test aims at checking the client gRPC implementation.
         let request = quickwit_proto::search::SearchStreamRequest {
             index_id: "test-index".to_string(),
-            query_ast: qast_helper("test", &["body"]),
+            query_ast: qast_json_helper("test", &["body"]),
             snippet_fields: Vec::new(),
             start_timestamp: None,
             end_timestamp: None,
@@ -76,17 +77,21 @@ mod tests {
             partition_by_field: None,
         };
         let mut metastore = MockMetastore::new();
+        let index_metadata = IndexMetadata::for_test("test-index", "ram:///indexes/test-index");
+        let index_uid = index_metadata.index_uid.clone();
         metastore
             .expect_index_metadata()
-            .returning(|_index_id: &str| {
-                Ok(IndexMetadata::for_test(
-                    "test-index",
-                    "ram:///indexes/test-index",
-                ))
-            });
-        metastore
-            .expect_list_splits()
-            .returning(|_filter| Ok(vec![mock_split("split_1"), mock_split("split_2")]));
+            .returning(move |_index_id: &str| Ok(index_metadata.clone()));
+        metastore.expect_list_splits().returning(move |_filter| {
+            Ok(vec![
+                MockSplitBuilder::new("split_1")
+                    .with_index_uid(&index_uid)
+                    .build(),
+                MockSplitBuilder::new("split_2")
+                    .with_index_uid(&index_uid)
+                    .build(),
+            ])
+        });
         let mut mock_search_service = MockSearchService::new();
         let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
         result_sender.send(Ok(quickwit_proto::search::LeafSearchStreamResponse {

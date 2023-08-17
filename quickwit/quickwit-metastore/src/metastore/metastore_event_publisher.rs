@@ -29,7 +29,10 @@ use quickwit_proto::IndexUid;
 use tracing::info;
 
 use crate::checkpoint::IndexCheckpointDelta;
-use crate::{IndexMetadata, ListSplitsQuery, Metastore, MetastoreResult, Split, SplitMetadata};
+use crate::{
+    IndexMetadata, ListIndexesQuery, ListSplitsQuery, Metastore, MetastoreResult, Split,
+    SplitMetadata,
+};
 
 /// Metastore events dispatched to subscribers.
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -113,8 +116,11 @@ impl Metastore for MetastoreEventPublisher {
         self.underlying.index_metadata(index_id).await
     }
 
-    async fn list_indexes_metadatas(&self) -> MetastoreResult<Vec<IndexMetadata>> {
-        self.underlying.list_indexes_metadatas().await
+    async fn list_indexes_metadatas(
+        &self,
+        query: ListIndexesQuery,
+    ) -> MetastoreResult<Vec<IndexMetadata>> {
+        self.underlying.list_indexes_metadatas(query).await
     }
 
     async fn delete_index(&self, index_uid: IndexUid) -> MetastoreResult<()> {

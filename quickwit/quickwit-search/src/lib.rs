@@ -49,7 +49,6 @@ pub use collector::QuickwitAggregations;
 use metrics::SEARCH_METRICS;
 use quickwit_common::tower::Pool;
 use quickwit_doc_mapper::DocMapper;
-use quickwit_query::query_ast::QueryAst;
 use tantivy::schema::NamedFieldDocument;
 
 /// Refer to this as `crate::Result<T>`.
@@ -60,7 +59,7 @@ use std::sync::Arc;
 
 pub use find_trace_ids_collector::FindTraceIdsCollector;
 use quickwit_config::SearcherConfig;
-use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
+use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_metastore::{ListSplitsQuery, Metastore, SplitMetadata, SplitState};
 use quickwit_proto::search::{PartialHit, SearchRequest, SearchResponse, SplitIdAndFooterOffsets};
 use quickwit_proto::IndexUid;
@@ -74,7 +73,9 @@ pub use crate::cluster_client::ClusterClient;
 pub use crate::error::{parse_grpc_error, SearchError};
 use crate::fetch_docs::fetch_docs;
 use crate::leaf::{leaf_list_terms, leaf_search};
-pub use crate::root::{jobs_to_leaf_request, root_list_terms, root_search, SearchJob};
+pub use crate::root::{
+    jobs_to_leaf_requests, root_list_terms, root_search, IndexMetasForLeafSearch, SearchJob,
+};
 pub use crate::search_job_placer::{Job, SearchJobPlacer};
 pub use crate::search_response_rest::SearchResponseRest;
 pub use crate::search_stream::root_search_stream;
@@ -122,28 +123,24 @@ fn extract_split_and_footer_offsets(split_metadata: &SplitMetadata) -> SplitIdAn
 
 /// Extract the list of relevant splits for a given search request.
 async fn list_relevant_splits(
-    // TODO: switch search request to index_uid and remove this.
-    index_uid: IndexUid,
-    search_request: &SearchRequest,
+    index_uids: Vec<IndexUid>,
+    start_timestamp: Option<i64>,
+    end_timestamp: Option<i64>,
+    tags_filter_opt: Option<TagFilterAst>,
     metastore: &dyn Metastore,
 ) -> crate::Result<Vec<SplitMetadata>> {
-    let mut query = ListSplitsQuery::for_index(index_uid).with_split_state(SplitState::Published);
+    let mut query =
+        ListSplitsQuery::try_from_index_uids(index_uids)?.with_split_state(SplitState::Published);
 
-    if let Some(start_ts) = search_request.start_timestamp {
+    if let Some(start_ts) = start_timestamp {
         query = query.with_time_range_start_gte(start_ts);
     }
 
-    if let Some(end_ts) = search_request.end_timestamp {
+    if let Some(end_ts) = end_timestamp {
         query = query.with_time_range_end_lt(end_ts);
     }
 
-    let query_ast: QueryAst = serde_json::from_str(&search_request.query_ast).map_err(|_| {
-        SearchError::InternalError(format!(
-            "Failed to deserialize query_ast: `{}`",
-            search_request.query_ast
-        ))
-    })?;
-    if let Some(tags_filter) = extract_tags_from_query(query_ast) {
+    if let Some(tags_filter) = tags_filter_opt {
         query = query.with_tags_filter(tags_filter);
     }
 

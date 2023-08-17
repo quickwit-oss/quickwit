@@ -32,7 +32,7 @@ pub mod test_suite {
     use quickwit_doc_mapper::tag_pruning::{no_tag, tag, TagFilterAst};
     use quickwit_proto::metastore::DeleteQuery;
     use quickwit_proto::IndexUid;
-    use quickwit_query::query_ast::qast_helper;
+    use quickwit_query::query_ast::qast_json_helper;
     use time::OffsetDateTime;
     use tokio::time::sleep;
     use tracing::{error, info};
@@ -41,7 +41,8 @@ pub mod test_suite {
         IndexCheckpointDelta, PartitionId, Position, SourceCheckpoint, SourceCheckpointDelta,
     };
     use crate::{
-        ListSplitsQuery, Metastore, MetastoreError, Split, SplitMaturity, SplitMetadata, SplitState,
+        ListIndexesQuery, ListSplitsQuery, Metastore, MetastoreError, Split, SplitMaturity,
+        SplitMetadata, SplitState,
     };
 
     #[async_trait]
@@ -161,7 +162,7 @@ pub mod test_suite {
             .index_metadata("index-not-found")
             .await
             .unwrap_err();
-        assert!(matches!(error, MetastoreError::IndexDoesNotExist { .. }));
+        assert!(matches!(error, MetastoreError::IndexesDoNotExist { .. }));
 
         let index_uid = metastore.create_index(index_config.clone()).await.unwrap();
 
@@ -173,24 +174,24 @@ pub mod test_suite {
         cleanup_index(&metastore, index_uid).await;
     }
 
-    pub async fn test_metastore_list_indexes<MetastoreToTest: Metastore + DefaultForTest>() {
+    pub async fn test_metastore_list_all_indexes<MetastoreToTest: Metastore + DefaultForTest>() {
         let metastore = MetastoreToTest::default_for_test().await;
 
-        let index_id_suffix = append_random_suffix("test-list-indexes");
-        let index_id_1 = format!("{index_id_suffix}-1");
+        let index_id_prefix = append_random_suffix("test-list-all-indexes");
+        let index_id_1 = format!("{index_id_prefix}-1");
         let index_uri_1 = format!("ram:///indexes/{index_id_1}");
         let index_config_1 = IndexConfig::for_test(&index_id_1, &index_uri_1);
 
-        let index_id_2 = format!("{index_id_suffix}-2");
+        let index_id_2 = format!("{index_id_prefix}-2");
         let index_uri_2 = format!("ram:///indexes/{index_id_2}");
         let index_config_2 = IndexConfig::for_test(&index_id_2, &index_uri_2);
 
         let indexes_count = metastore
-            .list_indexes_metadatas()
+            .list_indexes_metadatas(ListIndexesQuery::All)
             .await
             .unwrap()
             .into_iter()
-            .filter(|index| index.index_id().starts_with(&index_id_suffix))
+            .filter(|index| index.index_id().starts_with(&index_id_prefix))
             .count();
         assert_eq!(indexes_count, 0);
 
@@ -198,16 +199,66 @@ pub mod test_suite {
         let index_uid_2 = metastore.create_index(index_config_2).await.unwrap();
 
         let indexes_count = metastore
-            .list_indexes_metadatas()
+            .list_indexes_metadatas(ListIndexesQuery::All)
             .await
             .unwrap()
             .into_iter()
-            .filter(|index| index.index_id().starts_with(&index_id_suffix))
+            .filter(|index| index.index_id().starts_with(&index_id_prefix))
             .count();
         assert_eq!(indexes_count, 2);
 
         cleanup_index(&metastore, index_uid_1).await;
         cleanup_index(&metastore, index_uid_2).await;
+    }
+
+    pub async fn test_metastore_list_indexes<MetastoreToTest: Metastore + DefaultForTest>() {
+        let metastore = MetastoreToTest::default_for_test().await;
+
+        let index_id_fragment = append_random_suffix("test-list-indexes");
+        let index_id_1 = format!("prefix-1-{index_id_fragment}-suffix-1");
+        let index_uri_1 = format!("ram:///indexes/{index_id_1}");
+        let index_config_1 = IndexConfig::for_test(&index_id_1, &index_uri_1);
+
+        let index_id_2 = format!("prefix-2-{index_id_fragment}-suffix-2");
+        let index_uri_2 = format!("ram:///indexes/{index_id_2}");
+        let index_config_2 = IndexConfig::for_test(&index_id_2, &index_uri_2);
+
+        let index_id_3 = format!("prefix.3.{index_id_fragment}.3");
+        let index_uri_3 = format!("ram:///indexes/{index_id_3}");
+        let index_config_3 = IndexConfig::for_test(&index_id_3, &index_uri_3);
+
+        let index_id_4 = format!("p-4-{index_id_fragment}-suffix-4");
+        let index_uri_4 = format!("ram:///indexes/{index_id_4}");
+        let index_config_4 = IndexConfig::for_test(&index_id_4, &index_uri_4);
+
+        let indexes_count = metastore
+            .list_indexes_metadatas(crate::ListIndexesQuery::IndexIdPatterns(vec![
+                format!("prefix-*-{index_id_fragment}-suffix-*"),
+                format!("prefix*{index_id_fragment}*suffix-*"),
+            ]))
+            .await
+            .unwrap()
+            .len();
+        assert_eq!(indexes_count, 0);
+
+        let index_uid_1 = metastore.create_index(index_config_1).await.unwrap();
+        let index_uid_2 = metastore.create_index(index_config_2).await.unwrap();
+        let index_uid_3 = metastore.create_index(index_config_3).await.unwrap();
+        let index_uid_4 = metastore.create_index(index_config_4).await.unwrap();
+
+        let indexes_count = metastore
+            .list_indexes_metadatas(crate::ListIndexesQuery::IndexIdPatterns(vec![format!(
+                "prefix-*-{index_id_fragment}-suffix-*"
+            )]))
+            .await
+            .unwrap()
+            .len();
+        assert_eq!(indexes_count, 2);
+
+        cleanup_index(&metastore, index_uid_1).await;
+        cleanup_index(&metastore, index_uid_2).await;
+        cleanup_index(&metastore, index_uid_3).await;
+        cleanup_index(&metastore, index_uid_4).await;
     }
 
     pub async fn test_metastore_delete_index<MetastoreToTest: Metastore + DefaultForTest>() {
@@ -221,13 +272,13 @@ pub mod test_suite {
             .delete_index(IndexUid::new("index-not-found"))
             .await
             .unwrap_err();
-        assert!(matches!(error, MetastoreError::IndexDoesNotExist { .. }));
+        assert!(matches!(error, MetastoreError::IndexesDoNotExist { .. }));
 
         let error = metastore
             .delete_index(IndexUid::new("test-delete-index"))
             .await
             .unwrap_err();
-        assert!(matches!(error, MetastoreError::IndexDoesNotExist { .. }));
+        assert!(matches!(error, MetastoreError::IndexesDoNotExist { .. }));
 
         let index_uid = metastore.create_index(index_config.clone()).await.unwrap();
 
@@ -319,14 +370,14 @@ pub mod test_suite {
                 .add_source(IndexUid::new("index-not-found"), source.clone())
                 .await
                 .unwrap_err(),
-            MetastoreError::IndexDoesNotExist { .. }
+            MetastoreError::IndexesDoNotExist { .. }
         ));
         assert!(matches!(
             metastore
                 .add_source(IndexUid::new(index_id), source)
                 .await
                 .unwrap_err(),
-            MetastoreError::IndexDoesNotExist { .. }
+            MetastoreError::IndexesDoNotExist { .. }
         ));
         cleanup_index(&metastore, index_uid).await;
     }
@@ -404,14 +455,14 @@ pub mod test_suite {
                 .add_source(IndexUid::new("index-not-found"), source.clone())
                 .await
                 .unwrap_err(),
-            MetastoreError::IndexDoesNotExist { .. }
+            MetastoreError::IndexesDoNotExist { .. }
         ));
         assert!(matches!(
             metastore
                 .add_source(IndexUid::new(&index_id), source.clone())
                 .await
                 .unwrap_err(),
-            MetastoreError::IndexDoesNotExist { .. }
+            MetastoreError::IndexesDoNotExist { .. }
         ));
 
         metastore
@@ -438,14 +489,14 @@ pub mod test_suite {
                 .delete_source(IndexUid::new("index-not-found"), &source_id)
                 .await
                 .unwrap_err(),
-            MetastoreError::IndexDoesNotExist { .. }
+            MetastoreError::IndexesDoNotExist { .. }
         ));
         assert!(matches!(
             metastore
                 .delete_source(IndexUid::new(index_id), &source_id)
                 .await
                 .unwrap_err(),
-            MetastoreError::IndexDoesNotExist { .. }
+            MetastoreError::IndexesDoNotExist { .. }
         ));
 
         cleanup_index(&metastore, index_uid).await;
@@ -520,7 +571,7 @@ pub mod test_suite {
                 .reset_source_checkpoint(IndexUid::new("index-not-found"), &source_ids[1])
                 .await
                 .unwrap_err(),
-            MetastoreError::IndexDoesNotExist { .. }
+            MetastoreError::IndexesDoNotExist { .. }
         ));
 
         assert!(matches!(
@@ -528,7 +579,7 @@ pub mod test_suite {
                 .reset_source_checkpoint(IndexUid::new(&index_id), &source_ids[1])
                 .await
                 .unwrap_err(),
-            MetastoreError::IndexDoesNotExist { .. }
+            MetastoreError::IndexesDoNotExist { .. }
         ));
 
         metastore
@@ -571,7 +622,7 @@ pub mod test_suite {
                 )
                 .await
                 .unwrap_err();
-            assert!(matches!(error, MetastoreError::IndexDoesNotExist { .. }));
+            assert!(matches!(error, MetastoreError::IndexesDoNotExist { .. }));
         }
 
         // Update the checkpoint, by publishing an empty array of splits with a non-empty
@@ -655,7 +706,7 @@ pub mod test_suite {
                 )
                 .await
                 .unwrap_err();
-            assert!(matches!(error, MetastoreError::IndexDoesNotExist { .. }));
+            assert!(matches!(error, MetastoreError::IndexesDoNotExist { .. }));
         }
 
         // Publish a split on a wrong index uid
@@ -673,7 +724,7 @@ pub mod test_suite {
                 )
                 .await
                 .unwrap_err();
-            assert!(matches!(error, MetastoreError::IndexDoesNotExist { .. }));
+            assert!(matches!(error, MetastoreError::IndexesDoNotExist { .. }));
         }
 
         // Publish a non-existent split on an index
@@ -1150,7 +1201,7 @@ pub mod test_suite {
                 )
                 .await
                 .unwrap_err();
-            assert!(matches!(error, MetastoreError::IndexDoesNotExist { .. }));
+            assert!(matches!(error, MetastoreError::IndexesDoNotExist { .. }));
         }
 
         // Replace a non-existent split on an index
@@ -1350,7 +1401,7 @@ pub mod test_suite {
             .mark_splits_for_deletion(IndexUid::new("index-not-found"), &[])
             .await
             .unwrap_err();
-        assert!(matches!(error, MetastoreError::IndexDoesNotExist { .. }));
+        assert!(matches!(error, MetastoreError::IndexesDoNotExist { .. }));
 
         metastore
             .mark_splits_for_deletion(index_uid.clone(), &["split-not-found"])
@@ -1472,14 +1523,14 @@ pub mod test_suite {
             .await
             .unwrap_err();
 
-        assert!(matches!(error, MetastoreError::IndexDoesNotExist { .. }));
+        assert!(matches!(error, MetastoreError::IndexesDoNotExist { .. }));
 
         let error = metastore
             .delete_splits(IndexUid::new(&index_id), &[])
             .await
             .unwrap_err();
 
-        assert!(matches!(error, MetastoreError::IndexDoesNotExist { .. }));
+        assert!(matches!(error, MetastoreError::IndexesDoNotExist { .. }));
 
         metastore
             .delete_splits(index_uid.clone(), &["split-not-found"])
@@ -1602,7 +1653,7 @@ pub mod test_suite {
             .list_all_splits(IndexUid::new("index-not-found"))
             .await
             .unwrap_err();
-        assert!(matches!(error, MetastoreError::IndexDoesNotExist { .. }));
+        assert!(matches!(error, MetastoreError::IndexesDoNotExist { .. }));
 
         let index_uid = metastore.create_index(index_config).await.unwrap();
 
@@ -1725,7 +1776,7 @@ pub mod test_suite {
             let query =
                 ListSplitsQuery::for_index(index_uid.clone()).with_split_state(SplitState::Staged);
             let error = metastore.list_splits(query).await.unwrap_err();
-            assert!(matches!(error, MetastoreError::IndexDoesNotExist { .. }));
+            assert!(matches!(error, MetastoreError::IndexesDoNotExist { .. }));
         }
         {
             let index_uid = metastore.create_index(index_config.clone()).await.unwrap();
@@ -2186,7 +2237,7 @@ pub mod test_suite {
         let index_uid = metastore.create_index(index_config.clone()).await.unwrap();
         let delete_query = DeleteQuery {
             index_uid: index_uid.to_string(),
-            query_ast: qast_helper("my_field:my_value", &[]),
+            query_ast: qast_json_helper("my_field:my_value", &[]),
             start_timestamp: Some(1),
             end_timestamp: Some(2),
         };
@@ -2199,7 +2250,7 @@ pub mod test_suite {
             })
             .await
             .unwrap_err();
-        assert!(matches!(error, MetastoreError::IndexDoesNotExist { .. }));
+        assert!(matches!(error, MetastoreError::IndexesDoNotExist { .. }));
 
         // Create a delete task on an index with wrong incarnation_id
         let error = metastore
@@ -2209,7 +2260,7 @@ pub mod test_suite {
             })
             .await
             .unwrap_err();
-        assert!(matches!(error, MetastoreError::IndexDoesNotExist { .. }));
+        assert!(matches!(error, MetastoreError::IndexesDoNotExist { .. }));
 
         // Create a delete task.
         let delete_task_1 = metastore
@@ -2249,13 +2300,13 @@ pub mod test_suite {
 
         let delete_query_index_1 = DeleteQuery {
             index_uid: index_uid_1.to_string(),
-            query_ast: qast_helper("my_field:my_value", &[]),
+            query_ast: qast_json_helper("my_field:my_value", &[]),
             start_timestamp: Some(1),
             end_timestamp: Some(2),
         };
         let delete_query_index_2 = DeleteQuery {
             index_uid: index_uid_2.to_string(),
-            query_ast: qast_helper("my_field:my_value", &[]),
+            query_ast: qast_json_helper("my_field:my_value", &[]),
             start_timestamp: Some(1),
             end_timestamp: Some(2),
         };
@@ -2304,7 +2355,7 @@ pub mod test_suite {
         let index_uid = metastore.create_index(index_config.clone()).await.unwrap();
         let delete_query = DeleteQuery {
             index_uid: index_uid.to_string(),
-            query_ast: qast_helper("my_field:my_value", &[]),
+            query_ast: qast_json_helper("my_field:my_value", &[]),
             start_timestamp: Some(1),
             end_timestamp: Some(2),
         };
@@ -2338,13 +2389,13 @@ pub mod test_suite {
             .unwrap();
         let delete_query_index_1 = DeleteQuery {
             index_uid: index_uid_1.to_string(),
-            query_ast: qast_helper("my_field:my_value", &[]),
+            query_ast: qast_json_helper("my_field:my_value", &[]),
             start_timestamp: Some(1),
             end_timestamp: Some(2),
         };
         let delete_query_index_2 = DeleteQuery {
             index_uid: index_uid_2.to_string(),
-            query_ast: qast_helper("my_field:my_value", &[]),
+            query_ast: qast_json_helper("my_field:my_value", &[]),
             start_timestamp: Some(1),
             end_timestamp: Some(2),
         };
@@ -2439,7 +2490,8 @@ pub mod test_suite {
             .list_stale_splits(IndexUid::new("index-not-found"), 0, 10)
             .await
             .unwrap_err();
-        assert!(matches!(error, MetastoreError::IndexDoesNotExist { .. }));
+        println!("{:?}", error);
+        assert!(matches!(error, MetastoreError::IndexesDoNotExist { .. }));
 
         {
             info!("List stale splits on an index");
@@ -2566,7 +2618,7 @@ pub mod test_suite {
             error!(err=?metastore_err);
             assert!(matches!(
                 metastore_err,
-                MetastoreError::IndexDoesNotExist { .. }
+                MetastoreError::IndexesDoNotExist { .. }
             ));
         }
 
@@ -2652,7 +2704,7 @@ pub mod test_suite {
             )
             .await
             .unwrap_err();
-        assert!(matches!(error, MetastoreError::IndexDoesNotExist { .. }));
+        assert!(matches!(error, MetastoreError::IndexesDoNotExist { .. }));
 
         let index_uid = metastore.create_index(index_config.clone()).await.unwrap();
 
@@ -2754,6 +2806,12 @@ macro_rules! metastore_test_suite {
             async fn test_metastore_list_indexes() {
                 let _ = tracing_subscriber::fmt::try_init();
                 crate::tests::test_suite::test_metastore_list_indexes::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            async fn test_metastore_list_all_indexes() {
+                let _ = tracing_subscriber::fmt::try_init();
+                crate::tests::test_suite::test_metastore_list_all_indexes::<$metastore_type>().await;
             }
 
             #[tokio::test]
