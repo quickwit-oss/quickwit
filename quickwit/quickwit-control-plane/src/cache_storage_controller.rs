@@ -31,7 +31,7 @@ use quickwit_cache_storage::CacheStorageService;
 use quickwit_cluster::ClusterChange;
 use quickwit_common::rendezvous_hasher::sort_by_rendez_vous_hash;
 use quickwit_common::uri::{Protocol, Uri};
-use quickwit_metastore::{IndexMetadata, ListSplitsQuery, Metastore};
+use quickwit_metastore::{IndexMetadata, ListIndexesQuery, ListSplitsQuery, Metastore};
 use quickwit_proto::cache_storage::{
     CacheStorageServiceClient, NotifySplitsChangeRequest, SplitsChangeNotification,
 };
@@ -107,7 +107,11 @@ impl CacheStorageController {
         let mut updated_nodes = HashSet::new();
         let available_nodes = self.pool.available_nodes().await;
         let mut node_to_split_map: HashMap<String, Vec<(String, IndexUid, Uri)>> = HashMap::new();
-        for index_metadata in self.metastore.list_indexes_metadatas().await? {
+        for index_metadata in self
+            .metastore
+            .list_indexes_metadatas(ListIndexesQuery::All)
+            .await?
+        {
             let index_uid = index_metadata.index_uid.clone();
             let storage_uri = index_metadata.index_uri();
             if storage_uri.protocol() != Protocol::Cache {
