@@ -34,7 +34,6 @@ use quickwit_metastore::{ListSplitsQuery, Metastore, SplitState};
 use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::metastore::MetastoreError;
 use time::OffsetDateTime;
-use tokio::join;
 use tracing::{debug, error, info, instrument};
 
 use crate::actors::indexing_pipeline::wait_duration_before_retry;
@@ -358,18 +357,25 @@ impl MergePipeline {
         let Some(handles) = &self.handles_opt else {
             return;
         };
-        let (merge_planner_state, merge_uploader_counters, merge_publisher_counters) = join!(
-            handles.merge_planner.observe(),
-            handles.merge_uploader.observe(),
-            handles.merge_publisher.observe(),
-        );
+        handles.merge_planner.refresh_observe();
+        handles.merge_uploader.refresh_observe();
+        handles.merge_publisher.refresh_observe();
         self.statistics = self
             .previous_generations_statistics
             .clone()
-            .add_actor_counters(&merge_uploader_counters, &merge_publisher_counters)
+            .add_actor_counters(
+                &handles.merge_uploader.last_observation(),
+                &handles.merge_publisher.last_observation(),
+            )
             .set_generation(self.statistics.generation)
             .set_num_spawn_attempts(self.statistics.num_spawn_attempts)
-            .set_ongoing_merges(merge_planner_state.ongoing_merge_operations.len());
+            .set_ongoing_merges(
+                handles
+                    .merge_planner
+                    .last_observation()
+                    .ongoing_merge_operations
+                    .len(),
+            );
     }
 
     async fn perform_health_check(

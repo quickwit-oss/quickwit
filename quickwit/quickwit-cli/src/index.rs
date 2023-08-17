@@ -33,7 +33,7 @@ use colored::{ColoredString, Colorize};
 use humantime::format_duration;
 use indicatif::{ProgressBar, ProgressStyle};
 use itertools::Itertools;
-use quickwit_actors::{ActorHandle, ObservationType};
+use quickwit_actors::ActorHandle;
 use quickwit_common::uri::Uri;
 use quickwit_config::{ConfigFormat, IndexConfig};
 use quickwit_indexing::models::IndexingStatistics;
@@ -923,18 +923,16 @@ pub async fn start_statistics_reporting_loop(
         report_interval.tick().await;
         // Try to receive with a timeout of 1 second.
         // 1 second is also the frequency at which we update statistic in the console
-        let observation = pipeline_handle.observe().await;
+        pipeline_handle.refresh_observe();
+
+        let observation = pipeline_handle.last_observation();
 
         // Let's not display live statistics to allow screen to scroll.
-        if observation.state.num_docs > 0 {
-            display_statistics(
-                &mut stdout_handle,
-                &mut throughput_calculator,
-                &observation.state,
-            )?;
+        if observation.num_docs > 0 {
+            display_statistics(&mut stdout_handle, &mut throughput_calculator, &observation)?;
         }
 
-        if observation.obs_type == ObservationType::PostMortem {
+        if pipeline_handle.state().is_exit() {
             break;
         }
     }

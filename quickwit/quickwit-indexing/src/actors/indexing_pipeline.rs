@@ -34,7 +34,6 @@ use quickwit_metastore::Metastore;
 use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::metastore::MetastoreError;
 use quickwit_storage::Storage;
-use tokio::join;
 use tokio::sync::Semaphore;
 use tracing::{debug, error, info, instrument};
 
@@ -237,20 +236,18 @@ impl IndexingPipeline {
         let Some(handles) = &self.handles_opt else {
             return;
         };
-        let (doc_processor_counters, indexer_counters, uploader_counters, publisher_counters) = join!(
-            handles.doc_processor.observe(),
-            handles.indexer.observe(),
-            handles.uploader.observe(),
-            handles.publisher.observe(),
-        );
+        handles.doc_processor.refresh_observe();
+        handles.indexer.refresh_observe();
+        handles.uploader.refresh_observe();
+        handles.publisher.refresh_observe();
         self.statistics = self
             .previous_generations_statistics
             .clone()
             .add_actor_counters(
-                &doc_processor_counters,
-                &indexer_counters,
-                &uploader_counters,
-                &publisher_counters,
+                &handles.doc_processor.last_observation(),
+                &handles.indexer.last_observation(),
+                &handles.uploader.last_observation(),
+                &handles.publisher.last_observation(),
             )
             .set_generation(self.statistics.generation)
             .set_num_spawn_attempts(self.statistics.num_spawn_attempts);
