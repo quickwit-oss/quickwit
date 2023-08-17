@@ -276,11 +276,7 @@ pub(crate) async fn extract_index_id_patterns(
         })?;
         index_ids_patterns.push(index_id_pattern.to_string());
     }
-    if index_ids_patterns.is_empty() {
-        return Err(warp::reject::custom(crate::rest::InvalidArgument(
-            "Missing index ID.".to_string(),
-        )));
-    }
+    assert!(!index_ids_patterns.is_empty());
     Ok(index_ids_patterns)
 }
 
@@ -496,6 +492,17 @@ mod tests {
             .recover(recover_fn)
     }
 
+    #[tokio::test]
+    async fn test_extract_index_id_patterns() {
+        extract_index_id_patterns("my-index".to_string())
+            .await
+            .unwrap();
+        extract_index_id_patterns("".to_string()).await.unwrap_err();
+        extract_index_id_patterns(" ".to_string())
+            .await
+            .unwrap_err();
+    }
+
     #[test]
     fn test_serialize_search_response() -> anyhow::Result<()> {
         let search_response = SearchResponseRest {
@@ -599,7 +606,8 @@ mod tests {
             .unwrap();
         assert_eq!(
             rejection.0,
-            "Index ID pattern `quickwit-demo-index**` is invalid. Patterns must not contain `**`."
+            "Index ID pattern `quickwit-demo-index**` is invalid. Patterns must not contain \
+             multiple consecutive `*`."
         );
     }
 

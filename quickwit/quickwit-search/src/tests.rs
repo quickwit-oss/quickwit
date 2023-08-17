@@ -30,7 +30,7 @@ use quickwit_proto::search::{
     SortValue,
 };
 use quickwit_query::query_ast::{
-    qast_helper, qast_string_helper, query_ast_from_user_text, QueryAst,
+    qast_helper, qast_json_helper, query_ast_from_user_text, QueryAst,
 };
 use serde_json::{json, Value as JsonValue};
 use tantivy::schema::Value as TantivyValue;
@@ -64,7 +64,7 @@ async fn test_single_node_simple() -> anyhow::Result<()> {
     test_sandbox.add_documents(docs.clone()).await?;
     let search_request = SearchRequest {
         index_id_patterns: vec![index_id.to_string()],
-        query_ast: qast_string_helper("anthropomorphic", &["body"]),
+        query_ast: qast_json_helper("anthropomorphic", &["body"]),
         max_hits: 2,
         ..Default::default()
     };
@@ -107,7 +107,7 @@ async fn test_single_node_termset() -> anyhow::Result<()> {
     test_sandbox.add_documents(docs.clone()).await?;
     let search_request = SearchRequest {
         index_id_patterns: vec![index_id.to_string()],
-        query_ast: qast_string_helper("title: IN [beagle]", &[]),
+        query_ast: qast_json_helper("title: IN [beagle]", &[]),
         start_timestamp: None,
         end_timestamp: None,
         max_hits: 2,
@@ -150,7 +150,7 @@ async fn test_single_search_with_snippet() -> anyhow::Result<()> {
     test_sandbox.add_documents(docs.clone()).await?;
     let search_request = SearchRequest {
         index_id_patterns: vec![index_id.to_string()],
-        query_ast: qast_string_helper("beagle", &["title", "body"]),
+        query_ast: qast_json_helper("beagle", &["title", "body"]),
         snippet_fields: vec!["title".to_string(), "body".to_string()],
         max_hits: 2,
         ..Default::default()
@@ -187,7 +187,7 @@ async fn slop_search_and_check(
     query: &str,
     expected_num_match: u64,
 ) -> anyhow::Result<()> {
-    let query_ast = qast_string_helper(query, &["body"]);
+    let query_ast = qast_json_helper(query, &["body"]);
     let search_request = SearchRequest {
         index_id_patterns: vec![index_id.to_string()],
         query_ast,
@@ -379,7 +379,7 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
 
     let search_request = SearchRequest {
         index_id_patterns: vec![index_id.to_string()],
-        query_ast: qast_string_helper("info", &["body"]),
+        query_ast: qast_json_helper("info", &["body"]),
         start_timestamp: Some(start_timestamp + 10),
         end_timestamp: Some(start_timestamp + 20),
         max_hits: 15,
@@ -403,7 +403,7 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
     // filter on time range [i64::MIN 20[ should only hit first 19 docs because of filtering
     let search_request = SearchRequest {
         index_id_patterns: vec![index_id.to_string()],
-        query_ast: qast_string_helper("info", &["body"]),
+        query_ast: qast_json_helper("info", &["body"]),
         end_timestamp: Some(start_timestamp + 20),
         max_hits: 25,
         sort_fields: vec![SortField {
@@ -426,7 +426,7 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
     // filter on tag, should return an error since no split is tagged
     let search_request = SearchRequest {
         index_id_patterns: vec![index_id.to_string()],
-        query_ast: qast_string_helper("tag:foo AND info", &["body"]),
+        query_ast: qast_json_helper("tag:foo AND info", &["body"]),
         max_hits: 25,
         sort_fields: vec![SortField {
             field_name: "ts".to_string(),
@@ -511,7 +511,7 @@ async fn single_node_search_sort_by_field(
 
     let search_request = SearchRequest {
         index_id_patterns: vec![index_id.to_string()],
-        query_ast: qast_string_helper("city", &["description"]),
+        query_ast: qast_json_helper("city", &["description"]),
         max_hits: 15,
         sort_fields: vec![SortField {
             field_name: sort_by_field.to_string(),
@@ -868,7 +868,7 @@ async fn test_single_node_invalid_sorting_with_query() {
 
     let search_request = SearchRequest {
         index_id_patterns: vec![index_id.to_string()],
-        query_ast: qast_string_helper("city", &["description"]),
+        query_ast: qast_json_helper("city", &["description"]),
         max_hits: 15,
         sort_fields: vec![SortField {
             field_name: "description".to_string(),
@@ -976,7 +976,7 @@ async fn test_search_util(test_sandbox: &TestSandbox, query: &str) -> Vec<u32> {
         .collect();
     let request = SearchRequest {
         index_id_patterns: vec![test_sandbox.index_uid().index_id().to_string()],
-        query_ast: qast_string_helper(query, &[]),
+        query_ast: qast_json_helper(query, &[]),
         max_hits: 100,
         ..Default::default()
     };
@@ -1296,7 +1296,7 @@ async fn test_single_node_aggregation() -> anyhow::Result<()> {
     test_sandbox.add_documents(docs.clone()).await?;
     let search_request = SearchRequest {
         index_id_patterns: vec![index_id.to_string()],
-        query_ast: qast_string_helper("*", &[]),
+        query_ast: qast_json_helper("*", &[]),
         max_hits: 2,
         aggregation_request: Some(agg_req.to_string()),
         ..Default::default()
@@ -1369,7 +1369,7 @@ async fn test_single_node_aggregation_missing_fast_field() {
     test_sandbox.add_documents(docs.clone()).await.unwrap();
     let search_request = SearchRequest {
         index_id_patterns: vec![index_id.to_string()],
-        query_ast: qast_string_helper("*", &[]),
+        query_ast: qast_json_helper("*", &[]),
         max_hits: 2,
         aggregation_request: Some(agg_req.to_string()),
         ..Default::default()
@@ -1411,7 +1411,7 @@ async fn test_single_node_with_ip_field() -> anyhow::Result<()> {
     {
         let search_request = SearchRequest {
             index_id_patterns: vec![index_id.to_string()],
-            query_ast: qast_string_helper("*", &[]),
+            query_ast: qast_json_helper("*", &[]),
             max_hits: 10,
             ..Default::default()
         };
@@ -1427,7 +1427,7 @@ async fn test_single_node_with_ip_field() -> anyhow::Result<()> {
     {
         let search_request = SearchRequest {
             index_id_patterns: vec![index_id.to_string()],
-            query_ast: qast_string_helper("10.10.11.125", &["host"]),
+            query_ast: qast_json_helper("10.10.11.125", &["host"]),
             max_hits: 10,
             ..Default::default()
         };
@@ -1483,7 +1483,7 @@ async fn test_single_node_range_queries() -> anyhow::Result<()> {
     {
         let search_request = SearchRequest {
             index_id_patterns: vec![index_id.to_string()],
-            query_ast: qast_string_helper(
+            query_ast: qast_json_helper(
                 "datetime:[2023-01-10T15:13:36Z TO 2023-01-10T15:13:38Z}",
                 &[],
             ),
@@ -1502,7 +1502,7 @@ async fn test_single_node_range_queries() -> anyhow::Result<()> {
     {
         let search_request = SearchRequest {
             index_id_patterns: vec![index_id.to_string()],
-            query_ast: qast_string_helper("status_code:[400 TO 401]", &[]),
+            query_ast: qast_json_helper("status_code:[400 TO 401]", &[]),
             max_hits: 10,
             ..Default::default()
         };
@@ -1518,7 +1518,7 @@ async fn test_single_node_range_queries() -> anyhow::Result<()> {
     {
         let search_request = SearchRequest {
             index_id_patterns: vec![index_id.to_string()],
-            query_ast: qast_string_helper("host:[10.0.0.0 TO 10.255.255.255]", &[]),
+            query_ast: qast_json_helper("host:[10.0.0.0 TO 10.255.255.255]", &[]),
             max_hits: 10,
             ..Default::default()
         };
@@ -1534,7 +1534,7 @@ async fn test_single_node_range_queries() -> anyhow::Result<()> {
     {
         let search_request = SearchRequest {
             index_id_patterns: vec![index_id.to_string()],
-            query_ast: qast_string_helper("latency:[100 TO *]", &[]),
+            query_ast: qast_json_helper("latency:[100 TO *]", &[]),
             max_hits: 10,
             ..Default::default()
         };
@@ -1550,7 +1550,7 @@ async fn test_single_node_range_queries() -> anyhow::Result<()> {
     {
         let search_request = SearchRequest {
             index_id_patterns: vec![index_id.to_string()],
-            query_ast: qast_string_helper("error_code:[-1 TO 1]", &[]),
+            query_ast: qast_json_helper("error_code:[-1 TO 1]", &[]),
             max_hits: 10,
             ..Default::default()
         };
@@ -1740,7 +1740,7 @@ async fn test_single_node_find_trace_ids_collector() {
 
         let search_request = SearchRequest {
             index_id_patterns: vec![index_id.to_string()],
-            query_ast: qast_string_helper("*", &[]),
+            query_ast: qast_json_helper("*", &[]),
             aggregation_request: Some(aggregations),
             ..Default::default()
         };

@@ -167,7 +167,6 @@ impl Metastore for InstrumentedMetastore {
             .index_uids
             .iter()
             .map(|index_uid| index_uid.to_string())
-            .collect_vec()
             .join(",");
         instrument!(
             self.underlying.list_splits(query.clone()).await,

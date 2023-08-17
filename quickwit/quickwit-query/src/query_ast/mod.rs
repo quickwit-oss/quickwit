@@ -272,7 +272,7 @@ fn parse_user_query_in_asts(
 /// # Panics
 ///
 /// Panics if the user text is invalid.
-pub fn qast_string_helper(user_text: &str, default_fields: &[&'static str]) -> String {
+pub fn qast_json_helper(user_text: &str, default_fields: &[&'static str]) -> String {
     let ast = qast_helper(user_text, default_fields);
     serde_json::to_string(&ast).expect("The query AST should be JSON serializable.")
 }

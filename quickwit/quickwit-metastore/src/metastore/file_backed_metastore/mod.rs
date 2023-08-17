@@ -32,12 +32,13 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::future::try_join_all;
+use itertools::Itertools;
 use quickwit_common::uri::Uri;
 use quickwit_config::{validate_index_id_pattern, IndexConfig, SourceConfig};
 use quickwit_proto::metastore::{DeleteQuery, DeleteTask};
 use quickwit_proto::IndexUid;
 use quickwit_storage::Storage;
-use regex::Regex;
+use regex::RegexSet;
 use tokio::sync::{Mutex, OwnedMutexGuard, RwLock};
 
 use self::file_backed_index::FileBackedIndex;
@@ -551,7 +552,7 @@ impl Metastore for FileBackedMetastore {
         let mut splits = Vec::new();
         for index_uid in query.index_uids.iter() {
             let index_splits = self
-                .read(index_uid.clone(), |index| index.list_splits(query.clone()))
+                .read(index_uid.clone(), |index| index.list_splits(&query))
                 .await?;
             splits.extend(index_splits);
         }
@@ -572,17 +573,16 @@ impl Metastore for FileBackedMetastore {
         // 2) Get each index metadata. Note that each get will take a read lock on
         // `per_index_metastores`. Lock is released in 1) to let a concurrent task/thread to
         // take a write lock on `per_index_metastores`.
-        let index_matcher = match query {
-            ListIndexesQuery::IndexIdPatterns(patterns) => {
-                IndexIdPatternsMatcher::try_from_patterns(patterns).map_err(|error| {
-                    MetastoreError::InternalError {
-                        message: "Failed to build `IndexIdPatternsMatcher`".to_string(),
-                        cause: error.to_string(),
-                    }
-                })?
-            }
-            ListIndexesQuery::All => IndexIdPatternsMatcher::all(),
+        let index_matcher_result = match query {
+            ListIndexesQuery::IndexIdPatterns(patterns) => build_regex_set_from_patterns(patterns),
+            ListIndexesQuery::All => build_regex_set_from_patterns(vec!["*".to_string()]),
         };
+        let index_matcher =
+            index_matcher_result.map_err(|error| MetastoreError::InternalError {
+                message: "Failed to build RegexSet from index patterns`".to_string(),
+                cause: error.to_string(),
+            })?;
+
         let index_ids: Vec<String> = {
             let per_index_metastores_rlock = self.per_index_metastores.read().await;
             per_index_metastores_rlock
@@ -591,7 +591,7 @@ impl Metastore for FileBackedMetastore {
                     IndexState::Alive(_) => Some(index_id),
                     _ => None,
                 })
-                .filter(|index_id| index_matcher.matches(index_id))
+                .filter(|index_id| index_matcher.is_match(index_id))
                 .cloned()
                 .collect()
         };
@@ -698,74 +698,32 @@ async fn get_index_mutex(
     }
 }
 
-/// Index ID patterns matcher which matches one of the given patterns with the following
-/// rules:
+/// Returns a [`RegexSet`] built from the following rules:
 /// - If the given pattern does not contain a `*` char, it matches the exact pattern.
 /// - If the given pattern contains one or more `*`, it matches the regex built from a regex where
 ///   `*` is replaced by `.*`. All other regular expression meta characters are escaped.
-struct IndexIdPatternsMatcher {
-    match_all: bool,
-    index_ids: Vec<String>,
-    regexes: Vec<Regex>,
-}
-
-impl IndexIdPatternsMatcher {
-    fn all() -> Self {
-        Self {
-            match_all: true,
-            index_ids: Vec::new(),
-            regexes: Vec::new(),
-        }
+fn build_regex_set_from_patterns(patterns: Vec<String>) -> anyhow::Result<RegexSet> {
+    // If there is a match all pattern, no need to go further.
+    if patterns.iter().any(|pattern| pattern == "*") {
+        return Ok(RegexSet::new([".*".to_string()]).expect("Regex compilation shouldn't fail"));
     }
-
-    fn try_from_patterns(patterns: Vec<String>) -> anyhow::Result<Self> {
-        let mut index_ids = Vec::new();
-        let mut regexes = Vec::new();
-        // If there is a match all pattern, no need to go further.
-        if patterns.iter().any(|pattern| pattern == "*") {
-            return Ok(Self::all());
-        }
-        for index_pattern in patterns {
-            if index_pattern.contains('*') {
-                let regex = build_regex_from_pattern(&index_pattern)?;
-                regexes.push(regex);
-            } else {
-                index_ids.push(index_pattern);
-            }
-        }
-        Ok(Self {
-            match_all: false,
-            index_ids,
-            regexes,
-        })
-    }
-
-    fn matches(&self, index_id: &str) -> bool {
-        if self.match_all {
-            return true;
-        }
-
-        self.index_ids.iter().any(|x| x == index_id)
-            || self.regexes.iter().any(|regex| regex.is_match(index_id))
-    }
+    let regexes: Vec<String> = patterns
+        .iter()
+        .map(|index_pattern| build_regex_exprs_from_pattern(index_pattern))
+        .try_collect()?;
+    let regex_set = RegexSet::new(regexes)?;
+    Ok(regex_set)
 }
 
 /// Converts the tokens into a valid regex.
-fn build_regex_from_pattern(index_pattern: &str) -> anyhow::Result<Regex> {
+fn build_regex_exprs_from_pattern(index_pattern: &str) -> anyhow::Result<String> {
     // Note: consecutive '*' are not allowed in the pattern.
     validate_index_id_pattern(index_pattern)?;
     let mut re: String = String::new();
     re.push('^');
-    for tok in index_pattern.chars() {
-        if tok == '*' {
-            re.push_str(".*");
-        } else {
-            re.push_str(&regex::escape(&tok.to_string()));
-        }
-    }
+    re.push_str(&index_pattern.split('*').map(regex::escape).join(".*"));
     re.push('$');
-    let regex = Regex::new(&re).expect("Regex compilation shouldn't fail");
-    Ok(regex)
+    Ok(re)
 }
 
 #[cfg(test)]
@@ -791,7 +749,7 @@ mod tests {
     use futures::executor::block_on;
     use quickwit_config::IndexConfig;
     use quickwit_proto::metastore::DeleteQuery;
-    use quickwit_query::query_ast::qast_string_helper;
+    use quickwit_query::query_ast::qast_json_helper;
     use quickwit_storage::{MockStorage, RamStorage, Storage, StorageErrorKind};
     use rand::Rng;
     use time::OffsetDateTime;
@@ -1541,7 +1499,7 @@ mod tests {
             start_timestamp: None,
             end_timestamp: None,
             index_uid: index_uid.to_string(),
-            query_ast: qast_string_helper("harry potter", &["body"]),
+            query_ast: qast_json_helper("harry potter", &["body"]),
         };
 
         let delete_task_1 = metastore
@@ -1576,7 +1534,7 @@ mod tests {
             start_timestamp: None,
             end_timestamp: None,
             index_uid: index_uid.to_string(),
-            query_ast: qast_string_helper("harry potter", &["body"]),
+            query_ast: qast_json_helper("harry potter", &["body"]),
         };
         let delete_task_4 = metastore
             .create_delete_task(delete_query.clone())
@@ -1586,33 +1544,34 @@ mod tests {
     }
     #[test]
     fn test_build_regexes_from_pattern() {
-        assert_eq!(build_regex_from_pattern("*").unwrap().to_string(), r"^.*$",);
+        assert_eq!(build_regex_exprs_from_pattern("*").unwrap(), r"^.*$",);
         assert_eq!(
-            build_regex_from_pattern("index-1").unwrap().to_string(),
+            build_regex_exprs_from_pattern("index-1").unwrap(),
             r"^index\-1$",
         );
         assert_eq!(
-            build_regex_from_pattern("*-index-*-1").unwrap().to_string(),
+            build_regex_exprs_from_pattern("*-index-*-1").unwrap(),
             r"^.*\-index\-.*\-1$",
         );
         assert_eq!(
-            build_regex_from_pattern("INDEX.2*-1").unwrap().to_string(),
+            build_regex_exprs_from_pattern("INDEX.2*-1").unwrap(),
             r"^INDEX\.2.*\-1$",
         );
         // Tests with invalid pattern.
         assert_eq!(
-            &build_regex_from_pattern("index-**-1")
+            &build_regex_exprs_from_pattern("index-**-1")
                 .unwrap_err()
                 .to_string(),
-            "Index ID pattern `index-**-1` is invalid. Patterns must not contain `**`.",
+            "Index ID pattern `index-**-1` is invalid. Patterns must not contain multiple \
+             consecutive `*`.",
         );
-        assert!(build_regex_from_pattern("-index-1").is_err());
+        assert!(build_regex_exprs_from_pattern("-index-1").is_err());
     }
 
     #[test]
     fn test_index_ids_patterns_matcher() {
         {
-            let matcher = IndexIdPatternsMatcher::try_from_patterns(vec![
+            let matcher = build_regex_set_from_patterns(vec![
                 "index-1".to_string(),
                 "index-2".to_string(),
                 "*-index-pattern-1-*".to_string(),
@@ -1620,25 +1579,23 @@ mod tests {
             ])
             .unwrap();
 
-            assert!(matcher.matches("index-1"));
-            assert!(matcher.matches("index-2"));
-            assert!(matcher.matches("abc-index-pattern-1-1"));
-            assert!(matcher.matches("def-index-pattern-1-2"));
-            assert!(matcher.matches("ghi.index.pattern.1.2-1"));
-            assert!(matcher.matches("jkl.index.pattern.1.2-bignumber"));
-            assert!(!matcher.matches("index-3"));
-            assert!(!matcher.matches("index.pattern.1.2-1"));
+            assert!(matcher.is_match("index-1"));
+            assert!(matcher.is_match("index-2"));
+            assert!(matcher.is_match("abc-index-pattern-1-1"));
+            assert!(matcher.is_match("def-index-pattern-1-2"));
+            assert!(matcher.is_match("ghi.index.pattern.1.2-1"));
+            assert!(matcher.is_match("jkl.index.pattern.1.2-bignumber"));
+            assert!(!matcher.is_match("index-3"));
+            assert!(!matcher.is_match("index.pattern.1.2-1"));
         }
         {
-            let matcher = IndexIdPatternsMatcher::try_from_patterns(vec![
-                "index-1".to_string(),
-                "*".to_string(),
-            ])
-            .unwrap();
+            let matcher =
+                build_regex_set_from_patterns(vec!["index-1".to_string(), "*".to_string()])
+                    .unwrap();
 
-            assert!(matcher.matches("index-1"));
-            assert!(matcher.matches("index-2"));
-            assert!(matcher.matches("abc-index-pattern-1-1"));
+            assert!(matcher.is_match("index-1"));
+            assert!(matcher.is_match("index-2"));
+            assert!(matcher.is_match("abc-index-pattern-1-1"));
         }
     }
 }

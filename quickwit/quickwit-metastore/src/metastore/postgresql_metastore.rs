@@ -231,15 +231,12 @@ fn write_sql_filter<V: Display>(
 
 fn build_query_filter(mut sql: String, query: &ListSplitsQuery) -> String {
     // Note: `ListSplitsQuery` builder enforces a non empty `index_uids` list.
-    sql.push_str(" WHERE (");
-    for (idx, index_uid) in query.index_uids.iter().enumerate() {
-        let _ = write!(sql, "index_uid = '{}'", index_uid);
-
-        if idx < query.index_uids.len() - 1 {
-            sql.push_str(" OR ");
-        }
-    }
-    sql.push(')');
+    let where_predicate: String = query
+        .index_uids
+        .iter()
+        .map(|index_uid| format!("index_uid = '{index_uid}'"))
+        .join(" OR ");
+    sql.push_str(&format!(" WHERE ({where_predicate})"));
 
     if !query.split_states.is_empty() {
         let params = query
@@ -767,21 +764,21 @@ impl Metastore for PostgresqlMetastore {
         // returning splits. We could do the same here or remove index existence check `list_splits`
         // for all metastore implementations.
         if pg_splits.is_empty() {
-            let index_ids_str = query
+            let index_ids_str: Vec<String> = query
                 .index_uids
                 .iter()
                 .map(|index_uid| index_uid.index_id().to_string())
-                .collect_vec();
+                .collect();
             let found_index_ids: HashSet<String> = self
                 .list_indexes_metadatas(ListIndexesQuery::IndexIdPatterns(index_ids_str.clone()))
                 .await?
                 .into_iter()
                 .map(|index_metadata| index_metadata.index_id().to_string())
                 .collect();
-            let missing_index_ids = index_ids_str
+            let missing_index_ids: Vec<String> = index_ids_str
                 .into_iter()
                 .filter(|index_id| !found_index_ids.contains(index_id))
-                .collect_vec();
+                .collect();
             if !missing_index_ids.is_empty() {
                 return Err(MetastoreError::IndexesDoNotExist {
                     index_ids: missing_index_ids,
@@ -1604,7 +1601,8 @@ mod tests {
 
         let index_uid_2 = IndexUid::new("test-index-2");
         let query =
-            ListSplitsQuery::try_for_indexes(vec![index_uid.clone(), index_uid_2.clone()]).unwrap();
+            ListSplitsQuery::try_from_index_uids(vec![index_uid.clone(), index_uid_2.clone()])
+                .unwrap();
         let sql = build_query_filter(String::new(), &query);
         assert_eq!(
             sql,

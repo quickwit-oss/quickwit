@@ -356,7 +356,7 @@ mod tests {
                 index_uid: index_uid.to_string(),
                 start_timestamp: None,
                 end_timestamp: None,
-                query_ast: quickwit_query::query_ast::qast_string_helper("body:delete", &[]),
+                query_ast: quickwit_query::query_ast::qast_json_helper("body:delete", &[]),
             })
             .await
             .unwrap();

@@ -120,31 +120,34 @@ pub fn validate_identifier(label: &str, value: &str) -> anyhow::Result<()> {
 }
 
 /// Checks whether an index ID pattern conforms to Quickwit conventions.
-/// Index id patterns accepts the same characters as identifiers AND accepts `*`
+/// Index ID patterns accept the same characters as identifiers AND accept `*`
 /// chars to allow for glob-like patterns.
-pub fn validate_index_id_pattern(value: &str) -> anyhow::Result<()> {
+pub fn validate_index_id_pattern(pattern: &str) -> anyhow::Result<()> {
     static IDENTIFIER_REGEX_WITH_GLOB_PATTERN: OnceCell<Regex> = OnceCell::new();
 
     if !IDENTIFIER_REGEX_WITH_GLOB_PATTERN
         .get_or_init(|| Regex::new(r"^[a-zA-Z\*][a-zA-Z0-9-_\.\*]{0,254}$").expect("Failed to compile regular expression. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues."))
-        .is_match(value)
+        .is_match(pattern)
     {
         bail!(
-            "Index ID pattern `{value}` is invalid. Patterns must match the following regular \
+            "Index ID pattern `{pattern}` is invalid. Patterns must match the following regular \
              expression: `^[a-zA-Z\\*][a-zA-Z0-9-_\\.\\*]{{0,254}}$`."
         );
     }
 
     // Forbid multiple stars in the pattern to force the user making simpler patterns
     // as multiple stars does not bring any value.
-    if value.contains("**") {
-        bail!("Index ID pattern `{value}` is invalid. Patterns must not contain `**`.");
+    if pattern.contains("**") {
+        bail!(
+            "Index ID pattern `{pattern}` is invalid. Patterns must not contain multiple \
+             consecutive `*`."
+        );
     }
 
     // If there is no star in the pattern, we need at least 3 characters.
-    if !value.contains('*') && value.len() < 3 {
+    if !pattern.contains('*') && pattern.len() < 3 {
         bail!(
-            "Index ID pattern `{value}` is invalid. An index ID must have at least 3 characters."
+            "Index ID pattern `{pattern}` is invalid. An index ID must have at least 3 characters."
         );
     }
 

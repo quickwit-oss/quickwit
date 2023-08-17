@@ -345,7 +345,7 @@ mod tests {
         PartialHit, SearchRequest, SearchStreamRequest, SortValue, SplitIdAndFooterOffsets,
         SplitSearchError,
     };
-    use quickwit_query::query_ast::qast_string_helper;
+    use quickwit_query::query_ast::qast_json_helper;
 
     use super::*;
     use crate::root::SearchJob;
@@ -379,7 +379,7 @@ mod tests {
     fn mock_leaf_search_request() -> LeafSearchRequest {
         let search_request = SearchRequest {
             index_id_patterns: vec!["test-idx".to_string()],
-            query_ast: qast_string_helper("test", &["body"]),
+            query_ast: qast_json_helper("test", &["body"]),
             max_hits: 10,
             ..Default::default()
         };
@@ -409,7 +409,7 @@ mod tests {
     fn mock_leaf_search_stream_request() -> LeafSearchStreamRequest {
         let search_request = SearchStreamRequest {
             index_id: "test-idx".to_string(),
-            query_ast: qast_string_helper("text", &["body"]),
+            query_ast: qast_json_helper("text", &["body"]),
             snippet_fields: Vec::new(),
             start_timestamp: None,
             end_timestamp: None,

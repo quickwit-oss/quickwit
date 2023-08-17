@@ -468,9 +468,9 @@ mod tests {
         // Creates 2 delete tasks, one that will match 1 document,
         // the other that will match no document.
 
-        let body_delete_ast = quickwit_query::query_ast::qast_string_helper("body:delete", &[]);
+        let body_delete_ast = quickwit_query::query_ast::qast_json_helper("body:delete", &[]);
         let match_nothing_ast =
-            quickwit_query::query_ast::qast_string_helper("body:matchnothing", &[]);
+            quickwit_query::query_ast::qast_json_helper("body:matchnothing", &[]);
         metastore
             .create_delete_task(DeleteQuery {
                 index_uid: index_uid.to_string(),

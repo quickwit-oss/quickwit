@@ -132,7 +132,7 @@ mod tests {
     use quickwit_indexing::MockSplitBuilder;
     use quickwit_metastore::{IndexMetadata, MockMetastore};
     use quickwit_proto::search::OutputFormat;
-    use quickwit_query::query_ast::qast_string_helper;
+    use quickwit_query::query_ast::qast_json_helper;
     use tokio_stream::wrappers::UnboundedReceiverStream;
 
     use super::*;
@@ -142,7 +142,7 @@ mod tests {
     async fn test_root_search_stream_single_split() -> anyhow::Result<()> {
         let request = quickwit_proto::search::SearchStreamRequest {
             index_id: "test-index".to_string(),
-            query_ast: qast_string_helper("test", &["body"]),
+            query_ast: qast_json_helper("test", &["body"]),
             fast_field: "timestamp".to_string(),
             output_format: OutputFormat::Csv as i32,
             ..Default::default()
@@ -193,7 +193,7 @@ mod tests {
     async fn test_root_search_stream_single_split_partitionned() -> anyhow::Result<()> {
         let request = quickwit_proto::search::SearchStreamRequest {
             index_id: "test-index".to_string(),
-            query_ast: qast_string_helper("test", &["body"]),
+            query_ast: qast_json_helper("test", &["body"]),
             fast_field: "timestamp".to_string(),
             output_format: OutputFormat::Csv as i32,
             partition_by_field: Some("timestamp".to_string()),
@@ -243,7 +243,7 @@ mod tests {
     async fn test_root_search_stream_single_split_with_error() -> anyhow::Result<()> {
         let request = quickwit_proto::search::SearchStreamRequest {
             index_id: "test-index".to_string(),
-            query_ast: qast_string_helper("test", &["body"]),
+            query_ast: qast_json_helper("test", &["body"]),
             fast_field: "timestamp".to_string(),
             output_format: OutputFormat::Csv as i32,
             ..Default::default()
@@ -320,7 +320,7 @@ mod tests {
         assert!(root_search_stream(
             quickwit_proto::search::SearchStreamRequest {
                 index_id: "test-index".to_string(),
-                query_ast: qast_string_helper(r#"invalid_field:"test""#, &[]),
+                query_ast: qast_json_helper(r#"invalid_field:"test""#, &[]),
                 fast_field: "timestamp".to_string(),
                 output_format: OutputFormat::Csv as i32,
                 partition_by_field: Some("timestamp".to_string()),
@@ -335,7 +335,7 @@ mod tests {
         assert!(root_search_stream(
             quickwit_proto::search::SearchStreamRequest {
                 index_id: "test-index".to_string(),
-                query_ast: qast_string_helper("test", &["invalid_field"]),
+                query_ast: qast_json_helper("test", &["invalid_field"]),
                 fast_field: "timestamp".to_string(),
                 output_format: OutputFormat::Csv as i32,
                 partition_by_field: Some("timestamp".to_string()),

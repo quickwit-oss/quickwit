@@ -32,7 +32,7 @@ pub mod test_suite {
     use quickwit_doc_mapper::tag_pruning::{no_tag, tag, TagFilterAst};
     use quickwit_proto::metastore::DeleteQuery;
     use quickwit_proto::IndexUid;
-    use quickwit_query::query_ast::qast_string_helper;
+    use quickwit_query::query_ast::qast_json_helper;
     use time::OffsetDateTime;
     use tokio::time::sleep;
     use tracing::{error, info};
@@ -2237,7 +2237,7 @@ pub mod test_suite {
         let index_uid = metastore.create_index(index_config.clone()).await.unwrap();
         let delete_query = DeleteQuery {
             index_uid: index_uid.to_string(),
-            query_ast: qast_string_helper("my_field:my_value", &[]),
+            query_ast: qast_json_helper("my_field:my_value", &[]),
             start_timestamp: Some(1),
             end_timestamp: Some(2),
         };
@@ -2300,13 +2300,13 @@ pub mod test_suite {
 
         let delete_query_index_1 = DeleteQuery {
             index_uid: index_uid_1.to_string(),
-            query_ast: qast_string_helper("my_field:my_value", &[]),
+            query_ast: qast_json_helper("my_field:my_value", &[]),
             start_timestamp: Some(1),
             end_timestamp: Some(2),
         };
         let delete_query_index_2 = DeleteQuery {
             index_uid: index_uid_2.to_string(),
-            query_ast: qast_string_helper("my_field:my_value", &[]),
+            query_ast: qast_json_helper("my_field:my_value", &[]),
             start_timestamp: Some(1),
             end_timestamp: Some(2),
         };
@@ -2355,7 +2355,7 @@ pub mod test_suite {
         let index_uid = metastore.create_index(index_config.clone()).await.unwrap();
         let delete_query = DeleteQuery {
             index_uid: index_uid.to_string(),
-            query_ast: qast_string_helper("my_field:my_value", &[]),
+            query_ast: qast_json_helper("my_field:my_value", &[]),
             start_timestamp: Some(1),
             end_timestamp: Some(2),
         };
@@ -2389,13 +2389,13 @@ pub mod test_suite {
             .unwrap();
         let delete_query_index_1 = DeleteQuery {
             index_uid: index_uid_1.to_string(),
-            query_ast: qast_string_helper("my_field:my_value", &[]),
+            query_ast: qast_json_helper("my_field:my_value", &[]),
             start_timestamp: Some(1),
             end_timestamp: Some(2),
         };
         let delete_query_index_2 = DeleteQuery {
             index_uid: index_uid_2.to_string(),
-            query_ast: qast_string_helper("my_field:my_value", &[]),
+            query_ast: qast_json_helper("my_field:my_value", &[]),
             start_timestamp: Some(1),
             end_timestamp: Some(2),
         };

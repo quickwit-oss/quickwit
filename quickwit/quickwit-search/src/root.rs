@@ -1115,7 +1115,7 @@ mod tests {
     use quickwit_indexing::MockSplitBuilder;
     use quickwit_metastore::{IndexMetadata, MockMetastore};
     use quickwit_proto::search::{ScrollRequest, SortOrder, SortValue, SplitSearchError};
-    use quickwit_query::query_ast::{qast_helper, qast_string_helper, query_ast_from_user_text};
+    use quickwit_query::query_ast::{qast_helper, qast_json_helper, query_ast_from_user_text};
     use tantivy::schema::{FAST, STORED, TEXT};
 
     use super::*;
@@ -1226,7 +1226,7 @@ mod tests {
     fn test_validate_request_and_build_metadatas_fail_with_different_timestamps() {
         let search_request = quickwit_proto::search::SearchRequest {
             index_id_patterns: vec!["test-index".to_string()],
-            query_ast: qast_string_helper("test", &["body"]),
+            query_ast: qast_json_helper("test", &["body"]),
             max_hits: 10,
             start_offset: 10,
             ..Default::default()
@@ -1331,7 +1331,7 @@ mod tests {
     async fn test_root_search_offset_out_of_bounds_1085() -> anyhow::Result<()> {
         let search_request = quickwit_proto::search::SearchRequest {
             index_id_patterns: vec!["test-index".to_string()],
-            query_ast: qast_string_helper("test", &["body"]),
+            query_ast: qast_json_helper("test", &["body"]),
             max_hits: 10,
             start_offset: 10,
             ..Default::default()
@@ -1421,7 +1421,7 @@ mod tests {
     async fn test_root_search_single_split() -> anyhow::Result<()> {
         let search_request = quickwit_proto::search::SearchRequest {
             index_id_patterns: vec!["test-index".to_string()],
-            query_ast: qast_string_helper("test", &["body"]),
+            query_ast: qast_json_helper("test", &["body"]),
             max_hits: 10,
             ..Default::default()
         };
@@ -1480,7 +1480,7 @@ mod tests {
     async fn test_root_search_multiple_splits() -> anyhow::Result<()> {
         let search_request = quickwit_proto::search::SearchRequest {
             index_id_patterns: vec!["test-index".to_string()],
-            query_ast: qast_string_helper("test", &["body"]),
+            query_ast: qast_json_helper("test", &["body"]),
             max_hits: 10,
             ..Default::default()
         };
@@ -1565,7 +1565,7 @@ mod tests {
     ) -> anyhow::Result<()> {
         let mut search_request = quickwit_proto::search::SearchRequest {
             index_id_patterns: vec!["test-index".to_string()],
-            query_ast: qast_string_helper("test", &["body"]),
+            query_ast: qast_json_helper("test", &["body"]),
             max_hits: 10,
             ..Default::default()
         };
@@ -1737,7 +1737,7 @@ mod tests {
     ) -> anyhow::Result<()> {
         let search_request = quickwit_proto::search::SearchRequest {
             index_id_patterns: vec!["test-index".to_string()],
-            query_ast: qast_string_helper("test", &["body"]),
+            query_ast: qast_json_helper("test", &["body"]),
             max_hits: 10,
             ..Default::default()
         };
@@ -1905,7 +1905,7 @@ mod tests {
     async fn test_root_search_multiple_splits_retry_on_other_node() -> anyhow::Result<()> {
         let search_request = quickwit_proto::search::SearchRequest {
             index_id_patterns: vec!["test-index".to_string()],
-            query_ast: qast_string_helper("test", &["body"]),
+            query_ast: qast_json_helper("test", &["body"]),
             max_hits: 10,
             ..Default::default()
         };
@@ -2019,7 +2019,7 @@ mod tests {
     async fn test_root_search_multiple_splits_retry_on_all_nodes() -> anyhow::Result<()> {
         let search_request = quickwit_proto::search::SearchRequest {
             index_id_patterns: vec!["test-index".to_string()],
-            query_ast: qast_string_helper("test", &["body"]),
+            query_ast: qast_json_helper("test", &["body"]),
             max_hits: 10,
             ..Default::default()
         };
@@ -2143,7 +2143,7 @@ mod tests {
     async fn test_root_search_single_split_retry_single_node() -> anyhow::Result<()> {
         let search_request = quickwit_proto::search::SearchRequest {
             index_id_patterns: vec!["test-index".to_string()],
-            query_ast: qast_string_helper("test", &["body"]),
+            query_ast: qast_json_helper("test", &["body"]),
             max_hits: 10,
             ..Default::default()
         };
@@ -2214,7 +2214,7 @@ mod tests {
     async fn test_root_search_single_split_retry_single_node_fails() -> anyhow::Result<()> {
         let search_request = quickwit_proto::search::SearchRequest {
             index_id_patterns: vec!["test-index".to_string()],
-            query_ast: qast_string_helper("test", &["body"]),
+            query_ast: qast_json_helper("test", &["body"]),
             max_hits: 10,
             ..Default::default()
         };
@@ -2270,7 +2270,7 @@ mod tests {
     ) -> anyhow::Result<()> {
         let search_request = quickwit_proto::search::SearchRequest {
             index_id_patterns: vec!["test-index".to_string()],
-            query_ast: qast_string_helper("test", &["body"]),
+            query_ast: qast_json_helper("test", &["body"]),
             max_hits: 10,
             ..Default::default()
         };
@@ -2352,7 +2352,7 @@ mod tests {
     ) -> anyhow::Result<()> {
         let search_request = quickwit_proto::search::SearchRequest {
             index_id_patterns: vec!["test-index".to_string()],
-            query_ast: qast_string_helper("test", &["body"]),
+            query_ast: qast_json_helper("test", &["body"]),
             max_hits: 10,
             ..Default::default()
         };
@@ -2441,7 +2441,7 @@ mod tests {
             &SearcherContext::new(SearcherConfig::default()),
             quickwit_proto::search::SearchRequest {
                 index_id_patterns: vec!["test-index".to_string()],
-                query_ast: qast_string_helper("invalid_field:\"test\"", &["body"]),
+                query_ast: qast_json_helper("invalid_field:\"test\"", &["body"]),
                 max_hits: 10,
                 ..Default::default()
             },
@@ -2455,7 +2455,7 @@ mod tests {
             &SearcherContext::new(SearcherConfig::default()),
             quickwit_proto::search::SearchRequest {
                 index_id_patterns: vec!["test-index".to_string()],
-                query_ast: qast_string_helper("test", &["invalid_field"]),
+                query_ast: qast_json_helper("test", &["invalid_field"]),
                 max_hits: 10,
                 ..Default::default()
             },
@@ -2491,7 +2491,7 @@ mod tests {
 
         let search_request = quickwit_proto::search::SearchRequest {
             index_id_patterns: vec!["test-index".to_string()],
-            query_ast: qast_string_helper("test", &["body"]),
+            query_ast: qast_json_helper("test", &["body"]),
             max_hits: 10,
             aggregation_request: Some(agg_req.to_string()),
             ..Default::default()
@@ -2530,7 +2530,7 @@ mod tests {
     async fn test_root_search_invalid_request() -> anyhow::Result<()> {
         let search_request = quickwit_proto::search::SearchRequest {
             index_id_patterns: vec!["test-index".to_string()],
-            query_ast: qast_string_helper("test", &["body"]),
+            query_ast: qast_json_helper("test", &["body"]),
             max_hits: 10,
             start_offset: 20_000,
             ..Default::default()
@@ -2564,7 +2564,7 @@ mod tests {
 
         let search_request = quickwit_proto::search::SearchRequest {
             index_id_patterns: vec!["test-index".to_string()],
-            query_ast: qast_string_helper("test", &["body"]),
+            query_ast: qast_json_helper("test", &["body"]),
             max_hits: 20_000,
             ..Default::default()
         };
@@ -2821,7 +2821,7 @@ mod tests {
         let mut scroll_id: String = {
             let search_request = quickwit_proto::search::SearchRequest {
                 index_id_patterns: vec!["test-index".to_string()],
-                query_ast: qast_string_helper("test", &["body"]),
+                query_ast: qast_json_helper("test", &["body"]),
                 max_hits: MAX_HITS_PER_PAGE as u64,
                 scroll_ttl_secs: Some(60),
                 ..Default::default()
@@ -2898,7 +2898,7 @@ mod tests {
     async fn test_root_search_multi_indices() -> anyhow::Result<()> {
         let search_request = quickwit_proto::search::SearchRequest {
             index_id_patterns: vec!["test-index-*".to_string()],
-            query_ast: qast_string_helper("test", &["body"]),
+            query_ast: qast_json_helper("test", &["body"]),
             max_hits: 10,
             ..Default::default()
         };

@@ -123,14 +123,14 @@ fn extract_split_and_footer_offsets(split_metadata: &SplitMetadata) -> SplitIdAn
 
 /// Extract the list of relevant splits for a given search request.
 async fn list_relevant_splits(
-    indexes_uids: Vec<IndexUid>,
+    index_uids: Vec<IndexUid>,
     start_timestamp: Option<i64>,
     end_timestamp: Option<i64>,
     tags_filter_opt: Option<TagFilterAst>,
     metastore: &dyn Metastore,
 ) -> crate::Result<Vec<SplitMetadata>> {
     let mut query =
-        ListSplitsQuery::try_for_indexes(indexes_uids)?.with_split_state(SplitState::Published);
+        ListSplitsQuery::try_from_index_uids(index_uids)?.with_split_state(SplitState::Published);
 
     if let Some(start_ts) = start_timestamp {
         query = query.with_time_range_start_gte(start_ts);

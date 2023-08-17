@@ -38,7 +38,7 @@ mod tests {
     use quickwit_proto::search::search_service_server::SearchServiceServer;
     use quickwit_proto::search::OutputFormat;
     use quickwit_proto::tonic;
-    use quickwit_query::query_ast::qast_string_helper;
+    use quickwit_query::query_ast::qast_json_helper;
     use quickwit_search::{
         create_search_client_from_grpc_addr, root_search_stream, ClusterClient, MockSearchService,
         SearchError, SearchJobPlacer, SearchService, SearcherPool,
@@ -68,7 +68,7 @@ mod tests {
         // This test aims at checking the client gRPC implementation.
         let request = quickwit_proto::search::SearchStreamRequest {
             index_id: "test-index".to_string(),
-            query_ast: qast_string_helper("test", &["body"]),
+            query_ast: qast_json_helper("test", &["body"]),
             snippet_fields: Vec::new(),
             start_timestamp: None,
             end_timestamp: None,

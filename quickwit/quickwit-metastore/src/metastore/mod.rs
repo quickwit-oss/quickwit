@@ -315,10 +315,10 @@ pub trait Metastore: Send + Sync + 'static {
 /// Query builder for listing indexes within the metastore.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum ListIndexesQuery {
-    /// List of index ID pattern.
+    /// List of index ID patterns.
     /// A pattern can contain the wildcard character `*`.
     IndexIdPatterns(Vec<String>),
-    /// Match all indexes
+    /// Matches all indexes.
     All,
 }
 
@@ -376,7 +376,7 @@ impl ListSplitsQuery {
 
     /// Creates a new [ListSplitsQuery] from a non-empty list of index Uids.
     /// Returns an error if the list of index uids is empty.
-    pub fn try_for_indexes(index_uids: Vec<IndexUid>) -> MetastoreResult<Self> {
+    pub fn try_from_index_uids(index_uids: Vec<IndexUid>) -> MetastoreResult<Self> {
         if index_uids.is_empty() {
             return Err(MetastoreError::InternalError {
                 message: "ListSplitQuery should define at least one index uid.".to_string(),
