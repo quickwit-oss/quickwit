@@ -19,9 +19,10 @@ test-all:
 	AWS_ACCESS_KEY_ID=ignored \
 	AWS_SECRET_ACCESS_KEY=ignored \
 	AWS_REGION=us-east-1 \
+	PUBSUB_EMULATOR_HOST=localhost:8681 \
 	QW_S3_ENDPOINT=http://localhost:4566 \
 	QW_S3_FORCE_PATH_STYLE_ACCESS=1 \
-	TEST_DATABASE_URL=postgres://quickwit-dev:quickwit-dev@localhost:5432/quickwit-metastore-dev \
+	QW_TEST_DATABASE_URL=postgres://quickwit-dev:quickwit-dev@localhost:5432/quickwit-metastore-dev \
 	cargo test --all-features
 	cargo test --test failpoints --features fail/failpoints
 

@@ -12,15 +12,15 @@ on:
       - quickwit/quickwit-*/**
 
 env:
+  AWS_REGION: us-east-1
   AWS_ACCESS_KEY_ID: "placeholder"
   AWS_SECRET_ACCESS_KEY: "placeholder"
-  AWS_REGION: us-east-1
   CARGO_INCREMENTAL: 0
+  PUBSUB_EMULATOR_HOST: "localhost:9898"
   QW_DISABLE_TELEMETRY: 1
   QW_S3_ENDPOINT: "http://localhost:4566" # Services are exposed as localhost because we are not running coverage in a container.
   QW_S3_FORCE_PATH_STYLE_ACCESS: 1
-  TEST_DATABASE_URL: postgres://quickwit-dev:quickwit-dev@localhost:5432/quickwit-metastore-dev
-  PUBSUB_EMULATOR_HOST: "localhost:9898"
+  QW_TEST_DATABASE_URL: postgres://quickwit-dev:quickwit-dev@localhost:5432/quickwit-metastore-dev
 
 jobs:
   test:
@@ -111,6 +111,9 @@ jobs:
           - "9898:8681"
         env:
           PUBSUB_PROJECT1: "quickwit-emulator,emulator_topic:emulator_subscription"
+        credentials:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_ACCESS_TOKEN }}
 
     steps:
       - uses: actions/checkout@v3

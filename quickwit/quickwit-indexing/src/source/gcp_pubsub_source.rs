@@ -118,7 +118,7 @@ impl GcpPubSubSource {
                     })?;
                 ClientConfig::default().with_credentials(credentials).await
             }
-            None => ClientConfig::default().with_auth().await,
+            _ => ClientConfig::default().with_auth().await,
         }
         .context("Failed to create GCP PubSub client config.")?;
 
@@ -141,11 +141,9 @@ impl GcpPubSubSource {
             max_messages_per_pull=%max_messages_per_pull,
             "Starting GCP PubSub source."
         );
-
         if !subscription.exists(Some(RetrySetting::default())).await? {
             anyhow::bail!("GCP PubSub subscription `{subscription_name}` does not exist.");
         }
-
         Ok(Self {
             ctx,
             subscription_name,
@@ -181,7 +179,6 @@ impl Source for GcpPubSubSource {
                     if let Err(err) = resp {
                         warn!("Failed to pull messages from subscription `{}`: {:?}", self.subscription_name, err);
                     }
-
                     if batch.num_bytes >= BATCH_NUM_BYTES_LIMIT {
                         break;
                     }
@@ -314,7 +311,10 @@ mod gcp_pubsub_emulator_tests {
     static GCP_TEST_PROJECT: &str = "quickwit-emulator";
 
     fn get_source_config(subscription: &str) -> SourceConfig {
-        var("PUBSUB_EMULATOR_HOST").expect("test should be run with PUBSUB_EMULATOR_HOST env");
+        var("PUBSUB_EMULATOR_HOST").expect(
+            "environment variable `PUBSUB_EMULATOR_HOST` should be set when running GCP PubSub \
+             source tests",
+        );
         let source_id = append_random_suffix("test-gcp-pubsub-source--source");
         SourceConfig {
             source_id,
@@ -352,18 +352,18 @@ mod gcp_pubsub_emulator_tests {
     }
 
     #[tokio::test]
-    async fn test_gcp_source_invalid_subscription() {
-        quickwit_common::setup_logging_for_tests();
-        let sub = append_random_suffix("test-gcp-pubsub-source--sub");
-        let source_config = get_source_config(&sub);
+    async fn test_gcp_pubsub_source_invalid_subscription() {
+        let subscription =
+            append_random_suffix("test-gcp-pubsub-source--invalid-subscription--subscription");
+        let source_config = get_source_config(&subscription);
 
-        let index_id = append_random_suffix("test-gcp-pubsub-source--process-message--index");
+        let index_id = append_random_suffix("test-gcp-pubsub-source--invalid-subscription--index");
         let index_uid = IndexUid::new(&index_id);
         let metastore = metastore_for_test();
         let SourceParams::GcpPubSub(params) = source_config.clone().source_params else {
             panic!(
                 "Expected `SourceParams::GcpPubSub` source params, got {:?}",
-                source_config.clone().source_params
+                source_config.source_params
             );
         };
         let ctx = SourceExecutionContext::for_test(
@@ -376,12 +376,11 @@ mod gcp_pubsub_emulator_tests {
     }
 
     #[tokio::test]
-    async fn test_gcp_source() {
-        quickwit_common::setup_logging_for_tests();
+    async fn test_gcp_pubsub_source() {
         let universe = Universe::with_accelerated_time();
 
         let topic = append_random_suffix("test-gcp-pubsub-source--topic");
-        let subscription = append_random_suffix("test-gcp-pubsub-source--sub");
+        let subscription = append_random_suffix("test-gcp-pubsub-source--subscription");
         let publisher = create_topic_and_subscription(&topic, &subscription).await;
 
         let source_config = get_source_config(&subscription);
@@ -392,20 +391,18 @@ mod gcp_pubsub_emulator_tests {
         let index_id: String = append_random_suffix("test-gcp-pubsub-source--index");
         let index_uid = IndexUid::new(&index_id);
 
-        let mut msgs = Vec::new();
+        let mut pubsub_messages = Vec::with_capacity(6);
         for i in 0..6 {
-            let msg = PubsubMessage {
+            let pubsub_message = PubsubMessage {
                 data: format!("Message {}", i).into(),
                 ..Default::default()
             };
-            msgs.push(msg);
+            pubsub_messages.push(pubsub_message);
         }
-
-        let publish_resp = publisher.publish_bulk(msgs).await;
-        for val in publish_resp {
-            val.get().await.unwrap();
+        let awaiters = publisher.publish_bulk(pubsub_messages).await;
+        for awaiter in awaiters {
+            awaiter.get().await.unwrap();
         }
-
         let source = source_loader
             .load_source(
                 SourceExecutionContext::for_test(
@@ -439,7 +436,7 @@ mod gcp_pubsub_emulator_tests {
             "Message 5",
         ];
         assert_eq!(messages[0].docs, expected_docs);
-        let expected_state: JsonValue = json!({
+        let expected_exit_state = json!({
             "index_id": index_id,
             "source_id": source_id,
             "subscription": subscription,
@@ -448,6 +445,6 @@ mod gcp_pubsub_emulator_tests {
             "num_invalid_messages": 0,
             "num_consecutive_empty_batches": 4,
         });
-        assert_eq!(exit_state, expected_state);
+        assert_eq!(exit_state, expected_exit_state);
     }
 }

@@ -1360,10 +1360,10 @@ impl crate::tests::test_suite::DefaultForTest for PostgresqlMetastore {
         // too catastrophic, as it is limited by the number of concurrent
         // unit tests running (= number of test-threads).
         dotenv::dotenv().ok();
-        let uri: Uri = std::env::var("TEST_DATABASE_URL")
-            .expect("Environment variable `TEST_DATABASE_URL` should be set.")
+        let uri: Uri = std::env::var("QW_TEST_DATABASE_URL")
+            .expect("Environment variable `QW_TEST_DATABASE_URL` should be set.")
             .parse()
-            .expect("Environment variable `TEST_DATABASE_URL` should be a valid URI.");
+            .expect("Environment variable `QW_TEST_DATABASE_URL` should be a valid URI.");
         PostgresqlMetastore::new(&PostgresMetastoreConfig::default(), &uri)
             .await
             .expect("Failed to initialize test PostgreSQL metastore.")

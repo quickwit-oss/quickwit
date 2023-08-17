@@ -190,7 +190,7 @@ mod tests {
         let metastore_resolver = MetastoreResolver::unconfigured();
         // If the database defined in the env var or the default one is not up, the
         // test block after making 10 attempts with a timeout of 10s each = 100s.
-        let test_database_url = env::var("TEST_DATABASE_URL").unwrap_or_else(|_| {
+        let test_database_url = env::var("QW_TEST_DATABASE_URL").unwrap_or_else(|_| {
             "postgres://quickwit-dev:quickwit-dev@localhost/quickwit-metastore-dev".to_string()
         });
         let (_uri_protocol, uri_path) = test_database_url.split_once("://").unwrap();
