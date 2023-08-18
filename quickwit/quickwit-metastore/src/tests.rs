@@ -30,7 +30,7 @@ pub mod test_suite {
     use quickwit_common::rand::append_random_suffix;
     use quickwit_config::{IndexConfig, SourceConfig, SourceInputFormat, SourceParams};
     use quickwit_doc_mapper::tag_pruning::{no_tag, tag, TagFilterAst};
-    use quickwit_proto::metastore::DeleteQuery;
+    use quickwit_proto::metastore::{DeleteQuery, EntityKind, MetastoreError};
     use quickwit_proto::IndexUid;
     use quickwit_query::query_ast::qast_json_helper;
     use time::OffsetDateTime;
@@ -41,8 +41,8 @@ pub mod test_suite {
         IndexCheckpointDelta, PartitionId, Position, SourceCheckpoint, SourceCheckpointDelta,
     };
     use crate::{
-        ListIndexesQuery, ListSplitsQuery, Metastore, MetastoreError, Split, SplitMaturity,
-        SplitMetadata, SplitState,
+        ListIndexesQuery, ListSplitsQuery, Metastore, Split, SplitMaturity, SplitMetadata,
+        SplitState,
     };
 
     #[async_trait]
@@ -111,7 +111,7 @@ pub mod test_suite {
         assert_eq!(index_metadata.index_uri(), &index_uri);
 
         let error = metastore.create_index(index_config).await.unwrap_err();
-        assert!(matches!(error, MetastoreError::IndexAlreadyExists { .. }));
+        assert!(matches!(error, MetastoreError::AlreadyExists { .. }));
 
         cleanup_index(&metastore, index_uid).await;
     }
@@ -162,7 +162,10 @@ pub mod test_suite {
             .index_metadata("index-not-found")
             .await
             .unwrap_err();
-        assert!(matches!(error, MetastoreError::IndexesDoNotExist { .. }));
+        assert!(matches!(
+            error,
+            MetastoreError::NotFound(EntityKind::Index { .. })
+        ));
 
         let index_uid = metastore.create_index(index_config.clone()).await.unwrap();
 
@@ -272,13 +275,19 @@ pub mod test_suite {
             .delete_index(IndexUid::new("index-not-found"))
             .await
             .unwrap_err();
-        assert!(matches!(error, MetastoreError::IndexesDoNotExist { .. }));
+        assert!(matches!(
+            error,
+            MetastoreError::NotFound(EntityKind::Index { .. })
+        ));
 
         let error = metastore
             .delete_index(IndexUid::new("test-delete-index"))
             .await
             .unwrap_err();
-        assert!(matches!(error, MetastoreError::IndexesDoNotExist { .. }));
+        assert!(matches!(
+            error,
+            MetastoreError::NotFound(EntityKind::Index { .. })
+        ));
 
         let index_uid = metastore.create_index(index_config.clone()).await.unwrap();
 
@@ -363,21 +372,21 @@ pub mod test_suite {
                 .add_source(index_uid.clone(), source.clone())
                 .await
                 .unwrap_err(),
-            MetastoreError::SourceAlreadyExists { .. }
+            MetastoreError::AlreadyExists(EntityKind::Source { .. })
         ));
         assert!(matches!(
             metastore
                 .add_source(IndexUid::new("index-not-found"), source.clone())
                 .await
                 .unwrap_err(),
-            MetastoreError::IndexesDoNotExist { .. }
+            MetastoreError::NotFound(EntityKind::Index { .. })
         ));
         assert!(matches!(
             metastore
                 .add_source(IndexUid::new(index_id), source)
                 .await
                 .unwrap_err(),
-            MetastoreError::IndexesDoNotExist { .. }
+            MetastoreError::NotFound(EntityKind::Index { .. })
         ));
         cleanup_index(&metastore, index_uid).await;
     }
@@ -455,14 +464,14 @@ pub mod test_suite {
                 .add_source(IndexUid::new("index-not-found"), source.clone())
                 .await
                 .unwrap_err(),
-            MetastoreError::IndexesDoNotExist { .. }
+            MetastoreError::NotFound(EntityKind::Index { .. })
         ));
         assert!(matches!(
             metastore
                 .add_source(IndexUid::new(&index_id), source.clone())
                 .await
                 .unwrap_err(),
-            MetastoreError::IndexesDoNotExist { .. }
+            MetastoreError::NotFound(EntityKind::Index { .. })
         ));
 
         metastore
@@ -482,21 +491,21 @@ pub mod test_suite {
                 .delete_source(index_uid.clone(), &source_id)
                 .await
                 .unwrap_err(),
-            MetastoreError::SourceDoesNotExist { .. }
+            MetastoreError::NotFound(EntityKind::Source { .. })
         ));
         assert!(matches!(
             metastore
                 .delete_source(IndexUid::new("index-not-found"), &source_id)
                 .await
                 .unwrap_err(),
-            MetastoreError::IndexesDoNotExist { .. }
+            MetastoreError::NotFound(EntityKind::Index { .. })
         ));
         assert!(matches!(
             metastore
                 .delete_source(IndexUid::new(index_id), &source_id)
                 .await
                 .unwrap_err(),
-            MetastoreError::IndexesDoNotExist { .. }
+            MetastoreError::NotFound(EntityKind::Index { .. })
         ));
 
         cleanup_index(&metastore, index_uid).await;
@@ -571,7 +580,7 @@ pub mod test_suite {
                 .reset_source_checkpoint(IndexUid::new("index-not-found"), &source_ids[1])
                 .await
                 .unwrap_err(),
-            MetastoreError::IndexesDoNotExist { .. }
+            MetastoreError::NotFound(EntityKind::Index { .. })
         ));
 
         assert!(matches!(
@@ -579,7 +588,7 @@ pub mod test_suite {
                 .reset_source_checkpoint(IndexUid::new(&index_id), &source_ids[1])
                 .await
                 .unwrap_err(),
-            MetastoreError::IndexesDoNotExist { .. }
+            MetastoreError::NotFound(EntityKind::Index { .. })
         ));
 
         metastore
@@ -622,7 +631,10 @@ pub mod test_suite {
                 )
                 .await
                 .unwrap_err();
-            assert!(matches!(error, MetastoreError::IndexesDoNotExist { .. }));
+            assert!(matches!(
+                error,
+                MetastoreError::NotFound(EntityKind::Index { .. })
+            ));
         }
 
         // Update the checkpoint, by publishing an empty array of splits with a non-empty
@@ -706,7 +718,10 @@ pub mod test_suite {
                 )
                 .await
                 .unwrap_err();
-            assert!(matches!(error, MetastoreError::IndexesDoNotExist { .. }));
+            assert!(matches!(
+                error,
+                MetastoreError::NotFound(EntityKind::Index { .. })
+            ));
         }
 
         // Publish a split on a wrong index uid
@@ -724,7 +739,10 @@ pub mod test_suite {
                 )
                 .await
                 .unwrap_err();
-            assert!(matches!(error, MetastoreError::IndexesDoNotExist { .. }));
+            assert!(matches!(
+                error,
+                MetastoreError::NotFound(EntityKind::Index { .. })
+            ));
         }
 
         // Publish a non-existent split on an index
@@ -735,7 +753,10 @@ pub mod test_suite {
                 .publish_splits(index_uid.clone(), &["split-not-found"], &[], None)
                 .await
                 .unwrap_err();
-            assert!(matches!(error, MetastoreError::SplitsDoNotExist { .. }));
+            assert!(matches!(
+                error,
+                MetastoreError::NotFound(EntityKind::Splits { .. })
+            ));
 
             cleanup_index(&metastore, index_uid).await;
         }
@@ -795,7 +816,10 @@ pub mod test_suite {
                 .unwrap_err();
             assert!(matches!(
                 error,
-                MetastoreError::IncompatibleCheckpointDelta(_)
+                MetastoreError::FailedPrecondition {
+                    entity: EntityKind::CheckpointDelta { .. },
+                    ..
+                }
             ));
 
             cleanup_index(&metastore, index_uid).await;
@@ -842,7 +866,13 @@ pub mod test_suite {
                 )
                 .await
                 .unwrap_err();
-            assert!(matches!(error, MetastoreError::SplitsNotStaged { .. }));
+            assert!(matches!(
+                error,
+                MetastoreError::FailedPrecondition {
+                    entity: EntityKind::Splits { .. },
+                    ..
+                }
+            ));
 
             cleanup_index(&metastore, index_uid).await;
         }
@@ -869,7 +899,10 @@ pub mod test_suite {
                 )
                 .await
                 .unwrap_err();
-            assert!(matches!(error, MetastoreError::SplitsDoNotExist { .. }));
+            assert!(matches!(
+                error,
+                MetastoreError::NotFound(EntityKind::Splits { .. })
+            ));
 
             cleanup_index(&metastore, index_uid).await;
         }
@@ -910,7 +943,10 @@ pub mod test_suite {
                 )
                 .await
                 .unwrap_err();
-            assert!(matches!(error, MetastoreError::SplitsDoNotExist { .. }));
+            assert!(matches!(
+                error,
+                MetastoreError::NotFound(EntityKind::Splits { .. })
+            ));
 
             cleanup_index(&metastore, index_uid).await;
         }
@@ -956,7 +992,10 @@ pub mod test_suite {
                 )
                 .await
                 .unwrap_err();
-            assert!(matches!(error, MetastoreError::SplitsDoNotExist { .. }));
+            assert!(matches!(
+                error,
+                MetastoreError::NotFound(EntityKind::Splits { .. })
+            ));
 
             cleanup_index(&metastore, index_uid).await;
         }
@@ -1031,7 +1070,13 @@ pub mod test_suite {
                 )
                 .await
                 .unwrap_err();
-            assert!(matches!(error, MetastoreError::SplitsNotStaged { .. }));
+            assert!(matches!(
+                error,
+                MetastoreError::FailedPrecondition {
+                    entity: EntityKind::Splits { .. },
+                    ..
+                }
+            ));
 
             cleanup_index(&metastore, index_uid).await;
         }
@@ -1077,7 +1122,10 @@ pub mod test_suite {
                 .unwrap_err();
             assert!(matches!(
                 error,
-                MetastoreError::IncompatibleCheckpointDelta(_)
+                MetastoreError::FailedPrecondition {
+                    entity: EntityKind::CheckpointDelta { .. },
+                    ..
+                }
             ));
 
             cleanup_index(&metastore, index_uid).await;
@@ -1201,7 +1249,10 @@ pub mod test_suite {
                 )
                 .await
                 .unwrap_err();
-            assert!(matches!(error, MetastoreError::IndexesDoNotExist { .. }));
+            assert!(matches!(
+                error,
+                MetastoreError::NotFound(EntityKind::Index { .. })
+            ));
         }
 
         // Replace a non-existent split on an index
@@ -1218,7 +1269,10 @@ pub mod test_suite {
                 )
                 .await
                 .unwrap_err();
-            assert!(matches!(error, MetastoreError::SplitsDoNotExist { .. }));
+            assert!(matches!(
+                error,
+                MetastoreError::NotFound(EntityKind::Splits { .. })
+            ));
 
             cleanup_index(&metastore, index_uid).await;
         }
@@ -1242,7 +1296,10 @@ pub mod test_suite {
                 .publish_splits(index_uid.clone(), &[&split_id_2], &[&split_id_1], None)
                 .await
                 .unwrap_err();
-            assert!(matches!(error, MetastoreError::SplitsDoNotExist { .. }));
+            assert!(matches!(
+                error,
+                MetastoreError::NotFound(EntityKind::Splits { .. })
+            ));
 
             cleanup_index(&metastore, index_uid).await;
         }
@@ -1274,7 +1331,13 @@ pub mod test_suite {
                 .publish_splits(index_uid.clone(), &[&split_id_2], &[&split_id_1], None)
                 .await
                 .unwrap_err();
-            assert!(matches!(error, MetastoreError::SplitsNotStaged { .. }));
+            assert!(matches!(
+                error,
+                MetastoreError::FailedPrecondition {
+                    entity: EntityKind::Splits { .. },
+                    ..
+                }
+            ));
 
             cleanup_index(&metastore, index_uid).await;
         }
@@ -1307,7 +1370,10 @@ pub mod test_suite {
                 ) // TODO source id
                 .await
                 .unwrap_err();
-            assert!(matches!(error, MetastoreError::SplitsDoNotExist { .. }));
+            assert!(matches!(
+                error,
+                MetastoreError::NotFound(EntityKind::Splits { .. })
+            ));
 
             cleanup_index(&metastore, index_uid).await;
         }
@@ -1341,7 +1407,7 @@ pub mod test_suite {
                 .await
                 .unwrap_err();
             assert!(
-                matches!(error, MetastoreError::SplitsNotDeletable { split_ids } if split_ids == [split_id_1.clone()])
+                matches!(error, MetastoreError::FailedPrecondition { entity: EntityKind::Splits { split_ids }, .. } if split_ids == [split_id_1.clone()])
             );
 
             cleanup_index(&metastore, index_uid).await;
@@ -1401,7 +1467,10 @@ pub mod test_suite {
             .mark_splits_for_deletion(IndexUid::new("index-not-found"), &[])
             .await
             .unwrap_err();
-        assert!(matches!(error, MetastoreError::IndexesDoNotExist { .. }));
+        assert!(matches!(
+            error,
+            MetastoreError::NotFound(EntityKind::Index { .. })
+        ));
 
         metastore
             .mark_splits_for_deletion(index_uid.clone(), &["split-not-found"])
@@ -1523,14 +1592,20 @@ pub mod test_suite {
             .await
             .unwrap_err();
 
-        assert!(matches!(error, MetastoreError::IndexesDoNotExist { .. }));
+        assert!(matches!(
+            error,
+            MetastoreError::NotFound(EntityKind::Index { .. })
+        ));
 
         let error = metastore
             .delete_splits(IndexUid::new(&index_id), &[])
             .await
             .unwrap_err();
 
-        assert!(matches!(error, MetastoreError::IndexesDoNotExist { .. }));
+        assert!(matches!(
+            error,
+            MetastoreError::NotFound(EntityKind::Index { .. })
+        ));
 
         metastore
             .delete_splits(index_uid.clone(), &["split-not-found"])
@@ -1568,7 +1643,13 @@ pub mod test_suite {
             .await
             .unwrap_err();
 
-        assert!(matches!(error, MetastoreError::SplitsNotDeletable { .. }));
+        assert!(matches!(
+            error,
+            MetastoreError::FailedPrecondition {
+                entity: EntityKind::Splits { .. },
+                ..
+            }
+        ));
 
         assert_eq!(
             metastore
@@ -1653,7 +1734,11 @@ pub mod test_suite {
             .list_all_splits(IndexUid::new("index-not-found"))
             .await
             .unwrap_err();
-        assert!(matches!(error, MetastoreError::IndexesDoNotExist { .. }));
+        assert!(matches!(
+            error,
+            // TODO: This discrepancy is tracked in #3760.
+            MetastoreError::NotFound(EntityKind::Index { .. } | EntityKind::Indexes { .. })
+        ));
 
         let index_uid = metastore.create_index(index_config).await.unwrap();
 
@@ -1776,7 +1861,11 @@ pub mod test_suite {
             let query =
                 ListSplitsQuery::for_index(index_uid.clone()).with_split_state(SplitState::Staged);
             let error = metastore.list_splits(query).await.unwrap_err();
-            assert!(matches!(error, MetastoreError::IndexesDoNotExist { .. }));
+            assert!(matches!(
+                error,
+                // TODO: This discrepancy is tracked in #3760.
+                MetastoreError::NotFound(EntityKind::Index { .. } | EntityKind::Indexes { .. })
+            ));
         }
         {
             let index_uid = metastore.create_index(index_config.clone()).await.unwrap();
@@ -2250,7 +2339,10 @@ pub mod test_suite {
             })
             .await
             .unwrap_err();
-        assert!(matches!(error, MetastoreError::IndexesDoNotExist { .. }));
+        assert!(matches!(
+            error,
+            MetastoreError::NotFound(EntityKind::Index { .. })
+        ));
 
         // Create a delete task on an index with wrong incarnation_id
         let error = metastore
@@ -2260,7 +2352,10 @@ pub mod test_suite {
             })
             .await
             .unwrap_err();
-        assert!(matches!(error, MetastoreError::IndexesDoNotExist { .. }));
+        assert!(matches!(
+            error,
+            MetastoreError::NotFound(EntityKind::Index { .. })
+        ));
 
         // Create a delete task.
         let delete_task_1 = metastore
@@ -2490,8 +2585,10 @@ pub mod test_suite {
             .list_stale_splits(IndexUid::new("index-not-found"), 0, 10)
             .await
             .unwrap_err();
-        println!("{:?}", error);
-        assert!(matches!(error, MetastoreError::IndexesDoNotExist { .. }));
+        assert!(matches!(
+            error,
+            MetastoreError::NotFound(EntityKind::Index { .. })
+        ));
 
         {
             info!("List stale splits on an index");
@@ -2618,7 +2715,7 @@ pub mod test_suite {
             error!(err=?metastore_err);
             assert!(matches!(
                 metastore_err,
-                MetastoreError::IndexesDoNotExist { .. }
+                MetastoreError::NotFound(EntityKind::Index { .. })
             ));
         }
 
@@ -2704,7 +2801,10 @@ pub mod test_suite {
             )
             .await
             .unwrap_err();
-        assert!(matches!(error, MetastoreError::IndexesDoNotExist { .. }));
+        assert!(matches!(
+            error,
+            MetastoreError::NotFound(EntityKind::Index { .. })
+        ));
 
         let index_uid = metastore.create_index(index_config.clone()).await.unwrap();
 
@@ -2733,33 +2833,37 @@ pub mod test_suite {
             .publish_splits(index_uid.clone(), &[&split_id_1, &split_id_2], &[], None)
             .await
             .unwrap();
-        let err = metastore
+        let error = metastore
             .stage_splits(index_uid.clone(), vec![split_metadata_1.clone()])
             .await
             .expect_err(
                 "Metastore should not allow splits which are not `Staged` to be overwritten.",
             );
-        assert!(
-            matches!(err, MetastoreError::SplitsNotStaged { .. }),
-            "Metastore should return a `SplitsNotStaged` error when attempting to perform an \
-             operation that must not occur.",
-        );
+        assert!(matches!(
+            error,
+            MetastoreError::FailedPrecondition {
+                entity: EntityKind::Splits { .. },
+                ..
+            }
+        ),);
 
         metastore
             .mark_splits_for_deletion(index_uid.clone(), &[&split_id_2])
             .await
             .unwrap();
-        let err = metastore
+        let error = metastore
             .stage_splits(index_uid.clone(), vec![split_metadata_2.clone()])
             .await
             .expect_err(
                 "Metastore should not allow splits which are not `Staged` to be overwritten.",
             );
-        assert!(
-            matches!(err, MetastoreError::SplitsNotStaged { .. }),
-            "Metastore should return a `SplitsNotStaged` error when attempting to perform an \
-             operation that must not occur.",
-        );
+        assert!(matches!(
+            error,
+            MetastoreError::FailedPrecondition {
+                entity: EntityKind::Splits { .. },
+                ..
+            }
+        ),);
 
         cleanup_index(&metastore, index_uid).await;
     }

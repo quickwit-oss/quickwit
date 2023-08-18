@@ -150,7 +150,7 @@ type TimestampFieldOpt = Option<String>;
 /// Note: the requirements on timestamp fields and resolved query ASTs can be lifted
 /// but it adds complexity that does not seem needed right now.
 fn validate_request_and_build_metadatas(
-    indexes_metadatas: &[IndexMetadata],
+    indexes_metadata: &[IndexMetadata],
     search_request: &SearchRequest,
 ) -> crate::Result<(TimestampFieldOpt, QueryAst, IndexesMetasForLeafSearch)> {
     let mut metadatas_for_leaf: HashMap<IndexUid, IndexMetasForLeafSearch> = HashMap::new();
@@ -159,13 +159,13 @@ fn validate_request_and_build_metadatas(
     let mut query_ast_resolved_opt: Option<QueryAst> = None;
     let mut timestamp_field_opt: Option<String> = None;
 
-    for index_metadata in indexes_metadatas.iter() {
+    for index_metadata in indexes_metadata {
         let doc_mapper = build_doc_mapper(
             &index_metadata.index_config.doc_mapping,
             &index_metadata.index_config.search_settings,
         )
         .map_err(|err| {
-            SearchError::InternalError(format!("Failed to build doc mapper. Cause: {err}"))
+            SearchError::Internal(format!("Failed to build doc mapper. Cause: {err}"))
         })?;
         let query_ast_resolved_for_index = query_ast
             .clone()
@@ -209,7 +209,7 @@ fn validate_request_and_build_metadatas(
         let index_metadata_for_leaf_search = IndexMetasForLeafSearch {
             index_uri: index_metadata.index_uri().clone(),
             doc_mapper_str: serde_json::to_string(&doc_mapper).map_err(|err| {
-                SearchError::InternalError(format!("Failed to serialize doc mapper. Cause: {err}"))
+                SearchError::Internal(format!("Failed to serialize doc mapper. Cause: {err}"))
             })?,
         };
         metadatas_for_leaf.insert(
@@ -219,7 +219,7 @@ fn validate_request_and_build_metadatas(
     }
 
     let query_ast_resolved = query_ast_resolved_opt.ok_or_else(|| {
-        SearchError::InternalError(
+        SearchError::Internal(
             "Resolved query AST must be present. This should never happen.".to_string(),
         )
     })?;
@@ -470,21 +470,14 @@ pub(crate) async fn search_partial_hits_phase(
         merge_collector.merge_fruits(leaf_search_responses)
     })
     .await
-    .context("failed to merge fruits")?
-    .map_err(|merge_error: TantivyError| {
-        crate::SearchError::InternalError(format!("{merge_error}"))
-    })?;
+    .context("failed to merge leaf search responses")?
+    .map_err(|error: TantivyError| crate::SearchError::Internal(error.to_string()))?;
     debug!(leaf_search_response = ?leaf_search_response, "Merged leaf search response.");
 
     if !leaf_search_response.failed_splits.is_empty() {
         error!(failed_splits = ?leaf_search_response.failed_splits, "Leaf search response contains at least one failed split.");
-        let errors: String = leaf_search_response
-            .failed_splits
-            .iter()
-            .map(|splits| format!("{splits}"))
-            .collect::<Vec<_>>()
-            .join(", ");
-        return Err(SearchError::InternalError(errors));
+        let errors: String = leaf_search_response.failed_splits.iter().join(", ");
+        return Err(SearchError::Internal(errors));
     }
     Ok(leaf_search_response)
 }
@@ -686,23 +679,24 @@ pub async fn root_search(
     cluster_client: &ClusterClient,
 ) -> crate::Result<SearchResponse> {
     let start_instant = tokio::time::Instant::now();
-    let indexes_metadatas = metastore
+    let indexes_metadata = metastore
         .list_indexes_metadatas(ListIndexesQuery::IndexIdPatterns(
             search_request.index_id_patterns.clone(),
         ))
         .await?;
-    if indexes_metadatas.is_empty() {
-        return Err(SearchError::IndexesDoNotExist {
+    if indexes_metadata.is_empty() {
+        return Err(SearchError::IndexesNotFound {
             index_id_patterns: search_request.index_id_patterns,
         });
     }
-    let index_uids = indexes_metadatas
+    let index_uids = indexes_metadata
         .iter()
         .map(|index_metadata| index_metadata.index_uid.clone())
         .collect_vec();
     let (timestamp_field_opt, query_ast_resolved, indexes_metas_for_leaf_search) =
-        validate_request_and_build_metadatas(&indexes_metadatas, &search_request)?;
+        validate_request_and_build_metadatas(&indexes_metadata, &search_request)?;
     search_request.query_ast = serde_json::to_string(&query_ast_resolved)?;
+
     if let Some(timestamp_field) = &timestamp_field_opt {
         refine_start_end_timestamp_from_ast(
             &query_ast_resolved,
@@ -884,7 +878,7 @@ pub async fn root_list_terms(
 
     let doc_mapper = build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)
         .map_err(|err| {
-            SearchError::InternalError(format!("Failed to build doc mapper. Cause: {err}"))
+            SearchError::Internal(format!("Failed to build doc mapper. Cause: {err}"))
         })?;
 
     let schema = doc_mapper.schema();
@@ -952,7 +946,7 @@ pub async fn root_list_terms(
             .map(|splits| splits.to_string())
             .collect::<Vec<_>>()
             .join(", ");
-        return Err(SearchError::InternalError(errors));
+        return Err(SearchError::Internal(errors));
     }
 
     // Merging is a cpu-bound task, but probably fast enough to not require
@@ -1013,7 +1007,7 @@ async fn assign_client_fetch_docs_jobs(
         let (index_uid, offsets) = index_uids_and_split_offsets_map
             .get(&split_id)
             .ok_or_else(|| {
-                crate::SearchError::InternalError(format!(
+                crate::SearchError::Internal(format!(
                     "Received partial hit from an unknown split {split_id}"
                 ))
             })?
@@ -1052,7 +1046,7 @@ pub fn jobs_to_leaf_requests(
     // Group jobs by index uid.
     for (index_uid, job_group) in &jobs.into_iter().group_by(|job| job.index_uid.clone()) {
         let search_index_meta = search_indexes_metadatas.get(&index_uid).ok_or_else(|| {
-            SearchError::InternalError(format!(
+            SearchError::Internal(format!(
                 "Received search job for an unknown index {index_uid}. It should never happen."
             ))
         })?;
@@ -1079,7 +1073,7 @@ pub fn jobs_to_fetch_docs_requests(
         let index_meta = indexes_metas_for_leaf_search
             .get(&index_uid)
             .ok_or_else(|| {
-                SearchError::InternalError(format!(
+                SearchError::Internal(format!(
                     "Received search job for an unknown index {index_uid}"
                 ))
             })?;
@@ -2248,7 +2242,7 @@ mod tests {
         );
         mock_search_service.expect_fetch_docs().returning(
             |_fetch_docs_req: quickwit_proto::search::FetchDocsRequest| {
-                Err(SearchError::InternalError("mockerr docs".to_string()))
+                Err(SearchError::Internal("mockerr docs".to_string()))
             },
         );
         let searcher_pool = searcher_pool_for_test([("127.0.0.1:1001", mock_search_service)]);
@@ -2325,7 +2319,7 @@ mod tests {
         );
         mock_search_service_2.expect_fetch_docs().returning(
             |_fetch_docs_req: quickwit_proto::search::FetchDocsRequest| {
-                Err(SearchError::InternalError("mockerr docs".to_string()))
+                Err(SearchError::Internal("mockerr docs".to_string()))
             },
         );
         let searcher_pool = searcher_pool_for_test([
@@ -2392,12 +2386,12 @@ mod tests {
         let mut mock_search_service_2 = MockSearchService::new();
         mock_search_service_2.expect_leaf_search().returning(
             move |_leaf_search_req: quickwit_proto::search::LeafSearchRequest| {
-                Err(SearchError::InternalError("mockerr search".to_string()))
+                Err(SearchError::Internal("mockerr search".to_string()))
             },
         );
         mock_search_service_2.expect_fetch_docs().returning(
             |_fetch_docs_req: quickwit_proto::search::FetchDocsRequest| {
-                Err(SearchError::InternalError("mockerr docs".to_string()))
+                Err(SearchError::Internal("mockerr docs".to_string()))
             },
         );
         let searcher_pool = searcher_pool_for_test([

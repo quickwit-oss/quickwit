@@ -35,12 +35,14 @@ pub use index_metadata::IndexMetadata;
 use quickwit_common::uri::Uri;
 use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
-use quickwit_proto::metastore::{DeleteQuery, DeleteTask};
+use quickwit_proto::metastore::{
+    DeleteQuery, DeleteTask, EntityKind, MetastoreError, MetastoreResult,
+};
 use quickwit_proto::IndexUid;
 use time::OffsetDateTime;
 
 use crate::checkpoint::IndexCheckpointDelta;
-use crate::{MetastoreError, MetastoreResult, Split, SplitMetadata, SplitState};
+use crate::{Split, SplitMetadata, SplitState};
 
 /// Metastore meant to manage Quickwit's indexes, their splits and delete tasks.
 ///
@@ -109,7 +111,7 @@ pub trait Metastore: Send + Sync + 'static {
     async fn index_exists(&self, index_id: &str) -> MetastoreResult<bool> {
         match self.index_metadata(index_id).await {
             Ok(_) => Ok(true),
-            Err(MetastoreError::IndexesDoNotExist { .. }) => Ok(false),
+            Err(MetastoreError::NotFound { .. }) => Ok(false),
             Err(error) => Err(error),
         }
     }
@@ -129,9 +131,8 @@ pub trait Metastore: Send + Sync + 'static {
         let index_metadata = self.index_metadata(index_uid.index_id()).await?;
 
         if index_metadata.index_uid != *index_uid {
-            return Err(MetastoreError::IndexesDoNotExist {
-                index_ids: vec![index_uid.index_id().to_string()],
-            });
+            let index_id = index_uid.index_id().to_string();
+            return Err(MetastoreError::NotFound(EntityKind::Index { index_id }));
         }
         Ok(index_metadata)
     }
@@ -142,7 +143,7 @@ pub trait Metastore: Send + Sync + 'static {
     /// [`IndexMetadata`].
     async fn list_indexes_metadatas(
         &self,
-        list_indexes_query: ListIndexesQuery,
+        query: ListIndexesQuery,
     ) -> MetastoreResult<Vec<IndexMetadata>>;
 
     /// Deletes an index.
@@ -257,9 +258,8 @@ pub trait Metastore: Send + Sync + 'static {
 
     // Source API
 
-    /// Adds a new source. Fails with
-    /// [`SourceAlreadyExists`](crate::MetastoreError::SourceAlreadyExists) if a source with the
-    /// same ID is already defined for the index.
+    /// Adds a new source. Fails with [`MetastoreError::NotFound`] if a source with the same ID is
+    /// already defined for the index.
     ///
     /// If a checkpoint is already registered for the source, it is kept.
     async fn add_source(&self, index_uid: IndexUid, source: SourceConfig) -> MetastoreResult<()>;
@@ -280,9 +280,8 @@ pub trait Metastore: Send + Sync + 'static {
         source_id: &str,
     ) -> MetastoreResult<()>;
 
-    /// Deletes a source. Fails with
-    /// [`SourceDoesNotExist`](crate::MetastoreError::SourceDoesNotExist) if the specified source
-    /// does not exist.
+    /// Deletes a source. Fails with [`MetastoreError::NotFound`] if the specified source does not
+    /// exist.
     ///
     /// The checkpoint associated to the source is deleted as well.
     /// If the checkpoint is missing, this does not trigger an error.
@@ -312,20 +311,20 @@ pub trait Metastore: Send + Sync + 'static {
     ) -> MetastoreResult<Vec<DeleteTask>>;
 }
 
-/// Query builder for listing indexes within the metastore.
+/// A query object for listing indexes stored in the metastore.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub enum ListIndexesQuery {
+    /// Matches all indexes.
+    All,
     /// List of index ID patterns.
     /// A pattern can contain the wildcard character `*`.
     IndexIdPatterns(Vec<String>),
-    /// Matches all indexes.
-    All,
 }
 
+/// A query object for listing splits stored in the metastore.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-/// A query builder for listing splits within the metastore.
 pub struct ListSplitsQuery {
-    /// A non empty list of index UIDs to get splits from.
+    /// A non-empty list of index UIDs to get splits from.
     pub index_uids: Vec<IndexUid>,
 
     /// The maximum number of splits to retrieve.
@@ -358,7 +357,7 @@ pub struct ListSplitsQuery {
 
 #[allow(unused_attributes)]
 impl ListSplitsQuery {
-    /// Creates a new [ListSplitsQuery] for a specific index.
+    /// Creates a new [`ListSplitsQuery`] for the designated index.
     pub fn for_index(index_uid: IndexUid) -> Self {
         Self {
             index_uids: vec![index_uid],
@@ -374,11 +373,11 @@ impl ListSplitsQuery {
         }
     }
 
-    /// Creates a new [ListSplitsQuery] from a non-empty list of index Uids.
-    /// Returns an error if the list of index uids is empty.
+    /// Creates a new [`ListSplitsQuery`] from a non-empty list of index UIDs.
+    /// Returns an error if the list is empty.
     pub fn try_from_index_uids(index_uids: Vec<IndexUid>) -> MetastoreResult<Self> {
         if index_uids.is_empty() {
-            return Err(MetastoreError::InternalError {
+            return Err(MetastoreError::Internal {
                 message: "ListSplitQuery should define at least one index uid.".to_string(),
                 cause: "".to_string(),
             });

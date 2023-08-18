@@ -209,9 +209,9 @@ mod tests {
     use quickwit_actors::Universe;
     use quickwit_common::shared_consts::DELETION_GRACE_PERIOD;
     use quickwit_metastore::{
-        IndexMetadata, ListSplitsQuery, MetastoreError, MockMetastore, Split, SplitMetadata,
-        SplitState,
+        IndexMetadata, ListSplitsQuery, MockMetastore, Split, SplitMetadata, SplitState,
     };
+    use quickwit_proto::metastore::MetastoreError;
     use quickwit_storage::MockStorage;
     use time::OffsetDateTime;
 
@@ -479,7 +479,7 @@ mod tests {
             .expect_list_indexes_metadatas()
             .times(4)
             .returning(move |_list_indexes_query: ListIndexesQuery| {
-                Err(MetastoreError::DbError {
+                Err(MetastoreError::Db {
                     message: "Fail to list indexes.".to_string(),
                 })
             });
@@ -552,11 +552,10 @@ mod tests {
                 assert!(["test-index-1", "test-index-2"].contains(&query.index_uids[0].index_id()));
 
                 if query.index_uids[0].index_id() == "test-index-2" {
-                    return Err(MetastoreError::DbError {
+                    return Err(MetastoreError::Db {
                         message: "fail to delete".to_string(),
                     });
                 }
-
                 let splits = match query.split_states[0] {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
                     SplitState::MarkedForDeletion => {
@@ -649,7 +648,7 @@ mod tests {
                 // instead this should simply get logged and return the list of splits
                 // which have successfully been deleted.
                 if index_uid.index_id() == "test-index-2" {
-                    Err(MetastoreError::DbError {
+                    Err(MetastoreError::Db {
                         message: "fail to delete".to_string(),
                     })
                 } else {

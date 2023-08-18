@@ -41,7 +41,8 @@ use quickwit_common::fs::get_cache_directory_path;
 use quickwit_common::rand::append_random_suffix;
 use quickwit_common::uri::Uri;
 use quickwit_config::{SourceInputFormat, CLI_INGEST_SOURCE_ID};
-use quickwit_metastore::{MetastoreError, MetastoreResolver, SplitState};
+use quickwit_metastore::{MetastoreResolver, SplitState};
+use quickwit_proto::metastore::{EntityKind, MetastoreError};
 use serde_json::{json, Number, Value};
 use tokio::time::{sleep, Duration};
 
@@ -98,7 +99,7 @@ async fn test_cmd_create() {
 
     // Creating an existing index should fail.
     let error = create_logs_index(&test_env).await.unwrap_err();
-    assert!(error.to_string().contains("already exists"),);
+    assert!(error.to_string().contains("already exist(s)"),);
 }
 
 #[tokio::test]
@@ -187,9 +188,9 @@ async fn test_cmd_ingest_on_non_existing_index() {
 
     assert_eq!(
         error.root_cause().downcast_ref::<MetastoreError>().unwrap(),
-        &MetastoreError::IndexesDoNotExist {
-            index_ids: vec!["index-does-not-exist".to_string()]
-        }
+        &MetastoreError::NotFound(EntityKind::Index {
+            index_id: "index-does-not-exist".to_string()
+        })
     );
 }
 

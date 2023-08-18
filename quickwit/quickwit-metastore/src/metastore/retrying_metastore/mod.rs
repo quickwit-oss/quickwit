@@ -17,7 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-mod error;
 mod retry;
 #[cfg(test)]
 mod test;
@@ -26,15 +25,12 @@ use async_trait::async_trait;
 use quickwit_common::retry::RetryParams;
 use quickwit_common::uri::Uri;
 use quickwit_config::{IndexConfig, SourceConfig};
-use quickwit_proto::metastore::{DeleteQuery, DeleteTask};
+use quickwit_proto::metastore::{DeleteQuery, DeleteTask, MetastoreResult};
 use quickwit_proto::IndexUid;
 
 use self::retry::retry;
 use crate::checkpoint::IndexCheckpointDelta;
-use crate::{
-    IndexMetadata, ListIndexesQuery, ListSplitsQuery, Metastore, MetastoreResult, Split,
-    SplitMetadata,
-};
+use crate::{IndexMetadata, ListIndexesQuery, ListSplitsQuery, Metastore, Split, SplitMetadata};
 
 /// Retry layer for a [`Metastore`].
 /// This is a band-aid solution for now. This will be removed after retry can be usable on

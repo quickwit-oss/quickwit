@@ -36,7 +36,7 @@ pub enum StorageErrorKind {
     /// A third-party service forbids this operation, or is misconfigured.
     Service,
     /// Any generic internal error.
-    InternalError,
+    Internal,
     /// A timeout occured during the operation.
     Timeout,
     /// Io error.

@@ -34,6 +34,12 @@ use tracing::{info, warn};
 #[derive(Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct PartitionId(pub Arc<String>);
 
+impl fmt::Display for PartitionId {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", &self.0)
+    }
+}
+
 impl From<String> for PartitionId {
     fn from(partition_id_str: String) -> Self {
         PartitionId(Arc::new(partition_id_str))
@@ -269,11 +275,11 @@ impl<'de> Deserialize<'de> for SourceCheckpoint {
 /// the checkpoint.
 #[derive(Clone, Debug, Error, Eq, PartialEq, Serialize, Deserialize)]
 #[error(
-    "IncompatibleChkptDelta at partition: {partition_id:?} cur_pos:{current_position:?} \
+    "Incompatible checkpoint delta at partition `{partition_id}`: cur_pos:{current_position:?} \
      delta_pos:{delta_position_from:?}"
 )]
 pub struct IncompatibleCheckpointDelta {
-    /// One PartitionId for which the incompatibility has been detected.
+    /// The partition ID for which the incompatibility has been detected.
     pub partition_id: PartitionId,
     /// The current position within this partition.
     pub current_position: Position,
@@ -286,7 +292,8 @@ pub enum PartitionDeltaError {
     #[error(transparent)]
     IncompatibleCheckpointDelta(#[from] IncompatibleCheckpointDelta),
     #[error(
-        "EmptyOrNegativeDelta at partition: {partition_id:?} {from_position:?} >= {to_position:?}"
+        "Empty or negative delta at partition `{partition_id}`: {from_position:?} >= \
+         {to_position:?}"
     )]
     EmptyOrNegativeDelta {
         /// One PartitionId for which the negative delta has been detected.

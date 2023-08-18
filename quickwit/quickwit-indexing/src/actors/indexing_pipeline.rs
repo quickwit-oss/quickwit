@@ -30,8 +30,9 @@ use quickwit_common::temp_dir::TempDirectory;
 use quickwit_common::KillSwitch;
 use quickwit_config::{IndexingSettings, SourceConfig};
 use quickwit_doc_mapper::DocMapper;
-use quickwit_metastore::{Metastore, MetastoreError};
+use quickwit_metastore::Metastore;
 use quickwit_proto::indexing::IndexingPipelineId;
+use quickwit_proto::metastore::MetastoreError;
 use quickwit_storage::Storage;
 use tokio::join;
 use tokio::sync::Semaphore;
@@ -504,7 +505,7 @@ impl Handler<Spawn> for IndexingPipeline {
         }
         self.previous_generations_statistics.num_spawn_attempts = 1 + spawn.retry_count;
         if let Err(spawn_error) = self.spawn_pipeline(ctx).await {
-            if let Some(MetastoreError::IndexesDoNotExist { .. }) =
+            if let Some(MetastoreError::NotFound { .. }) =
                 spawn_error.downcast_ref::<MetastoreError>()
             {
                 info!(error = ?spawn_error, "Could not spawn pipeline, index might have been deleted.");
@@ -550,7 +551,8 @@ mod tests {
     use quickwit_actors::{Command, Universe};
     use quickwit_config::{IndexingSettings, SourceInputFormat, SourceParams, VoidSourceParams};
     use quickwit_doc_mapper::{default_doc_mapper_for_test, DefaultDocMapper};
-    use quickwit_metastore::{IndexMetadata, MetastoreError, MockMetastore};
+    use quickwit_metastore::{IndexMetadata, MockMetastore};
+    use quickwit_proto::metastore::MetastoreError;
     use quickwit_proto::IndexUid;
     use quickwit_storage::RamStorage;
 
@@ -583,7 +585,7 @@ mod tests {
                     return Ok(index_metadata);
                 }
                 num_fails -= 1;
-                Err(MetastoreError::ConnectionError {
+                Err(MetastoreError::Connection {
                     message: "MetastoreError Alarm".to_string(),
                 })
             });

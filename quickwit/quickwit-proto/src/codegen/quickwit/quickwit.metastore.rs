@@ -17,7 +17,7 @@ pub struct CreateIndexResponse {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListIndexesMetadatasRequest {
     #[prost(string, tag = "1")]
-    pub filter_json: ::prost::alloc::string::String,
+    pub query_json: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -67,7 +67,7 @@ pub struct ListAllSplitsRequest {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListSplitsRequest {
     #[prost(string, tag = "1")]
-    pub filter_json: ::prost::alloc::string::String,
+    pub query_json: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]

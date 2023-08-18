@@ -376,7 +376,7 @@ mod tests {
             .returning(move |_: LeafSearchRequest| {
                 if leaf_search_num_failures > 0 {
                     leaf_search_num_failures -= 1;
-                    return Err(SearchError::InternalError("leaf search error".to_string()));
+                    return Err(SearchError::Internal("leaf search error".to_string()));
                 }
                 Ok(LeafSearchResponse {
                     num_hits: 1,

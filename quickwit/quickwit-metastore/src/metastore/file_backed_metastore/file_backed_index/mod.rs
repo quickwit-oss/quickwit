@@ -29,7 +29,9 @@ use std::ops::Bound;
 
 use quickwit_common::PrettySample;
 use quickwit_config::SourceConfig;
-use quickwit_proto::metastore::{DeleteQuery, DeleteTask};
+use quickwit_proto::metastore::{
+    DeleteQuery, DeleteTask, EntityKind, MetastoreError, MetastoreResult,
+};
 use quickwit_proto::IndexUid;
 use serde::{Deserialize, Serialize};
 use serialize::VersionedFileBackedIndex;
@@ -37,10 +39,7 @@ use time::OffsetDateTime;
 use tracing::{info, warn};
 
 use crate::checkpoint::IndexCheckpointDelta;
-use crate::{
-    split_tag_filter, IndexMetadata, ListSplitsQuery, MetastoreError, MetastoreResult, Split,
-    SplitMetadata, SplitState,
-};
+use crate::{split_tag_filter, IndexMetadata, ListSplitsQuery, Split, SplitMetadata, SplitState};
 
 /// A `FileBackedIndex` object carries an index metadata and its split metadata.
 // This struct is meant to be used only within the [`FileBackedMetastore`]. The public visibility is
@@ -177,7 +176,7 @@ impl FileBackedIndex {
     /// it is simply updated/overwritten.
     ///
     /// If a split already exists and is *not* in the [SplitState::Staged] state, a
-    /// [MetastoreError::SplitsNotStaged] error is returned providing the split ID to go with
+    /// [MetastoreError::NotFound] error is returned providing the split ID to go with
     /// it.
     pub(crate) fn stage_split(
         &mut self,
@@ -186,24 +185,23 @@ impl FileBackedIndex {
         // Check whether the split exists.
         // If the split exists, we check what state it is in. If it's anything other than `Staged`
         // something has gone very wrong and we should abort the operation.
-        if let Some(existing_split) = self.splits.get(split_metadata.split_id()) {
-            if existing_split.split_state != SplitState::Staged {
-                return Err(MetastoreError::SplitsNotStaged {
-                    split_ids: vec![existing_split.split_id().to_string()],
-                });
+        if let Some(split) = self.splits.get(split_metadata.split_id()) {
+            if split.split_state != SplitState::Staged {
+                let entity = EntityKind::Split {
+                    split_id: split.split_id().to_string(),
+                };
+                let message = "split is not staged".to_string();
+                return Err(MetastoreError::FailedPrecondition { entity, message });
             }
         }
-
         let now_timestamp = OffsetDateTime::now_utc().unix_timestamp();
-        let metadata = Split {
+        let split = Split {
             split_state: SplitState::Staged,
             update_timestamp: now_timestamp,
             publish_timestamp: None,
             split_metadata,
         };
-
-        self.splits
-            .insert(metadata.split_id().to_string(), metadata);
+        self.splits.insert(split.split_id().to_string(), split);
         Ok(())
     }
 
@@ -243,9 +241,9 @@ impl FileBackedIndex {
         }
         if !split_not_found_ids.is_empty() {
             if return_error_on_splits_not_found {
-                return Err(MetastoreError::SplitsDoNotExist {
+                return Err(MetastoreError::NotFound(EntityKind::Splits {
                     split_ids: split_not_found_ids,
-                });
+                }));
             } else {
                 warn!(
                     index_id=%self.index_id(),
@@ -256,9 +254,11 @@ impl FileBackedIndex {
             }
         }
         if !non_deletable_split_ids.is_empty() {
-            return Err(MetastoreError::SplitsNotDeletable {
+            let entity = EntityKind::Splits {
                 split_ids: non_deletable_split_ids,
-            });
+            };
+            let message = "splits are not deletable".to_string();
+            return Err(MetastoreError::FailedPrecondition { entity, message });
         }
         Ok(mutation_occurred)
     }
@@ -285,15 +285,17 @@ impl FileBackedIndex {
         }
 
         if !split_not_found_ids.is_empty() {
-            return Err(MetastoreError::SplitsDoNotExist {
+            return Err(MetastoreError::NotFound(EntityKind::Splits {
                 split_ids: split_not_found_ids,
-            });
+            }));
         }
 
         if !split_not_staged_ids.is_empty() {
-            return Err(MetastoreError::SplitsNotStaged {
+            let entity = EntityKind::Splits {
                 split_ids: split_not_staged_ids,
-            });
+            };
+            let message = "splits are not staged".to_string();
+            return Err(MetastoreError::FailedPrecondition { entity, message });
         }
 
         Ok(())
@@ -307,7 +309,18 @@ impl FileBackedIndex {
         checkpoint_delta_opt: Option<IndexCheckpointDelta>,
     ) -> MetastoreResult<()> {
         if let Some(checkpoint_delta) = checkpoint_delta_opt {
-            self.metadata.checkpoint.try_apply_delta(checkpoint_delta)?;
+            let source_id = checkpoint_delta.source_id.clone();
+            self.metadata
+                .checkpoint
+                .try_apply_delta(checkpoint_delta)
+                .map_err(|error| {
+                    let entity = EntityKind::CheckpointDelta {
+                        index_id: self.index_id().to_string(),
+                        source_id,
+                    };
+                    let message = error.to_string();
+                    MetastoreError::FailedPrecondition { entity, message }
+                })?;
         }
         self.mark_splits_as_published_helper(split_ids)?;
         self.mark_splits_for_deletion(replaced_split_ids, &[SplitState::Published], true)?;
@@ -360,9 +373,11 @@ impl FileBackedIndex {
             }
         }
         if !split_not_deletable_ids.is_empty() {
-            return Err(MetastoreError::SplitsNotDeletable {
+            let entity = EntityKind::Splits {
                 split_ids: split_not_deletable_ids,
-            });
+            };
+            let message = "splits are not deletable".to_string();
+            return Err(MetastoreError::FailedPrecondition { entity, message });
         }
         info!(index_id=%self.index_id(), "Deleted {} splits from index.", split_ids.len());
 
@@ -427,12 +442,11 @@ impl FileBackedIndex {
         delete_opstamp: u64,
     ) -> MetastoreResult<bool> {
         for split_id in split_ids {
-            let split =
-                self.splits
-                    .get_mut(*split_id)
-                    .ok_or_else(|| MetastoreError::SplitsDoNotExist {
-                        split_ids: vec![split_id.to_string()],
-                    })?;
+            let split = self.splits.get_mut(*split_id).ok_or_else(|| {
+                MetastoreError::NotFound(EntityKind::Splits {
+                    split_ids: vec![split_id.to_string()],
+                })
+            })?;
             split.split_metadata.delete_opstamp = delete_opstamp;
         }
         Ok(true)

@@ -43,13 +43,13 @@ use crate::{with_arg, BodyFormat};
 #[openapi(
     paths(search_get_handler, search_post_handler, search_stream_handler,),
     components(schemas(
+        BodyFormat,
+        OutputFormat,
         SearchRequestQueryString,
         SearchResponseRest,
         SortBy,
         SortField,
         SortOrder,
-        OutputFormat,
-        BodyFormat,
     ),)
 )]
 pub struct SearchApi;
@@ -93,7 +93,7 @@ impl From<String> for SortBy {
             };
             sort_fields.push(sort_field);
         }
-        SortBy { sort_fields }
+        Self { sort_fields }
     }
 }
 
@@ -132,11 +132,11 @@ fn default_max_hits() -> u64 {
 //   I did not find a way to plug it to serde_qs.
 // Conclusion: the best way I found to reject a user query that contains an empty
 // string on an mandatory field is this serializer.
-fn deserialize_not_empty_string<'de, D>(deserializer: D) -> Result<String, D::Error>
+fn deserialize_non_empty_string<'de, D>(deserializer: D) -> Result<String, D::Error>
 where D: Deserializer<'de> {
     let value = String::deserialize(deserializer)?;
     if value.is_empty() {
-        return Err(de::Error::custom("Expected a non empty string field."));
+        return Err(de::Error::custom("Expected a non-empty string field."));
     }
     Ok(value)
 }
@@ -373,7 +373,7 @@ struct SearchStreamRequestQueryString {
     /// If set, restricts search to documents with a `timestamp < end_timestamp``.
     pub end_timestamp: Option<i64>,
     /// The fast field to extract.
-    #[serde(deserialize_with = "deserialize_not_empty_string")]
+    #[serde(deserialize_with = "deserialize_non_empty_string")]
     pub fast_field: String,
     /// The requested output format.
     #[serde(default)]
@@ -891,7 +891,7 @@ mod tests {
     async fn test_rest_search_api_with_index_does_not_exist() -> anyhow::Result<()> {
         let mut mock_search_service = MockSearchService::new();
         mock_search_service.expect_root_search().returning(|_| {
-            Err(SearchError::IndexesDoNotExist {
+            Err(SearchError::IndexesNotFound {
                 index_id_patterns: vec!["not-found-index".to_string()],
             })
         });
@@ -912,7 +912,7 @@ mod tests {
         let mut mock_search_service = MockSearchService::new();
         mock_search_service
             .expect_root_search()
-            .returning(|_| Err(SearchError::InternalError("ty".to_string())));
+            .returning(|_| Err(SearchError::Internal("ty".to_string())));
         let rest_search_api_handler = search_handler(mock_search_service);
         assert_eq!(
             warp::test::request()
@@ -1045,7 +1045,7 @@ mod tests {
         let parse_error = rejection.find::<serde_qs::Error>().unwrap();
         assert_eq!(
             parse_error.to_string(),
-            "Expected a non empty string field."
+            "Expected a non-empty string field."
         );
     }
 
