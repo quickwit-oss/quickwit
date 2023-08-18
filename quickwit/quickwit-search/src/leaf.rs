@@ -379,7 +379,7 @@ async fn leaf_search_single_split(
     })
     .await
     .map_err(|_| {
-        crate::SearchError::InternalError(format!("Leaf search panicked. split={split_id}"))
+        crate::SearchError::Internal(format!("Leaf search panicked. split={split_id}"))
     })??;
 
     searcher_context
@@ -428,7 +428,7 @@ pub(crate) fn rewrite_start_end_time_bounds(
 /// `leaf` step of search.
 ///
 /// The leaf search collects all kind of information, and returns a set of
-/// [PartialHit](quickwit_proto::PartialHit) candidates. The root will be in
+/// [PartialHit](quickwit_proto::search::PartialHit) candidates. The root will be in
 /// charge to consolidate, identify the actual final top hits to display, and
 /// fetch the actual documents to convert the partial hits into actual Hits.
 pub async fn leaf_search(

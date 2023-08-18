@@ -33,7 +33,9 @@ use quickwit_config::{
     PostgresMetastoreConfig, SourceConfig,
 };
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
-use quickwit_proto::metastore::{DeleteQuery, DeleteTask};
+use quickwit_proto::metastore::{
+    DeleteQuery, DeleteTask, EntityKind, MetastoreError, MetastoreResult,
+};
 use quickwit_proto::IndexUid;
 use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgDatabaseError, PgPoolOptions};
@@ -44,13 +46,11 @@ use tracing::{debug, error, info, instrument, warn};
 
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::metastore::instrumented_metastore::InstrumentedMetastore;
-use crate::metastore::postgresql_model::{
-    DeleteTask as PgDeleteTask, Index as PgIndex, Split as PgSplit,
-};
+use crate::metastore::postgresql_model::{PgDeleteTask, PgIndex, PgSplit};
 use crate::metastore::FilterRange;
 use crate::{
-    IndexMetadata, ListIndexesQuery, ListSplitsQuery, Metastore, MetastoreError, MetastoreFactory,
-    MetastoreResolverError, MetastoreResult, Split, SplitMaturity, SplitMetadata, SplitState,
+    IndexMetadata, ListIndexesQuery, ListSplitsQuery, Metastore, MetastoreFactory,
+    MetastoreResolverError, Split, SplitMaturity, SplitMetadata, SplitState,
 };
 
 static MIGRATOR: Migrator = sqlx::migrate!("migrations/postgresql");
@@ -83,7 +83,7 @@ async fn establish_connection(
         .await
         .map_err(|error| {
             error!(connection_uri=%connection_uri, error=?error, "Failed to establish connection to database.");
-            MetastoreError::ConnectionError {
+            MetastoreError::Connection {
                 message: error.to_string(),
             }
         })
@@ -98,7 +98,7 @@ async fn run_postgres_migrations(pool: &Pool<Postgres>) -> MetastoreResult<()> {
     if let Err(migration_err) = migration_res {
         tx.rollback().await?;
         error!(err=?migration_err, "Database migrations failed");
-        return Err(MetastoreError::InternalError {
+        return Err(MetastoreError::Internal {
             message: "Failed to run migration on Postgresql database.".to_string(),
             cause: migration_err.to_string(),
         });
@@ -156,7 +156,7 @@ where E: sqlx::Executor<'a, Database = Postgres> {
     .bind(index_id)
     .fetch_optional(executor)
     .await
-    .map_err(|error| MetastoreError::DbError {
+    .map_err(|error| MetastoreError::Db {
         message: error.to_string(),
     })?;
     Ok(index_opt)
@@ -181,7 +181,7 @@ where
     .bind(index_uid.to_string())
     .fetch_optional(executor)
     .await
-    .map_err(|error| MetastoreError::DbError {
+    .map_err(|error| MetastoreError::Db {
         message: error.to_string(),
     })?;
     Ok(index_opt)
@@ -193,8 +193,10 @@ async fn index_metadata(
 ) -> MetastoreResult<IndexMetadata> {
     index_opt(tx.as_mut(), index_id)
         .await?
-        .ok_or_else(|| MetastoreError::IndexesDoNotExist {
-            index_ids: vec![index_id.to_string()],
+        .ok_or_else(|| {
+            MetastoreError::NotFound(EntityKind::Index {
+                index_id: index_id.to_string(),
+            })
         })?
         .index_metadata()
 }
@@ -349,24 +351,26 @@ fn convert_sqlx_err(index_id: &str, sqlx_err: sqlx::Error) -> MetastoreError {
             let pg_error_table = pg_db_error.table();
 
             match (pg_error_code, pg_error_table) {
-                (pg_error_code::FOREIGN_KEY_VIOLATION, _) => MetastoreError::IndexesDoNotExist {
-                    index_ids: vec![index_id.to_string()],
-                },
-                (pg_error_code::UNIQUE_VIOLATION, Some(table)) if table.starts_with("indexes") => {
-                    MetastoreError::IndexAlreadyExists {
+                (pg_error_code::FOREIGN_KEY_VIOLATION, _) => {
+                    MetastoreError::NotFound(EntityKind::Index {
                         index_id: index_id.to_string(),
-                    }
+                    })
+                }
+                (pg_error_code::UNIQUE_VIOLATION, Some(table)) if table.starts_with("indexes") => {
+                    MetastoreError::AlreadyExists(EntityKind::Index {
+                        index_id: index_id.to_string(),
+                    })
                 }
                 (pg_error_code::UNIQUE_VIOLATION, _) => {
                     error!(pg_db_err=?boxed_db_err, "postgresql-error");
-                    MetastoreError::InternalError {
+                    MetastoreError::Internal {
                         message: "Unique key violation.".to_string(),
                         cause: format!("DB error {boxed_db_err:?}"),
                     }
                 }
                 _ => {
                     error!(pg_db_err=?boxed_db_err, "postgresql-error");
-                    MetastoreError::DbError {
+                    MetastoreError::Db {
                         message: boxed_db_err.to_string(),
                     }
                 }
@@ -374,7 +378,7 @@ fn convert_sqlx_err(index_id: &str, sqlx_err: sqlx::Error) -> MetastoreError {
         }
         _ => {
             error!(err=?sqlx_err, "An error has occurred in the database operation.");
-            MetastoreError::DbError {
+            MetastoreError::Db {
                 message: sqlx_err.to_string(),
             }
         }
@@ -417,9 +421,9 @@ where
     let index_id = index_uid.index_id();
     let mut index_metadata = index_metadata(tx, index_id).await?;
     if index_metadata.index_uid != index_uid {
-        return Err(MetastoreError::IndexesDoNotExist {
-            index_ids: vec![index_id.to_string()],
-        });
+        return Err(MetastoreError::NotFound(EntityKind::Index {
+            index_id: index_id.to_string(),
+        }));
     }
     let mutation_occurred = mutate_fn(&mut index_metadata)?;
     if !mutation_occurred {
@@ -443,9 +447,9 @@ where
     .execute(tx.as_mut())
     .await?;
     if update_index_res.rows_affected() == 0 {
-        return Err(MetastoreError::IndexesDoNotExist {
-            index_ids: vec![index_id.to_string()],
-        });
+        return Err(MetastoreError::NotFound(EntityKind::Index {
+            index_id: index_id.to_string(),
+        }));
     }
     Ok(mutation_occurred)
 }
@@ -466,7 +470,7 @@ impl Metastore for PostgresqlMetastore {
             ListIndexesQuery::All => "SELECT * FROM indexes".to_string(),
             ListIndexesQuery::IndexIdPatterns(index_id_patterns) => {
                 build_index_id_patterns_sql_query(index_id_patterns).map_err(|error| {
-                    MetastoreError::InternalError {
+                    MetastoreError::Internal {
                         message: "Failed to build `list_indexes_metadatas` SQL query".to_string(),
                         cause: error.to_string(),
                     }
@@ -510,9 +514,9 @@ impl Metastore for PostgresqlMetastore {
             .execute(&self.connection_pool)
             .await?;
         if delete_res.rows_affected() == 0 {
-            return Err(MetastoreError::IndexesDoNotExist {
-                index_ids: vec![index_uid.index_id().to_string()],
-            });
+            return Err(MetastoreError::NotFound(EntityKind::Index {
+                index_id: index_uid.index_id().to_string(),
+            }));
         }
         Ok(())
     }
@@ -602,13 +606,15 @@ impl Metastore for PostgresqlMetastore {
                 .map_err(|error| convert_sqlx_err(index_uid.index_id(), error))?;
 
             if upserted_split_ids.len() != split_ids.len() {
-                let failed_split_ids = split_ids
+                let failed_split_ids: Vec<String> = split_ids
                     .into_iter()
-                    .filter(|id| !upserted_split_ids.contains(id))
+                    .filter(|split_id| !upserted_split_ids.contains(split_id))
                     .collect();
-                return Err(MetastoreError::SplitsNotStaged {
+                let entity = EntityKind::Splits {
                     split_ids: failed_split_ids,
-                });
+                };
+                let message = "splits are not staged".to_string();
+                return Err(MetastoreError::FailedPrecondition { entity, message });
             }
 
             debug!(index_id=%index_uid.index_id(), num_splits=split_ids.len(), "Splits successfully staged.");
@@ -628,14 +634,23 @@ impl Metastore for PostgresqlMetastore {
         run_with_tx!(self.connection_pool, tx, {
             let mut index_metadata = index_metadata(tx, index_uid.index_id()).await?;
             if index_metadata.index_uid != index_uid {
-                return Err(MetastoreError::IndexesDoNotExist {
-                    index_ids: vec![index_uid.index_id().to_string()],
-                });
+                return Err(MetastoreError::NotFound(EntityKind::Index {
+                    index_id: index_uid.index_id().to_string(),
+                }));
             }
             if let Some(checkpoint_delta) = checkpoint_delta_opt {
+                let source_id = checkpoint_delta.source_id.clone();
                 index_metadata
                     .checkpoint
-                    .try_apply_delta(checkpoint_delta)?;
+                    .try_apply_delta(checkpoint_delta)
+                    .map_err(|error| {
+                        let entity = EntityKind::CheckpointDelta {
+                            index_id: index_uid.index_id().to_string(),
+                            source_id,
+                        };
+                        let message = error.to_string();
+                        MetastoreError::FailedPrecondition { entity, message }
+                    })?;
             }
             let index_metadata_json = serde_json::to_string(&index_metadata).map_err(|error| {
                 MetastoreError::JsonSerializeError {
@@ -727,19 +742,23 @@ impl Metastore for PostgresqlMetastore {
                     .map_err(|error| convert_sqlx_err(index_uid.index_id(), error))?;
 
             if !not_found_split_ids.is_empty() {
-                return Err(MetastoreError::SplitsDoNotExist {
+                return Err(MetastoreError::NotFound(EntityKind::Splits {
                     split_ids: not_found_split_ids,
-                });
+                }));
             }
             if !not_staged_split_ids.is_empty() {
-                return Err(MetastoreError::SplitsNotStaged {
+                let entity = EntityKind::Splits {
                     split_ids: not_staged_split_ids,
-                });
+                };
+                let message = "splits are not staged".to_string();
+                return Err(MetastoreError::FailedPrecondition { entity, message });
             }
             if !not_marked_split_ids.is_empty() {
-                return Err(MetastoreError::SplitsNotDeletable {
+                let entity = EntityKind::Splits {
                     split_ids: not_marked_split_ids,
-                });
+                };
+                let message = "splits are not marked for deletion".to_string();
+                return Err(MetastoreError::FailedPrecondition { entity, message });
             }
             info!(
                 index_id=%index_uid.index_id(),
@@ -775,14 +794,14 @@ impl Metastore for PostgresqlMetastore {
                 .into_iter()
                 .map(|index_metadata| index_metadata.index_id().to_string())
                 .collect();
-            let missing_index_ids: Vec<String> = index_ids_str
+            let not_found_index_ids: Vec<String> = index_ids_str
                 .into_iter()
                 .filter(|index_id| !found_index_ids.contains(index_id))
                 .collect();
-            if !missing_index_ids.is_empty() {
-                return Err(MetastoreError::IndexesDoNotExist {
-                    index_ids: missing_index_ids,
-                });
+            if !not_found_index_ids.is_empty() {
+                return Err(MetastoreError::NotFound(EntityKind::Indexes {
+                    index_ids: not_found_index_ids,
+                }));
             }
         }
         pg_splits
@@ -845,9 +864,9 @@ impl Metastore for PostgresqlMetastore {
                 .await?
                 .is_none()
         {
-            return Err(MetastoreError::IndexesDoNotExist {
-                index_ids: vec![index_uid.index_id().to_string()],
-            });
+            return Err(MetastoreError::NotFound(EntityKind::Index {
+                index_id: index_uid.index_id().to_string(),
+            }));
         }
         info!(
             index_id=%index_uid.index_id(),
@@ -927,14 +946,19 @@ impl Metastore for PostgresqlMetastore {
                 .await?
                 .is_none()
         {
-            return Err(MetastoreError::IndexesDoNotExist {
-                index_ids: vec![index_uid.index_id().to_string()],
-            });
+            return Err(MetastoreError::NotFound(EntityKind::Index {
+                index_id: index_uid.index_id().to_string(),
+            }));
         }
         if !not_deletable_split_ids.is_empty() {
-            return Err(MetastoreError::SplitsNotDeletable {
+            let message = format!(
+                "splits `{}` are not deletable",
+                not_deletable_split_ids.join(", ")
+            );
+            let entity = EntityKind::Splits {
                 split_ids: not_deletable_split_ids,
-            });
+            };
+            return Err(MetastoreError::FailedPrecondition { entity, message });
         }
         info!(index_id=%index_uid.index_id(), "Deleted {} splits from index.", num_deleted_splits);
 
@@ -953,8 +977,10 @@ impl Metastore for PostgresqlMetastore {
     async fn index_metadata(&self, index_id: &str) -> MetastoreResult<IndexMetadata> {
         index_opt(&self.connection_pool, index_id)
             .await?
-            .ok_or_else(|| MetastoreError::IndexesDoNotExist {
-                index_ids: vec![index_id.to_string()],
+            .ok_or_else(|| {
+                MetastoreError::NotFound(EntityKind::Index {
+                    index_id: index_id.to_string(),
+                })
             })?
             .index_metadata()
     }
@@ -1034,7 +1060,7 @@ impl Metastore for PostgresqlMetastore {
         .bind(index_uid.to_string())
         .fetch_one(&self.connection_pool)
         .await
-        .map_err(|error| MetastoreError::DbError {
+        .map_err(|error| MetastoreError::Db {
             message: error.to_string(),
         })?;
 
@@ -1113,9 +1139,9 @@ impl Metastore for PostgresqlMetastore {
                 .await?
                 .is_none()
         {
-            return Err(MetastoreError::IndexesDoNotExist {
-                index_ids: vec![index_uid.index_id().to_string()],
-            });
+            return Err(MetastoreError::NotFound(EntityKind::Index {
+                index_id: index_uid.index_id().to_string(),
+            }));
         }
         Ok(())
     }
@@ -1181,9 +1207,9 @@ impl Metastore for PostgresqlMetastore {
                 .await?
                 .is_none()
         {
-            return Err(MetastoreError::IndexesDoNotExist {
-                index_ids: vec![index_uid.index_id().to_string()],
-            });
+            return Err(MetastoreError::NotFound(EntityKind::Index {
+                index_id: index_uid.index_id().to_string(),
+            }));
         }
         pg_stale_splits
             .into_iter()
@@ -1258,11 +1284,9 @@ fn build_index_id_patterns_sql_query(index_id_patterns: Vec<String>) -> anyhow::
     }
     let mut where_like_query = String::new();
     for (index_id_pattern_idx, index_id_pattern) in index_id_patterns.iter().enumerate() {
-        validate_index_id_pattern(index_id_pattern).map_err(|error| {
-            MetastoreError::InternalError {
-                message: "Failed to build list indexes query".to_string(),
-                cause: error.to_string(),
-            }
+        validate_index_id_pattern(index_id_pattern).map_err(|error| MetastoreError::Internal {
+            message: "Failed to build list indexes query".to_string(),
+            cause: error.to_string(),
         })?;
         if index_id_pattern.contains('*') {
             let sql_pattern = index_id_pattern.replace('*', "%");
@@ -1334,7 +1358,7 @@ impl MetastoreFactory for PostgresqlMetastoreFactory {
         })?;
         let postgresql_metastore = PostgresqlMetastore::new(postgresql_metastore_config, uri)
             .await
-            .map_err(MetastoreResolverError::FailedToOpenMetastore)?;
+            .map_err(MetastoreResolverError::Initialization)?;
         let instrumented_metastore = InstrumentedMetastore::new(Box::new(postgresql_metastore));
         let unique_metastore_for_uri = self
             .cache_metastore(uri.clone(), Arc::new(instrumented_metastore))
@@ -1638,7 +1662,7 @@ mod tests {
             build_index_id_patterns_sql_query(vec!["*-index-*-&-last**".to_string()])
                 .unwrap_err()
                 .to_string(),
-            "Internal error: `Failed to build list indexes query` Cause: `Index ID pattern \
+            "Internal error: Failed to build list indexes query Cause: `Index ID pattern \
              `*-index-*-&-last**` is invalid. Patterns must match the following regular \
              expression: `^[a-zA-Z\\*][a-zA-Z0-9-_\\.\\*]{0,254}$`.`."
         );

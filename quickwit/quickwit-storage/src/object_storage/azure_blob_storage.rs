@@ -566,7 +566,7 @@ impl From<AzureErrorWrapper> for StorageError {
             },
             ErrorKind::Io => StorageErrorKind::Io.with_error(err),
             ErrorKind::Credential => StorageErrorKind::Unauthorized.with_error(err),
-            _ => StorageErrorKind::InternalError.with_error(err),
+            _ => StorageErrorKind::Internal.with_error(err),
         }
     }
 }

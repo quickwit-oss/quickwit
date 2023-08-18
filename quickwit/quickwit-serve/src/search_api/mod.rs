@@ -98,9 +98,7 @@ mod tests {
             data: b"123".to_vec(),
             split_id: "split_1".to_string(),
         }))?;
-        result_sender.send(Err(SearchError::InternalError(
-            "Error on `split2`".to_string(),
-        )))?;
+        result_sender.send(Err(SearchError::Internal("Error on `split2`".to_string())))?;
         mock_search_service
             .expect_leaf_search_stream()
             .withf(|request| request.split_offsets.len() == 2) // First request.
@@ -114,9 +112,7 @@ mod tests {
             .withf(|request| request.split_offsets.len() == 1) // Retry request on the failing split.
             .return_once(
                 |_leaf_search_req: quickwit_proto::search::LeafSearchStreamRequest| {
-                    Err(SearchError::InternalError(
-                        "Error again on `split2`".to_string(),
-                    ))
+                    Err(SearchError::Internal("Error again on `split2`".to_string()))
                 },
             );
         // The test will hang on indefinitely if we don't drop the sender.

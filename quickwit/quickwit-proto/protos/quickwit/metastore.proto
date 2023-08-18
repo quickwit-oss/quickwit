@@ -104,7 +104,7 @@ message CreateIndexResponse {
 }
 
 message ListIndexesMetadatasRequest {
-  string filter_json = 1;
+  string query_json = 1;
 }
 
 message ListIndexesMetadatasResponse {
@@ -132,7 +132,7 @@ message ListAllSplitsRequest {
 }
 
 message ListSplitsRequest {
-  string filter_json = 1;
+  string query_json = 1;
 }
 
 message ListSplitsResponse {

@@ -17,123 +17,10 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use quickwit_proto::{ServiceError, ServiceErrorCode};
-use serde::{Deserialize, Serialize};
-use thiserror::Error as ThisError;
+use quickwit_proto::metastore::MetastoreError;
 
-use crate::checkpoint::IncompatibleCheckpointDelta;
-
-/// Metastore error kinds.
-#[allow(missing_docs)]
-#[derive(Clone, Debug, ThisError, Serialize, Deserialize, PartialEq, Eq)]
-pub enum MetastoreError {
-    #[error("Connection error: `{message}`.")]
-    ConnectionError { message: String },
-
-    #[error("Index `{index_id}` already exists.")]
-    IndexAlreadyExists { index_id: String },
-
-    #[error("Access forbidden: `{message}`.")]
-    Forbidden { message: String },
-
-    #[error("Indexes `{index_ids:?}` do not exist.")]
-    IndexesDoNotExist { index_ids: Vec<String> },
-
-    /// Any generic internal error.
-    /// The message can be helpful to users, but the detail of the error
-    /// are judged uncoverable and not useful for error handling.
-    #[error("Internal error: `{message}` Cause: `{cause}`.")]
-    InternalError { message: String, cause: String },
-
-    #[error("Failed to deserialize index metadata: `{message}`")]
-    InvalidManifest { message: String },
-
-    #[error("IOError `{message}`")]
-    Io { message: String },
-
-    #[error("Splits `{split_ids:?}` do not exist.")]
-    SplitsDoNotExist { split_ids: Vec<String> },
-
-    #[error("Splits `{split_ids:?}` are not in a deletable state.")]
-    SplitsNotDeletable { split_ids: Vec<String> },
-
-    #[error("Splits `{split_ids:?}` are not staged.")]
-    SplitsNotStaged { split_ids: Vec<String> },
-
-    #[error("Publish checkpoint delta overlaps with the current checkpoint: {0:?}.")]
-    IncompatibleCheckpointDelta(#[from] IncompatibleCheckpointDelta),
-
-    #[error("Source `{source_id}` of type `{source_type}` already exists.")]
-    SourceAlreadyExists {
-        source_id: String,
-        source_type: String,
-    },
-
-    #[error("Source `{source_id}` does not exist.")]
-    SourceDoesNotExist { source_id: String },
-
-    #[error("Database error: `{message}`.")]
-    DbError { message: String },
-
-    #[error("Failed to deserialize `{struct_name}` from JSON: `{message}`.")]
-    JsonDeserializeError {
-        struct_name: String,
-        message: String,
-    },
-
-    #[error("Failed to serialize `{struct_name}` to JSON: `{message}`.")]
-    JsonSerializeError {
-        struct_name: String,
-        message: String,
-    },
-}
-
-#[cfg(feature = "postgres")]
-impl From<sqlx::Error> for MetastoreError {
-    fn from(error: sqlx::Error) -> Self {
-        MetastoreError::DbError {
-            message: error.to_string(),
-        }
-    }
-}
-
-impl From<MetastoreError> for quickwit_proto::tonic::Status {
-    fn from(metastore_error: MetastoreError) -> Self {
-        let grpc_code = metastore_error.status_code().to_grpc_status_code();
-        let error_msg = serde_json::to_string(&metastore_error)
-            .unwrap_or_else(|_| format!("Raw metastore error: {metastore_error}"));
-        quickwit_proto::tonic::Status::new(grpc_code, error_msg)
-    }
-}
-
-impl ServiceError for MetastoreError {
-    fn status_code(&self) -> ServiceErrorCode {
-        match self {
-            Self::ConnectionError { .. } => ServiceErrorCode::Internal,
-            Self::Forbidden { .. } => ServiceErrorCode::MethodNotAllowed,
-            Self::IncompatibleCheckpointDelta(_) => ServiceErrorCode::BadRequest,
-            Self::IndexAlreadyExists { .. } => ServiceErrorCode::BadRequest,
-            Self::IndexesDoNotExist { .. } => ServiceErrorCode::NotFound,
-            Self::InternalError { .. } => ServiceErrorCode::Internal,
-            Self::InvalidManifest { .. } => ServiceErrorCode::Internal,
-            Self::Io { .. } => ServiceErrorCode::Internal,
-            Self::SourceAlreadyExists { .. } => ServiceErrorCode::BadRequest,
-            Self::SourceDoesNotExist { .. } => ServiceErrorCode::NotFound,
-            Self::SplitsDoNotExist { .. } => ServiceErrorCode::BadRequest,
-            Self::SplitsNotDeletable { .. } => ServiceErrorCode::BadRequest,
-            Self::SplitsNotStaged { .. } => ServiceErrorCode::BadRequest,
-            Self::DbError { .. } => ServiceErrorCode::Internal,
-            Self::JsonDeserializeError { .. } => ServiceErrorCode::Internal,
-            Self::JsonSerializeError { .. } => ServiceErrorCode::Internal,
-        }
-    }
-}
-
-/// Generic Result type for metastore operations.
-pub type MetastoreResult<T> = Result<T, MetastoreError>;
-
-/// Generic Storage Resolver Error.
-#[derive(Debug, ThisError)]
+/// Generic Storage Resolver error.
+#[derive(Debug, thiserror::Error)]
 pub enum MetastoreResolverError {
     /// The metastore config is invalid.
     #[error("Invalid metastore config: `{0}`")]
@@ -151,5 +38,5 @@ pub enum MetastoreResolverError {
     /// resolver failed to actually connect to the backend. e.g. connection error, credentials
     /// error, incompatible version, internal error in a third party, etc.
     #[error("Failed to connect to metastore: `{0}`")]
-    FailedToOpenMetastore(MetastoreError),
+    Initialization(#[from] MetastoreError),
 }

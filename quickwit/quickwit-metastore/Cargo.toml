@@ -13,7 +13,6 @@ documentation = "https://quickwit.io/docs/"
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 byte-unit = { workspace = true }
-sqlx = { workspace = true, optional = true }
 futures = { workspace = true }
 http = { workspace = true }
 itertools = { workspace = true }
@@ -24,6 +23,7 @@ regex = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
+sqlx = { workspace = true, optional = true }
 tempfile = { workspace = true, optional = true }
 thiserror = { workspace = true }
 time = { workspace = true }
@@ -31,8 +31,8 @@ tokio = { workspace = true }
 tokio-stream = { workspace = true }
 tower = { workspace = true }
 tracing = { workspace = true }
-utoipa = { workspace = true }
 ulid = { workspace = true, features = ["serde"] }
+utoipa = { workspace = true }
 
 quickwit-common = { workspace = true }
 quickwit-config = { workspace = true }
@@ -47,15 +47,16 @@ futures = { workspace = true }
 md5 = { workspace = true }
 mockall = { workspace = true }
 rand = { workspace = true }
-tracing-subscriber = { workspace = true }
 tempfile = { workspace = true }
+tracing-subscriber = { workspace = true }
 
+quickwit-common = { workspace = true, features = ["testsuite"] }
 quickwit-config = { workspace = true, features = ["testsuite"] }
 quickwit-doc-mapper = { workspace = true, features = ["testsuite"] }
 quickwit-storage = { workspace = true, features = ["testsuite"] }
 
 [features]
-testsuite = ["mockall", "tempfile", "quickwit-config/testsuite"]
-ci-test = []
-postgres = ["sqlx"]
 azure = ["quickwit-storage/azure"]
+ci-test = []
+postgres = ["quickwit-proto/postgres", "sqlx"]
+testsuite = ["mockall", "tempfile", "quickwit-config/testsuite"]

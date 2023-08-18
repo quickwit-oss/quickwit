@@ -52,7 +52,7 @@ pub async fn root_search_stream(
 
     let doc_mapper = build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)
         .map_err(|err| {
-            SearchError::InternalError(format!("Failed to build doc mapper. Cause: {err}"))
+            SearchError::Internal(format!("Failed to build doc mapper. Cause: {err}"))
         })?;
 
     let query_ast: QueryAst = serde_json::from_str(&search_stream_request.query_ast)
@@ -84,7 +84,7 @@ pub async fn root_search_stream(
     .await?;
 
     let doc_mapper_str = serde_json::to_string(&doc_mapper).map_err(|err| {
-        SearchError::InternalError(format!("Failed to serialize doc mapper: Cause {err}"))
+        SearchError::Internal(format!("Failed to serialize doc mapper: Cause {err}"))
     })?;
 
     let index_uri: &Uri = &index_config.index_uri;
@@ -270,7 +270,7 @@ mod tests {
             data: b"123".to_vec(),
             split_id: "split1".to_string(),
         }))?;
-        result_sender.send(Err(SearchError::InternalError("error".to_string())))?;
+        result_sender.send(Err(SearchError::Internal("error".to_string())))?;
         mock_search_service
             .expect_leaf_search_stream()
             .withf(|request| request.split_offsets.len() == 2) // First request.
@@ -284,7 +284,7 @@ mod tests {
             .withf(|request| request.split_offsets.len() == 1) // Retry request on the failed split.
             .return_once(
                 |_leaf_search_req: quickwit_proto::search::LeafSearchStreamRequest| {
-                    Err(SearchError::InternalError("error".to_string()))
+                    Err(SearchError::Internal("error".to_string()))
                 },
             );
         // The test will hang on indefinitely if we don't drop the sender.

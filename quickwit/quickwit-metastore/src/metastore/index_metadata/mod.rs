@@ -24,6 +24,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use quickwit_common::uri::Uri;
 use quickwit_config::{IndexConfig, SourceConfig, TestableForRegression};
+use quickwit_proto::metastore::{EntityKind, MetastoreError, MetastoreResult};
 use quickwit_proto::IndexUid;
 use serde::{Deserialize, Serialize};
 use serialize::VersionedIndexMetadata;
@@ -32,7 +33,6 @@ use time::OffsetDateTime;
 use crate::checkpoint::{
     IndexCheckpoint, PartitionId, Position, SourceCheckpoint, SourceCheckpointDelta,
 };
-use crate::{MetastoreError, MetastoreResult};
 
 /// An index metadata carries all meta data about an index.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -94,10 +94,9 @@ impl IndexMetadata {
         let entry = self.sources.entry(source.source_id.clone());
         let source_id = source.source_id.clone();
         if let Entry::Occupied(_) = entry {
-            return Err(MetastoreError::SourceAlreadyExists {
+            return Err(MetastoreError::AlreadyExists(EntityKind::Source {
                 source_id: source_id.clone(),
-                source_type: source.source_type().to_string(),
-            });
+            }));
         }
         entry.or_insert(source);
         self.checkpoint.add_source(&source_id);
@@ -105,12 +104,11 @@ impl IndexMetadata {
     }
 
     pub(crate) fn toggle_source(&mut self, source_id: &str, enable: bool) -> MetastoreResult<bool> {
-        let source =
-            self.sources
-                .get_mut(source_id)
-                .ok_or_else(|| MetastoreError::SourceDoesNotExist {
-                    source_id: source_id.to_string(),
-                })?;
+        let source = self.sources.get_mut(source_id).ok_or_else(|| {
+            MetastoreError::NotFound(EntityKind::Source {
+                source_id: source_id.to_string(),
+            })
+        })?;
         let mutation_occurred = source.enabled != enable;
         source.enabled = enable;
         Ok(mutation_occurred)
@@ -118,11 +116,11 @@ impl IndexMetadata {
 
     /// Deletes a source from the index. Returns whether the index was modified (true).
     pub(crate) fn delete_source(&mut self, source_id: &str) -> MetastoreResult<bool> {
-        self.sources
-            .remove(source_id)
-            .ok_or_else(|| MetastoreError::SourceDoesNotExist {
+        self.sources.remove(source_id).ok_or_else(|| {
+            MetastoreError::NotFound(EntityKind::Source {
                 source_id: source_id.to_string(),
-            })?;
+            })
+        })?;
         self.checkpoint.remove_source(source_id);
         Ok(true)
     }

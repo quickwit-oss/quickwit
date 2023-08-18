@@ -37,14 +37,14 @@ where E: Send + Sync + std::error::Error + 'static + ToStorageErrorKind + Retrya
 {
     fn from(error: SdkError<E>) -> StorageError {
         let error_kind = match &error {
-            SdkError::ConstructionFailure(_) => StorageErrorKind::InternalError,
+            SdkError::ConstructionFailure(_) => StorageErrorKind::Internal,
             SdkError::DispatchFailure(failure) => {
                 if failure.is_io() {
                     StorageErrorKind::Io
                 } else if failure.is_timeout() {
                     StorageErrorKind::Timeout
                 } else {
-                    StorageErrorKind::InternalError
+                    StorageErrorKind::Internal
                 }
             }
             SdkError::ResponseError(response_error) => {
@@ -52,12 +52,12 @@ where E: Send + Sync + std::error::Error + 'static + ToStorageErrorKind + Retrya
                 match response.status() {
                     StatusCode::NOT_FOUND => StorageErrorKind::NotFound,
                     StatusCode::UNAUTHORIZED => StorageErrorKind::Unauthorized,
-                    _ => StorageErrorKind::InternalError,
+                    _ => StorageErrorKind::Internal,
                 }
             }
             SdkError::ServiceError(service_error) => service_error.err().to_storage_error_kind(),
             SdkError::TimeoutError(_) => StorageErrorKind::Timeout,
-            _ => StorageErrorKind::InternalError,
+            _ => StorageErrorKind::Internal,
         };
         let source = anyhow::anyhow!("{}", DisplayErrorContext(error));
         error_kind.with_error(source)
@@ -106,7 +106,7 @@ impl ToStorageErrorKind for CompleteMultipartUploadError {
 impl ToStorageErrorKind for AbortMultipartUploadError {
     fn to_storage_error_kind(&self) -> StorageErrorKind {
         match self {
-            AbortMultipartUploadError::NoSuchUpload(_) => StorageErrorKind::InternalError,
+            AbortMultipartUploadError::NoSuchUpload(_) => StorageErrorKind::Internal,
             AbortMultipartUploadError::Unhandled(_) => StorageErrorKind::Service,
             _ => StorageErrorKind::Service,
         }

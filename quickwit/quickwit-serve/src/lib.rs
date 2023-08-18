@@ -75,12 +75,13 @@ use quickwit_ingest::{
 };
 use quickwit_janitor::{start_janitor_service, JanitorService};
 use quickwit_metastore::{
-    ListIndexesQuery, Metastore, MetastoreError, MetastoreEvent, MetastoreEventPublisher,
-    MetastoreGrpcClient, MetastoreResolver, RetryingMetastore,
+    ListIndexesQuery, Metastore, MetastoreEvent, MetastoreEventPublisher, MetastoreGrpcClient,
+    MetastoreResolver, RetryingMetastore,
 };
 use quickwit_opentelemetry::otlp::{OtlpGrpcLogsService, OtlpGrpcTracesService};
 use quickwit_proto::control_plane::ControlPlaneServiceClient;
 use quickwit_proto::indexing::IndexingServiceClient;
+use quickwit_proto::metastore::{EntityKind, MetastoreError};
 use quickwit_search::{
     create_search_client_from_channel, start_searcher_service, SearchJobPlacer, SearchService,
     SearchServiceClient, SearcherPool,
@@ -224,9 +225,9 @@ pub async fn serve_quickwit(
             for index_config in [otel_logs_index_config, otel_traces_index_config] {
                 match index_service.create_index(index_config, false).await {
                     Ok(_)
-                    | Err(IndexServiceError::MetastoreError(
-                        MetastoreError::IndexAlreadyExists { .. },
-                    )) => Ok(()),
+                    | Err(IndexServiceError::Metastore(MetastoreError::AlreadyExists(
+                        EntityKind::Index { .. },
+                    ))) => Ok(()),
                     Err(error) => Err(error),
                 }?;
             }

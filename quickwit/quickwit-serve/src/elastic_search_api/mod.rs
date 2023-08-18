@@ -168,7 +168,7 @@ mod tests {
                 {
                     Ok(Default::default())
                 } else {
-                    Err(quickwit_search::SearchError::InternalError(
+                    Err(quickwit_search::SearchError::Internal(
                         "something bad happened".to_string(),
                     ))
                 }
@@ -326,7 +326,7 @@ mod tests {
                 {
                     Ok(Default::default())
                 } else {
-                    Err(quickwit_search::SearchError::InternalError(
+                    Err(quickwit_search::SearchError::Internal(
                         "something bad happened".to_string(),
                     ))
                 }

@@ -140,14 +140,13 @@ async fn leaf_search_stream_single_split(
         doc_mapper.as_ref(),
     )?);
 
-    let output_format = OutputFormat::from_i32(stream_request.output_format).ok_or_else(|| {
-        SearchError::InternalError("Invalid output format specified.".to_string())
-    })?;
+    let output_format = OutputFormat::from_i32(stream_request.output_format)
+        .ok_or_else(|| SearchError::Internal("Invalid output format specified.".to_string()))?;
 
     if request_fields.partition_by_fast_field.is_some()
         && output_format != OutputFormat::ClickHouseRowBinary
     {
-        return Err(SearchError::InternalError(
+        return Err(SearchError::Internal(
             "Invalid output format specified, only ClickHouseRowBinary is allowed when providing \
              a partitioned-by field."
                 .to_string(),
@@ -205,9 +204,7 @@ async fn leaf_search_stream_single_split(
                 )?;
                 super::serialize::<i64>(&collected_values, &mut buffer, output_format).map_err(
                     |_| {
-                        SearchError::InternalError(
-                            "Error when serializing i64 during export".to_owned(),
-                        )
+                        SearchError::Internal("Error when serializing i64 during export".to_owned())
                     },
                 )?;
             }
@@ -220,9 +217,7 @@ async fn leaf_search_stream_single_split(
                 )?;
                 super::serialize::<u64>(&collected_values, &mut buffer, output_format).map_err(
                     |_| {
-                        SearchError::InternalError(
-                            "Error when serializing u64 during export".to_owned(),
-                        )
+                        SearchError::Internal("Error when serializing u64 during export".to_owned())
                     },
                 )?;
             }
@@ -243,9 +238,7 @@ async fn leaf_search_stream_single_split(
                 // We serialize Date as i64 microseconds.
                 super::serialize::<i64>(&collected_values_as_micros, &mut buffer, output_format)
                     .map_err(|_| {
-                        SearchError::InternalError(
-                            "Error when serializing i64 during export".to_owned(),
-                        )
+                        SearchError::Internal("Error when serializing i64 during export".to_owned())
                     })?;
             }
             (Type::I64, Some(Type::I64)) => {
@@ -257,9 +250,7 @@ async fn leaf_search_stream_single_split(
                 )?;
                 super::serialize_partitions::<i64, i64>(collected_values.as_slice(), &mut buffer)
                     .map_err(|_| {
-                    SearchError::InternalError(
-                        "Error when serializing i64 during export".to_owned(),
-                    )
+                    SearchError::Internal("Error when serializing i64 during export".to_owned())
                 })?;
             }
             (Type::U64, Some(Type::U64)) => {
@@ -271,18 +262,16 @@ async fn leaf_search_stream_single_split(
                 )?;
                 super::serialize_partitions::<u64, u64>(collected_values.as_slice(), &mut buffer)
                     .map_err(|_| {
-                    SearchError::InternalError(
-                        "Error when serializing i64 during export".to_owned(),
-                    )
+                    SearchError::Internal("Error when serializing i64 during export".to_owned())
                 })?;
             }
             (fast_field_type, None) => {
-                return Err(SearchError::InternalError(format!(
+                return Err(SearchError::Internal(format!(
                     "Search stream does not support fast field of type `{fast_field_type:?}`."
                 )));
             }
             (fast_field_type, Some(partition_fast_field_type)) => {
-                return Err(SearchError::InternalError(format!(
+                return Err(SearchError::Internal(format!(
                     "Search stream does not support the combination of fast field type \
                      `{fast_field_type:?}` and partition fast field type \
                      `{partition_fast_field_type:?}`."
@@ -293,7 +282,7 @@ async fn leaf_search_stream_single_split(
     });
     let buffer = collect_handle.await.map_err(|_| {
         error!(split_id = %split.split_id, request_fields=%request_fields, "Failed to collect fast field");
-        SearchError::InternalError(format!("Error when collecting fast field values for split {}", split.split_id))
+        SearchError::Internal(format!("Error when collecting fast field values for split {}", split.split_id))
     })??;
     Ok(LeafSearchStreamResponse {
         data: buffer,

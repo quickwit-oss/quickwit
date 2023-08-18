@@ -33,9 +33,9 @@ use quickwit_proto::metastore::{
     AddSourceRequest, CreateIndexRequest, DeleteIndexRequest, DeleteQuery, DeleteSourceRequest,
     DeleteSplitsRequest, DeleteTask, IndexMetadataRequest, LastDeleteOpstampRequest,
     ListAllSplitsRequest, ListDeleteTasksRequest, ListIndexesMetadatasRequest, ListSplitsRequest,
-    ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreServiceClient,
-    PublishSplitsRequest, ResetSourceCheckpointRequest, StageSplitsRequest, ToggleSourceRequest,
-    UpdateSplitsDeleteOpstampRequest,
+    ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError, MetastoreResult,
+    MetastoreServiceClient, PublishSplitsRequest, ResetSourceCheckpointRequest, StageSplitsRequest,
+    ToggleSourceRequest, UpdateSplitsDeleteOpstampRequest,
 };
 use quickwit_proto::tonic::codegen::InterceptedService;
 use quickwit_proto::tonic::Status;
@@ -43,10 +43,7 @@ use quickwit_proto::{IndexUid, SpanContextInterceptor};
 use tower::timeout::error::Elapsed;
 
 use crate::checkpoint::IndexCheckpointDelta;
-use crate::{
-    IndexMetadata, ListIndexesQuery, ListSplitsQuery, Metastore, MetastoreError, MetastoreResult,
-    Split, SplitMetadata,
-};
+use crate::{IndexMetadata, ListIndexesQuery, ListSplitsQuery, Metastore, Split, SplitMetadata};
 
 // URI describing in a generic way the metastore services resource present in the cluster (=
 // discovered by Quickwit gossip). This value is used to build the URI of `MetastoreGrpcClient` and
@@ -157,12 +154,11 @@ impl Metastore for MetastoreGrpcClient {
         Ok(index_uid)
     }
 
-    /// Lists indexes.
     async fn list_indexes_metadatas(
         &self,
         query: ListIndexesQuery,
     ) -> MetastoreResult<Vec<IndexMetadata>> {
-        let filter_json = serde_json::to_string(&query).map_err(|error| {
+        let query_json = serde_json::to_string(&query).map_err(|error| {
             MetastoreError::JsonDeserializeError {
                 struct_name: "ListIndexesQuery".to_string(),
                 message: error.to_string(),
@@ -171,7 +167,7 @@ impl Metastore for MetastoreGrpcClient {
         let response = self
             .underlying
             .clone()
-            .list_indexes_metadatas(ListIndexesMetadatasRequest { filter_json })
+            .list_indexes_metadatas(ListIndexesMetadatasRequest { query_json })
             .await
             .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
         let indexes_metadatas =
@@ -279,13 +275,13 @@ impl Metastore for MetastoreGrpcClient {
 
     /// Lists the splits.
     async fn list_splits(&self, query: ListSplitsQuery) -> MetastoreResult<Vec<Split>> {
-        let filter_json =
+        let query_json =
             serde_json::to_string(&query).map_err(|error| MetastoreError::JsonSerializeError {
                 struct_name: "ListSplitsQuery".to_string(),
                 message: error.to_string(),
             })?;
 
-        let request = ListSplitsRequest { filter_json };
+        let request = ListSplitsRequest { query_json };
         let response = self
             .underlying
             .clone()
@@ -559,14 +555,14 @@ pub fn parse_grpc_error(grpc_error: &Status) -> MetastoreError {
         .and_then(|error| error.downcast_ref::<Elapsed>());
 
     if elapsed_error_opt.is_some() {
-        return MetastoreError::ConnectionError {
+        return MetastoreError::Connection {
             message: "gRPC request timeout triggered by the channel timeout. This can happens \
                       when tonic channel has no registered endpoints."
                 .to_string(),
         };
     }
 
-    serde_json::from_str(grpc_error.message()).unwrap_or_else(|_| MetastoreError::InternalError {
+    serde_json::from_str(grpc_error.message()).unwrap_or_else(|_| MetastoreError::Internal {
         message: grpc_error.message().to_string(),
         cause: "".to_string(),
     })

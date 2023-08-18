@@ -23,13 +23,15 @@ use async_trait::async_trait;
 use quickwit_common::retry::RetryParams;
 use quickwit_common::uri::Uri;
 use quickwit_config::{IndexConfig, SourceConfig};
-use quickwit_proto::metastore::{DeleteQuery, DeleteTask};
+use quickwit_proto::metastore::{
+    DeleteQuery, DeleteTask, EntityKind, MetastoreError, MetastoreResult,
+};
 use quickwit_proto::IndexUid;
 
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{
-    IndexMetadata, ListIndexesQuery, ListSplitsQuery, Metastore, MetastoreError, MetastoreResult,
-    RetryingMetastore, Split, SplitMetadata,
+    IndexMetadata, ListIndexesQuery, ListSplitsQuery, Metastore, RetryingMetastore, Split,
+    SplitMetadata,
 };
 
 struct RetryTestMetastore {
@@ -226,16 +228,16 @@ async fn test_retryable_metastore_errors() {
     let metastore: RetryingMetastore = RetryTestMetastore::new_retrying_with_errors(
         5,
         &[
-            MetastoreError::ConnectionError {
+            MetastoreError::Connection {
                 message: "".to_string(),
             },
             MetastoreError::Io {
                 message: "".to_string(),
             },
-            MetastoreError::DbError {
+            MetastoreError::Db {
                 message: "".to_string(),
             },
-            MetastoreError::InternalError {
+            MetastoreError::Internal {
                 message: "".to_string(),
                 cause: "".to_string(),
             },
@@ -251,9 +253,9 @@ async fn test_retryable_metastore_errors() {
 
     let metastore: RetryingMetastore = RetryTestMetastore::new_retrying_with_errors(
         5,
-        &[MetastoreError::IndexesDoNotExist {
-            index_ids: vec!["".to_string()],
-        }],
+        &[MetastoreError::NotFound(EntityKind::Index {
+            index_id: "".to_string(),
+        })],
     );
 
     // On non-retryable errors, RetryingMetastore should exit with an error.
@@ -270,7 +272,7 @@ async fn test_retryable_more_than_max_retry() {
         &(0..4)
             .collect::<Vec<_>>()
             .iter()
-            .map(|index| MetastoreError::ConnectionError {
+            .map(|index| MetastoreError::Connection {
                 message: format!("{index}"),
             })
             .collect::<Vec<_>>(),
@@ -282,7 +284,7 @@ async fn test_retryable_more_than_max_retry() {
         .unwrap_err();
     assert_eq!(
         error,
-        MetastoreError::ConnectionError {
+        MetastoreError::Connection {
             message: "2".to_string() // Max 3 retries, last error index is 2
         }
     )
@@ -293,18 +295,17 @@ async fn test_mixed_retryable_metastore_errors() {
     let metastore: RetryingMetastore = RetryTestMetastore::new_retrying_with_errors(
         5,
         &[
-            MetastoreError::ConnectionError {
+            MetastoreError::Connection {
                 message: "".to_string(),
             },
             MetastoreError::Io {
                 message: "".to_string(),
             },
             // Non-retryable
-            MetastoreError::SourceAlreadyExists {
+            MetastoreError::AlreadyExists(EntityKind::Source {
                 source_id: "".to_string(),
-                source_type: "".to_string(),
-            },
-            MetastoreError::InternalError {
+            }),
+            MetastoreError::Internal {
                 message: "".to_string(),
                 cause: "".to_string(),
             },
@@ -318,9 +319,8 @@ async fn test_mixed_retryable_metastore_errors() {
 
     assert_eq!(
         error,
-        MetastoreError::SourceAlreadyExists {
-            source_id: "".to_string(),
-            source_type: "".to_string(),
-        }
+        MetastoreError::AlreadyExists(EntityKind::Source {
+            source_id: "".to_string()
+        }),
     )
 }

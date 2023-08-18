@@ -1381,7 +1381,7 @@ async fn test_single_node_aggregation_missing_fast_field() {
     )
     .await
     .unwrap_err();
-    let SearchError::InternalError(error_msg) = single_node_error else {
+    let SearchError::Internal(error_msg) = single_node_error else {
         panic!();
     };
     assert!(error_msg.contains("Field \"color\" is not configured as fast field"));

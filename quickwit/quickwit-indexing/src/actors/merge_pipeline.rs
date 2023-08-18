@@ -30,8 +30,9 @@ use quickwit_common::io::IoControls;
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_common::KillSwitch;
 use quickwit_doc_mapper::DocMapper;
-use quickwit_metastore::{ListSplitsQuery, Metastore, MetastoreError, SplitState};
+use quickwit_metastore::{ListSplitsQuery, Metastore, SplitState};
 use quickwit_proto::indexing::IndexingPipelineId;
+use quickwit_proto::metastore::MetastoreError;
 use time::OffsetDateTime;
 use tokio::join;
 use tracing::{debug, error, info, instrument};
@@ -428,7 +429,7 @@ impl Handler<Spawn> for MergePipeline {
         }
         self.previous_generations_statistics.num_spawn_attempts = 1 + spawn.retry_count;
         if let Err(spawn_error) = self.spawn_pipeline(ctx).await {
-            if let Some(MetastoreError::IndexesDoNotExist { .. }) =
+            if let Some(MetastoreError::NotFound { .. }) =
                 spawn_error.downcast_ref::<MetastoreError>()
             {
                 info!(error = ?spawn_error, "Could not spawn pipeline, index might have been deleted.");
@@ -491,17 +492,14 @@ mod tests {
             .expect_list_splits()
             .times(1)
             .returning(move |list_split_query| {
-                assert_eq!(list_split_query.index_uids, vec![index_uid.clone()]);
+                assert_eq!(list_split_query.index_uids, &[index_uid.clone()]);
                 assert_eq!(
                     list_split_query.split_states,
                     vec![quickwit_metastore::SplitState::Published]
                 );
-                match list_split_query.mature {
-                    Bound::Excluded(_) => {}
-                    _ => {
-                        panic!("Expected excluded bound.");
-                    }
-                }
+                let Bound::Excluded(_) = list_split_query.mature else {
+                    panic!("Expected excluded bound.");
+                };
                 Ok(Vec::new())
             });
         let universe = Universe::with_accelerated_time();

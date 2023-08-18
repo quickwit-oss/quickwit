@@ -35,7 +35,9 @@ use futures::future::try_join_all;
 use itertools::Itertools;
 use quickwit_common::uri::Uri;
 use quickwit_config::{validate_index_id_pattern, IndexConfig, SourceConfig};
-use quickwit_proto::metastore::{DeleteQuery, DeleteTask};
+use quickwit_proto::metastore::{
+    DeleteQuery, DeleteTask, EntityKind, MetastoreError, MetastoreResult,
+};
 use quickwit_proto::IndexUid;
 use quickwit_storage::Storage;
 use regex::RegexSet;
@@ -48,11 +50,9 @@ use self::store_operations::{
     check_indexes_states_exist, delete_index, fetch_index, fetch_or_init_indexes_states,
     index_exists, put_index, put_indexes_states,
 };
-use super::ListIndexesQuery;
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{
-    IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, MetastoreResult, Split,
-    SplitMetadata, SplitState,
+    IndexMetadata, ListIndexesQuery, ListSplitsQuery, Metastore, Split, SplitMetadata, SplitState,
 };
 
 /// State of an index tracked by the metastore.
@@ -161,14 +161,14 @@ impl FileBackedMetastore {
     async fn mutate<T>(
         &self,
         index_uid: IndexUid,
-        mutate_fn: impl FnOnce(&mut FileBackedIndex) -> crate::MetastoreResult<MutationOccurred<T>>,
+        mutate_fn: impl FnOnce(&mut FileBackedIndex) -> MetastoreResult<MutationOccurred<T>>,
     ) -> MetastoreResult<T> {
         let index_id = index_uid.index_id();
         let mut locked_index = self.get_locked_index(index_id).await?;
         if locked_index.index_uid() != index_uid {
-            return Err(MetastoreError::IndexesDoNotExist {
-                index_ids: vec![index_id.to_string()],
-            });
+            return Err(MetastoreError::NotFound(EntityKind::Index {
+                index_id: index_id.to_string(),
+            }));
         }
         let mut index = locked_index.clone();
         let value = match mutate_fn(&mut index)? {
@@ -215,9 +215,9 @@ impl FileBackedMetastore {
         if locked_index.index_uid() == index_uid {
             view(&locked_index)
         } else {
-            Err(MetastoreError::IndexesDoNotExist {
-                index_ids: vec![index_id.to_string()],
-            })
+            Err(MetastoreError::NotFound(EntityKind::Index {
+                index_id: index_id.to_string(),
+            }))
         }
     }
 
@@ -324,12 +324,12 @@ impl Metastore for FileBackedMetastore {
         //   don't want to override an existing metadata file.
         if let Some(index_state) = per_index_metastores_wlock.get(&index_id) {
             if let IndexState::Alive(_) = index_state {
-                return Err(MetastoreError::IndexAlreadyExists {
+                return Err(MetastoreError::AlreadyExists(EntityKind::Index {
                     index_id: index_id.clone(),
-                });
+                }));
             }
         } else if index_exists(&*self.storage, &index_id).await? {
-            return Err(MetastoreError::InternalError {
+            return Err(MetastoreError::Internal {
                 message: format!("Index {index_id} cannot be created."),
                 cause: format!(
                     "Index {index_id} is not present in the `indexes_states.json` file but its \
@@ -380,9 +380,9 @@ impl Metastore for FileBackedMetastore {
         if !per_index_metastores_wlock.contains_key(index_id)
             && !index_exists(&*self.storage, index_id).await?
         {
-            return Err(MetastoreError::IndexesDoNotExist {
-                index_ids: vec![index_id.to_string()],
-            });
+            return Err(MetastoreError::NotFound(EntityKind::Index {
+                index_id: index_id.to_string(),
+            }));
         }
 
         // Set state to `Deleting` and keep the previous state in memory in case we need to insert
@@ -405,7 +405,7 @@ impl Metastore for FileBackedMetastore {
             Ok(()) |
             // If the index file does not exist, we still need to return an error,
             // but it makes sense to ensure that the index state is removed.
-            Err(MetastoreError::IndexesDoNotExist { .. }) => {
+            Err(MetastoreError::NotFound(EntityKind::Index { .. })) => {
                 per_index_metastores_wlock.remove(index_id);
                 if let Err(error) = put_indexes_states(&*self.storage, &per_index_metastores_wlock).await {
                     per_index_metastores_wlock.insert(index_id.to_string(), IndexState::Deleting);
@@ -431,16 +431,21 @@ impl Metastore for FileBackedMetastore {
             for split_metadata in split_metadata_list {
                 match index.stage_split(split_metadata) {
                     Ok(()) => {}
-                    Err(MetastoreError::SplitsNotStaged { split_ids }) => {
-                        failed_split_ids.extend(split_ids);
+                    Err(MetastoreError::FailedPrecondition {
+                        entity: EntityKind::Split { split_id },
+                        ..
+                    }) => {
+                        failed_split_ids.push(split_id);
                     }
                     Err(error) => return Err(error),
                 };
             }
             if !failed_split_ids.is_empty() {
-                Err(MetastoreError::SplitsNotStaged {
+                let entity = EntityKind::Splits {
                     split_ids: failed_split_ids,
-                })
+                };
+                let message = "splits are not staged".to_string();
+                Err(MetastoreError::FailedPrecondition { entity, message })
             } else {
                 Ok(MutationOccurred::Yes(()))
             }
@@ -549,14 +554,15 @@ impl Metastore for FileBackedMetastore {
     /// Read-only accessors
 
     async fn list_splits(&self, query: ListSplitsQuery) -> MetastoreResult<Vec<Split>> {
-        let mut splits = Vec::new();
-        for index_uid in query.index_uids.iter() {
-            let index_splits = self
+        let mut all_splits = Vec::new();
+
+        for index_uid in &query.index_uids {
+            let splits = self
                 .read(index_uid.clone(), |index| index.list_splits(&query))
                 .await?;
-            splits.extend(index_splits);
+            all_splits.extend(splits);
         }
-        Ok(splits)
+        Ok(all_splits)
     }
 
     async fn index_metadata(&self, index_id: &str) -> MetastoreResult<IndexMetadata> {
@@ -577,17 +583,16 @@ impl Metastore for FileBackedMetastore {
             ListIndexesQuery::IndexIdPatterns(patterns) => build_regex_set_from_patterns(patterns),
             ListIndexesQuery::All => build_regex_set_from_patterns(vec!["*".to_string()]),
         };
-        let index_matcher =
-            index_matcher_result.map_err(|error| MetastoreError::InternalError {
-                message: "Failed to build RegexSet from index patterns`".to_string(),
-                cause: error.to_string(),
-            })?;
+        let index_matcher = index_matcher_result.map_err(|error| MetastoreError::Internal {
+            message: "Failed to build RegexSet from index patterns`".to_string(),
+            cause: error.to_string(),
+        })?;
 
         let index_ids: Vec<String> = {
             let per_index_metastores_rlock = self.per_index_metastores.read().await;
             per_index_metastores_rlock
                 .iter()
-                .flat_map(|(index_id, index_state)| match index_state {
+                .filter_map(|(index_id, index_state)| match index_state {
                     IndexState::Alive(_) => Some(index_id),
                     _ => None,
                 })
@@ -599,14 +604,14 @@ impl Metastore for FileBackedMetastore {
             try_join_all(index_ids.iter().map(|index_id| async move {
                 match self.index_metadata(index_id).await {
                     Ok(index_metadata) => Ok(Some(index_metadata)),
-                    Err(MetastoreError::IndexesDoNotExist { index_ids: _ }) => Ok(None),
-                    Err(MetastoreError::InternalError { message, cause }) => {
+                    Err(MetastoreError::NotFound(EntityKind::Index { .. })) => Ok(None),
+                    Err(MetastoreError::Internal { message, cause }) => {
                         // Indexes can be in a transition state `Creating` or `Deleting`.
                         // This is fine to ignore them.
                         if cause.contains("is in transitioning state") {
                             Ok(None)
                         } else {
-                            Err(MetastoreError::InternalError { message, cause })
+                            Err(MetastoreError::Internal { message, cause })
                         }
                     }
                     Err(error) => Err(error),
@@ -683,13 +688,13 @@ async fn get_index_mutex(
 ) -> MetastoreResult<Arc<Mutex<FileBackedIndex>>> {
     match index_state {
         IndexState::Alive(lazy_index) => lazy_index.get().await,
-        IndexState::Creating => Err(MetastoreError::InternalError {
+        IndexState::Creating => Err(MetastoreError::Internal {
             message: format!("Index `{index_id}` cannot be retrieved."),
             cause: "Index `{index_id}` is in transitioning state `Creating` and this should not \
                     happened. Either recreate or delete it."
                 .to_string(),
         }),
-        IndexState::Deleting => Err(MetastoreError::InternalError {
+        IndexState::Deleting => Err(MetastoreError::Internal {
             message: format!("Index `{index_id}` cannot be retrieved."),
             cause: "Index `{index_id}` is in transitioning state `Deleting` and this should not \
                     happened. Try to delete it again."
@@ -748,7 +753,7 @@ mod tests {
 
     use futures::executor::block_on;
     use quickwit_config::IndexConfig;
-    use quickwit_proto::metastore::DeleteQuery;
+    use quickwit_proto::metastore::{DeleteQuery, MetastoreError};
     use quickwit_query::query_ast::qast_json_helper;
     use quickwit_storage::{MockStorage, RamStorage, Storage, StorageErrorKind};
     use rand::Rng;
@@ -761,9 +766,7 @@ mod tests {
     };
     use super::*;
     use crate::tests::test_suite::DefaultForTest;
-    use crate::{
-        IndexMetadata, ListSplitsQuery, Metastore, MetastoreError, SplitMetadata, SplitState,
-    };
+    use crate::{IndexMetadata, ListSplitsQuery, Metastore, SplitMetadata, SplitState};
 
     #[tokio::test]
     async fn test_file_backed_metastore_connectivity_fails_if_states_file_does_not_exist() {
@@ -829,20 +832,14 @@ mod tests {
             .get_index(IndexUid::new("index-does-not-exist"))
             .await
             .unwrap_err();
-        assert!(matches!(
-            metastore_error,
-            MetastoreError::IndexesDoNotExist { .. }
-        ));
+        assert!(matches!(metastore_error, MetastoreError::NotFound { .. }));
 
         // Open a index with a different incarnation_id.
         let metastore_error = metastore
             .get_index(IndexUid::new(index_id))
             .await
             .unwrap_err();
-        assert!(matches!(
-            metastore_error,
-            MetastoreError::IndexesDoNotExist { .. }
-        ));
+        assert!(matches!(metastore_error, MetastoreError::NotFound { .. }));
     }
 
     #[tokio::test]
@@ -921,7 +918,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_file_backed_metastore_get_index_checks_for_inconsistent_index_id(
-    ) -> crate::MetastoreResult<()> {
+    ) -> MetastoreResult<()> {
         let storage = Arc::new(RamStorage::default());
         let index_id = "test-index";
         let index_metadata =
@@ -953,16 +950,13 @@ mod tests {
             .get_index(IndexUid::new(index_id))
             .await
             .unwrap_err();
-        assert!(matches!(
-            metastore_error,
-            MetastoreError::InternalError { .. }
-        ));
+        assert!(matches!(metastore_error, MetastoreError::Internal { .. }));
 
         Ok(())
     }
 
     #[tokio::test]
-    async fn test_file_backed_metastore_wrt_directly_visible() -> crate::MetastoreResult<()> {
+    async fn test_file_backed_metastore_wrt_directly_visible() -> MetastoreResult<()> {
         let metastore = FileBackedMetastore::default_for_test().await;
         let index_config = IndexConfig::for_test("test-index", "ram:///indexes/test-index");
         let index_uid = metastore.create_index(index_config).await?;
@@ -991,7 +985,8 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_file_backed_metastore_polling() -> crate::MetastoreResult<()> {
+    async fn test_file_backed_metastore_polling() -> quickwit_proto::metastore::MetastoreResult<()>
+    {
         let storage = Arc::new(RamStorage::default());
 
         let metastore_wrt = FileBackedMetastore::try_new(storage.clone(), None)
@@ -1165,10 +1160,7 @@ mod tests {
 
         // Create index.
         let metastore_error = metastore.create_index(index_config).await.unwrap_err();
-        assert!(matches!(
-            metastore_error,
-            MetastoreError::InternalError { .. }
-        ));
+        assert!(matches!(metastore_error, MetastoreError::Internal { .. }));
         // Try fetch the not created index.
         let created_index_error = metastore
             .get_index(IndexUid::new(index_id))
@@ -1176,7 +1168,7 @@ mod tests {
             .unwrap_err();
         assert!(matches!(
             created_index_error,
-            MetastoreError::IndexesDoNotExist { .. }
+            MetastoreError::NotFound { .. }
         ));
     }
 
@@ -1214,16 +1206,13 @@ mod tests {
 
         // Create index
         let metastore_error = metastore.create_index(index_config).await.unwrap_err();
-        assert!(matches!(
-            metastore_error,
-            MetastoreError::InternalError { .. }
-        ));
+        assert!(matches!(metastore_error, MetastoreError::Internal { .. }));
         // Let's fetch the index, we expect an internal error as the index state is in `Creating`
         // state.
         let created_index_error = metastore.get_index(index_uid.clone()).await.unwrap_err();
         assert!(matches!(
             created_index_error,
-            MetastoreError::InternalError { .. }
+            MetastoreError::Internal { .. }
         ));
         // Check index state is in `Creating` in the states file.
         let index_states =
@@ -1238,7 +1227,7 @@ mod tests {
         let deleted_index_error = metastore.delete_index(index_uid.clone()).await.unwrap_err();
         assert!(matches!(
             deleted_index_error,
-            MetastoreError::IndexesDoNotExist { .. }
+            MetastoreError::NotFound { .. }
         ));
         let index_states = fetch_or_init_indexes_states(Arc::new(ram_storage_clone_2), None)
             .await
@@ -1248,7 +1237,7 @@ mod tests {
         let created_index_error = metastore.get_index(index_uid).await.unwrap_err();
         assert!(matches!(
             created_index_error,
-            MetastoreError::IndexesDoNotExist { .. }
+            MetastoreError::NotFound { .. }
         ));
     }
 
@@ -1284,10 +1273,7 @@ mod tests {
 
         // Create index
         let metastore_error = metastore.create_index(index_config).await.unwrap_err();
-        assert!(matches!(
-            metastore_error,
-            MetastoreError::InternalError { .. }
-        ));
+        assert!(matches!(metastore_error, MetastoreError::Internal { .. }));
         // Let's fetch the index, we expect an internal error as the index state is in `Creating`
         // state.
         let created_index_error = metastore
@@ -1296,7 +1282,7 @@ mod tests {
             .unwrap_err();
         assert!(matches!(
             created_index_error,
-            MetastoreError::InternalError { .. }
+            MetastoreError::Internal { .. }
         ));
     }
 
@@ -1333,16 +1319,13 @@ mod tests {
 
         // Delete index
         let metastore_error = metastore.delete_index(index_uid.clone()).await.unwrap_err();
-        assert!(matches!(
-            metastore_error,
-            MetastoreError::InternalError { .. }
-        ));
+        assert!(matches!(metastore_error, MetastoreError::Internal { .. }));
         // Let's fetch the index, we expect an internal error as the index state is in `Deleting`
         // state.
         let created_index_error = metastore.get_index(index_uid).await.unwrap_err();
         assert!(matches!(
             created_index_error,
-            MetastoreError::InternalError { .. }
+            MetastoreError::Internal { .. }
         ));
     }
 
@@ -1385,21 +1368,18 @@ mod tests {
 
         // Delete index
         let metastore_error = metastore.delete_index(index_uid.clone()).await.unwrap_err();
-        assert!(matches!(
-            metastore_error,
-            MetastoreError::InternalError { .. }
-        ));
+        assert!(matches!(metastore_error, MetastoreError::Internal { .. }));
         // Let's fetch the index, we expect an internal error as the index state is in `Deleting`
         // state.
         let created_index_error = metastore.get_index(index_uid).await.unwrap_err();
         assert!(matches!(
             created_index_error,
-            MetastoreError::InternalError { .. }
+            MetastoreError::Internal { .. }
         ));
     }
 
     #[tokio::test]
-    async fn test_file_backed_metastore_get_list_indexes() -> crate::MetastoreResult<()> {
+    async fn test_file_backed_metastore_get_list_indexes() -> MetastoreResult<()> {
         let index_id_creating = "test-index--creating";
         let index_id_alive = "testing-index--alive";
         let index_id_unregistered = "test-index--unregistered";
