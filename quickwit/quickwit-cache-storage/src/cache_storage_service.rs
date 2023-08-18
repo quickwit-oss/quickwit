@@ -25,10 +25,10 @@ use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, Un
 // use quickwit_common::fs::get_cache_directory_path;
 // use quickwit_common::temp_dir;
 use quickwit_config::NodeConfig;
-use quickwit_metastore::MetastoreError;
 use quickwit_proto::cache_storage::{
     NotifySplitsChangeRequest, NotifySplitsChangeResponse, SplitsChangeNotification,
 };
+use quickwit_proto::metastore::MetastoreError;
 use quickwit_proto::{ServiceError, ServiceErrorCode};
 use quickwit_storage::{
     CacheStorageCounters, CacheStorageFactory, StorageError, StorageResolver, StorageResolverError,
