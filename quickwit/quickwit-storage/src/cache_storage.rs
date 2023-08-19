@@ -246,6 +246,7 @@ impl StorageFactory for CacheStorageFactory {
         uri: &Uri,
     ) -> Result<Arc<dyn Storage>, StorageResolverError> {
         if uri.protocol().is_cache() {
+            // TODO: Prevent stack overflow here if cache uri is also cache
             let cache_uri = self
                 .inner
                 .storage_config

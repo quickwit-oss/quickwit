@@ -30,7 +30,7 @@ use quickwit_serve::SearchRequestQueryString;
 
 use crate::test_utils::{ingest_with_retry, ClusterSandbox};
 
-fn get_ndjson_filepath(ndjson_dataset_filename: &str) -> String {
+pub fn get_ndjson_filepath(ndjson_dataset_filename: &str) -> String {
     format!(
         "{}/resources/tests/{}",
         env!("CARGO_MANIFEST_DIR"),

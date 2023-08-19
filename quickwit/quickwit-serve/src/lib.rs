@@ -53,7 +53,7 @@ pub use format::BodyFormat;
 use futures::{Stream, StreamExt};
 use itertools::Itertools;
 use quickwit_actors::{ActorExitStatus, Mailbox, Universe};
-use quickwit_cache_storage::{start_cache_storage_service, CacheStorageService};
+use quickwit_cache_storage::start_cache_storage_service;
 use quickwit_cluster::{Cluster, ClusterChange, ClusterMember};
 use quickwit_common::pubsub::{EventBroker, EventSubscriptionHandle};
 use quickwit_common::runtimes::RuntimesConfig;
@@ -82,6 +82,7 @@ use quickwit_metastore::{
     MetastoreResolver, RetryingMetastore,
 };
 use quickwit_opentelemetry::otlp::{OtlpGrpcLogsService, OtlpGrpcTracesService};
+use quickwit_proto::cache_storage::CacheStorageServiceClient;
 use quickwit_proto::control_plane::ControlPlaneServiceClient;
 use quickwit_proto::indexing::IndexingServiceClient;
 use quickwit_proto::metastore::{EntityKind, MetastoreError};
@@ -127,7 +128,7 @@ struct QuickwitServices {
     pub ingest_service: IngestServiceClient,
     pub index_service: Arc<IndexService>,
     #[allow(dead_code)]
-    pub cache_storage_service: Option<Mailbox<CacheStorageService>>,
+    pub cache_storage_service: Option<CacheStorageServiceClient>,
     pub services: HashSet<QuickwitService>,
 }
 
@@ -536,7 +537,7 @@ async fn start_control_plane(
     universe: &Universe,
     cluster: &Cluster,
     indexing_service: Option<Mailbox<IndexingService>>,
-    cache_storage_service: Option<Mailbox<CacheStorageService>>,
+    cache_storage_service_client: Option<CacheStorageServiceClient>,
     metastore: Arc<dyn Metastore>,
 ) -> anyhow::Result<Mailbox<ControlPlane>> {
     let scheduler = setup_indexing_scheduler(
@@ -552,7 +553,7 @@ async fn start_control_plane(
     let cache_controller = setup_cache_storage_controller(
         universe,
         cluster.ready_nodes_change_stream().await,
-        cache_storage_service,
+        cache_storage_service_client,
         metastore,
     )
     .await?;
@@ -637,17 +638,17 @@ async fn setup_indexing_scheduler(
 async fn setup_cache_storage_controller(
     universe: &Universe,
     cluster_change_stream: impl Stream<Item = ClusterChange> + Send + 'static,
-    local_cache_storage_controller: Option<Mailbox<CacheStorageService>>,
+    local_cache_storage_service_client: Option<CacheStorageServiceClient>,
     metastore: Arc<dyn Metastore>,
 ) -> anyhow::Result<Mailbox<CacheStorageController>> {
-    let cache_storage_service = start_cache_storage_controller(
+    let cache_storage_controller = start_cache_storage_controller(
         universe,
         cluster_change_stream,
-        local_cache_storage_controller,
+        local_cache_storage_service_client,
         metastore,
     )
     .await?;
-    Ok(cache_storage_service)
+    Ok(cache_storage_controller)
 }
 
 fn require<T: Clone + Send>(

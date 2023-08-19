@@ -28,6 +28,8 @@ use quickwit_ingest::IngestServiceGrpcServerAdapter;
 use quickwit_jaeger::JaegerService;
 use quickwit_metastore::GrpcMetastoreAdapter;
 use quickwit_opentelemetry::otlp::{OtlpGrpcLogsService, OtlpGrpcTracesService};
+use quickwit_proto::cache_storage::cache_storage_service_grpc_server::CacheStorageServiceGrpcServer;
+use quickwit_proto::cache_storage::CacheStorageServiceGrpcServerAdapter;
 use quickwit_proto::control_plane::control_plane_service_grpc_server::ControlPlaneServiceGrpcServer;
 use quickwit_proto::control_plane::ControlPlaneServiceGrpcServerAdapter;
 use quickwit_proto::indexing::indexing_service_grpc_server::IndexingServiceGrpcServer;
@@ -145,6 +147,18 @@ pub(crate) async fn start_grpc_server(
         } else {
             None
         };
+    // Mount gRPC cache storage service if cache storage is configurated on node.
+    let cache_storage_service = if services.config.is_cache_storage_enabled() {
+        if let Some(cache_storage_client) = &services.cache_storage_service {
+            enabled_grpc_services.insert("cache_storage");
+            let adapter = CacheStorageServiceGrpcServerAdapter::new(cache_storage_client.clone());
+            Some(CacheStorageServiceGrpcServer::new(adapter))
+        } else {
+            None
+        }
+    } else {
+        None
+    };
     let server_router = server
         .add_optional_service(metastore_grpc_service)
         .add_optional_service(control_plane_grpc_service)
@@ -153,7 +167,8 @@ pub(crate) async fn start_grpc_server(
         .add_optional_service(otlp_log_grpc_service)
         .add_optional_service(otlp_trace_service)
         .add_optional_service(search_grpc_service)
-        .add_optional_service(jaeger_grpc_service);
+        .add_optional_service(jaeger_grpc_service)
+        .add_optional_service(cache_storage_service);
 
     info!(
         enabled_grpc_services=?enabled_grpc_services,

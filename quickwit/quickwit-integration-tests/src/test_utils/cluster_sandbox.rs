@@ -48,7 +48,7 @@ use tracing::debug;
 
 /// Configuration of a node made of a [`NodeConfig`] and a
 /// set of services.
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct TestNodeConfig {
     pub node_config: NodeConfig,
     pub services: HashSet<QuickwitService>,
@@ -144,14 +144,13 @@ impl ClusterSandbox {
         node_configs: Vec<TestNodeConfig>,
     ) -> anyhow::Result<Self> {
         let runtimes_config = RuntimesConfig::light_for_tests();
-        let storage_resolver = StorageResolver::unconfigured();
         let metastore_resolver = MetastoreResolver::unconfigured();
         let mut join_handles = Vec::new();
         let shutdown_trigger = ClusterShutdownTrigger::new();
         for node_config in node_configs.iter() {
             join_handles.push(tokio::spawn({
                 let node_config = node_config.node_config.clone();
-                let storage_resolver = storage_resolver.clone();
+                let storage_resolver = StorageResolver::configured(&node_config.storage_configs);
                 let metastore_resolver = metastore_resolver.clone();
                 let shutdown_signal = shutdown_trigger.shutdown_signal();
                 async move {
@@ -361,6 +360,7 @@ pub fn build_node_configs(
     let mut node_configs = Vec::new();
     let mut peers: Vec<String> = Vec::new();
     let unique_dir_name = new_coolid("test-dir");
+    let indices_path = root_data_dir.join("indexes");
     for (node_idx, node_services) in nodes_services.iter().enumerate() {
         let mut config = NodeConfig::for_test();
         config.enabled_services = node_services.clone();
@@ -370,7 +370,7 @@ pub fn build_node_configs(
         config.metastore_uri =
             QuickwitUri::from_str(&format!("ram:///{unique_dir_name}/metastore")).unwrap();
         config.default_index_root_uri =
-            QuickwitUri::from_str(&format!("ram:///{unique_dir_name}/indexes")).unwrap();
+            QuickwitUri::from_str(&format!("file://{}", indices_path.to_str().unwrap())).unwrap();
         peers.push(config.gossip_advertise_addr.to_string());
         node_configs.push(TestNodeConfig {
             node_config: config,

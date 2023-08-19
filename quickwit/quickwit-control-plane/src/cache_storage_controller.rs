@@ -27,7 +27,6 @@ use async_trait::async_trait;
 use futures::future::try_join_all;
 use futures::{Stream, StreamExt};
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox};
-use quickwit_cache_storage::CacheStorageService;
 use quickwit_cluster::ClusterChange;
 use quickwit_common::rendezvous_hasher::sort_by_rendez_vous_hash;
 use quickwit_common::uri::{Protocol, Uri};
@@ -242,7 +241,7 @@ impl CacheStorageServicePool {
     /// Listens to cluster stream changes and notifies relevant cache storage services
     pub fn listen_for_changes(
         &self,
-        local_cache_storage_service: Option<Mailbox<CacheStorageService>>,
+        local_cache_storage_service_client: Option<CacheStorageServiceClient>,
         cache_storage_contoller: Mailbox<CacheStorageController>,
         cluster_change_stream: impl Stream<Item = ClusterChange> + Send + 'static,
     ) {
@@ -256,12 +255,7 @@ impl CacheStorageServicePool {
                         {
                             let node_id = node.node_id().to_string();
                             if node.is_self_node() {
-                                if let Some(local_cache_storage_service_clone) =
-                                    local_cache_storage_service.clone()
-                                {
-                                    let client = CacheStorageServiceClient::from_mailbox(
-                                        local_cache_storage_service_clone,
-                                    );
+                                if let Some(client) = local_cache_storage_service_client.clone() {
                                     if services.write().await.insert(node_id, client).is_none() {
                                         if let Err(err) = cache_storage_contoller
                                             .send_message(CacheUpdateRequest {})

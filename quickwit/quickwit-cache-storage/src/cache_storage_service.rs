@@ -21,12 +21,13 @@ use std::fmt;
 
 use anyhow::anyhow;
 use async_trait::async_trait;
-use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, Universe};
+use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Universe};
 // use quickwit_common::fs::get_cache_directory_path;
 // use quickwit_common::temp_dir;
 use quickwit_config::NodeConfig;
 use quickwit_proto::cache_storage::{
-    NotifySplitsChangeRequest, NotifySplitsChangeResponse, SplitsChangeNotification,
+    CacheStorageServiceClient, NotifySplitsChangeRequest, NotifySplitsChangeResponse,
+    SplitsChangeNotification,
 };
 use quickwit_proto::metastore::MetastoreError;
 use quickwit_proto::{ServiceError, ServiceErrorCode};
@@ -160,7 +161,7 @@ pub async fn start_cache_storage_service(
     universe: &Universe,
     config: &NodeConfig,
     storage_resolver: StorageResolver,
-) -> anyhow::Result<Option<Mailbox<CacheStorageService>>> {
+) -> anyhow::Result<Option<CacheStorageServiceClient>> {
     if config.is_cache_storage_enabled() {
         info!("Starting cache storage service.");
         // Spawn indexing service.
@@ -168,8 +169,10 @@ pub async fn start_cache_storage_service(
             CacheStorageService::new(config.node_id.clone(), storage_resolver).await?;
 
         let (cache_storage_service, _) = universe.spawn_builder().spawn(cache_storage_service);
+        let cache_storage_service_client =
+            CacheStorageServiceClient::from_mailbox(cache_storage_service);
 
-        Ok(Some(cache_storage_service))
+        Ok(Some(cache_storage_service_client))
     } else {
         Ok(None)
     }

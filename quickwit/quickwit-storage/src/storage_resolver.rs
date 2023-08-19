@@ -163,10 +163,6 @@ impl StorageResolver {
 
     /// TODO: This is ugly. I will need to replace it when I refactor storage.
     pub fn cache_storage_factory(&self) -> Option<CacheStorageFactory> {
-        println!(
-            "Getting cache_storage_factory {:?}",
-            self.per_backend_factories.keys()
-        );
         self.per_backend_factories
             .get(&StorageBackend::Cache)?
             .as_cache_storage_factory()

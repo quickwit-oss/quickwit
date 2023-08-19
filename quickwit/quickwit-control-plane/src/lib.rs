@@ -28,12 +28,12 @@ use async_trait::async_trait;
 use cache_storage_controller::{CacheStorageController, CacheStorageServicePool};
 use futures::Stream;
 use quickwit_actors::{Mailbox, Universe};
-use quickwit_cache_storage::CacheStorageService;
 use quickwit_cluster::ClusterChange;
 use quickwit_common::pubsub::EventSubscriber;
 use quickwit_common::tower::Pool;
 use quickwit_config::SourceParams;
 use quickwit_metastore::{Metastore, MetastoreEvent};
+use quickwit_proto::cache_storage::CacheStorageServiceClient;
 use quickwit_proto::control_plane::{
     ControlPlaneService, ControlPlaneServiceClient, NotifyIndexChangeRequest,
     NotifySplitsChangeRequest,
@@ -69,14 +69,14 @@ pub async fn start_indexing_scheduler(
 pub async fn start_cache_storage_controller(
     universe: &Universe,
     cluster_change_stream: impl Stream<Item = ClusterChange> + Send + 'static,
-    local_cache_storage_service: Option<Mailbox<CacheStorageService>>,
+    local_cache_storage_service_client: Option<CacheStorageServiceClient>,
     metastore: Arc<dyn Metastore>,
 ) -> anyhow::Result<Mailbox<CacheStorageController>> {
     let service_pool = CacheStorageServicePool::default();
     let controller = CacheStorageController::new(metastore, service_pool.clone());
     let (controller_mailbox, _) = universe.spawn_builder().spawn(controller);
     service_pool.listen_for_changes(
-        local_cache_storage_service,
+        local_cache_storage_service_client,
         controller_mailbox.clone(),
         cluster_change_stream,
     );

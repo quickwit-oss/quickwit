@@ -5451,6 +5451,7 @@ name = "quickwit-integration-tests"
 version = "0.6.3"
 dependencies = [
  "anyhow",
+ "byte-unit",
  "bytes",
  "chitchat",
  "futures-util",
