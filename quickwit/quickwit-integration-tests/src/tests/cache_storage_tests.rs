@@ -77,7 +77,9 @@ async fn test_basic_storage_cache_workflow() {
             search_services,
         ],
     );
-    let [metastore_node_config, controlplane_node_config, indexer_node_config, search_node_config] = &mut configs[..] else {
+    let [metastore_node_config, controlplane_node_config, indexer_node_config, search_node_config] =
+        &mut configs[..]
+    else {
         panic!("failed to construct node configs");
     };
     let cache_path = temp_dir.path().join("cache");
