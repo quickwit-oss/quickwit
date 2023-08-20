@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::VecDeque;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::{fmt, mem};
@@ -35,6 +36,7 @@ use quickwit_metastore::checkpoint::{PartitionId, Position, SourceCheckpoint};
 use serde_json::{json, Value as JsonValue};
 use tokio::time;
 use tracing::{debug, info, warn};
+use ulid::Ulid;
 
 use super::SourceActor;
 use crate::actors::DocProcessor;
@@ -44,6 +46,8 @@ use crate::source::{
 
 const BATCH_NUM_BYTES_LIMIT: u64 = 5_000_000;
 const DEFAULT_MAX_MESSAGES_PER_PULL: i32 = 1_000;
+type BatchId = Ulid; // Ulids are monotonically increasing
+type MessageIDs = Vec<String>;
 
 pub struct GcpPubSubSourceFactory;
 
@@ -55,7 +59,7 @@ impl TypedSourceFactory for GcpPubSubSourceFactory {
     async fn typed_create_source(
         ctx: Arc<SourceExecutionContext>,
         params: GcpPubSubSourceParams,
-        _checkpoint: SourceCheckpoint, // TODO: Use checkpoint!
+        _checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self::Source> {
         GcpPubSubSource::try_new(ctx, params).await
     }
@@ -83,6 +87,10 @@ pub struct GcpPubSubSource {
     backfill_mode_enabled: bool,
     partition_id: PartitionId,
     max_messages_per_pull: i32,
+    // in_flight_batches contains messages that are not ack.
+    // batchId is send to the quickwit checkpoint, so that we track until where
+    // we should ack when quickit storage has commited the msgs
+    in_flight_batches: VecDeque<(BatchId, MessageIDs)>
 }
 
 impl fmt::Debug for GcpPubSubSource {
@@ -152,11 +160,13 @@ impl GcpPubSubSource {
             backfill_mode_enabled,
             partition_id,
             max_messages_per_pull,
+            in_flight_batches: VecDeque::new(),
         })
     }
 
     fn should_exit(&self) -> bool {
-        self.backfill_mode_enabled && self.state.num_consecutive_empty_batches > 3
+        self.backfill_mode_enabled && self.state.num_consecutive_empty_batches > 3 &&
+            self.in_flight_batches.is_empty()
     }
 }
 
@@ -171,7 +181,6 @@ impl Source for GcpPubSubSource {
         let mut batch: BatchBuilder = BatchBuilder::default();
         let deadline = time::sleep(*quickwit_actors::HEARTBEAT / 2);
         tokio::pin!(deadline);
-        // TODO: ensure we ACK the message after being commit: at least once
         // TODO: ensure we increase_ack_deadline for the items
         loop {
             tokio::select! {
@@ -216,10 +225,25 @@ impl Source for GcpPubSubSource {
 
     async fn suggest_truncate(
         &mut self,
-        _checkpoint: SourceCheckpoint,
+        checkpoint: SourceCheckpoint,
         _ctx: &ActorContext<SourceActor>,
     ) -> anyhow::Result<()> {
-        // TODO: add ack of ids
+        if let Some(Position::Offset(offset_str)) = checkpoint.position_for_partition(&self.partition_id) {
+            let commited_until = offset_str.parse::<Ulid>()?;
+            while let Some((position, messages)) = self.in_flight_batches.front() {
+                if position > &commited_until {
+                    break
+                }
+                // TODO, we could avoid this clone if we pop and push back if fail to ack ?
+                self.subscription
+                    .ack(messages.clone())
+                    .await
+                    .map_err(anyhow::Error::from)?;
+
+                self.in_flight_batches.pop_front();
+            }
+        }
+
         Ok(())
     }
 
@@ -262,10 +286,11 @@ impl GcpPubSubSource {
             .map(|timestamp| timestamp.seconds * 1_000 + (timestamp.nanos as i64 / 1_000_000))
             .unwrap_or(0); // TODO: Replace with now UTC millis.
 
+        let mut message_ids: MessageIDs = Vec::with_capacity(messages.len());
         for message in messages {
-            message.ack().await?; // TODO: remove ACK here when doing at least once
             self.state.num_messages_processed += 1;
             self.state.num_bytes_processed += message.message.data.len() as u64;
+            message_ids.push(message.message.message_id);
             let doc: Bytes = Bytes::from(message.message.data);
             if doc.is_empty() {
                 self.state.num_invalid_messages += 1;
@@ -273,9 +298,12 @@ impl GcpPubSubSource {
                 batch.push(doc);
             }
         }
+
+        let position_id: Ulid = Ulid::new();
+        self.in_flight_batches.push_back((position_id, message_ids));
+
         let to_position = Position::from(format!(
-            "{}:{message_id}:{publish_timestamp_millis}",
-            self.state.num_messages_processed
+            "{position_id}"
         ));
         let from_position = mem::replace(&mut self.state.current_position, to_position.clone());
 
