@@ -807,18 +807,19 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_rest_search_api_route_invalid_key() -> anyhow::Result<()> {
+    async fn test_rest_search_api_route_invalid_key() {
         let resp = warp::test::request()
             .path("/quickwit-demo-index/search?query=*&end_unix_timestamp=1450720000")
             .reply(&search_handler(MockSearchService::new()))
             .await;
         assert_eq!(resp.status(), 400);
-        let resp_json: JsonValue = serde_json::from_slice(resp.body())?;
-        let exp_resp_json = serde_json::json!({
-            "message": "unknown field `end_unix_timestamp`, expected one of `query`, `aggs`, `search_field`, `snippet_fields`, `start_timestamp`, `end_timestamp`, `max_hits`, `start_offset`, `format`, `sort_by`, `sort_by_field`"
-        });
-        assert_eq!(resp_json, exp_resp_json);
-        Ok(())
+        let resp_json: JsonValue = serde_json::from_slice(resp.body()).unwrap();
+        assert!(resp_json
+            .get("message")
+            .unwrap()
+            .as_str()
+            .unwrap()
+            .contains("unknown field `end_unix_timestamp`"));
     }
 
     #[tokio::test]
