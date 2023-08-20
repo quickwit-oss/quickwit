@@ -21,6 +21,7 @@ use std::convert::Infallible;
 use std::fmt;
 use std::future::Future;
 use std::ops::Deref;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -67,6 +68,8 @@ pub struct ActorContextInner<A: Actor> {
     actor_state: AtomicState,
     backpressure_micros_counter_opt: Option<IntCounter>,
     observable_state_tx: watch::Sender<A::ObservableState>,
+    // Boolean marking the presence of an observe message in the actor's high priority queue.
+    observe_enqueued: AtomicBool,
 }
 
 impl<A: Actor> ActorContext<A> {
@@ -84,6 +87,7 @@ impl<A: Actor> ActorContext<A> {
                 actor_state: AtomicState::default(),
                 observable_state_tx,
                 backpressure_micros_counter_opt,
+                observe_enqueued: AtomicBool::new(false),
             }
             .into(),
         }
@@ -203,8 +207,16 @@ impl<A: Actor> ActorContext<A> {
         self.actor_state.resume();
     }
 
+    /// Sets the queue as observed and returns the previous value.
+    /// This method is used to make sure we do not have Observe messages
+    /// stacking up in the observe queue.
+    pub(crate) fn set_observe_enqueued_and_return_previous(&self) -> bool {
+        self.observe_enqueued.swap(true, Ordering::Relaxed)
+    }
+
     pub(crate) fn observe(&self, actor: &mut A) -> A::ObservableState {
         let obs_state = actor.observable_state();
+        self.inner.observe_enqueued.store(false, Ordering::Relaxed);
         let _ = self.observable_state_tx.send(obs_state.clone());
         obs_state
     }

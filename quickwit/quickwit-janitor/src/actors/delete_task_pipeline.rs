@@ -254,28 +254,19 @@ impl Handler<Observe> for DeleteTaskPipeline {
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         if let Some(handles) = &self.handles {
-            let (
-                delete_task_planner,
-                downloader,
-                delete_task_executor,
-                packager,
-                uploader,
-                publisher,
-            ) = join!(
-                handles.delete_task_planner.observe(),
-                handles.downloader.observe(),
-                handles.delete_task_executor.observe(),
-                handles.packager.observe(),
-                handles.uploader.observe(),
-                handles.publisher.observe(),
-            );
+            handles.delete_task_planner.refresh_observe();
+            handles.downloader.refresh_observe();
+            handles.delete_task_executor.refresh_observe();
+            handles.packager.refresh_observe();
+            handles.uploader.refresh_observe();
+            handles.publisher.refresh_observe();
             self.state = DeleteTaskPipelineState {
-                delete_task_planner: delete_task_planner.state,
-                downloader: downloader.state,
-                delete_task_executor: delete_task_executor.state,
-                packager: packager.state,
-                uploader: uploader.state,
-                publisher: publisher.state,
+                delete_task_planner: handles.delete_task_planner.last_observation(),
+                downloader: handles.downloader.last_observation(),
+                delete_task_executor: handles.delete_task_executor.last_observation(),
+                packager: handles.packager.last_observation(),
+                uploader: handles.uploader.last_observation(),
+                publisher: handles.publisher.last_observation(),
             }
         }
         ctx.schedule_self_msg(OBSERVE_PIPELINE_INTERVAL, Observe)
@@ -403,7 +394,7 @@ mod tests {
         // for the pipeline state to be updated.
         test_sandbox
             .universe()
-            .sleep(OBSERVE_PIPELINE_INTERVAL * 2)
+            .sleep(OBSERVE_PIPELINE_INTERVAL * 3)
             .await;
         let pipeline_state = pipeline_handler.process_pending_and_observe().await.state;
         assert_eq!(pipeline_state.delete_task_planner.num_errors, 1);

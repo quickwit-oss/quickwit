@@ -144,8 +144,34 @@ impl<A: Actor> ActorHandle<A> {
     ///
     /// The observation will be scheduled as a high priority message, therefore it will be executed
     /// after the current active message and the current command queue have been processed.
+    ///
+    /// This method does not do anything to avoid Observe messages from stacking up.
+    /// In supervisors, prefer using `refresh_observation`.
     pub async fn observe(&self) -> Observation<A::ObservableState> {
         self.observe_with_priority(Priority::High).await
+    }
+
+    /// Triggers an observation.
+    /// It is scheduled as a high priority
+    /// message, and will hence be executed as soon as possible.
+    ///
+    /// This method does not enqueue an Observe request if there is already one in
+    /// the queue.
+    ///
+    /// The resulting observation can eventually be accessible using the
+    /// observation watch channel.
+    ///
+    /// This function returning does NOT mean that the observation was executed.
+    pub fn refresh_observe(&self) {
+        let observation_already_enqueued = self
+            .actor_context
+            .set_observe_enqueued_and_return_previous();
+        if !observation_already_enqueued {
+            let _ = self
+                .actor_context
+                .mailbox()
+                .send_message_with_high_priority(Observe);
+        }
     }
 
     async fn observe_with_priority(&self, priority: Priority) -> Observation<A::ObservableState> {
@@ -268,6 +294,9 @@ impl<A: Actor> ActorHandle<A> {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    use std::time::Duration;
+
     use async_trait::async_trait;
 
     use super::*;
@@ -350,5 +379,55 @@ mod tests {
         assert!(matches!(exit_status, ActorExitStatus::DownstreamClosed));
         assert!(matches!(count, 1)); //< Upon panick we cannot get a post mortem state.
         Ok(())
+    }
+
+    #[derive(Default)]
+    struct ObserveActor {
+        observe: AtomicU32,
+    }
+
+    #[async_trait]
+    impl Actor for ObserveActor {
+        type ObservableState = u32;
+
+        fn observable_state(&self) -> u32 {
+            self.observe.fetch_add(1, Ordering::Relaxed)
+        }
+
+        async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
+            ctx.send_self_message(YieldLoop).await?;
+            Ok(())
+        }
+    }
+
+    #[derive(Debug)]
+    struct YieldLoop;
+
+    #[async_trait]
+    impl Handler<YieldLoop> for ObserveActor {
+        type Reply = ();
+        async fn handle(
+            &mut self,
+            _: YieldLoop,
+            ctx: &ActorContext<Self>,
+        ) -> Result<Self::Reply, ActorExitStatus> {
+            ctx.sleep(Duration::from_millis(25)).await; // OBSERVE_TIMEOUT.mul_f32(10.0f32)).await;
+            ctx.send_self_message(YieldLoop).await?;
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn test_observation_debounce() {
+        // TODO investigate why Universe::with_accelerated_time() does not work here.
+        let universe = Universe::new();
+        let (_, actor_handle) = universe.spawn_builder().spawn(ObserveActor::default());
+        for _ in 0..10 {
+            actor_handle.refresh_observe();
+            universe.sleep(Duration::from_millis(10)).await;
+        }
+        let (_last_obs, num_obs) = actor_handle.quit().await;
+        assert!(num_obs < 8);
+        universe.assert_quit().await;
     }
 }

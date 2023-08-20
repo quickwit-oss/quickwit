@@ -32,7 +32,7 @@ use chitchat::FailureDetectorConfig;
 use clap::{arg, ArgMatches, Command};
 use colored::{ColoredString, Colorize};
 use humantime::format_duration;
-use quickwit_actors::{ActorExitStatus, ActorHandle, ObservationType, Universe};
+use quickwit_actors::{ActorExitStatus, ActorHandle, Universe};
 use quickwit_cluster::{Cluster, ClusterMember};
 use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::uri::Uri;
@@ -616,14 +616,15 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
     loop {
         check_interval.tick().await;
 
-        let observation = pipeline_handle.observe().await;
+        pipeline_handle.refresh_observe();
+        let observation = pipeline_handle.last_observation();
 
         if observation.num_ongoing_merges == 0 {
             info!("Merge pipeline has no more ongoing merges, Exiting.");
             break;
         }
 
-        if observation.obs_type == ObservationType::PostMortem {
+        if pipeline_handle.state().is_exit() {
             info!("Merge pipeline has exited, Exiting.");
             break;
         }
@@ -753,18 +754,16 @@ pub async fn start_statistics_reporting_loop(
         report_interval.tick().await;
         // Try to receive with a timeout of 1 second.
         // 1 second is also the frequency at which we update statistic in the console
-        let observation = pipeline_handle.observe().await;
+        pipeline_handle.refresh_observe();
+
+        let observation = pipeline_handle.last_observation();
 
         // Let's not display live statistics to allow screen to scroll.
-        if observation.state.num_docs > 0 {
-            display_statistics(
-                &mut stdout_handle,
-                &mut throughput_calculator,
-                &observation.state,
-            )?;
+        if observation.num_docs > 0 {
+            display_statistics(&mut stdout_handle, &mut throughput_calculator, &observation)?;
         }
 
-        if observation.obs_type == ObservationType::PostMortem {
+        if pipeline_handle.state().is_exit() {
             break;
         }
     }

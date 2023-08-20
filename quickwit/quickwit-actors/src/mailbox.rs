@@ -253,7 +253,7 @@ impl<A: Actor> Mailbox<A> {
         }
     }
 
-    pub(crate) fn send_message_with_high_priority<M>(
+    pub fn send_message_with_high_priority<M>(
         &self,
         message: M,
     ) -> Result<oneshot::Receiver<A::Reply>, SendError>
