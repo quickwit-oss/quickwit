@@ -151,16 +151,17 @@ impl<A: Actor> ActorHandle<A> {
         self.observe_with_priority(Priority::High).await
     }
 
-    // Triggers an observation.
-    // It is scheduled as a high priority
-    // message, and will hence be executed as soon as possible.
-    //
-    // This method does not enqueue an Observe requests if one is already enqueue.
-    //
-    // The resulting observation can eventually be accessible using the
-    // observation watch channel.
-    //
-    // This function returning does NOT mean that the observation was executed.
+    /// Triggers an observation.
+    /// It is scheduled as a high priority
+    /// message, and will hence be executed as soon as possible.
+    ///
+    /// This method does not enqueue an Observe request if there is already one in
+    /// the queue.
+    ///
+    /// The resulting observation can eventually be accessible using the
+    /// observation watch channel.
+    ///
+    /// This function returning does NOT mean that the observation was executed.
     pub fn refresh_observe(&self) {
         let observation_already_enqueued = self
             .actor_context
@@ -422,7 +423,7 @@ mod tests {
         let universe = Universe::new();
         let (_, actor_handle) = universe.spawn_builder().spawn(ObserveActor::default());
         for _ in 0..10 {
-            let _ = actor_handle.refresh_observe();
+            actor_handle.refresh_observe();
             universe.sleep(Duration::from_millis(10)).await;
         }
         let (_last_obs, num_obs) = actor_handle.quit().await;

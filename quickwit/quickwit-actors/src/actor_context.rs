@@ -68,7 +68,7 @@ pub struct ActorContextInner<A: Actor> {
     actor_state: AtomicState,
     backpressure_micros_counter_opt: Option<IntCounter>,
     observable_state_tx: watch::Sender<A::ObservableState>,
-    // Counter that gets incremented after each observation.
+    // Boolean marking the presence of an observe message in the actor's high priority queue.
     observe_enqueued: AtomicBool,
 }
 
