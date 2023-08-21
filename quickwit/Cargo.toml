@@ -183,7 +183,7 @@ ttl_cache = "0.5"
 typetag = "0.2"
 ulid = "1.0"
 username = "0.2"
-utoipa = "3.4.3"
+utoipa = "3.5.0"
 uuid = { version = "1.4", features = ["v4", "serde"] }
 warp = "0.3"
 whichlang = { git = "https://github.com/quickwit-oss/whichlang", rev = "fe406416" }
