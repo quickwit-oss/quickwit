@@ -18,11 +18,13 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::ops::Deref;
+use std::str::FromStr;
 use std::{env, fmt};
 
 use anyhow::ensure;
 use byte_unit::Byte;
 use itertools::Itertools;
+use quickwit_common::uri::Uri;
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, EnumMap};
 
@@ -406,22 +408,30 @@ pub struct RamStorageConfig;
 #[serde(deny_unknown_fields)]
 pub struct CacheStorageConfig {
     #[serde(default)]
-    pub cache_uri: Option<String>,
+    pub cache_uri: Option<Uri>,
     #[serde(default)]
     pub max_cache_storage_disk_usage: Option<Byte>,
 }
 
 impl CacheStorageConfig {
-    pub fn cache_uri(&self) -> Option<String> {
+    pub fn cache_uri(&self) -> Option<Uri> {
+        // TODO do we really need an env variable?
+        // TODO shouldn't we have a reasonable default? (or even no config possible)
+        // TODO is this priority order good?
         env::var("QW_CACHE_CACHE_URI")
             .ok()
+            .map(|uri_str| {
+                Uri::from_str(&uri_str).expect("Invalid uri in QW_CACHE_CACHE_URI")
+                // TODO make sure the panic would happen at the startup of quickwit, or that we use
+                // errors.
+            })
             .or_else(|| self.cache_uri.clone())
     }
 
     #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test() -> Self {
         CacheStorageConfig {
-            cache_uri: Some("ram://cache".to_string()),
+            cache_uri: Some(Uri::for_test("ram://cache")),
             max_cache_storage_disk_usage: None,
         }
     }

@@ -13,13 +13,13 @@ pub struct NotifySplitsChangeResponse {}
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SplitsChangeNotification {
-    /// / Storage uri.
+    /// Storage uri.
     #[prost(string, tag = "1")]
     pub storage_uri: ::prost::alloc::string::String,
-    /// / Index id.
+    /// Index id.
     #[prost(string, tag = "2")]
     pub index_id: ::prost::alloc::string::String,
-    /// / Split ID.
+    /// Split ID.
     #[prost(string, tag = "3")]
     pub split_id: ::prost::alloc::string::String,
 }
@@ -503,7 +503,7 @@ pub mod cache_storage_service_grpc_client {
             self.inner = self.inner.max_encoding_message_size(limit);
             self
         }
-        /// / Apply an indexing plan on the node.
+        /// Apply an indexing plan on the node.
         pub async fn notify_split_change(
             &mut self,
             request: impl tonic::IntoRequest<super::NotifySplitsChangeRequest>,
@@ -543,7 +543,7 @@ pub mod cache_storage_service_grpc_server {
     /// Generated trait containing gRPC methods that should be implemented for use with CacheStorageServiceGrpcServer.
     #[async_trait]
     pub trait CacheStorageServiceGrpc: Send + Sync + 'static {
-        /// / Apply an indexing plan on the node.
+        /// Apply an indexing plan on the node.
         async fn notify_split_change(
             &self,
             request: tonic::Request<super::NotifySplitsChangeRequest>,

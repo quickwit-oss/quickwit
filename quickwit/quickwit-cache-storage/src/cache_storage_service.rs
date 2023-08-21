@@ -22,8 +22,6 @@ use std::fmt;
 use anyhow::anyhow;
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Universe};
-// use quickwit_common::fs::get_cache_directory_path;
-// use quickwit_common::temp_dir;
 use quickwit_config::NodeConfig;
 use quickwit_proto::cache_storage::{
     CacheStorageServiceClient, NotifySplitsChangeRequest, NotifySplitsChangeResponse,
@@ -38,7 +36,6 @@ use thiserror::Error;
 use tracing::{debug, error, info};
 
 /// Name of the cache directory, usually located at `<data_dir_path>/searching`.
-// pub const CACHE_DIR_NAME: &str = "searching";
 
 #[derive(Error, Debug)]
 pub enum CacheStorageServiceError {
@@ -162,20 +159,17 @@ pub async fn start_cache_storage_service(
     config: &NodeConfig,
     storage_resolver: StorageResolver,
 ) -> anyhow::Result<Option<CacheStorageServiceClient>> {
-    if config.is_cache_storage_enabled() {
-        info!("Starting cache storage service.");
-        // Spawn indexing service.
-        let cache_storage_service =
-            CacheStorageService::new(config.node_id.clone(), storage_resolver).await?;
-
-        let (cache_storage_service, _) = universe.spawn_builder().spawn(cache_storage_service);
-        let cache_storage_service_client =
-            CacheStorageServiceClient::from_mailbox(cache_storage_service);
-
-        Ok(Some(cache_storage_service_client))
-    } else {
-        Ok(None)
+    if !config.is_cache_storage_enabled() {
+        return Ok(None);
     }
+    info!("Starting cache storage service.");
+    // Spawn indexing service.
+    let cache_storage_service =
+        CacheStorageService::new(config.node_id.clone(), storage_resolver).await?;
+    let (cache_storage_service, _) = universe.spawn_builder().spawn(cache_storage_service);
+    let cache_storage_service_client =
+        CacheStorageServiceClient::from_mailbox(cache_storage_service);
+    Ok(Some(cache_storage_service_client))
 }
 #[cfg(test)]
 mod tests {

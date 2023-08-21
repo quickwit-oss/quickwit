@@ -22,7 +22,7 @@ syntax = "proto3";
 package quickwit.cache_storage;
 
 service CacheStorageService {
-  /// Apply an indexing plan on the node.
+  // Apply an indexing plan on the node.
   rpc notifySplitChange(NotifySplitsChangeRequest) returns (NotifySplitsChangeResponse);
 }
 
@@ -33,10 +33,10 @@ message NotifySplitsChangeRequest {
 message NotifySplitsChangeResponse {}
 
 message SplitsChangeNotification {
-  /// Storage uri.
+  // Storage uri.
   string storage_uri = 1;
-  /// Index id.
+  // Index id.
   string index_id = 2;
-  /// Split ID.
+  // Split ID.
   string split_id = 3;
 }

@@ -101,7 +101,6 @@ impl CacheStorageController {
 
     async fn update_cache(&mut self, ctx: &ActorContext<Self>) -> anyhow::Result<()> {
         let _protect_guard = ctx.protect_zone();
-        //        let current_splits_vec = self.split_to_node_map.keys().collect_vec();
         let mut current_splits_to_node_map = self.split_to_node_map.clone();
         let mut updated_nodes = HashSet::new();
         let available_nodes = self.pool.available_nodes().await;

@@ -148,17 +148,14 @@ pub(crate) async fn start_grpc_server(
             None
         };
     // Mount gRPC cache storage service if cache storage is configurated on node.
-    let cache_storage_service = if services.config.is_cache_storage_enabled() {
+    let cache_storage_service: Option<CacheStorageServiceGrpcServer<_>> =
         if let Some(cache_storage_client) = &services.cache_storage_service {
             enabled_grpc_services.insert("cache_storage");
             let adapter = CacheStorageServiceGrpcServerAdapter::new(cache_storage_client.clone());
             Some(CacheStorageServiceGrpcServer::new(adapter))
         } else {
             None
-        }
-    } else {
-        None
-    };
+        };
     let server_router = server
         .add_optional_service(metastore_grpc_service)
         .add_optional_service(control_plane_grpc_service)

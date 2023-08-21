@@ -45,36 +45,50 @@ struct SplitInfo {
     state_lock: Arc<RwLock<SplitState>>,
 }
 
+#[derive(Clone)]
 pub struct CachedSplitRegistry {
     inner: Arc<InnerCachedSplitRegistry>,
 }
 
-impl Clone for CachedSplitRegistry {
-    fn clone(&self) -> Self {
-        Self {
-            inner: self.inner.clone(),
-        }
-    }
-}
-
-pub struct InnerCachedSplitRegistry {
+struct InnerCachedSplitRegistry {
     storage_config: CacheStorageConfig,
-    counters: Arc<AtomicCacheStorageCounters>,
+    counters: AtomicCacheStorageCounters,
     splits: RwLock<HashMap<String, SplitInfo>>,
+    cache_storage: tokio::sync::OnceCell<Option<Arc<dyn Storage>>>,
 }
 
 impl CachedSplitRegistry {
-    pub(crate) fn new(
-        storage_config: CacheStorageConfig,
-        counters: Arc<AtomicCacheStorageCounters>,
-    ) -> Self {
+    pub(crate) fn new(storage_config: CacheStorageConfig) -> Self {
         Self {
             inner: Arc::new(InnerCachedSplitRegistry {
                 storage_config,
-                counters,
+                counters: Default::default(),
                 splits: RwLock::new(HashMap::new()),
+                cache_storage: Default::default(),
             }),
         }
+    }
+
+    pub(crate) fn counters(&self) -> &AtomicCacheStorageCounters {
+        &self.inner.counters
+    }
+
+    // TODO why `Option`
+    async fn cache_storage(&self, storage_resolver: &StorageResolver) -> Option<Arc<dyn Storage>> {
+        self.inner
+            .cache_storage
+            .get_or_init(|| async {
+                let cache_uri = self.inner.storage_config.cache_uri().clone()?;
+                match storage_resolver.resolve(&cache_uri).await {
+                    Ok(cache) => Some(cache),
+                    Err(err) => {
+                        error!("Failed to resolve cache storage. {:?}", err);
+                        None
+                    }
+                }
+            })
+            .await
+            .clone()
     }
 
     #[allow(dead_code)]
@@ -104,61 +118,63 @@ impl CachedSplitRegistry {
         index_id: &str,
         storage_uri: &Uri,
     ) {
-        if !splits_guard.contains_key(split_id) {
-            let state_lock = Arc::new(RwLock::new(SplitState::Initializing));
-            let split = SplitInfo {
-                index_id: index_id.to_string(),
-                state_lock: state_lock.clone(),
-            };
-            splits_guard.insert(split_id.to_string(), split);
-            tokio::spawn({
-                let self_clone = self.clone();
-                let split_id = split_id.to_string();
-                let index_id = index_id.to_string();
-                let storage_uri = storage_uri.clone();
-                let state_lock = state_lock;
-                let storage_resolver = storage_resolver.clone();
-                async move {
-                    let mut state_guard = state_lock.write().await;
-                    match *state_guard {
-                        SplitState::Initializing => {
-                            *state_guard = SplitState::Preparing;
-                            let file_name = split_file(&split_id);
-                            let path = Path::new(&file_name);
-                            let output_path = Path::new(&index_id).join(split_file(&split_id));
-                            if let Err(err) = self_clone
-                                .copy_split(&storage_resolver, &storage_uri, path, &output_path)
-                                .await
-                            {
-                                error!(error=?err, "Failed to copy split to cache.");
-                                self_clone.inner.splits.write().await.remove(&split_id);
-                            } else {
-                                *state_guard = SplitState::Ready;
-                                self_clone
-                                    .inner
-                                    .counters
-                                    .num_downloaded_splits
-                                    .fetch_add(1, Ordering::Relaxed);
-                            }
-                        }
-                        SplitState::Deleting => {
-                            // The resource was deleted while we were trying to initialize it
-                            if self_clone
-                                .inner
-                                .splits
-                                .write()
-                                .await
-                                .remove(&split_id)
-                                .is_some()
-                            {}
-                        }
-                        _ => {
-                            // Shouldn't be here.
-                        }
-                    };
-                }
-            });
+        if splits_guard.contains_key(split_id) {
+            // No need to do anything: the split is already here.
+            return;
         }
+        let state_lock = Arc::new(RwLock::new(SplitState::Initializing));
+        let split = SplitInfo {
+            index_id: index_id.to_string(),
+            state_lock: state_lock.clone(),
+        };
+        splits_guard.insert(split_id.to_string(), split);
+        tokio::spawn({
+            let self_clone = self.clone();
+            let split_id = split_id.to_string();
+            let index_id = index_id.to_string();
+            let storage_uri = storage_uri.clone();
+            let state_lock = state_lock;
+            let storage_resolver = storage_resolver.clone();
+            async move {
+                let mut state_guard = state_lock.write().await;
+                match *state_guard {
+                    SplitState::Initializing => {
+                        *state_guard = SplitState::Preparing;
+                        let file_name = split_file(&split_id);
+                        let path = Path::new(&file_name);
+                        let output_path = Path::new(&index_id).join(split_file(&split_id));
+                        if let Err(err) = self_clone
+                            .copy_split(&storage_resolver, &storage_uri, path, &output_path)
+                            .await
+                        {
+                            error!(error=?err, "Failed to copy split to cache.");
+                            self_clone.inner.splits.write().await.remove(&split_id);
+                        } else {
+                            *state_guard = SplitState::Ready;
+                            self_clone
+                                .inner
+                                .counters
+                                .num_downloaded_splits
+                                .fetch_add(1, Ordering::Relaxed);
+                        }
+                    }
+                    SplitState::Deleting => {
+                        // The resource was deleted while we were trying to initialize it
+                        if self_clone
+                            .inner
+                            .splits
+                            .write()
+                            .await
+                            .remove(&split_id)
+                            .is_some()
+                        {}
+                    }
+                    _ => {
+                        // Shouldn't be here.
+                    }
+                };
+            }
+        });
     }
 
     async fn copy_split(
@@ -169,11 +185,11 @@ impl CachedSplitRegistry {
         output_path: &Path,
     ) -> anyhow::Result<()> {
         // TODO: Figure out an ealier way to handle these issues
-        if let Some(cache_uri_str) = self.inner.storage_config.cache_uri.clone() {
-            let cache_uri = cache_uri_str.parse()?;
+        if let Some(cache_storage) = self.cache_storage(storage_resolver).await {
             let storage = storage_resolver.resolve(storage_uri).await?;
-            let cache = storage_resolver.resolve(&cache_uri).await?;
-            storage.copy_to_storage(path, cache, output_path).await?;
+            storage
+                .copy_to_storage(path, cache_storage, output_path)
+                .await?;
         }
         Ok(())
     }
@@ -223,10 +239,8 @@ impl CachedSplitRegistry {
     ) -> anyhow::Result<()> {
         // TODO: This should've been handle earlier, but we need have a more graceful way of dealing
         // with possible issues
-        if let Some(cache_uri_str) = self.inner.storage_config.cache_uri.clone() {
-            let cache_uri = cache_uri_str.parse()?;
-            let cache = storage_resolver.resolve(&cache_uri).await?;
-            cache.delete(path).await?;
+        if let Some(cache_storage) = self.cache_storage(storage_resolver).await {
+            cache_storage.delete(path).await?;
         }
         Ok(())
     }
@@ -315,13 +329,13 @@ mod tests {
         let storage_resolver = StorageResolver::ram_for_test();
         let config = CacheStorageConfig::for_test();
         let counters = Arc::new(AtomicCacheStorageCounters::default());
-        let registry = CachedSplitRegistry::new(config.clone(), counters.clone());
+        let registry = CachedSplitRegistry::new(config.clone());
         let storage = storage_resolver
             .resolve(&Uri::for_test("ram://data"))
             .await
             .unwrap();
         let cache = storage_resolver
-            .resolve(&Uri::for_test(&config.cache_uri.unwrap()))
+            .resolve(&config.cache_uri().unwrap())
             .await
             .unwrap();
         let split_id = "abcd".to_string();

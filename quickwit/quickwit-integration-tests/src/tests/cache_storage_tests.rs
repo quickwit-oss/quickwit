@@ -27,6 +27,7 @@ use byte_unit::{Byte, ByteUnit};
 use bytes::Bytes;
 use quickwit_common::is_split_file;
 use quickwit_common::test_utils::wait_until_predicate;
+use quickwit_common::uri::Uri;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{CacheStorageConfig, StorageConfig, StorageConfigs};
 use quickwit_rest_client::models::IngestSource;
@@ -38,7 +39,7 @@ use crate::tests::basic_tests::get_ndjson_filepath;
 
 fn test_cache_storage_config(uri: &str, size_in_mb: f64) -> StorageConfig {
     StorageConfig::Cache(CacheStorageConfig {
-        cache_uri: Some(uri.to_string()),
+        cache_uri: Some(Uri::from_well_formed(uri)),
         max_cache_storage_disk_usage: if size_in_mb == 0.0 {
             None
         } else {
@@ -110,7 +111,7 @@ async fn test_basic_storage_cache_workflow() {
     sandbox.wait_for_cluster_num_ready_nodes(4).await.unwrap();
 
     let index_config = Bytes::from(format!(
-        r#" 
+        r#"
             version: 0.6
             index_id: {}
             index_uri: {}

@@ -127,7 +127,6 @@ struct QuickwitServices {
     pub janitor_service: Option<Mailbox<JanitorService>>,
     pub ingest_service: IngestServiceClient,
     pub index_service: Arc<IndexService>,
-    #[allow(dead_code)]
     pub cache_storage_service: Option<CacheStorageServiceClient>,
     pub services: HashSet<QuickwitService>,
 }
