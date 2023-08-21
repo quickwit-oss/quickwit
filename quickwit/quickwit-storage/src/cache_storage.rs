@@ -180,7 +180,12 @@ impl AtomicCacheStorageCounters {
 }
 
 /// Storage resolver for [`CacheStorage`].
+#[derive(Clone)]
 pub struct CacheStorageFactory {
+    inner: Arc<InnerCacheStorageFactory>,
+}
+
+struct InnerCacheStorageFactory {
     storage_config: CacheStorageConfig,
     cache_split_registry: CachedSplitRegistry,
 }
@@ -189,14 +194,16 @@ impl CacheStorageFactory {
     /// Create a new storage factory
     pub fn new(storage_config: CacheStorageConfig) -> Self {
         Self {
-            storage_config: storage_config.clone(),
-            cache_split_registry: CachedSplitRegistry::new(storage_config),
+            inner: Arc::new(InnerCacheStorageFactory {
+                storage_config: storage_config.clone(),
+                cache_split_registry: CachedSplitRegistry::new(storage_config),
+            }),
         }
     }
 
     /// Returns the cache storage stats
     pub fn counters(&self) -> CacheStorageCounters {
-        self.cache_split_registry.counters().as_counters()
+        self.inner.cache_split_registry.counters().as_counters()
     }
 
     /// Update all split caches on the node
@@ -213,7 +220,8 @@ impl CacheStorageFactory {
                 notification.storage_uri.parse()?,
             ));
         }
-        self.cache_split_registry
+        self.inner
+            .cache_split_registry
             .bulk_update(storage_resolver, &splits)
             .await;
         Ok(())
@@ -233,7 +241,7 @@ impl StorageFactory for CacheStorageFactory {
     ) -> Result<Arc<dyn Storage>, StorageResolverError> {
         if uri.protocol().is_cache() {
             // TODO: Prevent stack overflow here if cache uri is also cache
-            let cache_uri = self.storage_config.cache_uri().ok_or_else(|| {
+            let cache_uri = self.inner.storage_config.cache_uri().ok_or_else(|| {
                 StorageResolverError::InvalidConfig("Expected cache uri in config.".to_string())
             })?;
             let cache = storage_resolver.resolve(&cache_uri).await?;
@@ -255,13 +263,17 @@ impl StorageFactory for CacheStorageFactory {
                 uri: uri.clone(),
                 storage,
                 cache,
-                cache_split_registry: self.cache_split_registry.clone(),
+                cache_split_registry: self.inner.cache_split_registry.clone(),
             };
             Ok(Arc::new(cache_storage))
         } else {
             let message = format!("URI `{uri}` is not a valid Cache URI.");
             Err(StorageResolverError::InvalidUri(message))
         }
+    }
+
+    fn as_cache_storage_factory(&self) -> Option<CacheStorageFactory> {
+        Some(self.clone())
     }
 }
 

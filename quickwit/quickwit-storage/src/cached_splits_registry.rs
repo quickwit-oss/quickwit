@@ -78,7 +78,7 @@ impl CachedSplitRegistry {
         self.inner
             .cache_storage
             .get_or_init(|| async {
-                let cache_uri = self.inner.storage_config.cache_uri().clone()?;
+                let cache_uri = self.inner.storage_config.cache_uri()?;
                 match storage_resolver.resolve(&cache_uri).await {
                     Ok(cache) => Some(cache),
                     Err(err) => {
