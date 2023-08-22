@@ -328,7 +328,6 @@ mod tests {
     async fn test_basic_workflow() {
         let storage_resolver = StorageResolver::ram_for_test();
         let config = CacheStorageConfig::for_test();
-        let counters = Arc::new(AtomicCacheStorageCounters::default());
         let registry = CachedSplitRegistry::new(config.clone());
         let storage = storage_resolver
             .resolve(&Uri::for_test("ram://data"))
@@ -341,7 +340,7 @@ mod tests {
         let split_id = "abcd".to_string();
         let index_id = "my_index".to_string();
         let path = PathBuf::new().join("abcd.split");
-        assert_eq!(counters.as_counters().num_downloaded_splits, 0);
+        assert_eq!(registry.counters().as_counters().num_downloaded_splits, 0);
         storage
             .put(&path, Box::new(b"abcdefg"[..].to_vec()))
             .await
@@ -371,7 +370,7 @@ mod tests {
         .await
         .unwrap();
 
-        assert_eq!(counters.as_counters().num_downloaded_splits, 1);
+        assert_eq!(registry.counters().as_counters().num_downloaded_splits, 1);
 
         registry.delete(&storage_resolver, &split_id).await;
 
@@ -395,7 +394,7 @@ mod tests {
         .await
         .is_err());
 
-        assert_eq!(counters.as_counters().num_downloaded_splits, 0);
+        assert_eq!(registry.counters().as_counters().num_downloaded_splits, 0);
     }
 
     async fn test_get_all(
