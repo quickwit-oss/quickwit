@@ -78,7 +78,7 @@ impl CacheStorage {
     }
 
     fn counters(&self) -> &AtomicCacheStorageCounters {
-        self.cache_split_registry.counters()
+        self.cache_split_registry.atomic_counters()
     }
 }
 
@@ -182,28 +182,37 @@ impl AtomicCacheStorageCounters {
 /// Storage resolver for [`CacheStorage`].
 #[derive(Clone)]
 pub struct CacheStorageFactory {
-    inner: Arc<InnerCacheStorageFactory>,
-}
-
-struct InnerCacheStorageFactory {
     storage_config: CacheStorageConfig,
-    cache_split_registry: CachedSplitRegistry,
+    cached_split_registry: Option<CachedSplitRegistry>,
 }
 
 impl CacheStorageFactory {
     /// Create a new storage factory
     pub fn new(storage_config: CacheStorageConfig) -> Self {
+        // the split registry is only needed if we have cache configured on this node
+        let cached_split_registry = if storage_config.max_cache_storage_disk_usage.is_some() {
+            Some(CachedSplitRegistry::new(storage_config.clone()))
+        } else {
+            None
+        };
         Self {
-            inner: Arc::new(InnerCacheStorageFactory {
-                storage_config: storage_config.clone(),
-                cache_split_registry: CachedSplitRegistry::new(storage_config),
-            }),
+            storage_config,
+            cached_split_registry,
         }
     }
 
     /// Returns the cache storage stats
     pub fn counters(&self) -> CacheStorageCounters {
-        self.inner.cache_split_registry.counters().as_counters()
+        if let Some(cached_split_registry) = &self.cached_split_registry {
+            cached_split_registry.counters()
+        } else {
+            CacheStorageCounters::default()
+        }
+    }
+
+    /// Returns the cached split registry or None on the nodes where cache is not configured
+    pub fn cached_split_registry(&self) -> Option<CachedSplitRegistry> {
+        self.cached_split_registry.clone()
     }
 
     /// Update all split caches on the node
@@ -212,18 +221,19 @@ impl CacheStorageFactory {
         storage_resolver: &StorageResolver,
         notifications: Vec<SplitsChangeNotification>,
     ) -> anyhow::Result<()> {
-        let mut splits: Vec<(String, String, Uri)> = Vec::new();
-        for notification in notifications {
-            splits.push((
-                notification.split_id,
-                notification.index_id,
-                notification.storage_uri.parse()?,
-            ));
+        if let Some(cached_split_registry) = &self.cached_split_registry {
+            let mut splits: Vec<(String, String, Uri)> = Vec::new();
+            for notification in notifications {
+                splits.push((
+                    notification.split_id,
+                    notification.index_id,
+                    notification.storage_uri.parse()?,
+                ));
+            }
+            cached_split_registry
+                .bulk_update(storage_resolver, &splits)
+                .await;
         }
-        self.inner
-            .cache_split_registry
-            .bulk_update(storage_resolver, &splits)
-            .await;
         Ok(())
     }
 }
@@ -241,7 +251,7 @@ impl StorageFactory for CacheStorageFactory {
     ) -> Result<Arc<dyn Storage>, StorageResolverError> {
         if uri.protocol().is_cache() {
             // TODO: Prevent stack overflow here if cache uri is also cache
-            let cache_uri = self.inner.storage_config.cache_uri().ok_or_else(|| {
+            let cache_uri = self.storage_config.cache_uri().ok_or_else(|| {
                 StorageResolverError::InvalidConfig("Expected cache uri in config.".to_string())
             })?;
             let cache = storage_resolver.resolve(&cache_uri).await?;
@@ -259,21 +269,23 @@ impl StorageFactory for CacheStorageFactory {
                     StorageResolverError::InvalidConfig(message)
                 })?;
             let storage = storage_resolver.resolve(&upstream_uri).await?;
-            let cache_storage = CacheStorage {
-                uri: uri.clone(),
-                storage,
-                cache,
-                cache_split_registry: self.inner.cache_split_registry.clone(),
+            let cache_storage = if let Some(cached_split_registry) = &self.cached_split_registry {
+                Arc::new(CacheStorage {
+                    uri: uri.clone(),
+                    storage,
+                    cache,
+                    cache_split_registry: cached_split_registry.clone(),
+                })
+            } else {
+                // We don't have cache configured on this node - we can just return an underlying
+                // storage
+                storage
             };
-            Ok(Arc::new(cache_storage))
+            Ok(cache_storage)
         } else {
             let message = format!("URI `{uri}` is not a valid Cache URI.");
             Err(StorageResolverError::InvalidUri(message))
         }
-    }
-
-    fn as_cache_storage_factory(&self) -> Option<CacheStorageFactory> {
-        Some(self.clone())
     }
 }
 

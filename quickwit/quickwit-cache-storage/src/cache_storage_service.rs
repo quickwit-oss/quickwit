@@ -22,6 +22,7 @@ use std::fmt;
 use anyhow::anyhow;
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Universe};
+use quickwit_common::uri::Uri;
 use quickwit_config::NodeConfig;
 use quickwit_proto::cache_storage::{
     CacheStorageServiceClient, NotifySplitsChangeRequest, NotifySplitsChangeResponse,
@@ -30,7 +31,7 @@ use quickwit_proto::cache_storage::{
 use quickwit_proto::metastore::MetastoreError;
 use quickwit_proto::{ServiceError, ServiceErrorCode};
 use quickwit_storage::{
-    CacheStorageCounters, CacheStorageFactory, StorageError, StorageResolver, StorageResolverError,
+    CacheStorageCounters, CachedSplitRegistry, StorageError, StorageResolver, StorageResolverError,
 };
 use thiserror::Error;
 use tracing::{debug, error, info};
@@ -62,7 +63,7 @@ impl ServiceError for CacheStorageServiceError {
 pub struct CacheStorageService {
     node_id: String,
     storage_resolver: StorageResolver,
-    cache_storage_factory: CacheStorageFactory,
+    cached_split_registry: CachedSplitRegistry,
 }
 
 impl CacheStorageService {
@@ -70,11 +71,11 @@ impl CacheStorageService {
         node_id: String,
         storage_resolver: StorageResolver,
     ) -> anyhow::Result<CacheStorageService> {
-        if let Some(cache_storage_factory) = storage_resolver.cache_storage_factory() {
+        if let Some(cached_split_registry) = storage_resolver.cached_split_registry() {
             Ok(Self {
                 node_id,
                 storage_resolver,
-                cache_storage_factory,
+                cached_split_registry,
             })
         } else {
             Err(anyhow!(CacheStorageServiceError::InvalidParams(
@@ -89,12 +90,20 @@ impl CacheStorageService {
 
     pub async fn update_split_cache(
         &self,
-        splits: Vec<SplitsChangeNotification>,
+        notifications: Vec<SplitsChangeNotification>,
     ) -> Result<(), ActorExitStatus> {
-        self.cache_storage_factory
-            .update_split_cache(&self.storage_resolver, splits)
-            .await
-            .map_err(|e| ActorExitStatus::from(anyhow!("Failed to update split cache: {:?}", e)))
+        let mut splits: Vec<(String, String, Uri)> = Vec::new();
+        for notification in notifications {
+            splits.push((
+                notification.split_id,
+                notification.index_id,
+                notification.storage_uri.parse()?,
+            ));
+        }
+        self.cached_split_registry
+            .bulk_update(&self.storage_resolver, &splits)
+            .await;
+        Ok(())
     }
 }
 
@@ -146,7 +155,7 @@ impl Actor for CacheStorageService {
     type ObservableState = CacheStorageCounters;
 
     fn observable_state(&self) -> Self::ObservableState {
-        self.cache_storage_factory.counters()
+        self.cached_split_registry.counters()
     }
 
     async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {

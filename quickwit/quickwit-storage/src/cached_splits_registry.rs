@@ -31,7 +31,7 @@ use tokio::sync::{RwLock, RwLockWriteGuard};
 use tracing::error;
 
 use crate::cache_storage::AtomicCacheStorageCounters;
-use crate::{Storage, StorageResolver, StorageResult};
+use crate::{CacheStorageCounters, Storage, StorageResolver, StorageResult};
 
 enum SplitState {
     Initializing,
@@ -45,6 +45,7 @@ struct SplitInfo {
     state_lock: Arc<RwLock<SplitState>>,
 }
 
+/// Internal structure that mainains a list of cached splits
 #[derive(Clone)]
 pub struct CachedSplitRegistry {
     inner: Arc<InnerCachedSplitRegistry>,
@@ -69,8 +70,13 @@ impl CachedSplitRegistry {
         }
     }
 
-    pub(crate) fn counters(&self) -> &AtomicCacheStorageCounters {
+    pub(crate) fn atomic_counters(&self) -> &AtomicCacheStorageCounters {
         &self.inner.counters
+    }
+
+    /// Returns the stats
+    pub fn counters(&self) -> CacheStorageCounters {
+        self.inner.counters.as_counters()
     }
 
     // TODO why `Option`
@@ -92,7 +98,7 @@ impl CachedSplitRegistry {
     }
 
     #[allow(dead_code)]
-    pub async fn load(
+    pub(crate) async fn load(
         &self,
         storage_resolver: &StorageResolver,
         split_id: &str,
@@ -195,7 +201,7 @@ impl CachedSplitRegistry {
     }
 
     #[allow(dead_code)]
-    pub async fn delete(&self, storage_resolver: &StorageResolver, split_id: &String) {
+    pub(crate) async fn delete(&self, storage_resolver: &StorageResolver, split_id: &String) {
         let splits_guard = self.inner.splits.write().await;
         self.inner_delete(&splits_guard, storage_resolver, split_id)
             .await;
@@ -245,6 +251,8 @@ impl CachedSplitRegistry {
         Ok(())
     }
 
+    /// Start an async process that updates the stored splits to match the list provided to the
+    /// method.
     pub async fn bulk_update(
         &self,
         storage_resolver: &StorageResolver,
@@ -274,7 +282,7 @@ impl CachedSplitRegistry {
         }
     }
 
-    pub async fn get_slice(
+    pub(crate) async fn get_slice(
         &self,
         cache: Arc<dyn Storage>,
         path: &Path,
@@ -294,7 +302,7 @@ impl CachedSplitRegistry {
         None
     }
 
-    pub async fn get_all(
+    pub(crate) async fn get_all(
         &self,
         cache: Arc<dyn Storage>,
         path: &Path,
@@ -340,7 +348,7 @@ mod tests {
         let split_id = "abcd".to_string();
         let index_id = "my_index".to_string();
         let path = PathBuf::new().join("abcd.split");
-        assert_eq!(registry.counters().as_counters().num_downloaded_splits, 0);
+        assert_eq!(registry.counters().num_downloaded_splits, 0);
         storage
             .put(&path, Box::new(b"abcdefg"[..].to_vec()))
             .await
@@ -370,7 +378,7 @@ mod tests {
         .await
         .unwrap();
 
-        assert_eq!(registry.counters().as_counters().num_downloaded_splits, 1);
+        assert_eq!(registry.counters().num_downloaded_splits, 1);
 
         registry.delete(&storage_resolver, &split_id).await;
 
@@ -394,7 +402,7 @@ mod tests {
         .await
         .is_err());
 
-        assert_eq!(registry.counters().as_counters().num_downloaded_splits, 0);
+        assert_eq!(registry.counters().num_downloaded_splits, 0);
     }
 
     async fn test_get_all(

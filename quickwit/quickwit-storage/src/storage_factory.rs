@@ -23,7 +23,6 @@ use async_trait::async_trait;
 use quickwit_common::uri::Uri;
 use quickwit_config::StorageBackend;
 
-use crate::cache_storage::CacheStorageFactory;
 use crate::{Storage, StorageResolver, StorageResolverError};
 
 /// A storage factory builds a [`Storage`] object for a target [`StorageBackend`] from a
@@ -40,11 +39,6 @@ pub trait StorageFactory: Send + Sync + 'static {
         storage_resolver: &StorageResolver,
         uri: &Uri,
     ) -> Result<Arc<dyn Storage>, StorageResolverError>;
-
-    /// TODO: This is ugly. I will need to replace it when I refactor storage.
-    fn as_cache_storage_factory(&self) -> Option<CacheStorageFactory> {
-        None
-    }
 }
 
 /// A storage factory for handling unsupported or unavailable storage backends.

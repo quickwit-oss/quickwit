@@ -26,6 +26,7 @@ use quickwit_common::uri::{Protocol, Uri};
 use quickwit_config::{StorageBackend, StorageConfigs};
 
 use crate::cache_storage::CacheStorageFactory;
+use crate::cached_splits_registry::CachedSplitRegistry;
 use crate::local_file_storage::LocalFileStorageFactory;
 use crate::ram_storage::RamStorageFactory;
 #[cfg(feature = "azure")]
@@ -38,6 +39,7 @@ use crate::{S3CompatibleObjectStorageFactory, Storage, StorageFactory, StorageRe
 #[derive(Clone)]
 pub struct StorageResolver {
     per_backend_factories: Arc<HashMap<StorageBackend, Box<dyn StorageFactory>>>,
+    cached_split_registry: Option<CachedSplitRegistry>,
 }
 
 impl fmt::Debug for StorageResolver {
@@ -95,10 +97,11 @@ impl StorageResolver {
             .register(RamStorageFactory::default())
             .register(S3CompatibleObjectStorageFactory::new(
                 storage_configs.find_s3().cloned().unwrap_or_default(),
-            ))
-            .register(CacheStorageFactory::new(
-                storage_configs.find_cache().cloned().unwrap_or_default(),
             ));
+        let cache_storage_factory =
+            CacheStorageFactory::new(storage_configs.find_cache().cloned().unwrap_or_default());
+        builder.cached_split_registry = cache_storage_factory.cached_split_registry();
+        builder = builder.register(cache_storage_factory);
         #[cfg(feature = "azure")]
         {
             builder = builder.register(AzureBlobStorageFactory::new(
@@ -143,35 +146,17 @@ impl StorageResolver {
             .expect("Storage factory and config backends should match.")
     }
 
-    // /// Returns a [`StorageResolver`] for testing purposes that includes both cache and ram
-    // /// storge factories configured
-    // #[cfg(any(test, feature = "testsuite"))]
-    // pub fn for_test() -> Self {
-    //     use quickwit_config::{CacheStorageConfig, RamStorageConfig};
-
-    //     use crate::cache_storage::CacheStorageFactory;
-
-    //     StorageResolver::builder()
-    //         .register(
-    //             RamStorageFactory::default(),
-    //             RamStorageConfig::default().into(),
-    //         )
-    //         .register(CacheStorageFactory, CacheStorageConfig::for_test().into())
-    //         .build()
-    //         .expect("Storage factory and config backends should match.")
-    // }
-
-    /// TODO: This is ugly. I will need to replace it when I refactor storage.
-    pub fn cache_storage_factory(&self) -> Option<CacheStorageFactory> {
-        self.per_backend_factories
-            .get(&StorageBackend::Cache)?
-            .as_cache_storage_factory()
+    /// Returns cached split registry if available
+    /// It is only available on the nodes where cache storage is configured.
+    pub fn cached_split_registry(&self) -> Option<CachedSplitRegistry> {
+        self.cached_split_registry.clone()
     }
 }
 
 #[derive(Default)]
 pub struct StorageResolverBuilder {
     per_backend_factories: HashMap<StorageBackend, Box<dyn StorageFactory>>,
+    cached_split_registry: Option<CachedSplitRegistry>,
 }
 
 impl StorageResolverBuilder {
@@ -186,6 +171,7 @@ impl StorageResolverBuilder {
     pub fn build(self) -> anyhow::Result<StorageResolver> {
         let storage_resolver = StorageResolver {
             per_backend_factories: Arc::new(self.per_backend_factories),
+            cached_split_registry: self.cached_split_registry,
         };
         Ok(storage_resolver)
     }
