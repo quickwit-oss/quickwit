@@ -35,6 +35,9 @@ indexer:
   split_store_max_num_splits: 10000
   max_concurrent_split_uploads: 8
 
+ingest_api:
+  replication_factor: 2
+
 searcher:
   aggregation_memory_limit: 1G
   aggregation_bucket_limit: 500000

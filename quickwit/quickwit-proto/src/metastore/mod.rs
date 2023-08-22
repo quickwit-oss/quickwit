@@ -20,8 +20,11 @@
 use std::fmt;
 
 use quickwit_common::retry::Retryable;
+use serde::{Deserialize, Serialize};
 
 use crate::{IndexId, QueueId, ServiceError, ServiceErrorCode, SourceId, SplitId};
+
+pub mod events;
 
 include!("../codegen/quickwit/quickwit.metastore.rs");
 
@@ -37,7 +40,7 @@ pub enum EntityKind {
     CheckpointDelta {
         /// Index ID.
         index_id: IndexId,
-        /// Source Id.
+        /// Source ID.
         source_id: SourceId,
     },
     /// An index.
@@ -52,6 +55,8 @@ pub enum EntityKind {
     },
     /// A source.
     Source {
+        /// Index ID.
+        index_id: IndexId,
         /// Source ID.
         source_id: SourceId,
     },
@@ -82,7 +87,10 @@ impl fmt::Display for EntityKind {
             EntityKind::Index { index_id } => write!(f, "index `{}`", index_id),
             EntityKind::Indexes { index_ids } => write!(f, "indexes `{}`", index_ids.join(", ")),
             EntityKind::Shard { queue_id } => write!(f, "shard `{queue_id}`"),
-            EntityKind::Source { source_id } => write!(f, "source `{source_id}`"),
+            EntityKind::Source {
+                index_id,
+                source_id,
+            } => write!(f, "source `{index_id}/{source_id}`"),
             EntityKind::Split { split_id } => write!(f, "split `{split_id}`"),
             EntityKind::Splits { split_ids } => write!(f, "splits `{}`", split_ids.join(", ")),
         }
@@ -91,26 +99,26 @@ impl fmt::Display for EntityKind {
 
 #[derive(Debug, Clone, thiserror::Error, Eq, PartialEq, Serialize, Deserialize)]
 pub enum MetastoreError {
-    #[error("Database error: {message}.")]
-    Db { message: String },
+    #[error("{0} already exist(s).")]
+    AlreadyExists(EntityKind),
 
     #[error("Connection error: {message}.")]
     Connection { message: String },
 
+    #[error("Database error: {message}.")]
+    Db { message: String },
+
     #[error("Precondition failed for {entity}: {message}")]
     FailedPrecondition { entity: EntityKind, message: String },
-
-    #[error("{0} do(es) not exist.")]
-    NotFound(EntityKind),
-
-    #[error("{0} already exist(s).")]
-    AlreadyExists(EntityKind),
 
     #[error("Access forbidden: {message}.")]
     Forbidden { message: String },
 
     #[error("Internal error: {message} Cause: `{cause}`.")]
     Internal { message: String, cause: String },
+
+    #[error("Invalid argument: {message}.")]
+    InvalidArgument { message: String },
 
     #[error("IO error: {message}.")]
     Io { message: String },
@@ -126,6 +134,12 @@ pub enum MetastoreError {
         struct_name: String,
         message: String,
     },
+
+    #[error("{0} do(es) not exist.")]
+    NotFound(EntityKind),
+
+    #[error("Metastore unavailable: {0}.")]
+    Unavailable(String),
 }
 
 #[cfg(feature = "postgres")]
@@ -146,19 +160,21 @@ impl From<MetastoreError> for tonic::Status {
     }
 }
 
-impl crate::ServiceError for MetastoreError {
+impl ServiceError for MetastoreError {
     fn status_code(&self) -> ServiceErrorCode {
         match self {
+            Self::AlreadyExists { .. } => ServiceErrorCode::BadRequest,
             Self::Connection { .. } => ServiceErrorCode::Internal,
             Self::Db { .. } => ServiceErrorCode::Internal,
             Self::FailedPrecondition { .. } => ServiceErrorCode::BadRequest,
             Self::Forbidden { .. } => ServiceErrorCode::MethodNotAllowed,
-            Self::AlreadyExists { .. } => ServiceErrorCode::BadRequest,
-            Self::NotFound { .. } => ServiceErrorCode::NotFound,
             Self::Internal { .. } => ServiceErrorCode::Internal,
+            Self::InvalidArgument { .. } => ServiceErrorCode::BadRequest,
             Self::Io { .. } => ServiceErrorCode::Internal,
             Self::JsonDeserializeError { .. } => ServiceErrorCode::Internal,
             Self::JsonSerializeError { .. } => ServiceErrorCode::Internal,
+            Self::NotFound { .. } => ServiceErrorCode::NotFound,
+            Self::Unavailable(_) => ServiceErrorCode::Unavailable,
         }
     }
 }
@@ -172,5 +188,43 @@ impl Retryable for MetastoreError {
                 | MetastoreError::Io { .. }
                 | MetastoreError::Internal { .. }
         )
+    }
+}
+
+impl SourceType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            SourceType::Cli => "ingest-cli",
+            SourceType::File => "file",
+            SourceType::GcpPubsub => "gcp_pubsub",
+            SourceType::IngestV1 => "ingest-api",
+            SourceType::IngestV2 => "ingest",
+            SourceType::Kafka => "kafka",
+            SourceType::Kinesis => "kinesis",
+            SourceType::Nats => "nats",
+            SourceType::Pulsar => "pulsar",
+            SourceType::Vec => "vec",
+            SourceType::Void => "void",
+        }
+    }
+}
+
+pub mod serde_utils {
+    use serde::{Deserialize, Serialize};
+
+    use super::{MetastoreError, MetastoreResult};
+
+    pub fn from_json_str<'de, T: Deserialize<'de>>(value_str: &'de str) -> MetastoreResult<T> {
+        serde_json::from_str(value_str).map_err(|error| MetastoreError::JsonDeserializeError {
+            struct_name: std::any::type_name::<T>().to_string(),
+            message: error.to_string(),
+        })
+    }
+
+    pub fn to_json_str<T: Serialize>(value: &T) -> Result<String, MetastoreError> {
+        serde_json::to_string(value).map_err(|error| MetastoreError::JsonSerializeError {
+            struct_name: std::any::type_name::<T>().to_string(),
+            message: error.to_string(),
+        })
     }
 }

@@ -18,6 +18,7 @@ hyper = { workspace = true }
 itertools = { workspace = true }
 mockall = { workspace = true, optional = true }
 prost = { workspace = true }
+rand = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
@@ -31,6 +32,7 @@ tracing = { workspace = true }
 quickwit-actors = { workspace = true }
 quickwit-common = { workspace = true }
 quickwit-config = { workspace = true }
+quickwit-ingest = { workspace = true }
 quickwit-metastore = { workspace = true }
 quickwit-proto = { workspace = true }
 
@@ -40,12 +42,12 @@ mockall = { workspace = true }
 proptest = { workspace = true }
 rand = { workspace = true }
 
+chitchat = { workspace = true }
 quickwit-actors = { workspace = true, features = ["testsuite"] }
 quickwit-cluster = { workspace = true, features = ["testsuite"] }
-chitchat = { workspace = true }
-quickwit-indexing = { workspace = true }
 quickwit-common = { workspace = true, features = ["testsuite"] }
 quickwit-config = { workspace = true, features = ["testsuite"] }
+quickwit-indexing = { workspace = true }
 quickwit-metastore = { workspace = true, features = ["testsuite"] }
 quickwit-proto = { workspace = true, features = ["testsuite"] }
 quickwit-storage = { workspace = true, features = ["testsuite"] }

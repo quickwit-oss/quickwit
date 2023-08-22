@@ -53,17 +53,17 @@ impl CommitTypeV2 {
     /// (if the ProtoBuf definition does not change) and safe for programmatic use.
     pub fn as_str_name(&self) -> &'static str {
         match self {
-            CommitTypeV2::Auto => "Auto",
-            CommitTypeV2::Wait => "Wait",
-            CommitTypeV2::Force => "Force",
+            CommitTypeV2::Auto => "AUTO",
+            CommitTypeV2::Wait => "WAIT",
+            CommitTypeV2::Force => "FORCE",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
-            "Auto" => Some(Self::Auto),
-            "Wait" => Some(Self::Wait),
-            "Force" => Some(Self::Force),
+            "AUTO" => Some(Self::Auto),
+            "WAIT" => Some(Self::Wait),
+            "FORCE" => Some(Self::Force),
             _ => None,
         }
     }

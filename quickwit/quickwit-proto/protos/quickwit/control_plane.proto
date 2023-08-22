@@ -25,6 +25,26 @@ import "quickwit/ingest.proto";
 import "quickwit/metastore.proto";
 
 service ControlPlaneService {
+  // The control plane acts as a proxy for the metastore so it can track its state accurately and react to events in real-time.
+  // Index API
+
+  // Creates a new index.
+  rpc CreateIndex(quickwit.metastore.CreateIndexRequest) returns (quickwit.metastore.CreateIndexResponse);
+
+  // Deletes an index.
+  rpc DeleteIndex(quickwit.metastore.DeleteIndexRequest) returns (quickwit.metastore.EmptyResponse);
+
+  // Source API
+
+  // Adds a source to an index.
+  rpc AddSource(quickwit.metastore.AddSourceRequest) returns (quickwit.metastore.EmptyResponse);
+
+  // Enables or disables a source.
+  rpc ToggleSource(quickwit.metastore.ToggleSourceRequest) returns (quickwit.metastore.EmptyResponse);
+
+  // Removes a source from an index.
+  rpc DeleteSource(quickwit.metastore.DeleteSourceRequest) returns (quickwit.metastore.EmptyResponse);
+
   /// Notify the Control Plane that a change on an index occurred. The change
   /// can be an index creation, deletion, or update that includes a source creation/deletion/num pipeline update.
   // Note(fmassot): it's not very clear for a user to know which change triggers a control plane notification.
@@ -32,6 +52,8 @@ service ControlPlaneService {
   // type of change. The index ID and/or source ID could also be added.
   // However, these attributes will not be used by the Control Plane, at least at short term.
   rpc NotifyIndexChange(NotifyIndexChangeRequest) returns (NotifyIndexChangeResponse);
+
+  // Shard API
 
   /// Returns the list of open shards for one or several sources. If the control plane is not able to find any
   /// for a source, it will pick a pair of leader-follower ingesters and will open a new shard.
@@ -44,9 +66,7 @@ message NotifyIndexChangeRequest {}
 
 message NotifyIndexChangeResponse {}
 
-///
-/// Shard API
-///
+// Shard API
 
 message GetOpenShardsRequest {
   repeated GetOpenShardsSubrequest subrequests = 1;
@@ -58,6 +78,7 @@ message GetOpenShardsSubrequest {
     string source_id = 2;
 }
 
+// TODO: Handle partial failures.
 message GetOpenShardsResponse {
   repeated GetOpenShardsSubresponse subresponses = 1;
 }

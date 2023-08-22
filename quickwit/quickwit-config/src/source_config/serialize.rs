@@ -95,6 +95,7 @@ impl SourceConfigForSerialization {
                 // TODO consider any validation opportunity
             }
             SourceParams::GcpPubSub(_)
+            | SourceParams::Ingest
             | SourceParams::IngestApi
             | SourceParams::IngestCli
             | SourceParams::Vec(_)

@@ -33,6 +33,7 @@ use quickwit_proto::control_plane::{
     ControlPlaneResult, NotifyIndexChangeRequest, NotifyIndexChangeResponse,
 };
 use quickwit_proto::indexing::{ApplyIndexingPlanRequest, IndexingService, IndexingTask};
+use quickwit_proto::NodeId;
 use serde::Serialize;
 use tracing::{debug, error, info, warn};
 
@@ -109,9 +110,9 @@ pub struct IndexingSchedulerState {
 /// plan with the running plan.
 pub struct IndexingScheduler {
     cluster_id: String,
-    self_node_id: String,
+    self_node_id: NodeId,
     metastore: Arc<dyn Metastore>,
-    indexing_client_pool: IndexerPool,
+    indexer_pool: IndexerPool,
     state: IndexingSchedulerState,
 }
 
@@ -152,15 +153,15 @@ impl Actor for IndexingScheduler {
 impl IndexingScheduler {
     pub fn new(
         cluster_id: String,
-        self_node_id: String,
+        self_node_id: NodeId,
         metastore: Arc<dyn Metastore>,
-        indexing_client_pool: IndexerPool,
+        indexer_pool: IndexerPool,
     ) -> Self {
         Self {
             cluster_id,
             self_node_id,
             metastore,
-            indexing_client_pool,
+            indexer_pool,
             state: IndexingSchedulerState::default(),
         }
     }
@@ -264,7 +265,7 @@ impl IndexingScheduler {
     }
 
     async fn get_indexers_from_indexer_pool(&self) -> Vec<(String, IndexerNodeInfo)> {
-        self.indexing_client_pool.all().await
+        self.indexer_pool.all().await
     }
 
     async fn apply_physical_indexing_plan(
@@ -537,6 +538,7 @@ mod tests {
     use quickwit_indexing::IndexingService;
     use quickwit_metastore::{IndexMetadata, ListIndexesQuery, MockMetastore};
     use quickwit_proto::indexing::{ApplyIndexingPlanRequest, IndexingServiceClient, IndexingTask};
+    use quickwit_proto::NodeId;
     use serde_json::json;
 
     use super::{IndexingScheduler, CONTROL_PLAN_LOOP_INTERVAL};
@@ -624,7 +626,7 @@ mod tests {
             },
         );
         let mut indexer_inboxes = Vec::new();
-        let indexing_client_pool = Pool::default();
+        let indexer_pool = Pool::default();
         let change_stream = cluster.ready_nodes_change_stream().await;
         let mut indexing_clients = HashMap::new();
         for indexer in indexers {
@@ -633,13 +635,14 @@ mod tests {
             indexer_inboxes.push(indexing_service_inbox);
         }
         let indexer_change_stream = test_indexer_change_stream(change_stream, indexing_clients);
-        indexing_client_pool.listen_for_changes(indexer_change_stream);
+        indexer_pool.listen_for_changes(indexer_change_stream);
 
+        let self_node_id: NodeId = cluster.self_node_id().to_string().into();
         let indexing_scheduler = IndexingScheduler::new(
             cluster.cluster_id().to_string(),
-            cluster.self_node_id().to_string(),
+            self_node_id,
             Arc::new(metastore),
-            indexing_client_pool,
+            indexer_pool,
         );
         let (_, scheduler_handler) = universe.spawn_builder().spawn(indexing_scheduler);
         (indexer_inboxes, scheduler_handler)
@@ -895,10 +898,12 @@ mod tests {
             let task_1 = IndexingTask {
                 index_uid: "index-1:11111111111111111111111111".to_string(),
                 source_id: "source-1".to_string(),
+                shard_ids: Vec::new(),
             };
             let task_2 = IndexingTask {
                 index_uid: "index-1:11111111111111111111111111".to_string(),
                 source_id: "source-2".to_string(),
+                shard_ids: Vec::new(),
             };
             running_plan.insert(
                 "indexer-1".to_string(),
@@ -917,10 +922,12 @@ mod tests {
             let task_1 = IndexingTask {
                 index_uid: "index-1:11111111111111111111111111".to_string(),
                 source_id: "source-1".to_string(),
+                shard_ids: Vec::new(),
             };
             let task_2 = IndexingTask {
                 index_uid: "index-1:11111111111111111111111111".to_string(),
                 source_id: "source-2".to_string(),
+                shard_ids: Vec::new(),
             };
             running_plan.insert("indexer-1".to_string(), vec![task_1.clone()]);
             desired_plan.insert("indexer-1".to_string(), vec![task_2.clone()]);
@@ -945,10 +952,12 @@ mod tests {
             let task_1 = IndexingTask {
                 index_uid: "index-1:11111111111111111111111111".to_string(),
                 source_id: "source-1".to_string(),
+                shard_ids: Vec::new(),
             };
             let task_2 = IndexingTask {
                 index_uid: "index-2:11111111111111111111111111".to_string(),
                 source_id: "source-2".to_string(),
+                shard_ids: Vec::new(),
             };
             running_plan.insert("indexer-2".to_string(), vec![task_2.clone()]);
             desired_plan.insert("indexer-1".to_string(), vec![task_1.clone()]);
@@ -981,6 +990,7 @@ mod tests {
             let task_1 = IndexingTask {
                 index_uid: "index-1:11111111111111111111111111".to_string(),
                 source_id: "source-1".to_string(),
+                shard_ids: Vec::new(),
             };
             running_plan.insert("indexer-1".to_string(), vec![task_1.clone()]);
             desired_plan.insert(
@@ -1004,6 +1014,7 @@ mod tests {
             let task_1 = IndexingTask {
                 index_uid: "index-1:11111111111111111111111111".to_string(),
                 source_id: "source-1".to_string(),
+                shard_ids: Vec::new(),
             };
             running_plan.insert(
                 "indexer-1".to_string(),

@@ -20,6 +20,7 @@
 mod grpc_adapter;
 
 use std::error::Error;
+use std::fmt;
 use std::net::SocketAddr;
 
 use anyhow::bail;
@@ -65,6 +66,14 @@ pub struct MetastoreGrpcClient {
     // `GRPC_METASTORE_BASE_URI:{grpc_advertise_port}`. This value is only useful for
     // debugging.
     uri: QuickwitUri,
+}
+
+impl fmt::Debug for MetastoreGrpcClient {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("GrpcMetastore")
+            .field("uri", &self.uri)
+            .finish()
+    }
 }
 
 impl MetastoreGrpcClient {
@@ -133,16 +142,13 @@ impl Metastore for MetastoreGrpcClient {
 
     /// Creates an index.
     async fn create_index(&self, index_config: IndexConfig) -> MetastoreResult<IndexUid> {
-        let index_config_serialized_json =
-            serde_json::to_string(&index_config).map_err(|error| {
-                MetastoreError::JsonSerializeError {
-                    struct_name: "IndexConfig".to_string(),
-                    message: error.to_string(),
-                }
-            })?;
-        let request = CreateIndexRequest {
-            index_config_serialized_json,
-        };
+        let index_config_json = serde_json::to_string(&index_config).map_err(|error| {
+            MetastoreError::JsonSerializeError {
+                struct_name: "IndexConfig".to_string(),
+                message: error.to_string(),
+            }
+        })?;
+        let request = CreateIndexRequest { index_config_json };
         let inner_response = self
             .underlying
             .clone()
@@ -369,14 +375,14 @@ impl Metastore for MetastoreGrpcClient {
 
     /// Adds a source to a given index.
     async fn add_source(&self, index_uid: IndexUid, source: SourceConfig) -> MetastoreResult<()> {
-        let source_config_serialized_json =
+        let source_config_json =
             serde_json::to_string(&source).map_err(|error| MetastoreError::JsonSerializeError {
                 struct_name: "SourceConfig".to_string(),
                 message: error.to_string(),
             })?;
         let request = AddSourceRequest {
             index_uid: index_uid.into(),
-            source_config_serialized_json,
+            source_config_json,
         };
         self.underlying
             .clone()

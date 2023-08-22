@@ -302,6 +302,14 @@ impl IngesterServiceClient {
     {
         Self { inner: Box::new(instance) }
     }
+    pub fn as_grpc_service(
+        &self,
+    ) -> ingester_service_grpc_server::IngesterServiceGrpcServer<
+        IngesterServiceGrpcServerAdapter,
+    > {
+        let adapter = IngesterServiceGrpcServerAdapter::new(self.clone());
+        ingester_service_grpc_server::IngesterServiceGrpcServer::new(adapter)
+    }
     pub fn from_channel<C>(channel: C) -> Self
     where
         C: tower::Service<
@@ -373,7 +381,7 @@ impl IngesterService for IngesterServiceClient {
     }
 }
 #[cfg(any(test, feature = "testsuite"))]
-pub mod mock {
+pub mod ingester_service_mock {
     use super::*;
     #[derive(Debug, Clone)]
     struct MockIngesterServiceWrapper {
@@ -383,34 +391,36 @@ pub mod mock {
     impl IngesterService for MockIngesterServiceWrapper {
         async fn persist(
             &mut self,
-            request: PersistRequest,
-        ) -> crate::ingest::IngestV2Result<PersistResponse> {
+            request: super::PersistRequest,
+        ) -> crate::ingest::IngestV2Result<super::PersistResponse> {
             self.inner.lock().await.persist(request).await
         }
         async fn open_replication_stream(
             &mut self,
-            request: quickwit_common::ServiceStream<SynReplicationMessage>,
+            request: quickwit_common::ServiceStream<super::SynReplicationMessage>,
         ) -> crate::ingest::IngestV2Result<
-            IngesterServiceStream<AckReplicationMessage>,
+            IngesterServiceStream<super::AckReplicationMessage>,
         > {
             self.inner.lock().await.open_replication_stream(request).await
         }
         async fn open_fetch_stream(
             &mut self,
-            request: OpenFetchStreamRequest,
-        ) -> crate::ingest::IngestV2Result<IngesterServiceStream<FetchResponseV2>> {
+            request: super::OpenFetchStreamRequest,
+        ) -> crate::ingest::IngestV2Result<
+            IngesterServiceStream<super::FetchResponseV2>,
+        > {
             self.inner.lock().await.open_fetch_stream(request).await
         }
         async fn ping(
             &mut self,
-            request: PingRequest,
-        ) -> crate::ingest::IngestV2Result<PingResponse> {
+            request: super::PingRequest,
+        ) -> crate::ingest::IngestV2Result<super::PingResponse> {
             self.inner.lock().await.ping(request).await
         }
         async fn truncate(
             &mut self,
-            request: TruncateRequest,
-        ) -> crate::ingest::IngestV2Result<TruncateResponse> {
+            request: super::TruncateRequest,
+        ) -> crate::ingest::IngestV2Result<super::TruncateResponse> {
             self.inner.lock().await.truncate(request).await
         }
     }

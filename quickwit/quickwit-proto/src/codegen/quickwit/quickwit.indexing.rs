@@ -14,11 +14,11 @@ pub struct IndexingTask {
     #[prost(string, tag = "1")]
     pub index_uid: ::prost::alloc::string::String,
     /// / The task's source ID.
-    ///
-    /// / The shards assigned to the indexer.
-    /// repeated uint64 shard_ids = 3;
     #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,
+    /// / The shards assigned to the indexer.
+    #[prost(uint64, repeated, tag = "3")]
+    pub shard_ids: ::prost::alloc::vec::Vec<u64>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -51,6 +51,14 @@ impl IndexingServiceClient {
         T: IndexingService,
     {
         Self { inner: Box::new(instance) }
+    }
+    pub fn as_grpc_service(
+        &self,
+    ) -> indexing_service_grpc_server::IndexingServiceGrpcServer<
+        IndexingServiceGrpcServerAdapter,
+    > {
+        let adapter = IndexingServiceGrpcServerAdapter::new(self.clone());
+        indexing_service_grpc_server::IndexingServiceGrpcServer::new(adapter)
     }
     pub fn from_channel<C>(channel: C) -> Self
     where
@@ -99,7 +107,7 @@ impl IndexingService for IndexingServiceClient {
     }
 }
 #[cfg(any(test, feature = "testsuite"))]
-pub mod mock {
+pub mod indexing_service_mock {
     use super::*;
     #[derive(Debug, Clone)]
     struct MockIndexingServiceWrapper {
@@ -109,8 +117,8 @@ pub mod mock {
     impl IndexingService for MockIndexingServiceWrapper {
         async fn apply_indexing_plan(
             &mut self,
-            request: ApplyIndexingPlanRequest,
-        ) -> crate::indexing::IndexingResult<ApplyIndexingPlanResponse> {
+            request: super::ApplyIndexingPlanRequest,
+        ) -> crate::indexing::IndexingResult<super::ApplyIndexingPlanResponse> {
             self.inner.lock().await.apply_indexing_plan(request).await
         }
     }

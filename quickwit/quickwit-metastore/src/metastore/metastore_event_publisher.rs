@@ -21,50 +21,18 @@ use std::fmt;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use quickwit_common::pubsub::{Event, EventBroker};
+use quickwit_common::pubsub::EventBroker;
 use quickwit_common::uri::Uri;
 use quickwit_config::{IndexConfig, SourceConfig};
+use quickwit_proto::metastore::events::{
+    AddSourceEvent, DeleteIndexEvent, DeleteSourceEvent, ToggleSourceEvent,
+};
 use quickwit_proto::metastore::{DeleteQuery, DeleteTask, MetastoreResult};
 use quickwit_proto::IndexUid;
 use tracing::info;
 
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{IndexMetadata, ListIndexesQuery, ListSplitsQuery, Metastore, Split, SplitMetadata};
-
-/// Metastore events dispatched to subscribers.
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub enum MetastoreEvent {
-    /// Delete index event.
-    DeleteIndex {
-        /// Index ID of the deleted index.
-        index_uid: IndexUid,
-    },
-    /// Add source event.
-    AddSource {
-        /// Index ID of the added source.
-        index_uid: IndexUid,
-        /// Source config of the added source.
-        source_config: SourceConfig,
-    },
-    /// Toggle source events.
-    ToggleSource {
-        /// Index ID of the toggled source.
-        index_uid: IndexUid,
-        /// Source ID of the toggled source.
-        source_id: String,
-        /// Whether the source was enabled or not.
-        enabled: bool,
-    },
-    /// Delete source event.
-    DeleteSource {
-        /// Index ID of the deleted source.
-        index_uid: IndexUid,
-        /// Source ID of the deleted source.
-        source_id: String,
-    },
-}
-
-impl Event for MetastoreEvent {}
 
 /// Wraps a metastore and dispatches events to subscribers.
 pub struct MetastoreEventPublisher {
@@ -121,7 +89,7 @@ impl Metastore for MetastoreEventPublisher {
     }
 
     async fn delete_index(&self, index_uid: IndexUid) -> MetastoreResult<()> {
-        let event = MetastoreEvent::DeleteIndex {
+        let event = DeleteIndexEvent {
             index_uid: index_uid.clone(),
         };
         self.underlying.delete_index(index_uid).await?;
@@ -187,9 +155,10 @@ impl Metastore for MetastoreEventPublisher {
     // Source API
 
     async fn add_source(&self, index_uid: IndexUid, source: SourceConfig) -> MetastoreResult<()> {
-        let event = MetastoreEvent::AddSource {
+        let event = AddSourceEvent {
             index_uid: index_uid.clone(),
-            source_config: source.clone(),
+            source_id: source.source_id.clone(),
+            source_type: source.source_type(),
         };
         info!("add source {0}, {source:?}", index_uid.index_id());
         self.underlying.add_source(index_uid, source).await?;
@@ -203,7 +172,7 @@ impl Metastore for MetastoreEventPublisher {
         source_id: &str,
         enable: bool,
     ) -> MetastoreResult<()> {
-        let event = MetastoreEvent::ToggleSource {
+        let event = ToggleSourceEvent {
             index_uid: index_uid.clone(),
             source_id: source_id.to_string(),
             enabled: enable,
@@ -226,7 +195,7 @@ impl Metastore for MetastoreEventPublisher {
     }
 
     async fn delete_source(&self, index_uid: IndexUid, source_id: &str) -> MetastoreResult<()> {
-        let event = MetastoreEvent::DeleteSource {
+        let event = DeleteSourceEvent {
             index_uid: index_uid.clone(),
             source_id: source_id.to_string(),
         };
@@ -282,6 +251,7 @@ mod tests {
 
     use quickwit_common::pubsub::EventSubscriber;
     use quickwit_config::SourceParams;
+    use quickwit_proto::metastore::SourceType;
 
     use super::*;
     use crate::metastore_for_test;
@@ -300,11 +270,11 @@ mod tests {
     metastore_test_suite!(crate::metastore::metastore_event_publisher::MetastoreEventPublisher);
 
     #[derive(Debug, Clone)]
-    struct TxSubscriber(tokio::sync::mpsc::Sender<MetastoreEvent>);
+    struct TxSubscriber(tokio::sync::mpsc::Sender<AddSourceEvent>);
 
     #[async_trait]
-    impl EventSubscriber<MetastoreEvent> for TxSubscriber {
-        async fn handle_event(&mut self, event: MetastoreEvent) {
+    impl EventSubscriber<AddSourceEvent> for TxSubscriber {
+        async fn handle_event(&mut self, event: AddSourceEvent) {
             let _ = self.0.send(event).await;
         }
     }
@@ -327,47 +297,17 @@ mod tests {
             .unwrap();
 
         metastore
-            .add_source(
-                index_uid.clone(),
-                SourceConfig::for_test(source_id, SourceParams::void()),
-            )
+            .add_source(index_uid.clone(), source_config)
             .await
             .unwrap();
-        metastore
-            .toggle_source(index_uid.clone(), source_id, false)
-            .await
-            .unwrap();
-        metastore
-            .delete_source(index_uid.clone(), source_id)
-            .await
-            .unwrap();
-        metastore.delete_index(index_uid.clone()).await.unwrap();
 
         assert_eq!(
             rx.recv().await.unwrap(),
-            MetastoreEvent::AddSource {
-                index_uid: index_uid.clone(),
-                source_config,
-            }
-        );
-        assert_eq!(
-            rx.recv().await.unwrap(),
-            MetastoreEvent::ToggleSource {
+            AddSourceEvent {
                 index_uid: index_uid.clone(),
                 source_id: source_id.to_string(),
-                enabled: false,
+                source_type: SourceType::Void,
             }
-        );
-        assert_eq!(
-            rx.recv().await.unwrap(),
-            MetastoreEvent::DeleteSource {
-                index_uid: index_uid.clone(),
-                source_id: source_id.to_string(),
-            }
-        );
-        assert_eq!(
-            rx.recv().await.unwrap(),
-            MetastoreEvent::DeleteIndex { index_uid }
         );
         subscription.cancel();
     }

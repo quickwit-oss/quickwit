@@ -126,18 +126,21 @@ struct CodegenContext {
     tower_block_name: Ident,
     tower_block_builder_name: Ident,
     mailbox_name: Ident,
+    mock_mod_name: Ident,
     mock_name: Ident,
-    grpc_client_package_name: Ident,
     grpc_client_name: Ident,
     grpc_client_adapter_name: Ident,
+    grpc_client_package_name: Ident,
+    grpc_server_name: Ident,
+    grpc_server_adapter_name: Ident,
     grpc_server_package_name: Ident,
     grpc_service_name: Ident,
-    grpc_server_adapter_name: Ident,
 }
 
 impl CodegenContext {
     fn from_service(service: &Service, result_type_path: &str, error_type_path: &str) -> Self {
         let service_name = quote::format_ident!("{}", service.name);
+        let mock_mod_name = quote::format_ident!("{}_mock", service.name.to_snake_case());
         let mock_name = quote::format_ident!("Mock{}", service.name);
 
         let result_type = syn::parse_str::<syn::Path>(result_type_path)
@@ -160,15 +163,17 @@ impl CodegenContext {
         let tower_block_builder_name = quote::format_ident!("{}TowerBlockBuilder", service.name);
         let mailbox_name = quote::format_ident!("{}Mailbox", service.name);
 
-        let grpc_client_package_name =
-            quote::format_ident!("{}_grpc_client", service.name.to_snake_case());
         let grpc_client_name = quote::format_ident!("{}GrpcClient", service.name);
         let grpc_client_adapter_name = quote::format_ident!("{}GrpcClientAdapter", service.name);
+        let grpc_client_package_name =
+            quote::format_ident!("{}_grpc_client", service.name.to_snake_case());
 
+        let grpc_server_name = quote::format_ident!("{}GrpcServer", service.name);
+        let grpc_server_adapter_name = quote::format_ident!("{}GrpcServerAdapter", service.name);
         let grpc_server_package_name =
             quote::format_ident!("{}_grpc_server", service.name.to_snake_case());
+
         let grpc_service_name = quote::format_ident!("{}Grpc", service.name);
-        let grpc_server_adapter_name = quote::format_ident!("{}GrpcServerAdapter", service.name);
 
         Self {
             service_name,
@@ -181,13 +186,15 @@ impl CodegenContext {
             tower_block_name,
             tower_block_builder_name,
             mailbox_name,
+            mock_mod_name,
             mock_name,
-            grpc_client_package_name,
             grpc_client_name,
             grpc_client_adapter_name,
+            grpc_client_package_name,
+            grpc_server_name,
+            grpc_server_adapter_name,
             grpc_server_package_name,
             grpc_service_name,
-            grpc_server_adapter_name,
         }
     }
 }
@@ -242,22 +249,32 @@ struct SynMethod {
 }
 
 impl SynMethod {
-    fn request_type(&self) -> TokenStream {
-        if self.client_streaming {
+    fn request_type(&self, mock: bool) -> TokenStream {
+        let request_type = if mock {
             let request_type = &self.request_type;
-            quote! { quickwit_common::ServiceStream<#request_type> }
+            quote! { super::#request_type }
         } else {
             self.request_type.to_token_stream()
+        };
+        if self.client_streaming {
+            quote! { quickwit_common::ServiceStream<#request_type> }
+        } else {
+            request_type
         }
     }
 
-    fn response_type(&self, context: &CodegenContext) -> TokenStream {
-        if self.server_streaming {
-            let stream_type = &context.stream_type;
+    fn response_type(&self, context: &CodegenContext, mock: bool) -> TokenStream {
+        let response_type = if mock {
             let response_type = &self.response_type;
-            quote! { #stream_type<#response_type> }
+            quote! { super::#response_type }
         } else {
             self.response_type.to_token_stream()
+        };
+        if self.server_streaming {
+            let stream_type = &context.stream_type;
+            quote! { #stream_type<#response_type> }
+        } else {
+            response_type
         }
     }
 
@@ -314,8 +331,8 @@ fn generate_service_trait_methods(context: &CodegenContext) -> TokenStream {
 
     for syn_method in &context.methods {
         let method_name = syn_method.name.to_token_stream();
-        let request_type = syn_method.request_type();
-        let response_type = syn_method.response_type(context);
+        let request_type = syn_method.request_type(false);
+        let response_type = syn_method.response_type(context, false);
         let method = quote! {
             async fn #method_name(&mut self, request: #request_type) -> #result_type<#response_type>;
         };
@@ -327,10 +344,17 @@ fn generate_service_trait_methods(context: &CodegenContext) -> TokenStream {
 fn generate_client(context: &CodegenContext) -> TokenStream {
     let service_name = &context.service_name;
     let client_name = &context.client_name;
+
+    let grpc_client_name = &context.grpc_client_name;
     let grpc_client_adapter_name = &context.grpc_client_adapter_name;
     let grpc_client_package_name = &context.grpc_client_package_name;
-    let grpc_client_name = &context.grpc_client_name;
+
+    let grpc_server_name = &context.grpc_server_name;
+    let grpc_server_adapter_name = &context.grpc_server_adapter_name;
+    let grpc_server_package_name = &context.grpc_server_package_name;
+
     let client_methods = generate_client_methods(context, false);
+    let mock_mod_name = &context.mock_mod_name;
     let mock_methods = generate_client_methods(context, true);
     let mailbox_name = &context.mailbox_name;
     let tower_block_builder_name = &context.tower_block_builder_name;
@@ -351,6 +375,11 @@ fn generate_client(context: &CodegenContext) -> TokenStream {
                 Self {
                     inner: Box::new(instance),
                 }
+            }
+
+            pub fn as_grpc_service(&self) -> #grpc_server_package_name::#grpc_server_name<#grpc_server_adapter_name> {
+                let adapter = #grpc_server_adapter_name::new(self.clone());
+                #grpc_server_package_name::#grpc_server_name::new(adapter)
             }
 
             pub fn from_channel<C>(channel: C) -> Self
@@ -392,7 +421,7 @@ fn generate_client(context: &CodegenContext) -> TokenStream {
         }
 
         #[cfg(any(test, feature = "testsuite"))]
-        pub mod mock {
+        pub mod #mock_mod_name {
             use super::*;
 
             #[derive(Debug, Clone)]
@@ -424,8 +453,8 @@ fn generate_client_methods(context: &CodegenContext, mock: bool) -> TokenStream 
 
     for syn_method in &context.methods {
         let method_name = syn_method.name.to_token_stream();
-        let request_type = syn_method.request_type();
-        let response_type = syn_method.response_type(context);
+        let request_type = syn_method.request_type(mock);
+        let response_type = syn_method.response_type(context, mock);
 
         let body = if !mock {
             quote! {
@@ -433,7 +462,7 @@ fn generate_client_methods(context: &CodegenContext, mock: bool) -> TokenStream 
             }
         } else {
             quote! {
-                    self.inner.lock().await.#method_name(request).await
+                self.inner.lock().await.#method_name(request).await
             }
         };
         let method = quote! {
@@ -454,8 +483,8 @@ fn generate_tower_services(context: &CodegenContext) -> TokenStream {
 
     for syn_method in &context.methods {
         let method_name = syn_method.name.to_token_stream();
-        let request_type = syn_method.request_type();
-        let response_type = syn_method.response_type(context);
+        let request_type = syn_method.request_type(false);
+        let response_type = syn_method.response_type(context, false);
 
         let service = quote! {
             impl tower::Service<#request_type> for Box<dyn #service_name> {
@@ -508,8 +537,8 @@ fn generate_tower_block_attributes(context: &CodegenContext) -> TokenStream {
 
     for syn_method in &context.methods {
         let attribute_name = quote::format_ident!("{}_svc", syn_method.name);
-        let request_type = syn_method.request_type();
-        let response_type = syn_method.response_type(context);
+        let request_type = syn_method.request_type(false);
+        let response_type = syn_method.response_type(context, false);
 
         let attribute = quote! {
             #attribute_name: quickwit_common::tower::BoxService<#request_type, #response_type, #error_type>,
@@ -554,8 +583,8 @@ fn generate_tower_block_service_impl(context: &CodegenContext) -> TokenStream {
     for syn_method in &context.methods {
         let attribute_name = quote::format_ident!("{}_svc", syn_method.name);
         let method_name = syn_method.name.to_token_stream();
-        let request_type = syn_method.request_type();
-        let response_type = syn_method.response_type(context);
+        let request_type = syn_method.request_type(false);
+        let response_type = syn_method.response_type(context, false);
 
         let attribute = quote! {
             async fn #method_name(&mut self, request: #request_type) -> #result_type<#response_type> {
@@ -596,8 +625,8 @@ fn generate_tower_block_builder_attributes(context: &CodegenContext) -> TokenStr
 
     for syn_method in &context.methods {
         let attribute_name = quote::format_ident!("{}_layer", syn_method.name);
-        let request_type = syn_method.request_type();
-        let response_type = syn_method.response_type(context);
+        let request_type = syn_method.request_type(false);
+        let response_type = syn_method.response_type(context, false);
 
         let attribute = quote! {
             #[allow(clippy::type_complexity)]
@@ -625,8 +654,8 @@ fn generate_tower_block_builder_impl(context: &CodegenContext) -> TokenStream {
     for (i, syn_method) in context.methods.iter().enumerate() {
         let layer_attribute_name = quote::format_ident!("{}_layer", syn_method.name);
         let svc_attribute_name = quote::format_ident!("{}_svc", syn_method.name);
-        let request_type = syn_method.request_type();
-        let response_type = syn_method.response_type(context);
+        let request_type = syn_method.request_type(false);
+        let response_type = syn_method.response_type(context, false);
 
         let layer_method_bound = quote! {
             L::Service: tower::Service<#request_type, Response = #response_type, Error = #error_type> + Clone + Send + Sync + 'static,
@@ -830,8 +859,8 @@ fn generate_mailbox_bounds_and_methods(
 
     for syn_method in &context.methods {
         let method_name = syn_method.name.to_token_stream();
-        let request_type = syn_method.request_type();
-        let response_type = syn_method.response_type(context);
+        let request_type = syn_method.request_type(false);
+        let response_type = syn_method.response_type(context, false);
 
         let bound = quote! {
             tower::Service<#request_type, Response = #response_type, Error = #error_type, Future = BoxFuture<#response_type, #error_type>>
@@ -889,8 +918,8 @@ fn generate_grpc_client_adapter_methods(context: &CodegenContext) -> TokenStream
 
     for syn_method in &context.methods {
         let method_name = syn_method.name.to_token_stream();
-        let request_type = syn_method.request_type();
-        let response_type = syn_method.response_type(context);
+        let request_type = syn_method.request_type(false);
+        let response_type = syn_method.response_type(context, false);
 
         let into_response_type = if syn_method.server_streaming {
             quote! { |response|

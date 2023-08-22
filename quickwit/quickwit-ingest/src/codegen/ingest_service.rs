@@ -177,6 +177,14 @@ impl IngestServiceClient {
     {
         Self { inner: Box::new(instance) }
     }
+    pub fn as_grpc_service(
+        &self,
+    ) -> ingest_service_grpc_server::IngestServiceGrpcServer<
+        IngestServiceGrpcServerAdapter,
+    > {
+        let adapter = IngestServiceGrpcServerAdapter::new(self.clone());
+        ingest_service_grpc_server::IngestServiceGrpcServer::new(adapter)
+    }
     pub fn from_channel<C>(channel: C) -> Self
     where
         C: tower::Service<
@@ -227,7 +235,7 @@ impl IngestService for IngestServiceClient {
     }
 }
 #[cfg(any(test, feature = "testsuite"))]
-pub mod mock {
+pub mod ingest_service_mock {
     use super::*;
     #[derive(Debug, Clone)]
     struct MockIngestServiceWrapper {
@@ -237,17 +245,20 @@ pub mod mock {
     impl IngestService for MockIngestServiceWrapper {
         async fn ingest(
             &mut self,
-            request: IngestRequest,
-        ) -> crate::Result<IngestResponse> {
+            request: super::IngestRequest,
+        ) -> crate::Result<super::IngestResponse> {
             self.inner.lock().await.ingest(request).await
         }
         async fn fetch(
             &mut self,
-            request: FetchRequest,
-        ) -> crate::Result<FetchResponse> {
+            request: super::FetchRequest,
+        ) -> crate::Result<super::FetchResponse> {
             self.inner.lock().await.fetch(request).await
         }
-        async fn tail(&mut self, request: TailRequest) -> crate::Result<FetchResponse> {
+        async fn tail(
+            &mut self,
+            request: super::TailRequest,
+        ) -> crate::Result<super::FetchResponse> {
             self.inner.lock().await.tail(request).await
         }
     }

@@ -17,6 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::fmt;
+
 use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_common::uri::Uri;
@@ -71,6 +73,12 @@ impl InstrumentedMetastore {
         Self {
             underlying: metastore,
         }
+    }
+}
+
+impl fmt::Debug for InstrumentedMetastore {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("InstrumentedMetastore").finish()
     }
 }
 

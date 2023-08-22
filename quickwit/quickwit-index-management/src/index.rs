@@ -71,6 +71,7 @@ impl ServiceError for IndexServiceError {
 }
 
 /// Index service responsible for creating, updating and deleting indexes.
+#[derive(Clone)]
 pub struct IndexService {
     metastore: Arc<dyn Metastore>,
     storage_resolver: StorageResolver,
@@ -322,6 +323,7 @@ impl IndexService {
             .get(source_id)
             .ok_or_else(|| {
                 IndexServiceError::Metastore(MetastoreError::NotFound(EntityKind::Source {
+                    index_id: index_id.to_string(),
                     source_id: source_id.to_string(),
                 }))
             })?

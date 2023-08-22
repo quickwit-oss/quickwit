@@ -23,9 +23,9 @@ package quickwit.ingest;
 
 
 enum CommitTypeV2 {
-    Auto = 0;
-    Wait = 1;
-    Force = 2;
+    AUTO = 0;
+    WAIT = 1;
+    FORCE = 2;
 }
 
 message DocBatchV2 {

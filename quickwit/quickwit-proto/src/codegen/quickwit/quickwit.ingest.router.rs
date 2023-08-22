@@ -80,6 +80,14 @@ impl IngestRouterServiceClient {
     {
         Self { inner: Box::new(instance) }
     }
+    pub fn as_grpc_service(
+        &self,
+    ) -> ingest_router_service_grpc_server::IngestRouterServiceGrpcServer<
+        IngestRouterServiceGrpcServerAdapter,
+    > {
+        let adapter = IngestRouterServiceGrpcServerAdapter::new(self.clone());
+        ingest_router_service_grpc_server::IngestRouterServiceGrpcServer::new(adapter)
+    }
     pub fn from_channel<C>(channel: C) -> Self
     where
         C: tower::Service<
@@ -129,7 +137,7 @@ impl IngestRouterService for IngestRouterServiceClient {
     }
 }
 #[cfg(any(test, feature = "testsuite"))]
-pub mod mock {
+pub mod ingest_router_service_mock {
     use super::*;
     #[derive(Debug, Clone)]
     struct MockIngestRouterServiceWrapper {
@@ -139,8 +147,8 @@ pub mod mock {
     impl IngestRouterService for MockIngestRouterServiceWrapper {
         async fn ingest(
             &mut self,
-            request: IngestRequestV2,
-        ) -> crate::ingest::IngestV2Result<IngestResponseV2> {
+            request: super::IngestRequestV2,
+        ) -> crate::ingest::IngestV2Result<super::IngestResponseV2> {
             self.inner.lock().await.ingest(request).await
         }
     }

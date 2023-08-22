@@ -25,6 +25,7 @@ use itertools::Itertools;
 use quickwit_common::rendezvous_hasher::sort_by_rendez_vous_hash;
 use quickwit_config::{SourceConfig, CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID};
 use quickwit_proto::indexing::IndexingTask;
+use quickwit_proto::metastore::SourceType;
 use quickwit_proto::IndexUid;
 use serde::Serialize;
 
@@ -287,7 +288,7 @@ pub(crate) fn build_indexing_plan(
             continue;
         }
         // Ignore file sources as we don't know the file location.
-        if source_config.source_type() == "file" {
+        if source_config.source_type() == SourceType::File {
             continue;
         }
         let num_pipelines = if source_config.source_id == INGEST_API_SOURCE_ID {
@@ -304,6 +305,7 @@ pub(crate) fn build_indexing_plan(
             indexing_tasks.push(IndexingTask {
                 index_uid: index_source_id.index_uid.to_string(),
                 source_id: index_source_id.source_id.clone(),
+                shard_ids: Vec::new(),
             });
         }
     }
@@ -415,6 +417,7 @@ mod tests {
                 IndexingTask {
                     index_uid: index_source_id.index_uid.to_string(),
                     source_id: index_source_id.source_id.to_string(),
+                    shard_ids: Vec::new(),
                 }
             );
         }
@@ -452,6 +455,7 @@ mod tests {
                 IndexingTask {
                     index_uid: index_source_id.index_uid.to_string(),
                     source_id: index_source_id.source_id.to_string(),
+                    shard_ids: Vec::new(),
                 }
             );
         }
@@ -571,6 +575,7 @@ mod tests {
                 )
                 .to_string(),
                 source_id: source_1.to_string(),
+                shard_ids: Vec::new(),
             });
         }
         for _ in 0..2 {
@@ -581,6 +586,7 @@ mod tests {
                 )
                 .to_string(),
                 source_id: source_2.to_string(),
+                shard_ids: Vec::new(),
             });
         }
 
@@ -642,10 +648,12 @@ mod tests {
             IndexingTask {
                 index_uid: IndexUid::from_parts(index_1, "11111111111111111111111111").to_string(),
                 source_id: source_1.to_string(),
+                shard_ids: Vec::new(),
             },
             IndexingTask {
                 index_uid: IndexUid::from_parts(index_1, "11111111111111111111111111").to_string(),
                 source_id: source_1.to_string(),
+                shard_ids: Vec::new(),
             },
         ];
 
