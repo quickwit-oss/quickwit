@@ -31,7 +31,7 @@ use once_cell::sync::OnceCell;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use quickwit_metastore::{Metastore, SplitMetadata};
-use quickwit_proto::IndexUid;
+use quickwit_proto::{IndexUid, PublishToken};
 use quickwit_storage::SplitPayloadBuilder;
 use serde::Serialize;
 use tantivy::TrackedObject;
@@ -261,7 +261,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
     type Reply = ();
 
     #[instrument(name = "uploader",
-        parent=batch.parent_span.id(),
+        parent=batch.batch_parent_span.id(),
         skip_all)]
     async fn handle(
         &mut self,
@@ -349,11 +349,12 @@ impl Handler<PackagedSplitBatch> for Uploader {
 
                 let splits_update = make_publish_operation(
                     index_uid,
-                    batch.publish_lock,
                     packaged_splits_and_metadata,
                     batch.checkpoint_delta_opt,
-                    batch.merge_operation,
-                    batch.parent_span,
+                    batch.publish_lock,
+                    batch.publish_token_opt,
+                    batch.merge_operation_opt,
+                    batch.batch_parent_span,
                 );
 
                 split_update_sender.send(splits_update, &ctx_clone).await?;
@@ -393,6 +394,7 @@ impl Handler<EmptySplit> for Uploader {
             replaced_split_ids: Vec::new(),
             checkpoint_delta_opt: Some(empty_split.checkpoint_delta),
             publish_lock: empty_split.publish_lock,
+            publish_token_opt: empty_split.publish_token_opt,
             merge_operation: None,
             parent_span: empty_split.batch_parent_span,
         };
@@ -404,9 +406,10 @@ impl Handler<EmptySplit> for Uploader {
 
 fn make_publish_operation(
     index_uid: IndexUid,
-    publish_lock: PublishLock,
     packaged_splits_and_metadatas: Vec<(PackagedSplit, SplitMetadata)>,
     checkpoint_delta_opt: Option<IndexCheckpointDelta>,
+    publish_lock: PublishLock,
+    publish_token_opt: Option<PublishToken>,
     merge_operation: Option<TrackedObject<MergeOperation>>,
     parent_span: Span,
 ) -> SplitsUpdate {
@@ -417,13 +420,14 @@ fn make_publish_operation(
         .collect::<HashSet<_>>();
     SplitsUpdate {
         index_uid,
-        publish_lock,
         new_splits: packaged_splits_and_metadatas
             .into_iter()
             .map(|split_and_meta| split_and_meta.1)
             .collect_vec(),
         replaced_split_ids: Vec::from_iter(replaced_split_ids),
         checkpoint_delta_opt,
+        publish_lock,
+        publish_token_opt,
         merge_operation,
         parent_span,
     }
@@ -539,6 +543,7 @@ mod tests {
                 }],
                 checkpoint_delta_opt,
                 PublishLock::default(),
+                None,
                 None,
                 Span::none(),
             ))
@@ -674,6 +679,7 @@ mod tests {
                 None,
                 PublishLock::default(),
                 None,
+                None,
                 Span::none(),
             ))
             .await?;
@@ -785,6 +791,7 @@ mod tests {
                 checkpoint_delta_opt,
                 PublishLock::default(),
                 None,
+                None,
                 Span::none(),
             ))
             .await?;
@@ -832,9 +839,10 @@ mod tests {
         uploader_mailbox
             .send_message(EmptySplit {
                 index_uid: IndexUid::new("test-index"),
-                batch_parent_span: Span::none(),
                 checkpoint_delta,
                 publish_lock: PublishLock::default(),
+                publish_token_opt: None,
+                batch_parent_span: Span::none(),
             })
             .await?;
         assert_eq!(

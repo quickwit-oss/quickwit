@@ -8,6 +8,7 @@ pub struct DocBatchV2 {
     pub doc_lengths: ::prost::alloc::vec::Vec<u32>,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Eq)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Shard {
@@ -18,23 +19,29 @@ pub struct Shard {
     pub source_id: ::prost::alloc::string::String,
     #[prost(uint64, tag = "3")]
     pub shard_id: u64,
-    /// / The node ID of the ingester to which all the write requests for this shard should be sent to.
+    /// The node ID of the ingester to which all the write requests for this shard should be sent to.
     #[prost(string, tag = "4")]
     pub leader_id: ::prost::alloc::string::String,
-    /// / The node ID of the ingester holding a copy of the data.
+    /// The node ID of the ingester holding a copy of the data.
     #[prost(string, optional, tag = "5")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub follower_id: ::core::option::Option<::prost::alloc::string::String>,
     /// Mutable fields
     #[prost(enumeration = "ShardState", tag = "8")]
     pub shard_state: i32,
-    /// / Position up to which the follower has acknowledged replication of the records written in its log.
+    /// Position up to which the follower has acknowledged replication of the records written in its log.
     #[prost(uint64, optional, tag = "9")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub replication_position_inclusive: ::core::option::Option<u64>,
-    /// / Position up to which indexers have indexed and published the records stored in the shard.
-    /// / It is updated asynchronously in a best effort manner by the indexers and indicates the position up to which the log can be safely truncated.
+    /// Position up to which indexers have indexed and published the records stored in the shard.
+    /// It is updated asynchronously in a best effort manner by the indexers and indicates the position up to which the log can be safely truncated.
     #[prost(string, tag = "10")]
+    #[serde(default, skip_serializing_if = "String::is_empty")]
     pub publish_position_inclusive: ::prost::alloc::string::String,
+    /// A publish token that ensures only one indexer works on a given shard at a time.
+    /// For instance, if an indexer goes rogue, eventually the control plane will detect it and assign the shard to another indexer, which will override the publish token.
     #[prost(string, optional, tag = "11")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub publish_token: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
@@ -73,13 +80,13 @@ impl CommitTypeV2 {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum ShardState {
-    /// / The shard is open and accepts write requests.
+    /// The shard is open and accepts write requests.
     Open = 0,
-    /// / The shard is open and still accepts write requests, but should no longer be advertised to ingest routers.
-    /// / It is waiting for the its leader or follower to close it with its final replication position, after which write requests will be rejected.
+    /// The shard is open and still accepts write requests, but should no longer be advertised to ingest routers.
+    /// It is waiting for its leader or follower to close it with its final replication position, after which write requests will be rejected.
     Closing = 1,
-    /// / The shard is closed and cannot be written to.
-    /// / It can be safely deleted if the publish position is superior or equal to the replication position.
+    /// The shard is closed and cannot be written to.
+    /// It can be safely deleted if the publish position is superior or equal to the replication position.
     Closed = 2,
 }
 impl ShardState {

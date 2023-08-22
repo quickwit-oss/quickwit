@@ -511,12 +511,18 @@ mod pulsar_broker_tests {
                 )
                 .unwrap();
         }
-        let index_delta = IndexCheckpointDelta {
+        let checkpoint_delta = IndexCheckpointDelta {
             source_id: source_id.to_string(),
             source_delta,
         };
         metastore
-            .publish_splits(index_uid.clone(), &[&split_id], &[], Some(index_delta))
+            .publish_splits(
+                index_uid.clone(),
+                &[&split_id],
+                &[],
+                Some(checkpoint_delta),
+                None,
+            )
             .await
             .unwrap();
         index_uid

@@ -22,7 +22,7 @@ use std::fmt;
 use itertools::Itertools;
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use quickwit_metastore::SplitMetadata;
-use quickwit_proto::IndexUid;
+use quickwit_proto::{IndexUid, PublishToken};
 use tantivy::TrackedObject;
 use tracing::Span;
 
@@ -35,6 +35,7 @@ pub struct SplitsUpdate {
     pub replaced_split_ids: Vec<String>,
     pub checkpoint_delta_opt: Option<IndexCheckpointDelta>,
     pub publish_lock: PublishLock,
+    pub publish_token_opt: Option<PublishToken>,
     /// A [`MergeOperation`] tracked by either the `MergePlanner` or the `DeleteTaskPlanner`
     /// in the `MergePipeline` or `DeleteTaskPipeline`.
     /// See planners docs to understand the usage.

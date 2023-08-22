@@ -34,13 +34,13 @@ message DocBatchV2 {
 }
 
 enum ShardState {
-    /// The shard is open and accepts write requests.
+    // The shard is open and accepts write requests.
     OPEN = 0;
-    /// The shard is open and still accepts write requests, but should no longer be advertised to ingest routers.
-    /// It is waiting for the its leader or follower to close it with its final replication position, after which write requests will be rejected.
+    // The shard is open and still accepts write requests, but should no longer be advertised to ingest routers.
+    // It is waiting for its leader or follower to close it with its final replication position, after which write requests will be rejected.
     CLOSING = 1;
-    /// The shard is closed and cannot be written to.
-    /// It can be safely deleted if the publish position is superior or equal to the replication position.
+    // The shard is closed and cannot be written to.
+    // It can be safely deleted if the publish position is superior or equal to the replication position.
     CLOSED = 2;
 }
 
@@ -49,17 +49,19 @@ message Shard {
     string index_uid = 1;
     string source_id = 2;
     uint64 shard_id = 3;
-    /// The node ID of the ingester to which all the write requests for this shard should be sent to.
+    // The node ID of the ingester to which all the write requests for this shard should be sent to.
     string leader_id = 4;
-    /// The node ID of the ingester holding a copy of the data.
+    // The node ID of the ingester holding a copy of the data.
     optional string follower_id = 5;
 
     // Mutable fields
     ShardState shard_state = 8;
-    /// Position up to which the follower has acknowledged replication of the records written in its log.
+    // Position up to which the follower has acknowledged replication of the records written in its log.
     optional uint64 replication_position_inclusive = 9;
-    /// Position up to which indexers have indexed and published the records stored in the shard.
-    /// It is updated asynchronously in a best effort manner by the indexers and indicates the position up to which the log can be safely truncated.
+    // Position up to which indexers have indexed and published the records stored in the shard.
+    // It is updated asynchronously in a best effort manner by the indexers and indicates the position up to which the log can be safely truncated.
     string publish_position_inclusive = 10;
+    // A publish token that ensures only one indexer works on a given shard at a time.
+    // For instance, if an indexer goes rogue, eventually the control plane will detect it and assign the shard to another indexer, which will override the publish token.
     optional string publish_token = 11;
 }

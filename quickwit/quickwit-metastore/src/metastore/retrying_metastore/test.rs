@@ -27,7 +27,7 @@ use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_proto::metastore::{
     DeleteQuery, DeleteTask, EntityKind, MetastoreError, MetastoreResult,
 };
-use quickwit_proto::IndexUid;
+use quickwit_proto::{IndexUid, PublishToken};
 
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{
@@ -132,9 +132,10 @@ impl Metastore for RetryTestMetastore {
     async fn publish_splits<'a>(
         &self,
         _index_uid: IndexUid,
-        _split_ids: &[&'a str],
+        _staged_split_ids: &[&'a str],
         _replaced_split_ids: &[&'a str],
         _checkpoint_delta_opt: Option<IndexCheckpointDelta>,
+        _publish_token_opt: Option<PublishToken>,
     ) -> MetastoreResult<()> {
         self.try_success()
     }

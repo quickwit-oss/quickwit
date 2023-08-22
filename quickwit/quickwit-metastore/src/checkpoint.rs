@@ -25,14 +25,22 @@ use std::iter::FromIterator;
 use std::ops::Range;
 use std::sync::Arc;
 
+use quickwit_proto::SourceId;
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::{info, warn};
 
-/// PartitionId identifies a partition for a given source.
+/// A `PartitionId` uniquely identifies a partition for a given source.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
 pub struct PartitionId(pub Arc<String>);
+
+impl PartitionId {
+    /// Returns the partition ID as a `u64`.
+    pub fn as_u64(&self) -> Option<u64> {
+        self.0.parse().ok()
+    }
+}
 
 impl fmt::Display for PartitionId {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -69,12 +77,12 @@ impl From<i64> for PartitionId {
 /// Marks a position within a specific partition of a source.
 ///
 /// The nature of the position may very depending on the source.
-/// Each source needs to encode it as a String in such a way that
+/// Each source needs to encode it as a `String` in such a way that
 /// the lexicographical order matches the natural order of the
 /// position.
 ///
-/// For instance, for u64 a 0-left-padded decimal representation
-/// can be used. Alternatively a base64 representation of their
+/// For instance, for u64, a 20-left-padded decimal representation
+/// can be used. Alternatively, a base64 representation of their
 /// Big Endian representation can be used.
 ///
 /// The empty string can be used to represent the beginning of the source,
@@ -120,8 +128,8 @@ impl From<String> for Position {
     }
 }
 
-impl<'a> From<&'a str> for Position {
-    fn from(position_str: &'a str) -> Self {
+impl From<&str> for Position {
+    fn from(position_str: &str) -> Self {
         match position_str {
             "" => Position::Beginning,
             _ => Position::Offset(Arc::new(position_str.to_string())),
@@ -129,10 +137,17 @@ impl<'a> From<&'a str> for Position {
     }
 }
 
+/// A partition delta represents an interval (from, to] over a partition of a source.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct PartitionDelta {
+    pub from: Position,
+    pub to: Position,
+}
+
 #[derive(Default, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct IndexCheckpoint {
     #[serde(flatten)]
-    per_source: BTreeMap<String, SourceCheckpoint>,
+    per_source: BTreeMap<SourceId, SourceCheckpoint>,
 }
 
 impl fmt::Debug for IndexCheckpoint {
@@ -143,14 +158,14 @@ impl fmt::Debug for IndexCheckpoint {
     }
 }
 
-impl From<BTreeMap<String, SourceCheckpoint>> for IndexCheckpoint {
-    fn from(per_source: BTreeMap<String, SourceCheckpoint>) -> Self {
-        IndexCheckpoint { per_source }
+impl From<BTreeMap<SourceId, SourceCheckpoint>> for IndexCheckpoint {
+    fn from(per_source: BTreeMap<SourceId, SourceCheckpoint>) -> Self {
+        Self { per_source }
     }
 }
 
 impl IndexCheckpoint {
-    /// Updates a given source checkpoint. Returns whether the checkpoint was modified.
+    /// Updates a checkpoint in place. Returns whether the checkpoint was modified.
     ///
     /// If the checkpoint delta is not compatible with the
     /// current checkpoint, an error is returned, and the
@@ -177,7 +192,7 @@ impl IndexCheckpoint {
         self.per_source.remove(source_id).is_some()
     }
 
-    /// Returns the checkpoint associated to a given source.
+    /// Returns the checkpoint associated with a given source.
     ///
     /// All registered source have an associated checkpoint (that is possibly empty).
     ///
@@ -215,6 +230,11 @@ pub struct SourceCheckpoint {
 }
 
 impl SourceCheckpoint {
+    /// Adds a partition to the checkpoint.
+    pub fn add_partition(&mut self, partition_id: PartitionId, position: Position) {
+        self.per_partition.insert(partition_id, position);
+    }
+
     /// Returns the number of partitions covered by the checkpoint.
     pub fn num_partitions(&self) -> usize {
         self.per_partition.len()
@@ -275,16 +295,16 @@ impl<'de> Deserialize<'de> for SourceCheckpoint {
 /// the checkpoint.
 #[derive(Clone, Debug, Error, Eq, PartialEq, Serialize, Deserialize)]
 #[error(
-    "Incompatible checkpoint delta at partition `{partition_id}`: cur_pos:{current_position:?} \
-     delta_pos:{delta_position_from:?}"
+    "Incompatible checkpoint delta at partition `{partition_id}`: cur_pos:{partition_position:?} \
+     delta_pos:{delta_from_position:?}"
 )]
 pub struct IncompatibleCheckpointDelta {
     /// The partition ID for which the incompatibility has been detected.
     pub partition_id: PartitionId,
-    /// The current position within this partition.
-    pub current_position: Position,
-    /// The origin position for the delta.
-    pub delta_position_from: Position,
+    /// The current position (inclusive) within this partition.
+    pub partition_position: Position,
+    /// The start position (exclusive) for the delta.
+    pub delta_from_position: Position,
 }
 
 #[derive(Clone, Debug, Error, Serialize, Deserialize, PartialEq, Eq)]
@@ -318,7 +338,7 @@ impl SourceCheckpoint {
             .map(|(partition_id, position)| (partition_id.clone(), position.clone()))
     }
 
-    fn check_compatibility(
+    pub fn check_compatibility(
         &self,
         delta: &SourceCheckpointDelta,
     ) -> Result<(), IncompatibleCheckpointDelta> {
@@ -335,8 +355,8 @@ impl SourceCheckpoint {
                 Ordering::Greater => {
                     return Err(IncompatibleCheckpointDelta {
                         partition_id: delta_partition.clone(),
-                        current_position: position.clone(),
-                        delta_position_from: delta_position.from.clone(),
+                        partition_position: position.clone(),
+                        delta_from_position: delta_position.from.clone(),
                     });
                 }
             }
@@ -390,13 +410,6 @@ impl fmt::Debug for SourceCheckpoint {
     }
 }
 
-/// A partition delta represents an interval (from, to] over a partition of a source.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-struct PartitionDelta {
-    pub from: Position,
-    pub to: Position,
-}
-
 /// A checkpoint delta represents a checkpoint update.
 ///
 /// It is shipped as part of a split to convey the update
@@ -407,11 +420,6 @@ struct PartitionDelta {
 /// partition not only a new position, but also an expected
 /// `from` position. This makes it possible to defensively check that
 /// we are not trying to add documents to the index that were already indexed.
-#[derive(Default, Clone, Eq, PartialEq, Serialize, Deserialize)]
-pub struct SourceCheckpointDelta {
-    per_partition: BTreeMap<PartitionId, PartitionDelta>,
-}
-
 #[derive(Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct IndexCheckpointDelta {
     pub source_id: String,
@@ -425,7 +433,7 @@ impl IndexCheckpointDelta {
 
     #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test(source_id: &str, pos_range: Range<u64>) -> Self {
-        IndexCheckpointDelta {
+        Self {
             source_id: source_id.to_string(),
             source_delta: SourceCheckpointDelta::from_range(pos_range),
         }
@@ -437,6 +445,11 @@ impl fmt::Debug for IndexCheckpointDelta {
         write!(f, "{}:{:?}", &self.source_id, self.source_delta)?;
         Ok(())
     }
+}
+
+#[derive(Default, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct SourceCheckpointDelta {
+    per_partition: BTreeMap<PartitionId, PartitionDelta>,
 }
 
 impl fmt::Debug for SourceCheckpointDelta {
@@ -509,6 +522,13 @@ impl SourceCheckpointDelta {
         source_checkpoint
     }
 
+    /// Returns an iterator of partition IDs and associated deltas.
+    pub fn iter(&self) -> impl Iterator<Item = (PartitionId, PartitionDelta)> + '_ {
+        self.per_partition
+            .iter()
+            .map(|(partition_id, partition_delta)| (partition_id.clone(), partition_delta.clone()))
+    }
+
     /// Records a `(from, to]` partition delta for a given partition.
     pub fn record_partition_delta(
         &mut self,
@@ -532,8 +552,8 @@ impl SourceCheckpointDelta {
                 } else {
                     return Err(PartitionDeltaError::from(IncompatibleCheckpointDelta {
                         partition_id: occupied_entry.key().clone(),
-                        current_position: occupied_entry.get().to.clone(),
-                        delta_position_from: from_position,
+                        partition_position: occupied_entry.get().to.clone(),
+                        delta_from_position: from_position,
                     }));
                 }
             }
@@ -775,8 +795,8 @@ mod tests {
             result,
             Err(PartitionDeltaError::from(IncompatibleCheckpointDelta {
                 partition_id: PartitionId::from("a"),
-                current_position: Position::from("00128"),
-                delta_position_from: Position::from("00130")
+                partition_position: Position::from("00128"),
+                delta_from_position: Position::from("00130")
             }))
         );
     }

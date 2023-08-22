@@ -551,7 +551,7 @@ pub mod test_suite {
                 .await
                 .unwrap();
             metastore
-                .publish_splits(index_uid.clone(), &[split_id], &[], None)
+                .publish_splits(index_uid.clone(), &[split_id], &[], None, None)
                 .await
                 .unwrap();
         }
@@ -631,6 +631,7 @@ pub mod test_suite {
                         IndexCheckpointDelta::for_test(&source_id, offsets)
                     }
                     .into(),
+                    None,
                 )
                 .await
                 .unwrap_err();
@@ -656,6 +657,7 @@ pub mod test_suite {
                         IndexCheckpointDelta::for_test(&source_id, offsets)
                     }
                     .into(),
+                    None,
                 )
                 .await
                 .unwrap();
@@ -718,6 +720,7 @@ pub mod test_suite {
                         IndexCheckpointDelta::for_test(&source_id, offsets)
                     }
                     .into(),
+                    None,
                 )
                 .await
                 .unwrap_err();
@@ -739,6 +742,7 @@ pub mod test_suite {
                         IndexCheckpointDelta::for_test(&source_id, offsets)
                     }
                     .into(),
+                    None,
                 )
                 .await
                 .unwrap_err();
@@ -753,7 +757,7 @@ pub mod test_suite {
             let index_uid = metastore.create_index(index_config.clone()).await.unwrap();
 
             let error = metastore
-                .publish_splits(index_uid.clone(), &["split-not-found"], &[], None)
+                .publish_splits(index_uid.clone(), &["split-not-found"], &[], None, None)
                 .await
                 .unwrap_err();
             assert!(matches!(
@@ -774,7 +778,7 @@ pub mod test_suite {
                 .unwrap();
 
             metastore
-                .publish_splits(index_uid.clone(), &[&split_id_1], &[], None)
+                .publish_splits(index_uid.clone(), &[&split_id_1], &[], None, None)
                 .await
                 .unwrap();
 
@@ -800,6 +804,7 @@ pub mod test_suite {
                         IndexCheckpointDelta::for_test(&source_id, offsets)
                     }
                     .into(),
+                    None,
                 )
                 .await
                 .unwrap();
@@ -814,6 +819,7 @@ pub mod test_suite {
                         IndexCheckpointDelta::for_test(&source_id, offsets)
                     }
                     .into(),
+                    None,
                 )
                 .await
                 .unwrap_err();
@@ -847,6 +853,7 @@ pub mod test_suite {
                         IndexCheckpointDelta::for_test(&source_id, offsets)
                     }
                     .into(),
+                    None,
                 )
                 .await
                 .unwrap();
@@ -866,6 +873,7 @@ pub mod test_suite {
                         IndexCheckpointDelta::for_test(&source_id, offsets)
                     }
                     .into(),
+                    None,
                 )
                 .await
                 .unwrap_err();
@@ -899,6 +907,7 @@ pub mod test_suite {
                         IndexCheckpointDelta::for_test(&source_id, offsets)
                     }
                     .into(),
+                    None,
                 )
                 .await
                 .unwrap_err();
@@ -929,6 +938,7 @@ pub mod test_suite {
                         IndexCheckpointDelta::for_test(&source_id, offsets)
                     }
                     .into(),
+                    None,
                 )
                 .await
                 .unwrap();
@@ -943,6 +953,7 @@ pub mod test_suite {
                         IndexCheckpointDelta::for_test(&source_id, offsets)
                     }
                     .into(),
+                    None,
                 )
                 .await
                 .unwrap_err();
@@ -973,6 +984,7 @@ pub mod test_suite {
                         IndexCheckpointDelta::for_test(&source_id, offsets)
                     }
                     .into(),
+                    None,
                 )
                 .await
                 .unwrap();
@@ -992,6 +1004,7 @@ pub mod test_suite {
                         IndexCheckpointDelta::for_test(&source_id, offsets)
                     }
                     .into(),
+                    None,
                 )
                 .await
                 .unwrap_err();
@@ -1027,6 +1040,7 @@ pub mod test_suite {
                         IndexCheckpointDelta::for_test(&source_id, offsets)
                     }
                     .into(),
+                    None,
                 )
                 .await
                 .unwrap();
@@ -1056,6 +1070,7 @@ pub mod test_suite {
                         IndexCheckpointDelta::for_test(&source_id, offsets)
                     }
                     .into(),
+                    None,
                 )
                 .await
                 .unwrap();
@@ -1070,6 +1085,7 @@ pub mod test_suite {
                         IndexCheckpointDelta::for_test(&source_id, offsets)
                     }
                     .into(),
+                    None,
                 )
                 .await
                 .unwrap_err();
@@ -1106,6 +1122,7 @@ pub mod test_suite {
                         IndexCheckpointDelta::for_test(&source_id, offsets)
                     }
                     .into(),
+                    None,
                 )
                 .await
                 .unwrap();
@@ -1120,6 +1137,7 @@ pub mod test_suite {
                         IndexCheckpointDelta::for_test(&source_id, offsets)
                     }
                     .into(),
+                    None,
                 )
                 .await
                 .unwrap_err();
@@ -1184,6 +1202,7 @@ pub mod test_suite {
                             &[&split_id],
                             &[],
                             Some(checkpoint_delta),
+                            None,
                         )
                         .await
                         .unwrap();
@@ -1249,6 +1268,7 @@ pub mod test_suite {
                     &["split-not-found-1"],
                     &["split-not-found-2"],
                     None,
+                    None,
                 )
                 .await
                 .unwrap_err();
@@ -1268,6 +1288,7 @@ pub mod test_suite {
                     index_uid.clone(),
                     &["split-not-found-1"],
                     &["split-not-found-2"],
+                    None,
                     None,
                 )
                 .await
@@ -1290,13 +1311,19 @@ pub mod test_suite {
                 .unwrap();
 
             metastore
-                .publish_splits(index_uid.clone(), &[&split_id_1], &[], None)
+                .publish_splits(index_uid.clone(), &[&split_id_1], &[], None, None)
                 .await
                 .unwrap();
 
             // TODO Source id
             let error = metastore
-                .publish_splits(index_uid.clone(), &[&split_id_2], &[&split_id_1], None)
+                .publish_splits(
+                    index_uid.clone(),
+                    &[&split_id_2],
+                    &[&split_id_1],
+                    None,
+                    None,
+                )
                 .await
                 .unwrap_err();
             assert!(matches!(
@@ -1320,7 +1347,13 @@ pub mod test_suite {
                 .unwrap();
 
             metastore
-                .publish_splits(index_uid.clone(), &[&split_id_1, &split_id_2], &[], None)
+                .publish_splits(
+                    index_uid.clone(),
+                    &[&split_id_1, &split_id_2],
+                    &[],
+                    None,
+                    None,
+                )
                 .await
                 .unwrap();
 
@@ -1331,7 +1364,13 @@ pub mod test_suite {
 
             // TODO source_id
             let error = metastore
-                .publish_splits(index_uid.clone(), &[&split_id_2], &[&split_id_1], None)
+                .publish_splits(
+                    index_uid.clone(),
+                    &[&split_id_2],
+                    &[&split_id_1],
+                    None,
+                    None,
+                )
                 .await
                 .unwrap_err();
             assert!(matches!(
@@ -1355,7 +1394,7 @@ pub mod test_suite {
                 .unwrap();
 
             metastore
-                .publish_splits(index_uid.clone(), &[&split_id_1], &[], None)
+                .publish_splits(index_uid.clone(), &[&split_id_1], &[], None, None)
                 .await
                 .unwrap();
 
@@ -1369,6 +1408,7 @@ pub mod test_suite {
                     index_uid.clone(),
                     &[&split_id_2, &split_id_3],
                     &[&split_id_1],
+                    None,
                     None,
                 ) // TODO source id
                 .await
@@ -1391,7 +1431,7 @@ pub mod test_suite {
                 .unwrap();
 
             metastore
-                .publish_splits(index_uid.clone(), &[&split_id_1], &[], None)
+                .publish_splits(index_uid.clone(), &[&split_id_1], &[], None, None)
                 .await
                 .unwrap();
 
@@ -1406,7 +1446,13 @@ pub mod test_suite {
                 .unwrap();
 
             let error = metastore
-                .publish_splits(index_uid.clone(), &[&split_id_2], &[&split_id_1], None)
+                .publish_splits(
+                    index_uid.clone(),
+                    &[&split_id_2],
+                    &[&split_id_1],
+                    None,
+                    None,
+                )
                 .await
                 .unwrap_err();
             assert!(
@@ -1426,7 +1472,7 @@ pub mod test_suite {
                 .unwrap();
 
             metastore
-                .publish_splits(index_uid.clone(), &[&split_id_1], &[], None)
+                .publish_splits(index_uid.clone(), &[&split_id_1], &[], None, None)
                 .await
                 .unwrap();
 
@@ -1444,6 +1490,7 @@ pub mod test_suite {
                     index_uid.clone(),
                     &[&split_id_2, &split_id_3],
                     &[&split_id_1],
+                    None,
                     None,
                 )
                 .await
@@ -1504,7 +1551,7 @@ pub mod test_suite {
             .await
             .unwrap();
         metastore
-            .publish_splits(index_uid.clone(), &[&split_id_2], &[], None)
+            .publish_splits(index_uid.clone(), &[&split_id_2], &[], None, None)
             .await
             .unwrap();
 
@@ -1520,7 +1567,7 @@ pub mod test_suite {
             .await
             .unwrap();
         metastore
-            .publish_splits(index_uid.clone(), &[&split_id_3], &[], None)
+            .publish_splits(index_uid.clone(), &[&split_id_3], &[], None, None)
             .await
             .unwrap();
 
@@ -1626,7 +1673,7 @@ pub mod test_suite {
             .await
             .unwrap();
         metastore
-            .publish_splits(index_uid.clone(), &[&split_id_1], &[], None)
+            .publish_splits(index_uid.clone(), &[&split_id_1], &[], None, None)
             .await
             .unwrap();
 
@@ -1761,7 +1808,13 @@ pub mod test_suite {
             .unwrap();
 
         metastore
-            .publish_splits(index_uid.clone(), &[&split_id_1, &split_id_2], &[], None)
+            .publish_splits(
+                index_uid.clone(),
+                &[&split_id_1, &split_id_2],
+                &[],
+                None,
+                None,
+            )
             .await
             .unwrap();
 
@@ -2297,6 +2350,7 @@ pub mod test_suite {
                     IndexCheckpointDelta::for_test(&source_id, offsets)
                 }
                 .into(),
+                None,
             )
             .await
             .unwrap();
@@ -2618,7 +2672,7 @@ pub mod test_suite {
                 .await
                 .unwrap();
             metastore
-                .publish_splits(index_uid.clone(), &[&split_id_4], &[], None)
+                .publish_splits(index_uid.clone(), &[&split_id_4], &[], None, None)
                 .await
                 .unwrap();
             // Sleep for 1 second to have different publish timestamps.
@@ -2628,6 +2682,7 @@ pub mod test_suite {
                     index_uid.clone(),
                     &[&split_id_1, &split_id_2, &split_id_5],
                     &[],
+                    None,
                     None,
                 )
                 .await
@@ -2738,7 +2793,13 @@ pub mod test_suite {
                 .await
                 .unwrap();
             metastore
-                .publish_splits(index_uid.clone(), &[&split_id_1, &split_id_2], &[], None)
+                .publish_splits(
+                    index_uid.clone(),
+                    &[&split_id_1, &split_id_2],
+                    &[],
+                    None,
+                    None,
+                )
                 .await
                 .unwrap();
 
@@ -2833,7 +2894,13 @@ pub mod test_suite {
             .expect("Pre-existing staged splits should be updated.");
 
         metastore
-            .publish_splits(index_uid.clone(), &[&split_id_1, &split_id_2], &[], None)
+            .publish_splits(
+                index_uid.clone(),
+                &[&split_id_1, &split_id_2],
+                &[],
+                None,
+                None,
+            )
             .await
             .unwrap();
         let error = metastore
