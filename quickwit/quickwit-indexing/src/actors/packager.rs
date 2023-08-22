@@ -338,8 +338,9 @@ mod tests {
     use quickwit_metastore::checkpoint::IndexCheckpointDelta;
     use quickwit_proto::indexing::IndexingPipelineId;
     use quickwit_proto::IndexUid;
+    use tantivy::directory::MmapDirectory;
     use tantivy::schema::{NumericOptions, Schema, FAST, STRING, TEXT};
-    use tantivy::{doc, DateTime, Index};
+    use tantivy::{doc, DateTime, IndexBuilder, IndexSettings};
     use tracing::Span;
 
     use super::*;
@@ -363,12 +364,16 @@ mod tests {
         let tag_bool =
             schema_builder.add_bool_field("tag_bool", NumericOptions::default().set_indexed());
         let schema = schema_builder.build();
-        let mut index = Index::create_in_dir(split_scratch_directory.path(), schema)?;
-        index.set_tokenizers(quickwit_query::create_default_quickwit_tokenizer_manager());
-        index.set_fast_field_tokenizers(
-            quickwit_query::get_quickwit_fastfield_normalizer_manager().clone(),
-        );
-        let mut index_writer = index.writer_with_num_threads(1, 10_000_000)?;
+        let index_builder = IndexBuilder::new()
+            .settings(IndexSettings::default())
+            .schema(schema)
+            .tokenizers(quickwit_query::create_default_quickwit_tokenizer_manager())
+            .fast_field_tokenizers(
+                quickwit_query::get_quickwit_fastfield_normalizer_manager().clone(),
+            );
+        let index_directory = MmapDirectory::open(split_scratch_directory.path())?;
+        let mut index_writer =
+            index_builder.single_segment_index_writer(index_directory, 100_000_000)?;
         let mut timerange_opt: Option<RangeInclusive<DateTime>> = None;
         let mut num_docs = 0;
         for &timestamp in segment_timestamps {
@@ -396,7 +401,7 @@ mod tests {
                 )
             }
         }
-        index_writer.commit()?;
+        let index = index_writer.finalize()?;
         let pipeline_id = IndexingPipelineId {
             index_uid: IndexUid::new("test-index"),
             source_id: "test-source".to_string(),
