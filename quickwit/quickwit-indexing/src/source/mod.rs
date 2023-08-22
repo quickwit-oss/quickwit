@@ -98,7 +98,6 @@ use serde_json::Value as JsonValue;
 pub use source_factory::{SourceFactory, SourceLoader, TypedSourceFactory};
 use tokio::runtime::Handle;
 use tracing::error;
-use tracing::log::info;
 pub use vec_source::{VecSource, VecSourceFactory};
 pub use void_source::{VoidSource, VoidSourceFactory};
 
@@ -354,12 +353,12 @@ pub async fn check_source_connectivity(source_config: &SourceConfig) -> anyhow::
         }
         #[allow(unused_variables)]
         SourceParams::GcpPubSub(params) => {
-            #[cfg(not(feature = "gcp_pubsub"))]
+            #[cfg(not(feature = "gcp-pubsub"))]
             bail!("Quickwit binary was not compiled with the `gcp_pubsub` feature.");
 
-            #[cfg(feature = "gcp_pubsub")]
+            #[cfg(feature = "gcp-pubsub")]
             {
-                // TODO: gcp_pubsub connectivity
+                gcp_pubsub_source::check_connectivity(params).await?;
                 Ok(())
             }
         }

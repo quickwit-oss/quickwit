@@ -65,6 +65,43 @@ impl TypedSourceFactory for GcpPubSubSourceFactory {
     }
 }
 
+/// Checks whether we can establish a connection.
+pub(crate) async fn check_connectivity(params: &GcpPubSubSourceParams) -> anyhow::Result<()> {
+    connect_gcp_pubsub(params).await?;
+    Ok(())
+}
+
+async fn connect_gcp_pubsub(params: &GcpPubSubSourceParams) -> anyhow::Result<Subscription> {
+    let mut client_config: ClientConfig = match &params.credentials_file {
+        Some(credentials_file) => {
+            let credentials = CredentialsFile::new_from_file(credentials_file.clone())
+                .await
+                .with_context(|| {
+                    format!("Failed to load GCP PubSub credentials file from `{credentials_file}`.")
+                })?;
+            ClientConfig::default().with_credentials(credentials).await
+        }
+        _ => ClientConfig::default().with_auth().await,
+    }
+    .context("Failed to create GCP PubSub client config.")?;
+
+    if params.project_id.is_some() {
+        client_config.project_id = params.project_id.clone()
+    }
+
+    let client = Client::new(client_config)
+        .await
+        .context("Failed to create GCP PubSub client.")?;
+    let subscription = client.subscription(&params.subscription);
+    if !subscription.exists(Some(RetrySetting::default())).await? {
+        anyhow::bail!(
+            "GCP PubSub subscription `{}` does not exist.",
+            &params.subscription
+        );
+    }
+    Ok(subscription)
+}
+
 #[derive(Default)]
 pub struct GcpPubSubSourceState {
     /// Number of bytes processed by the source.
@@ -90,7 +127,8 @@ pub struct GcpPubSubSource {
     // in_flight_batches contains messages that are not ack.
     // batchId is send to the quickwit checkpoint, so that we track until where
     // we should ack when quickit storage has commited the msgs
-    in_flight_batches: VecDeque<(BatchId, MessageIDs)>
+    // TODO: we should increase_ack_deadline for the messageIDs
+    in_flight_batches: VecDeque<(BatchId, MessageIDs)>,
 }
 
 impl fmt::Debug for GcpPubSubSource {
@@ -109,39 +147,16 @@ impl GcpPubSubSource {
         ctx: Arc<SourceExecutionContext>,
         params: GcpPubSubSourceParams,
     ) -> anyhow::Result<Self> {
+        let subscription = connect_gcp_pubsub(&params).await?;
         let subscription_name = params.subscription;
         let backfill_mode_enabled = params.enable_backfill_mode;
         let max_messages_per_pull = params
             .max_messages_per_pull
             .unwrap_or(DEFAULT_MAX_MESSAGES_PER_PULL);
 
-        let mut client_config: ClientConfig = match params.credentials_file {
-            Some(credentials_file) => {
-                let credentials = CredentialsFile::new_from_file(credentials_file.clone())
-                    .await
-                    .with_context(|| {
-                        format!(
-                            "Failed to load GCP PubSub credentials file from `{credentials_file}`."
-                        )
-                    })?;
-                ClientConfig::default().with_credentials(credentials).await
-            }
-            _ => ClientConfig::default().with_auth().await,
-        }
-        .context("Failed to create GCP PubSub client config.")?;
-
-        if params.project_id.is_some() {
-            client_config.project_id = params.project_id
-        }
-
-        let client = Client::new(client_config)
-            .await
-            .context("Failed to create GCP PubSub client.")?;
-        let subscription = client.subscription(&subscription_name);
         // TODO: replace with "<node_id>/<index_id>/<source_id>/<pipeline_ord>"
         let partition_id = append_random_suffix(&format!("gpc-pubsub-{subscription_name}"));
         let partition_id = PartitionId::from(partition_id);
-
         info!(
             index_id=%ctx.index_uid.index_id(),
             source_id=%ctx.source_config.source_id,
@@ -149,9 +164,6 @@ impl GcpPubSubSource {
             max_messages_per_pull=%max_messages_per_pull,
             "Starting GCP PubSub source."
         );
-        if !subscription.exists(Some(RetrySetting::default())).await? {
-            anyhow::bail!("GCP PubSub subscription `{subscription_name}` does not exist.");
-        }
         Ok(Self {
             ctx,
             subscription_name,
@@ -165,8 +177,9 @@ impl GcpPubSubSource {
     }
 
     fn should_exit(&self) -> bool {
-        self.backfill_mode_enabled && self.state.num_consecutive_empty_batches > 3 &&
-            self.in_flight_batches.is_empty()
+        self.backfill_mode_enabled
+            && self.state.num_consecutive_empty_batches > 3
+            && self.in_flight_batches.is_empty()
     }
 }
 
@@ -181,7 +194,6 @@ impl Source for GcpPubSubSource {
         let mut batch: BatchBuilder = BatchBuilder::default();
         let deadline = time::sleep(*quickwit_actors::HEARTBEAT / 2);
         tokio::pin!(deadline);
-        // TODO: ensure we increase_ack_deadline for the items
         loop {
             tokio::select! {
                 resp = self.pull_message_batch(&mut batch) => {
@@ -228,19 +240,23 @@ impl Source for GcpPubSubSource {
         checkpoint: SourceCheckpoint,
         _ctx: &ActorContext<SourceActor>,
     ) -> anyhow::Result<()> {
-        if let Some(Position::Offset(offset_str)) = checkpoint.position_for_partition(&self.partition_id) {
+        if let Some(Position::Offset(offset_str)) =
+            checkpoint.position_for_partition(&self.partition_id)
+        {
             let commited_until = offset_str.parse::<Ulid>()?;
-            while let Some((position, messages)) = self.in_flight_batches.front() {
+            while let Some((position, _)) = self.in_flight_batches.front() {
                 if position > &commited_until {
-                    break
+                    break;
                 }
-                // TODO, we could avoid this clone if we pop and push back if fail to ack ?
+                // if we failed to ack the message, for now we just return an error that will be log
+                // we might consider to push it back to the queue later, to be a bit more resilient
+                // but we need to implements logics to extends ack first
+                let (_, messages) = self.in_flight_batches.pop_front().unwrap();
                 self.subscription
-                    .ack(messages.clone())
+                    .ack(messages)
                     .await
-                    .map_err(anyhow::Error::from)?;
-
-                self.in_flight_batches.pop_front();
+                    .map_err(anyhow::Error::from)
+                    .context("fail to ack some message. they might be duplicated")?
             }
         }
 
@@ -278,8 +294,8 @@ impl GcpPubSubSource {
         let Some(last_message) = messages.last() else {
             return Ok(());
         };
-        let message_id = last_message.message.message_id.clone();
-        let publish_timestamp_millis = last_message
+        let _message_id = last_message.message.message_id.clone();
+        let _publish_timestamp_millis = last_message
             .message
             .publish_time
             .as_ref()
@@ -302,9 +318,7 @@ impl GcpPubSubSource {
         let position_id: Ulid = Ulid::new();
         self.in_flight_batches.push_back((position_id, message_ids));
 
-        let to_position = Position::from(format!(
-            "{position_id}"
-        ));
+        let to_position = Position::from(format!("{position_id}"));
         let from_position = mem::replace(&mut self.state.current_position, to_position.clone());
 
         batch
