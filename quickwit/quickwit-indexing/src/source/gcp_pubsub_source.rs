@@ -30,7 +30,6 @@ use google_cloud_gax::retry::RetrySetting;
 use google_cloud_pubsub::client::{Client, ClientConfig};
 use google_cloud_pubsub::subscription::Subscription;
 use quickwit_actors::{ActorContext, ActorExitStatus, Mailbox};
-use quickwit_common::rand::append_random_suffix;
 use quickwit_config::GcpPubSubSourceParams;
 use quickwit_metastore::checkpoint::{PartitionId, Position, SourceCheckpoint};
 use serde_json::{json, Value as JsonValue};
@@ -154,9 +153,8 @@ impl GcpPubSubSource {
             .max_messages_per_pull
             .unwrap_or(DEFAULT_MAX_MESSAGES_PER_PULL);
 
-        // TODO: replace with "<node_id>/<index_id>/<source_id>/<pipeline_ord>"
-        let partition_id = append_random_suffix(&format!("gpc-pubsub-{subscription_name}"));
-        let partition_id = PartitionId::from(partition_id);
+        // TODO: replace with "<node_id>/<index_id>/<source_id>/<pipeline_ord>" !
+        let partition_id = PartitionId::from(format!("gpc-pubsub-{subscription_name}"));
         info!(
             index_id=%ctx.index_uid.index_id(),
             source_id=%ctx.source_config.source_id,
@@ -291,22 +289,16 @@ impl GcpPubSubSource {
             .await
             .context("Failed to pull messages from subscription.")?;
 
-        let Some(last_message) = messages.last() else {
+        if messages.is_empty() {
             return Ok(());
         };
-        let _message_id = last_message.message.message_id.clone();
-        let _publish_timestamp_millis = last_message
-            .message
-            .publish_time
-            .as_ref()
-            .map(|timestamp| timestamp.seconds * 1_000 + (timestamp.nanos as i64 / 1_000_000))
-            .unwrap_or(0); // TODO: Replace with now UTC millis.
-
+        // TODO: do we want to log some stuff depending on the publish time. Like the "lag" behind
+        // or put it in the position ?
         let mut message_ids: MessageIDs = Vec::with_capacity(messages.len());
         for message in messages {
             self.state.num_messages_processed += 1;
             self.state.num_bytes_processed += message.message.data.len() as u64;
-            message_ids.push(message.message.message_id);
+            message_ids.push(message.ack_id().to_string());
             let doc: Bytes = Bytes::from(message.message.data);
             if doc.is_empty() {
                 self.state.num_invalid_messages += 1;
@@ -341,6 +333,7 @@ mod gcp_pubsub_emulator_tests {
     use google_cloud_pubsub::publisher::Publisher;
     use google_cloud_pubsub::subscription::SubscriptionConfig;
     use quickwit_actors::Universe;
+    use quickwit_common::rand::append_random_suffix;
     use quickwit_config::{SourceConfig, SourceInputFormat, SourceParams};
     use quickwit_metastore::metastore_for_test;
     use quickwit_proto::IndexUid;
@@ -348,7 +341,7 @@ mod gcp_pubsub_emulator_tests {
 
     use super::*;
     use crate::models::RawDocBatch;
-    use crate::source::quickwit_supported_sources;
+    use crate::source::{quickwit_supported_sources, SuggestTruncate};
 
     static GCP_TEST_PROJECT: &str = "quickwit-emulator";
 
@@ -463,8 +456,24 @@ mod gcp_pubsub_emulator_tests {
             source,
             doc_processor_mailbox: doc_processor_mailbox.clone(),
         };
-        let (_source_mailbox, source_handle) = universe.spawn_builder().spawn(source_actor);
+        let (source_mailbox, source_handle) = universe.spawn_builder().spawn(source_actor);
+        let partition = format!("gpc-pubsub-{subscription}");
+        let trigger_suggest_truncate = tokio::spawn(async move {
+            loop {
+                let to_position = Position::from(format!("{}", Ulid::new()));
+                let checkpoint: SourceCheckpoint =
+                    vec![(PartitionId::from(partition.clone()), to_position)]
+                        .into_iter()
+                        .collect();
+
+                let suggest_truncate_req = SuggestTruncate(checkpoint);
+                tokio::time::sleep(Duration::from_millis(50)).await;
+                source_mailbox.ask(suggest_truncate_req).await.unwrap();
+            }
+        });
+
         let (exit_status, exit_state) = source_handle.join().await;
+        trigger_suggest_truncate.abort();
         assert!(exit_status.is_success());
 
         let messages: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
