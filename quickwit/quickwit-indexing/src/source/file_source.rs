@@ -178,8 +178,8 @@ mod tests {
     use quickwit_config::{SourceConfig, SourceInputFormat, SourceParams};
     use quickwit_metastore::checkpoint::{SourceCheckpoint, SourceCheckpointDelta};
     use quickwit_metastore::metastore_for_test;
-    use quickwit_proto::IndexUid;
     use quickwit_proto::indexing::IndexingPipelineId;
+    use quickwit_proto::IndexUid;
 
     use super::*;
     use crate::source::SourceActor;

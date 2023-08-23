@@ -745,8 +745,8 @@ mod kafka_broker_tests {
     use quickwit_config::{IndexConfig, SourceConfig, SourceInputFormat, SourceParams};
     use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
     use quickwit_metastore::{metastore_for_test, Metastore, SplitMetadata};
-    use quickwit_proto::IndexUid;
     use quickwit_proto::indexing::IndexingPipelineId;
+    use quickwit_proto::IndexUid;
     use rdkafka::admin::{AdminClient, AdminOptions, NewTopic, TopicReplication};
     use rdkafka::client::DefaultClientContext;
     use rdkafka::message::ToBytes;

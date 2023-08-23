@@ -228,8 +228,8 @@ mod tests {
     use quickwit_ingest::{init_ingest_api, CommitType, DocBatchBuilder, IngestRequest};
     use quickwit_metastore::checkpoint::{SourceCheckpoint, SourceCheckpointDelta};
     use quickwit_metastore::metastore_for_test;
-    use quickwit_proto::IndexUid;
     use quickwit_proto::indexing::IndexingPipelineId;
+    use quickwit_proto::IndexUid;
 
     use super::*;
     use crate::source::SourceActor;

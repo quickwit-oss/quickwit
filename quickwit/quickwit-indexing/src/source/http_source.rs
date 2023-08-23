@@ -188,9 +188,9 @@ impl Source for HttpSource {
             .find(|(_, partition_counters)| partition_counters.current_offset < u64::MAX)
         else {
             info!("No more partitions to read from, stopping source.");
-            info!("Resetting failing URIs and retrying in 1min");
+            info!("Resetting failing URIs and retrying in 1h");
             self.uri_with_errors.clear();
-            return Ok(Duration::from_secs(60));
+            return Ok(Duration::from_secs(60 * 60));
         };
         let uri = partition.0.as_str();
         let lines_result: anyhow::Result<Lines<BufReader<Box<dyn AsyncRead + Send + Unpin>>>> =
@@ -238,6 +238,8 @@ impl Source for HttpSource {
                 )
                 .unwrap();
             ctx.send_message(doc_processor_mailbox, doc_batch).await?;
+        } else if reach_eof {
+            counters.current_offset = u64::MAX;
         }
         if !reach_eof {
             self.current_reader = Some(lines);
@@ -343,8 +345,8 @@ mod tests {
     use quickwit_config::{SourceConfig, SourceInputFormat, SourceParams};
     use quickwit_metastore::checkpoint::{SourceCheckpoint, SourceCheckpointDelta};
     use quickwit_metastore::metastore_for_test;
-    use quickwit_proto::IndexUid;
     use quickwit_proto::indexing::IndexingPipelineId;
+    use quickwit_proto::IndexUid;
 
     use super::*;
     use crate::source::SourceActor;
@@ -380,7 +382,7 @@ mod tests {
         let universe = Universe::with_accelerated_time();
         let (doc_processor_mailbox, indexer_inbox) = universe.create_test_mailbox();
         let params = HttpSourceParams::from_pattern(Uri::from_well_formed(
-            "https://data.gharchive.org/2015-01-01-{0..2}.json.gz",
+            "https://data.gharchive.org/2012-03-10-{12,15}.json.gz",
         ));
 
         let metastore = metastore_for_test();

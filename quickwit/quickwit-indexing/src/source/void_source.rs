@@ -78,7 +78,8 @@ mod tests {
     use quickwit_config::{SourceInputFormat, SourceParams};
     use quickwit_metastore::checkpoint::SourceCheckpoint;
     use quickwit_metastore::metastore_for_test;
-    use quickwit_proto::{IndexUid, indexing::IndexingPipelineId};
+    use quickwit_proto::indexing::IndexingPipelineId;
+    use quickwit_proto::IndexUid;
     use serde_json::json;
 
     use super::*;
