@@ -51,11 +51,11 @@ impl NodeStateExt for NodeState {
     fn grpc_advertise_addr(&self) -> anyhow::Result<SocketAddr> {
         self.get(GRPC_ADVERTISE_ADDR_KEY)
             .with_context(|| {
-                format!("Could not find key `{GRPC_ADVERTISE_ADDR_KEY}` in Chitchat node state.")
+                format!("could not find key `{GRPC_ADVERTISE_ADDR_KEY}` in Chitchat node state")
             })
             .map(|grpc_advertise_addr_value| {
                 grpc_advertise_addr_value.parse().with_context(|| {
-                    format!("Failed to parse gRPC advertise address `{grpc_advertise_addr_value}`.")
+                    format!("failed to parse gRPC advertise address `{grpc_advertise_addr_value}`")
                 })
             })?
     }
@@ -138,7 +138,7 @@ pub(crate) fn build_cluster_member(
         .get(ENABLED_SERVICES_KEY)
         .ok_or_else(|| {
             anyhow::anyhow!(
-                "Could not find `{}` key in node `{}` state.",
+                "could not find `{}` key in node `{}` state",
                 ENABLED_SERVICES_KEY,
                 chitchat_id.node_id
             )
@@ -164,7 +164,7 @@ pub(crate) fn build_cluster_member(
 fn parse_indexing_task_key(key: &str) -> anyhow::Result<IndexingTask> {
     let (_prefix, reminder) = key.split_once(INDEXING_TASK_SEPARATOR).ok_or_else(|| {
         anyhow!(
-            "Indexing task must contain the delimiter character `:`: `{}`",
+            "indexing task must contain the delimiter character `:`: `{}`",
             key
         )
     })?;

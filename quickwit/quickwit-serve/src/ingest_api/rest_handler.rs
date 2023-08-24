@@ -44,7 +44,7 @@ pub struct IngestApi;
 pub struct IngestApiSchemas;
 
 #[derive(Debug, Error)]
-#[error("Body is not utf-8.")]
+#[error("body is not utf-8")]
 struct InvalidUtf8;
 
 impl warp::reject::Reject for InvalidUtf8 {}

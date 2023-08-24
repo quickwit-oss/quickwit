@@ -237,7 +237,7 @@ impl Source for KinesisSource {
                                 // This should in theory never be `None` but is an `Option<T>` nontheless
                                 // so it is probably best to error rather than skip here in case this changes.
                                 let record_sequence_number = record.sequence_number
-                                    .context("Received Kinesis record without sequence number.")?;
+                                    .context("received Kinesis record without sequence number")?;
 
                                 if record_data.is_empty() {
                                     warn!(
@@ -262,7 +262,7 @@ impl Source for KinesisSource {
                                         .get_mut(&shard_id)
                                         .ok_or_else(|| {
                                             anyhow::anyhow!(
-                                                "Received record from unassigned shard `{}`.", shard_id,
+                                                "received record from unassigned shard `{}`", shard_id,
                                             )
                                         })?;
                                     shard_consumer_state.lag_millis = lag_millis;
@@ -275,7 +275,7 @@ impl Source for KinesisSource {
                                         partition_id,
                                         previous_position,
                                         current_position,
-                                    ).context("Failed to record partition delta.")?;
+                                    ).context("failed to record partition delta")?;
                                 }
                             }
                             if batch_num_bytes >= TARGET_BATCH_NUM_BYTES {
@@ -364,7 +364,7 @@ pub(super) async fn get_region(
     if let Some(endpoint) = sdk_config.endpoint_url() {
         return Ok(RegionOrEndpoint::Endpoint(endpoint.to_string()));
     }
-    bail!("Unable to sniff region from envioronment")
+    bail!("unable to sniff region from envioronment")
 }
 
 #[cfg(all(test, feature = "kinesis-localstack-tests"))]

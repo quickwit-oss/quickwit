@@ -650,7 +650,7 @@ mod tests {
             Err(SearchError::Internal("retry error".to_string())),
         )
         .unwrap_err();
-        assert_eq!(merge_error.to_string(), "Internal error: `error`.");
+        assert_eq!(merge_error.to_string(), "internal error: `error`");
         Ok(())
     }
 

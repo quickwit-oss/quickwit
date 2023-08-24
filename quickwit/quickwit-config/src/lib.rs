@@ -114,8 +114,8 @@ pub fn validate_identifier(label: &str, value: &str) -> anyhow::Result<()> {
         return Ok(());
     }
     bail!(
-        "{label} identifier `{value}` is invalid. Identifiers must match the following regular \
-         expression: `^[a-zA-Z][a-zA-Z0-9-_\\.]{{2,254}}$`."
+        "{label} identifier `{value}` is invalid. identifiers must match the following regular \
+         expression: `^[a-zA-Z][a-zA-Z0-9-_\\.]{{2,254}}$`"
     );
 }
 
@@ -130,8 +130,8 @@ pub fn validate_index_id_pattern(pattern: &str) -> anyhow::Result<()> {
         .is_match(pattern)
     {
         bail!(
-            "Index ID pattern `{pattern}` is invalid. Patterns must match the following regular \
-             expression: `^[a-zA-Z\\*][a-zA-Z0-9-_\\.\\*]{{0,254}}$`."
+            "index ID pattern `{pattern}` is invalid. patterns must match the following regular \
+             expression: `^[a-zA-Z\\*][a-zA-Z0-9-_\\.\\*]{{0,254}}$`"
         );
     }
 
@@ -139,15 +139,15 @@ pub fn validate_index_id_pattern(pattern: &str) -> anyhow::Result<()> {
     // as multiple stars does not bring any value.
     if pattern.contains("**") {
         bail!(
-            "Index ID pattern `{pattern}` is invalid. Patterns must not contain multiple \
-             consecutive `*`."
+            "index ID pattern `{pattern}` is invalid. patterns must not contain multiple \
+             consecutive `*`"
         );
     }
 
     // If there is no star in the pattern, we need at least 3 characters.
     if !pattern.contains('*') && pattern.len() < 3 {
         bail!(
-            "Index ID pattern `{pattern}` is invalid. An index ID must have at least 3 characters."
+            "index ID pattern `{pattern}` is invalid. an index ID must have at least 3 characters"
         );
     }
 
@@ -157,8 +157,8 @@ pub fn validate_index_id_pattern(pattern: &str) -> anyhow::Result<()> {
 pub fn validate_node_id(node_id: &str) -> anyhow::Result<()> {
     if !is_valid_hostname(node_id) {
         bail!(
-            "Node identifier `{node_id}` is invalid. Node identifiers must be valid short \
-             hostnames (see RFC 1123)."
+            "node identifier `{node_id}` is invalid. node identifiers must be valid short \
+             hostnames (see RFC 1123)"
         );
     }
     Ok(())
@@ -183,12 +183,12 @@ impl ConfigFormat {
     pub fn sniff_from_uri(uri: &Uri) -> anyhow::Result<ConfigFormat> {
         let extension_str: &str = uri.extension().with_context(|| {
             format!(
-                "Failed to read config file `{uri}`: file extension is missing. Supported file \
-                 formats and extensions are JSON (.json), TOML (.toml), and YAML (.yaml or .yml)."
+                "failed to read config file `{uri}`: file extension is missing. supported file \
+                 formats and extensions are JSON (.json), TOML (.toml), and YAML (.yaml or .yml)"
             )
         })?;
         ConfigFormat::from_str(extension_str)
-            .with_context(|| format!("Failed to identify configuration file format {uri}."))
+            .with_context(|| format!("failed to identify configuration file format {uri}"))
     }
 
     pub fn parse<T>(&self, payload: &[u8]) -> anyhow::Result<T>
@@ -197,31 +197,31 @@ impl ConfigFormat {
             ConfigFormat::Json => {
                 let mut json_value: JsonValue =
                     serde_json::from_reader(StripComments::new(payload))?;
-                let version_value = json_value.get_mut("version").context("Missing version.")?;
+                let version_value = json_value.get_mut("version").context("missing version")?;
                 if let Some(version_number) = version_value.as_u64() {
                     warn!("`version` is supposed to be a string.");
                     *version_value = JsonValue::String(version_number.to_string());
                 }
-                serde_json::from_value(json_value).context("Failed to read JSON file.")
+                serde_json::from_value(json_value).context("failed to read JSON file")
             }
             ConfigFormat::Toml => {
                 let payload_str = std::str::from_utf8(payload)
-                    .context("Configuration file contains invalid UTF-8 characters.")?;
+                    .context("configuration file contains invalid UTF-8 characters")?;
                 let mut toml_value: toml::Value =
-                    toml::from_str(payload_str).context("Failed to read TOML file.")?;
-                let version_value = toml_value.get_mut("version").context("Missing version.")?;
+                    toml::from_str(payload_str).context("failed to read TOML file")?;
+                let version_value = toml_value.get_mut("version").context("missing version")?;
                 if let Some(version_number) = version_value.as_integer() {
                     warn!("`version` is supposed to be a string.");
                     *version_value = toml::Value::String(version_number.to_string());
                     let reserialized = toml::to_string(version_value)
-                        .context("Failed to reserialize toml config.")?;
-                    toml::from_str(&reserialized).context("Failed to read TOML file.")
+                        .context("failed to reserialize toml config")?;
+                    toml::from_str(&reserialized).context("failed to read TOML file")
                 } else {
-                    toml::from_str(payload_str).context("Failed to read TOML file.")
+                    toml::from_str(payload_str).context("failed to read TOML file")
                 }
             }
             ConfigFormat::Yaml => {
-                serde_yaml::from_slice(payload).context("Failed to read YAML file.")
+                serde_yaml::from_slice(payload).context("failed to read YAML file")
             }
         }
     }
@@ -236,8 +236,8 @@ impl FromStr for ConfigFormat {
             "toml" => Ok(Self::Toml),
             "yaml" | "yml" => Ok(Self::Yaml),
             _ => bail!(
-                "File extension `.{ext}` is not supported. Supported file formats and extensions \
-                 are JSON (.json), TOML (.toml), and YAML (.yaml or .yml).",
+                "file extension `.{ext}` is not supported. supported file formats and extensions \
+                 are JSON (.json), TOML (.toml), and YAML (.yaml or .yml)",
             ),
         }
     }
@@ -283,6 +283,6 @@ mod tests {
         assert!(validate_index_id_pattern("foo!")
             .unwrap_err()
             .to_string()
-            .contains("Index ID pattern `foo!` is invalid."));
+            .contains("index ID pattern `foo!` is invalid."));
     }
 }

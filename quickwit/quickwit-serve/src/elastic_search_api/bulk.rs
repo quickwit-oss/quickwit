@@ -37,9 +37,9 @@ use crate::with_arg;
 
 #[derive(Error, Debug)]
 pub enum IngestRestApiError {
-    #[error("Failed to parse action `{0}`.")]
+    #[error("failed to parse action `{0}`")]
     BulkInvalidAction(String),
-    #[error("Failed to parse source `{0}`.")]
+    #[error("failed to parse source `{0}`")]
     BulkInvalidSource(String),
     #[error(transparent)]
     IngestApi(#[from] IngestServiceError),
@@ -94,7 +94,7 @@ async fn elastic_ingest_bulk(
         let action = serde_json::from_slice::<BulkAction>(line)
             .map_err(|error| IngestRestApiError::BulkInvalidAction(error.to_string()))?;
         let source = lines.next().ok_or_else(|| {
-            IngestRestApiError::BulkInvalidSource("Expected source for the action.".to_string())
+            IngestRestApiError::BulkInvalidSource("expected source for the action".to_string())
         })?;
         // when ingesting on /my-index/_bulk, if _index: is set to something else than my-index,
         // ES honors it and create the doc in the requested index. That is, `my-index` is a default

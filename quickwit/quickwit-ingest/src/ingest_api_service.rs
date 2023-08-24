@@ -81,7 +81,7 @@ async fn get_or_initialize_partition_id(dir_path: &Path) -> crate::Result<String
     let partition_id_path = dir_path.join(PARTITION_ID_PATH);
     if let Ok(partition_id_bytes) = tokio::fs::read(&partition_id_path).await {
         let partition_id: &str = std::str::from_utf8(&partition_id_bytes).map_err(|_| {
-            let msg = format!("Partition key ({partition_id_bytes:?}) is not utf8");
+            let msg = format!("partition key ({partition_id_bytes:?}) is not utf8");
             IngestServiceError::Corruption(msg)
         })?;
         return Ok(partition_id.to_string());

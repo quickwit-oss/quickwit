@@ -191,9 +191,9 @@ pub async fn serve_quickwit(
             .map_err(|_| {
                 error!("No metastore service found among cluster members, stopping server.");
                 anyhow!(
-                    "Failed to start server: no metastore service was found among cluster \
-                     members. Try running Quickwit with additional metastore service `quickwit \
-                     run --service metastore`."
+                    "failed to start server: no metastore service was found among cluster \
+                     members. try running quickwit with additional metastore service `quickwit \
+                     run --service metastore`"
                 )
             })?;
         let balance_channel =
@@ -881,7 +881,7 @@ mod tests {
             if *metastore_readiness_rx.borrow() {
                 Ok(())
             } else {
-                Err(anyhow::anyhow!("Metastore not ready"))
+                Err(anyhow::anyhow!("metastore not ready"))
             }
         });
         let (grpc_readiness_trigger_tx, grpc_readiness_signal_rx) = oneshot::channel();

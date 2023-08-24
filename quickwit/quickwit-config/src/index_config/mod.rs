@@ -241,7 +241,7 @@ impl RetentionPolicy {
     pub fn retention_period(&self) -> anyhow::Result<Duration> {
         parse_duration(&self.retention_period).with_context(|| {
             format!(
-                "Failed to parse retention period `{}`.",
+                "failed to parse retention period `{}`",
                 self.retention_period
             )
         })
@@ -252,7 +252,7 @@ impl RetentionPolicy {
 
         Schedule::from_str(&evaluation_schedule).with_context(|| {
             format!(
-                "Failed to parse retention evaluation schedule `{}`.",
+                "failed to parse retention evaluation schedule `{}`",
                 self.evaluation_schedule
             )
         })
@@ -751,7 +751,7 @@ mod tests {
         assert!(parsing_config_error
             .root_cause()
             .to_string()
-            .contains("Failed to parse human-readable duration `x`"));
+            .contains("failed to parse human-readable duration `x`"));
     }
 
     #[test]
@@ -816,7 +816,7 @@ mod tests {
                 };
                 assert_eq!(
                     retention_policy.retention_period().unwrap_err().to_string(),
-                    "Failed to parse retention period `foo`."
+                    "failed to parse retention period `foo`"
                 );
             }
         }

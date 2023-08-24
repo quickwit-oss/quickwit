@@ -46,7 +46,7 @@ async fn test_suite_on_azure_storage() -> anyhow::Result<()> {
     );
     quickwit_storage::storage_test_single_part_upload(&mut object_storage)
         .await
-        .context("Test single-part upload failed.")?;
+        .context("test single-part upload failed")?;
 
     object_storage.set_policy(MultiPartPolicy {
         // On azure, block size is limited between 64KB and 100MB.
@@ -58,7 +58,7 @@ async fn test_suite_on_azure_storage() -> anyhow::Result<()> {
     });
     quickwit_storage::storage_test_multi_part_upload(&mut object_storage)
         .await
-        .context("Test multipart upload failed.")?;
+        .context("test multipart upload failed")?;
 
     // Teardown container.
     container_client.delete().into_future().await?;

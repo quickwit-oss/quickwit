@@ -225,13 +225,13 @@ impl ReplicationTask {
     ) -> IngestV2Result<ReplicateResponse> {
         if replicate_request.leader_id != self.leader_id {
             return Err(IngestV2Error::Internal(format!(
-                "Invalid argument: expected leader ID `{}`, got `{}`.",
+                "invalid argument: expected leader ID `{}`, got `{}`",
                 self.leader_id, replicate_request.leader_id
             )));
         }
         if replicate_request.follower_id != self.follower_id {
             return Err(IngestV2Error::Internal(format!(
-                "Invalid argument: expected follower ID `{}`, got `{}`.",
+                "invalid argument: expected follower ID `{}`, got `{}`",
                 self.follower_id, replicate_request.follower_id
             )));
         }
@@ -327,8 +327,8 @@ impl ReplicationTask {
 
             if replica_position_inclusive != to_position_inclusive {
                 return Err(IngestV2Error::Internal(format!(
-                    "Bad replica position: expected {to_position_inclusive:?}, got \
-                     {replica_position_inclusive:?}."
+                    "bad replica position: expected {to_position_inclusive:?}, got \
+                     {replica_position_inclusive:?}"
                 )));
             }
             replica_shard.set_replica_position_inclusive(replica_position_inclusive);

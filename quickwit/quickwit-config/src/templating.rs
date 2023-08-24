@@ -36,7 +36,7 @@ static TEMPLATE_ENV_VAR_CAPTURE: Lazy<Regex> = Lazy::new(|| {
 
 pub fn render_config(config_content: &[u8]) -> Result<String> {
     let template_str = std::str::from_utf8(config_content)
-        .context("Config file contains invalid UTF-8 characters.")?;
+        .context("config file contains invalid UTF-8 characters")?;
 
     let mut values = HashMap::new();
 
@@ -77,8 +77,8 @@ pub fn render_config(config_content: &[u8]) -> Result<String> {
                     default_value
                 } else {
                     bail!(
-                        "Failed to render config file template: environment variable \
-                         `{env_var_key}` is not set and no default value is provided."
+                        "failed to render config file template: environment variable \
+                         `{env_var_key}` is not set and no default value is provided"
                     );
                 }
             };
@@ -88,7 +88,7 @@ pub fn render_config(config_content: &[u8]) -> Result<String> {
     let template = Template::new(template_str).with_regex(&TEMPLATE_ENV_VAR_CAPTURE);
     let rendered = template
         .render_string(&values)
-        .context("Failed to render config file template.")?;
+        .context("failed to render config file template")?;
     Ok(rendered)
 }
 

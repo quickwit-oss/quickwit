@@ -52,7 +52,7 @@ pub async fn root_search_stream(
 
     let doc_mapper = build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)
         .map_err(|err| {
-            SearchError::Internal(format!("Failed to build doc mapper. Cause: {err}"))
+            SearchError::Internal(format!("failed to build doc mapper. cause: {err}"))
         })?;
 
     let query_ast: QueryAst = serde_json::from_str(&search_stream_request.query_ast)
@@ -84,7 +84,7 @@ pub async fn root_search_stream(
     .await?;
 
     let doc_mapper_str = serde_json::to_string(&doc_mapper).map_err(|err| {
-        SearchError::Internal(format!("Failed to serialize doc mapper: Cause {err}"))
+        SearchError::Internal(format!("failed to serialize doc mapper: cause {err}"))
     })?;
 
     let index_uri: &Uri = &index_config.index_uri;
@@ -296,7 +296,7 @@ mod tests {
         let stream = root_search_stream(request, &metastore, cluster_client).await?;
         let result: Result<Vec<_>, SearchError> = stream.try_collect().await;
         assert_eq!(result.is_err(), true);
-        assert_eq!(result.unwrap_err().to_string(), "Internal error: `error`.");
+        assert_eq!(result.unwrap_err().to_string(), "internal error: `error`");
         Ok(())
     }
 

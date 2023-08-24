@@ -92,7 +92,7 @@ impl ScrollContext {
 
     pub fn load(payload: &[u8]) -> anyhow::Result<Self> {
         let scroll_context =
-            serde_json::from_slice(payload).context("Failed to deserialize context")?;
+            serde_json::from_slice(payload).context("failed to deserialize context")?;
         Ok(scroll_context)
     }
 
@@ -200,7 +200,7 @@ impl FromStr for ScrollKeyAndStartOffset {
             .decode(scroll_id_str)
             .map_err(|_| "scroll id is invalid base64.")?;
         if base64_decoded.len() != 16 + 8 + 4 {
-            return Err("scroll id payload is not 8 bytes long.");
+            return Err("scroll id payload is not 8 bytes long");
         }
         let (scroll_ulid_bytes, from_bytes, max_hits_bytes) = (
             &base64_decoded[..16],

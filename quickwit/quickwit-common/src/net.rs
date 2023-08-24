@@ -127,7 +127,7 @@ impl FromStr for Host {
         if is_valid_hostname(host) {
             return Ok(Self::Hostname(host.to_string()));
         }
-        bail!("Failed to parse host: `{host}`.")
+        bail!("failed to parse host: `{host}`")
     }
 }
 
@@ -164,7 +164,7 @@ impl HostAddr {
         }
         let (hostname, port) = if let Some((hostname_str, port_str)) = host_addr.split_once(':') {
             let port_u16 = port_str.parse::<u16>().with_context(|| {
-                format!("Failed to parse address `{host_addr}`: port is invalid.")
+                format!("failed to parse address `{host_addr}`: port is invalid")
             })?;
             (hostname_str, port_u16)
         } else {
@@ -172,7 +172,7 @@ impl HostAddr {
         };
         if !is_valid_hostname(hostname) {
             bail!(
-                "Failed to parse address `{}`: hostname is invalid.",
+                "failed to parse address `{}`: hostname is invalid",
                 host_addr
             )
         }
@@ -272,10 +272,10 @@ pub async fn get_socket_addr<T: ToSocketAddrs + std::fmt::Debug>(
 ) -> anyhow::Result<SocketAddr> {
     lookup_host(addr)
         .await
-        .with_context(|| format!("Failed to parse address or resolve hostname {addr:?}."))?
+        .with_context(|| format!("failed to parse address or resolve hostname {addr:?}"))?
         .next()
         .ok_or_else(|| {
-            anyhow::anyhow!("DNS resolution did not yield any record for hostname {addr:?}.")
+            anyhow::anyhow!("DNS resolution did not yield any record for hostname {addr:?}")
         })
 }
 
@@ -334,7 +334,7 @@ fn _get_hostname(hostname: OsString) -> io::Result<String> {
     } else {
         Err(io::Error::new(
             io::ErrorKind::Other,
-            format!("Invalid hostname: `{hostname_lossy}`."),
+            format!("invalid hostname: `{hostname_lossy}`"),
         ))
     }
 }

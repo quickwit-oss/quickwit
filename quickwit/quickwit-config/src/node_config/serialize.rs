@@ -103,7 +103,7 @@ fn default_advertise_host(listen_ip: &IpAddr) -> anyhow::Result<Host> {
             info!(advertise_address=%private_ip, interface_name=%interface_name, "Using sniffed advertise address.");
             return Ok(Host::from(private_ip));
         }
-        bail!("Listen address `{listen_ip}` is unspecified and advertise address is not set.");
+        bail!("listen address `{listen_ip}` is unspecified and advertise address is not set");
     }
     info!(advertise_address=%listen_ip, "Using listen address as advertise address.");
     Ok(Host::from(*listen_ip))
@@ -248,8 +248,8 @@ impl NodeConfigBuilder {
             .filepath()
             .with_context(|| {
                 format!(
-                    "Data dir must be located on the local file system. Current location: \
-                     `{data_dir_uri}`."
+                    "data dir must be located on the local file system. current location: \
+                     `{data_dir_uri}`"
                 )
             })?
             .to_path_buf();
@@ -851,7 +851,7 @@ mod tests {
         let error = NodeConfig::load(ConfigFormat::Yaml, file.as_bytes())
             .await
             .unwrap_err();
-        assert!(error.to_string().contains("Data dir"));
+        assert!(error.to_string().contains("data dir"));
     }
 
     #[tokio::test]
@@ -929,7 +929,7 @@ mod tests {
             )
             .await
             .unwrap_err();
-            assert!(error.to_string().contains("Data dir must be located"));
+            assert!(error.to_string().contains("data dir must be located"));
         }
     }
 

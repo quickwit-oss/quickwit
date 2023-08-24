@@ -202,7 +202,7 @@ pub fn parse_duration_or_none(duration_with_unit_str: &str) -> anyhow::Result<Ti
     } else {
         humantime::parse_duration(duration_with_unit_str)
             .map(Timeout::new)
-            .context("Failed to parse timeout.")
+            .context("failed to parse timeout")
     }
 }
 
@@ -215,7 +215,7 @@ pub fn start_actor_runtimes(
         || services.contains(&QuickwitService::ControlPlane)
     {
         quickwit_common::runtimes::initialize_runtimes(runtimes_config)
-            .context("Failed to start actor runtimes.")?;
+            .context("failed to start actor runtimes")?;
     }
     Ok(())
 }
@@ -224,11 +224,11 @@ pub fn start_actor_runtimes(
 async fn load_node_config(config_uri: &Uri) -> anyhow::Result<NodeConfig> {
     let config_content = load_file(&StorageResolver::unconfigured(), config_uri)
         .await
-        .context("Failed to load node config.")?;
+        .context("failed to load node config")?;
     let config_format = ConfigFormat::sniff_from_uri(config_uri)?;
     let config = NodeConfig::load(config_format, config_content.as_slice())
         .await
-        .with_context(|| format!("Failed to parse node config `{config_uri}`."))?;
+        .with_context(|| format!("failed to parse node config `{config_uri}`"))?;
     info!(config_uri=%config_uri, config=?config, "Loaded node config.");
     Ok(config)
 }

@@ -47,7 +47,7 @@ fn serde_multikey_inner(_attr: TokenStream, item: TokenStream) -> Result<TokenSt
     let Ok(input) = syn::parse::<ItemStruct>(item) else {
         return Err(Error::new(
             Span::call_site(),
-            "The attribute can only be applied to struct.",
+            "the attribute can only be applied to struct",
         ));
     };
 
@@ -71,7 +71,7 @@ fn generate_main_struct(mut input: ItemStruct) -> Result<TokenStream2, Error> {
     if !deserialize && !serialize {
         return Err(Error::new(
             Span::call_site(),
-            "`serde_multikey` was applied to a non Serialize/Deserialize struct.",
+            "`serde_multikey` was applied to a non Serialize/Deserialize struct",
         ));
     }
 
@@ -167,7 +167,7 @@ fn generate_proxy_struct(mut input: ItemStruct) -> Result<TokenStream2, Error> {
     let Fields::Named(FieldsNamed { brace_token, named }) = input.fields else {
         return Err(Error::new(
             Span::call_site(),
-            "`serde_multikey` was applied to a tuple-struct or an empty struct.",
+            "`serde_multikey` was applied to a tuple-struct or an empty struct",
         ));
     };
     for pair in named.into_pairs() {
@@ -192,13 +192,13 @@ fn generate_proxy_struct(mut input: ItemStruct) -> Result<TokenStream2, Error> {
                 (true, None) => {
                     return Err(Error::new(
                         field_name.span(),
-                        "Structure implement Serialize but no serializer defined",
+                        "structure implement serialize but no serializer defined",
                     ));
                 }
                 (false, Some(_)) => {
                     return Err(Error::new(
                         field_name.span(),
-                        "Structure doesn't implement Serialize but a serializer is defined",
+                        "structure doesn't implement serialize but a serializer is defined",
                     ));
                 }
             }
@@ -210,13 +210,13 @@ fn generate_proxy_struct(mut input: ItemStruct) -> Result<TokenStream2, Error> {
                 (true, None) => {
                     return Err(Error::new(
                         field_name.span(),
-                        "Structure implement Deserialize but no deserializer defined",
+                        "structure implement deserialize but no deserializer defined",
                     ));
                 }
                 (false, Some(_)) => {
                     return Err(Error::new(
                         field_name.span(),
-                        "Structure doesn't implement Deserialize but a deserializer is defined",
+                        "structure doesn't implement deserialize but a deserializer is defined",
                     ));
                 }
             }
@@ -473,14 +473,14 @@ fn parse_attributes(
         let last = multikey_attributes.last().unwrap();
         return Err(Error::new(
             last.pound_token.spans[0],
-            "`serde_multikey` was applied multiple time to the same field.",
+            "`serde_multikey` was applied multiple time to the same field",
         ));
     }
     let options = if let Some(multikey_attribute) = multikey_attributes.pop() {
         let Meta::List(meta_list) = multikey_attribute.meta else {
             return Err(Error::new(
                 multikey_attribute.pound_token.spans[0],
-                "`serde_multikey` require list-style arguments.",
+                "`serde_multikey` require list-style arguments",
             ));
         };
         let mut options: MultiKeyOptions = syn::parse2(meta_list.tokens)?;

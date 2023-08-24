@@ -30,17 +30,17 @@ use tokio::task::JoinError;
 #[allow(missing_docs)]
 #[derive(Error, Debug, Serialize, Deserialize, Clone)]
 pub enum SearchError {
-    #[error("Could not find indexes matching the IDs or patterns `{index_id_patterns:?}`.")]
+    #[error("could not find indexes matching the IDs or patterns `{index_id_patterns:?}`")]
     IndexesNotFound { index_id_patterns: Vec<String> },
-    #[error("Internal error: `{0}`.")]
+    #[error("internal error: `{0}`")]
     Internal(String),
-    #[error("Invalid aggregation request: {0}")]
+    #[error("invalid aggregation request: {0}")]
     InvalidAggregationRequest(String),
-    #[error("Invalid argument: {0}")]
+    #[error("invalid argument: {0}")]
     InvalidArgument(String),
     #[error("{0}")]
     InvalidQuery(String),
-    #[error("Storage not found: `{0}`)")]
+    #[error("storage not found: `{0}`)")]
     StorageResolver(#[from] StorageResolverError),
 }
 
@@ -77,13 +77,13 @@ impl From<TantivyError> for SearchError {
 
 impl From<postcard::Error> for SearchError {
     fn from(error: postcard::Error) -> Self {
-        SearchError::Internal(format!("Postcard error: {error}"))
+        SearchError::Internal(format!("postcard error: {error}"))
     }
 }
 
 impl From<serde_json::Error> for SearchError {
     fn from(serde_error: serde_json::Error) -> Self {
-        SearchError::Internal(format!("Serde error: {serde_error}"))
+        SearchError::Internal(format!("serde error: {serde_error}"))
     }
 }
 
@@ -119,7 +119,7 @@ impl From<MetastoreError> for SearchError {
 
 impl From<JoinError> for SearchError {
     fn from(join_error: JoinError) -> SearchError {
-        SearchError::Internal(format!("Spawned task in root join failed: {join_error}"))
+        SearchError::Internal(format!("spawned task in root join failed: {join_error}"))
     }
 }
 

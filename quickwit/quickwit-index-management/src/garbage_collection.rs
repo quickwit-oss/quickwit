@@ -38,7 +38,7 @@ const DELETE_SPLITS_BATCH_SIZE: usize = 1000;
 /// [`DeleteSplitsError`] describes the errors that occurred during the deletion of splits from
 /// storage and metastore.
 #[derive(Error, Debug)]
-#[error("Failed to delete splits from storage and/or metastore.")]
+#[error("failed to delete splits from storage and/or metastore")]
 pub struct DeleteSplitsError {
     successes: Vec<SplitInfo>,
     storage_error: Option<BulkDeleteError>,
@@ -294,7 +294,7 @@ pub async fn delete_splits_from_storage_and_metastore(
             error!(
                 error=?metastore_error,
                 index_id=index_uid.index_id(),
-                "Failed to delete split(s) {:?} from metastore.",
+                "failed to delete split(s) {:?} from metastore",
                 PrettySample::new(&split_ids, 5),
             );
             let delete_splits_error = DeleteSplitsError {

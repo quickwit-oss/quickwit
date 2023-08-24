@@ -115,7 +115,7 @@ impl Mode {
             (ModeType::Dynamic, Some(dynamic_mapping)) => Mode::Dynamic(dynamic_mapping),
             (ModeType::Dynamic, None) => Mode::default(), // Dynamic with default options
             (_, Some(_)) => anyhow::bail!(
-                "`dynamic_mapping` is only allowed with mode=dynamic. (Here mode=`{:?}`)",
+                "`dynamic_mapping` is only allowed with mode=dynamic. (here mode=`{:?}`)",
                 mode
             ),
         })

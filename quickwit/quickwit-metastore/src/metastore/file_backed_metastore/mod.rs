@@ -340,10 +340,10 @@ impl Metastore for FileBackedMetastore {
             }
         } else if index_exists(&*self.storage, &index_id).await? {
             return Err(MetastoreError::Internal {
-                message: format!("Index {index_id} cannot be created."),
+                message: format!("index {index_id} cannot be created"),
                 cause: format!(
-                    "Index {index_id} is not present in the `indexes_states.json` file but its \
-                     file `{index_id}/metastore.json` is on the storage."
+                    "index {index_id} is not present in the `indexes_states.json` file but its \
+                     file `{index_id}/metastore.json` is on the storage"
                 ),
             });
         }
@@ -594,7 +594,7 @@ impl Metastore for FileBackedMetastore {
             ListIndexesQuery::All => build_regex_set_from_patterns(vec!["*".to_string()]),
         };
         let index_matcher = index_matcher_result.map_err(|error| MetastoreError::Internal {
-            message: "Failed to build RegexSet from index patterns`".to_string(),
+            message: "failed to build regex set from index patterns`".to_string(),
             cause: error.to_string(),
         })?;
 
@@ -699,15 +699,15 @@ async fn get_index_mutex(
     match index_state {
         IndexState::Alive(lazy_index) => lazy_index.get().await,
         IndexState::Creating => Err(MetastoreError::Internal {
-            message: format!("Index `{index_id}` cannot be retrieved."),
-            cause: "Index `{index_id}` is in transitioning state `Creating` and this should not \
-                    happened. Either recreate or delete it."
+            message: format!("index `{index_id}` cannot be retrieved"),
+            cause: "index `{index_id}` is in transitioning state `creating` and this should not \
+                    happened. either recreate or delete it"
                 .to_string(),
         }),
         IndexState::Deleting => Err(MetastoreError::Internal {
-            message: format!("Index `{index_id}` cannot be retrieved."),
-            cause: "Index `{index_id}` is in transitioning state `Deleting` and this should not \
-                    happened. Try to delete it again."
+            message: format!("index `{index_id}` cannot be retrieved"),
+            cause: "index `{index_id}` is in transitioning state `deleting` and this should not \
+                    happened. try to delete it again"
                 .to_string(),
         }),
     }
@@ -720,7 +720,7 @@ async fn get_index_mutex(
 fn build_regex_set_from_patterns(patterns: Vec<String>) -> anyhow::Result<RegexSet> {
     // If there is a match all pattern, no need to go further.
     if patterns.iter().any(|pattern| pattern == "*") {
-        return Ok(RegexSet::new([".*".to_string()]).expect("Regex compilation shouldn't fail"));
+        return Ok(RegexSet::new([".*".to_string()]).expect("regex compilation shouldn't fail"));
     }
     let regexes: Vec<String> = patterns
         .iter()
@@ -880,7 +880,7 @@ mod tests {
             .returning(move |path| block_on(ram_storage.get_all(path)));
         mock_storage.expect_put().times(1).returning(|_uri, _| {
             Err(StorageErrorKind::Io
-                .with_error(anyhow::anyhow!("Oops. Some network problem maybe?")))
+                .with_error(anyhow::anyhow!("oops. perhaps there are some network problems")))
         });
         let metastore = FileBackedMetastore::for_test(Arc::new(mock_storage));
 
@@ -1159,7 +1159,7 @@ mod tests {
             .returning(move |path, _| {
                 assert!(path == Path::new("indexes_states.json"));
                 Err(StorageErrorKind::Io
-                    .with_error(anyhow::anyhow!("Oops. Some network problem maybe?")))
+                    .with_error(anyhow::anyhow!("oops. perhaps there are some network problems")))
             });
         mock_storage
             .expect_get_all()
@@ -1205,7 +1205,7 @@ mod tests {
                     return block_on(ram_storage_clone.put(path, put_payload));
                 }
                 Err(StorageErrorKind::Io
-                    .with_error(anyhow::anyhow!("Oops. Some network problem maybe?")))
+                    .with_error(anyhow::anyhow!("oops. perhaps there are some network problems")))
             });
         mock_storage
             .expect_get_all()
@@ -1272,7 +1272,7 @@ mod tests {
                 if path == Path::new("indexes_states.json") {
                     if indexes_json_valid_put == 0 {
                         return Err(StorageErrorKind::Io
-                            .with_error(anyhow::anyhow!("Oops. Some network problem maybe?")));
+                            .with_error(anyhow::anyhow!("oops. perhaps there are some network problems")));
                     }
                     indexes_json_valid_put -= 1;
                 }
@@ -1317,7 +1317,7 @@ mod tests {
             .expect_delete()
             .returning(|_| {
                 Err(StorageErrorKind::Io
-                    .with_error(anyhow::anyhow!("Oops. Some network problem maybe?")))
+                    .with_error(anyhow::anyhow!("oops. perhaps there are some network problems")))
             });
         mock_storage
             .expect_put()
@@ -1368,7 +1368,7 @@ mod tests {
                 if path == Path::new("indexes_states.json") {
                     if indexes_json_valid_put == 0 {
                         return Err(StorageErrorKind::Io
-                            .with_error(anyhow::anyhow!("Oops. Some network problem maybe?")));
+                            .with_error(anyhow::anyhow!("oops. perhaps there are some network problems")));
                     }
                     indexes_json_valid_put -= 1;
                 }
@@ -1552,8 +1552,8 @@ mod tests {
             &build_regex_exprs_from_pattern("index-**-1")
                 .unwrap_err()
                 .to_string(),
-            "Index ID pattern `index-**-1` is invalid. Patterns must not contain multiple \
-             consecutive `*`.",
+            "index ID pattern `index-**-1` is invalid. patterns must not contain multiple \
+             consecutive `*`",
         );
         assert!(build_regex_exprs_from_pattern("-index-1").is_err());
     }

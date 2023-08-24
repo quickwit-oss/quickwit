@@ -108,7 +108,7 @@ impl MetastoreGrpcClient {
                 let client = client.take();
                 async move {
                     client.ok_or_else(|| {
-                        std::io::Error::new(std::io::ErrorKind::Other, "Client already taken")
+                        std::io::Error::new(std::io::ErrorKind::Other, "client already taken")
                     })
                 }
             }))
@@ -131,7 +131,7 @@ impl MetastoreGrpcClient {
 impl Metastore for MetastoreGrpcClient {
     async fn check_connectivity(&self) -> anyhow::Result<()> {
         if self.balance_channel.num_connections() == 0 {
-            bail!("The metastore service is unavailable.");
+            bail!("the metastore service is unavailable");
         }
         Ok(())
     }
@@ -562,8 +562,8 @@ pub fn parse_grpc_error(grpc_error: &Status) -> MetastoreError {
 
     if elapsed_error_opt.is_some() {
         return MetastoreError::Connection {
-            message: "gRPC request timeout triggered by the channel timeout. This can happens \
-                      when tonic channel has no registered endpoints."
+            message: "grpc request timeout triggered by the channel timeout. this can happens \
+                      when tonic channel has no registered endpoints"
                 .to_string(),
         };
     }

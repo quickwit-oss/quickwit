@@ -60,7 +60,7 @@ impl<'de> Deserialize<'de> for TraceId {
 
         if b64trace_id.len() != TraceId::BASE64_LENGTH {
             let message = format!(
-                "Base64 trace ID must be {} bytes long, got {}.",
+                "base64 trace ID must be {} bytes long, got {}",
                 TraceId::BASE64_LENGTH,
                 b64trace_id.len()
             );
@@ -72,7 +72,7 @@ impl<'de> Deserialize<'de> for TraceId {
             // estimate and fails.
             .decode_slice_unchecked(b64trace_id.as_bytes(), &mut trace_id)
             .map_err(|error| {
-                let message = format!("Failed to decode Base64 trace ID: {:?}.", error);
+                let message = format!("failed to decode base64 trace ID: {:?}", error);
                 de::Error::custom(message)
             })?;
         Ok(TraceId(trace_id))
@@ -80,7 +80,7 @@ impl<'de> Deserialize<'de> for TraceId {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("Trace ID must be 16 bytes long, got {0}.")]
+#[error("trace ID must be 16 bytes long, got {0}")]
 pub struct TryFromTraceIdError(usize);
 
 impl TryFrom<&[u8]> for TraceId {

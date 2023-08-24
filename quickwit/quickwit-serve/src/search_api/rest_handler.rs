@@ -136,7 +136,7 @@ fn deserialize_non_empty_string<'de, D>(deserializer: D) -> Result<String, D::Er
 where D: Deserializer<'de> {
     let value = String::deserialize(deserializer)?;
     if value.is_empty() {
-        return Err(de::Error::custom("Expected a non-empty string field."));
+        return Err(de::Error::custom("expected a non-empty string field"));
     }
     Ok(value)
 }
@@ -606,8 +606,8 @@ mod tests {
             .unwrap();
         assert_eq!(
             rejection.0,
-            "Index ID pattern `quickwit-demo-index**` is invalid. Patterns must not contain \
-             multiple consecutive `*`."
+            "index ID pattern `quickwit-demo-index**` is invalid. patterns must not contain \
+             multiple consecutive `*`"
         );
     }
 
@@ -1046,7 +1046,7 @@ mod tests {
         let parse_error = rejection.find::<serde_qs::Error>().unwrap();
         assert_eq!(
             parse_error.to_string(),
-            "Expected a non-empty string field."
+            "expected a non-empty string field"
         );
     }
 

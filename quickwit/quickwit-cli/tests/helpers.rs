@@ -240,7 +240,7 @@ pub async fn create_test_env(
         resource_files["index_config"].display()
     ));
     let cluster_endpoint = Url::parse(&format!("http://localhost:{rest_listen_port}"))
-        .context("Failed to parse cluster endpoint.")?;
+        .context("failed to parse cluster endpoint")?;
 
     Ok(TestEnv {
         _temp_dir: temp_dir,

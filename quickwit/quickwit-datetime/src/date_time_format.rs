@@ -52,7 +52,7 @@ impl FromStr for StrptimeParser {
             strptime_format_str.to_lowercase().contains("%z"),
             |strptime_format: &String| {
                 parse_to_format_item(strptime_format).map_err(|err| {
-                    format!("Invalid format specification `{strptime_format}`. Error: {err}.")
+                    format!("invalid format specification `{strptime_format}`. error: {err}.")
                 })
             },
         )
@@ -183,8 +183,8 @@ impl FromStr for DateTimeInputFormat {
             _ => {
                 if !is_strftime_formatting(date_time_format_str) {
                     return Err(format!(
-                        "Unknown input format: `{date_time_format_str}`. A custom date time \
-                         format must contain at least one `strftime` special characters."
+                        "unknown input format: `{date_time_format_str}`. a custom date time \
+                         format must contain at least one `strftime` special characters"
                     ));
                 }
                 DateTimeInputFormat::Strptime(StrptimeParser::from_str(date_time_format_str)?)
@@ -285,8 +285,8 @@ impl FromStr for DateTimeOutputFormat {
             _ => {
                 if !is_strftime_formatting(date_time_format_str) {
                     return Err(format!(
-                        "Unknown output format: `{date_time_format_str}`. A custom date time \
-                         format must contain at least one `strftime` special characters."
+                        "unknown output format: `{date_time_format_str}`. a custom date time \
+                         format must contain at least one `strftime` special characters"
                     ));
                 }
                 DateTimeOutputFormat::Strptime(StrptimeParser::from_str(date_time_format_str)?)
@@ -417,7 +417,7 @@ mod tests {
             let error_str = DateTimeInputFormat::from_str(format)
                 .unwrap_err()
                 .to_string();
-            assert!(error_str.contains(&format!("Unknown input format: `{format}`.")));
+            assert!(error_str.contains(&format!("unknown input format: `{format}`")));
         }
     }
 
@@ -428,7 +428,7 @@ mod tests {
             let error_str = DateTimeOutputFormat::from_str(format)
                 .unwrap_err()
                 .to_string();
-            assert!(error_str.contains(&format!("Unknown output format: `{format}`.")));
+            assert!(error_str.contains(&format!("unknown output format: `{format}`")));
         }
     }
 }

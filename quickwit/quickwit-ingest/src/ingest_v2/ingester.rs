@@ -205,7 +205,7 @@ impl IngesterService for Ingester {
     ) -> IngestV2Result<PersistResponse> {
         if persist_request.leader_id != self.self_node_id {
             return Err(IngestV2Error::Internal(format!(
-                "Routing error: request was sent to ingester node `{}` instead of `{}`.",
+                "routing error: request was sent to ingester node `{}` instead of `{}`",
                 self.self_node_id, persist_request.leader_id,
             )));
         }
@@ -366,7 +366,7 @@ impl IngesterService for Ingester {
         let open_replication_stream_request = syn_replication_stream
             .next()
             .await
-            .ok_or_else(|| IngestV2Error::Internal("Syn replication stream aborted.".to_string()))?
+            .ok_or_else(|| IngestV2Error::Internal("syn replication stream aborted".to_string()))?
             .into_open_request()
             .expect("The first message should be an open replication stream request.");
 
@@ -380,7 +380,7 @@ impl IngesterService for Ingester {
 
         let Entry::Vacant(entry) = state_guard.replication_tasks.entry(leader_id.clone()) else {
             return Err(IngestV2Error::Internal(format!(
-                "A replication stream betwen {leader_id} and {follower_id} is already opened."
+                "a replication stream betwen {leader_id} and {follower_id} is already opened"
             )));
         };
         let (ack_replication_stream_tx, ack_replication_stream) = ServiceStream::new_bounded(5);
@@ -414,7 +414,7 @@ impl IngesterService for Ingester {
             .read()
             .await
             .find_shard_status_rx(&queue_id)
-            .ok_or_else(|| IngestV2Error::Internal("Shard not found.".to_string()))?;
+            .ok_or_else(|| IngestV2Error::Internal("shard not found".to_string()))?;
         let service_stream = FetchTask::spawn(
             open_fetch_stream_request,
             mrecordlog,
@@ -450,7 +450,7 @@ impl IngesterService for Ingester {
     ) -> IngestV2Result<TruncateResponse> {
         if truncate_request.leader_id != self.self_node_id {
             return Err(IngestV2Error::Internal(format!(
-                "Routing error: expected ingester `{}`, got `{}`.",
+                "routing error: expected ingester `{}`, got `{}`",
                 truncate_request.leader_id, self.self_node_id
             )));
         }
@@ -467,7 +467,7 @@ impl IngesterService for Ingester {
                     .truncate(&queue_id, subrequest.to_position_inclusive)
                     .await
                     .map_err(|error| {
-                        IngestV2Error::Internal(format!("Failed to truncate: {error:?}"))
+                        IngestV2Error::Internal(format!("failed to truncate: {error:?}"))
                     })?;
             }
             if let Some(replica_shard) = state_guard.replica_shards.get(&queue_id) {

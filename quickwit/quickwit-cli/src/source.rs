@@ -209,7 +209,7 @@ impl SourceCliCommand {
     pub fn parse_cli_args(mut matches: ArgMatches) -> anyhow::Result<Self> {
         let (subcommand, submatches) = matches
             .remove_subcommand()
-            .context("Failed to parse source subcommand.")?;
+            .context("failed to parse source subcommand")?;
         match subcommand.as_str() {
             "create" => Self::parse_create_args(submatches).map(Self::CreateSource),
             "enable" => {
@@ -224,7 +224,7 @@ impl SourceCliCommand {
             "reset-checkpoint" => {
                 Self::parse_reset_checkpoint_args(submatches).map(Self::ResetCheckpoint)
             }
-            _ => bail!("Unknown source subcommand `{subcommand}`."),
+            _ => bail!("unknown source subcommand `{subcommand}`"),
         }
     }
 
@@ -348,7 +348,7 @@ async fn toggle_source_cli(args: ToggleSourceArgs) -> anyhow::Result<()> {
         .sources(&args.index_id)
         .toggle(&args.source_id, args.enable)
         .await
-        .context("Failed to update source")?;
+        .context("failed to update source")?;
 
     let toggled_state_name = if args.enable { "enabled" } else { "disabled" };
     println!(
@@ -376,7 +376,7 @@ async fn delete_source_cli(args: DeleteSourceArgs) -> anyhow::Result<()> {
         .sources(&args.index_id)
         .delete(&args.source_id)
         .await
-        .context("Failed to delete source.")?;
+        .context("failed to delete source")?;
     println!("{} Source successfully deleted.", "✔".color(GREEN_COLOR));
     Ok(())
 }
@@ -388,7 +388,7 @@ async fn describe_source_cli(args: DescribeSourceArgs) -> anyhow::Result<()> {
         .indexes()
         .get(&args.index_id)
         .await
-        .context("Failed to fetch index metadata.")?;
+        .context("failed to fetch index metadata")?;
     let source_checkpoint = index_metadata
         .checkpoint
         .source_checkpoint(&args.source_id)
@@ -414,7 +414,7 @@ where
     let source = sources
         .into_iter()
         .find(|source| source.source_id == source_id)
-        .with_context(|| format!("Source `{source_id}` does not exist."))?;
+        .with_context(|| format!("source `{source_id}` does not exist"))?;
 
     let source_rows = vec![SourceRow {
         source_id: source.source_id.clone(),
@@ -446,7 +446,7 @@ async fn list_sources_cli(args: ListSourcesArgs) -> anyhow::Result<()> {
         .indexes()
         .get(&args.index_id)
         .await
-        .context("Failed to fetch indexes metadatas.")?;
+        .context("failed to fetch indexes metadatas")?;
     let table = make_list_sources_table(index_metadata.sources.into_values());
     display_tables(&[table]);
     Ok(())

@@ -65,7 +65,7 @@ impl MetastoreConfigs {
         for (left, right) in backends.iter().zip(backends.iter().skip(1)) {
             ensure!(
                 left != right,
-                "{left:?} metastore config is defined multiple times."
+                "{left:?} metastore config is defined multiple times"
             );
         }
         Ok(())

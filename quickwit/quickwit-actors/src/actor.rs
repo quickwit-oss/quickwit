@@ -44,21 +44,21 @@ pub enum ActorExitStatus {
     ///
     /// (This is equivalent to exit status code 0.)
     /// Note that this is not really an error.
-    #[error("Success")]
+    #[error("success")]
     Success,
 
     /// The actor was asked to gracefully shutdown.
     ///
     /// (Semantically equivalent to exit status code 130, triggered by SIGINT aka Ctrl-C, or
     /// SIGQUIT)
-    #[error("Quit")]
+    #[error("quit")]
     Quit,
 
     /// The actor tried to send a message to a dowstream actor and failed.
     /// The logic ruled that the actor should be killed.
     ///
     /// (Semantically equivalent to exit status code 141, triggered by SIGPIPE)
-    #[error("Downstream actor exited.")]
+    #[error("downstream actor exited")]
     DownstreamClosed,
 
     /// The actor was killed.
@@ -68,15 +68,15 @@ pub enum ActorExitStatus {
     /// - its kill switch was activated.
     ///
     /// (Semantically equivalent to exit status code 137, triggered by SIGKILL)
-    #[error("Killed")]
+    #[error("killed")]
     Killed,
 
     /// An unexpected error happened while processing a message.
-    #[error("Failure(cause={0:?})")]
+    #[error("failure(cause={0:?})")]
     Failure(Arc<anyhow::Error>),
 
     /// The thread or the task executing the actor loop panicked.
-    #[error("Panicked")]
+    #[error("panicked")]
     Panicked,
 }
 

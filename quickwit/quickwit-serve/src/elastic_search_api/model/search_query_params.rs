@@ -156,7 +156,7 @@ fn parse_sort_field_str(sort_field_str: &str) -> Result<SortField, SearchError> 
     if let Some((field, order_str)) = sort_field_str.split_once(':') {
         let order = SortOrder::from_str_name(order_str).ok_or_else(|| {
             SearchError::InvalidArgument(format!(
-                "Invalid sort order `{}`. Expected `asc` or `desc`",
+                "invalid sort order `{}`. expected `asc` or `desc`",
                 field
             ))
         })?;
@@ -200,7 +200,7 @@ impl SearchQueryParams {
             return Ok(None);
         };
         let duration: Duration = humantime::parse_duration(scroll_str).map_err(|_err| {
-            SearchError::InvalidArgument(format!("Invalid scroll duration: `{scroll_str}`"))
+            SearchError::InvalidArgument(format!("invalid scroll duration: `{scroll_str}`"))
         })?;
         Ok(Some(duration))
     }

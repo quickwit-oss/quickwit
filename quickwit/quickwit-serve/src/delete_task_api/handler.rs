@@ -140,7 +140,7 @@ pub async fn post_delete_request(
         .parse_user_query(&[])
         .map_err(|err| JanitorError::InvalidDeleteQuery(err.to_string()))?;
     let query_ast_json = serde_json::to_string(&query_ast).map_err(|_err| {
-        JanitorError::Internal("Failed to serialized delete query ast".to_string())
+        JanitorError::Internal("failed to serialized delete query ast".to_string())
     })?;
     let delete_query = DeleteQuery {
         index_uid: index_uid.to_string(),
@@ -223,7 +223,7 @@ mod tests {
             .reply(&delete_query_api_handlers)
             .await;
         assert_eq!(resp.status(), 400);
-        assert!(String::from_utf8_lossy(resp.body()).contains("Invalid delete query"));
+        assert!(String::from_utf8_lossy(resp.body()).contains("invalid delete query"));
 
         // GET delete tasks.
         let resp = warp::test::request()

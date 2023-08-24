@@ -134,7 +134,7 @@ impl Handler<SplitsUpdate> for Publisher {
                 checkpoint_delta_opt.clone(),
             ))
             .await
-            .context("Failed to publish splits.")?;
+            .context("failed to publish splits")?;
         } else {
             // TODO: Remove the junk right away?
             info!(

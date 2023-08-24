@@ -81,11 +81,11 @@ where
         let command = ctx
             .protect_future(message)
             .await
-            .context("Failed to receive command from uploader.")?;
+            .context("failed to receive command from uploader")?;
         if let SequencerCommand::Proceed(msg) = command {
             ctx.send_message(&self.mailbox, msg)
                 .await
-                .context("Failed to send message to publisher.")?;
+                .context("failed to send message to publisher")?;
         }
         Ok(())
     }

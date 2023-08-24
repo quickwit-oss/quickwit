@@ -24,9 +24,9 @@ use quickwit_actors::AskError;
 // Service errors have to be handwritten before codegen.
 #[derive(Debug, thiserror::Error)]
 pub enum HelloError {
-    #[error("Internal error: {0}")]
+    #[error("internal error: {0}")]
     InternalError(String),
-    #[error("Transport error: {0}")]
+    #[error("transport error: {0}")]
     TransportError(#[from] tonic::Status),
 }
 

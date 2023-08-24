@@ -107,7 +107,7 @@ impl TryFrom<HashMap<String, TermQueryValue>> for TermQuery {
 
     fn try_from(map: HashMap<String, TermQueryValue>) -> Result<Self, Self::Error> {
         if map.len() > 1 {
-            return Err("TermQuery must have exactly one entry");
+            return Err("term query must have exactly one entry");
         }
         Ok(TermQuery::from(map.into_iter().next().unwrap())) // unwrap justified by the if
                                                              // statementabove.
