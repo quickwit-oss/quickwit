@@ -2514,8 +2514,9 @@ mod tests {
         assert!(search_response.is_err());
         assert_eq!(
             search_response.unwrap_err().to_string(),
-            "Invalid aggregation request: no variant of enum AggregationVariants found in \
-             flattened data at line 17 column 17"
+            "Invalid aggregation request: unknown variant `termss`, expected one of `range`, \
+             `histogram`, `date_histogram`, `terms`, `avg`, `value_count`, `max`, `min`, `stats`, \
+             `sum`, `percentiles` at line 18 column 13"
         );
         Ok(())
     }
