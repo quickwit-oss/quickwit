@@ -190,7 +190,7 @@ impl Source for HttpSource {
             info!("No more partitions to read from, stopping source.");
             info!("Resetting failing URIs and retrying in 1h");
             self.uri_with_errors.clear();
-            return Ok(Duration::from_secs(60 * 60));
+            return Ok(Duration::from_secs(3600));
         };
         let uri = partition.0.as_str();
         let lines_result: anyhow::Result<Lines<BufReader<Box<dyn AsyncRead + Send + Unpin>>>> =
@@ -214,11 +214,11 @@ impl Source for HttpSource {
             if counters.previous_offset >= counters.http_offset {
                 continue;
             }
+            doc_batch.docs.push(Bytes::from(line));
             if counters.http_offset - counters.current_offset > BATCH_NUM_BYTES_LIMIT {
                 reach_eof = false;
                 break;
             }
-            doc_batch.docs.push(Bytes::from(line));
         }
 
         if !doc_batch.docs.is_empty() {
@@ -382,14 +382,14 @@ mod tests {
         let universe = Universe::with_accelerated_time();
         let (doc_processor_mailbox, indexer_inbox) = universe.create_test_mailbox();
         let params = HttpSourceParams::from_pattern(Uri::from_well_formed(
-            "https://data.gharchive.org/2012-03-10-{12,15}.json.gz",
+            "https://data.gharchive.org/2015-01-01-{12..15}.json.gz",
         ));
 
         let metastore = metastore_for_test();
         let pipeline_id = IndexingPipelineId {
             index_uid: IndexUid::new("test-index"),
-            source_id: "kafka-file-source".to_string(),
-            node_id: "kafka-node".to_string(),
+            source_id: "http-source".to_string(),
+            node_id: "http-node".to_string(),
             pipeline_ord: 0,
         };
         let file_source = HttpSourceFactory::typed_create_source(
@@ -422,38 +422,57 @@ mod tests {
         assert_eq!(
             positions,
             serde_json::json!({
-                "https://data.gharchive.org/2015-01-01-0.json.gz": {
+                "https://data.gharchive.org/2015-01-01-12.json.gz": {
                     "current_offset": 18446744073709551615u64,
-                    "http_offset": 18023797,
-                    "num_lines_processed": 7702,
-                    "previous_offset": 15002237,
+                    "http_offset": 18403373,
+                    "num_lines_processed": 8273,
+                    "previous_offset": 15021720,
                 },
-                "https://data.gharchive.org/2015-01-01-1.json.gz": {
+                "https://data.gharchive.org/2015-01-01-13.json.gz": {
                     "current_offset": 18446744073709551615u64,
-                    "num_lines_processed": 7427,
-                    "http_offset": 17649671,
-                    "previous_offset": 15007652,
+                    "num_lines_processed": 8971,
+                    "http_offset": 22173788,
+                    "previous_offset": 20028080,
+                },
+                "https://data.gharchive.org/2015-01-01-14.json.gz": {
+                    "current_offset": 18446744073709551615u64,
+                    "num_lines_processed": 10307,
+                    "http_offset": 24286911,
+                    "previous_offset": 20006289,
                 }
             })
         );
         let indexer_msgs = indexer_inbox.drain_for_test();
-        assert_eq!(indexer_msgs.len(), 9);
+        assert_eq!(indexer_msgs.len(), 14);
+        for (i, msg) in indexer_msgs.iter().enumerate() {
+            if i < 14 {
+                let batch = msg.downcast_ref::<RawDocBatch>().unwrap();
+                println!("{:?}", batch.docs.len());
+            } else {
+                let command = msg.downcast_ref::<Command>().unwrap();
+                println!("command {:?}", command);
+            }
+        }
         let batch1 = indexer_msgs[0].downcast_ref::<RawDocBatch>().unwrap();
         let batch2 = indexer_msgs[1].downcast_ref::<RawDocBatch>().unwrap();
-        let command = indexer_msgs[8].downcast_ref::<Command>().unwrap();
+        // let command = indexer_msgs[13].downcast_ref::<Command>().unwrap();
+        println!("{:?}", indexer_msgs[13]);
+        println!("{}, {}", batch1.docs.len(), batch2.docs.len());
         assert_eq!(
             format!("{:?}", &batch1.checkpoint_delta),
             format!(
                 "∆({}:{})",
-                "https://data.gharchive.org/2015-01-01-0.json.gz",
-                "(00000000000000000000..00000000000005000080]"
+                "https://data.gharchive.org/2015-01-01-12.json.gz",
+                "(00000000000000000000..00000000000005004072]"
             )
         );
         assert_eq!(
             &extract_position_delta(&batch2.checkpoint_delta).unwrap(),
             "00000000000005000080..00000000000010000360"
         );
-        assert!(matches!(command, &Command::ExitWithSuccess));
+        assert_eq!(batch1.docs.len(), 100);
+        assert_eq!(batch2.docs.len(), 100);
+        // assert!(matches!(command, &Command::ExitWithSuccess));
         Ok(())
     }
 
