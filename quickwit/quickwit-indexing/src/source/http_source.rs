@@ -128,7 +128,6 @@ impl HttpSource {
                 current_counters.insert(partition_id.clone(), counters);
             }
         }
-        info!("HttpSource current counters: {current_counters:?}");
         Self {
             ctx,
             current_counters,
@@ -154,8 +153,8 @@ async fn read_lines(
 ) -> anyhow::Result<Lines<BufReader<Box<dyn AsyncRead + Send + Unpin>>>> {
     info!("Reading lines from uri: {:?}", uri);
     let client = reqwest::ClientBuilder::new()
-        .connect_timeout(Duration::from_secs(10))
-        .timeout(Duration::from_secs(15))
+        .connect_timeout(Duration::from_secs(30))
+        .timeout(Duration::from_secs(600))
         .build()
         .context("Failed to build reqwest client.")?;
     let stream = client
@@ -191,6 +190,7 @@ impl Source for HttpSource {
             info!("Resetting failing URIs and retrying in 1h");
             self.uri_with_errors.clear();
             return Ok(Duration::from_secs(3600));
+            // return Err(ActorExitStatus::Success);
         };
         let uri = partition.0.as_str();
         let lines_result: anyhow::Result<Lines<BufReader<Box<dyn AsyncRead + Send + Unpin>>>> =
@@ -208,7 +208,15 @@ impl Source for HttpSource {
         };
         let mut doc_batch = RawDocBatch::default();
         let mut reach_eof = true;
-        while let Some(Ok(line)) = lines.next().await {
+        while let Some(line_res) = lines.next().await {
+            let line = line_res.map_err(|error| {
+                warn!(
+                    "Failed to read line from uri: {uri:?}: {error:?}",
+                    uri = uri,
+                    error = error
+                );
+                anyhow::Error::from(error)
+            })?;
             counters.http_offset += 1 + line.as_bytes().len() as u64; // +1 for newline
             counters.num_lines_processed += 1;
             if counters.previous_offset >= counters.http_offset {
@@ -550,5 +558,6 @@ mod tests {
         );
         let indexer_messages: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
         assert!(&indexer_messages[0].docs[0].starts_with(b"{\"id\""));
+        assert_eq!(indexer_messages[0].docs.len(), 3)
     }
 }
