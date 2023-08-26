@@ -30,6 +30,7 @@ use google_cloud_gax::retry::RetrySetting;
 use google_cloud_pubsub::client::{Client, ClientConfig};
 use google_cloud_pubsub::subscription::Subscription;
 use quickwit_actors::{ActorContext, ActorExitStatus, Mailbox};
+use quickwit_common::rand::append_random_suffix;
 use quickwit_config::GcpPubSubSourceParams;
 use quickwit_metastore::checkpoint::{PartitionId, Position, SourceCheckpoint};
 use serde_json::{json, Value as JsonValue};
@@ -154,7 +155,8 @@ impl GcpPubSubSource {
             .unwrap_or(DEFAULT_MAX_MESSAGES_PER_PULL);
 
         // TODO: replace with "<node_id>/<index_id>/<source_id>/<pipeline_ord>" !
-        let partition_id = PartitionId::from(format!("gpc-pubsub-{subscription_name}"));
+        let partition_id = append_random_suffix(&format!("gpc-pubsub-{subscription_name}"));
+        let partition_id = PartitionId::from(partition_id);
         info!(
             index_id=%ctx.index_uid.index_id(),
             source_id=%ctx.source_config.source_id,
@@ -273,6 +275,7 @@ impl Source for GcpPubSubSource {
             "index_id": self.ctx.index_uid.index_id(),
             "source_id": self.ctx.source_config.source_id,
             "subscription": self.subscription_name,
+            "partition_id": self.partition_id,
             "num_bytes_processed": self.state.num_bytes_processed,
             "num_messages_processed": self.state.num_messages_processed,
             "num_invalid_messages": self.state.num_invalid_messages,
@@ -334,6 +337,7 @@ mod gcp_pubsub_emulator_tests {
     use google_cloud_pubsub::subscription::SubscriptionConfig;
     use quickwit_actors::Universe;
     use quickwit_common::rand::append_random_suffix;
+    use quickwit_common::setup_logging_for_tests;
     use quickwit_config::{SourceConfig, SourceInputFormat, SourceParams};
     use quickwit_metastore::metastore_for_test;
     use quickwit_proto::IndexUid;
@@ -346,6 +350,7 @@ mod gcp_pubsub_emulator_tests {
     static GCP_TEST_PROJECT: &str = "quickwit-emulator";
 
     fn get_source_config(subscription: &str) -> SourceConfig {
+        setup_logging_for_tests();
         var("PUBSUB_EMULATOR_HOST").expect(
             "environment variable `PUBSUB_EMULATOR_HOST` should be set when running GCP PubSub \
              source tests",
@@ -384,6 +389,10 @@ mod gcp_pubsub_emulator_tests {
             .await
             .unwrap();
         created_topic.new_publisher(None)
+    }
+
+    fn get_partition_id(source: &Box<dyn Source>) -> String {
+        source.observable_state()["partition_id"].as_str().unwrap().to_string()
     }
 
     #[tokio::test]
@@ -451,18 +460,19 @@ mod gcp_pubsub_emulator_tests {
             .await
             .unwrap();
 
+        let partition = get_partition_id(&source);
         let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
         let source_actor = SourceActor {
             source,
             doc_processor_mailbox: doc_processor_mailbox.clone(),
         };
         let (source_mailbox, source_handle) = universe.spawn_builder().spawn(source_actor);
-        let partition = format!("gpc-pubsub-{subscription}");
+        let suggest_truncate_partition = partition.clone();
         let trigger_suggest_truncate = tokio::spawn(async move {
             loop {
                 let to_position = Position::from(format!("{}", Ulid::new()));
                 let checkpoint: SourceCheckpoint =
-                    vec![(PartitionId::from(partition.clone()), to_position)]
+                    vec![(PartitionId::from(suggest_truncate_partition.clone()), to_position)]
                         .into_iter()
                         .collect();
 
@@ -491,6 +501,7 @@ mod gcp_pubsub_emulator_tests {
             "index_id": index_id,
             "source_id": source_id,
             "subscription": subscription,
+            "partition_id": partition,
             "num_bytes_processed": 54,
             "num_messages_processed": 6,
             "num_invalid_messages": 0,
