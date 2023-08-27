@@ -342,10 +342,11 @@ mod gcp_pubsub_emulator_tests {
     use quickwit_metastore::metastore_for_test;
     use quickwit_proto::IndexUid;
     use serde_json::json;
+    use tokio::sync::watch;
 
     use super::*;
     use crate::models::RawDocBatch;
-    use crate::source::{quickwit_supported_sources, SuggestTruncate};
+    use crate::source::{quickwit_supported_sources, SuggestTruncate, VoidSource};
 
     static GCP_TEST_PROJECT: &str = "quickwit-emulator";
 
@@ -391,8 +392,30 @@ mod gcp_pubsub_emulator_tests {
         created_topic.new_publisher(None)
     }
 
-    fn get_partition_id(source: &Box<dyn Source>) -> String {
-        source.observable_state()["partition_id"].as_str().unwrap().to_string()
+    fn get_partition_id(source: &dyn Source) -> String {
+        source.observable_state()["partition_id"]
+            .as_str()
+            .unwrap()
+            .to_string()
+    }
+
+    fn ack_id_nb(ack_id: &str) -> u64 {
+        ack_id.split(':').last().unwrap().parse::<u64>().unwrap()
+    }
+
+    async fn publish_sample_msg(publisher: &Publisher, start: u64, end: u64) {
+        let mut pubsub_messages = Vec::with_capacity((end - start) as usize);
+        for i in start..end {
+            let pubsub_message = PubsubMessage {
+                data: format!("Message {}", i).into(),
+                ..Default::default()
+            };
+            pubsub_messages.push(pubsub_message);
+        }
+        let awaiters = publisher.publish_bulk(pubsub_messages).await;
+        for awaiter in awaiters {
+            awaiter.get().await.unwrap();
+        }
     }
 
     #[tokio::test]
@@ -435,18 +458,7 @@ mod gcp_pubsub_emulator_tests {
         let index_id: String = append_random_suffix("test-gcp-pubsub-source--index");
         let index_uid = IndexUid::new(&index_id);
 
-        let mut pubsub_messages = Vec::with_capacity(6);
-        for i in 0..6 {
-            let pubsub_message = PubsubMessage {
-                data: format!("Message {}", i).into(),
-                ..Default::default()
-            };
-            pubsub_messages.push(pubsub_message);
-        }
-        let awaiters = publisher.publish_bulk(pubsub_messages).await;
-        for awaiter in awaiters {
-            awaiter.get().await.unwrap();
-        }
+        publish_sample_msg(&publisher, 0, 6).await;
         let source = source_loader
             .load_source(
                 SourceExecutionContext::for_test(
@@ -460,7 +472,7 @@ mod gcp_pubsub_emulator_tests {
             .await
             .unwrap();
 
-        let partition = get_partition_id(&source);
+        let partition = get_partition_id(&(*source));
         let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
         let source_actor = SourceActor {
             source,
@@ -471,10 +483,12 @@ mod gcp_pubsub_emulator_tests {
         let trigger_suggest_truncate = tokio::spawn(async move {
             loop {
                 let to_position = Position::from(format!("{}", Ulid::new()));
-                let checkpoint: SourceCheckpoint =
-                    vec![(PartitionId::from(suggest_truncate_partition.clone()), to_position)]
-                        .into_iter()
-                        .collect();
+                let checkpoint: SourceCheckpoint = vec![(
+                    PartitionId::from(suggest_truncate_partition.clone()),
+                    to_position,
+                )]
+                .into_iter()
+                .collect();
 
                 let suggest_truncate_req = SuggestTruncate(checkpoint);
                 tokio::time::sleep(Duration::from_millis(50)).await;
@@ -508,5 +522,175 @@ mod gcp_pubsub_emulator_tests {
             "num_consecutive_empty_batches": 4,
         });
         assert_eq!(exit_state, expected_exit_state);
+    }
+
+    #[tokio::test]
+    async fn test_gcp_pubsub_source_ack() {
+        let universe = Universe::with_accelerated_time();
+        let topic = append_random_suffix("test-gcp-pubsub-source--ack--topic");
+        let subscription = append_random_suffix("test-gcp-pubsub-source--ack--subscription");
+        let publisher = create_topic_and_subscription(&topic, &subscription).await;
+
+        let source_config = get_source_config(&subscription);
+        let index_id = append_random_suffix("test-gcp-pubsub-source--acl--index");
+        let metastore = metastore_for_test();
+        let index_uid = IndexUid::new(&index_id);
+        let (doc_processor_mailbox, _doc_processor_inbox) = universe.create_test_mailbox();
+
+        let ctx = SourceExecutionContext::for_test(
+            metastore,
+            index_uid,
+            PathBuf::from("./queues"),
+            source_config,
+        );
+        let mut gcp_source: GcpPubSubSource = GcpPubSubSource::try_new(
+            ctx,
+            GcpPubSubSourceParams {
+                subscription: subscription.clone(),
+                enable_backfill_mode: true,
+                credentials_file: None,
+                project_id: Some(GCP_TEST_PROJECT.to_string()),
+                max_messages_per_pull: None,
+            },
+        )
+        .await
+        .unwrap();
+
+        // we make a void actor. We will call the real source fn manually
+        let source_actor = SourceActor {
+            source: Box::new(VoidSource {}),
+            doc_processor_mailbox: doc_processor_mailbox.clone(),
+        };
+        let (source_mailbox, _source_handle) = universe.spawn_builder().spawn(source_actor);
+        let (observable_state_tx, _observable_state_rx) = watch::channel(json!({}));
+
+        let source_ctx = SourceContext::for_test(&universe, source_mailbox, observable_state_tx);
+
+        gcp_source
+            .emit_batches(&doc_processor_mailbox, &source_ctx)
+            .await
+            .unwrap();
+        assert_eq!(gcp_source.in_flight_batches.len(), 0);
+        publish_sample_msg(&publisher, 0, 6).await;
+        assert_eq!(gcp_source.in_flight_batches.len(), 0);
+        let ulid_before_batch = Ulid::new();
+
+        gcp_source
+            .emit_batches(&doc_processor_mailbox, &source_ctx)
+            .await
+            .unwrap();
+        assert_eq!(gcp_source.in_flight_batches.len(), 1);
+        assert_eq!(
+            gcp_source
+                .in_flight_batches
+                .iter()
+                .fold(0, |acc, e| acc + e.1.len()),
+            6
+        );
+        // we use the first ack_id to ensure that when we ack, we ack the correct batch
+        // in gcp pubsub emulator, the ack id are incremental
+        let first_ack_id = ack_id_nb(
+            gcp_source
+                .in_flight_batches
+                .front()
+                .unwrap()
+                .1
+                .first()
+                .unwrap(),
+        );
+
+        publish_sample_msg(&publisher, 0, 6).await;
+        gcp_source
+            .emit_batches(&doc_processor_mailbox, &source_ctx)
+            .await
+            .unwrap();
+        assert_eq!(gcp_source.in_flight_batches.len(), 2);
+        assert_eq!(
+            gcp_source
+                .in_flight_batches
+                .iter()
+                .fold(0, |acc, e| acc + e.1.len()),
+            12
+        );
+        let ulid_after_second_batch = Ulid::new();
+        publish_sample_msg(&publisher, 0, 6).await;
+        gcp_source
+            .emit_batches(&doc_processor_mailbox, &source_ctx)
+            .await
+            .unwrap();
+        assert_eq!(gcp_source.in_flight_batches.len(), 3);
+        assert_eq!(
+            gcp_source
+                .in_flight_batches
+                .iter()
+                .fold(0, |acc, e| acc + e.1.len()),
+            18
+        );
+        let ulid_after_third_batch = Ulid::new();
+
+        // ensure that nothing is ack if ulid is before
+        let to_position = Position::from(format!("{}", ulid_before_batch));
+        let checkpoint: SourceCheckpoint = vec![(gcp_source.partition_id.clone(), to_position)]
+            .into_iter()
+            .collect();
+        gcp_source
+            .suggest_truncate(checkpoint, &source_ctx)
+            .await
+            .unwrap();
+        assert_eq!(gcp_source.in_flight_batches.len(), 3);
+        assert_eq!(
+            gcp_source
+                .in_flight_batches
+                .iter()
+                .fold(0, |acc, e| acc + e.1.len()),
+            18
+        );
+
+        // ensure that the two first batch are ack
+        let to_position = Position::from(format!("{}", ulid_after_second_batch));
+        let checkpoint: SourceCheckpoint = vec![(gcp_source.partition_id.clone(), to_position)]
+            .into_iter()
+            .collect();
+        gcp_source
+            .suggest_truncate(checkpoint, &source_ctx)
+            .await
+            .unwrap();
+        assert_eq!(gcp_source.in_flight_batches.len(), 1);
+        assert_eq!(
+            gcp_source
+                .in_flight_batches
+                .iter()
+                .fold(0, |acc, e| acc + e.1.len()),
+            6
+        );
+        let expected_acks = Vec::from_iter(first_ack_id + 12..first_ack_id + 18);
+        let got_acks: Vec<u64> = gcp_source
+            .in_flight_batches
+            .front()
+            .unwrap()
+            .1
+            .iter()
+            .map(|a| ack_id_nb(a))
+            .collect();
+        assert_eq!(got_acks, expected_acks);
+
+        let to_position = Position::from(format!("{}", ulid_after_third_batch));
+        let checkpoint: SourceCheckpoint = vec![(gcp_source.partition_id.clone(), to_position)]
+            .into_iter()
+            .collect();
+        gcp_source
+            .suggest_truncate(checkpoint, &source_ctx)
+            .await
+            .unwrap();
+        assert_eq!(gcp_source.in_flight_batches.len(), 0);
+        assert_eq!(
+            gcp_source
+                .in_flight_batches
+                .iter()
+                .fold(0, |acc, e| acc + e.1.len()),
+            0
+        );
+
+        universe.quit().await;
     }
 }
