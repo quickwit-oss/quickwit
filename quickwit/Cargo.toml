@@ -50,7 +50,7 @@ byte-unit = { version = "4", default-features = false, features = ["serde", "std
 bytes = { version = "1", features = ["serde"] }
 chitchat = { git = "https://github.com/quickwit-oss/chitchat", rev = "bc29598" }
 chrono = { version = "0.4.23", default-features = false, features = ["clock", "std"] }
-clap = { version = "4.3.0", features = ["env", "string"] }
+clap = { version = "4.4.1", features = ["env", "string"] }
 colored = "2.0.0"
 console-subscriber = "0.1.8"
 criterion = { version = "0.5", features = ["async_tokio"] }
