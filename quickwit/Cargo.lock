@@ -5707,6 +5707,7 @@ dependencies = [
  "tracing",
  "tracing-opentelemetry",
  "ttl_cache",
+ "typetag",
  "ulid",
  "utoipa",
 ]
