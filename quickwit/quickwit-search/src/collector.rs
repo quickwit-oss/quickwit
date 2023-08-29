@@ -374,29 +374,24 @@ impl QuickwitSegmentCollector {
     fn collect_top_k(&mut self, doc_id: DocId, score: Score) {
         let (sorting_field_value_opt1, sorting_field_value_opt2): (Option<u64>, Option<u64>) =
             self.sort_by.compute_u64_sort_value_opt(doc_id, score);
+
+        let sort_value = PartialHitHeapItem {
+            sort_value_opt1: sorting_field_value_opt1,
+            sort_value_opt2: sorting_field_value_opt2,
+            doc_id,
+        };
+
         if self.at_capacity() {
-            if let Some(sorting_field_value) = sorting_field_value_opt1 {
-                if let Some(limit_sorting_field) =
-                    self.hits.peek().and_then(|head| head.sort_value_opt1)
-                {
-                    // In case of a tie, we keep the document with a lower `DocId`.
-                    if limit_sorting_field < sorting_field_value {
-                        if let Some(mut head) = self.hits.peek_mut() {
-                            head.sort_value_opt1 = Some(sorting_field_value);
-                            head.sort_value_opt2 = sorting_field_value_opt2;
-                            head.doc_id = doc_id;
-                        }
-                    }
+            if let Some(limit_sorting_value) = self.hits.peek() {
+                // In case of a tie, we keep the document with a lower `DocId`.
+                if limit_sorting_value > &sort_value {
+                    *self.hits.peek_mut().unwrap() = sort_value;
                 }
             }
         } else {
             // we have not reached capacity yet, so we can just push the
             // element.
-            self.hits.push(PartialHitHeapItem {
-                sort_value_opt1: sorting_field_value_opt1,
-                sort_value_opt2: sorting_field_value_opt2,
-                doc_id,
-            });
+            self.hits.push(sort_value);
         }
     }
 
@@ -1282,8 +1277,7 @@ mod tests {
 
         for (sort_str, sort_function) in sort_orders {
             dataset.sort_by(sort_function);
-            // for len in 0..dataset.len() {
-            for len in [dataset.len()] {
+            for len in 0..dataset.len() {
                 let collector = super::make_collector_for_split(
                     "fake_split_id".to_string(),
                     &MockDocMapper,
