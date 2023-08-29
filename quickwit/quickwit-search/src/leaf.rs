@@ -146,7 +146,6 @@ pub(crate) async fn open_index_with_caches(
 /// to be hit.
 #[instrument(skip(searcher))]
 pub(crate) async fn warmup(searcher: &Searcher, warmup_info: &WarmupInfo) -> anyhow::Result<()> {
-    debug!(warmup_info=?warmup_info, "warmup");
     let warm_up_terms_future = warm_up_terms(searcher, &warmup_info.terms_grouped_by_field)
         .instrument(debug_span!("warm_up_terms"));
     let warm_up_term_ranges_future =
@@ -326,7 +325,7 @@ async fn warm_up_fieldnorms(searcher: &Searcher, requires_scoring: bool) -> anyh
 }
 
 /// Apply a leaf search on a single split.
-#[instrument(skip(searcher_context, search_request, storage, split, doc_mapper,))]
+#[instrument(skip_all)]
 async fn leaf_search_single_split(
     searcher_context: &SearcherContext,
     mut search_request: SearchRequest,

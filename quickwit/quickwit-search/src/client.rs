@@ -121,6 +121,7 @@ impl SearchServiceClient {
     }
 
     /// Perform leaf search.
+    #[instrument(skip_all)]
     pub async fn leaf_search(
         &mut self,
         request: quickwit_proto::search::LeafSearchRequest,
@@ -139,6 +140,7 @@ impl SearchServiceClient {
     }
 
     /// Perform leaf stream.
+    #[instrument(skip(self, request))]
     pub async fn leaf_search_stream(
         &mut self,
         request: quickwit_proto::search::LeafSearchStreamRequest,
@@ -193,6 +195,7 @@ impl SearchServiceClient {
     }
 
     /// Perform fetch docs.
+    #[instrument(skip(self, request))]
     pub async fn fetch_docs(
         &mut self,
         request: quickwit_proto::search::FetchDocsRequest,
@@ -211,6 +214,7 @@ impl SearchServiceClient {
     }
 
     /// Perform leaf list terms.
+    #[instrument(skip(self, request))]
     pub async fn leaf_list_terms(
         &mut self,
         request: quickwit_proto::search::LeafListTermsRequest,
@@ -231,6 +235,7 @@ impl SearchServiceClient {
     /// Gets the value associated to a key stored locally in the targetted node.
     /// This call is not "distributed".
     /// If the key is not present on the targetted search `None` is simply returned.
+    #[instrument(skip(self, get_kv_req))]
     pub async fn get_kv(&mut self, get_kv_req: GetKvRequest) -> crate::Result<Option<Vec<u8>>> {
         match &mut self.client_impl {
             SearchServiceClientImpl::Local(service) => {
@@ -251,6 +256,7 @@ impl SearchServiceClient {
     /// Gets the value associated to a key stored locally in the targetted node.
     /// This call is not "distributed". It is up to the client to put the K,V pair
     /// on several nodes.
+    #[instrument(skip(self, put_kv_req))]
     pub async fn put_kv(&mut self, put_kv_req: PutKvRequest) -> crate::Result<()> {
         match &mut self.client_impl {
             SearchServiceClientImpl::Local(service) => {
