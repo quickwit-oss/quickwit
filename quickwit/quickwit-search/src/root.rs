@@ -367,7 +367,7 @@ fn get_scroll_ttl_duration(search_request: &SearchRequest) -> crate::Result<Opti
     Ok(Some(scroll_ttl))
 }
 
-#[instrument(skip(search_request, indexes_metas_for_leaf_search, cluster_client))]
+#[instrument(skip_all)]
 async fn search_partial_hits_phase_with_scroll(
     searcher_context: &SearcherContext,
     indexes_metas_for_leaf_search: &IndexesMetasForLeafSearch,
@@ -431,7 +431,7 @@ async fn search_partial_hits_phase_with_scroll(
     }
 }
 
-#[instrument(skip(search_request, indexes_metas_for_leaf_search, cluster_client))]
+#[instrument(skip_all)]
 pub(crate) async fn search_partial_hits_phase(
     searcher_context: &SearcherContext,
     indexes_metas_for_leaf_search: &IndexesMetasForLeafSearch,
@@ -472,7 +472,7 @@ pub(crate) async fn search_partial_hits_phase(
     .await
     .context("failed to merge leaf search responses")?
     .map_err(|error: TantivyError| crate::SearchError::Internal(error.to_string()))?;
-    debug!(leaf_search_response = ?leaf_search_response, "Merged leaf search response.");
+    // debug!(leaf_search_response = ?leaf_search_response, "Merged leaf search response.");
 
     if !leaf_search_response.failed_splits.is_empty() {
         error!(failed_splits = ?leaf_search_response.failed_splits, "Leaf search response contains at least one failed split.");
@@ -492,6 +492,13 @@ pub(crate) fn get_snippet_request(search_request: &SearchRequest) -> Option<Snip
     })
 }
 
+#[instrument(skip(
+    indexes_metas_for_leaf_search,
+    partial_hits,
+    split_metadatas,
+    snippet_request_opt,
+    cluster_client
+))]
 pub(crate) async fn fetch_docs_phase(
     indexes_metas_for_leaf_search: &IndexesMetasForLeafSearch,
     partial_hits: &[PartialHit],
@@ -571,12 +578,7 @@ pub(crate) async fn fetch_docs_phase(
 /// 2. Merges the search results.
 /// 3. Sends fetch docs requests to multiple leaf nodes.
 /// 4. Builds the response with docs and returns.
-#[instrument(skip(
-    searcher_context,
-    indexes_metas_for_leaf_search,
-    search_request,
-    cluster_client
-))]
+#[instrument(skip_all)]
 async fn root_search_aux(
     searcher_context: &SearcherContext,
     indexes_metas_for_leaf_search: &IndexesMetasForLeafSearch,
@@ -671,7 +673,7 @@ fn finalize_aggregation_if_any(
 /// 2. Merges the search results.
 /// 3. Sends fetch docs requests to multiple leaf nodes.
 /// 4. Builds the response with docs and returns.
-#[instrument(skip(search_request, cluster_client, metastore))]
+#[instrument(skip_all)]
 pub async fn root_search(
     searcher_context: &SearcherContext,
     mut search_request: SearchRequest,

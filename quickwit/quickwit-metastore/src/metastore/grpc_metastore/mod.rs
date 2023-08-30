@@ -39,7 +39,7 @@ use quickwit_proto::metastore::{
 };
 use quickwit_proto::tonic::codegen::InterceptedService;
 use quickwit_proto::tonic::Status;
-use quickwit_proto::{IndexUid, SpanContextInterceptor};
+use quickwit_proto::{IndexUid, SpanContextInterceptor, GRPC_MAX_MESSAGE_SIZE};
 use tower::timeout::error::Elapsed;
 
 use crate::checkpoint::IndexCheckpointDelta;
@@ -78,7 +78,8 @@ impl MetastoreGrpcClient {
         let underlying = MetastoreServiceClient::with_interceptor(
             balance_channel.clone(),
             SpanContextInterceptor,
-        );
+        )
+        .max_decoding_message_size(GRPC_MAX_MESSAGE_SIZE);
         let uri = QuickwitUri::from_well_formed(GRPC_METASTORE_BASE_URI);
         Ok(Self {
             underlying,

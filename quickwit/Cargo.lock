@@ -254,6 +254,7 @@ checksum = "62b74f44609f0f91493e3082d3734d98497e094777144380ea4db9f9905dd5b6"
 dependencies = [
  "flate2",
  "futures-core",
+ "futures-io",
  "memchr",
  "pin-project-lite",
  "tokio",
@@ -5307,6 +5308,7 @@ version = "0.6.3"
 dependencies = [
  "anyhow",
  "arc-swap",
+ "async-compression",
  "async-trait",
  "aws-config",
  "aws-sdk-kinesis",
@@ -5320,6 +5322,7 @@ dependencies = [
  "flume",
  "fnv",
  "futures",
+ "futures-util",
  "google-cloud-auth 0.12.0",
  "google-cloud-default",
  "google-cloud-gax 0.15.0",
@@ -5347,6 +5350,7 @@ dependencies = [
  "quickwit-storage",
  "rand 0.8.5",
  "rdkafka",
+ "regex",
  "reqwest",
  "serde",
  "serde_json",

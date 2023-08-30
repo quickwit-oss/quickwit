@@ -39,6 +39,7 @@ use quickwit_proto::opentelemetry::proto::collector::trace::v1::trace_service_se
 use quickwit_proto::search::search_service_server::SearchServiceServer;
 use quickwit_proto::tonic::codegen::CompressionEncoding;
 use quickwit_proto::tonic::transport::Server;
+use quickwit_proto::GRPC_MAX_MESSAGE_SIZE;
 use tracing::*;
 
 use crate::search_api::GrpcSearchAdapter;
@@ -59,7 +60,10 @@ pub(crate) async fn start_grpc_server(
         enabled_grpc_services.insert("metastore");
         let metastore = services.metastore.clone();
         let grpc_metastore = GrpcMetastoreAdapter::from(metastore);
-        Some(MetastoreServiceServer::new(grpc_metastore))
+        Some(
+            MetastoreServiceServer::new(grpc_metastore)
+                .max_decoding_message_size(GRPC_MAX_MESSAGE_SIZE),
+        )
     } else {
         None
     };

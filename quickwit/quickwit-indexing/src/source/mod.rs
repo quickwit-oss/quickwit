@@ -60,6 +60,7 @@
 mod file_source;
 #[cfg(feature = "gcp-pubsub")]
 mod gcp_pubsub_source;
+mod http_source;
 mod ingest_api_source;
 #[cfg(feature = "kafka")]
 mod kafka_source;
@@ -93,7 +94,7 @@ use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::{SourceConfig, SourceParams};
 use quickwit_metastore::checkpoint::{SourceCheckpoint, SourceCheckpointDelta};
 use quickwit_metastore::Metastore;
-use quickwit_proto::IndexUid;
+use quickwit_proto::indexing::IndexingPipelineId;
 use serde_json::Value as JsonValue;
 pub use source_factory::{SourceFactory, SourceLoader, TypedSourceFactory};
 use tokio::runtime::Handle;
@@ -103,12 +104,13 @@ pub use void_source::{VoidSource, VoidSourceFactory};
 
 use crate::actors::DocProcessor;
 use crate::models::RawDocBatch;
+use crate::source::http_source::HttpSourceFactory;
 use crate::source::ingest_api_source::IngestApiSourceFactory;
 
 /// Runtime configuration used during execution of a source actor.
 pub struct SourceExecutionContext {
     pub metastore: Arc<dyn Metastore>,
-    pub index_uid: IndexUid,
+    pub pipeline_id: IndexingPipelineId,
     // Ingest API queues directory path.
     pub queues_dir_path: PathBuf,
     pub source_config: SourceConfig,
@@ -118,13 +120,13 @@ impl SourceExecutionContext {
     #[cfg(test)]
     fn for_test(
         metastore: Arc<dyn Metastore>,
-        index_uid: IndexUid,
+        pipeline_id: IndexingPipelineId,
         queues_dir_path: PathBuf,
         source_config: SourceConfig,
     ) -> Arc<SourceExecutionContext> {
         Arc::new(Self {
             metastore,
-            index_uid,
+            pipeline_id,
             queues_dir_path,
             source_config,
         })
@@ -304,6 +306,7 @@ pub fn quickwit_supported_sources() -> &'static SourceLoader {
         source_factory.add_source("vec", VecSourceFactory);
         source_factory.add_source("void", VoidSourceFactory);
         source_factory.add_source("ingest-api", IngestApiSourceFactory);
+        source_factory.add_source("http", HttpSourceFactory);
         source_factory
     })
 }

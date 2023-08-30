@@ -229,7 +229,7 @@ impl fmt::Debug for KafkaSource {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         formatter
             .debug_struct("KafkaSource")
-            .field("index_id", &self.ctx.index_uid.index_id())
+            .field("index_id", &self.ctx.pipeline_id.index_uid.index_id())
             .field("source_id", &self.ctx.source_config.source_id)
             .field("topic", &self.topic)
             .finish()
@@ -248,7 +248,7 @@ impl KafkaSource {
 
         let (events_tx, events_rx) = mpsc::channel(100);
         let (client_config, consumer) = create_consumer(
-            &ctx.index_uid,
+            &ctx.pipeline_id.index_uid,
             &ctx.source_config.source_id,
             params,
             events_tx.clone(),
@@ -266,7 +266,7 @@ impl KafkaSource {
         let publish_lock = PublishLock::default();
 
         info!(
-            index_id=%ctx.index_uid.index_id(),
+            index_id=%ctx.pipeline_id.index_uid.index_id(),
             source_id=%ctx.source_config.source_id,
             topic=%topic,
             group_id=%group_id,
@@ -349,13 +349,13 @@ impl KafkaSource {
             .protect_future(
                 self.ctx
                     .metastore
-                    .index_metadata_strict(&self.ctx.index_uid),
+                    .index_metadata_strict(&self.ctx.pipeline_id.index_uid),
             )
             .await
             .with_context(|| {
                 format!(
                     "Failed to fetch index metadata for index `{}`.",
-                    self.ctx.index_uid.index_id()
+                    self.ctx.pipeline_id.index_uid.index_id()
                 )
             })?;
         let checkpoint = index_metadata
@@ -392,7 +392,7 @@ impl KafkaSource {
             next_offsets.push((partition, next_offset));
         }
         info!(
-            index_id=%self.ctx.index_uid.index_id(),
+            index_id=%self.ctx.pipeline_id.index_uid.index_id(),
             source_id=%self.ctx.source_config.source_id,
             topic=%self.topic,
             partitions=?partitions,
@@ -534,7 +534,7 @@ impl Source for KafkaSource {
             .sorted()
             .collect();
         json!({
-            "index_id": self.ctx.index_uid.index_id(),
+            "index_id": self.ctx.pipeline_id.index_uid.index_id(),
             "source_id": self.ctx.source_config.source_id,
             "topic": self.topic,
             "assigned_partitions": assigned_partitions,
@@ -745,6 +745,7 @@ mod kafka_broker_tests {
     use quickwit_config::{IndexConfig, SourceConfig, SourceInputFormat, SourceParams};
     use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
     use quickwit_metastore::{metastore_for_test, Metastore, SplitMetadata};
+    use quickwit_proto::indexing::IndexingPipelineId;
     use quickwit_proto::IndexUid;
     use rdkafka::admin::{AdminClient, AdminOptions, NewTopic, TopicReplication};
     use rdkafka::client::DefaultClientContext;
@@ -930,16 +931,21 @@ mod kafka_broker_tests {
 
         let metastore = metastore_for_test();
         let index_id = append_random_suffix("test-kafka-source--process-message--index");
-        let index_uid = IndexUid::new(&index_id);
         let (_source_id, source_config) = get_source_config(&topic);
         let params = if let SourceParams::Kafka(params) = source_config.clone().source_params {
             params
         } else {
             unreachable!()
         };
+        let pipeline_id = IndexingPipelineId {
+            index_uid: IndexUid::new(&index_id),
+            source_id: "kafka-file-source".to_string(),
+            node_id: "kafka-node".to_string(),
+            pipeline_ord: 0,
+        };
         let ctx = SourceExecutionContext::for_test(
             metastore,
-            index_uid,
+            pipeline_id,
             PathBuf::from("./queues"),
             source_config,
         );
@@ -1057,15 +1063,20 @@ mod kafka_broker_tests {
         let (source_id, source_config) = get_source_config(&topic);
 
         let index_uid = setup_index(metastore.clone(), &index_id, &source_id, &[(2, -1, 42)]).await;
-
         let params = if let SourceParams::Kafka(params) = source_config.clone().source_params {
             params
         } else {
             unreachable!()
         };
+        let pipeline_id = IndexingPipelineId {
+            index_uid,
+            source_id: "kafka-file-source".to_string(),
+            node_id: "kafka-node".to_string(),
+            pipeline_ord: 0,
+        };
         let ctx = Arc::new(SourceExecutionContext {
             metastore,
-            index_uid,
+            pipeline_id,
             queues_dir_path: PathBuf::from("./queues"),
             source_config,
         });
@@ -1124,9 +1135,15 @@ mod kafka_broker_tests {
         } else {
             unreachable!()
         };
+        let pipeline_id = IndexingPipelineId {
+            index_uid,
+            source_id: "kafka-file-source".to_string(),
+            node_id: "kafka-node".to_string(),
+            pipeline_ord: 0,
+        };
         let ctx = SourceExecutionContext::for_test(
             metastore,
-            index_uid,
+            pipeline_id,
             PathBuf::from("./queues"),
             source_config,
         );
@@ -1181,9 +1198,15 @@ mod kafka_broker_tests {
         } else {
             unreachable!()
         };
+        let pipeline_id = IndexingPipelineId {
+            index_uid,
+            source_id: "kafka-file-source".to_string(),
+            node_id: "kafka-node".to_string(),
+            pipeline_ord: 0,
+        };
         let ctx = SourceExecutionContext::for_test(
             metastore,
-            index_uid,
+            pipeline_id,
             PathBuf::from("./queues"),
             source_config,
         );
@@ -1217,11 +1240,17 @@ mod kafka_broker_tests {
             let index_id = append_random_suffix("test-kafka-source--index");
             let (source_id, source_config) = get_source_config(&topic);
             let index_uid = setup_index(metastore.clone(), &index_id, &source_id, &[]).await;
+            let pipeline_id = IndexingPipelineId {
+                index_uid,
+                source_id: "kafka-file-source".to_string(),
+                node_id: "kafka-node".to_string(),
+                pipeline_ord: 0,
+            };
             let source = source_loader
                 .load_source(
                     SourceExecutionContext::for_test(
                         metastore,
-                        index_uid,
+                        pipeline_id,
                         PathBuf::from("./queues"),
                         source_config,
                     ),
@@ -1276,11 +1305,17 @@ mod kafka_broker_tests {
             let index_id = append_random_suffix("test-kafka-source--index");
             let (source_id, source_config) = get_source_config(&topic);
             let index_uid = setup_index(metastore.clone(), &index_id, &source_id, &[]).await;
+            let pipeline_id = IndexingPipelineId {
+                index_uid,
+                source_id: "kafka-file-source".to_string(),
+                node_id: "kafka-node".to_string(),
+                pipeline_ord: 0,
+            };
             let source = source_loader
                 .load_source(
                     Arc::new(SourceExecutionContext {
                         metastore,
-                        index_uid,
+                        pipeline_id,
                         queues_dir_path: PathBuf::from("./queues"),
                         source_config,
                     }),
@@ -1345,11 +1380,17 @@ mod kafka_broker_tests {
                 &[(0, -1, 0), (1, -1, 2)],
             )
             .await;
+            let pipeline_id = IndexingPipelineId {
+                index_uid,
+                source_id: "kafka-file-source".to_string(),
+                node_id: "kafka-node".to_string(),
+                pipeline_ord: 0,
+            };
             let source = source_loader
                 .load_source(
                     Arc::new(SourceExecutionContext {
                         metastore,
-                        index_uid,
+                        pipeline_id,
                         queues_dir_path: PathBuf::from("./queues"),
                         source_config,
                     }),

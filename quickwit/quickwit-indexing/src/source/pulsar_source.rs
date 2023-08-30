@@ -103,9 +103,10 @@ impl PulsarSource {
         params: PulsarSourceParams,
         checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self> {
-        let subscription_name = subscription_name(&ctx.index_uid, &ctx.source_config.source_id);
+        let subscription_name =
+            subscription_name(&ctx.pipeline_id.index_uid, &ctx.source_config.source_id);
         info!(
-            index_id=%ctx.index_uid.index_id(),
+            index_id=%ctx.pipeline_id.index_uid.index_id(),
             source_id=%ctx.source_config.source_id,
             topics=?params.topics,
             subscription_name=%subscription_name,
@@ -281,7 +282,7 @@ impl Source for PulsarSource {
 
     fn observable_state(&self) -> JsonValue {
         json!({
-            "index_id": self.ctx.index_uid.index_id(),
+            "index_id": self.ctx.pipeline_id.index_uid.index_id(),
             "source_id": self.ctx.source_config.source_id,
             "topics": self.params.topics,
             "subscription_name": self.subscription_name,
@@ -446,6 +447,7 @@ mod pulsar_broker_tests {
         IndexCheckpointDelta, PartitionId, Position, SourceCheckpointDelta,
     };
     use quickwit_metastore::{metastore_for_test, Metastore, SplitMetadata};
+    use quickwit_proto::indexing::IndexingPipelineId;
     use reqwest::StatusCode;
 
     use super::*;
@@ -684,9 +686,15 @@ mod pulsar_broker_tests {
         source_config: SourceConfig,
         start_checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<(ActorHandle<SourceActor>, Inbox<DocProcessor>)> {
+        let pipeline_id = IndexingPipelineId {
+            index_uid: index_uid.clone(),
+            source_id: source_config.source_id.to_string(),
+            node_id: "kafka-node".to_string(),
+            pipeline_ord: 0,
+        };
         let ctx = SourceExecutionContext::for_test(
             metastore,
-            index_uid,
+            pipeline_id,
             PathBuf::from("./queues"),
             source_config,
         );
@@ -798,8 +806,6 @@ mod pulsar_broker_tests {
         let metastore = metastore_for_test();
         let topic = append_random_suffix("test-pulsar-source-topic");
 
-        let index_id = append_random_suffix("test-pulsar-source-index");
-        let index_uid = IndexUid::new(&index_id);
         let (_source_id, source_config) = get_source_config([&topic]);
         let params = if let SourceParams::Pulsar(params) = source_config.clone().source_params {
             params
@@ -807,9 +813,15 @@ mod pulsar_broker_tests {
             unreachable!()
         };
 
+        let pipeline_id = IndexingPipelineId {
+            index_uid: IndexUid::new("test-index"),
+            source_id: "kafka-file-source".to_string(),
+            node_id: "kafka-node".to_string(),
+            pipeline_ord: 0,
+        };
         let ctx = SourceExecutionContext::for_test(
             metastore,
-            index_uid,
+            pipeline_id,
             PathBuf::from("./queues"),
             source_config,
         );

@@ -89,7 +89,7 @@ impl fmt::Debug for GcpPubSubSource {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         formatter
             .debug_struct("GcpPubSubSource")
-            .field("index_id", &self.ctx.index_uid.index_id())
+            .field("index_id", &self.ctx.pipeline_id.index_uid.index_id())
             .field("source_id", &self.ctx.source_config.source_id)
             .field("subscription", &self.subscription)
             .finish()
@@ -135,8 +135,8 @@ impl GcpPubSubSource {
         let partition_id = PartitionId::from(partition_id);
 
         info!(
-            index_id=%ctx.index_uid.index_id(),
-            source_id=%ctx.source_config.source_id,
+            index_id=%ctx.pipeline_id.index_uid.index_id(),
+            source_id=%ctx.pipeline_id.source_id,
             subscription=%subscription_name,
             max_messages_per_pull=%max_messages_per_pull,
             "Starting GCP PubSub source."
@@ -232,7 +232,7 @@ impl Source for GcpPubSubSource {
 
     fn observable_state(&self) -> JsonValue {
         json!({
-            "index_id": self.ctx.index_uid.index_id(),
+            "index_id": self.ctx.pipeline_id.index_uid.index_id(),
             "source_id": self.ctx.source_config.source_id,
             "subscription": self.subscription_name,
             "num_bytes_processed": self.state.num_bytes_processed,
@@ -301,6 +301,7 @@ mod gcp_pubsub_emulator_tests {
     use quickwit_actors::Universe;
     use quickwit_config::{SourceConfig, SourceInputFormat, SourceParams};
     use quickwit_metastore::metastore_for_test;
+    use quickwit_proto::indexing::IndexingPipelineId;
     use quickwit_proto::IndexUid;
     use serde_json::json;
 
@@ -366,9 +367,15 @@ mod gcp_pubsub_emulator_tests {
                 source_config.source_params
             );
         };
+        let indexing_pipeline_id = IndexingPipelineId {
+            index_uid,
+            pipeline_ord: 0,
+            node_id: "0".to_string(),
+            source_id: "source".to_string(),
+        };
         let ctx = SourceExecutionContext::for_test(
             metastore,
-            index_uid,
+            indexing_pipeline_id,
             PathBuf::from("./queues"),
             source_config,
         );
@@ -403,11 +410,17 @@ mod gcp_pubsub_emulator_tests {
         for awaiter in awaiters {
             awaiter.get().await.unwrap();
         }
+        let indexing_pipeline_id = IndexingPipelineId {
+            index_uid,
+            pipeline_ord: 0,
+            node_id: "0".to_string(),
+            source_id: source_id.to_string(),
+        };
         let source = source_loader
             .load_source(
                 SourceExecutionContext::for_test(
                     metastore,
-                    index_uid,
+                    indexing_pipeline_id,
                     PathBuf::from("./queues"),
                     source_config,
                 ),
