@@ -23,7 +23,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use crate::cache::{StorageCache, MemorySizedCache};
+use crate::cache::{MemorySizedCache, StorageCache};
 use crate::metrics::CacheMetrics;
 use crate::OwnedBytes;
 
@@ -163,13 +163,13 @@ mod tests {
     use std::sync::Arc;
 
     use super::QuickwitCache;
-    use crate::cache::{StorageCache, StorageCache};
-    use crate::OwnedBytes;
+    use crate::cache::StorageCache;
+    use crate::{MockStorageCache, OwnedBytes};
 
     #[tokio::test]
     async fn test_quickwit_cache_get_all() {
-        let mock_cache_hotcache = StorageCache::default();
-        let mut mock_cache_fast = StorageCache::default();
+        let mock_cache_hotcache = MockStorageCache::default();
+        let mut mock_cache_fast = MockStorageCache::default();
         mock_cache_fast
             .expect_get_all()
             .times(1)
@@ -183,8 +183,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_quickwit_cache_get() {
-        let mock_cache_hotcache = StorageCache::default();
-        let mut mock_cache = StorageCache::default();
+        let mock_cache_hotcache = MockStorageCache::default();
+        let mut mock_cache = MockStorageCache::default();
         mock_cache
             .expect_get()
             .times(1)
@@ -198,13 +198,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_quickwit_cache_priority() {
-        let mut mock_cache_ast = StorageCache::default();
+        let mut mock_cache_ast = MockStorageCache::default();
         mock_cache_ast
             .expect_get()
             .times(1)
             .withf(|path, _| path == Path::new("bubu/toto.fast"))
             .returning(|_, _| Some(OwnedBytes::new(&b"aaaaa"[..])));
-        let mock_cache_fast = StorageCache::default();
+        let mock_cache_fast = MockStorageCache::default();
         let mut quickwit_cache = QuickwitCache::empty();
         quickwit_cache.add_route("ast", Arc::new(mock_cache_ast));
         quickwit_cache.add_route("fast", Arc::new(mock_cache_fast));

@@ -109,12 +109,12 @@ mod tests {
     use std::sync::Mutex;
 
     use super::*;
-    use crate::{StorageCache, MockStorage, OwnedBytes};
+    use crate::{MockStorage, MockStorageCache, OwnedBytes};
 
     #[tokio::test]
     async fn put_in_cache_test() {
         let mut mock_storage = MockStorage::default();
-        let mut mock_cache = StorageCache::default();
+        let mut mock_cache = MockStorageCache::default();
         let actual_cache: Arc<Mutex<HashMap<PathBuf, OwnedBytes>>> =
             Arc::new(Mutex::new(HashMap::new()));
 
