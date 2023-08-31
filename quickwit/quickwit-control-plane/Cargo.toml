@@ -12,7 +12,6 @@ documentation = "https://quickwit.io/docs/"
 [dependencies]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
-chitchat = { workspace = true }
 dyn-clone = { workspace = true }
 http = { workspace = true }
 hyper = { workspace = true }
@@ -28,13 +27,10 @@ tokio-stream = { workspace = true }
 tonic = { workspace = true }
 tower = { workspace = true }
 tracing = { workspace = true }
-utoipa = { workspace = true }
 
 quickwit-actors = { workspace = true }
-quickwit-cluster = { workspace = true }
 quickwit-common = { workspace = true }
 quickwit-config = { workspace = true }
-quickwit-indexing = { workspace = true }
 quickwit-metastore = { workspace = true }
 quickwit-proto = { workspace = true }
 
@@ -46,6 +42,8 @@ rand = { workspace = true }
 
 quickwit-actors = { workspace = true, features = ["testsuite"] }
 quickwit-cluster = { workspace = true, features = ["testsuite"] }
+chitchat = { workspace = true }
+quickwit-indexing = { workspace = true }
 quickwit-common = { workspace = true, features = ["testsuite"] }
 quickwit-config = { workspace = true, features = ["testsuite"] }
 quickwit-metastore = { workspace = true, features = ["testsuite"] }

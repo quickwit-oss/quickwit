@@ -38,8 +38,6 @@ tokio-stream = { workspace = true }
 tonic = { workspace = true }
 tower = { workspace = true }
 tracing = { workspace = true }
-utoipa = { workspace = true }
-warp = { workspace = true }
 
 [features]
 testsuite = []

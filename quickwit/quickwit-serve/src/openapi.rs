@@ -19,7 +19,6 @@
 
 use std::mem;
 
-use quickwit_common::metrics::MetricsApi;
 use quickwit_config::ConfigApiSchemas;
 use quickwit_doc_mapper::DocMapperApiSchemas;
 use quickwit_indexing::IndexingApiSchemas;
@@ -35,6 +34,7 @@ use crate::health_check_api::HealthCheckApi;
 use crate::index_api::IndexApi;
 use crate::indexing_api::IndexingApi;
 use crate::ingest_api::{IngestApi, IngestApiSchemas};
+use crate::metrics_api::MetricsApi;
 use crate::node_info_handler::NodeInfoApi;
 use crate::search_api::SearchApi;
 

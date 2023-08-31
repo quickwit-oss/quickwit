@@ -4951,7 +4951,6 @@ dependencies = [
 name = "quickwit-aws"
 version = "0.6.3"
 dependencies = [
- "anyhow",
  "async-trait",
  "aws-config",
  "aws-sdk-kinesis",
@@ -4965,7 +4964,6 @@ dependencies = [
  "once_cell",
  "quickwit-actors",
  "rand 0.8.5",
- "thiserror",
  "tokio",
  "tower",
  "tracing",
@@ -5127,8 +5125,6 @@ dependencies = [
  "tonic 0.9.2",
  "tower",
  "tracing",
- "utoipa",
- "warp",
 ]
 
 [[package]]
@@ -5196,7 +5192,6 @@ dependencies = [
  "tonic 0.9.2",
  "tower",
  "tracing",
- "utoipa",
 ]
 
 [[package]]
@@ -5688,7 +5683,6 @@ dependencies = [
  "postcard",
  "proptest",
  "prost",
- "quickwit-cluster",
  "quickwit-common",
  "quickwit-config",
  "quickwit-directories",

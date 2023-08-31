@@ -22,7 +22,6 @@ use std::sync::Arc;
 
 use hyper::http::HeaderValue;
 use hyper::{http, Method};
-use quickwit_common::metrics;
 use quickwit_common::tower::BoxFutureInfaillible;
 use quickwit_proto::ServiceErrorCode;
 use tower::make::Shared;
@@ -41,6 +40,7 @@ use crate::index_api::index_management_handlers;
 use crate::indexing_api::indexing_get_handler;
 use crate::ingest_api::ingest_api_handlers;
 use crate::json_api_response::{ApiError, JsonApiResponse};
+use crate::metrics_api::metrics_handler;
 use crate::node_info_handler::node_info_handler;
 use crate::search_api::{search_get_handler, search_post_handler, search_stream_handler};
 use crate::ui_handler::ui_handler;
@@ -83,9 +83,7 @@ pub(crate) async fn start_rest_server(
     );
 
     // `/metrics` route.
-    let metrics_routes = warp::path("metrics")
-        .and(warp::get())
-        .map(metrics::metrics_handler);
+    let metrics_routes = warp::path("metrics").and(warp::get()).map(metrics_handler);
 
     let ingest_service = quickwit_services.ingest_service.clone();
 
