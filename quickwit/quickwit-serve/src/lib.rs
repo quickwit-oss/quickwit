@@ -35,6 +35,7 @@ mod index_api;
 mod indexing_api;
 mod ingest_api;
 mod json_api_response;
+mod metrics_api;
 mod node_info_handler;
 mod openapi;
 mod search_api;

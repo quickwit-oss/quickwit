@@ -19,7 +19,7 @@
 
 use std::mem;
 
-use quickwit_common::metrics::MetricsApi;
+use crate::metrics_api::MetricsApi;
 use quickwit_config::ConfigApiSchemas;
 use quickwit_doc_mapper::DocMapperApiSchemas;
 use quickwit_indexing::IndexingApiSchemas;
