@@ -45,7 +45,7 @@ use crate::{OwnedBytes, Storage};
 /// have universally unique names. It happens to be true today, but this might be very error prone
 /// in the future.
 pub fn wrap_storage_with_long_term_cache(
-    long_term_cache: Arc<dyn Cache>,
+    long_term_cache: Arc<dyn StorageCache>,
     storage: Arc<dyn Storage>,
 ) -> Arc<dyn Storage> {
     Arc::new(StorageWithCache {
@@ -54,11 +54,11 @@ pub fn wrap_storage_with_long_term_cache(
     })
 }
 
-/// The `Cache` trait is the abstraction used to describe the caching logic
+/// The `StorageCache` trait is the abstraction used to describe the caching logic
 /// used in front of a storage. See `StorageWithCache`.
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait]
-pub trait Cache: Send + Sync + 'static {
+pub trait StorageCache: Send + Sync + 'static {
     /// Try to get a slice from the cache.
     async fn get(&self, path: &Path, byte_range: Range<usize>) -> Option<OwnedBytes>;
     /// Try to get the entire file.

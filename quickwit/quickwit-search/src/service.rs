@@ -34,7 +34,7 @@ use quickwit_proto::search::{
     LeafSearchStreamResponse, ListTermsRequest, ListTermsResponse, PutKvRequest, ScrollRequest,
     SearchRequest, SearchResponse, SearchStreamRequest, SnippetRequest,
 };
-use quickwit_storage::{Cache, MemorySizedCache, QuickwitCache, StorageResolver};
+use quickwit_storage::{MemorySizedCache, QuickwitCache, StorageCache, StorageResolver};
 use tantivy::aggregation::AggregationLimits;
 use tokio::sync::Semaphore;
 use tokio_stream::wrappers::UnboundedReceiverStream;
@@ -396,7 +396,7 @@ pub struct SearcherContext {
     /// Searcher config.
     pub searcher_config: SearcherConfig,
     /// Fast fields cache.
-    pub fast_fields_cache: Arc<dyn Cache>,
+    pub fast_fields_cache: Arc<dyn StorageCache>,
     /// Counting semaphore to limit concurrent leaf search split requests.
     pub leaf_search_split_semaphore: Semaphore,
     /// Split footer cache.

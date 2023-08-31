@@ -23,7 +23,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 
-use crate::cache::{Cache, MemorySizedCache};
+use crate::cache::{MemorySizedCache, StorageCache};
 use crate::metrics::CacheMetrics;
 use crate::OwnedBytes;
 
@@ -32,11 +32,11 @@ const FULL_SLICE: Range<usize> = 0..usize::MAX;
 /// Quickwit storage cache with a size limit.
 /// It is used currently by to cache only fast fields data.
 pub struct QuickwitCache {
-    router: Vec<(&'static str, Arc<dyn Cache>)>,
+    router: Vec<(&'static str, Arc<dyn StorageCache>)>,
 }
 
-impl From<Vec<(&'static str, Arc<dyn Cache>)>> for QuickwitCache {
-    fn from(router: Vec<(&'static str, Arc<dyn Cache>)>) -> Self {
+impl From<Vec<(&'static str, Arc<dyn StorageCache>)>> for QuickwitCache {
+    fn from(router: Vec<(&'static str, Arc<dyn StorageCache>)>) -> Self {
         QuickwitCache { router }
     }
 }
@@ -65,11 +65,11 @@ impl QuickwitCache {
 
     /// Adds a caching route defined by a path suffix. All elements with a path matching
     /// this suffix will be cached.
-    pub fn add_route(&mut self, path_suffix: &'static str, route_cache: Arc<dyn Cache>) {
+    pub fn add_route(&mut self, path_suffix: &'static str, route_cache: Arc<dyn StorageCache>) {
         self.router.push((path_suffix, route_cache));
     }
 
-    fn get_relevant_cache(&self, path: &Path) -> Option<&dyn Cache> {
+    fn get_relevant_cache(&self, path: &Path) -> Option<&dyn StorageCache> {
         for (suffix, cache) in &self.router {
             if path.to_string_lossy().ends_with(suffix) {
                 return Some(cache.as_ref());
@@ -80,7 +80,7 @@ impl QuickwitCache {
 }
 
 #[async_trait]
-impl Cache for QuickwitCache {
+impl StorageCache for QuickwitCache {
     async fn get(&self, path: &Path, byte_range: Range<usize>) -> Option<OwnedBytes> {
         // We don't check for the presence of the entire file in the
         // cache.
@@ -136,7 +136,7 @@ impl SimpleCache {
 }
 
 #[async_trait]
-impl Cache for SimpleCache {
+impl StorageCache for SimpleCache {
     async fn get(&self, path: &Path, byte_range: Range<usize>) -> Option<OwnedBytes> {
         if let Some(bytes) = self.slice_cache.get_slice(path, byte_range) {
             return Some(bytes);
@@ -163,13 +163,13 @@ mod tests {
     use std::sync::Arc;
 
     use super::QuickwitCache;
-    use crate::cache::{Cache, MockCache};
-    use crate::OwnedBytes;
+    use crate::cache::StorageCache;
+    use crate::{MockStorageCache, OwnedBytes};
 
     #[tokio::test]
     async fn test_quickwit_cache_get_all() {
-        let mock_cache_hotcache = MockCache::default();
-        let mut mock_cache_fast = MockCache::default();
+        let mock_cache_hotcache = MockStorageCache::default();
+        let mut mock_cache_fast = MockStorageCache::default();
         mock_cache_fast
             .expect_get_all()
             .times(1)
@@ -183,8 +183,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_quickwit_cache_get() {
-        let mock_cache_hotcache = MockCache::default();
-        let mut mock_cache = MockCache::default();
+        let mock_cache_hotcache = MockStorageCache::default();
+        let mut mock_cache = MockStorageCache::default();
         mock_cache
             .expect_get()
             .times(1)
@@ -198,13 +198,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_quickwit_cache_priority() {
-        let mut mock_cache_ast = MockCache::default();
+        let mut mock_cache_ast = MockStorageCache::default();
         mock_cache_ast
             .expect_get()
             .times(1)
             .withf(|path, _| path == Path::new("bubu/toto.fast"))
             .returning(|_, _| Some(OwnedBytes::new(&b"aaaaa"[..])));
-        let mock_cache_fast = MockCache::default();
+        let mock_cache_fast = MockStorageCache::default();
         let mut quickwit_cache = QuickwitCache::empty();
         quickwit_cache.add_route("ast", Arc::new(mock_cache_ast));
         quickwit_cache.add_route("fast", Arc::new(mock_cache_fast));

@@ -25,14 +25,14 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use quickwit_common::uri::Uri;
 
-use crate::cache::Cache;
+use crate::cache::StorageCache;
 use crate::storage::SendableAsync;
 use crate::{BulkDeleteError, OwnedBytes, Storage, StorageResult};
 
 /// Use with care, StorageWithCache is read-only.
 pub struct StorageWithCache {
     pub storage: Arc<dyn Storage>,
-    pub cache: Arc<dyn Cache>,
+    pub cache: Arc<dyn StorageCache>,
 }
 
 impl fmt::Debug for StorageWithCache {
@@ -109,12 +109,12 @@ mod tests {
     use std::sync::Mutex;
 
     use super::*;
-    use crate::{MockCache, MockStorage, OwnedBytes};
+    use crate::{MockStorage, MockStorageCache, OwnedBytes};
 
     #[tokio::test]
     async fn put_in_cache_test() {
         let mut mock_storage = MockStorage::default();
-        let mut mock_cache = MockCache::default();
+        let mut mock_cache = MockStorageCache::default();
         let actual_cache: Arc<Mutex<HashMap<PathBuf, OwnedBytes>>> =
             Arc::new(Mutex::new(HashMap::new()));
 

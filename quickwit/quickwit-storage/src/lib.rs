@@ -59,9 +59,10 @@ pub use versioned_component::VersionedComponent;
 
 pub use self::bundle_storage::{BundleStorage, BundleStorageFileOffsets};
 #[cfg(any(test, feature = "testsuite"))]
-pub use self::cache::MockCache;
+pub use self::cache::MockStorageCache;
 pub use self::cache::{
-    wrap_storage_with_long_term_cache, ByteRangeCache, Cache, MemorySizedCache, QuickwitCache,
+    wrap_storage_with_long_term_cache, ByteRangeCache, MemorySizedCache, QuickwitCache,
+    StorageCache,
 };
 pub use self::local_file_storage::{LocalFileStorage, LocalFileStorageFactory};
 #[cfg(feature = "azure")]
