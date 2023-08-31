@@ -42,6 +42,8 @@ pub mod types;
 
 pub use types::*;
 
+use crate::search::ReportSplitsRequest;
+
 pub mod jaeger {
     pub mod api_v2 {
         include!("codegen/jaeger/jaeger.api_v2.rs");
@@ -294,3 +296,5 @@ impl<E: fmt::Debug + ServiceError> ServiceError for quickwit_actors::AskError<E>
         }
     }
 }
+
+impl quickwit_common::pubsub::Event for ReportSplitsRequest {}

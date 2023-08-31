@@ -84,7 +84,7 @@ impl<A: Actor> JsonObservable for TypedJsonObservable<A> {
 }
 
 #[derive(Default, Clone)]
-pub(crate) struct ActorRegistry {
+pub struct ActorRegistry {
     actors: Arc<RwLock<HashMap<TypeId, ActorRegistryForSpecificType>>>,
 }
 
@@ -121,7 +121,7 @@ pub struct ActorObservation {
 }
 
 impl ActorRegistry {
-    pub fn register<A: Actor>(&self, mailbox: &Mailbox<A>, join_handle: ActorJoinHandle) {
+    pub(crate) fn register<A: Actor>(&self, mailbox: &Mailbox<A>, join_handle: ActorJoinHandle) {
         let typed_id = TypeId::of::<A>();
         let actor_instance_id = mailbox.actor_instance_id().to_string();
         let weak_mailbox = mailbox.downgrade();
@@ -181,7 +181,7 @@ impl ActorRegistry {
         }
     }
 
-    pub async fn quit(&self) -> HashMap<String, ActorExitStatus> {
+    pub(crate) async fn quit(&self) -> HashMap<String, ActorExitStatus> {
         let mut obs_futures = Vec::new();
         let mut actor_ids = Vec::new();
         for registry_for_type in self.actors.read().unwrap().values() {
@@ -195,7 +195,7 @@ impl ActorRegistry {
         actor_ids.into_iter().zip(res).collect()
     }
 
-    pub fn is_empty(&self) -> bool {
+    pub(crate) fn is_empty(&self) -> bool {
         self.actors
             .read()
             .unwrap()

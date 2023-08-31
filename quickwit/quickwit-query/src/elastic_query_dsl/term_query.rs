@@ -21,8 +21,8 @@ use serde::Deserialize;
 
 use crate::elastic_query_dsl::one_field_map::OneFieldMap;
 use crate::elastic_query_dsl::{ConvertableToQueryAst, ElasticQueryDslInner};
-use crate::not_nan_f32::NotNaNf32;
 use crate::query_ast::{self, QueryAst};
+use crate::NotNaNf32;
 
 pub type TermQuery = OneFieldMap<TermQueryValue>;
 

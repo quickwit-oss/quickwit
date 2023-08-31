@@ -32,6 +32,7 @@ use quickwit_actors::{
 };
 use quickwit_cluster::Cluster;
 use quickwit_common::fs::get_cache_directory_path;
+use quickwit_common::pubsub::EventBroker;
 use quickwit_common::temp_dir;
 use quickwit_config::{
     build_doc_mapper, IndexConfig, IndexerConfig, SourceConfig, INGEST_API_SOURCE_ID,
@@ -87,6 +88,12 @@ struct MergePipelineHandle {
     handle: ActorHandle<MergePipeline>,
 }
 
+/// The indexing service is (single) actor service running on indexer and in charge
+/// of executing the indexing plans received from the control plane.
+///
+/// Concretely this means receiving new plans, comparing the current situation
+/// with the target situation, and spawning/shutting down the  indexing pipelines that
+/// are respectively missing or extranumerous.
 pub struct IndexingService {
     node_id: String,
     indexing_root_directory: PathBuf,
@@ -101,10 +108,11 @@ pub struct IndexingService {
     max_concurrent_split_uploads: usize,
     merge_pipeline_handles: HashMap<MergePipelineId, MergePipelineHandle>,
     cooperative_indexing_permits: Option<Arc<Semaphore>>,
+    event_broker: EventBroker,
 }
 
 impl Debug for IndexingService {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
         formatter
             .debug_struct("IndexingService")
             .field("cluster_id", &self.cluster.cluster_id())
@@ -125,6 +133,7 @@ impl IndexingService {
         metastore: Arc<dyn Metastore>,
         ingest_api_service_opt: Option<Mailbox<IngestApiService>>,
         storage_resolver: StorageResolver,
+        event_broker: EventBroker,
     ) -> anyhow::Result<IndexingService> {
         let split_store_space_quota = SplitStoreQuota::new(
             indexer_config.split_store_max_num_splits,
@@ -155,6 +164,7 @@ impl IndexingService {
             max_concurrent_split_uploads: indexer_config.max_concurrent_split_uploads,
             merge_pipeline_handles: HashMap::new(),
             cooperative_indexing_permits,
+            event_broker,
         })
     }
 
@@ -268,6 +278,7 @@ impl IndexingService {
                 .resources
                 .max_merge_write_throughput,
             max_concurrent_split_uploads: self.max_concurrent_split_uploads,
+            event_broker: self.event_broker.clone(),
         };
 
         let merge_planner_mailbox = self
@@ -294,6 +305,7 @@ impl IndexingService {
             queues_dir_path: self.queue_dir_path.clone(),
             cooperative_indexing_permits: self.cooperative_indexing_permits.clone(),
             merge_planner_mailbox,
+            event_broker: self.event_broker.clone(),
         };
         let pipeline = IndexingPipeline::new(pipeline_params);
         let (_pipeline_mailbox, pipeline_handle) = ctx.spawn_actor().spawn(pipeline);
@@ -766,7 +778,7 @@ mod tests {
 
     use super::*;
 
-    async fn spawn_indexing_service(
+    async fn spawn_indexing_service_for_test(
         data_dir_path: &Path,
         universe: &Universe,
         metastore: Arc<dyn Metastore>,
@@ -789,6 +801,7 @@ mod tests {
             metastore,
             Some(ingest_api_service),
             storage_resolver.clone(),
+            EventBroker::default(),
         )
         .await
         .unwrap();
@@ -816,7 +829,7 @@ mod tests {
         let universe = Universe::with_accelerated_time();
         let temp_dir = tempfile::tempdir().unwrap();
         let (indexing_service, indexing_service_handle) =
-            spawn_indexing_service(temp_dir.path(), &universe, metastore, cluster).await;
+            spawn_indexing_service_for_test(temp_dir.path(), &universe, metastore, cluster).await;
         let observation = indexing_service_handle.observe().await;
         assert_eq!(observation.num_running_pipelines, 0);
         assert_eq!(observation.num_failed_pipelines, 0);
@@ -906,7 +919,7 @@ mod tests {
         let universe = Universe::new();
         let temp_dir = tempfile::tempdir().unwrap();
         let (indexing_service, indexing_server_handle) =
-            spawn_indexing_service(temp_dir.path(), &universe, metastore, cluster).await;
+            spawn_indexing_service_for_test(temp_dir.path(), &universe, metastore, cluster).await;
 
         // Test `supervise_pipelines`
         let source_config = SourceConfig {
@@ -962,7 +975,7 @@ mod tests {
             .unwrap();
         let universe = Universe::new();
         let temp_dir = tempfile::tempdir().unwrap();
-        let (indexing_service, indexing_service_handle) = spawn_indexing_service(
+        let (indexing_service, indexing_service_handle) = spawn_indexing_service_for_test(
             temp_dir.path(),
             &universe,
             metastore.clone(),
@@ -1182,6 +1195,7 @@ mod tests {
             metastore.clone(),
             Some(ingest_api_service),
             storage_resolver.clone(),
+            EventBroker::default(),
         )
         .await
         .unwrap();
@@ -1288,8 +1302,13 @@ mod tests {
         metastore.expect_list_splits().returning(|_| Ok(Vec::new()));
         let universe = Universe::new();
         let temp_dir = tempfile::tempdir().unwrap();
-        let (indexing_service, indexing_service_handle) =
-            spawn_indexing_service(temp_dir.path(), &universe, Arc::new(metastore), cluster).await;
+        let (indexing_service, indexing_service_handle) = spawn_indexing_service_for_test(
+            temp_dir.path(),
+            &universe,
+            Arc::new(metastore),
+            cluster,
+        )
+        .await;
         let _pipeline_id = indexing_service
             .ask_for_res(SpawnPipeline {
                 index_id: index_id.clone(),
@@ -1362,6 +1381,7 @@ mod tests {
             metastore.clone(),
             Some(ingest_api_service.clone()),
             storage_resolver.clone(),
+            EventBroker::default(),
         )
         .await
         .unwrap();

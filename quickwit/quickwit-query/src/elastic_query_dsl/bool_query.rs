@@ -22,8 +22,8 @@ use serde_with::formats::PreferMany;
 use serde_with::{serde_as, OneOrMany};
 
 use crate::elastic_query_dsl::{ConvertableToQueryAst, ElasticQueryDslInner};
-use crate::not_nan_f32::NotNaNf32;
 use crate::query_ast::{self, QueryAst};
+use crate::NotNaNf32;
 
 /// # Unsupported features
 /// - minimum_should_match

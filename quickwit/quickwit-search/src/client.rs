@@ -24,7 +24,9 @@ use std::time::Duration;
 
 use futures::{StreamExt, TryStreamExt};
 use http::Uri;
-use quickwit_proto::search::{GetKvRequest, LeafSearchStreamResponse, PutKvRequest};
+use quickwit_proto::search::{
+    GetKvRequest, LeafSearchStreamResponse, PutKvRequest, ReportSplitsRequest,
+};
 use quickwit_proto::tonic::codegen::InterceptedService;
 use quickwit_proto::tonic::transport::{Channel, Endpoint};
 use quickwit_proto::tonic::Request;
@@ -264,6 +266,17 @@ impl SearchServiceClient {
             }
         }
         Ok(())
+    }
+
+    pub async fn report_splits(&mut self, report_splits_request: ReportSplitsRequest) {
+        match &mut self.client_impl {
+            SearchServiceClientImpl::Local(service) => {
+                service.report_splits(report_splits_request).await;
+            }
+            SearchServiceClientImpl::Grpc(search_client) => {
+                search_client.report_splits(report_splits_request).await;
+            }
+        }
     }
 }
 

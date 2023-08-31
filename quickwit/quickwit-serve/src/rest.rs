@@ -107,7 +107,7 @@ pub(crate) async fn start_rest_server(
         ))
         .or(ingest_api_handlers(ingest_service.clone()))
         .or(index_management_handlers(
-            quickwit_services.index_service.clone(),
+            quickwit_services.index_management_service.clone(),
             quickwit_services.config.clone(),
         ))
         .or(delete_task_api_handlers(

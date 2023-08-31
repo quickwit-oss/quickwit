@@ -64,6 +64,10 @@ impl SpawnContext {
         )
     }
 
+    pub fn registry(&self) -> ActorRegistry {
+        self.registry.clone()
+    }
+
     pub fn child_context(&self) -> SpawnContext {
         SpawnContext {
             scheduler_client: self.scheduler_client.clone(),

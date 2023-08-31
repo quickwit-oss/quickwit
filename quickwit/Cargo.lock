@@ -5789,6 +5789,7 @@ dependencies = [
  "azure_storage",
  "azure_storage_blobs",
  "base64 0.21.2",
+ "byte-unit",
  "bytes",
  "fnv",
  "futures",
@@ -5801,6 +5802,7 @@ dependencies = [
  "quickwit-aws",
  "quickwit-common",
  "quickwit-config",
+ "quickwit-proto",
  "rand 0.8.5",
  "regex",
  "serde",
@@ -5813,6 +5815,7 @@ dependencies = [
  "tokio-util",
  "tracing",
  "tracing-subscriber",
+ "ulid",
 ]
 
 [[package]]

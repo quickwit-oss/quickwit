@@ -19,87 +19,21 @@
 
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
-use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::net::SocketAddr;
 
 use anyhow::bail;
-use async_trait::async_trait;
-use quickwit_common::pubsub::EventSubscriber;
-use quickwit_common::rendezvous_hasher::{node_affinity, sort_by_rendez_vous_hash};
-use quickwit_proto::search::{ReportSplit, ReportSplitsRequest};
+use quickwit_common::rendezvous_hasher::sort_by_rendez_vous_hash;
 
+use crate::search_cluster_client::Job;
 use crate::{SearchServiceClient, SearcherPool};
-
-/// Job.
-/// The unit in which distributed search is performed.
-///
-/// The `split_id` is used to define an affinity between a leaf nodes and a job.
-/// The `cost` is used to spread the work evenly amongst nodes.
-pub trait Job {
-    /// Split ID of the targeted split.
-    fn split_id(&self) -> &str;
-
-    /// Estimation of the load associated with running a given job.
-    ///
-    /// A list of jobs will be assigned to leaf nodes in a way that spread
-    /// the sum of cost evenly.
-    fn cost(&self) -> usize;
-
-    /// Compares the cost of two jobs in reverse order, breaking ties by split ID.
-    fn compare_cost(&self, other: &Self) -> Ordering {
-        self.cost()
-            .cmp(&other.cost())
-            .reverse()
-            .then_with(|| self.split_id().cmp(other.split_id()))
-    }
-}
 
 /// Search job placer.
 /// It assigns jobs to search clients.
 #[derive(Clone, Default)]
-pub struct SearchJobPlacer {
+pub(crate) struct SearchJobPlacer {
     /// Search clients pool.
     searcher_pool: SearcherPool,
-}
-
-#[async_trait]
-impl EventSubscriber<ReportSplitsRequest> for SearchJobPlacer {
-    async fn handle_event(&mut self, evt: ReportSplitsRequest) {
-        let mut nodes: HashMap<SocketAddr, SearchServiceClient> =
-            self.searcher_pool.all().await.into_iter().collect();
-        if nodes.is_empty() {
-            return;
-        }
-        let mut splits_per_node: HashMap<SocketAddr, Vec<ReportSplit>> =
-            HashMap::with_capacity(nodes.len().min(evt.report_splits.len()));
-        for report_split in evt.report_splits {
-            let Some(node_addr) = nodes
-                .keys()
-                .max_by_key(|node_addr| node_affinity(*node_addr, &report_split.split_id))
-            else {
-                // This actually never happens thanks to the if-condition at the
-                // top of this function.
-                return;
-            };
-            splits_per_node
-                .entry(*node_addr)
-                .or_insert_with(Default::default)
-                .push(report_split);
-        }
-        for (node_addr, report_splits) in splits_per_node {
-            if let Some(search_client) = nodes.get_mut(&node_addr) {
-                let report_splits_req = ReportSplitsRequest { report_splits };
-                let _ = search_client.report_splits(report_splits_req).await;
-            }
-        }
-    }
-}
-
-impl fmt::Debug for SearchJobPlacer {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("SearchJobPlacer").finish()
-    }
 }
 
 impl SearchJobPlacer {
@@ -240,8 +174,11 @@ impl Eq for CandidateNodes {}
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::{searcher_pool_for_test, MockSearchService, SearchJob};
+    use std::collections::HashSet;
+    use std::net::SocketAddr;
+
+    use crate::root::SearchJob;
+    use crate::{searcher_pool_for_test, MockSearchService, SearchJobPlacer, SearcherPool};
 
     #[tokio::test]
     async fn test_search_job_placer() {

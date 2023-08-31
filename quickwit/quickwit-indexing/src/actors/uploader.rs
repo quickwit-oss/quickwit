@@ -29,8 +29,10 @@ use fail::fail_point;
 use itertools::Itertools;
 use once_cell::sync::OnceCell;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
+use quickwit_common::pubsub::EventBroker;
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use quickwit_metastore::{Metastore, SplitMetadata};
+use quickwit_proto::search::{ReportSplit, ReportSplitsRequest};
 use quickwit_proto::IndexUid;
 use quickwit_storage::SplitPayloadBuilder;
 use serde::Serialize;
@@ -168,6 +170,7 @@ pub struct Uploader {
     split_update_mailbox: SplitsUpdateMailbox,
     max_concurrent_split_uploads: usize,
     counters: UploaderCounters,
+    event_broker: EventBroker,
 }
 
 impl Uploader {
@@ -178,6 +181,7 @@ impl Uploader {
         split_store: IndexingSplitStore,
         split_update_mailbox: SplitsUpdateMailbox,
         max_concurrent_split_uploads: usize,
+        event_broker: EventBroker,
     ) -> Uploader {
         Uploader {
             uploader_type,
@@ -187,6 +191,7 @@ impl Uploader {
             split_update_mailbox,
             max_concurrent_split_uploads,
             counters: Default::default(),
+            event_broker,
         }
     }
     async fn acquire_semaphore(
@@ -296,11 +301,14 @@ impl Handler<PackagedSplitBatch> for Uploader {
         let ctx_clone = ctx.clone();
         let merge_policy = self.merge_policy.clone();
         info!(split_ids=?split_ids, "start-stage-and-store-splits");
+        let event_broker = self.event_broker.clone();
         tokio::spawn(
             async move {
                 fail_point!("uploader:intask:before");
 
                 let mut split_metadata_list = Vec::with_capacity(batch.splits.len());
+                let mut report_splits: Vec<ReportSplit> = Vec::with_capacity(batch.splits.len());
+
                 for packaged_split in batch.splits.iter() {
                     if batch.publish_lock.is_dead() {
                         // TODO: Remove the junk right away?
@@ -320,7 +328,15 @@ impl Handler<PackagedSplitBatch> for Uploader {
                         split_streamer.footer_range.start..split_streamer.footer_range.end,
                     );
 
+                    report_splits.push(ReportSplit {
+                        storage_uri: split_store.remote_uri().to_string(),
+                        split_id: packaged_split.split_id().to_string(),
+                        num_merge_ops: split_metadata.num_merge_ops as u32,
+                        len: split_metadata.footer_offsets.end as u64,
+                    });
+
                     split_metadata_list.push(split_metadata);
+
                 }
 
                 metastore
@@ -329,6 +345,9 @@ impl Handler<PackagedSplitBatch> for Uploader {
                 counters.num_staged_splits.fetch_add(split_metadata_list.len() as u64, Ordering::SeqCst);
 
                 let mut packaged_splits_and_metadata = Vec::with_capacity(batch.splits.len());
+
+                event_broker.publish(ReportSplitsRequest { report_splits });
+
                 for (packaged_split, metadata) in batch.splits.into_iter().zip(split_metadata_list) {
                     let upload_result = upload_split(
                         &packaged_split,
@@ -477,6 +496,7 @@ mod tests {
     #[tokio::test]
     async fn test_uploader_with_sequencer() -> anyhow::Result<()> {
         quickwit_common::setup_logging_for_tests();
+        let event_broker = EventBroker::default();
         let universe = Universe::new();
         let pipeline_id = IndexingPipelineId {
             index_uid: IndexUid::new("test-index"),
@@ -499,7 +519,7 @@ mod tests {
             .returning(|_, _| Ok(()));
         let ram_storage = RamStorage::default();
         let split_store =
-            IndexingSplitStore::create_without_local_store(Arc::new(ram_storage.clone()));
+            IndexingSplitStore::create_without_local_store_for_test(Arc::new(ram_storage.clone()));
         let merge_policy = Arc::new(NopMergePolicy);
         let uploader = Uploader::new(
             UploaderType::IndexUploader,
@@ -508,6 +528,7 @@ mod tests {
             split_store,
             SplitsUpdateMailbox::Sequencer(sequencer_mailbox),
             4,
+            event_broker,
         );
         let (uploader_mailbox, uploader_handle) = universe.spawn_builder().spawn(uploader);
         let split_scratch_directory = TempDirectory::for_test();
@@ -609,7 +630,7 @@ mod tests {
             .returning(|_, _| Ok(()));
         let ram_storage = RamStorage::default();
         let split_store =
-            IndexingSplitStore::create_without_local_store(Arc::new(ram_storage.clone()));
+            IndexingSplitStore::create_without_local_store_for_test(Arc::new(ram_storage.clone()));
         let merge_policy = Arc::new(NopMergePolicy);
         let uploader = Uploader::new(
             UploaderType::IndexUploader,
@@ -618,6 +639,7 @@ mod tests {
             split_store,
             SplitsUpdateMailbox::Sequencer(sequencer_mailbox),
             4,
+            EventBroker::default(),
         );
         let (uploader_mailbox, uploader_handle) = universe.spawn_builder().spawn(uploader);
         let split_scratch_directory_1 = TempDirectory::for_test();
@@ -747,7 +769,7 @@ mod tests {
             .returning(|_, _| Ok(()));
         let ram_storage = RamStorage::default();
         let split_store =
-            IndexingSplitStore::create_without_local_store(Arc::new(ram_storage.clone()));
+            IndexingSplitStore::create_without_local_store_for_test(Arc::new(ram_storage.clone()));
         let merge_policy = Arc::new(NopMergePolicy);
         let uploader = Uploader::new(
             UploaderType::IndexUploader,
@@ -756,6 +778,7 @@ mod tests {
             split_store,
             SplitsUpdateMailbox::Publisher(publisher_mailbox),
             4,
+            EventBroker::default(),
         );
         let (uploader_mailbox, uploader_handle) = universe.spawn_builder().spawn(uploader);
         let split_scratch_directory = TempDirectory::for_test();
@@ -815,7 +838,7 @@ mod tests {
         mock_metastore.expect_stage_splits().never();
         let ram_storage = RamStorage::default();
         let split_store =
-            IndexingSplitStore::create_without_local_store(Arc::new(ram_storage.clone()));
+            IndexingSplitStore::create_without_local_store_for_test(Arc::new(ram_storage.clone()));
         let uploader = Uploader::new(
             UploaderType::IndexUploader,
             Arc::new(mock_metastore),
@@ -823,6 +846,7 @@ mod tests {
             split_store,
             SplitsUpdateMailbox::Sequencer(sequencer_mailbox),
             4,
+            EventBroker::default(),
         );
         let (uploader_mailbox, uploader_handle) = universe.spawn_builder().spawn(uploader);
         let checkpoint_delta = IndexCheckpointDelta {

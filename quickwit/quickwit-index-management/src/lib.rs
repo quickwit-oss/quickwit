@@ -21,4 +21,6 @@ mod garbage_collection;
 mod index;
 
 pub use garbage_collection::run_garbage_collect;
-pub use index::{clear_cache_directory, validate_storage_uri, IndexService, IndexServiceError};
+pub use index::{
+    clear_cache_directory, validate_storage_uri, IndexService, IndexServiceError,
+};

@@ -20,9 +20,8 @@
 use serde::Deserialize;
 
 use crate::elastic_query_dsl::ConvertableToQueryAst;
-use crate::not_nan_f32::NotNaNf32;
 use crate::query_ast::UserInputQuery;
-use crate::BooleanOperand;
+use crate::{BooleanOperand, NotNaNf32};
 
 #[derive(Deserialize, Debug, Eq, PartialEq, Clone)]
 #[serde(deny_unknown_fields)]

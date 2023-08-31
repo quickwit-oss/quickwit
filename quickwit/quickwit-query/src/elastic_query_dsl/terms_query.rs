@@ -23,8 +23,8 @@ use crate::elastic_query_dsl::bool_query::BoolQuery;
 use crate::elastic_query_dsl::one_field_map::OneFieldMap;
 use crate::elastic_query_dsl::term_query::term_query_from_field_value;
 use crate::elastic_query_dsl::{ConvertableToQueryAst, ElasticQueryDslInner};
-use crate::not_nan_f32::NotNaNf32;
 use crate::query_ast::QueryAst;
+use crate::NotNaNf32;
 
 #[derive(PartialEq, Eq, Debug, Deserialize, Clone)]
 #[serde(try_from = "TermsQueryForSerialization")]

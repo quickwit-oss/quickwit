@@ -166,7 +166,7 @@ mod tests {
                 storage_builder = storage_builder.put(&split_file(split.split_id()), &buffer);
             }
             let ram_storage = storage_builder.build();
-            IndexingSplitStore::create_without_local_store(Arc::new(ram_storage))
+            IndexingSplitStore::create_without_local_store_for_test(Arc::new(ram_storage))
         };
 
         let universe = Universe::with_accelerated_time();

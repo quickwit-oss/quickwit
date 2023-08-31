@@ -34,6 +34,7 @@ use colored::{ColoredString, Colorize};
 use humantime::format_duration;
 use quickwit_actors::{ActorExitStatus, ActorHandle, Universe};
 use quickwit_cluster::{Cluster, ClusterMember};
+use quickwit_common::pubsub::EventBroker;
 use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::uri::Uri;
 use quickwit_config::service::QuickwitService;
@@ -434,7 +435,8 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
     .await?;
 
     if args.overwrite {
-        let index_service = IndexService::new(metastore.clone(), storage_resolver.clone());
+        let index_service =
+            IndexService::new(metastore.clone(), storage_resolver.clone());
         index_service.clear_index(&args.index_id).await?;
     }
     // The indexing service needs to update its cluster chitchat state so that the control plane is
@@ -458,6 +460,7 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
         metastore,
         None,
         storage_resolver,
+        EventBroker::default(),
     )
     .await?;
     let universe = Universe::new();
@@ -587,6 +590,7 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
         metastore,
         None,
         storage_resolver,
+        EventBroker::default(),
     )
     .await?;
     let (indexing_service_mailbox, indexing_service_handle) =

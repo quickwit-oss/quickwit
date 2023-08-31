@@ -23,9 +23,8 @@ use serde::Deserialize;
 
 use crate::elastic_query_dsl::one_field_map::OneFieldMap;
 use crate::elastic_query_dsl::ConvertableToQueryAst;
-use crate::not_nan_f32::NotNaNf32;
 use crate::query_ast::QueryAst;
-use crate::JsonLiteral;
+use crate::{JsonLiteral, NotNaNf32};
 
 #[derive(Deserialize, Debug, Default, Eq, PartialEq, Clone)]
 #[serde(deny_unknown_fields)]
