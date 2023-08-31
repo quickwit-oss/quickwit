@@ -83,9 +83,7 @@ pub(crate) async fn start_rest_server(
     );
 
     // `/metrics` route.
-    let metrics_routes = warp::path("metrics")
-        .and(warp::get())
-        .map(metrics_handler);
+    let metrics_routes = warp::path("metrics").and(warp::get()).map(metrics_handler);
 
     let ingest_service = quickwit_services.ingest_service.clone();
 

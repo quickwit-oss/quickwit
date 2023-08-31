@@ -156,7 +156,6 @@ impl Drop for GaugeGuard {
     }
 }
 
-
 pub fn metrics_text_payload() -> String {
     let metric_families = prometheus::gather();
     let mut buffer = Vec::new();

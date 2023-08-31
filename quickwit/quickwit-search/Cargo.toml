@@ -41,7 +41,6 @@ opentelemetry = { workspace = true }
 ulid = { workspace = true }
 utoipa = { workspace = true }
 
-quickwit-cluster = { workspace = true }
 quickwit-common = { workspace = true }
 quickwit-config = { workspace = true }
 quickwit-directories = { workspace = true }
