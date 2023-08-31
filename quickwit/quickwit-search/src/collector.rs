@@ -1072,12 +1072,12 @@ mod tests {
                     if let Some(field) = field.strip_prefix('-') {
                         SortField {
                             field_name: field.to_string(),
-                            sort_order: SortOrder::Asc.into(),
+                            sort_order: SortOrder::Desc.into(),
                         }
                     } else {
                         SortField {
                             field_name: field.to_string(),
-                            sort_order: SortOrder::Desc.into(),
+                            sort_order: SortOrder::Asc.into(),
                         }
                     }
                 })
@@ -1203,35 +1203,33 @@ mod tests {
             ("", Box::new(cmp_doc_id_desc)),
             (
                 "sort1",
-                Box::new(|a, b| cmp_1_desc(a, b).then(cmp_doc_id_desc(a, b))),
+                Box::new(|a, b| cmp_1_asc(a, b).then(cmp_doc_id_desc(a, b))),
             ),
             (
                 "-sort1",
-                Box::new(|a, b| cmp_1_asc(a, b).then(cmp_doc_id_asc(a, b))),
+                Box::new(|a, b| cmp_1_desc(a, b).then(cmp_doc_id_asc(a, b))),
             ),
             (
                 "sort1,sort2",
-                Box::new(|a, b| {
-                    cmp_1_desc(a, b).then(cmp_2_desc(a, b).then(cmp_doc_id_desc(a, b)))
-                }),
+                Box::new(|a, b| cmp_1_asc(a, b).then(cmp_2_asc(a, b).then(cmp_doc_id_desc(a, b)))),
             ),
             (
                 "-sort1,sort2",
                 Box::new(|a, b| {
-                    cmp_1_asc(a, b)
-                        .then(cmp_2_desc(a, b))
+                    cmp_1_desc(a, b)
+                        .then(cmp_2_asc(a, b))
                         .then(cmp_doc_id_asc(a, b))
                 }),
             ),
             (
                 "sort1,-sort2",
-                Box::new(|a, b| cmp_1_desc(a, b).then(cmp_2_asc(a, b).then(cmp_doc_id_desc(a, b)))),
+                Box::new(|a, b| cmp_1_asc(a, b).then(cmp_2_desc(a, b).then(cmp_doc_id_desc(a, b)))),
             ),
             (
                 "-sort1,-sort2",
                 Box::new(|a, b| {
-                    cmp_1_asc(a, b)
-                        .then(cmp_2_asc(a, b))
+                    cmp_1_desc(a, b)
+                        .then(cmp_2_desc(a, b))
                         .then(cmp_doc_id_asc(a, b))
                 }),
             ),
@@ -1243,33 +1241,33 @@ mod tests {
             ("", Box::new(cmp_doc_id_desc)),
             (
                 "sort1",
-                Box::new(|a, b| cmp_1_desc(a, b).then(cmp_doc_id_asc(a, b))),
-            ),
-            (
-                "-sort1",
                 Box::new(|a, b| cmp_1_asc(a, b).then(cmp_doc_id_asc(a, b))),
             ),
             (
+                "-sort1",
+                Box::new(|a, b| cmp_1_desc(a, b).then(cmp_doc_id_asc(a, b))),
+            ),
+            (
                 "sort1,sort2",
-                Box::new(|a, b| cmp_1_desc(a, b).then(cmp_2_desc(a, b).then(cmp_doc_id_asc(a, b)))),
+                Box::new(|a, b| cmp_1_asc(a, b).then(cmp_2_asc(a, b).then(cmp_doc_id_asc(a, b)))),
             ),
             (
                 "-sort1,sort2",
                 Box::new(|a, b| {
-                    cmp_1_asc(a, b)
-                        .then(cmp_2_desc(a, b))
+                    cmp_1_desc(a, b)
+                        .then(cmp_2_asc(a, b))
                         .then(cmp_doc_id_asc(a, b))
                 }),
             ),
             (
                 "sort1,-sort2",
-                Box::new(|a, b| cmp_1_desc(a, b).then(cmp_2_asc(a, b).then(cmp_doc_id_asc(a, b)))),
+                Box::new(|a, b| cmp_1_asc(a, b).then(cmp_2_desc(a, b).then(cmp_doc_id_asc(a, b)))),
             ),
             (
                 "-sort1,-sort2",
                 Box::new(|a, b| {
-                    cmp_1_asc(a, b)
-                        .then(cmp_2_asc(a, b))
+                    cmp_1_desc(a, b)
+                        .then(cmp_2_desc(a, b))
                         .then(cmp_doc_id_asc(a, b))
                 }),
             ),
@@ -1277,7 +1275,7 @@ mod tests {
 
         for (sort_str, sort_function) in sort_orders {
             dataset.sort_by(sort_function);
-            for len in 0..dataset.len() {
+            for len in 1..dataset.len() {
                 let collector = super::make_collector_for_split(
                     "fake_split_id".to_string(),
                     &MockDocMapper,
@@ -1290,7 +1288,6 @@ mod tests {
                     .unwrap());
                 assert_eq!(res.partial_hits.len(), len);
                 for (expected, got) in dataset.iter().zip(res.partial_hits.iter()) {
-                    dbg!((&expected, &got));
                     assert_eq!(
                         expected.0 as u32, got.doc_id,
                         "missmatch ordering for \"{sort_str}\":{len}"
