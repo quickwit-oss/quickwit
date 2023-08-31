@@ -27,11 +27,6 @@ None, ascending sort would give `[1, 2, None]`, and descending sort would give `
 If the client does not request sorting, documents are sorted using (DocId, SplitId, SegmentId), in
 Descending order.
 
-There are also plain bugs in sorting, in particular when values are absent (like 
-https://github.com/quickwit-oss/quickwit/blob/5d2c66e38e17ba5952196f01123d87f5a98b6a3c/quickwit/quickwit-search/src/collector.rs#L379-L380
-which prevent further admission in top-k once a single document with an absent value makes it into
-the top-k, such as if it's one of the first matching documents in the split).
-
 ## Code
 Sorting happends in multiple places. First in `QuickwitSegmentCollector::collect_top_k`, for
 getting top documents from a single segment (and a single split). Then in 
