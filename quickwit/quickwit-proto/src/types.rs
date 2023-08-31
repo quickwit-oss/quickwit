@@ -25,7 +25,7 @@ use std::ops::Deref;
 use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
-use ulid::Ulid;
+pub use ulid::Ulid;
 
 pub type IndexId = String;
 

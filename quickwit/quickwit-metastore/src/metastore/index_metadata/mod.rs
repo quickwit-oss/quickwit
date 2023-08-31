@@ -25,7 +25,7 @@ use std::collections::{BTreeMap, HashMap};
 use quickwit_common::uri::Uri;
 use quickwit_config::{IndexConfig, SourceConfig, TestableForRegression};
 use quickwit_proto::metastore::{EntityKind, MetastoreError, MetastoreResult};
-use quickwit_proto::IndexUid;
+use quickwit_proto::{IndexUid, SourceId};
 use serde::{Deserialize, Serialize};
 use serialize::VersionedIndexMetadata;
 use time::OffsetDateTime;
@@ -48,7 +48,7 @@ pub struct IndexMetadata {
     /// Time at which the index was created.
     pub create_timestamp: i64,
     /// Sources
-    pub sources: HashMap<String, SourceConfig>,
+    pub sources: HashMap<SourceId, SourceConfig>,
 }
 
 impl IndexMetadata {
@@ -66,7 +66,10 @@ impl IndexMetadata {
     /// Returns an [`IndexMetadata`] object with multiple hard coded values for tests.
     #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test(index_id: &str, index_uri: &str) -> Self {
-        IndexMetadata::new(IndexConfig::for_test(index_id, index_uri))
+        let index_uid = IndexUid::from_parts(index_id, "0");
+        let mut index_metadata = IndexMetadata::new(IndexConfig::for_test(index_id, index_uri));
+        index_metadata.index_uid = index_uid;
+        index_metadata
     }
 
     /// Extracts the index config from the index metadata object.
@@ -90,27 +93,29 @@ impl IndexMetadata {
     }
 
     /// Adds a source to the index. Returns an error if the source_id already exists.
-    pub fn add_source(&mut self, source: SourceConfig) -> MetastoreResult<()> {
-        let entry = self.sources.entry(source.source_id.clone());
-        let source_id = source.source_id.clone();
-        if let Entry::Occupied(_) = entry {
-            return Err(MetastoreError::AlreadyExists(EntityKind::Source {
-                source_id: source_id.clone(),
-            }));
+    pub fn add_source(&mut self, source_config: SourceConfig) -> MetastoreResult<()> {
+        match self.sources.entry(source_config.source_id.clone()) {
+            Entry::Occupied(_) => Err(MetastoreError::AlreadyExists(EntityKind::Source {
+                index_id: self.index_id().to_string(),
+                source_id: source_config.source_id,
+            })),
+            Entry::Vacant(entry) => {
+                self.checkpoint.add_source(&source_config.source_id);
+                entry.insert(source_config);
+                Ok(())
+            }
         }
-        entry.or_insert(source);
-        self.checkpoint.add_source(&source_id);
-        Ok(())
     }
 
     pub(crate) fn toggle_source(&mut self, source_id: &str, enable: bool) -> MetastoreResult<bool> {
-        let source = self.sources.get_mut(source_id).ok_or_else(|| {
-            MetastoreError::NotFound(EntityKind::Source {
+        let Some(source_config) = self.sources.get_mut(source_id) else {
+            return Err(MetastoreError::NotFound(EntityKind::Source {
+                index_id: self.index_id().to_string(),
                 source_id: source_id.to_string(),
-            })
-        })?;
-        let mutation_occurred = source.enabled != enable;
-        source.enabled = enable;
+            }));
+        };
+        let mutation_occurred = source_config.enabled != enable;
+        source_config.enabled = enable;
         Ok(mutation_occurred)
     }
 
@@ -118,6 +123,7 @@ impl IndexMetadata {
     pub(crate) fn delete_source(&mut self, source_id: &str) -> MetastoreResult<bool> {
         self.sources.remove(source_id).ok_or_else(|| {
             MetastoreError::NotFound(EntityKind::Source {
+                index_id: self.index_id().to_string(),
                 source_id: source_id.to_string(),
             })
         })?;

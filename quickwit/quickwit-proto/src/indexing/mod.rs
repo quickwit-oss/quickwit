@@ -174,13 +174,13 @@ impl TryFrom<&str> for IndexingTask {
             Ok(IndexingTask {
                 index_uid: format!("{part2}:{part1}"),
                 source_id: source_id.to_string(),
-                // shard_ids: Vec::new(),
+                shard_ids: Vec::new(),
             })
         } else {
             Ok(IndexingTask {
                 index_uid: part1.to_string(),
                 source_id: source_id.to_string(),
-                // shard_ids: Vec::new(),
+                shard_ids: Vec::new(),
             })
         }
     }
@@ -195,7 +195,7 @@ mod tests {
         let original = IndexingTask {
             index_uid: "test-index:123456".to_string(),
             source_id: "test-source".to_string(),
-            // shard_ids: Vec::new(),
+            shard_ids: Vec::new(),
         };
 
         let serialized = original.to_string();
@@ -210,7 +210,7 @@ mod tests {
             IndexingTask {
                 index_uid: "foo".to_string(),
                 source_id: "bar".to_string(),
-                // shard_ids: Vec::new(),
+                shard_ids: Vec::new(),
             }
         );
     }

@@ -77,6 +77,12 @@ impl HelloClient {
     {
         Self { inner: Box::new(instance) }
     }
+    pub fn as_grpc_service(
+        &self,
+    ) -> hello_grpc_server::HelloGrpcServer<HelloGrpcServerAdapter> {
+        let adapter = HelloGrpcServerAdapter::new(self.clone());
+        hello_grpc_server::HelloGrpcServer::new(adapter)
+    }
     pub fn from_channel<C>(channel: C) -> Self
     where
         C: tower::Service<
@@ -134,7 +140,7 @@ impl Hello for HelloClient {
     }
 }
 #[cfg(any(test, feature = "testsuite"))]
-pub mod mock {
+pub mod hello_mock {
     use super::*;
     #[derive(Debug, Clone)]
     struct MockHelloWrapper {
@@ -144,20 +150,20 @@ pub mod mock {
     impl Hello for MockHelloWrapper {
         async fn hello(
             &mut self,
-            request: HelloRequest,
-        ) -> crate::HelloResult<HelloResponse> {
+            request: super::HelloRequest,
+        ) -> crate::HelloResult<super::HelloResponse> {
             self.inner.lock().await.hello(request).await
         }
         async fn goodbye(
             &mut self,
-            request: GoodbyeRequest,
-        ) -> crate::HelloResult<GoodbyeResponse> {
+            request: super::GoodbyeRequest,
+        ) -> crate::HelloResult<super::GoodbyeResponse> {
             self.inner.lock().await.goodbye(request).await
         }
         async fn ping(
             &mut self,
-            request: quickwit_common::ServiceStream<PingRequest>,
-        ) -> crate::HelloResult<HelloStream<PingResponse>> {
+            request: quickwit_common::ServiceStream<super::PingRequest>,
+        ) -> crate::HelloResult<HelloStream<super::PingResponse>> {
             self.inner.lock().await.ping(request).await
         }
     }

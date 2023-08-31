@@ -26,6 +26,7 @@ use std::str::FromStr;
 use bytes::Bytes;
 use quickwit_common::is_false;
 use quickwit_common::uri::Uri;
+use quickwit_proto::metastore::SourceType;
 use serde::de::Error;
 use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value as JsonValue;
@@ -40,6 +41,9 @@ pub const CLI_INGEST_SOURCE_ID: &str = "_ingest-cli-source";
 
 /// Reserved source ID used for Quickwit ingest API.
 pub const INGEST_API_SOURCE_ID: &str = "_ingest-api-source";
+
+/// Reserved source ID used for native Quickwit ingest.
+pub const INGEST_SOURCE_ID: &str = "_ingest-source";
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(into = "VersionedSourceConfig")]
@@ -82,17 +86,18 @@ pub struct SourceConfig {
 }
 
 impl SourceConfig {
-    pub fn source_type(&self) -> &str {
+    pub fn source_type(&self) -> SourceType {
         match self.source_params {
-            SourceParams::File(_) => "file",
-            SourceParams::GcpPubSub(_) => "gcp_pubsub",
-            SourceParams::IngestApi => "ingest-api",
-            SourceParams::IngestCli => "ingest-cli",
-            SourceParams::Kafka(_) => "kafka",
-            SourceParams::Kinesis(_) => "kinesis",
-            SourceParams::Pulsar(_) => "pulsar",
-            SourceParams::Vec(_) => "vec",
-            SourceParams::Void(_) => "void",
+            SourceParams::File(_) => SourceType::File,
+            SourceParams::GcpPubSub(_) => SourceType::GcpPubsub,
+            SourceParams::Ingest => SourceType::IngestV2,
+            SourceParams::IngestApi => SourceType::IngestV1,
+            SourceParams::IngestCli => SourceType::Cli,
+            SourceParams::Kafka(_) => SourceType::Kafka,
+            SourceParams::Kinesis(_) => SourceType::Kinesis,
+            SourceParams::Pulsar(_) => SourceType::Pulsar,
+            SourceParams::Vec(_) => SourceType::Vec,
+            SourceParams::Void(_) => SourceType::Void,
         }
     }
 
@@ -101,6 +106,7 @@ impl SourceConfig {
         match &self.source_params {
             SourceParams::File(params) => serde_json::to_value(params),
             SourceParams::GcpPubSub(params) => serde_json::to_value(params),
+            SourceParams::Ingest => serde_json::to_value(()),
             SourceParams::IngestApi => serde_json::to_value(()),
             SourceParams::IngestCli => serde_json::to_value(()),
             SourceParams::Kafka(params) => serde_json::to_value(params),
@@ -109,7 +115,20 @@ impl SourceConfig {
             SourceParams::Vec(params) => serde_json::to_value(params),
             SourceParams::Void(params) => serde_json::to_value(params),
         }
-        .unwrap()
+        .expect("`SourceParams` should be JSON serializable")
+    }
+
+    /// Creates an ingest source.
+    pub fn ingest_default() -> Self {
+        Self {
+            source_id: INGEST_SOURCE_ID.to_string(),
+            max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+            desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
+            enabled: false,
+            source_params: SourceParams::Ingest,
+            transform_config: None,
+            input_format: SourceInputFormat::Json,
+        }
     }
 
     /// Creates the default ingest-api source config.
@@ -204,6 +223,7 @@ impl FromStr for SourceInputFormat {
 pub enum SourceParams {
     File(FileSourceParams),
     GcpPubSub(GcpPubSubSourceParams),
+    Ingest,
     #[serde(rename = "ingest-api")]
     IngestApi,
     #[serde(rename = "ingest-cli")]

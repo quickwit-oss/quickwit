@@ -35,6 +35,7 @@ vrl-stdlib = { workspace = true, optional=true }
 quickwit-common = { workspace = true }
 quickwit-doc-mapper = { workspace = true }
 quickwit-macros = { workspace = true }
+quickwit-proto = { workspace = true }
 
 [dev-dependencies]
 tokio = { workspace = true }

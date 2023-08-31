@@ -5145,6 +5145,7 @@ dependencies = [
  "quickwit-common",
  "quickwit-doc-mapper",
  "quickwit-macros",
+ "quickwit-proto",
  "regex",
  "serde",
  "serde_json",
@@ -5179,6 +5180,7 @@ dependencies = [
  "quickwit-common",
  "quickwit-config",
  "quickwit-indexing",
+ "quickwit-ingest",
  "quickwit-metastore",
  "quickwit-proto",
  "quickwit-storage",
@@ -7376,9 +7378,9 @@ dependencies = [
 
 [[package]]
 name = "tempfile"
-version = "3.8.0"
+version = "3.7.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb94d2f3cc536af71caac6b6fcebf65860b347e7ce0cc9ebe8f70d3e521054ef"
+checksum = "dc02fddf48964c42031a0b3fe0428320ecf3a73c401040fc0096f97794310651"
 dependencies = [
  "cfg-if",
  "fastrand 2.0.0",

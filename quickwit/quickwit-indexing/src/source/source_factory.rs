@@ -96,15 +96,14 @@ impl SourceLoader {
         ctx: Arc<SourceExecutionContext>,
         checkpoint: SourceCheckpoint,
     ) -> Result<Box<dyn Source>, SourceLoaderError> {
-        let source_type = ctx.source_config.source_type().to_string();
+        let source_type = ctx.source_config.source_type().as_str().to_string();
         let source_id = ctx.source_config.source_id.clone();
-        let source_factory = self
-            .type_to_factory
-            .get(ctx.source_config.source_type())
-            .ok_or_else(|| SourceLoaderError::UnknownSourceType {
-                requested_source_type: ctx.source_config.source_type().to_string(),
+        let source_factory = self.type_to_factory.get(&source_type).ok_or_else(|| {
+            SourceLoaderError::UnknownSourceType {
+                requested_source_type: ctx.source_config.source_type().as_str().to_string(),
                 available_source_types: self.type_to_factory.keys().join(", "),
-            })?;
+            }
+        })?;
         source_factory
             .create_source(ctx, checkpoint)
             .await

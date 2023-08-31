@@ -17,32 +17,29 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-// #![deny(clippy::disallowed_methods)]
-
-mod format;
-mod metrics;
-
-mod grpc;
-mod rest;
-pub(crate) mod simple_list;
-
 mod build_info;
 mod cluster_api;
 mod delete_task_api;
 mod elastic_search_api;
+mod format;
+mod grpc;
 mod health_check_api;
 mod index_api;
 mod indexing_api;
 mod ingest_api;
 mod json_api_response;
+mod metrics;
 mod metrics_api;
 mod node_info_handler;
 mod openapi;
+mod rest;
 mod search_api;
+pub(crate) mod simple_list;
 mod ui_handler;
 
 use std::collections::{HashMap, HashSet};
 use std::convert::Infallible;
+use std::fs;
 use std::net::SocketAddr;
 use std::num::NonZeroUsize;
 use std::sync::Arc;
@@ -64,25 +61,29 @@ use quickwit_common::tower::{
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{NodeConfig, SearcherConfig};
 use quickwit_control_plane::control_plane::ControlPlane;
-use quickwit_control_plane::scheduler::IndexingScheduler;
-use quickwit_control_plane::{
-    start_indexing_scheduler, ControlPlaneEventSubscriber, IndexerNodeInfo, IndexerPool,
-};
-use quickwit_index_management::{IndexService, IndexServiceError};
+use quickwit_control_plane::{ControlPlaneEventSubscriber, IndexerNodeInfo, IndexerPool};
+use quickwit_index_management::{IndexService as IndexManager, IndexServiceError};
 use quickwit_indexing::actors::IndexingService;
 use quickwit_indexing::start_indexing_service;
 use quickwit_ingest::{
-    start_ingest_api_service, GetMemoryCapacity, IngestRequest, IngestServiceClient, MemoryCapacity,
+    start_ingest_api_service, GetMemoryCapacity, IngestRequest, IngestRouter, IngestServiceClient,
+    Ingester, IngesterPool, MemoryCapacity,
 };
 use quickwit_janitor::{start_janitor_service, JanitorService};
 use quickwit_metastore::{
-    ListIndexesQuery, Metastore, MetastoreEvent, MetastoreEventPublisher, MetastoreGrpcClient,
-    MetastoreResolver, RetryingMetastore,
+    ListIndexesQuery, Metastore, MetastoreEventPublisher, MetastoreGrpcClient, MetastoreResolver,
+    RetryingMetastore,
 };
 use quickwit_opentelemetry::otlp::{OtlpGrpcLogsService, OtlpGrpcTracesService};
 use quickwit_proto::control_plane::ControlPlaneServiceClient;
 use quickwit_proto::indexing::IndexingServiceClient;
+use quickwit_proto::ingest::ingester::IngesterServiceClient;
+use quickwit_proto::ingest::router::IngestRouterServiceClient;
+use quickwit_proto::metastore::events::{
+    AddSourceEvent, DeleteIndexEvent, DeleteSourceEvent, ToggleSourceEvent,
+};
 use quickwit_proto::metastore::{EntityKind, MetastoreError};
+use quickwit_proto::NodeId;
 use quickwit_search::{
     create_search_client_from_channel, start_searcher_service, SearchJobPlacer, SearchService,
     SearchServiceClient, SearcherPool,
@@ -109,22 +110,27 @@ const READINESS_REPORTING_INTERVAL: Duration = if cfg!(any(test, feature = "test
 
 struct QuickwitServices {
     pub config: Arc<NodeConfig>,
+    pub services: HashSet<QuickwitService>,
     pub cluster: Cluster,
     pub metastore: Arc<dyn Metastore>,
-    pub control_plane_service: Option<ControlPlaneServiceClient>,
-    /// The control plane listens to metastore events.
-    /// We need to keep the subscription handle to keep listening. If not, subscription is dropped.
+    pub control_plane_service: ControlPlaneServiceClient,
     #[allow(dead_code)]
-    pub control_plane_subscription_handle: Option<EventSubscriptionHandle<MetastoreEvent>>,
+    /// The control plane listens to metastore events.
+    /// We must maintain a reference to the subscription handles to continue receiving
+    /// notifcations. Otherwise, the subscriptions are dropped.
+    pub control_plane_event_subscription_handles_opt: Option<ControlPlaneEventSubscriptionHandles>,
+    pub index_manager: IndexManager,
+    pub indexing_service_opt: Option<Mailbox<IndexingService>>,
+    // Ingest v1
+    pub ingest_service: IngestServiceClient,
+    // Ingest v2
+    pub ingest_router_service: IngestRouterServiceClient,
+    pub ingester_service_opt: Option<IngesterServiceClient>,
+    pub janitor_service_opt: Option<Mailbox<JanitorService>>,
     /// We do have a search service even on nodes that are not running `search`.
     /// It is only used to serve the rest API calls and will only execute
     /// the root requests.
     pub search_service: Arc<dyn SearchService>,
-    pub indexing_service: Option<Mailbox<IndexingService>>,
-    pub janitor_service: Option<Mailbox<JanitorService>>,
-    pub ingest_service: IngestServiceClient,
-    pub index_service: Arc<IndexService>,
-    pub services: HashSet<QuickwitService>,
 }
 
 fn has_node_with_metastore_service(members: &[ClusterMember]) -> bool {
@@ -205,34 +211,14 @@ pub async fn serve_quickwit(
     )
     .await?;
 
-    // Always instantiate index management service.
-    let index_service = Arc::new(IndexService::new(
-        metastore.clone(),
-        storage_resolver.clone(),
-    ));
-
-    let (ingest_service, indexing_service) = if config
+    let (ingest_service, indexing_service_opt) = if config
         .enabled_services
         .contains(&QuickwitService::Indexer)
     {
         let ingest_api_service =
             start_ingest_api_service(&universe, &config.data_dir_path, &config.ingest_api_config)
                 .await?;
-        if config.indexer_config.enable_otlp_endpoint {
-            let otel_logs_index_config =
-                OtlpGrpcLogsService::index_config(&config.default_index_root_uri)?;
-            let otel_traces_index_config =
-                OtlpGrpcTracesService::index_config(&config.default_index_root_uri)?;
-            for index_config in [otel_logs_index_config, otel_traces_index_config] {
-                match index_service.create_index(index_config, false).await {
-                    Ok(_)
-                    | Err(IndexServiceError::Metastore(MetastoreError::AlreadyExists(
-                        EntityKind::Index { .. },
-                    ))) => Ok(()),
-                    Err(error) => Err(error),
-                }?;
-            }
-        }
+
         let indexing_service = start_indexing_service(
             &universe,
             &config,
@@ -273,37 +259,71 @@ pub async fn serve_quickwit(
     // Instantiate the control plane service if enabled.
     // If not and metastore service is enabled, we need to instantiate the control plane client
     // so the metastore can notify the control plane.
-    let control_plane_service: Option<ControlPlaneServiceClient> = if config
+    let ingester_pool = IngesterPool::default();
+
+    let control_plane_service: ControlPlaneServiceClient = if config
         .enabled_services
         .contains(&QuickwitService::ControlPlane)
     {
         let cluster_change_stream = cluster.ready_nodes_change_stream().await;
-        let control_plane_mailbox = start_control_plane(
+        let replication_factor = config
+            .ingest_api_config
+            .replication_factor()
+            .expect("replication factor should have been validated")
+            .get();
+        let control_plane_mailbox = setup_control_plane(
             &universe,
             cluster.cluster_id().to_string(),
             cluster.self_node_id().to_string(),
             cluster_change_stream,
-            indexing_service.clone(),
+            indexing_service_opt.clone(),
+            ingester_pool.clone(),
             metastore.clone(),
+            replication_factor,
         )
         .await?;
-        Some(ControlPlaneServiceClient::from_mailbox(
-            control_plane_mailbox,
-        ))
-    } else if config
-        .enabled_services
-        .contains(&QuickwitService::Metastore)
-    {
+        ControlPlaneServiceClient::from_mailbox(control_plane_mailbox)
+    } else {
         let balance_channel =
             balance_channel_for_service(&cluster, QuickwitService::ControlPlane).await;
-        Some(ControlPlaneServiceClient::from_channel(balance_channel))
-    } else {
-        None
+        ControlPlaneServiceClient::from_channel(balance_channel)
     };
-    let control_plane_subscription_handle =
-        control_plane_service.clone().map(|scheduler_service| {
-            event_broker.subscribe::<MetastoreEvent>(ControlPlaneEventSubscriber(scheduler_service))
-        });
+    let control_plane_event_subscription_handles_opt =
+        setup_control_plane_event_subscriptions(&config, &event_broker, &control_plane_service);
+
+    // Ingest V2
+    let (ingest_router_service, ingester_service_opt) = setup_ingest_v2(
+        &config,
+        &cluster,
+        control_plane_service.clone(),
+        ingester_pool,
+    )
+    .await?;
+
+    // Any node can serve index management requests (create/update/delete index, add/remove source,
+    // etc.), so we always instantiate an index manager.
+    let index_manager = IndexManager::new(metastore.clone(), storage_resolver.clone());
+
+    if config.enabled_services.contains(&QuickwitService::Indexer)
+        && config.indexer_config.enable_otlp_endpoint
+    {
+        {
+            let otel_logs_index_config =
+                OtlpGrpcLogsService::index_config(&config.default_index_root_uri)?;
+            let otel_traces_index_config =
+                OtlpGrpcTracesService::index_config(&config.default_index_root_uri)?;
+
+            for index_config in [otel_logs_index_config, otel_traces_index_config] {
+                match index_manager.create_index(index_config, false).await {
+                    Ok(_)
+                    | Err(IndexServiceError::Metastore(MetastoreError::AlreadyExists(
+                        EntityKind::Index { .. },
+                    ))) => Ok(()),
+                    Err(error) => Err(error),
+                }?;
+            }
+        }
+    }
 
     let searcher_config = config.searcher_config.clone();
     let cluster_change_stream = cluster.ready_nodes_change_stream().await;
@@ -316,7 +336,7 @@ pub async fn serve_quickwit(
     )
     .await?;
 
-    let janitor_service = if config.enabled_services.contains(&QuickwitService::Janitor) {
+    let janitor_service_opt = if config.enabled_services.contains(&QuickwitService::Janitor) {
         let janitor_service = start_janitor_service(
             &universe,
             &config,
@@ -335,16 +355,18 @@ pub async fn serve_quickwit(
     let services = config.enabled_services.clone();
     let quickwit_services: Arc<QuickwitServices> = Arc::new(QuickwitServices {
         config: Arc::new(config),
+        services,
         cluster: cluster.clone(),
         metastore: metastore.clone(),
         control_plane_service,
-        control_plane_subscription_handle,
-        search_service,
-        indexing_service,
-        janitor_service,
+        control_plane_event_subscription_handles_opt,
+        index_manager,
+        indexing_service_opt,
+        ingest_router_service,
         ingest_service,
-        index_service,
-        services,
+        ingester_service_opt,
+        janitor_service_opt,
+        search_service,
     });
     // Setup and start gRPC server.
     let (grpc_readiness_trigger_tx, grpc_readiness_signal_rx) = oneshot::channel::<()>();
@@ -481,6 +503,115 @@ where R: Rate
     }
 }
 
+#[allow(dead_code)]
+#[derive(Debug)]
+struct ControlPlaneEventSubscriptionHandles {
+    delete_index_event_subscription_handle: EventSubscriptionHandle<DeleteIndexEvent>,
+    add_source_event_subscription_handle: EventSubscriptionHandle<AddSourceEvent>,
+    toggle_source_event_subscription_handle: EventSubscriptionHandle<ToggleSourceEvent>,
+    delete_source_event_subscription_handle: EventSubscriptionHandle<DeleteSourceEvent>,
+}
+
+fn setup_control_plane_event_subscriptions(
+    config: &NodeConfig,
+    event_broker: &EventBroker,
+    control_plane_service: &ControlPlaneServiceClient,
+) -> Option<ControlPlaneEventSubscriptionHandles> {
+    if !config
+        .enabled_services
+        .contains(&QuickwitService::Metastore)
+    {
+        return None;
+    }
+    let control_plane_event_subscriber =
+        ControlPlaneEventSubscriber::new(control_plane_service.clone());
+
+    let delete_index_event_subscription_handle =
+        event_broker.subscribe::<DeleteIndexEvent>(control_plane_event_subscriber.clone());
+    let add_source_event_subscription_handle =
+        event_broker.subscribe::<AddSourceEvent>(control_plane_event_subscriber.clone());
+    let toggle_source_event_subscription_handle =
+        event_broker.subscribe::<ToggleSourceEvent>(control_plane_event_subscriber.clone());
+    let delete_source_event_subscription_handle =
+        event_broker.subscribe::<DeleteSourceEvent>(control_plane_event_subscriber);
+    let control_plane_subscription_handles = ControlPlaneEventSubscriptionHandles {
+        delete_index_event_subscription_handle,
+        add_source_event_subscription_handle,
+        toggle_source_event_subscription_handle,
+        delete_source_event_subscription_handle,
+    };
+    Some(control_plane_subscription_handles)
+}
+
+async fn setup_ingest_v2(
+    config: &NodeConfig,
+    cluster: &Cluster,
+    control_plane: ControlPlaneServiceClient,
+    ingester_pool: IngesterPool,
+) -> anyhow::Result<(IngestRouterServiceClient, Option<IngesterServiceClient>)> {
+    // Instantiate ingest router.
+    let self_node_id: NodeId = cluster.self_node_id().into();
+    let replication_factor = config
+        .ingest_api_config
+        .replication_factor()
+        .expect("replication factor should have been validated")
+        .get();
+    let ingest_router = IngestRouter::new(
+        self_node_id.clone(),
+        control_plane,
+        ingester_pool.clone(),
+        replication_factor,
+    );
+    let ingest_router_service = IngestRouterServiceClient::new(ingest_router);
+
+    // Instantiate ingester.
+    let ingester_service_opt = if config.enabled_services.contains(&QuickwitService::Indexer) {
+        let wal_dir_path = config.data_dir_path.join("wal");
+        fs::create_dir_all(&wal_dir_path)?;
+
+        let ingester = Ingester::try_new(
+            self_node_id.clone(),
+            ingester_pool.clone(),
+            &wal_dir_path,
+            replication_factor,
+        )
+        .await?;
+        let ingester_service = IngesterServiceClient::new(ingester);
+        Some(ingester_service)
+    } else {
+        None
+    };
+    // Setup ingester pool change stream.
+    let ingester_service_opt_clone = ingester_service_opt.clone();
+    let cluster_change_stream = cluster.ready_nodes_change_stream().await;
+    let ingester_change_stream = cluster_change_stream.filter_map(move |cluster_change| {
+        let ingester_service_opt = ingester_service_opt_clone.clone();
+        Box::pin(async move {
+            match cluster_change {
+                ClusterChange::Add(node)
+                    if node.enabled_services().contains(&QuickwitService::Indexer) =>
+                {
+                    let node_id: NodeId = node.node_id().into();
+
+                    if node.is_self_node() {
+                        let ingester_service = ingester_service_opt
+                            .expect("The ingester service should be initialized.");
+                        Some(Change::Insert(node_id, ingester_service))
+                    } else {
+                        let timeout_channel = Timeout::new(node.channel(), Duration::from_secs(30));
+                        let ingester_service = IngesterServiceClient::from_channel(timeout_channel);
+                        Some(Change::Insert(node_id, ingester_service))
+                    }
+                }
+                ClusterChange::Remove(node) => Some(Change::Remove(node.node_id().into())),
+                _ => None,
+            }
+        })
+    });
+    ingester_pool.listen_for_changes(ingester_change_stream);
+    Ok((ingest_router_service, ingester_service_opt))
+}
+
 async fn setup_searcher(
     searcher_config: SearcherConfig,
     cluster_change_stream: impl Stream<Item = ClusterChange> + Send + 'static,
@@ -526,25 +657,28 @@ async fn setup_searcher(
     Ok((search_job_placer, search_service))
 }
 
-async fn start_control_plane(
+#[allow(clippy::too_many_arguments)]
+async fn setup_control_plane(
     universe: &Universe,
     cluster_id: String,
     self_node_id: String,
     cluster_change_stream: impl Stream<Item = ClusterChange> + Send + 'static,
     indexing_service: Option<Mailbox<IndexingService>>,
+    ingester_pool: IngesterPool,
     metastore: Arc<dyn Metastore>,
+    replication_factor: usize,
 ) -> anyhow::Result<Mailbox<ControlPlane>> {
-    let scheduler = setup_indexing_scheduler(
+    let self_node_id: NodeId = self_node_id.into();
+    let indexer_pool = setup_indexer_pool(cluster_change_stream, indexing_service);
+    let (control_plane_mailbox, _control_plane_handle) = ControlPlane::spawn(
         universe,
         cluster_id,
         self_node_id,
-        cluster_change_stream,
-        indexing_service,
+        indexer_pool,
+        ingester_pool,
         metastore,
-    )
-    .await?;
-    let control_plane = ControlPlane::new(scheduler);
-    let (control_plane_mailbox, _) = universe.spawn_builder().spawn(control_plane);
+        replication_factor,
+    );
     Ok(control_plane_mailbox)
 }
 
@@ -599,26 +733,6 @@ fn setup_indexer_pool(
     });
     indexer_pool.listen_for_changes(indexer_change_stream);
     indexer_pool
-}
-
-async fn setup_indexing_scheduler(
-    universe: &Universe,
-    cluster_id: String,
-    self_node_id: String,
-    cluster_change_stream: impl Stream<Item = ClusterChange> + Send + 'static,
-    indexing_service: Option<Mailbox<IndexingService>>,
-    metastore: Arc<dyn Metastore>,
-) -> anyhow::Result<Mailbox<IndexingScheduler>> {
-    let indexer_pool = setup_indexer_pool(cluster_change_stream, indexing_service);
-    let indexing_scheduler = start_indexing_scheduler(
-        cluster_id,
-        self_node_id,
-        universe,
-        indexer_pool.clone(),
-        metastore,
-    )
-    .await?;
-    Ok(indexing_scheduler)
 }
 
 fn require<T: Clone + Send>(
@@ -820,6 +934,7 @@ mod tests {
         let new_indexing_task = IndexingTask {
             index_uid: "test-index:0".to_string(),
             source_id: "test-source".to_string(),
+            shard_ids: Vec::new(),
         };
         let updated_indexer_node = ClusterNode::for_test(
             "test-indexer-node",

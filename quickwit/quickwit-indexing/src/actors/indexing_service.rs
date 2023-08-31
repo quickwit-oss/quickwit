@@ -565,6 +565,7 @@ impl IndexingService {
             .map(|pipeline_id| IndexingTask {
                 index_uid: pipeline_id.index_uid.to_string(),
                 source_id: pipeline_id.source_id.clone(),
+                shard_ids: Vec::new(),
             })
             // Sort indexing tasks so it's more readable for debugging purpose.
             .sorted_by(|left, right| {
@@ -989,10 +990,12 @@ mod tests {
             IndexingTask {
                 index_uid: metadata.index_uid.to_string(),
                 source_id: "test-indexing-service--source-1".to_string(),
+                shard_ids: Vec::new(),
             },
             IndexingTask {
                 index_uid: metadata.index_uid.to_string(),
                 source_id: "test-indexing-service--source-1".to_string(),
+                shard_ids: Vec::new(),
             },
         ];
         indexing_service
@@ -1025,18 +1028,22 @@ mod tests {
             IndexingTask {
                 index_uid: metadata.index_uid.to_string(),
                 source_id: INGEST_API_SOURCE_ID.to_string(),
+                shard_ids: Vec::new(),
             },
             IndexingTask {
                 index_uid: metadata.index_uid.to_string(),
                 source_id: "test-indexing-service--source-1".to_string(),
+                shard_ids: Vec::new(),
             },
             IndexingTask {
                 index_uid: metadata.index_uid.to_string(),
                 source_id: "test-indexing-service--source-1".to_string(),
+                shard_ids: Vec::new(),
             },
             IndexingTask {
                 index_uid: metadata.index_uid.to_string(),
                 source_id: source_config_2.source_id.clone(),
+                shard_ids: Vec::new(),
             },
         ];
         indexing_service
@@ -1075,14 +1082,17 @@ mod tests {
             IndexingTask {
                 index_uid: metadata.index_uid.to_string(),
                 source_id: INGEST_API_SOURCE_ID.to_string(),
+                shard_ids: Vec::new(),
             },
             IndexingTask {
                 index_uid: metadata.index_uid.to_string(),
                 source_id: "test-indexing-service--source-1".to_string(),
+                shard_ids: Vec::new(),
             },
             IndexingTask {
                 index_uid: metadata.index_uid.to_string(),
                 source_id: source_config_2.source_id.clone(),
+                shard_ids: Vec::new(),
             },
         ];
         indexing_service

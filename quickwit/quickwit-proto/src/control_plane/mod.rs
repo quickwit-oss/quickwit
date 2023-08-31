@@ -20,6 +20,9 @@
 use quickwit_actors::AskError;
 use thiserror;
 
+use crate::metastore::MetastoreError;
+use crate::{ServiceError, ServiceErrorCode};
+
 include!("../codegen/quickwit/quickwit.control_plane.rs");
 
 pub type ControlPlaneResult<T> = std::result::Result<T, ControlPlaneError>;
@@ -28,14 +31,30 @@ pub type ControlPlaneResult<T> = std::result::Result<T, ControlPlaneError>;
 pub enum ControlPlaneError {
     #[error("An internal error occurred: {0}.")]
     Internal(String),
+    #[error("An internal error occurred: {0}.")]
+    Metastore(#[from] MetastoreError),
     #[error("Control plane is unavailable: {0}.")]
     Unavailable(String),
+}
+
+impl From<ControlPlaneError> for MetastoreError {
+    fn from(error: ControlPlaneError) -> Self {
+        match error {
+            ControlPlaneError::Internal(message) => MetastoreError::Internal {
+                message: "TODO".to_string(),
+                cause: message,
+            },
+            ControlPlaneError::Metastore(error) => error,
+            ControlPlaneError::Unavailable(message) => MetastoreError::Unavailable(message),
+        }
+    }
 }
 
 impl From<ControlPlaneError> for tonic::Status {
     fn from(error: ControlPlaneError) -> Self {
         match error {
             ControlPlaneError::Internal(message) => tonic::Status::internal(message),
+            ControlPlaneError::Metastore(error) => error.into(),
             ControlPlaneError::Unavailable(message) => tonic::Status::unavailable(message),
         }
     }
@@ -62,6 +81,16 @@ impl From<AskError<ControlPlaneError>> for ControlPlaneError {
             AskError::ProcessMessageError => ControlPlaneError::Internal(
                 "An error occurred while processing the request".to_string(),
             ),
+        }
+    }
+}
+
+impl ServiceError for ControlPlaneError {
+    fn status_code(&self) -> ServiceErrorCode {
+        match self {
+            Self::Internal { .. } => ServiceErrorCode::Internal,
+            Self::Metastore(error) => error.status_code(),
+            Self::Unavailable(_) => ServiceErrorCode::Unavailable,
         }
     }
 }

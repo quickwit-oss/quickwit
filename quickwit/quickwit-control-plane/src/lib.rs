@@ -19,21 +19,20 @@
 
 pub mod control_plane;
 pub mod indexing_plan;
+pub mod ingest;
 pub mod scheduler;
 
-use std::sync::Arc;
-
 use async_trait::async_trait;
-use quickwit_actors::{Mailbox, Universe};
 use quickwit_common::pubsub::EventSubscriber;
 use quickwit_common::tower::Pool;
-use quickwit_config::SourceParams;
-use quickwit_metastore::{Metastore, MetastoreEvent};
 use quickwit_proto::control_plane::{
     ControlPlaneService, ControlPlaneServiceClient, NotifyIndexChangeRequest,
 };
 use quickwit_proto::indexing::{IndexingServiceClient, IndexingTask};
-use scheduler::IndexingScheduler;
+use quickwit_proto::metastore::events::{
+    AddSourceEvent, CreateIndexEvent, DeleteIndexEvent, DeleteSourceEvent, ToggleSourceEvent,
+};
+use quickwit_proto::metastore::SourceType;
 use tracing::error;
 
 /// Indexer-node specific information stored in the pool of available indexer nodes
@@ -45,21 +44,26 @@ pub struct IndexerNodeInfo {
 
 pub type IndexerPool = Pool<String, IndexerNodeInfo>;
 
-/// Starts the Control Plane.
-pub async fn start_indexing_scheduler(
-    cluster_id: String,
-    self_node_id: String,
-    universe: &Universe,
-    indexer_pool: IndexerPool,
-    metastore: Arc<dyn Metastore>,
-) -> anyhow::Result<Mailbox<IndexingScheduler>> {
-    let scheduler = IndexingScheduler::new(cluster_id, self_node_id, metastore, indexer_pool);
-    let (scheduler_mailbox, _) = universe.spawn_builder().spawn(scheduler);
-    Ok(scheduler_mailbox)
-}
-
+/// Subscribes to various metastore events and forwards them to the control plane using the inner
+/// client. The actual subscriptions are set up in `quickwit-serve`.
 #[derive(Debug, Clone)]
-pub struct ControlPlaneEventSubscriber(pub ControlPlaneServiceClient);
+pub struct ControlPlaneEventSubscriber(ControlPlaneServiceClient);
+
+impl ControlPlaneEventSubscriber {
+    pub fn new(control_plane: ControlPlaneServiceClient) -> Self {
+        Self(control_plane)
+    }
+
+    pub(crate) async fn notify_index_change(&mut self, event_name: &'static str) {
+        if let Err(error) = self
+            .0
+            .notify_index_change(NotifyIndexChangeRequest {})
+            .await
+        {
+            error!(error=?error, event=event_name, "Failed to notify control plane of index change.");
+        }
+    }
+}
 
 /// Notify the control plane when one of the following event occurs:
 /// - an index is deleted.
@@ -72,36 +76,47 @@ pub struct ControlPlaneEventSubscriber(pub ControlPlaneServiceClient);
 // - We don't sent any data to the Control Plane. It could be nice to send the relevant data to the
 //   control plane and let it decide to schedule or not indexing tasks.
 #[async_trait]
-impl EventSubscriber<MetastoreEvent> for ControlPlaneEventSubscriber {
-    async fn handle_event(&mut self, event: MetastoreEvent) {
-        let event = match event {
-            MetastoreEvent::DeleteIndex { .. } => "delete-index",
-            MetastoreEvent::AddSource { source_config, .. } => {
-                if matches!(
-                    source_config.source_params,
-                    SourceParams::File(_) | SourceParams::IngestCli
-                ) {
-                    return;
-                }
-                "add-source"
-            }
-            MetastoreEvent::ToggleSource { .. } => "toggle-source",
-            MetastoreEvent::DeleteSource { .. } => "delete-source",
+impl EventSubscriber<CreateIndexEvent> for ControlPlaneEventSubscriber {
+    async fn handle_event(&mut self, _event: CreateIndexEvent) {
+        self.notify_index_change("create-index").await;
+    }
+}
+
+#[async_trait]
+impl EventSubscriber<DeleteIndexEvent> for ControlPlaneEventSubscriber {
+    async fn handle_event(&mut self, _event: DeleteIndexEvent) {
+        self.notify_index_change("delete-index").await;
+    }
+}
+
+#[async_trait]
+impl EventSubscriber<AddSourceEvent> for ControlPlaneEventSubscriber {
+    async fn handle_event(&mut self, event: AddSourceEvent) {
+        if !matches!(event.source_type, SourceType::Cli | SourceType::File) {
+            self.notify_index_change("add-source").await;
         };
-        if let Err(error) = self
-            .0
-            .notify_index_change(NotifyIndexChangeRequest {})
-            .await
-        {
-            error!(error=?error, event=event, "Failed to notify control plane of index change.");
-        }
+    }
+}
+
+#[async_trait]
+impl EventSubscriber<ToggleSourceEvent> for ControlPlaneEventSubscriber {
+    async fn handle_event(&mut self, _event: ToggleSourceEvent) {
+        self.notify_index_change("toggle-source").await;
+    }
+}
+
+#[async_trait]
+impl EventSubscriber<DeleteSourceEvent> for ControlPlaneEventSubscriber {
+    async fn handle_event(&mut self, _event: DeleteSourceEvent) {
+        self.notify_index_change("delete-source").await;
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use quickwit_config::SourceConfig;
+
     use quickwit_proto::control_plane::NotifyIndexChangeResponse;
+    use quickwit_proto::metastore::SourceType;
     use quickwit_proto::IndexUid;
 
     use super::*;
@@ -117,21 +132,24 @@ mod tests {
 
         let index_uid = IndexUid::new("test-index");
 
-        let event = MetastoreEvent::AddSource {
+        let event = AddSourceEvent {
             index_uid: index_uid.clone(),
-            source_config: SourceConfig::for_test("test-source", SourceParams::IngestApi),
+            source_id: "test-source".to_string(),
+            source_type: SourceType::Cli,
         };
         control_plane_event_subscriber.handle_event(event).await;
 
-        let event = MetastoreEvent::AddSource {
+        let event = AddSourceEvent {
             index_uid: index_uid.clone(),
-            source_config: SourceConfig::for_test("test-source", SourceParams::file("test-file")),
+            source_id: "test-source".to_string(),
+            source_type: SourceType::File,
         };
         control_plane_event_subscriber.handle_event(event).await;
 
-        let event = MetastoreEvent::AddSource {
+        let event = AddSourceEvent {
             index_uid: index_uid.clone(),
-            source_config: SourceConfig::for_test("test-source", SourceParams::IngestCli),
+            source_id: "test-source".to_string(),
+            source_type: SourceType::IngestV2,
         };
         control_plane_event_subscriber.handle_event(event).await;
     }

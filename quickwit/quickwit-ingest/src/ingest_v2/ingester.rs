@@ -434,8 +434,10 @@ impl IngesterService for Ingester {
             return Ok(ping_response);
         };
         let follower_id: NodeId = follower_id.clone().into();
-        let mut ingester = self.ingester_pool.get(&follower_id).await.ok_or_else(|| {
-            IngestV2Error::Internal(format!("No ingester found for follower `{}`.", follower_id))
+        let mut ingester = self.ingester_pool.get(&follower_id).await.ok_or({
+            IngestV2Error::IngesterUnavailable {
+                ingester_id: follower_id,
+            }
         })?;
         ingester.ping(ping_request).await?;
         let ping_response = PingResponse {};

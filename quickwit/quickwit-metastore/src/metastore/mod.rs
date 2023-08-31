@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+pub mod control_plane_metastore;
 pub mod file_backed_metastore;
 pub mod grpc_metastore;
 pub(crate) mod index_metadata;
@@ -28,6 +29,7 @@ pub mod postgresql_metastore;
 mod postgresql_model;
 pub mod retrying_metastore;
 
+use std::fmt;
 use std::ops::{Bound, RangeInclusive};
 
 use async_trait::async_trait;
@@ -36,7 +38,9 @@ use quickwit_common::uri::Uri;
 use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_proto::metastore::{
-    DeleteQuery, DeleteTask, EntityKind, MetastoreError, MetastoreResult,
+    CloseShardsRequest, CloseShardsResponse, DeleteQuery, DeleteShardsRequest,
+    DeleteShardsResponse, DeleteTask, EntityKind, ListShardsRequest, ListShardsResponse,
+    MetastoreError, MetastoreResult, OpenShardsRequest, OpenShardsResponse,
 };
 use quickwit_proto::IndexUid;
 use time::OffsetDateTime;
@@ -92,7 +96,7 @@ use crate::{Split, SplitMetadata, SplitState};
 /// corresponding index.
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait]
-pub trait Metastore: Send + Sync + 'static {
+pub trait Metastore: fmt::Debug + Send + Sync + 'static {
     /// Returns the metastore's uri.
     fn uri(&self) -> &Uri;
 
@@ -309,6 +313,48 @@ pub trait Metastore: Send + Sync + 'static {
         index_uid: IndexUid,
         opstamp_start: u64,
     ) -> MetastoreResult<Vec<DeleteTask>>;
+
+    // Shard API:
+    // - `open_shards`
+    // - `close_shards`
+    // - `list_shards`
+    // - `delete_shards`
+
+    /// Creates new open shards for one or multiple indexes.
+    async fn open_shards(
+        &self,
+        _request: OpenShardsRequest,
+    ) -> MetastoreResult<OpenShardsResponse> {
+        // TODO: Remove default implementation once all metastores implement this method.
+        unimplemented!()
+    }
+
+    /// Closes some shards, i.e. changes their state from `Open` to `Closing` or `Closed`.
+    async fn close_shards(
+        &self,
+        _request: CloseShardsRequest,
+    ) -> MetastoreResult<CloseShardsResponse> {
+        // TODO: Remove default implementation once all metastores implement this method.
+        unimplemented!()
+    }
+
+    /// Lists the shards of one or multiple indexes.
+    async fn list_shards(
+        &self,
+        _request: ListShardsRequest,
+    ) -> MetastoreResult<ListShardsResponse> {
+        // TODO: Remove default implementation once all metastores implement this method.
+        unimplemented!()
+    }
+
+    /// Deletes some shards.
+    async fn delete_shards(
+        &self,
+        _request: DeleteShardsRequest,
+    ) -> MetastoreResult<DeleteShardsResponse> {
+        // TODO: Remove default implementation once all metastores implement this method.
+        unimplemented!()
+    }
 }
 
 /// A query object for listing indexes stored in the metastore.

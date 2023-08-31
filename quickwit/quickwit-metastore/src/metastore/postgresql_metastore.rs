@@ -18,7 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::{HashMap, HashSet};
-use std::fmt::{Display, Write};
+use std::fmt::{self, Display, Write};
 use std::ops::Bound;
 use std::str::FromStr;
 use std::sync::Arc;
@@ -112,6 +112,14 @@ async fn run_postgres_migrations(pool: &Pool<Postgres>) -> MetastoreResult<()> {
 pub struct PostgresqlMetastore {
     uri: Uri,
     connection_pool: Pool<Postgres>,
+}
+
+impl fmt::Debug for PostgresqlMetastore {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("PostgresqlMetastore")
+            .field("uri", &self.uri)
+            .finish()
+    }
 }
 
 impl PostgresqlMetastore {

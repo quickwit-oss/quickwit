@@ -24,6 +24,7 @@ pub struct GetOpenShardsSubrequest {
     #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,
 }
+/// TODO: Handle partial failures.
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -73,6 +74,26 @@ use tower::{Layer, Service, ServiceExt};
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait::async_trait]
 pub trait ControlPlaneService: std::fmt::Debug + dyn_clone::DynClone + Send + Sync + 'static {
+    async fn create_index(
+        &mut self,
+        request: super::metastore::CreateIndexRequest,
+    ) -> crate::control_plane::ControlPlaneResult<super::metastore::CreateIndexResponse>;
+    async fn delete_index(
+        &mut self,
+        request: super::metastore::DeleteIndexRequest,
+    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse>;
+    async fn add_source(
+        &mut self,
+        request: super::metastore::AddSourceRequest,
+    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse>;
+    async fn toggle_source(
+        &mut self,
+        request: super::metastore::ToggleSourceRequest,
+    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse>;
+    async fn delete_source(
+        &mut self,
+        request: super::metastore::DeleteSourceRequest,
+    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse>;
     async fn notify_index_change(
         &mut self,
         request: NotifyIndexChangeRequest,
@@ -103,6 +124,14 @@ impl ControlPlaneServiceClient {
         T: ControlPlaneService,
     {
         Self { inner: Box::new(instance) }
+    }
+    pub fn as_grpc_service(
+        &self,
+    ) -> control_plane_service_grpc_server::ControlPlaneServiceGrpcServer<
+        ControlPlaneServiceGrpcServerAdapter,
+    > {
+        let adapter = ControlPlaneServiceGrpcServerAdapter::new(self.clone());
+        control_plane_service_grpc_server::ControlPlaneServiceGrpcServer::new(adapter)
     }
     pub fn from_channel<C>(channel: C) -> Self
     where
@@ -145,6 +174,38 @@ impl ControlPlaneServiceClient {
 }
 #[async_trait::async_trait]
 impl ControlPlaneService for ControlPlaneServiceClient {
+    async fn create_index(
+        &mut self,
+        request: super::metastore::CreateIndexRequest,
+    ) -> crate::control_plane::ControlPlaneResult<
+        super::metastore::CreateIndexResponse,
+    > {
+        self.inner.create_index(request).await
+    }
+    async fn delete_index(
+        &mut self,
+        request: super::metastore::DeleteIndexRequest,
+    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
+        self.inner.delete_index(request).await
+    }
+    async fn add_source(
+        &mut self,
+        request: super::metastore::AddSourceRequest,
+    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
+        self.inner.add_source(request).await
+    }
+    async fn toggle_source(
+        &mut self,
+        request: super::metastore::ToggleSourceRequest,
+    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
+        self.inner.toggle_source(request).await
+    }
+    async fn delete_source(
+        &mut self,
+        request: super::metastore::DeleteSourceRequest,
+    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
+        self.inner.delete_source(request).await
+    }
     async fn notify_index_change(
         &mut self,
         request: NotifyIndexChangeRequest,
@@ -165,7 +226,7 @@ impl ControlPlaneService for ControlPlaneServiceClient {
     }
 }
 #[cfg(any(test, feature = "testsuite"))]
-pub mod mock {
+pub mod control_plane_service_mock {
     use super::*;
     #[derive(Debug, Clone)]
     struct MockControlPlaneServiceWrapper {
@@ -173,22 +234,62 @@ pub mod mock {
     }
     #[async_trait::async_trait]
     impl ControlPlaneService for MockControlPlaneServiceWrapper {
+        async fn create_index(
+            &mut self,
+            request: super::super::metastore::CreateIndexRequest,
+        ) -> crate::control_plane::ControlPlaneResult<
+            super::super::metastore::CreateIndexResponse,
+        > {
+            self.inner.lock().await.create_index(request).await
+        }
+        async fn delete_index(
+            &mut self,
+            request: super::super::metastore::DeleteIndexRequest,
+        ) -> crate::control_plane::ControlPlaneResult<
+            super::super::metastore::EmptyResponse,
+        > {
+            self.inner.lock().await.delete_index(request).await
+        }
+        async fn add_source(
+            &mut self,
+            request: super::super::metastore::AddSourceRequest,
+        ) -> crate::control_plane::ControlPlaneResult<
+            super::super::metastore::EmptyResponse,
+        > {
+            self.inner.lock().await.add_source(request).await
+        }
+        async fn toggle_source(
+            &mut self,
+            request: super::super::metastore::ToggleSourceRequest,
+        ) -> crate::control_plane::ControlPlaneResult<
+            super::super::metastore::EmptyResponse,
+        > {
+            self.inner.lock().await.toggle_source(request).await
+        }
+        async fn delete_source(
+            &mut self,
+            request: super::super::metastore::DeleteSourceRequest,
+        ) -> crate::control_plane::ControlPlaneResult<
+            super::super::metastore::EmptyResponse,
+        > {
+            self.inner.lock().await.delete_source(request).await
+        }
         async fn notify_index_change(
             &mut self,
-            request: NotifyIndexChangeRequest,
-        ) -> crate::control_plane::ControlPlaneResult<NotifyIndexChangeResponse> {
+            request: super::NotifyIndexChangeRequest,
+        ) -> crate::control_plane::ControlPlaneResult<super::NotifyIndexChangeResponse> {
             self.inner.lock().await.notify_index_change(request).await
         }
         async fn get_open_shards(
             &mut self,
-            request: GetOpenShardsRequest,
-        ) -> crate::control_plane::ControlPlaneResult<GetOpenShardsResponse> {
+            request: super::GetOpenShardsRequest,
+        ) -> crate::control_plane::ControlPlaneResult<super::GetOpenShardsResponse> {
             self.inner.lock().await.get_open_shards(request).await
         }
         async fn close_shards(
             &mut self,
-            request: CloseShardsRequest,
-        ) -> crate::control_plane::ControlPlaneResult<CloseShardsResponse> {
+            request: super::CloseShardsRequest,
+        ) -> crate::control_plane::ControlPlaneResult<super::CloseShardsResponse> {
             self.inner.lock().await.close_shards(request).await
         }
     }
@@ -204,6 +305,91 @@ pub mod mock {
 pub type BoxFuture<T, E> = std::pin::Pin<
     Box<dyn std::future::Future<Output = Result<T, E>> + Send + 'static>,
 >;
+impl tower::Service<super::metastore::CreateIndexRequest>
+for Box<dyn ControlPlaneService> {
+    type Response = super::metastore::CreateIndexResponse;
+    type Error = crate::control_plane::ControlPlaneError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: super::metastore::CreateIndexRequest) -> Self::Future {
+        let mut svc = self.clone();
+        let fut = async move { svc.create_index(request).await };
+        Box::pin(fut)
+    }
+}
+impl tower::Service<super::metastore::DeleteIndexRequest>
+for Box<dyn ControlPlaneService> {
+    type Response = super::metastore::EmptyResponse;
+    type Error = crate::control_plane::ControlPlaneError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: super::metastore::DeleteIndexRequest) -> Self::Future {
+        let mut svc = self.clone();
+        let fut = async move { svc.delete_index(request).await };
+        Box::pin(fut)
+    }
+}
+impl tower::Service<super::metastore::AddSourceRequest>
+for Box<dyn ControlPlaneService> {
+    type Response = super::metastore::EmptyResponse;
+    type Error = crate::control_plane::ControlPlaneError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: super::metastore::AddSourceRequest) -> Self::Future {
+        let mut svc = self.clone();
+        let fut = async move { svc.add_source(request).await };
+        Box::pin(fut)
+    }
+}
+impl tower::Service<super::metastore::ToggleSourceRequest>
+for Box<dyn ControlPlaneService> {
+    type Response = super::metastore::EmptyResponse;
+    type Error = crate::control_plane::ControlPlaneError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: super::metastore::ToggleSourceRequest) -> Self::Future {
+        let mut svc = self.clone();
+        let fut = async move { svc.toggle_source(request).await };
+        Box::pin(fut)
+    }
+}
+impl tower::Service<super::metastore::DeleteSourceRequest>
+for Box<dyn ControlPlaneService> {
+    type Response = super::metastore::EmptyResponse;
+    type Error = crate::control_plane::ControlPlaneError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: super::metastore::DeleteSourceRequest) -> Self::Future {
+        let mut svc = self.clone();
+        let fut = async move { svc.delete_source(request).await };
+        Box::pin(fut)
+    }
+}
 impl tower::Service<NotifyIndexChangeRequest> for Box<dyn ControlPlaneService> {
     type Response = NotifyIndexChangeResponse;
     type Error = crate::control_plane::ControlPlaneError;
@@ -255,6 +441,31 @@ impl tower::Service<CloseShardsRequest> for Box<dyn ControlPlaneService> {
 /// A tower block is a set of towers. Each tower is stack of layers (middlewares) that are applied to a service.
 #[derive(Debug)]
 struct ControlPlaneServiceTowerBlock {
+    create_index_svc: quickwit_common::tower::BoxService<
+        super::metastore::CreateIndexRequest,
+        super::metastore::CreateIndexResponse,
+        crate::control_plane::ControlPlaneError,
+    >,
+    delete_index_svc: quickwit_common::tower::BoxService<
+        super::metastore::DeleteIndexRequest,
+        super::metastore::EmptyResponse,
+        crate::control_plane::ControlPlaneError,
+    >,
+    add_source_svc: quickwit_common::tower::BoxService<
+        super::metastore::AddSourceRequest,
+        super::metastore::EmptyResponse,
+        crate::control_plane::ControlPlaneError,
+    >,
+    toggle_source_svc: quickwit_common::tower::BoxService<
+        super::metastore::ToggleSourceRequest,
+        super::metastore::EmptyResponse,
+        crate::control_plane::ControlPlaneError,
+    >,
+    delete_source_svc: quickwit_common::tower::BoxService<
+        super::metastore::DeleteSourceRequest,
+        super::metastore::EmptyResponse,
+        crate::control_plane::ControlPlaneError,
+    >,
     notify_index_change_svc: quickwit_common::tower::BoxService<
         NotifyIndexChangeRequest,
         NotifyIndexChangeResponse,
@@ -274,6 +485,11 @@ struct ControlPlaneServiceTowerBlock {
 impl Clone for ControlPlaneServiceTowerBlock {
     fn clone(&self) -> Self {
         Self {
+            create_index_svc: self.create_index_svc.clone(),
+            delete_index_svc: self.delete_index_svc.clone(),
+            add_source_svc: self.add_source_svc.clone(),
+            toggle_source_svc: self.toggle_source_svc.clone(),
+            delete_source_svc: self.delete_source_svc.clone(),
             notify_index_change_svc: self.notify_index_change_svc.clone(),
             get_open_shards_svc: self.get_open_shards_svc.clone(),
             close_shards_svc: self.close_shards_svc.clone(),
@@ -282,6 +498,38 @@ impl Clone for ControlPlaneServiceTowerBlock {
 }
 #[async_trait::async_trait]
 impl ControlPlaneService for ControlPlaneServiceTowerBlock {
+    async fn create_index(
+        &mut self,
+        request: super::metastore::CreateIndexRequest,
+    ) -> crate::control_plane::ControlPlaneResult<
+        super::metastore::CreateIndexResponse,
+    > {
+        self.create_index_svc.ready().await?.call(request).await
+    }
+    async fn delete_index(
+        &mut self,
+        request: super::metastore::DeleteIndexRequest,
+    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
+        self.delete_index_svc.ready().await?.call(request).await
+    }
+    async fn add_source(
+        &mut self,
+        request: super::metastore::AddSourceRequest,
+    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
+        self.add_source_svc.ready().await?.call(request).await
+    }
+    async fn toggle_source(
+        &mut self,
+        request: super::metastore::ToggleSourceRequest,
+    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
+        self.toggle_source_svc.ready().await?.call(request).await
+    }
+    async fn delete_source(
+        &mut self,
+        request: super::metastore::DeleteSourceRequest,
+    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
+        self.delete_source_svc.ready().await?.call(request).await
+    }
     async fn notify_index_change(
         &mut self,
         request: NotifyIndexChangeRequest,
@@ -303,6 +551,51 @@ impl ControlPlaneService for ControlPlaneServiceTowerBlock {
 }
 #[derive(Debug, Default)]
 pub struct ControlPlaneServiceTowerBlockBuilder {
+    #[allow(clippy::type_complexity)]
+    create_index_layer: Option<
+        quickwit_common::tower::BoxLayer<
+            Box<dyn ControlPlaneService>,
+            super::metastore::CreateIndexRequest,
+            super::metastore::CreateIndexResponse,
+            crate::control_plane::ControlPlaneError,
+        >,
+    >,
+    #[allow(clippy::type_complexity)]
+    delete_index_layer: Option<
+        quickwit_common::tower::BoxLayer<
+            Box<dyn ControlPlaneService>,
+            super::metastore::DeleteIndexRequest,
+            super::metastore::EmptyResponse,
+            crate::control_plane::ControlPlaneError,
+        >,
+    >,
+    #[allow(clippy::type_complexity)]
+    add_source_layer: Option<
+        quickwit_common::tower::BoxLayer<
+            Box<dyn ControlPlaneService>,
+            super::metastore::AddSourceRequest,
+            super::metastore::EmptyResponse,
+            crate::control_plane::ControlPlaneError,
+        >,
+    >,
+    #[allow(clippy::type_complexity)]
+    toggle_source_layer: Option<
+        quickwit_common::tower::BoxLayer<
+            Box<dyn ControlPlaneService>,
+            super::metastore::ToggleSourceRequest,
+            super::metastore::EmptyResponse,
+            crate::control_plane::ControlPlaneError,
+        >,
+    >,
+    #[allow(clippy::type_complexity)]
+    delete_source_layer: Option<
+        quickwit_common::tower::BoxLayer<
+            Box<dyn ControlPlaneService>,
+            super::metastore::DeleteSourceRequest,
+            super::metastore::EmptyResponse,
+            crate::control_plane::ControlPlaneError,
+        >,
+    >,
     #[allow(clippy::type_complexity)]
     notify_index_change_layer: Option<
         quickwit_common::tower::BoxLayer<
@@ -336,6 +629,46 @@ impl ControlPlaneServiceTowerBlockBuilder {
     where
         L: tower::Layer<Box<dyn ControlPlaneService>> + Clone + Send + Sync + 'static,
         L::Service: tower::Service<
+                super::metastore::CreateIndexRequest,
+                Response = super::metastore::CreateIndexResponse,
+                Error = crate::control_plane::ControlPlaneError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<
+            super::metastore::CreateIndexRequest,
+        >>::Future: Send + 'static,
+        L::Service: tower::Service<
+                super::metastore::DeleteIndexRequest,
+                Response = super::metastore::EmptyResponse,
+                Error = crate::control_plane::ControlPlaneError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<
+            super::metastore::DeleteIndexRequest,
+        >>::Future: Send + 'static,
+        L::Service: tower::Service<
+                super::metastore::AddSourceRequest,
+                Response = super::metastore::EmptyResponse,
+                Error = crate::control_plane::ControlPlaneError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<
+            super::metastore::AddSourceRequest,
+        >>::Future: Send + 'static,
+        L::Service: tower::Service<
+                super::metastore::ToggleSourceRequest,
+                Response = super::metastore::EmptyResponse,
+                Error = crate::control_plane::ControlPlaneError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<
+            super::metastore::ToggleSourceRequest,
+        >>::Future: Send + 'static,
+        L::Service: tower::Service<
+                super::metastore::DeleteSourceRequest,
+                Response = super::metastore::EmptyResponse,
+                Error = crate::control_plane::ControlPlaneError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<
+            super::metastore::DeleteSourceRequest,
+        >>::Future: Send + 'static,
+        L::Service: tower::Service<
                 NotifyIndexChangeRequest,
                 Response = NotifyIndexChangeResponse,
                 Error = crate::control_plane::ControlPlaneError,
@@ -355,6 +688,26 @@ impl ControlPlaneServiceTowerBlockBuilder {
         <L::Service as tower::Service<CloseShardsRequest>>::Future: Send + 'static,
     {
         self
+            .create_index_layer = Some(
+            quickwit_common::tower::BoxLayer::new(layer.clone()),
+        );
+        self
+            .delete_index_layer = Some(
+            quickwit_common::tower::BoxLayer::new(layer.clone()),
+        );
+        self
+            .add_source_layer = Some(
+            quickwit_common::tower::BoxLayer::new(layer.clone()),
+        );
+        self
+            .toggle_source_layer = Some(
+            quickwit_common::tower::BoxLayer::new(layer.clone()),
+        );
+        self
+            .delete_source_layer = Some(
+            quickwit_common::tower::BoxLayer::new(layer.clone()),
+        );
+        self
             .notify_index_change_layer = Some(
             quickwit_common::tower::BoxLayer::new(layer.clone()),
         );
@@ -363,6 +716,81 @@ impl ControlPlaneServiceTowerBlockBuilder {
             quickwit_common::tower::BoxLayer::new(layer.clone()),
         );
         self.close_shards_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn create_index_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<Box<dyn ControlPlaneService>> + Send + Sync + 'static,
+        L::Service: tower::Service<
+                super::metastore::CreateIndexRequest,
+                Response = super::metastore::CreateIndexResponse,
+                Error = crate::control_plane::ControlPlaneError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<
+            super::metastore::CreateIndexRequest,
+        >>::Future: Send + 'static,
+    {
+        self.create_index_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn delete_index_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<Box<dyn ControlPlaneService>> + Send + Sync + 'static,
+        L::Service: tower::Service<
+                super::metastore::DeleteIndexRequest,
+                Response = super::metastore::EmptyResponse,
+                Error = crate::control_plane::ControlPlaneError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<
+            super::metastore::DeleteIndexRequest,
+        >>::Future: Send + 'static,
+    {
+        self.delete_index_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn add_source_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<Box<dyn ControlPlaneService>> + Send + Sync + 'static,
+        L::Service: tower::Service<
+                super::metastore::AddSourceRequest,
+                Response = super::metastore::EmptyResponse,
+                Error = crate::control_plane::ControlPlaneError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<
+            super::metastore::AddSourceRequest,
+        >>::Future: Send + 'static,
+    {
+        self.add_source_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn toggle_source_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<Box<dyn ControlPlaneService>> + Send + Sync + 'static,
+        L::Service: tower::Service<
+                super::metastore::ToggleSourceRequest,
+                Response = super::metastore::EmptyResponse,
+                Error = crate::control_plane::ControlPlaneError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<
+            super::metastore::ToggleSourceRequest,
+        >>::Future: Send + 'static,
+    {
+        self.toggle_source_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn delete_source_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<Box<dyn ControlPlaneService>> + Send + Sync + 'static,
+        L::Service: tower::Service<
+                super::metastore::DeleteSourceRequest,
+                Response = super::metastore::EmptyResponse,
+                Error = crate::control_plane::ControlPlaneError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<
+            super::metastore::DeleteSourceRequest,
+        >>::Future: Send + 'static,
+    {
+        self.delete_source_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
     pub fn notify_index_change_layer<L>(mut self, layer: L) -> Self
@@ -445,6 +873,31 @@ impl ControlPlaneServiceTowerBlockBuilder {
         self,
         boxed_instance: Box<dyn ControlPlaneService>,
     ) -> ControlPlaneServiceClient {
+        let create_index_svc = if let Some(layer) = self.create_index_layer {
+            layer.layer(boxed_instance.clone())
+        } else {
+            quickwit_common::tower::BoxService::new(boxed_instance.clone())
+        };
+        let delete_index_svc = if let Some(layer) = self.delete_index_layer {
+            layer.layer(boxed_instance.clone())
+        } else {
+            quickwit_common::tower::BoxService::new(boxed_instance.clone())
+        };
+        let add_source_svc = if let Some(layer) = self.add_source_layer {
+            layer.layer(boxed_instance.clone())
+        } else {
+            quickwit_common::tower::BoxService::new(boxed_instance.clone())
+        };
+        let toggle_source_svc = if let Some(layer) = self.toggle_source_layer {
+            layer.layer(boxed_instance.clone())
+        } else {
+            quickwit_common::tower::BoxService::new(boxed_instance.clone())
+        };
+        let delete_source_svc = if let Some(layer) = self.delete_source_layer {
+            layer.layer(boxed_instance.clone())
+        } else {
+            quickwit_common::tower::BoxService::new(boxed_instance.clone())
+        };
         let notify_index_change_svc = if let Some(layer) = self.notify_index_change_layer
         {
             layer.layer(boxed_instance.clone())
@@ -462,6 +915,11 @@ impl ControlPlaneServiceTowerBlockBuilder {
             quickwit_common::tower::BoxService::new(boxed_instance.clone())
         };
         let tower_block = ControlPlaneServiceTowerBlock {
+            create_index_svc,
+            delete_index_svc,
+            add_source_svc,
+            toggle_source_svc,
+            delete_source_svc,
             notify_index_change_svc,
             get_open_shards_svc,
             close_shards_svc,
@@ -542,6 +1000,51 @@ where
     ControlPlaneServiceMailbox<
         A,
     >: tower::Service<
+            super::metastore::CreateIndexRequest,
+            Response = super::metastore::CreateIndexResponse,
+            Error = crate::control_plane::ControlPlaneError,
+            Future = BoxFuture<
+                super::metastore::CreateIndexResponse,
+                crate::control_plane::ControlPlaneError,
+            >,
+        >
+        + tower::Service<
+            super::metastore::DeleteIndexRequest,
+            Response = super::metastore::EmptyResponse,
+            Error = crate::control_plane::ControlPlaneError,
+            Future = BoxFuture<
+                super::metastore::EmptyResponse,
+                crate::control_plane::ControlPlaneError,
+            >,
+        >
+        + tower::Service<
+            super::metastore::AddSourceRequest,
+            Response = super::metastore::EmptyResponse,
+            Error = crate::control_plane::ControlPlaneError,
+            Future = BoxFuture<
+                super::metastore::EmptyResponse,
+                crate::control_plane::ControlPlaneError,
+            >,
+        >
+        + tower::Service<
+            super::metastore::ToggleSourceRequest,
+            Response = super::metastore::EmptyResponse,
+            Error = crate::control_plane::ControlPlaneError,
+            Future = BoxFuture<
+                super::metastore::EmptyResponse,
+                crate::control_plane::ControlPlaneError,
+            >,
+        >
+        + tower::Service<
+            super::metastore::DeleteSourceRequest,
+            Response = super::metastore::EmptyResponse,
+            Error = crate::control_plane::ControlPlaneError,
+            Future = BoxFuture<
+                super::metastore::EmptyResponse,
+                crate::control_plane::ControlPlaneError,
+            >,
+        >
+        + tower::Service<
             NotifyIndexChangeRequest,
             Response = NotifyIndexChangeResponse,
             Error = crate::control_plane::ControlPlaneError,
@@ -569,6 +1072,38 @@ where
             >,
         >,
 {
+    async fn create_index(
+        &mut self,
+        request: super::metastore::CreateIndexRequest,
+    ) -> crate::control_plane::ControlPlaneResult<
+        super::metastore::CreateIndexResponse,
+    > {
+        self.call(request).await
+    }
+    async fn delete_index(
+        &mut self,
+        request: super::metastore::DeleteIndexRequest,
+    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
+        self.call(request).await
+    }
+    async fn add_source(
+        &mut self,
+        request: super::metastore::AddSourceRequest,
+    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
+        self.call(request).await
+    }
+    async fn toggle_source(
+        &mut self,
+        request: super::metastore::ToggleSourceRequest,
+    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
+        self.call(request).await
+    }
+    async fn delete_source(
+        &mut self,
+        request: super::metastore::DeleteSourceRequest,
+    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
+        self.call(request).await
+    }
     async fn notify_index_change(
         &mut self,
         request: NotifyIndexChangeRequest,
@@ -610,6 +1145,58 @@ where
         + Send,
     T::Future: Send,
 {
+    async fn create_index(
+        &mut self,
+        request: super::metastore::CreateIndexRequest,
+    ) -> crate::control_plane::ControlPlaneResult<
+        super::metastore::CreateIndexResponse,
+    > {
+        self.inner
+            .create_index(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|error| error.into())
+    }
+    async fn delete_index(
+        &mut self,
+        request: super::metastore::DeleteIndexRequest,
+    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
+        self.inner
+            .delete_index(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|error| error.into())
+    }
+    async fn add_source(
+        &mut self,
+        request: super::metastore::AddSourceRequest,
+    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
+        self.inner
+            .add_source(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|error| error.into())
+    }
+    async fn toggle_source(
+        &mut self,
+        request: super::metastore::ToggleSourceRequest,
+    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
+        self.inner
+            .toggle_source(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|error| error.into())
+    }
+    async fn delete_source(
+        &mut self,
+        request: super::metastore::DeleteSourceRequest,
+    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
+        self.inner
+            .delete_source(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|error| error.into())
+    }
     async fn notify_index_change(
         &mut self,
         request: NotifyIndexChangeRequest,
@@ -656,6 +1243,61 @@ impl ControlPlaneServiceGrpcServerAdapter {
 #[async_trait::async_trait]
 impl control_plane_service_grpc_server::ControlPlaneServiceGrpc
 for ControlPlaneServiceGrpcServerAdapter {
+    async fn create_index(
+        &self,
+        request: tonic::Request<super::metastore::CreateIndexRequest>,
+    ) -> Result<tonic::Response<super::metastore::CreateIndexResponse>, tonic::Status> {
+        self.inner
+            .clone()
+            .create_index(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(|error| error.into())
+    }
+    async fn delete_index(
+        &self,
+        request: tonic::Request<super::metastore::DeleteIndexRequest>,
+    ) -> Result<tonic::Response<super::metastore::EmptyResponse>, tonic::Status> {
+        self.inner
+            .clone()
+            .delete_index(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(|error| error.into())
+    }
+    async fn add_source(
+        &self,
+        request: tonic::Request<super::metastore::AddSourceRequest>,
+    ) -> Result<tonic::Response<super::metastore::EmptyResponse>, tonic::Status> {
+        self.inner
+            .clone()
+            .add_source(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(|error| error.into())
+    }
+    async fn toggle_source(
+        &self,
+        request: tonic::Request<super::metastore::ToggleSourceRequest>,
+    ) -> Result<tonic::Response<super::metastore::EmptyResponse>, tonic::Status> {
+        self.inner
+            .clone()
+            .toggle_source(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(|error| error.into())
+    }
+    async fn delete_source(
+        &self,
+        request: tonic::Request<super::metastore::DeleteSourceRequest>,
+    ) -> Result<tonic::Response<super::metastore::EmptyResponse>, tonic::Status> {
+        self.inner
+            .clone()
+            .delete_source(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(|error| error.into())
+    }
     async fn notify_index_change(
         &self,
         request: tonic::Request<NotifyIndexChangeRequest>,
@@ -777,6 +1419,165 @@ pub mod control_plane_service_grpc_client {
             self.inner = self.inner.max_encoding_message_size(limit);
             self
         }
+        /// Creates a new index.
+        pub async fn create_index(
+            &mut self,
+            request: impl tonic::IntoRequest<super::super::metastore::CreateIndexRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::super::metastore::CreateIndexResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.control_plane.ControlPlaneService/CreateIndex",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit.control_plane.ControlPlaneService",
+                        "CreateIndex",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Deletes an index.
+        pub async fn delete_index(
+            &mut self,
+            request: impl tonic::IntoRequest<super::super::metastore::DeleteIndexRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::super::metastore::EmptyResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.control_plane.ControlPlaneService/DeleteIndex",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit.control_plane.ControlPlaneService",
+                        "DeleteIndex",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Adds a source to an index.
+        pub async fn add_source(
+            &mut self,
+            request: impl tonic::IntoRequest<super::super::metastore::AddSourceRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::super::metastore::EmptyResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.control_plane.ControlPlaneService/AddSource",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit.control_plane.ControlPlaneService",
+                        "AddSource",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Enables or disables a source.
+        pub async fn toggle_source(
+            &mut self,
+            request: impl tonic::IntoRequest<
+                super::super::metastore::ToggleSourceRequest,
+            >,
+        ) -> std::result::Result<
+            tonic::Response<super::super::metastore::EmptyResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.control_plane.ControlPlaneService/ToggleSource",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit.control_plane.ControlPlaneService",
+                        "ToggleSource",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        /// Removes a source from an index.
+        pub async fn delete_source(
+            &mut self,
+            request: impl tonic::IntoRequest<
+                super::super::metastore::DeleteSourceRequest,
+            >,
+        ) -> std::result::Result<
+            tonic::Response<super::super::metastore::EmptyResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.control_plane.ControlPlaneService/DeleteSource",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit.control_plane.ControlPlaneService",
+                        "DeleteSource",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
         /// / Notify the Control Plane that a change on an index occurred. The change
         /// / can be an index creation, deletion, or update that includes a source creation/deletion/num pipeline update.
         /// Note(fmassot): it's not very clear for a user to know which change triggers a control plane notification.
@@ -884,6 +1685,46 @@ pub mod control_plane_service_grpc_server {
     /// Generated trait containing gRPC methods that should be implemented for use with ControlPlaneServiceGrpcServer.
     #[async_trait]
     pub trait ControlPlaneServiceGrpc: Send + Sync + 'static {
+        /// Creates a new index.
+        async fn create_index(
+            &self,
+            request: tonic::Request<super::super::metastore::CreateIndexRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::super::metastore::CreateIndexResponse>,
+            tonic::Status,
+        >;
+        /// Deletes an index.
+        async fn delete_index(
+            &self,
+            request: tonic::Request<super::super::metastore::DeleteIndexRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::super::metastore::EmptyResponse>,
+            tonic::Status,
+        >;
+        /// Adds a source to an index.
+        async fn add_source(
+            &self,
+            request: tonic::Request<super::super::metastore::AddSourceRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::super::metastore::EmptyResponse>,
+            tonic::Status,
+        >;
+        /// Enables or disables a source.
+        async fn toggle_source(
+            &self,
+            request: tonic::Request<super::super::metastore::ToggleSourceRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::super::metastore::EmptyResponse>,
+            tonic::Status,
+        >;
+        /// Removes a source from an index.
+        async fn delete_source(
+            &self,
+            request: tonic::Request<super::super::metastore::DeleteSourceRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::super::metastore::EmptyResponse>,
+            tonic::Status,
+        >;
         /// / Notify the Control Plane that a change on an index occurred. The change
         /// / can be an index creation, deletion, or update that includes a source creation/deletion/num pipeline update.
         /// Note(fmassot): it's not very clear for a user to know which change triggers a control plane notification.
@@ -994,6 +1835,249 @@ pub mod control_plane_service_grpc_server {
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
             let inner = self.inner.clone();
             match req.uri().path() {
+                "/quickwit.control_plane.ControlPlaneService/CreateIndex" => {
+                    #[allow(non_camel_case_types)]
+                    struct CreateIndexSvc<T: ControlPlaneServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: ControlPlaneServiceGrpc,
+                    > tonic::server::UnaryService<
+                        super::super::metastore::CreateIndexRequest,
+                    > for CreateIndexSvc<T> {
+                        type Response = super::super::metastore::CreateIndexResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::super::metastore::CreateIndexRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).create_index(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = CreateIndexSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.control_plane.ControlPlaneService/DeleteIndex" => {
+                    #[allow(non_camel_case_types)]
+                    struct DeleteIndexSvc<T: ControlPlaneServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: ControlPlaneServiceGrpc,
+                    > tonic::server::UnaryService<
+                        super::super::metastore::DeleteIndexRequest,
+                    > for DeleteIndexSvc<T> {
+                        type Response = super::super::metastore::EmptyResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::super::metastore::DeleteIndexRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).delete_index(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = DeleteIndexSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.control_plane.ControlPlaneService/AddSource" => {
+                    #[allow(non_camel_case_types)]
+                    struct AddSourceSvc<T: ControlPlaneServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: ControlPlaneServiceGrpc,
+                    > tonic::server::UnaryService<
+                        super::super::metastore::AddSourceRequest,
+                    > for AddSourceSvc<T> {
+                        type Response = super::super::metastore::EmptyResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::super::metastore::AddSourceRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move { (*inner).add_source(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = AddSourceSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.control_plane.ControlPlaneService/ToggleSource" => {
+                    #[allow(non_camel_case_types)]
+                    struct ToggleSourceSvc<T: ControlPlaneServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: ControlPlaneServiceGrpc,
+                    > tonic::server::UnaryService<
+                        super::super::metastore::ToggleSourceRequest,
+                    > for ToggleSourceSvc<T> {
+                        type Response = super::super::metastore::EmptyResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::super::metastore::ToggleSourceRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).toggle_source(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = ToggleSourceSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.control_plane.ControlPlaneService/DeleteSource" => {
+                    #[allow(non_camel_case_types)]
+                    struct DeleteSourceSvc<T: ControlPlaneServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: ControlPlaneServiceGrpc,
+                    > tonic::server::UnaryService<
+                        super::super::metastore::DeleteSourceRequest,
+                    > for DeleteSourceSvc<T> {
+                        type Response = super::super::metastore::EmptyResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<
+                                super::super::metastore::DeleteSourceRequest,
+                            >,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).delete_source(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = DeleteSourceSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
                 "/quickwit.control_plane.ControlPlaneService/NotifyIndexChange" => {
                     #[allow(non_camel_case_types)]
                     struct NotifyIndexChangeSvc<T: ControlPlaneServiceGrpc>(pub Arc<T>);

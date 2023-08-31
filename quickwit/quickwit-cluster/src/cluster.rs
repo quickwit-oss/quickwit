@@ -765,6 +765,7 @@ mod tests {
         let indexing_task = IndexingTask {
             index_uid: "index-1:11111111111111111111111111".to_string(),
             source_id: "source-1".to_string(),
+            shard_ids: Vec::new(),
         };
         cluster2
             .set_self_key_value(GRPC_ADVERTISE_ADDR_KEY, "127.0.0.1:1001")
@@ -840,6 +841,7 @@ mod tests {
                 IndexingTask {
                     index_uid: format!("index-{index_id}:11111111111111111111111111"),
                     source_id: format!("source-{source_id}"),
+                    shard_ids: Vec::new(),
                 }
             })
             .collect_vec();
