@@ -37,9 +37,10 @@ use itertools::{Either, Itertools};
 use quickwit_common::uri::Uri;
 use quickwit_config::{validate_index_id_pattern, IndexConfig, SourceConfig};
 use quickwit_proto::metastore::{
-    CloseShardsRequest, CloseShardsResponse, DeleteQuery, DeleteShardsRequest,
-    DeleteShardsResponse, DeleteTask, EntityKind, ListShardsRequest, ListShardsResponse,
-    MetastoreError, MetastoreResult, OpenShardsRequest, OpenShardsResponse,
+    AcquireShardsRequest, AcquireShardsResponse, CloseShardsRequest, CloseShardsResponse,
+    DeleteQuery, DeleteShardsRequest, DeleteShardsResponse, DeleteTask, EntityKind,
+    ListShardsRequest, ListShardsResponse, MetastoreError, MetastoreResult, OpenShardsRequest,
+    OpenShardsResponse,
 };
 use quickwit_proto::{IndexUid, PublishToken};
 use quickwit_storage::Storage;
@@ -663,6 +664,23 @@ impl Metastore for FileBackedMetastore {
             subresponses.push(subresponse);
         }
         let response = OpenShardsResponse { subresponses };
+        Ok(response)
+    }
+
+    async fn acquire_shards(
+        &self,
+        request: AcquireShardsRequest,
+    ) -> MetastoreResult<AcquireShardsResponse> {
+        let mut subresponses = Vec::with_capacity(request.subrequests.len());
+
+        for subrequest in request.subrequests {
+            let index_uid: IndexUid = subrequest.index_uid.clone().into();
+            let subresponse = self
+                .mutate(index_uid, |index| index.acquire_shards(subrequest))
+                .await?;
+            subresponses.push(subresponse);
+        }
+        let response = AcquireShardsResponse { subresponses };
         Ok(response)
     }
 

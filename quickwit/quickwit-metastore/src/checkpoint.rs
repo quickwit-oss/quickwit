@@ -102,6 +102,10 @@ impl Position {
             Position::Offset(offset) => offset,
         }
     }
+
+    pub fn as_u64(&self) -> Option<u64> {
+        self.as_str().parse().ok()
+    }
 }
 
 impl From<i64> for Position {

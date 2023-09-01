@@ -36,16 +36,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     .unwrap();
 
     // Indexing Service
-    let mut prost_config = prost_build::Config::default();
-    prost_config.type_attribute("IndexingTask", "#[derive(Eq, Hash)]");
-
-    Codegen::run_with_config(
+    Codegen::run(
         &["protos/quickwit/indexing.proto"],
         "src/codegen/quickwit",
         "crate::indexing::IndexingResult",
         "crate::indexing::IndexingError",
         &[],
-        prost_config,
     )
     .unwrap();
 

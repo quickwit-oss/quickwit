@@ -35,7 +35,7 @@ use tracing::info;
 
 use crate::actors::DocProcessor;
 use crate::models::RawDocBatch;
-use crate::source::{Source, SourceContext, SourceExecutionContext, TypedSourceFactory};
+use crate::source::{Source, SourceContext, SourceRuntimeArgs, TypedSourceFactory};
 
 /// Number of bytes after which a new batch is cut.
 pub(crate) const BATCH_NUM_BYTES_LIMIT: u64 = 500_000u64;
@@ -132,7 +132,7 @@ impl TypedSourceFactory for FileSourceFactory {
 
     // TODO handle checkpoint for files.
     async fn typed_create_source(
-        ctx: Arc<SourceExecutionContext>,
+        ctx: Arc<SourceRuntimeArgs>,
         params: FileSourceParams,
         checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<FileSource> {
@@ -155,7 +155,7 @@ impl TypedSourceFactory for FileSourceFactory {
                 Box::new(tokio::io::stdin())
             };
         let file_source = FileSource {
-            source_id: ctx.source_config.source_id.clone(),
+            source_id: ctx.source_id().to_string(),
             counters: FileSourceCounters {
                 previous_offset: offset,
                 current_offset: offset,
@@ -188,22 +188,22 @@ mod tests {
         let universe = Universe::with_accelerated_time();
         let (doc_processor_mailbox, indexer_inbox) = universe.create_test_mailbox();
         let params = FileSourceParams::file("data/test_corpus.json");
-
+        let source_config = SourceConfig {
+            source_id: "test-file-source".to_string(),
+            desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
+            max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+            enabled: true,
+            source_params: SourceParams::File(params.clone()),
+            transform_config: None,
+            input_format: SourceInputFormat::Json,
+        };
         let metastore = metastore_for_test();
         let file_source = FileSourceFactory::typed_create_source(
-            SourceExecutionContext::for_test(
-                metastore,
+            SourceRuntimeArgs::for_test(
                 IndexUid::new("test-index"),
+                source_config,
+                metastore,
                 PathBuf::from("./queues"),
-                SourceConfig {
-                    source_id: "test-file-source".to_string(),
-                    desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
-                    max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
-                    enabled: true,
-                    source_params: SourceParams::File(params.clone()),
-                    transform_config: None,
-                    input_format: SourceInputFormat::Json,
-                },
             ),
             params,
             SourceCheckpoint::default(),
@@ -255,21 +255,22 @@ mod tests {
             .to_string_lossy()
             .to_string();
 
+        let source_config = SourceConfig {
+            source_id: "test-file-source".to_string(),
+            desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
+            max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+            enabled: true,
+            source_params: SourceParams::File(params.clone()),
+            transform_config: None,
+            input_format: SourceInputFormat::Json,
+        };
         let metastore = metastore_for_test();
         let source = FileSourceFactory::typed_create_source(
-            SourceExecutionContext::for_test(
-                metastore,
+            SourceRuntimeArgs::for_test(
                 IndexUid::new("test-index"),
+                source_config,
+                metastore,
                 PathBuf::from("./queues"),
-                SourceConfig {
-                    source_id: "test-file-source".to_string(),
-                    desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
-                    max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
-                    enabled: true,
-                    source_params: SourceParams::File(params.clone()),
-                    transform_config: None,
-                    input_format: SourceInputFormat::Json,
-                },
             ),
             params,
             SourceCheckpoint::default(),
@@ -345,21 +346,22 @@ mod tests {
         .unwrap();
         checkpoint.try_apply_delta(checkpoint_delta).unwrap();
 
+        let source_config = SourceConfig {
+            source_id: "test-file-source".to_string(),
+            desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
+            max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+            enabled: true,
+            source_params: SourceParams::File(params.clone()),
+            transform_config: None,
+            input_format: SourceInputFormat::Json,
+        };
         let metastore = metastore_for_test();
         let source = FileSourceFactory::typed_create_source(
-            SourceExecutionContext::for_test(
-                metastore,
+            SourceRuntimeArgs::for_test(
                 IndexUid::new("test-index"),
+                source_config,
+                metastore,
                 PathBuf::from("./queues"),
-                SourceConfig {
-                    source_id: "test-file-source".to_string(),
-                    desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
-                    max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
-                    enabled: true,
-                    source_params: SourceParams::File(params.clone()),
-                    transform_config: None,
-                    input_format: SourceInputFormat::Json,
-                },
             ),
             params,
             checkpoint,

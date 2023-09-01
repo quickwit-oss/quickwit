@@ -47,5 +47,9 @@ pub use packaged_split::{PackagedSplit, PackagedSplitBatch};
 pub use processed_doc::{ProcessedDoc, ProcessedDocBatch};
 pub use publish_lock::{NewPublishLock, PublishLock};
 pub use publisher_message::SplitsUpdate;
+use quickwit_proto::PublishToken;
 pub use raw_doc_batch::RawDocBatch;
 pub use split_attrs::{create_split_metadata, SplitAttrs};
+
+#[derive(Debug)]
+pub struct NewPublishToken(pub PublishToken);

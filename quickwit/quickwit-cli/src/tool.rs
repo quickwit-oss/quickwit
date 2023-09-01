@@ -47,6 +47,7 @@ use quickwit_indexing::models::{
     DetachIndexingPipeline, DetachMergePipeline, IndexingStatistics, SpawnPipeline,
 };
 use quickwit_indexing::IndexingPipeline;
+use quickwit_ingest::IngesterPool;
 use quickwit_metastore::Metastore;
 use quickwit_proto::search::SearchResponse;
 use quickwit_search::{single_node_search, SearchResponseRest};
@@ -457,6 +458,7 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
         cluster,
         metastore,
         None,
+        IngesterPool::default(),
         storage_resolver,
     )
     .await?;
@@ -586,6 +588,7 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
         cluster,
         metastore,
         None,
+        IngesterPool::default(),
         storage_resolver,
     )
     .await?;

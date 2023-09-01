@@ -25,10 +25,11 @@ use quickwit_common::uri::Uri;
 use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_proto::control_plane::{ControlPlaneService, ControlPlaneServiceClient};
 use quickwit_proto::metastore::{
-    serde_utils as metastore_serde_utils, AddSourceRequest, CloseShardsRequest,
-    CloseShardsResponse, CreateIndexRequest, DeleteIndexRequest, DeleteQuery, DeleteShardsRequest,
-    DeleteShardsResponse, DeleteSourceRequest, DeleteTask, ListShardsRequest, ListShardsResponse,
-    MetastoreResult, OpenShardsRequest, OpenShardsResponse, ToggleSourceRequest,
+    serde_utils as metastore_serde_utils, AcquireShardsRequest, AcquireShardsResponse,
+    AddSourceRequest, CloseShardsRequest, CloseShardsResponse, CreateIndexRequest,
+    DeleteIndexRequest, DeleteQuery, DeleteShardsRequest, DeleteShardsResponse,
+    DeleteSourceRequest, DeleteTask, ListShardsRequest, ListShardsResponse, MetastoreResult,
+    OpenShardsRequest, OpenShardsResponse, ToggleSourceRequest,
 };
 use quickwit_proto::{IndexUid, PublishToken};
 
@@ -37,7 +38,6 @@ use crate::{IndexMetadata, ListIndexesQuery, ListSplitsQuery, Metastore, Split, 
 
 /// A [`Metastore`] implementation that proxies some requests to the control plane so it can
 /// track the state of the metastore accurately and react to events in real-time.
-#[derive(Clone)]
 pub struct ControlPlaneMetastore {
     control_plane: ControlPlaneServiceClient,
     metastore: Arc<dyn Metastore>,
@@ -229,6 +229,13 @@ impl Metastore for ControlPlaneMetastore {
 
     async fn open_shards(&self, request: OpenShardsRequest) -> MetastoreResult<OpenShardsResponse> {
         self.metastore.open_shards(request).await
+    }
+
+    async fn acquire_shards(
+        &self,
+        request: AcquireShardsRequest,
+    ) -> MetastoreResult<AcquireShardsResponse> {
+        self.metastore.acquire_shards(request).await
     }
 
     async fn close_shards(

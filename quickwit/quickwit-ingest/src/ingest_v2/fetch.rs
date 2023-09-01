@@ -74,6 +74,8 @@ fn advance_by(range: &mut RangeInclusive<u64>, len: u64) {
     *range = *range.start() + len..=*range.end();
 }
 
+type FetchTaskHandle = JoinHandle<(u64, Option<u64>)>;
+
 impl FetchTask {
     pub const DEFAULT_BATCH_NUM_BYTES: usize = 1024 * 1024; // 1 MiB
 
@@ -82,7 +84,10 @@ impl FetchTask {
         mrecordlog: Arc<RwLock<MultiRecordLog>>,
         shard_status_rx: watch::Receiver<ShardStatus>,
         batch_num_bytes: usize,
-    ) -> ServiceStream<IngestV2Result<FetchResponseV2>> {
+    ) -> (
+        ServiceStream<IngestV2Result<FetchResponseV2>>,
+        FetchTaskHandle,
+    ) {
         let (fetch_response_tx, fetch_stream) = ServiceStream::new_bounded(3);
         let from_position_inclusive = open_fetch_stream_request
             .from_position_exclusive
@@ -104,24 +109,37 @@ impl FetchTask {
             batch_num_bytes,
         };
         let future = async move { fetch_task.run().await };
-        tokio::spawn(future);
-        fetch_stream
+        let fetch_task_handle: FetchTaskHandle = tokio::spawn(future);
+        (fetch_stream, fetch_task_handle)
     }
 
     /// Waits for new records. Returns `false` if the ingester is dropped.
     async fn wait_for_new_records(&mut self) -> bool {
-        while self.shard_status_rx.borrow().replication_position_inclusive
-            < *self.fetch_range.start()
-        {
+        loop {
+            let shard_status = self.shard_status_rx.borrow().clone();
+
+            if shard_status.shard_state.is_closed()
+                && shard_status.publish_position_inclusive <= *self.fetch_range.start()
+            {
+                // The shard is closed and we have fetched all records up to the publish position.
+                return false;
+            }
+            if shard_status.replication_position_inclusive >= *self.fetch_range.start() {
+                // Some new records are available.
+                return true;
+            }
             if self.shard_status_rx.changed().await.is_err() {
                 // The ingester was dropped.
                 return false;
             }
         }
-        true
     }
 
-    async fn run(&mut self) {
+    /// Runs the fetch task. It waits for new records in the log and pushes them into the fetch
+    /// response channel until `to_position_inclusive` is reached, the shard is closed and
+    /// `to_position_inclusive` is reached, or the ingester is dropped. It returns the total number
+    /// of records fetched and the position of the last record fetched.
+    async fn run(&mut self) -> (u64, Option<u64>) {
         debug!(
             client_id=%self.client_id,
             index_uid=%self.index_uid,
@@ -130,6 +148,8 @@ impl FetchTask {
             fetch_range=?self.fetch_range,
             "Spawning fetch task."
         );
+        let mut total_num_docs = 0;
+
         while !self.fetch_range.is_empty() {
             if !self.wait_for_new_records().await {
                 break;
@@ -160,6 +180,7 @@ impl FetchTask {
 
             let doc_batch = doc_batch_builder.build();
             let num_docs = doc_batch.num_docs() as u64;
+            total_num_docs += num_docs;
 
             let fetch_response = FetchResponseV2 {
                 index_uid: self.index_uid.clone().into(),
@@ -185,9 +206,13 @@ impl FetchTask {
             index_uid=%self.index_uid,
             source_id=%self.source_id,
             shard_id=%self.shard_id,
-            to_position_inclusive=%self.fetch_range.end(),
             "Fetch task completed."
-        )
+        );
+        if total_num_docs == 0 {
+            (0, None)
+        } else {
+            (total_num_docs, Some(*self.fetch_range.start() - 1))
+        }
     }
 }
 
@@ -213,6 +238,11 @@ impl MultiFetchStream {
             fetch_response_rx,
             fetch_response_tx,
         }
+    }
+
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn fetch_response_tx(&self) -> mpsc::Sender<IngestV2Result<FetchResponseV2>> {
+        self.fetch_response_tx.clone()
     }
 
     /// Subscribes to a shard and fails over to the replica if an error occurs.
@@ -298,7 +328,7 @@ impl MultiFetchStream {
         let client_id = self.client_id.clone();
         let ingester_pool = self.ingester_pool.clone();
         let fetch_response_tx = self.fetch_response_tx.clone();
-        let fetch_task_future = fetch_task(
+        let fetch_task_future = fault_tolerant_fetch_task(
             client_id,
             index_uid,
             source_id,
@@ -330,8 +360,31 @@ impl MultiFetchStream {
         Ok(())
     }
 
-    pub async fn next(&mut self) -> Option<IngestV2Result<FetchResponseV2>> {
-        self.fetch_response_rx.recv().await
+    /// Returns the next fetch response. This method blocks until a response is available.
+    ///
+    /// # Cancel safety
+    ///
+    /// This method is cancel safe.
+    pub async fn next(&mut self) -> IngestV2Result<FetchResponseV2> {
+        // Because we always hold a sender and never call `close()` on the receiver, the channel is
+        // always open.
+        self.fetch_response_rx
+            .recv()
+            .await
+            .expect("the channel should be open")
+    }
+
+    /// Resets the stream by aborting all the active fetch tasks and dropping all queued responses.
+    ///
+    /// The borrow checker guarantees that both `next()` and `reset()` cannot be called
+    /// simultaneously because they are both `&mut self` methods.
+    pub fn reset(&mut self) {
+        for (_queue_id, fetch_stream_handle) in self.fetch_task_handles.drain() {
+            fetch_stream_handle.abort();
+        }
+        let (fetch_response_tx, fetch_response_rx) = mpsc::channel(3);
+        self.fetch_response_tx = fetch_response_tx;
+        self.fetch_response_rx = fetch_response_rx;
     }
 }
 
@@ -359,7 +412,7 @@ fn select_preferred_and_failover_ingesters(
 /// Streams records from the preferred ingester and fails over to the other ingester if an error
 /// occurs.
 #[allow(clippy::too_many_arguments)]
-async fn fetch_task(
+async fn fault_tolerant_fetch_task(
     client_id: String,
     index_uid: IndexUid,
     source_id: SourceId,
@@ -433,6 +486,7 @@ mod tests {
 
     use bytes::Bytes;
     use mrecordlog::MultiRecordLog;
+    use quickwit_proto::ingest::ShardState;
     use quickwit_proto::types::queue_id;
     use tokio::time::timeout;
 
@@ -456,7 +510,7 @@ mod tests {
             to_position_inclusive: None,
         };
         let (shard_status_tx, shard_status_rx) = watch::channel(ShardStatus::default());
-        let mut fetch_stream = FetchTask::spawn(
+        let (mut fetch_stream, fetch_task_handle) = FetchTask::spawn(
             open_fetch_stream_request,
             mrecordlog.clone(),
             shard_status_rx,
@@ -521,10 +575,21 @@ mod tests {
             fetch_response.doc_batch.as_ref().unwrap().doc_buffer,
             "test-doc-001"
         );
+
+        let shard_status = ShardStatus {
+            shard_state: ShardState::Closed,
+            replication_position_inclusive: 1.into(),
+            publish_position_inclusive: 1.into(),
+        };
+        shard_status_tx.send(shard_status).unwrap();
+
+        let (num_docs, last_position) = fetch_task_handle.await.unwrap();
+        assert_eq!(num_docs, 2);
+        assert_eq!(last_position, Some(1));
     }
 
     #[tokio::test]
-    async fn test_fetch_task_to_position() {
+    async fn test_fetch_task_up_to_position() {
         let tempdir = tempfile::tempdir().unwrap();
         let mrecordlog = Arc::new(RwLock::new(
             MultiRecordLog::open(tempdir.path()).await.unwrap(),
@@ -541,7 +606,7 @@ mod tests {
             to_position_inclusive: Some(0),
         };
         let (shard_status_tx, shard_status_rx) = watch::channel(ShardStatus::default());
-        let mut fetch_stream = FetchTask::spawn(
+        let (mut fetch_stream, fetch_task_handle) = FetchTask::spawn(
             open_fetch_stream_request,
             mrecordlog.clone(),
             shard_status_rx,
@@ -577,6 +642,10 @@ mod tests {
             fetch_response.doc_batch.as_ref().unwrap().doc_buffer,
             "test-doc-000"
         );
+
+        let (num_docs, last_position) = fetch_task_handle.await.unwrap();
+        assert_eq!(num_docs, 1);
+        assert_eq!(last_position, Some(0));
     }
 
     #[tokio::test]
@@ -597,7 +666,7 @@ mod tests {
             to_position_inclusive: Some(2),
         };
         let (shard_status_tx, shard_status_rx) = watch::channel(ShardStatus::default());
-        let mut fetch_stream = FetchTask::spawn(
+        let (mut fetch_stream, fetch_task_handle) = FetchTask::spawn(
             open_fetch_stream_request,
             mrecordlog.clone(),
             shard_status_rx,
@@ -658,10 +727,14 @@ mod tests {
             fetch_response.doc_batch.as_ref().unwrap().doc_buffer,
             "test-doc-002"
         );
+
+        let (num_docs, last_position) = fetch_task_handle.await.unwrap();
+        assert_eq!(num_docs, 3);
+        assert_eq!(last_position, Some(2));
     }
 
     #[tokio::test]
-    async fn test_fetch_task_failover() {
+    async fn test_fault_tolerant_fetch_task() {
         // TODO: Backport from original branch.
     }
 

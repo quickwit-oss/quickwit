@@ -57,7 +57,7 @@ pub(crate) struct FileBackedIndexV0_6 {
     #[serde(rename = "index")]
     metadata: IndexMetadata,
     splits: Vec<Split>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "HashMap::is_empty")]
     shards: HashMap<SourceId, SerdeShards>,
     #[serde(default)]
     delete_tasks: Vec<DeleteTask>,

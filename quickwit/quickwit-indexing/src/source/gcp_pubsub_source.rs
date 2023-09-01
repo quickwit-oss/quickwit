@@ -38,9 +38,7 @@ use tracing::{debug, info, warn};
 
 use super::SourceActor;
 use crate::actors::DocProcessor;
-use crate::source::{
-    BatchBuilder, Source, SourceContext, SourceExecutionContext, TypedSourceFactory,
-};
+use crate::source::{BatchBuilder, Source, SourceContext, SourceRuntimeArgs, TypedSourceFactory};
 
 const BATCH_NUM_BYTES_LIMIT: u64 = 5_000_000;
 const DEFAULT_MAX_MESSAGES_PER_PULL: i32 = 1_000;
@@ -53,7 +51,7 @@ impl TypedSourceFactory for GcpPubSubSourceFactory {
     type Params = GcpPubSubSourceParams;
 
     async fn typed_create_source(
-        ctx: Arc<SourceExecutionContext>,
+        ctx: Arc<SourceRuntimeArgs>,
         params: GcpPubSubSourceParams,
         _checkpoint: SourceCheckpoint, // TODO: Use checkpoint!
     ) -> anyhow::Result<Self::Source> {
@@ -76,7 +74,7 @@ pub struct GcpPubSubSourceState {
 }
 
 pub struct GcpPubSubSource {
-    ctx: Arc<SourceExecutionContext>,
+    ctx: Arc<SourceRuntimeArgs>,
     subscription_name: String,
     subscription: Subscription,
     state: GcpPubSubSourceState,
@@ -89,8 +87,8 @@ impl fmt::Debug for GcpPubSubSource {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         formatter
             .debug_struct("GcpPubSubSource")
-            .field("index_id", &self.ctx.index_uid.index_id())
-            .field("source_id", &self.ctx.source_config.source_id)
+            .field("index_id", &self.ctx.index_id())
+            .field("source_id", &self.ctx.source_id())
             .field("subscription", &self.subscription)
             .finish()
     }
@@ -98,7 +96,7 @@ impl fmt::Debug for GcpPubSubSource {
 
 impl GcpPubSubSource {
     pub async fn try_new(
-        ctx: Arc<SourceExecutionContext>,
+        ctx: Arc<SourceRuntimeArgs>,
         params: GcpPubSubSourceParams,
     ) -> anyhow::Result<Self> {
         let subscription_name = params.subscription;
@@ -135,8 +133,8 @@ impl GcpPubSubSource {
         let partition_id = PartitionId::from(partition_id);
 
         info!(
-            index_id=%ctx.index_uid.index_id(),
-            source_id=%ctx.source_config.source_id,
+            index_id=%ctx.index_id(),
+            source_id=%ctx.source_id(),
             subscription=%subscription_name,
             max_messages_per_pull=%max_messages_per_pull,
             "Starting GCP PubSub source."
@@ -224,16 +222,13 @@ impl Source for GcpPubSubSource {
     }
 
     fn name(&self) -> String {
-        format!(
-            "GcpPubSubSource{{source_id={}}}",
-            self.ctx.source_config.source_id
-        )
+        format!("GcpPubSubSource{{source_id={}}}", self.ctx.source_id())
     }
 
     fn observable_state(&self) -> JsonValue {
         json!({
-            "index_id": self.ctx.index_uid.index_id(),
-            "source_id": self.ctx.source_config.source_id,
+            "index_id": self.ctx.index_id(),
+            "source_id": self.ctx.source_id(),
             "subscription": self.subscription_name,
             "num_bytes_processed": self.state.num_bytes_processed,
             "num_messages_processed": self.state.num_messages_processed,
@@ -270,7 +265,7 @@ impl GcpPubSubSource {
             if doc.is_empty() {
                 self.state.num_invalid_messages += 1;
             } else {
-                batch.push(doc);
+                batch.add_doc(doc);
             }
         }
         let to_position = Position::from(format!(
@@ -366,11 +361,11 @@ mod gcp_pubsub_emulator_tests {
                 source_config.source_params
             );
         };
-        let ctx = SourceExecutionContext::for_test(
-            metastore,
+        let ctx = SourceRuntimeArgs::for_test(
             index_uid,
-            PathBuf::from("./queues"),
             source_config,
+            metastore,
+            PathBuf::from("./queues"),
         );
         GcpPubSubSource::try_new(ctx, params).await.unwrap_err();
     }
@@ -405,11 +400,11 @@ mod gcp_pubsub_emulator_tests {
         }
         let source = source_loader
             .load_source(
-                SourceExecutionContext::for_test(
-                    metastore,
+                SourceRuntimeArgs::for_test(
                     index_uid,
-                    PathBuf::from("./queues"),
                     source_config,
+                    metastore,
+                    PathBuf::from("./queues"),
                 ),
                 SourceCheckpoint::default(),
             )

@@ -151,15 +151,15 @@ impl ClusterSandbox {
         for node_config in node_configs.iter() {
             join_handles.push(tokio::spawn({
                 let node_config = node_config.node_config.clone();
-                let storage_resolver = storage_resolver.clone();
                 let metastore_resolver = metastore_resolver.clone();
+                let storage_resolver = storage_resolver.clone();
                 let shutdown_signal = shutdown_trigger.shutdown_signal();
                 async move {
                     let result = serve_quickwit(
                         node_config,
                         runtimes_config,
-                        storage_resolver,
                         metastore_resolver,
+                        storage_resolver,
                         shutdown_signal,
                     )
                     .await?;

@@ -26,13 +26,13 @@ use quickwit_metastore::checkpoint::SourceCheckpoint;
 use thiserror::Error;
 
 use super::Source;
-use crate::source::SourceExecutionContext;
+use crate::source::SourceRuntimeArgs;
 
 #[async_trait]
 pub trait SourceFactory: 'static + Send + Sync {
     async fn create_source(
         &self,
-        ctx: Arc<SourceExecutionContext>,
+        ctx: Arc<SourceRuntimeArgs>,
         checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Box<dyn Source>>;
 }
@@ -42,7 +42,7 @@ pub trait TypedSourceFactory: Send + Sync + 'static {
     type Source: Source;
     type Params: serde::de::DeserializeOwned + Send + Sync + 'static;
     async fn typed_create_source(
-        ctx: Arc<SourceExecutionContext>,
+        ctx: Arc<SourceRuntimeArgs>,
         params: Self::Params,
         checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self::Source>;
@@ -52,7 +52,7 @@ pub trait TypedSourceFactory: Send + Sync + 'static {
 impl<T: TypedSourceFactory> SourceFactory for T {
     async fn create_source(
         &self,
-        ctx: Arc<SourceExecutionContext>,
+        ctx: Arc<SourceRuntimeArgs>,
         checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Box<dyn Source>> {
         let typed_params: T::Params = serde_json::from_value(ctx.source_config.params())?;
@@ -93,14 +93,14 @@ impl SourceLoader {
 
     pub async fn load_source(
         &self,
-        ctx: Arc<SourceExecutionContext>,
+        ctx: Arc<SourceRuntimeArgs>,
         checkpoint: SourceCheckpoint,
     ) -> Result<Box<dyn Source>, SourceLoaderError> {
         let source_type = ctx.source_config.source_type().as_str().to_string();
-        let source_id = ctx.source_config.source_id.clone();
+        let source_id = ctx.source_id().to_string();
         let source_factory = self.type_to_factory.get(&source_type).ok_or_else(|| {
             SourceLoaderError::UnknownSourceType {
-                requested_source_type: ctx.source_config.source_type().as_str().to_string(),
+                requested_source_type: source_type.clone(),
                 available_source_types: self.type_to_factory.keys().join(", "),
             }
         })?;
@@ -143,11 +143,11 @@ mod tests {
         };
         source_loader
             .load_source(
-                SourceExecutionContext::for_test(
-                    metastore,
+                SourceRuntimeArgs::for_test(
                     IndexUid::new("test-index"),
-                    PathBuf::from("./queues"),
                     source_config,
+                    metastore,
+                    PathBuf::from("./queues"),
                 ),
                 SourceCheckpoint::default(),
             )
