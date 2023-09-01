@@ -81,12 +81,19 @@ impl BuildTantivyAst for FieldPresenceQuery {
             InvalidQuery::SchemaError("Field presence is not available for this split.".to_string())
         })?;
         let (field, _field_entry, path) = find_field_or_hit_dynamic(&self.field, schema)?;
-        let field_presence_hash = compute_field_presence_hash(field, path);
-        let field_presence_term: Term =
-            Term::from_field_u64(field_presence_field, field_presence_hash);
-        let field_presence_term_query =
-            tantivy::query::TermQuery::new(field_presence_term, IndexRecordOption::Basic);
-        Ok(TantivyQueryAst::from(field_presence_term_query))
+        let field_entry = schema.get_field_entry(field);
+        if field_entry.is_fast() {
+            let exists_query = tantivy::query::ExistsQuery::new_exists_query(self.field.clone());
+            Ok(TantivyQueryAst::from(exists_query))
+        } else {
+            // fallback to the presense field
+            let field_presence_hash = compute_field_presence_hash(field, path);
+            let field_presence_term: Term =
+                Term::from_field_u64(field_presence_field, field_presence_hash);
+            let field_presence_term_query =
+                tantivy::query::TermQuery::new(field_presence_term, IndexRecordOption::Basic);
+            Ok(TantivyQueryAst::from(field_presence_term_query))    
+        }
     }
 }
 
