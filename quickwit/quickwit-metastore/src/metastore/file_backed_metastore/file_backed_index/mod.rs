@@ -96,6 +96,7 @@ impl quickwit_config::TestableForRegression for FileBackedIndex {
     fn test_equality(&self, other: &Self) {
         self.metadata().test_equality(other.metadata());
         assert_eq!(self.splits(), other.splits());
+        assert_eq!(self.delete_tasks, other.delete_tasks);
     }
 }
 
