@@ -107,6 +107,11 @@ where
         self.inner.read().await.map.len()
     }
 
+    /// Returns all the keys in the pool.
+    pub async fn keys(&self) -> Vec<K> {
+        self.inner.read().await.map.keys().cloned().collect()
+    }
+
     /// Returns all the key-value pairs in the pool.
     pub async fn all(&self) -> Vec<(K, V)> {
         self.inner

@@ -27,6 +27,7 @@ mod lazy_file_backed_index;
 mod store_operations;
 
 use std::collections::HashMap;
+use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -117,6 +118,15 @@ pub struct FileBackedMetastore {
     storage: Arc<dyn Storage>,
     per_index_metastores: Arc<RwLock<HashMap<String, IndexState>>>,
     polling_interval_opt: Option<Duration>,
+}
+
+impl fmt::Debug for FileBackedMetastore {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("FileBackedMetastore")
+            .field("uri", self.storage.uri())
+            .field("polling_interval_opt", &self.polling_interval_opt)
+            .finish()
+    }
 }
 
 impl FileBackedMetastore {

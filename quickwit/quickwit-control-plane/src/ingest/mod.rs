@@ -17,26 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-syntax = "proto3";
+pub(crate) mod ingest_controller;
 
-package quickwit.indexing;
-
-service IndexingService {
-  /// Apply an indexing plan on the node.
-  rpc ApplyIndexingPlan(ApplyIndexingPlanRequest) returns (ApplyIndexingPlanResponse);
-}
-
-message ApplyIndexingPlanRequest {
-  repeated IndexingTask indexing_tasks = 1;
-}
-
-message IndexingTask {
-  /// The tasks's index UID.
-  string index_uid = 1;
-  /// The task's source ID.
-  string source_id = 2;
-  /// The shards assigned to the indexer.
-  repeated uint64 shard_ids = 3;
-}
-
-message ApplyIndexingPlanResponse {}
+pub use ingest_controller::IngestController;

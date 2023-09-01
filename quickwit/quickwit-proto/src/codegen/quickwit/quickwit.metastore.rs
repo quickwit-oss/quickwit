@@ -1,9 +1,13 @@
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct EmptyResponse {}
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CreateIndexRequest {
     #[prost(string, tag = "2")]
-    pub index_config_serialized_json: ::prost::alloc::string::String,
+    pub index_config_json: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -33,14 +37,6 @@ pub struct DeleteIndexRequest {
     #[prost(string, tag = "1")]
     pub index_uid: ::prost::alloc::string::String,
 }
-#[derive(Serialize, Deserialize, utoipa::ToSchema)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct DeleteTasksResponse {}
-#[derive(Serialize, Deserialize, utoipa::ToSchema)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct DeleteIndexResponse {}
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -122,15 +118,11 @@ pub struct DeleteSplitsRequest {
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct SplitResponse {}
-#[derive(Serialize, Deserialize, utoipa::ToSchema)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AddSourceRequest {
     #[prost(string, tag = "1")]
     pub index_uid: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
-    pub source_config_serialized_json: ::prost::alloc::string::String,
+    pub source_config_json: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -161,10 +153,6 @@ pub struct ResetSourceCheckpointRequest {
     #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,
 }
-#[derive(Serialize, Deserialize, utoipa::ToSchema)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct SourceResponse {}
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -253,6 +241,222 @@ pub struct ListDeleteTasksRequest {
 pub struct ListDeleteTasksResponse {
     #[prost(message, repeated, tag = "1")]
     pub delete_tasks: ::prost::alloc::vec::Vec<DeleteTask>,
+}
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct OpenShardsRequest {
+    #[prost(message, repeated, tag = "1")]
+    pub subrequests: ::prost::alloc::vec::Vec<OpenShardsSubrequest>,
+}
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct OpenShardsSubrequest {
+    #[prost(string, tag = "1")]
+    pub index_uid: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub source_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub leader_id: ::prost::alloc::string::String,
+    #[prost(string, optional, tag = "4")]
+    pub follower_id: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(uint64, tag = "5")]
+    pub next_shard_id: u64,
+}
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct OpenShardsResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub subresponses: ::prost::alloc::vec::Vec<OpenShardsSubresponse>,
+}
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct OpenShardsSubresponse {
+    #[prost(string, tag = "1")]
+    pub index_uid: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub source_id: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag = "3")]
+    pub open_shards: ::prost::alloc::vec::Vec<super::ingest::Shard>,
+    #[prost(uint64, tag = "4")]
+    pub next_shard_id: u64,
+}
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CloseShardsRequest {
+    #[prost(message, repeated, tag = "1")]
+    pub subrequests: ::prost::alloc::vec::Vec<CloseShardsSubrequest>,
+}
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CloseShardsSubrequest {
+    #[prost(string, tag = "1")]
+    pub index_uid: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub source_id: ::prost::alloc::string::String,
+    #[prost(uint64, tag = "3")]
+    pub shard_id: u64,
+    #[prost(enumeration = "super::ingest::ShardState", tag = "4")]
+    pub shard_state: i32,
+    #[prost(uint64, optional, tag = "5")]
+    pub replication_position_inclusive: ::core::option::Option<u64>,
+}
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CloseShardsResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub successes: ::prost::alloc::vec::Vec<CloseShardsSuccess>,
+    #[prost(message, repeated, tag = "2")]
+    pub failures: ::prost::alloc::vec::Vec<CloseShardsFailure>,
+}
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CloseShardsSuccess {
+    #[prost(string, tag = "1")]
+    pub index_uid: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub source_id: ::prost::alloc::string::String,
+    #[prost(uint64, tag = "3")]
+    pub shard_id: u64,
+}
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CloseShardsFailure {
+    #[prost(string, tag = "1")]
+    pub index_uid: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub source_id: ::prost::alloc::string::String,
+    #[prost(uint64, tag = "3")]
+    pub shard_id: u64,
+    #[prost(uint32, tag = "4")]
+    pub error_code: u32,
+    #[prost(string, tag = "5")]
+    pub error_message: ::prost::alloc::string::String,
+}
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DeleteShardsRequest {
+    #[prost(message, repeated, tag = "1")]
+    pub subrequests: ::prost::alloc::vec::Vec<DeleteShardsSubrequest>,
+    #[prost(bool, tag = "2")]
+    pub force: bool,
+}
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DeleteShardsSubrequest {
+    #[prost(string, tag = "1")]
+    pub index_uid: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub source_id: ::prost::alloc::string::String,
+    #[prost(uint64, repeated, tag = "3")]
+    pub shard_ids: ::prost::alloc::vec::Vec<u64>,
+}
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DeleteShardsResponse {}
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListShardsRequest {
+    #[prost(message, repeated, tag = "1")]
+    pub subrequests: ::prost::alloc::vec::Vec<ListShardsSubrequest>,
+}
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListShardsSubrequest {
+    #[prost(string, tag = "1")]
+    pub index_uid: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub source_id: ::prost::alloc::string::String,
+    #[prost(enumeration = "super::ingest::ShardState", optional, tag = "3")]
+    pub shard_state: ::core::option::Option<i32>,
+}
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListShardsResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub subresponses: ::prost::alloc::vec::Vec<ListShardsSubresponse>,
+}
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListShardsSubresponse {
+    #[prost(string, tag = "1")]
+    pub index_uid: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub source_id: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag = "3")]
+    pub shards: ::prost::alloc::vec::Vec<super::ingest::Shard>,
+    #[prost(uint64, tag = "4")]
+    pub next_shard_id: u64,
+}
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum SourceType {
+    Cli = 0,
+    File = 1,
+    GcpPubsub = 2,
+    IngestV1 = 3,
+    IngestV2 = 4,
+    Kafka = 5,
+    Kinesis = 6,
+    Nats = 7,
+    Pulsar = 8,
+    Vec = 9,
+    Void = 10,
+}
+impl SourceType {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            SourceType::Cli => "CLI",
+            SourceType::File => "FILE",
+            SourceType::GcpPubsub => "GCP_PUBSUB",
+            SourceType::IngestV1 => "INGEST_V1",
+            SourceType::IngestV2 => "INGEST_V2",
+            SourceType::Kafka => "KAFKA",
+            SourceType::Kinesis => "KINESIS",
+            SourceType::Nats => "NATS",
+            SourceType::Pulsar => "PULSAR",
+            SourceType::Vec => "VEC",
+            SourceType::Void => "VOID",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "CLI" => Some(Self::Cli),
+            "FILE" => Some(Self::File),
+            "GCP_PUBSUB" => Some(Self::GcpPubsub),
+            "INGEST_V1" => Some(Self::IngestV1),
+            "INGEST_V2" => Some(Self::IngestV2),
+            "KAFKA" => Some(Self::Kafka),
+            "KINESIS" => Some(Self::Kinesis),
+            "NATS" => Some(Self::Nats),
+            "PULSAR" => Some(Self::Pulsar),
+            "VEC" => Some(Self::Vec),
+            "VOID" => Some(Self::Void),
+            _ => None,
+        }
+    }
 }
 /// Generated client implementations.
 pub mod metastore_service_client {
@@ -436,10 +640,7 @@ pub mod metastore_service_client {
         pub async fn delete_index(
             &mut self,
             request: impl tonic::IntoRequest<super::DeleteIndexRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::DeleteIndexResponse>,
-            tonic::Status,
-        > {
+        ) -> std::result::Result<tonic::Response<super::EmptyResponse>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -526,7 +727,7 @@ pub mod metastore_service_client {
         pub async fn stage_splits(
             &mut self,
             request: impl tonic::IntoRequest<super::StageSplitsRequest>,
-        ) -> std::result::Result<tonic::Response<super::SplitResponse>, tonic::Status> {
+        ) -> std::result::Result<tonic::Response<super::EmptyResponse>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -554,7 +755,7 @@ pub mod metastore_service_client {
         pub async fn publish_splits(
             &mut self,
             request: impl tonic::IntoRequest<super::PublishSplitsRequest>,
-        ) -> std::result::Result<tonic::Response<super::SplitResponse>, tonic::Status> {
+        ) -> std::result::Result<tonic::Response<super::EmptyResponse>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -582,7 +783,7 @@ pub mod metastore_service_client {
         pub async fn mark_splits_for_deletion(
             &mut self,
             request: impl tonic::IntoRequest<super::MarkSplitsForDeletionRequest>,
-        ) -> std::result::Result<tonic::Response<super::SplitResponse>, tonic::Status> {
+        ) -> std::result::Result<tonic::Response<super::EmptyResponse>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -610,7 +811,7 @@ pub mod metastore_service_client {
         pub async fn delete_splits(
             &mut self,
             request: impl tonic::IntoRequest<super::DeleteSplitsRequest>,
-        ) -> std::result::Result<tonic::Response<super::SplitResponse>, tonic::Status> {
+        ) -> std::result::Result<tonic::Response<super::EmptyResponse>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -638,7 +839,7 @@ pub mod metastore_service_client {
         pub async fn add_source(
             &mut self,
             request: impl tonic::IntoRequest<super::AddSourceRequest>,
-        ) -> std::result::Result<tonic::Response<super::SourceResponse>, tonic::Status> {
+        ) -> std::result::Result<tonic::Response<super::EmptyResponse>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -663,7 +864,7 @@ pub mod metastore_service_client {
         pub async fn toggle_source(
             &mut self,
             request: impl tonic::IntoRequest<super::ToggleSourceRequest>,
-        ) -> std::result::Result<tonic::Response<super::SourceResponse>, tonic::Status> {
+        ) -> std::result::Result<tonic::Response<super::EmptyResponse>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -691,7 +892,7 @@ pub mod metastore_service_client {
         pub async fn delete_source(
             &mut self,
             request: impl tonic::IntoRequest<super::DeleteSourceRequest>,
-        ) -> std::result::Result<tonic::Response<super::SourceResponse>, tonic::Status> {
+        ) -> std::result::Result<tonic::Response<super::EmptyResponse>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -719,7 +920,7 @@ pub mod metastore_service_client {
         pub async fn reset_source_checkpoint(
             &mut self,
             request: impl tonic::IntoRequest<super::ResetSourceCheckpointRequest>,
-        ) -> std::result::Result<tonic::Response<super::SourceResponse>, tonic::Status> {
+        ) -> std::result::Result<tonic::Response<super::EmptyResponse>, tonic::Status> {
             self.inner
                 .ready()
                 .await
@@ -895,6 +1096,117 @@ pub mod metastore_service_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        pub async fn open_shards(
+            &mut self,
+            request: impl tonic::IntoRequest<super::OpenShardsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::OpenShardsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.metastore.MetastoreService/OpenShards",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("quickwit.metastore.MetastoreService", "OpenShards"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn close_shards(
+            &mut self,
+            request: impl tonic::IntoRequest<super::CloseShardsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CloseShardsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.metastore.MetastoreService/CloseShards",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("quickwit.metastore.MetastoreService", "CloseShards"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn delete_shards(
+            &mut self,
+            request: impl tonic::IntoRequest<super::DeleteShardsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::DeleteShardsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.metastore.MetastoreService/DeleteShards",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit.metastore.MetastoreService",
+                        "DeleteShards",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn list_shards(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ListShardsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListShardsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.metastore.MetastoreService/ListShards",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("quickwit.metastore.MetastoreService", "ListShards"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -932,10 +1244,7 @@ pub mod metastore_service_server {
         async fn delete_index(
             &self,
             request: tonic::Request<super::DeleteIndexRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::DeleteIndexResponse>,
-            tonic::Status,
-        >;
+        ) -> std::result::Result<tonic::Response<super::EmptyResponse>, tonic::Status>;
         /// Gets all splits from index.
         async fn list_all_splits(
             &self,
@@ -956,42 +1265,42 @@ pub mod metastore_service_server {
         async fn stage_splits(
             &self,
             request: tonic::Request<super::StageSplitsRequest>,
-        ) -> std::result::Result<tonic::Response<super::SplitResponse>, tonic::Status>;
+        ) -> std::result::Result<tonic::Response<super::EmptyResponse>, tonic::Status>;
         /// Publishes split.
         async fn publish_splits(
             &self,
             request: tonic::Request<super::PublishSplitsRequest>,
-        ) -> std::result::Result<tonic::Response<super::SplitResponse>, tonic::Status>;
+        ) -> std::result::Result<tonic::Response<super::EmptyResponse>, tonic::Status>;
         /// Marks splits for deletion.
         async fn mark_splits_for_deletion(
             &self,
             request: tonic::Request<super::MarkSplitsForDeletionRequest>,
-        ) -> std::result::Result<tonic::Response<super::SplitResponse>, tonic::Status>;
+        ) -> std::result::Result<tonic::Response<super::EmptyResponse>, tonic::Status>;
         /// Deletes splits.
         async fn delete_splits(
             &self,
             request: tonic::Request<super::DeleteSplitsRequest>,
-        ) -> std::result::Result<tonic::Response<super::SplitResponse>, tonic::Status>;
+        ) -> std::result::Result<tonic::Response<super::EmptyResponse>, tonic::Status>;
         /// Adds source.
         async fn add_source(
             &self,
             request: tonic::Request<super::AddSourceRequest>,
-        ) -> std::result::Result<tonic::Response<super::SourceResponse>, tonic::Status>;
+        ) -> std::result::Result<tonic::Response<super::EmptyResponse>, tonic::Status>;
         /// Toggles source.
         async fn toggle_source(
             &self,
             request: tonic::Request<super::ToggleSourceRequest>,
-        ) -> std::result::Result<tonic::Response<super::SourceResponse>, tonic::Status>;
+        ) -> std::result::Result<tonic::Response<super::EmptyResponse>, tonic::Status>;
         /// Removes source.
         async fn delete_source(
             &self,
             request: tonic::Request<super::DeleteSourceRequest>,
-        ) -> std::result::Result<tonic::Response<super::SourceResponse>, tonic::Status>;
+        ) -> std::result::Result<tonic::Response<super::EmptyResponse>, tonic::Status>;
         /// Resets source checkpoint.
         async fn reset_source_checkpoint(
             &self,
             request: tonic::Request<super::ResetSourceCheckpointRequest>,
-        ) -> std::result::Result<tonic::Response<super::SourceResponse>, tonic::Status>;
+        ) -> std::result::Result<tonic::Response<super::EmptyResponse>, tonic::Status>;
         /// Gets last opstamp for a given `index_id`.
         async fn last_delete_opstamp(
             &self,
@@ -1027,6 +1336,34 @@ pub mod metastore_service_server {
             request: tonic::Request<super::ListStaleSplitsRequest>,
         ) -> std::result::Result<
             tonic::Response<super::ListSplitsResponse>,
+            tonic::Status,
+        >;
+        async fn open_shards(
+            &self,
+            request: tonic::Request<super::OpenShardsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::OpenShardsResponse>,
+            tonic::Status,
+        >;
+        async fn close_shards(
+            &self,
+            request: tonic::Request<super::CloseShardsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CloseShardsResponse>,
+            tonic::Status,
+        >;
+        async fn delete_shards(
+            &self,
+            request: tonic::Request<super::DeleteShardsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::DeleteShardsResponse>,
+            tonic::Status,
+        >;
+        async fn list_shards(
+            &self,
+            request: tonic::Request<super::ListShardsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListShardsResponse>,
             tonic::Status,
         >;
     }
@@ -1254,7 +1591,7 @@ pub mod metastore_service_server {
                         T: MetastoreService,
                     > tonic::server::UnaryService<super::DeleteIndexRequest>
                     for delete_indexSvc<T> {
-                        type Response = super::DeleteIndexResponse;
+                        type Response = super::EmptyResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
@@ -1390,7 +1727,7 @@ pub mod metastore_service_server {
                         T: MetastoreService,
                     > tonic::server::UnaryService<super::StageSplitsRequest>
                     for stage_splitsSvc<T> {
-                        type Response = super::SplitResponse;
+                        type Response = super::EmptyResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
@@ -1436,7 +1773,7 @@ pub mod metastore_service_server {
                         T: MetastoreService,
                     > tonic::server::UnaryService<super::PublishSplitsRequest>
                     for publish_splitsSvc<T> {
-                        type Response = super::SplitResponse;
+                        type Response = super::EmptyResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
@@ -1482,7 +1819,7 @@ pub mod metastore_service_server {
                         T: MetastoreService,
                     > tonic::server::UnaryService<super::MarkSplitsForDeletionRequest>
                     for mark_splits_for_deletionSvc<T> {
-                        type Response = super::SplitResponse;
+                        type Response = super::EmptyResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
@@ -1528,7 +1865,7 @@ pub mod metastore_service_server {
                         T: MetastoreService,
                     > tonic::server::UnaryService<super::DeleteSplitsRequest>
                     for delete_splitsSvc<T> {
-                        type Response = super::SplitResponse;
+                        type Response = super::EmptyResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
@@ -1574,7 +1911,7 @@ pub mod metastore_service_server {
                         T: MetastoreService,
                     > tonic::server::UnaryService<super::AddSourceRequest>
                     for add_sourceSvc<T> {
-                        type Response = super::SourceResponse;
+                        type Response = super::EmptyResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
@@ -1618,7 +1955,7 @@ pub mod metastore_service_server {
                         T: MetastoreService,
                     > tonic::server::UnaryService<super::ToggleSourceRequest>
                     for toggle_sourceSvc<T> {
-                        type Response = super::SourceResponse;
+                        type Response = super::EmptyResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
@@ -1664,7 +2001,7 @@ pub mod metastore_service_server {
                         T: MetastoreService,
                     > tonic::server::UnaryService<super::DeleteSourceRequest>
                     for delete_sourceSvc<T> {
-                        type Response = super::SourceResponse;
+                        type Response = super::EmptyResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
@@ -1710,7 +2047,7 @@ pub mod metastore_service_server {
                         T: MetastoreService,
                     > tonic::server::UnaryService<super::ResetSourceCheckpointRequest>
                     for reset_source_checkpointSvc<T> {
-                        type Response = super::SourceResponse;
+                        type Response = super::EmptyResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
                             tonic::Status,
@@ -1969,6 +2306,186 @@ pub mod metastore_service_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = list_stale_splitsSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.metastore.MetastoreService/OpenShards" => {
+                    #[allow(non_camel_case_types)]
+                    struct OpenShardsSvc<T: MetastoreService>(pub Arc<T>);
+                    impl<
+                        T: MetastoreService,
+                    > tonic::server::UnaryService<super::OpenShardsRequest>
+                    for OpenShardsSvc<T> {
+                        type Response = super::OpenShardsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::OpenShardsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move { (*inner).open_shards(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = OpenShardsSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.metastore.MetastoreService/CloseShards" => {
+                    #[allow(non_camel_case_types)]
+                    struct CloseShardsSvc<T: MetastoreService>(pub Arc<T>);
+                    impl<
+                        T: MetastoreService,
+                    > tonic::server::UnaryService<super::CloseShardsRequest>
+                    for CloseShardsSvc<T> {
+                        type Response = super::CloseShardsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::CloseShardsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).close_shards(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = CloseShardsSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.metastore.MetastoreService/DeleteShards" => {
+                    #[allow(non_camel_case_types)]
+                    struct DeleteShardsSvc<T: MetastoreService>(pub Arc<T>);
+                    impl<
+                        T: MetastoreService,
+                    > tonic::server::UnaryService<super::DeleteShardsRequest>
+                    for DeleteShardsSvc<T> {
+                        type Response = super::DeleteShardsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::DeleteShardsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).delete_shards(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = DeleteShardsSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.metastore.MetastoreService/ListShards" => {
+                    #[allow(non_camel_case_types)]
+                    struct ListShardsSvc<T: MetastoreService>(pub Arc<T>);
+                    impl<
+                        T: MetastoreService,
+                    > tonic::server::UnaryService<super::ListShardsRequest>
+                    for ListShardsSvc<T> {
+                        type Response = super::ListShardsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ListShardsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move { (*inner).list_shards(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = ListShardsSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

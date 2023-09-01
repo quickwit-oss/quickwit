@@ -266,6 +266,7 @@ impl NodeConfigBuilder {
 
         self.storage_configs.validate()?;
         self.storage_configs.apply_flavors();
+        self.ingest_api_config.validate()?;
 
         let node_config = NodeConfig {
             cluster_id: self.cluster_id.resolve(env_vars)?,
@@ -489,6 +490,13 @@ mod tests {
             }
         );
         assert_eq!(
+            config.ingest_api_config,
+            IngestApiConfig {
+                replication_factor: 2,
+                ..Default::default()
+            }
+        );
+        assert_eq!(
             config.searcher_config,
             SearcherConfig {
                 aggregation_memory_limit: Byte::from_str("1G").unwrap(),
@@ -594,6 +602,7 @@ mod tests {
                 env::current_dir().unwrap().display()
             )
         );
+        assert_eq!(config.ingest_api_config.replication_factor, 1);
     }
 
     #[tokio::test]
@@ -1051,5 +1060,37 @@ mod tests {
         )
         .await
         .expect_err("Config should not allow empty origins.");
+    }
+
+    #[tokio::test]
+    async fn test_node_config_validates_ingest_config() {
+        let ingest_config = IngestApiConfig {
+            replication_factor: 0,
+            ..Default::default()
+        };
+        let error_message = ingest_config.validate().unwrap_err().to_string();
+        assert!(error_message.contains("either 1 or 2, got `0`"));
+
+        let ingest_config = IngestApiConfig {
+            replication_factor: 3,
+            ..Default::default()
+        };
+        let error_message = ingest_config.validate().unwrap_err().to_string();
+        assert!(error_message.contains("either 1 or 2, got `3`"));
+
+        let node_config_yaml = r#"
+            version: 0.6
+            ingest_api:
+              replication_factor: 0
+        "#;
+        let error_message = load_node_config_with_env(
+            ConfigFormat::Yaml,
+            node_config_yaml.as_bytes(),
+            &Default::default(),
+        )
+        .await
+        .unwrap_err()
+        .to_string();
+        assert!(error_message.contains("replication factor"));
     }
 }

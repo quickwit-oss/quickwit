@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::fmt;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use async_trait::async_trait;
@@ -38,6 +39,12 @@ struct RetryTestMetastore {
     retry_count: AtomicUsize,
     error_count: usize,
     errors_to_return: Vec<MetastoreError>,
+}
+
+impl fmt::Debug for RetryTestMetastore {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RetryTestMetastore").finish()
+    }
 }
 
 impl RetryTestMetastore {
@@ -303,6 +310,7 @@ async fn test_mixed_retryable_metastore_errors() {
             },
             // Non-retryable
             MetastoreError::AlreadyExists(EntityKind::Source {
+                index_id: "".to_string(),
                 source_id: "".to_string(),
             }),
             MetastoreError::Internal {
@@ -320,6 +328,7 @@ async fn test_mixed_retryable_metastore_errors() {
     assert_eq!(
         error,
         MetastoreError::AlreadyExists(EntityKind::Source {
+            index_id: "".to_string(),
             source_id: "".to_string()
         }),
     )

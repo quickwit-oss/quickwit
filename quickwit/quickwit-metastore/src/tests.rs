@@ -30,7 +30,7 @@ pub mod test_suite {
     use quickwit_common::rand::append_random_suffix;
     use quickwit_config::{IndexConfig, SourceConfig, SourceInputFormat, SourceParams};
     use quickwit_doc_mapper::tag_pruning::{no_tag, tag, TagFilterAst};
-    use quickwit_proto::metastore::{DeleteQuery, EntityKind, MetastoreError};
+    use quickwit_proto::metastore::{DeleteQuery, EntityKind, MetastoreError, SourceType};
     use quickwit_proto::IndexUid;
     use quickwit_query::query_ast::qast_json_helper;
     use time::OffsetDateTime;
@@ -361,7 +361,10 @@ pub mod test_suite {
         assert_eq!(sources.len(), 1);
         assert!(sources.contains_key(&source_id));
         assert_eq!(sources.get(&source_id).unwrap().source_id, source_id);
-        assert_eq!(sources.get(&source_id).unwrap().source_type(), "void");
+        assert_eq!(
+            sources.get(&source_id).unwrap().source_type(),
+            SourceType::Void
+        );
         assert_eq!(
             index_metadata.checkpoint.source_checkpoint(&source_id),
             Some(&SourceCheckpoint::default())

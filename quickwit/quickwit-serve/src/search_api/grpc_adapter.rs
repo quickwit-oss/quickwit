@@ -21,13 +21,12 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use futures::TryStreamExt;
+use quickwit_proto::error::convert_to_grpc_result;
 use quickwit_proto::search::{
     search_service_server as grpc, GetKvRequest, GetKvResponse, LeafSearchStreamRequest,
     LeafSearchStreamResponse,
 };
-use quickwit_proto::{
-    convert_to_grpc_result, set_parent_span_from_request_metadata, tonic, ServiceError,
-};
+use quickwit_proto::{set_parent_span_from_request_metadata, tonic, ServiceError};
 use quickwit_search::SearchService;
 use tracing::instrument;
 

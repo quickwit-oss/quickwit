@@ -21,6 +21,8 @@ mod retry;
 #[cfg(test)]
 mod test;
 
+use std::fmt;
+
 use async_trait::async_trait;
 use quickwit_common::retry::RetryParams;
 use quickwit_common::uri::Uri;
@@ -51,6 +53,12 @@ impl RetryingMetastore {
                 ..Default::default()
             },
         }
+    }
+}
+
+impl fmt::Debug for RetryingMetastore {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RetryingMetastore").finish()
     }
 }
 

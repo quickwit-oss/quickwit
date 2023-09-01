@@ -78,8 +78,8 @@ pub(crate) async fn start_rest_server(
     // `/health/*` routes.
     let health_check_routes = health_check_handlers(
         quickwit_services.cluster.clone(),
-        quickwit_services.indexing_service.clone(),
-        quickwit_services.janitor_service.clone(),
+        quickwit_services.indexing_service_opt.clone(),
+        quickwit_services.janitor_service_opt.clone(),
     );
 
     // `/metrics` route.
@@ -96,7 +96,7 @@ pub(crate) async fn start_rest_server(
             quickwit_services.config.clone(),
         ))
         .or(indexing_get_handler(
-            quickwit_services.indexing_service.clone(),
+            quickwit_services.indexing_service_opt.clone(),
         ))
         .or(search_get_handler(quickwit_services.search_service.clone()))
         .or(search_post_handler(
@@ -107,7 +107,7 @@ pub(crate) async fn start_rest_server(
         ))
         .or(ingest_api_handlers(ingest_service.clone()))
         .or(index_management_handlers(
-            quickwit_services.index_service.clone(),
+            quickwit_services.index_manager.clone(),
             quickwit_services.config.clone(),
         ))
         .or(delete_task_api_handlers(

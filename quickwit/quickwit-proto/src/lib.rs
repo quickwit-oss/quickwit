@@ -21,12 +21,10 @@
 #![deny(clippy::disallowed_methods)]
 #![allow(rustdoc::invalid_html_tags)]
 
-use std::convert::Infallible;
 use std::fmt;
 
 use ::opentelemetry::global;
 use ::opentelemetry::propagation::{Extractor, Injector};
-use tonic::codegen::http;
 use tonic::service::Interceptor;
 use tonic::Status;
 use tracing::Span;
@@ -34,12 +32,14 @@ use tracing_opentelemetry::OpenTelemetrySpanExt;
 
 pub mod control_plane;
 pub use {bytes, tonic};
+pub mod error;
 pub mod indexing;
 pub mod ingest;
 pub mod metastore;
 pub mod search;
 pub mod types;
 
+pub use error::{ServiceError, ServiceErrorCode};
 pub use types::*;
 
 pub mod jaeger {
@@ -107,73 +107,6 @@ pub mod opentelemetry {
 
 #[macro_use]
 extern crate serde;
-
-/// This enum serves as a Rosetta stone of
-/// gRPC and Http status code.
-///
-/// It is voluntarily a restricted subset.
-#[derive(Clone, Copy)]
-pub enum ServiceErrorCode {
-    BadRequest,
-    Internal,
-    MethodNotAllowed,
-    NotFound,
-    RateLimited,
-    Unavailable,
-    UnsupportedMediaType,
-    NotSupportedYet, /* Used for API that is available in elasticsearch but is not yet
-                      * available in Quickwit. */
-}
-
-impl ServiceErrorCode {
-    pub fn to_grpc_status_code(self) -> tonic::Code {
-        match self {
-            ServiceErrorCode::BadRequest => tonic::Code::InvalidArgument,
-            ServiceErrorCode::Internal => tonic::Code::Internal,
-            ServiceErrorCode::MethodNotAllowed => tonic::Code::InvalidArgument,
-            ServiceErrorCode::NotFound => tonic::Code::NotFound,
-            ServiceErrorCode::RateLimited => tonic::Code::ResourceExhausted,
-            ServiceErrorCode::Unavailable => tonic::Code::Unavailable,
-            ServiceErrorCode::UnsupportedMediaType => tonic::Code::InvalidArgument,
-            ServiceErrorCode::NotSupportedYet => tonic::Code::Unimplemented,
-        }
-    }
-    pub fn to_http_status_code(self) -> http::StatusCode {
-        match self {
-            ServiceErrorCode::BadRequest => http::StatusCode::BAD_REQUEST,
-            ServiceErrorCode::Internal => http::StatusCode::INTERNAL_SERVER_ERROR,
-            ServiceErrorCode::MethodNotAllowed => http::StatusCode::METHOD_NOT_ALLOWED,
-            ServiceErrorCode::NotFound => http::StatusCode::NOT_FOUND,
-            ServiceErrorCode::RateLimited => http::StatusCode::TOO_MANY_REQUESTS,
-            ServiceErrorCode::Unavailable => http::StatusCode::SERVICE_UNAVAILABLE,
-            ServiceErrorCode::UnsupportedMediaType => http::StatusCode::UNSUPPORTED_MEDIA_TYPE,
-            ServiceErrorCode::NotSupportedYet => http::StatusCode::NOT_IMPLEMENTED,
-        }
-    }
-}
-
-pub trait ServiceError: ToString {
-    fn grpc_error(&self) -> tonic::Status {
-        let grpc_code = self.status_code().to_grpc_status_code();
-        let error_msg = self.to_string();
-        tonic::Status::new(grpc_code, error_msg)
-    }
-
-    fn status_code(&self) -> ServiceErrorCode;
-}
-
-impl ServiceError for Infallible {
-    fn status_code(&self) -> ServiceErrorCode {
-        unreachable!()
-    }
-}
-
-pub fn convert_to_grpc_result<T, E: ServiceError>(
-    res: Result<T, E>,
-) -> Result<tonic::Response<T>, tonic::Status> {
-    res.map(tonic::Response::new)
-        .map_err(|error| error.grpc_error())
-}
 
 impl TryFrom<search::SearchStreamRequest> for search::SearchRequest {
     type Error = anyhow::Error;

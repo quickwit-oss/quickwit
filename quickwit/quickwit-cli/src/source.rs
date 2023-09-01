@@ -418,7 +418,7 @@ where
 
     let source_rows = vec![SourceRow {
         source_id: source.source_id.clone(),
-        source_type: source.source_type().to_string(),
+        source_type: source.source_type().as_str().to_string(),
         enabled: source.enabled.to_string(),
     }];
     let source_table = make_table("Source", source_rows, true);
@@ -457,7 +457,7 @@ where I: IntoIterator<Item = SourceConfig> {
     let rows = sources
         .into_iter()
         .map(|source| SourceRow {
-            source_type: source.source_type().to_string(),
+            source_type: source.source_type().as_str().to_string(),
             source_id: source.source_id,
             enabled: source.enabled.to_string(),
         })

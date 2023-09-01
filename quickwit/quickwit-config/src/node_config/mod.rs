@@ -22,11 +22,11 @@ mod serialize;
 use std::collections::{HashMap, HashSet};
 use std::env;
 use std::net::SocketAddr;
-use std::num::NonZeroU64;
+use std::num::{NonZeroU64, NonZeroUsize};
 use std::path::PathBuf;
 use std::time::Duration;
 
-use anyhow::bail;
+use anyhow::{bail, ensure};
 use byte_unit::Byte;
 use quickwit_common::net::HostAddr;
 use quickwit_common::uri::Uri;
@@ -141,6 +141,7 @@ impl Default for SearcherConfig {
 pub struct IngestApiConfig {
     pub max_queue_memory_usage: Byte,
     pub max_queue_disk_usage: Byte,
+    pub replication_factor: usize,
 }
 
 impl Default for IngestApiConfig {
@@ -148,7 +149,36 @@ impl Default for IngestApiConfig {
         Self {
             max_queue_memory_usage: Byte::from_bytes(2 * 1024 * 1024 * 1024), /* 2 GiB // TODO maybe we want more? */
             max_queue_disk_usage: Byte::from_bytes(4 * 1024 * 1024 * 1024), /* 4 GiB // TODO maybe we want more? */
+            replication_factor: 1,
         }
+    }
+}
+
+impl IngestApiConfig {
+    pub fn replication_factor(&self) -> anyhow::Result<NonZeroUsize> {
+        if let Ok(replication_factor_str) = env::var("QW_INGEST_REPLICATION_FACTOR") {
+            let replication_factor = match replication_factor_str.trim() {
+                "1" => 1,
+                "2" => 2,
+                _ => bail!(
+                    "replication factor must be either 1 or 2, got `{replication_factor_str}`"
+                ),
+            };
+            return Ok(NonZeroUsize::new(replication_factor)
+                .expect("replication factor should be either 1 or 2"));
+        }
+        ensure!(
+            self.replication_factor >= 1 && self.replication_factor <= 2,
+            "replication factor must be either 1 or 2, got `{}`",
+            self.replication_factor
+        );
+        Ok(NonZeroUsize::new(self.replication_factor)
+            .expect("replication factor should be either 1 or 2"))
+    }
+
+    fn validate(&self) -> anyhow::Result<()> {
+        self.replication_factor()?;
+        Ok(())
     }
 }
 

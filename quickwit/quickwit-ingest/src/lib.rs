@@ -216,16 +216,15 @@ mod tests {
 
         let queues_dir_path = temp_dir.path().join("queues-0");
         get_ingest_api_service(&queues_dir_path).await.unwrap_err();
-        init_ingest_api(
-            &universe,
-            &queues_dir_path,
-            &IngestApiConfig {
-                max_queue_memory_usage: Byte::from_bytes(1200),
-                max_queue_disk_usage: Byte::from_bytes(1024 * 1024 * 256),
-            },
-        )
-        .await
-        .unwrap();
+
+        let ingest_api_config = IngestApiConfig {
+            max_queue_memory_usage: Byte::from_bytes(1200),
+            max_queue_disk_usage: Byte::from_bytes(1024 * 1024 * 256),
+            ..Default::default()
+        };
+        init_ingest_api(&universe, &queues_dir_path, &ingest_api_config)
+            .await
+            .unwrap();
         let ingest_api_service = get_ingest_api_service(&queues_dir_path).await.unwrap();
 
         ingest_api_service
