@@ -1557,15 +1557,16 @@ mod tests {
     #[tokio::test]
     async fn test_root_search_multiple_splits_sort_heteregeneous_field_ascending(
     ) -> anyhow::Result<()> {
-        let mut search_request = quickwit_proto::search::SearchRequest {
+        let search_request = quickwit_proto::search::SearchRequest {
             index_id_patterns: vec!["test-index".to_string()],
             query_ast: qast_json_helper("test", &["body"]),
             max_hits: 10,
+            sort_fields: vec![SortField {
+                field_name: "response_date".to_string(),
+                sort_order: SortOrder::Asc.into(),
+            }],
             ..Default::default()
         };
-        if let Some(sort_field) = search_request.sort_fields.get_mut(0) {
-            sort_field.set_sort_order(SortOrder::Asc);
-        }
         let mut metastore = MockMetastore::new();
         let index_metadata = IndexMetadata::for_test("test-index", "ram:///test-index");
         let index_uid = index_metadata.index_uid.clone();
@@ -1674,7 +1675,7 @@ mod tests {
         assert_eq!(search_response.num_hits, 5);
         assert_eq!(search_response.hits.len(), 5);
         assert_eq!(
-            search_response.hits[2].partial_hit.as_ref().unwrap(),
+            search_response.hits[0].partial_hit.as_ref().unwrap(),
             &PartialHit {
                 split_id: "split2".to_string(),
                 segment_ord: 0,
@@ -1694,7 +1695,7 @@ mod tests {
             }
         );
         assert_eq!(
-            search_response.hits[0].partial_hit.as_ref().unwrap(),
+            search_response.hits[2].partial_hit.as_ref().unwrap(),
             &PartialHit {
                 split_id: "split1".to_string(),
                 segment_ord: 0,
@@ -1704,7 +1705,7 @@ mod tests {
             }
         );
         assert_eq!(
-            search_response.hits[4].partial_hit.as_ref().unwrap(),
+            search_response.hits[3].partial_hit.as_ref().unwrap(),
             &PartialHit {
                 split_id: "split1".to_string(),
                 segment_ord: 0,
@@ -1714,7 +1715,7 @@ mod tests {
             }
         );
         assert_eq!(
-            search_response.hits[3].partial_hit.as_ref().unwrap(),
+            search_response.hits[4].partial_hit.as_ref().unwrap(),
             &PartialHit {
                 split_id: "split2".to_string(),
                 segment_ord: 0,
@@ -1733,6 +1734,10 @@ mod tests {
             index_id_patterns: vec!["test-index".to_string()],
             query_ast: qast_json_helper("test", &["body"]),
             max_hits: 10,
+            sort_fields: vec![SortField {
+                field_name: "response_date".to_string(),
+                sort_order: SortOrder::Desc.into(),
+            }],
             ..Default::default()
         };
         let mut metastore = MockMetastore::new();
