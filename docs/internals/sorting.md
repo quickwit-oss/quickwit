@@ -1,41 +1,11 @@
 # Sorting
 
-Quickwit can sort results based on fastfield values or score. This document discuss where and ho
+Quickwit can sort results based on fastfield values or score. This document discuss where and how
  it happens.
 It also tries to describe optimizations that may be enabled (but are not necessarily implemente)
 by this behavior.
 
-# Current state
-(this section shall be removed once proposed changes are accepted)
-
-## Behavior
-
-Sorting is controlled by the `sort_by` query parameter. It accepts a comma separated list of fields
-to use for sorting. Sorting is Ascending by default. The sorting order can be reversed by prefixing
-a field name with a hyphen `-`.
-The special value `_score` means sorting by score, with a sort that is then Descending by default
-(documents matching better goes first).
-
-In case of equality between two documents, the GlobalDocId, composed of (SplitId, SegmentId, DocId)
-is used as a tie breaker. It is always used in Ascending order *inside a split*. It is used in the
-same order as the first field *when merging results*
-
-If a document doesn't have a value for a sorting field, that document is considered to go after any
-document which has a value, independently of sort order. That is, when sorting the value 1,2 and
-None, ascending sort would give `[1, 2, None]`, and descending sort would give `[2, 1, None]`.
-
-If the client does not request sorting, documents are sorted using (DocId, SplitId, SegmentId), in
-Descending order.
-
-## Code
-Sorting happends in multiple places. First in `QuickwitSegmentCollector::collect_top_k`, for
-getting top documents from a single segment (and a single split). Then in 
-`top_k_partial_hits` when merging splits inside a single leaf node. The retry mechanism in
-cluster\_client can also end up merging results in `merge_leaf_search_response`, this time
-only concatenating partial hits. Finally results from splits on different leaf nodes are
-merged using the same logic as merging splits inside a leaf node, executed on the root node.
-
-# Proposed state
+Described below is the target behavior, which is *not* implemented right now, but will be shortly.
 
 ## Behavior
 
@@ -55,7 +25,10 @@ None, ascending sort would give `[1, 2, None]`, and descending sort would give `
 If a client does not request sorting, documents are sorted using (SplitId, SegmentId, DocId), on
 Descending order. In other words, everything happens as if documents were sorted by a constant
 value.
-// TODO we could also say "it's not sorted" and add a special `_doc_id` for that. See optimizations
+
+<!--
+TODO we could also say "it's not sorted" and add a special `_doc_id` for that. See optimizations
+-->
 
 # Code
 
@@ -74,11 +47,13 @@ order for "not sorted" queries allows to leverage SplitId as a way to know wheth
 contain or not better results (if its SplitId is more/less than the current worst best-hit, the
 split does not need to be searched).
 
-If we allow unsorted requests, we can go further and stop searching as soon as we have k hits,
-without even looking at other splits metadata. Argument can be made in favor of this because
-GlobalDocId is not stable, and can change during a merge, so order is not guaranteed anyway,
-at least not until Quickwit has support for a Point In Time mechanism.
+<!--
+If we allow unsorted requests, we can go further and stop searching as soon as we have k hits
+(even going as far as stopping mid collection), without even looking at other splits metadata.
+Argument can be made in favor of this because GlobalDocId is not stable, and can change during
+a merge, so order is not guaranteed anyway, at least not until Quickwit has support for a Point
+In Time mechanism.
+-->
 
-None of these optimization described have any impact if we give an exact count of matching
-documents, an option to request only a lower bound would be required for these optimizations to
-make sense.
+These optimization have limited to no impact if we give an exact count of matching documents.
+An option to request only a lower bound would be required for these optimizations to make sense.
