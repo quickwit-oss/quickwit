@@ -92,7 +92,7 @@ impl BuildTantivyAst for FieldPresenceQuery {
                 Term::from_field_u64(field_presence_field, field_presence_hash);
             let field_presence_term_query =
                 tantivy::query::TermQuery::new(field_presence_term, IndexRecordOption::Basic);
-            Ok(TantivyQueryAst::from(field_presence_term_query))    
+            Ok(TantivyQueryAst::from(field_presence_term_query))
         }
     }
 }
