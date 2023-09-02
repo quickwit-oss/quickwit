@@ -60,8 +60,6 @@ pub mod tool;
 /// Throughput calculation window size.
 const THROUGHPUT_WINDOW_SIZE: usize = 5;
 
-pub const QW_ENABLE_JAEGER_EXPORTER_ENV_KEY: &str = "QW_ENABLE_JAEGER_EXPORTER";
-
 pub const QW_ENABLE_TOKIO_CONSOLE_ENV_KEY: &str = "QW_ENABLE_TOKIO_CONSOLE";
 
 pub const QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY: &str =

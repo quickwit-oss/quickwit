@@ -109,7 +109,6 @@ oneshot = "0.1.5"
 openssl = { version = "0.10.55", default-features = false }
 openssl-probe = "0.1.5"
 opentelemetry = { version = "0.19", features = ["rt-tokio"] }
-opentelemetry-jaeger = { version = "0.18", features = ["rt-tokio"] }
 opentelemetry-otlp = "0.12.0"
 pin-project = "1.1.0"
 pnet = { version = "0.33.0", features = ["std"] }
