@@ -251,11 +251,10 @@ impl Source for GcpPubSubSource {
                 // if we failed to ack the message, for now we just return an error that will be log
                 // we might consider to push it back to the queue later, to be a bit more resilient
                 // but we need to implements logics to extends ack first
-                let (_, messages) = self.in_flight_batches.pop_front().unwrap();
+                let (_, message_ids) = self.in_flight_batches.pop_front().unwrap();
                 self.subscription
-                    .ack(messages)
+                    .ack(message_ids)
                     .await
-                    .map_err(anyhow::Error::from)
                     .context("fail to ack some message. they might be duplicated")?
             }
         }
@@ -313,7 +312,7 @@ impl GcpPubSubSource {
         let position_id: Ulid = Ulid::new();
         self.in_flight_batches.push_back((position_id, message_ids));
 
-        let to_position = Position::from(format!("{position_id}"));
+        let to_position = Position::from(position_id.to_string());
         let from_position = mem::replace(&mut self.state.current_position, to_position.clone());
 
         batch
@@ -403,7 +402,7 @@ mod gcp_pubsub_emulator_tests {
         ack_id.split(':').last().unwrap().parse::<u64>().unwrap()
     }
 
-    async fn publish_sample_msg(publisher: &Publisher, start: u64, end: u64) {
+    async fn publish_sample_messages(publisher: &Publisher, start: u64, end: u64) {
         let mut pubsub_messages = Vec::with_capacity((end - start) as usize);
         for i in start..end {
             let pubsub_message = PubsubMessage {
@@ -458,7 +457,7 @@ mod gcp_pubsub_emulator_tests {
         let index_id: String = append_random_suffix("test-gcp-pubsub-source--index");
         let index_uid = IndexUid::new(&index_id);
 
-        publish_sample_msg(&publisher, 0, 6).await;
+        publish_sample_messages(&publisher, 0, 6).await;
         let source = source_loader
             .load_source(
                 SourceExecutionContext::for_test(
@@ -472,7 +471,7 @@ mod gcp_pubsub_emulator_tests {
             .await
             .unwrap();
 
-        let partition = get_partition_id(&(*source));
+        let partition = get_partition_id(&*source);
         let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
         let source_actor = SourceActor {
             source,
@@ -482,7 +481,7 @@ mod gcp_pubsub_emulator_tests {
         let suggest_truncate_partition = partition.clone();
         let trigger_suggest_truncate = tokio::spawn(async move {
             loop {
-                let to_position = Position::from(format!("{}", Ulid::new()));
+                let to_position = Position::from(Ulid::new().to_string());
                 let checkpoint: SourceCheckpoint = vec![(
                     PartitionId::from(suggest_truncate_partition.clone()),
                     to_position,
@@ -571,7 +570,7 @@ mod gcp_pubsub_emulator_tests {
             .await
             .unwrap();
         assert_eq!(gcp_source.in_flight_batches.len(), 0);
-        publish_sample_msg(&publisher, 0, 6).await;
+        publish_sample_messages(&publisher, 0, 6).await;
         assert_eq!(gcp_source.in_flight_batches.len(), 0);
         let ulid_before_batch = Ulid::new();
 
@@ -584,7 +583,8 @@ mod gcp_pubsub_emulator_tests {
             gcp_source
                 .in_flight_batches
                 .iter()
-                .fold(0, |acc, e| acc + e.1.len()),
+                .map(|e| e.1.len())
+                .sum::<usize>(),
             6
         );
         // we use the first ack_id to ensure that when we ack, we ack the correct batch
@@ -599,7 +599,7 @@ mod gcp_pubsub_emulator_tests {
                 .unwrap(),
         );
 
-        publish_sample_msg(&publisher, 0, 6).await;
+        publish_sample_messages(&publisher, 0, 6).await;
         gcp_source
             .emit_batches(&doc_processor_mailbox, &source_ctx)
             .await
@@ -613,7 +613,7 @@ mod gcp_pubsub_emulator_tests {
             12
         );
         let ulid_after_second_batch = Ulid::new();
-        publish_sample_msg(&publisher, 0, 6).await;
+        publish_sample_messages(&publisher, 0, 6).await;
         gcp_source
             .emit_batches(&doc_processor_mailbox, &source_ctx)
             .await
@@ -629,7 +629,7 @@ mod gcp_pubsub_emulator_tests {
         let ulid_after_third_batch = Ulid::new();
 
         // ensure that nothing is ack if ulid is before
-        let to_position = Position::from(format!("{}", ulid_before_batch));
+        let to_position = Position::from(ulid_before_batch.to_string());
         let checkpoint: SourceCheckpoint = vec![(gcp_source.partition_id.clone(), to_position)]
             .into_iter()
             .collect();
