@@ -25,6 +25,7 @@ use std::sync::Arc;
 use anyhow::Context;
 use futures::future::try_join_all;
 use itertools::{Either, Itertools};
+use quickwit_common::PrettySample;
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
 use quickwit_doc_mapper::{DocMapper, TermRange, WarmupInfo};
 use quickwit_proto::search::{
@@ -47,7 +48,7 @@ use crate::collector::{make_collector_for_split, make_merge_collector};
 use crate::service::SearcherContext;
 use crate::SearchError;
 
-#[instrument(skip(index_storage, footer_cache))]
+#[instrument(skip_all)]
 async fn get_split_footer_from_cache_or_fetch(
     index_storage: Arc<dyn Storage>,
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
@@ -87,7 +88,7 @@ async fn get_split_footer_from_cache_or_fetch(
 /// - A split footer cache given by `SearcherContext.split_footer_cache`.
 /// - A fast fields cache given by `SearcherContext.storage_long_term_cache`.
 /// - An ephemeral unbounded cache directory whose lifetime is tied to the returned `Index`.
-#[instrument(skip(searcher_context, index_storage, tokenizer_manager))]
+#[instrument(skip_all, fields(split_footer_start=split_and_footer_offsets.split_footer_start, split_footer_end=split_and_footer_offsets.split_footer_end))]
 pub(crate) async fn open_index_with_caches(
     searcher_context: &SearcherContext,
     index_storage: Arc<dyn Storage>,
@@ -144,9 +145,9 @@ pub(crate) async fn open_index_with_caches(
 /// * `term_dict_field_names` - A list of fields, where the whole dictionary needs to be loaded.
 /// This is e.g. required for term aggregation, since we don't know in advance which terms are going
 /// to be hit.
-#[instrument(skip(searcher))]
+#[instrument(skip_all)]
 pub(crate) async fn warmup(searcher: &Searcher, warmup_info: &WarmupInfo) -> anyhow::Result<()> {
-    debug!(warmup_info=?warmup_info, "warmup");
+    debug!(warmup_info=?warmup_info);
     let warm_up_terms_future = warm_up_terms(searcher, &warmup_info.terms_grouped_by_field)
         .instrument(debug_span!("warm_up_terms"));
     let warm_up_term_ranges_future =
@@ -326,7 +327,7 @@ async fn warm_up_fieldnorms(searcher: &Searcher, requires_scoring: bool) -> anyh
 }
 
 /// Apply a leaf search on a single split.
-#[instrument(skip(searcher_context, search_request, storage, split, doc_mapper,))]
+#[instrument(skip_all, fields(split_id = split.split_id))]
 async fn leaf_search_single_split(
     searcher_context: &SearcherContext,
     mut search_request: SearchRequest,
@@ -372,7 +373,7 @@ async fn leaf_search_single_split(
     warmup_info.merge(collector_warmup_info);
 
     warmup(&searcher, &warmup_info).await?;
-    let span = info_span!("tantivy_search", split_id = %split.split_id);
+    let span = info_span!("tantivy_search");
     let leaf_search_response = crate::run_cpu_intensive(move || {
         let _span_guard = span.enter();
         searcher.search(&query, &quickwit_collector)
@@ -431,6 +432,7 @@ pub(crate) fn rewrite_start_end_time_bounds(
 /// [PartialHit](quickwit_proto::search::PartialHit) candidates. The root will be in
 /// charge to consolidate, identify the actual final top hits to display, and
 /// fetch the actual documents to convert the partial hits into actual Hits.
+#[instrument(skip_all, fields(index = ?request.index_id_patterns))]
 pub async fn leaf_search(
     searcher_context: Arc<SearcherContext>,
     request: &SearchRequest,
@@ -438,6 +440,7 @@ pub async fn leaf_search(
     splits: &[SplitIdAndFooterOffsets],
     doc_mapper: Arc<dyn DocMapper>,
 ) -> Result<LeafSearchResponse, SearchError> {
+    info!(splits_num = splits.len(), split_offsets = ?PrettySample::new(splits, 5));
     let request = Arc::new(request.clone());
     let leaf_search_single_split_futures: Vec<_> = splits
         .iter()
@@ -513,7 +516,7 @@ pub async fn leaf_search(
 }
 
 /// Apply a leaf list terms on a single split.
-#[instrument(skip(searcher_context, search_request, storage, split))]
+#[instrument(skip_all, fields(split_id = split.split_id))]
 async fn leaf_list_terms_single_split(
     searcher_context: &SearcherContext,
     search_request: &ListTermsRequest,
@@ -621,12 +624,14 @@ fn term_to_data(field: Field, field_type: &FieldType, field_value: &[u8]) -> Vec
 }
 
 /// `leaf` step of list terms.
+#[instrument(skip_all, fields(index = ?request.index_id))]
 pub async fn leaf_list_terms(
     searcher_context: Arc<SearcherContext>,
     request: &ListTermsRequest,
     index_storage: Arc<dyn Storage>,
     splits: &[SplitIdAndFooterOffsets],
 ) -> Result<LeafListTermsResponse, SearchError> {
+    info!(split_offsets = ?PrettySample::new(splits, 5));
     let leaf_search_single_split_futures: Vec<_> = splits
         .iter()
         .map(|split| {

@@ -25,6 +25,7 @@ use futures::future::try_join_all;
 use itertools::Itertools;
 use quickwit_common::shared_consts::{DELETION_GRACE_PERIOD, SCROLL_BATCH_LEN};
 use quickwit_common::uri::Uri;
+use quickwit_common::PrettySample;
 use quickwit_config::{build_doc_mapper, IndexConfig};
 use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
 use quickwit_doc_mapper::{DocMapper, DYNAMIC_FIELD_NAME};
@@ -44,7 +45,7 @@ use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResult
 use tantivy::collector::Collector;
 use tantivy::schema::{FieldType, Schema};
 use tantivy::TantivyError;
-use tracing::{debug, error, info_span, instrument};
+use tracing::{debug, error, info, info_span, instrument};
 
 use crate::cluster_client::ClusterClient;
 use crate::collector::{make_merge_collector, QuickwitAggregations};
@@ -367,7 +368,7 @@ fn get_scroll_ttl_duration(search_request: &SearchRequest) -> crate::Result<Opti
     Ok(Some(scroll_ttl))
 }
 
-#[instrument(skip(search_request, indexes_metas_for_leaf_search, cluster_client))]
+#[instrument(skip_all)]
 async fn search_partial_hits_phase_with_scroll(
     searcher_context: &SearcherContext,
     indexes_metas_for_leaf_search: &IndexesMetasForLeafSearch,
@@ -431,7 +432,7 @@ async fn search_partial_hits_phase_with_scroll(
     }
 }
 
-#[instrument(skip(search_request, indexes_metas_for_leaf_search, cluster_client))]
+#[instrument(skip_all)]
 pub(crate) async fn search_partial_hits_phase(
     searcher_context: &SearcherContext,
     indexes_metas_for_leaf_search: &IndexesMetasForLeafSearch,
@@ -492,6 +493,7 @@ pub(crate) fn get_snippet_request(search_request: &SearchRequest) -> Option<Snip
     })
 }
 
+#[instrument(skip_all, fields(partial_hits_num=partial_hits.len()))]
 pub(crate) async fn fetch_docs_phase(
     indexes_metas_for_leaf_search: &IndexesMetasForLeafSearch,
     partial_hits: &[PartialHit],
@@ -571,12 +573,7 @@ pub(crate) async fn fetch_docs_phase(
 /// 2. Merges the search results.
 /// 3. Sends fetch docs requests to multiple leaf nodes.
 /// 4. Builds the response with docs and returns.
-#[instrument(skip(
-    searcher_context,
-    indexes_metas_for_leaf_search,
-    search_request,
-    cluster_client
-))]
+#[instrument(skip_all)]
 async fn root_search_aux(
     searcher_context: &SearcherContext,
     indexes_metas_for_leaf_search: &IndexesMetasForLeafSearch,
@@ -584,6 +581,7 @@ async fn root_search_aux(
     split_metadatas: Vec<SplitMetadata>,
     cluster_client: &ClusterClient,
 ) -> crate::Result<SearchResponse> {
+    info!(split_metadatas = ?PrettySample::new(&split_metadatas, 5));
     let (first_phase_result, scroll_key_and_start_offset_opt): (
         LeafSearchResponse,
         Option<ScrollKeyAndStartOffset>,
@@ -671,13 +669,14 @@ fn finalize_aggregation_if_any(
 /// 2. Merges the search results.
 /// 3. Sends fetch docs requests to multiple leaf nodes.
 /// 4. Builds the response with docs and returns.
-#[instrument(skip(search_request, cluster_client, metastore))]
+#[instrument(skip_all)]
 pub async fn root_search(
     searcher_context: &SearcherContext,
     mut search_request: SearchRequest,
     metastore: &dyn Metastore,
     cluster_client: &ClusterClient,
 ) -> crate::Result<SearchResponse> {
+    info!(searcher_context = ?searcher_context, search_request = ?search_request);
     let start_instant = tokio::time::Instant::now();
     let indexes_metadata = metastore
         .list_indexes_metadatas(ListIndexesQuery::IndexIdPatterns(
