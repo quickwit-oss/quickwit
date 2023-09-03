@@ -345,7 +345,7 @@ mod gcp_pubsub_emulator_tests {
 
     use super::*;
     use crate::models::RawDocBatch;
-    use crate::source::{quickwit_supported_sources, SuggestTruncate, VoidSource};
+    use crate::source::{quickwit_supported_sources, SuggestTruncate};
 
     static GCP_TEST_PROJECT: &str = "quickwit-emulator";
 
@@ -555,15 +555,9 @@ mod gcp_pubsub_emulator_tests {
         .await
         .unwrap();
 
-        // we make a void actor. We will call the real source fn manually
-        let source_actor = SourceActor {
-            source: Box::new(VoidSource {}),
-            doc_processor_mailbox: doc_processor_mailbox.clone(),
-        };
-        let (source_mailbox, _source_handle) = universe.spawn_builder().spawn(source_actor);
+        let (source_mailbox, _source_inbox) = universe.create_test_mailbox();
         let (observable_state_tx, _observable_state_rx) = watch::channel(json!({}));
-
-        let source_ctx = SourceContext::for_test(&universe, source_mailbox, observable_state_tx);
+        let source_ctx = ActorContext::for_test(&universe, source_mailbox, observable_state_tx);
 
         gcp_source
             .emit_batches(&doc_processor_mailbox, &source_ctx)
