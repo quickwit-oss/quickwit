@@ -17,11 +17,11 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::cmp::{Ordering, Reverse};
+use std::cmp::Ordering;
 use std::collections::HashSet;
 
 use itertools::Itertools;
-use quickwit_common::binary_heap::{top_k, SortKeyMapper, TopK};
+use quickwit_common::binary_heap::{SortKeyMapper, TopK};
 use quickwit_doc_mapper::{DocMapper, WarmupInfo};
 use quickwit_proto::search::{LeafSearchResponse, PartialHit, SearchRequest, SortOrder, SortValue};
 use serde::Deserialize;
@@ -644,64 +644,16 @@ fn merge_leaf_responses(
 /// TODO we could possibly optimize the sort away (but I doubt it matters).
 fn top_k_partial_hits(
     partial_hits: impl Iterator<Item = PartialHit>,
-    sort_order1: SortOrder,
-    sort_order2: SortOrder,
+    order1: SortOrder,
+    order2: SortOrder,
     num_hits: usize,
 ) -> Vec<PartialHit> {
-    let get_sort_values = |partial_hit: &PartialHit| {
-        (
-            partial_hit
-                .sort_value
-                .and_then(|sort_value| sort_value.sort_value),
-            partial_hit
-                .sort_value2
-                .and_then(|sort_value| sort_value.sort_value),
-        )
-    };
-    match (sort_order1, sort_order2) {
-        (SortOrder::Asc, SortOrder::Asc) => {
-            top_k(partial_hits.into_iter(), num_hits, |partial_hit| {
-                // This reverse dance is a little bit complicated.
-                // Note that `Option<Reverse<T>>` is very different from `Reverse<Option<T>>`.
-                //
-                // Since the value is Option<Option<T>>, we have to use and_then (in
-                // get_sort_values) to flatten it to Option<T>, or else we would get
-                // `Option<Reverse<Option<T>>`.
-                //
-                // We do want the earlier: documents without any values should always get ranked
-                // after documents with a value, regardless of whether we use
-                // ascending or descending order.
-                let (score, score2) = get_sort_values(partial_hit);
-                let score = score.map(Reverse);
-                let score2 = score2.map(Reverse);
-                let addr = GlobalDocAddress::from_partial_hit(partial_hit);
-                (score, score2, Reverse(addr))
-            })
-        }
-        (SortOrder::Asc, SortOrder::Desc) => {
-            top_k(partial_hits.into_iter(), num_hits, |partial_hit| {
-                let (score, score2) = get_sort_values(partial_hit);
-                let score = score.map(Reverse);
-                let addr = GlobalDocAddress::from_partial_hit(partial_hit);
-                (score, score2, Reverse(addr))
-            })
-        }
-        (SortOrder::Desc, SortOrder::Desc) => {
-            top_k(partial_hits.into_iter(), num_hits, |partial_hit| {
-                let addr = GlobalDocAddress::from_partial_hit(partial_hit);
-                let (score, score2) = get_sort_values(partial_hit);
-                (score, score2, addr)
-            })
-        }
-        (SortOrder::Desc, SortOrder::Asc) => {
-            top_k(partial_hits.into_iter(), num_hits, |partial_hit| {
-                let (score, score2) = get_sort_values(partial_hit);
-                let score2 = score2.map(Reverse);
-                let addr = GlobalDocAddress::from_partial_hit(partial_hit);
-                (score, score2, addr)
-            })
-        }
-    }
+    let sort_key_mapper = HitSortingMapper { order1, order2 };
+    let mut top_k_hits = TopK::new(num_hits, sort_key_mapper);
+
+    partial_hits.for_each(|hit| top_k_hits.add_entry(hit));
+
+    top_k_hits.finalize()
 }
 
 pub(crate) fn sort_by_from_request(search_request: &SearchRequest) -> SortByPair {
