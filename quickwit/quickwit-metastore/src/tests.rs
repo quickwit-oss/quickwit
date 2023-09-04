@@ -1806,7 +1806,7 @@ pub mod test_suite {
             maturity: SplitMaturity::Immature {
                 maturation_period: Duration::from_secs(0),
             },
-            tags: to_btree_set(&["tag!", "tag:foo", "tag:bar"]),
+            tags: to_btree_set(&["tag!", "tag:foo", "$tag!", "$tag:bar"]),
             delete_opstamp: 3,
             ..Default::default()
         };
@@ -1820,7 +1820,7 @@ pub mod test_suite {
             maturity: SplitMaturity::Immature {
                 maturation_period: Duration::from_secs(10),
             },
-            tags: to_btree_set(&["tag!", "tag:bar"]),
+            tags: to_btree_set(&["tag!", "$tag!", "$tag:bar"]),
             delete_opstamp: 1,
             ..Default::default()
         };
@@ -1834,7 +1834,7 @@ pub mod test_suite {
             maturity: SplitMaturity::Immature {
                 maturation_period: Duration::from_secs(20),
             },
-            tags: to_btree_set(&["tag!", "tag:foo", "tag:baz"]),
+            tags: to_btree_set(&["tag!", "tag:foo", "tag:baz", "$tag!"]),
             delete_opstamp: 5,
             ..Default::default()
         };
@@ -1844,7 +1844,7 @@ pub mod test_suite {
             split_id: split_id_4.clone(),
             index_uid: index_uid.clone(),
             time_range: Some(300..=399),
-            tags: to_btree_set(&["tag!", "tag:foo"]),
+            tags: to_btree_set(&["tag!", "tag:foo", "$tag!"]),
             delete_opstamp: 7,
             ..Default::default()
         };
@@ -1855,7 +1855,7 @@ pub mod test_suite {
             index_uid: index_uid.clone(),
             time_range: None,
             create_timestamp: current_timestamp,
-            tags: to_btree_set(&["tag!", "tag:baz", "tag:biz"]),
+            tags: to_btree_set(&["tag!", "tag:baz", "tag:biz", "$tag!"]),
             delete_opstamp: 9,
             ..Default::default()
         };
@@ -2156,7 +2156,7 @@ pub mod test_suite {
             );
 
             let tag_filter_ast = TagFilterAst::Or(vec![
-                TagFilterAst::Or(vec![no_tag("tag!"), tag("tag:bar")]),
+                TagFilterAst::Or(vec![no_tag("$tag!"), tag("$tag:bar")]),
                 TagFilterAst::Or(vec![no_tag("tag!"), tag("tag:baz")]),
             ]);
             let query = ListSplitsQuery::for_index(index_uid.clone())
