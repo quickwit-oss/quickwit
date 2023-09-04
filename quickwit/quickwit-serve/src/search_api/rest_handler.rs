@@ -75,17 +75,13 @@ impl From<String> for SortBy {
                 continue;
             }
             let (field_name, sort_order) = if let Some(tail) = field_name.strip_prefix('+') {
-                (tail.trim().to_string(), SortOrder::Asc)
-            } else if let Some(tail) = field_name.strip_prefix('-') {
                 (tail.trim().to_string(), SortOrder::Desc)
+            } else if let Some(tail) = field_name.strip_prefix('-') {
+                (tail.trim().to_string(), SortOrder::Asc)
             } else {
                 let trimmed_field_name = field_name.trim().to_string();
 
-                if trimmed_field_name == "_score" {
-                    (trimmed_field_name, SortOrder::Desc)
-                } else {
-                    (trimmed_field_name, SortOrder::Asc)
-                }
+                (trimmed_field_name, SortOrder::Desc)
             };
             let sort_field = SortField {
                 field_name,
@@ -701,21 +697,21 @@ mod tests {
                 "field1",
                 vec![SortField {
                     field_name: "field1".to_string(),
-                    sort_order: SortOrder::Asc as i32,
+                    sort_order: SortOrder::Desc as i32,
                 }],
             ),
             (
                 "+field1",
                 vec![SortField {
                     field_name: "field1".to_string(),
-                    sort_order: SortOrder::Asc as i32,
+                    sort_order: SortOrder::Desc as i32,
                 }],
             ),
             (
                 "-field1",
                 vec![SortField {
                     field_name: "field1".to_string(),
-                    sort_order: SortOrder::Desc as i32,
+                    sort_order: SortOrder::Asc as i32,
                 }],
             ),
             (
@@ -729,6 +725,13 @@ mod tests {
                 "-_score",
                 vec![SortField {
                     field_name: "_score".to_string(),
+                    sort_order: SortOrder::Asc as i32,
+                }],
+            ),
+            (
+                "+_score",
+                vec![SortField {
+                    field_name: "_score".to_string(),
                     sort_order: SortOrder::Desc as i32,
                 }],
             ),
@@ -737,11 +740,11 @@ mod tests {
                 vec![
                     SortField {
                         field_name: "field1".to_string(),
-                        sort_order: SortOrder::Asc as i32,
+                        sort_order: SortOrder::Desc as i32,
                     },
                     SortField {
                         field_name: "field2".to_string(),
-                        sort_order: SortOrder::Asc as i32,
+                        sort_order: SortOrder::Desc as i32,
                     },
                 ],
             ),
@@ -750,11 +753,11 @@ mod tests {
                 vec![
                     SortField {
                         field_name: "field1".to_string(),
-                        sort_order: SortOrder::Asc as i32,
+                        sort_order: SortOrder::Desc as i32,
                     },
                     SortField {
                         field_name: "field2".to_string(),
-                        sort_order: SortOrder::Desc as i32,
+                        sort_order: SortOrder::Asc as i32,
                     },
                 ],
             ),
@@ -763,11 +766,11 @@ mod tests {
                 vec![
                     SortField {
                         field_name: "field1".to_string(),
-                        sort_order: SortOrder::Desc as i32,
+                        sort_order: SortOrder::Asc as i32,
                     },
                     SortField {
                         field_name: "field2".to_string(),
-                        sort_order: SortOrder::Asc as i32,
+                        sort_order: SortOrder::Desc as i32,
                     },
                 ],
             ),
@@ -801,7 +804,7 @@ mod tests {
             &req.sort_by.sort_fields,
             &[SortField {
                 field_name: "fiel1".to_string(),
-                sort_order: SortOrder::Asc as i32,
+                sort_order: SortOrder::Desc as i32,
             }],
         );
     }
