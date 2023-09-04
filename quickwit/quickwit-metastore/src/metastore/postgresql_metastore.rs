@@ -1472,6 +1472,12 @@ mod tests {
             tags_ast,
             "$QuickwitGuard$tag:$$;DELETE FROM something_evil$QuickwitGuard$ = ANY(tags)",
         );
+        let tags_ast = tag("tag:$QuickwitGuard$;DELETE FROM something_evil");
+        test_tags_filter_expression_helper(
+            tags_ast,
+            "$QuickwitGuardQuickwitGuard$tag:$QuickwitGuard$;DELETE FROM \
+             something_evil$QuickwitGuardQuickwitGuard$ = ANY(tags)",
+        );
     }
 
     #[test]
