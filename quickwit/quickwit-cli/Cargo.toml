@@ -35,7 +35,6 @@ itertools = { workspace = true }
 once_cell = { workspace = true }
 openssl-probe = { workspace = true, optional = true }
 opentelemetry = { workspace = true }
-opentelemetry-jaeger = { workspace = true }
 opentelemetry-otlp = { workspace = true }
 regex = { workspace = true }
 reqwest = { workspace = true }

@@ -29,9 +29,7 @@ use quickwit_cli::checklist::RED_COLOR;
 use quickwit_cli::cli::{build_cli, CliCommand};
 #[cfg(feature = "jemalloc")]
 use quickwit_cli::jemalloc::start_jemalloc_metrics_loop;
-use quickwit_cli::{
-    busy_detector, QW_ENABLE_JAEGER_EXPORTER_ENV_KEY, QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY,
-};
+use quickwit_cli::{busy_detector, QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY};
 use quickwit_serve::BuildInfo;
 use tracing::Level;
 use tracing_subscriber::fmt::time::UtcTime;
@@ -70,22 +68,7 @@ fn setup_logging_and_tracing(
         );
     // Note on disabling ANSI characters: setting the ansi boolean on event format is insufficient.
     // It is thus set on layers, see https://github.com/tokio-rs/tracing/issues/1817
-    if std::env::var_os(QW_ENABLE_JAEGER_EXPORTER_ENV_KEY).is_some() {
-        let tracer = opentelemetry_jaeger::new_agent_pipeline()
-            .with_service_name("quickwit")
-            .with_auto_split_batch(true)
-            .install_batch(opentelemetry::runtime::Tokio)
-            .context("Failed to initialize Jaeger exporter.")?;
-        registry
-            .with(tracing_opentelemetry::layer().with_tracer(tracer))
-            .with(
-                tracing_subscriber::fmt::layer()
-                    .event_format(event_format)
-                    .with_ansi(ansi),
-            )
-            .try_init()
-            .context("Failed to set up tracing.")?;
-    } else if std::env::var_os(QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY).is_some() {
+    if std::env::var_os(QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY).is_some() {
         let otlp_exporter = opentelemetry_otlp::new_exporter().tonic().with_env();
         let trace_config = trace::config().with_resource(Resource::new([
             KeyValue::new("service.name", "quickwit"),

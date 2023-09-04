@@ -71,21 +71,11 @@ You will be notified by email from the CI system if any issues are discovered, b
 1. Ensure Docker and Docker Compose are correctly installed on your machine (see above)
 2. Start the Jaeger services (UI, collector, agent, ...) running the command `make docker-compose-up DOCKER_SERVICES=jaeger`
 3. Start Quickwit with the following environment variables:
+   
 ```
-QW_ENABLE_JAEGER_EXPORTER=true
-OTEL_BSP_MAX_EXPORT_BATCH_SIZE=8
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
+QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER=true
 ```
-
-If you are on MacOS, the default UDP packet size is 9216 bytes which is too low compared to the jaeger exporter max size set by default at 65000 bytes. As a workaround, you can increase the limit at your own risk: `sudo sysctl -w net.inet.udp.maxdgram=65535`.
-
-The `OTEL_BSP_MAX_EXPORT_BATCH_SIZE` is the key parameter, it sets the maximum number of spans sent to Jaeger in one batch. Quickwit tends to produce spans of relatively big size and if the batch size is greater than the maximum UDP packet size, the sending of the batch to Jaeger will fail and the following error will appear in the logs:
-
-```
-OpenTelemetry trace error occurred. Exporter jaeger encountered the following error(s): thrift agent failed with transport error
-```
-
-Ref: https://github.com/open-telemetry/opentelemetry-rust/issues/851
-
 
 4. Open your browser and visit [localhost:16686](http://localhost:16686/)
 
