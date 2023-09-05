@@ -22,7 +22,7 @@ use std::convert::Infallible;
 use std::ops::Bound;
 
 use quickwit_query::query_ast::{
-    PhrasePrefixQuery, QueryAst, QueryAstVisitor, RangeQuery, TermSetQuery,
+    FieldPresenceQuery, PhrasePrefixQuery, QueryAst, QueryAstVisitor, RangeQuery, TermSetQuery,
 };
 use quickwit_query::InvalidQuery;
 use tantivy::query::Query;
@@ -47,6 +47,21 @@ impl<'a> QueryAstVisitor<'a> for RangeQueryFields {
     }
 }
 
+#[derive(Default)]
+struct ExistsQueryFields {
+    exists_query_field_names: HashSet<String>,
+}
+
+impl<'a> QueryAstVisitor<'a> for ExistsQueryFields {
+    type Err = Infallible;
+
+    fn visit_exists(&mut self, exists_query: &'a FieldPresenceQuery) -> Result<(), Infallible> {
+        self.exists_query_field_names
+            .insert(exists_query.field.to_string());
+        Ok(())
+    }
+}
+
 /// Build a `Query` with field resolution & forbidding range clauses.
 pub(crate) fn build_query(
     query_ast: &QueryAst,
@@ -58,7 +73,14 @@ pub(crate) fn build_query(
     let mut range_query_fields = RangeQueryFields::default();
     // This cannot fail. The error type is Infallible.
     let _: Result<(), Infallible> = range_query_fields.visit(query_ast);
-    let fast_field_names: HashSet<String> = range_query_fields.range_query_field_names;
+
+    let mut exists_query_fields = ExistsQueryFields::default();
+    // This cannot fail. The error type is Infallible.
+    let _: Result<(), Infallible> = exists_query_fields.visit(query_ast);
+
+    let mut fast_field_names = HashSet::new();
+    fast_field_names.extend(range_query_fields.range_query_field_names);
+    fast_field_names.extend(exists_query_fields.exists_query_field_names);
 
     let query = query_ast.build_tantivy_query(
         &schema,

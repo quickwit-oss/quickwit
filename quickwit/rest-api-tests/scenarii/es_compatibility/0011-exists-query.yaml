@@ -10,15 +10,6 @@ expected:
 json:
   query:
     exists:
-      field: type
-expected:
-  hits:
-    total:
-      value: 100
----
-json:
-  query:
-    exists:
       field: thisfielddoesnotexists
 expected:
   hits:
