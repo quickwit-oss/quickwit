@@ -91,7 +91,7 @@ impl<M> From<flume::TrySendError<M>> for TrySendError<M> {
 pub enum RecvError {
     #[error("no message are currently available")]
     NoMessageAvailable,
-    #[error("all sender were dropped and no pending messages are in the channel")]
+    #[error("all senders were dropped and no pending messages are in the channel")]
     Disconnected,
 }
 
