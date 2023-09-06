@@ -886,7 +886,7 @@ async fn test_single_node_invalid_sorting_with_query() {
     let error_msg = single_node_response.unwrap_err().to_string();
     assert_eq!(
         error_msg,
-        "invalid argument: sort by field on type text is currently not supported `description`"
+        "Invalid argument: sort by field on type text is currently not supported `description`"
     );
     test_sandbox.assert_quit().await;
 }

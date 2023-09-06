@@ -562,7 +562,7 @@ pub fn parse_grpc_error(grpc_error: &Status) -> MetastoreError {
 
     if elapsed_error_opt.is_some() {
         return MetastoreError::Connection {
-            message: "grpc request timeout triggered by the channel timeout. this can happens \
+            message: "gRPC request timeout triggered by the channel timeout. this can happens \
                       when tonic channel has no registered endpoints"
                 .to_string(),
         };

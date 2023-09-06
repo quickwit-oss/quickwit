@@ -215,7 +215,7 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
             let (default_search_field, _json_path) = schema
                 .find_field_with_default(default_search_field_name, dynamic_field)
                 .with_context(|| {
-                    format!("unknown default search field: `{default_search_field_name}`")
+                    format!("Unknown default search field: `{default_search_field_name}`")
                 })?;
             if !schema.get_field_entry(default_search_field).is_indexed() {
                 bail!("default search field `{default_search_field_name}` is not indexed",);
@@ -1073,7 +1073,7 @@ mod tests {
             .unwrap();
         assert!(deser_err
             .to_string()
-            .contains("the following fields are reserved for quickwit internal usage"));
+            .contains("the following fields are reserved for Quickwit internal usage"));
     }
 
     #[test]

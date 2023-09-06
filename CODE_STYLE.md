@@ -111,12 +111,12 @@ These assert will not be part of the release binary and won't hurt the execution
 
 ## Errors
 
-Error messages should be concise, lowercase, and without trailing punctuation.
+Error messages should be concise, lowercase (except proper names), and without trailing punctuation.
 
 ### Examples
 - "failed to start actor runtimes"
-- "cannot join postgresql URI {} with path {:?}"
-- "could not find split metadata in metastore {}"
+- "cannot join PostgreSQL URI {} with path {:?}"
+- "could not find split metadata in Metastore {}"
 - "unkown output format {:?}"
 
 ## Comments

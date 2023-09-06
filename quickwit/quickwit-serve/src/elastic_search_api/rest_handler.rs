@@ -313,7 +313,7 @@ async fn es_scroll(
     };
     let scroll_ttl_secs: Option<u32> = if let Some(scroll_ttl) = scroll_query_params.scroll {
         let scroll_ttl_duration = humantime::parse_duration(&scroll_ttl)
-            .map_err(|_| SearchError::InvalidArgument(format!("scroll invalid: {}", scroll_ttl)))?;
+            .map_err(|_| SearchError::InvalidArgument(format!("Scroll invalid: {}", scroll_ttl)))?;
         Some(scroll_ttl_duration.as_secs() as u32)
     } else {
         None

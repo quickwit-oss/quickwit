@@ -36,7 +36,7 @@ pub enum SearchError {
     Internal(String),
     #[error("invalid aggregation request: {0}")]
     InvalidAggregationRequest(String),
-    #[error("invalid argument: {0}")]
+    #[error("Invalid argument: {0}")]
     InvalidArgument(String),
     #[error("{0}")]
     InvalidQuery(String),
@@ -71,19 +71,19 @@ pub fn parse_grpc_error(grpc_error: &tonic::Status) -> SearchError {
 
 impl From<TantivyError> for SearchError {
     fn from(tantivy_error: TantivyError) -> Self {
-        SearchError::Internal(format!("tantivy error: {tantivy_error}"))
+        SearchError::Internal(format!("Tantivy error: {tantivy_error}"))
     }
 }
 
 impl From<postcard::Error> for SearchError {
     fn from(error: postcard::Error) -> Self {
-        SearchError::Internal(format!("postcard error: {error}"))
+        SearchError::Internal(format!("Postcard error: {error}"))
     }
 }
 
 impl From<serde_json::Error> for SearchError {
     fn from(serde_error: serde_json::Error) -> Self {
-        SearchError::Internal(format!("serde error: {serde_error}"))
+        SearchError::Internal(format!("Serde error: {serde_error}"))
     }
 }
 

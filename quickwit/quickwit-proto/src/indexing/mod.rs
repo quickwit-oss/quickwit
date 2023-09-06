@@ -45,7 +45,7 @@ pub enum IndexingError {
     Io(io::Error),
     #[error("invalid params `{0}`")]
     InvalidParams(anyhow::Error),
-    #[error("spanw pipelines errors `{pipeline_ids:?}`")]
+    #[error("Spanw pipelines errors `{pipeline_ids:?}`")]
     SpawnPipelinesError {
         pipeline_ids: Vec<IndexingPipelineId>,
     },

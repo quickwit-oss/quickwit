@@ -69,7 +69,7 @@ impl FullTextParams {
     ) -> anyhow::Result<Vec<(usize, Term)>> {
         let text_indexing_options = json_options
             .get_text_indexing_options()
-            .with_context(|| format!("json field text `{}` is not indexed", json_path))?;
+            .with_context(|| format!("Json field text `{}` is not indexed", json_path))?;
         let mut text_analyzer: TextAnalyzer =
             self.text_analyzer(text_indexing_options, tokenizer_manager)?;
         let mut token_stream = text_analyzer.token_stream(text);

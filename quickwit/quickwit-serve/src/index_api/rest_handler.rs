@@ -674,8 +674,8 @@ async fn toggle_source(
     let index_uid: IndexUid = metastore.index_metadata(&index_id).await?.index_uid;
     if [CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID].contains(&source_id.as_str()) {
         return Err(IndexServiceError::OperationNotAllowed(format!(
-            "source `{source_id}` is managed by quickwit, you cannot enable or disable a source \
-             managed by quickwit"
+            "source `{source_id}` is managed by Quickwit, you cannot enable or disable a source \
+             managed by Quickwit"
         )));
     }
     metastore
@@ -717,8 +717,8 @@ async fn delete_source(
     let index_uid: IndexUid = metastore.index_metadata(&index_id).await?.index_uid;
     if [INGEST_API_SOURCE_ID, CLI_INGEST_SOURCE_ID].contains(&source_id.as_str()) {
         return Err(IndexServiceError::OperationNotAllowed(format!(
-            "source `{source_id}` is managed by quickwit, you cannot delete a source managed by \
-             quickwit"
+            "source `{source_id}` is managed by Quickwit, you cannot delete a source managed by \
+             Quickwit"
         )));
     }
     metastore.delete_source(index_uid, &source_id).await?;
@@ -1513,7 +1513,7 @@ mod tests {
             assert_eq!(resp.status(), 400);
             let body = std::str::from_utf8(resp.body()).unwrap();
             assert!(body.contains(
-                "quickwit currently supports multiple pipelines only for GCP pubsub or kafka \
+                "Quickwit currently supports multiple pipelines only for GCP PubSub or Kafka \
                  sources"
             ));
         }

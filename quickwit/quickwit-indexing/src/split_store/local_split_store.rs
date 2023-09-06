@@ -118,7 +118,7 @@ impl SplitFolder {
     /// There are no specific constraint on `path`.
     pub async fn create(split_id: &str, path: &Path) -> io::Result<Self> {
         let split_id = Ulid::from_str(split_id).map_err(|_err| {
-            let error_msg = format!("split id should be an `Ulid`. got `{split_id:?}`");
+            let error_msg = format!("Split Id should be an `Ulid`. got `{split_id:?}`");
             io::Error::new(io::ErrorKind::InvalidInput, error_msg)
         })?;
         let num_bytes = num_bytes_in_folder(path).await?;

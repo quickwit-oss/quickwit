@@ -65,7 +65,7 @@ pub fn validate_field_mapping_name(field_mapping_name: &str) -> anyhow::Result<(
     if QW_RESERVED_FIELD_NAMES.contains(&field_mapping_name) {
         bail!(
             "field name `{field_mapping_name}` is reserved. the following fields are reserved for \
-             quickwit internal usage: {}",
+             Quickwit internal usage: {}",
             QW_RESERVED_FIELD_NAMES.join(", "),
         );
     }
@@ -132,11 +132,11 @@ mod tests {
         assert!(validate_field_mapping_name("_source")
             .unwrap_err()
             .to_string()
-            .contains("are reserved for quickwit"));
+            .contains("are reserved for Quickwit"));
         assert!(validate_field_mapping_name("_dynamic")
             .unwrap_err()
             .to_string()
-            .contains("are reserved for quickwit"));
+            .contains("are reserved for Quickwit"));
         assert!(validate_field_mapping_name("my-field!")
             .unwrap_err()
             .to_string()

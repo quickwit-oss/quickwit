@@ -145,7 +145,7 @@ pub(crate) mod tests {
                 .await
         })
         .await
-        .with_context(|| format!("failed to create kinesis data stream `{stream_name}`"))?;
+        .with_context(|| format!("failed to create Kinesis data stream `{stream_name}`"))?;
         Ok(())
     }
 
@@ -163,7 +163,7 @@ pub(crate) mod tests {
                 .await
         })
         .await
-        .with_context(|| format!("failed to delete kinesis data stream `{stream_name}`"))?;
+        .with_context(|| format!("failed to delete Kinesis data stream `{stream_name}`"))?;
         Ok(())
     }
 

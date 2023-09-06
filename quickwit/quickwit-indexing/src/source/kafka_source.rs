@@ -661,7 +661,7 @@ fn create_consumer(
             topic: params.topic,
             events_tx,
         })
-        .context("failed to create kafka consumer")?;
+        .context("failed to create Kafka consumer")?;
 
     Ok((client_config, consumer))
 }
@@ -679,7 +679,7 @@ fn parse_client_log_level(client_log_level: Option<String>) -> anyhow::Result<RD
         Some("alert") => RDKafkaLogLevel::Alert,
         Some("emerg") => RDKafkaLogLevel::Emerg,
         Some(level) => bail!(
-            "failed to parse kafka client log level. value `{}` is not supported",
+            "failed to parse Kafka client log level. value `{}` is not supported",
             level
         ),
     };
@@ -690,7 +690,7 @@ fn parse_client_params(client_params: JsonValue) -> anyhow::Result<ClientConfig>
     let params = if let JsonValue::Object(params) = client_params {
         params
     } else {
-        bail!("failed to parse kafka client parameters. `client_params` must be a JSON object");
+        bail!("failed to parse Kafka client parameters. `client_params` must be a JSON object");
     };
     let mut client_config = ClientConfig::new();
     for (key, value_json) in params {
@@ -700,7 +700,7 @@ fn parse_client_params(client_params: JsonValue) -> anyhow::Result<ClientConfig>
             JsonValue::String(value_string) => value_string,
             JsonValue::Null => continue,
             JsonValue::Array(_) | JsonValue::Object(_) => bail!(
-                "failed to parse kafka client parameters. `client_params.{}` must be a boolean, \
+                "failed to parse Kafka client parameters. `client_params.{}` must be a boolean, \
                  number, or string",
                 key
             ),

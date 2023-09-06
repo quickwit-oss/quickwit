@@ -302,8 +302,7 @@ impl IndexService {
             .get(&source_id)
             .ok_or_else(|| {
                 IndexServiceError::Internal(
-                    "created source is not in index metadata, this should never happen"
-                        .to_string(),
+                    "created source is not in index metadata, this should never happen".to_string(),
                 )
             })?
             .clone();

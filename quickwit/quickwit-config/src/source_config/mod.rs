@@ -359,9 +359,7 @@ impl TryFrom<KinesisSourceParamsInner> for KinesisSourceParams {
 
     fn try_from(value: KinesisSourceParamsInner) -> Result<Self, Self::Error> {
         if value.region.is_some() && value.endpoint.is_some() {
-            return Err(
-                "kinesis source parameters `region` and `endpoint` are mutually exclusive",
-            );
+            return Err("Kinesis source parameters `region` and `endpoint` are mutually exclusive");
         }
         let region = value.region.map(RegionOrEndpoint::Region);
         let endpoint = value.endpoint.map(RegionOrEndpoint::Endpoint);
@@ -429,7 +427,7 @@ where D: Deserializer<'de> {
 
     if uri.strip_prefix("pulsar://").is_none() {
         return Err(Error::custom(format!(
-            "invalid pulsar uri provided, must be in the format of `pulsar://host:port/path`. \
+            "invalid Pulsar uri provided, must be in the format of `pulsar://host:port/path`. \
              got: `{uri}`"
         )));
     }
@@ -888,7 +886,7 @@ mod tests {
                     endpoint: https://localhost:4566
                 "#;
             let error = serde_yaml::from_str::<KinesisSourceParams>(yaml).unwrap_err();
-            assert!(error.to_string().starts_with("kinesis source parameters "));
+            assert!(error.to_string().starts_with("Kinesis source parameters "));
         }
     }
 

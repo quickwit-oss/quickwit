@@ -157,20 +157,20 @@ impl AzureBlobStorage {
     ) -> Result<AzureBlobStorage, StorageResolverError> {
         let account_name = azure_storage_config.resolve_account_name().ok_or_else(|| {
             let message = format!(
-                "could not find azure account name in environment variable `{}` or storage config",
+                "could not find Azure account name in environment variable `{}` or storage config",
                 AzureStorageConfig::AZURE_STORAGE_ACCOUNT_ENV_VAR
             );
             StorageResolverError::InvalidConfig(message)
         })?;
         let access_key = azure_storage_config.resolve_access_key().ok_or_else(|| {
             let message = format!(
-                "could not find azure access key in environment variable `{}` or storage config",
+                "could not find Azure access key in environment variable `{}` or storage config",
                 AzureStorageConfig::AZURE_STORAGE_ACCESS_KEY_ENV_VAR
             );
             StorageResolverError::InvalidConfig(message)
         })?;
         let (container_name, prefix) = parse_azure_uri(uri).ok_or_else(|| {
-            let message = format!("failed to extract container name from azure URI: {uri}");
+            let message = format!("failed to extract container name from Azure URI: {uri}");
             StorageResolverError::InvalidUri(message)
         })?;
         let azure_blob_storage =
@@ -522,7 +522,7 @@ async fn download_all(
 }
 
 #[derive(Error, Debug)]
-#[error("azure error wrapper(inner={inner})")]
+#[error("Azure error wrapper(inner={inner})")]
 struct AzureErrorWrapper {
     inner: AzureError,
 }

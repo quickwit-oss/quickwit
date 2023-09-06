@@ -144,7 +144,7 @@ impl Handler<MergeScratch> for MergeExecutor {
 }
 
 fn combine_index_meta(mut index_metas: Vec<IndexMeta>) -> anyhow::Result<IndexMeta> {
-    let mut union_index_meta = index_metas.pop().with_context(|| "only one index meta")?;
+    let mut union_index_meta = index_metas.pop().with_context(|| "only one IndexMeta")?;
     for index_meta in index_metas {
         union_index_meta.segments.extend(index_meta.segments);
     }

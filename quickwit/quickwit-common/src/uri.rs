@@ -247,7 +247,7 @@ impl Uri {
                 .to_string_lossy()
                 .to_string(),
             Protocol::PostgreSQL => bail!(
-                "cannot join postgresql URI `{}` with path `{:?}`",
+                "cannot join PostgreSQL URI `{}` with path `{:?}`",
                 self.uri,
                 path
             ),

@@ -99,7 +99,7 @@ async fn run_postgres_migrations(pool: &Pool<Postgres>) -> MetastoreResult<()> {
         tx.rollback().await?;
         error!(err=?migration_err, "Database migrations failed");
         return Err(MetastoreError::Internal {
-            message: "failed to run migration on postgresql database".to_string(),
+            message: "failed to run migration on Postgresql database".to_string(),
             cause: migration_err.to_string(),
         });
     }
@@ -1359,7 +1359,7 @@ impl MetastoreFactory for PostgresqlMetastoreFactory {
         debug!("metastore not found in cache");
         let postgresql_metastore_config = metastore_config.as_postgres().ok_or_else(|| {
             let message = format!(
-                "expected postgresql metastore config, got `{:?}`",
+                "expected PostgreSQL metastore config, got `{:?}`",
                 metastore_config.backend()
             );
             MetastoreResolverError::InvalidConfig(message)
@@ -1676,7 +1676,7 @@ mod tests {
             build_index_id_patterns_sql_query(vec!["*-index-*-&-last**".to_string()])
                 .unwrap_err()
                 .to_string(),
-            "internal error: failed to build list indexes query Cause: `index ID pattern \
+            "internal error: failed to build list indexes query; cause: `index ID pattern \
              `*-index-*-&-last**` is invalid. patterns must match the following regular \
              expression: `^[a-zA-Z\\*][a-zA-Z0-9-_\\.\\*]{0,254}$`.`"
         );

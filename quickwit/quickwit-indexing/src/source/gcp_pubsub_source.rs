@@ -113,14 +113,14 @@ impl GcpPubSubSource {
                     .await
                     .with_context(|| {
                         format!(
-                            "failed to load GCP pubsub credentials file from `{credentials_file}`"
+                            "failed to load GCP PubSub credentials file from `{credentials_file}`"
                         )
                     })?;
                 ClientConfig::default().with_credentials(credentials).await
             }
             _ => ClientConfig::default().with_auth().await,
         }
-        .context("failed to create GCP pubsub client config")?;
+        .context("failed to create GCP PubSub client config")?;
 
         if params.project_id.is_some() {
             client_config.project_id = params.project_id
@@ -128,7 +128,7 @@ impl GcpPubSubSource {
 
         let client = Client::new(client_config)
             .await
-            .context("failed to create GCP pubsub client")?;
+            .context("failed to create GCP PubSub client")?;
         let subscription = client.subscription(&subscription_name);
         // TODO: replace with "<node_id>/<index_id>/<source_id>/<pipeline_ord>"
         let partition_id = append_random_suffix(&format!("gpc-pubsub-{subscription_name}"));
@@ -142,7 +142,7 @@ impl GcpPubSubSource {
             "Starting GCP PubSub source."
         );
         if !subscription.exists(Some(RetrySetting::default())).await? {
-            anyhow::bail!("GCP pubsub subscription `{subscription_name}` does not exist");
+            anyhow::bail!("GCP PubSub subscription `{subscription_name}` does not exist");
         }
         Ok(Self {
             ctx,

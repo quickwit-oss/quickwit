@@ -342,7 +342,7 @@ mod openapi_schema_tests {
                 .map(|resolve| format!("Struct: {:?} - {:?}", resolve.parent, resolve.location,))
                 .join("\n");
             anyhow::bail!(
-                "failed to resolve schemas for openAPI \
+                "failed to resolve schemas for OpenAPI \
                  spec:\n{errors_pending}\n{errors_resolve_once}"
             );
         }

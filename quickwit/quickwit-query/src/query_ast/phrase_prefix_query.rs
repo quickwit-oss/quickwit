@@ -98,7 +98,7 @@ impl PhrasePrefixQuery {
                 Ok((field, terms))
             }
             _ => Err(InvalidQuery::SchemaError(
-                "trying to run a phrase prefix query on a non-text field".to_string(),
+                "trying to run a PhrasePrefix query on a non-text field".to_string(),
             )),
         }
     }

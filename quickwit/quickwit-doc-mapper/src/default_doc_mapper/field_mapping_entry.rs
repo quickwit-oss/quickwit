@@ -1560,8 +1560,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             err.to_string(),
-            "error while parsing field `my_field_name`: fast field is not allowed for \
-             array<bytes>",
+            "error while parsing field `my_field_name`: fast field is not allowed for array<bytes>",
         );
     }
 

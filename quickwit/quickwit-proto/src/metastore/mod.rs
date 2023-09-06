@@ -114,7 +114,7 @@ pub enum MetastoreError {
     #[error("access forbidden: {message}")]
     Forbidden { message: String },
 
-    #[error("internal error: {message} Cause: `{cause}`")]
+    #[error("internal error: {message}; cause: `{cause}`")]
     Internal { message: String, cause: String },
 
     #[error("invalid argument: {message}")]

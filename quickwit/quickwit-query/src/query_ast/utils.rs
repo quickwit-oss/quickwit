@@ -166,7 +166,7 @@ fn compute_query_with_field(
             tokenizer_manager,
         ),
         FieldType::Facet(_) => Err(InvalidQuery::SchemaError(
-            "facets are not supported in quickwit".to_string(),
+            "facets are not supported in Quickwit".to_string(),
         )),
         FieldType::Bytes(_) => {
             let buffer: Vec<u8> = parse_value_from_user_text(value, field_entry.name())?;

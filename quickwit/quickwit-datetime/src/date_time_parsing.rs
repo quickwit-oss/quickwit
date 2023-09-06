@@ -171,7 +171,7 @@ pub fn parse_timestamp(timestamp: i64) -> Result<TantivyDateTime, String> {
             Ok(TantivyDateTime::from_timestamp_nanos(timestamp))
         }
         _ => Err(format!(
-            "failed to parse unix timestamp `{timestamp}`. quickwit only support timestamp values \
+            "failed to parse unix timestamp `{timestamp}`. Quickwit only support timestamp values \
              ranging from `13 Apr 1972 23:59:55` to `16 Mar 2242 12:56:31`"
         )),
     }

@@ -60,7 +60,7 @@ impl StorageResolver {
             Protocol::S3 => StorageBackend::S3,
             _ => {
                 let message = format!(
-                    "quickwit does not support {} as a storage backend",
+                    "Quickwit does not support {} as a storage backend",
                     uri.protocol()
                 );
                 return Err(StorageResolverError::UnsupportedBackend(message));

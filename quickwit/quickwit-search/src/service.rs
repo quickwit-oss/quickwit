@@ -326,7 +326,7 @@ pub(crate) async fn scroll(
         payload.ok_or_else(|| SearchError::Internal("scroll key not found".to_string()))?;
 
     let mut scroll_context = ScrollContext::load(&payload)
-        .map_err(|_| SearchError::Internal("corrupted scroll context".to_string()))?;
+        .map_err(|_| SearchError::Internal("corrupted Scroll context".to_string()))?;
 
     let end_doc: u64 = start_doc + scroll_context.max_hits_per_page;
 

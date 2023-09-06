@@ -361,7 +361,7 @@ fn get_scroll_ttl_duration(search_request: &SearchRequest) -> crate::Result<Opti
     let scroll_ttl: Duration = Duration::from_secs(scroll_ttl_secs as u64);
     if scroll_ttl > MAX_SCROLL_TTL {
         return Err(SearchError::InvalidArgument(format!(
-            "quickwit only supports scroll TTL period up to {} secs",
+            "Quickwit only supports scroll TTL period up to {} secs",
             MAX_SCROLL_TTL.as_secs()
         )));
     }
@@ -2558,7 +2558,7 @@ mod tests {
         assert!(search_response.is_err());
         assert_eq!(
             search_response.unwrap_err().to_string(),
-            "invalid argument: max value for start_offset is 10_000, but got 20000",
+            "Invalid argument: max value for start_offset is 10_000, but got 20000",
         );
 
         let search_request = quickwit_proto::search::SearchRequest {
@@ -2578,7 +2578,7 @@ mod tests {
         assert!(search_response.is_err());
         assert_eq!(
             search_response.unwrap_err().to_string(),
-            "invalid argument: max value for max_hits is 10_000, but got 20000",
+            "Invalid argument: max value for max_hits is 10_000, but got 20000",
         );
 
         Ok(())

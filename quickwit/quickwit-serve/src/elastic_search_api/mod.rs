@@ -229,7 +229,7 @@ mod tests {
             .error
             .reason
             .unwrap()
-            .starts_with("invalid argument: failed to parse request header"));
+            .starts_with("Invalid argument: failed to parse request header"));
     }
 
     #[tokio::test]
@@ -257,7 +257,7 @@ mod tests {
             .error
             .reason
             .unwrap()
-            .starts_with("invalid argument: failed to parse request body"));
+            .starts_with("Invalid argument: failed to parse request body"));
     }
 
     #[tokio::test]
@@ -284,7 +284,7 @@ mod tests {
             .error
             .reason
             .unwrap()
-            .starts_with("invalid argument: expect request body after request header"));
+            .starts_with("Invalid argument: expect request body after request header"));
     }
 
     #[tokio::test]
@@ -310,7 +310,7 @@ mod tests {
         let es_error: ElasticSearchError = serde_json::from_slice(resp.body()).unwrap();
         assert_eq!(
             es_error.error.reason.unwrap(),
-            "invalid argument: `_msearch` request header must define at least one index"
+            "Invalid argument: `_msearch` request header must define at least one index"
         );
     }
 

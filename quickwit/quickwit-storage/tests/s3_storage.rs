@@ -58,7 +58,7 @@ async fn run_s3_storage_test_suite(s3_storage_config: S3StorageConfig, bucket_ur
 
     quickwit_storage::storage_test_suite(&mut object_storage)
         .await
-        .context("s3 storage test suite failed")
+        .context("S3 storage test suite failed")
         .unwrap();
 
     let mut object_storage = S3CompatibleObjectStorage::from_uri(&s3_storage_config, &storage_uri)

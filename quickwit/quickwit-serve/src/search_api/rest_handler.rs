@@ -1044,10 +1044,7 @@ mod tests {
             .await
             .unwrap_err();
         let parse_error = rejection.find::<serde_qs::Error>().unwrap();
-        assert_eq!(
-            parse_error.to_string(),
-            "expected a non-empty string field"
-        );
+        assert_eq!(parse_error.to_string(), "expected a non-empty string field");
     }
 
     #[tokio::test]

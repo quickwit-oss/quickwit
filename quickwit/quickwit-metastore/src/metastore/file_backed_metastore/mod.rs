@@ -594,7 +594,7 @@ impl Metastore for FileBackedMetastore {
             ListIndexesQuery::All => build_regex_set_from_patterns(vec!["*".to_string()]),
         };
         let index_matcher = index_matcher_result.map_err(|error| MetastoreError::Internal {
-            message: "failed to build regex set from index patterns`".to_string(),
+            message: "failed to build RegexSet from index patterns`".to_string(),
             cause: error.to_string(),
         })?;
 
@@ -879,8 +879,9 @@ mod tests {
             .times(1)
             .returning(move |path| block_on(ram_storage.get_all(path)));
         mock_storage.expect_put().times(1).returning(|_uri, _| {
-            Err(StorageErrorKind::Io
-                .with_error(anyhow::anyhow!("oops. perhaps there are some network problems")))
+            Err(StorageErrorKind::Io.with_error(anyhow::anyhow!(
+                "oops. perhaps there are some network problems"
+            )))
         });
         let metastore = FileBackedMetastore::for_test(Arc::new(mock_storage));
 
@@ -1158,8 +1159,9 @@ mod tests {
             .times(1)
             .returning(move |path, _| {
                 assert!(path == Path::new("indexes_states.json"));
-                Err(StorageErrorKind::Io
-                    .with_error(anyhow::anyhow!("oops. perhaps there are some network problems")))
+                Err(StorageErrorKind::Io.with_error(anyhow::anyhow!(
+                    "oops. perhaps there are some network problems"
+                )))
             });
         mock_storage
             .expect_get_all()
@@ -1204,8 +1206,9 @@ mod tests {
                 if path == Path::new("indexes_states.json") {
                     return block_on(ram_storage_clone.put(path, put_payload));
                 }
-                Err(StorageErrorKind::Io
-                    .with_error(anyhow::anyhow!("oops. perhaps there are some network problems")))
+                Err(StorageErrorKind::Io.with_error(anyhow::anyhow!(
+                    "oops. perhaps there are some network problems"
+                )))
             });
         mock_storage
             .expect_get_all()
@@ -1271,8 +1274,9 @@ mod tests {
                 );
                 if path == Path::new("indexes_states.json") {
                     if indexes_json_valid_put == 0 {
-                        return Err(StorageErrorKind::Io
-                            .with_error(anyhow::anyhow!("oops. perhaps there are some network problems")));
+                        return Err(StorageErrorKind::Io.with_error(anyhow::anyhow!(
+                            "oops. perhaps there are some network problems"
+                        )));
                     }
                     indexes_json_valid_put -= 1;
                 }
@@ -1316,8 +1320,9 @@ mod tests {
         mock_storage // remove this if we end up changing the semantics of create.
             .expect_delete()
             .returning(|_| {
-                Err(StorageErrorKind::Io
-                    .with_error(anyhow::anyhow!("oops. perhaps there are some network problems")))
+                Err(StorageErrorKind::Io.with_error(anyhow::anyhow!(
+                    "oops. perhaps there are some network problems"
+                )))
             });
         mock_storage
             .expect_put()
@@ -1367,8 +1372,9 @@ mod tests {
                 assert!(path == Path::new("indexes_states.json"));
                 if path == Path::new("indexes_states.json") {
                     if indexes_json_valid_put == 0 {
-                        return Err(StorageErrorKind::Io
-                            .with_error(anyhow::anyhow!("oops. perhaps there are some network problems")));
+                        return Err(StorageErrorKind::Io.with_error(anyhow::anyhow!(
+                            "oops. perhaps there are some network problems"
+                        )));
                     }
                     indexes_json_valid_put -= 1;
                 }
