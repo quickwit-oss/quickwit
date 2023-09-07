@@ -21,6 +21,7 @@ use serde::{Deserialize, Serialize};
 
 mod bool_query;
 mod exists_query;
+mod match_bool_prefix;
 mod match_phrase_query;
 mod match_query;
 mod multi_match;
@@ -39,12 +40,17 @@ use range_query::RangeQuery;
 use term_query::TermQuery;
 
 use crate::elastic_query_dsl::exists_query::ExistsQuery;
+use crate::elastic_query_dsl::match_bool_prefix::MatchBoolPrefixQuery;
 use crate::elastic_query_dsl::match_phrase_query::MatchPhraseQuery;
 use crate::elastic_query_dsl::match_query::MatchQuery;
 use crate::elastic_query_dsl::multi_match::MultiMatchQuery;
 use crate::elastic_query_dsl::terms_query::TermsQuery;
 use crate::not_nan_f32::NotNaNf32;
 use crate::query_ast::QueryAst;
+
+fn default_max_expansions() -> u32 {
+    50
+}
 
 #[derive(Serialize, Deserialize, Debug, Eq, PartialEq, Clone, Copy, Default)]
 pub(crate) struct MatchAllQuery {
@@ -64,6 +70,7 @@ pub(crate) enum ElasticQueryDslInner {
     MatchAll(MatchAllQuery),
     MatchNone(MatchNoneQuery),
     Match(MatchQuery),
+    MatchBoolPrefix(MatchBoolPrefixQuery),
     MatchPhrase(MatchPhraseQuery),
     MatchPhrasePrefix(MatchPhrasePrefixQuery),
     MultiMatch(MultiMatchQuery),
@@ -105,6 +112,9 @@ impl ConvertableToQueryAst for ElasticQueryDslInner {
                 }
             }
             Self::MatchNone(_) => Ok(QueryAst::MatchNone),
+            Self::MatchBoolPrefix(match_bool_prefix_query) => {
+                match_bool_prefix_query.convert_to_query_ast()
+            }
             Self::MatchPhrase(match_phrase_query) => match_phrase_query.convert_to_query_ast(),
             Self::MatchPhrasePrefix(match_phrase_prefix) => {
                 match_phrase_prefix.convert_to_query_ast()

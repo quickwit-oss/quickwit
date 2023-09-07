@@ -20,15 +20,13 @@
 use serde::Deserialize;
 
 use crate::elastic_query_dsl::one_field_map::OneFieldMap;
-use crate::elastic_query_dsl::{ConvertableToQueryAst, ElasticQueryDslInner};
+use crate::elastic_query_dsl::{
+    default_max_expansions, ConvertableToQueryAst, ElasticQueryDslInner,
+};
 use crate::query_ast::{self, FullTextMode, FullTextParams, QueryAst};
 use crate::MatchAllOrNone;
 
 pub(crate) type MatchPhrasePrefixQuery = OneFieldMap<MatchPhrasePrefixQueryParams>;
-
-fn default_max_expansions() -> u32 {
-    50
-}
 
 #[derive(PartialEq, Eq, Debug, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
