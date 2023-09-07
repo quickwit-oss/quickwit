@@ -21,6 +21,7 @@
 #![deny(clippy::disallowed_methods)]
 #![allow(rustdoc::invalid_html_tags)]
 
+use std::cmp::Ordering;
 use std::fmt;
 
 use ::opentelemetry::global;
@@ -224,6 +225,25 @@ impl<E: fmt::Debug + ServiceError> ServiceError for quickwit_actors::AskError<E>
             quickwit_actors::AskError::MessageNotDelivered => ServiceErrorCode::Internal,
             quickwit_actors::AskError::ProcessMessageError => ServiceErrorCode::Internal,
             quickwit_actors::AskError::ErrorReply(err) => err.status_code(),
+        }
+    }
+}
+
+impl search::SortOrder {
+    pub fn compare_opt<T: Ord>(&self, this: &Option<T>, other: &Option<T>) -> Ordering {
+        match (this, other) {
+            (Some(this), Some(other)) => self.compare(this, other),
+            (Some(_), None) => Ordering::Greater,
+            (None, Some(_)) => Ordering::Less,
+            (None, None) => Ordering::Equal,
+        }
+    }
+
+    pub fn compare<T: Ord>(&self, this: &T, other: &T) -> Ordering {
+        if self == &search::SortOrder::Desc {
+            this.cmp(other)
+        } else {
+            other.cmp(this)
         }
     }
 }
