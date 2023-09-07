@@ -374,29 +374,24 @@ impl QuickwitSegmentCollector {
     fn collect_top_k(&mut self, doc_id: DocId, score: Score) {
         let (sorting_field_value_opt1, sorting_field_value_opt2): (Option<u64>, Option<u64>) =
             self.sort_by.compute_u64_sort_value_opt(doc_id, score);
+
+        let sort_value = PartialHitHeapItem {
+            sort_value_opt1: sorting_field_value_opt1,
+            sort_value_opt2: sorting_field_value_opt2,
+            doc_id,
+        };
+
         if self.at_capacity() {
-            if let Some(sorting_field_value) = sorting_field_value_opt1 {
-                if let Some(limit_sorting_field) =
-                    self.hits.peek().and_then(|head| head.sort_value_opt1)
-                {
-                    // In case of a tie, we keep the document with a lower `DocId`.
-                    if limit_sorting_field < sorting_field_value {
-                        if let Some(mut head) = self.hits.peek_mut() {
-                            head.sort_value_opt1 = Some(sorting_field_value);
-                            head.sort_value_opt2 = sorting_field_value_opt2;
-                            head.doc_id = doc_id;
-                        }
-                    }
+            if let Some(limit_sorting_value) = self.hits.peek() {
+                // In case of a tie, we keep the document with a lower `DocId`.
+                if limit_sorting_value > &sort_value {
+                    *self.hits.peek_mut().unwrap() = sort_value;
                 }
             }
         } else {
             // we have not reached capacity yet, so we can just push the
             // element.
-            self.hits.push(PartialHitHeapItem {
-                sort_value_opt1: sorting_field_value_opt1,
-                sort_value_opt2: sorting_field_value_opt2,
-                doc_id,
-            });
+            self.hits.push(sort_value);
         }
     }
 
@@ -885,7 +880,7 @@ pub(crate) fn make_merge_collector(
 mod tests {
     use std::cmp::Ordering;
 
-    use quickwit_proto::search::{PartialHit, SortOrder, SortValue};
+    use quickwit_proto::search::{PartialHit, SearchRequest, SortField, SortOrder, SortValue};
 
     use super::PartialHitHeapItem;
     use crate::collector::top_k_partial_hits;
@@ -990,5 +985,315 @@ mod tests {
             ),
             &[make_hit_given_split_id(1), make_hit_given_split_id(2)]
         );
+    }
+
+    // TODO figure out a way to remove this boilerplate and use mockall
+    #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
+    struct MockDocMapper;
+
+    #[typetag::serde(name = "mock")]
+    impl quickwit_doc_mapper::DocMapper for MockDocMapper {
+        // Required methods
+        fn doc_from_json_obj(
+            &self,
+            _json_obj: quickwit_doc_mapper::JsonObject,
+        ) -> Result<(u64, tantivy::Document), quickwit_doc_mapper::DocParsingError> {
+            unimplemented!()
+        }
+        fn doc_to_json(
+            &self,
+            _named_doc: std::collections::BTreeMap<String, Vec<tantivy::schema::Value>>,
+        ) -> anyhow::Result<quickwit_doc_mapper::JsonObject> {
+            unimplemented!()
+        }
+        fn schema(&self) -> tantivy::schema::Schema {
+            unimplemented!()
+        }
+        fn query(
+            &self,
+            _split_schema: tantivy::schema::Schema,
+            _query_ast: &quickwit_query::query_ast::QueryAst,
+            _with_validation: bool,
+        ) -> Result<
+            (
+                Box<dyn tantivy::query::Query>,
+                quickwit_doc_mapper::WarmupInfo,
+            ),
+            quickwit_doc_mapper::QueryParserError,
+        > {
+            unimplemented!()
+        }
+        fn default_search_fields(&self) -> &[String] {
+            unimplemented!()
+        }
+        fn max_num_partitions(&self) -> std::num::NonZeroU32 {
+            unimplemented!()
+        }
+        fn tokenizer_manager(&self) -> &tantivy::tokenizer::TokenizerManager {
+            unimplemented!()
+        }
+
+        fn timestamp_field_name(&self) -> Option<&str> {
+            None
+        }
+    }
+
+    fn sort_dataset() -> Vec<(Option<u64>, Option<u64>)> {
+        // every comination of 0..=2 + None, in random order.
+        // (2, 1) is dupplicated to allow testing for DocId sorting with two sort fields
+        vec![
+            (Some(2), Some(1)),
+            (Some(0), Some(1)),
+            (Some(1), Some(1)),
+            (Some(0), Some(0)),
+            (None, Some(1)),
+            (None, Some(2)),
+            (Some(2), Some(1)),
+            (Some(1), Some(2)),
+            (Some(0), None),
+            (None, Some(0)),
+            (Some(2), Some(0)),
+            (Some(2), Some(2)),
+            (Some(0), Some(2)),
+            (Some(2), None),
+            (None, None),
+            (Some(1), Some(0)),
+            (Some(1), None),
+        ]
+    }
+
+    fn make_request(max_hits: u64, sort_fields: &str) -> SearchRequest {
+        SearchRequest {
+            max_hits,
+            sort_fields: sort_fields
+                .split(',')
+                .filter(|field| !field.is_empty())
+                .map(|field| {
+                    if let Some(field) = field.strip_prefix('-') {
+                        SortField {
+                            field_name: field.to_string(),
+                            sort_order: SortOrder::Desc.into(),
+                        }
+                    } else {
+                        SortField {
+                            field_name: field.to_string(),
+                            sort_order: SortOrder::Asc.into(),
+                        }
+                    }
+                })
+                .collect(),
+            ..SearchRequest::default()
+        }
+    }
+
+    fn make_index() -> tantivy::Index {
+        use tantivy::schema::{Document, NumericOptions, Schema};
+        use tantivy::{Index, UserOperation};
+
+        let dataset = sort_dataset();
+
+        let mut schema_builder = Schema::builder();
+        let opts = NumericOptions::default().set_fast();
+
+        schema_builder.add_u64_field("sort1", opts.clone());
+        schema_builder.add_u64_field("sort2", opts);
+        let schema = schema_builder.build();
+
+        let field1 = schema.get_field("sort1").unwrap();
+        let field2 = schema.get_field("sort2").unwrap();
+
+        let index = Index::create_in_ram(schema);
+        let mut index_writer = index.writer(50_000_000).unwrap();
+
+        index_writer
+            .run(
+                dataset
+                    .into_iter()
+                    .map(|(val1, val2)| {
+                        let mut doc = Document::new();
+                        if let Some(val1) = val1 {
+                            doc.add_u64(field1, val1);
+                        }
+                        if let Some(val2) = val2 {
+                            doc.add_u64(field2, val2);
+                        }
+                        doc
+                    })
+                    .map(UserOperation::Add),
+            )
+            .unwrap();
+        index_writer.commit().unwrap();
+
+        index
+    }
+
+    #[test]
+    fn test_single_split_sorting() {
+        let index = make_index();
+
+        let reader = index.reader().unwrap();
+        let searcher = reader.searcher();
+
+        // tuple of DocId and sort value
+        type Doc = (usize, (Option<u64>, Option<u64>));
+
+        let mut dataset: Vec<Doc> = sort_dataset().into_iter().enumerate().collect();
+
+        let reverse_int = |val: &Option<u64>| val.as_ref().map(|val| u64::MAX - val);
+        let cmp_doc_id_desc = |a: &Doc, b: &Doc| b.0.cmp(&a.0);
+        let cmp_doc_id_asc = |a: &Doc, b: &Doc| a.0.cmp(&b.0);
+        let cmp_1_desc = |a: &Doc, b: &Doc| b.1 .0.cmp(&a.1 .0);
+        let cmp_1_asc = |a: &Doc, b: &Doc| reverse_int(&b.1 .0).cmp(&reverse_int(&a.1 .0));
+        let cmp_2_desc = |a: &Doc, b: &Doc| b.1 .1.cmp(&a.1 .1);
+        let cmp_2_asc = |a: &Doc, b: &Doc| reverse_int(&b.1 .1).cmp(&reverse_int(&a.1 .1));
+
+        {
+            // the logic for sorting isn't easy to wrap one's head arround. These simple tests are
+            // here to convince oneself they do what we want them todo
+            let mut data = vec![(1, (None, None)), (0, (None, None))];
+            let data_copy = data.clone();
+            data.sort_by(cmp_doc_id_desc);
+            assert_eq!(data, data_copy);
+
+            let mut data = vec![(0, (None, None)), (1, (None, None))];
+            let data_copy = data.clone();
+            data.sort_by(cmp_doc_id_asc);
+            assert_eq!(data, data_copy);
+
+            let mut data = vec![
+                (1, (Some(2), None)),
+                (0, (Some(1), None)),
+                (2, (None, None)),
+            ];
+            let data_copy = data.clone();
+            data.sort_by(cmp_1_desc);
+            assert_eq!(data, data_copy);
+
+            let mut data = vec![
+                (1, (Some(1), None)),
+                (0, (Some(2), None)),
+                (2, (None, None)),
+            ];
+            let data_copy = data.clone();
+            data.sort_by(cmp_1_asc);
+            assert_eq!(data, data_copy);
+
+            let mut data = vec![
+                (1, (None, Some(2))),
+                (0, (None, Some(1))),
+                (2, (None, None)),
+            ];
+            let data_copy = data.clone();
+            data.sort_by(cmp_2_desc);
+            assert_eq!(data, data_copy);
+
+            let mut data = vec![
+                (1, (None, Some(1))),
+                (0, (None, Some(2))),
+                (2, (None, None)),
+            ];
+            let data_copy = data.clone();
+            data.sort_by(cmp_2_asc);
+            assert_eq!(data, data_copy);
+        }
+
+        // what it shall become
+        #[allow(clippy::type_complexity)]
+        let _sort_orders: Vec<(_, Box<dyn Fn(&Doc, &Doc) -> Ordering>)> = vec![
+            ("", Box::new(cmp_doc_id_desc)),
+            (
+                "sort1",
+                Box::new(|a, b| cmp_1_asc(a, b).then(cmp_doc_id_desc(a, b))),
+            ),
+            (
+                "-sort1",
+                Box::new(|a, b| cmp_1_desc(a, b).then(cmp_doc_id_asc(a, b))),
+            ),
+            (
+                "sort1,sort2",
+                Box::new(|a, b| cmp_1_asc(a, b).then(cmp_2_asc(a, b).then(cmp_doc_id_desc(a, b)))),
+            ),
+            (
+                "-sort1,sort2",
+                Box::new(|a, b| {
+                    cmp_1_desc(a, b)
+                        .then(cmp_2_asc(a, b))
+                        .then(cmp_doc_id_asc(a, b))
+                }),
+            ),
+            (
+                "sort1,-sort2",
+                Box::new(|a, b| cmp_1_asc(a, b).then(cmp_2_desc(a, b).then(cmp_doc_id_desc(a, b)))),
+            ),
+            (
+                "-sort1,-sort2",
+                Box::new(|a, b| {
+                    cmp_1_desc(a, b)
+                        .then(cmp_2_desc(a, b))
+                        .then(cmp_doc_id_asc(a, b))
+                }),
+            ),
+        ];
+
+        // what it is currently
+        #[allow(clippy::type_complexity)]
+        let sort_orders: Vec<(_, Box<dyn Fn(&Doc, &Doc) -> Ordering>)> = vec![
+            ("", Box::new(cmp_doc_id_desc)),
+            (
+                "sort1",
+                Box::new(|a, b| cmp_1_asc(a, b).then(cmp_doc_id_asc(a, b))),
+            ),
+            (
+                "-sort1",
+                Box::new(|a, b| cmp_1_desc(a, b).then(cmp_doc_id_asc(a, b))),
+            ),
+            (
+                "sort1,sort2",
+                Box::new(|a, b| cmp_1_asc(a, b).then(cmp_2_asc(a, b).then(cmp_doc_id_asc(a, b)))),
+            ),
+            (
+                "-sort1,sort2",
+                Box::new(|a, b| {
+                    cmp_1_desc(a, b)
+                        .then(cmp_2_asc(a, b))
+                        .then(cmp_doc_id_asc(a, b))
+                }),
+            ),
+            (
+                "sort1,-sort2",
+                Box::new(|a, b| cmp_1_asc(a, b).then(cmp_2_desc(a, b).then(cmp_doc_id_asc(a, b)))),
+            ),
+            (
+                "-sort1,-sort2",
+                Box::new(|a, b| {
+                    cmp_1_desc(a, b)
+                        .then(cmp_2_desc(a, b))
+                        .then(cmp_doc_id_asc(a, b))
+                }),
+            ),
+        ];
+
+        for (sort_str, sort_function) in sort_orders {
+            dataset.sort_by(sort_function);
+            for len in 1..dataset.len() {
+                let collector = super::make_collector_for_split(
+                    "fake_split_id".to_string(),
+                    &MockDocMapper,
+                    &make_request(len as u64, sort_str),
+                    Default::default(),
+                )
+                .unwrap();
+                let res = dbg!(searcher
+                    .search(&tantivy::query::AllQuery, &collector)
+                    .unwrap());
+                assert_eq!(res.partial_hits.len(), len);
+                for (expected, got) in dataset.iter().zip(res.partial_hits.iter()) {
+                    assert_eq!(
+                        expected.0 as u32, got.doc_id,
+                        "missmatch ordering for \"{sort_str}\":{len}"
+                    );
+                }
+            }
+        }
     }
 }

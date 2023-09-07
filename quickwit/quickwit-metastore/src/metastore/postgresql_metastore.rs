@@ -1238,7 +1238,7 @@ fn generate_dollar_guard(s: &str) -> String {
     }
     let mut dollar_guard = String::new();
     loop {
-        dollar_guard.push_str("Quickwit!");
+        dollar_guard.push_str("QuickwitGuard");
         // This terminates because `dollar_guard`
         // will eventually be longer than s.
         if !s.contains(&dollar_guard) {
@@ -1470,7 +1470,13 @@ mod tests {
         let tags_ast = tag("tag:$$;DELETE FROM something_evil");
         test_tags_filter_expression_helper(
             tags_ast,
-            "$Quickwit!$tag:$$;DELETE FROM something_evil$Quickwit!$ = ANY(tags)",
+            "$QuickwitGuard$tag:$$;DELETE FROM something_evil$QuickwitGuard$ = ANY(tags)",
+        );
+        let tags_ast = tag("tag:$QuickwitGuard$;DELETE FROM something_evil");
+        test_tags_filter_expression_helper(
+            tags_ast,
+            "$QuickwitGuardQuickwitGuard$tag:$QuickwitGuard$;DELETE FROM \
+             something_evil$QuickwitGuardQuickwitGuard$ = ANY(tags)",
         );
     }
 

@@ -164,22 +164,18 @@ services:
       - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
 
   jaeger:
-    image: jaegertracing/all-in-one:${JAEGER_VERSION:-1.20.0}
+    image: jaegertracing/all-in-one:${JAEGER_VERSION:-1.48.0}
     container_name: jaeger
     ports:
-      - "${MAP_HOST_JAEGER:-127.0.0.1}:5775:5775/udp"
-      - "${MAP_HOST_JAEGER:-127.0.0.1}:5778:5778"
-      - "${MAP_HOST_JAEGER:-127.0.0.1}:6831:6831/udp"
-      - "${MAP_HOST_JAEGER:-127.0.0.1}:6832:6832/udp"
-      - "${MAP_HOST_JAEGER:-127.0.0.1}:14250:14250"
-      - "${MAP_HOST_JAEGER:-127.0.0.1}:14268:14268"
-      - "${MAP_HOST_JAEGER:-127.0.0.1}:16686:16686"
+      - "${MAP_HOST_JAEGER:-127.0.0.1}:4317:4317"   # OTLP over gRPC
+      - "${MAP_HOST_JAEGER:-127.0.0.1}:4318:4318"   # OTLP over HTTP
+      - "${MAP_HOST_JAEGER:-127.0.0.1}:16686:16686" # Frontend
     profiles:
       - jaeger
       - monitoring
 
   otel-collector:
-    image: otel/opentelemetry-collector:${OTEL_VERSION:-0.75.0}
+    image: otel/opentelemetry-collector:${OTEL_VERSION:-0.84.0}
     container_name: otel-collector
     ports:
       - "${MAP_HOST_OTEL:-127.0.0.1}:1888:1888"   # pprof extension
@@ -210,6 +206,9 @@ services:
       - "host.docker.internal:host-gateway"
 
   gcp-pubsub-emulator:
+    profiles:
+      - gcp-pubsub
+      - all
     # It is not an official docker image
     # if we prefer we can build a docker from the official docker image (gcloud cli)
     # and install the pubsub emulator https://cloud.google.com/pubsub/docs/emulator

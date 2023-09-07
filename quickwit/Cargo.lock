@@ -3034,12 +3034,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "integer-encoding"
-version = "3.0.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8bb03732005da905c88227371639bf1ad885cc712789c011c31c5fb3ab3ccf02"
-
-[[package]]
 name = "inventory"
 version = "0.3.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4072,23 +4066,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "opentelemetry-jaeger"
-version = "0.18.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "08e028dc9f4f304e9320ce38c80e7cf74067415b1ad5a8750a38bae54a4d450d"
-dependencies = [
- "async-trait",
- "futures",
- "futures-executor",
- "once_cell",
- "opentelemetry",
- "opentelemetry-semantic-conventions",
- "thiserror",
- "thrift",
- "tokio",
-]
-
-[[package]]
 name = "opentelemetry-otlp"
 version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4117,15 +4094,6 @@ dependencies = [
  "opentelemetry",
  "prost",
  "tonic 0.8.3",
-]
-
-[[package]]
-name = "opentelemetry-semantic-conventions"
-version = "0.11.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "24e33428e6bf08c6f7fcea4ddb8e358fab0fe48ab877a87c70c6ebe20f673ce5"
-dependencies = [
- "opentelemetry",
 ]
 
 [[package]]
@@ -4196,9 +4164,9 @@ dependencies = [
 
 [[package]]
 name = "ouroboros"
-version = "0.17.2"
+version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e2ba07320d39dfea882faa70554b4bd342a5f273ed59ba7c1c6b4c840492c954"
+checksum = "1c86de06555b970aec45229b27291b53154f21a5743a163419f4e4c0b065dcde"
 dependencies = [
  "aliasable",
  "ouroboros_macro",
@@ -4207,11 +4175,12 @@ dependencies = [
 
 [[package]]
 name = "ouroboros_macro"
-version = "0.17.2"
+version = "0.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ec4c6225c69b4ca778c0aea097321a64c421cf4577b331c61b229267edabb6f8"
+checksum = "8cad0c4b129e9696e37cb712b243777b90ef489a0bfaa0ac34e7d9b860e4f134"
 dependencies = [
  "heck",
+ "itertools 0.11.0",
  "proc-macro-error",
  "proc-macro2",
  "quote",
@@ -4232,8 +4201,8 @@ checksum = "b15813163c1d831bf4a13c3610c05c0d03b39feb07f7e09fa234dac9b15aaf39"
 
 [[package]]
 name = "ownedbytes"
-version = "0.5.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=e6cacc4#e6cacc40a98d57b06ce29bc2d0ccbff9e15e6116"
+version = "0.6.0"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=49448b3#49448b31c69ceec4cbab0f68c38f608b0dbd1a3b"
 dependencies = [
  "stable_deref_trait",
 ]
@@ -4989,7 +4958,6 @@ dependencies = [
  "once_cell",
  "openssl-probe",
  "opentelemetry",
- "opentelemetry-jaeger",
  "opentelemetry-otlp",
  "predicates 3.0.3",
  "quickwit-actors",
@@ -5709,6 +5677,7 @@ dependencies = [
  "tracing",
  "tracing-opentelemetry",
  "ttl_cache",
+ "typetag",
  "ulid",
  "utoipa",
 ]
@@ -7226,8 +7195,8 @@ dependencies = [
 
 [[package]]
 name = "tantivy"
-version = "0.20.2"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=e6cacc4#e6cacc40a98d57b06ce29bc2d0ccbff9e15e6116"
+version = "0.21.0"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=49448b3#49448b31c69ceec4cbab0f68c38f608b0dbd1a3b"
 dependencies = [
  "aho-corasick",
  "arc-swap",
@@ -7280,16 +7249,16 @@ dependencies = [
 
 [[package]]
 name = "tantivy-bitpacker"
-version = "0.4.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=e6cacc4#e6cacc40a98d57b06ce29bc2d0ccbff9e15e6116"
+version = "0.5.0"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=49448b3#49448b31c69ceec4cbab0f68c38f608b0dbd1a3b"
 dependencies = [
  "bitpacking",
 ]
 
 [[package]]
 name = "tantivy-columnar"
-version = "0.1.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=e6cacc4#e6cacc40a98d57b06ce29bc2d0ccbff9e15e6116"
+version = "0.2.0"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=49448b3#49448b31c69ceec4cbab0f68c38f608b0dbd1a3b"
 dependencies = [
  "fastdivide",
  "fnv",
@@ -7303,8 +7272,8 @@ dependencies = [
 
 [[package]]
 name = "tantivy-common"
-version = "0.5.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=e6cacc4#e6cacc40a98d57b06ce29bc2d0ccbff9e15e6116"
+version = "0.6.0"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=49448b3#49448b31c69ceec4cbab0f68c38f608b0dbd1a3b"
 dependencies = [
  "async-trait",
  "byteorder",
@@ -7326,16 +7295,16 @@ dependencies = [
 
 [[package]]
 name = "tantivy-query-grammar"
-version = "0.20.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=e6cacc4#e6cacc40a98d57b06ce29bc2d0ccbff9e15e6116"
+version = "0.21.0"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=49448b3#49448b31c69ceec4cbab0f68c38f608b0dbd1a3b"
 dependencies = [
  "nom",
 ]
 
 [[package]]
 name = "tantivy-sstable"
-version = "0.1.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=e6cacc4#e6cacc40a98d57b06ce29bc2d0ccbff9e15e6116"
+version = "0.2.0"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=49448b3#49448b31c69ceec4cbab0f68c38f608b0dbd1a3b"
 dependencies = [
  "tantivy-common",
  "tantivy-fst",
@@ -7344,8 +7313,8 @@ dependencies = [
 
 [[package]]
 name = "tantivy-stacker"
-version = "0.1.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=e6cacc4#e6cacc40a98d57b06ce29bc2d0ccbff9e15e6116"
+version = "0.2.0"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=49448b3#49448b31c69ceec4cbab0f68c38f608b0dbd1a3b"
 dependencies = [
  "murmurhash32",
  "tantivy-common",
@@ -7353,8 +7322,8 @@ dependencies = [
 
 [[package]]
 name = "tantivy-tokenizer-api"
-version = "0.1.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=e6cacc4#e6cacc40a98d57b06ce29bc2d0ccbff9e15e6116"
+version = "0.2.0"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=49448b3#49448b31c69ceec4cbab0f68c38f608b0dbd1a3b"
 dependencies = [
  "serde",
 ]
@@ -7449,28 +7418,6 @@ checksum = "3fdd6f064ccff2d6567adcb3873ca630700f00b5ad3f060c25b5dcfd9a4ce152"
 dependencies = [
  "cfg-if",
  "once_cell",
-]
-
-[[package]]
-name = "threadpool"
-version = "1.8.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d050e60b33d41c19108b32cea32164033a9013fe3b46cbd4457559bfbf77afaa"
-dependencies = [
- "num_cpus",
-]
-
-[[package]]
-name = "thrift"
-version = "0.17.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "7e54bc85fc7faa8bc175c4bab5b92ba8d9a3ce893d0e9f42cc455c8ab16a9e09"
-dependencies = [
- "byteorder",
- "integer-encoding",
- "log",
- "ordered-float 2.10.0",
- "threadpool",
 ]
 
 [[package]]

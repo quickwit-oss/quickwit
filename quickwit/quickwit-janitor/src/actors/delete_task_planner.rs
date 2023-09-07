@@ -147,7 +147,7 @@ impl DeleteTaskPlanner {
                 .get_relevant_stale_splits(self.index_uid.clone(), last_delete_opstamp, ctx)
                 .await?;
             ctx.record_progress();
-            info!(
+            debug!(
                 index_id = self.index_uid.index_id(),
                 last_delete_opstamp = last_delete_opstamp,
                 num_stale_splits = stale_splits.len()
