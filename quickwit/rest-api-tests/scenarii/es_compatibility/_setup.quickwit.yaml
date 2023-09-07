@@ -20,6 +20,10 @@ json:
           type: u64
           fast: true
           indexed: true
+        - name: public
+          type: bool
+          fast: false          
+          indexed: true
         - name: created_at
           type: datetime
           fast: true

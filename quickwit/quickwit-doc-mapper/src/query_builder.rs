@@ -24,7 +24,7 @@ use std::ops::Bound;
 use quickwit_query::query_ast::{
     FieldPresenceQuery, PhrasePrefixQuery, QueryAst, QueryAstVisitor, RangeQuery, TermSetQuery,
 };
-use quickwit_query::InvalidQuery;
+use quickwit_query::{find_field_or_hit_dynamic, InvalidQuery};
 use tantivy::query::Query;
 use tantivy::schema::{Field, Schema};
 use tantivy::tokenizer::TokenizerManager;
@@ -56,11 +56,11 @@ impl<'a> QueryAstVisitor<'a> for ExistsQueryFields {
     type Err = Infallible;
 
     fn visit_exists(&mut self, exists_query: &'a FieldPresenceQuery) -> Result<(), Infallible> {
-        /// If the field is a fast field, we will rely on the `ColumnIndex`.
-        /// If the field is not a fast, we will rely on the field presence field.
-        ///
-        /// In both case we add the field for warmup. The warmup will be no op if the field is not 
-        /// a fast field.
+        // If the field is a fast field, we will rely on the `ColumnIndex`.
+        // If the field is not a fast, we will rely on the field presence field.
+        //
+        // After all field names are collected they are checked against schema and
+        // non-fast fields are removed from warmup operation.
         self.exists_query_field_names
             .insert(exists_query.field.to_string());
         Ok(())
@@ -85,7 +85,12 @@ pub(crate) fn build_query(
 
     let mut fast_field_names = HashSet::new();
     fast_field_names.extend(range_query_fields.range_query_field_names);
-    fast_field_names.extend(exists_query_fields.exists_query_field_names);
+    fast_field_names.extend(
+        exists_query_fields
+            .exists_query_field_names
+            .into_iter()
+            .filter(|field| is_fast_field(&schema, field)),
+    );
 
     let query = query_ast.build_tantivy_query(
         &schema,
@@ -118,6 +123,13 @@ pub(crate) fn build_query(
     };
 
     Ok((query, warmup_info))
+}
+
+fn is_fast_field(schema: &Schema, field_name: &str) -> bool {
+    if let Ok((_field, field_entry, _path)) = find_field_or_hit_dynamic(field_name, schema) {
+        return field_entry.is_fast();
+    }
+    false
 }
 
 #[derive(Default)]
