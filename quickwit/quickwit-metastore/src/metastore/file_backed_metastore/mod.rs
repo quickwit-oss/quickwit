@@ -33,13 +33,15 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::future::try_join_all;
-use itertools::Itertools;
+use itertools::{Either, Itertools};
 use quickwit_common::uri::Uri;
 use quickwit_config::{validate_index_id_pattern, IndexConfig, SourceConfig};
 use quickwit_proto::metastore::{
-    DeleteQuery, DeleteTask, EntityKind, MetastoreError, MetastoreResult,
+    CloseShardsRequest, CloseShardsResponse, DeleteQuery, DeleteShardsRequest,
+    DeleteShardsResponse, DeleteTask, EntityKind, ListShardsRequest, ListShardsResponse,
+    MetastoreError, MetastoreResult, OpenShardsRequest, OpenShardsResponse,
 };
-use quickwit_proto::IndexUid;
+use quickwit_proto::{IndexUid, PublishToken};
 use quickwit_storage::Storage;
 use regex::RegexSet;
 use tokio::sync::{Mutex, OwnedMutexGuard, RwLock};
@@ -467,12 +469,18 @@ impl Metastore for FileBackedMetastore {
     async fn publish_splits<'a>(
         &self,
         index_uid: IndexUid,
-        split_ids: &[&'a str],
+        staged_split_ids: &[&'a str],
         replaced_split_ids: &[&'a str],
         checkpoint_delta_opt: Option<IndexCheckpointDelta>,
+        publish_token_opt: Option<PublishToken>,
     ) -> MetastoreResult<()> {
         self.mutate(index_uid, |index| {
-            index.publish_splits(split_ids, replaced_split_ids, checkpoint_delta_opt)?;
+            index.publish_splits(
+                staged_split_ids,
+                replaced_split_ids,
+                checkpoint_delta_opt,
+                publish_token_opt,
+            )?;
             Ok(MutationOccurred::Yes(()))
         })
         .await?;
@@ -640,6 +648,84 @@ impl Metastore for FileBackedMetastore {
 
     async fn check_connectivity(&self) -> anyhow::Result<()> {
         check_indexes_states_exist(self.storage.clone()).await
+    }
+
+    // Shard API
+
+    async fn open_shards(&self, request: OpenShardsRequest) -> MetastoreResult<OpenShardsResponse> {
+        let mut subresponses = Vec::with_capacity(request.subrequests.len());
+
+        for subrequest in request.subrequests {
+            let index_uid: IndexUid = subrequest.index_uid.clone().into();
+            let subresponse = self
+                .mutate(index_uid, |index| index.open_shards(subrequest))
+                .await?;
+            subresponses.push(subresponse);
+        }
+        let response = OpenShardsResponse { subresponses };
+        Ok(response)
+    }
+
+    async fn close_shards(
+        &self,
+        request: CloseShardsRequest,
+    ) -> MetastoreResult<CloseShardsResponse> {
+        let mut successes = Vec::with_capacity(request.subrequests.len());
+        let mut failures = Vec::new();
+
+        for subrequest in request.subrequests {
+            let index_uid: IndexUid = subrequest.index_uid.clone().into();
+            match self
+                .mutate(index_uid, |index| index.close_shards(subrequest))
+                .await
+            {
+                Ok(Either::Left(success)) => {
+                    successes.push(success);
+                }
+                Ok(Either::Right(failure)) => {
+                    failures.push(failure);
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        let response = CloseShardsResponse {
+            successes,
+            failures,
+        };
+        Ok(response)
+    }
+
+    async fn delete_shards(
+        &self,
+        request: DeleteShardsRequest,
+    ) -> MetastoreResult<DeleteShardsResponse> {
+        let mut subresponses = Vec::with_capacity(request.subrequests.len());
+
+        for subrequest in request.subrequests {
+            let index_uid: IndexUid = subrequest.index_uid.clone().into();
+            let subresponse = self
+                .mutate(index_uid, |index| {
+                    index.delete_shards(subrequest, request.force)
+                })
+                .await?;
+            subresponses.push(subresponse);
+        }
+        let response = DeleteShardsResponse {};
+        Ok(response)
+    }
+
+    async fn list_shards(&self, request: ListShardsRequest) -> MetastoreResult<ListShardsResponse> {
+        let mut subresponses = Vec::with_capacity(request.subrequests.len());
+
+        for subrequest in request.subrequests {
+            let index_uid: IndexUid = subrequest.index_uid.clone().into();
+            let subresponse = self
+                .mutate(index_uid, |index| index.list_shards(subrequest))
+                .await?;
+            subresponses.push(subresponse);
+        }
+        let response = ListShardsResponse { subresponses };
+        Ok(response)
     }
 
     /// -------------------------------------------------------------------------------
@@ -909,7 +995,7 @@ mod tests {
 
         // publish split fails
         let err = metastore
-            .publish_splits(index_uid.clone(), &[split_id], &[], None)
+            .publish_splits(index_uid.clone(), &[split_id], &[], None, None)
             .await;
         assert!(err.is_err());
 
@@ -1087,7 +1173,7 @@ mod tests {
                     // publish split
                     let split_id = format!("split-{i}");
                     metastore
-                        .publish_splits(index_uid.clone(), &[&split_id], &[], None)
+                        .publish_splits(index_uid.clone(), &[&split_id], &[], None, None)
                         .await
                         .unwrap();
                 }

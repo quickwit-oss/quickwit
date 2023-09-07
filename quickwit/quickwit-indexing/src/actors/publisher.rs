@@ -117,8 +117,8 @@ impl Handler<SplitsUpdate> for Publisher {
             replaced_split_ids,
             checkpoint_delta_opt,
             publish_lock,
-            merge_operation: _,
-            parent_span: _,
+            publish_token_opt,
+            ..
         } = split_update;
 
         let split_ids: Vec<&str> = new_splits.iter().map(|split| split.split_id()).collect();
@@ -132,6 +132,7 @@ impl Handler<SplitsUpdate> for Publisher {
                 &split_ids[..],
                 &replaced_split_ids_ref_vec,
                 checkpoint_delta_opt.clone(),
+                publish_token_opt,
             ))
             .await
             .context("Failed to publish splits.")?;
@@ -205,7 +206,11 @@ mod tests {
         mock_metastore
             .expect_publish_splits()
             .withf(
-                |index_uid, split_ids, replaced_split_ids, checkpoint_delta_opt| {
+                |index_uid,
+                 split_ids,
+                 replaced_split_ids,
+                 checkpoint_delta_opt,
+                 _publish_token_opt| {
                     let checkpoint_delta = checkpoint_delta_opt.as_ref().unwrap();
                     index_uid.to_string() == "index:11111111111111111111111111"
                         && checkpoint_delta.source_id == "source"
@@ -215,7 +220,7 @@ mod tests {
                 },
             )
             .times(1)
-            .returning(|_, _, _, _| Ok(()));
+            .returning(|_, _, _, _, _| Ok(()));
         let (merge_planner_mailbox, merge_planner_inbox) = universe.create_test_mailbox();
 
         let (source_mailbox, source_inbox) = universe.create_test_mailbox();
@@ -241,6 +246,7 @@ mod tests {
                     source_delta: SourceCheckpointDelta::from_range(1..3),
                 }),
                 publish_lock: PublishLock::default(),
+                publish_token_opt: None,
                 merge_operation: None,
                 parent_span: tracing::Span::none(),
             })
@@ -277,7 +283,11 @@ mod tests {
         mock_metastore
             .expect_publish_splits()
             .withf(
-                |index_uid, split_ids, replaced_split_ids, checkpoint_delta_opt| {
+                |index_uid,
+                 split_ids,
+                 replaced_split_ids,
+                 checkpoint_delta_opt,
+                 _publish_token_opt| {
                     let checkpoint_delta = checkpoint_delta_opt.as_ref().unwrap();
                     index_uid.to_string() == "index:11111111111111111111111111"
                         && checkpoint_delta.source_id == "source"
@@ -287,7 +297,7 @@ mod tests {
                 },
             )
             .times(1)
-            .returning(|_, _, _, _| Ok(()));
+            .returning(|_, _, _, _, _| Ok(()));
         let (merge_planner_mailbox, merge_planner_inbox) = universe.create_test_mailbox();
 
         let (source_mailbox, source_inbox) = universe.create_test_mailbox();
@@ -310,6 +320,7 @@ mod tests {
                     source_delta: SourceCheckpointDelta::from_range(1..3),
                 }),
                 publish_lock: PublishLock::default(),
+                publish_token_opt: None,
                 merge_operation: None,
                 parent_span: tracing::Span::none(),
             })
@@ -347,7 +358,11 @@ mod tests {
         mock_metastore
             .expect_publish_splits()
             .withf(
-                |index_uid, new_split_ids, replaced_split_ids, checkpoint_delta_opt| {
+                |index_uid,
+                 new_split_ids,
+                 replaced_split_ids,
+                 checkpoint_delta_opt,
+                 _publish_token_opt| {
                     index_uid.to_string() == "index:11111111111111111111111111"
                         && new_split_ids[..] == ["split3"]
                         && replaced_split_ids[..] == ["split1", "split2"]
@@ -355,7 +370,7 @@ mod tests {
                 },
             )
             .times(1)
-            .returning(|_, _, _, _| Ok(()));
+            .returning(|_, _, _, _, _| Ok(()));
         let (merge_planner_mailbox, merge_planner_inbox) = universe.create_test_mailbox();
         let publisher = Publisher::new(
             PublisherType::MainPublisher,
@@ -373,6 +388,7 @@ mod tests {
             replaced_split_ids: vec!["split1".to_string(), "split2".to_string()],
             checkpoint_delta_opt: None,
             publish_lock: PublishLock::default(),
+            publish_token_opt: None,
             merge_operation: None,
             parent_span: Span::none(),
         };
@@ -414,6 +430,7 @@ mod tests {
                 replaced_split_ids: Vec::new(),
                 checkpoint_delta_opt: None,
                 publish_lock,
+                publish_token_opt: None,
                 merge_operation: None,
                 parent_span: Span::none(),
             })

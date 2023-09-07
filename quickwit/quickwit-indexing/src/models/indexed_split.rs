@@ -24,7 +24,7 @@ use quickwit_common::io::IoControls;
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use quickwit_proto::indexing::IndexingPipelineId;
-use quickwit_proto::IndexUid;
+use quickwit_proto::{IndexUid, PublishToken};
 use tantivy::directory::MmapDirectory;
 use tantivy::{IndexBuilder, TrackedObject};
 use tracing::{instrument, Span};
@@ -153,15 +153,16 @@ impl IndexedSplitBuilder {
 
 #[derive(Debug)]
 pub struct IndexedSplitBatch {
-    pub batch_parent_span: Span,
     pub splits: Vec<IndexedSplit>,
-    pub checkpoint_delta: Option<IndexCheckpointDelta>,
+    pub checkpoint_delta_opt: Option<IndexCheckpointDelta>,
     pub publish_lock: PublishLock,
+    pub publish_token_opt: Option<PublishToken>,
     /// A [`MergeOperation`] tracked by either the `MergePlanner` or the `DeleteTaskPlanner`
     /// in the `MergePipeline` or `DeleteTaskPipeline`.
     /// See planners docs to understand the usage.
     /// If `None`, the split batch was built in the `IndexingPipeline`.
-    pub merge_operation: Option<TrackedObject<MergeOperation>>,
+    pub merge_operation_opt: Option<TrackedObject<MergeOperation>>,
+    pub batch_parent_span: Span,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -176,18 +177,20 @@ pub enum CommitTrigger {
 
 #[derive(Debug)]
 pub struct IndexedSplitBatchBuilder {
-    pub batch_parent_span: Span,
     pub splits: Vec<IndexedSplitBuilder>,
-    pub checkpoint_delta: Option<IndexCheckpointDelta>,
+    pub checkpoint_delta_opt: Option<IndexCheckpointDelta>,
     pub publish_lock: PublishLock,
+    pub publish_token_opt: Option<PublishToken>,
     pub commit_trigger: CommitTrigger,
+    pub batch_parent_span: Span,
 }
 
 /// Sends notifications to the Publisher that the last batch of splits was emtpy.
 #[derive(Debug)]
 pub struct EmptySplit {
     pub index_uid: IndexUid,
-    pub batch_parent_span: Span,
     pub checkpoint_delta: IndexCheckpointDelta,
     pub publish_lock: PublishLock,
+    pub publish_token_opt: Option<PublishToken>,
+    pub batch_parent_span: Span,
 }

@@ -22,22 +22,28 @@
 //! anything from here directly.
 
 mod serialize;
+mod shards;
 
 use std::collections::HashMap;
 use std::fmt::Debug;
 use std::ops::Bound;
 
+use itertools::Either;
 use quickwit_common::PrettySample;
-use quickwit_config::SourceConfig;
+use quickwit_config::{SourceConfig, INGEST_SOURCE_ID};
 use quickwit_proto::metastore::{
-    DeleteQuery, DeleteTask, EntityKind, MetastoreError, MetastoreResult,
+    CloseShardsFailure, CloseShardsSubrequest, CloseShardsSuccess, DeleteQuery,
+    DeleteShardsSubrequest, DeleteTask, EntityKind, ListShardsSubrequest, ListShardsSubresponse,
+    MetastoreError, MetastoreResult, OpenShardsSubrequest, OpenShardsSubresponse,
 };
-use quickwit_proto::IndexUid;
+use quickwit_proto::{IndexUid, PublishToken, SourceId, SplitId};
 use serde::{Deserialize, Serialize};
 use serialize::VersionedFileBackedIndex;
+use shards::Shards;
 use time::OffsetDateTime;
 use tracing::{info, warn};
 
+use super::MutationOccurred;
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{split_tag_filter, IndexMetadata, ListSplitsQuery, Split, SplitMetadata, SplitState};
 
@@ -46,11 +52,13 @@ use crate::{split_tag_filter, IndexMetadata, ListSplitsQuery, Split, SplitMetada
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(into = "VersionedFileBackedIndex")]
 #[serde(from = "VersionedFileBackedIndex")]
-pub struct FileBackedIndex {
+pub(crate) struct FileBackedIndex {
     /// Metadata specific to the index.
     metadata: IndexMetadata,
     /// List of splits belonging to the index.
-    splits: HashMap<String, Split>,
+    splits: HashMap<SplitId, Split>,
+    /// Shards of each source.
+    per_source_shards: HashMap<SourceId, Shards>,
     /// Delete tasks.
     delete_tasks: Vec<DeleteTask>,
     /// Stamper.
@@ -71,7 +79,14 @@ pub struct FileBackedIndex {
 #[cfg(any(test, feature = "testsuite"))]
 impl quickwit_config::TestableForRegression for FileBackedIndex {
     fn sample_for_regression() -> Self {
+        use quickwit_proto::ingest::Shard;
+
+        use self::shards::SerdeShards;
+
         let index_metadata = IndexMetadata::sample_for_regression();
+        let index_uid = index_metadata.index_uid.clone();
+        let source_id = INGEST_SOURCE_ID.to_string();
+
         let split_metadata = SplitMetadata::sample_for_regression();
         let split = Split {
             split_state: SplitState::Published,
@@ -80,22 +95,41 @@ impl quickwit_config::TestableForRegression for FileBackedIndex {
             publish_timestamp: Some(1789),
         };
         let splits = vec![split];
+
+        let shard = Shard {
+            index_uid: index_uid.clone().into(),
+            source_id: source_id.clone(),
+            shard_id: 1,
+            leader_id: "leader-ingester".to_string(),
+            follower_id: Some("follower-ingester".to_string()),
+            ..Default::default()
+        };
+
+        let serde_shards = SerdeShards {
+            next_shard_id: 2,
+            shards: vec![shard],
+        };
+        let shards = Shards::from_serde_shards(index_uid.clone(), source_id.clone(), serde_shards);
+        let per_source_shards = HashMap::from_iter([(source_id, shards)]);
+
         let delete_task = DeleteTask {
             create_timestamp: 0,
             opstamp: 10,
             delete_query: Some(DeleteQuery {
-                index_uid: "index:11111111111111111111111111".to_string(),
+                index_uid: index_uid.into(),
                 start_timestamp: None,
                 end_timestamp: None,
                 query_ast: quickwit_query::query_ast::qast_json_helper("Harry Potter", &["body"]),
             }),
         };
-        FileBackedIndex::new(index_metadata, splits, vec![delete_task])
+        let delete_tasks = vec![delete_task];
+        FileBackedIndex::new(index_metadata, splits, per_source_shards, delete_tasks)
     }
 
     fn test_equality(&self, other: &Self) {
         self.metadata().test_equality(other.metadata());
-        assert_eq!(self.splits(), other.splits());
+        assert_eq!(self.splits, other.splits);
+        assert_eq!(self.per_source_shards, other.per_source_shards);
         assert_eq!(self.delete_tasks, other.delete_tasks);
     }
 }
@@ -105,6 +139,7 @@ impl From<IndexMetadata> for FileBackedIndex {
         Self {
             metadata: index_metadata,
             splits: Default::default(),
+            per_source_shards: Default::default(),
             delete_tasks: Default::default(),
             stamper: Default::default(),
             recently_modified: false,
@@ -122,18 +157,25 @@ enum DeleteSplitOutcome {
 
 impl FileBackedIndex {
     /// Constructor.
-    pub fn new(metadata: IndexMetadata, splits: Vec<Split>, delete_tasks: Vec<DeleteTask>) -> Self {
+    pub fn new(
+        metadata: IndexMetadata,
+        splits: Vec<Split>,
+        per_source_shards: HashMap<SourceId, Shards>,
+        delete_tasks: Vec<DeleteTask>,
+    ) -> Self {
         let last_opstamp = delete_tasks
             .iter()
             .map(|delete_task| delete_task.opstamp)
             .max()
             .unwrap_or(0) as usize;
+        let splits = splits
+            .into_iter()
+            .map(|split| (split.split_id().to_string(), split))
+            .collect();
         Self {
             metadata,
-            splits: splits
-                .into_iter()
-                .map(|split| (split.split_id().to_string(), split))
-                .collect(),
+            splits,
+            per_source_shards,
             delete_tasks,
             stamper: Stamper::new(last_opstamp),
             recently_modified: false,
@@ -164,11 +206,6 @@ impl FileBackedIndex {
     /// Index metadata accessor.
     pub fn metadata(&self) -> &IndexMetadata {
         &self.metadata
-    }
-
-    /// Splits accessor.
-    pub fn splits(&self) -> &HashMap<String, Split> {
-        &self.splits
     }
 
     /// Stages a single split.
@@ -305,25 +342,37 @@ impl FileBackedIndex {
     /// Publishes splits.
     pub(crate) fn publish_splits<'a>(
         &mut self,
-        split_ids: &[&'a str],
+        staged_split_ids: &[&'a str],
         replaced_split_ids: &[&'a str],
         checkpoint_delta_opt: Option<IndexCheckpointDelta>,
+        publish_token_opt: Option<PublishToken>,
     ) -> MetastoreResult<()> {
         if let Some(checkpoint_delta) = checkpoint_delta_opt {
             let source_id = checkpoint_delta.source_id.clone();
-            self.metadata
-                .checkpoint
-                .try_apply_delta(checkpoint_delta)
-                .map_err(|error| {
-                    let entity = EntityKind::CheckpointDelta {
-                        index_id: self.index_id().to_string(),
-                        source_id,
-                    };
-                    let message = error.to_string();
-                    MetastoreError::FailedPrecondition { entity, message }
+
+            if source_id == INGEST_SOURCE_ID {
+                let publish_token = publish_token_opt.ok_or_else(|| {
+                    let message = format!(
+                        "publish token is required for publishing splits for source `{source_id}`"
+                    );
+                    MetastoreError::InvalidArgument { message }
                 })?;
+                self.try_apply_delta_v2(checkpoint_delta, publish_token)?;
+            } else {
+                self.metadata
+                    .checkpoint
+                    .try_apply_delta(checkpoint_delta)
+                    .map_err(|error| {
+                        let entity = EntityKind::CheckpointDelta {
+                            index_id: self.index_id().to_string(),
+                            source_id,
+                        };
+                        let message = error.to_string();
+                        MetastoreError::FailedPrecondition { entity, message }
+                    })?;
+            }
         }
-        self.mark_splits_as_published_helper(split_ids)?;
+        self.mark_splits_as_published_helper(staged_split_ids)?;
         self.mark_splits_for_deletion(replaced_split_ids, &[SplitState::Published], true)?;
         Ok(())
     }
@@ -394,10 +443,17 @@ impl FileBackedIndex {
     }
 
     /// Adds a source.
-    pub(crate) fn add_source(&mut self, source: SourceConfig) -> MetastoreResult<()> {
-        self.metadata.add_source(source)
+    pub(crate) fn add_source(&mut self, source_config: SourceConfig) -> MetastoreResult<()> {
+        let source_id = source_config.source_id.clone();
+        self.metadata.add_source(source_config)?;
+        self.per_source_shards.insert(
+            source_id.clone(),
+            Shards::empty(self.index_uid(), source_id),
+        );
+        Ok(())
     }
 
+    /// Enables or disables a source. Returns whether a mutation occurred.
     pub(crate) fn toggle_source(&mut self, source_id: &str, enable: bool) -> MetastoreResult<bool> {
         self.metadata.toggle_source(source_id, enable)
     }
@@ -463,6 +519,68 @@ impl FileBackedIndex {
             .collect();
         Ok(delete_tasks)
     }
+
+    // Shard API
+
+    fn get_shards_for_source(&self, source_id: &str) -> MetastoreResult<&Shards> {
+        self.per_source_shards.get(source_id).ok_or_else(|| {
+            MetastoreError::NotFound(EntityKind::Source {
+                index_id: self.index_id().to_string(),
+                source_id: source_id.to_string(),
+            })
+        })
+    }
+
+    fn get_shards_for_source_mut(&mut self, source_id: &str) -> MetastoreResult<&mut Shards> {
+        self.per_source_shards.get_mut(source_id).ok_or_else(|| {
+            MetastoreError::NotFound(EntityKind::Source {
+                index_id: self.metadata.index_id().to_string(),
+                source_id: source_id.to_string(),
+            })
+        })
+    }
+
+    pub(crate) fn open_shards(
+        &mut self,
+        subrequest: OpenShardsSubrequest,
+    ) -> MetastoreResult<MutationOccurred<OpenShardsSubresponse>> {
+        self.get_shards_for_source_mut(&subrequest.source_id)?
+            .open_shards(subrequest)
+    }
+
+    pub(crate) fn close_shards(
+        &mut self,
+        subrequest: CloseShardsSubrequest,
+    ) -> MetastoreResult<MutationOccurred<Either<CloseShardsSuccess, CloseShardsFailure>>> {
+        self.get_shards_for_source_mut(&subrequest.source_id)?
+            .close_shards(subrequest)
+    }
+
+    pub(crate) fn delete_shards(
+        &mut self,
+        subrequest: DeleteShardsSubrequest,
+        force: bool,
+    ) -> MetastoreResult<MutationOccurred<()>> {
+        self.get_shards_for_source_mut(&subrequest.source_id)?
+            .delete_shards(subrequest, force)
+    }
+
+    pub(crate) fn list_shards(
+        &mut self,
+        subrequest: ListShardsSubrequest,
+    ) -> MetastoreResult<MutationOccurred<ListShardsSubresponse>> {
+        self.get_shards_for_source(&subrequest.source_id)?
+            .list_shards(subrequest)
+    }
+
+    pub(crate) fn try_apply_delta_v2(
+        &mut self,
+        checkpoint_delta: IndexCheckpointDelta,
+        publish_token: PublishToken,
+    ) -> MetastoreResult<MutationOccurred<()>> {
+        self.get_shards_for_source_mut(&checkpoint_delta.source_id)?
+            .try_apply_delta(checkpoint_delta.source_delta, publish_token)
+    }
 }
 
 /// Stamper provides Opstamps, which is just an auto-increment id to label
@@ -471,9 +589,9 @@ impl FileBackedIndex {
 struct Stamper(usize);
 
 impl Stamper {
-    /// Creates a [`Stamper`].
-    pub fn new(first_opstamp: usize) -> Self {
-        Self(first_opstamp)
+    /// Creates a new [`Stamper`].
+    pub fn new(initial_opstamp: usize) -> Self {
+        Self(initial_opstamp)
     }
 
     /// Increments the stamper by 1 and returns the incremented value.

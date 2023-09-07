@@ -30,7 +30,7 @@ use quickwit_proto::metastore::{
     DeleteShardsResponse, DeleteSourceRequest, DeleteTask, ListShardsRequest, ListShardsResponse,
     MetastoreResult, OpenShardsRequest, OpenShardsResponse, ToggleSourceRequest,
 };
-use quickwit_proto::IndexUid;
+use quickwit_proto::{IndexUid, PublishToken};
 
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{IndexMetadata, ListIndexesQuery, ListSplitsQuery, Metastore, Split, SplitMetadata};
@@ -149,6 +149,7 @@ impl Metastore for ControlPlaneMetastore {
         staged_split_ids: &[&'a str],
         replaced_split_ids: &[&'a str],
         checkpoint_delta_opt: Option<IndexCheckpointDelta>,
+        publish_token_opt: Option<PublishToken>,
     ) -> MetastoreResult<()> {
         self.metastore
             .publish_splits(
@@ -156,6 +157,7 @@ impl Metastore for ControlPlaneMetastore {
                 staged_split_ids,
                 replaced_split_ids,
                 checkpoint_delta_opt,
+                publish_token_opt,
             )
             .await
     }

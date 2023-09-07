@@ -91,11 +91,12 @@ pub struct PublishSplitsRequest {
     pub staged_split_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     #[prost(string, repeated, tag = "3")]
     pub replaced_split_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    /// optional string publish_token = 5;
     #[prost(string, optional, tag = "4")]
-    pub index_checkpoint_delta_serialized_json: ::core::option::Option<
+    pub index_checkpoint_delta_json_opt: ::core::option::Option<
         ::prost::alloc::string::String,
     >,
+    #[prost(string, optional, tag = "5")]
+    pub publish_token_opt: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]

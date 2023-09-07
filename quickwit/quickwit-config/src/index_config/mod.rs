@@ -35,6 +35,7 @@ use quickwit_doc_mapper::{
     DefaultDocMapper, DefaultDocMapperBuilder, DocMapper, FieldMappingEntry, Mode, ModeType,
     QuickwitJsonOptions, TokenizerEntry,
 };
+use quickwit_proto::IndexId;
 use serde::{Deserialize, Serialize};
 pub use serialize::load_index_config_from_user_config;
 
@@ -296,7 +297,7 @@ fn prepend_at_char(schedule: &str) -> String {
 #[serde(into = "VersionedIndexConfig")]
 #[serde(try_from = "VersionedIndexConfig")]
 pub struct IndexConfig {
-    pub index_id: String,
+    pub index_id: IndexId,
     pub index_uri: Uri,
     pub doc_mapping: DocMapping,
     pub indexing_settings: IndexingSettings,

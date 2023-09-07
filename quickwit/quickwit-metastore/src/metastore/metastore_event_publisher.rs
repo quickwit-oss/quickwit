@@ -28,7 +28,7 @@ use quickwit_proto::metastore::events::{
     AddSourceEvent, DeleteIndexEvent, DeleteSourceEvent, ToggleSourceEvent,
 };
 use quickwit_proto::metastore::{DeleteQuery, DeleteTask, MetastoreResult};
-use quickwit_proto::IndexUid;
+use quickwit_proto::{IndexUid, PublishToken};
 use tracing::info;
 
 use crate::checkpoint::IndexCheckpointDelta;
@@ -115,6 +115,7 @@ impl Metastore for MetastoreEventPublisher {
         split_ids: &[&'a str],
         replaced_split_ids: &[&'a str],
         checkpoint_delta_opt: Option<IndexCheckpointDelta>,
+        publish_token_opt: Option<PublishToken>,
     ) -> MetastoreResult<()> {
         self.underlying
             .publish_splits(
@@ -122,6 +123,7 @@ impl Metastore for MetastoreEventPublisher {
                 split_ids,
                 replaced_split_ids,
                 checkpoint_delta_opt,
+                publish_token_opt,
             )
             .await
     }
