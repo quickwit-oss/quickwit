@@ -35,6 +35,9 @@ pub type SplitId = String;
 
 pub type ShardId = u64;
 
+/// See the file `ingest.proto` for more details.
+pub type PublishToken = String;
+
 /// Uniquely identifies a shard and its underlying mrecordlog queue.
 pub type QueueId = String; // <index_uid>/<source_id>/<shard_id>
 

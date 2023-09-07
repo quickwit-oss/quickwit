@@ -25,8 +25,11 @@ import "quickwit/ingest.proto";
 import "quickwit/metastore.proto";
 
 service ControlPlaneService {
-  // The control plane acts as a proxy for the metastore so it can track its state accurately and react to events in real-time.
-  // Index API
+  // The control plane acts as a proxy for the metastore for a subset of the API so it can track the state of the metastore accurately and react to events in real-time.
+
+  // Metastore index API proxy:
+  // - `create_index`
+  // - `delete_index`
 
   // Creates a new index.
   rpc CreateIndex(quickwit.metastore.CreateIndexRequest) returns (quickwit.metastore.CreateIndexResponse);
@@ -34,7 +37,10 @@ service ControlPlaneService {
   // Deletes an index.
   rpc DeleteIndex(quickwit.metastore.DeleteIndexRequest) returns (quickwit.metastore.EmptyResponse);
 
-  // Source API
+  // Metastore source API proxy:
+  // - `add_source`
+  // - `toggle_source`
+  // - `delete_source`
 
   // Adds a source to an index.
   rpc AddSource(quickwit.metastore.AddSourceRequest) returns (quickwit.metastore.EmptyResponse);
@@ -45,6 +51,14 @@ service ControlPlaneService {
   // Removes a source from an index.
   rpc DeleteSource(quickwit.metastore.DeleteSourceRequest) returns (quickwit.metastore.EmptyResponse);
 
+  // Shard API
+
+  /// Returns the list of open shards for one or several sources. If the control plane is not able to find any
+  /// for a source, it will pick a pair of leader-follower ingesters and will open a new shard.
+  rpc GetOpenShards(GetOpenShardsRequest) returns (GetOpenShardsResponse);
+
+  rpc CloseShards(CloseShardsRequest) returns (CloseShardsResponse);
+
   /// Notify the Control Plane that a change on an index occurred. The change
   /// can be an index creation, deletion, or update that includes a source creation/deletion/num pipeline update.
   // Note(fmassot): it's not very clear for a user to know which change triggers a control plane notification.
@@ -53,13 +67,6 @@ service ControlPlaneService {
   // However, these attributes will not be used by the Control Plane, at least at short term.
   rpc NotifyIndexChange(NotifyIndexChangeRequest) returns (NotifyIndexChangeResponse);
 
-  // Shard API
-
-  /// Returns the list of open shards for one or several sources. If the control plane is not able to find any
-  /// for a source, it will pick a pair of leader-follower ingesters and will open a new shard.
-  rpc GetOpenShards(GetOpenShardsRequest) returns (GetOpenShardsResponse);
-
-  rpc CloseShards(CloseShardsRequest) returns (CloseShardsResponse);
 }
 
 message NotifyIndexChangeRequest {}

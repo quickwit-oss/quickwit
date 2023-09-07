@@ -17,12 +17,13 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::{BTreeSet, HashSet};
+use std::collections::BTreeSet;
 use std::fmt;
 
+use itertools::Itertools;
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
-use quickwit_proto::IndexUid;
+use quickwit_proto::{IndexUid, PublishToken};
 use tantivy::TrackedObject;
 use tracing::Span;
 
@@ -38,6 +39,10 @@ pub struct PackagedSplit {
 }
 
 impl PackagedSplit {
+    pub fn index_uid(&self) -> &IndexUid {
+        &self.split_attrs.pipeline_id.index_uid
+    }
+
     pub fn split_id(&self) -> &str {
         &self.split_attrs.split_id
     }
@@ -56,45 +61,46 @@ impl fmt::Debug for PackagedSplit {
 
 #[derive(Debug)]
 pub struct PackagedSplitBatch {
-    pub parent_span: Span,
     pub splits: Vec<PackagedSplit>,
     pub checkpoint_delta_opt: Option<IndexCheckpointDelta>,
+    pub publish_lock: PublishLock,
+    pub publish_token_opt: Option<PublishToken>,
     /// A [`MergeOperation`] tracked by either the `MergePlanner` or the `DeleteTaskPlanner`
     /// in the `MergePipeline` or `DeleteTaskPipeline`.
     /// See planners docs to understand the usage.
     /// If `None`, the split batch was built in the `IndexingPipeline`.
-    pub merge_operation: Option<TrackedObject<MergeOperation>>,
-    pub publish_lock: PublishLock,
+    pub merge_operation_opt: Option<TrackedObject<MergeOperation>>,
+    pub batch_parent_span: Span,
 }
 
 impl PackagedSplitBatch {
     /// Instantiate a consistent [`PackagedSplitBatch`] that
     /// satisfies two constraints:
     /// - a batch must have at least one split
-    /// - all splits must be on the same `index_id`.
+    /// - all splits must belong to the same `index_uid`.
     pub fn new(
         splits: Vec<PackagedSplit>,
         checkpoint_delta_opt: Option<IndexCheckpointDelta>,
         publish_lock: PublishLock,
-        merge_operation: Option<TrackedObject<MergeOperation>>,
-        span: Span,
+        publish_token_opt: Option<PublishToken>,
+        merge_operation_opt: Option<TrackedObject<MergeOperation>>,
+        batch_parent_span: Span,
     ) -> Self {
         assert!(!splits.is_empty());
-        assert_eq!(
+        assert!(
             splits
                 .iter()
-                .map(|split| split.split_attrs.pipeline_id.index_uid.clone())
-                .collect::<HashSet<_>>()
-                .len(),
-            1,
-            "All splits must be on the same `index_id`."
+                .tuple_windows()
+                .all(|(left_split, right_split)| left_split.index_uid() == right_split.index_uid()),
+            "All splits must belong to the same `index_uid`."
         );
         Self {
-            parent_span: span,
             splits,
             checkpoint_delta_opt,
             publish_lock,
-            merge_operation,
+            publish_token_opt,
+            merge_operation_opt,
+            batch_parent_span,
         }
     }
 

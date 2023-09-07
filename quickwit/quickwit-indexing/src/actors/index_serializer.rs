@@ -94,11 +94,12 @@ impl Handler<IndexedSplitBatchBuilder> for IndexSerializer {
             splits.push(split);
         }
         let indexed_split_batch = IndexedSplitBatch {
-            batch_parent_span: batch_builder.batch_parent_span,
             splits,
-            checkpoint_delta: batch_builder.checkpoint_delta,
+            checkpoint_delta_opt: batch_builder.checkpoint_delta_opt,
             publish_lock: batch_builder.publish_lock,
-            merge_operation: None,
+            publish_token_opt: batch_builder.publish_token_opt,
+            merge_operation_opt: None,
+            batch_parent_span: batch_builder.batch_parent_span,
         };
         ctx.send_message(&self.packager_mailbox, indexed_split_batch)
             .await?;

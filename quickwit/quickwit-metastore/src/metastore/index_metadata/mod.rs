@@ -29,6 +29,7 @@ use quickwit_proto::{IndexUid, SourceId};
 use serde::{Deserialize, Serialize};
 use serialize::VersionedIndexMetadata;
 use time::OffsetDateTime;
+use ulid::Ulid;
 
 use crate::checkpoint::{
     IndexCheckpoint, PartitionId, Position, SourceCheckpoint, SourceCheckpointDelta,
@@ -147,7 +148,7 @@ impl TestableForRegression for IndexMetadata {
         let checkpoint = IndexCheckpoint::from(per_source_checkpoint);
         let index_config = IndexConfig::sample_for_regression();
         let mut index_metadata = IndexMetadata {
-            index_uid: IndexUid::from_parts("test", "11111111111111111111111111"),
+            index_uid: IndexUid::from_parts(index_config.index_id.clone(), Ulid::nil()),
             index_config,
             checkpoint,
             create_timestamp: 1789,

@@ -136,7 +136,7 @@ impl Handler<IndexedSplitBatch> for Packager {
             "start-packaging-splits"
         );
         fail_point!("packager:before");
-        let mut packaged_splits = Vec::new();
+        let mut packaged_splits = Vec::with_capacity(batch.splits.len());
         for split in batch.splits {
             if batch.publish_lock.is_dead() {
                 // TODO: Remove the junk right away?
@@ -153,9 +153,10 @@ impl Handler<IndexedSplitBatch> for Packager {
             &self.uploader_mailbox,
             PackagedSplitBatch::new(
                 packaged_splits,
-                batch.checkpoint_delta,
+                batch.checkpoint_delta_opt,
                 batch.publish_lock,
-                batch.merge_operation,
+                batch.publish_token_opt,
+                batch.merge_operation_opt,
                 batch.batch_parent_span,
             ),
         )
@@ -465,10 +466,11 @@ mod tests {
         packager_mailbox
             .send_message(IndexedSplitBatch {
                 splits: vec![indexed_split],
-                checkpoint_delta: IndexCheckpointDelta::for_test("source_id", 10..20).into(),
+                checkpoint_delta_opt: IndexCheckpointDelta::for_test("source_id", 10..20).into(),
                 publish_lock: PublishLock::default(),
+                publish_token_opt: None,
+                merge_operation_opt: None,
                 batch_parent_span: Span::none(),
-                merge_operation: None,
             })
             .await?;
         assert_eq!(
