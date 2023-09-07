@@ -13,7 +13,7 @@ jobs:
       matrix:
         target: [x86_64-apple-darwin, aarch64-apple-darwin]
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/cargo-build-macos-binary
         with:
           target: ${{ matrix.target }}
@@ -26,7 +26,7 @@ jobs:
     name: Build ${{ matrix.target }}
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/cross-build-binary
         with:
           target: ${{ matrix.target }}

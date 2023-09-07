@@ -442,20 +442,20 @@ pub async fn leaf_search(
 ) -> Result<LeafSearchResponse, SearchError> {
     info!(splits_num = splits.len(), split_offsets = ?PrettySample::new(splits, 5));
     let request = Arc::new(request.clone());
-    let leaf_search_single_split_futures: Vec<_> = splits
-        .iter()
-        .map(|split| {
-            let split = split.clone();
-            let doc_mapper_clone = doc_mapper.clone();
-            let index_storage_clone = index_storage.clone();
-            let searcher_context_clone = searcher_context.clone();
-            let request = request.clone();
-            tokio::spawn(
-                async move {
-                let _leaf_split_search_permit = searcher_context_clone.leaf_search_split_semaphore
-                    .acquire()
-                    .await
-                    .expect("Failed to acquire permit. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.");
+    let mut leaf_search_single_split_futures: Vec<_> = Vec::with_capacity(splits.len());
+    for split in splits {
+        let searcher_context_clone = searcher_context.clone();
+        let leaf_split_search_permit = searcher_context.leaf_search_split_semaphore
+            .clone()
+            .acquire_owned()
+            .await
+            .expect("Failed to acquire permit. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.");
+        let split = split.clone();
+        let doc_mapper_clone = doc_mapper.clone();
+        let index_storage_clone = index_storage.clone();
+        let request = request.clone();
+        let leaf_search_single_split_future = tokio::spawn(
+            async move {
                 crate::SEARCH_METRICS.leaf_searches_splits_total.inc();
                 let timer = crate::SEARCH_METRICS
                     .leaf_search_split_duration_secs
@@ -469,11 +469,16 @@ pub async fn leaf_search(
                 )
                 .await;
                 timer.observe_duration();
+                // We explicitly drop it, to highlight it to the reader and to force the move.
+                drop(leaf_split_search_permit);
                 leaf_search_single_split_res.map_err(|err| (split.split_id.clone(), err))
-            }.in_current_span())
-        })
-        .collect();
-    let split_search_results = futures::future::join_all(leaf_search_single_split_futures).await;
+            }
+            .in_current_span(),
+        );
+        leaf_search_single_split_futures.push(leaf_search_single_split_future);
+    }
+    let split_search_results: Vec<Result<Result<LeafSearchResponse, _>, _>> =
+        futures::future::join_all(leaf_search_single_split_futures).await;
 
     // the result wrapping is only for the collector api merge_fruits
     // (Vec<tantivy::Result<LeafSearchResponse>>)
@@ -638,8 +643,8 @@ pub async fn leaf_list_terms(
             let index_storage_clone = index_storage.clone();
             let searcher_context_clone = searcher_context.clone();
             async move {
-                let _leaf_split_search_permit = searcher_context_clone.leaf_search_split_semaphore
-                    .acquire()
+                let _leaf_split_search_permit = searcher_context_clone.leaf_search_split_semaphore.clone()
+                    .acquire_owned()
                     .await
                     .expect("Failed to acquire permit. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.");
                 // TODO dedicated counter and timer?

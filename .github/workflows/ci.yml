@@ -44,7 +44,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - name: Install Ubuntu packages
         run: sudo apt-get -y install protobuf-compiler python3 python3-pip
       - uses: dorny/paths-filter@v2
@@ -97,7 +97,7 @@ jobs:
     name: Lints
     runs-on: "ubuntu-latest"
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
       - uses: dorny/paths-filter@v2
         id: modified
         with:
