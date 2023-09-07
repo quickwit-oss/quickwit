@@ -22,7 +22,8 @@ use std::convert::Infallible;
 use std::ops::Bound;
 
 use quickwit_query::query_ast::{
-    PhrasePrefixQuery, QueryAst, QueryAstVisitor, RangeQuery, TermSetQuery,
+    FullTextMode, FullTextQuery, PhrasePrefixQuery, QueryAst, QueryAstVisitor, RangeQuery,
+    TermSetQuery,
 };
 use quickwit_query::InvalidQuery;
 use tantivy::query::Query;
@@ -69,7 +70,7 @@ pub(crate) fn build_query(
 
     let term_set_query_fields = extract_term_set_query_fields(query_ast);
     let term_ranges_grouped_by_field =
-        extract_phrase_prefix_term_ranges(query_ast, &schema, tokenizer_manager)?;
+        extract_prefix_term_ranges(query_ast, &schema, tokenizer_manager)?;
 
     let mut terms_grouped_by_field: HashMap<Field, HashMap<_, bool>> = Default::default();
     query.query_terms(&mut |term, need_position| {
@@ -134,52 +135,79 @@ fn prefix_term_to_range(prefix: Term) -> (Bound<Term>, Bound<Term>) {
     (Bound::Included(prefix), Bound::Unbounded)
 }
 
-struct ExtractPhrasePrefixTermRanges<'a> {
+type PositionNeeded = bool;
+
+struct ExtractPrefixTermRanges<'a> {
     schema: &'a Schema,
     tokenizer_manager: &'a TokenizerManager,
-    term_ranges_to_warm_up: HashMap<Field, HashMap<TermRange, bool>>,
+    term_ranges_to_warm_up: HashMap<Field, HashMap<TermRange, PositionNeeded>>,
 }
 
-impl<'a> ExtractPhrasePrefixTermRanges<'a> {
+impl<'a> ExtractPrefixTermRanges<'a> {
     fn with_schema(schema: &'a Schema, tokenizer_manager: &'a TokenizerManager) -> Self {
-        ExtractPhrasePrefixTermRanges {
+        ExtractPrefixTermRanges {
             schema,
             tokenizer_manager,
             term_ranges_to_warm_up: HashMap::new(),
         }
     }
+
+    fn add_prefix_term(
+        &mut self,
+        term: Term,
+        max_expansions: u32,
+        position_needed: PositionNeeded,
+    ) {
+        let field = term.field();
+        let (start, end) = prefix_term_to_range(term);
+        let term_range = TermRange {
+            start,
+            end,
+            limit: Some(max_expansions as u64),
+        };
+        self.term_ranges_to_warm_up
+            .entry(field)
+            .or_default()
+            .insert(term_range, position_needed);
+    }
 }
 
-impl<'a, 'b: 'a> QueryAstVisitor<'a> for ExtractPhrasePrefixTermRanges<'b> {
+impl<'a, 'b: 'a> QueryAstVisitor<'a> for ExtractPrefixTermRanges<'b> {
     type Err = InvalidQuery;
+
+    fn visit_full_text(&mut self, full_text_query: &'a FullTextQuery) -> Result<(), Self::Err> {
+        if let FullTextMode::BoolPrefix {
+            operator: _,
+            max_expansions,
+        } = &full_text_query.params.mode
+        {
+            if let Some(prefix_term) =
+                full_text_query.get_last_term(self.schema, self.tokenizer_manager)
+            {
+                self.add_prefix_term(prefix_term, *max_expansions, false);
+            }
+        }
+        Ok(())
+    }
 
     fn visit_phrase_prefix(
         &mut self,
         phrase_prefix: &'a PhrasePrefixQuery,
     ) -> Result<(), Self::Err> {
-        let (field, terms) = phrase_prefix.get_terms(self.schema, self.tokenizer_manager)?;
+        let (_, terms) = phrase_prefix.get_terms(self.schema, self.tokenizer_manager)?;
         if let Some((_, term)) = terms.last() {
-            let (start, end) = prefix_term_to_range(term.clone());
-            let term_range = TermRange {
-                start,
-                end,
-                limit: Some(phrase_prefix.max_expansions as u64),
-            };
-            self.term_ranges_to_warm_up
-                .entry(field)
-                .or_default()
-                .insert(term_range, true);
+            self.add_prefix_term(term.clone(), phrase_prefix.max_expansions, true);
         }
         Ok(())
     }
 }
 
-fn extract_phrase_prefix_term_ranges(
+fn extract_prefix_term_ranges(
     query_ast: &QueryAst,
     schema: &Schema,
     tokenizer_manager: &TokenizerManager,
-) -> anyhow::Result<HashMap<Field, HashMap<TermRange, bool>>> {
-    let mut visitor = ExtractPhrasePrefixTermRanges::with_schema(schema, tokenizer_manager);
+) -> anyhow::Result<HashMap<Field, HashMap<TermRange, PositionNeeded>>> {
+    let mut visitor = ExtractPrefixTermRanges::with_schema(schema, tokenizer_manager);
     visitor.visit(query_ast)?;
     Ok(visitor.term_ranges_to_warm_up)
 }

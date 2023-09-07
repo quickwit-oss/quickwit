@@ -1,0 +1,60 @@
+method: [GET]
+json:
+  query:
+    match_bool_prefix:
+      payload.pull_request.body:
+        query: "file not ch"
+expected:
+  hits:
+    total:
+      value: 1
+      relation: "eq"
+---
+method: [GET]
+json:
+  query:
+    match_bool_prefix:
+      payload.pull_request.body:
+        query: "file not chzn"
+        operator: AND
+expected:
+  hits:
+    total:
+      value: 0
+      relation: "eq"
+---
+method: [GET]
+json:
+  query:
+    match_bool_prefix:
+      payload.pull_request.body:
+        query: "file not ch"
+        operator: AND
+expected:
+  hits:
+    total:
+      value: 1
+      relation: "eq"
+---
+method: [GET]
+json:
+  query:
+    match_bool_prefix:
+      payload.pull_request.body: "file not ch"
+expected:
+  hits:
+    total:
+      value: 1
+      relation: "eq"
+---
+method: [GET]
+json:
+  query:
+    match_phrase_prefix:
+      payload.commits.message:
+        query: "fix"
+expected:
+  hits:
+    total:
+      value: 7
+      relation: "eq"

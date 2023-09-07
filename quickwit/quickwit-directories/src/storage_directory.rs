@@ -58,7 +58,7 @@ impl FileHandle for StorageDirectoryFileHandle {
         Err(unsupported_operation(&self.path))
     }
 
-    #[instrument(level = "debug", fields(path = %self.path.to_string_lossy()), skip(self))]
+    #[instrument(level = "debug", fields(path = %self.path.to_string_lossy(), byte_range_size = byte_range.end - byte_range.start), skip(self))]
     async fn read_bytes_async(&self, byte_range: Range<usize>) -> io::Result<OwnedBytes> {
         if byte_range.is_empty() {
             return Ok(OwnedBytes::empty());

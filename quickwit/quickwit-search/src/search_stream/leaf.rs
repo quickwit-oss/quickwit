@@ -23,6 +23,7 @@ use std::marker::PhantomData;
 use std::sync::Arc;
 
 use futures::{FutureExt, StreamExt};
+use quickwit_common::PrettySample;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_proto::search::{
     LeafSearchStreamResponse, OutputFormat, SearchRequest, SearchStreamRequest,
@@ -51,6 +52,7 @@ use crate::{Result, SearchError};
 // to process stream in grpc_adapter.rs to change SearchError
 // to tonic::Status as tonic::Status is required by the stream result
 // signature defined by proto generated code.
+#[instrument(skip_all, fields(index = request.index_id))]
 pub async fn leaf_search_stream(
     searcher_context: Arc<SearcherContext>,
     request: SearchStreamRequest,
@@ -58,6 +60,7 @@ pub async fn leaf_search_stream(
     splits: Vec<SplitIdAndFooterOffsets>,
     doc_mapper: Arc<dyn DocMapper>,
 ) -> UnboundedReceiverStream<crate::Result<LeafSearchStreamResponse>> {
+    info!(split_offsets = ?PrettySample::new(&splits, 5));
     let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
     let span = info_span!("leaf_search_stream",);
     tokio::spawn(
@@ -105,7 +108,7 @@ async fn leaf_search_results_stream(
 }
 
 /// Apply a leaf search on a single split.
-#[instrument(fields(split_id = %split.split_id), skip(searcher_context, split, doc_mapper, stream_request, storage))]
+#[instrument(skip_all, fields(split_id = %split.split_id))]
 async fn leaf_search_stream_single_split(
     searcher_context: Arc<SearcherContext>,
     split: SplitIdAndFooterOffsets,

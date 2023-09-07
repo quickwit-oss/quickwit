@@ -38,7 +38,6 @@ use quickwit_storage::{MemorySizedCache, QuickwitCache, StorageCache, StorageRes
 use tantivy::aggregation::AggregationLimits;
 use tokio::sync::Semaphore;
 use tokio_stream::wrappers::UnboundedReceiverStream;
-use tracing::info;
 
 use crate::leaf_cache::LeafSearchCache;
 use crate::root::{fetch_docs_phase, get_snippet_request};
@@ -178,7 +177,6 @@ impl SearchService for SearchServiceImpl {
         let search_request = leaf_search_request
             .search_request
             .ok_or_else(|| SearchError::Internal("No search request.".to_string()))?;
-        info!(index=?search_request.index_id_patterns, splits=?leaf_search_request.split_offsets, "leaf_search");
         let storage = self
             .storage_resolver
             .resolve(&Uri::from_well_formed(leaf_search_request.index_uri))
@@ -242,7 +240,6 @@ impl SearchService for SearchServiceImpl {
         let stream_request = leaf_stream_request
             .request
             .ok_or_else(|| SearchError::Internal("No search request.".to_string()))?;
-        info!(index=?stream_request.index_id, splits=?leaf_stream_request.split_offsets, "leaf_search");
         let storage = self
             .storage_resolver
             .resolve(&Uri::from_well_formed(leaf_stream_request.index_uri))
@@ -280,8 +277,6 @@ impl SearchService for SearchServiceImpl {
         let search_request = leaf_search_request
             .list_terms_request
             .ok_or_else(|| SearchError::Internal("No search request.".to_string()))?;
-        info!(index=?search_request.index_id, splits=?leaf_search_request.split_offsets,
-         "leaf_search");
         let storage = self
             .storage_resolver
             .resolve(&Uri::from_well_formed(leaf_search_request.index_uri))
@@ -398,7 +393,7 @@ pub struct SearcherContext {
     /// Fast fields cache.
     pub fast_fields_cache: Arc<dyn StorageCache>,
     /// Counting semaphore to limit concurrent leaf search split requests.
-    pub leaf_search_split_semaphore: Semaphore,
+    pub leaf_search_split_semaphore: Arc<Semaphore>,
     /// Split footer cache.
     pub split_footer_cache: MemorySizedCache<String>,
     /// Counting semaphore to limit concurrent split stream requests.
@@ -427,8 +422,9 @@ impl SearcherContext {
             capacity_in_bytes,
             &quickwit_storage::STORAGE_METRICS.split_footer_cache,
         );
-        let leaf_search_split_semaphore =
-            Semaphore::new(searcher_config.max_num_concurrent_split_searches);
+        let leaf_search_split_semaphore = Arc::new(Semaphore::new(
+            searcher_config.max_num_concurrent_split_searches,
+        ));
         let split_stream_semaphore =
             Semaphore::new(searcher_config.max_num_concurrent_split_streams);
         let fast_field_cache_capacity =

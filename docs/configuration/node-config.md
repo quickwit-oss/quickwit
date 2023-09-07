@@ -107,6 +107,16 @@ This section contains the configuration options for an indexer. The split store 
 | `max_concurrent_split_uploads` | Maximum number of concurrent split uploads allowed on the node. | `12` |
 | `enable_otlp_endpoint` | If true, enables the OpenTelemetry exporter endpoint to ingest logs and traces via the OpenTelemetry Protocol (OTLP). | `false` |
 
+Example:
+
+```yaml
+indexer:
+  split_store_max_num_bytes: 100G
+  split_store_max_num_splits: 1000
+  max_concurrent_split_uploads: 12
+  enable_otlp_endpoint: true
+```
+
 ## Ingest API configuration
 
 | Property | Description | Default value |
@@ -114,6 +124,13 @@ This section contains the configuration options for an indexer. The split store 
 | `max_queue_memory_usage` | Maximum size in bytes of the in-memory Ingest queue. | `2GiB` |
 | `max_queue_disk_usage` | Maximum disk-space in bytes taken by the Ingest queue. This is typically higher than the max in-memory queue. | `4GiB` |
 
+Example:
+
+```yaml
+ingest_api:
+  max_queue_memory_usage: 2GiB
+  max_queue_disk_usage: 4GiB
+```
 
 ## Searcher configuration
 
@@ -129,11 +146,27 @@ This section contains the configuration options for a Searcher.
 | `max_num_concurrent_split_searches` | Maximum number of concurrent split search requests running on a Searcher. | `100` |
 | `max_num_concurrent_split_streams` | Maximum number of concurrent split stream requests running on a Searcher. | `100` |
 
+Example:
+
+```yaml
+searcher:
+  fast_field_cache_capacity: 1G
+  split_footer_cache_capacity: 500M
+  partial_request_cache_capacity: 64M
+```
+
 ## Jaeger configuration
 
 | Property | Description | Default value |
 | --- | --- | --- |
 | `enable_endpoint` | If true, enables the gRPC endpoint that allows the Jaeger Query Service to connect and retrieve traces. | `false` |
+
+Example:
+
+```yaml
+searcher:
+  enable_endpoint: true
+```
 
 
 ## Using environment variables in the configuration
