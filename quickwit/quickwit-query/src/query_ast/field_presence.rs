@@ -30,7 +30,7 @@ use crate::{find_field_or_hit_dynamic, InvalidQuery};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]
 pub struct FieldPresenceQuery {
-    pub(crate) field: String,
+    pub field: String,
 }
 
 impl From<FieldPresenceQuery> for QueryAst {
@@ -80,13 +80,24 @@ impl BuildTantivyAst for FieldPresenceQuery {
         let field_presence_field = schema.get_field(FIELD_PRESENCE_FIELD_NAME).map_err(|_| {
             InvalidQuery::SchemaError("Field presence is not available for this split.".to_string())
         })?;
-        let (field, _field_entry, path) = find_field_or_hit_dynamic(&self.field, schema)?;
-        let field_presence_hash = compute_field_presence_hash(field, path);
-        let field_presence_term: Term =
-            Term::from_field_u64(field_presence_field, field_presence_hash);
-        let field_presence_term_query =
-            tantivy::query::TermQuery::new(field_presence_term, IndexRecordOption::Basic);
-        Ok(TantivyQueryAst::from(field_presence_term_query))
+        let (field, field_entry, path) = find_field_or_hit_dynamic(&self.field, schema)?;
+        if field_entry.is_fast() {
+            let full_path = if path.is_empty() {
+                field_entry.name().to_string()
+            } else {
+                format!("{}.{}", field_entry.name(), path)
+            };
+            let exists_query = tantivy::query::ExistsQuery::new_exists_query(full_path);
+            Ok(TantivyQueryAst::from(exists_query))
+        } else {
+            // fallback to the presence field
+            let field_presence_hash = compute_field_presence_hash(field, path);
+            let field_presence_term: Term =
+                Term::from_field_u64(field_presence_field, field_presence_hash);
+            let field_presence_term_query =
+                tantivy::query::TermQuery::new(field_presence_term, IndexRecordOption::Basic);
+            Ok(TantivyQueryAst::from(field_presence_term_query))
+        }
     }
 }
 

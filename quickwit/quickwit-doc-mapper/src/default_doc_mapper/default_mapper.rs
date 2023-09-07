@@ -501,7 +501,8 @@ impl DocMapper for DefaultDocMapper {
             );
             for FieldValue { field, value } in document.field_values() {
                 let field_entry = self.schema.get_field_entry(*field);
-                if !field_entry.is_indexed() {
+                if !field_entry.is_indexed() || field_entry.is_fast() {
+                    // We are using an tantivy's ExistsQuery for fast fields.
                     continue;
                 }
                 let mut path_hasher: PathHasher = PathHasher::default();
@@ -664,10 +665,10 @@ mod tests {
             .doc_from_json_obj(json_doc.as_object().unwrap().clone())
             .unwrap();
         let schema = doc_mapper.schema();
-        // 8 property entry + 1 field "_source" + two fields values for "tags" field
+        // 9 property entry + 1 field "_source" + 2 fields values for "tags" field
         // + 2 values inf "server.status" field + 2 values in "server.payload" field
-        // + 12 values for field presence.
-        assert_eq!(document.len(), 28);
+        // + 7 values for field presence
+        assert_eq!(document.len(), 23);
         let expected_json_paths_and_values: HashMap<String, JsonValue> =
             serde_json::from_str(EXPECTED_JSON_PATHS_AND_VALUES).unwrap();
         let mut field_presences: HashSet<u64> = HashSet::new();
@@ -698,11 +699,17 @@ mod tests {
                 }
             }
         }
-        assert_eq!(field_presences.len(), 12);
+        assert_eq!(field_presences.len(), 7);
         let timestamp_field = schema.get_field("timestamp").unwrap();
+        let body_field = schema.get_field("body").unwrap();
         let attributes_field = schema.get_field("attributes.server").unwrap();
         assert!(
-            field_presences.contains(&PathHasher::hash_path(&[&timestamp_field
+            !field_presences.contains(&PathHasher::hash_path(&[&timestamp_field
+                .field_id()
+                .to_le_bytes()[..]]))
+        );
+        assert!(
+            field_presences.contains(&PathHasher::hash_path(&[&body_field
                 .field_id()
                 .to_le_bytes()[..]]))
         );
