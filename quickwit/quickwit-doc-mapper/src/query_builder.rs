@@ -56,6 +56,11 @@ impl<'a> QueryAstVisitor<'a> for ExistsQueryFields {
     type Err = Infallible;
 
     fn visit_exists(&mut self, exists_query: &'a FieldPresenceQuery) -> Result<(), Infallible> {
+        /// If the field is a fast field, we will rely on the `ColumnIndex`.
+        /// If the field is not a fast, we will rely on the field presence field.
+        ///
+        /// In both case we add the field for warmup. The warmup will be no op if the field is not 
+        /// a fast field.
         self.exists_query_field_names
             .insert(exists_query.field.to_string());
         Ok(())
