@@ -90,7 +90,7 @@ impl BuildTantivyAst for FieldPresenceQuery {
             let exists_query = tantivy::query::ExistsQuery::new_exists_query(full_path);
             Ok(TantivyQueryAst::from(exists_query))
         } else {
-            // fallback to the presense field
+            // fallback to the presence field
             let field_presence_hash = compute_field_presence_hash(field, path);
             let field_presence_term: Term =
                 Term::from_field_u64(field_presence_field, field_presence_hash);
