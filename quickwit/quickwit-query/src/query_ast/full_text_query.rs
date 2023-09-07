@@ -20,9 +20,13 @@
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use tantivy::json_utils::JsonTermWriter;
-use tantivy::query::{PhraseQuery as TantivyPhraseQuery, TermQuery as TantivyTermQuery};
+use tantivy::query::{
+    PhrasePrefixQuery as TantivyPhrasePrefixQuery, PhraseQuery as TantivyPhraseQuery,
+    TermQuery as TantivyTermQuery,
+};
 use tantivy::schema::{
-    Field, IndexRecordOption, JsonObjectOptions, Schema as TantivySchema, TextFieldIndexing,
+    Field, FieldType, IndexRecordOption, JsonObjectOptions, Schema as TantivySchema,
+    TextFieldIndexing,
 };
 use tantivy::tokenizer::{TextAnalyzer, TokenStream, TokenizerManager};
 use tantivy::Term;
@@ -30,7 +34,7 @@ use tantivy::Term;
 use crate::query_ast::tantivy_query_ast::{TantivyBoolQuery, TantivyQueryAst};
 use crate::query_ast::utils::full_text_query;
 use crate::query_ast::{BuildTantivyAst, QueryAst};
-use crate::{BooleanOperand, InvalidQuery, MatchAllOrNone};
+use crate::{find_field_or_hit_dynamic, BooleanOperand, InvalidQuery, MatchAllOrNone};
 
 #[derive(Serialize, Deserialize, Debug, Eq, PartialEq, Clone)]
 #[serde(deny_unknown_fields)]
@@ -120,11 +124,28 @@ impl FullTextParams {
         }
         match self.mode {
             FullTextMode::Bool { operator } => {
-                let term_query: Vec<TantivyQueryAst> = terms
+                let leaf_queries: Vec<TantivyQueryAst> = terms
                     .into_iter()
                     .map(|(_, term)| TantivyTermQuery::new(term, index_record_option).into())
                     .collect();
-                Ok(TantivyBoolQuery::build_clause(operator, term_query).into())
+                Ok(TantivyBoolQuery::build_clause(operator, leaf_queries).into())
+            }
+            FullTextMode::BoolPrefix {
+                operator,
+                max_expansions,
+            } => {
+                let term_with_prefix = terms.pop();
+                let mut leaf_queries: Vec<TantivyQueryAst> = terms
+                    .into_iter()
+                    .map(|(_, term)| TantivyTermQuery::new(term, index_record_option).into())
+                    .collect();
+                if let Some(term_with_prefix) = term_with_prefix {
+                    let mut phrase_prefix_query =
+                        TantivyPhrasePrefixQuery::new_with_offset(vec![term_with_prefix]);
+                    phrase_prefix_query.set_max_expansions(max_expansions);
+                    leaf_queries.push(phrase_prefix_query.into());
+                }
+                Ok(TantivyBoolQuery::build_clause(operator, leaf_queries).into())
             }
             FullTextMode::Phrase { slop } => {
                 let mut phrase_query = TantivyPhraseQuery::new_with_offset(terms);
@@ -158,6 +179,10 @@ pub enum FullTextMode {
     // create a boolean clause (conjunction or disjunction based on the operator).
     Bool {
         operator: BooleanOperand,
+    },
+    BoolPrefix {
+        operator: BooleanOperand,
+        max_expansions: u32,
     },
     // Act as Phrase with slop 0 if the field has positions,
     // otherwise act as an intersection.
@@ -221,6 +246,54 @@ impl BuildTantivyAst for FullTextQuery {
             schema,
             tokenizer_manager,
         )
+    }
+}
+
+impl FullTextQuery {
+    /// Returns the last term of the query assuming the query is targetting a string or a Json
+    /// field.
+    ///
+    /// This strange method is used to identify which term range should be warmed up for
+    /// phrase prefix queries.
+    pub fn get_last_term(
+        &self,
+        schema: &TantivySchema,
+        tokenizer_manager: &TokenizerManager,
+    ) -> Option<Term> {
+        let (field, field_entry, json_path) =
+            find_field_or_hit_dynamic(&self.field, schema).ok()?;
+        let field_type: &FieldType = field_entry.field_type();
+        match field_type {
+            FieldType::Str(text_options) => {
+                let text_field_indexing = text_options.get_indexing_options()?;
+                let mut terms = self
+                    .params
+                    .tokenize_text_into_terms(
+                        field,
+                        &self.text,
+                        text_field_indexing,
+                        tokenizer_manager,
+                    )
+                    .ok()?;
+                let (_pos, term) = terms.pop()?;
+                Some(term)
+            }
+            FieldType::JsonObject(ref json_options) => {
+                let mut terms = self
+                    .params
+                    .tokenize_text_into_terms_json(
+                        field,
+                        json_path,
+                        &self.text,
+                        json_options,
+                        tokenizer_manager,
+                    )
+                    .ok()?;
+                let (_pos, term) = terms.pop()?;
+                Some(term)
+            }
+            _ => None,
+        }
     }
 }
 

@@ -88,9 +88,9 @@ impl From<MatchQuery> for ElasticQueryDslInner {
 
 #[derive(Deserialize)]
 #[serde(transparent)]
-struct MatchQueryParamsForDeserialization {
+pub(crate) struct MatchQueryParamsForDeserialization {
     #[serde(deserialize_with = "string_or_struct")]
-    inner: MatchQueryParams,
+    pub(crate) inner: MatchQueryParams,
 }
 
 impl From<MatchQuery> for OneFieldMap<MatchQueryParams> {
