@@ -393,7 +393,7 @@ pub struct SearcherContext {
     /// Fast fields cache.
     pub fast_fields_cache: Arc<dyn StorageCache>,
     /// Counting semaphore to limit concurrent leaf search split requests.
-    pub leaf_search_split_semaphore: Semaphore,
+    pub leaf_search_split_semaphore: Arc<Semaphore>,
     /// Split footer cache.
     pub split_footer_cache: MemorySizedCache<String>,
     /// Counting semaphore to limit concurrent split stream requests.
@@ -422,8 +422,9 @@ impl SearcherContext {
             capacity_in_bytes,
             &quickwit_storage::STORAGE_METRICS.split_footer_cache,
         );
-        let leaf_search_split_semaphore =
-            Semaphore::new(searcher_config.max_num_concurrent_split_searches);
+        let leaf_search_split_semaphore = Arc::new(Semaphore::new(
+            searcher_config.max_num_concurrent_split_searches,
+        ));
         let split_stream_semaphore =
             Semaphore::new(searcher_config.max_num_concurrent_split_streams);
         let fast_field_cache_capacity =
