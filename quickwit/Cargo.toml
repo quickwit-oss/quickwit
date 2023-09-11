@@ -180,7 +180,7 @@ tracing-subscriber = { version = "0.3.16", features = [
 ] }
 ttl_cache = "0.5"
 typetag = "0.2"
-ulid = "1.0"
+ulid = "1.1"
 username = "0.2"
 utoipa = "3.5.0"
 uuid = { version = "1.4", features = ["v4", "serde"] }
