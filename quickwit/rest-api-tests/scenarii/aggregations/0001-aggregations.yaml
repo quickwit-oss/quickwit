@@ -1,0 +1,151 @@
+# Test date histogram aggregation
+method: [GET]
+engines:
+  - quickwit
+endpoint: _elastic/aggregations/_search
+json:
+  query:
+    match_all: {}
+  aggs:
+    date_histo: 
+      date_histogram: 
+        field: "date"
+        fixed_interval: "30d"
+        offset: "-4d"
+expected:
+  aggregations:
+    date_histo:
+      buckets:
+        -  { "doc_count": 4, "key": 1420070400000.0, "key_as_string": "2015-01-01T00:00:00Z" }
+        -  { "doc_count": 2, "key": 1422662400000.0, "key_as_string": "2015-01-31T00:00:00Z" }
+--- 
+# Test date histogram aggregation and sub-aggregation 
+method: [GET]
+engines:
+  - quickwit
+endpoint: _elastic/aggregations/_search
+json:
+  query:
+    match_all: {}
+  aggs:
+    date_histo: 
+      date_histogram: 
+        field: "date"
+        fixed_interval: "30d"
+        offset: "-4d"
+      aggs:
+        response:
+          stats:
+            field: response
+expected:
+  aggregations:
+    date_histo:
+      buckets:
+        -  { "doc_count": 4, "key": 1420070400000.0, "key_as_string": "2015-01-01T00:00:00Z", "response": { "avg": 80.0, "count": 3, "max": 120.0, "min": 20.0, "sum": 240.0 } }
+        -  { "doc_count": 2, "key": 1422662400000.0, "key_as_string": "2015-01-31T00:00:00Z", "response": { "avg": 80.0, "count": 2, "max": 130.0, "min": 30.0, "sum": 160.0 }  }
+--- 
+# Test date histogram aggregation + exists and sub-aggregation 
+method: [GET]
+engines:
+  - quickwit
+endpoint: _elastic/aggregations/_search
+json:
+  query:
+    bool:
+      must:
+        - exists:
+            field: response
+  aggs:
+    date_histo: 
+      date_histogram: 
+        field: "date"
+        fixed_interval: "30d"
+        offset: "-4d"
+      aggs:
+        response:
+          stats:
+            field: response
+expected:
+  aggregations:
+    date_histo:
+      buckets:
+        -  { "doc_count": 3, "key": 1420070400000.0, "key_as_string": "2015-01-01T00:00:00Z", "response": { "avg": 80.0, "count": 3, "max": 120.0, "min": 20.0, "sum": 240.0 } }
+        -  { "doc_count": 2, "key": 1422662400000.0, "key_as_string": "2015-01-31T00:00:00Z", "response": { "avg": 80.0, "count": 2, "max": 130.0, "min": 30.0, "sum": 160.0 }  }
+--- 
+# Test term aggs
+method: [GET]
+engines:
+  - quickwit
+endpoint: _elastic/aggregations/_search
+json:
+  query:
+    match_all: {}
+  aggs:
+    hosts: 
+      terms: 
+        field: "host"
+    tags: 
+      terms: 
+        field: "tags"
+expected:
+  aggregations:
+    hosts:
+      buckets:
+      - doc_count: 3
+        key: 192.168.0.10
+      - doc_count: 2
+        key: 192.168.0.1
+      - doc_count: 1
+        key: 192.168.0.15
+      - doc_count: 1
+        key: 192.168.0.11
+      doc_count_error_upper_bound: 0
+      sum_other_doc_count: 0
+    tags:
+      buckets:
+      - doc_count: 4
+        key: nice
+      - doc_count: 2
+        key: cool
+      doc_count_error_upper_bound: 0
+      sum_other_doc_count: 0
+--- 
+# Test date histogram + percentiles sub-aggregation
+method: [GET]
+engines:
+  - quickwit
+endpoint: _elastic/aggregations/_search
+json:
+  query:
+    match_all: {}
+  aggs:
+    metrics:
+      date_histogram:
+        field: date
+        fixed_interval: 30d
+        offset: "-4d"
+      aggs:
+        response:
+          percentiles:
+            field: response
+            percents:
+            - 85
+            keyed: false
+expected:
+  aggregations:
+    metrics:
+      buckets:
+      - doc_count: 4
+        key: 1420070400000.0
+        key_as_string: '2015-01-01T00:00:00Z'
+        response:
+          values:
+          - key: 85.0
+            value: 100.49456770856702
+      - doc_count: 2
+        key: 1422662400000.0
+        key_as_string: '2015-01-31T00:00:00Z'
+        response:
+          values:
+          - key: 85.0
+            value: 30.26717133872237

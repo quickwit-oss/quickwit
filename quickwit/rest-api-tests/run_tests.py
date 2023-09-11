@@ -273,6 +273,7 @@ def filter_test(prefixes, test_name):
     return False
 
 def filter_tests(prefixes, test_names):
+    print("Filtering tests prefixes: %s" % prefixes)
     if prefixes is None or len(prefixes) == 0:
         return test_names
     return [
