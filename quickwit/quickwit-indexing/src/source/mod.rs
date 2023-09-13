@@ -351,6 +351,17 @@ pub async fn check_source_connectivity(source_config: &SourceConfig) -> anyhow::
                 Ok(())
             }
         }
+        #[allow(unused_variables)]
+        SourceParams::GcpPubSub(params) => {
+            #[cfg(not(feature = "gcp-pubsub"))]
+            bail!("Quickwit binary was not compiled with the `gcp-pubsub` feature.");
+
+            #[cfg(feature = "gcp-pubsub")]
+            {
+                gcp_pubsub_source::check_connectivity(params).await?;
+                Ok(())
+            }
+        }
         _ => Ok(()),
     }
 }
