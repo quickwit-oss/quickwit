@@ -17,7 +17,7 @@ runs:
       shell: bash
     - uses: actions/setup-node@v3
       with:
-        node-version: 16
+        node-version: 18
         cache: "yarn"
         cache-dependency-path: quickwit/quickwit-ui/yarn.lock
     - run: make build-ui
