@@ -7,7 +7,7 @@
 **/qwdata
 **/target
 docs
-examples
+distribution
 !.git/
 !quickwit-ui/build/.gitignore
 !quickwit-ui/.gitignore_for_build_directory

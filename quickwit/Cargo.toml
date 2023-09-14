@@ -19,6 +19,7 @@ members = [
   "quickwit-integration-tests",
   "quickwit-jaeger",
   "quickwit-janitor",
+  "quickwit-lambda",
   "quickwit-macros",
   "quickwit-macros/impl",
   "quickwit-metastore",
@@ -416,4 +417,3 @@ sasl2-sys = { git = "https://github.com/quickwit-oss/rust-sasl/", rev = "daca921
 #tracing-log = { git = "https://github.com/trinity-1686a/tracing.git", rev = "6806cac3" }
 #tracing-opentelemetry = { git = "https://github.com/trinity-1686a/tracing.git", rev = "6806cac3" }
 #tracing-subscriber = { git = "https://github.com/trinity-1686a/tracing.git", rev = "6806cac3" }
-

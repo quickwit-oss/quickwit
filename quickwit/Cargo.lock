@@ -3185,6 +3185,40 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d3c48237b9604c5a4702de6b824e02006c3214327564636aef27c1028a8fa0ed"
 
 [[package]]
+name = "lambda_runtime"
+version = "0.8.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8300e2e10ab2a49016584d9f248736a9da5ea819648df4c9d6c82fa2231fb510"
+dependencies = [
+ "async-stream",
+ "bytes",
+ "futures",
+ "http",
+ "http-serde",
+ "hyper",
+ "lambda_runtime_api_client",
+ "serde",
+ "serde_json",
+ "serde_path_to_error",
+ "tokio",
+ "tokio-stream",
+ "tower",
+ "tracing",
+]
+
+[[package]]
+name = "lambda_runtime_api_client"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "690c5ae01f3acac8c9c3348b556fc443054e9b7f1deaf53e9ebab716282bf0ed"
+dependencies = [
+ "http",
+ "hyper",
+ "tokio",
+ "tower-service",
+]
+
+[[package]]
 name = "lazy_static"
 version = "1.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5465,6 +5499,17 @@ dependencies = [
  "tracing",
  "ulid",
  "utoipa",
+]
+
+[[package]]
+name = "quickwit-lambda"
+version = "0.6.3"
+dependencies = [
+ "anyhow",
+ "lambda_runtime",
+ "quickwit-serve",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]
