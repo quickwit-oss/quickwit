@@ -59,12 +59,10 @@ doc_mapping:
       input_formats:
         - rfc3339
       precision: seconds
-
-indexing_settings:
   timestamp_field: created_at
 
-search_settings:
-  default_search_fields: []
+indexing_settings:
+  commit_timeout_secs: 10
 ```
 
 Execute these Bash commands to download the index config and create the `gh-archive` index:
