@@ -1679,7 +1679,7 @@ mod tests {
                 .to_string(),
             "internal error: failed to build list indexes query; cause: `index ID pattern \
              `*-index-*-&-last**` is invalid. patterns must match the following regular \
-             expression: `^[a-zA-Z\\*][a-zA-Z0-9-_\\.\\*]{0,254}$`.`"
+             expression: `^[a-zA-Z\\*][a-zA-Z0-9-_\\.\\*]{0,254}$``"
         );
     }
 }

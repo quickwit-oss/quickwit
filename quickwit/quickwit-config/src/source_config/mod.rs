@@ -1166,7 +1166,7 @@ mod tests {
                 timezone: "foo".to_string(),
             };
             let error = transform_config.compile_vrl_script().unwrap_err();
-            assert!(error.to_string().starts_with("Failed to parse timezone"));
+            assert!(error.to_string().starts_with("failed to parse timezone"));
         }
         {
             let transform_config = TransformConfig {
@@ -1174,7 +1174,7 @@ mod tests {
                 timezone: "Turkey".to_string(),
             };
             let error = transform_config.compile_vrl_script().unwrap_err();
-            assert!(error.to_string().starts_with("Failed to compile"));
+            assert!(error.to_string().starts_with("failed to compile"));
         }
     }
 
