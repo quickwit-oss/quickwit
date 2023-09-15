@@ -604,7 +604,12 @@ mod tests {
         metastore
             .expect_publish_splits()
             .withf(
-                |index_uid, splits, replaced_splits, checkpoint_delta_opt| -> bool {
+                |index_uid,
+                 splits,
+                 replaced_splits,
+                 checkpoint_delta_opt,
+                 _publish_token_opt|
+                 -> bool {
                     let checkpoint_delta = checkpoint_delta_opt.as_ref().unwrap();
                     index_uid.to_string() == "test-index:11111111111111111111111111"
                         && checkpoint_delta.source_id == "test-source"
@@ -614,7 +619,7 @@ mod tests {
                             .ends_with(":(00000000000000000000..00000000000000001030])")
                 },
             )
-            .returning(|_, _, _, _| Ok(()));
+            .returning(|_, _, _, _, _| Ok(()));
         let node_id = "test-node";
         let metastore = Arc::new(metastore);
         let pipeline_id = IndexingPipelineId {
@@ -698,7 +703,12 @@ mod tests {
         metastore
             .expect_publish_splits()
             .withf(
-                |index_uid, splits, replaced_split_ids, checkpoint_delta_opt| -> bool {
+                |index_uid,
+                 splits,
+                 replaced_split_ids,
+                 checkpoint_delta_opt,
+                 _publish_token_opt|
+                 -> bool {
                     let checkpoint_delta = checkpoint_delta_opt.as_ref().unwrap();
                     index_uid.to_string() == "test-index:11111111111111111111111111"
                         && splits.len() == 1
@@ -708,7 +718,7 @@ mod tests {
                             .ends_with(":(00000000000000000000..00000000000000001030])")
                 },
             )
-            .returning(|_, _, _, _| Ok(()));
+            .returning(|_, _, _, _, _| Ok(()));
         let universe = Universe::new();
         let node_id = "test-node";
         let metastore = Arc::new(metastore);
@@ -872,7 +882,12 @@ mod tests {
         metastore
             .expect_publish_splits()
             .withf(
-                |index_uid, splits, replaced_split_ids, checkpoint_delta_opt| -> bool {
+                |index_uid,
+                 splits,
+                 replaced_split_ids,
+                 checkpoint_delta_opt,
+                 _publish_token_opt|
+                 -> bool {
                     let checkpoint_delta = checkpoint_delta_opt.as_ref().unwrap();
                     index_uid.to_string() == "test-index:11111111111111111111111111"
                         && splits.is_empty()
@@ -882,7 +897,7 @@ mod tests {
                             .ends_with(":(00000000000000000000..00000000000000001030])")
                 },
             )
-            .returning(|_, _, _, _| Ok(()));
+            .returning(|_, _, _, _, _| Ok(()));
         let universe = Universe::new();
         let node_id = "test-node";
         let metastore = Arc::new(metastore);

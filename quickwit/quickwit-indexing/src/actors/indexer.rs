@@ -40,6 +40,7 @@ use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
 use quickwit_metastore::Metastore;
 use quickwit_proto::indexing::IndexingPipelineId;
+use quickwit_proto::PublishToken;
 use quickwit_query::get_quickwit_fastfield_normalizer_manager;
 use serde::Serialize;
 use tantivy::schema::Schema;
@@ -205,6 +206,7 @@ impl IndexerState {
             },
             indexing_permit,
             publish_lock: self.publish_lock.clone(),
+            publish_token_opt: None, // TODO: Get publish token from source (next PR)
             last_delete_opstamp,
             memory_usage: Byte::from_bytes(0),
         };
@@ -318,6 +320,7 @@ struct IndexingWorkbench {
     checkpoint_delta: IndexCheckpointDelta,
     indexing_permit: Option<OwnedSemaphorePermit>,
     publish_lock: PublishLock,
+    publish_token_opt: Option<PublishToken>,
     // On workbench creation, we fetch from the metastore the last delete task opstamp.
     // We use this value to set the `delete_opstamp` of the workbench splits.
     last_delete_opstamp: u64,
@@ -550,6 +553,7 @@ impl Indexer {
             other_indexed_split_opt,
             checkpoint_delta,
             publish_lock,
+            publish_token_opt,
             batch_parent_span,
             indexing_permit,
             ..
@@ -574,9 +578,10 @@ impl Indexer {
                     &self.index_serializer_mailbox,
                     EmptySplit {
                         index_uid: self.indexer_state.pipeline_id.index_uid.clone(),
-                        batch_parent_span,
                         checkpoint_delta,
                         publish_lock,
+                        publish_token_opt,
+                        batch_parent_span,
                     },
                 )
                 .await?;
@@ -589,11 +594,12 @@ impl Indexer {
         ctx.send_message(
             &self.index_serializer_mailbox,
             IndexedSplitBatchBuilder {
-                batch_parent_span,
                 splits,
-                checkpoint_delta: Some(checkpoint_delta),
+                checkpoint_delta_opt: Some(checkpoint_delta),
                 publish_lock,
+                publish_token_opt,
                 commit_trigger,
+                batch_parent_span,
             },
         )
         .await?;
@@ -771,7 +777,7 @@ mod tests {
         for split in batch.splits.iter() {
             assert_eq!(split.split_attrs.delete_opstamp, last_delete_opstamp);
         }
-        let index_checkpoint = batch.checkpoint_delta.unwrap();
+        let index_checkpoint = batch.checkpoint_delta_opt.unwrap();
         assert_eq!(index_checkpoint.source_id, "test-source");
         assert_eq!(
             index_checkpoint.source_delta,
@@ -1497,7 +1503,7 @@ mod tests {
         let mut metastore = MockMetastore::default();
         metastore
             .expect_publish_splits()
-            .returning(move |_, splits, _, _| {
+            .returning(move |_, splits, _, _, _| {
                 assert!(splits.is_empty());
                 Ok(())
             });

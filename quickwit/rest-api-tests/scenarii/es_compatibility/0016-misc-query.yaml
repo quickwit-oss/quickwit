@@ -87,7 +87,17 @@ json:
 expected:
   hits:
     total:
-      value: 60
+      value: 59  # There are actually 60 documents where this field is not empty, but one of them has a field longer than 255 chars
+---
+# test exists for a non-fast field
+json:
+  query:
+    exists:
+      field: public 
+expected:
+  hits:
+    total:
+      value: 100
 ---
 json:
   query:

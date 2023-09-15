@@ -128,11 +128,12 @@ impl Handler<MergeScratch> for MergeExecutor {
             ctx.send_message(
                 &self.merge_packager_mailbox,
                 IndexedSplitBatch {
-                    batch_parent_span: merge_op.merge_parent_span.clone(),
                     splits: vec![indexed_split],
-                    checkpoint_delta: Default::default(),
+                    checkpoint_delta_opt: Default::default(),
                     publish_lock: PublishLock::default(),
-                    merge_operation: Some(merge_op),
+                    publish_token_opt: None,
+                    batch_parent_span: merge_op.merge_parent_span.clone(),
+                    merge_operation_opt: Some(merge_op),
                 },
             )
             .await?;
@@ -715,6 +716,7 @@ mod tests {
                 index_uid.clone(),
                 &[new_split_metadata.split_id()],
                 &[split_metadata.split_id()],
+                None,
                 None,
             )
             .await

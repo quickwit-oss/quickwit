@@ -3,7 +3,7 @@
     {
       "create_timestamp": 0,
       "delete_query": {
-        "index_uid": "index:11111111111111111111111111",
+        "index_uid": "my-index:00000000000000000000000000",
         "query_ast": "{\"type\":\"bool\",\"must\":[{\"type\":\"full_text\",\"field\":\"body\",\"text\":\"Harry\",\"params\":{\"mode\":{\"type\":\"phrase_fallback_to_intersection\"}}},{\"type\":\"full_text\",\"field\":\"body\",\"text\":\"Potter\",\"params\":{\"mode\":{\"type\":\"phrase_fallback_to_intersection\"}}}]}"
       },
       "opstamp": 10
@@ -28,7 +28,6 @@
           "stored": true,
           "tokenizer": "raw"
         },
-        "index_field_presence": true,
         "field_mappings": [
           {
             "coerce": true,
@@ -73,6 +72,7 @@
             "type": "text"
           }
         ],
+        "index_field_presence": true,
         "max_num_partitions": 100,
         "mode": "dynamic",
         "partition_key": "tenant_id",
@@ -120,7 +120,7 @@
       },
       "version": "0.6"
     },
-    "index_uid": "test:11111111111111111111111111",
+    "index_uid": "my-index:00000000000000000000000000",
     "sources": [
       {
         "desired_num_pipelines": 2,
@@ -142,6 +142,21 @@
     ],
     "version": "0.6"
   },
+  "shards": {
+    "_ingest-source": {
+      "next_shard_id": 2,
+      "shards": [
+        {
+          "follower_id": "follower-ingester",
+          "index_uid": "my-index:00000000000000000000000000",
+          "leader_id": "leader-ingester",
+          "shard_id": 1,
+          "shard_state": 0,
+          "source_id": "_ingest-source"
+        }
+      ]
+    }
+  },
   "splits": [
     {
       "create_timestamp": 3,
@@ -150,7 +165,7 @@
         "end": 2000,
         "start": 1000
       },
-      "index_uid": "my-index:11111111111111111111111111",
+      "index_uid": "my-index:00000000000000000000000000",
       "maturity": {
         "maturation_period_millis": 4000,
         "type": "immature"

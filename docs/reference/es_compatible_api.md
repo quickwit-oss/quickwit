@@ -368,8 +368,35 @@ The following query types are supported.
 | `max_expansions`  |  `Integer` | Number of terms to be match by the prefix matching.               |  50     |
 | `slop`            | `Integer`  | Allows extra tokens between the query tokens.                    |  0      |
 | `analyzer`        | String     | Analyzer meant to cut the query into terms. It is recommended to NOT use this parameter. |  The actual field tokenizer.  |
-| `zero_terms_query`  |  `all` or `none` | Defines if all (`all`) or no documents (`none`) should be returned if the query does not contain any terms after tokenization. | `none` |
 
+
+
+
+### `match_bool_prefix`
+
+[Elasticsearch reference documentation](https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-match-query-phrase-prefix.html)
+
+#### Example
+
+```json
+{
+    "match_bool_prefix": {
+      "payload.commits.message": {
+        "query" : "automated comm" // This will match "automated commit" for instance.
+      }
+    }
+}
+```
+
+Contrary to ES/Opensearch, in Quickwit, at most 50 terms will be considered when searching the last term of the query as a prefix `match_bool_prefix`.
+
+#### Supported Parameters
+
+| Variable          | Type       | Description                                                      | Default |
+|-------------------|------------|------------------------------------------------------------------|---------|
+| `query`           | String     |  Full-text search query. The last token will be prefix-matched   | -       |
+| `operator`  | `"AND"` or `"OR"` | Defines whether all terms should be present (`AND`) or if at least one term is sufficient to match (`OR`).  | OR  |
+| `zero_terms_query`|  `all` or `none` | Defines if all (`all`) or no documents (`none`) should be returned if the query does not contain any terms after tokenization. | `none` |
 
 ### `term`
 

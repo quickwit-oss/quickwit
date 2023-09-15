@@ -23,17 +23,17 @@ use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_config::IndexConfig;
 use quickwit_proto::metastore::{
-    AddSourceRequest, CloseShardsRequest, CloseShardsResponse, CreateIndexRequest,
-    CreateIndexResponse, DeleteIndexRequest, DeleteQuery, DeleteShardsRequest,
-    DeleteShardsResponse, DeleteSourceRequest, DeleteSplitsRequest, DeleteTask, EmptyResponse,
-    IndexMetadataRequest, IndexMetadataResponse, LastDeleteOpstampRequest,
-    LastDeleteOpstampResponse, ListAllSplitsRequest, ListDeleteTasksRequest,
-    ListDeleteTasksResponse, ListIndexesMetadatasRequest, ListIndexesMetadatasResponse,
-    ListShardsRequest, ListShardsResponse, ListSplitsRequest, ListSplitsResponse,
-    ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError, MetastoreService,
-    OpenShardsRequest, OpenShardsResponse, PublishSplitsRequest, ResetSourceCheckpointRequest,
-    StageSplitsRequest, ToggleSourceRequest, UpdateSplitsDeleteOpstampRequest,
-    UpdateSplitsDeleteOpstampResponse,
+    serde_utils as metastore_serde_utils, AddSourceRequest, CloseShardsRequest,
+    CloseShardsResponse, CreateIndexRequest, CreateIndexResponse, DeleteIndexRequest, DeleteQuery,
+    DeleteShardsRequest, DeleteShardsResponse, DeleteSourceRequest, DeleteSplitsRequest,
+    DeleteTask, EmptyResponse, IndexMetadataRequest, IndexMetadataResponse,
+    LastDeleteOpstampRequest, LastDeleteOpstampResponse, ListAllSplitsRequest,
+    ListDeleteTasksRequest, ListDeleteTasksResponse, ListIndexesMetadatasRequest,
+    ListIndexesMetadatasResponse, ListShardsRequest, ListShardsResponse, ListSplitsRequest,
+    ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError,
+    MetastoreService, OpenShardsRequest, OpenShardsResponse, PublishSplitsRequest,
+    ResetSourceCheckpointRequest, StageSplitsRequest, ToggleSourceRequest,
+    UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
 };
 use quickwit_proto::tonic::{Request, Response, Status};
 use quickwit_proto::{set_parent_span_from_request_metadata, tonic};
@@ -224,13 +224,10 @@ impl MetastoreService for GrpcMetastoreAdapter {
             .map(|split_id| split_id.as_str())
             .collect_vec();
         let checkpoint_delta_opt = publish_request
-            .index_checkpoint_delta_serialized_json
-            .map(|json| serde_json::from_str(&json))
-            .transpose()
-            .map_err(|error| MetastoreError::JsonDeserializeError {
-                struct_name: "IndexCheckpointDelta".to_string(),
-                message: error.to_string(),
-            })?;
+            .index_checkpoint_delta_json_opt
+            .as_deref()
+            .map(metastore_serde_utils::from_json_str)
+            .transpose()?;
         let publish_splits_reply = self
             .0
             .publish_splits(
@@ -238,6 +235,7 @@ impl MetastoreService for GrpcMetastoreAdapter {
                 &split_ids,
                 &replaced_split_ids,
                 checkpoint_delta_opt,
+                publish_request.publish_token_opt,
             )
             .await
             .map(|_| EmptyResponse {})?;

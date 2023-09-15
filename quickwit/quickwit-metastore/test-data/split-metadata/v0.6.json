@@ -5,7 +5,7 @@
     "end": 2000,
     "start": 1000
   },
-  "index_uid": "my-index:11111111111111111111111111",
+  "index_uid": "my-index:00000000000000000000000000",
   "maturity": {
     "maturation_period_millis": 4000,
     "type": "immature"

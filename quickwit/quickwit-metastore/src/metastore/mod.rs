@@ -42,7 +42,7 @@ use quickwit_proto::metastore::{
     DeleteShardsResponse, DeleteTask, EntityKind, ListShardsRequest, ListShardsResponse,
     MetastoreError, MetastoreResult, OpenShardsRequest, OpenShardsResponse,
 };
-use quickwit_proto::IndexUid;
+use quickwit_proto::{IndexUid, PublishToken};
 use time::OffsetDateTime;
 
 use crate::checkpoint::IndexCheckpointDelta;
@@ -190,6 +190,7 @@ pub trait Metastore: fmt::Debug + Send + Sync + 'static {
         staged_split_ids: &[&'a str],
         replaced_split_ids: &[&'a str],
         checkpoint_delta_opt: Option<IndexCheckpointDelta>,
+        publish_token_opt: Option<PublishToken>,
     ) -> MetastoreResult<()>;
 
     /// Lists the splits.

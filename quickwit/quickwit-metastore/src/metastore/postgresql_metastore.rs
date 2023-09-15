@@ -36,7 +36,7 @@ use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_proto::metastore::{
     DeleteQuery, DeleteTask, EntityKind, MetastoreError, MetastoreResult,
 };
-use quickwit_proto::IndexUid;
+use quickwit_proto::{IndexUid, PublishToken};
 use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgDatabaseError, PgPoolOptions};
 use sqlx::{ConnectOptions, Pool, Postgres, Transaction};
@@ -638,6 +638,7 @@ impl Metastore for PostgresqlMetastore {
         staged_split_ids: &[&'a str],
         replaced_split_ids: &[&'a str],
         checkpoint_delta_opt: Option<IndexCheckpointDelta>,
+        _publish_token_opt: Option<PublishToken>,
     ) -> MetastoreResult<()> {
         run_with_tx!(self.connection_pool, tx, {
             let mut index_metadata = index_metadata(tx, index_uid.index_id()).await?;

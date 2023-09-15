@@ -84,9 +84,26 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "DeleteQuery.end_timestamp",
             "#[serde(skip_serializing_if = \"Option::is_none\")]",
         )
+        .field_attribute(
+            "Shard.follower_id",
+            "#[serde(default, skip_serializing_if = \"Option::is_none\")]",
+        )
+        .field_attribute(
+            "Shard.publish_position_inclusive",
+            "#[serde(default, skip_serializing_if = \"String::is_empty\")]",
+        )
+        .field_attribute(
+            "Shard.publish_token",
+            "#[serde(default, skip_serializing_if = \"Option::is_none\")]",
+        )
+        .field_attribute(
+            "Shard.replication_position_inclusive",
+            "#[serde(default, skip_serializing_if = \"Option::is_none\")]",
+        )
         .type_attribute(".", "#[derive(Serialize, Deserialize, utoipa::ToSchema)]")
         .type_attribute("PartialHit.sort_value", "#[derive(Copy)]")
         .type_attribute("SearchRequest", "#[derive(Eq, Hash)]")
+        .type_attribute("Shard", "#[derive(Eq)]")
         .type_attribute("SortByValue", "#[derive(Ord, PartialOrd)]")
         .type_attribute("SortField", "#[derive(Eq, Hash)]")
         .out_dir("src/codegen/quickwit")

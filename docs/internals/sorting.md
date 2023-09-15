@@ -5,8 +5,6 @@ Quickwit can sort results based on fastfield values or score. This document disc
 It also tries to describe optimizations that may be enabled (but are not necessarily implemente)
 by this behavior.
 
-Described below is the target behavior, which is *not* implemented right now, but will be shortly.
-
 ## Behavior
 
 Sorting is controlled by the `sort_by` query parameter. It accepts a comma separated list of fields
@@ -32,8 +30,6 @@ TODO we could also say "it's not sorted" and add a special `_doc_id` for that. S
 
 # Code
 
-(The changes described here are currently part of quickwit#3545, which is an optimization PR. They
-*should* be backported to a standalone PR to ease review and discussion).
 A new structure TopK is introduced which is used both for in-split sorting and for merging of
 results. It reduces the risks of inconsistencies between in-split and between-split behavior.
 `SortOrder` gets new `compare` and `compare_opt` method which can be used to compare two values with

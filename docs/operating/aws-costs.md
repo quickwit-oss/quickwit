@@ -5,6 +5,10 @@ sidebar_position: 3
 
 Quickwit has been tested on Amazon S3. This page sums up what we have learned from that experience.
 
+## Real World Example
+In this [blog post](https://quickwit.io/blog/benchmarking-quickwit-engine-on-an-adversarial-dataset#indexing-costs), we indexed 23 TB of data and evaluated performance and costs.
+You may be able to deduce the costs of indexing and querying on your dataset.
+
 ## Data transfers costs and latency
 
 Cloud providers charge for data transfers in and out of their networks. In addition, querying an index from a remote machine adds some extra latency.
