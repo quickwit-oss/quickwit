@@ -263,22 +263,27 @@ pub type IngesterServiceStream<T> = quickwit_common::ServiceStream<
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait::async_trait]
 pub trait IngesterService: std::fmt::Debug + dyn_clone::DynClone + Send + Sync + 'static {
+    /// Persists batches of documents to primary shards owned by a leader.
     async fn persist(
         &mut self,
         request: PersistRequest,
     ) -> crate::ingest::IngestV2Result<PersistResponse>;
+    /// Opens a replication stream from a leader to a follower.
     async fn open_replication_stream(
         &mut self,
         request: quickwit_common::ServiceStream<SynReplicationMessage>,
     ) -> crate::ingest::IngestV2Result<IngesterServiceStream<AckReplicationMessage>>;
+    /// Streams records from a leader or a follower. The client can optionally specify a range of positions to fetch.
     async fn open_fetch_stream(
         &mut self,
         request: OpenFetchStreamRequest,
     ) -> crate::ingest::IngestV2Result<IngesterServiceStream<FetchResponseV2>>;
+    /// Pings an ingester to check if it is ready to host shards and serve requests.
     async fn ping(
         &mut self,
         request: PingRequest,
     ) -> crate::ingest::IngestV2Result<PingResponse>;
+    /// Truncates the shards at the given positions. Indexers should call this RPC on leaders, which will replicate the request to followers.
     async fn truncate(
         &mut self,
         request: TruncateRequest,

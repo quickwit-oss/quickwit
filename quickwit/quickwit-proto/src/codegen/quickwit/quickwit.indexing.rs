@@ -9,13 +9,13 @@ pub struct ApplyIndexingPlanRequest {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IndexingTask {
-    /// / The tasks's index UID.
+    /// The tasks's index UID.
     #[prost(string, tag = "1")]
     pub index_uid: ::prost::alloc::string::String,
-    /// / The task's source ID.
+    /// The task's source ID.
     #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,
-    /// / The shards assigned to the indexer.
+    /// The shards assigned to the indexer.
     #[prost(uint64, repeated, tag = "3")]
     pub shard_ids: ::prost::alloc::vec::Vec<u64>,
 }
@@ -28,6 +28,7 @@ use tower::{Layer, Service, ServiceExt};
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait::async_trait]
 pub trait IndexingService: std::fmt::Debug + dyn_clone::DynClone + Send + Sync + 'static {
+    /// Apply an indexing plan on the node.
     async fn apply_indexing_plan(
         &mut self,
         request: ApplyIndexingPlanRequest,
@@ -500,7 +501,7 @@ pub mod indexing_service_grpc_client {
             self.inner = self.inner.max_encoding_message_size(limit);
             self
         }
-        /// / Apply an indexing plan on the node.
+        /// Apply an indexing plan on the node.
         pub async fn apply_indexing_plan(
             &mut self,
             request: impl tonic::IntoRequest<super::ApplyIndexingPlanRequest>,
@@ -540,7 +541,7 @@ pub mod indexing_service_grpc_server {
     /// Generated trait containing gRPC methods that should be implemented for use with IndexingServiceGrpcServer.
     #[async_trait]
     pub trait IndexingServiceGrpc: Send + Sync + 'static {
-        /// / Apply an indexing plan on the node.
+        /// Apply an indexing plan on the node.
         async fn apply_indexing_plan(
             &self,
             request: tonic::Request<super::ApplyIndexingPlanRequest>,

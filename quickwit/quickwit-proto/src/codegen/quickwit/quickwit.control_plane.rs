@@ -74,26 +74,33 @@ use tower::{Layer, Service, ServiceExt};
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait::async_trait]
 pub trait ControlPlaneService: std::fmt::Debug + dyn_clone::DynClone + Send + Sync + 'static {
+    /// Creates a new index.
     async fn create_index(
         &mut self,
         request: super::metastore::CreateIndexRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::CreateIndexResponse>;
+    /// Deletes an index.
     async fn delete_index(
         &mut self,
         request: super::metastore::DeleteIndexRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse>;
+    /// Adds a source to an index.
     async fn add_source(
         &mut self,
         request: super::metastore::AddSourceRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse>;
+    /// Enables or disables a source.
     async fn toggle_source(
         &mut self,
         request: super::metastore::ToggleSourceRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse>;
+    /// Removes a source from an index.
     async fn delete_source(
         &mut self,
         request: super::metastore::DeleteSourceRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse>;
+    /// Returns the list of open shards for one or several sources. If the control plane is not able to find any
+    /// for a source, it will pick a pair of leader-follower ingesters and will open a new shard.
     async fn get_open_shards(
         &mut self,
         request: GetOpenShardsRequest,
@@ -102,6 +109,12 @@ pub trait ControlPlaneService: std::fmt::Debug + dyn_clone::DynClone + Send + Sy
         &mut self,
         request: CloseShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<CloseShardsResponse>;
+    /// Notify the Control Plane that a change on an index occurred. The change
+    /// can be an index creation, deletion, or update that includes a source creation/deletion/num pipeline update.
+    /// Note(fmassot): it's not very clear for a user to know which change triggers a control plane notification.
+    /// This can be explicited in the attributes of `NotifyIndexChangeRequest` with an enum that describes the
+    /// type of change. The index ID and/or source ID could also be added.
+    /// However, these attributes will not be used by the Control Plane, at least at short term.
     async fn notify_index_change(
         &mut self,
         request: NotifyIndexChangeRequest,
@@ -1581,8 +1594,8 @@ pub mod control_plane_service_grpc_client {
                 );
             self.inner.unary(req, path, codec).await
         }
-        /// / Returns the list of open shards for one or several sources. If the control plane is not able to find any
-        /// / for a source, it will pick a pair of leader-follower ingesters and will open a new shard.
+        /// Returns the list of open shards for one or several sources. If the control plane is not able to find any
+        /// for a source, it will pick a pair of leader-follower ingesters and will open a new shard.
         pub async fn get_open_shards(
             &mut self,
             request: impl tonic::IntoRequest<super::GetOpenShardsRequest>,
@@ -1643,8 +1656,8 @@ pub mod control_plane_service_grpc_client {
                 );
             self.inner.unary(req, path, codec).await
         }
-        /// / Notify the Control Plane that a change on an index occurred. The change
-        /// / can be an index creation, deletion, or update that includes a source creation/deletion/num pipeline update.
+        /// Notify the Control Plane that a change on an index occurred. The change
+        /// can be an index creation, deletion, or update that includes a source creation/deletion/num pipeline update.
         /// Note(fmassot): it's not very clear for a user to know which change triggers a control plane notification.
         /// This can be explicited in the attributes of `NotifyIndexChangeRequest` with an enum that describes the
         /// type of change. The index ID and/or source ID could also be added.
@@ -1728,8 +1741,8 @@ pub mod control_plane_service_grpc_server {
             tonic::Response<super::super::metastore::EmptyResponse>,
             tonic::Status,
         >;
-        /// / Returns the list of open shards for one or several sources. If the control plane is not able to find any
-        /// / for a source, it will pick a pair of leader-follower ingesters and will open a new shard.
+        /// Returns the list of open shards for one or several sources. If the control plane is not able to find any
+        /// for a source, it will pick a pair of leader-follower ingesters and will open a new shard.
         async fn get_open_shards(
             &self,
             request: tonic::Request<super::GetOpenShardsRequest>,
@@ -1744,8 +1757,8 @@ pub mod control_plane_service_grpc_server {
             tonic::Response<super::CloseShardsResponse>,
             tonic::Status,
         >;
-        /// / Notify the Control Plane that a change on an index occurred. The change
-        /// / can be an index creation, deletion, or update that includes a source creation/deletion/num pipeline update.
+        /// Notify the Control Plane that a change on an index occurred. The change
+        /// can be an index creation, deletion, or update that includes a source creation/deletion/num pipeline update.
         /// Note(fmassot): it's not very clear for a user to know which change triggers a control plane notification.
         /// This can be explicited in the attributes of `NotifyIndexChangeRequest` with an enum that describes the
         /// type of change. The index ID and/or source ID could also be added.
