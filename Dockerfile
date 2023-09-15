@@ -1,4 +1,14 @@
-FROM rust:bullseye AS builder
+FROM node:18 as ui-builder
+
+COPY quickwit/quickwit-ui /quickwit/quickwit-ui
+
+WORKDIR /quickwit/quickwit-ui
+
+RUN touch .gitignore_for_build_directory \
+    && make install build
+
+
+FROM rust:bullseye AS bin-builder
 
 ARG CARGO_FEATURES=release-feature-set
 ARG CARGO_PROFILE=release
@@ -10,43 +20,21 @@ ENV QW_COMMIT_DATE=$QW_COMMIT_DATE
 ENV QW_COMMIT_HASH=$QW_COMMIT_HASH
 ENV QW_COMMIT_TAGS=$QW_COMMIT_TAGS
 
-
 RUN apt-get -y update \
     && apt-get -y install ca-certificates \
                           clang \
                           cmake \
-                          curl \
-                          gnupg \
                           libssl-dev \
                           llvm \
                           protobuf-compiler \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Node.js
-RUN mkdir -p /etc/apt/keyrings \
-    && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
-        | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
-    && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_16.x nodistro main" \
-        | tee /etc/apt/sources.list.d/nodesource.list \
-    && apt-get update \
-    && apt-get -y install nodejs \
-    && rm -rf /var/lib/apt/lists/*
-
 # Required by tonic
 RUN rustup component add rustfmt
 
-# Build UI
-COPY quickwit/quickwit-ui /quickwit/quickwit-ui
-
-WORKDIR /quickwit/quickwit-ui
-
-RUN echo "Building Quickwit UI" \
-    && touch .gitignore_for_build_directory \
-    && npm install --location=global yarn \
-    && make install build
-
-# Build workspace
 COPY quickwit /quickwit
+COPY config/quickwit.yaml /quickwit/config/quickwit.yaml
+COPY --from=ui-builder /quickwit/quickwit-ui/build /quickwit/quickwit-ui/build
 
 WORKDIR /quickwit
 
@@ -57,8 +45,6 @@ RUN echo "Building workspace with feature(s) '$CARGO_FEATURES' and profile '$CAR
     && echo "Copying binaries to /quickwit/bin" \
     && mkdir -p /quickwit/bin \
     && find target/$CARGO_PROFILE -maxdepth 1 -perm /a+x -type f -exec mv {} /quickwit/bin \;
-
-COPY config/quickwit.yaml /quickwit/config/quickwit.yaml
 
 
 FROM debian:bullseye-slim AS quickwit
@@ -75,8 +61,8 @@ RUN apt-get -y update \
 
 WORKDIR /quickwit
 RUN mkdir config qwdata
-COPY --from=builder /quickwit/bin/quickwit /usr/local/bin/quickwit
-COPY --from=builder /quickwit/config/quickwit.yaml /quickwit/config/quickwit.yaml
+COPY --from=bin-builder /quickwit/bin/quickwit /usr/local/bin/quickwit
+COPY --from=bin-builder /quickwit/config/quickwit.yaml /quickwit/config/quickwit.yaml
 
 ENV QW_CONFIG=/quickwit/config/quickwit.yaml
 ENV QW_DATA_DIR=/quickwit/qwdata
