@@ -91,7 +91,7 @@ impl TryFrom<IndexMetadataV0_6> for IndexMetadata {
         let mut sources: HashMap<String, SourceConfig> = Default::default();
         for source in v0_6.sources {
             if sources.contains_key(&source.source_id) {
-                anyhow::bail!("Source `{}` is defined more than once", source.source_id);
+                anyhow::bail!("source `{}` is defined more than once", source.source_id);
             }
             sources.insert(source.source_id.clone(), source);
         }

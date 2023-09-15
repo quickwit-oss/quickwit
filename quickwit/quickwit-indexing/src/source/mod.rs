@@ -313,7 +313,7 @@ pub async fn check_source_connectivity(source_config: &SourceConfig) -> anyhow::
         SourceParams::File(params) => {
             if let Some(filepath) = &params.filepath {
                 if !Path::new(filepath).try_exists()? {
-                    bail!("File `{}` does not exist.", filepath.display())
+                    bail!("file `{}` does not exist", filepath.display())
                 }
             }
             Ok(())
@@ -321,7 +321,7 @@ pub async fn check_source_connectivity(source_config: &SourceConfig) -> anyhow::
         #[allow(unused_variables)]
         SourceParams::Kafka(params) => {
             #[cfg(not(feature = "kafka"))]
-            bail!("Quickwit binary was not compiled with the `kafka` feature.");
+            bail!("Quickwit binary was not compiled with the `kafka` feature");
 
             #[cfg(feature = "kafka")]
             {
@@ -332,7 +332,7 @@ pub async fn check_source_connectivity(source_config: &SourceConfig) -> anyhow::
         #[allow(unused_variables)]
         SourceParams::Kinesis(params) => {
             #[cfg(not(feature = "kinesis"))]
-            bail!("Quickwit binary was not compiled with the `kinesis` feature.");
+            bail!("Quickwit binary was not compiled with the `kinesis` feature");
 
             #[cfg(feature = "kinesis")]
             {
@@ -343,7 +343,7 @@ pub async fn check_source_connectivity(source_config: &SourceConfig) -> anyhow::
         #[allow(unused_variables)]
         SourceParams::Pulsar(params) => {
             #[cfg(not(feature = "pulsar"))]
-            bail!("Quickwit binary was not compiled with the `pulsar` feature.");
+            bail!("Quickwit binary was not compiled with the `pulsar` feature");
 
             #[cfg(feature = "pulsar")]
             {

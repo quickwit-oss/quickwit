@@ -337,13 +337,13 @@ mod test {
             (Err(query_err_msg), TestExpectation::Err(sub_str)) => {
                 assert!(
                     query_err_msg.contains(sub_str),
-                    "Query error received is {query_err_msg}. It should contain {sub_str}"
+                    "query error received is {query_err_msg}. it should contain {sub_str}"
                 );
             }
             (Ok(query_str), TestExpectation::Ok(sub_str)) => {
                 assert!(
                     query_str.contains(sub_str),
-                    "Error query parsing {query_str} should contain {sub_str}"
+                    "error query parsing {query_str} should contain {sub_str}"
                 );
             }
             (Err(error_msg), TestExpectation::Ok(expectation)) => {
@@ -374,14 +374,14 @@ mod test {
             "title:[a TO b]",
             Vec::new(),
             TestExpectation::Err(
-                "Range queries are only supported for fast fields. (`title` is not a fast field)",
+                "range queries are only supported for fast fields. (`title` is not a fast field)",
             ),
         );
         check_build_query_dynamic_mode(
             "title:{a TO b} desc:foo",
             Vec::new(),
             TestExpectation::Err(
-                "Range queries are only supported for fast fields. (`title` is not a fast field)",
+                "range queries are only supported for fast fields. (`title` is not a fast field)",
             ),
         );
     }
@@ -392,7 +392,7 @@ mod test {
         check_build_query_static_mode(
             "foo:bar",
             Vec::new(),
-            TestExpectation::Err("Invalid query: Field does not exist: `foo`"),
+            TestExpectation::Err("invalid query: field does not exist: `foo`"),
         );
         check_build_query_static_mode(
             "title:bar",
@@ -402,27 +402,27 @@ mod test {
         check_build_query_static_mode(
             "bar",
             vec!["fieldnotinschema".to_string()],
-            TestExpectation::Err("Invalid query: Field does not exist: `fieldnotinschema`"),
+            TestExpectation::Err("invalid query: field does not exist: `fieldnotinschema`"),
         );
         check_build_query_static_mode(
             "title:[a TO b]",
             Vec::new(),
             TestExpectation::Err(
-                "Range queries are only supported for fast fields. (`title` is not a fast field)",
+                "range queries are only supported for fast fields. (`title` is not a fast field)",
             ),
         );
         check_build_query_static_mode(
             "title:{a TO b} desc:foo",
             Vec::new(),
             TestExpectation::Err(
-                "Range queries are only supported for fast fields. (`title` is not a fast field)",
+                "range queries are only supported for fast fields. (`title` is not a fast field)",
             ),
         );
         check_build_query_static_mode(
             "title:>foo",
             Vec::new(),
             TestExpectation::Err(
-                "Range queries are only supported for fast fields. (`title` is not a fast field)",
+                "range queries are only supported for fast fields. (`title` is not a fast field)",
             ),
         );
         check_build_query_static_mode(
@@ -443,17 +443,17 @@ mod test {
         check_build_query_static_mode(
             "foo",
             Vec::new(),
-            TestExpectation::Err("Query requires a default search field and none was supplied."),
+            TestExpectation::Err("query requires a default search field and none was supplied"),
         );
         check_build_query_static_mode(
             "bar",
             Vec::new(),
-            TestExpectation::Err("Query requires a default search field and none was supplied"),
+            TestExpectation::Err("query requires a default search field and none was supplied"),
         );
         check_build_query_static_mode(
             "title:hello AND (Jane OR desc:world)",
             Vec::new(),
-            TestExpectation::Err("Query requires a default search field and none was supplied"),
+            TestExpectation::Err("query requires a default search field and none was supplied"),
         );
         check_build_query_static_mode(
             "server.running:true",
@@ -468,7 +468,7 @@ mod test {
         check_build_query_static_mode(
             "IN [hello]",
             Vec::new(),
-            TestExpectation::Err("Set query need to target a specific field."),
+            TestExpectation::Err("set query need to target a specific field"),
         );
     }
 
@@ -580,7 +580,7 @@ mod test {
         check_build_query_static_mode(
             "server.running:notabool",
             Vec::new(),
-            TestExpectation::Err("Expected a `bool` search value for field `server.running`"),
+            TestExpectation::Err("expected a `bool` search value for field `server.running`"),
         );
     }
 

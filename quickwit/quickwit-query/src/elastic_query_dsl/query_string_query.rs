@@ -50,7 +50,7 @@ pub(crate) struct QueryStringQuery {
 impl ConvertableToQueryAst for QueryStringQuery {
     fn convert_to_query_ast(self) -> anyhow::Result<crate::query_ast::QueryAst> {
         if self.default_field.is_some() && self.fields.is_some() {
-            anyhow::bail!("Fields and default_field cannot be both set in `query_string` queries.");
+            anyhow::bail!("fields and default_field cannot be both set in `query_string` queries");
         }
         let default_fields: Option<Vec<String>> = self
             .default_field

@@ -117,25 +117,25 @@ fn validate_timestamp_field(
     mapping_root_node: &MappingNode,
 ) -> anyhow::Result<()> {
     if timestamp_field_path.starts_with('.') || timestamp_field_path.starts_with("\\.") {
-        bail!("Timestamp field `{timestamp_field_path}` should not start with a `.`.");
+        bail!("timestamp field `{timestamp_field_path}` should not start with a `.`");
     }
     if timestamp_field_path.ends_with('.') {
-        bail!("Timestamp field `{timestamp_field_path}` should not end with a `.`.");
+        bail!("timestamp field `{timestamp_field_path}` should not end with a `.`");
     }
     let Some(timestamp_field_type) =
         mapping_root_node.find_field_mapping_type(timestamp_field_path)
     else {
-        bail!("Could not find timestamp field `{timestamp_field_path}` in field mappings.");
+        bail!("could not find timestamp field `{timestamp_field_path}` in field mappings");
     };
     if let FieldMappingType::DateTime(date_time_option, cardinality) = &timestamp_field_type {
         if cardinality != &Cardinality::SingleValue {
-            bail!("Timestamp field `{timestamp_field_path}` should be single-valued.");
+            bail!("timestamp field `{timestamp_field_path}` should be single-valued");
         }
         if !date_time_option.fast {
-            bail!("Timestamp field `{timestamp_field_path}` should be a fast field.");
+            bail!("timestamp field `{timestamp_field_path}` should be a fast field");
         }
     } else {
-        bail!("Timestamp field `{timestamp_field_path}` should be a datetime field.");
+        bail!("timestamp field `{timestamp_field_path}` should be a datetime field");
     }
     Ok(())
 }
@@ -173,7 +173,7 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
         for tokenizer_config_entry in builder.tokenizers.iter() {
             if custom_tokenizer_names.contains(&tokenizer_config_entry.name) {
                 bail!(
-                    "Duplicated custom tokenizer: `{}`",
+                    "duplicated custom tokenizer: `{}`",
                     tokenizer_config_entry.name
                 );
             }
@@ -182,8 +182,8 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
                 .is_some()
             {
                 bail!(
-                    "Custom tokenizer name `{}` should be different from built-in tokenizer's \
-                     names.",
+                    "custom tokenizer name `{}` should be different from built-in tokenizer's \
+                     names",
                     tokenizer_config_entry.name
                 );
             }
@@ -192,7 +192,7 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
                 .text_analyzer()
                 .map_err(|error| {
                     anyhow::anyhow!(
-                        "Failed to build tokenizer `{}`: {:?}",
+                        "failed to build tokenizer `{}`: {:?}",
                         tokenizer_config_entry.name,
                         error
                     )
@@ -207,7 +207,7 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
         for default_search_field_name in &builder.default_search_fields {
             if default_search_field_names.contains(default_search_field_name) {
                 bail!(
-                    "Duplicated default search field: `{}`",
+                    "duplicated default search field: `{}`",
                     default_search_field_name
                 )
             }
@@ -218,7 +218,7 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
                     format!("Unknown default search field: `{default_search_field_name}`")
                 })?;
             if !schema.get_field_entry(default_search_field).is_indexed() {
-                bail!("Default search field `{default_search_field_name}` is not indexed.",);
+                bail!("default search field `{default_search_field_name}` is not indexed",);
             }
             default_search_field_names.push(default_search_field_name.clone());
         }
@@ -231,7 +231,7 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
 
         let partition_key_expr: &str = builder.partition_key.as_deref().unwrap_or("");
         let partition_key = RoutingExpr::new(partition_key_expr).with_context(|| {
-            format!("Failed to interpret the partition key: `{partition_key_expr}`")
+            format!("failed to interpret the partition key: `{partition_key_expr}`")
         })?;
 
         // If valid, partition key fields should be considered as tags.
@@ -269,14 +269,14 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
 /// - the field must be indexed.
 fn validate_tag(tag_field_name: &str, schema: &Schema) -> Result<(), anyhow::Error> {
     if tag_field_name.starts_with('.') || tag_field_name.starts_with("\\.") {
-        bail!("Tag field `{tag_field_name}` should not start with a `.`.");
+        bail!("tag field `{tag_field_name}` should not start with a `.`");
     }
     if tag_field_name.ends_with('.') {
-        bail!("Tag field `{tag_field_name}` should not end with a `.`.");
+        bail!("tag field `{tag_field_name}` should not end with a `.`");
     }
     let field = schema
         .get_field(tag_field_name)
-        .with_context(|| format!("Unknown tag field: `{tag_field_name}`"))?;
+        .with_context(|| format!("unknown tag field: `{tag_field_name}`"))?;
     let field_type = schema.get_field_entry(field).field_type();
     match field_type {
         FieldType::Str(options) => {
@@ -284,7 +284,7 @@ fn validate_tag(tag_field_name: &str, schema: &Schema) -> Result<(), anyhow::Err
                 .get_indexing_options()
                 .map(|text_options: &tantivy::schema::TextFieldIndexing| text_options.tokenizer());
             if tokenizer_opt != Some(RAW_TOKENIZER_NAME) {
-                bail!("Tags collection is only allowed on text fields with the `raw` tokenizer.");
+                bail!("tags collection is only allowed on text fields with the `raw` tokenizer");
             }
         }
         FieldType::U64(_) | FieldType::I64(_) => {
@@ -299,14 +299,14 @@ fn validate_tag(tag_field_name: &str, schema: &Schema) -> Result<(), anyhow::Err
             // avoid a "ZRP because you searched you searched for 0.100 instead of 0.1",
             // or `myflag:1`, `myflag:True` instead of `myflag:true`.
             bail!(
-                "Tags collection is not allowed on `{}` fields.",
+                "tags collection is not allowed on `{}` fields",
                 field_type.value_type().name().to_lowercase()
             )
         }
     }
     if !field_type.is_indexed() {
         bail!(
-            "Tag fields are required to be indexed. (`{}` is not configured as indexed).",
+            "tag fields are required to be indexed. (`{}` is not configured as indexed)",
             tag_field_name
         )
     }
@@ -331,7 +331,7 @@ fn validate_fields_tokenizers(
         if let Some(tokenizer_name) = tokenizer_name_opt {
             if tokenizer_manager.get(tokenizer_name).is_none() {
                 bail!(
-                    "Unknown tokenizer `{}` for field `{}`.",
+                    "unknown tokenizer `{}` for field `{}`",
                     tokenizer_name,
                     field_entry.name()
                 );
@@ -392,13 +392,13 @@ fn extract_single_obj(
     };
     if values.len() > 1 {
         bail!(
-            "Invalid named document. There are more than 1 value associated to the `{key}` field."
+            "invalid named document. there are more than 1 value associated to the `{key}` field"
         );
     }
     match values.pop() {
         Some(TantivyValue::JsonObject(dynamic_json_obj)) => Ok(Some(dynamic_json_obj)),
         Some(_) => {
-            bail!("The `{key}` value has to be a json object.");
+            bail!("the `{key}` value has to be a json object");
         }
         None => Ok(None),
     }
@@ -769,7 +769,7 @@ mod tests {
             error,
             DocParsingError::ValueError(
                 "body".to_owned(),
-                "Expected JSON string, got `1`.".to_owned()
+                "expected JSON string, got `1`".to_owned()
             )
         );
         Ok(())
@@ -857,7 +857,7 @@ mod tests {
             )
             .unwrap_err()
             .to_string(),
-            "Timestamp field `.my.timestamp` should not start with a `.`.",
+            "timestamp field `.my.timestamp` should not start with a `.`",
         );
 
         assert_eq!(
@@ -875,7 +875,7 @@ mod tests {
             )
             .unwrap_err()
             .to_string(),
-            "Timestamp field `\\.my\\.timestamp` should not start with a `.`.",
+            "timestamp field `\\.my\\.timestamp` should not start with a `.`",
         )
     }
 
@@ -889,7 +889,7 @@ mod tests {
             )
             .unwrap_err()
             .to_string(),
-            "Timestamp field `my.timestamp.` should not end with a `.`.",
+            "timestamp field `my.timestamp.` should not end with a `.`",
         );
 
         assert_eq!(
@@ -900,7 +900,7 @@ mod tests {
             )
             .unwrap_err()
             .to_string(),
-            "Timestamp field `my\\.timestamp\\.` should not end with a `.`.",
+            "timestamp field `my\\.timestamp\\.` should not end with a `.`",
         )
     }
 
@@ -914,7 +914,7 @@ mod tests {
             )
             .unwrap_err()
             .to_string(),
-            "Tag field `.my.tag` should not start with a `.`.",
+            "tag field `.my.tag` should not start with a `.`",
         );
 
         assert_eq!(
@@ -925,7 +925,7 @@ mod tests {
             )
             .unwrap_err()
             .to_string(),
-            "Tag field `\\.my\\.tag` should not start with a `.`.",
+            "tag field `\\.my\\.tag` should not start with a `.`",
         )
     }
 
@@ -939,7 +939,7 @@ mod tests {
             )
             .unwrap_err()
             .to_string(),
-            "Tag field `my.tag.` should not end with a `.`.",
+            "tag field `my.tag.` should not end with a `.`",
         );
 
         assert_eq!(
@@ -950,7 +950,7 @@ mod tests {
             )
             .unwrap_err()
             .to_string(),
-            "Tag field `my\\.tag\\.` should not end with a `.`.",
+            "tag field `my\\.tag\\.` should not end with a `.`",
         )
     }
 
@@ -967,7 +967,7 @@ mod tests {
             ]
         }"#;
         let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper).unwrap();
-        let expected_msg = "Timestamp field `timestamp` should be a datetime field.";
+        let expected_msg = "timestamp field `timestamp` should be a datetime field";
         assert_eq!(&builder.try_build().unwrap_err().to_string(), &expected_msg);
     }
 
@@ -986,7 +986,7 @@ mod tests {
             ]
         }"#;
         let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper).unwrap();
-        let expected_msg = "Timestamp field `timestamp` should be a fast field.";
+        let expected_msg = "timestamp field `timestamp` should be a fast field";
         assert_eq!(&builder.try_build().unwrap_err().to_string(), &expected_msg);
     }
 
@@ -1000,7 +1000,7 @@ mod tests {
                 ]
             }"#;
             let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper).unwrap();
-            let expected_msg = "Duplicated field definition `body`.";
+            let expected_msg = "duplicated field definition `body`";
             assert_eq!(&builder.try_build().unwrap_err().to_string(), expected_msg);
         }
 
@@ -1019,7 +1019,7 @@ mod tests {
                 ]
             }"#;
             let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper).unwrap();
-            let expected_msg = "Duplicated field definition `username`.";
+            let expected_msg = "duplicated field definition `username`";
             assert_eq!(&builder.try_build().unwrap_err().to_string(), expected_msg);
         }
     }
@@ -1059,7 +1059,7 @@ mod tests {
         }"#;
 
         let builder = serde_json::from_str::<DefaultDocMapperBuilder>(doc_mapper).unwrap();
-        let expected_msg = "Timestamp field `timestamp` should be single-valued.";
+        let expected_msg = "timestamp field `timestamp` should be single-valued";
         assert_eq!(&builder.try_build().unwrap_err().to_string(), expected_msg);
     }
 
@@ -1080,7 +1080,7 @@ mod tests {
             .unwrap();
         assert!(deser_err
             .to_string()
-            .contains("The following fields are reserved for Quickwit internal usage"));
+            .contains("the following fields are reserved for Quickwit internal usage"));
     }
 
     #[test]
@@ -1104,7 +1104,7 @@ mod tests {
             "image": "invalid base64 data"
         }"#,
         );
-        let expected_msg = "The field `image` could not be parsed: Expected base64 string, got \
+        let expected_msg = "the field `image` could not be parsed: expected base64 string, got \
                             `invalid base64 data`: Invalid byte 32, offset 7.";
         assert_eq!(result.unwrap_err().to_string(), expected_msg);
         Ok(())
@@ -1313,7 +1313,7 @@ mod tests {
                 .try_build()
                 .unwrap_err()
                 .to_string(),
-            "Tags collection is only allowed on text fields with the `raw` tokenizer.".to_string(),
+            "tags collection is only allowed on text fields with the `raw` tokenizer".to_string(),
         );
 
         let doc_mapper_two = r#"{
@@ -1331,7 +1331,7 @@ mod tests {
                 .try_build()
                 .unwrap_err()
                 .to_string(),
-            "Tags collection is not allowed on `bytes` fields.".to_string(),
+            "tags collection is not allowed on `bytes` fields".to_string(),
         );
         Ok(())
     }
@@ -1569,7 +1569,7 @@ mod tests {
                 })
             );
         } else {
-            panic!("Expected json");
+            panic!("expected json");
         }
     }
 
@@ -1597,7 +1597,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             default_doc_mapper_query_aux(&doc_mapper, "body.wrong_field:hello").unwrap_err(),
-            "Invalid query: Field does not exist: `body.wrong_field`"
+            "invalid query: field does not exist: `body.wrong_field`"
         );
     }
 
@@ -1821,7 +1821,7 @@ mod tests {
         .unwrap();
         let mapper = mapper_builder.try_build();
         let error_msg = mapper.unwrap_err().to_string();
-        assert!(error_msg.contains("Unknown tokenizer"));
+        assert!(error_msg.contains("unknown tokenizer"));
     }
 
     #[test]
@@ -1878,7 +1878,7 @@ mod tests {
         let mapper = mapper_builder.try_build();
         assert!(mapper.is_err());
         let error_mesg = mapper.unwrap_err().to_string();
-        assert!(error_mesg.contains("Invalid regex tokenizer"));
+        assert!(error_mesg.contains("invalid regex tokenizer"));
     }
 
     #[test]

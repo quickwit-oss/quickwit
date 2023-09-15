@@ -76,17 +76,17 @@ impl SourceConfigForSerialization {
             validate_identifier("Source ID", &self.source_id)?;
         }
         let desired_num_pipelines = NonZeroUsize::new(self.desired_num_pipelines)
-            .ok_or_else(|| anyhow::anyhow!("`desired_num_pipelines` must be strictly positive."))?;
+            .ok_or_else(|| anyhow::anyhow!("`desired_num_pipelines` must be strictly positive"))?;
         let max_num_pipelines_per_indexer = NonZeroUsize::new(self.max_num_pipelines_per_indexer)
             .ok_or_else(|| {
-            anyhow::anyhow!("`max_num_pipelines_per_indexer` must be strictly positive.")
+            anyhow::anyhow!("`max_num_pipelines_per_indexer` must be strictly positive")
         })?;
         match &self.source_params {
             // We want to forbid source_config with no filepath
             SourceParams::File(file_params) => {
                 if file_params.filepath.is_none() {
                     bail!(
-                        "Source `{}` of type `file` must contain a filepath.",
+                        "source `{}` of type `file` must contain a filepath",
                         self.source_id
                     )
                 }
@@ -105,7 +105,7 @@ impl SourceConfigForSerialization {
             SourceParams::GcpPubSub(_) | SourceParams::Kafka(_) => {}
             _ => {
                 if self.desired_num_pipelines > 1 || self.max_num_pipelines_per_indexer > 1 {
-                    bail!("Quickwit currently supports multiple pipelines only for GCP PubSub or Kafka sources. Open an issue https://github.com/quickwit-oss/quickwit/issues if you need the feature for other source types.");
+                    bail!("Quickwit currently supports multiple pipelines only for GCP PubSub or Kafka sources. open an issue https://github.com/quickwit-oss/quickwit/issues if you need the feature for other source types");
                 }
             }
         }

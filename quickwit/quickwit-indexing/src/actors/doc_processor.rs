@@ -255,7 +255,7 @@ impl DocProcessor {
     ) -> anyhow::Result<Self> {
         let timestamp_field_opt = extract_timestamp_field(doc_mapper.as_ref())?;
         if cfg!(not(feature = "vrl")) && transform_config_opt.is_some() {
-            anyhow::bail!("VRL is not enabled. Please recompile with the `vrl` feature.")
+            anyhow::bail!("VRL is not enabled. please recompile with the `vrl` feature")
         }
         let doc_processor = Self {
             doc_mapper,
@@ -344,7 +344,7 @@ fn extract_timestamp_field(doc_mapper: &dyn DocMapper) -> anyhow::Result<Option<
     };
     let timestamp_field = schema
         .get_field(timestamp_field_name)
-        .context("Failed to find timestamp field in schema")?;
+        .context("failed to find timestamp field in schema")?;
     Ok(Some(timestamp_field))
 }
 

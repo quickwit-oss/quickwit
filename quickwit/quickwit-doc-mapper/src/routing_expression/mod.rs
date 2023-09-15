@@ -243,17 +243,17 @@ fn convert_ast(ast: Vec<expression_dsl::ExpressionAst>) -> anyhow::Result<InnerR
                 "hash_mod" => {
                     if args.len() != 2 {
                         anyhow::bail!(
-                            "Invalid arguments for `hash_mod`: expected 2 arguments, found {}",
+                            "invalid arguments for `hash_mod`: expected 2 arguments, found {}",
                             args.len()
                         );
                     }
 
                     let Argument::Expression(fields) = args.remove(0) else {
-                        anyhow::bail!("Invalid 1st argument for `hash_mod`: expected expression");
+                        anyhow::bail!("invalid 1st argument for `hash_mod`: expected expression");
                     };
 
                     let Argument::Number(modulo) = args.remove(0) else {
-                        anyhow::bail!("Invalid 2nd argument for `hash_mod`: expected number");
+                        anyhow::bail!("invalid 2nd argument for `hash_mod`: expected number");
                     };
 
                     Ok(InnerRoutingExpr::Modulo(
@@ -261,7 +261,7 @@ fn convert_ast(ast: Vec<expression_dsl::ExpressionAst>) -> anyhow::Result<InnerR
                         modulo,
                     ))
                 }
-                _ => anyhow::bail!("Unknown function `{}`", name),
+                _ => anyhow::bail!("unknown function `{}`", name),
             },
         })
         .collect::<Result<Vec<_>, _>>()?;

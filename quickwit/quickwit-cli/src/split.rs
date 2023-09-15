@@ -117,8 +117,8 @@ impl FromStr for OutputFormat {
             "pretty-json" | "pretty_json" => Ok(OutputFormat::PrettyJson),
             "table" => Ok(OutputFormat::Table),
             _ => bail!(
-                "Unkown output format `{output_format_str}`. Supported formats are: `table`, \
-                 `json`, and `pretty-json`."
+                "unkown output format `{output_format_str}`. supported formats are: `table`, \
+                 `json`, and `pretty-json`"
             ),
         }
     }
@@ -163,12 +163,12 @@ impl SplitCliCommand {
     pub fn parse_cli_args(mut matches: ArgMatches) -> anyhow::Result<Self> {
         let (subcommand, submatches) = matches
             .remove_subcommand()
-            .context("Failed to split subcommand.")?;
+            .context("failed to split subcommand")?;
         match subcommand.as_str() {
             "describe" => Self::parse_describe_args(submatches),
             "list" => Self::parse_list_args(submatches),
             "mark-for-deletion" => Self::parse_mark_for_deletion_args(submatches),
-            _ => bail!("Unknown split subcommand `{subcommand}`."),
+            _ => bail!("unknown split subcommand `{subcommand}`"),
         }
     }
 
@@ -290,7 +290,7 @@ async fn list_split_cli(args: ListSplitArgs) -> anyhow::Result<()> {
         .splits(&args.index_id)
         .list(list_splits_query_params)
         .await
-        .context("Failed to list splits.")?;
+        .context("failed to list splits")?;
     let output = match args.output_format {
         OutputFormat::Json => serde_json::to_string(&splits)?,
         OutputFormat::PrettyJson => serde_json::to_string_pretty(&splits)?,
@@ -343,7 +343,7 @@ async fn describe_split_cli(args: DescribeSplitArgs) -> anyhow::Result<()> {
         .find(|split| split.split_id() == args.split_id)
         .with_context(|| {
             format!(
-                "Could not find split metadata in metastore {}",
+                "could not find split metadata in metastore {}",
                 args.split_id
             )
         })?;
@@ -430,8 +430,8 @@ fn parse_date(date_arg: &str, option_name: &str) -> anyhow::Result<OffsetDateTim
         }
     }
     bail!(
-        "Failed to parse --{}-date option parameter `{}`. Supported format is `YYYY-MM-DD[ \
-         HH:DD[:SS]]`.",
+        "failed to parse --{}-date option parameter `{}`. supported format is `YYYY-MM-DD[ \
+         HH:DD[:SS]]`",
         option_name,
         date_arg
     );
@@ -443,8 +443,8 @@ fn parse_split_state(split_state_arg: &str) -> anyhow::Result<SplitState> {
         "published" => SplitState::Published,
         "marked" => SplitState::MarkedForDeletion,
         _ => bail!(format!(
-            "Unknown split state `{split_state_arg}`. Possible values are `staged`, `published`, \
-             and `marked`."
+            "unknown split state `{split_state_arg}`. possible values are `staged`, `published`, \
+             and `marked`"
         )),
     };
     Ok(split_state)

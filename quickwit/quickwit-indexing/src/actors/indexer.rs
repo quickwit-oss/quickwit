@@ -235,7 +235,7 @@ impl IndexerState {
             *indexing_workbench_opt = Some(indexing_workbench);
         }
         let current_indexing_workbench = indexing_workbench_opt.as_mut().context(
-            "No index writer available. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues."
+            "no index writer available. this should never happen! please, report on https://github.com/quickwit-oss/quickwit/issues"
         )?;
         Ok(current_indexing_workbench)
     }
@@ -266,7 +266,7 @@ impl IndexerState {
         checkpoint_delta
             .source_delta
             .extend(batch.checkpoint_delta)
-            .context("Batch delta does not follow indexer checkpoint")?;
+            .context("batch delta does not follow indexer checkpoint")?;
         let mut memory_usage_delta: u64 = 0;
         for doc in batch.docs {
             let ProcessedDoc {
@@ -294,7 +294,7 @@ impl IndexerState {
             indexed_split
                 .index_writer
                 .add_document(doc)
-                .context("Failed to add document.")?;
+                .context("failed to add document")?;
             let mem_usage_after = indexed_split.index_writer.mem_usage() as u64;
             memory_usage_delta += mem_usage_after - mem_usage_before;
             ctx.record_progress();

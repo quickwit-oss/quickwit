@@ -31,9 +31,9 @@ use super::{BoxError, BoxFuture};
 
 #[derive(Debug, thiserror::Error)]
 pub enum BufferError {
-    #[error("The buffer's worker closed unexpectedly.")]
+    #[error("the buffer's worker closed unexpectedly")]
     Closed,
-    #[error("The buffer service returned an unknown error.")]
+    #[error("the buffer service returned an unknown error")]
     Unknown,
 }
 
@@ -183,11 +183,11 @@ mod tests {
 
     #[derive(Debug, Clone, thiserror::Error, PartialEq, Eq)]
     enum MyServiceError {
-        #[error("Service is exhausted")]
+        #[error("service is exhausted")]
         Exhausted,
-        #[error("Service is unavailable")]
+        #[error("service is unavailable")]
         Unavailable,
-        #[error("Service attempted to divide by zero")]
+        #[error("service attempted to divide by zero")]
         ZeroDivision,
     }
 

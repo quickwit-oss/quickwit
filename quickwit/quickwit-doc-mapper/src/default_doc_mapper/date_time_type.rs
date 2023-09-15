@@ -82,7 +82,7 @@ impl QuickwitDateTimeOptions {
                     quickwit_datetime::parse_timestamp_float(timestamp_f64, &self.input_formats.0)?
                 } else {
                     return Err(format!(
-                        "Failed to parse datetime `{timestamp:?}`: value is larger than i64::MAX.",
+                        "failed to parse datetime `{timestamp:?}`: value is larger than i64::MAX",
                     ));
                 }
             }
@@ -91,8 +91,8 @@ impl QuickwitDateTimeOptions {
             }
             _ => {
                 return Err(format!(
-                    "Failed to parse datetime: expected a float, integer, or string, got \
-                     `{json_value}`."
+                    "failed to parse datetime: expected a float, integer, or string, got \
+                     `{json_value}`"
                 ))
             }
         };
@@ -316,7 +316,7 @@ mod tests {
             let error = serde_json::from_str::<InputFormats>(input_formats_json)
                 .unwrap_err()
                 .to_string();
-            assert!(error.contains("Invalid format specification"));
+            assert!(error.contains("invalid format specification"));
         }
     }
 

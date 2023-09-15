@@ -130,7 +130,7 @@ impl SearchJobPlacer {
 
         if candidate_nodes.is_empty() {
             bail!(
-                "Failed to assign search jobs. There are no available searcher nodes in the pool."
+                "failed to assign search jobs. there are no available searcher nodes in the pool"
             );
         }
         jobs.sort_unstable_by(Job::compare_cost);

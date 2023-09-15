@@ -152,7 +152,7 @@ impl SearchServiceImpl {
 
 fn deserialize_doc_mapper(doc_mapper_str: &str) -> crate::Result<Arc<dyn DocMapper>> {
     let doc_mapper = serde_json::from_str::<Arc<dyn DocMapper>>(doc_mapper_str).map_err(|err| {
-        SearchError::Internal(format!("Failed to deserialize doc mapper: `{err}`"))
+        SearchError::Internal(format!("failed to deserialize doc mapper: `{err}`"))
     })?;
     Ok(doc_mapper)
 }
@@ -176,7 +176,7 @@ impl SearchService for SearchServiceImpl {
     ) -> crate::Result<LeafSearchResponse> {
         let search_request = leaf_search_request
             .search_request
-            .ok_or_else(|| SearchError::Internal("No search request.".to_string()))?;
+            .ok_or_else(|| SearchError::Internal("no search request".to_string()))?;
         let storage = self
             .storage_resolver
             .resolve(&Uri::from_well_formed(leaf_search_request.index_uri))
@@ -239,7 +239,7 @@ impl SearchService for SearchServiceImpl {
     ) -> crate::Result<UnboundedReceiverStream<crate::Result<LeafSearchStreamResponse>>> {
         let stream_request = leaf_stream_request
             .request
-            .ok_or_else(|| SearchError::Internal("No search request.".to_string()))?;
+            .ok_or_else(|| SearchError::Internal("no search request".to_string()))?;
         let storage = self
             .storage_resolver
             .resolve(&Uri::from_well_formed(leaf_stream_request.index_uri))
@@ -276,7 +276,7 @@ impl SearchService for SearchServiceImpl {
     ) -> crate::Result<LeafListTermsResponse> {
         let search_request = leaf_search_request
             .list_terms_request
-            .ok_or_else(|| SearchError::Internal("No search request.".to_string()))?;
+            .ok_or_else(|| SearchError::Internal("no search request".to_string()))?;
         let storage = self
             .storage_resolver
             .resolve(&Uri::from_well_formed(leaf_search_request.index_uri))
@@ -323,10 +323,10 @@ pub(crate) async fn scroll(
     let scroll_key: [u8; 16] = current_scroll.scroll_key();
     let payload = cluster_client.get_kv(&scroll_key[..]).await;
     let payload =
-        payload.ok_or_else(|| SearchError::Internal("scroll key not found.".to_string()))?;
+        payload.ok_or_else(|| SearchError::Internal("scroll key not found".to_string()))?;
 
     let mut scroll_context = ScrollContext::load(&payload)
-        .map_err(|_| SearchError::Internal("Corrupted scroll context.".to_string()))?;
+        .map_err(|_| SearchError::Internal("corrupted Scroll context".to_string()))?;
 
     let end_doc: u64 = start_doc + scroll_context.max_hits_per_page;
 

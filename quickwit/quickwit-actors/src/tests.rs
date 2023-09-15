@@ -497,7 +497,7 @@ impl Actor for BuggyFinalizeActor {
         _exit_status: &ActorExitStatus,
         _: &ActorContext<Self>,
     ) -> anyhow::Result<()> {
-        anyhow::bail!("Finalize error")
+        anyhow::bail!("finalize error")
     }
 }
 

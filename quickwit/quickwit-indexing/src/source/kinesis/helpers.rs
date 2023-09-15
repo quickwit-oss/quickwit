@@ -134,7 +134,7 @@ pub(crate) mod tests {
                     .or_insert_with(Vec::new)
                     .push(sequence_number);
             } else {
-                bail!("Sequence number is missing from record.");
+                bail!("sequence number is missing from record");
             }
         }
         Ok(sequence_numbers)

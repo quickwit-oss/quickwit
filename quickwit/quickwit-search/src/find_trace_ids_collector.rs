@@ -157,7 +157,7 @@ impl Collector for FindTraceIdsCollector {
             .bytes(&self.trace_id_field_name)?
             .ok_or_else(|| {
                 let err_msg = format!(
-                    "Failed to find column for trace_id field `{}`",
+                    "failed to find column for trace_id field `{}`",
                     self.trace_id_field_name
                 );
                 tantivy::TantivyError::InternalError(err_msg)

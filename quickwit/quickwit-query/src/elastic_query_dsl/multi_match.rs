@@ -92,13 +92,13 @@ fn deserialize_match_query_for_one_field(
 fn validate_field_name(field_name: &str) -> Result<(), String> {
     if field_name.contains('^') {
         return Err(format!(
-            "Quickwit does not support field boosting in the multi match query fields (Got `{}`)",
+            "Quickwit does not support field boosting in the multi match query fields (got `{}`)",
             field_name
         ));
     }
     if field_name.contains('*') {
         return Err(format!(
-            "Quickwit does not support wildcards in the multi match query fields (Got `{}`)",
+            "Quickwit does not support wildcards in the multi match query fields (got `{}`)",
             field_name
         ));
     }
@@ -111,8 +111,8 @@ impl TryFrom<MultiMatchQueryForDeserialization> for MultiMatchQuery {
     fn try_from(multi_match_query: MultiMatchQueryForDeserialization) -> Result<Self, Self::Error> {
         if multi_match_query.fields.is_empty() {
             return Err(serde::de::Error::custom(
-                "Quickwit does not support multi match query with 0 fields. MultiMatchQuery must \
-                 have at least one field.",
+                "Quickwit does not support multi match query with 0 fields. MultiMatchQueries \
+                 must have at least one field.",
             ));
         }
         for field in &multi_match_query.fields {

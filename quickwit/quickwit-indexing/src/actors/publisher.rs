@@ -135,7 +135,7 @@ impl Handler<SplitsUpdate> for Publisher {
                 publish_token_opt,
             ))
             .await
-            .context("Failed to publish splits.")?;
+            .context("failed to publish splits")?;
         } else {
             // TODO: Remove the junk right away?
             info!(

@@ -140,7 +140,7 @@ fn compute_query_with_field(
         FieldType::Str(text_options) => {
             let text_field_indexing = text_options.get_indexing_options().ok_or_else(|| {
                 InvalidQuery::SchemaError(format!(
-                    "Field {} is not full-text searchable",
+                    "field {} is not full-text searchable",
                     field_entry.name()
                 ))
             })?;
@@ -166,7 +166,7 @@ fn compute_query_with_field(
             tokenizer_manager,
         ),
         FieldType::Facet(_) => Err(InvalidQuery::SchemaError(
-            "Facets are not supported in Quickwit.".to_string(),
+            "facets are not supported in Quickwit".to_string(),
         )),
         FieldType::Bytes(_) => {
             let buffer: Vec<u8> = parse_value_from_user_text(value, field_entry.name())?;

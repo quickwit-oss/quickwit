@@ -127,9 +127,7 @@ impl SplitsUpdateSender {
     fn discard(self) -> anyhow::Result<()> {
         if let SplitsUpdateSender::Sequencer(split_uploader_tx) = self {
             if split_uploader_tx.send(SequencerCommand::Discard).is_err() {
-                bail!(
-                    "Failed to send cancel command to sequencer. The sequencer is probably dead."
-                );
+                bail!("failed to send cancel command to sequencer. the sequencer is probably dead");
             }
         }
         Ok(())
@@ -146,7 +144,7 @@ impl SplitsUpdateSender {
                     split_uploaded_tx.send(SequencerCommand::Proceed(split_update))
                 {
                     bail!(
-                        "Failed to send upload split `{:?}`. The publisher is probably dead.",
+                        "failed to send upload split `{:?}`. the publisher is probably dead",
                         &publisher_message
                     );
                 }
@@ -221,7 +219,7 @@ impl Uploader {
         concurrent_upload_permits
             .acquire()
             .await
-            .context("The uploader semaphore is closed. (This should never happen.)")
+            .context("the uploader semaphore is closed. (this should never happen)")
     }
 }
 
@@ -341,7 +339,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
                     if let Err(cause) = upload_result {
                         warn!(cause=?cause, split_id=packaged_split.split_id(), "Failed to upload split. Killing!");
                         kill_switch.kill();
-                        bail!("Failed to upload split `{}`. Killing!", packaged_split.split_id());
+                        bail!("failed to upload split `{}`. killing the actor contex", packaged_split.split_id());
                     }
 
                     packaged_splits_and_metadata.push((packaged_split, metadata));

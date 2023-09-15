@@ -256,7 +256,7 @@ fn get_status_with_error(rejection: Rejection) -> ApiError {
         error!("REST server error: {:?}", rejection);
         ApiError {
             service_code: ServiceErrorCode::Internal,
-            message: "Internal server error.".to_string(),
+            message: "internal server error".to_string(),
         }
     }
 }

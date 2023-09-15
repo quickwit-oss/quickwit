@@ -123,7 +123,7 @@ impl Display for ChecklistError {
                     check_item,
                     check_item_err
                         .as_ref()
-                        .expect_err("ChecklistError can't contain success results.")
+                        .expect_err("ChecklistError can't contain success results")
                 )
             })
             .join("");

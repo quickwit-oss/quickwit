@@ -77,7 +77,7 @@ impl FromStr for QuickwitService {
             "metastore" => Ok(QuickwitService::Metastore),
             _ => {
                 bail!(
-                    "Failed to parse service `{service_str}`. Supported services are: `{}`.",
+                    "failed to parse service `{service_str}`. supported services are: `{}`",
                     QuickwitService::supported_services().iter().join("`, `")
                 )
             }

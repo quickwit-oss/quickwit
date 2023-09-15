@@ -112,7 +112,7 @@ mod tests {
             .withf(|request| request.split_offsets.len() == 1) // Retry request on the failing split.
             .return_once(
                 |_leaf_search_req: quickwit_proto::search::LeafSearchStreamRequest| {
-                    Err(SearchError::Internal("Error again on `split2`".to_string()))
+                    Err(SearchError::Internal("error again on `split2`".to_string()))
                 },
             );
         // The test will hang on indefinitely if we don't drop the sender.
@@ -132,7 +132,7 @@ mod tests {
         let search_error = search_stream_result.unwrap_err();
         assert_eq!(
             search_error.to_string(),
-            "Internal error: `Internal error: `Error again on `split2``.`."
+            "internal error: `internal error: `error again on `split2```"
         );
         Ok(())
     }

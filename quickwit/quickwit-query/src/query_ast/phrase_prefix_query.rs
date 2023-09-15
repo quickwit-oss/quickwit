@@ -53,14 +53,14 @@ impl PhrasePrefixQuery {
             FieldType::Str(ref text_options) => {
                 let text_field_indexing = text_options.get_indexing_options().ok_or_else(|| {
                     InvalidQuery::SchemaError(format!(
-                        "Field {} is not full-text searchable",
+                        "field {} is not full-text searchable",
                         field_entry.name()
                     ))
                 })?;
                 if !text_field_indexing.index_option().has_positions() {
                     return Err(InvalidQuery::SchemaError(
-                        "Trying to run a PhrasePrefix query on a field which does not have \
-                         positions indexed."
+                        "trying to run a phrase prefix query on a field which does not have \
+                         positions indexed"
                             .to_string(),
                     ));
                 }
@@ -77,14 +77,14 @@ impl PhrasePrefixQuery {
                 let text_field_indexing =
                     json_options.get_text_indexing_options().ok_or_else(|| {
                         InvalidQuery::SchemaError(format!(
-                            "Field {} is not full-text searchable",
+                            "field {} is not full-text searchable",
                             field_entry.name()
                         ))
                     })?;
                 if !text_field_indexing.index_option().has_positions() {
                     return Err(InvalidQuery::SchemaError(
-                        "Trying to run a PhrasePrefix query on a field which does not have \
-                         positions indexed."
+                        "trying to run a PhrasePrefix query on a field which does not have \
+                         positions indexed"
                             .to_string(),
                     ));
                 }
@@ -98,7 +98,7 @@ impl PhrasePrefixQuery {
                 Ok((field, terms))
             }
             _ => Err(InvalidQuery::SchemaError(
-                "Trying to run a PhrasePrefix query on a non-text field.".to_string(),
+                "trying to run a PhrasePrefix query on a non-text field".to_string(),
             )),
         }
     }

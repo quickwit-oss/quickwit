@@ -39,7 +39,7 @@ impl TryFrom<f32> for NotNaNf32 {
 
     fn try_from(possibly_nan: f32) -> Result<NotNaNf32, &'static str> {
         if possibly_nan.is_nan() {
-            return Err("NaN is not supported as a boost value.");
+            return Err("NaN is not supported as a boost value");
         }
         Ok(NotNaNf32(possibly_nan))
     }

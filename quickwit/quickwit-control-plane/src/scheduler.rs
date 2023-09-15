@@ -314,7 +314,7 @@ impl Handler<NotifyIndexChangeRequest> for IndexingScheduler {
         debug!("Index change notification: schedule indexing plan.");
         self.schedule_indexing_plan_if_needed()
             .await
-            .context("Error when scheduling indexing plan")?;
+            .context("error when scheduling indexing plan")?;
         Ok(Ok(NotifyIndexChangeResponse {}))
     }
 }

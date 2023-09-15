@@ -245,7 +245,7 @@ impl OtlpGrpcLogsService {
         .await
         .map_err(|join_error| {
             error!("Failed to parse log records: {join_error:?}");
-            Status::internal("Failed to parse log records.")
+            Status::internal("failed to parse log records")
         })??;
         if num_log_records == num_parse_errors {
             return Err(tonic::Status::internal(error_message));

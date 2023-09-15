@@ -99,46 +99,46 @@ impl fmt::Display for EntityKind {
 
 #[derive(Debug, Clone, thiserror::Error, Eq, PartialEq, Serialize, Deserialize)]
 pub enum MetastoreError {
-    #[error("{0} already exist(s).")]
+    #[error("{0} already exist(s)")]
     AlreadyExists(EntityKind),
 
-    #[error("Connection error: {message}.")]
+    #[error("connection error: {message}")]
     Connection { message: String },
 
-    #[error("Database error: {message}.")]
+    #[error("database error: {message}")]
     Db { message: String },
 
-    #[error("Precondition failed for {entity}: {message}")]
+    #[error("precondition failed for {entity}: {message}")]
     FailedPrecondition { entity: EntityKind, message: String },
 
-    #[error("Access forbidden: {message}.")]
+    #[error("access forbidden: {message}")]
     Forbidden { message: String },
 
-    #[error("Internal error: {message} Cause: `{cause}`.")]
+    #[error("internal error: {message}; cause: `{cause}`")]
     Internal { message: String, cause: String },
 
-    #[error("Invalid argument: {message}.")]
+    #[error("invalid argument: {message}")]
     InvalidArgument { message: String },
 
-    #[error("IO error: {message}.")]
+    #[error("IO error: {message}")]
     Io { message: String },
 
-    #[error("Failed to deserialize `{struct_name}` from JSON: {message}.")]
+    #[error("failed to deserialize `{struct_name}` from JSON: {message}")]
     JsonDeserializeError {
         struct_name: String,
         message: String,
     },
 
-    #[error("Failed to serialize `{struct_name}` to JSON: {message}.")]
+    #[error("failed to serialize `{struct_name}` to JSON: {message}")]
     JsonSerializeError {
         struct_name: String,
         message: String,
     },
 
-    #[error("{0} do(es) not exist.")]
+    #[error("{0} do(es) not exist")]
     NotFound(EntityKind),
 
-    #[error("Metastore unavailable: {0}.")]
+    #[error("metastore unavailable: {0}")]
     Unavailable(String),
 }
 
@@ -155,7 +155,7 @@ impl From<MetastoreError> for tonic::Status {
     fn from(metastore_error: MetastoreError) -> Self {
         let grpc_code = metastore_error.status_code().to_grpc_status_code();
         let error_msg = serde_json::to_string(&metastore_error)
-            .unwrap_or_else(|_| format!("Raw metastore error: {metastore_error}"));
+            .unwrap_or_else(|_| format!("raw metastore error: {metastore_error}"));
         tonic::Status::new(grpc_code, error_msg)
     }
 }

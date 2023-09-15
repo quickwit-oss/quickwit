@@ -21,31 +21,31 @@ use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum InvalidQuery {
-    #[error("Query is incompatible with schema. {0}).")]
+    #[error("query is incompatible with schema. {0})")]
     SchemaError(String),
-    #[error("Expected `{expected_value_type}` boundary for field `{field_name}`")]
+    #[error("expected `{expected_value_type}` boundary for field `{field_name}`")]
     InvalidBoundary {
         expected_value_type: &'static str,
         field_name: String,
     },
     #[error(
-        "Expected a `{expected_value_type}` search value for field `{field_name}`. Got `{value}`."
+        "expected a `{expected_value_type}` search value for field `{field_name}`, got `{value}`"
     )]
     InvalidSearchTerm {
         expected_value_type: &'static str,
         field_name: String,
         value: String,
     },
-    #[error("Range query on `{value_type}` field (`{field_name}`) forbidden")]
+    #[error("range query on `{value_type}` field (`{field_name}`) forbidden")]
     RangeQueryNotSupportedForField {
         value_type: &'static str,
         field_name: String,
     },
-    #[error("Field does not exist: `{full_path}`")]
+    #[error("field does not exist: `{full_path}`")]
     FieldDoesNotExist { full_path: String },
     #[error("Json field root is not a valid search field: `{full_path}`")]
     JsonFieldRootNotSearchable { full_path: String },
-    #[error("User query should have been parsed")]
+    #[error("user query should have been parsed")]
     UserQueryNotParsed,
     #[error("{0}")]
     Other(#[from] anyhow::Error),

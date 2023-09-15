@@ -480,7 +480,7 @@ mod tests {
             .times(4)
             .returning(move |_list_indexes_query: ListIndexesQuery| {
                 Err(MetastoreError::Db {
-                    message: "Fail to list indexes.".to_string(),
+                    message: "fail to list indexes".to_string(),
                 })
             });
 

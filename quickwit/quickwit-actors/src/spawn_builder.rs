@@ -306,9 +306,9 @@ impl<A: Actor> ActorExecutionEnv<A> {
             .get_mut()
             .finalize(&exit_status, &self.ctx)
             .await
-            .with_context(|| format!("Finalization of actor {}", self.actor.get_mut().name()))
+            .with_context(|| format!("finalization of actor {}", self.actor.get_mut().name()))
         {
-            error!(error=?finalize_error, "Finalizing failed, set exit status to panicked.");
+            error!(error=?finalize_error, "finalizing failed, set exit status to panicked");
             return ActorExitStatus::Panicked;
         }
         exit_status

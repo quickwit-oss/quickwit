@@ -68,9 +68,9 @@ impl IndexConfigForSerialization {
         if let Some(index_uri) = self.index_uri.as_ref() {
             return Ok(index_uri.clone());
         }
-        let default_index_root_uri = default_index_root_uri_opt.context("Missing `index_uri`")?;
+        let default_index_root_uri = default_index_root_uri_opt.context("missing `index_uri`")?;
         let index_uri: Uri = default_index_root_uri.join(&self.index_id)
-            .context("Failed to create default index URI. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.")?;
+            .context("failed to create default index URI. this should never happen! please, report on https://github.com/quickwit-oss/quickwit/issues")?;
         info!(
             index_id = %self.index_id,
             index_uri = %index_uri,
@@ -92,8 +92,8 @@ impl IndexConfigForSerialization {
 
             if self.doc_mapping.timestamp_field.is_none() {
                 anyhow::bail!(
-                    "Failed to validate index config. The retention policy requires a timestamp \
-                     field, but the indexing settings do not declare one."
+                    "failed to validate index config. the retention policy requires a timestamp \
+                     field, but the indexing settings do not declare one"
                 );
             }
         }
@@ -204,8 +204,8 @@ mod test {
             .to_string();
         assert_eq!(
             validation_err,
-            "Index config merge policy `max_merge_factor` must be superior or equal to \
-             `merge_factor`."
+            "index config merge policy `max_merge_factor` must be superior or equal to \
+             `merge_factor`"
         );
     }
 
@@ -222,7 +222,7 @@ mod test {
             .validate_and_build(None)
             .unwrap_err()
             .to_string();
-        assert!(validation_err.contains("The retention policy requires a timestamp field"));
+        assert!(validation_err.contains("the retention policy requires a timestamp field"));
     }
 
     #[test]
@@ -234,7 +234,7 @@ mod test {
         "#;
         let config_parse_result: anyhow::Result<IndexConfig> =
             ConfigFormat::Yaml.parse(config_yaml.as_bytes());
-        assert!(format!("{:?}", config_parse_result.unwrap_err()).contains("Missing `index_uri`"));
+        assert!(format!("{:?}", config_parse_result.unwrap_err()).contains("missing `index_uri`"));
     }
 
     #[test]

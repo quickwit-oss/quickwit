@@ -70,7 +70,7 @@ async fn get_split_footer_from_cache_or_fetch(
         .await
         .with_context(|| {
             format!(
-                "Failed to fetch hotcache and footer from {} for split `{}`",
+                "failed to fetch hotcache and footer from {} for split `{}`",
                 index_storage.uri(),
                 split_and_footer_offsets.split_id
             )
@@ -186,8 +186,8 @@ async fn warm_up_term_dict_fields(
             .get_field(term_dict_field_name)
             .with_context(|| {
                 format!(
-                    "Couldn't get field named `{term_dict_field_name}` from schema to warm up \
-                     term dicts."
+                    "couldn't get field named `{term_dict_field_name}` from schema to warm up \
+                     term dicts"
                 )
             })?;
 
@@ -215,7 +215,7 @@ async fn warm_up_postings(
     let mut fields = Vec::new();
     for field_name in field_names.iter() {
         let field = searcher.schema().get_field(field_name).with_context(|| {
-            format!("Couldn't get field named `{field_name}` from schema to warm up postings.")
+            format!("couldn't get field named `{field_name}` from schema to warm up postings")
         })?;
 
         fields.push(field);
@@ -380,7 +380,7 @@ async fn leaf_search_single_split(
     })
     .await
     .map_err(|_| {
-        crate::SearchError::Internal(format!("Leaf search panicked. split={split_id}"))
+        crate::SearchError::Internal(format!("leaf search panicked. split={split_id}"))
     })??;
 
     searcher_context
@@ -508,7 +508,7 @@ pub async fn leaf_search(
         merge_collector.merge_fruits(split_search_responses)
     })
     .await
-    .context("Failed to merge split search responses.")??;
+    .context("failed to merge split search responses")??;
 
     merged_search_response
         .failed_splits
@@ -540,7 +540,7 @@ async fn leaf_list_terms_single_split(
         .get_field(&search_request.field)
         .with_context(|| {
             format!(
-                "Couldn't get field named {:?} from schema to list terms.",
+                "couldn't get field named {:?} from schema to list terms",
                 search_request.field
             )
         })?;
@@ -576,7 +576,7 @@ async fn leaf_list_terms_single_split(
         )
         .read_bytes_async()
         .await
-        .with_context(|| "Failed to load sstable range")?;
+        .with_context(|| "failed to load sstable range")?;
 
         let mut range = dict.range();
         if let Some(limit) = search_request.max_hits {
@@ -590,7 +590,7 @@ async fn leaf_list_terms_single_split(
         }
         let mut stream = range
             .into_stream()
-            .with_context(|| "Failed to create stream over sstable")?;
+            .with_context(|| "failed to create stream over sstable")?;
         let mut segment_result: Vec<Vec<u8>> =
             Vec::with_capacity(search_request.max_hits.unwrap_or(0) as usize);
         while stream.advance() {

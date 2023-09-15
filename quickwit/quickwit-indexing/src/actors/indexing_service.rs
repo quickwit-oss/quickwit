@@ -593,7 +593,7 @@ impl IndexingService {
         let queues: HashSet<String> = ingest_api_service
             .ask_for_res(ListQueuesRequest {})
             .await
-            .context("Failed to list queues.")?
+            .context("failed to list queues")?
             .queues
             .into_iter()
             .collect();
@@ -603,7 +603,7 @@ impl IndexingService {
             .metastore
             .list_indexes_metadatas(ListIndexesQuery::All)
             .await
-            .context("Failed to list queues")?
+            .context("failed to list queues")?
             .into_iter()
             .map(|index_metadata| index_metadata.index_id().to_string())
             .collect();

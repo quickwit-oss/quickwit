@@ -78,7 +78,7 @@ pub async fn init_ingest_api(
     .await
     .with_context(|| {
         format!(
-            "Failed to open the ingest API record log located at `{}`.",
+            "failed to open the ingest API record log located at `{}`",
             queues_dir_path.display()
         )
     })?;
@@ -99,7 +99,7 @@ pub async fn get_ingest_api_service(
         return Ok(mailbox.clone());
     }
     bail!(
-        "Ingest API service with queues directory located at `{}` is not initialized.",
+        "ingest API service with queues directory located at `{}` is not initialized",
         queues_dir_path.display()
     )
 }

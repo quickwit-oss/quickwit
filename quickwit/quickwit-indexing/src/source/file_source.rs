@@ -91,7 +91,7 @@ impl Source for FileSource {
             if let Some(filepath) = &self.params.filepath {
                 let filepath_str = filepath
                     .to_str()
-                    .context("Path is invalid utf-8")?
+                    .context("path is invalid utf-8")?
                     .to_string();
                 let partition_id = PartitionId::from(filepath_str);
                 doc_batch
@@ -140,7 +140,7 @@ impl TypedSourceFactory for FileSourceFactory {
         let reader: Box<dyn AsyncRead + Send + Sync + Unpin> =
             if let Some(filepath) = &params.filepath {
                 let mut file = File::open(&filepath).await.with_context(|| {
-                    format!("Failed to open source file `{}`.", filepath.display())
+                    format!("failed to open source file `{}`", filepath.display())
                 })?;
                 let partition_id = PartitionId::from(filepath.to_string_lossy().to_string());
                 if let Some(Position::Offset(offset_str)) =

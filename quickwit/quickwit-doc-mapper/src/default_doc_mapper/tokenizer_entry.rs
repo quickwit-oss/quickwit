@@ -59,12 +59,12 @@ impl TokenizerConfig {
             TokenizerType::Ngram(options) => {
                 let tokenizer =
                     NgramTokenizer::new(options.min_gram, options.max_gram, options.prefix_only)
-                        .with_context(|| "Invalid ngram tokenizer".to_string())?;
+                        .with_context(|| "invalid ngram tokenizer".to_string())?;
                 TextAnalyzer::builder(tokenizer).dynamic()
             }
             TokenizerType::Regex(options) => {
                 let tokenizer = RegexTokenizer::new(&options.pattern)
-                    .with_context(|| "Invalid regex tokenizer".to_string())?;
+                    .with_context(|| "invalid regex tokenizer".to_string())?;
                 TextAnalyzer::builder(tokenizer).dynamic()
             }
         };

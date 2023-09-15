@@ -134,8 +134,8 @@ impl MetastoreFactory for FileBackedMetastoreFactory {
                 }
                 StorageResolverError::FailedToOpenStorage { kind, message } => {
                     MetastoreResolverError::Initialization(MetastoreError::Internal {
-                        message: format!("Failed to open metastore file `{uri}`."),
-                        cause: format!("StorageError {kind:?}: {message}."),
+                        message: format!("failed to open metastore file `{uri}`"),
+                        cause: format!("StorageError {kind:?}: {message}"),
                     })
                 }
             })?;

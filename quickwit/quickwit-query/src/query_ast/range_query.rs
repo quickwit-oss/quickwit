@@ -231,7 +231,7 @@ impl BuildTantivyAst for RangeQuery {
             super::utils::find_field_or_hit_dynamic(&self.field, schema)?;
         if !field_entry.is_fast() {
             return Err(InvalidQuery::SchemaError(format!(
-                "Range queries are only supported for fast fields. (`{}` is not a fast field)",
+                "range queries are only supported for fast fields. (`{}` is not a fast field)",
                 field_entry.name()
             )));
         }

@@ -454,8 +454,8 @@ async fn test_very_large_index_name() {
         .unwrap_err();
 
     assert!(error.to_string().ends_with(
-        "is invalid. Identifiers must match the following regular expression: \
-         `^[a-zA-Z][a-zA-Z0-9-_\\.]{2,254}$`..)"
+        "is invalid. identifiers must match the following regular expression: \
+         `^[a-zA-Z][a-zA-Z0-9-_\\.]{2,254}$`)"
     ));
 
     // Clean up

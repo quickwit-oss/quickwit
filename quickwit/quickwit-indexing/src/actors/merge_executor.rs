@@ -145,7 +145,7 @@ impl Handler<MergeScratch> for MergeExecutor {
 }
 
 fn combine_index_meta(mut index_metas: Vec<IndexMeta>) -> anyhow::Result<IndexMeta> {
-    let mut union_index_meta = index_metas.pop().with_context(|| "Only one IndexMeta")?;
+    let mut union_index_meta = index_metas.pop().with_context(|| "only one IndexMeta")?;
     for index_meta in index_metas {
         union_index_meta.segments.extend(index_meta.segments);
     }
@@ -470,17 +470,17 @@ impl MergeExecutor {
         let num_delete_tasks = delete_tasks.len();
         if num_delete_tasks > 0 {
             let doc_mapper = doc_mapper_opt
-                .ok_or_else(|| anyhow!("Doc mapper must be present if there are delete tasks."))?;
+                .ok_or_else(|| anyhow!("doc mapper must be present if there are delete tasks"))?;
             for delete_task in delete_tasks {
                 let delete_query = delete_task
                     .delete_query
                     .expect("A delete task must have a delete query.");
                 let query_ast: QueryAst = serde_json::from_str(&delete_query.query_ast)
-                    .context("Invalid query_ast json")?;
+                    .context("invalid query_ast json")?;
                 // We ignore the docmapper default fields when we consider delete query.
                 // We reparse the query here defensivley, but actually, it should already have been
                 // done in the delete task rest handler.
-                let parsed_query_ast = query_ast.parse_user_query(&[]).context("Invalid query")?;
+                let parsed_query_ast = query_ast.parse_user_query(&[]).context("invalid query")?;
                 debug!(
                     "Delete all documents matched by query `{:?}`",
                     parsed_query_ast

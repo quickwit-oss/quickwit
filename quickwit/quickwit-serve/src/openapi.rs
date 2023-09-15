@@ -242,12 +242,12 @@ mod openapi_schema_tests {
             let errors = errors
                 .into_iter()
                 .map(|(location, method, path, info)| {
-                    format!("{method} {path:?} {info} - Location: {location}")
+                    format!("{method} {path:?} {info} - location: {location}")
                 })
                 .join("\n");
 
             anyhow::bail!(
-                "Failed to resolve schemas, do these types implement `ToSchema`?:\n\n{errors}"
+                "failed to resolve schemas, do these types implement `ToSchema`?:\n\n{errors}"
             )
         }
 
@@ -342,7 +342,7 @@ mod openapi_schema_tests {
                 .map(|resolve| format!("Struct: {:?} - {:?}", resolve.parent, resolve.location,))
                 .join("\n");
             anyhow::bail!(
-                "Failed to resolve schemas for OpenAPI \
+                "failed to resolve schemas for OpenAPI \
                  spec:\n{errors_pending}\n{errors_resolve_once}"
             );
         }

@@ -108,7 +108,7 @@ impl FromStr for Protocol {
             "pg" | "postgres" | "postgresql" => Ok(Protocol::PostgreSQL),
             "ram" => Ok(Protocol::Ram),
             "s3" => Ok(Protocol::S3),
-            _ => bail!("Unknown URI protocol `{protocol}`."),
+            _ => bail!("unknown URI protocol `{protocol}`"),
         }
     }
 }
@@ -236,7 +236,7 @@ impl Uri {
     pub fn join<P: AsRef<Path> + std::fmt::Debug>(&self, path: P) -> anyhow::Result<Self> {
         if path.as_ref().is_absolute() {
             bail!(
-                "Cannot join URI `{}` with absolute path `{:?}`.",
+                "cannot join URI `{}` with absolute path `{:?}`",
                 self.uri,
                 path
             );
@@ -247,7 +247,7 @@ impl Uri {
                 .to_string_lossy()
                 .to_string(),
             Protocol::PostgreSQL => bail!(
-                "Cannot join PostgreSQL URI `{}` with path `{:?}`.",
+                "cannot join PostgreSQL URI `{}` with path `{:?}`",
                 self.uri,
                 path
             ),
@@ -272,7 +272,7 @@ impl Uri {
     fn parse_str(uri_str: &str) -> anyhow::Result<Self> {
         // CAUTION: Do not display the URI in error messages to avoid leaking credentials.
         if uri_str.is_empty() {
-            bail!("Failed to parse empty URI.");
+            bail!("failed to parse empty URI");
         }
         let (protocol, mut path) = match uri_str.split_once(PROTOCOL_SEPARATOR) {
             None => (Protocol::File, uri_str.to_string()),
@@ -283,11 +283,11 @@ impl Uri {
                 // We only accept `~` (alias to the home directory) and `~/path/to/something`.
                 // If there is something following the `~` that is not `/`, we bail.
                 if path.len() > 1 && !path.starts_with("~/") {
-                    bail!("Failed to normalize URI: tilde expansion is only partially supported.");
+                    bail!("failed to normalize URI: tilde expansion is only partially supported");
                 }
 
                 let home_dir_path = home::home_dir()
-                    .context("Failed to normalize URI: could not resolve home directory.")?
+                    .context("failed to normalize URI: could not resolve home directory")?
                     .to_string_lossy()
                     .to_string();
 
@@ -295,8 +295,8 @@ impl Uri {
             }
             if Path::new(&path).is_relative() {
                 let current_dir = env::current_dir().context(
-                    "Failed to normalize URI: could not resolve current working directory. The \
-                     directory does not exist or user has insufficient permissions.",
+                    "failed to normalize URI: could not resolve current working directory. the \
+                     directory does not exist or user has insufficient permissions",
                 )?;
                 path = current_dir.join(path).to_string_lossy().to_string();
             }
@@ -447,7 +447,7 @@ mod tests {
         );
         assert_eq!(
             Uri::from_str("~anything/bar").unwrap_err().to_string(),
-            "Failed to normalize URI: tilde expansion is only partially supported."
+            "failed to normalize URI: tilde expansion is only partially supported"
         );
         assert_eq!(
             Uri::from_str("~/.").unwrap(),
@@ -491,7 +491,7 @@ mod tests {
             Uri::from_str("http://localhost:9000/quickwit")
                 .unwrap_err()
                 .to_string(),
-            "Unknown URI protocol `http`."
+            "unknown URI protocol `http`"
         );
     }
 

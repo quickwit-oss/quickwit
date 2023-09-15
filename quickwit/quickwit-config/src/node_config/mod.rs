@@ -281,7 +281,7 @@ impl NodeConfig {
         let config = load_node_config_with_env(config_format, config_content, &env_vars).await?;
         if !config.data_dir_path.try_exists()? {
             bail!(
-                "Data dir `{}` does not exist.",
+                "data dir `{}` does not exist",
                 config.data_dir_path.display()
             );
         }
@@ -308,7 +308,7 @@ impl NodeConfig {
         }
         if !self.peer_seeds.is_empty() && peer_seed_addrs.is_empty() {
             bail!(
-                "Failed to resolve any of the peer seed addresses: `{}`",
+                "failed to resolve any of the peer seed addresses: `{}`",
                 self.peer_seeds.join(", ")
             )
         }

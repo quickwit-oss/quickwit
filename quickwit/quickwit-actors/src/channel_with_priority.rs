@@ -64,17 +64,17 @@ impl<T> LockedOption<T> {
 
 #[derive(Debug, Error)]
 pub enum SendError {
-    #[error("The channel is closed.")]
+    #[error("the channel is closed")]
     Disconnected,
-    #[error("The channel is full.")]
+    #[error("the channel is full")]
     Full,
 }
 
 #[derive(Debug, Error)]
 pub enum TrySendError<M> {
-    #[error("The channel is closed.")]
+    #[error("the channel is closed")]
     Disconnected,
-    #[error("The channel is full.")]
+    #[error("the channel is full")]
     Full(M),
 }
 
@@ -89,9 +89,9 @@ impl<M> From<flume::TrySendError<M>> for TrySendError<M> {
 
 #[derive(Clone, Copy, Debug, Error, Eq, PartialEq)]
 pub enum RecvError {
-    #[error("No message are currently available.")]
+    #[error("no message are currently available")]
     NoMessageAvailable,
-    #[error("All sender were dropped and no pending messages are in the channel.")]
+    #[error("all senders were dropped and no pending messages are in the channel")]
     Disconnected,
 }
 

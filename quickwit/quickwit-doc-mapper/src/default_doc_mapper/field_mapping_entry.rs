@@ -198,7 +198,7 @@ impl BinaryFormat {
             byte_str
         } else {
             return Err(format!(
-                "Expected {} string, got `{json_val}`.",
+                "expected {} string, got `{json_val}`",
                 self.as_str()
             ));
         };
@@ -206,10 +206,10 @@ impl BinaryFormat {
             Self::Base64 => BASE64_STANDARD
                 .decode(&byte_str)
                 .map_err(|base64_decode_err| {
-                    format!("Expected base64 string, got `{byte_str}`: {base64_decode_err}")
+                    format!("expected base64 string, got `{byte_str}`: {base64_decode_err}")
                 })?,
             Self::Hex => hex::decode(&byte_str).map_err(|hex_decode_err| {
-                format!("Expected hex string, got `{byte_str}`: {hex_decode_err}")
+                format!("expected hex string, got `{byte_str}`: {hex_decode_err}")
             })?,
         };
         Ok(TantivyValue::Bytes(payload))
@@ -314,7 +314,7 @@ impl TextIndexingOptions {
             if tokenizer.is_some() || record.is_some() || fieldnorms {
                 bail!(
                     "`record`, `tokenizer`, and `fieldnorms` parameters are allowed only if \
-                     indexed is true."
+                     indexed is true"
                 )
             }
             Ok(None)
@@ -334,7 +334,7 @@ impl TextIndexingOptions {
             }))
         } else {
             if tokenizer.is_some() || record.is_some() {
-                bail!("`record` and `tokenizer` parameters are allowed only if indexed is true.")
+                bail!("`record` and `tokenizer` parameters are allowed only if indexed is true")
             }
             Ok(None)
         }
@@ -632,7 +632,7 @@ fn deserialize_mapping_type(
         QuickwitFieldType::Object => {
             let object_options: QuickwitObjectOptions = serde_json::from_value(json)?;
             if object_options.field_mappings.is_empty() {
-                anyhow::bail!("object type must have at least one field mapping.");
+                anyhow::bail!("object type must have at least one field mapping");
             }
             return Ok(FieldMappingType::Object(object_options));
         }
@@ -670,7 +670,7 @@ fn deserialize_mapping_type(
         Type::Bytes => {
             let numeric_options: QuickwitBytesOptions = serde_json::from_value(json)?;
             if numeric_options.fast && cardinality == Cardinality::MultiValues {
-                bail!("fast field is not allowed for array<bytes>.");
+                bail!("fast field is not allowed for array<bytes>");
             }
             Ok(FieldMappingType::Bytes(numeric_options, cardinality))
         }
@@ -689,7 +689,7 @@ impl TryFrom<FieldMappingEntryForSerialization> for FieldMappingEntry {
         let quickwit_field_type =
             QuickwitFieldType::parse_type_id(&value.type_id).ok_or_else(|| {
                 format!(
-                    "Field `{}` has an unknown type: `{}`.",
+                    "field `{}` has an unknown type: `{}`",
                     &value.name, &value.type_id
                 )
             })?;
@@ -697,7 +697,7 @@ impl TryFrom<FieldMappingEntryForSerialization> for FieldMappingEntry {
             quickwit_field_type,
             JsonValue::Object(value.field_mapping_json),
         )
-        .map_err(|err| format!("Error while parsing field `{}`: {}", value.name, err))?;
+        .map_err(|err| format!("error while parsing field `{}`: {}", value.name, err))?;
         Ok(FieldMappingEntry {
             name: value.name,
             mapping_type,
@@ -836,8 +836,8 @@ mod tests {
         let error = result.unwrap_err();
         assert_eq!(
             error.to_string(),
-            "Error while parsing field `data_binary`: `record`, `tokenizer`, and `fieldnorms` \
-             parameters are allowed only if indexed is true."
+            "error while parsing field `data_binary`: `record`, `tokenizer`, and `fieldnorms` \
+             parameters are allowed only if indexed is true"
         );
     }
 
@@ -879,8 +879,8 @@ mod tests {
         let error = result.unwrap_err();
         assert_eq!(
             error.to_string(),
-            "Error while parsing field `data_binary`: `record` and `tokenizer` parameters are \
-             allowed only if indexed is true."
+            "error while parsing field `data_binary`: `record` and `tokenizer` parameters are \
+             allowed only if indexed is true"
         );
     }
 
@@ -899,7 +899,7 @@ mod tests {
         assert!(mapping_entry.is_err());
         assert_eq!(
             mapping_entry.unwrap_err().to_string(),
-            "Error while parsing field `my_field_name`: unknown variant `notexist`, expected one \
+            "error while parsing field `my_field_name`: unknown variant `notexist`, expected one \
              of `basic`, `freq`, `position`"
                 .to_string()
         );
@@ -921,7 +921,7 @@ mod tests {
         assert!(mapping_entry
             .unwrap_err()
             .to_string()
-            .contains("Error while parsing field `my_field_name`: unknown field `blub`"));
+            .contains("error while parsing field `my_field_name`: unknown field `blub`"));
         Ok(())
     }
 
@@ -994,8 +994,8 @@ mod tests {
         let error = result.unwrap_err();
         assert_eq!(
             error.to_string(),
-            "Error while parsing field `my_field_name`: `record`, `tokenizer`, and `fieldnorms` \
-             parameters are allowed only if indexed is true."
+            "error while parsing field `my_field_name`: `record`, `tokenizer`, and `fieldnorms` \
+             parameters are allowed only if indexed is true"
         );
     }
 
@@ -1059,8 +1059,8 @@ mod tests {
         let error = result.unwrap_err();
         assert_eq!(
             error.to_string(),
-            "Error while parsing field `my_field_name`: object type must have at least one field \
-             mapping."
+            "error while parsing field `my_field_name`: object type must have at least one field \
+             mapping"
         );
     }
 
@@ -1078,7 +1078,7 @@ mod tests {
         let error = result.unwrap_err();
         assert_eq!(
             error.to_string(),
-            "Field `my_field_name` has an unknown type: `my custom type`."
+            "field `my_field_name` has an unknown type: `my custom type`"
         );
     }
 
@@ -1112,7 +1112,7 @@ mod tests {
 
         assert_eq!(
             error.to_string(),
-            "Error while parsing field `my_field_name`: unknown field `tokenizer`, expected one \
+            "error while parsing field `my_field_name`: unknown field `tokenizer`, expected one \
              of `description`, `stored`, `indexed`, `fast`, `coerce`, `output_format`"
         );
     }
@@ -1204,7 +1204,7 @@ mod tests {
             )
             .unwrap_err()
             .to_string(),
-            "Error while parsing field `my_field_name`: unknown field `tokenizer`, expected one \
+            "error while parsing field `my_field_name`: unknown field `tokenizer`, expected one \
              of `description`, `stored`, `indexed`, `fast`, `coerce`, `output_format`"
         );
     }
@@ -1560,8 +1560,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             err.to_string(),
-            "Error while parsing field `my_field_name`: fast field is not allowed for \
-             array<bytes>.",
+            "error while parsing field `my_field_name`: fast field is not allowed for array<bytes>",
         );
     }
 

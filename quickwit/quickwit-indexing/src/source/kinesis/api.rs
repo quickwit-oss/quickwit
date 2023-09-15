@@ -145,7 +145,7 @@ pub(crate) mod tests {
                 .await
         })
         .await
-        .with_context(|| format!("Failed to create Kinesis data stream `{stream_name}`."))?;
+        .with_context(|| format!("failed to create Kinesis data stream `{stream_name}`"))?;
         Ok(())
     }
 
@@ -163,7 +163,7 @@ pub(crate) mod tests {
                 .await
         })
         .await
-        .with_context(|| format!("Failed to delete Kinesis data stream `{stream_name}`."))?;
+        .with_context(|| format!("failed to delete Kinesis data stream `{stream_name}`"))?;
         Ok(())
     }
 
@@ -184,7 +184,7 @@ pub(crate) mod tests {
 
         response
             .stream_description
-            .ok_or_else(|| anyhow!("No stream summary was returned from AWS"))
+            .ok_or_else(|| anyhow!("no stream summary was returned from AWS"))
     }
     /// Lists the Kinesis data streams.
     /// https://docs.aws.amazon.com/kinesis/latest/APIReference/API_ListStreams.html

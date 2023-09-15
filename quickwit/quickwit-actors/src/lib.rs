@@ -121,10 +121,10 @@ const OBSERVE_TIMEOUT: Duration = Duration::from_secs(3);
 /// Error that occurred while calling `ActorContext::ask(..)` or `Universe::ask`
 #[derive(Error, Debug)]
 pub enum AskError<E: fmt::Debug> {
-    #[error("Message could not be delivered")]
+    #[error("message could not be delivered")]
     MessageNotDelivered,
-    #[error("Error while the message was being processed.")]
+    #[error("error while the message was being processed")]
     ProcessMessageError,
-    #[error("The handler returned an error: `{0:?}`.")]
+    #[error("the handler returned an error: `{0:?}`")]
     ErrorReply(#[from] E),
 }

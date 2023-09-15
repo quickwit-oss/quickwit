@@ -66,7 +66,7 @@ impl UserInputQuery {
             .map(|search_fields| &search_fields[..])
             .unwrap_or(default_search_fields);
         let user_input_ast = tantivy::query_grammar::parse_query(&self.user_text)
-            .map_err(|_| anyhow::anyhow!("Failed to parse query: `{}`.", &self.user_text))?;
+            .map_err(|_| anyhow::anyhow!("failed to parse query: `{}`", &self.user_text))?;
         let default_occur = match self.default_operator {
             BooleanOperand::And => Occur::Must,
             BooleanOperand::Or => Occur::Should,
@@ -127,7 +127,7 @@ fn convert_user_input_ast_to_query_ast(
                 lower,
                 upper,
             } => {
-                let field: String = field.context("Range query without field is not supported.")?;
+                let field: String = field.context("range query without field is not supported")?;
                 let convert_bound = |user_input_bound: UserInputBound| match user_input_bound {
                     UserInputBound::Inclusive(user_text) => {
                         Bound::Included(JsonLiteral::String(user_text))
@@ -151,7 +151,7 @@ fn convert_user_input_ast_to_query_ast(
                     default_search_fields.to_vec()
                 };
                 if field_names.is_empty() {
-                    anyhow::bail!("Set query need to target a specific field.");
+                    anyhow::bail!("set query need to target a specific field");
                 }
                 let mut terms_per_field: HashMap<String, BTreeSet<String>> = Default::default();
                 let terms: BTreeSet<String> = elements.into_iter().collect();
@@ -199,7 +199,7 @@ fn convert_user_input_literal(
             .collect()
     };
     if field_names.is_empty() {
-        anyhow::bail!("Query requires a default search field and none was supplied.");
+        anyhow::bail!("query requires a default search field and none was supplied");
     }
     let mode = match delimiter {
         Delimiter::None => FullTextMode::PhraseFallbackToIntersection,
@@ -297,7 +297,7 @@ mod tests {
             .unwrap_err();
             assert_eq!(
                 &invalid_err.to_string(),
-                "Query requires a default search field and none was supplied."
+                "query requires a default search field and none was supplied"
             );
         }
         {
@@ -310,7 +310,7 @@ mod tests {
             .unwrap_err();
             assert_eq!(
                 &invalid_err.to_string(),
-                "Query requires a default search field and none was supplied."
+                "query requires a default search field and none was supplied"
             );
         }
     }

@@ -96,7 +96,7 @@ impl BundleStorage {
 }
 
 #[derive(Debug, Error)]
-#[error("CorruptedData. error: {error:?}")]
+#[error("corrupted data. error: {error:?}")]
 pub struct CorruptedData {
     #[from]
     #[source]
@@ -135,7 +135,7 @@ impl VersionedComponent for BundleStorageFileOffsetsVersions {
     }
 
     fn deserialize_impl(&self, bytes: &mut OwnedBytes) -> anyhow::Result<Self::Component> {
-        serde_json::from_reader(bytes).context("Deserializing bundle storage file offsets failed")
+        serde_json::from_reader(bytes).context("deserializing bundle storage file offsets failed")
     }
 }
 
@@ -241,7 +241,7 @@ impl Storage for BundleStorage {
     ) -> crate::StorageResult<OwnedBytes> {
         let file_offsets = self.metadata.get(path).ok_or_else(|| {
             crate::StorageErrorKind::NotFound
-                .with_error(anyhow::anyhow!("Missing file `{}`", path.display()))
+                .with_error(anyhow::anyhow!("missing file `{}`", path.display()))
         })?;
         let new_range =
             file_offsets.start as usize + range.start..file_offsets.start as usize + range.end;
@@ -253,7 +253,7 @@ impl Storage for BundleStorage {
     async fn get_all(&self, path: &Path) -> crate::StorageResult<OwnedBytes> {
         let file_offsets = self.metadata.get(path).ok_or_else(|| {
             crate::StorageErrorKind::NotFound
-                .with_error(anyhow::anyhow!("Missing file `{}`", path.display()))
+                .with_error(anyhow::anyhow!("missing file `{}`", path.display()))
         })?;
         self.storage
             .get_slice(
@@ -282,7 +282,7 @@ impl Storage for BundleStorage {
     async fn file_num_bytes(&self, path: &Path) -> StorageResult<u64> {
         let file_range = self.metadata.get(path).ok_or_else(|| {
             crate::StorageErrorKind::NotFound
-                .with_error(anyhow::anyhow!("Missing file `{}`", path.display()))
+                .with_error(anyhow::anyhow!("missing file `{}`", path.display()))
         })?;
         Ok(file_range.end - file_range.start)
     }

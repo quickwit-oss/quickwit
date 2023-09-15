@@ -54,7 +54,7 @@ impl<'de> Deserialize<'de> for SpanId {
 
         if b64span_id.len() != SpanId::BASE64_LENGTH {
             let message = format!(
-                "Base64 span ID must be {} bytes long, got {}.",
+                "base64 span ID must be {} bytes long, got {}",
                 SpanId::BASE64_LENGTH,
                 b64span_id.len()
             );
@@ -66,7 +66,7 @@ impl<'de> Deserialize<'de> for SpanId {
             // estimate and fails.
             .decode_slice_unchecked(b64span_id.as_bytes(), &mut span_id)
             .map_err(|error| {
-                let message = format!("Failed to decode Base64 span ID: {:?}.", error);
+                let message = format!("failed to decode base64 span ID: {:?}", error);
                 de::Error::custom(message)
             })?;
         Ok(SpanId(span_id))
@@ -74,7 +74,7 @@ impl<'de> Deserialize<'de> for SpanId {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("Span ID must be 8 bytes long, got {0}.")]
+#[error("span ID must be 8 bytes long, got {0}")]
 pub struct TryFromSpanIdError(usize);
 
 impl TryFrom<&[u8]> for SpanId {

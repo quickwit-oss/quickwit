@@ -70,7 +70,7 @@ impl LocalFileStorage {
                 root: root.to_path_buf(),
             })
             .ok_or_else(|| {
-                let message = format!("URI `{uri}` is not a valid file URI.");
+                let message = format!("URI `{uri}` is not a valid file URI");
                 StorageResolverError::InvalidUri(message)
             })
     }
@@ -109,7 +109,7 @@ fn ensure_valid_relative_path(path: &Path) -> StorageResult<()> {
                 // We forbid `Path` components that are breaking the assumption that
                 // root.join(path) is a child of root (if we omit fs links).
                 return Err(StorageErrorKind::Unauthorized.with_error(anyhow::anyhow!(
-                    "Path `{}` is forbidden. Only simple relative path are allowed.",
+                    "path `{}` is forbidden. only simple relative path are allowed",
                     path.display()
                 )));
             }
@@ -183,7 +183,7 @@ impl Storage for LocalFileStorage {
     ) -> crate::StorageResult<()> {
         let full_path = self.full_path(path)?;
         let parent_dir = full_path.parent().ok_or_else(|| {
-            let err = anyhow::anyhow!("No parent directory for {full_path:?}");
+            let err = anyhow::anyhow!("no parent directory for {full_path:?}");
             StorageErrorKind::Internal.with_error(err)
         })?;
 
@@ -299,7 +299,7 @@ impl Storage for LocalFileStorage {
         let full_path = self.full_path(path)?;
         let content_bytes = fs::read(full_path).await.map_err(|err| {
             StorageError::from(err).add_context(format!(
-                "Failed to read file {}/{}",
+                "failed to read file {}/{}",
                 self.uri(),
                 path.to_string_lossy()
             ))
@@ -319,7 +319,7 @@ impl Storage for LocalFileStorage {
                     Ok(metadata.len())
                 } else {
                     Err(StorageErrorKind::NotFound.with_error(anyhow::anyhow!(
-                        "File `{}` is actually a directory.",
+                        "file `{}` is actually a directory",
                         path.display()
                     )))
                 }

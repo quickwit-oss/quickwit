@@ -102,7 +102,7 @@ impl Storage for RamStorage {
     async fn copy_to(&self, path: &Path, output: &mut dyn SendableAsync) -> StorageResult<()> {
         let payload_bytes = self.get_data(path).await.ok_or_else(|| {
             StorageErrorKind::NotFound
-                .with_error(anyhow::anyhow!("Failed to find dest_path {:?}", path))
+                .with_error(anyhow::anyhow!("failed to find dest_path {:?}", path))
         })?;
         output.write_all(&payload_bytes).await?;
         output.flush().await?;
@@ -112,7 +112,7 @@ impl Storage for RamStorage {
     async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
         let payload_bytes = self.get_data(path).await.ok_or_else(|| {
             StorageErrorKind::NotFound
-                .with_error(anyhow::anyhow!("Failed to find dest_path {:?}", path))
+                .with_error(anyhow::anyhow!("failed to find dest_path {:?}", path))
         })?;
         Ok(payload_bytes.slice(range.start..range.end))
     }
@@ -133,7 +133,7 @@ impl Storage for RamStorage {
     async fn get_all(&self, path: &Path) -> StorageResult<OwnedBytes> {
         let payload_bytes = self.get_data(path).await.ok_or_else(|| {
             StorageErrorKind::NotFound
-                .with_error(anyhow::anyhow!("Failed to find dest_path {:?}", path))
+                .with_error(anyhow::anyhow!("failed to find dest_path {:?}", path))
         })?;
         Ok(payload_bytes)
     }
@@ -146,7 +146,7 @@ impl Storage for RamStorage {
         if let Some(file_bytes) = self.files.read().await.get(path) {
             Ok(file_bytes.len() as u64)
         } else {
-            let err = anyhow::anyhow!("Missing file `{}`", path.display());
+            let err = anyhow::anyhow!("missing file `{}`", path.display());
             Err(StorageErrorKind::NotFound.with_error(err))
         }
     }
@@ -202,7 +202,7 @@ impl StorageFactory for RamStorageFactory {
                 uri.clone(),
             )),
             _ => {
-                let message = format!("URI `{uri}` is not a valid RAM URI.");
+                let message = format!("URI `{uri}` is not a valid RAM URI");
                 Err(StorageResolverError::InvalidUri(message))
             }
         }

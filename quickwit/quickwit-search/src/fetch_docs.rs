@@ -67,7 +67,7 @@ async fn fetch_docs_to_map(
             global_doc_addrs.into_iter().cloned().collect();
         let split_and_offset = split_offsets_map
             .get(split_id)
-            .ok_or_else(|| anyhow::anyhow!("Failed to find offset for split {}", split_id))?;
+            .ok_or_else(|| anyhow::anyhow!("failed to find offset for split {}", split_id))?;
         split_fetch_docs_futures.push(fetch_docs_in_split(
             searcher_context.clone(),
             global_doc_addrs,
@@ -89,7 +89,7 @@ async fn fetch_docs_to_map(
             .collect_vec();
         error!(split_ids = ?split_ids, error = ?error, "Error when fetching docs in splits.");
         anyhow::anyhow!(
-            "Error when fetching docs for splits {:?}: {:?}.",
+            "error when fetching docs for splits {:?}: {:?}",
             split_ids,
             error
         )
@@ -301,7 +301,7 @@ async fn create_fields_snippet_generator(
 ) -> anyhow::Result<FieldsSnippetGenerator> {
     let schema = searcher.schema();
     let query_ast_resolved = serde_json::from_str(&snippet_request.query_ast_resolved)
-        .context("Failed to deserialize QueryAst.")?;
+        .context("failed to deserialize QueryAst")?;
     let (query, _) = doc_mapper.query(schema.clone(), &query_ast_resolved, false)?;
     let mut snippet_generators = HashMap::new();
     for field_name in &snippet_request.snippet_fields {

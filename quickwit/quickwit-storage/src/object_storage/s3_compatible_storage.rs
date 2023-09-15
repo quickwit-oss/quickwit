@@ -162,7 +162,7 @@ impl S3CompatibleObjectStorage {
         uri: &Uri,
     ) -> Result<Self, StorageResolverError> {
         let (bucket, prefix) = parse_s3_uri(uri).ok_or_else(|| {
-            let message = format!("Failed to extract bucket name from S3 URI: {uri}");
+            let message = format!("failed to extract bucket name from S3 URI: {uri}");
             StorageResolverError::InvalidUri(message)
         })?;
         let storage = Self::new(s3_storage_config, uri.clone(), bucket).await?;
@@ -321,7 +321,7 @@ impl S3CompatibleObjectStorage {
         .upload_id
         .ok_or_else(|| {
             StorageErrorKind::Internal
-                .with_error(anyhow!("The returned multipart upload id was null."))
+                .with_error(anyhow!("the returned multipart upload id was null"))
         })?;
         Ok(MultipartUploadId(upload_id))
     }
@@ -739,7 +739,7 @@ impl Storage for S3CompatibleObjectStorage {
             .map(OwnedBytes::new)
             .map_err(|err| {
                 err.add_context(format!(
-                    "Failed to fetch slice {:?} for object: {}/{}",
+                    "failed to fetch slice {:?} for object: {}/{}",
                     range,
                     self.uri,
                     path.display(),
@@ -756,7 +756,7 @@ impl Storage for S3CompatibleObjectStorage {
             .map(OwnedBytes::new)
             .map_err(|err| {
                 err.add_context(format!(
-                    "Failed to fetch object: {}/{}",
+                    "failed to fetch object: {}/{}",
                     self.uri,
                     path.display()
                 ))

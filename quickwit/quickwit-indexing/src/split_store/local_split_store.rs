@@ -78,7 +78,7 @@ pub fn get_tantivy_directory_from_split_bundle(
     let mmap_directory = MmapDirectory::open(split_file.parent().ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::NotFound,
-            format!("Couldn't find parent for {:?}", &split_file),
+            format!("couldn't find parent for {:?}", &split_file),
         )
     })?)?;
     let split_fileslice = mmap_directory.open_read(Path::new(&split_file))?;
@@ -118,7 +118,7 @@ impl SplitFolder {
     /// There are no specific constraint on `path`.
     pub async fn create(split_id: &str, path: &Path) -> io::Result<Self> {
         let split_id = Ulid::from_str(split_id).map_err(|_err| {
-            let error_msg = format!("Split Id should be an `Ulid`. Got `{split_id:?}`.");
+            let error_msg = format!("Split Id should be an `Ulid`. got `{split_id:?}`");
             io::Error::new(io::ErrorKind::InvalidInput, error_msg)
         })?;
         let num_bytes = num_bytes_in_folder(path).await?;
@@ -297,7 +297,7 @@ impl LocalSplitStore {
     ) -> anyhow::Result<LocalSplitStore> {
         tokio::fs::create_dir_all(&split_store_folder)
             .await
-            .context("Failed to create the split cache directory.")?;
+            .context("failed to create the split cache directory")?;
 
         let mut split_folders: Vec<SplitFolder> = Vec::new();
 
@@ -316,8 +316,8 @@ impl LocalSplitStore {
 
             let split_id = split_id_from_split_folder(&dir_path).ok_or_else(|| {
                 let error_msg = format!(
-                    "Split folder name should match the format `<split_id>.split`. Got \
-                     `{dir_path:?}`."
+                    "split folder name should match the format `<split_id>.split`. got \
+                     `{dir_path:?}`"
                 );
                 io::Error::new(io::ErrorKind::InvalidInput, error_msg)
             })?;

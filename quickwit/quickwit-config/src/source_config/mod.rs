@@ -213,7 +213,7 @@ impl FromStr for SourceInputFormat {
         match format_str {
             "json" => Ok(Self::Json),
             "plain" => Ok(Self::PlainText),
-            unknown => Err(format!("Unknown source input format: `{unknown}`.")),
+            unknown => Err(format!("unknown source input format: `{unknown}`")),
         }
     }
 }
@@ -359,9 +359,7 @@ impl TryFrom<KinesisSourceParamsInner> for KinesisSourceParams {
 
     fn try_from(value: KinesisSourceParamsInner) -> Result<Self, Self::Error> {
         if value.region.is_some() && value.endpoint.is_some() {
-            return Err(
-                "Kinesis source parameters `region` and `endpoint` are mutually exclusive.",
-            );
+            return Err("Kinesis source parameters `region` and `endpoint` are mutually exclusive");
         }
         let region = value.region.map(RegionOrEndpoint::Region);
         let endpoint = value.endpoint.map(RegionOrEndpoint::Endpoint);
@@ -429,8 +427,8 @@ where D: Deserializer<'de> {
 
     if uri.strip_prefix("pulsar://").is_none() {
         return Err(Error::custom(format!(
-            "Invalid Pulsar uri provided, must be in the format of `pulsar://host:port/path`. \
-             Got: `{uri}`"
+            "invalid Pulsar uri provided, must be in the format of `pulsar://host:port/path`. \
+             got: `{uri}`"
         )));
     }
 
@@ -494,7 +492,7 @@ impl TransformConfig {
         use anyhow::Context;
         let timezone = vrl::compiler::TimeZone::parse(&self.timezone).with_context(|| {
             format!(
-                "Failed to parse timezone: `{}`. Timezone must be a valid name \
+                "failed to parse timezone: `{}`. timezone must be a valid name \
             in the TZ database: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones",
                 self.timezone,
             )
@@ -509,7 +507,7 @@ impl TransformConfig {
             Err(diagnostics) => {
                 let mut formatter = vrl::diagnostic::Formatter::new(&vrl_script, diagnostics);
                 formatter.enable_colors(!quickwit_common::no_color());
-                anyhow::bail!("Failed to compile VRL script:\n {formatter}")
+                anyhow::bail!("failed to compile VRL script:\n {formatter}")
             }
         };
 

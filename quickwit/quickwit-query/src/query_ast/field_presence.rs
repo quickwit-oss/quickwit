@@ -78,7 +78,7 @@ impl BuildTantivyAst for FieldPresenceQuery {
         _with_validation: bool,
     ) -> Result<TantivyQueryAst, InvalidQuery> {
         let field_presence_field = schema.get_field(FIELD_PRESENCE_FIELD_NAME).map_err(|_| {
-            InvalidQuery::SchemaError("Field presence is not available for this split.".to_string())
+            InvalidQuery::SchemaError("field presence is not available for this split".to_string())
         })?;
         let (field, field_entry, path) = find_field_or_hit_dynamic(&self.field, schema)?;
         if field_entry.is_fast() {

@@ -32,13 +32,13 @@ pub type IngestV2Result<T> = std::result::Result<T, IngestV2Error>;
 
 #[derive(Debug, Clone, thiserror::Error)]
 pub enum IngestV2Error {
-    #[error("An internal error occurred: {0}.")]
+    #[error("an internal error occurred: {0}")]
     Internal(String),
-    #[error("Failed to connect to ingester `{ingester_id}`.")]
+    #[error("failed to connect to ingester `{ingester_id}`")]
     IngesterUnavailable { ingester_id: NodeId },
     #[error(
-        "Ingest service is currently unavailable with {num_ingesters} in the cluster and a \
-         replication factor of {replication_factor}."
+        "ingest service is currently unavailable with {num_ingesters} in the cluster and a \
+         replication factor of {replication_factor}"
     )]
     ServiceUnavailable {
         num_ingesters: usize,
@@ -50,7 +50,7 @@ pub enum IngestV2Error {
     //     source_id: SourceId,
     //     shard_id: ShardId,
     // },
-    #[error("Failed to open or write to shard.")]
+    #[error("failed to open or write to shard")]
     ShardUnavailable {
         leader_id: NodeId,
         index_uid: IndexUid,

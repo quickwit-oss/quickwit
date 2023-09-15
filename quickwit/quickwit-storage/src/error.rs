@@ -48,22 +48,22 @@ pub enum StorageErrorKind {
 #[derive(Debug, Clone, thiserror::Error, Serialize, Deserialize)]
 pub enum StorageResolverError {
     /// The storage config is invalid.
-    #[error("Invalid storage config: `{0}`")]
+    #[error("invalid storage config: `{0}`")]
     InvalidConfig(String),
 
     /// The URI does not contain sufficient information to connect to the storage.
-    #[error("Invalid storage URI: `{0}`")]
+    #[error("invalid storage URI: `{0}`")]
     InvalidUri(String),
 
     /// The requested backend is unsupported or unavailable.
-    #[error("Unsupported storage backend: `{0}`")]
+    #[error("unsupported storage backend: `{0}`")]
     UnsupportedBackend(String),
 
     /// The URI is valid, and is meant to be handled by this resolver,
     /// but the resolver failed to actually connect to the storage.
     /// e.g. Connection error, credential error, incompatible version,
     /// internal error in third party etc.
-    #[error("Failed to open storage {kind:?}: {message}.")]
+    #[error("failed to open storage {kind:?}: {message}")]
     FailedToOpenStorage {
         kind: crate::StorageErrorKind,
         message: String,
@@ -93,7 +93,7 @@ impl From<StorageError> for io::Error {
 
 /// Generic StorageError.
 #[derive(Debug, Clone, Error)]
-#[error("StorageError(kind={kind:?}, source={source})")]
+#[error("storage error(kind={kind:?}, source={source})")]
 #[allow(missing_docs)]
 pub struct StorageError {
     pub kind: StorageErrorKind,
@@ -193,7 +193,7 @@ impl fmt::Display for BulkDeleteError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
-            "Bulk delete error ({} success(es),  {} failure(s), {} unattempted)",
+            "bulk delete error ({} success(es),  {} failure(s), {} unattempted)",
             self.successes.len(),
             self.failures.len(),
             self.unattempted.len()

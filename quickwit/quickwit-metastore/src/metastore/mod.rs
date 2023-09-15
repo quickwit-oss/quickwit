@@ -425,7 +425,7 @@ impl ListSplitsQuery {
     pub fn try_from_index_uids(index_uids: Vec<IndexUid>) -> MetastoreResult<Self> {
         if index_uids.is_empty() {
             return Err(MetastoreError::Internal {
-                message: "ListSplitQuery should define at least one index uid.".to_string(),
+                message: "ListSplitQuery should define at least one index uid".to_string(),
                 cause: "".to_string(),
             });
         }

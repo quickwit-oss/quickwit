@@ -82,7 +82,7 @@ async fn establish_connection(
         .connect_with(pg_connect_options)
         .await
         .map_err(|error| {
-            error!(connection_uri=%connection_uri, error=?error, "Failed to establish connection to database.");
+            error!(connection_uri=%connection_uri, error=?error, "failed to establish connection to database");
             MetastoreError::Connection {
                 message: error.to_string(),
             }
@@ -99,7 +99,7 @@ async fn run_postgres_migrations(pool: &Pool<Postgres>) -> MetastoreResult<()> {
         tx.rollback().await?;
         error!(err=?migration_err, "Database migrations failed");
         return Err(MetastoreError::Internal {
-            message: "Failed to run migration on Postgresql database.".to_string(),
+            message: "failed to run migration on Postgresql database".to_string(),
             cause: migration_err.to_string(),
         });
     }
@@ -372,7 +372,7 @@ fn convert_sqlx_err(index_id: &str, sqlx_err: sqlx::Error) -> MetastoreError {
                 (pg_error_code::UNIQUE_VIOLATION, _) => {
                     error!(pg_db_err=?boxed_db_err, "postgresql-error");
                     MetastoreError::Internal {
-                        message: "Unique key violation.".to_string(),
+                        message: "unique key violation".to_string(),
                         cause: format!("DB error {boxed_db_err:?}"),
                     }
                 }
@@ -479,7 +479,7 @@ impl Metastore for PostgresqlMetastore {
             ListIndexesQuery::IndexIdPatterns(index_id_patterns) => {
                 build_index_id_patterns_sql_query(index_id_patterns).map_err(|error| {
                     MetastoreError::Internal {
-                        message: "Failed to build `list_indexes_metadatas` SQL query".to_string(),
+                        message: "failed to build `list_indexes_metadatas` SQL query".to_string(),
                         cause: error.to_string(),
                     }
                 })?
@@ -1294,7 +1294,7 @@ fn build_index_id_patterns_sql_query(index_id_patterns: Vec<String>) -> anyhow::
     let mut where_like_query = String::new();
     for (index_id_pattern_idx, index_id_pattern) in index_id_patterns.iter().enumerate() {
         validate_index_id_pattern(index_id_pattern).map_err(|error| MetastoreError::Internal {
-            message: "Failed to build list indexes query".to_string(),
+            message: "failed to build list indexes query".to_string(),
             cause: error.to_string(),
         })?;
         if index_id_pattern.contains('*') {
@@ -1360,7 +1360,7 @@ impl MetastoreFactory for PostgresqlMetastoreFactory {
         debug!("metastore not found in cache");
         let postgresql_metastore_config = metastore_config.as_postgres().ok_or_else(|| {
             let message = format!(
-                "Expected PostgreSQL metastore config, got `{:?}`.",
+                "expected PostgreSQL metastore config, got `{:?}`",
                 metastore_config.backend()
             );
             MetastoreResolverError::InvalidConfig(message)
@@ -1677,9 +1677,9 @@ mod tests {
             build_index_id_patterns_sql_query(vec!["*-index-*-&-last**".to_string()])
                 .unwrap_err()
                 .to_string(),
-            "Internal error: Failed to build list indexes query Cause: `Index ID pattern \
-             `*-index-*-&-last**` is invalid. Patterns must match the following regular \
-             expression: `^[a-zA-Z\\*][a-zA-Z0-9-_\\.\\*]{0,254}$`.`."
+            "internal error: failed to build list indexes query; cause: `index ID pattern \
+             `*-index-*-&-last**` is invalid. patterns must match the following regular \
+             expression: `^[a-zA-Z\\*][a-zA-Z0-9-_\\.\\*]{0,254}$`.`"
         );
     }
 }

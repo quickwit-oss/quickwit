@@ -483,7 +483,7 @@ impl IngestController {
                     .find_leader_and_follower(ctx, &mut unavailable_ingesters)
                     .await
                     .ok_or_else(|| {
-                        ControlPlaneError::Unavailable("No available ingester".to_string())
+                        ControlPlaneError::Unavailable("no available ingester".to_string())
                     })?;
                 let open_shards_subrequest = metastore::OpenShardsSubrequest {
                     index_uid: index_uid.into(),
@@ -586,7 +586,7 @@ impl Actor for IngestController {
     async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
         self.load_state(ctx)
             .await
-            .context("Failed to initialize ingest controller.")?;
+            .context("failed to initialize ingest controller")?;
         Ok(())
     }
 }

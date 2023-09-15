@@ -236,7 +236,7 @@ fn try_extract_terms(
         .sum::<usize>();
     if num_terms > max_terms {
         bail!(
-            "Number of unique terms for tag field {} > {}.",
+            "number of unique terms for tag field {} > {}",
             named_field.name,
             max_terms
         );
@@ -256,11 +256,11 @@ fn try_extract_terms(
                 FieldType::Bool(_) => match u64_from_term_data(term_data)? {
                     0 => false,
                     1 => true,
-                    _ => bail!("Invalid boolean value"),
+                    _ => bail!("invalid boolean value"),
                 }
                 .to_string(),
                 FieldType::Bytes(_) => {
-                    bail!("Tags collection is not allowed on `bytes` fields.")
+                    bail!("tags collection is not allowed on `bytes` fields")
                 }
                 _ => std::str::from_utf8(term_data)?.to_string(),
             };
@@ -327,7 +327,7 @@ fn create_packaged_split(
 fn u64_from_term_data(data: &[u8]) -> anyhow::Result<u64> {
     let u64_bytes: [u8; 8] = data[0..8]
         .try_into()
-        .context("Could not interpret term bytes as u64")?;
+        .context("could not interpret term bytes as u64")?;
     Ok(u64::from_be_bytes(u64_bytes))
 }
 

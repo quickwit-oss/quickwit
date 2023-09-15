@@ -229,14 +229,14 @@ impl ToolCliCommand {
     pub fn parse_cli_args(mut matches: ArgMatches) -> anyhow::Result<Self> {
         let (subcommand, submatches) = matches
             .remove_subcommand()
-            .context("Failed to parse tool subcommand.")?;
+            .context("failed to parse tool subcommand")?;
         match subcommand.as_str() {
             "gc" => Self::parse_garbage_collect_args(submatches),
             "local-ingest" => Self::parse_local_ingest_args(submatches),
             "local-search" => Self::parse_local_search_args(submatches),
             "merge" => Self::parse_merge_args(submatches),
             "extract-split" => Self::parse_extract_split_args(submatches),
-            _ => bail!("Unknown tool subcommand `{subcommand}`."),
+            _ => bail!("unknown tool subcommand `{subcommand}`"),
         }
     }
 
@@ -286,7 +286,7 @@ impl ToolCliCommand {
             .expect("`index` should be a required arg.");
         let query = matches
             .remove_one::<String>("query")
-            .context("`query` should be a required arg.")?;
+            .context("`query` should be a required arg")?;
         let aggregation = matches.remove_one::<String>("aggregation");
         let max_hits = matches
             .remove_one::<String>("max-hits")
@@ -518,7 +518,7 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
             println!("{} Documents successfully indexed.", "✔".color(GREEN_COLOR));
             Ok(())
         }
-        _ => bail!("Failed to ingest all the documents."),
+        _ => bail!("failed to ingest all the documents"),
     }
 }
 

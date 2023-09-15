@@ -443,7 +443,7 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
     assert!(single_node_response.is_err());
     assert_eq!(
         single_node_response.err().map(|err| err.to_string()),
-        Some("Invalid query: Field does not exist: `tag`".to_string())
+        Some("invalid query: field does not exist: `tag`".to_string())
     );
     test_sandbox.assert_quit().await;
     Ok(())
@@ -886,7 +886,7 @@ async fn test_single_node_invalid_sorting_with_query() {
     let error_msg = single_node_response.unwrap_err().to_string();
     assert_eq!(
         error_msg,
-        "Invalid argument: Sort by field on type text is currently not supported `description`."
+        "Invalid argument: sort by field on type text is currently not supported `description`"
     );
     test_sandbox.assert_quit().await;
 }

@@ -295,7 +295,7 @@ impl<'de> Deserialize<'de> for SourceCheckpoint {
 /// the checkpoint.
 #[derive(Clone, Debug, Error, Eq, PartialEq, Serialize, Deserialize)]
 #[error(
-    "Incompatible checkpoint delta at partition `{partition_id}`: cur_pos:{partition_position:?} \
+    "incompatible checkpoint delta at partition `{partition_id}`: cur_pos:{partition_position:?} \
      delta_pos:{delta_from_position:?}"
 )]
 pub struct IncompatibleCheckpointDelta {
@@ -312,7 +312,7 @@ pub enum PartitionDeltaError {
     #[error(transparent)]
     IncompatibleCheckpointDelta(#[from] IncompatibleCheckpointDelta),
     #[error(
-        "Empty or negative delta at partition `{partition_id}`: {from_position:?} >= \
+        "empty or negative delta at partition `{partition_id}`: {from_position:?} >= \
          {to_position:?}"
     )]
     EmptyOrNegativeDelta {
