@@ -310,7 +310,11 @@ fn validate(node_config: &NodeConfig) -> anyhow::Result<()> {
     }
 
     if node_config.metastore_uri.protocol().is_file() {
-        warn!("metastore_uri = {}. Using file-backed metastore comes with certain limitations, please refer to the specific documentation for details.", node_config.metastore_uri);
+        warn!(
+            "metastore_uri = {}. Using file-backed metastore comes with certain limitations, \
+            please refer to the specific documentation for details.",
+            node_config.metastore_uri
+        );
     }
 
     Ok(())
