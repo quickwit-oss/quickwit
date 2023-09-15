@@ -20,7 +20,7 @@
 use anyhow::Context;
 use quickwit_common::uri::Uri;
 use serde::{Deserialize, Serialize};
-use tracing::info;
+use tracing::{info, warn};
 
 use crate::{
     build_doc_mapper, validate_identifier, ConfigFormat, DocMapping, IndexConfig, IndexingSettings,
@@ -87,6 +87,9 @@ impl IndexConfigForSerialization {
 
         let index_uri = self.index_uri_or_fallback_to_default(default_index_root_uri)?;
 
+        if index_uri.protocol().is_file() {
+            warn!("index_uri = {}. Using file-backed index comes with certain limitations, please refer to the specific documentation for details.", index_uri);
+        }
         if let Some(retention_policy) = &self.retention_policy {
             retention_policy.validate()?;
 
