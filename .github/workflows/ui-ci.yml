@@ -24,6 +24,8 @@ jobs:
         task:
           - name: Cypress run
             command: |
+              sudo apt-get -y install protobuf-compiler
+              rustup show
               CI=false yarn --cwd quickwit-ui build
               cargo build --features=postgres
               mkdir qwdata
@@ -62,11 +64,8 @@ jobs:
           node-version: 18
           cache: "yarn"
           cache-dependency-path: quickwit/quickwit-ui/yarn.lock
-      - name: Install rust
-        run: curl https://sh.rustup.rs -sSf | sh -s -- -y
-      - uses: arduino/setup-protoc@v2
-        with:
-          version: "21.x"
+      - name: Install rustup
+        run: curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain none -y
       - name: Install JS dependencies
         run: yarn --cwd quickwit-ui install
         working-directory: ./quickwit
@@ -74,7 +73,6 @@ jobs:
         if: matrix.task.name == 'Cypress run'
         uses: Swatinem/rust-cache@v2
         with:
-          key: "default"
           workspaces: "./quickwit -> target"
       - name: ${{ matrix.task.name }}
         run: ${{ matrix.task.command }}
