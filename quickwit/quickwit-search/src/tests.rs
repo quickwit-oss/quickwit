@@ -1029,7 +1029,7 @@ async fn test_search_util(test_sandbox: &TestSandbox, query: &str) -> Vec<u32> {
         .list_all_splits(test_sandbox.index_uid())
         .await
         .unwrap();
-    let splits_offsets: Vec<_> = splits
+    let mut splits_offsets: Vec<_> = splits
         .into_iter()
         .map(|split_meta| extract_split_and_footer_offsets(&split_meta.split_metadata))
         .collect();
@@ -1045,7 +1045,7 @@ async fn test_search_util(test_sandbox: &TestSandbox, query: &str) -> Vec<u32> {
         searcher_context,
         request,
         test_sandbox.storage(),
-        &splits_offsets,
+        &mut splits_offsets,
         test_sandbox.doc_mapper(),
     )
     .await

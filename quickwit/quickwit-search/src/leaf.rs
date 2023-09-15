@@ -20,7 +20,7 @@
 use std::collections::{HashMap, HashSet};
 use std::ops::Bound;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use anyhow::Context;
 use futures::future::try_join_all;
@@ -29,8 +29,8 @@ use quickwit_common::PrettySample;
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
 use quickwit_doc_mapper::{DocMapper, TermRange, WarmupInfo};
 use quickwit_proto::search::{
-    LeafListTermsResponse, LeafSearchResponse, ListTermsRequest, SearchRequest,
-    SplitIdAndFooterOffsets, SplitSearchError,
+    LeafListTermsResponse, LeafSearchResponse, ListTermsRequest, PartialHit, SearchRequest,
+    SortOrder, SortValue, SplitIdAndFooterOffsets, SplitSearchError,
 };
 use quickwit_query::query_ast::QueryAst;
 use quickwit_storage::{
@@ -435,6 +435,95 @@ pub(crate) fn rewrite_start_end_time_bounds(
     }
 }
 
+#[derive(Debug)]
+enum MutCanSplitDoBetter {
+    Uninformative,
+    SplitIdHigher(Option<String>),
+    SplitTimestampHigher(Option<i64>),
+    SplitTimestampLower(Option<i64>),
+}
+
+#[derive(Debug, Clone)]
+pub struct CanSplitDoBetter {
+    inner: Arc<RwLock<MutCanSplitDoBetter>>,
+}
+
+impl CanSplitDoBetter {
+    /// Split metadata contains no information using for sorting
+    pub fn uninformative() -> Self {
+        CanSplitDoBetter {
+            inner: Arc::new(RwLock::new(MutCanSplitDoBetter::Uninformative)),
+        }
+    }
+
+    /// No order was requested, split id can be useful
+    pub fn no_order() -> Self {
+        CanSplitDoBetter {
+            inner: Arc::new(RwLock::new(MutCanSplitDoBetter::SplitIdHigher(None))),
+        }
+    }
+
+    /// Sorted by desc timestamp was requested
+    pub fn desc_timestamp() -> Self {
+        CanSplitDoBetter {
+            inner: Arc::new(RwLock::new(MutCanSplitDoBetter::SplitTimestampHigher(None))),
+        }
+    }
+
+    /// Sorted by asc timestamp was requested
+    pub fn asc_timestamp() -> Self {
+        CanSplitDoBetter {
+            inner: Arc::new(RwLock::new(MutCanSplitDoBetter::SplitTimestampLower(None))),
+        }
+    }
+
+    /// Returns whether the given split can possibly give documents better than the one already
+    /// known to match.
+    pub fn can_be_better(&self, split: &SplitIdAndFooterOffsets) -> bool {
+        match &*self.inner.read().unwrap() {
+            MutCanSplitDoBetter::SplitIdHigher(Some(split_id)) => split.split_id >= *split_id,
+            MutCanSplitDoBetter::SplitTimestampHigher(Some(timestamp)) => {
+                split.timestamp_end() > *timestamp
+            }
+            MutCanSplitDoBetter::SplitTimestampLower(Some(timestamp)) => {
+                split.timestamp_start() < *timestamp
+            }
+            _ => true,
+        }
+    }
+
+    /// Record the new worst-of-the-top document, that is, the document which would first be
+    /// evicted from the list of best documents, if a better document was found. Only call this
+    /// funciton if you have at least max_hits documents already.
+    pub fn record_new_worst_hit(&self, hit: &PartialHit) {
+        match &mut *self.inner.write().unwrap() {
+            MutCanSplitDoBetter::Uninformative => (),
+            MutCanSplitDoBetter::SplitIdHigher(split_id) => *split_id = Some(hit.split_id.clone()),
+            MutCanSplitDoBetter::SplitTimestampHigher(timestamp) => {
+                if let Some(SortValue::I64(timestamp_ns)) =
+                    hit.sort_value.and_then(|v| v.sort_value)
+                {
+                    // if we get a timestamp of, says 1.5s, we need to check up to 2s to make
+                    // sure we don't throw away something like 1.2s, so we should round up while
+                    // dividing.
+                    *timestamp = Some(quickwit_common::div_ceil(timestamp_ns, 1_000_000_000));
+                }
+            }
+            MutCanSplitDoBetter::SplitTimestampLower(timestamp) => {
+                if let Some(SortValue::I64(timestamp_ns)) =
+                    hit.sort_value.and_then(|v| v.sort_value)
+                {
+                    // if we get a timestamp of, says 1.5s, we need to check down to 1s to make
+                    // sure we don't throw away something like 1.7s, so we should truncate,
+                    // which is the default behavior of division
+                    let timestamp_s = timestamp_ns / 1_000_000_000;
+                    *timestamp = Some(timestamp_s);
+                }
+            }
+        }
+    }
+}
+
 /// `leaf` step of search.
 ///
 /// The leaf search collects all kind of information, and returns a set of
@@ -446,10 +535,44 @@ pub async fn leaf_search(
     searcher_context: Arc<SearcherContext>,
     request: Arc<SearchRequest>,
     index_storage: Arc<dyn Storage>,
-    splits: &[SplitIdAndFooterOffsets],
+    splits: &mut [SplitIdAndFooterOffsets],
     doc_mapper: Arc<dyn DocMapper>,
 ) -> Result<LeafSearchResponse, SearchError> {
     info!(splits_num = splits.len(), split_offsets = ?PrettySample::new(splits, 5));
+
+    // The leaf search code contains some logic that makes it possible to skip entire splits
+    // when we are confident they won't make it into top K.
+    // To make this optimization as potent as possible, we sort the splits so that the first splits
+    // are the most likely to fill our Top K.
+    // In the future, is split get more metadata per column, we may be able to do this more than
+    // just for timestamp an "unsorted" splits.
+    let split_filter = if request.sort_fields.is_empty() {
+        splits.sort_unstable_by(|a, b| b.split_id.cmp(&a.split_id));
+        CanSplitDoBetter::no_order()
+    } else if let Some((sort_by, timestamp_field)) = request
+        .sort_fields
+        .first()
+        .zip(doc_mapper.timestamp_field_name())
+    {
+        if sort_by.field_name == timestamp_field {
+            if sort_by.sort_order() == SortOrder::Desc {
+                splits.sort_unstable_by_key(|split| std::cmp::Reverse(split.timestamp_end()));
+                CanSplitDoBetter::desc_timestamp()
+            } else {
+                splits.sort_unstable_by_key(|split| split.timestamp_start());
+                CanSplitDoBetter::asc_timestamp()
+            }
+        } else {
+            CanSplitDoBetter::uninformative()
+        }
+    } else {
+        CanSplitDoBetter::uninformative()
+    };
+
+    // In the future this should become `request.aggregation_request.is_some() ||
+    // request.exact_count == true`
+    let run_all_splits = true;
+
     let mut leaf_search_single_split_futures: Vec<_> = Vec::with_capacity(splits.len());
     for split in splits {
         let searcher_context_clone = searcher_context.clone();
