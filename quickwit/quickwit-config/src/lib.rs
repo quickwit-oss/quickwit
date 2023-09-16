@@ -192,7 +192,9 @@ impl ConfigFormat {
     }
 
     pub fn parse<T>(&self, payload: &[u8]) -> anyhow::Result<T>
-    where T: DeserializeOwned {
+    where
+        T: DeserializeOwned,
+    {
         match self {
             ConfigFormat::Json => {
                 let mut json_value: JsonValue =
