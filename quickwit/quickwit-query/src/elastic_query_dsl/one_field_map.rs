@@ -56,18 +56,18 @@ impl<'de, V: Deserialize<'de>> Visitor<'de> for OneFieldMapVisitor<V> {
         if let Some(num_keys) = map.size_hint() {
             if num_keys != 1 {
                 return Err(serde::de::Error::custom(format!(
-                    "Expected a single field. Got {num_keys}."
+                    "expected a single field. got {num_keys}"
                 )));
             }
         }
         let Some((key, val)) = map.next_entry()? else {
             return Err(serde::de::Error::custom(
-                "Expected a single field. Got none.",
+                "expected a single field. got none",
             ));
         };
         if let Some(second_key) = map.next_key::<String>()? {
             return Err(serde::de::Error::custom(format!(
-                "Expected a single field. Got several ({key}, {second_key}, ...)."
+                "expected a single field. got several ({key}, {second_key}, ...)"
             )));
         }
         Ok(OneFieldMap {
@@ -118,7 +118,7 @@ mod tests {
                 "my-field2": {"count": 2}
             }));
         let deser_err = deser.unwrap_err();
-        assert_eq!(deser_err.to_string(), "Expected a single field. Got 2.");
+        assert_eq!(deser_err.to_string(), "expected a single field. got 2");
     }
 
     #[test]
@@ -126,6 +126,6 @@ mod tests {
         let deser: serde_json::Result<OneFieldMap<Property>> =
             serde_json::from_value(serde_json::json!({}));
         let deser_err = deser.unwrap_err();
-        assert_eq!(deser_err.to_string(), "Expected a single field. Got 0.");
+        assert_eq!(deser_err.to_string(), "expected a single field. got 0");
     }
 }

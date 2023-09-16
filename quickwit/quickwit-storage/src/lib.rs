@@ -95,11 +95,11 @@ pub async fn load_file(
 ) -> anyhow::Result<OwnedBytes> {
     let parent = uri
         .parent()
-        .ok_or_else(|| anyhow::anyhow!("URI `{uri}` is not a valid file URI."))?;
+        .ok_or_else(|| anyhow::anyhow!("URI `{uri}` is not a valid file URI"))?;
     let storage = storage_resolver.resolve(&parent).await?;
     let file_name = uri
         .file_name()
-        .ok_or_else(|| anyhow::anyhow!("URI `{uri}` is not a valid file URI."))?;
+        .ok_or_else(|| anyhow::anyhow!("URI `{uri}` is not a valid file URI"))?;
     let bytes = storage.get_all(file_name).await?;
     Ok(bytes)
 }

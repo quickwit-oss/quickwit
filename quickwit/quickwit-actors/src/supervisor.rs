@@ -246,7 +246,7 @@ mod tests {
                 }
                 FailingActorMessage::ReturnError => {
                     return Err(ActorExitStatus::from(anyhow::anyhow!(
-                        "Failing actor error"
+                        "failing actor error"
                     )));
                 }
                 FailingActorMessage::Increment => {

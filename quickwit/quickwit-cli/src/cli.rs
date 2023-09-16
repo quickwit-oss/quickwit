@@ -77,14 +77,14 @@ impl CliCommand {
     pub fn parse_cli_args(mut matches: ArgMatches) -> anyhow::Result<Self> {
         let (subcommand, submatches) = matches
             .remove_subcommand()
-            .context("Failed to parse command.")?;
+            .context("failed to parse command")?;
         match subcommand.as_str() {
             "index" => IndexCliCommand::parse_cli_args(submatches).map(CliCommand::Index),
             "run" => RunCliCommand::parse_cli_args(submatches).map(CliCommand::Run),
             "source" => SourceCliCommand::parse_cli_args(submatches).map(CliCommand::Source),
             "split" => SplitCliCommand::parse_cli_args(submatches).map(CliCommand::Split),
             "tool" => ToolCliCommand::parse_cli_args(submatches).map(CliCommand::Tool),
-            _ => bail!("Unknown command `{subcommand}`."),
+            _ => bail!("unknown command `{subcommand}`"),
         }
     }
 

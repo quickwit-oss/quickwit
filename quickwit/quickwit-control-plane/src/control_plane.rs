@@ -293,7 +293,7 @@ impl Handler<NotifyIndexChangeRequest> for ControlPlane {
         self.indexing_scheduler_mailbox
             .send_message(request)
             .await
-            .context("Error sending index change notification to index scheduler.")?;
+            .context("error sending index change notification to index scheduler")?;
         Ok(Ok(NotifyIndexChangeResponse {}))
     }
 }

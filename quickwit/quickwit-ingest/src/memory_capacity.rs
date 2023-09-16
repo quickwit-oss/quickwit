@@ -22,7 +22,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 #[derive(Debug, Clone, Copy, thiserror::Error)]
-#[error("Failed to reserve requested memory capacity. Current capacity: {0}")]
+#[error("failed to reserve requested memory capacity. current capacity: {0}")]
 pub struct ReserveCapacityError(usize);
 
 #[derive(Clone)]

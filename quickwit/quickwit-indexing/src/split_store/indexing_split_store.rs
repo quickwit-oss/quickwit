@@ -134,7 +134,7 @@ impl IndexingSplitStore {
             .await
             .with_context(|| {
                 format!(
-                    "Failed uploading key {} in bucket {}",
+                    "failed uploading key {} in bucket {}",
                     key.display(),
                     self.inner.remote_storage.uri()
                 )

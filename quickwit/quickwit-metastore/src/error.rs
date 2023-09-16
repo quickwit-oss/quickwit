@@ -23,20 +23,20 @@ use quickwit_proto::metastore::MetastoreError;
 #[derive(Debug, thiserror::Error)]
 pub enum MetastoreResolverError {
     /// The metastore config is invalid.
-    #[error("Invalid metastore config: `{0}`")]
+    #[error("invalid metastore config: `{0}`")]
     InvalidConfig(String),
 
     /// The URI does not contain sufficient information to connect to the metastore.
-    #[error("Invalid metastore URI: `{0}`")]
+    #[error("invalid metastore URI: `{0}`")]
     InvalidUri(String),
 
     /// The requested backend is unsupported or unavailable.
-    #[error("Unsupported metastore backend: `{0}`")]
+    #[error("unsupported metastore backend: `{0}`")]
     UnsupportedBackend(String),
 
     /// The config and URI are valid, and are meant to be handled by this resolver, but the
     /// resolver failed to actually connect to the backend. e.g. connection error, credentials
     /// error, incompatible version, internal error in a third party, etc.
-    #[error("Failed to connect to metastore: `{0}`")]
+    #[error("failed to connect to metastore: `{0}`")]
     Initialization(#[from] MetastoreError),
 }

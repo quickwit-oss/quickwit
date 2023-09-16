@@ -254,7 +254,7 @@ impl Cluster {
                 .next(),
         )
         .await
-        .context("Deadline has passed before predicate held true.")?;
+        .context("deadline has passed before predicate held true")?;
         Ok(())
     }
 

@@ -31,31 +31,31 @@ pub type IndexingResult<T> = std::result::Result<T, IndexingError>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum IndexingError {
-    #[error("Indexing pipeline `{index_id}` for source `{source_id}` does not exist.")]
+    #[error("indexing pipeline `{index_id}` for source `{source_id}` does not exist")]
     MissingPipeline { index_id: String, source_id: String },
     #[error(
-        "Pipeline #{pipeline_ord} for index `{index_id}` and source `{source_id}` already exists."
+        "pipeline #{pipeline_ord} for index `{index_id}` and source `{source_id}` already exists"
     )]
     PipelineAlreadyExists {
         index_id: String,
         source_id: String,
         pipeline_ord: usize,
     },
-    #[error("I/O Error `{0}`.")]
+    #[error("I/O error `{0}`")]
     Io(io::Error),
-    #[error("Invalid params `{0}`.")]
+    #[error("invalid params `{0}`")]
     InvalidParams(anyhow::Error),
-    #[error("Spanw pipelines errors `{pipeline_ids:?}`.")]
+    #[error("Spanw pipelines errors `{pipeline_ids:?}`")]
     SpawnPipelinesError {
         pipeline_ids: Vec<IndexingPipelineId>,
     },
-    #[error("A metastore error occurred: {0}.")]
+    #[error("a metastore error occurred: {0}")]
     MetastoreError(String),
-    #[error("A storage resolver error occurred: {0}.")]
+    #[error("a storage resolver error occurred: {0}")]
     StorageResolverError(String),
-    #[error("An internal error occurred: {0}.")]
+    #[error("an internal error occurred: {0}")]
     Internal(String),
-    #[error("The ingest service is unavailable.")]
+    #[error("the ingest service is unavailable")]
     Unavailable,
 }
 
@@ -65,26 +65,26 @@ impl From<IndexingError> for tonic::Status {
             IndexingError::MissingPipeline {
                 index_id,
                 source_id,
-            } => tonic::Status::not_found(format!("Missing pipeline {index_id}/{source_id}")),
+            } => tonic::Status::not_found(format!("missing pipeline {index_id}/{source_id}")),
             IndexingError::PipelineAlreadyExists {
                 index_id,
                 source_id,
                 pipeline_ord,
             } => tonic::Status::already_exists(format!(
-                "Pipeline {index_id}/{source_id} {pipeline_ord} already exists "
+                "pipeline {index_id}/{source_id} {pipeline_ord} already exists "
             )),
             IndexingError::Io(error) => tonic::Status::internal(error.to_string()),
             IndexingError::InvalidParams(error) => {
                 tonic::Status::invalid_argument(error.to_string())
             }
             IndexingError::SpawnPipelinesError { pipeline_ids } => {
-                tonic::Status::internal(format!("Error spawning pipelines {:?}", pipeline_ids))
+                tonic::Status::internal(format!("error spawning pipelines {:?}", pipeline_ids))
             }
             IndexingError::Internal(string) => tonic::Status::internal(string),
             IndexingError::MetastoreError(string) => tonic::Status::internal(string),
             IndexingError::StorageResolverError(string) => tonic::Status::internal(string),
             IndexingError::Unavailable => {
-                tonic::Status::unavailable("Indexing service is unavailable.")
+                tonic::Status::unavailable("indexing service is unavailable")
             }
         }
     }
@@ -133,7 +133,7 @@ impl From<AskError<IndexingError>> for IndexingError {
             AskError::ErrorReply(error) => error,
             AskError::MessageNotDelivered => IndexingError::Unavailable,
             AskError::ProcessMessageError => IndexingError::Internal(
-                "An error occurred while processing the request".to_string(),
+                "an error occurred while processing the request".to_string(),
             ),
         }
     }
@@ -160,13 +160,13 @@ impl TryFrom<&str> for IndexingTask {
         let mut iter = index_task_str.rsplit(':');
         let source_id = iter.next().ok_or_else(|| {
             anyhow!(
-                "Invalid index task format, cannot find source_id in `{}`",
+                "invalid index task format, cannot find source_id in `{}`",
                 index_task_str
             )
         })?;
         let part1 = iter.next().ok_or_else(|| {
             anyhow!(
-                "Invalid index task format, cannot find index_id in `{}`",
+                "invalid index task format, cannot find index_id in `{}`",
                 index_task_str
             )
         })?;
@@ -218,11 +218,11 @@ mod tests {
     #[test]
     fn test_indexing_task_serialization_errors() {
         assert_eq!(
-            "Invalid index task format, cannot find index_id in ``",
+            "invalid index task format, cannot find index_id in ``",
             IndexingTask::try_from("").unwrap_err().to_string()
         );
         assert_eq!(
-            "Invalid index task format, cannot find index_id in `foo`",
+            "invalid index task format, cannot find index_id in `foo`",
             IndexingTask::try_from("foo").unwrap_err().to_string()
         );
     }

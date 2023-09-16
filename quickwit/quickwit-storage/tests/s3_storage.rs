@@ -58,7 +58,7 @@ async fn run_s3_storage_test_suite(s3_storage_config: S3StorageConfig, bucket_ur
 
     quickwit_storage::storage_test_suite(&mut object_storage)
         .await
-        .context("S3 storage test suite failed.")
+        .context("S3 storage test suite failed")
         .unwrap();
 
     let mut object_storage = S3CompatibleObjectStorage::from_uri(&s3_storage_config, &storage_uri)
@@ -68,7 +68,7 @@ async fn run_s3_storage_test_suite(s3_storage_config: S3StorageConfig, bucket_ur
 
     quickwit_storage::storage_test_single_part_upload(&mut object_storage)
         .await
-        .context("Test single-part upload failed.")
+        .context("test single-part upload failed")
         .unwrap();
 
     object_storage.set_policy(MultiPartPolicy {
@@ -81,7 +81,7 @@ async fn run_s3_storage_test_suite(s3_storage_config: S3StorageConfig, bucket_ur
 
     quickwit_storage::storage_test_multi_part_upload(&mut object_storage)
         .await
-        .context("Test multipart upload failed.")
+        .context("test multipart upload failed")
         .unwrap();
 }
 
@@ -132,7 +132,7 @@ fn test_suite_on_s3_storage_bulk_delete_single_object_delete_api() {
                 .unwrap();
         quickwit_storage::test_write_and_bulk_delete(&mut object_storage)
             .await
-            .context("Test bulk delete single-object delete API failed.")
+            .context("test bulk delete single-object delete API failed")
             .unwrap();
     });
 }

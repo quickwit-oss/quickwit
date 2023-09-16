@@ -77,7 +77,7 @@ where
                 if let Some(env_var_value) = env_vars.get(*env_var_key) {
                     let value = env_var_value.parse::<T>().map_err(|error| {
                         anyhow::anyhow!(
-                            "Failed to convert value `{env_var_value}` read from environment \
+                            "failed to convert value `{env_var_value}` read from environment \
                              variable `{env_var_key}` to type `{}`: {error:?}",
                             any::type_name::<T>(),
                         )
@@ -91,8 +91,8 @@ where
 
     pub(crate) fn resolve(self, env_vars: &HashMap<String, String>) -> anyhow::Result<T> {
         self.resolve_optional(env_vars)?.context(
-            "Failed to resolve field value: no value was provided via environment variable or \
-             config file, and the field has no default.",
+            "failed to resolve field value: no value was provided via environment variable or \
+             config file, and the field has no default",
         )
     }
 }

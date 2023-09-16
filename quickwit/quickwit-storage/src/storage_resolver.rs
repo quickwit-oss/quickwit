@@ -60,14 +60,14 @@ impl StorageResolver {
             Protocol::S3 => StorageBackend::S3,
             _ => {
                 let message = format!(
-                    "Quickwit does not support {} as a storage backend.",
+                    "Quickwit does not support {} as a storage backend",
                     uri.protocol()
                 );
                 return Err(StorageResolverError::UnsupportedBackend(message));
             }
         };
         let storage_factory = self.per_backend_factories.get(&backend).ok_or({
-            let message = format!("no storage factory is registered for {}.", uri.protocol());
+            let message = format!("no storage factory is registered for {}", uri.protocol());
             StorageResolverError::UnsupportedBackend(message)
         })?;
         let storage = storage_factory.resolve(uri).await?;

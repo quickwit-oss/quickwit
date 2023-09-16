@@ -53,4 +53,4 @@ json:
 status_code: 400
 expected:
   message:
-    $expect: "\"Default search field `some_field` is not indexed\" in val"
+    $expect: "\"default search field `some_field` is not indexed\" in val"

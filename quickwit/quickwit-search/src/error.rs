@@ -30,17 +30,17 @@ use tokio::task::JoinError;
 #[allow(missing_docs)]
 #[derive(Error, Debug, Serialize, Deserialize, Clone)]
 pub enum SearchError {
-    #[error("Could not find indexes matching the IDs or patterns `{index_id_patterns:?}`.")]
+    #[error("could not find indexes matching the IDs or patterns `{index_id_patterns:?}`")]
     IndexesNotFound { index_id_patterns: Vec<String> },
-    #[error("Internal error: `{0}`.")]
+    #[error("internal error: `{0}`")]
     Internal(String),
-    #[error("Invalid aggregation request: {0}")]
+    #[error("invalid aggregation request: {0}")]
     InvalidAggregationRequest(String),
     #[error("Invalid argument: {0}")]
     InvalidArgument(String),
     #[error("{0}")]
     InvalidQuery(String),
-    #[error("Storage not found: `{0}`)")]
+    #[error("storage not found: `{0}`)")]
     StorageResolver(#[from] StorageResolverError),
 }
 
@@ -71,7 +71,7 @@ pub fn parse_grpc_error(grpc_error: &tonic::Status) -> SearchError {
 
 impl From<TantivyError> for SearchError {
     fn from(tantivy_error: TantivyError) -> Self {
-        SearchError::Internal(format!("tantivy error: {tantivy_error}"))
+        SearchError::Internal(format!("Tantivy error: {tantivy_error}"))
     }
 }
 
@@ -119,7 +119,7 @@ impl From<MetastoreError> for SearchError {
 
 impl From<JoinError> for SearchError {
     fn from(join_error: JoinError) -> SearchError {
-        SearchError::Internal(format!("Spawned task in root join failed: {join_error}"))
+        SearchError::Internal(format!("spawned task in root join failed: {join_error}"))
     }
 }
 

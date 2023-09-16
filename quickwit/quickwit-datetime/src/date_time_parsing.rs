@@ -58,7 +58,7 @@ pub fn parse_date_time_str(
         }
     }
     Err(format!(
-        "Failed to parse datetime `{date_time_str}` using the following formats: `{}`.",
+        "failed to parse datetime `{date_time_str}` using the following formats: `{}`",
         date_time_formats
             .iter()
             .map(|date_time_format| date_time_format.as_str())
@@ -72,7 +72,7 @@ pub fn parse_timestamp_float(
 ) -> Result<TantivyDateTime, String> {
     if !date_time_formats.contains(&DateTimeInputFormat::Timestamp) {
         return Err(format!(
-            "Failed to parse datetime `{timestamp}` using the following formats: `{}`.",
+            "failed to parse datetime `{timestamp}` using the following formats: `{}`",
             date_time_formats
                 .iter()
                 .map(|date_time_format| date_time_format.as_str())
@@ -91,7 +91,7 @@ pub fn parse_timestamp_int(
 ) -> Result<TantivyDateTime, String> {
     if !date_time_formats.contains(&DateTimeInputFormat::Timestamp) {
         return Err(format!(
-            "Failed to parse datetime `{timestamp}` using the following formats: `{}`.",
+            "failed to parse datetime `{timestamp}` using the following formats: `{}`",
             date_time_formats
                 .iter()
                 .map(|date_time_format| date_time_format.as_str())
@@ -171,8 +171,8 @@ pub fn parse_timestamp(timestamp: i64) -> Result<TantivyDateTime, String> {
             Ok(TantivyDateTime::from_timestamp_nanos(timestamp))
         }
         _ => Err(format!(
-            "Failed to parse unix timestamp `{timestamp}`. Quickwit only support timestamp values \
-             ranging from `13 Apr 1972 23:59:55` to `16 Mar 2242 12:56:31`."
+            "failed to parse unix timestamp `{timestamp}`. Quickwit only support timestamp values \
+             ranging from `13 Apr 1972 23:59:55` to `16 Mar 2242 12:56:31`"
         )),
     }
 }
@@ -302,7 +302,7 @@ mod tests {
         .unwrap_err();
         assert_eq!(
             error,
-            "Failed to parse datetime `foo` using the following formats: `iso8601`, `rfc2822`."
+            "failed to parse datetime `foo` using the following formats: `iso8601`, `rfc2822`"
         );
     }
 
@@ -356,8 +356,8 @@ mod tests {
             .unwrap_err();
             assert_eq!(
                 error,
-                "Failed to parse datetime `1668730394917.01` using the following formats: \
-                 `iso8601`, `rfc2822`."
+                "failed to parse datetime `1668730394917.01` using the following formats: \
+                 `iso8601`, `rfc2822`"
             );
         }
     }
@@ -381,8 +381,8 @@ mod tests {
             .unwrap_err();
             assert_eq!(
                 error,
-                "Failed to parse datetime `1668730394917` using the following formats: `iso8601`, \
-                 `rfc2822`."
+                "failed to parse datetime `1668730394917` using the following formats: `iso8601`, \
+                 `rfc2822`"
             );
         }
     }
@@ -485,26 +485,26 @@ mod tests {
         {
             let less_than_supported_date = MIN_TIMESTAMP_SECONDS - 1;
             let parse_err = parse_timestamp(less_than_supported_date).unwrap_err();
-            assert!(parse_err.contains("Failed to parse unix timestamp"));
+            assert!(parse_err.contains("failed to parse unix timestamp"));
         }
         {
             let greater_than_supported_date = MAX_TIMESTAMP_SECONDS + 1;
             let parse_err = parse_timestamp(greater_than_supported_date).unwrap_err();
-            assert!(parse_err.contains("Failed to parse unix timestamp"));
+            assert!(parse_err.contains("failed to parse unix timestamp"));
         }
         {
             let unix_epoch = 0;
             let parse_err = parse_timestamp(unix_epoch).unwrap_err();
-            assert!(parse_err.contains("Failed to parse unix timestamp"));
+            assert!(parse_err.contains("failed to parse unix timestamp"));
 
             let parse_err = parse_timestamp(MIN_TIMESTAMP_SECONDS << 7).unwrap_err();
-            assert!(parse_err.contains("Failed to parse unix timestamp"));
+            assert!(parse_err.contains("failed to parse unix timestamp"));
 
             let parse_err = parse_timestamp(MIN_TIMESTAMP_SECONDS << 17).unwrap_err();
-            assert!(parse_err.contains("Failed to parse unix timestamp"));
+            assert!(parse_err.contains("failed to parse unix timestamp"));
 
             let parse_err = parse_timestamp(MIN_TIMESTAMP_SECONDS << 27).unwrap_err();
-            assert!(parse_err.contains("Failed to parse unix timestamp"));
+            assert!(parse_err.contains("failed to parse unix timestamp"));
         }
     }
 

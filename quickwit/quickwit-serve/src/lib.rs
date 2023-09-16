@@ -191,9 +191,9 @@ pub async fn serve_quickwit(
             .map_err(|_| {
                 error!("No metastore service found among cluster members, stopping server.");
                 anyhow!(
-                    "Failed to start server: no metastore service was found among cluster \
-                     members. Try running Quickwit with additional metastore service `quickwit \
-                     run --service metastore`."
+                    "failed to start server: no metastore service was found among cluster \
+                     members. try running Quickwit with additional metastore service `quickwit \
+                     run --service metastore`"
                 )
             })?;
         let balance_channel =
@@ -430,7 +430,7 @@ pub async fn serve_quickwit(
     let rest_join_handle = tokio::spawn(rest_server);
 
     let (grpc_res, rest_res) = tokio::try_join!(grpc_join_handle, rest_join_handle)
-        .expect("The tasks running the gRPC and REST servers should not panic or be cancelled.");
+        .expect("the tasks running the gRPC and REST servers should not panic or be cancelled");
 
     if let Err(grpc_err) = grpc_res {
         error!("gRPC server failed: {:?}", grpc_err);
@@ -595,7 +595,7 @@ async fn setup_ingest_v2(
 
                     if node.is_self_node() {
                         let ingester_service = ingester_service_opt
-                            .expect("The ingester service should be initialized.");
+                            .expect("the ingester service should be initialized");
                         Some(Change::Insert(node_id, ingester_service))
                     } else {
                         let timeout_channel = Timeout::new(node.channel(), Duration::from_secs(30));

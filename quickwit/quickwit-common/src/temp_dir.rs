@@ -148,7 +148,7 @@ impl<'a> Builder<'a> {
         if self.max_length < self.parts.len() + separator_count + self.num_rand_chars {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
-                "The filename limit is too small",
+                "the filename limit is too small",
             ));
         }
         // Calculate how many characters from the parts we can use in the final string.
@@ -294,7 +294,7 @@ mod tests {
         assert_prefix(vec!["abcde", "uvwxyz"], 5, "ab%u%");
         assert_prefix(vec!["abcde", "uvwxyz"], 4, "a%u%");
         assert_prefix_err(
-            "The filename limit is too small",
+            "the filename limit is too small",
             vec!["abcde", "uvwxyz"],
             3,
         );
@@ -310,7 +310,7 @@ mod tests {
         assert_prefix(vec!["0", "abcde", "uvwxyz"], 7, "0%ab%u%");
         assert_prefix(vec!["0", "abcde", "uvwxyz"], 6, "0%a%u%");
         assert_prefix_err(
-            "The filename limit is too small",
+            "the filename limit is too small",
             vec!["0", "abcde", "uvwxyz"],
             5,
         );
@@ -368,7 +368,7 @@ mod tests {
             if parts_num > 0 && rng.gen::<bool>() {
                 builder.max_length(rand::random::<usize>() % limit_threshold);
                 assert_eq!(
-                    "The filename limit is too small",
+                    "the filename limit is too small",
                     builder.prefix().unwrap_err().to_string()
                 );
             } else {

@@ -52,7 +52,7 @@ fn setup_logging_and_tracing(
     let env_filter = env::var("RUST_LOG")
         .map(|_| EnvFilter::from_default_env())
         .or_else(|_| EnvFilter::try_new(format!("quickwit={level}")))
-        .context("Failed to set up tracing env filter.")?;
+        .context("failed to set up tracing env filter")?;
     global::set_text_map_propagator(TraceContextPropagator::new());
     let registry = tracing_subscriber::registry().with(env_filter);
     let event_format = tracing_subscriber::fmt::format()
@@ -64,7 +64,7 @@ fn setup_logging_and_tracing(
                 time::format_description::parse(
                     "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z",
                 )
-                .expect("Time format invalid."),
+                .expect("time format invalid"),
             ),
         );
     // Note on disabling ANSI characters: setting the ansi boolean on event format is insufficient.
@@ -84,7 +84,7 @@ fn setup_logging_and_tracing(
             .with_trace_config(trace_config)
             .with_batch_config(batch_config)
             .install_batch(opentelemetry::runtime::Tokio)
-            .context("Failed to initialize OpenTelemetry OTLP exporter.")?;
+            .context("failed to initialize OpenTelemetry OTLP exporter")?;
         registry
             .with(tracing_opentelemetry::layer().with_tracer(tracer))
             .with(
@@ -93,7 +93,7 @@ fn setup_logging_and_tracing(
                     .with_ansi(ansi),
             )
             .try_init()
-            .context("Failed to set up tracing.")?;
+            .context("failed to set up tracing")?;
     } else {
         registry
             .with(
@@ -102,7 +102,7 @@ fn setup_logging_and_tracing(
                     .with_ansi(ansi),
             )
             .try_init()
-            .context("Failed to set up tracing.")?;
+            .context("failed to set up tracing")?;
     }
     Ok(())
 }

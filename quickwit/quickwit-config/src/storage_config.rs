@@ -99,7 +99,7 @@ impl StorageConfigs {
         for (left, right) in backends.iter().zip(backends.iter().skip(1)) {
             ensure!(
                 left != right,
-                "{left:?} storage config is defined multiple times.",
+                "{left:?} storage config is defined multiple times",
             );
         }
         Ok(())

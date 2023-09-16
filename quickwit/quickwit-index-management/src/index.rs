@@ -40,19 +40,19 @@ use crate::garbage_collection::{
 
 #[derive(Error, Debug)]
 pub enum IndexServiceError {
-    #[error("Failed to resolve the storage `{0}`.")]
+    #[error("failed to resolve the storage `{0}`")]
     Storage(#[from] StorageResolverError),
-    #[error("Metastore error `{0}`.")]
+    #[error("metastore error `{0}`")]
     Metastore(#[from] MetastoreError),
-    #[error("Split deletion error `{0}`.")]
+    #[error("split deletion error `{0}`")]
     SplitDeletion(#[from] DeleteSplitsError),
-    #[error("Invalid config: {0:#}.")]
+    #[error("invalid config: {0:#}")]
     InvalidConfig(anyhow::Error),
-    #[error("Invalid identifier: {0}.")]
+    #[error("invalid identifier: {0}")]
     InvalidIdentifier(String),
-    #[error("Operation not allowed: {0}.")]
+    #[error("operation not allowed: {0}")]
     OperationNotAllowed(String),
-    #[error("Internal error: {0}.")]
+    #[error("internal error: {0}")]
     Internal(String),
 }
 
@@ -260,7 +260,7 @@ impl IndexService {
         )
         .await
         {
-            error!(metastore_uri=%self.metastore.uri(), index_id=%index_id, error=?err, "Failed to delete all the split files during garbage collection.");
+            error!(metastore_uri=%self.metastore.uri(), index_id=%index_id, error=?err, "failed to delete all the split files during garbage collection");
         }
         for source_id in index_metadata.sources.keys() {
             self.metastore
@@ -281,7 +281,7 @@ impl IndexService {
         // that the identifier is valid. However it authorizes the special
         // private names internal to quickwit, so we do an extra check.
         validate_identifier("Source ID", &source_id).map_err(|_| {
-            IndexServiceError::InvalidIdentifier(format!("Invalid source ID: `{source_id}`"))
+            IndexServiceError::InvalidIdentifier(format!("invalid source ID: `{source_id}`"))
         })?;
         check_source_connectivity(&source_config)
             .await
@@ -290,7 +290,7 @@ impl IndexService {
             .add_source(index_uid.clone(), source_config)
             .await?;
         info!(
-            "Source `{}` successfully created for index `{}`.",
+            "source `{}` successfully created for index `{}`",
             source_id,
             index_uid.index_id()
         );
@@ -302,8 +302,7 @@ impl IndexService {
             .get(&source_id)
             .ok_or_else(|| {
                 IndexServiceError::Internal(
-                    "Created source is not in index metadata, this should never happen."
-                        .to_string(),
+                    "created source is not in index metadata, this should never happen".to_string(),
                 )
             })?
             .clone();
@@ -339,7 +338,7 @@ impl IndexService {
 ///   persisted.
 pub async fn clear_cache_directory(data_dir_path: &Path) -> anyhow::Result<()> {
     let cache_directory_path = get_cache_directory_path(data_dir_path);
-    info!(path = %cache_directory_path.display(), "Clearing cache directory.");
+    info!(path = %cache_directory_path.display(), "clearing cache directory");
     empty_dir(&cache_directory_path).await?;
     Ok(())
 }
@@ -384,7 +383,7 @@ mod tests {
             .await
             .unwrap_err();
         let IndexServiceError::Metastore(inner_error) = error else {
-            panic!("Expected `MetastoreError` variant, got {:?}", error)
+            panic!("expected `MetastoreError` variant, got {:?}", error)
         };
         assert!(
             matches!(inner_error, MetastoreError::AlreadyExists(EntityKind::Index { index_id }) if index_id == index_metadata_0.index_id())

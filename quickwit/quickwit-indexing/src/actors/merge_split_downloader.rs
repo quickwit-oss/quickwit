@@ -123,7 +123,7 @@ impl MergeSplitDownloader {
                 .await
                 .map_err(|error| {
                     let split_id = split.split_id();
-                    anyhow::anyhow!(error).context(format!("Failed to download split `{split_id}`"))
+                    anyhow::anyhow!(error).context(format!("failed to download split `{split_id}`"))
                 })?;
             tantivy_dirs.push(tantivy_dir);
         }

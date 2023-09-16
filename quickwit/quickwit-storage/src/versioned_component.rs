@@ -90,7 +90,7 @@ fn try_read_version<V: VersionedComponent>(bytes: &mut OwnedBytes) -> anyhow::Re
     let mut header_bytes: [u8; 8] = [0u8; 8];
     bytes
         .read_exact(&mut header_bytes[..])
-        .with_context(|| format!("Failed to read header for {}", V::component_name()))?;
+        .with_context(|| format!("failed to read header for {}", V::component_name()))?;
     try_deserialize_from_bytes::<V>(header_bytes)
 }
 
@@ -102,12 +102,12 @@ fn try_read_version<V: VersionedComponent>(bytes: &mut OwnedBytes) -> anyhow::Re
 fn try_deserialize_from_bytes<V: VersionedComponent>(header_bytes: [u8; 8]) -> anyhow::Result<V> {
     let magic_number = u32::from_le_bytes(header_bytes[0..4].try_into().unwrap());
     if magic_number != V::MAGIC_NUMBER {
-        anyhow::bail!("Hot directory metadata's magic number does not match.");
+        anyhow::bail!("hot directory metadata's magic number does not match");
     }
     let version_code: u32 = u32::from_le_bytes(header_bytes[4..8].try_into().unwrap());
     V::try_from_version_code_impl(version_code).with_context(|| {
         format!(
-            "Version code {} is not supported for {}",
+            "version code {} is not supported for {}",
             version_code,
             V::component_name()
         )
@@ -158,7 +158,7 @@ mod tests {
             match self {
                 FakeComponentCodec::V1 => {
                     if bytes.len() < 8 {
-                        anyhow::bail!("Not enough bytes to deserialize");
+                        anyhow::bail!("not enough bytes to deserialize");
                     }
                     let value_bytes: [u8; 8] = bytes[0..8].try_into().unwrap();
                     let value: u32 = u64::from_le_bytes(value_bytes) as u32;
@@ -166,7 +166,7 @@ mod tests {
                 }
                 FakeComponentCodec::V2 => {
                     if bytes.len() < 4 {
-                        anyhow::bail!("Not enough bytes to deserialize");
+                        anyhow::bail!("not enough bytes to deserialize");
                     }
                     let value_bytes: [u8; 4] = bytes[0..4].try_into().unwrap();
                     bytes.advance(4);

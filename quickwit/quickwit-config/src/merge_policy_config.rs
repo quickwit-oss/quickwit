@@ -116,7 +116,7 @@ where
     let value: String = Deserialize::deserialize(deserializer)?;
     let duration = humantime::parse_duration(&value).map_err(|error| {
         de::Error::custom(format!(
-            "Failed to parse human-readable duration `{value}`: {error:?}",
+            "failed to parse human-readable duration `{value}`: {error:?}",
         ))
     })?;
     Ok(duration)
@@ -162,8 +162,8 @@ impl MergePolicyConfig {
         };
         if max_merge_factor < merge_factor {
             anyhow::bail!(
-                "Index config merge policy `max_merge_factor` must be superior or equal to \
-                 `merge_factor`."
+                "index config merge policy `max_merge_factor` must be superior or equal to \
+                 `merge_factor`"
             );
         }
         Ok(())

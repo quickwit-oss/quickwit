@@ -50,11 +50,11 @@ const GLOBAL_QUICKWIT_RESOURCE_VERSION: &str = "0.6";
 /// This test makes sure that the resource is using the current `GLOBAL_QUICKWIT_RESOURCE_VERSION`.
 fn test_global_version<T: Serialize>(serializable: &T) -> anyhow::Result<()> {
     let json = serde_json::to_value(serializable).unwrap();
-    let version_value = json.get("version").context("No version tag")?;
+    let version_value = json.get("version").context("no version tag")?;
     let version_str = version_value.as_str().context("version should be a str")?;
     if version_str != GLOBAL_QUICKWIT_RESOURCE_VERSION {
         bail!(
-            "Version `{version_str}` is not the global quickwit resource version \
+            "version `{version_str}` is not the global quickwit resource version \
              ({GLOBAL_QUICKWIT_RESOURCE_VERSION})"
         );
     }
@@ -83,7 +83,7 @@ where T: TestableForRegression + std::fmt::Debug {
 fn test_backward_compatibility<T>(test_dir: &Path) -> anyhow::Result<()>
 where T: TestableForRegression + std::fmt::Debug {
     for entry in
-        fs::read_dir(test_dir).with_context(|| format!("Failed to read {}", test_dir.display()))?
+        fs::read_dir(test_dir).with_context(|| format!("failed to read {}", test_dir.display()))?
     {
         let entry = entry?;
         let path = entry.path();
@@ -197,7 +197,7 @@ pub(crate) fn test_json_backward_compatibility_helper<T>(test_name: &str) -> any
 where T: TestableForRegression + std::fmt::Debug {
     let sample_instance: T = T::sample_for_regression();
     let test_dir = Path::new("test-data").join(test_name);
-    test_global_version(&sample_instance).context("Version is not the global version.")?;
+    test_global_version(&sample_instance).context("version is not the global version")?;
     test_backward_compatibility::<T>(&test_dir).context("backward-compatibility")?;
     test_and_update_expected_files::<T>(&test_dir).context("test-and-update")?;
     test_and_create_new_test::<T>(&test_dir, sample_instance)

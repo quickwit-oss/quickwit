@@ -58,7 +58,7 @@ impl ConvertableToQueryAst for RangeQuery {
             field,
             lower_bound: match (gt, gte) {
                 (Some(_gt), Some(_gte)) => {
-                    anyhow::bail!("Both gt and gte are set")
+                    anyhow::bail!("both gt and gte are set")
                 }
                 (Some(gt), None) => Bound::Excluded(gt),
                 (None, Some(gte)) => Bound::Included(gte),
@@ -66,7 +66,7 @@ impl ConvertableToQueryAst for RangeQuery {
             },
             upper_bound: match (lt, lte) {
                 (Some(_lt), Some(_lte)) => {
-                    anyhow::bail!("Both lt and lte are set")
+                    anyhow::bail!("both lt and lte are set")
                 }
                 (Some(lt), None) => Bound::Excluded(lt),
                 (None, Some(lte)) => Bound::Included(lte),

@@ -232,7 +232,7 @@ impl MultiFetchStream {
 
         if let Entry::Occupied(_) = entry {
             return Err(IngestV2Error::Internal(format!(
-                "Stream has already subscribed to shard `{queue_id}`."
+                "stream has already subscribed to shard `{queue_id}`"
             )));
         }
         let (mut preferred_ingester_id, mut failover_ingester_id) =
@@ -253,7 +253,7 @@ impl MultiFetchStream {
                     continue;
                 };
                 return Err(IngestV2Error::Internal(format!(
-                    "Shard `{queue_id}` is unavailable."
+                    "shard `{queue_id}` is unavailable"
                 )));
             };
             let open_fetch_stream_request = OpenFetchStreamRequest {
@@ -290,7 +290,7 @@ impl MultiFetchStream {
                         "Failed to open fetch stream from `{preferred_ingester_id}`."
                     );
                     return Err(IngestV2Error::Internal(format!(
-                        "Shard `{queue_id}` is unavailable."
+                        "shard `{queue_id}` is unavailable"
                     )));
                 }
             };

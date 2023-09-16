@@ -166,7 +166,7 @@ fn validate_request_and_build_metadatas(
             &index_metadata.index_config.search_settings,
         )
         .map_err(|err| {
-            SearchError::Internal(format!("Failed to build doc mapper. Cause: {err}"))
+            SearchError::Internal(format!("failed to build doc mapper. cause: {err}"))
         })?;
         let query_ast_resolved_for_index = query_ast
             .clone()
@@ -178,8 +178,8 @@ fn validate_request_and_build_metadatas(
         if let Some(query_ast_resolved) = &query_ast_resolved_opt {
             if query_ast_resolved != &query_ast_resolved_for_index {
                 return Err(SearchError::InvalidQuery(
-                    "Resolved query ASTs must be the same across indexes. Resolving queries with \
-                     different default fields are different between indexes is not supported."
+                    "resolved query ASTs must be the same across indexes. resolving queries with \
+                     different default fields are different between indexes is not supported"
                         .to_string(),
                 ));
             }
@@ -192,7 +192,7 @@ fn validate_request_and_build_metadatas(
             match timestamp_field_opt {
                 Some(timestamp_field) if timestamp_field != timestamp_field_for_index => {
                     return Err(SearchError::InvalidQuery(
-                        "The timestamp field (if present) must be the same for all indexes."
+                        "the timestamp field (if present) must be the same for all indexes"
                             .to_string(),
                     ));
                 }
@@ -210,7 +210,7 @@ fn validate_request_and_build_metadatas(
         let index_metadata_for_leaf_search = IndexMetasForLeafSearch {
             index_uri: index_metadata.index_uri().clone(),
             doc_mapper_str: serde_json::to_string(&doc_mapper).map_err(|err| {
-                SearchError::Internal(format!("Failed to serialize doc mapper. Cause: {err}"))
+                SearchError::Internal(format!("failed to serialize doc mapper. cause: {err}"))
             })?,
         };
         metadatas_for_leaf.insert(
@@ -221,7 +221,7 @@ fn validate_request_and_build_metadatas(
 
     let query_ast_resolved = query_ast_resolved_opt.ok_or_else(|| {
         SearchError::Internal(
-            "Resolved query AST must be present. This should never happen.".to_string(),
+            "resolved query AST must be present. this should never happen".to_string(),
         )
     })?;
 
@@ -240,14 +240,14 @@ fn validate_requested_snippet_fields(
             FieldType::Str(text_options) => {
                 if !text_options.is_stored() {
                     return Err(anyhow::anyhow!(
-                        "The snippet field `{}` must be stored.",
+                        "the snippet field `{}` must be stored",
                         field_name
                     ));
                 }
             }
             other => {
                 return Err(anyhow::anyhow!(
-                    "The snippet field `{}` must be of type `Str`, got `{}`.",
+                    "the snippet field `{}` must be of type `Str`, got `{}`",
                     field_name,
                     other.value_type().name()
                 ))
@@ -263,7 +263,7 @@ fn validate_sort_by_fields(sort_fields: &[SortField], schema: &Schema) -> crate:
     }
     if sort_fields.len() > 2 {
         return Err(SearchError::InvalidArgument(format!(
-            "Sort by field must be up to 2 fields {:?}.",
+            "sort by field must be up to 2 fields {:?}",
             sort_fields
         )));
     }
@@ -302,18 +302,18 @@ fn validate_sort_by_field(field_name: &str, schema: &Schema) -> crate::Result<()
     let (sort_by_field, _json_path) = schema
         .find_field_with_default(field_name, dynamic_field_opt)
         .ok_or_else(|| {
-            SearchError::InvalidArgument(format!("Unknown field used in `sort by`: {field_name}"))
+            SearchError::InvalidArgument(format!("unknown field used in `sort by`: {field_name}"))
         })?;
     let sort_by_field_entry = schema.get_field_entry(sort_by_field);
     if matches!(sort_by_field_entry.field_type(), FieldType::Str(_)) {
         return Err(SearchError::InvalidArgument(format!(
-            "Sort by field on type text is currently not supported `{field_name}`."
+            "sort by field on type text is currently not supported `{field_name}`"
         )));
     }
     if !sort_by_field_entry.is_fast() {
         return Err(SearchError::InvalidArgument(format!(
-            "Sort by field must be a fast field, please add the fast property to your field \
-             `{field_name}`.",
+            "sort by field must be a fast field, please add the fast property to your field \
+             `{field_name}`",
         )));
     }
     Ok(())
@@ -361,7 +361,7 @@ fn get_scroll_ttl_duration(search_request: &SearchRequest) -> crate::Result<Opti
     let scroll_ttl: Duration = Duration::from_secs(scroll_ttl_secs as u64);
     if scroll_ttl > MAX_SCROLL_TTL {
         return Err(SearchError::InvalidArgument(format!(
-            "Quickwit only supports scroll TTL period up to {} secs.",
+            "Quickwit only supports scroll TTL period up to {} secs",
             MAX_SCROLL_TTL.as_secs()
         )));
     }
@@ -877,13 +877,13 @@ pub async fn root_list_terms(
 
     let doc_mapper = build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)
         .map_err(|err| {
-            SearchError::Internal(format!("Failed to build doc mapper. Cause: {err}"))
+            SearchError::Internal(format!("failed to build doc mapper. cause: {err}"))
         })?;
 
     let schema = doc_mapper.schema();
     let field = schema.get_field(&list_terms_request.field).map_err(|_| {
         SearchError::InvalidQuery(format!(
-            "Failed to list terms in `{}`, field doesn't exist",
+            "failed to list terms in `{}`, field doesn't exist",
             list_terms_request.field
         ))
     })?;
@@ -891,7 +891,7 @@ pub async fn root_list_terms(
     let field_entry = schema.get_field_entry(field);
     if !field_entry.is_indexed() {
         return Err(SearchError::InvalidQuery(
-            "Trying to list terms on field which isn't indexed".to_string(),
+            "trying to list terms on field which isn't indexed".to_string(),
         ));
     }
 
@@ -939,7 +939,7 @@ pub async fn root_list_terms(
         .collect();
 
     if !failed_splits.is_empty() {
-        error!(failed_splits = ?failed_splits, "Leaf search response contains at least one failed split.");
+        error!(failed_splits = ?failed_splits, "leaf search response contains at least one failed split");
         let errors: String = failed_splits
             .iter()
             .map(|splits| splits.to_string())
@@ -1007,7 +1007,7 @@ async fn assign_client_fetch_docs_jobs(
             .get(&split_id)
             .ok_or_else(|| {
                 crate::SearchError::Internal(format!(
-                    "Received partial hit from an unknown split {split_id}"
+                    "received partial hit from an unknown split {split_id}"
                 ))
             })?
             .clone();
@@ -1046,7 +1046,7 @@ pub fn jobs_to_leaf_requests(
     for (index_uid, job_group) in &jobs.into_iter().group_by(|job| job.index_uid.clone()) {
         let search_index_meta = search_indexes_metadatas.get(&index_uid).ok_or_else(|| {
             SearchError::Internal(format!(
-                "Received search job for an unknown index {index_uid}. It should never happen."
+                "received search job for an unknown index {index_uid}. it should never happen"
             ))
         })?;
         let leaf_search_request = LeafSearchRequest {
@@ -1073,7 +1073,7 @@ pub fn jobs_to_fetch_docs_requests(
             .get(&index_uid)
             .ok_or_else(|| {
                 SearchError::Internal(format!(
-                    "Received search job for an unknown index {index_uid}"
+                    "received search job for an unknown index {index_uid}"
                 ))
             })?;
         let fetch_docs_jobs: Vec<FetchDocsJob> = job_group.collect();
@@ -1131,7 +1131,7 @@ mod tests {
             check_snippet_fields_validation(&["title".to_string()]).unwrap_err();
         assert_eq!(
             field_not_stored_err.to_string(),
-            "The snippet field `title` must be stored."
+            "the snippet field `title` must be stored"
         );
         let field_doesnotexist_err =
             check_snippet_fields_validation(&["doesnotexist".to_string()]).unwrap_err();
@@ -1143,7 +1143,7 @@ mod tests {
             check_snippet_fields_validation(&["ip".to_string()]).unwrap_err();
         assert_eq!(
             field_is_not_text_err.to_string(),
-            "The snippet field `ip` must be of type `Str`, got `IpAddr`."
+            "the snippet field `ip` must be of type `Str`, got `IpAddr`"
         );
     }
 
@@ -1255,7 +1255,7 @@ mod tests {
         .unwrap_err();
         assert_eq!(
             timestamp_field_different.to_string(),
-            "The timestamp field (if present) must be the same for all indexes."
+            "the timestamp field (if present) must be the same for all indexes"
         );
     }
 
@@ -1282,8 +1282,8 @@ mod tests {
         .unwrap_err();
         assert_eq!(
             timestamp_field_different.to_string(),
-            "Resolved query ASTs must be the same across indexes. Resolving queries with \
-             different default fields are different between indexes is not supported."
+            "resolved query ASTs must be the same across indexes. resolving queries with \
+             different default fields are different between indexes is not supported"
         );
     }
 
@@ -2518,7 +2518,7 @@ mod tests {
         assert!(search_response.is_err());
         assert_eq!(
             search_response.unwrap_err().to_string(),
-            "Invalid aggregation request: unknown variant `termss`, expected one of `range`, \
+            "invalid aggregation request: unknown variant `termss`, expected one of `range`, \
              `histogram`, `date_histogram`, `terms`, `avg`, `value_count`, `max`, `min`, `stats`, \
              `sum`, `percentiles` at line 18 column 13"
         );

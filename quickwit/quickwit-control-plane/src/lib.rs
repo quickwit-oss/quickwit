@@ -60,7 +60,7 @@ impl ControlPlaneEventSubscriber {
             .notify_index_change(NotifyIndexChangeRequest {})
             .await
         {
-            error!(error=?error, event=event_name, "Failed to notify control plane of index change.");
+            error!(error=?error, event=event_name, "failed to notify control plane of index change");
         }
     }
 }

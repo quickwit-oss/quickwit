@@ -61,7 +61,7 @@ impl LeafType {
                 if let JsonValue::String(text) = json_val {
                     Ok(TantivyValue::Str(text))
                 } else {
-                    Err(format!("Expected JSON string, got `{json_val}`."))
+                    Err(format!("expected JSON string, got `{json_val}`"))
                 }
             }
             LeafType::I64(numeric_options) => i64::from_json(json_val, numeric_options.coerce),
@@ -71,17 +71,17 @@ impl LeafType {
                 if let JsonValue::Bool(val) = json_val {
                     Ok(TantivyValue::Bool(val))
                 } else {
-                    Err(format!("Expected bool value, got `{json_val}`."))
+                    Err(format!("expected bool value, got `{json_val}`"))
                 }
             }
             LeafType::IpAddr(_) => {
                 if let JsonValue::String(ip_address) = json_val {
                     let ipv6_value = IpAddr::from_str(ip_address.as_str())
-                        .map_err(|err| format!("Failed to parse IP address `{ip_address}`: {err}"))?
+                        .map_err(|err| format!("failed to parse IP address `{ip_address}`: {err}"))?
                         .into_ipv6_addr();
                     Ok(TantivyValue::IpAddr(ipv6_value))
                 } else {
-                    Err(format!("Expected string value, got `{json_val}`."))
+                    Err(format!("expected string value, got `{json_val}`"))
                 }
             }
             LeafType::DateTime(date_time_options) => date_time_options.parse_json(json_val),
@@ -90,7 +90,7 @@ impl LeafType {
                 if let JsonValue::Object(json_obj) = json_val {
                     Ok(TantivyValue::JsonObject(json_obj))
                 } else {
-                    Err(format!("Expected JSON object  got `{json_val}`."))
+                    Err(format!("expected JSON object  got `{json_val}`"))
                 }
             }
         }
@@ -247,7 +247,7 @@ trait NumVal: Sized + FromStr + ToString + Into<TantivyValue> {
                 .map(Self::into)
                 .ok_or_else(|| {
                     format!(
-                        "Expected {}, got inconvertible JSON number `{}`.",
+                        "expected {}, got inconvertible JSON number `{}`",
                         type_name::<Self>(),
                         num_val
                     )
@@ -256,23 +256,23 @@ trait NumVal: Sized + FromStr + ToString + Into<TantivyValue> {
                 if coerce {
                     str_val.parse::<Self>().map(Self::into).map_err(|_| {
                         format!(
-                            "Failed to coerce JSON string `\"{str_val}\"` to {}.",
+                            "failed to coerce JSON string `\"{str_val}\"` to {}",
                             type_name::<Self>()
                         )
                     })
                 } else {
                     Err(format!(
-                        "Expected JSON number, got string `\"{str_val}\"`. Enable coercion to {} \
-                         with the `coerce` parameter in the field mapping.",
+                        "expected JSON number, got string `\"{str_val}\"`. enable coercion to {} \
+                         with the `coerce` parameter in the field mapping",
                         type_name::<Self>()
                     ))
                 }
             }
             _ => {
                 let message = if coerce {
-                    format!("Expected JSON number or string, got `{json_val}`.")
+                    format!("expected JSON number or string, got `{json_val}`")
                 } else {
-                    format!("Expected JSON number, got `{json_val}`.")
+                    format!("expected JSON number, got `{json_val}`")
                 };
                 Err(message)
             }
@@ -502,7 +502,7 @@ impl MappingTree {
                 } else {
                     Err(DocParsingError::ValueError(
                         path.join("."),
-                        format!("Expected an JSON Object, got {json_value}"),
+                        format!("expected an JSON object, got {json_value}"),
                     ))
                 }
             }
@@ -543,7 +543,7 @@ fn build_mapping_tree_from_entries<'a>(
     for entry in entries {
         field_path.push(&entry.name);
         if mapping_node.branches.contains_key(&entry.name) {
-            bail!("Duplicated field definition `{}`.", entry.name);
+            bail!("duplicated field definition `{}`", entry.name);
         }
         let child_tree = build_mapping_from_field_type(&entry.mapping_type, field_path, schema)?;
         field_path.pop();
@@ -901,7 +901,7 @@ mod tests {
         );
         assert_eq!(
             leaf.value_from_json(json!("foo")).unwrap_err(),
-            "Failed to coerce JSON string `\"foo\"` to u64."
+            "failed to coerce JSON string `\"foo\"` to u64"
         );
 
         let numeric_options = QuickwitNumericOptions {
@@ -911,8 +911,8 @@ mod tests {
         let leaf = LeafType::U64(numeric_options);
         assert_eq!(
             leaf.value_from_json(json!("20")).unwrap_err(),
-            "Expected JSON number, got string `\"20\"`. Enable coercion to u64 with the `coerce` \
-             parameter in the field mapping."
+            "expected JSON number, got string `\"20\"`. enable coercion to u64 with the `coerce` \
+             parameter in the field mapping"
         );
     }
 
@@ -921,7 +921,7 @@ mod tests {
         let leaf = LeafType::U64(QuickwitNumericOptions::default());
         assert_eq!(
             leaf.value_from_json(json!(-20i64)).unwrap_err(),
-            "Expected u64, got inconvertible JSON number `-20`."
+            "expected u64, got inconvertible JSON number `-20`"
         );
     }
 
@@ -939,7 +939,7 @@ mod tests {
         let leaf = LeafType::I64(QuickwitNumericOptions::default());
         assert_eq!(
             leaf.value_from_json(json!(20.2f64)).unwrap_err(),
-            "Expected i64, got inconvertible JSON number `20.2`."
+            "expected i64, got inconvertible JSON number `20.2`"
         );
     }
 
@@ -949,7 +949,7 @@ mod tests {
         let err = leaf.value_from_json(json!(u64::max_value())).err().unwrap();
         assert_eq!(
             err,
-            "Expected i64, got inconvertible JSON number `18446744073709551615`."
+            "expected i64, got inconvertible JSON number `18446744073709551615`"
         );
     }
 
@@ -1016,10 +1016,10 @@ mod tests {
     fn test_parse_ip_addr_should_error() {
         let typ = LeafType::IpAddr(QuickwitIpAddrOptions::default());
         let err = typ.value_from_json(json!("foo")).err().unwrap();
-        assert!(err.contains("Failed to parse IP address `foo`"));
+        assert!(err.contains("failed to parse IP address `foo`"));
 
         let err = typ.value_from_json(json!(1200)).err().unwrap();
-        assert!(err.contains("Expected string value, got `1200`"));
+        assert!(err.contains("expected string value, got `1200`"));
     }
 
     #[test]
@@ -1099,8 +1099,8 @@ mod tests {
             .unwrap_err();
         assert_eq!(
             parse_err.to_string(),
-            "The field `root.my_field` could not be parsed: Expected JSON number or string, got \
-             `[1,2]`."
+            "the field `root.my_field` could not be parsed: expected JSON number or string, got \
+             `[1,2]`"
         );
     }
 
@@ -1118,7 +1118,7 @@ mod tests {
     fn test_parse_text_number_should_error() {
         let typ = LeafType::Text(QuickwitTextOptions::default());
         let err = typ.value_from_json(json!(2u64)).err().unwrap();
-        assert_eq!(err, "Expected JSON string, got `2`.");
+        assert_eq!(err, "expected JSON string, got `2`");
     }
 
     #[test]
@@ -1162,8 +1162,8 @@ mod tests {
         let err = typ.value_from_json(json!("foo-datetime")).unwrap_err();
         assert_eq!(
             err,
-            "Failed to parse datetime `foo-datetime` using the following formats: `rfc3339`, \
-             `unix_timestamp`."
+            "failed to parse datetime `foo-datetime` using the following formats: `rfc3339`, \
+             `unix_timestamp`"
         );
     }
 
@@ -1173,8 +1173,8 @@ mod tests {
         let err = typ.value_from_json(json!(["foo", "bar"])).err().unwrap();
         assert_eq!(
             err,
-            "Failed to parse datetime: expected a float, integer, or string, got \
-             `[\"foo\",\"bar\"]`."
+            "failed to parse datetime: expected a float, integer, or string, got \
+             `[\"foo\",\"bar\"]`"
         );
     }
 
@@ -1208,7 +1208,7 @@ mod tests {
     fn test_parse_bytes_number_should_err() {
         let typ = LeafType::Bytes(QuickwitBytesOptions::default());
         let error = typ.value_from_json(json!(2u64)).err().unwrap();
-        assert_eq!(error, "Expected base64 string, got `2`.");
+        assert_eq!(error, "expected base64 string, got `2`");
     }
 
     #[test]
@@ -1217,7 +1217,7 @@ mod tests {
         let error = typ.value_from_json(json!("dEwerwer#!%")).err().unwrap();
         assert_eq!(
             error,
-            "Expected base64 string, got `dEwerwer#!%`: Invalid byte 35, offset 8."
+            "expected base64 string, got `dEwerwer#!%`: Invalid byte 35, offset 8."
         );
     }
 

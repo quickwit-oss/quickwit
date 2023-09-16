@@ -283,7 +283,7 @@ impl FromStr for SplitState {
             "MarkedForDeletion" => SplitState::MarkedForDeletion,
             "ScheduledForDeletion" => SplitState::MarkedForDeletion, // Deprecated
             "New" => SplitState::Staged,                             // Deprecated
-            _ => return Err(format!("Unknown split state `{input}`.")),
+            _ => return Err(format!("unknown split state `{input}`")),
         };
         Ok(split_state)
     }

@@ -27,21 +27,21 @@ use serde::Serialize;
 
 #[derive(Debug, Clone, thiserror::Error, Serialize)]
 pub enum IngestServiceError {
-    #[error("Data corruption: {0}.")]
+    #[error("data corruption: {0}")]
     Corruption(String),
-    #[error("Index `{index_id}` already exists.")]
+    #[error("index `{index_id}` already exists")]
     IndexAlreadyExists { index_id: String },
-    #[error("Index `{index_id}` not found.")]
+    #[error("index `{index_id}` not found")]
     IndexNotFound { index_id: String },
-    #[error("An internal error occurred: {0}.")]
+    #[error("an internal error occurred: {0}")]
     Internal(String),
-    #[error("Invalid position: {0}.")]
+    #[error("invalid position: {0}")]
     InvalidPosition(String),
-    #[error("Io Error {0}")]
+    #[error("io error {0}")]
     IoError(String),
-    #[error("Rate limited")]
+    #[error("rate limited")]
     RateLimited,
-    #[error("The ingest service is unavailable.")]
+    #[error("the ingest service is unavailable")]
     Unavailable,
 }
 
@@ -106,12 +106,12 @@ impl ServiceError for IngestServiceError {
 }
 
 #[derive(Debug, thiserror::Error)]
-#[error("Key should contain 16 bytes, got {0}.")]
+#[error("key should contain 16 bytes, got {0}")]
 pub struct CorruptedKey(pub usize);
 
 impl From<CorruptedKey> for IngestServiceError {
     fn from(error: CorruptedKey) -> Self {
-        IngestServiceError::Corruption(format!("Corrupted key: {error:?}"))
+        IngestServiceError::Corruption(format!("corrupted key: {error:?}"))
     }
 }
 
@@ -137,7 +137,7 @@ impl From<ReadRecordError> for IngestServiceError {
         match error {
             ReadRecordError::IoError(io_error) => io_error.into(),
             ReadRecordError::Corruption => {
-                IngestServiceError::Corruption("Failed to read record".to_string())
+                IngestServiceError::Corruption("failed to read record".to_string())
             }
         }
     }
@@ -150,7 +150,7 @@ impl From<AppendError> for IngestServiceError {
             AppendError::MissingQueue(index_id) => IngestServiceError::IndexNotFound { index_id },
             // these errors can't be reached right now
             AppendError::Past => IngestServiceError::InvalidPosition(
-                "Attempted to append a record in the past".to_string(),
+                "attempted to append a record in the past".to_string(),
             ),
         }
     }

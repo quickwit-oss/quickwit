@@ -64,7 +64,7 @@ impl MetastoreResolver {
             Protocol::PostgreSQL => MetastoreBackend::PostgreSQL,
             _ => {
                 return Err(MetastoreResolverError::UnsupportedBackend(
-                    "no implementation exists for this backend.".to_string(),
+                    "no implementation exists for this backend".to_string(),
                 ))
             }
         };
@@ -72,7 +72,7 @@ impl MetastoreResolver {
             .per_backend_factories
             .get(&backend)
             .ok_or(MetastoreResolverError::UnsupportedBackend(
-                "no metastore factory is registered for this backend.".to_string(),
+                "no metastore factory is registered for this backend".to_string(),
             ))?;
         let metastore = metastore_factory.resolve(metastore_config, uri).await?;
         Ok(metastore)
@@ -158,7 +158,7 @@ impl MetastoreResolverBuilder {
         for (metastore_factory, metastore_config) in self.per_protocol_factories.values() {
             ensure!(
                 metastore_factory.backend() == metastore_config.backend(),
-                "Metastore factory and config backends do not match: {:?} vs. {:?}.",
+                "Metastore factory and config backends do not match: {:?} vs. {:?}",
                 metastore_factory.backend(),
                 metastore_config.backend(),
             );

@@ -60,7 +60,7 @@ impl FullTextParams {
             .unwrap_or(text_field_indexing.tokenizer());
         tokenizer_manager
             .get(tokenizer_name)
-            .with_context(|| format!("No tokenizer named `{}` is registered.", tokenizer_name))
+            .with_context(|| format!("no tokenizer named `{}` is registered", tokenizer_name))
     }
 
     pub(crate) fn tokenize_text_into_terms_json(

@@ -64,8 +64,8 @@ pub fn validate_field_mapping_name(field_mapping_name: &str) -> anyhow::Result<(
 
     if QW_RESERVED_FIELD_NAMES.contains(&field_mapping_name) {
         bail!(
-            "Field name `{field_mapping_name}` is reserved. The following fields are reserved for \
-             Quickwit internal usage: {}.",
+            "field name `{field_mapping_name}` is reserved. the following fields are reserved for \
+             Quickwit internal usage: {}",
             QW_RESERVED_FIELD_NAMES.join(", "),
         );
     }
@@ -73,31 +73,31 @@ pub fn validate_field_mapping_name(field_mapping_name: &str) -> anyhow::Result<(
         return Ok(());
     }
     if field_mapping_name.is_empty() {
-        bail!("Field name is empty.");
+        bail!("field name is empty");
     }
     if field_mapping_name.starts_with('.') {
         bail!(
-            "Field name `{}` must not start with a dot `.`",
+            "field name `{}` must not start with a dot `.`",
             field_mapping_name
         );
     }
     if field_mapping_name.len() > 255 {
         bail!(
-            "Field name `{}` is too long. Field names must not be longer than 255 characters.",
+            "field name `{}` is too long. field names must not be longer than 255 characters",
             field_mapping_name
         )
     }
     let first_char = field_mapping_name.chars().next().unwrap();
     if !first_char.is_ascii_alphabetic() {
         bail!(
-            "Field name `{}` is invalid. Field names must start with an uppercase or lowercase \
-             ASCII letter, or an underscore `_`.",
+            "field name `{}` is invalid. field names must start with an uppercase or lowercase \
+             ASCII letter, or an underscore `_`",
             field_mapping_name
         )
     }
     bail!(
-        "Field name `{}` contains illegal characters. Field names must only contain uppercase and \
-         lowercase ASCII letters, digits, hyphens `-`, periods `.`, and underscores `_`.",
+        "field name `{}` contains illegal characters. field names must only contain uppercase and \
+         lowercase ASCII letters, digits, hyphens `-`, periods `.`, and underscores `_`",
         field_mapping_name
     );
 }

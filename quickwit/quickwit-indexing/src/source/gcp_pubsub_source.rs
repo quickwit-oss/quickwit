@@ -113,14 +113,14 @@ impl GcpPubSubSource {
                     .await
                     .with_context(|| {
                         format!(
-                            "Failed to load GCP PubSub credentials file from `{credentials_file}`."
+                            "failed to load GCP PubSub credentials file from `{credentials_file}`"
                         )
                     })?;
                 ClientConfig::default().with_credentials(credentials).await
             }
             _ => ClientConfig::default().with_auth().await,
         }
-        .context("Failed to create GCP PubSub client config.")?;
+        .context("failed to create GCP PubSub client config")?;
 
         if params.project_id.is_some() {
             client_config.project_id = params.project_id
@@ -128,7 +128,7 @@ impl GcpPubSubSource {
 
         let client = Client::new(client_config)
             .await
-            .context("Failed to create GCP PubSub client.")?;
+            .context("failed to create GCP PubSub client")?;
         let subscription = client.subscription(&subscription_name);
         // TODO: replace with "<node_id>/<index_id>/<source_id>/<pipeline_ord>"
         let partition_id = append_random_suffix(&format!("gpc-pubsub-{subscription_name}"));
@@ -142,7 +142,7 @@ impl GcpPubSubSource {
             "Starting GCP PubSub source."
         );
         if !subscription.exists(Some(RetrySetting::default())).await? {
-            anyhow::bail!("GCP PubSub subscription `{subscription_name}` does not exist.");
+            anyhow::bail!("GCP PubSub subscription `{subscription_name}` does not exist");
         }
         Ok(Self {
             ctx,
@@ -249,7 +249,7 @@ impl GcpPubSubSource {
             .subscription
             .pull(self.max_messages_per_pull, None)
             .await
-            .context("Failed to pull messages from subscription.")?;
+            .context("failed to pull messages from subscription")?;
 
         let Some(last_message) = messages.last() else {
             return Ok(());
@@ -282,7 +282,7 @@ impl GcpPubSubSource {
         batch
             .checkpoint_delta
             .record_partition_delta(self.partition_id.clone(), from_position, to_position)
-            .context("Failed to record partition delta.")?;
+            .context("failed to record partition delta")?;
         Ok(())
     }
 }

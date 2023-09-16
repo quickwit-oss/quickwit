@@ -72,7 +72,7 @@ status_code: 400
 expected:
   status: 400
   error:
-    reason: "Invalid argument: Quickwit only supports scroll TTL period up to 1800 secs."
+    reason: "Invalid argument: Quickwit only supports scroll TTL period up to 1800 secs"
 ---
 params:
   size: 40

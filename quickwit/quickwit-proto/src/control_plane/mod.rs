@@ -29,11 +29,11 @@ pub type ControlPlaneResult<T> = std::result::Result<T, ControlPlaneError>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ControlPlaneError {
-    #[error("An internal error occurred: {0}.")]
+    #[error("an internal error occurred: {0}")]
     Internal(String),
-    #[error("An internal error occurred: {0}.")]
+    #[error("an internal error occurred: {0}")]
     Metastore(#[from] MetastoreError),
-    #[error("Control plane is unavailable: {0}.")]
+    #[error("control plane is unavailable: {0}")]
     Unavailable(String),
 }
 
@@ -41,7 +41,7 @@ impl From<ControlPlaneError> for MetastoreError {
     fn from(error: ControlPlaneError) -> Self {
         match error {
             ControlPlaneError::Internal(message) => MetastoreError::Internal {
-                message: "TODO".to_string(),
+                message: "todo".to_string(),
                 cause: message,
             },
             ControlPlaneError::Metastore(error) => error,
@@ -76,10 +76,10 @@ impl From<AskError<ControlPlaneError>> for ControlPlaneError {
         match error {
             AskError::ErrorReply(error) => error,
             AskError::MessageNotDelivered => {
-                ControlPlaneError::Unavailable("Request not delivered".to_string())
+                ControlPlaneError::Unavailable("request not delivered".to_string())
             }
             AskError::ProcessMessageError => ControlPlaneError::Internal(
-                "An error occurred while processing the request".to_string(),
+                "an error occurred while processing the request".to_string(),
             ),
         }
     }

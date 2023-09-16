@@ -27,7 +27,7 @@ pub static DEFAULT_CONTENT_TYPE: &str = "application/json";
 #[derive(Error, Debug)]
 pub enum Error {
     // Error returned by Quickwit server.
-    #[error("Api error: {0}")]
+    #[error("API error: {0}")]
     Api(#[from] ApiError),
     // Error returned by reqwest lib.
     #[error(transparent)]
@@ -36,13 +36,13 @@ pub enum Error {
     #[error("IO error: {0}")]
     Io(#[from] tokio::io::Error),
     // Internal error returned by quickwit client lib.
-    #[error("Internal Quickwit client error: {0}")]
+    #[error("internal Quickwit client error: {0}")]
     Internal(String),
     // Json serialization/deserialization error.
     #[error("Serde JSON error: {0}")]
     Json(#[from] serde_json::error::Error),
     // Error returned by url lib when parsing a string.
-    #[error("Url parsing error: {0}")]
+    #[error("URL parsing error: {0}")]
     UrlParse(String),
 }
 

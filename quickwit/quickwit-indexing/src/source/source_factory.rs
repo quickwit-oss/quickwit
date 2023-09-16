@@ -69,14 +69,14 @@ pub struct SourceLoader {
 #[derive(Error, Debug)]
 pub enum SourceLoaderError {
     #[error(
-        "Unknown source type `{requested_source_type}` (available source types are \
-         {available_source_types})."
+        "unknown source type `{requested_source_type}` (available source types are \
+         {available_source_types})"
     )]
     UnknownSourceType {
         requested_source_type: String,
         available_source_types: String, //< a comma separated list with the available source_type.
     },
-    #[error("Failed to create source `{source_id}` of type `{source_type}`. Cause: {error:?}")]
+    #[error("failed to create source `{source_id}` of type `{source_type}`. Cause: {error:?}")]
     FailedToCreateSource {
         source_id: String,
         source_type: String,

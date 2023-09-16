@@ -194,7 +194,7 @@ impl PulsarSource {
         batch
             .checkpoint_delta
             .record_partition_delta(partition, current_position, msg_position)
-            .context("Failed to record partition delta.")?;
+            .context("failed to record partition delta")?;
         batch.push(doc);
 
         self.state.num_bytes_processed += num_bytes;
@@ -235,8 +235,8 @@ impl Source for PulsarSource {
                 // that we can use the consumer within this Sync context.
                 message = self.pulsar_consumer.next() => {
                     let message = message
-                        .ok_or_else(|| ActorExitStatus::from(anyhow!("Consumer was dropped.")))?
-                        .map_err(|e| ActorExitStatus::from(anyhow!("Failed to get message from consumer: {:?}", e)))?;
+                        .ok_or_else(|| ActorExitStatus::from(anyhow!("consumer was dropped")))?
+                        .map_err(|e| ActorExitStatus::from(anyhow!("failed to get message from consumer: {:?}", e)))?;
 
                     self.process_message(message, &mut batch).map_err(ActorExitStatus::from)?;
 

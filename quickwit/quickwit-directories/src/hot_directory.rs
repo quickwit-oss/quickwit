@@ -60,11 +60,11 @@ impl VersionedComponent for HotDirectoryVersions {
         match self {
             Self::V1 => {
                 if bytes.len() < 4 {
-                    bail!("Data too short (len={}).", bytes.len());
+                    bail!("data too short (len={})", bytes.len());
                 }
                 let len = bytes.read_u32() as usize;
                 let hot_directory_meta = postcard::from_bytes(&bytes.as_slice()[..len])
-                    .context("Failed to deserialize Hot Directory Meta")?;
+                    .context("failed to deserialize hot directory meta")?;
                 bytes.advance(len);
                 Ok(hot_directory_meta)
             }
@@ -244,7 +244,7 @@ impl StaticSliceCache {
         let (body, idx) = body.split(body_len as usize);
         let idx_bytes = idx.as_slice();
         let index: SliceCacheIndex = postcard::from_bytes(idx_bytes).map_err(|err| {
-            DataCorruption::comment_only(format!("Failed to deserialize the slice index: {err:?}"))
+            DataCorruption::comment_only(format!("failed to deserialize the slice index: {err:?}"))
         })?;
         Ok(StaticSliceCache { bytes: body, index })
     }
@@ -309,7 +309,7 @@ impl StaticSliceCacheBuilder {
         for segment in &self.slices[1..] {
             if segment.range().start < last.range().end {
                 return Err(tantivy::TantivyError::InvalidArgument(format!(
-                    "Two segments are overlapping on byte {}",
+                    "two segments are overlapping on byte {}",
                     segment.range().start
                 )));
             }
@@ -335,7 +335,7 @@ impl StaticSliceCacheBuilder {
         };
         self.wrt.extend_from_slice(
             &postcard::to_allocvec(&slices_idx).map_err(|err| {
-                TantivyError::InternalError(format!("Could not serialize {err:?}"))
+                TantivyError::InternalError(format!("could not serialize {err:?}"))
             })?,
         );
         self.wrt.extend_from_slice(&self.offset.to_le_bytes()[..]);

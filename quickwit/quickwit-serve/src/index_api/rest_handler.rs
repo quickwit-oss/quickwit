@@ -94,8 +94,8 @@ fn json_body<T: DeserializeOwned + Send>(
 
 #[derive(Debug, Error)]
 #[error(
-    "Unsupported content-type header. Choices are application/json, application/toml and \
-     application/yaml."
+    "unsupported content-type header. choices are application/json, application/toml and \
+     application/yaml"
 )]
 pub struct UnsupportedContentType;
 impl warp::reject::Reject for UnsupportedContentType {}
@@ -551,8 +551,8 @@ async fn create_source(
             .map_err(IndexServiceError::InvalidConfig)?;
     if let SourceParams::File(_) = &source_config.source_params {
         return Err(IndexServiceError::OperationNotAllowed(
-            "File sources are limited to a local usage. Please use the CLI command `quickwit tool \
-             local-ingest` to ingest data from a file."
+            "file sources are limited to a local usage. please use the CLI command `quickwit tool \
+             local-ingest` to ingest data from a file"
                 .to_string(),
         ));
     }
@@ -674,8 +674,8 @@ async fn toggle_source(
     let index_uid: IndexUid = metastore.index_metadata(&index_id).await?.index_uid;
     if [CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID].contains(&source_id.as_str()) {
         return Err(IndexServiceError::OperationNotAllowed(format!(
-            "Source `{source_id}` is managed by Quickwit, you cannot enable or disable a source \
-             managed by Quickwit."
+            "source `{source_id}` is managed by Quickwit, you cannot enable or disable a source \
+             managed by Quickwit"
         )));
     }
     metastore
@@ -717,8 +717,8 @@ async fn delete_source(
     let index_uid: IndexUid = metastore.index_metadata(&index_id).await?.index_uid;
     if [INGEST_API_SOURCE_ID, CLI_INGEST_SOURCE_ID].contains(&source_id.as_str()) {
         return Err(IndexServiceError::OperationNotAllowed(format!(
-            "Source `{source_id}` is managed by Quickwit, you cannot delete a source managed by \
-             Quickwit."
+            "source `{source_id}` is managed by Quickwit, you cannot delete a source managed by \
+             Quickwit"
         )));
     }
     metastore.delete_source(index_uid, &source_id).await?;
@@ -762,7 +762,7 @@ async fn analyze_request(request: AnalyzeRequest) -> Result<serde_json::Value, I
     let tokens = analyze_text(&request.text, &request.tokenizer_config)
         .map_err(|err| IndexServiceError::Internal(format!("{err:?}")))?;
     let json_value = serde_json::to_value(tokens)
-        .map_err(|err| IndexServiceError::Internal(format!("Cannot serialize tokens: {err}")))?;
+        .map_err(|err| IndexServiceError::Internal(format!("cannot serialize tokens: {err}")))?;
     Ok(json_value)
 }
 
@@ -1454,7 +1454,7 @@ mod tests {
             .await;
         assert_eq!(resp.status(), 415);
         let body = std::str::from_utf8(resp.body()).unwrap();
-        assert!(body.contains("Unsupported content-type header. Choices are"));
+        assert!(body.contains("unsupported content-type header. choices are"));
     }
 
     #[tokio::test]
@@ -1477,7 +1477,7 @@ mod tests {
             .await;
         assert_eq!(resp.status(), 400);
         let body = std::str::from_utf8(resp.body()).unwrap();
-        assert!(body.contains("Field `timestamp` has an unknown type"));
+        assert!(body.contains("field `timestamp` has an unknown type"));
         Ok(())
     }
 

@@ -319,8 +319,8 @@ impl KafkaSource {
             .get(&partition)
             .ok_or_else(|| {
                 anyhow::anyhow!(
-                    "Received message from unassigned partition `{}`. Assigned partitions: \
-                     `{{{}}}`.",
+                    "received message from unassigned partition `{}`. Assigned partitions: \
+                     `{{{}}}`",
                     partition,
                     self.state.assigned_partitions.keys().join(", "),
                 )
@@ -335,7 +335,7 @@ impl KafkaSource {
         batch
             .checkpoint_delta
             .record_partition_delta(partition_id, previous_position, current_position)
-            .context("Failed to record partition delta.")?;
+            .context("failed to record partition delta")?;
         Ok(())
     }
 
@@ -354,7 +354,7 @@ impl KafkaSource {
             .await
             .with_context(|| {
                 format!(
-                    "Failed to fetch index metadata for index `{}`.",
+                    "failed to fetch index metadata for index `{}`",
                     self.ctx.index_uid.index_id()
                 )
             })?;
@@ -400,7 +400,7 @@ impl KafkaSource {
         );
         assignment_tx
             .send(next_offsets)
-            .map_err(|_| anyhow!("Consumer context was dropped."))?;
+            .map_err(|_| anyhow!("consumer context was dropped"))?;
         Ok(())
     }
 
@@ -414,7 +414,7 @@ impl KafkaSource {
         ctx.protect_future(self.publish_lock.kill()).await;
         ack_tx
             .send(())
-            .map_err(|_| anyhow!("Consumer context was dropped."))?;
+            .map_err(|_| anyhow!("consumer context was dropped"))?;
 
         batch.clear();
         self.publish_lock = PublishLock::default();
@@ -472,7 +472,7 @@ impl Source for KafkaSource {
         loop {
             tokio::select! {
                 event_opt = self.events_rx.recv() => {
-                    let event = event_opt.ok_or_else(|| ActorExitStatus::from(anyhow!("Consumer was dropped.")))?;
+                    let event = event_opt.ok_or_else(|| ActorExitStatus::from(anyhow!("consumer was dropped")))?;
                     match event {
                         KafkaEvent::Message(message) => self.process_message(message, &mut batch).await?,
                         KafkaEvent::AssignPartitions { partitions, assignment_tx} => self.process_assign_partitions(ctx, &partitions, assignment_tx).await?,
@@ -616,18 +616,18 @@ pub(super) async fn check_connectivity(params: KafkaSourceParams) -> anyhow::Res
     let cluster_metadata = spawn_blocking(move || {
         consumer
             .fetch_metadata(Some(&topic), timeout)
-            .with_context(|| format!("Failed to fetch metadata for topic `{topic}`."))
+            .with_context(|| format!("failed to fetch metadata for topic `{topic}`"))
     })
     .await??;
 
     if cluster_metadata.topics().is_empty() {
-        bail!("Topic `{}` does not exist.", params.topic);
+        bail!("topic `{}` does not exist", params.topic);
     }
     let topic_metadata = &cluster_metadata.topics()[0];
     assert_eq!(topic_metadata.name(), params.topic); // Belt and suspenders.
 
     if topic_metadata.partitions().is_empty() {
-        bail!("Topic `{}` has no partitions.", params.topic);
+        bail!("topic `{}` has no partitions", params.topic);
     }
     Ok(())
 }
@@ -661,7 +661,7 @@ fn create_consumer(
             topic: params.topic,
             events_tx,
         })
-        .context("Failed to create Kafka consumer.")?;
+        .context("failed to create Kafka consumer")?;
 
     Ok((client_config, consumer))
 }
@@ -679,7 +679,7 @@ fn parse_client_log_level(client_log_level: Option<String>) -> anyhow::Result<RD
         Some("alert") => RDKafkaLogLevel::Alert,
         Some("emerg") => RDKafkaLogLevel::Emerg,
         Some(level) => bail!(
-            "Failed to parse Kafka client log level. Value `{}` is not supported.",
+            "failed to parse Kafka client log level. value `{}` is not supported",
             level
         ),
     };
@@ -690,7 +690,7 @@ fn parse_client_params(client_params: JsonValue) -> anyhow::Result<ClientConfig>
     let params = if let JsonValue::Object(params) = client_params {
         params
     } else {
-        bail!("Failed to parse Kafka client parameters. `client_params` must be a JSON object.");
+        bail!("failed to parse Kafka client parameters. `client_params` must be a JSON object");
     };
     let mut client_config = ClientConfig::new();
     for (key, value_json) in params {
@@ -700,8 +700,8 @@ fn parse_client_params(client_params: JsonValue) -> anyhow::Result<ClientConfig>
             JsonValue::String(value_string) => value_string,
             JsonValue::Null => continue,
             JsonValue::Array(_) | JsonValue::Object(_) => bail!(
-                "Failed to parse Kafka client parameters. `client_params.{}` must be a boolean, \
-                 number, or string.",
+                "failed to parse Kafka client parameters. `client_params.{}` must be a boolean, \
+                 number, or string",
                 key
             ),
         };
@@ -782,7 +782,7 @@ mod kafka_broker_tests {
             .collect::<Result<Vec<_>, _>>()
             .map_err(|(topic, err_code)| {
                 anyhow::anyhow!(
-                    "Failed to create topic `{}`. Error code: `{}`",
+                    "failed to create topic `{}`. error code: `{}`",
                     topic,
                     err_code
                 )

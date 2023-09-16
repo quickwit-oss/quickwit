@@ -169,7 +169,7 @@ fn build_request_for_es_api(
         .collect();
     if sort_fields.len() >= 3 {
         return Err(ElasticSearchError::from(SearchError::InvalidArgument(
-            format!("Only up to two sort fields supported at the moment. Got {sort_fields:?}"),
+            format!("only up to two sort fields supported at the moment. got {sort_fields:?}"),
         )));
     }
 
@@ -232,26 +232,26 @@ async fn es_compat_index_multi_search(
 ) -> Result<MultiSearchResponse, ElasticSearchError> {
     let mut search_requests = Vec::new();
     let str_payload = from_utf8(&payload)
-        .map_err(|err| SearchError::InvalidQuery(format!("Invalid UTF-8: {}", err)))?;
+        .map_err(|err| SearchError::InvalidQuery(format!("invalid UTF-8: {}", err)))?;
     let mut payload_lines = str_lines(str_payload);
 
     while let Some(line) = payload_lines.next() {
         let request_header = serde_json::from_str::<MultiSearchHeader>(line).map_err(|err| {
             SearchError::InvalidArgument(format!(
-                "Failed to parse request header `{}...`: {}",
+                "failed to parse request header `{}...`: {}",
                 truncate_str(line, 20),
                 err
             ))
         })?;
         if request_header.index.is_empty() {
             return Err(ElasticSearchError::from(SearchError::InvalidArgument(
-                "`_msearch` request header must define at least one index.".to_string(),
+                "`_msearch` request header must define at least one index".to_string(),
             )));
         }
         for index in &request_header.index {
             validate_index_id_pattern(index).map_err(|err| {
                 SearchError::InvalidArgument(format!(
-                    "Request header contains an invalid index: {}",
+                    "request header contains an invalid index: {}",
                     err
                 ))
             })?;
@@ -260,12 +260,12 @@ async fn es_compat_index_multi_search(
         let search_body = payload_lines
             .next()
             .ok_or_else(|| {
-                SearchError::InvalidArgument("Expect request body after request header".to_string())
+                SearchError::InvalidArgument("expect request body after request header".to_string())
             })
             .and_then(|line| {
                 serde_json::from_str::<SearchBody>(line).map_err(|err| {
                     SearchError::InvalidArgument(format!(
-                        "Failed to parse request body `{}...`: {}",
+                        "failed to parse request body `{}...`: {}",
                         truncate_str(line, 20),
                         err
                     ))
@@ -309,7 +309,7 @@ async fn es_scroll(
 ) -> Result<ElasticSearchResponse, ElasticSearchError> {
     let start_instant = Instant::now();
     let Some(scroll_id) = scroll_query_params.scroll_id.clone() else {
-        return Err(SearchError::InvalidArgument("Missing scroll_id".to_string()).into());
+        return Err(SearchError::InvalidArgument("missing scroll_id".to_string()).into());
     };
     let scroll_ttl_secs: Option<u32> = if let Some(scroll_ttl) = scroll_query_params.scroll {
         let scroll_ttl_duration = humantime::parse_duration(&scroll_ttl)

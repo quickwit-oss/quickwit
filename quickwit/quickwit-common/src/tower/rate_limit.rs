@@ -218,7 +218,7 @@ mod tests {
     }
 
     #[derive(Debug, Clone, thiserror::Error)]
-    #[error("Rate meter error")]
+    #[error("rate meter error")]
     struct RateMeterError;
 
     impl From<BufferError> for RateMeterError {

@@ -25,11 +25,11 @@ use thiserror::Error;
 #[derive(Error, Debug)]
 #[allow(missing_docs)]
 pub enum QueryParserError {
-    #[error("Invalid json: {0}")]
+    #[error("invalid json: {0}")]
     InvalidJson(#[from] serde_json::Error),
-    #[error("Invalid query: {0}")]
+    #[error("invalid query: {0}")]
     InvalidQuery(#[from] InvalidQuery),
-    #[error("Invalid default search field: `{field_name}` {cause}")]
+    #[error("invalid default search field: `{field_name}` {cause}")]
     InvalidDefaultField {
         cause: &'static str,
         field_name: String,
@@ -43,19 +43,19 @@ pub enum QueryParserError {
 #[derive(Debug, Error, Eq, PartialEq)]
 pub enum DocParsingError {
     /// The provided string is not a syntactically valid JSON object.
-    #[error("The provided string is not a syntactically valid JSON object: {0}")]
+    #[error("the provided string is not a syntactically valid JSON object: {0}")]
     NotJsonObject(String),
     /// One of the value could not be parsed.
-    #[error("The field `{0}` could not be parsed: {1}")]
+    #[error("the field `{0}` could not be parsed: {1}")]
     ValueError(String, String),
     /// The json-document contains a field that is not declared in the schema.
-    #[error("The document contains a field that is not declared in the schema: {0:?}")]
+    #[error("the document contains a field that is not declared in the schema: {0:?}")]
     NoSuchFieldInSchema(String),
     /// The document contains a array of values but a single value is expected.
-    #[error("The document contains an array of values but a single value is expected: {0:?}")]
+    #[error("the document contains an array of values but a single value is expected: {0:?}")]
     MultiValuesNotSupported(String),
     /// The document does not contain a field that is required.
-    #[error("The document must contain field {0:?}.")]
+    #[error("the document must contain field {0:?}")]
     RequiredField(String),
 }
 

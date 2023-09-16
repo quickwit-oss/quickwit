@@ -26,11 +26,11 @@ use thiserror::Error;
 #[allow(missing_docs)]
 #[derive(Error, Debug, Serialize, Deserialize)]
 pub enum JanitorError {
-    #[error("Invalid delete query: `{0}`.")]
+    #[error("invalid delete query: `{0}`")]
     InvalidDeleteQuery(String),
-    #[error("Internal error: `{0}`")]
+    #[error("internal error: `{0}`")]
     Internal(String),
-    #[error("Metastore error: `{0}`.")]
+    #[error("metastore error: `{0}`")]
     Metastore(#[from] MetastoreError),
 }
 

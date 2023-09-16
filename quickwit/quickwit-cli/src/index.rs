@@ -259,7 +259,7 @@ impl IndexCliCommand {
     pub fn parse_cli_args(mut matches: ArgMatches) -> anyhow::Result<Self> {
         let (subcommand, submatches) = matches
             .remove_subcommand()
-            .context("Failed to parse index subcommand.")?;
+            .context("failed to parse index subcommand")?;
         match subcommand.as_str() {
             "clear" => Self::parse_clear_args(submatches),
             "create" => Self::parse_create_args(submatches),
@@ -268,7 +268,7 @@ impl IndexCliCommand {
             "ingest" => Self::parse_ingest_args(submatches),
             "list" => Self::parse_list_args(submatches),
             "search" => Self::parse_search_args(submatches),
-            _ => bail!("Unknown index subcommand `{subcommand}`."),
+            _ => bail!("unknown index subcommand `{subcommand}`"),
         }
     }
 
@@ -339,7 +339,7 @@ impl IndexCliCommand {
             (false, false) => CommitType::Auto,
             (false, true) => CommitType::Force,
             (true, false) => CommitType::WaitFor,
-            (true, true) => bail!("`--wait` and `--force` are mutually exclusive options."),
+            (true, true) => bail!("`--wait` and `--force` are mutually exclusive options"),
         };
 
         if commit_type == CommitType::Auto && client_args.commit_timeout.is_some() {
@@ -361,7 +361,7 @@ impl IndexCliCommand {
             .expect("`index` should be a required arg.");
         let query = matches
             .remove_one::<String>("query")
-            .context("`query` should be a required arg.")?;
+            .context("`query` should be a required arg")?;
         let aggregation = matches.remove_one::<String>("aggregation");
 
         let max_hits = matches
@@ -779,7 +779,7 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
     }
     let progress_bar = match &args.input_path_opt {
         Some(filepath) => {
-            let file_len = std::fs::metadata(filepath).context("File not found")?.len();
+            let file_len = std::fs::metadata(filepath).context("file not found")?.len();
             ProgressBar::new(file_len)
         }
         None => ProgressBar::new_spinner(),
@@ -834,7 +834,7 @@ pub async fn search_index(args: SearchIndexArgs) -> anyhow::Result<SearchRespons
     let aggs: Option<serde_json::Value> = args
         .aggregation
         .map(|aggs_string| {
-            serde_json::from_str(&aggs_string).context("Failed to deserialize aggregations.")
+            serde_json::from_str(&aggs_string).context("failed to deserialize aggregations")
         })
         .transpose()?;
     let sort_by = args
