@@ -1341,8 +1341,7 @@ mod tests {
         let metastore = metastore_for_test();
         let index_service = IndexService::new(metastore.clone(), StorageResolver::unconfigured());
         let mut node_config = NodeConfig::for_test();
-        node_config.default_index_root_uri =
-            Uri::from_well_formed("file:///default-index-root-uri");
+        node_config.default_index_root_uri = Uri::for_test("file:///default-index-root-uri");
         let index_management_handler =
             super::index_management_handlers(index_service, Arc::new(node_config));
         {
@@ -1382,8 +1381,7 @@ mod tests {
         let mut metastore = metastore_for_test();
         let index_service = IndexService::new(metastore.clone(), StorageResolver::unconfigured());
         let mut node_config = NodeConfig::for_test();
-        node_config.default_index_root_uri =
-            Uri::from_well_formed("file:///default-index-root-uri");
+        node_config.default_index_root_uri = Uri::for_test("file:///default-index-root-uri");
         let index_management_handler =
             super::index_management_handlers(index_service, Arc::new(node_config));
         let resp = warp::test::request()
@@ -1505,8 +1503,7 @@ mod tests {
         let metastore = metastore_for_test();
         let index_service = IndexService::new(metastore.clone(), StorageResolver::unconfigured());
         let mut node_config = NodeConfig::for_test();
-        node_config.default_index_root_uri =
-            Uri::from_well_formed("file:///default-index-root-uri");
+        node_config.default_index_root_uri = Uri::for_test("file:///default-index-root-uri");
         let index_management_handler =
             super::index_management_handlers(index_service, Arc::new(node_config))
                 .recover(recover_fn);
@@ -1528,8 +1525,7 @@ mod tests {
         let metastore = metastore_for_test();
         let index_service = IndexService::new(metastore.clone(), StorageResolver::unconfigured());
         let mut node_config = NodeConfig::for_test();
-        node_config.default_index_root_uri =
-            Uri::from_well_formed("file:///default-index-root-uri");
+        node_config.default_index_root_uri = Uri::for_test("file:///default-index-root-uri");
         let index_management_handler =
             super::index_management_handlers(index_service, Arc::new(node_config))
                 .recover(recover_fn);
@@ -1567,8 +1563,7 @@ mod tests {
         let metastore = metastore_for_test();
         let index_service = IndexService::new(metastore.clone(), StorageResolver::unconfigured());
         let mut node_config = NodeConfig::for_test();
-        node_config.default_index_root_uri =
-            Uri::from_well_formed("file:///default-index-root-uri");
+        node_config.default_index_root_uri = Uri::for_test("file:///default-index-root-uri");
         let index_management_handler =
             super::index_management_handlers(index_service, Arc::new(node_config))
                 .recover(recover_fn);
@@ -1604,8 +1599,7 @@ mod tests {
         let metastore = metastore_for_test();
         let index_service = IndexService::new(metastore.clone(), StorageResolver::unconfigured());
         let mut node_config = NodeConfig::for_test();
-        node_config.default_index_root_uri =
-            Uri::from_well_formed("file:///default-index-root-uri");
+        node_config.default_index_root_uri = Uri::for_test("file:///default-index-root-uri");
         let index_management_handler =
             super::index_management_handlers(index_service, Arc::new(node_config))
                 .recover(recover_fn);

@@ -131,10 +131,12 @@ impl AzureBlobStorage {
     /// Creates an emulated storage for testing.
     #[cfg(feature = "testsuite")]
     pub fn new_emulated(container: &str) -> Self {
+        use std::str::FromStr;
+
         let container_client = ClientBuilder::emulator().container_client(container);
         Self {
             container_client,
-            uri: Uri::from_well_formed(format!("azure://tester/{container}")),
+            uri: Uri::from_str(&format!("azure://tester/{container}")).unwrap(),
             prefix: PathBuf::new(),
             multipart_policy: MultiPartPolicy::default(),
             retry_params: RetryParams {
@@ -619,20 +621,20 @@ mod tests {
 
     #[test]
     fn test_parse_azure_uri() {
-        assert!(parse_azure_uri(&Uri::from_well_formed("azure://")).is_none());
+        assert!(parse_azure_uri(&Uri::for_test("azure://")).is_none());
 
         let (container, prefix) =
-            parse_azure_uri(&Uri::from_well_formed("azure://test-container")).unwrap();
+            parse_azure_uri(&Uri::for_test("azure://test-container")).unwrap();
         assert_eq!(container, "test-container");
         assert!(prefix.to_str().unwrap().is_empty());
 
         let (container, prefix) =
-            parse_azure_uri(&Uri::from_well_formed("azure://test-container/")).unwrap();
+            parse_azure_uri(&Uri::for_test("azure://test-container/")).unwrap();
         assert_eq!(container, "test-container");
         assert!(prefix.to_str().unwrap().is_empty());
 
         let (container, prefix) =
-            parse_azure_uri(&Uri::from_well_formed("azure://test-container/indexes")).unwrap();
+            parse_azure_uri(&Uri::for_test("azure://test-container/indexes")).unwrap();
         assert_eq!(container, "test-container");
         assert_eq!(prefix.to_str().unwrap(), "indexes");
     }

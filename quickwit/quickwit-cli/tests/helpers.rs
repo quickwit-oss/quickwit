@@ -20,6 +20,7 @@
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
+use std::str::FromStr;
 use std::sync::Arc;
 
 use anyhow::Context;
@@ -186,11 +187,9 @@ pub async fn create_test_env(
     // TODO: refactor when we have a singleton storage resolver.
     let metastore_uri = match storage_type {
         TestStorageType::LocalFileSystem => {
-            Uri::from_well_formed(format!("file://{}", indexes_dir_path.display()))
+            Uri::from_str(&format!("file://{}", indexes_dir_path.display())).unwrap()
         }
-        TestStorageType::S3 => {
-            Uri::from_well_formed("s3://quickwit-integration-tests/indexes".to_string())
-        }
+        TestStorageType::S3 => Uri::for_test("s3://quickwit-integration-tests/indexes"),
     };
     let storage_resolver = StorageResolver::unconfigured();
     let storage = storage_resolver.resolve(&metastore_uri).await?;
@@ -236,11 +235,12 @@ pub async fn create_test_env(
     resource_files.insert("wiki", wikipedia_docs_path);
 
     let config_uri =
-        Uri::from_well_formed(format!("file://{}", resource_files["config"].display()));
-    let index_config_uri = Uri::from_well_formed(format!(
+        Uri::from_str(&format!("file://{}", resource_files["config"].display())).unwrap();
+    let index_config_uri = Uri::from_str(&format!(
         "file://{}",
         resource_files["index_config"].display()
-    ));
+    ))
+    .unwrap();
     let cluster_endpoint = Url::parse(&format!("http://localhost:{rest_listen_port}"))
         .context("failed to parse cluster endpoint")?;
 
