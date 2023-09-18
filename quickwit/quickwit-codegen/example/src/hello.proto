@@ -46,7 +46,12 @@ message PingResponse {
 }
 
 service Hello {
+    // Says hello.
     rpc Hello(HelloRequest) returns (HelloResponse);
+
+    // Says goodbye.
     rpc Goodbye(GoodbyeRequest) returns (GoodbyeResponse);
+
+    // Ping pong.
     rpc Ping(stream PingRequest) returns (stream PingResponse);
 }
