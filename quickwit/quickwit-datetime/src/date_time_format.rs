@@ -63,12 +63,18 @@ impl StrptimeParser {
     /// Parse a given date according to the datetime format specified during the StrptimeParser
     /// creation. If the date format does not provide a specific a time, the time will be set to
     /// 00:00:00.
-    fn parse_primitive_date_time(
-        &self,
-        date_time_str: &str,
-    ) -> Result<PrimitiveDateTime, time::error::Parse> {
+    fn parse_primitive_date_time(&self, date_time_str: &str) -> anyhow::Result<PrimitiveDateTime> {
         let mut parsed = Parsed::new();
-        parsed.parse_items(date_time_str.as_bytes(), self.borrow_items())?;
+        if !parsed
+            .parse_items(date_time_str.as_bytes(), self.borrow_items())?
+            .is_empty()
+        {
+            anyhow::bail!(
+                "The date time string `{}` does not match the format `{}`.",
+                date_time_str,
+                self.borrow_strptime_format()
+            );
+        }
         // The parsed datetime contains a date but seems to be missing "time".
         // We complete it artificially with 00:00:00.
         if parsed.hour_24().is_none()
@@ -314,6 +320,8 @@ impl<'de> Deserialize<'de> for DateTimeOutputFormat {
 
 #[cfg(test)]
 mod tests {
+    use time::macros::datetime;
+
     use super::*;
 
     #[test]
@@ -430,5 +438,19 @@ mod tests {
                 .to_string();
             assert!(error_str.contains(&format!("unknown output format: `{format}`")));
         }
+    }
+
+    #[test]
+    fn test_strictly_parse_datetime_format() {
+        let parser = StrptimeParser::from_str("%Y-%m-%d").unwrap();
+        assert_eq!(
+            parser.parse_date_time("2021-01-01").unwrap(),
+            datetime!(2021-01-01 00:00:00 UTC)
+        );
+        let error_str = parser.parse_date_time("2021-01-01TABC").unwrap_err();
+        assert_eq!(
+            error_str,
+            "The date time string `2021-01-01TABC` does not match the format `%Y-%m-%d`."
+        );
     }
 }

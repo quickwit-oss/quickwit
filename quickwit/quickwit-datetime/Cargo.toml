@@ -10,6 +10,7 @@ homepage = "https://quickwit.io/"
 documentation = "https://quickwit.io/docs/"
 
 [dependencies]
+anyhow = { workspace = true }
 itertools = { workspace = true }
 ouroboros = "0.18.0"
 serde = { workspace = true }
