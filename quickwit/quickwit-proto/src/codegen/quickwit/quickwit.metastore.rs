@@ -288,6 +288,44 @@ pub struct OpenShardsSubresponse {
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AcquireShardsRequest {
+    #[prost(message, repeated, tag = "1")]
+    pub subrequests: ::prost::alloc::vec::Vec<AcquireShardsSubrequest>,
+}
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AcquireShardsSubrequest {
+    #[prost(string, tag = "1")]
+    pub index_uid: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub source_id: ::prost::alloc::string::String,
+    #[prost(uint64, repeated, tag = "3")]
+    pub shard_ids: ::prost::alloc::vec::Vec<u64>,
+    #[prost(string, tag = "4")]
+    pub publish_token: ::prost::alloc::string::String,
+}
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AcquireShardsResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub subresponses: ::prost::alloc::vec::Vec<AcquireShardsSubresponse>,
+}
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct AcquireShardsSubresponse {
+    #[prost(string, tag = "1")]
+    pub index_uid: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub source_id: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag = "3")]
+    pub acquired_shards: ::prost::alloc::vec::Vec<super::ingest::Shard>,
+}
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CloseShardsRequest {
     #[prost(message, repeated, tag = "1")]
     pub subrequests: ::prost::alloc::vec::Vec<CloseShardsSubrequest>,
@@ -1124,6 +1162,39 @@ pub mod metastore_service_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        /// Acquires a set of shards for indexing. This RPC locks the shards for publishing thanks to a publish token and only
+        /// the last indexer that has acquired the shards is allowed to publish. The response returns for each subrequest the
+        /// list of acquired shards along with the positions to index from.
+        pub async fn acquire_shards(
+            &mut self,
+            request: impl tonic::IntoRequest<super::AcquireShardsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::AcquireShardsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.metastore.MetastoreService/AcquireShards",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit.metastore.MetastoreService",
+                        "AcquireShards",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
         pub async fn close_shards(
             &mut self,
             request: impl tonic::IntoRequest<super::CloseShardsRequest>,
@@ -1344,6 +1415,16 @@ pub mod metastore_service_server {
             request: tonic::Request<super::OpenShardsRequest>,
         ) -> std::result::Result<
             tonic::Response<super::OpenShardsResponse>,
+            tonic::Status,
+        >;
+        /// Acquires a set of shards for indexing. This RPC locks the shards for publishing thanks to a publish token and only
+        /// the last indexer that has acquired the shards is allowed to publish. The response returns for each subrequest the
+        /// list of acquired shards along with the positions to index from.
+        async fn acquire_shards(
+            &self,
+            request: tonic::Request<super::AcquireShardsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::AcquireShardsResponse>,
             tonic::Status,
         >;
         async fn close_shards(
@@ -2351,6 +2432,52 @@ pub mod metastore_service_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = OpenShardsSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.metastore.MetastoreService/AcquireShards" => {
+                    #[allow(non_camel_case_types)]
+                    struct AcquireShardsSvc<T: MetastoreService>(pub Arc<T>);
+                    impl<
+                        T: MetastoreService,
+                    > tonic::server::UnaryService<super::AcquireShardsRequest>
+                    for AcquireShardsSvc<T> {
+                        type Response = super::AcquireShardsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::AcquireShardsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).acquire_shards(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = AcquireShardsSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

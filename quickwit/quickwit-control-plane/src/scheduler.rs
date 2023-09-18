@@ -27,18 +27,19 @@ use anyhow::Context;
 use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler};
-use quickwit_config::SourceConfig;
+use quickwit_config::{SourceConfig, INGEST_SOURCE_ID};
 use quickwit_metastore::{ListIndexesQuery, Metastore};
 use quickwit_proto::control_plane::{
     ControlPlaneResult, NotifyIndexChangeRequest, NotifyIndexChangeResponse,
 };
 use quickwit_proto::indexing::{ApplyIndexingPlanRequest, IndexingService, IndexingTask};
-use quickwit_proto::NodeId;
+use quickwit_proto::metastore::{ListShardsRequest, ListShardsSubrequest};
+use quickwit_proto::{NodeId, ShardId};
 use serde::Serialize;
 use tracing::{debug, error, info, warn};
 
 use crate::indexing_plan::{
-    build_indexing_plan, build_physical_indexing_plan, IndexSourceId, PhysicalIndexingPlan,
+    build_indexing_plan, build_physical_indexing_plan, PhysicalIndexingPlan, SourceUid,
 };
 use crate::{IndexerNodeInfo, IndexerPool};
 
@@ -172,9 +173,19 @@ impl IndexingScheduler {
             warn!("No indexer available, cannot schedule an indexing plan.");
             return Ok(());
         };
-        let source_configs: HashMap<IndexSourceId, SourceConfig> =
-            self.fetch_source_configs().await?;
-        let indexing_tasks = build_indexing_plan(&indexers, &source_configs);
+        let source_configs: HashMap<SourceUid, SourceConfig> = self.fetch_source_configs().await?;
+        let mut indexing_tasks = build_indexing_plan(&source_configs, indexers.len());
+
+        // TODO: This is a temporary hack to always create an indexing pipeline for the shards that
+        // exist.
+        let shards = self.fetch_shards(&source_configs).await?;
+        for (source_uid, shard_ids) in shards {
+            indexing_tasks.push(IndexingTask {
+                index_uid: source_uid.index_uid.into(),
+                source_id: source_uid.source_id.clone(),
+                shard_ids,
+            });
+        }
         let new_physical_plan =
             build_physical_indexing_plan(&indexers, &source_configs, indexing_tasks);
         if let Some(last_applied_plan) = &self.state.last_applied_physical_plan {
@@ -193,12 +204,12 @@ impl IndexingScheduler {
         Ok(())
     }
 
-    async fn fetch_source_configs(&self) -> anyhow::Result<HashMap<IndexSourceId, SourceConfig>> {
+    async fn fetch_source_configs(&self) -> anyhow::Result<HashMap<SourceUid, SourceConfig>> {
         let indexes_metadatas = self
             .metastore
             .list_indexes_metadatas(ListIndexesQuery::All)
             .await?;
-        let source_configs: HashMap<IndexSourceId, SourceConfig> = indexes_metadatas
+        let source_configs: HashMap<SourceUid, SourceConfig> = indexes_metadatas
             .into_iter()
             .flat_map(|index_metadata| {
                 index_metadata
@@ -206,7 +217,7 @@ impl IndexingScheduler {
                     .into_iter()
                     .map(move |(source_id, source_config)| {
                         (
-                            IndexSourceId {
+                            SourceUid {
                                 index_uid: index_metadata.index_uid.clone(),
                                 source_id,
                             },
@@ -216,6 +227,56 @@ impl IndexingScheduler {
             })
             .collect();
         Ok(source_configs)
+    }
+
+    async fn fetch_shards(
+        &self,
+        source_configs: &HashMap<SourceUid, SourceConfig>,
+    ) -> anyhow::Result<HashMap<SourceUid, Vec<ShardId>>> {
+        let mut list_shards_subrequests = Vec::new();
+
+        for (source_uid, source_config) in source_configs {
+            if source_uid.source_id != INGEST_SOURCE_ID || !source_config.enabled {
+                continue;
+            }
+            // TODO: More precisely, we want the shards that are open or closing or such that
+            // `shard.publish_position_inclusive`
+            // < `shard.replication_position_inclusive`.
+            let list_shard_subrequest = ListShardsSubrequest {
+                index_uid: source_uid.index_uid.clone().into(),
+                source_id: source_uid.source_id.clone(),
+                shard_state: None,
+            };
+            list_shards_subrequests.push(list_shard_subrequest);
+        }
+        let list_shards_request = ListShardsRequest {
+            subrequests: list_shards_subrequests,
+        };
+        let list_shards_response = self
+            .metastore
+            .list_shards(list_shards_request)
+            .await
+            .context("failed to list shards from metastore")?;
+
+        let mut shards = HashMap::new();
+
+        for list_shards_subresponse in list_shards_response.subresponses {
+            let source_uid = SourceUid {
+                index_uid: list_shards_subresponse.index_uid.into(),
+                source_id: list_shards_subresponse.source_id,
+            };
+            if list_shards_subresponse.shards.is_empty() {
+                continue;
+            }
+            let shard_ids = list_shards_subresponse
+                .shards
+                .into_iter()
+                .filter(|shard| shard.is_indexable())
+                .map(|shard| shard.shard_id)
+                .collect();
+            shards.insert(source_uid, shard_ids);
+        }
+        Ok(shards)
     }
 
     /// Checks if the last applied plan corresponds to the running indexing tasks present in the
@@ -538,6 +599,7 @@ mod tests {
     use quickwit_indexing::IndexingService;
     use quickwit_metastore::{IndexMetadata, ListIndexesQuery, MockMetastore};
     use quickwit_proto::indexing::{ApplyIndexingPlanRequest, IndexingServiceClient, IndexingTask};
+    use quickwit_proto::metastore::ListShardsResponse;
     use quickwit_proto::NodeId;
     use serde_json::json;
 
@@ -625,6 +687,11 @@ mod tests {
                 Ok(vec![index_metadata_2.clone(), index_metadata_1.clone()])
             },
         );
+        metastore.expect_list_shards().returning(|_| {
+            Ok(ListShardsResponse {
+                subresponses: Vec::new(),
+            })
+        });
         let mut indexer_inboxes = Vec::new();
         let indexer_pool = Pool::default();
         let change_stream = cluster.ready_nodes_change_stream().await;

@@ -47,9 +47,7 @@ use tracing::{debug, info, warn};
 
 use crate::actors::DocProcessor;
 use crate::models::{NewPublishLock, PublishLock};
-use crate::source::{
-    BatchBuilder, Source, SourceContext, SourceExecutionContext, TypedSourceFactory,
-};
+use crate::source::{BatchBuilder, Source, SourceContext, SourceRuntimeArgs, TypedSourceFactory};
 
 /// Number of bytes after which we cut a new batch.
 ///
@@ -73,7 +71,7 @@ impl TypedSourceFactory for KafkaSourceFactory {
     type Params = KafkaSourceParams;
 
     async fn typed_create_source(
-        ctx: Arc<SourceExecutionContext>,
+        ctx: Arc<SourceRuntimeArgs>,
         params: KafkaSourceParams,
         checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self::Source> {
@@ -216,7 +214,7 @@ pub struct KafkaSourceState {
 
 /// A `KafkaSource` consumes a topic and forwards its messages to an `Indexer`.
 pub struct KafkaSource {
-    ctx: Arc<SourceExecutionContext>,
+    ctx: Arc<SourceRuntimeArgs>,
     topic: String,
     state: KafkaSourceState,
     backfill_mode_enabled: bool,
@@ -229,8 +227,8 @@ impl fmt::Debug for KafkaSource {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         formatter
             .debug_struct("KafkaSource")
-            .field("index_id", &self.ctx.index_uid.index_id())
-            .field("source_id", &self.ctx.source_config.source_id)
+            .field("index_id", &self.ctx.index_id())
+            .field("source_id", &self.ctx.source_id())
             .field("topic", &self.topic)
             .finish()
     }
@@ -239,7 +237,7 @@ impl fmt::Debug for KafkaSource {
 impl KafkaSource {
     /// Instantiates a new `KafkaSource`.
     pub async fn try_new(
-        ctx: Arc<SourceExecutionContext>,
+        ctx: Arc<SourceRuntimeArgs>,
         params: KafkaSourceParams,
         _ignored_checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self> {
@@ -247,12 +245,8 @@ impl KafkaSource {
         let backfill_mode_enabled = params.enable_backfill_mode;
 
         let (events_tx, events_rx) = mpsc::channel(100);
-        let (client_config, consumer) = create_consumer(
-            &ctx.index_uid,
-            &ctx.source_config.source_id,
-            params,
-            events_tx.clone(),
-        )?;
+        let (client_config, consumer) =
+            create_consumer(ctx.index_uid(), ctx.source_id(), params, events_tx.clone())?;
         let native_client_config = client_config.create_native_config()?;
         let group_id = native_client_config.get("group.id")?;
         let session_timeout_ms = native_client_config
@@ -266,8 +260,8 @@ impl KafkaSource {
         let publish_lock = PublishLock::default();
 
         info!(
-            index_id=%ctx.index_uid.index_id(),
-            source_id=%ctx.source_config.source_id,
+            index_id=%ctx.index_id(),
+            source_id=%ctx.source_id(),
             topic=%topic,
             group_id=%group_id,
             max_poll_interval_ms=%max_poll_interval_ms,
@@ -306,7 +300,7 @@ impl KafkaSource {
         } = message;
 
         if let Some(doc) = doc_opt {
-            batch.push(doc);
+            batch.add_doc(doc);
         } else {
             self.state.num_invalid_messages += 1;
         }
@@ -349,18 +343,18 @@ impl KafkaSource {
             .protect_future(
                 self.ctx
                     .metastore
-                    .index_metadata_strict(&self.ctx.index_uid),
+                    .index_metadata_strict(self.ctx.index_uid()),
             )
             .await
             .with_context(|| {
                 format!(
                     "failed to fetch index metadata for index `{}`",
-                    self.ctx.index_uid.index_id()
+                    self.ctx.index_id()
                 )
             })?;
         let checkpoint = index_metadata
             .checkpoint
-            .source_checkpoint(&self.ctx.source_config.source_id)
+            .source_checkpoint(self.ctx.source_id())
             .cloned()
             .unwrap_or_default();
 
@@ -392,8 +386,8 @@ impl KafkaSource {
             next_offsets.push((partition, next_offset));
         }
         info!(
-            index_id=%self.ctx.index_uid.index_id(),
-            source_id=%self.ctx.source_config.source_id,
+            index_id=%self.ctx.index_id(),
+            source_id=%self.ctx.source_id(),
             topic=%self.topic,
             partitions=?partitions,
             "New partition assignment after rebalance.",
@@ -517,10 +511,7 @@ impl Source for KafkaSource {
     }
 
     fn name(&self) -> String {
-        format!(
-            "KafkaSource{{source_id={}}}",
-            self.ctx.source_config.source_id
-        )
+        format!("KafkaSource{{source_id={}}}", self.ctx.source_id())
     }
 
     fn observable_state(&self) -> JsonValue {
@@ -534,8 +525,8 @@ impl Source for KafkaSource {
             .sorted()
             .collect();
         json!({
-            "index_id": self.ctx.index_uid.index_id(),
-            "source_id": self.ctx.source_config.source_id,
+            "index_id": self.ctx.index_id(),
+            "source_id": self.ctx.source_id(),
             "topic": self.topic,
             "assigned_partitions": assigned_partitions,
             "current_positions": current_positions,
@@ -943,11 +934,11 @@ mod kafka_broker_tests {
         } else {
             unreachable!()
         };
-        let ctx = SourceExecutionContext::for_test(
-            metastore,
+        let ctx = SourceRuntimeArgs::for_test(
             index_uid,
-            PathBuf::from("./queues"),
             source_config,
+            metastore,
+            PathBuf::from("./queues"),
         );
         let ignored_checkpoint = SourceCheckpoint::default();
         let mut kafka_source = KafkaSource::try_new(ctx, params, ignored_checkpoint)
@@ -1069,12 +1060,12 @@ mod kafka_broker_tests {
         } else {
             unreachable!()
         };
-        let ctx = Arc::new(SourceExecutionContext {
-            metastore,
+        let ctx = SourceRuntimeArgs::for_test(
             index_uid,
-            queues_dir_path: PathBuf::from("./queues"),
             source_config,
-        });
+            metastore,
+            PathBuf::from("./queues"),
+        );
         let ignored_checkpoint = SourceCheckpoint::default();
         let mut kafka_source = KafkaSource::try_new(ctx, params, ignored_checkpoint)
             .await
@@ -1130,11 +1121,11 @@ mod kafka_broker_tests {
         } else {
             unreachable!()
         };
-        let ctx = SourceExecutionContext::for_test(
-            metastore,
+        let ctx = SourceRuntimeArgs::for_test(
             index_uid,
-            PathBuf::from("./queues"),
             source_config,
+            metastore,
+            PathBuf::from("./queues"),
         );
         let ignored_checkpoint = SourceCheckpoint::default();
         let mut kafka_source = KafkaSource::try_new(ctx, params, ignored_checkpoint)
@@ -1150,7 +1141,7 @@ mod kafka_broker_tests {
         let (ack_tx, ack_rx) = oneshot::channel();
 
         let mut batch = BatchBuilder::default();
-        batch.push(Bytes::from_static(b"test-doc"));
+        batch.add_doc(Bytes::from_static(b"test-doc"));
 
         let publish_lock = kafka_source.publish_lock.clone();
         assert!(publish_lock.is_alive());
@@ -1187,11 +1178,11 @@ mod kafka_broker_tests {
         } else {
             unreachable!()
         };
-        let ctx = SourceExecutionContext::for_test(
-            metastore,
+        let ctx = SourceRuntimeArgs::for_test(
             index_uid,
-            PathBuf::from("./queues"),
             source_config,
+            metastore,
+            PathBuf::from("./queues"),
         );
         let ignored_checkpoint = SourceCheckpoint::default();
         let mut kafka_source = KafkaSource::try_new(ctx, params, ignored_checkpoint)
@@ -1225,11 +1216,11 @@ mod kafka_broker_tests {
             let index_uid = setup_index(metastore.clone(), &index_id, &source_id, &[]).await;
             let source = source_loader
                 .load_source(
-                    SourceExecutionContext::for_test(
-                        metastore,
+                    SourceRuntimeArgs::for_test(
                         index_uid,
-                        PathBuf::from("./queues"),
                         source_config,
+                        metastore,
+                        PathBuf::from("./queues"),
                     ),
                     SourceCheckpoint::default(),
                 )
@@ -1284,12 +1275,12 @@ mod kafka_broker_tests {
             let index_uid = setup_index(metastore.clone(), &index_id, &source_id, &[]).await;
             let source = source_loader
                 .load_source(
-                    Arc::new(SourceExecutionContext {
-                        metastore,
+                    SourceRuntimeArgs::for_test(
                         index_uid,
-                        queues_dir_path: PathBuf::from("./queues"),
                         source_config,
-                    }),
+                        metastore,
+                        PathBuf::from("./queues"),
+                    ),
                     SourceCheckpoint::default(),
                 )
                 .await?;
@@ -1353,12 +1344,12 @@ mod kafka_broker_tests {
             .await;
             let source = source_loader
                 .load_source(
-                    Arc::new(SourceExecutionContext {
-                        metastore,
+                    SourceRuntimeArgs::for_test(
                         index_uid,
-                        queues_dir_path: PathBuf::from("./queues"),
                         source_config,
-                    }),
+                        metastore,
+                        PathBuf::from("./queues"),
+                    ),
                     SourceCheckpoint::default(),
                 )
                 .await?;

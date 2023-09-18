@@ -27,7 +27,11 @@ use async_trait::async_trait;
 use quickwit_common::retry::RetryParams;
 use quickwit_common::uri::Uri;
 use quickwit_config::{IndexConfig, SourceConfig};
-use quickwit_proto::metastore::{DeleteQuery, DeleteTask, MetastoreResult};
+use quickwit_proto::metastore::{
+    AcquireShardsRequest, AcquireShardsResponse, CloseShardsRequest, CloseShardsResponse,
+    DeleteQuery, DeleteShardsRequest, DeleteShardsResponse, DeleteTask, ListShardsRequest,
+    ListShardsResponse, MetastoreResult, OpenShardsRequest, OpenShardsResponse,
+};
 use quickwit_proto::{IndexUid, PublishToken};
 
 use self::retry::retry;
@@ -277,6 +281,50 @@ impl Metastore for RetryingMetastore {
             self.inner
                 .list_delete_tasks(index_uid.clone(), opstamp_start)
                 .await
+        })
+        .await
+    }
+
+    async fn open_shards(&self, request: OpenShardsRequest) -> MetastoreResult<OpenShardsResponse> {
+        retry(&self.retry_params, || async {
+            self.inner.open_shards(request.clone()).await
+        })
+        .await
+    }
+
+    async fn acquire_shards(
+        &self,
+        request: AcquireShardsRequest,
+    ) -> MetastoreResult<AcquireShardsResponse> {
+        retry(&self.retry_params, || async {
+            self.inner.acquire_shards(request.clone()).await
+        })
+        .await
+    }
+
+    async fn close_shards(
+        &self,
+        request: CloseShardsRequest,
+    ) -> MetastoreResult<CloseShardsResponse> {
+        retry(&self.retry_params, || async {
+            self.inner.close_shards(request.clone()).await
+        })
+        .await
+    }
+
+    async fn list_shards(&self, request: ListShardsRequest) -> MetastoreResult<ListShardsResponse> {
+        retry(&self.retry_params, || async {
+            self.inner.list_shards(request.clone()).await
+        })
+        .await
+    }
+
+    async fn delete_shards(
+        &self,
+        request: DeleteShardsRequest,
+    ) -> MetastoreResult<DeleteShardsResponse> {
+        retry(&self.retry_params, || async {
+            self.inner.delete_shards(request.clone()).await
         })
         .await
     }

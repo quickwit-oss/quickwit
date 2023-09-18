@@ -122,6 +122,9 @@ impl IndexService {
             .add_source(index_uid.clone(), SourceConfig::ingest_api_default())
             .await?;
         self.metastore
+            .add_source(index_uid.clone(), SourceConfig::ingest_default())
+            .await?;
+        self.metastore
             .add_source(index_uid, SourceConfig::cli_ingest_source())
             .await?;
         let index_metadata = self.metastore.index_metadata(&index_id).await?;

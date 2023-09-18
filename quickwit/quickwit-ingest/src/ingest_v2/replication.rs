@@ -244,8 +244,7 @@ impl ReplicationTask {
         for subrequest in replicate_request.subrequests {
             let queue_id = subrequest.queue_id();
 
-            let _replica_shard: &mut ReplicaShard = if subrequest.from_position_exclusive.is_none()
-            {
+            let replica_shard: &mut ReplicaShard = if subrequest.from_position_exclusive.is_none() {
                 let mut mrecordlog_guard = self.mrecordlog.write().await;
                 // Initialize the replica shard and corresponding mrecordlog queue.
                 mrecordlog_guard
@@ -260,8 +259,8 @@ impl ReplicationTask {
                             watch::channel(ShardStatus::default());
                         ReplicaShard {
                             leader_id: replicate_request.leader_id.clone().into(),
-                            _shard_state: ShardState::Open,
-                            _publish_position_inclusive: Position::default(),
+                            shard_state: ShardState::Open,
+                            publish_position_inclusive: Position::default(),
                             replica_position_inclusive: Position::default(),
                             shard_status_tx,
                             shard_status_rx,
@@ -273,6 +272,9 @@ impl ReplicationTask {
                     .get_mut(&queue_id)
                     .expect("The replica shard should be initialized.")
             };
+            if replica_shard.shard_state.is_closed() {
+                // TODO
+            }
             let to_position_inclusive = subrequest.to_position_inclusive();
             // let replica_position_inclusive = replica_shard.replica_position_inclusive;
 
@@ -355,12 +357,21 @@ impl ReplicationTask {
         truncate_request: TruncateRequest,
     ) -> IngestV2Result<TruncateResponse> {
         let mut mrecordlog_guard = self.mrecordlog.write().await;
+        let mut state_guard = self.state.write().await;
+
         for truncate_subrequest in truncate_request.subrequests {
             let queue_id = truncate_subrequest.queue_id();
-            mrecordlog_guard
-                .truncate(&queue_id, truncate_subrequest.to_position_inclusive)
-                .await
-                .expect("TODO");
+
+            if let Some(replica_shard) = state_guard.replica_shards.get_mut(&queue_id) {
+                mrecordlog_guard
+                    .truncate(&queue_id, truncate_subrequest.to_position_inclusive)
+                    .await
+                    .map_err(|error| {
+                        IngestV2Error::Internal(format!("Failed to truncate: {error:?}"))
+                    })?;
+                replica_shard
+                    .set_publish_position_inclusive(truncate_subrequest.to_position_inclusive);
+            }
         }
         let truncate_response = TruncateResponse {};
         Ok(truncate_response)

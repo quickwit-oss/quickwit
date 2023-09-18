@@ -1225,7 +1225,7 @@ pub mod ingester_service_grpc_client {
             self.inner = self.inner.max_encoding_message_size(limit);
             self
         }
-        /// / Persists batches of documents to primary shards owned by a leader.
+        /// Persists batches of documents to primary shards owned by a leader.
         pub async fn persist(
             &mut self,
             request: impl tonic::IntoRequest<super::PersistRequest>,
@@ -1256,7 +1256,7 @@ pub mod ingester_service_grpc_client {
                 );
             self.inner.unary(req, path, codec).await
         }
-        /// / Opens a replication stream from a leader to a follower.
+        /// Opens a replication stream from a leader to a follower.
         pub async fn open_replication_stream(
             &mut self,
             request: impl tonic::IntoStreamingRequest<
@@ -1289,7 +1289,7 @@ pub mod ingester_service_grpc_client {
                 );
             self.inner.streaming(req, path, codec).await
         }
-        /// / Streams records from a leader or a follower. The client can optionally specify a range of positions to fetch.
+        /// Streams records from a leader or a follower. The client can optionally specify a range of positions to fetch.
         pub async fn open_fetch_stream(
             &mut self,
             request: impl tonic::IntoRequest<super::OpenFetchStreamRequest>,
@@ -1320,7 +1320,7 @@ pub mod ingester_service_grpc_client {
                 );
             self.inner.server_streaming(req, path, codec).await
         }
-        /// / Pings an ingester to check if it is ready to host shards and serve requests.
+        /// Pings an ingester to check if it is ready to host shards and serve requests.
         pub async fn ping(
             &mut self,
             request: impl tonic::IntoRequest<super::PingRequest>,
@@ -1345,7 +1345,7 @@ pub mod ingester_service_grpc_client {
                 );
             self.inner.unary(req, path, codec).await
         }
-        /// / Truncates the shards at the given positions. Callers should this RPC on leaders and they will forward to followers.
+        /// Truncates the shards at the given positions. Indexers should call this RPC on leaders, which will replicate the request to followers.
         pub async fn truncate(
             &mut self,
             request: impl tonic::IntoRequest<super::TruncateRequest>,
@@ -1385,7 +1385,7 @@ pub mod ingester_service_grpc_server {
     /// Generated trait containing gRPC methods that should be implemented for use with IngesterServiceGrpcServer.
     #[async_trait]
     pub trait IngesterServiceGrpc: Send + Sync + 'static {
-        /// / Persists batches of documents to primary shards owned by a leader.
+        /// Persists batches of documents to primary shards owned by a leader.
         async fn persist(
             &self,
             request: tonic::Request<super::PersistRequest>,
@@ -1396,7 +1396,7 @@ pub mod ingester_service_grpc_server {
             >
             + Send
             + 'static;
-        /// / Opens a replication stream from a leader to a follower.
+        /// Opens a replication stream from a leader to a follower.
         async fn open_replication_stream(
             &self,
             request: tonic::Request<tonic::Streaming<super::SynReplicationMessage>>,
@@ -1410,7 +1410,7 @@ pub mod ingester_service_grpc_server {
             >
             + Send
             + 'static;
-        /// / Streams records from a leader or a follower. The client can optionally specify a range of positions to fetch.
+        /// Streams records from a leader or a follower. The client can optionally specify a range of positions to fetch.
         async fn open_fetch_stream(
             &self,
             request: tonic::Request<super::OpenFetchStreamRequest>,
@@ -1418,12 +1418,12 @@ pub mod ingester_service_grpc_server {
             tonic::Response<Self::OpenFetchStreamStream>,
             tonic::Status,
         >;
-        /// / Pings an ingester to check if it is ready to host shards and serve requests.
+        /// Pings an ingester to check if it is ready to host shards and serve requests.
         async fn ping(
             &self,
             request: tonic::Request<super::PingRequest>,
         ) -> std::result::Result<tonic::Response<super::PingResponse>, tonic::Status>;
-        /// / Truncates the shards at the given positions. Callers should this RPC on leaders and they will forward to followers.
+        /// Truncates the shards at the given positions. Indexers should call this RPC on leaders, which will replicate the request to followers.
         async fn truncate(
             &self,
             request: tonic::Request<super::TruncateRequest>,

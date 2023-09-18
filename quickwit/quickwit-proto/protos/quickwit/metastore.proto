@@ -17,7 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-
 syntax = "proto3";
 
 package quickwit.metastore;
@@ -106,6 +105,11 @@ service MetastoreService {
   /// `failures`.
 
   rpc OpenShards(OpenShardsRequest) returns (OpenShardsResponse);
+
+  // Acquires a set of shards for indexing. This RPC locks the shards for publishing thanks to a publish token and only
+  // the last indexer that has acquired the shards is allowed to publish. The response returns for each subrequest the
+  // list of acquired shards along with the positions to index from.
+  rpc AcquireShards(AcquireShardsRequest) returns (AcquireShardsResponse);
 
   rpc CloseShards(CloseShardsRequest) returns (CloseShardsResponse);
 
@@ -282,6 +286,27 @@ message OpenShardsSubresponse {
     string source_id = 2;
     repeated quickwit.ingest.Shard open_shards = 3;
     uint64 next_shard_id = 4;
+}
+
+message AcquireShardsRequest {
+  repeated AcquireShardsSubrequest subrequests = 1;
+}
+
+message AcquireShardsSubrequest {
+    string index_uid = 1;
+    string source_id = 2;
+    repeated uint64 shard_ids = 3;
+    string publish_token = 4;
+}
+
+message AcquireShardsResponse {
+  repeated AcquireShardsSubresponse subresponses = 1;
+}
+
+message AcquireShardsSubresponse {
+    string index_uid = 1;
+    string source_id = 2;
+    repeated quickwit.ingest.Shard acquired_shards = 3;
 }
 
 message CloseShardsRequest {

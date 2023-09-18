@@ -34,7 +34,7 @@ use serde_json::Value as JsonValue;
 use super::{Source, SourceActor, SourceContext, TypedSourceFactory};
 use crate::actors::DocProcessor;
 use crate::models::RawDocBatch;
-use crate::source::SourceExecutionContext;
+use crate::source::SourceRuntimeArgs;
 
 /// Wait time for SourceActor before pooling for new documents.
 /// TODO: Think of better way, maybe increment this (i.e wait longer) as time
@@ -55,7 +55,7 @@ pub struct IngestApiSourceCounters {
 }
 
 pub struct IngestApiSource {
-    ctx: Arc<SourceExecutionContext>,
+    ctx: Arc<SourceRuntimeArgs>,
     source_id: String,
     partition_id: PartitionId,
     ingest_api_service: Mailbox<IngestApiService>,
@@ -70,17 +70,17 @@ impl fmt::Debug for IngestApiSource {
 
 impl IngestApiSource {
     pub async fn try_new(
-        ctx: Arc<SourceExecutionContext>,
+        ctx: Arc<SourceRuntimeArgs>,
         checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self> {
-        let source_id = ctx.source_config.source_id.clone();
+        let source_id = ctx.source_id().to_string();
         let queues_dir_path = ctx.queues_dir_path.as_path();
         let ingest_api_service = get_ingest_api_service(queues_dir_path).await?;
         let partition_id: PartitionId = ingest_api_service.ask(GetPartitionId).await?.into();
 
         // Ensure a queue for this index exists.
         let create_queue_req = CreateQueueIfNotExistsRequest {
-            queue_id: ctx.index_uid.index_id().to_string(),
+            queue_id: ctx.index_id().to_string(),
         };
         ingest_api_service.ask_for_res(create_queue_req).await?;
 
@@ -121,7 +121,7 @@ impl Source for IngestApiSource {
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus> {
         let fetch_req = FetchRequest {
-            index_id: self.ctx.index_uid.index_id().to_string(),
+            index_id: self.ctx.index_id().to_string(),
             start_after: self.counters.current_offset,
             num_bytes_limit: None,
         };
@@ -180,7 +180,7 @@ impl Source for IngestApiSource {
         {
             let up_to_position_included = offset_str.parse::<u64>()?;
             let suggest_truncate_req = SuggestTruncateRequest {
-                index_id: self.ctx.index_uid.index_id().to_string(),
+                index_id: self.ctx.index_id().to_string(),
                 up_to_position_included,
             };
             ctx.ask_for_res(&self.ingest_api_service, suggest_truncate_req)
@@ -207,7 +207,7 @@ impl TypedSourceFactory for IngestApiSourceFactory {
     type Params = ();
 
     async fn typed_create_source(
-        ctx: Arc<SourceExecutionContext>,
+        ctx: Arc<SourceRuntimeArgs>,
         _: (),
         checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self::Source> {
@@ -283,11 +283,11 @@ mod tests {
             init_ingest_api(&universe, queues_dir_path, &IngestApiConfig::default()).await?;
         let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
         let source_config = make_source_config();
-        let ctx = SourceExecutionContext::for_test(
-            metastore,
+        let ctx = SourceRuntimeArgs::for_test(
             index_uid,
-            queues_dir_path.to_path_buf(),
             source_config,
+            metastore,
+            queues_dir_path.to_path_buf(),
         );
         let ingest_api_source = IngestApiSource::try_new(ctx, SourceCheckpoint::default()).await?;
         let ingest_api_source_actor = SourceActor {
@@ -382,11 +382,11 @@ mod tests {
         checkpoint.try_apply_delta(checkpoint_delta).unwrap();
 
         let source_config = make_source_config();
-        let ctx = SourceExecutionContext::for_test(
-            metastore,
+        let ctx = SourceRuntimeArgs::for_test(
             index_uid,
-            queues_dir_path.to_path_buf(),
             source_config,
+            metastore,
+            queues_dir_path.to_path_buf(),
         );
         let ingest_api_source = IngestApiSource::try_new(ctx, checkpoint).await?;
         let ingest_api_source_actor = SourceActor {
@@ -442,11 +442,11 @@ mod tests {
 
         let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
         let source_config = make_source_config();
-        let ctx = SourceExecutionContext::for_test(
-            metastore,
+        let ctx = SourceRuntimeArgs::for_test(
             index_uid,
-            queues_dir_path.to_path_buf(),
             source_config,
+            metastore,
+            queues_dir_path.to_path_buf(),
         );
         let ingest_api_source = IngestApiSource::try_new(ctx, SourceCheckpoint::default()).await?;
         let ingest_api_source_actor = SourceActor {
@@ -496,11 +496,11 @@ mod tests {
             init_ingest_api(&universe, queues_dir_path, &IngestApiConfig::default()).await?;
         let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
         let source_config = make_source_config();
-        let ctx = SourceExecutionContext::for_test(
-            metastore,
+        let ctx = SourceRuntimeArgs::for_test(
             index_uid,
-            queues_dir_path.to_path_buf(),
             source_config,
+            metastore,
+            queues_dir_path.to_path_buf(),
         );
         let ingest_api_source = IngestApiSource::try_new(ctx, SourceCheckpoint::default()).await?;
         let ingest_api_source_actor = SourceActor {
@@ -563,11 +563,11 @@ mod tests {
             init_ingest_api(&universe, queues_dir_path, &IngestApiConfig::default()).await?;
         let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
         let source_config = make_source_config();
-        let ctx = SourceExecutionContext::for_test(
-            metastore,
+        let ctx = SourceRuntimeArgs::for_test(
             index_uid,
-            queues_dir_path.to_path_buf(),
             source_config,
+            metastore,
+            queues_dir_path.to_path_buf(),
         );
         let ingest_api_source = IngestApiSource::try_new(ctx, SourceCheckpoint::default()).await?;
         let ingest_api_source_actor = SourceActor {

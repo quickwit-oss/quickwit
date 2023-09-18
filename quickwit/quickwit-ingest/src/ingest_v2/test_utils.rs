@@ -68,6 +68,8 @@ pub(super) trait PrimaryShardTestExt {
         expected_replica_position: Option<impl Into<Position>>,
     );
 
+    fn assert_publish_position(&self, expected_publish_position: impl Into<Position>);
+
     fn assert_is_open(&self, expected_position: impl Into<Position>);
 }
 
@@ -91,6 +93,24 @@ impl PrimaryShardTestExt for PrimaryShard {
             self.replica_position_inclusive_opt, expected_replica_position,
             "expected replica position at `{:?}`, got `{:?}`",
             expected_replica_position, self.replica_position_inclusive_opt
+        );
+    }
+
+    #[track_caller]
+    fn assert_publish_position(&self, expected_publish_position: impl Into<Position>) {
+        let expected_publish_position = expected_publish_position.into();
+
+        assert_eq!(
+            self.publish_position_inclusive, expected_publish_position,
+            "expected publish position at `{:?}`, got `{:?}`",
+            expected_publish_position, self.publish_position_inclusive
+        );
+        assert_eq!(
+            self.shard_status_tx.borrow().publish_position_inclusive,
+            expected_publish_position,
+            "expected publish position at `{:?}`, got `{:?}`",
+            expected_publish_position,
+            self.publish_position_inclusive
         );
     }
 

@@ -44,7 +44,7 @@ use super::shard_consumer::{ShardConsumer, ShardConsumerHandle, ShardConsumerMes
 use crate::actors::DocProcessor;
 use crate::models::RawDocBatch;
 use crate::source::kinesis::helpers::get_kinesis_client;
-use crate::source::{Source, SourceContext, SourceExecutionContext, TypedSourceFactory};
+use crate::source::{Source, SourceContext, SourceRuntimeArgs, TypedSourceFactory};
 
 const TARGET_BATCH_NUM_BYTES: u64 = 5_000_000;
 
@@ -59,11 +59,11 @@ impl TypedSourceFactory for KinesisSourceFactory {
     type Params = KinesisSourceParams;
 
     async fn typed_create_source(
-        ctx: Arc<SourceExecutionContext>,
+        ctx: Arc<SourceRuntimeArgs>,
         params: KinesisSourceParams,
         checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self::Source> {
-        KinesisSource::try_new(ctx.source_config.source_id.clone(), params, checkpoint).await
+        KinesisSource::try_new(ctx.source_id().to_string(), params, checkpoint).await
     }
 }
 

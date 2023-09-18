@@ -22,11 +22,8 @@ use std::num::NonZeroUsize;
 use anyhow::bail;
 use serde::{Deserialize, Serialize};
 
-use super::TransformConfig;
-use crate::{
-    validate_identifier, ConfigFormat, SourceConfig, SourceInputFormat, SourceParams,
-    CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID,
-};
+use super::{TransformConfig, RESERVED_SOURCE_IDS};
+use crate::{validate_identifier, ConfigFormat, SourceConfig, SourceInputFormat, SourceParams};
 
 type SourceConfigForSerialization = SourceConfigV0_6;
 
@@ -72,7 +69,7 @@ impl SourceConfigForSerialization {
     ///
     /// TODO refactor #1065
     fn validate_and_build(self) -> anyhow::Result<SourceConfig> {
-        if self.source_id != CLI_INGEST_SOURCE_ID && self.source_id != INGEST_API_SOURCE_ID {
+        if !RESERVED_SOURCE_IDS.contains(&self.source_id.as_str()) {
             validate_identifier("Source ID", &self.source_id)?;
         }
         let desired_num_pipelines = NonZeroUsize::new(self.desired_num_pipelines)

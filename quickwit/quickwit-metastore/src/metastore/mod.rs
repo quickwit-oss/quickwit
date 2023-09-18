@@ -38,9 +38,10 @@ use quickwit_common::uri::Uri;
 use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_proto::metastore::{
-    CloseShardsRequest, CloseShardsResponse, DeleteQuery, DeleteShardsRequest,
-    DeleteShardsResponse, DeleteTask, EntityKind, ListShardsRequest, ListShardsResponse,
-    MetastoreError, MetastoreResult, OpenShardsRequest, OpenShardsResponse,
+    AcquireShardsRequest, AcquireShardsResponse, CloseShardsRequest, CloseShardsResponse,
+    DeleteQuery, DeleteShardsRequest, DeleteShardsResponse, DeleteTask, EntityKind,
+    ListShardsRequest, ListShardsResponse, MetastoreError, MetastoreResult, OpenShardsRequest,
+    OpenShardsResponse,
 };
 use quickwit_proto::{IndexUid, PublishToken};
 use time::OffsetDateTime;
@@ -322,40 +323,28 @@ pub trait Metastore: fmt::Debug + Send + Sync + 'static {
     // - `delete_shards`
 
     /// Creates new open shards for one or multiple indexes.
-    async fn open_shards(
+    async fn open_shards(&self, request: OpenShardsRequest) -> MetastoreResult<OpenShardsResponse>;
+
+    ///
+    async fn acquire_shards(
         &self,
-        _request: OpenShardsRequest,
-    ) -> MetastoreResult<OpenShardsResponse> {
-        // TODO: Remove default implementation once all metastores implement this method.
-        unimplemented!()
-    }
+        request: AcquireShardsRequest,
+    ) -> MetastoreResult<AcquireShardsResponse>;
 
     /// Closes some shards, i.e. changes their state from `Open` to `Closing` or `Closed`.
     async fn close_shards(
         &self,
-        _request: CloseShardsRequest,
-    ) -> MetastoreResult<CloseShardsResponse> {
-        // TODO: Remove default implementation once all metastores implement this method.
-        unimplemented!()
-    }
+        request: CloseShardsRequest,
+    ) -> MetastoreResult<CloseShardsResponse>;
 
     /// Lists the shards of one or multiple indexes.
-    async fn list_shards(
-        &self,
-        _request: ListShardsRequest,
-    ) -> MetastoreResult<ListShardsResponse> {
-        // TODO: Remove default implementation once all metastores implement this method.
-        unimplemented!()
-    }
+    async fn list_shards(&self, request: ListShardsRequest) -> MetastoreResult<ListShardsResponse>;
 
     /// Deletes some shards.
     async fn delete_shards(
         &self,
-        _request: DeleteShardsRequest,
-    ) -> MetastoreResult<DeleteShardsResponse> {
-        // TODO: Remove default implementation once all metastores implement this method.
-        unimplemented!()
-    }
+        request: DeleteShardsRequest,
+    ) -> MetastoreResult<DeleteShardsResponse>;
 }
 
 /// A query object for listing indexes stored in the metastore.

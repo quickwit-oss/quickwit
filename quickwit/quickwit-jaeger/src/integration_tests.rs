@@ -30,7 +30,7 @@ use quickwit_indexing::models::SpawnPipeline;
 use quickwit_indexing::IndexingService;
 use quickwit_ingest::{
     init_ingest_api, CommitType, CreateQueueRequest, IngestApiService, IngestServiceClient,
-    QUEUES_DIR_NAME,
+    IngesterPool, QUEUES_DIR_NAME,
 };
 use quickwit_metastore::{FileBackedMetastore, Metastore};
 use quickwit_opentelemetry::otlp::OtlpGrpcTracesService;
@@ -67,6 +67,7 @@ async fn test_otel_jaeger_integration() {
     let temp_dir = tempfile::tempdir().unwrap();
 
     let (ingester_service, ingester_client) = ingester_for_test(&universe, temp_dir.path()).await;
+    let ingester_pool = IngesterPool::default();
     let traces_service = OtlpGrpcTracesService::new(ingester_client, Some(CommitType::Force));
 
     let storage_resolver = StorageResolver::unconfigured();
@@ -78,6 +79,7 @@ async fn test_otel_jaeger_integration() {
         metastore.clone(),
         storage_resolver.clone(),
         ingester_service.clone(),
+        ingester_pool.clone(),
     )
     .await;
 
@@ -337,6 +339,7 @@ async fn indexer_for_test(
     metastore: Arc<dyn Metastore>,
     storage_resolver: StorageResolver,
     ingester_service: Mailbox<IngestApiService>,
+    ingester_pool: IngesterPool,
 ) -> (Mailbox<IndexingService>, ActorHandle<IndexingService>) {
     let indexer_config = IndexerConfig::for_test().unwrap();
     let indexing_service = IndexingService::new(
@@ -347,6 +350,7 @@ async fn indexer_for_test(
         cluster,
         metastore,
         Some(ingester_service),
+        ingester_pool,
         storage_resolver,
     )
     .await

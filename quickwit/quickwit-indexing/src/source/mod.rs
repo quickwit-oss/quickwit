@@ -60,6 +60,7 @@
 mod file_source;
 #[cfg(feature = "gcp-pubsub")]
 mod gcp_pubsub_source;
+mod ingest;
 mod ingest_api_source;
 #[cfg(feature = "kafka")]
 mod kafka_source;
@@ -91,9 +92,11 @@ pub use pulsar_source::{PulsarSource, PulsarSourceFactory};
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox};
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::{SourceConfig, SourceParams};
+use quickwit_ingest::IngesterPool;
 use quickwit_metastore::checkpoint::{SourceCheckpoint, SourceCheckpointDelta};
 use quickwit_metastore::Metastore;
-use quickwit_proto::IndexUid;
+use quickwit_proto::indexing::IndexingPipelineId;
+use quickwit_proto::{IndexUid, ShardId};
 use serde_json::Value as JsonValue;
 pub use source_factory::{SourceFactory, SourceLoader, TypedSourceFactory};
 use tokio::runtime::Handle;
@@ -103,28 +106,57 @@ pub use void_source::{VoidSource, VoidSourceFactory};
 
 use crate::actors::DocProcessor;
 use crate::models::RawDocBatch;
+use crate::source::ingest::IngestSourceFactory;
 use crate::source::ingest_api_source::IngestApiSourceFactory;
 
 /// Runtime configuration used during execution of a source actor.
-pub struct SourceExecutionContext {
+pub struct SourceRuntimeArgs {
+    pub pipeline_id: IndexingPipelineId,
+    pub source_config: SourceConfig,
     pub metastore: Arc<dyn Metastore>,
-    pub index_uid: IndexUid,
+    pub ingester_pool: IngesterPool,
     // Ingest API queues directory path.
     pub queues_dir_path: PathBuf,
-    pub source_config: SourceConfig,
 }
 
-impl SourceExecutionContext {
+impl SourceRuntimeArgs {
+    pub fn node_id(&self) -> &str {
+        &self.pipeline_id.node_id
+    }
+
+    pub fn index_uid(&self) -> &IndexUid {
+        &self.pipeline_id.index_uid
+    }
+
+    pub fn index_id(&self) -> &str {
+        self.pipeline_id.index_uid.index_id()
+    }
+
+    pub fn source_id(&self) -> &str {
+        &self.pipeline_id.source_id
+    }
+
+    pub fn pipeline_ord(&self) -> usize {
+        self.pipeline_id.pipeline_ord
+    }
+
     #[cfg(test)]
     fn for_test(
-        metastore: Arc<dyn Metastore>,
         index_uid: IndexUid,
-        queues_dir_path: PathBuf,
         source_config: SourceConfig,
-    ) -> Arc<SourceExecutionContext> {
-        Arc::new(Self {
-            metastore,
+        metastore: Arc<dyn Metastore>,
+        queues_dir_path: PathBuf,
+    ) -> Arc<Self> {
+        let pipeline_id = IndexingPipelineId {
+            node_id: "test-node".to_string(),
             index_uid,
+            source_id: source_config.source_id.clone(),
+            pipeline_ord: 0,
+        };
+        Arc::new(Self {
+            pipeline_id,
+            metastore,
+            ingester_pool: IngesterPool::default(),
             queues_dir_path,
             source_config,
         })
@@ -180,6 +212,17 @@ pub trait Source: Send + 'static {
         ctx: &SourceContext,
     ) -> Result<Duration, ActorExitStatus>;
 
+    /// Assign shards is called when the source is assigned a new set of shards by the control
+    /// plane.
+    async fn assign_shards(
+        &mut self,
+        _assignement: Assignment,
+        _doc_processor_mailbox: &Mailbox<DocProcessor>,
+        _ctx: &SourceContext,
+    ) -> anyhow::Result<()> {
+        Ok(())
+    }
+
     /// After publication of a split, `suggest_truncate` is called.
     /// This makes it possible for the implementation of a source to
     /// release some resources associated to the data that was just published.
@@ -231,6 +274,14 @@ pub struct SourceActor {
 
 #[derive(Debug)]
 struct Loop;
+
+#[derive(Debug)]
+pub struct Assignment {
+    pub shard_ids: Vec<ShardId>,
+}
+
+#[derive(Debug)]
+pub struct AssignShards(pub Assignment);
 
 #[async_trait]
 impl Actor for SourceActor {
@@ -288,6 +339,23 @@ impl Handler<Loop> for SourceActor {
     }
 }
 
+#[async_trait]
+impl Handler<AssignShards> for SourceActor {
+    type Reply = ();
+
+    async fn handle(
+        &mut self,
+        message: AssignShards,
+        ctx: &SourceContext,
+    ) -> Result<(), ActorExitStatus> {
+        let AssignShards(assignment) = message;
+        self.source
+            .assign_shards(assignment, &self.doc_processor_mailbox, ctx)
+            .await?;
+        Ok(())
+    }
+}
+
 pub fn quickwit_supported_sources() -> &'static SourceLoader {
     static SOURCE_LOADER: OnceCell<SourceLoader> = OnceCell::new();
     SOURCE_LOADER.get_or_init(|| {
@@ -295,6 +363,8 @@ pub fn quickwit_supported_sources() -> &'static SourceLoader {
         source_factory.add_source("file", FileSourceFactory);
         #[cfg(feature = "gcp-pubsub")]
         source_factory.add_source("gcp_pubsub", GcpPubSubSourceFactory);
+        source_factory.add_source("ingest-api", IngestApiSourceFactory);
+        source_factory.add_source("ingest", IngestSourceFactory);
         #[cfg(feature = "kafka")]
         source_factory.add_source("kafka", KafkaSourceFactory);
         #[cfg(feature = "kinesis")]
@@ -303,7 +373,6 @@ pub fn quickwit_supported_sources() -> &'static SourceLoader {
         source_factory.add_source("pulsar", PulsarSourceFactory);
         source_factory.add_source("vec", VecSourceFactory);
         source_factory.add_source("void", VoidSourceFactory);
-        source_factory.add_source("ingest-api", IngestApiSourceFactory);
         source_factory
     })
 }
@@ -385,6 +454,11 @@ pub struct BatchBuilder {
 }
 
 impl BatchBuilder {
+    pub fn add_doc(&mut self, doc: Bytes) {
+        self.num_bytes += doc.len() as u64;
+        self.docs.push(doc);
+    }
+
     pub fn build(self) -> RawDocBatch {
         RawDocBatch {
             docs: self.docs,
@@ -397,11 +471,6 @@ impl BatchBuilder {
         self.docs.clear();
         self.num_bytes = 0;
         self.checkpoint_delta = SourceCheckpointDelta::default();
-    }
-
-    pub fn push(&mut self, doc: Bytes) {
-        self.num_bytes += doc.len() as u64;
-        self.docs.push(doc);
     }
 }
 

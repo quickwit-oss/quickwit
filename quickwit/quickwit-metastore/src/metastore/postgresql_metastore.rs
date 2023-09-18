@@ -34,7 +34,10 @@ use quickwit_config::{
 };
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_proto::metastore::{
-    DeleteQuery, DeleteTask, EntityKind, MetastoreError, MetastoreResult,
+    AcquireShardsRequest, AcquireShardsResponse, CloseShardsRequest, CloseShardsResponse,
+    DeleteQuery, DeleteShardsRequest, DeleteShardsResponse, DeleteTask, EntityKind,
+    ListShardsRequest, ListShardsResponse, MetastoreError, MetastoreResult, OpenShardsRequest,
+    OpenShardsResponse,
 };
 use quickwit_proto::{IndexUid, PublishToken};
 use sqlx::migrate::Migrator;
@@ -1224,6 +1227,41 @@ impl Metastore for PostgresqlMetastore {
             .into_iter()
             .map(|pg_split| pg_split.try_into())
             .collect()
+    }
+
+    async fn open_shards(
+        &self,
+        _request: OpenShardsRequest,
+    ) -> MetastoreResult<OpenShardsResponse> {
+        unimplemented!("`open_shards` is not implemented for PostgreSQL metastore")
+    }
+
+    async fn acquire_shards(
+        &self,
+        _request: AcquireShardsRequest,
+    ) -> MetastoreResult<AcquireShardsResponse> {
+        unimplemented!("`close_shards` is not implemented for PostgreSQL metastore")
+    }
+
+    async fn close_shards(
+        &self,
+        _request: CloseShardsRequest,
+    ) -> MetastoreResult<CloseShardsResponse> {
+        unimplemented!("`close_shards` is not implemented for PostgreSQL metastore")
+    }
+
+    async fn list_shards(
+        &self,
+        _request: ListShardsRequest,
+    ) -> MetastoreResult<ListShardsResponse> {
+        unimplemented!("`list_shards` is not implemented for PostgreSQL metastore")
+    }
+
+    async fn delete_shards(
+        &self,
+        _request: DeleteShardsRequest,
+    ) -> MetastoreResult<DeleteShardsResponse> {
+        unimplemented!("`delete_shards` is not implemented for PostgreSQL metastore")
     }
 }
 
