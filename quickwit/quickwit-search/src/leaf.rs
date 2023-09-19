@@ -23,7 +23,8 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::Context;
-use futures::future::try_join_all;
+use futures::future::{try_join_all, FutureExt};
+use futures::stream::{FuturesUnordered, StreamExt};
 use itertools::{Either, Itertools};
 use quickwit_common::PrettySample;
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
@@ -510,6 +511,23 @@ impl CanSplitDoBetter {
     }
 }
 
+/// Wait on a semaphore, then and then pull one item of the iterator.
+async fn split_iter_get_one<I: Iterator<Item = SplitIdAndFooterOffsets>>(
+    mut splits_iter: I,
+    semaphore: Arc<tokio::sync::Semaphore>,
+) -> Option<(
+    SplitIdAndFooterOffsets,
+    tokio::sync::OwnedSemaphorePermit,
+    I,
+)> {
+    let split = splits_iter.next()?;
+    let leaf_split_search_permit = semaphore
+        .acquire_owned()
+        .await
+        .expect("Failed to acquire permit. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.");
+    Some((split, leaf_split_search_permit, splits_iter))
+}
+
 /// `leaf` step of search.
 ///
 /// The leaf search collects all kind of information, and returns a set of
@@ -559,31 +577,10 @@ pub async fn leaf_search(
     // request.exact_count == true`
     let run_all_splits = true;
 
-    // TODO trinity-1686a: I really don't like how this code came out. I tried numerous time with
-    // more iter/stream, but was getting Higher Ranker Lifetime Errors, dyn trait and stream of
+    // TODO trinity-1686a: I don't really like how this code turned out. I tried numerous time with
+    // more iter/stream, but was getting Higher Ranker Lifetime Errors; dyn trait and stream of
     // futures don't play well together :-/
-
-    use futures::stream::FuturesUnordered;
-    use futures::{FutureExt, StreamExt};
-
     let mut futures = FuturesUnordered::new();
-
-    /// Wait on a semaphore, then and then pull one item of the iterator.
-    async fn split_iter_get_one<I: Iterator<Item = SplitIdAndFooterOffsets>>(
-        mut splits_iter: I,
-        semaphore: Arc<tokio::sync::Semaphore>,
-    ) -> Option<(
-        SplitIdAndFooterOffsets,
-        tokio::sync::OwnedSemaphorePermit,
-        I,
-    )> {
-        let split = splits_iter.next()?;
-        let leaf_split_search_permit = semaphore
-            .acquire_owned()
-            .await
-            .expect("Failed to acquire permit. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.");
-        Some((split, leaf_split_search_permit, splits_iter))
-    }
 
     futures.push(Either::Left(
         split_iter_get_one(
@@ -604,6 +601,8 @@ pub async fn leaf_search(
                 // no more splits to startup
             }
             Either::Left(Some((split, permit, splits_iter))) => {
+                // we got a split to run, but first setup so the split iterator is pulled for more
+                // splits to run after.
                 futures.push(Either::Left(
                     split_iter_get_one(
                         splits_iter,
@@ -611,6 +610,7 @@ pub async fn leaf_search(
                     )
                     .map(Either::Left),
                 ));
+
                 let mut request = (*request).clone();
                 if !split_filter.can_be_better(&split) {
                     if !run_all_splits {
@@ -623,6 +623,7 @@ pub async fn leaf_search(
                 let searcher_context_clone = searcher_context.clone();
                 let doc_mapper_clone = doc_mapper.clone();
                 let index_storage_clone = index_storage.clone();
+
                 let leaf_search_single_split_future = tokio::spawn(
                     async move {
                         crate::SEARCH_METRICS.leaf_searches_splits_total.inc();
@@ -664,6 +665,8 @@ pub async fn leaf_search(
                         })
                     }
                     Err(e) => incremental_merge_collector.add_failed_split(SplitSearchError {
+                        // we could reasonably add a wrapper to the JoinHandle to give us the
+                        // split_id anyway
                         split_id: "unknown".to_string(),
                         error: format!("{}", SearchError::from(e)),
                         retryable_error: true,
@@ -678,6 +681,7 @@ pub async fn leaf_search(
     }
 
     crate::run_cpu_intensive(|| incremental_merge_collector.finalize().map_err(Into::into))
+        .instrument(info_span!("incremental_merge_finalize"))
         .await
         .context("failed to merge split search responses")?
 }
