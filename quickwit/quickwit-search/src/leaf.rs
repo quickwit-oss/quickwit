@@ -36,7 +36,6 @@ use quickwit_query::query_ast::QueryAst;
 use quickwit_storage::{
     wrap_storage_with_cache, BundleStorage, MemorySizedCache, OwnedBytes, SplitCache, Storage,
 };
-use tantivy::collector::Collector;
 use tantivy::directory::FileSlice;
 use tantivy::fastfield::FastFieldReaders;
 use tantivy::schema::{Field, FieldType};
@@ -44,7 +43,7 @@ use tantivy::tokenizer::TokenizerManager;
 use tantivy::{Index, ReloadPolicy, Searcher, Term};
 use tracing::*;
 
-use crate::collector::{make_collector_for_split, make_merge_collector};
+use crate::collector::{make_collector_for_split, make_merge_collector, IncrementalCollector};
 use crate::service::SearcherContext;
 use crate::SearchError;
 
@@ -607,7 +606,10 @@ pub async fn leaf_search(
         .map(Either::Left),
     ));
 
-    let mut split_search_results: Vec<Result<Result<LeafSearchResponse, _>, _>> = Vec::new();
+    // Creates a collector which merges responses into one
+    let merge_collector =
+        make_merge_collector(&request, &searcher_context.get_aggregation_limits())?;
+    let mut incremental_merge_collector = IncrementalCollector::new(merge_collector);
 
     while let Some(sub_task) = futures.next().await {
         match sub_task {
@@ -622,10 +624,18 @@ pub async fn leaf_search(
                     )
                     .map(Either::Left),
                 ));
+                let mut request = (*request).clone();
+                if !split_filter.can_be_better(&split) {
+                    if !run_all_splits {
+                        continue;
+                    }
+                    request.max_hits = 0;
+                    request.start_offset = 0;
+                    request.sort_fields.clear();
+                }
                 let searcher_context_clone = searcher_context.clone();
                 let doc_mapper_clone = doc_mapper.clone();
                 let index_storage_clone = index_storage.clone();
-                let request = request.clone();
                 let leaf_search_single_split_future = tokio::spawn(
                     async move {
                         crate::SEARCH_METRICS.leaf_searches_splits_total.inc();
@@ -634,7 +644,7 @@ pub async fn leaf_search(
                             .start_timer();
                         let leaf_search_single_split_res = leaf_search_single_split(
                             &searcher_context_clone,
-                            (*request).clone(),
+                            request,
                             index_storage_clone,
                             split.clone(),
                             doc_mapper_clone,
@@ -653,51 +663,36 @@ pub async fn leaf_search(
                 .map(Either::Right);
                 futures.push(Either::Right(leaf_search_single_split_future));
             }
-            Either::Right(result) => {
+            Either::Right(split_search_res) => {
                 // a split finished. Process the result.
-                split_search_results.push(result);
+                match split_search_res {
+                    Ok(Ok(split_search_res)) => {
+                        incremental_merge_collector.add_split(split_search_res);
+                    }
+                    Ok(Err((split_id, err))) => {
+                        incremental_merge_collector.add_failed_split(SplitSearchError {
+                            split_id,
+                            error: format!("{err}"),
+                            retryable_error: true,
+                        })
+                    }
+                    Err(e) => incremental_merge_collector.add_failed_split(SplitSearchError {
+                        split_id: "unknown".to_string(),
+                        error: format!("{}", SearchError::from(e)),
+                        retryable_error: true,
+                    }),
+                }
+
+                if let Some(last_hit) = incremental_merge_collector.peek_worst_hit() {
+                    split_filter.record_new_worst_hit(last_hit);
+                }
             }
         }
     }
 
-    // the result wrapping is only for the collector api merge_fruits
-    // (Vec<tantivy::Result<LeafSearchResponse>>)
-    let (split_search_responses, errors): (
-        Vec<tantivy::Result<LeafSearchResponse>>,
-        Vec<(String, SearchError)>,
-    ) = split_search_results
-        .into_iter()
-        .partition_map(|split_search_res| match split_search_res {
-            Ok(Ok(split_search_resp)) => Either::Left(Ok(split_search_resp)),
-            Ok(Err(err)) => Either::Right(err),
-            Err(e) => {
-                warn!("A leaf_search_single_split panicked");
-                Either::Right(("unknown".to_string(), e.into()))
-            }
-        });
-
-    // Creates a collector which merges responses into one
-    let merge_collector =
-        make_merge_collector(&request, &searcher_context.get_aggregation_limits())?;
-
-    // Merging is a cpu-bound task.
-    // It should be executed by Tokio's blocking threads.
-    let span = info_span!("merge_search_responses");
-    let mut merged_search_response = crate::run_cpu_intensive(move || {
-        let _span_guard = span.enter();
-        merge_collector.merge_fruits(split_search_responses)
-    })
-    .await
-    .context("failed to merge split search responses")??;
-
-    merged_search_response
-        .failed_splits
-        .extend(errors.into_iter().map(|(split_id, err)| SplitSearchError {
-            split_id,
-            error: format!("{err}"),
-            retryable_error: true,
-        }));
-    Ok(merged_search_response)
+    crate::run_cpu_intensive(|| incremental_merge_collector.finalize().map_err(Into::into))
+        .await
+        .context("failed to merge split search responses")?
 }
 
 /// Apply a leaf list terms on a single split.
