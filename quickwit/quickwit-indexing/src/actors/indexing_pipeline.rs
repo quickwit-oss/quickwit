@@ -30,6 +30,7 @@ use quickwit_common::temp_dir::TempDirectory;
 use quickwit_common::KillSwitch;
 use quickwit_config::{IndexingSettings, SourceConfig};
 use quickwit_doc_mapper::DocMapper;
+use quickwit_ingest::IngesterPool;
 use quickwit_metastore::Metastore;
 use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::metastore::MetastoreError;
@@ -46,7 +47,7 @@ use crate::actors::uploader::UploaderType;
 use crate::actors::{Indexer, Packager, Publisher, Uploader};
 use crate::merge_policy::MergePolicy;
 use crate::models::IndexingStatistics;
-use crate::source::{quickwit_supported_sources, SourceActor, SourceExecutionContext};
+use crate::source::{quickwit_supported_sources, AssignShards, SourceActor, SourceRuntimeArgs};
 use crate::split_store::IndexingSplitStore;
 use crate::SplitsUpdateMailbox;
 
@@ -78,7 +79,8 @@ pub(crate) fn wait_duration_before_retry(retry_count: usize) -> Duration {
 static SPAWN_PIPELINE_SEMAPHORE: Semaphore = Semaphore::const_new(10);
 
 struct IndexingPipelineHandles {
-    source: ActorHandle<SourceActor>,
+    source_mailbox: Mailbox<SourceActor>,
+    source_handle: ActorHandle<SourceActor>,
     doc_processor: ActorHandle<DocProcessor>,
     indexer: ActorHandle<Indexer>,
     index_serializer: ActorHandle<IndexSerializer>,
@@ -160,7 +162,7 @@ impl IndexingPipeline {
     fn supervisables(&self) -> Vec<&dyn Supervisable> {
         if let Some(handles) = &self.handles_opt {
             let supervisables: Vec<&dyn Supervisable> = vec![
-                &handles.source,
+                &handles.source_handle,
                 &handles.doc_processor,
                 &handles.indexer,
                 &handles.index_serializer,
@@ -304,8 +306,7 @@ impl IndexingPipeline {
             index_id=%index_id,
             source_id=%source_id,
             pipeline_ord=%self.params.pipeline_id.pipeline_ord,
-            root_dir=%self.params.indexing_directory.path().display(),
-            "Spawning indexing pipeline.",
+            "spawning indexing pipeline",
         );
         let (source_mailbox, source_inbox) = ctx
             .spawn_ctx()
@@ -422,11 +423,12 @@ impl IndexingPipeline {
             .unwrap_or_default(); // TODO Have a stricter check.
         let source = ctx
             .protect_future(quickwit_supported_sources().load_source(
-                Arc::new(SourceExecutionContext {
-                    metastore: self.params.metastore.clone(),
-                    index_uid: self.params.pipeline_id.index_uid.clone(),
-                    queues_dir_path: self.params.queues_dir_path.clone(),
+                Arc::new(SourceRuntimeArgs {
+                    pipeline_id: self.params.pipeline_id.clone(),
                     source_config: self.params.source_config.clone(),
+                    metastore: self.params.metastore.clone(),
+                    ingester_pool: self.params.ingester_pool.clone(),
+                    queues_dir_path: self.params.queues_dir_path.clone(),
                 }),
                 source_checkpoint,
             ))
@@ -435,7 +437,7 @@ impl IndexingPipeline {
             source,
             doc_processor_mailbox,
         };
-        let (_source_mailbox, source_handle) = ctx
+        let (source_mailbox, source_handle) = ctx
             .spawn_actor()
             .set_mailboxes(source_mailbox, source_inbox)
             .set_kill_switch(self.kill_switch.clone())
@@ -445,7 +447,8 @@ impl IndexingPipeline {
         self.previous_generations_statistics = self.statistics.clone();
         self.statistics.generation += 1;
         self.handles_opt = Some(IndexingPipelineHandles {
-            source: source_handle,
+            source_mailbox,
+            source_handle,
             doc_processor: doc_processor_handle,
             indexer: indexer_handle,
             index_serializer: index_serializer_handle,
@@ -462,7 +465,7 @@ impl IndexingPipeline {
         self.kill_switch.kill();
         if let Some(handles) = self.handles_opt.take() {
             tokio::join!(
-                handles.source.kill(),
+                handles.source_handle.kill(),
                 handles.indexer.kill(),
                 handles.packager.kill(),
                 handles.uploader.kill(),
@@ -522,21 +525,48 @@ impl Handler<Spawn> for IndexingPipeline {
     }
 }
 
+#[async_trait]
+impl Handler<AssignShards> for IndexingPipeline {
+    type Reply = ();
+
+    async fn handle(
+        &mut self,
+        message: AssignShards,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus> {
+        if let Some(handles) = &mut self.handles_opt {
+            info!(
+                shard_ids=?message.0.shard_ids,
+                "assigning shards to indexing pipeline."
+            );
+            handles.source_mailbox.send_message(message).await?;
+        }
+        Ok(())
+    }
+}
+
 pub struct IndexingPipelineParams {
     pub pipeline_id: IndexingPipelineId,
-    pub doc_mapper: Arc<dyn DocMapper>,
-    pub indexing_directory: TempDirectory,
-    pub queues_dir_path: PathBuf,
-    pub indexing_settings: IndexingSettings,
-    pub source_config: SourceConfig,
     pub metastore: Arc<dyn Metastore>,
     pub storage: Arc<dyn Storage>,
+
+    // Indexing-related parameters
+    pub doc_mapper: Arc<dyn DocMapper>,
+    pub indexing_directory: TempDirectory,
+    pub indexing_settings: IndexingSettings,
     pub split_store: IndexingSplitStore,
-    pub merge_policy: Arc<dyn MergePolicy>,
     pub max_concurrent_split_uploads_index: usize,
-    pub max_concurrent_split_uploads_merge: usize,
     pub cooperative_indexing_permits: Option<Arc<Semaphore>>,
+
+    // Merge-related parameters
+    pub merge_policy: Arc<dyn MergePolicy>,
     pub merge_planner_mailbox: Mailbox<MergePlanner>,
+    pub max_concurrent_split_uploads_merge: usize,
+
+    // Source-related parameters
+    pub source_config: SourceConfig,
+    pub ingester_pool: IngesterPool,
+    pub queues_dir_path: PathBuf,
 }
 
 #[cfg(test)]
@@ -646,6 +676,7 @@ mod tests {
             source_config,
             indexing_directory: TempDirectory::for_test(),
             indexing_settings: IndexingSettings::for_test(),
+            ingester_pool: IngesterPool::default(),
             metastore: metastore.clone(),
             storage,
             split_store,
@@ -746,6 +777,7 @@ mod tests {
             source_config,
             indexing_directory: TempDirectory::for_test(),
             indexing_settings: IndexingSettings::for_test(),
+            ingester_pool: IngesterPool::default(),
             metastore: metastore.clone(),
             queues_dir_path: PathBuf::from("./queues"),
             storage,
@@ -821,6 +853,7 @@ mod tests {
             source_config,
             indexing_directory: TempDirectory::for_test(),
             indexing_settings: IndexingSettings::for_test(),
+            ingester_pool: IngesterPool::default(),
             metastore: metastore.clone(),
             queues_dir_path: PathBuf::from("./queues"),
             storage,
@@ -943,6 +976,7 @@ mod tests {
             source_config,
             indexing_directory: TempDirectory::for_test(),
             indexing_settings: IndexingSettings::for_test(),
+            ingester_pool: IngesterPool::default(),
             metastore: metastore.clone(),
             queues_dir_path: PathBuf::from("./queues"),
             storage,

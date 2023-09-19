@@ -25,8 +25,8 @@ package quickwit.ingest.router;
 import "quickwit/ingest.proto";
 
 service IngestRouterService {
-    /// Ingests batches of documents for one or multiple indexes.
-    /// TODO: Describe error cases and how to handle them.
+    // Ingests batches of documents for one or multiple indexes.
+    // TODO: Describe error cases and how to handle them.
     rpc Ingest(IngestRequestV2) returns (IngestResponseV2);
 }
 

@@ -27,7 +27,11 @@ use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_proto::metastore::events::{
     AddSourceEvent, DeleteIndexEvent, DeleteSourceEvent, ToggleSourceEvent,
 };
-use quickwit_proto::metastore::{DeleteQuery, DeleteTask, MetastoreResult};
+use quickwit_proto::metastore::{
+    AcquireShardsRequest, AcquireShardsResponse, CloseShardsRequest, CloseShardsResponse,
+    DeleteQuery, DeleteShardsRequest, DeleteShardsResponse, DeleteTask, ListShardsRequest,
+    ListShardsResponse, MetastoreResult, OpenShardsRequest, OpenShardsResponse,
+};
 use quickwit_proto::{IndexUid, PublishToken};
 use tracing::info;
 
@@ -245,6 +249,35 @@ impl Metastore for MetastoreEventPublisher {
         self.underlying
             .list_stale_splits(index_uid, delete_opstamp, num_splits)
             .await
+    }
+
+    async fn open_shards(&self, request: OpenShardsRequest) -> MetastoreResult<OpenShardsResponse> {
+        self.underlying.open_shards(request).await
+    }
+
+    async fn acquire_shards(
+        &self,
+        request: AcquireShardsRequest,
+    ) -> MetastoreResult<AcquireShardsResponse> {
+        self.underlying.acquire_shards(request).await
+    }
+
+    async fn close_shards(
+        &self,
+        request: CloseShardsRequest,
+    ) -> MetastoreResult<CloseShardsResponse> {
+        self.underlying.close_shards(request).await
+    }
+
+    async fn list_shards(&self, request: ListShardsRequest) -> MetastoreResult<ListShardsResponse> {
+        self.underlying.list_shards(request).await
+    }
+
+    async fn delete_shards(
+        &self,
+        request: DeleteShardsRequest,
+    ) -> MetastoreResult<DeleteShardsResponse> {
+        self.underlying.delete_shards(request).await
     }
 }
 

@@ -135,7 +135,6 @@
     ],
     "version": "0.6"
   },
-  "shards": {},
   "splits": [
     {
       "create_timestamp": 3,

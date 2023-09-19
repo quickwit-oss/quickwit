@@ -155,8 +155,30 @@ use tower::{Layer, Service, ServiceExt};
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait::async_trait]
 pub trait IngestService: std::fmt::Debug + dyn_clone::DynClone + Send + Sync + 'static {
+    /// Ingests document in a given queue.
+    ///
+    /// Upon any kind of error, the client should
+    /// - retry to get at least once delivery.
+    /// - not retry to get at most once delivery.
+    ///
+    /// Exactly once delivery is not supported yet.
     async fn ingest(&mut self, request: IngestRequest) -> crate::Result<IngestResponse>;
+    /// Fetches record from a given queue.
+    ///
+    /// Records are returned in order.
+    ///
+    /// The returned `FetchResponse` object is meant to be read with the
+    /// `crate::iter_records` function.
+    ///
+    /// Fetching does not necessarily return all of the available records.
+    /// If returning all records would exceed `FETCH_PAYLOAD_LIMIT` (2MB),
+    /// the response will be partial.
     async fn fetch(&mut self, request: FetchRequest) -> crate::Result<FetchResponse>;
+    /// Returns a batch containing the last records.
+    ///
+    /// It returns the last documents, from the newest
+    /// to the oldest, and stops as soon as `FETCH_PAYLOAD_LIMIT` (2MB)
+    /// is exceeded.
     async fn tail(&mut self, request: TailRequest) -> crate::Result<FetchResponse>;
 }
 dyn_clone::clone_trait_object!(IngestService);

@@ -41,7 +41,7 @@ use tracing::{debug, info, warn};
 
 use crate::actors::DocProcessor;
 use crate::source::{
-    BatchBuilder, Source, SourceActor, SourceContext, SourceExecutionContext, TypedSourceFactory,
+    BatchBuilder, Source, SourceActor, SourceContext, SourceRuntimeArgs, TypedSourceFactory,
 };
 
 /// Number of bytes after which we cut a new batch.
@@ -67,7 +67,7 @@ impl TypedSourceFactory for PulsarSourceFactory {
     type Params = PulsarSourceParams;
 
     async fn typed_create_source(
-        ctx: Arc<SourceExecutionContext>,
+        ctx: Arc<SourceRuntimeArgs>,
         params: PulsarSourceParams,
         checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self::Source> {
@@ -89,7 +89,7 @@ pub struct PulsarSourceState {
 }
 
 pub struct PulsarSource {
-    ctx: Arc<SourceExecutionContext>,
+    ctx: Arc<SourceRuntimeArgs>,
     pulsar_consumer: PulsarConsumer,
     params: PulsarSourceParams,
     subscription_name: String,
@@ -99,14 +99,14 @@ pub struct PulsarSource {
 
 impl PulsarSource {
     pub async fn try_new(
-        ctx: Arc<SourceExecutionContext>,
+        ctx: Arc<SourceRuntimeArgs>,
         params: PulsarSourceParams,
         checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self> {
-        let subscription_name = subscription_name(&ctx.index_uid, &ctx.source_config.source_id);
+        let subscription_name = subscription_name(ctx.index_uid(), ctx.source_id());
         info!(
-            index_id=%ctx.index_uid.index_id(),
-            source_id=%ctx.source_config.source_id,
+            index_id=%ctx.index_id(),
+            source_id=%ctx.source_id(),
             topics=?params.topics,
             subscription_name=%subscription_name,
             "Create Pulsar source."
@@ -195,7 +195,7 @@ impl PulsarSource {
             .checkpoint_delta
             .record_partition_delta(partition, current_position, msg_position)
             .context("failed to record partition delta")?;
-        batch.push(doc);
+        batch.add_doc(doc);
 
         self.state.num_bytes_processed += num_bytes;
         self.state.num_messages_processed += 1;
@@ -273,16 +273,13 @@ impl Source for PulsarSource {
     }
 
     fn name(&self) -> String {
-        format!(
-            "PulsarSource{{source_id={}}}",
-            self.ctx.source_config.source_id
-        )
+        format!("PulsarSource{{source_id={}}}", self.ctx.source_id())
     }
 
     fn observable_state(&self) -> JsonValue {
         json!({
-            "index_id": self.ctx.index_uid.index_id(),
-            "source_id": self.ctx.source_config.source_id,
+            "index_id": self.ctx.index_id(),
+            "source_id": self.ctx.source_id(),
             "topics": self.params.topics,
             "subscription_name": self.subscription_name,
             "consumer_name": self.params.consumer_name,
@@ -690,11 +687,11 @@ mod pulsar_broker_tests {
         source_config: SourceConfig,
         start_checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<(ActorHandle<SourceActor>, Inbox<DocProcessor>)> {
-        let ctx = SourceExecutionContext::for_test(
-            metastore,
+        let ctx = SourceRuntimeArgs::for_test(
             index_uid,
-            PathBuf::from("./queues"),
             source_config,
+            metastore,
+            PathBuf::from("./queues"),
         );
 
         let source_loader = quickwit_supported_sources();
@@ -813,11 +810,11 @@ mod pulsar_broker_tests {
             unreachable!()
         };
 
-        let ctx = SourceExecutionContext::for_test(
-            metastore,
+        let ctx = SourceRuntimeArgs::for_test(
             index_uid,
-            PathBuf::from("./queues"),
             source_config,
+            metastore,
+            PathBuf::from("./queues"),
         );
         let start_checkpoint = SourceCheckpoint::default();
 

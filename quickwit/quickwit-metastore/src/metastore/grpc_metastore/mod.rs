@@ -31,12 +31,15 @@ use quickwit_common::tower::BalanceChannel;
 use quickwit_common::uri::Uri as QuickwitUri;
 use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_proto::metastore::{
-    serde_utils as metastore_serde_utils, AddSourceRequest, CreateIndexRequest, DeleteIndexRequest,
-    DeleteQuery, DeleteSourceRequest, DeleteSplitsRequest, DeleteTask, IndexMetadataRequest,
+    serde_utils as metastore_serde_utils, AcquireShardsRequest, AcquireShardsResponse,
+    AddSourceRequest, CloseShardsRequest, CloseShardsResponse, CreateIndexRequest,
+    DeleteIndexRequest, DeleteQuery, DeleteShardsRequest, DeleteShardsResponse,
+    DeleteSourceRequest, DeleteSplitsRequest, DeleteTask, IndexMetadataRequest,
     LastDeleteOpstampRequest, ListAllSplitsRequest, ListDeleteTasksRequest,
-    ListIndexesMetadatasRequest, ListSplitsRequest, ListStaleSplitsRequest,
-    MarkSplitsForDeletionRequest, MetastoreError, MetastoreResult, MetastoreServiceClient,
-    PublishSplitsRequest, ResetSourceCheckpointRequest, StageSplitsRequest, ToggleSourceRequest,
+    ListIndexesMetadatasRequest, ListShardsRequest, ListShardsResponse, ListSplitsRequest,
+    ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError, MetastoreResult,
+    MetastoreServiceClient, OpenShardsRequest, OpenShardsResponse, PublishSplitsRequest,
+    ResetSourceCheckpointRequest, StageSplitsRequest, ToggleSourceRequest,
     UpdateSplitsDeleteOpstampRequest,
 };
 use quickwit_proto::tonic::codegen::InterceptedService;
@@ -549,6 +552,65 @@ impl Metastore for MetastoreGrpcClient {
                 }
             })?;
         Ok(splits)
+    }
+
+    async fn open_shards(&self, request: OpenShardsRequest) -> MetastoreResult<OpenShardsResponse> {
+        let response = self
+            .underlying
+            .clone()
+            .open_shards(request)
+            .await
+            .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
+        Ok(response.into_inner())
+    }
+
+    async fn acquire_shards(
+        &self,
+        request: AcquireShardsRequest,
+    ) -> MetastoreResult<AcquireShardsResponse> {
+        let response = self
+            .underlying
+            .clone()
+            .acquire_shards(request)
+            .await
+            .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
+        Ok(response.into_inner())
+    }
+
+    async fn close_shards(
+        &self,
+        request: CloseShardsRequest,
+    ) -> MetastoreResult<CloseShardsResponse> {
+        let response = self
+            .underlying
+            .clone()
+            .close_shards(request)
+            .await
+            .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
+        Ok(response.into_inner())
+    }
+
+    async fn list_shards(&self, request: ListShardsRequest) -> MetastoreResult<ListShardsResponse> {
+        let response = self
+            .underlying
+            .clone()
+            .list_shards(request)
+            .await
+            .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
+        Ok(response.into_inner())
+    }
+
+    async fn delete_shards(
+        &self,
+        request: DeleteShardsRequest,
+    ) -> MetastoreResult<DeleteShardsResponse> {
+        let response = self
+            .underlying
+            .clone()
+            .delete_shards(request)
+            .await
+            .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
+        Ok(response.into_inner())
     }
 }
 

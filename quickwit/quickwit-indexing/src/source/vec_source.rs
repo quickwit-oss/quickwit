@@ -32,7 +32,7 @@ use tracing::info;
 
 use crate::actors::DocProcessor;
 use crate::models::RawDocBatch;
-use crate::source::{Source, SourceContext, SourceExecutionContext, TypedSourceFactory};
+use crate::source::{Source, SourceContext, SourceRuntimeArgs, TypedSourceFactory};
 
 pub struct VecSource {
     source_id: String,
@@ -54,7 +54,7 @@ impl TypedSourceFactory for VecSourceFactory {
     type Source = VecSource;
     type Params = VecSourceParams;
     async fn typed_create_source(
-        ctx: Arc<SourceExecutionContext>,
+        ctx: Arc<SourceRuntimeArgs>,
         params: VecSourceParams,
         checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self::Source> {
@@ -64,7 +64,7 @@ impl TypedSourceFactory for VecSourceFactory {
             Some(Position::Beginning) | None => 0,
         };
         Ok(VecSource {
-            source_id: ctx.source_config.source_id.clone(),
+            source_id: ctx.source_id().to_string(),
             next_item_idx,
             params,
             partition,
@@ -150,21 +150,22 @@ mod tests {
             batch_num_docs: 3,
             partition: "partition".to_string(),
         };
+        let source_config = SourceConfig {
+            source_id: "test-vec-source".to_string(),
+            desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
+            max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+            enabled: true,
+            source_params: SourceParams::Vec(params.clone()),
+            transform_config: None,
+            input_format: SourceInputFormat::Json,
+        };
         let metastore = metastore_for_test();
         let vec_source = VecSourceFactory::typed_create_source(
-            SourceExecutionContext::for_test(
-                metastore,
+            SourceRuntimeArgs::for_test(
                 IndexUid::new("test-index"),
+                source_config,
+                metastore,
                 PathBuf::from("./queues"),
-                SourceConfig {
-                    source_id: "test-vec-source".to_string(),
-                    desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
-                    max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
-                    enabled: true,
-                    source_params: SourceParams::Vec(params.clone()),
-                    transform_config: None,
-                    input_format: SourceInputFormat::Json,
-                },
             ),
             params,
             SourceCheckpoint::default(),
@@ -210,21 +211,22 @@ mod tests {
         let mut checkpoint = SourceCheckpoint::default();
         checkpoint.try_apply_delta(SourceCheckpointDelta::from_range(0u64..2u64))?;
 
+        let source_config = SourceConfig {
+            source_id: "test-vec-source".to_string(),
+            desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
+            max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+            enabled: true,
+            source_params: SourceParams::Vec(params.clone()),
+            transform_config: None,
+            input_format: SourceInputFormat::Json,
+        };
         let metastore = metastore_for_test();
         let vec_source = VecSourceFactory::typed_create_source(
-            SourceExecutionContext::for_test(
-                metastore,
+            SourceRuntimeArgs::for_test(
                 IndexUid::new("test-index"),
+                source_config,
+                metastore,
                 PathBuf::from("./queues"),
-                SourceConfig {
-                    source_id: "test-vec-source".to_string(),
-                    desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
-                    max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
-                    enabled: true,
-                    source_params: SourceParams::Vec(params.clone()),
-                    transform_config: None,
-                    input_format: SourceInputFormat::Json,
-                },
             ),
             params,
             checkpoint,

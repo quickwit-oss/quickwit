@@ -17,38 +17,35 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-mod indexing_pipeline;
-mod merge_pipeline;
-
 mod doc_processor;
 mod index_serializer;
 mod indexer;
+mod indexing_pipeline;
 mod indexing_service;
+mod merge_executor;
+mod merge_pipeline;
+mod merge_planner;
+mod merge_split_downloader;
 mod packager;
 mod publisher;
 mod sequencer;
 mod uploader;
+#[cfg(feature = "vrl")]
+mod vrl_processing;
 
+pub use doc_processor::{DocProcessor, DocProcessorCounters};
+pub use index_serializer::IndexSerializer;
+pub use indexer::{Indexer, IndexerCounters};
 pub use indexing_pipeline::{IndexingPipeline, IndexingPipelineParams};
 pub use indexing_service::{
     IndexingService, IndexingServiceCounters, MergePipelineId, INDEXING_DIR_NAME,
 };
+pub use merge_executor::{combine_partition_ids, merge_split_attrs, MergeExecutor};
+pub use merge_pipeline::MergePipeline;
+pub use merge_planner::MergePlanner;
+pub use merge_split_downloader::MergeSplitDownloader;
+pub use packager::Packager;
+pub use publisher::{Publisher, PublisherCounters, PublisherType};
 pub use quickwit_proto::indexing::IndexingError;
 pub use sequencer::Sequencer;
-mod merge_executor;
-mod merge_planner;
-mod merge_split_downloader;
-
-#[cfg(feature = "vrl")]
-mod vrl_processing;
-
-pub use self::doc_processor::{DocProcessor, DocProcessorCounters};
-pub use self::index_serializer::IndexSerializer;
-pub use self::indexer::{Indexer, IndexerCounters};
-pub use self::merge_executor::{combine_partition_ids, merge_split_attrs, MergeExecutor};
-pub use self::merge_pipeline::MergePipeline;
-pub use self::merge_planner::MergePlanner;
-pub use self::merge_split_downloader::MergeSplitDownloader;
-pub use self::packager::Packager;
-pub use self::publisher::{Publisher, PublisherCounters, PublisherType};
-pub use self::uploader::{SplitsUpdateMailbox, Uploader, UploaderCounters, UploaderType};
+pub use uploader::{SplitsUpdateMailbox, Uploader, UploaderCounters, UploaderType};

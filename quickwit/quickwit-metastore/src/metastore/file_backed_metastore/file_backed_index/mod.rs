@@ -32,9 +32,10 @@ use itertools::Either;
 use quickwit_common::PrettySample;
 use quickwit_config::{SourceConfig, INGEST_SOURCE_ID};
 use quickwit_proto::metastore::{
-    CloseShardsFailure, CloseShardsSubrequest, CloseShardsSuccess, DeleteQuery,
-    DeleteShardsSubrequest, DeleteTask, EntityKind, ListShardsSubrequest, ListShardsSubresponse,
-    MetastoreError, MetastoreResult, OpenShardsSubrequest, OpenShardsSubresponse,
+    AcquireShardsSubrequest, AcquireShardsSubresponse, CloseShardsFailure, CloseShardsSubrequest,
+    CloseShardsSuccess, DeleteQuery, DeleteShardsSubrequest, DeleteTask, EntityKind,
+    ListShardsSubrequest, ListShardsSubresponse, MetastoreError, MetastoreResult,
+    OpenShardsSubrequest, OpenShardsSubresponse,
 };
 use quickwit_proto::{IndexUid, PublishToken, SourceId, SplitId};
 use serde::{Deserialize, Serialize};
@@ -546,6 +547,14 @@ impl FileBackedIndex {
     ) -> MetastoreResult<MutationOccurred<OpenShardsSubresponse>> {
         self.get_shards_for_source_mut(&subrequest.source_id)?
             .open_shards(subrequest)
+    }
+
+    pub(crate) fn acquire_shards(
+        &mut self,
+        subrequest: AcquireShardsSubrequest,
+    ) -> MetastoreResult<MutationOccurred<AcquireShardsSubresponse>> {
+        self.get_shards_for_source_mut(&subrequest.source_id)?
+            .acquire_shards(subrequest)
     }
 
     pub(crate) fn close_shards(

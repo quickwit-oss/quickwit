@@ -188,7 +188,7 @@ impl<A: Actor> ActorHandle<A> {
                 return self.wait_for_observable_state_callback(oneshot_rx).await;
             } else {
                 error!(
-                    actor_id = self.actor_context.actor_instance_id(),
+                    actor_id=%self.actor_context.actor_instance_id(),
                     "Failed to send observe message"
                 );
             }

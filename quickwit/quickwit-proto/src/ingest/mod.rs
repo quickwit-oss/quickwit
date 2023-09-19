@@ -119,6 +119,10 @@ impl DocBatchV2 {
 }
 
 impl Shard {
+    pub fn is_open(&self) -> bool {
+        self.shard_state() == ShardState::Open
+    }
+
     pub fn is_closing(&self) -> bool {
         self.shard_state() == ShardState::Closing
     }
@@ -127,14 +131,16 @@ impl Shard {
         self.shard_state() == ShardState::Closed
     }
 
-    pub fn is_open(&self) -> bool {
-        self.shard_state() == ShardState::Open
+    pub fn is_deletable(&self) -> bool {
+        self.is_closed() && !self.has_unpublished_docs()
     }
 
-    pub fn is_deletable(&self) -> bool {
-        self.is_closed()
-            && self.publish_position_inclusive.parse::<u64>().ok()
-                >= self.replication_position_inclusive
+    pub fn is_indexable(&self) -> bool {
+        !self.is_closed() || self.has_unpublished_docs()
+    }
+
+    pub fn has_unpublished_docs(&self) -> bool {
+        self.publish_position_inclusive.parse::<u64>().ok() < self.replication_position_inclusive
     }
 
     pub fn queue_id(&self) -> super::types::QueueId {
@@ -143,6 +149,10 @@ impl Shard {
 }
 
 impl ShardState {
+    pub fn is_open(&self) -> bool {
+        *self == ShardState::Open
+    }
+
     pub fn is_closing(&self) -> bool {
         *self == ShardState::Closing
     }
@@ -150,8 +160,33 @@ impl ShardState {
     pub fn is_closed(&self) -> bool {
         *self == ShardState::Closed
     }
+}
 
-    pub fn is_open(&self) -> bool {
-        *self == ShardState::Open
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_shard_as_unpublished_docs() {
+        let shard = Shard {
+            publish_position_inclusive: "".to_string(),
+            replication_position_inclusive: None,
+            ..Default::default()
+        };
+        assert!(!shard.has_unpublished_docs());
+
+        let shard = Shard {
+            publish_position_inclusive: "".to_string(),
+            replication_position_inclusive: Some(0),
+            ..Default::default()
+        };
+        assert!(shard.has_unpublished_docs());
+
+        let shard = Shard {
+            publish_position_inclusive: "0".to_string(),
+            replication_position_inclusive: Some(0),
+            ..Default::default()
+        };
+        assert!(!shard.has_unpublished_docs());
     }
 }
