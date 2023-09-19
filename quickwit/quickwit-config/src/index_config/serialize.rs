@@ -89,9 +89,7 @@ impl IndexConfigForSerialization {
 
         if index_uri.protocol().is_file() {
             warn!(
-                "index_uri = {}. Using file-backed index comes with certain limitations, please \
-                 refer to the specific documentation for details.",
-                index_uri
+                index_uri = %index_uri, "Using file-backed index comes with certain limitations, please refer to https://quickwit.io/docs/configuration/index-config for more details."
             );
         }
         if let Some(retention_policy) = &self.retention_policy {
