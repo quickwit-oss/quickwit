@@ -573,45 +573,92 @@ pub async fn leaf_search(
     // request.exact_count == true`
     let run_all_splits = true;
 
-    let mut leaf_search_single_split_futures: Vec<_> = Vec::with_capacity(splits.len());
-    for split in splits {
-        let searcher_context_clone = searcher_context.clone();
-        let leaf_split_search_permit = searcher_context.leaf_search_split_semaphore
-            .clone()
+    // TODO trinity-1686a: I really don't like how this code came out. I tried numerous time with
+    // more iter/stream, but was getting Higher Ranker Lifetime Errors, dyn trait and stream of
+    // futures don't play well together :-/
+
+    use futures::stream::FuturesUnordered;
+    use futures::{FutureExt, StreamExt};
+
+    let mut futures = FuturesUnordered::new();
+
+    /// Wait on a semaphore, then and then pull one item of the iterator.
+    async fn split_iter_get_one<I: Iterator<Item = SplitIdAndFooterOffsets>>(
+        mut splits_iter: I,
+        semaphore: Arc<tokio::sync::Semaphore>,
+    ) -> Option<(
+        SplitIdAndFooterOffsets,
+        tokio::sync::OwnedSemaphorePermit,
+        I,
+    )> {
+        let split = splits_iter.next()?;
+        let leaf_split_search_permit = semaphore
             .acquire_owned()
             .await
             .expect("Failed to acquire permit. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.");
-        let split = split.clone();
-        let doc_mapper_clone = doc_mapper.clone();
-        let index_storage_clone = index_storage.clone();
-        let request = request.clone();
-        let leaf_search_single_split_future = tokio::spawn(
-            async move {
-                crate::SEARCH_METRICS.leaf_searches_splits_total.inc();
-                let timer = crate::SEARCH_METRICS
-                    .leaf_search_split_duration_secs
-                    .start_timer();
-                let leaf_search_single_split_res = leaf_search_single_split(
-                    &searcher_context_clone,
-                    (*request).clone(),
-                    index_storage_clone,
-                    split.clone(),
-                    doc_mapper_clone,
-                )
-                .await;
-                // We explicitly drop it, to highlight it to the reader and to force the move.
-                if leaf_search_single_split_res.is_ok() {
-                    timer.observe_duration();
-                }
-                std::mem::drop(leaf_split_search_permit);
-                leaf_search_single_split_res.map_err(|err| (split.split_id.clone(), err))
-            }
-            .in_current_span(),
-        );
-        leaf_search_single_split_futures.push(leaf_search_single_split_future);
+        Some((split, leaf_split_search_permit, splits_iter))
     }
-    let split_search_results: Vec<Result<Result<LeafSearchResponse, _>, _>> =
-        futures::future::join_all(leaf_search_single_split_futures).await;
+
+    futures.push(Either::Left(
+        split_iter_get_one(
+            splits.iter().cloned(),
+            searcher_context.leaf_search_split_semaphore.clone(),
+        )
+        .map(Either::Left),
+    ));
+
+    let mut split_search_results: Vec<Result<Result<LeafSearchResponse, _>, _>> = Vec::new();
+
+    while let Some(sub_task) = futures.next().await {
+        match sub_task {
+            Either::Left(None) => {
+                // no more splits to startup
+            }
+            Either::Left(Some((split, permit, splits_iter))) => {
+                futures.push(Either::Left(
+                    split_iter_get_one(
+                        splits_iter,
+                        searcher_context.leaf_search_split_semaphore.clone(),
+                    )
+                    .map(Either::Left),
+                ));
+                let searcher_context_clone = searcher_context.clone();
+                let doc_mapper_clone = doc_mapper.clone();
+                let index_storage_clone = index_storage.clone();
+                let request = request.clone();
+                let leaf_search_single_split_future = tokio::spawn(
+                    async move {
+                        crate::SEARCH_METRICS.leaf_searches_splits_total.inc();
+                        let timer = crate::SEARCH_METRICS
+                            .leaf_search_split_duration_secs
+                            .start_timer();
+                        let leaf_search_single_split_res = leaf_search_single_split(
+                            &searcher_context_clone,
+                            (*request).clone(),
+                            index_storage_clone,
+                            split.clone(),
+                            doc_mapper_clone,
+                        )
+                        .await;
+                        if leaf_search_single_split_res.is_ok() {
+                            timer.observe_duration();
+                        }
+                        // We explicitly drop it, to highlight it to the reader and to force the
+                        // move.
+                        drop(permit);
+                        leaf_search_single_split_res.map_err(|err| (split.split_id, err))
+                    }
+                    .in_current_span(),
+                )
+                .map(Either::Right);
+                futures.push(Either::Right(leaf_search_single_split_future));
+            }
+            Either::Right(result) => {
+                // a split finished. Process the result.
+                split_search_results.push(result);
+            }
+        }
+    }
 
     // the result wrapping is only for the collector api merge_fruits
     // (Vec<tantivy::Result<LeafSearchResponse>>)
