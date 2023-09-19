@@ -57,6 +57,8 @@ use tower::{Layer, Service, ServiceExt};
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait::async_trait]
 pub trait IngestRouterService: std::fmt::Debug + dyn_clone::DynClone + Send + Sync + 'static {
+    /// Ingests batches of documents for one or multiple indexes.
+    /// TODO: Describe error cases and how to handle them.
     async fn ingest(
         &mut self,
         request: IngestRequestV2,
@@ -526,8 +528,8 @@ pub mod ingest_router_service_grpc_client {
             self.inner = self.inner.max_encoding_message_size(limit);
             self
         }
-        /// / Ingests batches of documents for one or multiple indexes.
-        /// / TODO: Describe error cases and how to handle them.
+        /// Ingests batches of documents for one or multiple indexes.
+        /// TODO: Describe error cases and how to handle them.
         pub async fn ingest(
             &mut self,
             request: impl tonic::IntoRequest<super::IngestRequestV2>,
@@ -567,8 +569,8 @@ pub mod ingest_router_service_grpc_server {
     /// Generated trait containing gRPC methods that should be implemented for use with IngestRouterServiceGrpcServer.
     #[async_trait]
     pub trait IngestRouterServiceGrpc: Send + Sync + 'static {
-        /// / Ingests batches of documents for one or multiple indexes.
-        /// / TODO: Describe error cases and how to handle them.
+        /// Ingests batches of documents for one or multiple indexes.
+        /// TODO: Describe error cases and how to handle them.
         async fn ingest(
             &self,
             request: tonic::Request<super::IngestRequestV2>,

@@ -17,13 +17,14 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::hash::Hash;
 use std::io;
 
 use anyhow::anyhow;
 use quickwit_actors::AskError;
 use thiserror;
 
-use crate::{IndexUid, ServiceError, ServiceErrorCode};
+use crate::{IndexUid, ServiceError, ServiceErrorCode, SourceId};
 
 include!("../codegen/quickwit/quickwit.indexing.rs");
 
@@ -38,7 +39,7 @@ pub enum IndexingError {
     )]
     PipelineAlreadyExists {
         index_id: String,
-        source_id: String,
+        source_id: SourceId,
         pipeline_ord: usize,
     },
     #[error("I/O error `{0}`")]
@@ -141,15 +142,27 @@ impl From<AskError<IndexingError>> for IndexingError {
 
 #[derive(Clone, Debug, Hash, Eq, PartialEq)]
 pub struct IndexingPipelineId {
-    pub index_uid: IndexUid,
-    pub source_id: String,
     pub node_id: String,
+    pub index_uid: IndexUid,
+    pub source_id: SourceId,
     pub pipeline_ord: usize,
 }
 
 impl ToString for IndexingTask {
     fn to_string(&self) -> String {
         format!("{}:{}", self.index_uid, self.source_id)
+    }
+}
+
+impl Eq for IndexingTask {}
+
+// TODO: This implementation conflicts with the default derived implementation. It would be better
+// to use a wrapper over `IndexingTask` where we need to group indexing tasks by index UID and
+// source ID.
+impl Hash for IndexingTask {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.index_uid.hash(state);
+        self.source_id.hash(state);
     }
 }
 

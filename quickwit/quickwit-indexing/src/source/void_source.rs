@@ -27,7 +27,7 @@ use quickwit_metastore::checkpoint::SourceCheckpoint;
 use serde_json::Value as JsonValue;
 
 use crate::actors::DocProcessor;
-use crate::source::{Source, SourceContext, SourceExecutionContext, TypedSourceFactory};
+use crate::source::{Source, SourceContext, SourceRuntimeArgs, TypedSourceFactory};
 
 pub struct VoidSource;
 
@@ -60,7 +60,7 @@ impl TypedSourceFactory for VoidSourceFactory {
     type Params = VoidSourceParams;
 
     async fn typed_create_source(
-        _ctx: Arc<SourceExecutionContext>,
+        _ctx: Arc<SourceRuntimeArgs>,
         _params: VoidSourceParams,
         _checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<VoidSource> {
@@ -96,11 +96,11 @@ mod tests {
             input_format: SourceInputFormat::Json,
         };
         let metastore = metastore_for_test();
-        let ctx = SourceExecutionContext::for_test(
-            metastore,
+        let ctx = SourceRuntimeArgs::for_test(
             IndexUid::new("test-index"),
-            PathBuf::from("./queues"),
             source_config,
+            metastore,
+            PathBuf::from("./queues"),
         );
         let source = quickwit_supported_sources()
             .load_source(ctx, SourceCheckpoint::default())
@@ -112,21 +112,22 @@ mod tests {
     #[tokio::test]
     async fn test_void_source_running() -> anyhow::Result<()> {
         let universe = Universe::with_accelerated_time();
+        let source_config = SourceConfig {
+            source_id: "test-void-source".to_string(),
+            desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
+            max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+            enabled: true,
+            source_params: SourceParams::void(),
+            transform_config: None,
+            input_format: SourceInputFormat::Json,
+        };
         let metastore = metastore_for_test();
         let void_source = VoidSourceFactory::typed_create_source(
-            SourceExecutionContext::for_test(
-                metastore,
+            SourceRuntimeArgs::for_test(
                 IndexUid::new("test-index"),
+                source_config,
+                metastore,
                 PathBuf::from("./queues"),
-                SourceConfig {
-                    source_id: "test-void-source".to_string(),
-                    desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
-                    max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
-                    enabled: true,
-                    source_params: SourceParams::void(),
-                    transform_config: None,
-                    input_format: SourceInputFormat::Json,
-                },
             ),
             VoidSourceParams,
             SourceCheckpoint::default(),

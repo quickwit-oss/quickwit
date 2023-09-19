@@ -143,8 +143,8 @@ impl Ingester {
 
         let primary_shard = PrimaryShard {
             follower_id_opt: follower_id_opt.cloned(),
-            _shard_state: ShardState::Open,
-            _publish_position_inclusive: Position::default(),
+            shard_state: ShardState::Open,
+            publish_position_inclusive: Position::default(),
             primary_position_inclusive: Position::default(),
             replica_position_inclusive_opt,
             shard_status_tx,
@@ -234,6 +234,9 @@ impl IngesterService for Ingester {
                     )
                     .await?
                 };
+            if primary_shard.shard_state.is_closed() {
+                // TODO
+            }
             let from_position_inclusive = primary_shard.primary_position_inclusive;
 
             let Some(doc_batch) = subrequest.doc_batch else {
@@ -414,8 +417,8 @@ impl IngesterService for Ingester {
             .read()
             .await
             .find_shard_status_rx(&queue_id)
-            .ok_or_else(|| IngestV2Error::Internal("shard not found".to_string()))?;
-        let service_stream = FetchTask::spawn(
+            .ok_or_else(|| IngestV2Error::Internal("shard not found.".to_string()))?;
+        let (service_stream, _fetch_task_handle) = FetchTask::spawn(
             open_fetch_stream_request,
             mrecordlog,
             shard_status_rx,
@@ -454,21 +457,22 @@ impl IngesterService for Ingester {
                 truncate_request.leader_id, self.self_node_id
             )));
         }
-        let state_guard = self.state.write().await;
+        let mut mrecordlog_guard = self.mrecordlog.write().await;
+        let mut state_guard = self.state.write().await;
 
         let mut truncate_subrequests: HashMap<NodeId, Vec<TruncateSubrequest>> = HashMap::new();
 
         for subrequest in truncate_request.subrequests {
             let queue_id = subrequest.queue_id();
 
-            if state_guard.primary_shards.contains_key(&queue_id) {
-                let mut mrecordlog_guard = self.mrecordlog.write().await;
+            if let Some(primary_shard) = state_guard.primary_shards.get_mut(&queue_id) {
                 mrecordlog_guard
                     .truncate(&queue_id, subrequest.to_position_inclusive)
                     .await
                     .map_err(|error| {
                         IngestV2Error::Internal(format!("failed to truncate: {error:?}"))
                     })?;
+                primary_shard.set_publish_position_inclusive(subrequest.to_position_inclusive);
             }
             if let Some(replica_shard) = state_guard.replica_shards.get(&queue_id) {
                 truncate_subrequests
@@ -502,6 +506,7 @@ impl IngesterService for Ingester {
             // TODO: Handle errors.
             truncate_result?;
         }
+        // TODO: Update publish positions of truncated shards and then delete them when
         let truncate_response = TruncateResponse {};
         Ok(truncate_response)
     }
@@ -583,13 +588,13 @@ pub(super) struct PrimaryShard {
     /// factor is 1.
     pub follower_id_opt: Option<NodeId>,
     /// Current state of the shard.
-    _shard_state: ShardState,
+    shard_state: ShardState,
     /// Position up to which indexers have indexed and published the data stored in the shard.
     /// It is updated asynchronously in a best effort manner by the indexers and indicates the
     /// position up to which the log can be safely truncated. When the shard is closed, the
     /// publish position has reached the replication position, and the deletion grace period has
     /// passed, the shard can be safely deleted.
-    _publish_position_inclusive: Position,
+    pub publish_position_inclusive: Position,
     /// Position up to which the leader has written records in its log.
     pub primary_position_inclusive: Position,
     /// Position up to which the follower has acknowledged replication of the records written in
@@ -601,17 +606,12 @@ pub(super) struct PrimaryShard {
 }
 
 impl PrimaryShard {
-    // TODO: Set publish position on truncate.
-    // fn set_publish_position_inclusive(&mut self, publish_position_inclusive: impl Into<Position>)
-    // {     self.publish_position_inclusive = publish_position_inclusive.into();
-
-    //     if self.shard_state.is_closed() {
-    //         self.shard_status_tx.send_modify(|shard_status| {
-    //             shard_status.shard_state = self.shard_state;
-    //             shard_status.publish_position_inclusive = self.publish_position_inclusive
-    //         });
-    //     }
-    // }
+    fn set_publish_position_inclusive(&mut self, publish_position_inclusive: impl Into<Position>) {
+        self.publish_position_inclusive = publish_position_inclusive.into();
+        self.shard_status_tx.send_modify(|shard_status| {
+            shard_status.publish_position_inclusive = self.publish_position_inclusive;
+        });
+    }
 
     fn set_primary_position_inclusive(&mut self, primary_position_inclusive: impl Into<Position>) {
         self.primary_position_inclusive = primary_position_inclusive.into();
@@ -640,25 +640,23 @@ impl PrimaryShard {
 /// details about the fields.
 pub(super) struct ReplicaShard {
     pub leader_id: NodeId,
-    pub(super) _shard_state: ShardState,
-    pub(super) _publish_position_inclusive: Position,
+    pub(super) shard_state: ShardState,
+    pub(super) publish_position_inclusive: Position,
     pub replica_position_inclusive: Position,
     pub shard_status_tx: watch::Sender<ShardStatus>,
     pub shard_status_rx: watch::Receiver<ShardStatus>,
 }
 
 impl ReplicaShard {
-    // TODO: Set publish position on truncate.
-    // fn set_publish_position_inclusive(&mut self, publish_position_inclusive: impl Into<Position>)
-    // {     self.publish_position_inclusive = publish_position_inclusive.into();
-
-    //     if self.shard_state.is_closed() {
-    //         self.shard_status_tx.send_modify(|shard_status| {
-    //             shard_status.shard_state = self.shard_state;
-    //             shard_status.publish_position_inclusive = self.publish_position_inclusive
-    //         });
-    //     }
-    // }
+    pub fn set_publish_position_inclusive(
+        &mut self,
+        publish_position_inclusive: impl Into<Position>,
+    ) {
+        self.publish_position_inclusive = publish_position_inclusive.into();
+        self.shard_status_tx.send_modify(|shard_status| {
+            shard_status.publish_position_inclusive = self.publish_position_inclusive;
+        });
+    }
 
     pub fn set_replica_position_inclusive(
         &mut self,
@@ -1259,6 +1257,18 @@ mod tests {
             ],
         };
         ingester.truncate(truncate_request).await.unwrap();
+
+        let ingester_state = ingester.state.read().await;
+        ingester_state
+            .primary_shards
+            .get(&queue_id_00)
+            .unwrap()
+            .assert_publish_position(0);
+        ingester_state
+            .primary_shards
+            .get(&queue_id_01)
+            .unwrap()
+            .assert_publish_position(1);
 
         let mrecordlog_guard = ingester.mrecordlog.read().await;
         let (position, record) = mrecordlog_guard

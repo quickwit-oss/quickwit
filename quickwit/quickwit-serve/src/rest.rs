@@ -85,6 +85,7 @@ pub(crate) async fn start_rest_server(
     // `/metrics` route.
     let metrics_routes = warp::path("metrics").and(warp::get()).map(metrics_handler);
 
+    let ingest_router = quickwit_services.ingest_router_service.clone();
     let ingest_service = quickwit_services.ingest_service.clone();
 
     // `/api/v1/*` routes.
@@ -93,7 +94,7 @@ pub(crate) async fn start_rest_server(
         .or(node_info_handler(
             BuildInfo::get(),
             RuntimeInfo::get(),
-            quickwit_services.config.clone(),
+            quickwit_services.node_config.clone(),
         ))
         .or(indexing_get_handler(
             quickwit_services.indexing_service_opt.clone(),
@@ -105,16 +106,16 @@ pub(crate) async fn start_rest_server(
         .or(search_stream_handler(
             quickwit_services.search_service.clone(),
         ))
-        .or(ingest_api_handlers(ingest_service.clone()))
+        .or(ingest_api_handlers(ingest_router, ingest_service.clone()))
         .or(index_management_handlers(
             quickwit_services.index_manager.clone(),
-            quickwit_services.config.clone(),
+            quickwit_services.node_config.clone(),
         ))
         .or(delete_task_api_handlers(
-            quickwit_services.metastore.clone(),
+            quickwit_services.metastore_client.clone(),
         ))
         .or(elastic_api_handlers(
-            quickwit_services.config.clone(),
+            quickwit_services.node_config.clone(),
             quickwit_services.search_service.clone(),
             ingest_service.clone(),
         ));
@@ -138,7 +139,7 @@ pub(crate) async fn start_rest_server(
     let warp_service = warp::service(rest_routes);
     let compression_predicate =
         DefaultPredicate::new().and(SizeAbove::new(MINIMUM_RESPONSE_COMPRESSION_SIZE));
-    let cors = build_cors(&quickwit_services.config.rest_cors_allow_origins);
+    let cors = build_cors(&quickwit_services.node_config.rest_cors_allow_origins);
 
     let service = ServiceBuilder::new()
         .layer(

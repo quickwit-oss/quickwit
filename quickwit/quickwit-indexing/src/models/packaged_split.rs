@@ -23,7 +23,7 @@ use std::fmt;
 use itertools::Itertools;
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
-use quickwit_proto::{IndexUid, PublishToken};
+use quickwit_proto::{IndexUid, PublishToken, SplitId};
 use tantivy::TrackedObject;
 use tracing::Span;
 
@@ -105,13 +105,10 @@ impl PackagedSplitBatch {
     }
 
     pub fn index_uid(&self) -> IndexUid {
-        self.splits
-            .get(0)
-            .map(|split| split.split_attrs.pipeline_id.index_uid.clone())
-            .unwrap()
+        self.splits[0].split_attrs.pipeline_id.index_uid.clone()
     }
 
-    pub fn split_ids(&self) -> Vec<String> {
+    pub fn split_ids(&self) -> Vec<SplitId> {
         self.splits
             .iter()
             .map(|split| split.split_attrs.split_id.clone())

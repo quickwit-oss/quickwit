@@ -46,14 +46,17 @@ pub type HelloStream<T> = quickwit_common::ServiceStream<crate::HelloResult<T>>;
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait::async_trait]
 pub trait Hello: std::fmt::Debug + dyn_clone::DynClone + Send + Sync + 'static {
+    /// Says hello.
     async fn hello(
         &mut self,
         request: HelloRequest,
     ) -> crate::HelloResult<HelloResponse>;
+    /// Says goodbye.
     async fn goodbye(
         &mut self,
         request: GoodbyeRequest,
     ) -> crate::HelloResult<GoodbyeResponse>;
+    /// Ping pong.
     async fn ping(
         &mut self,
         request: quickwit_common::ServiceStream<PingRequest>,
@@ -739,6 +742,7 @@ pub mod hello_grpc_client {
             self.inner = self.inner.max_encoding_message_size(limit);
             self
         }
+        /// Says hello.
         pub async fn hello(
             &mut self,
             request: impl tonic::IntoRequest<super::HelloRequest>,
@@ -758,6 +762,7 @@ pub mod hello_grpc_client {
             req.extensions_mut().insert(GrpcMethod::new("hello.Hello", "Hello"));
             self.inner.unary(req, path, codec).await
         }
+        /// Says goodbye.
         pub async fn goodbye(
             &mut self,
             request: impl tonic::IntoRequest<super::GoodbyeRequest>,
@@ -780,6 +785,7 @@ pub mod hello_grpc_client {
             req.extensions_mut().insert(GrpcMethod::new("hello.Hello", "Goodbye"));
             self.inner.unary(req, path, codec).await
         }
+        /// Ping pong.
         pub async fn ping(
             &mut self,
             request: impl tonic::IntoStreamingRequest<Message = super::PingRequest>,
@@ -811,10 +817,12 @@ pub mod hello_grpc_server {
     /// Generated trait containing gRPC methods that should be implemented for use with HelloGrpcServer.
     #[async_trait]
     pub trait HelloGrpc: Send + Sync + 'static {
+        /// Says hello.
         async fn hello(
             &self,
             request: tonic::Request<super::HelloRequest>,
         ) -> std::result::Result<tonic::Response<super::HelloResponse>, tonic::Status>;
+        /// Says goodbye.
         async fn goodbye(
             &self,
             request: tonic::Request<super::GoodbyeRequest>,
@@ -825,6 +833,7 @@ pub mod hello_grpc_server {
             >
             + Send
             + 'static;
+        /// Ping pong.
         async fn ping(
             &self,
             request: tonic::Request<tonic::Streaming<super::PingRequest>>,

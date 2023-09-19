@@ -24,9 +24,10 @@ use std::fmt;
 use itertools::Either;
 use quickwit_proto::ingest::{Shard, ShardState};
 use quickwit_proto::metastore::{
-    CloseShardsFailure, CloseShardsSubrequest, CloseShardsSuccess, DeleteShardsSubrequest,
-    EntityKind, ListShardsSubrequest, ListShardsSubresponse, MetastoreError, MetastoreResult,
-    OpenShardsSubrequest, OpenShardsSubresponse,
+    AcquireShardsSubrequest, AcquireShardsSubresponse, CloseShardsFailure, CloseShardsSubrequest,
+    CloseShardsSuccess, DeleteShardsSubrequest, EntityKind, ListShardsSubrequest,
+    ListShardsSubresponse, MetastoreError, MetastoreResult, OpenShardsSubrequest,
+    OpenShardsSubresponse,
 };
 use quickwit_proto::tonic::Code;
 use quickwit_proto::types::ShardId;
@@ -166,6 +167,41 @@ impl Shards {
         }
     }
 
+    pub(super) fn acquire_shards(
+        &mut self,
+        subrequest: AcquireShardsSubrequest,
+    ) -> MetastoreResult<MutationOccurred<AcquireShardsSubresponse>> {
+        let mut mutation_occurred = false;
+        let mut acquired_shards = Vec::with_capacity(subrequest.shard_ids.len());
+
+        for shard_id in subrequest.shard_ids {
+            if let Some(shard) = self.shards.get_mut(&shard_id) {
+                if shard.publish_token.as_ref() != Some(&subrequest.publish_token) {
+                    shard.publish_token = Some(subrequest.publish_token.clone());
+                    mutation_occurred = true;
+                }
+                acquired_shards.push(shard.clone());
+            } else {
+                warn!(
+                    index_id=%self.index_uid.index_id(),
+                    source_id=%self.source_id,
+                    shard_id=%shard_id,
+                    "shard not found"
+                );
+            }
+        }
+        let subresponse = AcquireShardsSubresponse {
+            index_uid: subrequest.index_uid,
+            source_id: subrequest.source_id,
+            acquired_shards,
+        };
+        if mutation_occurred {
+            Ok(MutationOccurred::Yes(subresponse))
+        } else {
+            Ok(MutationOccurred::No(subresponse))
+        }
+    }
+
     pub(super) fn close_shards(
         &mut self,
         subrequest: CloseShardsSubrequest,
@@ -176,7 +212,7 @@ impl Shards {
                 source_id: subrequest.source_id,
                 shard_id: subrequest.shard_id,
                 error_code: Code::NotFound as u32,
-                error_message: "Shard not found.".to_string(),
+                error_message: "shard not found".to_string(),
             };
             return Ok(MutationOccurred::No(Either::Right(failure)));
         };
@@ -289,10 +325,7 @@ impl Shards {
 
         for (partition_id, partition_delta) in checkpoint_delta.iter() {
             let shard_id = partition_id.as_u64().ok_or_else(|| {
-                let message = format!(
-                    "invalid partition ID: expected a 64-bit unsigned integer, got \
-                     `{partition_id}`"
-                );
+                let message = format!("invalid partition ID: expected a u64, got `{partition_id}`");
                 MetastoreError::InvalidArgument { message }
             })?;
             let shard = self.get_shard(shard_id)?;

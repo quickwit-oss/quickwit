@@ -25,21 +25,21 @@ import "quickwit/ingest.proto";
 
 
 service IngesterService {
-    /// Persists batches of documents to primary shards owned by a leader.
+    // Persists batches of documents to primary shards owned by a leader.
     rpc Persist(PersistRequest) returns (PersistResponse);
 
-    /// Opens a replication stream from a leader to a follower.
+    // Opens a replication stream from a leader to a follower.
     rpc OpenReplicationStream(stream SynReplicationMessage) returns (stream AckReplicationMessage);
 
-    /// Streams records from a leader or a follower. The client can optionally specify a range of positions to fetch.
+    // Streams records from a leader or a follower. The client can optionally specify a range of positions to fetch.
     rpc OpenFetchStream(OpenFetchStreamRequest) returns (stream FetchResponseV2);
 
     // rpc OpenWatchStream(OpenWatchStreamRequest) returns (stream WatchMessage);
 
-    /// Pings an ingester to check if it is ready to host shards and serve requests.
+    // Pings an ingester to check if it is ready to host shards and serve requests.
     rpc Ping(PingRequest) returns (PingResponse);
 
-    /// Truncates the shards at the given positions. Callers should this RPC on leaders and they will forward to followers.
+    // Truncates the shards at the given positions. Indexers should call this RPC on leaders, which will replicate the request to followers.
     rpc Truncate(TruncateRequest) returns (TruncateResponse);
 }
 

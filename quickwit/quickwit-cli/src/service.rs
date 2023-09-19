@@ -75,31 +75,31 @@ impl RunCliCommand {
 
     pub async fn execute(&self) -> anyhow::Result<()> {
         debug!(args = ?self, "run-service");
-        let mut config = load_node_config(&self.config_uri).await?;
+        let mut node_config = load_node_config(&self.config_uri).await?;
         let (storage_resolver, metastore_resolver) =
-            get_resolvers(&config.storage_configs, &config.metastore_configs);
+            get_resolvers(&node_config.storage_configs, &node_config.metastore_configs);
         crate::busy_detector::set_enabled(true);
 
         if let Some(services) = &self.services {
             tracing::info!(services = %services.iter().join(", "), "Setting services from override.");
-            config.enabled_services = services.clone();
+            node_config.enabled_services = services.clone();
         }
         let telemetry_handle_opt =
-            quickwit_telemetry::start_telemetry_loop(quickwit_telemetry_info(&config));
+            quickwit_telemetry::start_telemetry_loop(quickwit_telemetry_info(&node_config));
         quickwit_telemetry::send_telemetry_event(TelemetryEvent::RunCommand).await;
         // TODO move in serve quickwit?
         let runtimes_config = RuntimesConfig::default();
-        start_actor_runtimes(runtimes_config, &config.enabled_services)?;
+        start_actor_runtimes(runtimes_config, &node_config.enabled_services)?;
         let shutdown_signal = Box::pin(async move {
             signal::ctrl_c()
                 .await
                 .expect("Registering a signal handler for SIGINT should not fail.");
         });
         let serve_result = serve_quickwit(
-            config,
+            node_config,
             runtimes_config,
-            storage_resolver,
             metastore_resolver,
+            storage_resolver,
             shutdown_signal,
         )
         .await;

@@ -55,10 +55,10 @@ use ulid::Ulid;
 use crate::actors::IndexSerializer;
 use crate::models::{
     CommitTrigger, EmptySplit, IndexedSplitBatchBuilder, IndexedSplitBuilder, NewPublishLock,
-    ProcessedDoc, ProcessedDocBatch, PublishLock,
+    NewPublishToken, ProcessedDoc, ProcessedDocBatch, PublishLock,
 };
 
-// Random partition id used to gather partitions exceeding the maximum number of partitions.
+// Random partition ID used to gather partitions exceeding the maximum number of partitions.
 const OTHER_PARTITION_ID: u64 = 3264326757911759461u64;
 
 #[derive(Debug)]
@@ -85,6 +85,7 @@ struct IndexerState {
     indexing_directory: TempDirectory,
     indexing_settings: IndexingSettings,
     publish_lock: PublishLock,
+    publish_token_opt: Option<PublishToken>,
     schema: Schema,
     tokenizer_manager: TokenizerManager,
     max_num_partitions: NonZeroU32,
@@ -193,6 +194,14 @@ impl IndexerState {
                     .last_delete_opstamp(self.pipeline_id.index_uid.clone()),
             )
             .await?;
+
+        let checkpoint_delta = IndexCheckpointDelta {
+            source_id: self.pipeline_id.source_id.clone(),
+            source_delta: SourceCheckpointDelta::default(),
+        };
+        let publish_lock = self.publish_lock.clone();
+        let publish_token_opt = self.publish_token_opt.clone();
+
         let workbench = IndexingWorkbench {
             workbench_id,
             create_instant: Instant::now(),
@@ -200,13 +209,10 @@ impl IndexerState {
             _indexing_span: indexing_span,
             indexed_splits: FnvHashMap::with_capacity_and_hasher(250, Default::default()),
             other_indexed_split_opt: None,
-            checkpoint_delta: IndexCheckpointDelta {
-                source_id: self.pipeline_id.source_id.clone(),
-                source_delta: SourceCheckpointDelta::default(),
-            },
+            checkpoint_delta,
             indexing_permit,
-            publish_lock: self.publish_lock.clone(),
-            publish_token_opt: None, // TODO: Get publish token from source (next PR)
+            publish_lock,
+            publish_token_opt,
             last_delete_opstamp,
             memory_usage: Byte::from_bytes(0),
         };
@@ -461,6 +467,21 @@ impl Handler<NewPublishLock> for Indexer {
     }
 }
 
+#[async_trait]
+impl Handler<NewPublishToken> for Indexer {
+    type Reply = ();
+
+    async fn handle(
+        &mut self,
+        message: NewPublishToken,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus> {
+        let NewPublishToken(publish_token) = message;
+        self.indexer_state.publish_token_opt = Some(publish_token);
+        Ok(())
+    }
+}
+
 impl Indexer {
     pub fn new(
         pipeline_id: IndexingPipelineId,
@@ -489,6 +510,7 @@ impl Indexer {
                 indexing_directory,
                 indexing_settings,
                 publish_lock: PublishLock::default(),
+                publish_token_opt: None,
                 schema,
                 tokenizer_manager,
                 index_settings,

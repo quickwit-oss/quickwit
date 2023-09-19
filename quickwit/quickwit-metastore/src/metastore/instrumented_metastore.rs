@@ -23,7 +23,11 @@ use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_common::uri::Uri;
 use quickwit_config::{IndexConfig, SourceConfig};
-use quickwit_proto::metastore::{DeleteQuery, DeleteTask, MetastoreResult};
+use quickwit_proto::metastore::{
+    AcquireShardsRequest, AcquireShardsResponse, CloseShardsRequest, CloseShardsResponse,
+    DeleteQuery, DeleteShardsRequest, DeleteShardsResponse, DeleteTask, ListShardsRequest,
+    ListShardsResponse, MetastoreResult, OpenShardsRequest, OpenShardsResponse,
+};
 use quickwit_proto::{IndexUid, PublishToken};
 
 use crate::checkpoint::IndexCheckpointDelta;
@@ -313,6 +317,50 @@ impl Metastore for InstrumentedMetastore {
                 .list_stale_splits(index_uid.clone(), delete_opstamp, num_splits)
                 .await,
             [list_stale_splits, index_uid.index_id()]
+        );
+    }
+
+    async fn open_shards(&self, request: OpenShardsRequest) -> MetastoreResult<OpenShardsResponse> {
+        instrument!(
+            self.underlying.open_shards(request).await,
+            [open_shards, ""]
+        );
+    }
+
+    async fn acquire_shards(
+        &self,
+        request: AcquireShardsRequest,
+    ) -> MetastoreResult<AcquireShardsResponse> {
+        instrument!(
+            self.underlying.acquire_shards(request).await,
+            [acquire_shards, ""]
+        );
+    }
+
+    async fn close_shards(
+        &self,
+        request: CloseShardsRequest,
+    ) -> MetastoreResult<CloseShardsResponse> {
+        instrument!(
+            self.underlying.close_shards(request).await,
+            [close_shards, ""]
+        );
+    }
+
+    async fn list_shards(&self, request: ListShardsRequest) -> MetastoreResult<ListShardsResponse> {
+        instrument!(
+            self.underlying.list_shards(request).await,
+            [list_shards, ""]
+        );
+    }
+
+    async fn delete_shards(
+        &self,
+        request: DeleteShardsRequest,
+    ) -> MetastoreResult<DeleteShardsResponse> {
+        instrument!(
+            self.underlying.delete_shards(request).await,
+            [delete_shards, ""]
         );
     }
 }

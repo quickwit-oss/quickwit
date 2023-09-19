@@ -25,7 +25,10 @@ use quickwit_common::retry::RetryParams;
 use quickwit_common::uri::Uri;
 use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_proto::metastore::{
-    DeleteQuery, DeleteTask, EntityKind, MetastoreError, MetastoreResult,
+    AcquireShardsRequest, AcquireShardsResponse, CloseShardsRequest, CloseShardsResponse,
+    DeleteQuery, DeleteShardsRequest, DeleteShardsResponse, DeleteTask, EntityKind,
+    ListShardsRequest, ListShardsResponse, MetastoreError, MetastoreResult, OpenShardsRequest,
+    OpenShardsResponse,
 };
 use quickwit_proto::{IndexUid, PublishToken};
 
@@ -228,6 +231,41 @@ impl Metastore for RetryTestMetastore {
             Ok(_) => Ok(Vec::new()),
             Err(err) => Err(err),
         }
+    }
+
+    async fn open_shards(
+        &self,
+        _request: OpenShardsRequest,
+    ) -> MetastoreResult<OpenShardsResponse> {
+        self.try_success().map(|_| Default::default())
+    }
+
+    async fn acquire_shards(
+        &self,
+        _request: AcquireShardsRequest,
+    ) -> MetastoreResult<AcquireShardsResponse> {
+        self.try_success().map(|_| Default::default())
+    }
+
+    async fn close_shards(
+        &self,
+        _request: CloseShardsRequest,
+    ) -> MetastoreResult<CloseShardsResponse> {
+        self.try_success().map(|_| Default::default())
+    }
+
+    async fn list_shards(
+        &self,
+        _request: ListShardsRequest,
+    ) -> MetastoreResult<ListShardsResponse> {
+        self.try_success().map(|_| Default::default())
+    }
+
+    async fn delete_shards(
+        &self,
+        _request: DeleteShardsRequest,
+    ) -> MetastoreResult<DeleteShardsResponse> {
+        self.try_success().map(|_| Default::default())
     }
 }
 

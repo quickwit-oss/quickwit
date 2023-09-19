@@ -19,9 +19,9 @@
 
 use heck::ToSnakeCase;
 use proc_macro2::TokenStream;
-use prost_build::{Method, Service, ServiceGenerator};
+use prost_build::{Comments, Method, Service, ServiceGenerator};
 use quote::{quote, ToTokens};
-use syn::Ident;
+use syn::{parse_quote, Ident};
 
 use crate::ProstConfig;
 
@@ -242,6 +242,7 @@ fn generate_all(service: &Service, result_type_path: &str, error_type_path: &str
 struct SynMethod {
     name: Ident,
     proto_name: Ident,
+    comments: Vec<syn::Attribute>,
     request_type: syn::Path,
     response_type: syn::Path,
     client_streaming: bool,
@@ -284,12 +285,14 @@ impl SynMethod {
         for method in methods {
             let name = quote::format_ident!("{}", method.name);
             let proto_name = quote::format_ident!("{}", method.proto_name);
+            let comments = generate_comment_attributes(&method.comments);
             let request_type = syn::parse_str::<syn::Path>(&method.input_type).unwrap();
             let response_type = syn::parse_str::<syn::Path>(&method.output_type).unwrap();
 
             let syn_method = SynMethod {
                 name,
                 proto_name,
+                comments,
                 request_type,
                 response_type,
                 client_streaming: method.client_streaming,
@@ -299,6 +302,19 @@ impl SynMethod {
         }
         syn_methods
     }
+}
+
+fn generate_comment_attributes(comments: &Comments) -> Vec<syn::Attribute> {
+    let mut attributes = Vec::with_capacity(comments.leading.len());
+
+    for comment in &comments.leading {
+        let comment = syn::LitStr::new(comment, proc_macro2::Span::call_site());
+        let attribute: syn::Attribute = parse_quote! {
+            #[doc = #comment]
+        };
+        attributes.push(attribute);
+    }
+    attributes
 }
 
 fn generate_service_trait(context: &CodegenContext) -> TokenStream {
@@ -330,10 +346,12 @@ fn generate_service_trait_methods(context: &CodegenContext) -> TokenStream {
     let mut stream = TokenStream::new();
 
     for syn_method in &context.methods {
+        let comments = &syn_method.comments;
         let method_name = syn_method.name.to_token_stream();
         let request_type = syn_method.request_type(false);
         let response_type = syn_method.response_type(context, false);
         let method = quote! {
+            #(#comments)*
             async fn #method_name(&mut self, request: #request_type) -> #result_type<#response_type>;
         };
         stream.extend(method);

@@ -23,10 +23,10 @@ use std::hash::Hash;
 
 use itertools::Itertools;
 use quickwit_common::rendezvous_hasher::sort_by_rendez_vous_hash;
-use quickwit_config::{SourceConfig, CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID};
+use quickwit_config::{SourceConfig, CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID, INGEST_SOURCE_ID};
 use quickwit_proto::indexing::IndexingTask;
 use quickwit_proto::metastore::SourceType;
-use quickwit_proto::IndexUid;
+use quickwit_proto::{IndexUid, SourceId};
 use serde::Serialize;
 
 use crate::IndexerNodeInfo;
@@ -140,7 +140,7 @@ impl PhysicalIndexingPlan {
 /// task.
 pub(crate) fn build_physical_indexing_plan(
     indexers: &[(String, IndexerNodeInfo)],
-    source_configs: &HashMap<IndexSourceId, SourceConfig>,
+    source_configs: &HashMap<SourceUid, SourceConfig>,
     mut indexing_tasks: Vec<IndexingTask>,
 ) -> PhysicalIndexingPlan {
     // Sort by (index_id, source_id) to make the algorithm deterministic.
@@ -158,7 +158,7 @@ pub(crate) fn build_physical_indexing_plan(
         sort_by_rendez_vous_hash(&mut node_ids, &indexing_task);
         let source_config = source_configs
             // TODO(fmassot): remove this lame allocation to access the source...
-            .get(&IndexSourceId::from(indexing_task.clone()))
+            .get(&SourceUid::from(indexing_task.clone()))
             .expect("SourceConfig should always be present.");
         let candidates = select_node_candidates(&node_ids, &plan, source_config, &indexing_task);
 
@@ -245,12 +245,12 @@ fn compute_node_score(node_id: &str, physical_plan: &PhysicalIndexingPlan) -> f3
 }
 
 #[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
-pub(crate) struct IndexSourceId {
+pub(crate) struct SourceUid {
     pub index_uid: IndexUid,
-    pub source_id: String,
+    pub source_id: SourceId,
 }
 
-impl From<IndexingTask> for IndexSourceId {
+impl From<IndexingTask> for SourceUid {
     fn from(indexing_task: IndexingTask) -> Self {
         Self {
             index_uid: indexing_task.index_uid.into(),
@@ -273,18 +273,18 @@ impl From<IndexingTask> for IndexSourceId {
 /// - Ignore disabled sources, `CLI_INGEST_SOURCE_ID` and files sources (Quickwit is not aware of
 ///   the files locations and thus are ignored).
 pub(crate) fn build_indexing_plan(
-    indexers: &[(String, IndexerNodeInfo)],
-    source_configs: &HashMap<IndexSourceId, SourceConfig>,
+    source_configs: &HashMap<SourceUid, SourceConfig>,
+    num_indexers: usize,
 ) -> Vec<IndexingTask> {
     let mut indexing_tasks: Vec<IndexingTask> = Vec::new();
-    for (index_source_id, source_config) in source_configs
+    for (source_uid, source_config) in source_configs
         .iter()
         .sorted_by(|(left, _), (right, _)| left.cmp(right))
     {
         if !source_config.enabled {
             continue;
         }
-        if source_config.source_id == CLI_INGEST_SOURCE_ID {
+        if [CLI_INGEST_SOURCE_ID, INGEST_SOURCE_ID].contains(&source_config.source_id.as_str()) {
             continue;
         }
         // Ignore file sources as we don't know the file location.
@@ -292,19 +292,19 @@ pub(crate) fn build_indexing_plan(
             continue;
         }
         let num_pipelines = if source_config.source_id == INGEST_API_SOURCE_ID {
-            indexers.len()
+            num_indexers
         } else {
             // The num desired pipelines is constrained by the number of indexer and the maximum
             // of pipelines that can run on each indexer.
             std::cmp::min(
                 source_config.desired_num_pipelines.get(),
-                source_config.max_num_pipelines_per_indexer.get() * indexers.len(),
+                source_config.max_num_pipelines_per_indexer.get() * num_indexers,
             )
         };
         for _ in 0..num_pipelines {
             indexing_tasks.push(IndexingTask {
-                index_uid: index_source_id.index_uid.to_string(),
-                source_id: index_source_id.source_id.clone(),
+                index_uid: source_uid.index_uid.to_string(),
+                source_id: source_uid.source_id.clone(),
                 shard_ids: Vec::new(),
             });
         }
@@ -333,7 +333,7 @@ mod tests {
     use tonic::transport::Endpoint;
     use tower::timeout::Timeout;
 
-    use super::{build_physical_indexing_plan, IndexSourceId};
+    use super::{build_physical_indexing_plan, SourceUid};
     use crate::indexing_plan::build_indexing_plan;
     use crate::IndexerNodeInfo;
 
@@ -372,7 +372,7 @@ mod tests {
 
     fn count_indexing_tasks_count_for_test(
         num_indexers: usize,
-        source_configs: &HashMap<IndexSourceId, SourceConfig>,
+        source_configs: &HashMap<SourceUid, SourceConfig>,
     ) -> usize {
         source_configs
             .iter()
@@ -389,7 +389,7 @@ mod tests {
     async fn test_build_indexing_plan_one_source() {
         let indexers = cluster_members_for_test(4, QuickwitService::Indexer).await;
         let mut source_configs_map = HashMap::new();
-        let index_source_id = IndexSourceId {
+        let index_source_id = SourceUid {
             index_uid: "one-source-index:11111111111111111111111111"
                 .to_string()
                 .into(),
@@ -408,7 +408,7 @@ mod tests {
             },
         );
 
-        let indexing_tasks = build_indexing_plan(&indexers, &source_configs_map);
+        let indexing_tasks = build_indexing_plan(&source_configs_map, indexers.len());
 
         assert_eq!(indexing_tasks.len(), 3);
         for indexing_task in indexing_tasks {
@@ -427,7 +427,7 @@ mod tests {
     async fn test_build_indexing_plan_with_ingest_api_source() {
         let indexers = cluster_members_for_test(4, QuickwitService::Indexer).await;
         let mut source_configs_map = HashMap::new();
-        let index_source_id = IndexSourceId {
+        let index_source_id = SourceUid {
             index_uid: "ingest-api-index:11111111111111111111111111"
                 .to_string()
                 .into(),
@@ -446,7 +446,7 @@ mod tests {
             },
         );
 
-        let indexing_tasks = build_indexing_plan(&indexers, &source_configs_map);
+        let indexing_tasks = build_indexing_plan(&source_configs_map, indexers.len());
 
         assert_eq!(indexing_tasks.len(), 4);
         for indexing_task in indexing_tasks {
@@ -465,19 +465,19 @@ mod tests {
     async fn test_build_indexing_plan_with_sources_to_ignore() {
         let indexers = cluster_members_for_test(4, QuickwitService::Indexer).await;
         let mut source_configs_map = HashMap::new();
-        let file_index_source_id = IndexSourceId {
+        let file_index_source_id = SourceUid {
             index_uid: "one-source-index:11111111111111111111111111"
                 .to_string()
                 .into(),
             source_id: "file-source".to_string(),
         };
-        let cli_ingest_index_source_id = IndexSourceId {
+        let cli_ingest_index_source_id = SourceUid {
             index_uid: "second-source-index:11111111111111111111111111"
                 .to_string()
                 .into(),
             source_id: CLI_INGEST_SOURCE_ID.to_string(),
         };
-        let kafka_index_source_id = IndexSourceId {
+        let kafka_index_source_id = SourceUid {
             index_uid: "third-source-index:11111111111111111111111111"
                 .to_string()
                 .into(),
@@ -519,7 +519,7 @@ mod tests {
                 input_format: SourceInputFormat::Json,
             },
         );
-        let indexing_tasks = build_indexing_plan(&indexers, &source_configs_map);
+        let indexing_tasks = build_indexing_plan(&source_configs_map, indexers.len());
 
         assert_eq!(indexing_tasks.len(), 0);
     }
@@ -534,11 +534,11 @@ mod tests {
         let index_2 = "2";
         let source_2 = "0";
         let mut source_configs_map = HashMap::new();
-        let kafka_index_source_id_1 = IndexSourceId {
+        let kafka_index_source_id_1 = SourceUid {
             index_uid: IndexUid::from_parts(index_1, "11111111111111111111111111"),
             source_id: source_1.to_string(),
         };
-        let kafka_index_source_id_2 = IndexSourceId {
+        let kafka_index_source_id_2 = SourceUid {
             index_uid: IndexUid::from_parts(index_2, "11111111111111111111111111"),
             source_id: source_2.to_string(),
         };
@@ -628,7 +628,7 @@ mod tests {
         let index_1 = "test-indexing-plan-1";
         let source_1 = "source-1";
         let mut source_configs_map = HashMap::new();
-        let kafka_index_source_id_1 = IndexSourceId {
+        let kafka_index_source_id_1 = SourceUid {
             index_uid: IndexUid::from_parts(index_1, "11111111111111111111111111"),
             source_id: source_1.to_string(),
         };
@@ -672,13 +672,13 @@ mod tests {
             let mut indexers = tokio::runtime::Runtime::new().unwrap().block_on(
                 cluster_members_for_test(num_indexers, QuickwitService::Indexer)
             );
-            let source_configs: HashMap<IndexSourceId, SourceConfig> = index_id_sources
+            let source_configs: HashMap<SourceUid, SourceConfig> = index_id_sources
                 .into_iter()
                 .map(|(index_uid, source_config)| {
-                    (IndexSourceId { index_uid: index_uid.into(), source_id: source_config.source_id.to_string(), }, source_config)
+                    (SourceUid { index_uid: index_uid.into(), source_id: source_config.source_id.to_string(), }, source_config)
                 })
                 .collect();
-            let mut indexing_tasks = build_indexing_plan(&indexers, &source_configs);
+            let mut indexing_tasks = build_indexing_plan(&source_configs, indexers.len());
             let num_indexing_tasks = indexing_tasks.len();
             assert_eq!(indexing_tasks.len(), count_indexing_tasks_count_for_test(indexers.len(), &source_configs));
             let physical_indexing_plan = build_physical_indexing_plan(&indexers, &source_configs, indexing_tasks.clone());

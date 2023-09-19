@@ -36,13 +36,15 @@ use quickwit_common::temp_dir;
 use quickwit_config::{
     build_doc_mapper, IndexConfig, IndexerConfig, SourceConfig, INGEST_API_SOURCE_ID,
 };
-use quickwit_ingest::{DropQueueRequest, IngestApiService, ListQueuesRequest, QUEUES_DIR_NAME};
+use quickwit_ingest::{
+    DropQueueRequest, IngestApiService, IngesterPool, ListQueuesRequest, QUEUES_DIR_NAME,
+};
 use quickwit_metastore::{IndexMetadata, ListIndexesQuery, Metastore};
 use quickwit_proto::indexing::{
     ApplyIndexingPlanRequest, ApplyIndexingPlanResponse, IndexingError, IndexingPipelineId,
     IndexingTask,
 };
-use quickwit_proto::IndexUid;
+use quickwit_proto::{IndexId, IndexUid};
 use quickwit_storage::StorageResolver;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Semaphore;
@@ -51,6 +53,7 @@ use tracing::{debug, error, info, warn};
 use super::merge_pipeline::{MergePipeline, MergePipelineParams};
 use super::MergePlanner;
 use crate::models::{DetachIndexingPipeline, DetachMergePipeline, ObservePipeline, SpawnPipeline};
+use crate::source::{AssignShards, Assignment};
 use crate::split_store::{LocalSplitStore, SplitStoreQuota};
 use crate::{IndexingPipeline, IndexingPipelineParams, IndexingSplitStore, IndexingStatistics};
 
@@ -94,8 +97,10 @@ pub struct IndexingService {
     cluster: Cluster,
     metastore: Arc<dyn Metastore>,
     ingest_api_service_opt: Option<Mailbox<IngestApiService>>,
+    ingester_pool: IngesterPool,
     storage_resolver: StorageResolver,
-    indexing_pipeline_handles: HashMap<IndexingPipelineId, ActorHandle<IndexingPipeline>>,
+    indexing_pipelines:
+        HashMap<IndexingPipelineId, (Mailbox<IndexingPipeline>, ActorHandle<IndexingPipeline>)>,
     counters: IndexingServiceCounters,
     local_split_store: Arc<LocalSplitStore>,
     max_concurrent_split_uploads: usize,
@@ -124,6 +129,7 @@ impl IndexingService {
         cluster: Cluster,
         metastore: Arc<dyn Metastore>,
         ingest_api_service_opt: Option<Mailbox<IngestApiService>>,
+        ingester_pool: IngesterPool,
         storage_resolver: StorageResolver,
     ) -> anyhow::Result<IndexingService> {
         let split_store_space_quota = SplitStoreQuota::new(
@@ -148,9 +154,10 @@ impl IndexingService {
             cluster,
             metastore,
             ingest_api_service_opt,
+            ingester_pool,
             storage_resolver,
             local_split_store: Arc::new(local_split_store),
-            indexing_pipeline_handles: Default::default(),
+            indexing_pipelines: Default::default(),
             counters: Default::default(),
             max_concurrent_split_uploads: indexer_config.max_concurrent_split_uploads,
             merge_pipeline_handles: HashMap::new(),
@@ -162,8 +169,8 @@ impl IndexingService {
         &mut self,
         pipeline_id: &IndexingPipelineId,
     ) -> Result<ActorHandle<IndexingPipeline>, IndexingError> {
-        let pipeline_handle = self
-            .indexing_pipeline_handles
+        let (_pipeline_mailbox, pipeline_handle) = self
+            .indexing_pipelines
             .remove(pipeline_id)
             .ok_or_else(|| IndexingError::MissingPipeline {
                 index_id: pipeline_id.index_uid.index_id().to_string(),
@@ -192,8 +199,8 @@ impl IndexingService {
         &mut self,
         pipeline_id: &IndexingPipelineId,
     ) -> Result<Observation<IndexingStatistics>, IndexingError> {
-        let pipeline_handle = self
-            .indexing_pipeline_handles
+        let (_pipeline_mailbox, pipeline_handle) = self
+            .indexing_pipelines
             .get(pipeline_id)
             .ok_or_else(|| IndexingError::MissingPipeline {
                 index_id: pipeline_id.index_uid.index_id().to_string(),
@@ -206,7 +213,7 @@ impl IndexingService {
     async fn spawn_pipeline(
         &mut self,
         ctx: &ActorContext<Self>,
-        index_id: String,
+        index_id: IndexId,
         source_config: SourceConfig,
         pipeline_ord: usize,
     ) -> Result<IndexingPipelineId, IndexingError> {
@@ -230,7 +237,7 @@ impl IndexingService {
         index_config: IndexConfig,
         source_config: SourceConfig,
     ) -> Result<(), IndexingError> {
-        if self.indexing_pipeline_handles.contains_key(&pipeline_id) {
+        if self.indexing_pipelines.contains_key(&pipeline_id) {
             return Err(IndexingError::PipelineAlreadyExists {
                 index_id: pipeline_id.index_uid.index_id().to_string(),
                 source_id: pipeline_id.source_id,
@@ -281,24 +288,28 @@ impl IndexingService {
             (self.max_concurrent_split_uploads - max_concurrent_split_uploads_index).max(1);
         let pipeline_params = IndexingPipelineParams {
             pipeline_id: pipeline_id.clone(),
-            doc_mapper,
-            indexing_settings: index_config.indexing_settings.clone(),
-            source_config,
-            indexing_directory,
             metastore: self.metastore.clone(),
             storage,
+            // Indexing-related parameters
+            doc_mapper,
+            indexing_directory,
+            indexing_settings: index_config.indexing_settings.clone(),
             split_store,
-            merge_policy,
             max_concurrent_split_uploads_index,
-            max_concurrent_split_uploads_merge,
-            queues_dir_path: self.queue_dir_path.clone(),
             cooperative_indexing_permits: self.cooperative_indexing_permits.clone(),
+            // Merge-related parameters
+            merge_policy,
+            max_concurrent_split_uploads_merge,
             merge_planner_mailbox,
+            // Source-related parameters
+            source_config,
+            ingester_pool: self.ingester_pool.clone(),
+            queues_dir_path: self.queue_dir_path.clone(),
         };
         let pipeline = IndexingPipeline::new(pipeline_params);
-        let (_pipeline_mailbox, pipeline_handle) = ctx.spawn_actor().spawn(pipeline);
-        self.indexing_pipeline_handles
-            .insert(pipeline_id, pipeline_handle);
+        let (pipeline_mailbox, pipeline_handle) = ctx.spawn_actor().spawn(pipeline);
+        self.indexing_pipelines
+            .insert(pipeline_id, (pipeline_mailbox, pipeline_handle));
         self.counters.num_running_pipelines += 1;
         Ok(())
     }
@@ -318,9 +329,9 @@ impl IndexingService {
     }
 
     async fn handle_supervise(&mut self) -> Result<(), ActorExitStatus> {
-        self.indexing_pipeline_handles
-            .retain(
-                |pipeline_id, pipeline_handle| match pipeline_handle.state() {
+        self.indexing_pipelines
+            .retain(|pipeline_id, (_pipeline_mailbox, pipeline_handle)| {
+                match pipeline_handle.state() {
                     ActorState::Idle | ActorState::Paused | ActorState::Processing => true,
                     ActorState::Success => {
                         info!(
@@ -346,11 +357,11 @@ impl IndexingService {
                         self.counters.num_running_pipelines -= 1;
                         false
                     }
-                },
-            );
+                }
+            });
         // Evict and kill merge pipelines that are not needed.
         let needed_merge_pipeline_ids: HashSet<MergePipelineId> = self
-            .indexing_pipeline_handles
+            .indexing_pipelines
             .keys()
             .map(MergePipelineId::from)
             .collect();
@@ -420,7 +431,7 @@ impl IndexingService {
     ) -> Result<ApplyIndexingPlanResponse, IndexingError> {
         let mut updated_pipeline_ids: HashSet<IndexingPipelineId> = HashSet::new();
         let mut pipeline_ordinals: HashMap<&IndexingTask, usize> = HashMap::new();
-        for indexing_task in physical_indexing_plan_request.indexing_tasks.iter() {
+        for indexing_task in &physical_indexing_plan_request.indexing_tasks {
             let pipeline_ord = pipeline_ordinals.entry(indexing_task).or_insert(0);
             let pipeline_id = IndexingPipelineId {
                 node_id: self.node_id.clone(),
@@ -433,7 +444,7 @@ impl IndexingService {
         }
 
         let running_pipeline_ids: HashSet<IndexingPipelineId> =
-            self.indexing_pipeline_handles.keys().cloned().collect();
+            self.indexing_pipelines.keys().cloned().collect();
 
         // Spawn new pipeline in the new plan that are not currently running
         let failed_spawning_pipeline_ids = self
@@ -445,6 +456,31 @@ impl IndexingService {
             )
             .await?;
 
+        // TODO: Temporary hack to assign shards to pipelines.
+        for indexing_task in &physical_indexing_plan_request.indexing_tasks {
+            if indexing_task.shard_ids.is_empty() {
+                continue;
+            }
+            let pipeline_id = IndexingPipelineId {
+                node_id: self.node_id.clone(),
+                index_uid: indexing_task.index_uid.clone().into(),
+                source_id: indexing_task.source_id.clone(),
+                pipeline_ord: 0,
+            };
+            let Some((pipeline_mailbox, _pipeline_handle)) =
+                self.indexing_pipelines.get(&pipeline_id)
+            else {
+                continue;
+            };
+            let assignment = Assignment {
+                shard_ids: indexing_task.shard_ids.clone(),
+            };
+            let message = AssignShards(assignment);
+
+            if let Err(error) = pipeline_mailbox.send_message(message).await {
+                error!("failed to assign shards to indexing pipeline: {}", error);
+            }
+        }
         // Shut down currently running pipelines that are missing in the new plan.
         self.shutdown_pipelines(
             running_pipeline_ids
@@ -486,8 +522,6 @@ impl IndexingService {
 
         // Add new pipelines.
         for new_pipeline_id in added_pipeline_ids {
-            info!(pipeline_id=?new_pipeline_id, "Spawning indexing pipeline.");
-
             if let Some(index_metadata) =
                 indexes_metadata_by_index_id.get(&new_pipeline_id.index_uid)
             {
@@ -560,7 +594,7 @@ impl IndexingService {
     /// Updates running indexing tasks in chitchat cluster state.
     async fn update_cluster_running_indexing_tasks(&self) {
         let indexing_tasks = self
-            .indexing_pipeline_handles
+            .indexing_pipelines
             .keys()
             .map(|pipeline_id| IndexingTask {
                 index_uid: pipeline_id.index_uid.to_string(),
@@ -789,6 +823,7 @@ mod tests {
             cluster,
             metastore,
             Some(ingest_api_service),
+            IngesterPool::default(),
             storage_resolver.clone(),
         )
         .await
@@ -1191,6 +1226,7 @@ mod tests {
             cluster.clone(),
             metastore.clone(),
             Some(ingest_api_service),
+            IngesterPool::default(),
             storage_resolver.clone(),
         )
         .await
@@ -1258,9 +1294,10 @@ mod tests {
             _ctx: &ActorContext<Self>,
         ) -> Result<Self::Reply, ActorExitStatus> {
             Ok(self
-                .indexing_pipeline_handles
+                .indexing_pipelines
                 .get(&message.0)
                 .unwrap()
+                .1
                 .check_health(true))
         }
     }
@@ -1371,6 +1408,7 @@ mod tests {
             cluster.clone(),
             metastore.clone(),
             Some(ingest_api_service.clone()),
+            IngesterPool::default(),
             storage_resolver.clone(),
         )
         .await

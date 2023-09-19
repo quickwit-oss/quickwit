@@ -32,7 +32,7 @@ use quickwit_config::{
     SourceConfig, SourceInputFormat, SourceParams, VecSourceParams,
 };
 use quickwit_doc_mapper::DocMapper;
-use quickwit_ingest::{init_ingest_api, QUEUES_DIR_NAME};
+use quickwit_ingest::{init_ingest_api, IngesterPool, QUEUES_DIR_NAME};
 use quickwit_metastore::{Metastore, MetastoreResolver, Split, SplitMetadata, SplitState};
 use quickwit_proto::IndexUid;
 use quickwit_storage::{Storage, StorageResolver};
@@ -111,6 +111,7 @@ impl TestSandbox {
             cluster,
             metastore.clone(),
             Some(ingest_api_service),
+            IngesterPool::default(),
             storage_resolver.clone(),
         )
         .await?;
