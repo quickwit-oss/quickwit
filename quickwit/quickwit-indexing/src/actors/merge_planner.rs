@@ -78,7 +78,7 @@ impl Actor for MergePlanner {
 
     async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
         self.handle(RefreshMetric, ctx).await?;
-        self.send_merge_ops(ctx).await?;
+        let _ = ctx.try_send_self_message(PlanMerge);
         Ok(())
     }
 }
