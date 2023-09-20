@@ -31,3 +31,19 @@ json:
   query:
     exists: payload.size
 status_code: 400
+---
+# This test what happens on nested stuff.
+# This is broken on Quickwit at the moment.
+# See #3858
+json:
+  query:
+    exists:
+      engines:
+        - elasticsearch
+      field:
+        payload
+expected:
+  hits:
+    total:
+      value:  60
+
