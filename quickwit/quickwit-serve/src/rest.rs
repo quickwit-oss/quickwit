@@ -111,9 +111,7 @@ pub(crate) async fn start_rest_server(
             quickwit_services.index_manager.clone(),
             quickwit_services.node_config.clone(),
         ))
-        .or(delete_task_api_handlers(
-            quickwit_services.metastore_client.clone(),
-        ))
+        .or(delete_task_api_handlers(quickwit_services.metastore()))
         .or(elastic_api_handlers(
             quickwit_services.node_config.clone(),
             quickwit_services.search_service.clone(),

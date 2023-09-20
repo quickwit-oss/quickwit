@@ -37,7 +37,7 @@ use quickwit_proto::tonic::transport::Server;
 use tracing::*;
 
 use crate::search_api::GrpcSearchAdapter;
-use crate::QuickwitServices;
+use crate::{QuickwitServices, RemoteOrLocalMetastore};
 
 /// Starts and binds gRPC services to `grpc_listen_addr`.
 pub(crate) async fn start_grpc_server(
@@ -50,13 +50,15 @@ pub(crate) async fn start_grpc_server(
     let mut server = Server::builder();
 
     // Mount gRPC metastore service if `QuickwitService::Metastore` is enabled on node.
-    let metastore_grpc_service = if let Some(metastore_server) = &services.metastore_server_opt {
-        enabled_grpc_services.insert("metastore");
-        let grpc_metastore_adapter = GrpcMetastoreAdapter::from(metastore_server.clone());
-        Some(MetastoreServiceServer::new(grpc_metastore_adapter))
-    } else {
-        None
-    };
+    let metastore_grpc_service =
+        if let RemoteOrLocalMetastore::Local(metastore_server) = &services.metastore {
+            enabled_grpc_services.insert("metastore");
+            let grpc_metastore_adapter = GrpcMetastoreAdapter::from(metastore_server.clone());
+            Some(MetastoreServiceServer::new(grpc_metastore_adapter))
+        } else {
+            None
+        };
+
     // Mount gRPC indexing service if `QuickwitService::Indexer` is enabled on node.
     let indexing_grpc_service = if services.services.contains(&QuickwitService::Indexer) {
         if let Some(indexing_service) = services.indexing_service_opt.clone() {

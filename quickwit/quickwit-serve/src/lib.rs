@@ -45,7 +45,6 @@ use std::num::NonZeroUsize;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::anyhow;
 use byte_unit::n_mib_bytes;
 pub use format::BodyFormat;
 use futures::{Stream, StreamExt};
@@ -108,12 +107,26 @@ const READINESS_REPORTING_INTERVAL: Duration = if cfg!(any(test, feature = "test
     Duration::from_secs(10)
 };
 
+#[derive(Clone)]
+pub(crate) enum RemoteOrLocalMetastore {
+    Remote(Arc<dyn Metastore>),
+    Local(Arc<dyn Metastore>),
+}
+
+impl AsRef<Arc<dyn Metastore>> for RemoteOrLocalMetastore {
+    fn as_ref(&self) -> &Arc<dyn Metastore> {
+        match self {
+            RemoteOrLocalMetastore::Remote(metastore) => metastore,
+            RemoteOrLocalMetastore::Local(metastore) => metastore,
+        }
+    }
+}
+
 struct QuickwitServices {
     pub node_config: Arc<NodeConfig>,
     pub services: HashSet<QuickwitService>,
     pub cluster: Cluster,
-    pub metastore_server_opt: Option<Arc<dyn Metastore>>,
-    pub metastore_client: Arc<dyn Metastore>,
+    metastore: RemoteOrLocalMetastore,
     pub control_plane_service: ControlPlaneServiceClient,
     #[allow(dead_code)]
     /// The control plane listens to metastore events.
@@ -132,6 +145,12 @@ struct QuickwitServices {
     /// It is only used to serve the rest API calls and will only execute
     /// the root requests.
     pub search_service: Arc<dyn SearchService>,
+}
+
+impl QuickwitServices {
+    pub fn metastore(&self) -> Arc<dyn Metastore> {
+        self.metastore.as_ref().clone()
+    }
 }
 
 fn has_node_with_metastore_service(members: &[ClusterMember]) -> bool {
@@ -161,6 +180,48 @@ async fn balance_channel_for_service(
     BalanceChannel::from_stream(service_change_stream)
 }
 
+async fn create_metastore_remote_client(cluster: &Cluster) -> anyhow::Result<Arc<dyn Metastore>> {
+    // Wait for a metastore service to be available for at most 10 seconds.
+    if cluster
+        .wait_for_ready_members(has_node_with_metastore_service, Duration::from_secs(10))
+        .await
+        .is_err()
+    {
+        error!("No metastore service found among cluster members, stopping server.");
+        anyhow::bail!(
+            "failed to start server: no metastore service was found among cluster members. try \
+             running Quickwit with additional metastore service `quickwit run --service metastore`"
+        );
+    }
+    let balance_channel = balance_channel_for_service(cluster, QuickwitService::Metastore).await;
+    let grpc_metastore_client = MetastoreGrpcClient::from_balance_channel(balance_channel).await?;
+    let metastore_client = RetryingMetastore::new(Box::new(grpc_metastore_client));
+    Ok(Arc::new(metastore_client))
+}
+
+async fn get_local_or_remote_metastore(
+    node_config: &NodeConfig,
+    metastore_resolver: &MetastoreResolver,
+    cluster: &Cluster,
+    event_broker: &EventBroker,
+) -> anyhow::Result<RemoteOrLocalMetastore> {
+    if node_config
+        .enabled_services
+        .contains(&QuickwitService::Metastore)
+    {
+        // Instantiate a metastore "server" if the `metastore` role is enabled on the node.
+        let metastore = metastore_resolver
+            .resolve(&node_config.metastore_uri)
+            .await?;
+        let wrapped_metastore = MetastoreEventPublisher::new(metastore, event_broker.clone());
+        Ok(RemoteOrLocalMetastore::Local(Arc::new(wrapped_metastore)))
+    } else {
+        // Otherwise connect to the cluster.
+        let metastore = create_metastore_remote_client(cluster).await?;
+        Ok(RemoteOrLocalMetastore::Remote(metastore))
+    }
+}
+
 pub async fn serve_quickwit(
     node_config: NodeConfig,
     runtimes_config: RuntimesConfig,
@@ -176,42 +237,9 @@ pub async fn serve_quickwit(
     let universe = Universe::new();
 
     // Instantiate a metastore "server" if the `metastore` role is enabled on the node.
-    let metastore_server_opt: Option<Arc<dyn Metastore>> = if node_config
-        .enabled_services
-        .contains(&QuickwitService::Metastore)
-    {
-        let metastore = metastore_resolver
-            .resolve(&node_config.metastore_uri)
+    let metastore =
+        get_local_or_remote_metastore(&node_config, &metastore_resolver, &cluster, &event_broker)
             .await?;
-        let metastore = MetastoreEventPublisher::new(metastore.clone(), event_broker.clone());
-        Some(Arc::new(metastore))
-    } else {
-        None
-    };
-    // Instantiate a metastore client, either local if available or remote otherwise.
-    let metastore_client: Arc<dyn Metastore> = if let Some(metastore_server) = &metastore_server_opt
-    {
-        metastore_server.clone()
-    } else {
-        // Wait for a metastore service to be available for at most 10 seconds.
-        cluster
-            .wait_for_ready_members(has_node_with_metastore_service, Duration::from_secs(10))
-            .await
-            .map_err(|_| {
-                error!("No metastore service found among cluster members, stopping server.");
-                anyhow!(
-                    "failed to start server: no metastore service was found among cluster \
-                     members. try running Quickwit with additional metastore service `quickwit \
-                     run --service metastore`"
-                )
-            })?;
-        let balance_channel =
-            balance_channel_for_service(&cluster, QuickwitService::Metastore).await;
-        let grpc_metastore_client =
-            MetastoreGrpcClient::from_balance_channel(balance_channel).await?;
-        let metastore_client = RetryingMetastore::new(Box::new(grpc_metastore_client));
-        Arc::new(metastore_client)
-    };
 
     // Instantiate a control plane server if the `control-plane` role is enabled on the node.
     // Otherwise, instantiate a control plane client.
@@ -222,7 +250,7 @@ pub async fn serve_quickwit(
         check_cluster_configuration(
             &node_config.enabled_services,
             &node_config.peer_seeds,
-            metastore_client.clone(),
+            metastore.as_ref().clone(),
         )
         .await?;
 
@@ -240,7 +268,7 @@ pub async fn serve_quickwit(
             self_node_id,
             indexer_pool.clone(),
             ingester_pool.clone(),
-            metastore_client.clone(),
+            metastore.as_ref().clone(),
             replication_factor,
         )
         .await?;
@@ -260,7 +288,7 @@ pub async fn serve_quickwit(
     // Set up the "control plane proxy" for the metastore.
     let metastore_client: Arc<dyn Metastore> = Arc::new(ControlPlaneMetastore::new(
         control_plane_service.clone(),
-        metastore_client.clone(),
+        metastore.as_ref().clone(),
     ));
 
     // Setup ingest service v1.
@@ -391,8 +419,7 @@ pub async fn serve_quickwit(
         node_config: Arc::new(node_config),
         services,
         cluster: cluster.clone(),
-        metastore_server_opt,
-        metastore_client: metastore_client.clone(),
+        metastore,
         control_plane_service,
         control_plane_event_subscription_handles_opt,
         index_manager,
