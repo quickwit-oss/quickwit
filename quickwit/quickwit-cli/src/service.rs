@@ -125,10 +125,7 @@ fn quickwit_telemetry_info(config: &NodeConfig) -> QuickwitTelemetryInfo {
         features.insert(QuickwitFeature::Jaeger);
     }
     // The metastore URI is only relevant if the metastore is enabled.
-    if config
-        .enabled_services
-        .contains(&QuickwitService::Metastore)
-    {
+    if config.is_service_enabled(QuickwitService::Metastore) {
         if config.metastore_uri.protocol().is_postgresql() {
             features.insert(QuickwitFeature::PostgresqMetastore);
         } else {
