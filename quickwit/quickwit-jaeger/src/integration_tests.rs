@@ -24,6 +24,7 @@ use std::time::Duration;
 
 use quickwit_actors::{ActorHandle, Mailbox, Universe};
 use quickwit_cluster::{create_cluster_for_test, ChannelTransport, Cluster};
+use quickwit_common::pubsub::EventBroker;
 use quickwit_common::uri::Uri;
 use quickwit_config::{IndexerConfig, IngestApiConfig, JaegerConfig, SearcherConfig, SourceConfig};
 use quickwit_indexing::models::SpawnPipeline;
@@ -51,7 +52,8 @@ use quickwit_proto::opentelemetry::proto::trace::v1::{
     ResourceSpans, ScopeSpans, Span as OtlpSpan, Status as OtlpStatus,
 };
 use quickwit_search::{
-    start_searcher_service, SearchJobPlacer, SearchService, SearchServiceClient, SearcherPool,
+    start_searcher_service, SearchJobPlacer, SearchService, SearchServiceClient, SearcherContext,
+    SearcherPool,
 };
 use quickwit_storage::StorageResolver;
 use tempfile::TempDir;
@@ -352,6 +354,7 @@ async fn indexer_for_test(
         Some(ingester_service),
         ingester_pool,
         storage_resolver,
+        EventBroker::default(),
     )
     .await
     .unwrap();
@@ -366,11 +369,12 @@ async fn searcher_for_test(
     let searcher_config = SearcherConfig::default();
     let searcher_pool = SearcherPool::default();
     let search_job_placer = SearchJobPlacer::new(searcher_pool.clone());
+    let searcher_context = Arc::new(SearcherContext::new(searcher_config, None));
     let searcher_service = start_searcher_service(
-        searcher_config,
         metastore,
         storage_resolver,
         search_job_placer,
+        searcher_context,
     )
     .await
     .unwrap();

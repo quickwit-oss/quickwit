@@ -39,6 +39,14 @@ dyn_clone::clone_trait_object!(<E> EventSubscriber<E>);
 
 type EventSubscriptions<E> = HashMap<usize, EventSubscription<E>>;
 
+/// The event broker makes it possible to
+/// - emit specific local events
+/// - subscribe to these local events
+/// The event broker is not distributed in itself. Only events emitted
+/// locally will be received by the subscribers.
+///
+/// It is however possible to locally subscribe a handler to a kind of event,
+/// that will in turn run a RPC to other nodes.
 #[derive(Debug, Clone, Default)]
 pub struct EventBroker {
     inner: Arc<InnerEventBroker>,

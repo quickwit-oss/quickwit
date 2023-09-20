@@ -27,6 +27,7 @@ use anyhow::Context;
 #[cfg(any(test, feature = "testsuite"))]
 use byte_unit::Byte;
 use quickwit_common::io::{IoControls, IoControlsAccess};
+use quickwit_common::uri::Uri;
 use quickwit_metastore::SplitMetadata;
 use quickwit_storage::{PutPayload, Storage, StorageResult};
 use tantivy::directory::MmapDirectory;
@@ -64,7 +65,6 @@ pub struct IndexingSplitStore {
 struct InnerIndexingSplitStore {
     /// The remote storage.
     remote_storage: Arc<dyn Storage>,
-
     local_split_store: Arc<LocalSplitStore>,
 }
 
@@ -96,7 +96,7 @@ impl IndexingSplitStore {
 
     /// Helper function to create a indexing split store for tests.
     /// The resulting store does not have any local cache.
-    pub fn create_without_local_store(remote_storage: Arc<dyn Storage>) -> Self {
+    pub fn create_without_local_store_for_test(remote_storage: Arc<dyn Storage>) -> Self {
         let inner = InnerIndexingSplitStore {
             remote_storage,
             local_split_store: Arc::new(LocalSplitStore::no_caching()),
@@ -104,6 +104,14 @@ impl IndexingSplitStore {
         IndexingSplitStore {
             inner: Arc::new(inner),
         }
+    }
+
+    pub fn remote_uri(&self) -> &Uri {
+        self.inner.remote_storage.uri()
+    }
+
+    fn split_path(&self, split_id: &str) -> PathBuf {
+        PathBuf::from(quickwit_common::split_file(split_id))
     }
 
     /// Stores a split.
@@ -125,7 +133,7 @@ impl IndexingSplitStore {
         let start = Instant::now();
         let split_num_bytes = put_payload.len();
 
-        let key = PathBuf::from(quickwit_common::split_file(split.split_id()));
+        let key = self.split_path(split.split_id());
         let is_mature = split.is_mature(OffsetDateTime::now_utc());
         self.inner
             .remote_storage
@@ -175,7 +183,6 @@ impl IndexingSplitStore {
     /// The output_path is expected to be a directory path.
     ///
     /// If not, it will be fetched from the remote `Storage`.
-    ///
     ///
     /// # Implementation detail:
     ///

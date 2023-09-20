@@ -48,6 +48,7 @@ fn test_runtime_singleton() -> &'static Runtime {
     })
 }
 
+#[cfg(feature = "testsuite")]
 async fn run_s3_storage_test_suite(s3_storage_config: S3StorageConfig, bucket_uri: &str) {
     setup_logging_for_tests();
 

@@ -25,6 +25,7 @@ use bytes::Bytes;
 use chitchat::transport::ChannelTransport;
 use quickwit_actors::{Mailbox, Universe};
 use quickwit_cluster::create_cluster_for_test;
+use quickwit_common::pubsub::EventBroker;
 use quickwit_common::rand::append_random_suffix;
 use quickwit_common::uri::Uri;
 use quickwit_config::{
@@ -71,7 +72,7 @@ impl TestSandbox {
         doc_mapping_yaml: &str,
         indexing_settings_yaml: &str,
         search_fields: &[&str],
-    ) -> anyhow::Result<Self> {
+    ) -> anyhow::Result<TestSandbox> {
         let node_id = append_random_suffix("test-node");
         let transport = ChannelTransport::default();
         let cluster = create_cluster_for_test(Vec::new(), &["indexer"], &transport, true)
@@ -113,6 +114,7 @@ impl TestSandbox {
             Some(ingest_api_service),
             IngesterPool::default(),
             storage_resolver.clone(),
+            EventBroker::default(),
         )
         .await?;
         let (indexing_service, _indexing_service_handle) =

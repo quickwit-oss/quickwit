@@ -974,16 +974,17 @@ async fn test_search_util(test_sandbox: &TestSandbox, query: &str) -> Vec<u32> {
         .into_iter()
         .map(|split_meta| extract_split_and_footer_offsets(&split_meta.split_metadata))
         .collect();
-    let request = SearchRequest {
+    let request = Arc::new(SearchRequest {
         index_id_patterns: vec![test_sandbox.index_uid().index_id().to_string()],
         query_ast: qast_json_helper(query, &[]),
         max_hits: 100,
         ..Default::default()
-    };
-    let searcher_context = Arc::new(SearcherContext::new(SearcherConfig::default()));
+    });
+    let searcher_context: Arc<SearcherContext> =
+        Arc::new(SearcherContext::new(SearcherConfig::default(), None));
     let search_response = leaf_search(
         searcher_context,
-        &request,
+        request,
         test_sandbox.storage(),
         &splits_offsets,
         test_sandbox.doc_mapper(),
@@ -1605,7 +1606,7 @@ async fn test_single_node_list_terms() -> anyhow::Result<()> {
         .into_iter()
         .map(|split_meta| extract_split_and_footer_offsets(&split_meta.split_metadata))
         .collect();
-    let searcher_context = Arc::new(SearcherContext::new(SearcherConfig::default()));
+    let searcher_context = Arc::new(SearcherContext::new(SearcherConfig::default(), None));
 
     {
         let request = ListTermsRequest {
