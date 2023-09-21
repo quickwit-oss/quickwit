@@ -19,7 +19,6 @@
 
 use std::env;
 
-use crate::QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY;
 use anyhow::Context;
 use opentelemetry::sdk::propagation::TraceContextPropagator;
 use opentelemetry::sdk::trace::BatchConfig;
@@ -32,6 +31,10 @@ use tracing_subscriber::fmt::time::UtcTime;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::EnvFilter;
 
+use crate::QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY;
+#[cfg(feature = "tokio-console")]
+use crate::QW_ENABLE_TOKIO_CONSOLE_ENV_KEY;
+
 pub fn setup_logging_and_tracing(
     level: Level,
     ansi: bool,
@@ -39,7 +42,7 @@ pub fn setup_logging_and_tracing(
 ) -> anyhow::Result<()> {
     #[cfg(feature = "tokio-console")]
     {
-        if std::env::var_os(quickwit_cli::QW_ENABLE_TOKIO_CONSOLE_ENV_KEY).is_some() {
+        if std::env::var_os(QW_ENABLE_TOKIO_CONSOLE_ENV_KEY).is_some() {
             console_subscriber::init();
             return Ok(());
         }

@@ -18,7 +18,6 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use colored::Colorize;
-
 use opentelemetry::global;
 use quickwit_cli::busy_detector;
 use quickwit_cli::checklist::RED_COLOR;
