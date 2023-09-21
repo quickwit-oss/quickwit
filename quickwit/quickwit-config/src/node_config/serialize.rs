@@ -506,6 +506,7 @@ mod tests {
                 partial_request_cache_capacity: Byte::from_str("64M").unwrap(),
                 max_num_concurrent_split_searches: 150,
                 max_num_concurrent_split_streams: 120,
+                split_cache: None,
             }
         );
         assert_eq!(

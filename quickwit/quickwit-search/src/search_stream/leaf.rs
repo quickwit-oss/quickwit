@@ -450,7 +450,6 @@ mod tests {
     use std::str::from_utf8;
 
     use itertools::Itertools;
-    use quickwit_config::SearcherConfig;
     use quickwit_indexing::TestSandbox;
     use quickwit_query::query_ast::qast_json_helper;
     use serde_json::json;
@@ -505,7 +504,7 @@ mod tests {
             .into_iter()
             .map(|split_meta| extract_split_and_footer_offsets(&split_meta.split_metadata))
             .collect();
-        let searcher_context = Arc::new(SearcherContext::new(SearcherConfig::default()));
+        let searcher_context = Arc::new(SearcherContext::for_test());
         let mut single_node_stream = leaf_search_stream(
             searcher_context,
             request,
@@ -581,7 +580,7 @@ mod tests {
             .into_iter()
             .map(|split_meta| extract_split_and_footer_offsets(&split_meta.split_metadata))
             .collect();
-        let searcher_context = Arc::new(SearcherContext::new(SearcherConfig::default()));
+        let searcher_context = Arc::new(SearcherContext::for_test());
         let mut single_node_stream = leaf_search_stream(
             searcher_context,
             request,
@@ -636,7 +635,7 @@ mod tests {
             .into_iter()
             .map(|split_meta| extract_split_and_footer_offsets(&split_meta.split_metadata))
             .collect();
-        let searcher_context = Arc::new(SearcherContext::new(SearcherConfig::default()));
+        let searcher_context = Arc::new(SearcherContext::for_test());
         let mut single_node_stream = leaf_search_stream(
             searcher_context,
             request,
@@ -724,7 +723,7 @@ mod tests {
             .into_iter()
             .map(|split_meta| extract_split_and_footer_offsets(&split_meta.split_metadata))
             .collect();
-        let searcher_context = Arc::new(SearcherContext::new(SearcherConfig::default()));
+        let searcher_context = Arc::new(SearcherContext::for_test());
         let mut single_node_stream = leaf_search_stream(
             searcher_context,
             request,

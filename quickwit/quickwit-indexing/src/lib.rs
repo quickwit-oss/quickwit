@@ -23,6 +23,7 @@ use std::sync::Arc;
 
 use quickwit_actors::{Mailbox, Universe};
 use quickwit_cluster::Cluster;
+use quickwit_common::pubsub::EventBroker;
 use quickwit_config::NodeConfig;
 use quickwit_ingest::{IngestApiService, IngesterPool};
 use quickwit_metastore::Metastore;
@@ -72,6 +73,7 @@ pub async fn start_indexing_service(
     ingest_api_service: Mailbox<IngestApiService>,
     ingester_pool: IngesterPool,
     storage_resolver: StorageResolver,
+    event_broker: EventBroker,
 ) -> anyhow::Result<Mailbox<IndexingService>> {
     info!("Starting indexer service.");
 
@@ -86,6 +88,7 @@ pub async fn start_indexing_service(
         Some(ingest_api_service),
         ingester_pool,
         storage_resolver,
+        event_broker,
     )
     .await?;
     let (indexing_service, _) = universe.spawn_builder().spawn(indexing_service);

@@ -49,11 +49,13 @@ mod payload;
 mod prefix_storage;
 mod ram_storage;
 mod split;
+mod split_cache;
 mod storage_factory;
 mod storage_resolver;
 mod versioned_component;
 
 use quickwit_common::uri::Uri;
+pub use split_cache::SplitCache;
 pub use tantivy::directory::OwnedBytes;
 pub use versioned_component::VersionedComponent;
 
@@ -61,8 +63,7 @@ pub use self::bundle_storage::{BundleStorage, BundleStorageFileOffsets};
 #[cfg(any(test, feature = "testsuite"))]
 pub use self::cache::MockStorageCache;
 pub use self::cache::{
-    wrap_storage_with_long_term_cache, ByteRangeCache, MemorySizedCache, QuickwitCache,
-    StorageCache,
+    wrap_storage_with_cache, ByteRangeCache, MemorySizedCache, QuickwitCache, StorageCache,
 };
 pub use self::local_file_storage::{LocalFileStorage, LocalFileStorageFactory};
 #[cfg(feature = "azure")]

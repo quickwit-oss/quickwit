@@ -22,6 +22,7 @@
 use std::sync::Arc;
 
 use quickwit_actors::{Mailbox, Universe};
+use quickwit_common::pubsub::EventBroker;
 use quickwit_config::NodeConfig;
 use quickwit_metastore::{Metastore, SplitInfo};
 use quickwit_search::SearchJobPlacer;
@@ -49,6 +50,7 @@ pub async fn start_janitor_service(
     metastore: Arc<dyn Metastore>,
     search_job_placer: SearchJobPlacer,
     storage_resolver: StorageResolver,
+    event_broker: EventBroker,
 ) -> anyhow::Result<Mailbox<JanitorService>> {
     info!("Starting janitor service.");
     let garbage_collector = GarbageCollector::new(metastore.clone(), storage_resolver.clone());
@@ -63,6 +65,7 @@ pub async fn start_janitor_service(
         storage_resolver,
         config.data_dir_path.clone(),
         config.indexer_config.max_concurrent_split_uploads,
+        event_broker,
     )
     .await?;
     let (_, delete_task_service_handle) = universe.spawn_builder().spawn(delete_task_service);

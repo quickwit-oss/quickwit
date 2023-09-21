@@ -24,7 +24,7 @@ use std::hash::{Hash, Hasher};
 /// Computes the affinity of a node for a given `key`.
 /// A higher value means a higher affinity.
 /// This is the `rendezvous hash`.
-fn node_affinity<T: Hash, U: Hash>(node: T, key: &U) -> u64 {
+pub fn node_affinity<T: Hash, U: Hash>(node: T, key: &U) -> u64 {
     let mut state = DefaultHasher::new();
     key.hash(&mut state);
     node.hash(&mut state);
