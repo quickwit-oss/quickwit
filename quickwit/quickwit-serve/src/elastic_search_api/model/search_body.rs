@@ -28,7 +28,25 @@ use serde::{Deserialize, Deserializer, Serialize};
 use crate::elastic_search_api::model::{default_elasticsearch_sort_order, SortField};
 use crate::elastic_search_api::TrackTotalHits;
 
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(untagged)]
+enum FieldSortParamsForDeser {
+    // we can't just use FieldSortParams or we get infinite recursion on deser
+    Object { order: Option<SortOrder> },
+    String(SortOrder),
+}
+
+impl From<FieldSortParamsForDeser> for FieldSortParams {
+    fn from(for_deser: FieldSortParamsForDeser) -> FieldSortParams {
+        match for_deser {
+            FieldSortParamsForDeser::Object { order } => FieldSortParams { order },
+            FieldSortParamsForDeser::String(order) => FieldSortParams { order: Some(order) },
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(from = "FieldSortParamsForDeser")]
 struct FieldSortParams {
     #[serde(default)]
     pub order: Option<SortOrder>,
