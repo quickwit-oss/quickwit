@@ -156,6 +156,7 @@ mod tests {
             "sort": [
                 { "timestamp": { "order": "desc" } },
                 { "uid": { "order": "asc" } },
+                { "my_field": "asc" },
                 { "hello": {}},
                 { "_score": {}}
             ]
@@ -163,15 +164,17 @@ mod tests {
         "#;
         let search_body: super::SearchBody = serde_json::from_str(json).unwrap();
         let sort_fields = search_body.sort.unwrap();
-        assert_eq!(sort_fields.len(), 4);
+        assert_eq!(sort_fields.len(), 5);
         assert_eq!(sort_fields[0].field, "timestamp");
         assert_eq!(sort_fields[0].order, SortOrder::Desc);
         assert_eq!(sort_fields[1].field, "uid");
         assert_eq!(sort_fields[1].order, SortOrder::Asc);
-        assert_eq!(sort_fields[2].field, "hello");
+        assert_eq!(sort_fields[2].field, "my_field");
         assert_eq!(sort_fields[2].order, SortOrder::Asc);
-        assert_eq!(sort_fields[3].field, "_score");
-        assert_eq!(sort_fields[3].order, SortOrder::Desc);
+        assert_eq!(sort_fields[3].field, "hello");
+        assert_eq!(sort_fields[3].order, SortOrder::Asc);
+        assert_eq!(sort_fields[4].field, "_score");
+        assert_eq!(sort_fields[4].order, SortOrder::Desc);
     }
 
     #[test]
