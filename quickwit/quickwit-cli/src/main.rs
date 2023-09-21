@@ -17,95 +17,15 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::env;
-
-use anyhow::Context;
 use colored::Colorize;
-use opentelemetry::sdk::propagation::TraceContextPropagator;
-use opentelemetry::sdk::trace::BatchConfig;
-use opentelemetry::sdk::{trace, Resource};
-use opentelemetry::{global, KeyValue};
-use opentelemetry_otlp::WithExportConfig;
+use opentelemetry::global;
+use quickwit_cli::busy_detector;
 use quickwit_cli::checklist::RED_COLOR;
 use quickwit_cli::cli::{build_cli, CliCommand};
 #[cfg(feature = "jemalloc")]
 use quickwit_cli::jemalloc::start_jemalloc_metrics_loop;
-use quickwit_cli::{busy_detector, QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY};
+use quickwit_cli::logger::setup_logging_and_tracing;
 use quickwit_serve::BuildInfo;
-use tracing::Level;
-use tracing_subscriber::fmt::time::UtcTime;
-use tracing_subscriber::prelude::*;
-use tracing_subscriber::EnvFilter;
-
-fn setup_logging_and_tracing(
-    level: Level,
-    ansi: bool,
-    build_info: &BuildInfo,
-) -> anyhow::Result<()> {
-    #[cfg(feature = "tokio-console")]
-    {
-        if std::env::var_os(quickwit_cli::QW_ENABLE_TOKIO_CONSOLE_ENV_KEY).is_some() {
-            console_subscriber::init();
-            return Ok(());
-        }
-    }
-    let env_filter = env::var("RUST_LOG")
-        .map(|_| EnvFilter::from_default_env())
-        .or_else(|_| EnvFilter::try_new(format!("quickwit={level}")))
-        .context("failed to set up tracing env filter")?;
-    global::set_text_map_propagator(TraceContextPropagator::new());
-    let registry = tracing_subscriber::registry().with(env_filter);
-    let event_format = tracing_subscriber::fmt::format()
-        .with_target(true)
-        .with_timer(
-            // We do not rely on the Rfc3339 implementation, because it has a nanosecond precision.
-            // See discussion here: https://github.com/time-rs/time/discussions/418
-            UtcTime::new(
-                time::format_description::parse(
-                    "[year]-[month]-[day]T[hour]:[minute]:[second].[subsecond digits:3]Z",
-                )
-                .expect("time format invalid"),
-            ),
-        );
-    // Note on disabling ANSI characters: setting the ansi boolean on event format is insufficient.
-    // It is thus set on layers, see https://github.com/tokio-rs/tracing/issues/1817
-    if std::env::var_os(QW_ENABLE_OPENTELEMETRY_OTLP_EXPORTER_ENV_KEY).is_some() {
-        let otlp_exporter = opentelemetry_otlp::new_exporter().tonic().with_env();
-        // In debug mode, Quickwit can generate a lot of spans, and the default queue size of 2048
-        // is too small.
-        let batch_config = BatchConfig::default().with_max_queue_size(32768);
-        let trace_config = trace::config().with_resource(Resource::new([
-            KeyValue::new("service.name", "quickwit"),
-            KeyValue::new("service.version", build_info.version.clone()),
-        ]));
-        let tracer = opentelemetry_otlp::new_pipeline()
-            .tracing()
-            .with_exporter(otlp_exporter)
-            .with_trace_config(trace_config)
-            .with_batch_config(batch_config)
-            .install_batch(opentelemetry::runtime::Tokio)
-            .context("failed to initialize OpenTelemetry OTLP exporter")?;
-        registry
-            .with(tracing_opentelemetry::layer().with_tracer(tracer))
-            .with(
-                tracing_subscriber::fmt::layer()
-                    .event_format(event_format)
-                    .with_ansi(ansi),
-            )
-            .try_init()
-            .context("failed to set up tracing")?;
-    } else {
-        registry
-            .with(
-                tracing_subscriber::fmt::layer()
-                    .event_format(event_format)
-                    .with_ansi(ansi),
-            )
-            .try_init()
-            .context("failed to set up tracing")?;
-    }
-    Ok(())
-}
 
 fn main() -> anyhow::Result<()> {
     tokio::runtime::Builder::new_multi_thread()
