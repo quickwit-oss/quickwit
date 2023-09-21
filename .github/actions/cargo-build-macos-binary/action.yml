@@ -25,11 +25,9 @@ runs:
     - name: Install protoc
       run: brew install protobuf
       shell: bash
-    - uses: actions-rs/toolchain@v1
-      with:
-        toolchain: stable
-        targets: ${{ inputs.target }}
-        override: true
+    - name: Install rustup
+      shell: bash
+      run: curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain none -y
     - name: Add target aarch64-apple-darwin
       if: "${{ inputs.target == 'aarch64-apple-darwin' }}"
       run: rustup target add aarch64-apple-darwin
