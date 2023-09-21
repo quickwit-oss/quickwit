@@ -28,6 +28,9 @@ use ulid::Ulid;
 
 type LastAccessDate = u64;
 
+/// Maximum number of splits to track.
+const MAX_NUM_CANDIDATES: usize = 1_000;
+
 #[derive(Clone, Copy)]
 pub(crate) struct SplitKey {
     pub last_accessed: LastAccessDate,
@@ -213,7 +216,11 @@ impl SplitTable {
     /// Keep this method private.
     fn insert(&mut self, split_info: SplitInfo) {
         let was_not_in_queue = match split_info.status {
-            Status::Candidate { .. } => self.candidate_splits.insert(split_info.split_key),
+            Status::Candidate { .. } => {
+                let was_not_in_queue = self.candidate_splits.insert(split_info.split_key);
+                self.truncate_candidate_list();
+                was_not_in_queue
+            }
             Status::Downloading { .. } => self.downloading_splits.insert(split_info.split_key),
             Status::OnDisk { num_bytes } => {
                 self.on_disk_bytes += num_bytes;
@@ -312,6 +319,14 @@ impl SplitTable {
         });
     }
 
+    /// Make sure we have at most `MAX_CANDIDATES` candidate splits.
+    fn truncate_candidate_list(&mut self) {
+        while self.candidate_splits.len() > MAX_NUM_CANDIDATES {
+            let worst_candidate = self.candidate_splits.first().unwrap().split_ulid;
+            self.remove(worst_candidate);
+        }
+    }
+
     pub(crate) fn register_as_downloaded(&mut self, split_ulid: Ulid, num_bytes: u64) {
         self.change_split_status(split_ulid, Status::OnDisk { num_bytes });
     }
@@ -361,7 +376,7 @@ impl SplitTable {
     ///
     /// Returns `None` if this would mean evicting splits that
     /// have been accessed more recently than the candidate split.
-    fn make_room_for_split_if_necessary(
+    pub(crate) fn make_room_for_split_if_necessary(
         &mut self,
         last_access_date: LastAccessDate,
     ) -> Option<Vec<Ulid>> {
@@ -613,5 +628,25 @@ mod tests {
 
         let candidate2 = split_table.start_download(split_ulid).unwrap();
         assert_eq!(candidate2.split_ulid, split_ulid);
+    }
+
+    #[test]
+    fn test_split_table_truncate_candidates() {
+        let mut split_table = SplitTable::with_limits_and_existing_splits(
+            SplitCacheLimits {
+                max_num_bytes: Byte::from_bytes(10_000_000),
+                max_num_splits: NonZeroU32::new(5).unwrap(),
+                num_concurrent_downloads: NonZeroU32::new(1).unwrap(),
+            },
+            Default::default(),
+        );
+        for i in 1..2_000 {
+            let split_ulid = Ulid::new();
+            split_table.report(split_ulid, Uri::for_test(TEST_STORAGE_URI));
+            assert_eq!(
+                split_table.candidate_splits.len(),
+                i.min(super::MAX_NUM_CANDIDATES)
+            );
+        }
     }
 }

@@ -34,10 +34,10 @@ use quickwit_common::uri::Uri;
 use quickwit_config::SplitCacheLimits;
 use quickwit_proto::search::ReportSplit;
 use tantivy::directory::OwnedBytes;
-use tracing::{error, warn};
+use tracing::{error, info, warn};
 use ulid::Ulid;
 
-use crate::split_cache::download_task::spawn_download_task;
+use crate::split_cache::download_task::{delete_evicted_splits, spawn_download_task};
 use crate::split_cache::split_table::{SplitGuard, SplitTable};
 use crate::{wrap_storage_with_cache, Storage, StorageCache};
 
@@ -94,20 +94,30 @@ impl SplitCache {
                 }
             }
         }
-        let split_table = Arc::new(Mutex::new(SplitTable::with_limits_and_existing_splits(
-            limits,
-            existing_splits,
-        )));
+        let mut split_table = SplitTable::with_limits_and_existing_splits(limits, existing_splits);
+
+        // In case of a setting change, it could be useful to evict some splits on startup.
+        let splits_to_remove_opt = split_table.make_room_for_split_if_necessary(u64::MAX);
+        let root_path_clone = root_path.clone();
+        if let Some(splits_to_remove) = splits_to_remove_opt {
+            info!(
+                num_splits = splits_to_remove.len(),
+                "Evicting splits from the searcher cache. Has the node configuration changed?"
+            );
+            delete_evicted_splits(&root_path_clone, &splits_to_remove[..]);
+        }
+        let split_table_arc = Arc::new(Mutex::new(split_table));
+
         spawn_download_task(
             root_path.clone(),
-            split_table.clone(),
+            split_table_arc.clone(),
             storage_resolver,
             limits.num_concurrent_downloads,
         );
 
         Ok(SplitCache {
             root_path,
-            split_table,
+            split_table: split_table_arc,
         })
     }
 

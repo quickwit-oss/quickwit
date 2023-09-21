@@ -36,10 +36,10 @@ use crate::StorageResolver;
 /// At this point, the disk space is already accounted as released,
 /// so the error could result in a "disk space leak".
 #[instrument]
-async fn delete_evicted_splits(root_path: &Path, splits_to_delete: &[Ulid]) {
+pub(crate) fn delete_evicted_splits(root_path: &Path, splits_to_delete: &[Ulid]) {
     for &split_to_delete in splits_to_delete {
         let split_file_path = root_path.join(split_file(split_to_delete));
-        if let Err(_io_err) = tokio::fs::remove_file(&split_file_path).await {
+        if let Err(_io_err) = std::fs::remove_file(&split_file_path) {
             // This is an pretty critical error. The split size is not tracked anymore at this
             // point.
             error!(path=%split_file_path.display(), "Failed to remove split file from cache directory. This is critical as the file is now not taken in account in the cache size limits.");
@@ -78,7 +78,12 @@ async fn perform_eviction_and_download(
         split_to_download,
     } = download_opportunity;
     let split_ulid = split_to_download.split_ulid;
-    delete_evicted_splits(&root_path, &splits_to_delete[..]).await;
+    // tokio io runs on `spawn_blocking` threads anyway.
+    let root_path_clone = root_path.clone();
+    let _ = tokio::task::spawn_blocking(move || {
+        delete_evicted_splits(&root_path_clone, &splits_to_delete[..]);
+    })
+    .await;
     let num_bytes = download_split(&root_path, &split_to_download, storage_resolver).await?;
     let mut shared_split_table_lock = shared_split_table.lock().unwrap();
     shared_split_table_lock.register_as_downloaded(split_ulid, num_bytes);
