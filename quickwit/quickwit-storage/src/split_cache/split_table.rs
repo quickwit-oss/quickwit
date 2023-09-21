@@ -340,7 +340,7 @@ impl SplitTable {
     }
 
     fn is_out_of_limits(&self) -> bool {
-        if self.candidate_splits.is_empty() {
+        if self.on_disk_splits.is_empty() {
             return false;
         }
         if self.on_disk_splits.len() + self.downloading_splits.len()

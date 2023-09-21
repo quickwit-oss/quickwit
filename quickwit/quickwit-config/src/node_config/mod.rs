@@ -111,6 +111,7 @@ impl Default for IndexerConfig {
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct SplitCacheLimits {
     pub max_num_bytes: Byte,
     #[serde(default = "SplitCacheLimits::default_max_num_splits")]

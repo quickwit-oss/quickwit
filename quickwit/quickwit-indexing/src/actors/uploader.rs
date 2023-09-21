@@ -979,7 +979,7 @@ mod tests {
                         uncompressed_docs_size_in_bytes: 1_000,
                         num_docs: 10,
                         replaced_split_ids: Vec::new(),
-                        split_id: "split_ulid_str".to_string(),
+                        split_id: SPLIT_ULID_STR.to_string(),
                         delete_opstamp: 10,
                         num_merge_ops: 0,
                     },

@@ -24,7 +24,7 @@ use std::time::Duration;
 
 use quickwit_common::split_file;
 use tokio::sync::{OwnedSemaphorePermit, Semaphore};
-use tracing::error;
+use tracing::{error, instrument};
 use ulid::Ulid;
 
 use crate::split_cache::split_table::{CandidateSplit, DownloadOpportunity, SplitTable};
@@ -35,9 +35,10 @@ use crate::StorageResolver;
 ///
 /// At this point, the disk space is already accounted as released,
 /// so the error could result in a "disk space leak".
+#[instrument]
 async fn delete_evicted_splits(root_path: &Path, splits_to_delete: &[Ulid]) {
     for &split_to_delete in splits_to_delete {
-        let split_file_path = root_path.join(split_to_delete.to_string());
+        let split_file_path = root_path.join(split_file(split_to_delete));
         if let Err(_io_err) = tokio::fs::remove_file(&split_file_path).await {
             // This is an pretty critical error. The split size is not tracked anymore at this
             // point.
@@ -65,7 +66,7 @@ async fn download_split(
     Ok(num_bytes)
 }
 
-async fn perform_download(
+async fn perform_eviction_and_download(
     download_opportunity: DownloadOpportunity,
     root_path: PathBuf,
     storage_resolver: StorageResolver,
@@ -99,7 +100,7 @@ pub(crate) fn spawn_download_task(
                 .unwrap()
                 .find_download_opportunity();
             if let Some(download_opportunity) = download_opportunity_opt {
-                tokio::task::spawn(perform_download(
+                tokio::task::spawn(perform_eviction_and_download(
                     download_opportunity,
                     root_path.clone(),
                     storage_resolver.clone(),
