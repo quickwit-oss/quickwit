@@ -27,10 +27,10 @@ runs:
       shell: bash
     - name: Install rustup
       shell: bash
-      run: |
-        curl https://sh.rustup.rs -sSf | sh -s -- -y
-        rustup target add ${{ inputs.target }}
-        rustup override set stable-${{ inputs.target }}
+      run: curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain none -y
+    - name: Configure rustup
+      shell: bash
+      run: rustup override set stable-${{ inputs.target }}
     - name: Add target aarch64-apple-darwin
       if: "${{ inputs.target == 'aarch64-apple-darwin' }}"
       run: rustup target add aarch64-apple-darwin
