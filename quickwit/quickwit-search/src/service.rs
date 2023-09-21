@@ -146,7 +146,6 @@ impl SearchServiceImpl {
         cluster_client: ClusterClient,
         searcher_context: Arc<SearcherContext>,
     ) -> Self {
-        // let searcher_context = Arc::new(SearcherContext::new(searcher_config));
         SearchServiceImpl {
             metastore,
             storage_resolver,

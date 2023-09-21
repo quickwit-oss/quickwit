@@ -74,18 +74,15 @@ impl EventSubscriber<ReportSplitsRequest> for SearchJobPlacer {
         let mut splits_per_node: HashMap<SocketAddr, Vec<ReportSplit>> =
             HashMap::with_capacity(nodes.len().min(evt.report_splits.len()));
         for report_split in evt.report_splits {
-            let Some(node_addr) = nodes
+            let node_addr = nodes
                 .keys()
                 .max_by_key(|node_addr| node_affinity(*node_addr, &report_split.split_id))
-            else {
                 // This actually never happens thanks to the if-condition at the
                 // top of this function.
-                return;
-            };
+                .expect("`nodes` should not be empty.");
             splits_per_node
                 .entry(*node_addr)
-                .or_insert_with(Default::default)
-                .push(report_split);
+                .or_default();
         }
         for (node_addr, report_splits) in splits_per_node {
             if let Some(search_client) = nodes.get_mut(&node_addr) {

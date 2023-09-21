@@ -84,8 +84,8 @@ use quickwit_proto::metastore::events::{
     AddSourceEvent, DeleteIndexEvent, DeleteSourceEvent, ToggleSourceEvent,
 };
 use quickwit_proto::metastore::{EntityKind, MetastoreError};
-use quickwit_proto::NodeId;
 use quickwit_proto::search::ReportSplitsRequest;
+use quickwit_proto::NodeId;
 use quickwit_search::{
     create_search_client_from_channel, start_searcher_service, SearchJobPlacer, SearchService,
     SearchServiceClient, SearcherContext, SearcherPool,
