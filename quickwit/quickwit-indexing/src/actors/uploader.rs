@@ -329,8 +329,6 @@ impl Handler<PackagedSplitBatch> for Uploader {
                     report_splits.push(ReportSplit {
                         storage_uri: split_store.remote_uri().to_string(),
                         split_id: packaged_split.split_id().to_string(),
-                        num_merge_ops: split_metadata.num_merge_ops as u32,
-                        len: split_metadata.footer_offsets.end,
                     });
 
                     split_metadata_list.push(split_metadata);
@@ -481,8 +479,10 @@ async fn upload_split(
 #[cfg(test)]
 mod tests {
     use std::path::PathBuf;
+    use std::time::Duration;
 
     use quickwit_actors::{ObservationType, Universe};
+    use quickwit_common::pubsub::EventSubscriber;
     use quickwit_common::temp_dir::TempDirectory;
     use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
     use quickwit_metastore::MockMetastore;
@@ -901,6 +901,112 @@ mod tests {
         assert!(replaced_split_ids.is_empty());
         let files = ram_storage.list_files().await;
         assert!(files.is_empty());
+        universe.assert_quit().await;
+        Ok(())
+    }
+
+    #[derive(Clone)]
+    struct ReportSplitListener {
+        report_splits_tx: flume::Sender<ReportSplitsRequest>,
+    }
+
+    impl std::fmt::Debug for ReportSplitListener {
+        fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
+            f.debug_struct("ReportSplitListener").finish()
+        }
+    }
+
+    #[async_trait]
+    impl EventSubscriber<ReportSplitsRequest> for ReportSplitListener {
+        async fn handle_event(&mut self, event: ReportSplitsRequest) {
+            self.report_splits_tx.send(event).unwrap();
+        }
+    }
+
+    #[tokio::test]
+    async fn test_uploader_notifies_event_broker() -> anyhow::Result<()> {
+        quickwit_common::setup_logging_for_tests();
+        const SPLIT_ULID_STR: &str = "01HAV29D4XY3D462FS3D8K5Q2H";
+        let event_broker = EventBroker::default();
+        let (report_splits_tx, report_splits_rx) = flume::unbounded();
+        let report_splits_listener = ReportSplitListener { report_splits_tx };
+
+        // we need to keep the handle alive.
+        let _subscribe_handle = event_broker.subscribe(report_splits_listener);
+
+        let universe = Universe::new();
+        let pipeline_id = IndexingPipelineId {
+            index_uid: IndexUid::new("test-index"),
+            source_id: "test-source".to_string(),
+            node_id: "test-node".to_string(),
+            pipeline_ord: 0,
+        };
+        let mut mock_metastore = MockMetastore::default();
+        mock_metastore
+            .expect_stage_splits()
+            .times(1)
+            .returning(|_, _| Ok(()));
+        let ram_storage = RamStorage::default();
+        let split_store =
+            IndexingSplitStore::create_without_local_store_for_test(Arc::new(ram_storage.clone()));
+        let merge_policy = Arc::new(NopMergePolicy);
+        let (publisher_mailbox, _publisher_inbox) = universe.create_test_mailbox();
+        let uploader = Uploader::new(
+            UploaderType::IndexUploader,
+            Arc::new(mock_metastore),
+            merge_policy,
+            split_store,
+            SplitsUpdateMailbox::Publisher(publisher_mailbox),
+            4,
+            event_broker,
+        );
+        let (uploader_mailbox, uploader_handle) = universe.spawn_builder().spawn(uploader);
+        let split_scratch_directory = TempDirectory::for_test();
+        let checkpoint_delta_opt: Option<IndexCheckpointDelta> = Some(IndexCheckpointDelta {
+            source_id: "test-source".to_string(),
+            source_delta: SourceCheckpointDelta::from_range(3..15),
+        });
+        uploader_mailbox
+            .send_message(PackagedSplitBatch::new(
+                vec![PackagedSplit {
+                    split_attrs: SplitAttrs {
+                        partition_id: 3u64,
+                        pipeline_id,
+                        time_range: Some(
+                            DateTime::from_timestamp_secs(1_628_203_589)
+                                ..=DateTime::from_timestamp_secs(1_628_203_640),
+                        ),
+                        uncompressed_docs_size_in_bytes: 1_000,
+                        num_docs: 10,
+                        replaced_split_ids: Vec::new(),
+                        split_id: "split_ulid_str".to_string(),
+                        delete_opstamp: 10,
+                        num_merge_ops: 0,
+                    },
+                    split_scratch_directory,
+                    tags: Default::default(),
+                    hotcache_bytes: Vec::new(),
+                    split_files: Vec::new(),
+                }],
+                checkpoint_delta_opt,
+                PublishLock::default(),
+                None,
+                None,
+                Span::none(),
+            ))
+            .await?;
+        assert_eq!(
+            uploader_handle.process_pending_and_observe().await.obs_type,
+            ObservationType::Alive
+        );
+        mem::drop(uploader_mailbox);
+        let report_splits: ReportSplitsRequest = report_splits_rx
+            .recv_timeout(Duration::from_secs(1))
+            .unwrap();
+        assert_eq!(report_splits.report_splits.len(), 1);
+        let split = &report_splits.report_splits[0];
+        assert_eq!(split.storage_uri, "ram:///");
+        assert_eq!(split.split_id, SPLIT_ULID_STR);
         universe.assert_quit().await;
         Ok(())
     }

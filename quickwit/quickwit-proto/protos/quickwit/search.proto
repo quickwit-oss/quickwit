@@ -99,10 +99,10 @@ message GetKVResponse {
 
 
 message ReportSplit {
-    string storage_uri = 1;
+    // Split id (ULID format `01HAV29D4XY3D462FS3D8K5Q2H`)
     string split_id = 2;
-    uint64 len = 3;
-    uint32 num_merge_ops = 4;
+    // The storage uri. This URI does NOT include the split id.
+    string storage_uri = 1;
 }
 
 message ReportSplitsRequest {

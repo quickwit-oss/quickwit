@@ -42,14 +42,12 @@ pub struct GetKvResponse {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ReportSplit {
-    #[prost(string, tag = "1")]
-    pub storage_uri: ::prost::alloc::string::String,
+    /// Split id (ULID format `01HAV29D4XY3D462FS3D8K5Q2H`)
     #[prost(string, tag = "2")]
     pub split_id: ::prost::alloc::string::String,
-    #[prost(uint64, tag = "3")]
-    pub len: u64,
-    #[prost(uint32, tag = "4")]
-    pub num_merge_ops: u32,
+    /// The storage uri. This URI does NOT include the split id.
+    #[prost(string, tag = "1")]
+    pub storage_uri: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]

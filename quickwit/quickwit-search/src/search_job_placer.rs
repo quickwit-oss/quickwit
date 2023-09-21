@@ -80,9 +80,7 @@ impl EventSubscriber<ReportSplitsRequest> for SearchJobPlacer {
                 // This actually never happens thanks to the if-condition at the
                 // top of this function.
                 .expect("`nodes` should not be empty.");
-            splits_per_node
-                .entry(*node_addr)
-                .or_default();
+            splits_per_node.entry(*node_addr).or_default();
         }
         for (node_addr, report_splits) in splits_per_node {
             if let Some(search_client) = nodes.get_mut(&node_addr) {
