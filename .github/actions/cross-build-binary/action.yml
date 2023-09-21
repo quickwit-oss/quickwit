@@ -27,7 +27,7 @@ runs:
       run: curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain none -y
     - name: Configure rustup
       shell: bash
-      run: rustup override set stable-${{ inputs.target }}
+      run: rustup override set stable
     - name: Install cross
       run: cargo install cross
       shell: bash
