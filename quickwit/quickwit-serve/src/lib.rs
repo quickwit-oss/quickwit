@@ -372,7 +372,7 @@ pub async fn serve_quickwit(
                 storage_resolver.clone(),
                 split_cache_config,
             )
-            .context("Failed to load split cache.")?;
+            .context("failed to load searcher split cache")?;
             Some(Arc::new(split_cache))
         } else {
             None

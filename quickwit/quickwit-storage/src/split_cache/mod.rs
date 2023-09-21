@@ -48,7 +48,7 @@ pub struct SplitCache {
     // Directory containing the cached split files.
     // Split ids are universally unique, so we all put them in the same directory.
     root_path: PathBuf,
-    // In memory structures, listing the splits we know about regardless
+    // In memory structure, listing the splits we know about regardless
     // of whether they are in cache, being downloaded, or just available for download.
     split_table: Arc<Mutex<SplitTable>>,
 }
