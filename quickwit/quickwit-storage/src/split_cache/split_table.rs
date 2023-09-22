@@ -20,7 +20,7 @@
 use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::{Arc, Weak};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use quickwit_common::uri::Uri;
 use quickwit_config::SplitCacheLimits;
@@ -30,6 +30,9 @@ type LastAccessDate = u64;
 
 /// Maximum number of splits to track.
 const MAX_NUM_CANDIDATES: usize = 1_000;
+
+/// Splits that are freshly reported get a last access time of `now - NEWLY_REPORT_SPLIT_LAST_TIME`.
+const NEWLY_REPORTED_SPLIT_LAST_TIME: Duration = Duration::from_secs(60 * 10); // 10mn
 
 #[derive(Clone, Copy)]
 pub(crate) struct SplitKey {
@@ -103,7 +106,7 @@ pub struct SplitTable {
     downloading_splits: BTreeSet<SplitKey>,
     candidate_splits: BTreeSet<SplitKey>,
     split_to_status: HashMap<Ulid, SplitInfo>,
-    start_time: Instant,
+    origin_time: Instant,
     limits: SplitCacheLimits,
     on_disk_bytes: u64,
 }
@@ -113,12 +116,13 @@ impl SplitTable {
         limits: SplitCacheLimits,
         existing_filepaths: BTreeMap<Ulid, u64>,
     ) -> SplitTable {
+        let origin_time = Instant::now() - NEWLY_REPORTED_SPLIT_LAST_TIME;
         let mut split_table = SplitTable {
             on_disk_splits: BTreeSet::default(),
             candidate_splits: BTreeSet::default(),
             downloading_splits: BTreeSet::default(),
             split_to_status: HashMap::default(),
-            start_time: Instant::now(),
+            origin_time,
             limits,
             on_disk_bytes: 0u64,
         };
@@ -245,7 +249,7 @@ impl SplitTable {
     }
 
     fn touch(&mut self, split_ulid: Ulid, storage_uri: &Uri) -> Status {
-        let timestamp = compute_timestamp(self.start_time);
+        let timestamp = compute_timestamp(self.origin_time);
         self.mutate_split(split_ulid, |old_split_info| {
             if let Some(mut split_info) = old_split_info {
                 split_info.split_key.last_accessed = timestamp;
@@ -283,7 +287,7 @@ impl SplitTable {
     }
 
     fn change_split_status(&mut self, split_ulid: Ulid, status: Status) {
-        let start_time = self.start_time;
+        let start_time = self.origin_time;
         self.mutate_split(split_ulid, move |split_info_opt| {
             if let Some(mut split_info) = split_info_opt {
                 split_info.status = status;
@@ -301,13 +305,15 @@ impl SplitTable {
     }
 
     pub(crate) fn report(&mut self, split_ulid: Ulid, storage_uri: Uri) {
+        let origin_time = self.origin_time;
         self.mutate_split(split_ulid, move |split_info_opt| {
             if let Some(split_info) = split_info_opt {
                 return split_info;
             }
             SplitInfo {
                 split_key: SplitKey {
-                    last_accessed: 0u64,
+                    last_accessed: compute_timestamp(origin_time)
+                        .saturating_sub(NEWLY_REPORTED_SPLIT_LAST_TIME.as_micros() as u64),
                     split_ulid,
                 },
                 status: Status::Candidate(CandidateSplit {
