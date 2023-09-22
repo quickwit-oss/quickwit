@@ -34,6 +34,7 @@ use colored::{ColoredString, Colorize};
 use humantime::format_duration;
 use quickwit_actors::{ActorExitStatus, ActorHandle, Universe};
 use quickwit_cluster::{Cluster, ClusterMember};
+use quickwit_common::pubsub::EventBroker;
 use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::uri::Uri;
 use quickwit_config::service::QuickwitService;
@@ -460,6 +461,7 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
         None,
         IngesterPool::default(),
         storage_resolver,
+        EventBroker::default(),
     )
     .await?;
     let universe = Universe::new();
@@ -590,6 +592,7 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
         None,
         IngesterPool::default(),
         storage_resolver,
+        EventBroker::default(),
     )
     .await?;
     let (indexing_service_mailbox, indexing_service_handle) =

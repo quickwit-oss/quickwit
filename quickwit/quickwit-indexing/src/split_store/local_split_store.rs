@@ -183,7 +183,7 @@ impl InnerLocalSplitStore {
 
     /// Returns the directory filepath of a split in cache.
     fn split_path(&self, split_id: Ulid) -> PathBuf {
-        let split_file = split_file(&split_id.to_string());
+        let split_file = split_file(split_id);
         self.split_store_folder.join(split_file)
     }
 

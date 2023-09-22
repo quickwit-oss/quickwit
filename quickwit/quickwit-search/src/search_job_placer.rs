@@ -19,11 +19,15 @@
 
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
+use std::fmt;
 use std::hash::{Hash, Hasher};
 use std::net::SocketAddr;
 
 use anyhow::bail;
-use quickwit_common::rendezvous_hasher::sort_by_rendez_vous_hash;
+use async_trait::async_trait;
+use quickwit_common::pubsub::EventSubscriber;
+use quickwit_common::rendezvous_hasher::{node_affinity, sort_by_rendez_vous_hash};
+use quickwit_proto::search::{ReportSplit, ReportSplitsRequest};
 
 use crate::{SearchServiceClient, SearcherPool};
 
@@ -57,6 +61,43 @@ pub trait Job {
 pub struct SearchJobPlacer {
     /// Search clients pool.
     searcher_pool: SearcherPool,
+}
+
+#[async_trait]
+impl EventSubscriber<ReportSplitsRequest> for SearchJobPlacer {
+    async fn handle_event(&mut self, evt: ReportSplitsRequest) {
+        let mut nodes: HashMap<SocketAddr, SearchServiceClient> =
+            self.searcher_pool.all().await.into_iter().collect();
+        if nodes.is_empty() {
+            return;
+        }
+        let mut splits_per_node: HashMap<SocketAddr, Vec<ReportSplit>> =
+            HashMap::with_capacity(nodes.len().min(evt.report_splits.len()));
+        for report_split in evt.report_splits {
+            let node_addr = nodes
+                .keys()
+                .max_by_key(|node_addr| node_affinity(*node_addr, &report_split.split_id))
+                // This actually never happens thanks to the if-condition at the
+                // top of this function.
+                .expect("`nodes` should not be empty.");
+            splits_per_node
+                .entry(*node_addr)
+                .or_default()
+                .push(report_split);
+        }
+        for (node_addr, report_splits) in splits_per_node {
+            if let Some(search_client) = nodes.get_mut(&node_addr) {
+                let report_splits_req = ReportSplitsRequest { report_splits };
+                let _ = search_client.report_splits(report_splits_req).await;
+            }
+        }
+    }
+}
+
+impl fmt::Debug for SearchJobPlacer {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("SearchJobPlacer").finish()
+    }
 }
 
 impl SearchJobPlacer {
@@ -197,11 +238,8 @@ impl Eq for CandidateNodes {}
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashSet;
-    use std::net::SocketAddr;
-
-    use crate::root::SearchJob;
-    use crate::{searcher_pool_for_test, MockSearchService, SearchJobPlacer, SearcherPool};
+    use super::*;
+    use crate::{searcher_pool_for_test, MockSearchService, SearchJob};
 
     #[tokio::test]
     async fn test_search_job_placer() {

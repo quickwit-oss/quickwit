@@ -24,6 +24,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, ActorHandle, Handler};
+use quickwit_common::pubsub::EventBroker;
 use quickwit_common::temp_dir::{self};
 use quickwit_config::IndexConfig;
 use quickwit_metastore::{ListIndexesQuery, Metastore};
@@ -57,6 +58,7 @@ pub struct DeleteTaskService {
     delete_service_task_dir: PathBuf,
     pipeline_handles_by_index_uid: HashMap<IndexUid, ActorHandle<DeleteTaskPipeline>>,
     max_concurrent_split_uploads: usize,
+    event_broker: EventBroker,
 }
 
 impl DeleteTaskService {
@@ -66,6 +68,7 @@ impl DeleteTaskService {
         storage_resolver: StorageResolver,
         data_dir_path: PathBuf,
         max_concurrent_split_uploads: usize,
+        event_broker: EventBroker,
     ) -> anyhow::Result<Self> {
         let delete_service_task_path = data_dir_path.join(DELETE_SERVICE_TASK_DIR_NAME);
         let delete_service_task_dir =
@@ -77,6 +80,7 @@ impl DeleteTaskService {
             delete_service_task_dir,
             pipeline_handles_by_index_uid: Default::default(),
             max_concurrent_split_uploads,
+            event_broker,
         })
     }
 }
@@ -170,6 +174,7 @@ impl DeleteTaskService {
             index_storage,
             self.delete_service_task_dir.clone(),
             self.max_concurrent_split_uploads,
+            self.event_broker.clone(),
         );
         let (_pipeline_mailbox, pipeline_handler) = ctx.spawn_actor().spawn(pipeline);
         self.pipeline_handles_by_index_uid
@@ -202,6 +207,7 @@ impl Handler<UpdatePipelines> for DeleteTaskService {
 
 #[cfg(test)]
 mod tests {
+    use quickwit_common::pubsub::EventBroker;
     use quickwit_indexing::TestSandbox;
     use quickwit_proto::metastore::DeleteQuery;
     use quickwit_search::{searcher_pool_for_test, MockSearchService, SearchJobPlacer};
@@ -235,6 +241,7 @@ mod tests {
             StorageResolver::unconfigured(),
             data_dir_path,
             4,
+            EventBroker::default(),
         )
         .await
         .unwrap();

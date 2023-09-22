@@ -56,14 +56,12 @@ jobs:
               - quickwit/**/*.toml
               - quickwit/**/*.proto
               - quickwit/rest-api-tests/**
+              - .github/workflows/ci.yml
       # The following step is just meant to install rustup actually.
       # The next one installs the correct toolchain.
       - name: Install rustup
-        uses: actions-rs/toolchain@v1
         if: steps.modified.outputs.rust_src == 'true'
-        with:
-          toolchain: 1.70
-          components: ""
+        run: curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain none -y
       - name: Setup stable Rust Toolchain
         if: steps.modified.outputs.rust_src == 'true'
         run: rustup show
@@ -106,15 +104,16 @@ jobs:
               - quickwit/**/*.rs
               - quickwit/**/*.toml
               - quickwit/**/*.proto
+              - .github/workflows/ci.yml
       - name: Install Ubuntu packages
         if: always() && steps.modified.outputs.rust_src == 'true'
         run: sudo apt-get -y install protobuf-compiler python3 python3-pip
-      - name: Setup nightly Rust Toolchain (for rustfmt)
-        uses: actions-rs/toolchain@v1
+      - name: Install rustup
         if: steps.modified.outputs.rust_src == 'true'
-        with:
-          toolchain: nightly
-          components: rustfmt
+        run: curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain none -y
+      - name: Setup nightly Rust Toolchain (for rustfmt)
+        if: steps.modified.outputs.rust_src == 'true'
+        run: rustup toolchain install nightly
       - name: Setup stable Rust Toolchain
         if: steps.modified.outputs.rust_src == 'true'
         run: rustup show

@@ -466,7 +466,7 @@ impl MergeExecutor {
         ctx.record_progress();
         let _protect_guard = ctx.protect_zone();
 
-        let mut index_writer = union_index.writer_with_num_threads(1, 3_000_000)?;
+        let mut index_writer = union_index.writer_with_num_threads(1, 15_000_000)?;
         let num_delete_tasks = delete_tasks.len();
         if num_delete_tasks > 0 {
             let doc_mapper = doc_mapper_opt

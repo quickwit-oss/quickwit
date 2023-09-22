@@ -27,6 +27,7 @@ use quickwit_actors::{
     SpawnContext, Supervisable, HEARTBEAT,
 };
 use quickwit_common::io::IoControls;
+use quickwit_common::pubsub::EventBroker;
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_common::KillSwitch;
 use quickwit_doc_mapper::DocMapper;
@@ -244,6 +245,7 @@ impl MergePipeline {
             self.params.split_store.clone(),
             merge_publisher_mailbox.into(),
             self.params.max_concurrent_split_uploads,
+            self.params.event_broker.clone(),
         );
         let (merge_uploader_mailbox, merge_uploader_handler) = ctx
             .spawn_actor()
@@ -465,6 +467,7 @@ pub struct MergePipelineParams {
     pub merge_policy: Arc<dyn MergePolicy>,
     pub max_concurrent_split_uploads: usize, //< TODO share with the indexing pipeline.
     pub merge_max_io_num_bytes_per_sec: Option<Byte>,
+    pub event_broker: EventBroker,
 }
 
 #[cfg(test)]
@@ -510,7 +513,7 @@ mod tests {
             });
         let universe = Universe::with_accelerated_time();
         let storage = Arc::new(RamStorage::default());
-        let split_store = IndexingSplitStore::create_without_local_store(storage.clone());
+        let split_store = IndexingSplitStore::create_without_local_store_for_test(storage.clone());
         let pipeline_params = MergePipelineParams {
             pipeline_id,
             doc_mapper: Arc::new(default_doc_mapper_for_test()),
@@ -520,6 +523,7 @@ mod tests {
             merge_policy: default_merge_policy(),
             max_concurrent_split_uploads: 2,
             merge_max_io_num_bytes_per_sec: None,
+            event_broker: Default::default(),
         };
         let pipeline = MergePipeline::new(pipeline_params, universe.spawn_ctx());
         let (_pipeline_mailbox, pipeline_handler) = universe.spawn_builder().spawn(pipeline);

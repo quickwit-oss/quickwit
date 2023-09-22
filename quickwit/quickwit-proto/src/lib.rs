@@ -43,6 +43,8 @@ pub mod types;
 pub use error::{ServiceError, ServiceErrorCode};
 pub use types::*;
 
+use crate::search::ReportSplitsRequest;
+
 pub mod jaeger {
     pub mod api_v2 {
         include!("codegen/jaeger/jaeger.api_v2.rs");
@@ -247,3 +249,5 @@ impl search::SortOrder {
         }
     }
 }
+
+impl quickwit_common::pubsub::Event for ReportSplitsRequest {}
