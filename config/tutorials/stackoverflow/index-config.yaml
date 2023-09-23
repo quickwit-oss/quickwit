@@ -7,18 +7,6 @@ index_id: stackoverflow
 
 doc_mapping:
   field_mappings:
-    - name: user
-      type: text
-      fast: true
-      tokenizer: raw
-    - name: tags
-      type: array<text>
-      fast: true
-      tokenizer: raw
-    - name: type
-      type: text
-      fast: true
-      tokenizer: raw
     - name: title
       type: text
       tokenizer: default
@@ -29,12 +17,6 @@ doc_mapping:
       tokenizer: default
       record: position
       stored: true
-    - name: questionId
-      type: u64
-    - name: answerId
-      type: u64
-    - name: acceptedAnswerId
-      type: u64
     - name: creationDate
       type: datetime
       fast: true
