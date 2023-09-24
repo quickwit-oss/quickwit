@@ -79,7 +79,7 @@ Let's create an index configured to receive Stackoverflow posts (questions and a
 curl -o stackoverflow-index-config.yaml https://raw.githubusercontent.com/quickwit-oss/quickwit/main/config/tutorials/stackoverflow/index-config.yaml
 ```
 
-The index config defines three fields: `title`, `body` and `createDate`. `title` and `body` are [indexed and tokenized](../configuration/index-config.md#text-type) and they are also used as default search fields, which means they will be used for search if you do not target a specific field in your query. And `creationDate` serves as the timestamp for each record. And there is no more explicit field definitions. We can use the default dynamic [mode](/docs/configuration/index-config.md#mode) to simplify the index configuration.
+The index config defines three fields: `title`, `body` and `createDate`. `title` and `body` are [indexed and tokenized](../configuration/index-config.md#text-type), and they are also used as default search fields, which means they will be used for search if you do not target a specific field in your query. `creationDate` serves as the timestamp for each record. There are no more explicit field definitions as we can use the default dynamic [mode](/docs/configuration/index-config.md#mode): the undeclared fields will still be indexed, by default the dynamic mode uses the `raw` tokenizer and set `fast: true` to enable aggregation queries.
 
 And here is the complete config:
 
