@@ -449,6 +449,65 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[tokio::test]
+async fn test_single_node_without_timestamp_with_query_start_timestamp_enabled(
+) -> anyhow::Result<()> {
+    let index_id = "single-node-no-timestamp";
+    let doc_mapping_yaml = r#"
+            tag_fields:
+              - owner
+            field_mappings:
+              - name: body
+                type: text
+              - name: owner
+                type: text
+                tokenizer: raw
+        "#;
+    let indexing_settings_json = r#"{}"#;
+    let test_sandbox = TestSandbox::create(
+        index_id,
+        doc_mapping_yaml,
+        indexing_settings_json,
+        &["body"],
+    )
+    .await?;
+
+    let mut docs = Vec::new();
+    let start_timestamp = OffsetDateTime::now_utc().unix_timestamp();
+    for i in 0..30 {
+        let body = format!("info @ t:{}", i + 1);
+        docs.push(json!({"body": body}));
+    }
+    test_sandbox.add_documents(docs).await?;
+
+    let search_request = SearchRequest {
+        index_id_patterns: vec![index_id.to_string()],
+        query_ast: qast_json_helper("info", &["body"]),
+        start_timestamp: Some(start_timestamp + 10),
+        end_timestamp: Some(start_timestamp + 20),
+        max_hits: 15,
+        ..Default::default()
+    };
+    let single_node_response = single_node_search(
+        search_request,
+        test_sandbox.metastore(),
+        test_sandbox.storage_resolver(),
+    )
+    .await;
+
+    assert!(single_node_response.is_err());
+    assert_eq!(
+        single_node_response.err().map(|err| err.to_string()),
+        Some(
+            "the timestamp field is not set in index: [\"single-node-no-timestamp\"] definition \
+             but start-timestamp or end-timestamp are set in the query"
+                .to_string()
+        )
+    );
+    test_sandbox.assert_quit().await;
+    Ok(())
+}
+
 async fn single_node_search_sort_by_field(
     sort_by_field: &str,
     fieldnorms_enabled: bool,
