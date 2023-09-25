@@ -28,7 +28,25 @@ use serde::{Deserialize, Deserializer, Serialize};
 use crate::elastic_search_api::model::{default_elasticsearch_sort_order, SortField};
 use crate::elastic_search_api::TrackTotalHits;
 
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+#[serde(untagged)]
+enum FieldSortParamsForDeser {
+    // we can't just use FieldSortParams or we get infinite recursion on deser
+    Object { order: Option<SortOrder> },
+    String(SortOrder),
+}
+
+impl From<FieldSortParamsForDeser> for FieldSortParams {
+    fn from(for_deser: FieldSortParamsForDeser) -> FieldSortParams {
+        match for_deser {
+            FieldSortParamsForDeser::Object { order } => FieldSortParams { order },
+            FieldSortParamsForDeser::String(order) => FieldSortParams { order: Some(order) },
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(from = "FieldSortParamsForDeser")]
 struct FieldSortParams {
     #[serde(default)]
     pub order: Option<SortOrder>,
@@ -138,6 +156,7 @@ mod tests {
             "sort": [
                 { "timestamp": { "order": "desc" } },
                 { "uid": { "order": "asc" } },
+                { "my_field": "asc" },
                 { "hello": {}},
                 { "_score": {}}
             ]
@@ -145,15 +164,17 @@ mod tests {
         "#;
         let search_body: super::SearchBody = serde_json::from_str(json).unwrap();
         let sort_fields = search_body.sort.unwrap();
-        assert_eq!(sort_fields.len(), 4);
+        assert_eq!(sort_fields.len(), 5);
         assert_eq!(sort_fields[0].field, "timestamp");
         assert_eq!(sort_fields[0].order, SortOrder::Desc);
         assert_eq!(sort_fields[1].field, "uid");
         assert_eq!(sort_fields[1].order, SortOrder::Asc);
-        assert_eq!(sort_fields[2].field, "hello");
+        assert_eq!(sort_fields[2].field, "my_field");
         assert_eq!(sort_fields[2].order, SortOrder::Asc);
-        assert_eq!(sort_fields[3].field, "_score");
-        assert_eq!(sort_fields[3].order, SortOrder::Desc);
+        assert_eq!(sort_fields[3].field, "hello");
+        assert_eq!(sort_fields[3].order, SortOrder::Asc);
+        assert_eq!(sort_fields[4].field, "_score");
+        assert_eq!(sort_fields[4].order, SortOrder::Desc);
     }
 
     #[test]
