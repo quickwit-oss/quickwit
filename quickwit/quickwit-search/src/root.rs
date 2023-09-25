@@ -324,6 +324,15 @@ fn validate_request(
     search_request: &SearchRequest,
 ) -> crate::Result<()> {
     let schema = doc_mapper.schema();
+    if doc_mapper.timestamp_field_name().is_none()
+        && (search_request.start_timestamp.is_some() || search_request.end_timestamp.is_some())
+    {
+        return Err(SearchError::InvalidQuery(format!(
+            "the timestamp field is not set in index: {:?} definition but start-timestamp or \
+             end-timestamp are set in the query",
+            search_request.index_id_patterns
+        )));
+    }
 
     validate_requested_snippet_fields(&schema, &search_request.snippet_fields)?;
 
