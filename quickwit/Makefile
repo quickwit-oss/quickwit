@@ -53,7 +53,7 @@ build-rustdoc:
 
 .PHONY: build-ui
 build-ui:
-	@cd quickwit-ui && $(MAKE) install build
+	NODE_ENV=production cd quickwit-ui && $(MAKE) install build
 
 rm-postgres:
 	rm -fr /tmp/quickwit/services/postgres
