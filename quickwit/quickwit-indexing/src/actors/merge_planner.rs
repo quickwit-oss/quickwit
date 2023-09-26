@@ -654,14 +654,14 @@ mod tests {
         let pre_existing_splits = vec![
             split_metadata_for_test(
                 &index_uid,
-                &format!("a_small"),
+                "a_small",
                 0, // partition_id
                 1_000_000,
                 2,
             ),
             split_metadata_for_test(
                 &index_uid,
-                &format!("b_small"),
+                "b_small",
                 0, // partition_id
                 1_000_000,
                 2,
@@ -703,7 +703,7 @@ mod tests {
             .create_mailbox("MergeSplitDownloader", QueueCapacity::Bounded(2));
         let index_uid = IndexUid::new("test-index");
         let pipeline_id = IndexingPipelineId {
-            index_uid: index_uid,
+            index_uid,
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
@@ -725,14 +725,14 @@ mod tests {
         let pre_existing_splits = vec![
             split_metadata_for_test(
                 &other_index_uid,
-                &format!("a_small"),
+                "a_small",
                 0, // partition_id
                 1_000_000,
                 2,
             ),
             split_metadata_for_test(
                 &other_index_uid,
-                &format!("b_small"),
+                "b_small",
                 0, // partition_id
                 1_000_000,
                 2,
@@ -786,14 +786,14 @@ mod tests {
         let pre_existing_splits = vec![
             split_metadata_for_test(
                 &index_uid,
-                &format!("a_small"),
+                "a_small",
                 0, // partition_id
                 1_000_000,
                 2,
             ),
             split_metadata_for_test(
                 &index_uid,
-                &format!("b_small"),
+                "b_small",
                 0, // partition_id
                 1_000_000,
                 2,
