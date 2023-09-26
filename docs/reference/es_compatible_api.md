@@ -469,7 +469,7 @@ Contrary to ES/Opensearch, in Quickwit, at most 50 terms will be considered when
 }
 ```
 
-#### Supported Multi_match Queries
+#### Supported Multi-match Queries
 | Type    | Description                                                                              |
 |---------|------------------------------------------------------------------------------------------|
 | `most_fields` | (default) Finds documents which match any field and combines the _score from each field. |
