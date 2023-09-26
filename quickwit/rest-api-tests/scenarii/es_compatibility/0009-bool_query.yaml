@@ -105,4 +105,19 @@ expected:
   hits:
     total:
       value: 100
+---
+# Support null values
+json:
+  query:
+      bool:
+        must: null
+        must_not: null
+        should: null
+        filter: null
+        boost: null
+expected:
+  hits:
+    total:
+      value: 100
+
 
