@@ -342,6 +342,24 @@ The following query types are supported.
 
 
 
+### `match_phrase`
+
+[Elasticsearch reference documentation](https://www.elastic.co/guide/en/elasticsearch/reference/8.8/query-dsl-match-query-phrase.html)
+
+#### Example
+
+```json
+{
+  "query": {
+    "match_phrase": {
+      "title": "search keywords",
+      "analyzer": "default"
+    }
+  }
+}
+```
+
+
 
 ### `match_phrase_prefix`
 
@@ -398,6 +416,70 @@ Contrary to ES/Opensearch, in Quickwit, at most 50 terms will be considered when
 | `operator`  | `"AND"` or `"OR"` | Defines whether all terms should be present (`AND`) or if at least one term is sufficient to match (`OR`).  | OR  |
 | `zero_terms_query`|  `all` or `none` | Defines if all (`all`) or no documents (`none`) should be returned if the query does not contain any terms after tokenization. | `none` |
 
+
+
+### `Multi-match`
+
+[Elasticsearch reference documentation](https://www.elastic.co/guide/en/elasticsearch/reference/8.8/query-dsl-multi-match-query.html)
+
+#### Example
+```json
+{
+  "query": {
+    "multi_match" : {
+      "query":    "search keywords", 
+      "fields": [ "title", "body" ] 
+    }
+  }
+}
+```
+
+```json
+{
+  "query": {
+    "multi_match" : {
+      "query":      "search keywords",
+      "type":       "most_fields",
+      "fields":     [ "title", "body" ]
+    }
+  }
+}
+```
+
+```json
+{
+  "query": {
+    "multi_match" : {
+      "query":      "search keywords",
+      "type":       "phrase",
+      "fields":     [ "title", "body" ]
+    }
+  }
+}
+```
+
+```json
+{
+  "query": {
+    "multi_match" : {
+      "query":      "search key",
+      "type":       "phrase_prefix",
+      "fields":     [ "title", "body" ]
+    }
+  }
+}
+```
+
+#### Supported Multi-match Queries
+| Type    | Description                                                                              |
+|---------|------------------------------------------------------------------------------------------|
+| `most_fields` | (default) Finds documents which match any field and combines the `_score` from each field. |
+| `phrase` | Runs a `match_phrase` query on each field and uses the `_score` from the best field .         |
+| `phrase_prefix` | Runs a `match_phrase_prefix` query on each field and uses the `_score` from the best field.   |
+
+
+
+
 ### `term`
 
 [Elasticsearch reference documentation](https://www.elastic.co/guide/en/elasticsearch/reference/8.8/query-dsl-term-query.html)
@@ -421,6 +503,9 @@ Contrary to ES/Opensearch, in Quickwit, at most 50 terms will be considered when
 |-------------------|------------|------------------------------------------------------------------|---------|
 | `value`           | String     |  Term value. This is the string representation of a token after tokenization.    | -    |
 | `boost`     |  `Number`   | Multiplier boost for score computation | 1.0       |
+
+
+
 
 ### `match_all` / `match_none`
 
