@@ -474,7 +474,7 @@ Contrary to ES/Opensearch, in Quickwit, at most 50 terms will be considered when
 | Type    | Description                                                                              |
 |---------|------------------------------------------------------------------------------------------|
 | `most_fields` | (default) Finds documents which match any field and combines the _score from each field. |
-| `phrase` | Runs a match_phrase query on each field and uses the _score from the best field          |
+| `phrase` | Runs a `match_phrase` query on each field and uses the `_score` from the best field .         |
 | `phrase_prefix` | Runs a match_phrase_prefix query on each field and uses the _score from the best field   |
 
 
