@@ -58,7 +58,7 @@ pub struct SearchApi;
 
 // Matches index patterns separated by commas or its URL encoded version '%2C'.
 static COMMA_SEPARATED_INDEX_PATTERNS_REGEX: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r",|%2C").expect("The regular expression should compile."));
+    Lazy::new(|| Regex::new(r",|%2C").expect("the regular expression should compile"));
 
 pub(crate) async fn extract_index_id_patterns(
     comma_separated_index_patterns: String,
