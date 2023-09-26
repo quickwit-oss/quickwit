@@ -19,7 +19,7 @@
 
 use serde::Deserialize;
 use serde_with::formats::PreferMany;
-use serde_with::{serde_as, OneOrMany};
+use serde_with::{serde_as, DefaultOnNull, OneOrMany};
 
 use crate::elastic_query_dsl::{ConvertableToQueryAst, ElasticQueryDslInner};
 use crate::not_nan_f32::NotNaNf32;
@@ -32,16 +32,16 @@ use crate::query_ast::{self, QueryAst};
 #[derive(Deserialize, Debug, PartialEq, Eq, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct BoolQuery {
-    #[serde_as(deserialize_as = "OneOrMany<_, PreferMany>")]
+    #[serde_as(deserialize_as = "DefaultOnNull<OneOrMany<_, PreferMany>>")]
     #[serde(default)]
     must: Vec<ElasticQueryDslInner>,
-    #[serde_as(deserialize_as = "OneOrMany<_, PreferMany>")]
+    #[serde_as(deserialize_as = "DefaultOnNull<OneOrMany<_, PreferMany>>")]
     #[serde(default)]
     must_not: Vec<ElasticQueryDslInner>,
-    #[serde_as(deserialize_as = "OneOrMany<_, PreferMany>")]
+    #[serde_as(deserialize_as = "DefaultOnNull<OneOrMany<_, PreferMany>>")]
     #[serde(default)]
     should: Vec<ElasticQueryDslInner>,
-    #[serde_as(deserialize_as = "OneOrMany<_, PreferMany>")]
+    #[serde_as(deserialize_as = "DefaultOnNull<OneOrMany<_, PreferMany>>")]
     #[serde(default)]
     filter: Vec<ElasticQueryDslInner>,
     #[serde(default)]
@@ -129,6 +129,28 @@ mod tests {
                 must_not: Vec::new(),
                 should: Vec::new(),
                 filter: vec![term_query_from_field_value("product_id", "2").into(),],
+                boost: None,
+            }
+        );
+    }
+
+    #[test]
+    fn test_dsl_query_with_null_values() {
+        let bool_query_json = r#"{
+            "must": null,
+            "must_not": null,
+            "should": null,
+            "filter": null,
+            "boost": null
+        }"#;
+        let bool_query: BoolQuery = serde_json::from_str(bool_query_json).unwrap();
+        assert_eq!(
+            &bool_query,
+            &BoolQuery {
+                must: Vec::new(),
+                must_not: Vec::new(),
+                should: Vec::new(),
+                filter: Vec::new(),
                 boost: None,
             }
         );
