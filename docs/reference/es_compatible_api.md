@@ -352,7 +352,8 @@ The following query types are supported.
 {
   "query": {
     "match_phrase": {
-      "title": "search keywords"
+      "title": "search keywords",
+      "analyzer": "default"
     }
   }
 }
