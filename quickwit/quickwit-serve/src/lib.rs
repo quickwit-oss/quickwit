@@ -32,6 +32,7 @@ mod metrics;
 mod metrics_api;
 mod node_info_handler;
 mod openapi;
+mod rate_modulator;
 mod rest;
 mod search_api;
 pub(crate) mod simple_list;
@@ -46,7 +47,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{anyhow, Context};
+use anyhow::Context;
 use byte_unit::n_mib_bytes;
 pub use format::BodyFormat;
 use futures::{Stream, StreamExt};
@@ -57,7 +58,7 @@ use quickwit_common::pubsub::{EventBroker, EventSubscriptionHandle};
 use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::tower::{
     BalanceChannel, BoxFutureInfaillible, BufferLayer, Change, ConstantRate, EstimateRateLayer,
-    Rate, RateLimitLayer, SmaRateEstimator,
+    RateLimitLayer, SmaRateEstimator,
 };
 use quickwit_config::service::QuickwitService;
 use quickwit_config::NodeConfig;
@@ -67,8 +68,8 @@ use quickwit_index_management::{IndexService as IndexManager, IndexServiceError}
 use quickwit_indexing::actors::IndexingService;
 use quickwit_indexing::start_indexing_service;
 use quickwit_ingest::{
-    start_ingest_api_service, GetMemoryCapacity, IngestRequest, IngestRouter, IngestServiceClient,
-    Ingester, IngesterPool, MemoryCapacity,
+    start_ingest_api_service, GetMemoryCapacity, IngestApiService, IngestRequest, IngestRouter,
+    IngestServiceClient, Ingester, IngesterPool,
 };
 use quickwit_janitor::{start_janitor_service, JanitorService};
 use quickwit_metastore::{
@@ -100,6 +101,7 @@ use warp::{Filter, Rejection};
 pub use crate::build_info::{BuildInfo, RuntimeInfo};
 pub use crate::index_api::ListSplitsQueryParams;
 pub use crate::metrics::SERVE_METRICS;
+use crate::rate_modulator::RateModulator;
 #[cfg(test)]
 use crate::rest::recover_fn;
 pub use crate::search_api::{search_request_from_api_request, SearchRequestQueryString, SortBy};
@@ -112,7 +114,6 @@ const READINESS_REPORTING_INTERVAL: Duration = if cfg!(any(test, feature = "test
 
 struct QuickwitServices {
     pub node_config: Arc<NodeConfig>,
-    pub services: HashSet<QuickwitService>,
     pub cluster: Cluster,
     pub metastore_server_opt: Option<Arc<dyn Metastore>>,
     pub metastore_client: Arc<dyn Metastore>,
@@ -164,131 +165,16 @@ async fn balance_channel_for_service(
     BalanceChannel::from_stream(service_change_stream)
 }
 
-pub async fn serve_quickwit(
-    node_config: NodeConfig,
-    runtimes_config: RuntimesConfig,
-    metastore_resolver: MetastoreResolver,
-    storage_resolver: StorageResolver,
-    shutdown_signal: BoxFutureInfaillible<()>,
-) -> anyhow::Result<HashMap<String, ActorExitStatus>> {
-    let cluster = start_cluster_service(&node_config, &node_config.enabled_services).await?;
-
-    let event_broker = EventBroker::default();
-    let indexer_pool = IndexerPool::default();
-    let ingester_pool = IngesterPool::default();
-    let universe = Universe::new();
-
-    // Instantiate a metastore "server" if the `metastore` role is enabled on the node.
-    let metastore_server_opt: Option<Arc<dyn Metastore>> = if node_config
-        .enabled_services
-        .contains(&QuickwitService::Metastore)
-    {
-        let metastore = metastore_resolver
-            .resolve(&node_config.metastore_uri)
-            .await?;
-        let metastore = MetastoreEventPublisher::new(metastore.clone(), event_broker.clone());
-        Some(Arc::new(metastore))
-    } else {
-        None
-    };
-    // Instantiate a metastore client, either local if available or remote otherwise.
-    let metastore_client: Arc<dyn Metastore> = if let Some(metastore_server) = &metastore_server_opt
-    {
-        metastore_server.clone()
-    } else {
-        // Wait for a metastore service to be available for at most 10 seconds.
-        cluster
-            .wait_for_ready_members(has_node_with_metastore_service, Duration::from_secs(10))
-            .await
-            .map_err(|_| {
-                error!("No metastore service found among cluster members, stopping server.");
-                anyhow!(
-                    "failed to start server: no metastore service was found among cluster \
-                     members. try running Quickwit with additional metastore service `quickwit \
-                     run --service metastore`"
-                )
-            })?;
-        let balance_channel =
-            balance_channel_for_service(&cluster, QuickwitService::Metastore).await;
-        let grpc_metastore_client =
-            MetastoreGrpcClient::from_balance_channel(balance_channel).await?;
-        let metastore_client = RetryingMetastore::new(Box::new(grpc_metastore_client));
-        Arc::new(metastore_client)
-    };
-
-    // Instantiate a control plane server if the `control-plane` role is enabled on the node.
-    // Otherwise, instantiate a control plane client.
-    let control_plane_service: ControlPlaneServiceClient = if node_config
-        .enabled_services
-        .contains(&QuickwitService::ControlPlane)
-    {
-        check_cluster_configuration(
-            &node_config.enabled_services,
-            &node_config.peer_seeds,
-            metastore_client.clone(),
-        )
-        .await?;
-
-        let cluster_id = cluster.cluster_id().to_string();
-        let self_node_id = cluster.self_node_id().to_string();
-
-        let replication_factor = node_config
-            .ingest_api_config
-            .replication_factor()
-            .expect("replication factor should have been validated")
-            .get();
-        let control_plane_mailbox = setup_control_plane(
-            &universe,
-            cluster_id,
-            self_node_id,
-            indexer_pool.clone(),
-            ingester_pool.clone(),
-            metastore_client.clone(),
-            replication_factor,
-        )
-        .await?;
-        ControlPlaneServiceClient::from_mailbox(control_plane_mailbox)
-    } else {
-        let balance_channel =
-            balance_channel_for_service(&cluster, QuickwitService::ControlPlane).await;
-        ControlPlaneServiceClient::from_channel(balance_channel)
-    };
-
-    // Setup control plane event subscriptions.
-    let control_plane_event_subscription_handles_opt = setup_control_plane_event_subscriptions(
-        &node_config,
-        &event_broker,
-        &control_plane_service,
-    );
-
-    // Set up the "control plane proxy" for the metastore.
-    let metastore_client: Arc<dyn Metastore> = Arc::new(ControlPlaneMetastore::new(
-        control_plane_service.clone(),
-        metastore_client.clone(),
-    ));
-
-    // Setup ingest service v1.
-    let (ingest_service, indexing_service_opt) = if node_config
-        .enabled_services
-        .contains(&QuickwitService::Indexer)
-    {
+async fn start_ingest_client_if_needed(
+    node_config: &NodeConfig,
+    universe: &Universe,
+    cluster: &Cluster,
+) -> anyhow::Result<IngestServiceClient> {
+    if node_config.is_service_enabled(QuickwitService::Indexer) {
         let ingest_api_service = start_ingest_api_service(
-            &universe,
+            universe,
             &node_config.data_dir_path,
             &node_config.ingest_api_config,
-        )
-        .await?;
-
-        let indexing_service = start_indexing_service(
-            &universe,
-            &node_config,
-            runtimes_config.num_threads_blocking,
-            cluster.clone(),
-            metastore_client.clone(),
-            ingest_api_service.clone(),
-            ingester_pool.clone(),
-            storage_resolver.clone(),
-            event_broker.clone(),
         )
         .await?;
         let num_buckets = NonZeroUsize::new(60).expect("60 should be non-zero");
@@ -311,12 +197,158 @@ pub async fn serve_quickwit(
                     .into_inner(),
             )
             .build_from_mailbox(ingest_api_service);
-        (ingest_service, Some(indexing_service))
+        Ok(ingest_service)
     } else {
-        let balance_channel = balance_channel_for_service(&cluster, QuickwitService::Indexer).await;
+        let balance_channel = balance_channel_for_service(cluster, QuickwitService::Indexer).await;
         let ingest_service = IngestServiceClient::from_channel(balance_channel);
-        (ingest_service, None)
+        Ok(ingest_service)
+    }
+}
+
+async fn start_control_plane_if_needed(
+    node_config: &NodeConfig,
+    cluster: &Cluster,
+    metastore_client: &Arc<dyn Metastore>,
+    universe: &Universe,
+    indexer_pool: &IndexerPool,
+    ingester_pool: &IngesterPool,
+) -> anyhow::Result<ControlPlaneServiceClient> {
+    if node_config.is_service_enabled(QuickwitService::ControlPlane) {
+        check_cluster_configuration(
+            &node_config.enabled_services,
+            &node_config.peer_seeds,
+            metastore_client.clone(),
+        )
+        .await?;
+
+        let cluster_id = cluster.cluster_id().to_string();
+        let self_node_id = cluster.self_node_id().to_string();
+
+        let replication_factor = node_config
+            .ingest_api_config
+            .replication_factor()
+            .expect("replication factor should have been validated")
+            .get();
+        let control_plane_mailbox = setup_control_plane(
+            universe,
+            cluster_id,
+            self_node_id,
+            indexer_pool.clone(),
+            ingester_pool.clone(),
+            metastore_client.clone(),
+            replication_factor,
+        )
+        .await?;
+        Ok(ControlPlaneServiceClient::from_mailbox(
+            control_plane_mailbox,
+        ))
+    } else {
+        let balance_channel =
+            balance_channel_for_service(cluster, QuickwitService::ControlPlane).await;
+        Ok(ControlPlaneServiceClient::from_channel(balance_channel))
+    }
+}
+
+pub async fn serve_quickwit(
+    node_config: NodeConfig,
+    runtimes_config: RuntimesConfig,
+    metastore_resolver: MetastoreResolver,
+    storage_resolver: StorageResolver,
+    shutdown_signal: BoxFutureInfaillible<()>,
+) -> anyhow::Result<HashMap<String, ActorExitStatus>> {
+    let cluster = start_cluster_service(&node_config).await?;
+
+    let event_broker = EventBroker::default();
+    let indexer_pool = IndexerPool::default();
+    let ingester_pool = IngesterPool::default();
+    let universe = Universe::new();
+
+    // Instantiate a metastore "server" if the `metastore` role is enabled on the node.
+    let metastore_server_opt: Option<Arc<dyn Metastore>> =
+        if node_config.is_service_enabled(QuickwitService::Metastore) {
+            let metastore = metastore_resolver
+                .resolve(&node_config.metastore_uri)
+                .await?;
+            let metastore = MetastoreEventPublisher::new(metastore.clone(), event_broker.clone());
+            Some(Arc::new(metastore))
+        } else {
+            None
+        };
+    // Instantiate a metastore client, either local if available or remote otherwise.
+    let metastore_client: Arc<dyn Metastore> = if let Some(metastore_server) = &metastore_server_opt
+    {
+        metastore_server.clone()
+    } else {
+        // Wait for a metastore service to be available for at most 10 seconds.
+        if cluster
+            .wait_for_ready_members(has_node_with_metastore_service, Duration::from_secs(10))
+            .await
+            .is_err()
+        {
+            error!("No metastore service found among cluster members, stopping server.");
+            anyhow::bail!(
+                "failed to start server: no metastore service was found among cluster members. \
+                 try running Quickwit with additional metastore service `quickwit run --service \
+                 metastore`"
+            )
+        }
+        let balance_channel =
+            balance_channel_for_service(&cluster, QuickwitService::Metastore).await;
+        let grpc_metastore_client =
+            MetastoreGrpcClient::from_balance_channel(balance_channel).await?;
+        let metastore_client = RetryingMetastore::new(Box::new(grpc_metastore_client));
+        Arc::new(metastore_client)
     };
+
+    // Instantiate a control plane server if the `control-plane` role is enabled on the node.
+    // Otherwise, instantiate a control plane client.
+    let control_plane_service: ControlPlaneServiceClient = start_control_plane_if_needed(
+        &node_config,
+        &cluster,
+        &metastore_client,
+        &universe,
+        &indexer_pool,
+        &ingester_pool,
+    )
+    .await?;
+
+    // Setup control plane event subscriptions.
+    let control_plane_event_subscription_handles_opt = setup_control_plane_event_subscriptions(
+        &node_config,
+        &event_broker,
+        &control_plane_service,
+    );
+
+    // Set up the "control plane proxy" for the metastore.
+    let metastore_through_control_plane: Arc<dyn Metastore> = Arc::new(ControlPlaneMetastore::new(
+        control_plane_service.clone(),
+        metastore_client.clone(),
+    ));
+
+    // Setup ingest service v1.
+    let ingest_service = start_ingest_client_if_needed(&node_config, &universe, &cluster).await?;
+
+    let indexing_service_opt = if node_config.is_service_enabled(QuickwitService::Indexer) {
+        let ingest_api_service: Mailbox<IngestApiService> = universe
+            .get_one()
+            .context("Ingest API Service should have been started.")?;
+        let indexing_service = start_indexing_service(
+            &universe,
+            &node_config,
+            runtimes_config.num_threads_blocking,
+            cluster.clone(),
+            metastore_through_control_plane.clone(),
+            ingest_api_service.clone(),
+            ingester_pool.clone(),
+            storage_resolver.clone(),
+            event_broker.clone(),
+        )
+        .await?;
+        Some(indexing_service)
+    } else {
+        None
+    };
+
     // Setup indexer pool.
     let cluster_change_stream = cluster.ready_nodes_change_stream().await;
     setup_indexer_pool(
@@ -336,11 +368,12 @@ pub async fn serve_quickwit(
 
     // Any node can serve index management requests (create/update/delete index, add/remove source,
     // etc.), so we always instantiate an index manager.
-    let index_manager = IndexManager::new(metastore_client.clone(), storage_resolver.clone());
+    let index_manager = IndexManager::new(
+        metastore_through_control_plane.clone(),
+        storage_resolver.clone(),
+    );
 
-    if node_config
-        .enabled_services
-        .contains(&QuickwitService::Indexer)
+    if node_config.is_service_enabled(QuickwitService::Indexer)
         && node_config.indexer_config.enable_otlp_endpoint
     {
         {
@@ -385,7 +418,7 @@ pub async fn serve_quickwit(
 
     let (search_job_placer, search_service) = setup_searcher(
         cluster_change_stream,
-        metastore_client.clone(),
+        metastore_through_control_plane.clone(),
         storage_resolver.clone(),
         searcher_context,
     )
@@ -401,14 +434,11 @@ pub async fn serve_quickwit(
             None
         };
 
-    let janitor_service_opt = if node_config
-        .enabled_services
-        .contains(&QuickwitService::Janitor)
-    {
+    let janitor_service_opt = if node_config.is_service_enabled(QuickwitService::Janitor) {
         let janitor_service = start_janitor_service(
             &universe,
             &node_config,
-            metastore_client.clone(),
+            metastore_through_control_plane.clone(),
             search_job_placer,
             storage_resolver.clone(),
             event_broker.clone(),
@@ -421,13 +451,11 @@ pub async fn serve_quickwit(
 
     let grpc_listen_addr = node_config.grpc_listen_addr;
     let rest_listen_addr = node_config.rest_listen_addr;
-    let services = node_config.enabled_services.clone();
     let quickwit_services: Arc<QuickwitServices> = Arc::new(QuickwitServices {
         node_config: Arc::new(node_config),
-        services,
         cluster: cluster.clone(),
         metastore_server_opt,
-        metastore_client: metastore_client.clone(),
+        metastore_client: metastore_through_control_plane.clone(),
         control_plane_service,
         _control_plane_event_subscription_handles_opt: control_plane_event_subscription_handles_opt,
         _report_splits_subscription_handle_opt: report_splits_subscription_handle_opt,
@@ -482,7 +510,7 @@ pub async fn serve_quickwit(
     // Thus readiness task is started once gRPC and REST servers are started.
     tokio::spawn(node_readiness_reporting_task(
         cluster,
-        metastore_client,
+        metastore_through_control_plane,
         grpc_readiness_signal_rx,
         rest_readiness_signal_rx,
     ));
@@ -513,67 +541,6 @@ pub async fn serve_quickwit(
     Ok(actor_exit_statuses)
 }
 
-#[derive(Clone)]
-struct RateModulator<R> {
-    rate_estimator: R,
-    memory_capacity: MemoryCapacity,
-    min_rate: ConstantRate,
-}
-
-impl<R> RateModulator<R>
-where R: Rate
-{
-    /// Creates a new [`RateModulator`] instance.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `rate_estimator` and `min_rate` have different periods.
-    pub fn new(rate_estimator: R, memory_capacity: MemoryCapacity, min_rate: ConstantRate) -> Self {
-        assert_eq!(
-            rate_estimator.period(),
-            min_rate.period(),
-            "Rate estimator and min rate periods must be equal."
-        );
-
-        Self {
-            rate_estimator,
-            memory_capacity,
-            min_rate,
-        }
-    }
-}
-
-impl<R> Rate for RateModulator<R>
-where R: Rate
-{
-    fn work(&self) -> u64 {
-        let memory_usage_ratio = self.memory_capacity.usage_ratio();
-        let work = self.rate_estimator.work().max(self.min_rate.work());
-
-        if memory_usage_ratio < 0.25 {
-            work * 2
-        } else if memory_usage_ratio > 0.99 {
-            work / 32
-        } else if memory_usage_ratio > 0.98 {
-            work / 16
-        } else if memory_usage_ratio > 0.95 {
-            work / 8
-        } else if memory_usage_ratio > 0.90 {
-            work / 4
-        } else if memory_usage_ratio > 0.80 {
-            work / 2
-        } else if memory_usage_ratio > 0.70 {
-            work * 2 / 3
-        } else {
-            work
-        }
-    }
-
-    fn period(&self) -> Duration {
-        self.rate_estimator.period()
-    }
-}
-
 #[allow(dead_code)]
 #[derive(Debug)]
 struct ControlPlaneEventSubscriptionHandles {
@@ -588,10 +555,7 @@ fn setup_control_plane_event_subscriptions(
     event_broker: &EventBroker,
     control_plane_service: &ControlPlaneServiceClient,
 ) -> Option<ControlPlaneEventSubscriptionHandles> {
-    if !config
-        .enabled_services
-        .contains(&QuickwitService::Metastore)
-    {
+    if !config.is_service_enabled(QuickwitService::Metastore) {
         return None;
     }
     let control_plane_event_subscriber =
@@ -636,7 +600,7 @@ async fn setup_ingest_v2(
     let ingest_router_service = IngestRouterServiceClient::new(ingest_router);
 
     // Instantiate ingester.
-    let ingester_service_opt = if config.enabled_services.contains(&QuickwitService::Indexer) {
+    let ingester_service_opt = if config.is_service_enabled(QuickwitService::Indexer) {
         let wal_dir_path = config.data_dir_path.join("wal");
         fs::create_dir_all(&wal_dir_path)?;
 

@@ -24,8 +24,6 @@ mod cluster;
 mod member;
 mod node;
 
-use std::collections::HashSet;
-
 #[cfg(any(test, feature = "testsuite"))]
 pub use chitchat::transport::ChannelTransport;
 use chitchat::transport::UdpTransport;
@@ -60,10 +58,7 @@ impl From<u64> for GenerationId {
     }
 }
 
-pub async fn start_cluster_service(
-    node_config: &NodeConfig,
-    enabled_services: &HashSet<QuickwitService>,
-) -> anyhow::Result<Cluster> {
+pub async fn start_cluster_service(node_config: &NodeConfig) -> anyhow::Result<Cluster> {
     let cluster_id = node_config.cluster_id.clone();
     let gossip_listen_addr = node_config.gossip_listen_addr;
     let peer_seed_addrs = node_config.peer_seed_addrs().await?;
@@ -76,7 +71,7 @@ pub async fn start_cluster_service(
         node_id,
         generation_id,
         is_ready,
-        enabled_services.clone(),
+        node_config.enabled_services.clone(),
         node_config.gossip_advertise_addr,
         node_config.grpc_advertise_addr,
         indexing_tasks,

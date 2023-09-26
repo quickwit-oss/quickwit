@@ -421,10 +421,8 @@ mod tests {
         assert_eq!(config.cluster_id, "quickwit-cluster");
         assert_eq!(config.enabled_services.len(), 2);
 
-        assert!(config.enabled_services.contains(&QuickwitService::Janitor));
-        assert!(config
-            .enabled_services
-            .contains(&QuickwitService::Metastore));
+        assert!(config.is_service_enabled(QuickwitService::Janitor));
+        assert!(config.is_service_enabled(QuickwitService::Metastore));
 
         assert_eq!(
             config.rest_listen_addr,
