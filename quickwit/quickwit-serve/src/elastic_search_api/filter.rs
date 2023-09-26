@@ -42,7 +42,7 @@ pub struct ElasticCompatibleApi;
 pub(crate) fn elastic_cluster_info_filter() -> impl Filter<Extract = (), Error = Rejection> + Clone
 {
     warp::path!("_elastic")
-        .and(warp::get())
+        .and(warp::get().or(warp::head()).unify())
         .and(warp::path::end())
 }
 

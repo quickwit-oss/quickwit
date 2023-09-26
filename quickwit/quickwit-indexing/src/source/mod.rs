@@ -240,7 +240,7 @@ pub trait Source: Send + 'static {
     async fn suggest_truncate(
         &mut self,
         _checkpoint: SourceCheckpoint,
-        _ctx: &ActorContext<SourceActor>,
+        _ctx: &SourceContext,
     ) -> anyhow::Result<()> {
         Ok(())
     }

@@ -36,6 +36,11 @@ use tracing::{info, warn};
 pub struct PartitionId(pub Arc<String>);
 
 impl PartitionId {
+    /// Returns the partition ID as a `i64`.
+    pub fn as_i64(&self) -> Option<i64> {
+        self.0.parse::<i64>().ok()
+    }
+
     /// Returns the partition ID as a `u64`.
     pub fn as_u64(&self) -> Option<u64> {
         self.0.parse().ok()
@@ -103,8 +108,20 @@ impl Position {
         }
     }
 
+    /// Returns the position as a `i64` (Kafka source).
+    pub fn as_i64(&self) -> Option<i64> {
+        match self {
+            Position::Beginning => None,
+            Position::Offset(offset) => offset.parse::<i64>().ok(),
+        }
+    }
+
+    /// Returns the position as a `u64` (ingest).
     pub fn as_u64(&self) -> Option<u64> {
-        self.as_str().parse().ok()
+        match self {
+            Position::Beginning => None,
+            Position::Offset(offset) => offset.parse::<u64>().ok(),
+        }
     }
 }
 
@@ -253,7 +270,7 @@ impl SourceCheckpoint {
 /// Creates a checkpoint from an iterator of `(PartitionId, Position)` tuples.
 /// ```
 /// use quickwit_metastore::checkpoint::{SourceCheckpoint, PartitionId, Position};
-/// let checkpoint: SourceCheckpoint = vec![(0u64, 0u64), (1u64, 2u64)]
+/// let checkpoint: SourceCheckpoint = [(0u64, 0u64), (1u64, 2u64)]
 ///     .into_iter()
 ///     .map(|(partition_id, offset)| {
 ///         (PartitionId::from(partition_id), Position::from(offset))
