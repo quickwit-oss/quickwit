@@ -24,7 +24,9 @@ use std::time::Duration;
 
 use futures::{StreamExt, TryStreamExt};
 use http::Uri;
-use quickwit_proto::search::{GetKvRequest, LeafSearchStreamResponse, PutKvRequest};
+use quickwit_proto::search::{
+    GetKvRequest, LeafSearchStreamResponse, PutKvRequest, ReportSplitsRequest,
+};
 use quickwit_proto::tonic::codegen::InterceptedService;
 use quickwit_proto::tonic::transport::{Channel, Endpoint};
 use quickwit_proto::tonic::Request;
@@ -264,6 +266,29 @@ impl SearchServiceClient {
             }
         }
         Ok(())
+    }
+
+    /// Indexers call report_splits to inform searchers node about the presence of a split, which
+    /// would then be considered as a candidate for the searcher split cache.
+    pub async fn report_splits(&mut self, report_splits_request: ReportSplitsRequest) {
+        match &mut self.client_impl {
+            SearchServiceClientImpl::Local(service) => {
+                let _ = service.report_splits(report_splits_request).await;
+            }
+            SearchServiceClientImpl::Grpc(search_client) => {
+                // Ignoring any error.
+                if search_client
+                    .report_splits(report_splits_request)
+                    .await
+                    .is_err()
+                {
+                    warn!(
+                        "Failed to report splits. This is not critical as this message is only \
+                         used to identify caching opportunities."
+                    );
+                }
+            }
+        }
     }
 }
 

@@ -373,4 +373,18 @@ mod tests {
         });
         assert_json_include!(actual: resp_json, expected: expected_response_json);
     }
+
+    #[tokio::test]
+    async fn test_head_request_on_root_endpoint() {
+        let build_info = BuildInfo::get();
+        let config = Arc::new(NodeConfig::for_test());
+        let handler =
+            es_compat_cluster_info_handler(config.clone(), build_info).recover(recover_fn);
+        let resp = warp::test::request()
+            .path("/_elastic")
+            .method("HEAD")
+            .reply(&handler)
+            .await;
+        assert_eq!(resp.status(), 200);
+    }
 }

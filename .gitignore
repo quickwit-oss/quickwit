@@ -6,6 +6,7 @@
 **/flamegraph.svg
 local/**
 quickwit/quickwit-ui/package-lock.json
+**/.DS_Store
 
 
 # Remove Cargo.lock from gitignore if creating an executable, leave it for libraries

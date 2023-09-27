@@ -22,7 +22,7 @@ mod serialize;
 use std::collections::{HashMap, HashSet};
 use std::env;
 use std::net::SocketAddr;
-use std::num::{NonZeroU64, NonZeroUsize};
+use std::num::{NonZeroU32, NonZeroU64, NonZeroUsize};
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -110,6 +110,36 @@ impl Default for IndexerConfig {
     }
 }
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SplitCacheLimits {
+    pub max_num_bytes: Byte,
+    #[serde(default = "SplitCacheLimits::default_max_num_splits")]
+    pub max_num_splits: NonZeroU32,
+    #[serde(default = "SplitCacheLimits::default_num_concurrent_downloads")]
+    pub num_concurrent_downloads: NonZeroU32,
+}
+
+impl SplitCacheLimits {
+    fn default_max_num_splits() -> NonZeroU32 {
+        NonZeroU32::new(10_000).unwrap()
+    }
+
+    fn default_num_concurrent_downloads() -> NonZeroU32 {
+        NonZeroU32::new(1).unwrap()
+    }
+}
+
+impl Default for SplitCacheLimits {
+    fn default() -> SplitCacheLimits {
+        SplitCacheLimits {
+            max_num_bytes: Byte::from_bytes(1_000_000_000), // 1 GB.
+            max_num_splits: NonZeroU32::new(100).unwrap(),
+            num_concurrent_downloads: NonZeroU32::new(1).unwrap(),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct SearcherConfig {
@@ -120,6 +150,11 @@ pub struct SearcherConfig {
     pub partial_request_cache_capacity: Byte,
     pub max_num_concurrent_split_searches: usize,
     pub max_num_concurrent_split_streams: usize,
+    // Strangely, if None, this will also have the effect of not forwarding
+    // to searcher.
+    // TODO document and fix if necessary.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub split_cache: Option<SplitCacheLimits>,
 }
 
 impl Default for SearcherConfig {
@@ -132,6 +167,7 @@ impl Default for SearcherConfig {
             max_num_concurrent_split_searches: 100,
             aggregation_memory_limit: Byte::from_bytes(500_000_000), // 500M
             aggregation_bucket_limit: 65000,
+            split_cache: None,
         }
     }
 }

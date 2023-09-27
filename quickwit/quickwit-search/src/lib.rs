@@ -64,6 +64,7 @@ use quickwit_metastore::{ListSplitsQuery, Metastore, SplitMetadata, SplitState};
 use quickwit_proto::search::{PartialHit, SearchRequest, SearchResponse, SplitIdAndFooterOffsets};
 use quickwit_proto::IndexUid;
 use quickwit_storage::StorageResolver;
+pub use service::SearcherContext;
 use tantivy::DocAddress;
 
 pub use crate::client::{
@@ -79,7 +80,6 @@ pub use crate::root::{
 pub use crate::search_job_placer::{Job, SearchJobPlacer};
 pub use crate::search_response_rest::SearchResponseRest;
 pub use crate::search_stream::root_search_stream;
-use crate::service::SearcherContext;
 pub use crate::service::{MockSearchService, SearchService, SearchServiceImpl};
 use crate::thread_pool::run_cpu_intensive;
 
@@ -166,17 +166,17 @@ fn convert_document_to_json_string(
 
 /// Starts a search node, aka a `searcher`.
 pub async fn start_searcher_service(
-    searcher_config: SearcherConfig,
     metastore: Arc<dyn Metastore>,
     storage_resolver: StorageResolver,
     search_job_placer: SearchJobPlacer,
+    searcher_context: Arc<SearcherContext>,
 ) -> anyhow::Result<Arc<dyn SearchService>> {
     let cluster_client = ClusterClient::new(search_job_placer);
     let search_service = Arc::new(SearchServiceImpl::new(
         metastore,
         storage_resolver,
         cluster_client,
-        searcher_config,
+        searcher_context,
     ));
     Ok(search_service)
 }
@@ -192,19 +192,19 @@ pub async fn single_node_search(
     let searcher_pool = SearcherPool::default();
     let search_job_placer = SearchJobPlacer::new(searcher_pool.clone());
     let cluster_client = ClusterClient::new(search_job_placer);
+    let searcher_config = SearcherConfig::default();
+    let searcher_context = Arc::new(SearcherContext::new(searcher_config, None));
     let search_service = Arc::new(SearchServiceImpl::new(
         metastore.clone(),
         storage_resolver,
         cluster_client.clone(),
-        SearcherConfig::default(),
+        searcher_context.clone(),
     ));
     let search_service_client =
         SearchServiceClient::from_service(search_service.clone(), socket_addr);
     searcher_pool
         .insert(socket_addr, search_service_client)
         .await;
-    let searcher_config = SearcherConfig::default();
-    let searcher_context = SearcherContext::new(searcher_config);
     root_search(
         &searcher_context,
         search_request,

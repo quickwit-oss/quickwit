@@ -33,14 +33,14 @@ use quickwit_metastore::checkpoint::{PartitionId, Position, SourceCheckpoint};
 use quickwit_proto::IndexUid;
 use rdkafka::config::{ClientConfig, RDKafkaLogLevel};
 use rdkafka::consumer::{
-    BaseConsumer, Consumer, ConsumerContext, DefaultConsumerContext, Rebalance,
+    BaseConsumer, CommitMode, Consumer, ConsumerContext, DefaultConsumerContext, Rebalance,
 };
 use rdkafka::error::KafkaError;
 use rdkafka::message::BorrowedMessage;
 use rdkafka::util::Timeout;
 use rdkafka::{ClientContext, Message, Offset, TopicPartitionList};
 use serde_json::{json, Value as JsonValue};
-use tokio::sync::mpsc;
+use tokio::sync::{mpsc, watch};
 use tokio::task::{spawn_blocking, JoinHandle};
 use tokio::time;
 use tracing::{debug, info, warn};
@@ -61,6 +61,8 @@ use crate::source::{BatchBuilder, Source, SourceContext, SourceRuntimeArgs, Type
 ///
 /// 5MB seems like a good one size fits all value.
 const BATCH_NUM_BYTES_LIMIT: u64 = 5_000_000;
+
+type GroupId = String;
 
 /// Factory for instantiating a `KafkaSource`.
 pub struct KafkaSourceFactory;
@@ -216,9 +218,11 @@ pub struct KafkaSourceState {
 pub struct KafkaSource {
     ctx: Arc<SourceRuntimeArgs>,
     topic: String,
+    group_id: GroupId,
     state: KafkaSourceState,
     backfill_mode_enabled: bool,
     events_rx: mpsc::Receiver<KafkaEvent>,
+    truncate_tx: watch::Sender<SourceCheckpoint>,
     poll_loop_jh: JoinHandle<()>,
     publish_lock: PublishLock,
 }
@@ -245,10 +249,10 @@ impl KafkaSource {
         let backfill_mode_enabled = params.enable_backfill_mode;
 
         let (events_tx, events_rx) = mpsc::channel(100);
-        let (client_config, consumer) =
+        let (truncate_tx, truncate_rx) = watch::channel(SourceCheckpoint::default());
+        let (client_config, consumer, group_id) =
             create_consumer(ctx.index_uid(), ctx.source_id(), params, events_tx.clone())?;
         let native_client_config = client_config.create_native_config()?;
-        let group_id = native_client_config.get("group.id")?;
         let session_timeout_ms = native_client_config
             .get("session.timeout.ms")?
             .parse::<u64>()?;
@@ -256,7 +260,8 @@ impl KafkaSource {
             .get("max.poll.interval.ms")?
             .parse::<u64>()?;
 
-        let poll_loop_jh = spawn_consumer_poll_loop(consumer, topic.clone(), events_tx);
+        let poll_loop_jh =
+            spawn_consumer_poll_loop(consumer, topic.clone(), events_tx, truncate_rx);
         let publish_lock = PublishLock::default();
 
         info!(
@@ -278,9 +283,11 @@ impl KafkaSource {
         Ok(KafkaSource {
             ctx,
             topic,
+            group_id,
             state: KafkaSourceState::default(),
             backfill_mode_enabled,
             events_rx,
+            truncate_tx,
             poll_loop_jh,
             publish_lock,
         })
@@ -372,8 +379,10 @@ impl KafkaSource {
                 .unwrap_or(Position::Beginning);
             let next_offset = match &current_position {
                 Position::Beginning => Offset::Beginning,
-                Position::Offset(offset_str) => {
-                    let offset: i64 = offset_str.parse().expect("Failed to parse checkpoint position to i64. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.");
+                Position::Offset(_) => {
+                    let offset = current_position
+                        .as_i64()
+                        .expect("Kafka offset should be stored as i64.");
                     Offset::Offset(offset + 1)
                 }
             };
@@ -389,12 +398,13 @@ impl KafkaSource {
             index_id=%self.ctx.index_id(),
             source_id=%self.ctx.source_id(),
             topic=%self.topic,
+            group_id=%self.group_id,
             partitions=?partitions,
             "New partition assignment after rebalance.",
         );
         assignment_tx
             .send(next_offsets)
-            .map_err(|_| anyhow!("consumer context was dropped"))?;
+            .context("Kafka consumer context was dropped")?;
         Ok(())
     }
 
@@ -408,7 +418,7 @@ impl KafkaSource {
         ctx.protect_future(self.publish_lock.kill()).await;
         ack_tx
             .send(())
-            .map_err(|_| anyhow!("consumer context was dropped"))?;
+            .context("Kafka consumer context was dropped")?;
 
         batch.clear();
         self.publish_lock = PublishLock::default();
@@ -437,6 +447,13 @@ impl KafkaSource {
             // This check ensures that we don't shutdown the source before the first partition assignment.
             && self.state.num_inactive_partitions > 0
             && self.state.num_inactive_partitions == self.state.assigned_partitions.len()
+    }
+
+    fn truncate(&self, checkpoint: SourceCheckpoint) -> anyhow::Result<()> {
+        self.truncate_tx
+            .send(checkpoint)
+            .context("Kafka consumer was dropped")?;
+        Ok(())
     }
 }
 
@@ -501,6 +518,15 @@ impl Source for KafkaSource {
         Ok(Duration::default())
     }
 
+    async fn suggest_truncate(
+        &mut self,
+        checkpoint: SourceCheckpoint,
+        _ctx: &SourceContext,
+    ) -> anyhow::Result<()> {
+        self.truncate(checkpoint)?;
+        Ok(())
+    }
+
     async fn finalize(
         &mut self,
         _exit_status: &ActorExitStatus,
@@ -548,6 +574,7 @@ fn spawn_consumer_poll_loop(
     consumer: RdKafkaConsumer,
     topic: String,
     events_tx: mpsc::Sender<KafkaEvent>,
+    mut truncate_rx: watch::Receiver<SourceCheckpoint>,
 ) -> JoinHandle<()> {
     spawn_blocking(move || {
         // `subscribe()` returns immediately but triggers the execution of synchronous code (e.g.
@@ -576,6 +603,29 @@ fn spawn_consumer_poll_loop(
                 // minutes.
                 if events_tx.blocking_send(event).is_err() {
                     break;
+                }
+            }
+            if let Ok(true) = truncate_rx.has_changed() {
+                let checkpoint = truncate_rx.borrow_and_update();
+
+                let mut tpl = TopicPartitionList::new();
+                for (partition_id, position) in checkpoint.iter() {
+                    let partition = partition_id
+                        .as_i64()
+                        .expect("Kafka partition should be stored as i64.")
+                        as i32;
+                    // Quickwit positions are inclusive whereas Kafka offsets are exclusive, hence
+                    // the increment by 1.
+                    let next_position = position
+                        .as_i64()
+                        .expect("Kafka offset should be stored as i64.")
+                        + 1;
+                    let offset = Offset::Offset(next_position);
+                    tpl.add_partition_offset(&topic, partition, offset)
+                        .expect("The offset should be valid.");
+                }
+                if let Err(error) = consumer.commit(&tpl, CommitMode::Async) {
+                    warn!(error=?error, "Failed to commit offsets.");
                 }
             }
         }
@@ -629,7 +679,7 @@ fn create_consumer(
     source_id: &str,
     params: KafkaSourceParams,
     events_tx: mpsc::Sender<KafkaEvent>,
-) -> anyhow::Result<(ClientConfig, RdKafkaConsumer)> {
+) -> anyhow::Result<(ClientConfig, RdKafkaConsumer, GroupId)> {
     // Group ID is limited to 255 characters.
     let mut group_id = match &params.client_params["group.id"] {
         JsonValue::String(group_id) => group_id.clone(),
@@ -654,7 +704,7 @@ fn create_consumer(
         })
         .context("failed to create Kafka consumer")?;
 
-    Ok((client_config, consumer))
+    Ok((client_config, consumer, group_id))
 }
 
 fn parse_client_log_level(client_log_level: Option<String>) -> anyhow::Result<RDKafkaLogLevel> {
@@ -747,11 +797,20 @@ mod kafka_broker_tests {
     use crate::new_split_id;
     use crate::source::{quickwit_supported_sources, RawDocBatch, SourceActor};
 
-    fn create_admin_client() -> anyhow::Result<AdminClient<DefaultClientContext>> {
+    fn create_base_consumer(group_id: &str) -> BaseConsumer {
+        ClientConfig::new()
+            .set("bootstrap.servers", "localhost:9092")
+            .set("group.id", group_id)
+            .create()
+            .unwrap()
+    }
+
+    fn create_admin_client() -> AdminClient<DefaultClientContext> {
         let admin_client = ClientConfig::new()
             .set("bootstrap.servers", "localhost:9092")
-            .create()?;
-        Ok(admin_client)
+            .create()
+            .unwrap();
+        admin_client
     }
 
     async fn create_topic(
@@ -921,7 +980,7 @@ mod kafka_broker_tests {
 
     #[tokio::test]
     async fn test_kafka_source_process_message() {
-        let admin_client = create_admin_client().unwrap();
+        let admin_client = create_admin_client();
         let topic = append_random_suffix("test-kafka-source--process-message--topic");
         create_topic(&admin_client, &topic, 2).await.unwrap();
 
@@ -929,10 +988,11 @@ mod kafka_broker_tests {
         let index_id = append_random_suffix("test-kafka-source--process-message--index");
         let index_uid = IndexUid::new(&index_id);
         let (_source_id, source_config) = get_source_config(&topic);
-        let params = if let SourceParams::Kafka(params) = source_config.clone().source_params {
-            params
-        } else {
-            unreachable!()
+        let SourceParams::Kafka(params) = source_config.clone().source_params else {
+            panic!(
+                "Expected Kafka source params, got {:?}.",
+                source_config.source_params
+            );
         };
         let ctx = SourceRuntimeArgs::for_test(
             index_uid,
@@ -1045,7 +1105,7 @@ mod kafka_broker_tests {
 
     #[tokio::test]
     async fn test_kafka_source_process_assign_partitions() {
-        let admin_client = create_admin_client().unwrap();
+        let admin_client = create_admin_client();
         let topic = append_random_suffix("test-kafka-source--process-assign-partitions--topic");
         create_topic(&admin_client, &topic, 2).await.unwrap();
 
@@ -1055,10 +1115,11 @@ mod kafka_broker_tests {
 
         let index_uid = setup_index(metastore.clone(), &index_id, &source_id, &[(2, -1, 42)]).await;
 
-        let params = if let SourceParams::Kafka(params) = source_config.clone().source_params {
-            params
-        } else {
-            unreachable!()
+        let SourceParams::Kafka(params) = source_config.clone().source_params else {
+            panic!(
+                "Expected Kafka source params, got {:?}.",
+                source_config.source_params
+            );
         };
         let ctx = SourceRuntimeArgs::for_test(
             index_uid,
@@ -1108,7 +1169,7 @@ mod kafka_broker_tests {
 
     #[tokio::test]
     async fn test_kafka_source_process_revoke_partitions() {
-        let admin_client = create_admin_client().unwrap();
+        let admin_client = create_admin_client();
         let topic = append_random_suffix("test-kafka-source--process-revoke-partitions--topic");
         create_topic(&admin_client, &topic, 1).await.unwrap();
 
@@ -1116,10 +1177,11 @@ mod kafka_broker_tests {
         let index_id = append_random_suffix("test-kafka-source--process-revoke--partitions--index");
         let index_uid = IndexUid::new(&index_id);
         let (_source_id, source_config) = get_source_config(&topic);
-        let params = if let SourceParams::Kafka(params) = source_config.clone().source_params {
-            params
-        } else {
-            unreachable!()
+        let SourceParams::Kafka(params) = source_config.clone().source_params else {
+            panic!(
+                "Expected Kafka source params, got {:?}.",
+                source_config.source_params
+            );
         };
         let ctx = SourceRuntimeArgs::for_test(
             index_uid,
@@ -1165,7 +1227,7 @@ mod kafka_broker_tests {
 
     #[tokio::test]
     async fn test_kafka_source_process_partition_eof() {
-        let admin_client = create_admin_client().unwrap();
+        let admin_client = create_admin_client();
         let topic = append_random_suffix("test-kafka-source--process-partition-eof--topic");
         create_topic(&admin_client, &topic, 1).await.unwrap();
 
@@ -1173,10 +1235,11 @@ mod kafka_broker_tests {
         let index_id = append_random_suffix("test-kafka-source--process-partition-eof--index");
         let index_uid = IndexUid::new(&index_id);
         let (_source_id, source_config) = get_source_config(&topic);
-        let params = if let SourceParams::Kafka(params) = source_config.clone().source_params {
-            params
-        } else {
-            unreachable!()
+        let SourceParams::Kafka(params) = source_config.clone().source_params else {
+            panic!(
+                "Expected Kafka source params, got {:?}.",
+                source_config.source_params
+            );
         };
         let ctx = SourceRuntimeArgs::for_test(
             index_uid,
@@ -1202,9 +1265,89 @@ mod kafka_broker_tests {
     }
 
     #[tokio::test]
+    async fn test_kafka_source_suggest_truncate() {
+        let admin_client = create_admin_client();
+        let topic = append_random_suffix("test-kafka-source--suggest-truncate--topic");
+        create_topic(&admin_client, &topic, 2).await.unwrap();
+
+        let metastore = metastore_for_test();
+        let index_id = append_random_suffix("test-kafka-source--suggest-truncate--index");
+        let (source_id, source_config) = get_source_config(&topic);
+
+        let index_uid = setup_index(metastore.clone(), &index_id, &source_id, &[(2, -1, 42)]).await;
+
+        let SourceParams::Kafka(params) = source_config.clone().source_params else {
+            panic!(
+                "Expected Kafka source params, got {:?}.",
+                source_config.source_params
+            );
+        };
+        let ctx = SourceRuntimeArgs::for_test(
+            index_uid,
+            source_config,
+            metastore,
+            PathBuf::from("./queues"),
+        );
+        let ignored_checkpoint = SourceCheckpoint::default();
+        let mut kafka_source = KafkaSource::try_new(ctx, params, ignored_checkpoint)
+            .await
+            .unwrap();
+
+        let universe = Universe::with_accelerated_time();
+        let (source_mailbox, _source_inbox) = universe.create_test_mailbox();
+        let (observable_state_tx, _observable_state_rx) = watch::channel(json!({}));
+        let ctx: ActorContext<SourceActor> =
+            ActorContext::for_test(&universe, source_mailbox, observable_state_tx);
+
+        let KafkaEvent::AssignPartitions {
+            partitions,
+            assignment_tx,
+        } = kafka_source.events_rx.recv().await.unwrap()
+        else {
+            panic!("Expected `AssignPartitions` event.");
+        };
+        kafka_source
+            .process_assign_partitions(&ctx, &partitions, assignment_tx)
+            .await
+            .unwrap();
+
+        let checkpoint: SourceCheckpoint = [(0u64, 1u64), (1u64, 2u64)]
+            .into_iter()
+            .map(|(partition_id, offset)| (PartitionId::from(partition_id), Position::from(offset)))
+            .collect();
+        kafka_source.truncate(checkpoint).unwrap();
+
+        tokio::time::sleep(Duration::from_secs(1)).await;
+
+        let mut tpl = TopicPartitionList::new();
+        tpl.add_partition(&topic, 0);
+        tpl.add_partition(&topic, 1);
+
+        let consumer = create_base_consumer(&kafka_source.group_id);
+        let committed_offsets = consumer
+            .committed_offsets(tpl.clone(), Duration::from_secs(10))
+            .unwrap();
+
+        assert_eq!(
+            committed_offsets
+                .find_partition(&topic, 0)
+                .unwrap()
+                .offset(),
+            Offset::Offset(2)
+        );
+        assert_eq!(
+            committed_offsets
+                .find_partition(&topic, 1)
+                .unwrap()
+                .offset(),
+            Offset::Offset(3)
+        );
+    }
+
+    #[tokio::test]
     async fn test_kafka_source() -> anyhow::Result<()> {
         let universe = Universe::with_accelerated_time();
-        let admin_client = create_admin_client()?;
+        let admin_client = create_admin_client();
         let topic = append_random_suffix("test-kafka-source--topic");
         create_topic(&admin_client, &topic, 3).await?;
 
@@ -1405,7 +1548,7 @@ mod kafka_broker_tests {
         let bootstrap_servers = "localhost:9092".to_string();
         let topic = append_random_suffix("test-kafka-connectivity-topic");
 
-        let admin_client = create_admin_client().unwrap();
+        let admin_client = create_admin_client();
         create_topic(&admin_client, &topic, 1).await.unwrap();
 
         // Check valid connectivity

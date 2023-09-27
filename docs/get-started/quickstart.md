@@ -79,7 +79,7 @@ Let's create an index configured to receive Stackoverflow posts (questions and a
 curl -o stackoverflow-index-config.yaml https://raw.githubusercontent.com/quickwit-oss/quickwit/main/config/tutorials/stackoverflow/index-config.yaml
 ```
 
-The index config defines nine text fields. Among them there are five text fields: `user`, `tags`, `title`, `type` and `body`. Two of these fields, `body` and `title` are [indexed and tokenized](../configuration/index-config.md#text-type) and they are also used as default search fields, which means they will be used for search if you do not target a specific field in your query. The `tags` field is configured to accept multiple text values. The rest of the text fields are not tokenized and configured as [fast](/docs/configuration/index-config.md#text-type). There are three numeric fields `questionId`, `answerId` and `acceptedAnswerId`. And there is the `creationDate` field that serves as the timestamp for each record.
+The index config defines three fields: `title`, `body` and `creationDate`. `title` and `body` are [indexed and tokenized](../configuration/index-config.md#text-type), and they are also used as default search fields, which means they will be used for search if you do not target a specific field in your query. `creationDate` serves as the timestamp for each record. There are no more explicit field definitions as we can use the default dynamic [mode](/docs/configuration/index-config.md#mode): the undeclared fields will still be indexed, by default fast fields are enabled to enable aggregation queries. and the `raw` tokenizer is used for text. 
 
 And here is the complete config:
 
@@ -93,18 +93,6 @@ index_id: stackoverflow
 
 doc_mapping:
   field_mappings:
-    - name: user
-      type: text
-      fast: true
-      tokenizer: raw
-    - name: tags
-      type: array<text>
-      fast: true
-      tokenizer: raw
-    - name: type
-      type: text
-      fast: true
-      tokenizer: raw
     - name: title
       type: text
       tokenizer: default
@@ -115,12 +103,6 @@ doc_mapping:
       tokenizer: default
       record: position
       stored: true
-    - name: questionId
-      type: u64
-    - name: answerId
-      type: u64
-    - name: acceptedAnswerId
-      type: u64
     - name: creationDate
       type: datetime
       fast: true
@@ -133,7 +115,7 @@ search_settings:
   default_search_fields: [title, body]
 
 indexing_settings:
-  commit_timeout_secs: 5
+  commit_timeout_secs: 10
 ```
 
 Now we can create the index with the command:

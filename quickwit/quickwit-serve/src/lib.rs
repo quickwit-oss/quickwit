@@ -42,10 +42,11 @@ use std::convert::Infallible;
 use std::fs;
 use std::net::SocketAddr;
 use std::num::NonZeroUsize;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::anyhow;
+use anyhow::{anyhow, Context};
 use byte_unit::n_mib_bytes;
 pub use format::BodyFormat;
 use futures::{Stream, StreamExt};
@@ -59,7 +60,7 @@ use quickwit_common::tower::{
     Rate, RateLimitLayer, SmaRateEstimator,
 };
 use quickwit_config::service::QuickwitService;
-use quickwit_config::{NodeConfig, SearcherConfig};
+use quickwit_config::NodeConfig;
 use quickwit_control_plane::control_plane::ControlPlane;
 use quickwit_control_plane::{ControlPlaneEventSubscriber, IndexerNodeInfo, IndexerPool};
 use quickwit_index_management::{IndexService as IndexManager, IndexServiceError};
@@ -83,12 +84,13 @@ use quickwit_proto::metastore::events::{
     AddSourceEvent, DeleteIndexEvent, DeleteSourceEvent, ToggleSourceEvent,
 };
 use quickwit_proto::metastore::{EntityKind, MetastoreError};
+use quickwit_proto::search::ReportSplitsRequest;
 use quickwit_proto::NodeId;
 use quickwit_search::{
     create_search_client_from_channel, start_searcher_service, SearchJobPlacer, SearchService,
-    SearchServiceClient, SearcherPool,
+    SearchServiceClient, SearcherContext, SearcherPool,
 };
-use quickwit_storage::StorageResolver;
+use quickwit_storage::{SplitCache, StorageResolver};
 use tokio::sync::oneshot;
 use tower::timeout::Timeout;
 use tower::ServiceBuilder;
@@ -115,11 +117,6 @@ struct QuickwitServices {
     pub metastore_server_opt: Option<Arc<dyn Metastore>>,
     pub metastore_client: Arc<dyn Metastore>,
     pub control_plane_service: ControlPlaneServiceClient,
-    #[allow(dead_code)]
-    /// The control plane listens to metastore events.
-    /// We must maintain a reference to the subscription handles to continue receiving
-    /// notifcations. Otherwise, the subscriptions are dropped.
-    pub control_plane_event_subscription_handles_opt: Option<ControlPlaneEventSubscriptionHandles>,
     pub index_manager: IndexManager,
     pub indexing_service_opt: Option<Mailbox<IndexingService>>,
     // Ingest v1
@@ -132,6 +129,12 @@ struct QuickwitServices {
     /// It is only used to serve the rest API calls and will only execute
     /// the root requests.
     pub search_service: Arc<dyn SearchService>,
+
+    /// The control plane listens to metastore events.
+    /// We must maintain a reference to the subscription handles to continue receiving
+    /// notifications. Otherwise, the subscriptions are dropped.
+    _control_plane_event_subscription_handles_opt: Option<ControlPlaneEventSubscriptionHandles>,
+    _report_splits_subscription_handle_opt: Option<EventSubscriptionHandle<ReportSplitsRequest>>,
 }
 
 fn has_node_with_metastore_service(members: &[ClusterMember]) -> bool {
@@ -250,6 +253,7 @@ pub async fn serve_quickwit(
             balance_channel_for_service(&cluster, QuickwitService::ControlPlane).await;
         ControlPlaneServiceClient::from_channel(balance_channel)
     };
+
     // Setup control plane event subscriptions.
     let control_plane_event_subscription_handles_opt = setup_control_plane_event_subscriptions(
         &node_config,
@@ -284,6 +288,7 @@ pub async fn serve_quickwit(
             ingest_api_service.clone(),
             ingester_pool.clone(),
             storage_resolver.clone(),
+            event_broker.clone(),
         )
         .await?;
         let num_buckets = NonZeroUsize::new(60).expect("60 should be non-zero");
@@ -356,16 +361,45 @@ pub async fn serve_quickwit(
         }
     }
 
-    let searcher_config = node_config.searcher_config.clone();
     let cluster_change_stream = cluster.ready_nodes_change_stream().await;
 
+    let split_cache_root_directory: PathBuf =
+        node_config.data_dir_path.join("searcher-split-cache");
+    let split_cache_opt: Option<Arc<SplitCache>> =
+        if let Some(split_cache_config) = node_config.searcher_config.split_cache {
+            let split_cache = SplitCache::with_root_path(
+                split_cache_root_directory,
+                storage_resolver.clone(),
+                split_cache_config,
+            )
+            .context("failed to load searcher split cache")?;
+            Some(Arc::new(split_cache))
+        } else {
+            None
+        };
+
+    let searcher_context = Arc::new(SearcherContext::new(
+        node_config.searcher_config.clone(),
+        split_cache_opt,
+    ));
+
     let (search_job_placer, search_service) = setup_searcher(
-        searcher_config,
         cluster_change_stream,
         metastore_client.clone(),
         storage_resolver.clone(),
+        searcher_context,
     )
     .await?;
+
+    let report_splits_subscription_handle_opt =
+        // DISCLAIMER: This is quirky here: We base our decision to forward the split report depending
+        // on the current searcher configuration.
+        if node_config.searcher_config.split_cache.is_some() {
+            // The searcher receive hints about new splits to populate their index.
+            Some(event_broker.subscribe::<ReportSplitsRequest>(search_job_placer.clone()))
+        } else {
+            None
+        };
 
     let janitor_service_opt = if node_config
         .enabled_services
@@ -377,6 +411,7 @@ pub async fn serve_quickwit(
             metastore_client.clone(),
             search_job_placer,
             storage_resolver.clone(),
+            event_broker.clone(),
         )
         .await?;
         Some(janitor_service)
@@ -394,7 +429,8 @@ pub async fn serve_quickwit(
         metastore_server_opt,
         metastore_client: metastore_client.clone(),
         control_plane_service,
-        control_plane_event_subscription_handles_opt,
+        _control_plane_event_subscription_handles_opt: control_plane_event_subscription_handles_opt,
+        _report_splits_subscription_handle_opt: report_splits_subscription_handle_opt,
         index_manager,
         indexing_service_opt,
         ingest_router_service,
@@ -648,18 +684,18 @@ async fn setup_ingest_v2(
 }
 
 async fn setup_searcher(
-    searcher_config: SearcherConfig,
     cluster_change_stream: impl Stream<Item = ClusterChange> + Send + 'static,
     metastore: Arc<dyn Metastore>,
     storage_resolver: StorageResolver,
+    searcher_context: Arc<SearcherContext>,
 ) -> anyhow::Result<(SearchJobPlacer, Arc<dyn SearchService>)> {
     let searcher_pool = SearcherPool::default();
     let search_job_placer = SearchJobPlacer::new(searcher_pool.clone());
     let search_service = start_searcher_service(
-        searcher_config,
         metastore,
         storage_resolver,
         search_job_placer.clone(),
+        searcher_context,
     )
     .await?;
     let search_service_clone = search_service.clone();
@@ -867,6 +903,7 @@ mod tests {
     use chitchat::transport::ChannelTransport;
     use quickwit_cluster::{create_cluster_for_test, ClusterNode};
     use quickwit_common::uri::Uri;
+    use quickwit_config::SearcherConfig;
     use quickwit_metastore::{metastore_for_test, IndexMetadata, ListIndexesQuery, MockMetastore};
     use quickwit_proto::indexing::IndexingTask;
     use quickwit_search::Job;
@@ -1002,13 +1039,13 @@ mod tests {
 
     #[tokio::test]
     async fn test_setup_searcher() {
-        let searcher_config = SearcherConfig::default();
+        let searcher_context = Arc::new(SearcherContext::new(SearcherConfig::default(), None));
         let metastore = metastore_for_test();
         let (change_stream_tx, change_stream_rx) = mpsc::unbounded_channel();
         let change_stream = UnboundedReceiverStream::new(change_stream_rx);
         let storage_resolver = StorageResolver::unconfigured();
         let (search_job_placer, _searcher_service) =
-            setup_searcher(searcher_config, change_stream, metastore, storage_resolver)
+            setup_searcher(change_stream, metastore, storage_resolver, searcher_context)
                 .await
                 .unwrap();
 

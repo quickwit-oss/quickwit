@@ -18,12 +18,16 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::fmt;
+use std::io::{self, ErrorKind};
 use std::ops::Range;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
 use quickwit_common::uri::Uri;
+use tempfile::TempPath;
+use tokio::fs::File;
 use tokio::io::AsyncWrite;
+use tracing::error;
 
 use crate::{BulkDeleteError, OwnedBytes, PutPayload, StorageErrorKind, StorageResult};
 
@@ -81,14 +85,19 @@ pub trait Storage: fmt::Debug + Send + Sync + 'static {
     /// `output_path` is expected to be a file path (not a directory path)
     /// without any existing file yet.
     ///
-    /// If the call is successful, the file will be created.
-    /// If not, the file may or may not have been created.
+    /// This function will attempt to download things to a temporary file
+    /// in the same directory as the `output_path`, and then atomically move it
+    /// to the actual `output_path`.
+    ///
+    /// In case of failure, `quickwit` (not the OS) will attempt to delete the file
+    /// using some `Drop` mechanic.
+    /// If quickwit is killed for instance, this may result in the temporary file not
+    /// being deleted. It is important, upon started to identify these ".temp"
+    /// files and delete them.
     ///
     /// See also `copy_to`.
-    async fn copy_to_file(&self, path: &Path, output_path: &Path) -> StorageResult<()> {
-        let mut file = tokio::fs::File::create(output_path).await?;
-        self.copy_to(path, &mut file).await?;
-        Ok(())
+    async fn copy_to_file(&self, path: &Path, output_path: &Path) -> StorageResult<u64> {
+        default_copy_to_file(self, path, output_path).await
     }
 
     /// Downloads a slice of a file from the storage, and returns an in memory buffer
@@ -124,4 +133,134 @@ pub trait Storage: fmt::Debug + Send + Sync + 'static {
 
     /// Returns an URI identifying the storage
     fn uri(&self) -> &Uri;
+}
+
+async fn default_copy_to_file<S: Storage + ?Sized>(
+    storage: &S,
+    path: &Path,
+    output_path: &Path,
+) -> StorageResult<u64> {
+    let mut download_temp_file =
+        DownloadTempFile::with_target_path(output_path.to_path_buf()).await?;
+    storage.copy_to(path, download_temp_file.as_mut()).await?;
+    let num_bytes = download_temp_file.persist().await?;
+    Ok(num_bytes)
+}
+
+struct DownloadTempFile {
+    target_filepath: PathBuf,
+    temp_filepath: PathBuf,
+    file: File,
+    has_attempted_deletion: bool,
+}
+
+impl DownloadTempFile {
+    /// Creates or truncate temp file.
+    pub async fn with_target_path(target_filepath: PathBuf) -> io::Result<DownloadTempFile> {
+        let Some(filename) = target_filepath.file_name() else {
+            return Err(io::Error::new(
+                ErrorKind::Other,
+                "Target filepath is not a directory path. Expected a filepath.",
+            ));
+        };
+        let filename: &str = filename.to_str().ok_or_else(|| {
+            io::Error::new(
+                ErrorKind::Other,
+                "Target filepath is not a valid UTF-8 string.",
+            )
+        })?;
+        let mut temp_filepath = target_filepath.clone();
+        temp_filepath.set_file_name(format!("{filename}.temp"));
+        let file = tokio::fs::File::create(temp_filepath.clone()).await?;
+        Ok(DownloadTempFile {
+            target_filepath,
+            temp_filepath,
+            file,
+            has_attempted_deletion: false,
+        })
+    }
+
+    pub async fn persist(mut self) -> io::Result<u64> {
+        TempPath::from_path(&self.temp_filepath).persist(&self.target_filepath)?;
+        self.has_attempted_deletion = true;
+        let num_bytes = std::fs::metadata(&self.target_filepath)?.len();
+        Ok(num_bytes)
+    }
+}
+
+impl Drop for DownloadTempFile {
+    fn drop(&mut self) {
+        if self.has_attempted_deletion {
+            return;
+        }
+        let temp_filepath = self.temp_filepath.clone();
+        self.has_attempted_deletion = true;
+        tokio::task::spawn_blocking(move || {
+            if let Err(io_error) = std::fs::remove_file(&temp_filepath) {
+                error!(temp_filepath=%temp_filepath.display(), io_error=?io_error, "Failed to remove temporary file");
+            }
+        });
+    }
+}
+
+impl AsMut<File> for DownloadTempFile {
+    fn as_mut(&mut self) -> &mut File {
+        &mut self.file
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::time::Duration;
+
+    use super::*;
+    use crate::{RamStorage, StorageError};
+
+    const CONTENT: &[u8] = b"hello world";
+
+    #[tokio::test]
+    async fn test_copy_to_file() {
+        let ram_storage = RamStorage::default();
+        let temp_dir = tempfile::tempdir().unwrap();
+        let dest_filepath = temp_dir.path().join("bar");
+        let path = Path::new("foo/bar");
+        ram_storage
+            .put(path, Box::new(CONTENT.to_owned()))
+            .await
+            .unwrap();
+        let num_bytes = ram_storage
+            .copy_to_file(path, &dest_filepath)
+            .await
+            .unwrap();
+        assert_eq!(num_bytes, 11);
+        let content = std::fs::read(&dest_filepath).unwrap();
+        assert_eq!(&content, CONTENT);
+    }
+
+    #[tokio::test]
+    async fn test_copy_to_file_deletes_tempfile_on_failure() {
+        let mut storage = MockStorage::default();
+        storage.expect_copy_to().return_once(|_, _| {
+            Box::pin(futures::future::err(StorageError::from(io::Error::new(
+                io::ErrorKind::Other,
+                "fake storage error",
+            ))))
+        });
+        let path = Path::new("foo/bar");
+        let temp_dir = tempfile::tempdir().unwrap();
+        let dest_filepath = temp_dir.path().join("bar");
+        default_copy_to_file(&storage, path, &dest_filepath)
+            .await
+            .unwrap_err();
+        tokio::time::sleep(Duration::from_millis(100)).await;
+        let mut read_dir = tokio::fs::read_dir(dest_filepath.parent().unwrap())
+            .await
+            .unwrap();
+        let entry_opt = read_dir
+            .next_entry()
+            .await
+            .unwrap()
+            .map(|dir_entry| dir_entry.path());
+        assert_eq!(entry_opt, None);
+    }
 }

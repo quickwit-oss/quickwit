@@ -23,11 +23,13 @@ use std::sync::Arc;
 use futures::stream::StreamExt;
 use hyper::header::HeaderValue;
 use hyper::HeaderMap;
+use once_cell::sync::Lazy;
 use quickwit_config::validate_index_id_pattern;
 use quickwit_proto::search::{OutputFormat, SortField, SortOrder};
 use quickwit_proto::ServiceError;
 use quickwit_query::query_ast::query_ast_from_user_text;
 use quickwit_search::{SearchError, SearchResponseRest, SearchService};
+use regex::Regex;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
 use tracing::info;
@@ -53,6 +55,26 @@ use crate::{with_arg, BodyFormat};
     ),)
 )]
 pub struct SearchApi;
+
+// Matches index patterns separated by commas or its URL encoded version '%2C'.
+static COMMA_SEPARATED_INDEX_PATTERNS_REGEX: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r",|%2C").expect("the regular expression should compile"));
+
+pub(crate) async fn extract_index_id_patterns(
+    comma_separated_index_patterns: String,
+) -> Result<Vec<String>, Rejection> {
+    let mut index_ids_patterns = Vec::new();
+    for index_id_pattern in
+        COMMA_SEPARATED_INDEX_PATTERNS_REGEX.split(&comma_separated_index_patterns)
+    {
+        validate_index_id_pattern(index_id_pattern).map_err(|error| {
+            warp::reject::custom(crate::rest::InvalidArgument(error.to_string()))
+        })?;
+        index_ids_patterns.push(index_id_pattern.to_string());
+    }
+    assert!(!index_ids_patterns.is_empty());
+    Ok(index_ids_patterns)
+}
 
 #[derive(Debug, Default, Eq, PartialEq, Deserialize, utoipa::ToSchema)]
 pub struct SortBy {
@@ -260,20 +282,6 @@ async fn search(
     let body_format = search_request.format;
     let result = search_endpoint(index_id_patterns, search_request, &*search_service).await;
     make_json_api_response(result, body_format)
-}
-
-pub(crate) async fn extract_index_id_patterns(
-    comma_separated_index_patterns: String,
-) -> Result<Vec<String>, Rejection> {
-    let mut index_ids_patterns = Vec::new();
-    for index_id_pattern in comma_separated_index_patterns.split(',') {
-        validate_index_id_pattern(index_id_pattern).map_err(|error| {
-            warp::reject::custom(crate::rest::InvalidArgument(error.to_string()))
-        })?;
-        index_ids_patterns.push(index_id_pattern.to_string());
-    }
-    assert!(!index_ids_patterns.is_empty());
-    Ok(index_ids_patterns)
 }
 
 #[utoipa::path(
@@ -493,6 +501,18 @@ mod tests {
         extract_index_id_patterns("my-index".to_string())
             .await
             .unwrap();
+        assert_eq!(
+            extract_index_id_patterns("my-index-1,my-index-2".to_string())
+                .await
+                .unwrap(),
+            vec!["my-index-1".to_string(), "my-index-2".to_string()]
+        );
+        assert_eq!(
+            extract_index_id_patterns("my-index-1%2Cmy-index-2".to_string())
+                .await
+                .unwrap(),
+            vec!["my-index-1".to_string(), "my-index-2".to_string()]
+        );
         extract_index_id_patterns("".to_string()).await.unwrap_err();
         extract_index_id_patterns(" ".to_string())
             .await
@@ -1105,6 +1125,14 @@ mod tests {
             assert_eq!(
                 warp::test::request()
                     .path("/quickwit-demo-*,quickwit-demo2/search?query=*")
+                    .reply(&rest_search_api_handler)
+                    .await
+                    .status(),
+                200
+            );
+            assert_eq!(
+                warp::test::request()
+                    .path("/quickwit-demo-*%2Cquickwit-demo2/search?query=*")
                     .reply(&rest_search_api_handler)
                     .await
                     .status(),

@@ -1,3 +1,4 @@
+endpoint: "gharchive-*/_search"
 params:
   q: "*"
 expected:
@@ -8,6 +9,29 @@ expected:
     hits:
       $expect: "len(val) == 4"
 ---
+endpoint: "gharchive-*/_search"
+params:
+  q: "actor.login:fmassot OR actor.login:guilload"
+expected:
+  hits:
+    total:
+      value: 2
+      relation: "eq"
+    hits:
+      $expect: "len(val) == 2"
+---
+endpoint: "gharchive-1,gharchive-2/_search"
+params:
+  q: "actor.login:fmassot OR actor.login:guilload"
+expected:
+  hits:
+    total:
+      value: 2
+      relation: "eq"
+    hits:
+      $expect: "len(val) == 2"
+---
+endpoint: "gharchive-1%2Cgharchive-2/_search"
 params:
   q: "actor.login:fmassot OR actor.login:guilload"
 expected:

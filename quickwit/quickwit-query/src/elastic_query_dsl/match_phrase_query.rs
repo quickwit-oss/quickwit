@@ -26,8 +26,8 @@ use crate::elastic_query_dsl::ConvertableToQueryAst;
 use crate::query_ast::{FullTextMode, FullTextParams, FullTextQuery, QueryAst};
 use crate::{MatchAllOrNone, OneFieldMap};
 
-/// `MatchQuery` as defined in
-/// <https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-match-query.html>
+/// `MatchPhraseQuery` as defined in
+/// <https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-match-query-phrase.html>
 #[derive(Deserialize, Clone, Eq, PartialEq, Debug)]
 #[serde(
     from = "OneFieldMap<MatchPhraseQueryParamsForDeserialization>",

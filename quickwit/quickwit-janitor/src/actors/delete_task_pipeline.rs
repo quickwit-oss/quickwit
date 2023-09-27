@@ -26,6 +26,7 @@ use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Supervisor, SupervisorState,
 };
 use quickwit_common::io::IoControls;
+use quickwit_common::pubsub::EventBroker;
 use quickwit_common::temp_dir::{self};
 use quickwit_common::uri::Uri;
 use quickwit_config::build_doc_mapper;
@@ -82,6 +83,7 @@ pub struct DeleteTaskPipeline {
     handles: Option<DeletePipelineHandle>,
     max_concurrent_split_uploads: usize,
     state: DeleteTaskPipelineState,
+    event_broker: EventBroker,
 }
 
 #[async_trait]
@@ -129,6 +131,7 @@ impl DeleteTaskPipeline {
         index_storage: Arc<dyn Storage>,
         delete_service_task_dir: PathBuf,
         max_concurrent_split_uploads: usize,
+        event_broker: EventBroker,
     ) -> Self {
         Self {
             index_uid,
@@ -139,6 +142,7 @@ impl DeleteTaskPipeline {
             handles: Default::default(),
             max_concurrent_split_uploads,
             state: DeleteTaskPipelineState::default(),
+            event_broker,
         }
     }
 
@@ -162,7 +166,7 @@ impl DeleteTaskPipeline {
         let (publisher_mailbox, publisher_supervisor_handler) =
             ctx.spawn_actor().supervise(publisher);
         let split_store =
-            IndexingSplitStore::create_without_local_store(self.index_storage.clone());
+            IndexingSplitStore::create_without_local_store_for_test(self.index_storage.clone());
         let merge_policy = merge_policy_from_settings(&index_config.indexing_settings);
         let uploader = Uploader::new(
             UploaderType::DeleteUploader,
@@ -171,6 +175,7 @@ impl DeleteTaskPipeline {
             split_store.clone(),
             SplitsUpdateMailbox::Publisher(publisher_mailbox),
             self.max_concurrent_split_uploads,
+            self.event_broker.clone(),
         );
         let (uploader_mailbox, uploader_supervisor_handler) = ctx.spawn_actor().supervise(uploader);
 
@@ -279,6 +284,7 @@ impl Handler<Observe> for DeleteTaskPipeline {
 mod tests {
     use async_trait::async_trait;
     use quickwit_actors::Handler;
+    use quickwit_common::pubsub::EventBroker;
     use quickwit_common::temp_dir::TempDirectory;
     use quickwit_indexing::TestSandbox;
     use quickwit_metastore::SplitState;
@@ -384,6 +390,7 @@ mod tests {
             test_sandbox.storage(),
             delete_service_task_dir.path().into(),
             4,
+            EventBroker::default(),
         );
 
         let (pipeline_mailbox, pipeline_handler) =
@@ -459,6 +466,7 @@ mod tests {
             test_sandbox.storage(),
             delete_service_task_dir.path().into(),
             4,
+            EventBroker::default(),
         );
 
         let (_pipeline_mailbox, pipeline_handler) =

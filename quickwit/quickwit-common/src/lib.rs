@@ -46,7 +46,7 @@ pub mod type_map;
 pub mod uri;
 
 use std::env;
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 use std::ops::{Range, RangeInclusive};
 use std::str::FromStr;
 
@@ -72,7 +72,7 @@ pub fn setup_logging_for_tests() {
     let _ = env_logger::builder().format_timestamp(None).try_init();
 }
 
-pub fn split_file(split_id: &str) -> String {
+pub fn split_file(split_id: impl Display) -> String {
     format!("{split_id}.split")
 }
 

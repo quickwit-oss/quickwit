@@ -26,6 +26,7 @@ use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, Mailbox, QueueCapacity,
     Supervisable, HEARTBEAT,
 };
+use quickwit_common::pubsub::EventBroker;
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_common::KillSwitch;
 use quickwit_config::{IndexingSettings, SourceConfig};
@@ -348,6 +349,7 @@ impl IndexingPipeline {
             self.params.split_store.clone(),
             SplitsUpdateMailbox::Sequencer(sequencer_mailbox),
             self.params.max_concurrent_split_uploads_index,
+            self.params.event_broker.clone(),
         );
         let (uploader_mailbox, uploader_handle) = ctx
             .spawn_actor()
@@ -567,6 +569,7 @@ pub struct IndexingPipelineParams {
     pub source_config: SourceConfig,
     pub ingester_pool: IngesterPool,
     pub queues_dir_path: PathBuf,
+    pub event_broker: EventBroker,
 }
 
 #[cfg(test)]
@@ -668,8 +671,9 @@ mod tests {
             input_format: SourceInputFormat::Json,
         };
         let storage = Arc::new(RamStorage::default());
-        let split_store = IndexingSplitStore::create_without_local_store(storage.clone());
+        let split_store = IndexingSplitStore::create_without_local_store_for_test(storage.clone());
         let (merge_planner_mailbox, _) = universe.create_test_mailbox();
+        let event_broker = EventBroker::default();
         let pipeline_params = IndexingPipelineParams {
             pipeline_id,
             doc_mapper: Arc::new(default_doc_mapper_for_test()),
@@ -686,6 +690,7 @@ mod tests {
             max_concurrent_split_uploads_merge: 5,
             cooperative_indexing_permits: None,
             merge_planner_mailbox,
+            event_broker,
         };
         let pipeline = IndexingPipeline::new(pipeline_params);
         let (_pipeline_mailbox, pipeline_handle) = universe.spawn_builder().spawn(pipeline);
@@ -769,7 +774,7 @@ mod tests {
             input_format: SourceInputFormat::Json,
         };
         let storage = Arc::new(RamStorage::default());
-        let split_store = IndexingSplitStore::create_without_local_store(storage.clone());
+        let split_store = IndexingSplitStore::create_without_local_store_for_test(storage.clone());
         let (merge_planner_mailbox, _) = universe.create_test_mailbox();
         let pipeline_params = IndexingPipelineParams {
             pipeline_id,
@@ -787,6 +792,7 @@ mod tests {
             max_concurrent_split_uploads_merge: 5,
             cooperative_indexing_permits: None,
             merge_planner_mailbox,
+            event_broker: Default::default(),
         };
         let pipeline = IndexingPipeline::new(pipeline_params);
         let (_pipeline_mailbox, pipeline_handler) = universe.spawn_builder().spawn(pipeline);
@@ -832,7 +838,7 @@ mod tests {
             input_format: SourceInputFormat::Json,
         };
         let storage = Arc::new(RamStorage::default());
-        let split_store = IndexingSplitStore::create_without_local_store(storage.clone());
+        let split_store = IndexingSplitStore::create_without_local_store_for_test(storage.clone());
         let merge_pipeline_params = MergePipelineParams {
             pipeline_id: pipeline_id.clone(),
             doc_mapper: doc_mapper.clone(),
@@ -842,6 +848,7 @@ mod tests {
             merge_policy: default_merge_policy(),
             max_concurrent_split_uploads: 2,
             merge_max_io_num_bytes_per_sec: None,
+            event_broker: Default::default(),
         };
         let merge_pipeline = MergePipeline::new(merge_pipeline_params, universe.spawn_ctx());
         let merge_planner_mailbox = merge_pipeline.merge_planner_mailbox().clone();
@@ -863,6 +870,7 @@ mod tests {
             max_concurrent_split_uploads_merge: 5,
             cooperative_indexing_permits: None,
             merge_planner_mailbox: merge_planner_mailbox.clone(),
+            event_broker: Default::default(),
         };
         let indexing_pipeline = IndexingPipeline::new(indexing_pipeline_params);
         let (_indexing_pipeline_mailbox, indexing_pipeline_handler) =
@@ -950,7 +958,7 @@ mod tests {
             input_format: SourceInputFormat::Json,
         };
         let storage = Arc::new(RamStorage::default());
-        let split_store = IndexingSplitStore::create_without_local_store(storage.clone());
+        let split_store = IndexingSplitStore::create_without_local_store_for_test(storage.clone());
         let (merge_planner_mailbox, _) = universe.create_test_mailbox();
         // Create a minimal mapper with wrong date format to ensure that all documents will fail
         let broken_mapper = serde_json::from_str::<DefaultDocMapper>(
@@ -986,6 +994,7 @@ mod tests {
             max_concurrent_split_uploads_merge: 5,
             cooperative_indexing_permits: None,
             merge_planner_mailbox,
+            event_broker: Default::default(),
         };
         let pipeline = IndexingPipeline::new(pipeline_params);
         let (_pipeline_mailbox, pipeline_handler) = universe.spawn_builder().spawn(pipeline);

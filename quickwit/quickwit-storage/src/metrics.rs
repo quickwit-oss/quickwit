@@ -28,6 +28,7 @@ pub struct StorageMetrics {
     pub partial_request_cache: CacheMetrics,
     pub fast_field_cache: CacheMetrics,
     pub split_footer_cache: CacheMetrics,
+    pub searcher_split_cache: CacheMetrics,
     pub object_storage_get_total: IntCounter,
     pub object_storage_put_total: IntCounter,
     pub object_storage_put_parts: IntCounter,
@@ -41,6 +42,8 @@ impl Default for StorageMetrics {
             fast_field_cache: CacheMetrics::for_component("fastfields"),
             shortlived_cache: CacheMetrics::for_component("shortlived"),
             partial_request_cache: CacheMetrics::for_component("partial_request"),
+            searcher_split_cache: CacheMetrics::for_component("searcher_split"),
+
             split_footer_cache: CacheMetrics::for_component("splitfooter"),
             object_storage_get_total: new_counter(
                 "object_storage_gets_total",
@@ -84,7 +87,7 @@ pub struct CacheMetrics {
 }
 
 impl CacheMetrics {
-    fn for_component(component_name: &str) -> Self {
+    pub fn for_component(component_name: &str) -> Self {
         let namespace = format!("quickwit_cache_{component_name}");
         CacheMetrics {
             component_name: component_name.to_string(),

@@ -5,7 +5,7 @@ COPY quickwit/quickwit-ui /quickwit/quickwit-ui
 WORKDIR /quickwit/quickwit-ui
 
 RUN touch .gitignore_for_build_directory \
-    && make install build
+    && NODE_ENV=production make install build
 
 
 FROM rust:bullseye AS bin-builder

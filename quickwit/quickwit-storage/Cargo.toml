@@ -13,6 +13,7 @@ documentation = "https://quickwit.io/docs/"
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 base64 = { workspace = true }
+byte-unit = { workspace = true }
 bytes = { workspace = true }
 fnv = { workspace = true }
 futures = { workspace = true }
@@ -32,6 +33,7 @@ tokio = { workspace = true, features = ["test-util"] }
 tokio-stream = { workspace = true }
 tokio-util = { workspace = true }
 tracing = { workspace = true }
+ulid = { workspace = true }
 
 aws-config = { workspace = true }
 aws-credential-types = { workspace = true }
@@ -46,6 +48,7 @@ azure_storage_blobs = { workspace = true, optional = true }
 quickwit-aws = { workspace = true }
 quickwit-common = { workspace = true }
 quickwit-config = { workspace = true }
+quickwit-proto = { workspace = true }
 
 [dev-dependencies]
 mockall = { workspace = true }
