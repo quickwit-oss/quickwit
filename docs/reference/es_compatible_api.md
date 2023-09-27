@@ -552,7 +552,7 @@ Search APIs that accept <index_id> requests path parameter also support multi-ta
 
 In multi-target syntax, you can use a comma or its URL encoded version '%2C' seperated list to run a request on multiple indices: test1,test2,test3. You can also sue [glob-like](https://en.wikipedia.org/wiki/Glob_(programming)) wildcard ( \* ) expressions to target indices that match a pattern: test\* or \*test or te\*t or \*test\*.
 
-The following are some constrains about the multi-target expression.
+The multi-target expression has the following constraints:
 
     - It must follow the regex `^[a-zA-Z\*][a-zA-Z0-9-_\.\*]{0,254}$`.
     - It cannot contain consecutive asterisks (`*`).
