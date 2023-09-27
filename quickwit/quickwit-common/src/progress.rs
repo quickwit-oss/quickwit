@@ -20,6 +20,8 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 
+use futures::Future;
+
 /// Progress makes it possible to register some progress.
 /// It is used in lieu of healthcheck.
 ///
@@ -81,6 +83,13 @@ impl Progress {
     pub fn record_progress(&self) {
         self.0
             .fetch_max(ProgressState::Updated.into(), Ordering::Relaxed);
+    }
+
+    /// Executes a future in a protected zone.
+    pub async fn protect_future<Fut, T>(&self, future: Fut) -> T
+    where Fut: Future<Output = T> {
+        let _guard = self.protect_zone();
+        future.await
     }
 
     pub fn protect_zone(&self) -> ProtectedZoneGuard {
