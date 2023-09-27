@@ -46,7 +46,7 @@ service MetastoreService {
   rpc index_metadata(IndexMetadataRequest) returns (IndexMetadataResponse);
 
   // Gets an indexes metadatas.
-  rpc list_indexes_metadatas(ListIndexesMetadatasRequest) returns (ListIndexesMetadatasResponse);
+  rpc list_indexes_metadatas(ListIndexesMetadataRequest) returns (ListIndexesMetadataResponse);
 
   // Deletes an index
   rpc delete_index(DeleteIndexRequest) returns (EmptyResponse);
@@ -129,12 +129,12 @@ message CreateIndexResponse {
   string index_uid = 1;
 }
 
-message ListIndexesMetadatasRequest {
+message ListIndexesMetadataRequest {
   string query_json = 1;
 }
 
-message ListIndexesMetadatasResponse {
-  string indexes_metadatas_serialized_json = 1;
+message ListIndexesMetadataResponse {
+  string indexes_metadata_serialized_json = 1;
 }
 
 message DeleteIndexRequest {

@@ -27,6 +27,7 @@ utoipa = { workspace = true }
 
 quickwit-actors = { workspace = true }
 quickwit-common = { workspace = true }
+quickwit-macros = { workspace = true }
 
 [dev-dependencies]
 mockall = { workspace = true}

@@ -26,6 +26,8 @@ use tower::{Layer, Service};
 
 use crate::pubsub::{Event, EventBroker};
 
+#[derive(Clone)]
+
 pub struct EventListener<S> {
     inner: S,
     event_broker: EventBroker,

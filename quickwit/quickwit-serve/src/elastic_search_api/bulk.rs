@@ -371,7 +371,7 @@ mod tests {
     async fn test_bulk_ingest_request_returns_400_if_action_is_malformed() {
         let config = Arc::new(NodeConfig::for_test());
         let search_service = Arc::new(MockSearchService::new());
-        let ingest_service = IngestServiceClient::new(IngestServiceClient::mock());
+        let ingest_service = IngestServiceClient::from(IngestServiceClient::mock());
         let elastic_api_handlers = elastic_api_handlers(config, search_service, ingest_service);
         let payload = r#"
             {"create": {"_index": "my-index", "_id": "1"},}

@@ -100,6 +100,12 @@ impl ControlPlaneServiceClient {
     where
         T: ControlPlaneService,
     {
+        #[cfg(any(test, feature = "testsuite"))]
+        assert!(
+            std::any::TypeId::of:: < T > () != std::any::TypeId::of:: <
+            MockControlPlaneService > (),
+            "`MockControlPlaneService` must be wrapped in a `MockControlPlaneServiceWrapper`. Use `MockControlPlaneService::from(mock)` to instantiate the client."
+        );
         Self { inner: Box::new(instance) }
     }
     pub fn as_grpc_service(

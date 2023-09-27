@@ -37,7 +37,7 @@ async fn replay_grpc_request(
         GrpcRequest::IndexMetadataRequest(req) => {
             client.index_metadata(req).await?;
         }
-        GrpcRequest::ListIndexesMetadatasRequest(req) => {
+        GrpcRequest::ListIndexesMetadataRequest(req) => {
             client.list_indexes_metadatas(req).await?;
         }
         GrpcRequest::DeleteIndexRequest(req) => {

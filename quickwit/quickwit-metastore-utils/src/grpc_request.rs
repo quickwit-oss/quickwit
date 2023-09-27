@@ -67,7 +67,7 @@ macro_rules! req_from_impls {
 generate_req_enum!(
     CreateIndexRequest,
     IndexMetadataRequest,
-    ListIndexesMetadatasRequest,
+    ListIndexesMetadataRequest,
     DeleteIndexRequest,
     ListAllSplitsRequest,
     ListSplitsRequest,

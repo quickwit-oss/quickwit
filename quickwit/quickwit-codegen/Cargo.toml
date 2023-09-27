@@ -22,3 +22,4 @@ tonic-build = { workspace = true }
 
 [dev-dependencies]
 serde = { workspace = true }
+futures = { workspace = true }

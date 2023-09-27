@@ -23,56 +23,36 @@ use glob::glob;
 use quickwit_codegen::Codegen;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    // Prost + tonic + Quickwit codegen for control plane, indexing, and ingest services.
+    // Prost + tonic + Quickwit codegen for control plane, indexing, metastore, ingest and search
+    // services.
     //
-    // Control plane
+    // Control plane.
     Codegen::run(
         &["protos/quickwit/control_plane.proto"],
         "src/codegen/quickwit",
         "crate::control_plane::ControlPlaneResult",
         "crate::control_plane::ControlPlaneError",
         false,
+        false,
         &["protos"],
     )
     .unwrap();
 
-    // Indexing Service
+    // Indexing Service.
     Codegen::run(
         &["protos/quickwit/indexing.proto"],
         "src/codegen/quickwit",
         "crate::indexing::IndexingResult",
         "crate::indexing::IndexingError",
         false,
+        false,
         &[],
     )
     .unwrap();
 
-    // Ingest service
-    let mut prost_config = prost_build::Config::default();
-    prost_config.bytes(["DocBatchV2.doc_buffer", "MRecordBatch.mrecord_buffer"]);
-
-    Codegen::run_with_config(
-        &[
-            "protos/quickwit/ingester.proto",
-            "protos/quickwit/router.proto",
-        ],
-        "src/codegen/quickwit",
-        "crate::ingest::IngestV2Result",
-        "crate::ingest::IngestV2Error",
-        false,
-        &["protos"],
-        prost_config,
-    )
-    .unwrap();
-
-    // "Classic" prost + tonic codegen for metastore and search services.
-    let mut prost_config = prost_build::Config::default();
-    prost_config
-        .bytes(["DocBatchV2.doc_buffer", "MRecordBatch.mrecord_buffer"])
-        .protoc_arg("--experimental_allow_proto3_optional");
-
-    tonic_build::configure()
-        .enum_attribute(".", "#[serde(rename_all=\"snake_case\")]")
+    // Metastore service.
+    let mut metastore_api_config = prost_build::Config::default();
+    metastore_api_config
         .field_attribute("DeleteQuery.index_uid", "#[serde(alias = \"index_id\")]")
         .field_attribute("DeleteQuery.query_ast", "#[serde(alias = \"query\")]")
         .field_attribute(
@@ -82,7 +62,25 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .field_attribute(
             "DeleteQuery.end_timestamp",
             "#[serde(skip_serializing_if = \"Option::is_none\")]",
-        )
+        );
+
+    Codegen::run_with_config(
+        &["protos/quickwit/metastore.proto"],
+        "src/codegen/quickwit",
+        "crate::metastore::MetastoreResult",
+        "crate::metastore::MetastoreError",
+        true,
+        true,
+        &["protos"],
+        metastore_api_config,
+    )
+    .unwrap();
+
+    // Ingest service (metastore service proto should be generated before ingest).
+    let mut prost_config = prost_build::Config::default();
+    prost_config
+        .bytes(["DocBatchV2.doc_buffer", "MRecordBatch.mrecord_buffer"])
+        .type_attribute("Shard", "#[derive(Eq)]")
         .field_attribute(
             "Shard.follower_id",
             "#[serde(default, skip_serializing_if = \"Option::is_none\")]",
@@ -98,23 +96,37 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .field_attribute(
             "Shard.replication_position_inclusive",
             "#[serde(default, skip_serializing_if = \"Option::is_none\")]",
-        )
+        );
+
+    Codegen::run_with_config(
+        &[
+            "protos/quickwit/ingester.proto",
+            "protos/quickwit/router.proto",
+        ],
+        "src/codegen/quickwit",
+        "crate::ingest::IngestV2Result",
+        "crate::ingest::IngestV2Error",
+        false,
+        false,
+        &["protos"],
+        prost_config,
+    )
+    .unwrap();
+
+    // Search service.
+    let mut prost_config = prost_build::Config::default();
+    prost_config.protoc_arg("--experimental_allow_proto3_optional");
+
+    tonic_build::configure()
+        .enum_attribute(".", "#[serde(rename_all=\"snake_case\")]")
         .type_attribute(".", "#[derive(Serialize, Deserialize, utoipa::ToSchema)]")
         .type_attribute("PartialHit", "#[derive(Eq, Hash)]")
         .type_attribute("PartialHit.sort_value", "#[derive(Copy)]")
         .type_attribute("SearchRequest", "#[derive(Eq, Hash)]")
-        .type_attribute("Shard", "#[derive(Eq)]")
         .type_attribute("SortByValue", "#[derive(Ord, PartialOrd)]")
         .type_attribute("SortField", "#[derive(Eq, Hash)]")
         .out_dir("src/codegen/quickwit")
-        .compile_with_config(
-            prost_config,
-            &[
-                "protos/quickwit/metastore.proto",
-                "protos/quickwit/search.proto",
-            ],
-            &["protos"],
-        )?;
+        .compile_with_config(prost_config, &["protos/quickwit/search.proto"], &["protos"])?;
 
     // Jaeger proto
     let protos = find_protos("protos/third-party/jaeger");

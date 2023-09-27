@@ -19,14 +19,13 @@
 
 use std::cmp::Ordering;
 use std::fmt;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::Context;
 use fnv::{FnvHashMap, FnvHashSet};
 use itertools::Itertools;
-use quickwit_metastore::Metastore;
 use quickwit_proto::indexing::{ApplyIndexingPlanRequest, IndexingService, IndexingTask};
+use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_proto::NodeId;
 use serde::Serialize;
 use tracing::{debug, error, info, warn};
@@ -96,7 +95,7 @@ pub struct IndexingSchedulerState {
 pub struct IndexingScheduler {
     cluster_id: String,
     self_node_id: NodeId,
-    metastore: Arc<dyn Metastore>,
+    metastore: MetastoreServiceClient,
     indexer_pool: IndexerPool,
     state: IndexingSchedulerState,
 }
@@ -106,7 +105,7 @@ impl fmt::Debug for IndexingScheduler {
         f.debug_struct("IndexingScheduler")
             .field("cluster_id", &self.cluster_id)
             .field("node_id", &self.self_node_id)
-            .field("metastore_uri", &self.metastore.uri())
+            .field("metastore", &self.metastore)
             .field(
                 "last_applied_plan_ts",
                 &self.state.last_applied_plan_timestamp,
@@ -119,7 +118,7 @@ impl IndexingScheduler {
     pub fn new(
         cluster_id: String,
         self_node_id: NodeId,
-        metastore: Arc<dyn Metastore>,
+        metastore: MetastoreServiceClient,
         indexer_pool: IndexerPool,
     ) -> Self {
         Self {

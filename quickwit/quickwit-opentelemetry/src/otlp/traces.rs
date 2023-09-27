@@ -799,7 +799,8 @@ impl TraceService for OtlpGrpcTracesService {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_metastore::metastore_for_test;
+    use quickwit_metastore::{metastore_for_test, CreateIndexRequestExt};
+    use quickwit_proto::metastore::{CreateIndexRequest, MetastoreService};
     use quickwit_proto::opentelemetry::proto::common::v1::any_value::Value as OtlpAnyValueValue;
     use quickwit_proto::opentelemetry::proto::common::v1::{
         AnyValue as OtlpAnyValue, KeyValue as OtlpKeyValue,
@@ -820,10 +821,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_index() {
-        let metastore = metastore_for_test();
+        let mut metastore = metastore_for_test();
         let index_config =
             OtlpGrpcTracesService::index_config(&Uri::for_test("ram:///indexes")).unwrap();
-        metastore.create_index(index_config).await.unwrap();
+        let create_index_request = CreateIndexRequest::try_from_index_config(index_config).unwrap();
+        metastore.create_index(create_index_request).await.unwrap();
     }
 
     #[test]

@@ -18,21 +18,21 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashMap;
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
 use once_cell::sync::OnceCell;
 use quickwit_common::uri::Uri;
 use quickwit_config::{MetastoreBackend, MetastoreConfig};
-use quickwit_proto::metastore::MetastoreError;
+use quickwit_proto::metastore::{MetastoreError, MetastoreServiceClient};
 use quickwit_storage::{StorageResolver, StorageResolverError};
 use regex::Regex;
 use tokio::sync::Mutex;
 use tracing::debug;
 
-use crate::metastore::instrumented_metastore::InstrumentedMetastore;
-use crate::{FileBackedMetastore, Metastore, MetastoreFactory, MetastoreResolverError};
+use crate::metastore::instrument_metastore;
+use crate::{FileBackedMetastore, MetastoreFactory, MetastoreResolverError};
 
 /// A file-backed metastore factory.
 ///
@@ -44,11 +44,9 @@ use crate::{FileBackedMetastore, Metastore, MetastoreFactory, MetastoreResolverE
 #[derive(Clone)]
 pub struct FileBackedMetastoreFactory {
     storage_resolver: StorageResolver,
-    // We almost never garbage collect the dangling Weak pointers
-    // here. This is judged to not be much of a problem however.
-    //
-    // In a normal run, this cache will contain a single Metastore.
-    cache: Arc<Mutex<HashMap<Uri, Weak<dyn Metastore>>>>,
+    // We never garbage collect unused metastore client instances. This should not be a problem
+    // because during normal use this cache will hold at most a single instance.
+    cache: Arc<Mutex<HashMap<Uri, MetastoreServiceClient>>>,
 }
 
 fn extract_polling_interval_from_uri(uri: &str) -> (String, Option<Duration>) {
@@ -78,9 +76,8 @@ impl FileBackedMetastoreFactory {
         }
     }
 
-    async fn get_from_cache(&self, uri: &Uri) -> Option<Arc<dyn Metastore>> {
-        let cache_lock = self.cache.lock().await;
-        cache_lock.get(uri).and_then(Weak::upgrade)
+    async fn get_from_cache(&self, uri: &Uri) -> Option<MetastoreServiceClient> {
+        self.cache.lock().await.get(uri).cloned()
     }
 
     /// If there is a valid entry in the cache to begin with, we ignore the new
@@ -88,15 +85,17 @@ impl FileBackedMetastoreFactory {
     ///
     /// This way we make sure that we keep only one instance associated
     /// to the key `uri` outside of this struct.
-    async fn cache_metastore(&self, uri: Uri, metastore: Arc<dyn Metastore>) -> Arc<dyn Metastore> {
-        let mut cache_lock = self.cache.lock().await;
-        if let Some(metastore_weak) = cache_lock.get(&uri) {
-            if let Some(metastore_arc) = metastore_weak.upgrade() {
-                return metastore_arc.clone();
-            }
-        }
-        cache_lock.insert(uri, Arc::downgrade(&metastore));
-        metastore
+    async fn cache_metastore(
+        &self,
+        uri: Uri,
+        metastore: MetastoreServiceClient,
+    ) -> MetastoreServiceClient {
+        self.cache
+            .lock()
+            .await
+            .entry(uri)
+            .or_insert(metastore)
+            .clone()
     }
 }
 
@@ -110,7 +109,7 @@ impl MetastoreFactory for FileBackedMetastoreFactory {
         &self,
         _metastore_config: &MetastoreConfig,
         uri: &Uri,
-    ) -> Result<Arc<dyn Metastore>, MetastoreResolverError> {
+    ) -> Result<MetastoreServiceClient, MetastoreResolverError> {
         let (uri_stripped, polling_interval_opt) = extract_polling_interval_from_uri(uri.as_str());
         let uri = Uri::from_well_formed(uri_stripped);
         if let Some(metastore) = self.get_from_cache(&uri).await {
@@ -142,10 +141,8 @@ impl MetastoreFactory for FileBackedMetastoreFactory {
         let file_backed_metastore = FileBackedMetastore::try_new(storage, polling_interval_opt)
             .await
             .map_err(MetastoreResolverError::Initialization)?;
-        let instrumented_metastore = InstrumentedMetastore::new(Box::new(file_backed_metastore));
-        let unique_metastore_for_uri = self
-            .cache_metastore(uri, Arc::new(instrumented_metastore))
-            .await;
+        let instrumented_metastore = instrument_metastore(file_backed_metastore);
+        let unique_metastore_for_uri = self.cache_metastore(uri, instrumented_metastore).await;
         Ok(unique_metastore_for_uri)
     }
 }

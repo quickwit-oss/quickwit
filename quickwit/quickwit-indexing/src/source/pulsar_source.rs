@@ -433,7 +433,6 @@ mod pulsar_broker_tests {
     use std::num::NonZeroUsize;
     use std::ops::Range;
     use std::path::PathBuf;
-    use std::sync::Arc;
 
     use futures::future::join_all;
     use quickwit_actors::{ActorHandle, Inbox, Universe, HEARTBEAT};
@@ -442,7 +441,13 @@ mod pulsar_broker_tests {
     use quickwit_metastore::checkpoint::{
         IndexCheckpointDelta, PartitionId, Position, SourceCheckpointDelta,
     };
-    use quickwit_metastore::{metastore_for_test, Metastore, SplitMetadata};
+    use quickwit_metastore::{
+        metastore_for_test, CreateIndexRequestExt, SplitMetadata, StageSplitsRequestExt,
+    };
+    use quickwit_proto::metastore::{
+        CreateIndexRequest, MetastoreService, MetastoreServiceClient, PublishSplitsRequest,
+        StageSplitsRequest,
+    };
     use reqwest::StatusCode;
 
     use super::*;
@@ -479,24 +484,29 @@ mod pulsar_broker_tests {
     }
 
     async fn setup_index(
-        metastore: Arc<dyn Metastore>,
+        mut metastore: MetastoreServiceClient,
         index_id: &str,
         source_id: &str,
         partition_deltas: &[(&str, Position, Position)],
     ) -> IndexUid {
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(index_id, &index_uri);
-        let index_uid = metastore.create_index(index_config).await.unwrap();
+        let create_index_request = CreateIndexRequest::try_from_index_config(index_config).unwrap();
+        let index_uid: IndexUid = metastore
+            .create_index(create_index_request)
+            .await
+            .unwrap()
+            .index_uid
+            .into();
 
         if partition_deltas.is_empty() {
             return index_uid;
         }
         let split_id = new_split_id();
         let split_metadata = SplitMetadata::for_test(split_id.clone());
-        metastore
-            .stage_splits(index_uid.clone(), vec![split_metadata])
-            .await
-            .unwrap();
+        let stage_splits_request =
+            StageSplitsRequest::try_from_split_metadata(index_uid.clone(), split_metadata).unwrap();
+        metastore.stage_splits(stage_splits_request).await.unwrap();
 
         let mut source_delta = SourceCheckpointDelta::default();
         for (partition_id, from_position, to_position) in partition_deltas {
@@ -512,14 +522,17 @@ mod pulsar_broker_tests {
             source_id: source_id.to_string(),
             source_delta,
         };
+        let publish_splits_request = PublishSplitsRequest {
+            index_uid: index_uid.to_string(),
+            staged_split_ids: vec![split_id.clone()],
+            replaced_split_ids: Vec::new(),
+            index_checkpoint_delta_json_opt: Some(
+                serde_json::to_string(&checkpoint_delta).unwrap(),
+            ),
+            publish_token_opt: None,
+        };
         metastore
-            .publish_splits(
-                index_uid.clone(),
-                &[&split_id],
-                &[],
-                Some(checkpoint_delta),
-                None,
-            )
+            .publish_splits(publish_splits_request)
             .await
             .unwrap();
         index_uid
@@ -682,7 +695,7 @@ mod pulsar_broker_tests {
 
     async fn create_source(
         universe: &Universe,
-        metastore: Arc<dyn Metastore>,
+        metastore: MetastoreServiceClient,
         index_uid: IndexUid,
         source_config: SourceConfig,
         start_checkpoint: SourceCheckpoint,

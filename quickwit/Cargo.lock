@@ -5025,6 +5025,7 @@ name = "quickwit-codegen"
 version = "0.6.3"
 dependencies = [
  "anyhow",
+ "futures",
  "heck",
  "prettyplease 0.2.15",
  "proc-macro2",
@@ -5051,6 +5052,7 @@ dependencies = [
  "quickwit-actors",
  "quickwit-codegen",
  "quickwit-common",
+ "quickwit-macros",
  "serde",
  "thiserror",
  "tokio",
@@ -5558,6 +5560,7 @@ dependencies = [
  "async-trait",
  "bytes",
  "dyn-clone",
+ "futures",
  "glob",
  "http",
  "hyper",

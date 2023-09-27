@@ -22,14 +22,13 @@ use std::fmt;
 use quickwit_common::retry::Retryable;
 use serde::{Deserialize, Serialize};
 
-use crate::{queue_id, IndexId, QueueId, ServiceError, ServiceErrorCode, SourceId, SplitId};
+use crate::{
+    queue_id, IndexId, IndexUid, QueueId, ServiceError, ServiceErrorCode, SourceId, SplitId,
+};
 
 pub mod events;
 
 include!("../codegen/quickwit/quickwit.metastore.rs");
-
-pub use metastore_service_client::MetastoreServiceClient;
-pub use metastore_service_server::{MetastoreService, MetastoreServiceServer};
 
 pub type MetastoreResult<T> = Result<T, MetastoreError>;
 
@@ -151,6 +150,15 @@ impl From<sqlx::Error> for MetastoreError {
     }
 }
 
+impl From<tonic::Status> for MetastoreError {
+    fn from(status: tonic::Status) -> Self {
+        serde_json::from_str(status.message()).unwrap_or_else(|_| MetastoreError::Internal {
+            message: "failed to deserialize metastore error".to_string(),
+            cause: status.message().to_string(),
+        })
+    }
+}
+
 impl From<MetastoreError> for tonic::Status {
     fn from(metastore_error: MetastoreError) -> Self {
         let grpc_code = metastore_error.error_code().to_grpc_status_code();
@@ -205,6 +213,14 @@ impl SourceType {
             SourceType::Pulsar => "pulsar",
             SourceType::Vec => "vec",
             SourceType::Void => "void",
+        }
+    }
+}
+
+impl From<&IndexUid> for ListAllSplitsRequest {
+    fn from(index_uid: &IndexUid) -> Self {
+        Self {
+            index_uid: index_uid.to_string(),
         }
     }
 }
