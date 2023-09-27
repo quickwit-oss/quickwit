@@ -311,6 +311,10 @@ pub struct NodeConfig {
 }
 
 impl NodeConfig {
+    pub fn is_service_enabled(&self, service: QuickwitService) -> bool {
+        self.enabled_services.contains(&service)
+    }
+
     /// Parses and validates a [`NodeConfig`] from a given URI and config content.
     pub async fn load(config_format: ConfigFormat, config_content: &[u8]) -> anyhow::Result<Self> {
         let env_vars = env::vars().collect::<HashMap<_, _>>();
