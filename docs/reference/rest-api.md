@@ -90,7 +90,7 @@ Search APIs that accept <index id> requests path parameter also support multi-ta
 
 #### Multi-target syntax
 
-In multi-target syntax, you can use a comma or its URL encoded version '%2C' seperated list to run a request on multiple indices: test1,test2,test3. You can also sue [glob-like](https://en.wikipedia.org/wiki/Glob_(programming)) wildcard ( \* ) expressions to target indices that match a pattern: test\* or \*test or te\*t or \*test\*.
+In multi-target syntax, you can use a comma or its URL encoded version '%2C' separated list to run a request on multiple indices: test1,test2,test3. You can also use [glob-like](https://en.wikipedia.org/wiki/Glob_(programming)) wildcard ( \* ) expressions to target indices that match a pattern: test\* or \*test or te\*t or \*test\*.
 
 The following are some constrains about the multi-target expression.
 
