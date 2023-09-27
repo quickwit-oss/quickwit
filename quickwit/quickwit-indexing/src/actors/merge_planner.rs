@@ -653,18 +653,12 @@ mod tests {
         };
         let pre_existing_splits = vec![
             split_metadata_for_test(
-                &index_uid,
-                "a_small",
-                0, // partition_id
-                1_000_000,
-                2,
+                &index_uid, "a_small", 0, // partition_id
+                1_000_000, 2,
             ),
             split_metadata_for_test(
-                &index_uid,
-                "b_small",
-                0, // partition_id
-                1_000_000,
-                2,
+                &index_uid, "b_small", 0, // partition_id
+                1_000_000, 2,
             ),
         ];
         let merge_policy: Arc<dyn MergePolicy> = merge_policy_from_settings(&indexing_settings);
@@ -785,18 +779,12 @@ mod tests {
 
         let pre_existing_splits = vec![
             split_metadata_for_test(
-                &index_uid,
-                "a_small",
-                0, // partition_id
-                1_000_000,
-                2,
+                &index_uid, "a_small", 0, // partition_id
+                1_000_000, 2,
             ),
             split_metadata_for_test(
-                &index_uid,
-                "b_small",
-                0, // partition_id
-                1_000_000,
-                2,
+                &index_uid, "b_small", 0, // partition_id
+                1_000_000, 2,
             ),
         ];
 
