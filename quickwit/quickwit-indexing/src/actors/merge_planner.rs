@@ -20,6 +20,7 @@
 use std::cmp::Reverse;
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::time::Instant;
 
 use async_trait::async_trait;
 use itertools::Itertools;
@@ -50,6 +51,17 @@ pub struct MergePlanner {
     /// a merge operation is dropped after the publish of the merged split.
     /// Used for observability.
     ongoing_merge_operations_inventory: Inventory<MergeOperation>,
+    /// We use the actor start_time as a way to identify incarnations.
+    /// Incarnations are useful to avoid a nasty bug:
+    /// Since we recycle mailbox between MergePlanner instantiation,
+    /// in some rare case, we might end up reusing a mailbox that contains
+    /// `PlanMerge` messages.
+    ///
+    /// This would end up resurfacing a bug similar to what is observed in `#3847`.
+    ///
+    /// By using this `incarnation_id`, we can ignore messages that coming from a
+    /// previous incarnation.
+    incarnation_started_at: Instant,
 }
 
 #[async_trait]
@@ -77,8 +89,25 @@ impl Actor for MergePlanner {
     }
 
     async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
-        self.handle(RefreshMetric, ctx).await?;
-        self.send_merge_ops(ctx).await?;
+        self.handle(
+            RefreshMetric {
+                incarnation_started_at: self.incarnation_started_at,
+            },
+            ctx,
+        )
+        .await?;
+        // We do not call the handle method directly and instead queue the message in order to drain
+        // the recycled mailbox and get a consolidated vision of the set of published
+        // splits, before scheduling any merge operation. See #3847 for more details.
+
+        // If the mailbox is full, this send message might fail (the capacity is very low).
+        // This is however not much of a problem: it probably contains a NewSplit message.
+        // If it does not, we will be losing an opportunity to plan merge right away, but it will
+        // happen on the next split publication.
+        let _ = ctx.try_send_self_message(PlanMerge {
+            incarnation_started_at: self.incarnation_started_at,
+        });
+
         Ok(())
     }
 }
@@ -89,10 +118,14 @@ impl Handler<PlanMerge> for MergePlanner {
 
     async fn handle(
         &mut self,
-        _: PlanMerge,
+        plan_merge: PlanMerge,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        self.send_merge_ops(ctx).await?;
+        if plan_merge.incarnation_started_at == self.incarnation_started_at {
+            // Note we ignore messages that could be coming from a different incarnation.
+            // (See comment on `Self::incarnation_start_at`.)
+            self.send_merge_ops(ctx).await?;
+        }
         Ok(())
     }
 }
@@ -144,6 +177,7 @@ impl MergePlanner {
             merge_policy,
             merge_split_downloader_mailbox,
             ongoing_merge_operations_inventory: Inventory::default(),
+            incarnation_started_at: Instant::now(),
         };
         merge_planner.record_splits(published_splits);
         merge_planner
@@ -250,7 +284,9 @@ impl MergePlanner {
             // If `try_send_self_message` returns an error, it means that the
             // the self queue is full, which means that the `PlanMerge`
             // message is not really needed anyway.
-            let _ignored_result = ctx.try_send_self_message(PlanMerge);
+            let _ignored_result = ctx.try_send_self_message(PlanMerge {
+                incarnation_started_at: self.incarnation_started_at,
+            });
         }
         Ok(())
     }
@@ -264,10 +300,14 @@ fn belongs_to_pipeline(pipeline_id: &IndexingPipelineId, split: &SplitMetadata) 
 }
 
 #[derive(Debug)]
-struct RefreshMetric;
+struct RefreshMetric {
+    incarnation_started_at: Instant,
+}
 
 #[derive(Debug)]
-struct PlanMerge;
+struct PlanMerge {
+    incarnation_started_at: Instant,
+}
 
 #[async_trait]
 impl Handler<RefreshMetric> for MergePlanner {
@@ -275,9 +315,14 @@ impl Handler<RefreshMetric> for MergePlanner {
 
     async fn handle(
         &mut self,
-        _: RefreshMetric,
+        refresh_metric: RefreshMetric,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
+        if self.incarnation_started_at != refresh_metric.incarnation_started_at {
+            // This message was emitted by a different incarnation.
+            // (See `Self::incarnation_started_at`)
+            return Ok(());
+        }
         INDEXER_METRICS
             .ongoing_merge_operations
             .with_label_values([
@@ -285,8 +330,13 @@ impl Handler<RefreshMetric> for MergePlanner {
                 self.pipeline_id.source_id.as_str(),
             ])
             .set(self.ongoing_merge_operations_inventory.list().len() as i64);
-        ctx.schedule_self_msg(*quickwit_actors::HEARTBEAT, RefreshMetric)
-            .await;
+        ctx.schedule_self_msg(
+            *quickwit_actors::HEARTBEAT,
+            RefreshMetric {
+                incarnation_started_at: self.incarnation_started_at,
+            },
+        )
+        .await;
         Ok(())
     }
 }
@@ -302,7 +352,7 @@ mod tests {
     use std::time::Duration;
 
     use itertools::Itertools;
-    use quickwit_actors::{QueueCapacity, Universe};
+    use quickwit_actors::{ActorExitStatus, Command, QueueCapacity, Universe};
     use quickwit_config::merge_policy_config::{
         ConstWriteAmplificationMergePolicyConfig, MergePolicyConfig, StableLogMergePolicyConfig,
     };
@@ -320,6 +370,7 @@ mod tests {
     use crate::models::NewSplits;
 
     fn split_metadata_for_test(
+        index_uid: &IndexUid,
         split_id: &str,
         partition_id: u64,
         num_docs: usize,
@@ -327,7 +378,7 @@ mod tests {
     ) -> SplitMetadata {
         SplitMetadata {
             split_id: split_id.to_string(),
-            index_uid: IndexUid::new("test-index"),
+            index_uid: index_uid.clone(),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             num_docs,
@@ -344,10 +395,11 @@ mod tests {
     #[tokio::test]
     async fn test_merge_planner_with_stable_custom_merge_policy() -> anyhow::Result<()> {
         let universe = Universe::with_accelerated_time();
+        let index_uid = IndexUid::new("test-index");
         let (merge_split_downloader_mailbox, merge_split_downloader_inbox) =
             universe.create_test_mailbox();
         let pipeline_id = IndexingPipelineId {
-            index_uid: IndexUid::new("test-index"),
+            index_uid: index_uid.clone(),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
@@ -374,8 +426,8 @@ mod tests {
             // send one split
             let message = NewSplits {
                 new_splits: vec![
-                    split_metadata_for_test("1_1", 1, 2500, 0),
-                    split_metadata_for_test("1_2", 2, 3000, 0),
+                    split_metadata_for_test(&index_uid, "1_1", 1, 2500, 0),
+                    split_metadata_for_test(&index_uid, "1_2", 2, 3000, 0),
                 ],
             };
             merge_planner_mailbox.send_message(message).await?;
@@ -386,8 +438,8 @@ mod tests {
             // send two splits with a duplicate
             let message = NewSplits {
                 new_splits: vec![
-                    split_metadata_for_test("2_1", 1, 2000, 0),
-                    split_metadata_for_test("1_2", 2, 3000, 0),
+                    split_metadata_for_test(&index_uid, "2_1", 1, 2000, 0),
+                    split_metadata_for_test(&index_uid, "1_2", 2, 3000, 0),
                 ],
             };
             merge_planner_mailbox.send_message(message).await?;
@@ -398,10 +450,10 @@ mod tests {
             // send four more splits to generate merge
             let message = NewSplits {
                 new_splits: vec![
-                    split_metadata_for_test("3_1", 1, 1500, 0),
-                    split_metadata_for_test("4_1", 1, 1000, 0),
-                    split_metadata_for_test("2_2", 2, 2000, 0),
-                    split_metadata_for_test("3_2", 2, 4000, 0),
+                    split_metadata_for_test(&index_uid, "3_1", 1, 1500, 0),
+                    split_metadata_for_test(&index_uid, "4_1", 1, 1000, 0),
+                    split_metadata_for_test(&index_uid, "2_2", 2, 2000, 0),
+                    split_metadata_for_test(&index_uid, "3_2", 2, 4000, 0),
                 ],
             };
             merge_planner_mailbox.send_message(message).await?;
@@ -431,8 +483,9 @@ mod tests {
         let universe = Universe::with_accelerated_time();
         let (merge_split_downloader_mailbox, merge_split_downloader_inbox) =
             universe.create_test_mailbox();
+        let index_uid = IndexUid::new("test-index");
         let pipeline_id = IndexingPipelineId {
-            index_uid: IndexUid::new("test-index"),
+            index_uid: index_uid.clone(),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
@@ -459,10 +512,10 @@ mod tests {
         // send 4 splits, offering 2 merge opportunities.
         let message = NewSplits {
             new_splits: vec![
-                split_metadata_for_test("2_a", 2, 100, 2),
-                split_metadata_for_test("2_b", 2, 100, 2),
-                split_metadata_for_test("1_a", 1, 10, 1),
-                split_metadata_for_test("1_b", 1, 10, 1),
+                split_metadata_for_test(&index_uid, "2_a", 2, 100, 2),
+                split_metadata_for_test(&index_uid, "2_b", 2, 100, 2),
+                split_metadata_for_test(&index_uid, "1_a", 1, 10, 1),
+                split_metadata_for_test(&index_uid, "1_b", 1, 10, 1),
             ],
         };
         merge_planner_mailbox.send_message(message).await?;
@@ -482,8 +535,9 @@ mod tests {
         let (merge_split_downloader_mailbox, merge_split_downloader_inbox) = universe
             .spawn_ctx()
             .create_mailbox("MergeSplitDownloader", QueueCapacity::Bounded(2));
+        let index_uid = IndexUid::new("test-index");
         let pipeline_id = IndexingPipelineId {
-            index_uid: IndexUid::new("test-index"),
+            index_uid: index_uid.clone(),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
@@ -514,12 +568,14 @@ mod tests {
                     .flat_map(|partition_id| {
                         [
                             split_metadata_for_test(
+                                &index_uid,
                                 &format!("{partition_id}_a_large"),
                                 2,
                                 1_000_000,
                                 2,
                             ),
                             split_metadata_for_test(
+                                &index_uid,
                                 &format!("{partition_id}_b_large"),
                                 2,
                                 1_000_000,
@@ -538,12 +594,14 @@ mod tests {
                     .flat_map(|partition_id| {
                         [
                             split_metadata_for_test(
+                                &index_uid,
                                 &format!("{partition_id}_a_small"),
                                 2,
                                 100_000,
                                 1,
                             ),
                             split_metadata_for_test(
+                                &index_uid,
                                 &format!("{partition_id}_b_small"),
                                 2,
                                 100_000,
@@ -567,5 +625,211 @@ mod tests {
         .await
         .unwrap();
         universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_merge_planner_spawns_merge_over_existing_splits_on_startup() -> anyhow::Result<()>
+    {
+        let universe = Universe::with_accelerated_time();
+        let (merge_split_downloader_mailbox, merge_split_downloader_inbox) = universe
+            .spawn_ctx()
+            .create_mailbox("MergeSplitDownloader", QueueCapacity::Bounded(2));
+        let index_uid = IndexUid::new("test-index");
+        let pipeline_id = IndexingPipelineId {
+            index_uid: index_uid.clone(),
+            source_id: "test-source".to_string(),
+            node_id: "test-node".to_string(),
+            pipeline_ord: 0,
+        };
+        let merge_policy_config = ConstWriteAmplificationMergePolicyConfig {
+            merge_factor: 2,
+            max_merge_factor: 2,
+            max_merge_ops: 3,
+            ..Default::default()
+        };
+        let indexing_settings = IndexingSettings {
+            merge_policy: MergePolicyConfig::ConstWriteAmplification(merge_policy_config),
+            ..Default::default()
+        };
+        let pre_existing_splits = vec![
+            split_metadata_for_test(
+                &index_uid, "a_small", 0, // partition_id
+                1_000_000, 2,
+            ),
+            split_metadata_for_test(
+                &index_uid, "b_small", 0, // partition_id
+                1_000_000, 2,
+            ),
+        ];
+        let merge_policy: Arc<dyn MergePolicy> = merge_policy_from_settings(&indexing_settings);
+        let merge_planner = MergePlanner::new(
+            pipeline_id,
+            pre_existing_splits.clone(),
+            merge_policy,
+            merge_split_downloader_mailbox,
+        );
+        let (merge_planner_mailbox, merge_planner_handle) =
+            universe.spawn_builder().spawn(merge_planner);
+
+        // We wait for the first merge ops. If we sent the Quit message right away, it would have
+        // been queue before first `PlanMerge` message.
+        let merge_op = merge_split_downloader_inbox
+            .recv_typed_message::<TrackedObject<MergeOperation>>()
+            .await;
+        assert!(merge_op.is_some());
+        merge_planner_mailbox.send_message(Command::Quit).await?;
+        let (exit_status, _last_state) = merge_planner_handle.join().await;
+        assert!(matches!(exit_status, ActorExitStatus::Quit));
+        let merge_ops =
+            merge_split_downloader_inbox.drain_for_test_typed::<TrackedObject<MergeOperation>>();
+        assert!(merge_ops.is_empty());
+        universe.assert_quit().await;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_merge_planner_dismiss_splits_from_different_pipeline_id() -> anyhow::Result<()> {
+        // This test makes sure that the merge planner ignores the splits that do not belong
+        // to the same pipeline
+        let universe = Universe::with_accelerated_time();
+        let (merge_split_downloader_mailbox, merge_split_downloader_inbox) = universe
+            .spawn_ctx()
+            .create_mailbox("MergeSplitDownloader", QueueCapacity::Bounded(2));
+        let index_uid = IndexUid::new("test-index");
+        let pipeline_id = IndexingPipelineId {
+            index_uid,
+            source_id: "test-source".to_string(),
+            node_id: "test-node".to_string(),
+            pipeline_ord: 0,
+        };
+        let merge_policy_config = ConstWriteAmplificationMergePolicyConfig {
+            merge_factor: 2,
+            max_merge_factor: 2,
+            max_merge_ops: 3,
+            ..Default::default()
+        };
+        let indexing_settings = IndexingSettings {
+            merge_policy: MergePolicyConfig::ConstWriteAmplification(merge_policy_config),
+            ..Default::default()
+        };
+
+        // It is different from the index_uid because the index uid has a unique suffix.
+        let other_index_uid = IndexUid::new("test-index");
+
+        let pre_existing_splits = vec![
+            split_metadata_for_test(
+                &other_index_uid,
+                "a_small",
+                0, // partition_id
+                1_000_000,
+                2,
+            ),
+            split_metadata_for_test(
+                &other_index_uid,
+                "b_small",
+                0, // partition_id
+                1_000_000,
+                2,
+            ),
+        ];
+        let merge_policy: Arc<dyn MergePolicy> = merge_policy_from_settings(&indexing_settings);
+        let merge_planner = MergePlanner::new(
+            pipeline_id,
+            pre_existing_splits.clone(),
+            merge_policy,
+            merge_split_downloader_mailbox,
+        );
+        let (merge_planner_mailbox, merge_planner_handle) =
+            universe.spawn_builder().spawn(merge_planner);
+        universe.sleep(Duration::from_secs(10)).await;
+        merge_planner_mailbox.send_message(Command::Quit).await?;
+        let (exit_status, _last_state) = merge_planner_handle.join().await;
+        assert!(matches!(exit_status, ActorExitStatus::Quit));
+        let merge_ops =
+            merge_split_downloader_inbox.drain_for_test_typed::<TrackedObject<MergeOperation>>();
+
+        assert!(merge_ops.is_empty());
+        universe.assert_quit().await;
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_merge_planner_inherit_mailbox_with_splits_bug_3847() -> anyhow::Result<()> {
+        let universe = Universe::with_accelerated_time();
+        let (merge_split_downloader_mailbox, merge_split_downloader_inbox) = universe
+            .spawn_ctx()
+            .create_mailbox("MergeSplitDownloader", QueueCapacity::Bounded(2));
+        let index_uid = IndexUid::new("test-index");
+        let pipeline_id = IndexingPipelineId {
+            index_uid: index_uid.clone(),
+            source_id: "test-source".to_string(),
+            node_id: "test-node".to_string(),
+            pipeline_ord: 0,
+        };
+        let merge_policy_config = ConstWriteAmplificationMergePolicyConfig {
+            merge_factor: 2,
+            max_merge_factor: 2,
+            max_merge_ops: 3,
+            ..Default::default()
+        };
+        let indexing_settings = IndexingSettings {
+            merge_policy: MergePolicyConfig::ConstWriteAmplification(merge_policy_config),
+            ..Default::default()
+        };
+
+        let pre_existing_splits = vec![
+            split_metadata_for_test(
+                &index_uid, "a_small", 0, // partition_id
+                1_000_000, 2,
+            ),
+            split_metadata_for_test(
+                &index_uid, "b_small", 0, // partition_id
+                1_000_000, 2,
+            ),
+        ];
+
+        let merge_policy: Arc<dyn MergePolicy> = merge_policy_from_settings(&indexing_settings);
+        let merge_planner = MergePlanner::new(
+            pipeline_id,
+            pre_existing_splits.clone(),
+            merge_policy,
+            merge_split_downloader_mailbox,
+        );
+        let universe = Universe::with_accelerated_time();
+
+        // We create a fake old mailbox that contains two new splits and a PlanMerge message from an
+        // old incarnation. This could happen in real life if the merge pipeline failed
+        // right after a `PlanMerge` was pushed to the pipeline. Note that #3847 did not
+        // even require the `PlanMerge` to be in the pipeline
+        let (merge_planner_mailbox, merge_planner_inbox) =
+            universe.create_test_mailbox::<MergePlanner>();
+
+        // We spawn our merge planner with this recycled mailbox.
+        let (merge_planner_mailbox, merge_planner_handle) = universe
+            .spawn_builder()
+            .set_mailboxes(merge_planner_mailbox, merge_planner_inbox)
+            .spawn(merge_planner);
+
+        // The low capacity of the queue of the merge planner prevents us from sending a Command in
+        // the low priority queue. It would take the single slot and prevent the message
+        // sent in the initiliaze method.
+
+        // Instead, we wait for the first merge ops.
+        let merge_ops = merge_split_downloader_inbox
+            .recv_typed_message::<TrackedObject<MergeOperation>>()
+            .await;
+        assert!(merge_ops.is_some());
+
+        // At this point, our merge has been initialized.
+        merge_planner_mailbox.send_message(Command::Quit).await?;
+        let (exit_status, _last_state) = merge_planner_handle.join().await;
+
+        assert!(matches!(exit_status, ActorExitStatus::Quit));
+        let merge_ops =
+            merge_split_downloader_inbox.drain_for_test_typed::<TrackedObject<MergeOperation>>();
+        assert!(merge_ops.is_empty());
+
+        universe.assert_quit().await;
+        Ok(())
     }
 }
