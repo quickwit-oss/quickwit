@@ -331,6 +331,7 @@ impl Handler<DeleteSourceRequest> for ControlPlane {
 
         self.ingest_controller
             .delete_source(&index_uid, &request.source_id);
+
         self.indexing_scheduler.on_index_change().await?;
         let response = EmptyResponse {};
         Ok(Ok(response))
