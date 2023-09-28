@@ -66,7 +66,7 @@ impl EventBroker {
             .inner
             .subscriptions
             .lock()
-            .expect("The lock should never be poisoned.");
+            .expect("the lock should not be poisoned");
 
         if !subscriptions.contains::<EventSubscriptions<E>>() {
             subscriptions.insert::<EventSubscriptions<E>>(HashMap::new());
@@ -99,7 +99,7 @@ impl EventBroker {
             .inner
             .subscriptions
             .lock()
-            .expect("The lock should never be poisoned.");
+            .expect("the lock should not be poisoned");
 
         if let Some(typed_subscriptions) = subscriptions.get::<EventSubscriptions<E>>() {
             for subscription in typed_subscriptions.values() {
@@ -141,7 +141,7 @@ where E: Event
             let mut subscriptions = broker
                 .subscriptions
                 .lock()
-                .expect("The lock should never be poisoned.");
+                .expect("the lock should not be poisoned");
             if let Some(typed_subscriptions) = subscriptions.get_mut::<EventSubscriptions<E>>() {
                 typed_subscriptions.remove(&self.subscription_id);
             }
@@ -178,20 +178,24 @@ mod tests {
 
     #[tokio::test]
     async fn test_event_broker() {
-        let broker = EventBroker::default();
+        let event_broker = EventBroker::default();
         let counter = Arc::new(AtomicUsize::new(0));
         let subscriber = MySubscriber {
             counter: counter.clone(),
         };
-        let subscription = broker.subscribe(subscriber);
+        let subscription_handle = event_broker.subscribe(subscriber);
+
         let event = MyEvent { value: 42 };
-        broker.publish(event);
+        event_broker.publish(event);
+
         tokio::time::sleep(tokio::time::Duration::from_millis(1)).await;
         assert_eq!(counter.load(Ordering::Relaxed), 42);
 
-        subscription.cancel();
+        subscription_handle.cancel();
+
         let event = MyEvent { value: 1337 };
-        broker.publish(event);
+        event_broker.publish(event);
+
         tokio::time::sleep(tokio::time::Duration::from_millis(1)).await;
         assert_eq!(counter.load(Ordering::Relaxed), 42);
     }
