@@ -209,6 +209,21 @@ async fn es_compat_index_search(
 fn convert_hit(hit: quickwit_proto::search::Hit) -> ElasticHit {
     let fields: BTreeMap<String, serde_json::Value> =
         serde_json::from_str(&hit.json).unwrap_or_default();
+    let mut sort = Vec::new();
+    if let Some(partial_hit) = hit.partial_hit {
+        if let Some(sort_value) = partial_hit.sort_value {
+            sort.push(sort_value.into_json());
+        }
+        if let Some(sort_value2) = partial_hit.sort_value2 {
+            sort.push(sort_value2.into_json());
+        }
+        // TODO this is akin to a `_shard_doc`. We should only set that if the client requested it
+        sort.push(serde_json::Value::String(format!(
+            "{}:{:08x}:{:08x}",
+            partial_hit.split_id, partial_hit.segment_ord, partial_hit.doc_id
+        )))
+    }
+
     ElasticHit {
         fields,
         explanation: None,
@@ -221,7 +236,7 @@ fn convert_hit(hit: quickwit_proto::search::Hit) -> ElasticHit {
         highlight: Default::default(),
         inner_hits: Default::default(),
         matched_queries: Vec::default(),
-        sort: Vec::default(),
+        sort,
     }
 }
 

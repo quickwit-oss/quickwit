@@ -67,6 +67,26 @@ impl From<SortValue> for SortByValue {
     }
 }
 
+impl SortByValue {
+    pub fn into_json(self) -> serde_json::Value {
+        use serde_json::Value::*;
+        match self.sort_value {
+            Some(SortValue::U64(num)) => Number(num.into()),
+            Some(SortValue::I64(num)) => Number(num.into()),
+            Some(SortValue::F64(num)) => {
+                if let Some(num) = serde_json::Number::from_f64(num) {
+                    Number(num)
+                } else {
+                    // TODO is there a better way to handle infinite/nan?
+                    Null
+                }
+            }
+            Some(SortValue::Boolean(b)) => Bool(b),
+            None => Null,
+        }
+    }
+}
+
 impl Copy for SortValue {}
 impl Eq for SortValue {}
 
