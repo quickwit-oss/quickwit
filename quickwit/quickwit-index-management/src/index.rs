@@ -21,11 +21,14 @@ use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
+use futures::future::try_join_all;
+use itertools::Itertools;
 use quickwit_common::fs::{empty_dir, get_cache_directory_path};
 use quickwit_config::{validate_identifier, IndexConfig, SourceConfig};
 use quickwit_indexing::check_source_connectivity;
 use quickwit_metastore::{
-    IndexMetadata, ListSplitsQuery, Metastore, SplitInfo, SplitMetadata, SplitState,
+    IndexMetadata, ListIndexesQuery, ListSplitsQuery, Metastore, SplitInfo, SplitMetadata,
+    SplitState,
 };
 use quickwit_proto::metastore::{EntityKind, MetastoreError};
 use quickwit_proto::{IndexUid, ServiceError, ServiceErrorCode};
@@ -193,6 +196,44 @@ impl IndexService {
         Ok(deleted_splits)
     }
 
+    /// Deletes the indexes specified with `index_id_patterns`.
+    /// This is a wrapper of delete_index, and support index delete with index pattern
+    ///
+    /// * `index_id_patterns` - The target index Id patterns.
+    /// * `dry_run` - Should this only return a list of affected files without performing deletion.
+    pub async fn delete_indexes(
+        &self,
+        index_id_patterns: Vec<String>,
+        dry_run: bool,
+    ) -> Result<Vec<SplitInfo>, IndexServiceError> {
+        // get all index_ids by index_id_patterns
+        let indexes_metadata = self
+            .metastore()
+            .list_indexes_metadatas(ListIndexesQuery::IndexIdPatterns(index_id_patterns.clone()))
+            .await?;
+        // if indexes_metadata.is_empty() {
+        //     return Err(IndexServiceError::Internal(format!(
+        //         "can not find index using: {:?}",
+        //         index_id_patterns
+        //     )));
+        // }
+        let index_ids = indexes_metadata
+            .iter()
+            .map(|index_metadata| index_metadata.index_id())
+            .collect_vec();
+        info!(index_ids = ?index_ids);
+
+        // setup delete index tasks
+        let mut delete_index_tasks = Vec::new();
+        for index_id in index_ids {
+            delete_index_tasks.push(async move {
+                info!("delete_index:{}", index_id);
+                self.delete_index(index_id, dry_run).await
+            })
+        }
+        let delete_index_responses: Vec<Vec<SplitInfo>> = try_join_all(delete_index_tasks).await?;
+        Ok(delete_index_responses.concat())
+    }
     /// Detect all dangling splits and associated files from the index and removes them.
     ///
     /// * `index_id` - The target index Id.

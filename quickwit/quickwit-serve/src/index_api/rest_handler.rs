@@ -20,9 +20,7 @@
 use std::sync::Arc;
 
 use bytes::Bytes;
-use futures::future::try_join_all;
 use hyper::header::CONTENT_TYPE;
-use itertools::Itertools;
 use quickwit_common::uri::Uri;
 use quickwit_config::{
     load_source_config_from_user_config, ConfigFormat, NodeConfig, SourceConfig, SourceParams,
@@ -511,36 +509,9 @@ async fn delete_index(
     index_service: IndexService,
 ) -> Result<Vec<SplitInfo>, IndexServiceError> {
     info!(index_id_patterns = ?index_id_patterns, dry_run = delete_index_query_param.dry_run, "delete_index");
-    // get all index_ids by index_id_patterns
-    let indexes_metadata = index_service
-        .metastore()
-        .list_indexes_metadatas(ListIndexesQuery::IndexIdPatterns(index_id_patterns.clone()))
-        .await?;
-    if indexes_metadata.is_empty() {
-        return Err(IndexServiceError::Internal(format!(
-            "can not find index using: {:?}",
-            index_id_patterns
-        )));
-    }
-    let index_ids = indexes_metadata
-        .iter()
-        .map(|index_metadata| index_metadata.index_id())
-        .collect_vec();
-    info!(index_ids = ?index_ids);
-    let index_service_arc = Arc::new(index_service);
-
-    let mut delete_index_tasks = Vec::new();
-    for index_id in index_ids {
-        let index_service_clone = index_service_arc.clone();
-        delete_index_tasks.push(async move {
-            info!("delete_index:{}", index_id);
-            index_service_clone
-                .delete_index(index_id, delete_index_query_param.dry_run)
-                .await
-        })
-    }
-    let delete_index_responses: Vec<Vec<SplitInfo>> = try_join_all(delete_index_tasks).await?;
-    Ok(delete_index_responses.concat())
+    index_service
+        .delete_indexes(index_id_patterns, delete_index_query_param.dry_run)
+        .await
 }
 
 fn create_source_handler(
