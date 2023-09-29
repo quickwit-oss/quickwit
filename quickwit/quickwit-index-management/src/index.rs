@@ -206,7 +206,6 @@ impl IndexService {
         index_id_patterns: Vec<String>,
         dry_run: bool,
     ) -> Result<Vec<SplitInfo>, IndexServiceError> {
-        // get all index_ids by index_id_patterns
         let indexes_metadata = self
             .metastore
             .list_indexes_metadatas(ListIndexesQuery::IndexIdPatterns(index_id_patterns.clone()))
