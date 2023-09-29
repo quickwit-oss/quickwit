@@ -52,11 +52,6 @@ impl fmt::Display for SplitSearchError {
     }
 }
 
-// !!! Disclaimer !!!
-//
-// Prost imposes the PartialEq derived implementation.
-// This is terrible because this means Eq, PartialEq are not really in line with Ord's
-// implementation. if in presence of NaN.
 impl Eq for SortByValue {}
 impl Copy for SortByValue {}
 impl From<SortValue> for SortByValue {
@@ -64,6 +59,12 @@ impl From<SortValue> for SortByValue {
         SortByValue {
             sort_value: Some(sort_value),
         }
+    }
+}
+
+impl std::hash::Hash for SortByValue {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.sort_value.hash(state);
     }
 }
 
@@ -85,10 +86,38 @@ impl SortByValue {
             None => Null,
         }
     }
+
+    pub fn try_from_json(value: serde_json::Value) -> Option<Self> {
+        use serde_json::Value::*;
+        let sort_value = match value {
+            Null => None,
+            Bool(b) => Some(SortValue::Boolean(b)),
+            Number(number) => {
+                if let Some(number) = number.as_u64() {
+                    Some(SortValue::U64(number))
+                } else if let Some(number) = number.as_i64() {
+                    Some(SortValue::I64(number))
+                } else if let Some(number) = number.as_f64() {
+                    Some(SortValue::F64(number))
+                } else {
+                    // this should never happen as we don't emit such number ourselves
+                    return None;
+                }
+            }
+            // TODO this means we actually ignore _shard_doc
+            String(_) | Array(_) | Object(_) => return None,
+        };
+        Some(SortByValue { sort_value })
+    }
 }
 
-impl Copy for SortValue {}
+// !!! Disclaimer !!!
+//
+// Prost imposes the PartialEq derived implementation.
+// This is terrible because this means Eq, PartialEq are not really in line with Ord's
+// implementation. if in presence of NaN.
 impl Eq for SortValue {}
+impl Copy for SortValue {}
 
 impl Ord for SortValue {
     fn cmp(&self, other: &Self) -> Ordering {
@@ -135,6 +164,67 @@ impl Ord for SortValue {
 impl PartialOrd for SortValue {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
+    }
+}
+
+impl std::hash::Hash for SortValue {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        let this = self.normalize();
+        match this {
+            SortValue::U64(number) => {
+                0u8.hash(state);
+                number.hash(state);
+            }
+            SortValue::I64(number) => {
+                1u8.hash(state);
+                number.hash(state);
+            }
+            SortValue::F64(number) => {
+                2u8.hash(state);
+                number.to_bits().hash(state);
+            }
+            SortValue::Boolean(b) => {
+                3u8.hash(state);
+                b.hash(state);
+            }
+        }
+    }
+}
+
+impl SortValue {
+    pub fn normalize(&self) -> Self {
+        match self {
+            SortValue::U64(_) => *self,
+            SortValue::Boolean(_) => *self,
+            SortValue::I64(number) => {
+                if let Ok(number) = (*number).try_into() {
+                    SortValue::U64(number)
+                } else {
+                    *self
+                }
+            }
+            SortValue::F64(number) => {
+                let number = *number;
+                if number.ceil() == number {
+                    // number is not NaN, and is a natural number
+                    if number.is_sign_positive() && number <= u64::MAX as f64 {
+                        // number is positive (including positive zero) and less than u64::MAX, we
+                        // can convert it safely
+                        return SortValue::U64(number as u64);
+                    } else if number.is_sign_negative() && number >= i64::MIN as f64 {
+                        // number is negative (including negative zero)  and more than i64::MIN, we
+                        // check for zero, and convert it
+                        let number = number as i64;
+                        if number == 0 {
+                            return SortValue::U64(0);
+                        } else {
+                            return SortValue::I64(number);
+                        }
+                    }
+                }
+                *self
+            }
+        }
     }
 }
 

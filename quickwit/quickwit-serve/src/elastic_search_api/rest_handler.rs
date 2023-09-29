@@ -30,7 +30,7 @@ use hyper::StatusCode;
 use itertools::Itertools;
 use quickwit_common::truncate_str;
 use quickwit_config::{validate_index_id_pattern, NodeConfig};
-use quickwit_proto::search::{ScrollRequest, SearchResponse};
+use quickwit_proto::search::{ScrollRequest, SearchResponse, SortByValue};
 use quickwit_proto::ServiceErrorCode;
 use quickwit_query::query_ast::{QueryAst, UserInputQuery};
 use quickwit_query::BooleanOperand;
@@ -175,6 +175,11 @@ fn build_request_for_es_api(
 
     let scroll_duration: Option<Duration> = search_params.parse_scroll_ttl()?;
     let scroll_ttl_secs: Option<u32> = scroll_duration.map(|duration| duration.as_secs() as u32);
+    let search_after = search_body
+        .search_after
+        .into_iter()
+        .filter_map(SortByValue::try_from_json)
+        .collect();
 
     Ok(quickwit_proto::search::SearchRequest {
         index_id_patterns,
@@ -187,6 +192,7 @@ fn build_request_for_es_api(
         end_timestamp: None,
         snippet_fields: Vec::new(),
         scroll_ttl_secs,
+        search_after,
     })
 }
 

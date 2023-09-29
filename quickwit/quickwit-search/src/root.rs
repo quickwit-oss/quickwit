@@ -291,6 +291,9 @@ fn simplify_search_request_for_scroll_api(req: &SearchRequest) -> SearchRequest 
         snippet_fields: Vec::new(),
         // We remove the scroll ttl parameter. It is irrelevant to process later request
         scroll_ttl_secs: None,
+        // TODO not currently used, but should probably be stripped as it will end up being
+        // generated internally in the future
+        search_after: Vec::new(),
     }
 }
 

@@ -102,6 +102,10 @@ pub struct SearchRequest {
     /// in a consistent manner.
     #[prost(uint32, optional, tag = "15")]
     pub scroll_ttl_secs: ::core::option::Option<u32>,
+    /// Document with sort tuple smaller or equal to this are discarded to
+    /// enable pagination
+    #[prost(message, repeated, tag = "16")]
+    pub search_after: ::prost::alloc::vec::Vec<SortByValue>,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[derive(Eq, Hash)]

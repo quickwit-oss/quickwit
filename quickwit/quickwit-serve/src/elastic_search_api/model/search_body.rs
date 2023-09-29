@@ -69,6 +69,8 @@ pub struct SearchBody {
     pub track_total_hits: Option<TrackTotalHits>,
     #[serde(default)]
     pub stored_fields: Option<BTreeSet<String>>,
+    #[serde(default)]
+    pub search_after: Vec<serde_json::Value>,
 }
 
 struct FieldSortVecVisitor;
