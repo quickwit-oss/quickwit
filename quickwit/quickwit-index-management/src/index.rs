@@ -199,7 +199,7 @@ impl IndexService {
     /// Deletes the indexes specified with `index_id_patterns`.
     /// This is a wrapper of delete_index, and support index delete with index pattern
     ///
-    /// * `index_id_patterns` - The target index Id patterns.
+    /// * `index_id_patterns` - The targeted index ID patterns.
     /// * `dry_run` - Should this only return a list of affected files without performing deletion.
     pub async fn delete_indexes(
         &self,
