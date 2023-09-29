@@ -211,12 +211,14 @@ impl IndexService {
             .metastore()
             .list_indexes_metadatas(ListIndexesQuery::IndexIdPatterns(index_id_patterns.clone()))
             .await?;
-        // if indexes_metadata.is_empty() {
-        //     return Err(IndexServiceError::Internal(format!(
-        //         "can not find index using: {:?}",
-        //         index_id_patterns
-        //     )));
-        // }
+
+        if indexes_metadata.is_empty() {
+            return Err(IndexServiceError::Metastore(MetastoreError::NotFound(
+                EntityKind::Indexes {
+                    index_ids: index_id_patterns,
+                },
+            )));
+        }
         let index_ids = indexes_metadata
             .iter()
             .map(|index_metadata| index_metadata.index_id())

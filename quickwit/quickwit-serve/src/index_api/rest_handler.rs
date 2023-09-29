@@ -1128,6 +1128,14 @@ mod tests {
             .expect_list_splits()
             .returning(|_| Ok(vec![mock_split("split_1")]))
             .times(2);
+        metastore.expect_list_indexes_metadatas().returning(
+            move |_index_ids_query: ListIndexesQuery| {
+                Ok(vec![IndexMetadata::for_test(
+                    "quickwit-demo-index",
+                    "file:///path/to/index/quickwit-demo-index",
+                )])
+            },
+        );
         metastore
             .expect_mark_splits_for_deletion()
             .return_once(|_index_uid: IndexUid, _splits: &[&str]| Ok(()));
