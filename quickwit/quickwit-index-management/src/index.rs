@@ -255,7 +255,7 @@ impl IndexService {
             }
             Ok(concatenated_split_infos)
         } else {
-            return Err(IndexServiceError::Metastore(MetastoreError::Internal {
+            Err(IndexServiceError::Metastore(MetastoreError::Internal {
                 message: format!(
                     "errors occurred when deleting indexes: {:?}",
                     index_id_patterns
@@ -264,7 +264,7 @@ impl IndexService {
                     "errors: {:?}\ndeleted indexes: {:?}",
                     delete_errors, delete_responses
                 ),
-            }));
+            }))
         }
     }
     /// Detect all dangling splits and associated files from the index and removes them.
