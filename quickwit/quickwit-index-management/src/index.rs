@@ -17,11 +17,12 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
-use futures::future::try_join_all;
+use futures::StreamExt;
 use itertools::Itertools;
 use quickwit_common::fs::{empty_dir, get_cache_directory_path};
 use quickwit_config::{validate_identifier, IndexConfig, SourceConfig};
@@ -227,13 +228,44 @@ impl IndexService {
         // setup delete index tasks
         let mut delete_index_tasks = Vec::new();
         for index_id in index_ids {
-            delete_index_tasks.push(async move {
-                info!("delete_index:{}", index_id);
-                self.delete_index(index_id, dry_run).await
-            })
+            let task = async move {
+                let result = self.delete_index(index_id, dry_run).await;
+                (index_id, result)
+            };
+            delete_index_tasks.push(task);
         }
-        let delete_index_responses: Vec<Vec<SplitInfo>> = try_join_all(delete_index_tasks).await?;
-        Ok(delete_index_responses.concat())
+        let mut delete_responses: HashMap<String, Vec<SplitInfo>> = HashMap::new();
+        let mut delete_errors: HashMap<String, IndexServiceError> = HashMap::new();
+        let mut stream = futures::stream::iter(delete_index_tasks).buffer_unordered(100);
+        while let Some((index_id, delete_response)) = stream.next().await {
+            match delete_response {
+                Ok(split_infos) => {
+                    delete_responses.insert(index_id.to_string(), split_infos);
+                }
+                Err(error) => {
+                    delete_errors.insert(index_id.to_string(), error);
+                }
+            }
+        }
+
+        if delete_errors.is_empty() {
+            let mut concatenated_split_infos = Vec::new();
+            for (_, split_info_vec) in delete_responses.into_iter() {
+                concatenated_split_infos.extend(split_info_vec);
+            }
+            Ok(concatenated_split_infos)
+        } else {
+            return Err(IndexServiceError::Metastore(MetastoreError::Internal {
+                message: format!(
+                    "errors occurred when deleting indexes: {:?}",
+                    index_id_patterns
+                ),
+                cause: format!(
+                    "errors: {:?}\ndeleted indexes: {:?}",
+                    delete_errors, delete_responses
+                ),
+            }));
+        }
     }
     /// Detect all dangling splits and associated files from the index and removes them.
     ///
