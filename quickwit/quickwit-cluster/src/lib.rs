@@ -41,6 +41,8 @@ pub use crate::cluster::{Cluster, ClusterSnapshot, NodeIdSchema};
 pub use crate::member::ClusterMember;
 pub use crate::node::ClusterNode;
 
+pub type NodeId = String;
+
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub struct GenerationId(u64);
 

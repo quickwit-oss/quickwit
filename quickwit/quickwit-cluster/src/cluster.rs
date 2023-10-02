@@ -45,7 +45,7 @@ use crate::member::{
     GRPC_ADVERTISE_ADDR_KEY, INDEXING_TASK_PREFIX, READINESS_KEY, READINESS_VALUE_NOT_READY,
     READINESS_VALUE_READY,
 };
-use crate::ClusterNode;
+use crate::{ClusterNode, NodeId};
 
 const GOSSIP_INTERVAL: Duration = if cfg!(any(test, feature = "testsuite")) {
     Duration::from_millis(25)
@@ -422,7 +422,7 @@ struct InnerCluster {
     cluster_id: String,
     self_chitchat_id: ChitchatId,
     chitchat_handle: ChitchatHandle,
-    live_nodes: BTreeMap<ChitchatId, ClusterNode>,
+    live_nodes: BTreeMap<NodeId, ClusterNode>,
     change_stream_subscribers: Vec<mpsc::UnboundedSender<ClusterChange>>,
     ready_members_rx: watch::Receiver<Vec<ClusterMember>>,
 }
