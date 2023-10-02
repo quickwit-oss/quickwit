@@ -378,7 +378,7 @@ impl IndexConfig {
             default_search_fields: vec![
                 "body".to_string(),
                 r#"attributes.server"#.to_string(),
-                r#"attributes.server\.status"#.to_string(),
+                r"attributes.server\.status".to_string(),
             ],
         };
         IndexConfig {

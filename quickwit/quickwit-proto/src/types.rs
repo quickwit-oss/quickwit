@@ -45,6 +45,14 @@ pub fn queue_id(index_uid: &str, source_id: &str, shard_id: u64) -> QueueId {
     format!("{}/{}/{}", index_uid, source_id, shard_id)
 }
 
+pub fn split_queue_id(queue_id: &str) -> Option<(IndexUid, SourceId, ShardId)> {
+    let mut parts = queue_id.split('/');
+    let index_uid = parts.next()?;
+    let source_id = parts.next()?;
+    let shard_id = parts.next()?.parse::<u64>().ok()?;
+    Some((index_uid.into(), source_id.to_string(), shard_id))
+}
+
 /// Index identifiers that uniquely identify not only the index, but also
 /// its incarnation allowing to distinguish between deleted and recreated indexes.
 /// It is represented as a stiring in index_id:incarnation_id format.
@@ -109,6 +117,12 @@ impl From<&str> for IndexUid {
 impl From<String> for IndexUid {
     fn from(index_uid: String) -> Self {
         Self(index_uid)
+    }
+}
+
+impl PartialEq<&str> for IndexUid {
+    fn eq(&self, other: &&str) -> bool {
+        self.as_str() == *other
     }
 }
 
@@ -292,6 +306,32 @@ impl ToOwned for NodeIdRef {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_queue_id() {
+        assert_eq!(
+            queue_id("test-index:0", "test-source", 1),
+            "test-index:0/test-source/1"
+        );
+    }
+
+    #[test]
+    fn test_split_queue_id() {
+        let splits = split_queue_id("test-index:0");
+        assert!(splits.is_none());
+
+        let splits = split_queue_id("test-index:0/test-source");
+        assert!(splits.is_none());
+
+        let splits = split_queue_id("test-index:0/test-source/a");
+        assert!(splits.is_none());
+
+        let (index_uid, source_id, shard_id) =
+            split_queue_id("test-index:0/test-source/1").unwrap();
+        assert_eq!(index_uid, "test-index:0");
+        assert_eq!(source_id, "test-source");
+        assert_eq!(shard_id, 1);
+    }
 
     #[test]
     fn test_node_id() {

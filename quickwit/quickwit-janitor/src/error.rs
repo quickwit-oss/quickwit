@@ -35,11 +35,11 @@ pub enum JanitorError {
 }
 
 impl ServiceError for JanitorError {
-    fn status_code(&self) -> ServiceErrorCode {
+    fn error_code(&self) -> ServiceErrorCode {
         match self {
             JanitorError::InvalidDeleteQuery(_) => ServiceErrorCode::BadRequest,
             JanitorError::Internal(_) => ServiceErrorCode::Internal,
-            JanitorError::Metastore(error) => error.status_code(),
+            JanitorError::Metastore(error) => error.error_code(),
         }
     }
 }

@@ -34,7 +34,6 @@ use tower::{Layer, Service};
 
 pub use crate::error::HelloError;
 pub use crate::hello::*;
-use crate::hello::{Hello, HelloRequest, HelloResponse};
 
 pub type HelloResult<T> = Result<T, HelloError>;
 

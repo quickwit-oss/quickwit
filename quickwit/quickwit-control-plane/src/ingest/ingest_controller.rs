@@ -20,23 +20,24 @@
 use std::collections::hash_map::Entry;
 use std::collections::{HashMap, HashSet};
 use std::fmt;
-use std::hash::{Hash, Hasher};
-use std::ops::Deref;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
+use fnv::FnvHashMap;
 use itertools::Itertools;
 use quickwit_common::Progress;
 use quickwit_config::INGEST_SOURCE_ID;
 use quickwit_ingest::IngesterPool;
 use quickwit_metastore::{ListIndexesQuery, Metastore};
 use quickwit_proto::control_plane::{
-    CloseShardsRequest, CloseShardsResponse, ControlPlaneError, ControlPlaneResult,
-    GetOpenShardsRequest, GetOpenShardsResponse, GetOpenShardsSubresponse,
+    ControlPlaneError, ControlPlaneResult, GetOpenShardsSubresponse, GetOrCreateOpenShardsRequest,
+    GetOrCreateOpenShardsResponse,
 };
 use quickwit_proto::ingest::ingester::{IngesterService, PingRequest};
 use quickwit_proto::ingest::{IngestV2Error, Shard, ShardState};
-use quickwit_proto::metastore::{EntityKind, MetastoreError};
+use quickwit_proto::metastore::{
+    CloseShardsRequest, DeleteShardsRequest, EmptyResponse, EntityKind, MetastoreError,
+};
 use quickwit_proto::types::{IndexId, NodeId, SourceId};
 use quickwit_proto::{metastore, IndexUid, NodeIdRef, ShardId};
 use rand::seq::SliceRandom;
@@ -52,64 +53,38 @@ const PING_LEADER_TIMEOUT: Duration = if cfg!(test) {
 
 type NextShardId = ShardId;
 
-/// A wrapper around `Shard` that implements `Hash` to allow insertion of shards into a `HashSet`.
-struct ShardEntry(Shard);
-
-impl fmt::Debug for ShardEntry {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        f.debug_struct("ShardEntry")
-            .field("shard_id", &self.0.shard_id)
-            .field("leader_id", &self.0.leader_id)
-            .field("follower_id", &self.0.follower_id)
-            .field("shard_state", &self.0.shard_state)
-            .finish()
-    }
-}
-
-impl Deref for ShardEntry {
-    type Target = Shard;
-
-    fn deref(&self) -> &Self::Target {
-        &self.0
-    }
-}
-
-impl Hash for ShardEntry {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.0.shard_id.hash(state);
-    }
-}
-
-impl PartialEq for ShardEntry {
-    fn eq(&self, other: &Self) -> bool {
-        self.0.shard_id == other.0.shard_id
-    }
-}
-
-impl Eq for ShardEntry {}
-
 #[derive(Debug, Eq, PartialEq)]
 struct ShardTableEntry {
-    shard_entries: HashSet<ShardEntry>,
+    shards: FnvHashMap<ShardId, Shard>,
     next_shard_id: NextShardId,
 }
 
 impl Default for ShardTableEntry {
     fn default() -> Self {
         Self {
-            shard_entries: HashSet::new(),
-            next_shard_id: 1, // `1` matches the PostgreSQL sequence min value.
+            shards: Default::default(),
+            next_shard_id: Self::DEFAULT_NEXT_SHARD_ID,
         }
     }
 }
 
 impl ShardTableEntry {
+    const DEFAULT_NEXT_SHARD_ID: NextShardId = 1; // `1` matches the PostgreSQL sequence min value.
+
+    fn is_empty(&self) -> bool {
+        self.shards.is_empty()
+    }
+
+    fn is_default(&self) -> bool {
+        self.is_empty() && self.next_shard_id == Self::DEFAULT_NEXT_SHARD_ID
+    }
+
     #[cfg(test)]
     fn shards(&self) -> Vec<Shard> {
-        self.shard_entries
-            .iter()
-            .map(|shard_entry| shard_entry.0.clone())
-            .sorted_by_key(|shard| shard.shard_id)
+        self.shards
+            .values()
+            .cloned()
+            .sorted_unstable_by_key(|shard| shard.shard_id)
             .collect()
     }
 }
@@ -125,6 +100,12 @@ impl ShardTable {
         self.table_entries.len()
     }
 
+    /// Removes all entries that match the target index ID.
+    fn delete_index(&mut self, index_id: &str) {
+        self.table_entries
+            .retain(|(index_uid, _), _| index_uid.index_id() != index_id);
+    }
+
     /// Adds a new empty entry for the given index and source.
     ///
     /// TODO check and document the behavior on error (if the source was already here).
@@ -134,7 +115,7 @@ impl ShardTable {
         let previous_table_entry_opt = self.table_entries.insert(key, table_entry);
 
         if let Some(previous_table_entry) = previous_table_entry_opt {
-            if previous_table_entry != ShardTableEntry::default() {
+            if !previous_table_entry.is_default() {
                 error!(
                     "shard table entry for index `{}` and source `{}` already exists",
                     index_uid.index_id(),
@@ -144,7 +125,8 @@ impl ShardTable {
         }
     }
 
-    fn remove_source(&mut self, index_uid: &IndexUid, source_id: &SourceId) {
+    /// Removes any entry that matches the target index UID and source ID.
+    fn delete_source(&mut self, index_uid: &IndexUid, source_id: &SourceId) {
         let key = (index_uid.clone(), source_id.clone());
         self.table_entries.remove(&key);
     }
@@ -165,13 +147,13 @@ impl ShardTable {
         let key = (index_uid.clone(), source_id.clone());
         let table_entry = self.table_entries.get(&key)?;
         let open_shards: Vec<Shard> = table_entry
-            .shard_entries
-            .iter()
-            .filter(|shard_entry| {
-                shard_entry.is_open()
-                    && !unavailable_ingesters.contains(NodeIdRef::from_str(&shard_entry.leader_id))
+            .shards
+            .values()
+            .filter(|shard| {
+                shard.is_open()
+                    && !unavailable_ingesters.contains(NodeIdRef::from_str(&shard.leader_id))
             })
-            .map(|shard_entry| shard_entry.0.clone())
+            .cloned()
             .collect();
 
         #[cfg(test)]
@@ -196,8 +178,7 @@ impl ShardTable {
             Entry::Occupied(mut entry) => {
                 for shard in shards {
                     let table_entry = entry.get_mut();
-                    let shard_entry = ShardEntry(shard.clone());
-                    table_entry.shard_entries.replace(shard_entry);
+                    table_entry.shards.insert(shard.shard_id, shard.clone());
                     table_entry.next_shard_id = next_shard_id;
                 }
             }
@@ -205,10 +186,13 @@ impl ShardTable {
             // the metastore, so should we panic here? Warnings are most likely going to go
             // unnoticed.
             Entry::Vacant(entry) => {
-                let shard_entries: HashSet<ShardEntry> =
-                    shards.iter().cloned().map(ShardEntry).collect();
+                let shards: FnvHashMap<ShardId, Shard> = shards
+                    .iter()
+                    .cloned()
+                    .map(|shard| (shard.shard_id, shard))
+                    .collect();
                 let table_entry = ShardTableEntry {
-                    shard_entries,
+                    shards,
                     next_shard_id,
                 };
                 entry.insert(table_entry);
@@ -216,21 +200,28 @@ impl ShardTable {
         }
     }
 
-    /// Evicts the shards identified by their index UID, source ID, and shard IDs from the shard
-    /// table.
-    fn remove_shards(&mut self, index_uid: &IndexUid, source_id: &SourceId, shard_ids: &[ShardId]) {
+    /// Sets the state of the shards identified by their index UID, source ID, and shard IDs to
+    /// `Closed`.
+    fn close_shards(&mut self, index_uid: &IndexUid, source_id: &SourceId, shard_ids: &[ShardId]) {
         let key = (index_uid.clone(), source_id.clone());
+
         if let Some(table_entry) = self.table_entries.get_mut(&key) {
-            table_entry
-                .shard_entries
-                .retain(|shard_entry| !shard_ids.contains(&shard_entry.shard_id));
+            for shard_id in shard_ids {
+                if let Some(shard) = table_entry.shards.get_mut(shard_id) {
+                    shard.shard_state = ShardState::Closed as i32;
+                }
+            }
         }
     }
 
-    /// Removes all the entries that match the target index ID.
-    fn remove_index(&mut self, index_id: &str) {
-        self.table_entries
-            .retain(|(index_uid, _), _| index_uid.index_id() != index_id);
+    /// Removes the shards identified by their index UID, source ID, and shard IDs.
+    fn delete_shards(&mut self, index_uid: &IndexUid, source_id: &SourceId, shard_ids: &[ShardId]) {
+        let key = (index_uid.clone(), source_id.clone());
+        if let Some(table_entry) = self.table_entries.get_mut(&key) {
+            for shard_id in shard_ids {
+                table_entry.shards.remove(shard_id);
+            }
+        }
     }
 }
 
@@ -321,13 +312,13 @@ impl IngestController {
                     list_shards_subresponse.index_uid.into(),
                     list_shards_subresponse.source_id,
                 );
-                let shard_entries: HashSet<ShardEntry> = list_shards_subresponse
+                let shards: FnvHashMap<ShardId, Shard> = list_shards_subresponse
                     .shards
                     .into_iter()
-                    .map(ShardEntry)
+                    .map(|shard| (shard.shard_id, shard))
                     .collect();
                 let table_entry = ShardTableEntry {
-                    shard_entries,
+                    shards,
                     next_shard_id: list_shards_subresponse.next_shard_id,
                 };
                 self.shard_table.table_entries.insert(key, table_entry);
@@ -356,7 +347,6 @@ impl IngestController {
         let mut leader_ingester = self
             .ingester_pool
             .get(leader_id)
-            .await
             .ok_or(PingError::LeaderUnavailable)?;
 
         let ping_request = PingRequest {
@@ -389,8 +379,12 @@ impl IngestController {
         unavailable_ingesters: &mut HashSet<NodeId>,
         progress: &Progress,
     ) -> Option<(NodeId, Option<NodeId>)> {
-        let mut candidates: Vec<NodeId> = self.ingester_pool.keys().await;
-        candidates.retain(|node_id| !unavailable_ingesters.contains(node_id));
+        let mut candidates: Vec<NodeId> = self
+            .ingester_pool
+            .keys()
+            .into_iter()
+            .filter(|node_id| !unavailable_ingesters.contains(node_id))
+            .collect();
         candidates.shuffle(&mut rand::thread_rng());
 
         #[cfg(test)]
@@ -438,15 +432,15 @@ impl IngestController {
         None
     }
 
-    /// Finds the open shards that satisfies the [`GetOpenShardsRequest`] request sent by an
+    /// Finds the open shards that satisfies the [`GetOrCreateOpenShardsRequest`] request sent by an
     /// ingest router. First, the control plane checks its internal shard table to find
     /// candidates. If it does not contain any, the control plane will ask
     /// the metastore to open new shards.
-    pub(crate) async fn get_open_shards(
+    pub(crate) async fn get_or_create_open_shards(
         &mut self,
-        get_open_shards_request: GetOpenShardsRequest,
+        get_open_shards_request: GetOrCreateOpenShardsRequest,
         progress: &Progress,
-    ) -> ControlPlaneResult<GetOpenShardsResponse> {
+    ) -> ControlPlaneResult<GetOrCreateOpenShardsResponse> {
         let mut get_open_shards_subresponses =
             Vec::with_capacity(get_open_shards_request.subrequests.len());
 
@@ -468,6 +462,13 @@ impl IngestController {
                         index_id: get_open_shards_subrequest.index_id.clone(),
                     })
                 })?;
+            // if !get_open_shards_subrequest.closed_shards.is_empty() {
+            //     self.shard_table.delete_shards(
+            //         &index_uid,
+            //         &get_open_shards_subrequest.source_id,
+            //         &get_open_shards_subrequest.closed_shards,
+            //     );
+            // }
             let (open_shards, next_shard_id) = self
                 .shard_table
                 .find_open_shards(
@@ -532,7 +533,7 @@ impl IngestController {
                 get_open_shards_subresponses.push(get_open_shards_subresponse);
             }
         }
-        let get_open_shards_response = GetOpenShardsResponse {
+        let get_open_shards_response = GetOrCreateOpenShardsResponse {
             subresponses: get_open_shards_subresponses,
         };
         Ok(get_open_shards_response)
@@ -541,37 +542,33 @@ impl IngestController {
     pub(crate) async fn close_shards(
         &mut self,
         close_shards_request: CloseShardsRequest,
-        progress: &Progress,
-    ) -> ControlPlaneResult<CloseShardsResponse> {
-        let mut close_shards_subrequests =
-            Vec::with_capacity(close_shards_request.subrequests.len());
+    ) -> ControlPlaneResult<EmptyResponse> {
         for close_shards_subrequest in close_shards_request.subrequests {
-            let close_shards_subrequest = metastore::CloseShardsSubrequest {
-                index_uid: close_shards_subrequest.index_uid,
-                source_id: close_shards_subrequest.source_id,
-                shard_id: close_shards_subrequest.shard_id,
-                shard_state: close_shards_subrequest.shard_state,
-                replication_position_inclusive: close_shards_subrequest
-                    .replication_position_inclusive,
-            };
-            close_shards_subrequests.push(close_shards_subrequest);
+            let index_uid: IndexUid = close_shards_subrequest.index_uid.into();
+            let source_id = close_shards_subrequest.source_id;
+            // TODO: Group by (index_uid, source_id) first, or change schema of
+            // `CloseShardsSubrequest`.
+            let shard_ids = [close_shards_subrequest.shard_id];
+
+            self.shard_table
+                .close_shards(&index_uid, &source_id, &shard_ids)
         }
-        let metastore_close_shards_request = metastore::CloseShardsRequest {
-            subrequests: close_shards_subrequests,
-        };
-        let close_shards_response = progress
-            .protect_future(self.metastore.close_shards(metastore_close_shards_request))
-            .await?;
-        for close_shards_success in close_shards_response.successes {
-            let index_uid: IndexUid = close_shards_success.index_uid.into();
-            self.shard_table.remove_shards(
-                &index_uid,
-                &close_shards_success.source_id,
-                &[close_shards_success.shard_id],
-            );
+        Ok(EmptyResponse {})
+    }
+
+    pub(crate) async fn delete_shards(
+        &mut self,
+        delete_shards_request: DeleteShardsRequest,
+    ) -> ControlPlaneResult<EmptyResponse> {
+        for delete_shards_subrequest in delete_shards_request.subrequests {
+            let index_uid: IndexUid = delete_shards_subrequest.index_uid.into();
+            let source_id = delete_shards_subrequest.source_id;
+            let shard_ids = delete_shards_subrequest.shard_ids;
+
+            self.shard_table
+                .delete_shards(&index_uid, &source_id, &shard_ids)
         }
-        let close_shards_response = CloseShardsResponse {};
-        Ok(close_shards_response)
+        Ok(EmptyResponse {})
     }
 }
 
@@ -587,7 +584,13 @@ pub struct IngestControllerState {
 }
 
 impl IngestController {
-    pub(crate) fn add_index(&mut self, index_uid: IndexUid) {
+    pub fn observable_state(&self) -> IngestControllerState {
+        IngestControllerState {
+            num_indexes: self.index_table.len(),
+        }
+    }
+
+    pub(crate) fn create_index(&mut self, index_uid: IndexUid) {
         let index_uid = index_uid;
         let index_id = index_uid.index_id().to_string();
         self.index_table.insert(index_id, index_uid);
@@ -596,7 +599,7 @@ impl IngestController {
     pub(crate) fn delete_index(&mut self, index_uid: &IndexUid) {
         // TODO: We need to let the routers and ingesters know.
         self.index_table.remove(index_uid.index_id());
-        self.shard_table.remove_index(index_uid.index_id());
+        self.shard_table.delete_index(index_uid.index_id());
     }
 
     pub(crate) fn add_source(&mut self, index_uid: &IndexUid, source_id: &SourceId) {
@@ -604,13 +607,7 @@ impl IngestController {
     }
 
     pub(crate) fn delete_source(&mut self, index_uid: &IndexUid, source_id: &SourceId) {
-        self.shard_table.remove_source(index_uid, source_id);
-    }
-
-    pub fn observable_state(&self) -> IngestControllerState {
-        IngestControllerState {
-            num_indexes: self.index_table.len(),
-        }
+        self.shard_table.delete_source(index_uid, source_id);
     }
 }
 
@@ -619,7 +616,7 @@ mod tests {
 
     use quickwit_config::SourceConfig;
     use quickwit_metastore::{IndexMetadata, MockMetastore};
-    use quickwit_proto::control_plane::GetOpenShardsSubrequest;
+    use quickwit_proto::control_plane::GetOrCreateOpenShardsSubrequest;
     use quickwit_proto::ingest::ingester::{
         IngesterServiceClient, MockIngesterService, PingResponse,
     };
@@ -639,7 +636,7 @@ mod tests {
 
         let key = (index_uid.clone(), source_id.clone());
         let table_entry = shard_table.table_entries.get(&key).unwrap();
-        assert!(table_entry.shard_entries.is_empty());
+        assert!(table_entry.shards.is_empty());
         assert_eq!(table_entry.next_shard_id, 1);
     }
 
@@ -771,7 +768,7 @@ mod tests {
     }
 
     #[test]
-    fn test_shard_table_remove_shards() {
+    fn test_shard_table_delete_shards() {
         let index_uid_0: IndexUid = "test-index:0".into();
         let index_uid_1: IndexUid = "test-index:1".into();
         let source_id = "test-source".to_string();
@@ -804,8 +801,8 @@ mod tests {
         };
         shard_table.update_shards(&index_uid_0, &source_id, &[shard_01.clone(), shard_02], 3);
         shard_table.update_shards(&index_uid_1, &source_id, &[shard_11], 2);
-        shard_table.remove_shards(&index_uid_0, &source_id, &[2]);
-        shard_table.remove_shards(&index_uid_1, &source_id, &[1]);
+        shard_table.delete_shards(&index_uid_0, &source_id, &[2]);
+        shard_table.delete_shards(&index_uid_1, &source_id, &[1]);
 
         assert_eq!(shard_table.table_entries.len(), 2);
 
@@ -818,7 +815,7 @@ mod tests {
 
         let key = (index_uid_1.clone(), source_id.clone());
         let table_entry = shard_table.table_entries.get(&key).unwrap();
-        assert_eq!(table_entry.shard_entries.len(), 0);
+        assert_eq!(table_entry.shards.len(), 0);
         assert_eq!(table_entry.next_shard_id, 2);
     }
 
@@ -884,11 +881,11 @@ mod tests {
         assert_eq!(ingest_controller.index_table.len(), 2);
         assert_eq!(
             ingest_controller.index_table["test-index-0"],
-            "test-index-0:0".into()
+            "test-index-0:0"
         );
         assert_eq!(
             ingest_controller.index_table["test-index-1"],
-            "test-index-1:0".into()
+            "test-index-1:0"
         );
 
         assert_eq!(ingest_controller.shard_table.table_entries.len(), 2);
@@ -941,9 +938,7 @@ mod tests {
             Ok(PingResponse {})
         });
         let ingester: IngesterServiceClient = mock_ingester.into();
-        ingester_pool
-            .insert("test-ingester-0".into(), ingester.clone())
-            .await;
+        ingester_pool.insert("test-ingester-0".into(), ingester.clone());
 
         ingest_controller
             .ping_leader_and_follower(&leader_id, None, &progress)
@@ -961,9 +956,7 @@ mod tests {
             })
         });
         let ingester: IngesterServiceClient = mock_ingester.into();
-        ingester_pool
-            .insert("test-ingester-0".into(), ingester.clone())
-            .await;
+        ingester_pool.insert("test-ingester-0".into(), ingester.clone());
 
         let error = ingest_controller
             .ping_leader_and_follower(&leader_id, None, &progress)
@@ -982,9 +975,7 @@ mod tests {
             })
         });
         let ingester: IngesterServiceClient = mock_ingester.into();
-        ingester_pool
-            .insert("test-ingester-0".into(), ingester.clone())
-            .await;
+        ingester_pool.insert("test-ingester-0".into(), ingester.clone());
 
         let follower_id: NodeId = "test-ingester-1".into();
         let error = ingest_controller
@@ -1018,9 +1009,7 @@ mod tests {
             Err(IngestV2Error::Internal("Io error".to_string()))
         });
         let ingester: IngesterServiceClient = mock_ingester.into();
-        ingester_pool
-            .insert("test-ingester-0".into(), ingester.clone())
-            .await;
+        ingester_pool.insert("test-ingester-0".into(), ingester.clone());
 
         let leader_follower_pair = ingest_controller
             .find_leader_and_follower(&mut HashSet::new(), &progress)
@@ -1035,9 +1024,7 @@ mod tests {
             Ok(PingResponse {})
         });
         let ingester: IngesterServiceClient = mock_ingester.into();
-        ingester_pool
-            .insert("test-ingester-1".into(), ingester)
-            .await;
+        ingester_pool.insert("test-ingester-1".into(), ingester);
 
         let (leader_id, follower_id) = ingest_controller
             .find_leader_and_follower(&mut HashSet::new(), &progress)
@@ -1073,18 +1060,14 @@ mod tests {
             })
         });
         let ingester: IngesterServiceClient = mock_ingester.into();
-        ingester_pool
-            .insert("test-ingester-0".into(), ingester.clone())
-            .await;
+        ingester_pool.insert("test-ingester-0".into(), ingester.clone());
 
         let mut mock_ingester = MockIngesterService::default();
         mock_ingester.expect_ping().returning(|_request| {
             panic!("`test-ingester-1` should not be pinged.");
         });
         let ingester: IngesterServiceClient = mock_ingester.into();
-        ingester_pool
-            .insert("test-ingester-1".into(), ingester.clone())
-            .await;
+        ingester_pool.insert("test-ingester-1".into(), ingester.clone());
 
         let leader_follower_pair = ingest_controller
             .find_leader_and_follower(&mut HashSet::new(), &progress)
@@ -1107,18 +1090,14 @@ mod tests {
             Ok(PingResponse {})
         });
         let ingester: IngesterServiceClient = mock_ingester.into();
-        ingester_pool
-            .insert("test-ingester-0".into(), ingester.clone())
-            .await;
+        ingester_pool.insert("test-ingester-0".into(), ingester.clone());
 
         let mut mock_ingester = MockIngesterService::default();
         mock_ingester.expect_ping().returning(|_request| {
             panic!("`test-ingester-2` should not be pinged.");
         });
         let ingester: IngesterServiceClient = mock_ingester.into();
-        ingester_pool
-            .insert("test-ingester-2".into(), ingester.clone())
-            .await;
+        ingester_pool.insert("test-ingester-2".into(), ingester.clone());
 
         let (leader_id, follower_id) = ingest_controller
             .find_leader_and_follower(&mut HashSet::new(), &progress)
@@ -1173,15 +1152,11 @@ mod tests {
             Ok(PingResponse {})
         });
         let ingester: IngesterServiceClient = mock_ingester.into();
-        ingester_pool
-            .insert("test-ingester-1".into(), ingester.clone())
-            .await;
+        ingester_pool.insert("test-ingester-1".into(), ingester.clone());
 
         let mock_ingester = MockIngesterService::default();
         let ingester: IngesterServiceClient = mock_ingester.into();
-        ingester_pool
-            .insert("test-ingester-2".into(), ingester.clone())
-            .await;
+        ingester_pool.insert("test-ingester-2".into(), ingester.clone());
 
         let replication_factor = 2;
         let mut ingest_controller =
@@ -1218,33 +1193,35 @@ mod tests {
             .shard_table
             .update_shards(&index_uid_0, &source_id, &shards, 3);
 
-        let request = GetOpenShardsRequest {
+        let request = GetOrCreateOpenShardsRequest {
             subrequests: Vec::new(),
             unavailable_ingesters: Vec::new(),
         };
         let response = ingest_controller
-            .get_open_shards(request, &progress)
+            .get_or_create_open_shards(request, &progress)
             .await
             .unwrap();
         assert_eq!(response.subresponses.len(), 0);
 
         let subrequests = vec![
-            GetOpenShardsSubrequest {
+            GetOrCreateOpenShardsSubrequest {
                 index_id: "test-index-0".to_string(),
                 source_id: source_id.clone(),
+                closed_shards: Vec::new(),
             },
-            GetOpenShardsSubrequest {
+            GetOrCreateOpenShardsSubrequest {
                 index_id: "test-index-1".to_string(),
                 source_id: source_id.clone(),
+                closed_shards: Vec::new(),
             },
         ];
         let unavailable_ingesters = vec!["test-ingester-0".to_string()];
-        let request = GetOpenShardsRequest {
+        let request = GetOrCreateOpenShardsRequest {
             subrequests,
             unavailable_ingesters,
         };
         let response = ingest_controller
-            .get_open_shards(request, &progress)
+            .get_or_create_open_shards(request, &progress)
             .await
             .unwrap();
         assert_eq!(response.subresponses.len(), 2);

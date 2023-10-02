@@ -386,9 +386,7 @@ async fn searcher_for_test(
         .grpc_advertise_addr;
     let searcher_client =
         SearchServiceClient::from_service(searcher_service.clone(), grpc_advertise_addr);
-    searcher_pool
-        .insert(grpc_advertise_addr, searcher_client)
-        .await;
+    searcher_pool.insert(grpc_advertise_addr, searcher_client);
     searcher_service
 }
 

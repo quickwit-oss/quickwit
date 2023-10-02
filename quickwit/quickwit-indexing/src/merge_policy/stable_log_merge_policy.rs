@@ -235,6 +235,7 @@ impl StableLogMergePolicy {
         let mut current_level_max_docs =
             (splits[0].num_docs * 3).max(self.config.min_level_num_docs);
 
+        #[allow(clippy::single_range_in_vec_init)]
         let mut levels = vec![(0..current_level_max_docs)]; // for logging only
         for (split_ord, split) in splits.iter().enumerate() {
             if split.num_docs >= current_level_max_docs {

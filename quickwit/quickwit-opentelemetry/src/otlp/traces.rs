@@ -480,12 +480,12 @@ impl SpanStatus {
     }
 
     fn from_otlp(span_status: OtlpStatus) -> Self {
-        if span_status.code == OtlpStatusCode::Ok as i32 {
+        if span_status.code() == OtlpStatusCode::Ok {
             Self {
                 code: OtlpStatusCode::Ok,
                 message: None,
             }
-        } else if span_status.code == OtlpStatusCode::Error as i32 {
+        } else if span_status.code() == OtlpStatusCode::Error {
             let message = if span_status.message.is_empty() {
                 None
             } else {

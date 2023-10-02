@@ -3696,8 +3696,7 @@ dependencies = [
 [[package]]
 name = "mrecordlog"
 version = "0.4.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2ae279fda279177cadf1f2222ce4462fef46d814ba564e094c0b03e6503e39e0"
+source = "git+https://github.com/quickwit-oss/mrecordlog?rev=ae1ca3f#ae1ca3f08fdfd721feec7a6bfab481df5ddb7f75"
 dependencies = [
  "async-trait",
  "bytes",
@@ -5140,6 +5139,7 @@ dependencies = [
  "async-trait",
  "chitchat",
  "dyn-clone",
+ "fnv",
  "futures",
  "http",
  "hyper",

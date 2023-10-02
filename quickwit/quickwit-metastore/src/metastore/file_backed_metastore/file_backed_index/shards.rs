@@ -24,12 +24,11 @@ use std::fmt;
 use itertools::Either;
 use quickwit_proto::ingest::{Shard, ShardState};
 use quickwit_proto::metastore::{
-    AcquireShardsSubrequest, AcquireShardsSubresponse, CloseShardsFailure, CloseShardsSubrequest,
-    CloseShardsSuccess, DeleteShardsSubrequest, EntityKind, ListShardsSubrequest,
-    ListShardsSubresponse, MetastoreError, MetastoreResult, OpenShardsSubrequest,
-    OpenShardsSubresponse,
+    AcquireShardsSubrequest, AcquireShardsSubresponse, CloseShardsFailure, CloseShardsFailureKind,
+    CloseShardsSubrequest, CloseShardsSuccess, DeleteShardsSubrequest, EntityKind,
+    ListShardsSubrequest, ListShardsSubresponse, MetastoreError, MetastoreResult,
+    OpenShardsSubrequest, OpenShardsSubresponse,
 };
-use quickwit_proto::tonic::Code;
 use quickwit_proto::types::ShardId;
 use quickwit_proto::{queue_id, IndexUid, SourceId};
 use serde::{Deserialize, Serialize};
@@ -146,7 +145,7 @@ impl Shards {
                     shard_id=%shard.shard_id,
                     leader_id=%shard.leader_id,
                     follower_id=?shard.follower_id,
-                    "Opened shard."
+                    "opened shard"
                 );
                 shard
             }
@@ -211,8 +210,8 @@ impl Shards {
                 index_uid: subrequest.index_uid,
                 source_id: subrequest.source_id,
                 shard_id: subrequest.shard_id,
-                error_code: Code::NotFound as u32,
-                error_message: "shard not found".to_string(),
+                failure_kind: CloseShardsFailureKind::NotFound as i32,
+                failure_message: "shard not found".to_string(),
             };
             return Ok(MutationOccurred::No(Either::Right(failure)));
         };
@@ -235,20 +234,20 @@ impl Shards {
                     index_id=%self.index_uid.index_id(),
                     source_id=%shard.source_id,
                     shard_id=%shard.shard_id,
-                    "Closed shard.",
+                    "closed shard",
                 );
             }
             other => {
-                let error_message = format!(
-                    "Invalid `shard_state` argument: expected `Closing` or `Closed` state, got \
+                let failure_message = format!(
+                    "invalid `shard_state` argument: expected `Closing` or `Closed` state, got \
                      `{other:?}`.",
                 );
                 let failure = CloseShardsFailure {
                     index_uid: subrequest.index_uid,
                     source_id: subrequest.source_id,
                     shard_id: subrequest.shard_id,
-                    error_code: Code::InvalidArgument as u32,
-                    error_message,
+                    failure_kind: CloseShardsFailureKind::InvalidArgument as i32,
+                    failure_message,
                 };
                 return Ok(MutationOccurred::No(Either::Right(failure)));
             }
@@ -257,6 +256,9 @@ impl Shards {
             index_uid: subrequest.index_uid,
             source_id: subrequest.source_id,
             shard_id: subrequest.shard_id,
+            leader_id: shard.leader_id.clone(),
+            follower_id: shard.follower_id.clone(),
+            publish_position_inclusive: shard.publish_position_inclusive.clone(),
         };
         Ok(MutationOccurred::Yes(Either::Left(success)))
     }

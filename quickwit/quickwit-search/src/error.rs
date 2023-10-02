@@ -45,7 +45,7 @@ pub enum SearchError {
 }
 
 impl ServiceError for SearchError {
-    fn status_code(&self) -> ServiceErrorCode {
+    fn error_code(&self) -> ServiceErrorCode {
         match self {
             SearchError::IndexesNotFound { .. } => ServiceErrorCode::NotFound,
             SearchError::Internal(_) => ServiceErrorCode::Internal,

@@ -25,11 +25,17 @@ import "quickwit/ingest.proto";
 import "quickwit/metastore.proto";
 
 service ControlPlaneService {
-  // The control plane acts as a proxy for the metastore for a subset of the API so it can track the state of the metastore accurately and react to events in real-time.
+  // The control plane acts as a proxy for the metastore for a subset of the API so it can track the state of the
+  // metastore accurately and react to events in real-time.
 
-  // Metastore index API proxy:
+  // The following RPCs are forwarded and handled by the metastore:
   // - `create_index`
   // - `delete_index`
+  // - `add_source`
+  // - `toggle_source`
+  // - `delete_source`
+
+  // Index API
 
   // Creates a new index.
   rpc CreateIndex(quickwit.metastore.CreateIndexRequest) returns (quickwit.metastore.CreateIndexResponse);
@@ -37,10 +43,7 @@ service ControlPlaneService {
   // Deletes an index.
   rpc DeleteIndex(quickwit.metastore.DeleteIndexRequest) returns (quickwit.metastore.EmptyResponse);
 
-  // Metastore source API proxy:
-  // - `add_source`
-  // - `toggle_source`
-  // - `delete_source`
+  // Source API
 
   // Adds a source to an index.
   rpc AddSource(quickwit.metastore.AddSourceRequest) returns (quickwit.metastore.EmptyResponse);
@@ -55,25 +58,34 @@ service ControlPlaneService {
 
   // Returns the list of open shards for one or several sources. If the control plane is not able to find any
   // for a source, it will pick a pair of leader-follower ingesters and will open a new shard.
-  rpc GetOpenShards(GetOpenShardsRequest) returns (GetOpenShardsResponse);
+  rpc GetOrCreateOpenShards(GetOrCreateOpenShardsRequest) returns (GetOrCreateOpenShardsResponse);
 
-  rpc CloseShards(CloseShardsRequest) returns (CloseShardsResponse);
+  // The following RPCs are are metastore callbacks:
+  // - `close_shards`
+  // - `delete_shards`
+
+  // Closes a list of shards. This RPC is a metastore callback.
+  rpc CloseShards(quickwit.metastore.CloseShardsRequest) returns (quickwit.metastore.EmptyResponse);
+
+  // Deletes a list of shards. This RPC is a metastore callback.
+  rpc DeleteShards(quickwit.metastore.DeleteShardsRequest) returns (quickwit.metastore.EmptyResponse);
 }
 
 // Shard API
 
-message GetOpenShardsRequest {
-  repeated GetOpenShardsSubrequest subrequests = 1;
+message GetOrCreateOpenShardsRequest {
+  repeated GetOrCreateOpenShardsSubrequest subrequests = 1;
   repeated string unavailable_ingesters = 2;
 }
 
-message GetOpenShardsSubrequest {
+message GetOrCreateOpenShardsSubrequest {
     string index_id = 1;
     string source_id = 2;
+    repeated uint64 closed_shards = 3;
 }
 
 // TODO: Handle partial failures.
-message GetOpenShardsResponse {
+message GetOrCreateOpenShardsResponse {
   repeated GetOpenShardsSubresponse subresponses = 1;
 }
 
@@ -81,19 +93,4 @@ message GetOpenShardsSubresponse {
     string index_uid = 1;
     string source_id = 2;
     repeated quickwit.ingest.Shard open_shards = 3;
-}
-
-message CloseShardsRequest {
-  repeated CloseShardsSubrequest subrequests = 1;
-}
-
-message CloseShardsSubrequest {
-    string index_uid = 1;
-    string source_id = 2;
-    uint64 shard_id = 3;
-    quickwit.ingest.ShardState shard_state = 4;
-    optional uint64 replication_position_inclusive = 5;
-}
-
-message CloseShardsResponse {
 }

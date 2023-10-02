@@ -19,42 +19,56 @@
 
 use std::collections::hash_map::Entry;
 use std::collections::HashMap;
+use std::fmt;
 use std::iter::once;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
-use std::{cmp, fmt};
 
 use async_trait::async_trait;
 use bytes::{Bytes, BytesMut};
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
+use mrecordlog::error::DeleteQueueError;
 use mrecordlog::MultiRecordLog;
 use quickwit_common::tower::Pool;
 use quickwit_common::ServiceStream;
 use quickwit_proto::ingest::ingester::{
     AckReplicationMessage, FetchResponseV2, IngesterService, IngesterServiceClient,
     IngesterServiceStream, OpenFetchStreamRequest, OpenReplicationStreamRequest,
-    OpenReplicationStreamResponse, PersistRequest, PersistResponse, PersistSuccess, PingRequest,
-    PingResponse, ReplicateRequest, ReplicateSubrequest, SynReplicationMessage, TruncateRequest,
-    TruncateResponse, TruncateSubrequest,
+    OpenReplicationStreamResponse, PersistFailure, PersistFailureKind, PersistRequest,
+    PersistResponse, PersistSuccess, PingRequest, PingResponse, ReplicateRequest,
+    ReplicateSubrequest, SynReplicationMessage, TruncateRequest, TruncateResponse,
+    TruncateSubrequest,
 };
 use quickwit_proto::ingest::{CommitTypeV2, IngestV2Error, IngestV2Result, ShardState};
+use quickwit_proto::metastore::{
+    CloseShardsFailureKind, CloseShardsRequest, CloseShardsSubrequest,
+};
+use quickwit_proto::split_queue_id;
 use quickwit_proto::types::{NodeId, QueueId};
 use tokio::sync::{watch, RwLock};
+use tracing::{error, info};
 
 use super::fetch::FetchTask;
+use super::gc::remove_shards_after;
+use super::ingest_metastore::IngestMetastore;
+use super::models::{Position, PrimaryShard, ReplicaShard, ShardStatus};
 use super::replication::{
     ReplicationClient, ReplicationClientTask, ReplicationTask, ReplicationTaskHandle,
 };
 use super::IngesterPool;
+use crate::ingest_v2::gc::REMOVAL_GRACE_PERIOD;
 use crate::metrics::INGEST_METRICS;
 use crate::DocCommand;
 
 #[derive(Clone)]
 pub struct Ingester {
     self_node_id: NodeId,
+    metastore: Arc<dyn IngestMetastore>,
     ingester_pool: IngesterPool,
+    // TODO: There are a few places where we grab the two locks simultaneously. This will cause a
+    // deadlock. Let's fold `mrecordlog` into `IngesterState`.
     mrecordlog: Arc<RwLock<MultiRecordLog>>,
     state: Arc<RwLock<IngesterState>>,
     replication_factor: usize,
@@ -90,6 +104,7 @@ impl IngesterState {
 impl Ingester {
     pub async fn try_new(
         self_node_id: NodeId,
+        metastore: Arc<dyn IngestMetastore>,
         ingester_pool: Pool<NodeId, IngesterServiceClient>,
         wal_dir_path: &Path,
         replication_factor: usize,
@@ -108,14 +123,125 @@ impl Ingester {
             replication_clients: HashMap::new(),
             replication_tasks: HashMap::new(),
         };
-        let ingester = Self {
+        let mut ingester = Self {
             self_node_id,
+            metastore,
             ingester_pool,
             mrecordlog,
             state: Arc::new(RwLock::new(inner)),
             replication_factor,
         };
+        info!(
+            replication_factor=%replication_factor,
+            wal_dir=%wal_dir_path.display(),
+            "spawning ingester"
+        );
+        ingester.init().await?;
+
         Ok(ingester)
+    }
+
+    async fn init(&mut self) -> IngestV2Result<()> {
+        let mut mrecordlog_guard = self.mrecordlog.write().await;
+        let mut state = self.state.write().await;
+
+        let queue_ids = mrecordlog_guard.list_queues();
+
+        let mut subrequests = Vec::new();
+
+        for queue_id in queue_ids {
+            let current_position = mrecordlog_guard
+                .current_position(queue_id)
+                .expect("queue should exist");
+
+            let (index_uid, source_id, shard_id) =
+                split_queue_id(queue_id).expect("queue ID should be well-formed");
+
+            let subrequest = CloseShardsSubrequest {
+                index_uid: index_uid.into(),
+                source_id,
+                shard_id,
+                shard_state: ShardState::Closed as i32,
+                replication_position_inclusive: current_position,
+            };
+            subrequests.push(subrequest);
+        }
+        if subrequests.is_empty() {
+            return Ok(());
+        }
+        let close_shards_request = CloseShardsRequest { subrequests };
+        let close_shards_response = self.metastore.close_shards(close_shards_request).await?;
+        info!("closed {} shard(s)", close_shards_response.successes.len());
+
+        // Keep track of the queues that can be safely deleted.
+        let mut queues_to_remove: Vec<QueueId> = Vec::new();
+
+        for success in close_shards_response.successes {
+            let queue_id = success.queue_id();
+            let publish_position_inclusive: Position = success.publish_position_inclusive.into();
+
+            if let Some(truncate_position) = publish_position_inclusive.offset() {
+                mrecordlog_guard
+                    .truncate(&queue_id, truncate_position)
+                    .await
+                    .expect("queue should exist");
+            }
+            let current_position: Position = mrecordlog_guard
+                .current_position(&queue_id)
+                .expect("queue should exist")
+                .into();
+            let shard_status = ShardStatus {
+                shard_state: ShardState::Closed,
+                publish_position_inclusive,
+                replication_position_inclusive: current_position,
+            };
+            let (shard_status_tx, shard_status_rx) = watch::channel(shard_status);
+
+            if publish_position_inclusive >= current_position {
+                queues_to_remove.push(queue_id.clone())
+            }
+            if success.leader_id == self.self_node_id {
+                let primary_shard = PrimaryShard {
+                    follower_id_opt: success.follower_id.map(|follower_id| follower_id.into()),
+                    shard_state: ShardState::Closed,
+                    publish_position_inclusive,
+                    primary_position_inclusive: current_position,
+                    replica_position_inclusive_opt: None,
+                    shard_status_tx,
+                    shard_status_rx,
+                };
+                state.primary_shards.insert(queue_id, primary_shard);
+            } else {
+                let replica_shard = ReplicaShard {
+                    leader_id: success.leader_id.into(),
+                    shard_state: ShardState::Closed,
+                    publish_position_inclusive,
+                    replica_position_inclusive: current_position,
+                    shard_status_tx,
+                    shard_status_rx,
+                };
+                state.replica_shards.insert(queue_id, replica_shard);
+            }
+        }
+        for failure in close_shards_response.failures {
+            if failure.failure_kind() == CloseShardsFailureKind::NotFound {
+                let queue_id = failure.queue_id();
+
+                if let Err(DeleteQueueError::IoError(error)) =
+                    mrecordlog_guard.delete_queue(&queue_id).await
+                {
+                    error!("failed to delete mrecordlog queue: {}", error);
+                }
+            }
+        }
+        remove_shards_after(
+            queues_to_remove,
+            REMOVAL_GRACE_PERIOD,
+            self.metastore.clone(),
+            self.mrecordlog.clone(),
+            self.state.clone(),
+        );
+        Ok(())
     }
 
     async fn init_primary_shard<'a>(
@@ -174,11 +300,12 @@ impl Ingester {
             .try_send(open_message)
             .expect("The channel should be open and have capacity.");
 
-        let mut ingester = self.ingester_pool.get(follower_id).await.ok_or(
-            IngestV2Error::IngesterUnavailable {
-                ingester_id: follower_id.clone(),
-            },
-        )?;
+        let mut ingester =
+            self.ingester_pool
+                .get(follower_id)
+                .ok_or(IngestV2Error::IngesterUnavailable {
+                    ingester_id: follower_id.clone(),
+                })?;
         let mut ack_replication_stream = ingester
             .open_replication_stream(syn_replication_stream)
             .await?;
@@ -212,7 +339,7 @@ impl IngesterService for Ingester {
         let mut state_guard = self.state.write().await;
 
         let mut persist_successes = Vec::with_capacity(persist_request.subrequests.len());
-        // let mut persist_failures = Vec::new();
+        let mut persist_failures = Vec::new();
         let mut replicate_subrequests: HashMap<NodeId, Vec<ReplicateSubrequest>> = HashMap::new();
 
         let commit_type = persist_request.commit_type();
@@ -235,7 +362,14 @@ impl IngesterService for Ingester {
                     .await?
                 };
             if primary_shard.shard_state.is_closed() {
-                // TODO
+                let persist_failure = PersistFailure {
+                    index_uid: subrequest.index_uid,
+                    source_id: subrequest.source_id,
+                    shard_id: subrequest.shard_id,
+                    failure_kind: PersistFailureKind::ShardClosed as i32,
+                };
+                persist_failures.push(persist_failure);
+                continue;
             }
             let from_position_inclusive = primary_shard.primary_position_inclusive;
 
@@ -273,7 +407,7 @@ impl IngesterService for Ingester {
             state_guard
                 .primary_shards
                 .get_mut(&queue_id)
-                .expect("Primary shard should exist.")
+                .expect("primary shard should exist")
                 .set_primary_position_inclusive(primary_position_inclusive);
 
             if let Some(follower_id) = follower_id {
@@ -303,7 +437,7 @@ impl IngesterService for Ingester {
             let persist_response = PersistResponse {
                 leader_id,
                 successes: persist_successes,
-                failures: Vec::new(), // TODO
+                failures: persist_failures,
             };
             return Ok(persist_response);
         }
@@ -319,7 +453,7 @@ impl IngesterService for Ingester {
             let replication_client = state_guard
                 .replication_clients
                 .get(&follower_id)
-                .expect("The replication client should be initialized.")
+                .expect("the replication client should be initialized")
                 .clone();
             replicate_futures
                 .push(async move { replication_client.replicate(replicate_request).await });
@@ -371,10 +505,10 @@ impl IngesterService for Ingester {
             .await
             .ok_or_else(|| IngestV2Error::Internal("syn replication stream aborted".to_string()))?
             .into_open_request()
-            .expect("The first message should be an open replication stream request.");
+            .expect("the first message should be an open replication stream request");
 
         if open_replication_stream_request.follower_id != self.self_node_id {
-            return Err(IngestV2Error::Internal("Routing error".to_string()));
+            return Err(IngestV2Error::Internal("routing error".to_string()));
         }
         let leader_id: NodeId = open_replication_stream_request.leader_id.into();
         let follower_id: NodeId = open_replication_stream_request.follower_id.into();
@@ -392,11 +526,12 @@ impl IngesterService for Ingester {
         ack_replication_stream_tx
             .send(Ok(ack_replication_message))
             .await
-            .expect("Channel should be open and have enough capacity.");
+            .expect("channel should be open and have enough capacity");
 
         let replication_task_handle = ReplicationTask::spawn(
             leader_id,
             follower_id,
+            self.metastore.clone(),
             self.mrecordlog.clone(),
             self.state.clone(),
             syn_replication_stream,
@@ -417,7 +552,7 @@ impl IngesterService for Ingester {
             .read()
             .await
             .find_shard_status_rx(&queue_id)
-            .ok_or_else(|| IngestV2Error::Internal("shard not found.".to_string()))?;
+            .ok_or_else(|| IngestV2Error::Internal("shard not found".to_string()))?;
         let (service_stream, _fetch_task_handle) = FetchTask::spawn(
             open_fetch_stream_request,
             mrecordlog,
@@ -437,7 +572,7 @@ impl IngesterService for Ingester {
             return Ok(ping_response);
         };
         let follower_id: NodeId = follower_id.clone().into();
-        let mut ingester = self.ingester_pool.get(&follower_id).await.ok_or({
+        let mut ingester = self.ingester_pool.get(&follower_id).ok_or({
             IngestV2Error::IngesterUnavailable {
                 ingester_id: follower_id,
             }
@@ -457,6 +592,7 @@ impl IngesterService for Ingester {
                 truncate_request.leader_id, self.self_node_id
             )));
         }
+        let mut gc_candidates: Vec<QueueId> = Vec::new();
         let mut mrecordlog_guard = self.mrecordlog.write().await;
         let mut state_guard = self.state.write().await;
 
@@ -470,9 +606,13 @@ impl IngesterService for Ingester {
                     .truncate(&queue_id, subrequest.to_position_inclusive)
                     .await
                     .map_err(|error| {
-                        IngestV2Error::Internal(format!("failed to truncate: {error:?}"))
+                        IngestV2Error::Internal(format!("failed to truncate queue: {error:?}"))
                     })?;
                 primary_shard.set_publish_position_inclusive(subrequest.to_position_inclusive);
+
+                if primary_shard.is_gc_candidate() {
+                    gc_candidates.push(queue_id.clone());
+                }
             }
             if let Some(replica_shard) = state_guard.replica_shards.get(&queue_id) {
                 truncate_subrequests
@@ -512,163 +652,6 @@ impl IngesterService for Ingester {
     }
 }
 
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub(super) struct ShardStatus {
-    /// Current state of the shard.
-    pub shard_state: ShardState,
-    /// Position up to which indexers have indexed and published the records stored in the shard.
-    pub publish_position_inclusive: Position,
-    /// Position up to which the follower has acknowledged replication of the records written in
-    /// its log.
-    pub replication_position_inclusive: Position,
-}
-
-impl Default for ShardStatus {
-    fn default() -> Self {
-        Self {
-            shard_state: ShardState::Open,
-            publish_position_inclusive: Position::default(),
-            replication_position_inclusive: Position::default(),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub(super) enum Position {
-    #[default]
-    Beginning,
-    Offset(u64),
-}
-
-impl Position {
-    pub fn offset(&self) -> Option<u64> {
-        match self {
-            Position::Beginning => None,
-            Position::Offset(offset) => Some(*offset),
-        }
-    }
-}
-
-impl PartialEq<u64> for Position {
-    fn eq(&self, other: &u64) -> bool {
-        match self {
-            Position::Beginning => false,
-            Position::Offset(offset) => offset == other,
-        }
-    }
-}
-
-impl PartialOrd<u64> for Position {
-    fn partial_cmp(&self, other: &u64) -> Option<cmp::Ordering> {
-        match self {
-            Position::Beginning => Some(cmp::Ordering::Less),
-            Position::Offset(offset) => offset.partial_cmp(other),
-        }
-    }
-}
-
-impl From<u64> for Position {
-    fn from(offset: u64) -> Self {
-        Position::Offset(offset)
-    }
-}
-
-impl From<Option<u64>> for Position {
-    fn from(offset_opt: Option<u64>) -> Self {
-        match offset_opt {
-            Some(offset) => Position::Offset(offset),
-            None => Position::Beginning,
-        }
-    }
-}
-
-/// Records the state of a primary shard managed by a leader.
-pub(super) struct PrimaryShard {
-    /// Node ID of the ingester on which the replica shard is hosted. `None` if the replication
-    /// factor is 1.
-    pub follower_id_opt: Option<NodeId>,
-    /// Current state of the shard.
-    shard_state: ShardState,
-    /// Position up to which indexers have indexed and published the data stored in the shard.
-    /// It is updated asynchronously in a best effort manner by the indexers and indicates the
-    /// position up to which the log can be safely truncated. When the shard is closed, the
-    /// publish position has reached the replication position, and the deletion grace period has
-    /// passed, the shard can be safely deleted.
-    pub publish_position_inclusive: Position,
-    /// Position up to which the leader has written records in its log.
-    pub primary_position_inclusive: Position,
-    /// Position up to which the follower has acknowledged replication of the records written in
-    /// its log.
-    pub replica_position_inclusive_opt: Option<Position>,
-    /// Channel to notify readers that new records have been written to the shard.
-    pub shard_status_tx: watch::Sender<ShardStatus>,
-    pub shard_status_rx: watch::Receiver<ShardStatus>,
-}
-
-impl PrimaryShard {
-    fn set_publish_position_inclusive(&mut self, publish_position_inclusive: impl Into<Position>) {
-        self.publish_position_inclusive = publish_position_inclusive.into();
-        self.shard_status_tx.send_modify(|shard_status| {
-            shard_status.publish_position_inclusive = self.publish_position_inclusive;
-        });
-    }
-
-    fn set_primary_position_inclusive(&mut self, primary_position_inclusive: impl Into<Position>) {
-        self.primary_position_inclusive = primary_position_inclusive.into();
-
-        // Notify readers if the replication factor is 1.
-        if self.follower_id_opt.is_none() {
-            self.shard_status_tx.send_modify(|shard_status| {
-                shard_status.replication_position_inclusive = self.primary_position_inclusive
-            })
-        }
-    }
-
-    fn set_replica_position_inclusive(&mut self, replica_position_inclusive: impl Into<Position>) {
-        assert!(self.follower_id_opt.is_some());
-
-        let replica_position_inclusive = replica_position_inclusive.into();
-        self.replica_position_inclusive_opt = Some(replica_position_inclusive);
-
-        self.shard_status_tx.send_modify(|shard_status| {
-            shard_status.replication_position_inclusive = replica_position_inclusive
-        })
-    }
-}
-
-/// Records the state of a replica shard managed by a follower. See [`PrimaryShard`] for more
-/// details about the fields.
-pub(super) struct ReplicaShard {
-    pub leader_id: NodeId,
-    pub(super) shard_state: ShardState,
-    pub(super) publish_position_inclusive: Position,
-    pub replica_position_inclusive: Position,
-    pub shard_status_tx: watch::Sender<ShardStatus>,
-    pub shard_status_rx: watch::Receiver<ShardStatus>,
-}
-
-impl ReplicaShard {
-    pub fn set_publish_position_inclusive(
-        &mut self,
-        publish_position_inclusive: impl Into<Position>,
-    ) {
-        self.publish_position_inclusive = publish_position_inclusive.into();
-        self.shard_status_tx.send_modify(|shard_status| {
-            shard_status.publish_position_inclusive = self.publish_position_inclusive;
-        });
-    }
-
-    pub fn set_replica_position_inclusive(
-        &mut self,
-        replica_position_inclusive: impl Into<Position>,
-    ) {
-        self.replica_position_inclusive = replica_position_inclusive.into();
-        self.shard_status_tx.send_modify(|shard_status| {
-            shard_status.replication_position_inclusive = self.replica_position_inclusive
-        });
-    }
-}
-
 // TODO
 pub(super) fn commit_doc() -> Bytes {
     let mut buffer = BytesMut::with_capacity(1);
@@ -686,11 +669,16 @@ mod tests {
         IngesterServiceGrpcServer, IngesterServiceGrpcServerAdapter, PersistSubrequest,
     };
     use quickwit_proto::ingest::DocBatchV2;
+    use quickwit_proto::metastore::{
+        CloseShardsFailure, CloseShardsFailureKind, CloseShardsResponse, CloseShardsSuccess,
+        DeleteShardsResponse,
+    };
     use quickwit_proto::types::queue_id;
     use tonic::transport::{Endpoint, Server};
     use tower::timeout::Timeout;
 
     use super::*;
+    use crate::ingest_v2::ingest_metastore::MockIngestMetastore;
     use crate::ingest_v2::test_utils::{
         MultiRecordLogTestExt, PrimaryShardTestExt, ReplicaShardTestExt,
     };
@@ -698,14 +686,190 @@ mod tests {
     const NONE_REPLICA_POSITION: Option<Position> = None;
 
     #[tokio::test]
+    async fn test_ingester_init() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let self_node_id: NodeId = "test-ingester-0".into();
+        let mut mock_metastore = MockIngestMetastore::default();
+        mock_metastore
+            .expect_close_shards()
+            .once()
+            .returning(|request| {
+                assert_eq!(request.subrequests.len(), 4);
+                let mut subrequests = request.subrequests;
+                subrequests.sort_unstable_by(|left, right| left.shard_id.cmp(&right.shard_id));
+
+                for (i, subrequest) in subrequests.iter().enumerate() {
+                    assert_eq!(subrequest.index_uid, "test-index:0");
+                    assert_eq!(subrequest.source_id, "test-source");
+                    assert_eq!(subrequest.shard_id, i as u64 + 1);
+                    assert_eq!(subrequest.shard_state(), ShardState::Closed);
+                }
+                assert!(subrequests[0].replication_position_inclusive.is_none());
+                assert_eq!(subrequests[1].replication_position_inclusive, Some(1));
+                assert_eq!(subrequests[2].replication_position_inclusive, Some(1));
+                assert_eq!(subrequests[3].replication_position_inclusive, Some(1));
+
+                let response = CloseShardsResponse {
+                    successes: vec![
+                        CloseShardsSuccess {
+                            index_uid: "test-index:0".to_string(),
+                            source_id: "test-source".to_string(),
+                            shard_id: 2,
+                            leader_id: "test-ingester-0".to_string(),
+                            follower_id: Some("test-ingester-1".to_string()),
+                            publish_position_inclusive: "1".to_string(),
+                        },
+                        CloseShardsSuccess {
+                            index_uid: "test-index:0".to_string(),
+                            source_id: "test-source".to_string(),
+                            shard_id: 3,
+                            leader_id: "test-ingester-1".to_string(),
+                            follower_id: Some("test-ingester-0".to_string()),
+                            publish_position_inclusive: "0".to_string(),
+                        },
+                        CloseShardsSuccess {
+                            index_uid: "test-index:0".to_string(),
+                            source_id: "test-source".to_string(),
+                            shard_id: 4,
+                            leader_id: "test-ingester-0".to_string(),
+                            follower_id: Some("test-ingester-1".to_string()),
+                            publish_position_inclusive: "".to_string(),
+                        },
+                    ],
+                    failures: vec![CloseShardsFailure {
+                        index_uid: "test-index:0".to_string(),
+                        source_id: "test-source".to_string(),
+                        shard_id: 1,
+                        failure_kind: CloseShardsFailureKind::NotFound as i32,
+                        failure_message: "shard not found".to_string(),
+                    }],
+                };
+                Ok(response)
+            });
+        mock_metastore
+            .expect_delete_shards()
+            .once()
+            .returning(|request| {
+                assert_eq!(request.subrequests.len(), 1);
+
+                let subrequest = &request.subrequests[0];
+                assert_eq!(subrequest.index_uid, "test-index:0");
+                assert_eq!(subrequest.source_id, "test-source");
+                assert_eq!(subrequest.shard_ids, [2]);
+
+                let response = DeleteShardsResponse {};
+                Ok(response)
+            });
+        let metastore = Arc::new(mock_metastore);
+        let ingester_pool = IngesterPool::default();
+        let wal_dir_path = tempdir.path();
+        let replication_factor = 2;
+        let mut ingester = Ingester::try_new(
+            self_node_id.clone(),
+            metastore,
+            ingester_pool,
+            wal_dir_path,
+            replication_factor,
+        )
+        .await
+        .unwrap();
+
+        let mut mrecordlog_guard = ingester.mrecordlog.write().await;
+
+        let queue_ids: Vec<QueueId> = (1..=4)
+            .map(|shard_id| queue_id("test-index:0", "test-source", shard_id))
+            .collect();
+
+        for queue_id in &queue_ids {
+            mrecordlog_guard.create_queue(queue_id).await.unwrap();
+        }
+        let records = [
+            Bytes::from_static(b"test-doc-200"),
+            Bytes::from_static(b"test-doc-201"),
+        ];
+        mrecordlog_guard
+            .append_records(&queue_ids[1], None, records.into_iter())
+            .await
+            .unwrap();
+        let records = [
+            Bytes::from_static(b"test-doc-300"),
+            Bytes::from_static(b"test-doc-301"),
+        ];
+        mrecordlog_guard
+            .append_records(&queue_ids[2], None, records.into_iter())
+            .await
+            .unwrap();
+        let records = [
+            Bytes::from_static(b"test-doc-400"),
+            Bytes::from_static(b"test-doc-401"),
+        ];
+        mrecordlog_guard
+            .append_records(&queue_ids[3], None, records.into_iter())
+            .await
+            .unwrap();
+        drop(mrecordlog_guard);
+
+        ingester.init().await.unwrap();
+
+        let mrecordlog_guard = ingester.mrecordlog.read().await;
+        assert!(!mrecordlog_guard.queue_exists(&queue_ids[0]));
+        drop(mrecordlog_guard);
+
+        let state_guard = ingester.state.read().await;
+        assert_eq!(state_guard.primary_shards.len(), 2);
+        assert_eq!(state_guard.replica_shards.len(), 1);
+
+        let primary_shard_2 = state_guard.primary_shards.get(&queue_ids[1]).unwrap();
+        assert_eq!(
+            primary_shard_2.publish_position_inclusive,
+            Position::Offset(1)
+        );
+        assert!(primary_shard_2.shard_state.is_closed());
+        primary_shard_2.assert_positions(Some(1), NONE_REPLICA_POSITION);
+
+        let primary_shard_4 = state_guard.primary_shards.get(&queue_ids[3]).unwrap();
+        assert_eq!(
+            primary_shard_4.publish_position_inclusive,
+            Position::Beginning
+        );
+        assert!(primary_shard_4.shard_state.is_closed());
+        primary_shard_2.assert_positions(Some(1), NONE_REPLICA_POSITION);
+
+        let replica_shard_3 = state_guard.replica_shards.get(&queue_ids[2]).unwrap();
+        assert_eq!(
+            replica_shard_3.publish_position_inclusive,
+            Position::Offset(0),
+        );
+        assert_eq!(
+            replica_shard_3.replica_position_inclusive,
+            Position::Offset(1),
+        );
+        assert!(replica_shard_3.shard_state.is_closed());
+
+        drop(state_guard);
+
+        // Wait for the GC task to run.
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        let state_guard = ingester.state.read().await;
+        assert_eq!(state_guard.primary_shards.len(), 1);
+        assert!(!state_guard.primary_shards.contains_key(&queue_ids[1]));
+
+        let mrecordlog_guard = ingester.mrecordlog.read().await;
+        assert!(!mrecordlog_guard.queue_exists(&queue_ids[1]));
+    }
+
+    #[tokio::test]
     async fn test_ingester_persist() {
         let tempdir = tempfile::tempdir().unwrap();
-        let node_id: NodeId = "test-ingester-0".into();
+        let self_node_id: NodeId = "test-ingester-0".into();
+        let metastore = Arc::new(MockIngestMetastore::default());
         let ingester_pool = IngesterPool::default();
         let wal_dir_path = tempdir.path();
         let replication_factor = 1;
         let mut ingester = Ingester::try_new(
-            node_id.clone(),
+            self_node_id.clone(),
+            metastore,
             ingester_pool,
             wal_dir_path,
             replication_factor,
@@ -714,7 +878,7 @@ mod tests {
         .unwrap();
 
         let persist_request = PersistRequest {
-            leader_id: node_id.to_string(),
+            leader_id: self_node_id.to_string(),
             commit_type: CommitTypeV2::Auto as i32,
             subrequests: vec![
                 PersistSubrequest {
@@ -781,12 +945,14 @@ mod tests {
     #[tokio::test]
     async fn test_ingester_open_replication_stream() {
         let tempdir = tempfile::tempdir().unwrap();
-        let node_id: NodeId = "test-follower".into();
+        let self_node_id: NodeId = "test-follower".into();
+        let metastore = Arc::new(MockIngestMetastore::default());
         let ingester_pool = IngesterPool::default();
         let wal_dir_path = tempdir.path();
         let replication_factor = 1;
         let mut ingester = Ingester::try_new(
-            node_id.clone(),
+            self_node_id.clone(),
+            metastore,
             ingester_pool,
             wal_dir_path,
             replication_factor,
@@ -823,11 +989,13 @@ mod tests {
     async fn test_ingester_persist_replicate() {
         let tempdir = tempfile::tempdir().unwrap();
         let leader_id: NodeId = "test-leader".into();
+        let metastore = Arc::new(MockIngestMetastore::default());
         let ingester_pool = IngesterPool::default();
         let wal_dir_path = tempdir.path();
         let replication_factor = 2;
         let mut leader = Ingester::try_new(
             leader_id.clone(),
+            metastore.clone(),
             ingester_pool.clone(),
             wal_dir_path,
             replication_factor,
@@ -841,6 +1009,7 @@ mod tests {
         let replication_factor = 2;
         let follower = Ingester::try_new(
             follower_id.clone(),
+            metastore,
             ingester_pool.clone(),
             wal_dir_path,
             replication_factor,
@@ -848,12 +1017,10 @@ mod tests {
         .await
         .unwrap();
 
-        ingester_pool
-            .insert(
-                follower_id.clone(),
-                IngesterServiceClient::new(follower.clone()),
-            )
-            .await;
+        ingester_pool.insert(
+            follower_id.clone(),
+            IngesterServiceClient::new(follower.clone()),
+        );
 
         let persist_request = PersistRequest {
             leader_id: "test-leader".to_string(),
@@ -927,11 +1094,13 @@ mod tests {
     async fn test_ingester_persist_replicate_grpc() {
         let tempdir = tempfile::tempdir().unwrap();
         let leader_id: NodeId = "test-leader".into();
+        let metastore = Arc::new(MockIngestMetastore::default());
         let ingester_pool = IngesterPool::default();
         let wal_dir_path = tempdir.path();
         let replication_factor = 2;
         let mut leader = Ingester::try_new(
             leader_id.clone(),
+            metastore.clone(),
             ingester_pool.clone(),
             wal_dir_path,
             replication_factor,
@@ -959,6 +1128,7 @@ mod tests {
         let replication_factor = 2;
         let follower = Ingester::try_new(
             follower_id.clone(),
+            metastore,
             ingester_pool.clone(),
             wal_dir_path,
             replication_factor,
@@ -985,9 +1155,7 @@ mod tests {
         );
         let follower_grpc_client = IngesterServiceClient::from_channel(follower_channel);
 
-        ingester_pool
-            .insert(follower_id.clone(), follower_grpc_client)
-            .await;
+        ingester_pool.insert(follower_id.clone(), follower_grpc_client);
 
         let persist_request = PersistRequest {
             leader_id: "test-leader".to_string(),
@@ -1092,12 +1260,14 @@ mod tests {
     #[tokio::test]
     async fn test_ingester_open_fetch_stream() {
         let tempdir = tempfile::tempdir().unwrap();
-        let node_id: NodeId = "test-ingester-0".into();
+        let self_node_id: NodeId = "test-ingester-0".into();
+        let metastore = Arc::new(MockIngestMetastore::default());
         let ingester_pool = IngesterPool::default();
         let wal_dir_path = tempdir.path();
         let replication_factor = 1;
         let mut ingester = Ingester::try_new(
-            node_id.clone(),
+            self_node_id.clone(),
+            metastore,
             ingester_pool,
             wal_dir_path,
             replication_factor,
@@ -1106,7 +1276,7 @@ mod tests {
         .unwrap();
 
         let persist_request = PersistRequest {
-            leader_id: node_id.to_string(),
+            leader_id: self_node_id.to_string(),
             commit_type: CommitTypeV2::Auto as i32,
             subrequests: vec![
                 PersistSubrequest {
@@ -1153,7 +1323,7 @@ mod tests {
         assert_eq!(fetch_response.from_position_inclusive, 0);
 
         let persist_request = PersistRequest {
-            leader_id: node_id.to_string(),
+            leader_id: self_node_id.to_string(),
             commit_type: CommitTypeV2::Auto as i32,
             subrequests: vec![PersistSubrequest {
                 index_uid: "test-index:0".to_string(),
@@ -1181,12 +1351,14 @@ mod tests {
     #[tokio::test]
     async fn test_ingester_truncate() {
         let tempdir = tempfile::tempdir().unwrap();
-        let node_id: NodeId = "test-ingester-0".into();
+        let self_node_id: NodeId = "test-ingester-0".into();
+        let metastore = Arc::new(MockIngestMetastore::default());
         let ingester_pool = IngesterPool::default();
         let wal_dir_path = tempdir.path();
         let replication_factor = 1;
         let mut ingester = Ingester::try_new(
-            node_id.clone(),
+            self_node_id.clone(),
+            metastore,
             ingester_pool,
             wal_dir_path,
             replication_factor,
@@ -1199,11 +1371,11 @@ mod tests {
 
         let mut ingester_state = ingester.state.write().await;
         ingester
-            .init_primary_shard(&mut ingester_state, &queue_id_00, &node_id, None)
+            .init_primary_shard(&mut ingester_state, &queue_id_00, &self_node_id, None)
             .await
             .unwrap();
         ingester
-            .init_primary_shard(&mut ingester_state, &queue_id_01, &node_id, None)
+            .init_primary_shard(&mut ingester_state, &queue_id_01, &self_node_id, None)
             .await
             .unwrap();
 
@@ -1234,7 +1406,7 @@ mod tests {
         drop(mrecordlog_guard);
 
         let truncate_request = TruncateRequest {
-            leader_id: node_id.to_string(),
+            leader_id: self_node_id.to_string(),
             subrequests: vec![
                 TruncateSubrequest {
                     index_uid: "test-index:0".to_string(),

@@ -1114,7 +1114,7 @@ async fn test_search_dynamic_mode_expand_dots() -> anyhow::Result<()> {
         assert_eq!(&docs[..], &[0u32]);
     }
     {
-        let docs = test_search_util(&test_sandbox, r#"k8s\.component\.name:quickwit"#).await;
+        let docs = test_search_util(&test_sandbox, r"k8s\.component\.name:quickwit").await;
         assert_eq!(&docs[..], &[0u32]);
     }
     test_sandbox.assert_quit().await;
@@ -1140,7 +1140,7 @@ async fn test_search_dynamic_mode_do_not_expand_dots() -> anyhow::Result<()> {
     let docs = vec![json!({"k8s.component.name": "quickwit"})];
     test_sandbox.add_documents(docs).await.unwrap();
     {
-        let docs = test_search_util(&test_sandbox, r#"k8s\.component\.name:quickwit"#).await;
+        let docs = test_search_util(&test_sandbox, r"k8s\.component\.name:quickwit").await;
         assert_eq!(&docs[..], &[0u32]);
     }
     {

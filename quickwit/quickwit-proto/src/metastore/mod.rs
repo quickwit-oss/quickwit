@@ -22,7 +22,7 @@ use std::fmt;
 use quickwit_common::retry::Retryable;
 use serde::{Deserialize, Serialize};
 
-use crate::{IndexId, QueueId, ServiceError, ServiceErrorCode, SourceId, SplitId};
+use crate::{queue_id, IndexId, QueueId, ServiceError, ServiceErrorCode, SourceId, SplitId};
 
 pub mod events;
 
@@ -153,7 +153,7 @@ impl From<sqlx::Error> for MetastoreError {
 
 impl From<MetastoreError> for tonic::Status {
     fn from(metastore_error: MetastoreError) -> Self {
-        let grpc_code = metastore_error.status_code().to_grpc_status_code();
+        let grpc_code = metastore_error.error_code().to_grpc_status_code();
         let error_msg = serde_json::to_string(&metastore_error)
             .unwrap_or_else(|_| format!("raw metastore error: {metastore_error}"));
         tonic::Status::new(grpc_code, error_msg)
@@ -161,9 +161,9 @@ impl From<MetastoreError> for tonic::Status {
 }
 
 impl ServiceError for MetastoreError {
-    fn status_code(&self) -> ServiceErrorCode {
+    fn error_code(&self) -> ServiceErrorCode {
         match self {
-            Self::AlreadyExists { .. } => ServiceErrorCode::BadRequest,
+            Self::AlreadyExists { .. } => ServiceErrorCode::AlreadyExists,
             Self::Connection { .. } => ServiceErrorCode::Internal,
             Self::Db { .. } => ServiceErrorCode::Internal,
             Self::FailedPrecondition { .. } => ServiceErrorCode::BadRequest,
@@ -206,6 +206,18 @@ impl SourceType {
             SourceType::Vec => "vec",
             SourceType::Void => "void",
         }
+    }
+}
+
+impl CloseShardsSuccess {
+    pub fn queue_id(&self) -> QueueId {
+        queue_id(&self.index_uid, &self.source_id, self.shard_id)
+    }
+}
+
+impl CloseShardsFailure {
+    pub fn queue_id(&self) -> QueueId {
+        queue_id(&self.index_uid, &self.source_id, self.shard_id)
     }
 }
 

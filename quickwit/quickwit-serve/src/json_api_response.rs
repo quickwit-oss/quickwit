@@ -38,7 +38,7 @@ pub(crate) struct ApiError {
 }
 
 impl ServiceError for ApiError {
-    fn status_code(&self) -> ServiceErrorCode {
+    fn error_code(&self) -> ServiceErrorCode {
         self.service_code
     }
 }
@@ -57,12 +57,12 @@ pub(crate) fn make_json_api_response<T: serde::Serialize, E: ServiceError>(
     format: BodyFormat,
 ) -> JsonApiResponse {
     let result_with_api_error = result.map_err(|err| ApiError {
-        service_code: err.status_code(),
+        service_code: err.error_code(),
         message: err.to_string(),
     });
     let status_code = match &result_with_api_error {
         Ok(_) => status::StatusCode::OK,
-        Err(err) => err.status_code().to_http_status_code(),
+        Err(err) => err.error_code().to_http_status_code(),
     };
     JsonApiResponse::new(&result_with_api_error, status_code, &format)
 }

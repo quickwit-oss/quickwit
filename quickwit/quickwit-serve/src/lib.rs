@@ -27,6 +27,7 @@ mod health_check_api;
 mod index_api;
 mod indexing_api;
 mod ingest_api;
+mod ingest_metastore;
 mod json_api_response;
 mod metrics;
 mod metrics_api;
@@ -51,6 +52,7 @@ use anyhow::Context;
 use byte_unit::n_mib_bytes;
 pub use format::BodyFormat;
 use futures::{Stream, StreamExt};
+use ingest_metastore::IngestMetastoreImpl;
 use itertools::Itertools;
 use quickwit_actors::{ActorExitStatus, Mailbox, Universe};
 use quickwit_cluster::{start_cluster_service, Cluster, ClusterChange, ClusterMember};
@@ -63,7 +65,7 @@ use quickwit_common::tower::{
 use quickwit_config::service::QuickwitService;
 use quickwit_config::NodeConfig;
 use quickwit_control_plane::control_plane::ControlPlane;
-use quickwit_control_plane::{IndexerNodeInfo, IndexerPool};
+use quickwit_control_plane::{ControlPlaneEventSubscriber, IndexerNodeInfo, IndexerPool};
 use quickwit_index_management::{IndexService as IndexManager, IndexServiceError};
 use quickwit_indexing::actors::IndexingService;
 use quickwit_indexing::start_indexing_service;
@@ -81,7 +83,9 @@ use quickwit_proto::control_plane::ControlPlaneServiceClient;
 use quickwit_proto::indexing::IndexingServiceClient;
 use quickwit_proto::ingest::ingester::IngesterServiceClient;
 use quickwit_proto::ingest::router::IngestRouterServiceClient;
-use quickwit_proto::metastore::{EntityKind, MetastoreError};
+use quickwit_proto::metastore::{
+    CloseShardsRequest, DeleteShardsRequest, EntityKind, MetastoreError,
+};
 use quickwit_proto::search::ReportSplitsRequest;
 use quickwit_proto::NodeId;
 use quickwit_search::{
@@ -131,6 +135,7 @@ struct QuickwitServices {
     /// The control plane listens to metastore events.
     /// We must maintain a reference to the subscription handles to continue receiving
     /// notifications. Otherwise, the subscriptions are dropped.
+    _control_plane_event_subscription_handles_opt: Option<ControlPlaneEventSubscriptionHandles>,
     _report_splits_subscription_handle_opt: Option<EventSubscriptionHandle<ReportSplitsRequest>>,
 }
 
@@ -308,6 +313,13 @@ pub async fn serve_quickwit(
     )
     .await?;
 
+    // Setup control plane event subscriptions.
+    let control_plane_event_subscription_handles_opt = setup_control_plane_event_subscriptions(
+        &node_config,
+        &event_broker,
+        &control_plane_service,
+    );
+
     // Set up the "control plane proxy" for the metastore.
     let metastore_through_control_plane: Arc<dyn Metastore> = Arc::new(ControlPlaneMetastore::new(
         control_plane_service.clone(),
@@ -350,6 +362,7 @@ pub async fn serve_quickwit(
     let (ingest_router_service, ingester_service_opt) = setup_ingest_v2(
         &node_config,
         &cluster,
+        metastore_client.clone(),
         control_plane_service.clone(),
         ingester_pool,
     )
@@ -446,6 +459,7 @@ pub async fn serve_quickwit(
         metastore_server_opt,
         metastore_client: metastore_through_control_plane.clone(),
         control_plane_service,
+        _control_plane_event_subscription_handles_opt: control_plane_event_subscription_handles_opt,
         _report_splits_subscription_handle_opt: report_splits_subscription_handle_opt,
         index_manager,
         indexing_service_opt,
@@ -529,9 +543,39 @@ pub async fn serve_quickwit(
     Ok(actor_exit_statuses)
 }
 
+#[allow(dead_code)]
+#[derive(Debug)]
+struct ControlPlaneEventSubscriptionHandles {
+    close_shards_event_subscription_handle: EventSubscriptionHandle<CloseShardsRequest>,
+    delete_shards_event_subscription_handle: EventSubscriptionHandle<DeleteShardsRequest>,
+}
+
+fn setup_control_plane_event_subscriptions(
+    config: &NodeConfig,
+    event_broker: &EventBroker,
+    control_plane_service: &ControlPlaneServiceClient,
+) -> Option<ControlPlaneEventSubscriptionHandles> {
+    if !config.is_service_enabled(QuickwitService::Metastore) {
+        return None;
+    }
+    let control_plane_event_subscriber =
+        ControlPlaneEventSubscriber::new(control_plane_service.clone());
+
+    let close_shards_event_subscription_handle =
+        event_broker.subscribe::<CloseShardsRequest>(control_plane_event_subscriber.clone());
+    let delete_shards_event_subscription_handle =
+        event_broker.subscribe::<DeleteShardsRequest>(control_plane_event_subscriber.clone());
+    let control_plane_subscription_handles = ControlPlaneEventSubscriptionHandles {
+        close_shards_event_subscription_handle,
+        delete_shards_event_subscription_handle,
+    };
+    Some(control_plane_subscription_handles)
+}
+
 async fn setup_ingest_v2(
     config: &NodeConfig,
     cluster: &Cluster,
+    metastore: Arc<dyn Metastore>,
     control_plane: ControlPlaneServiceClient,
     ingester_pool: IngesterPool,
 ) -> anyhow::Result<(IngestRouterServiceClient, Option<IngesterServiceClient>)> {
@@ -557,6 +601,7 @@ async fn setup_ingest_v2(
 
         let ingester = Ingester::try_new(
             self_node_id.clone(),
+            Arc::new(IngestMetastoreImpl::new(metastore)),
             ingester_pool.clone(),
             &wal_dir_path,
             replication_factor,
@@ -912,9 +957,9 @@ mod tests {
             .unwrap();
         tokio::time::sleep(Duration::from_millis(1)).await;
 
-        assert_eq!(indexer_pool.len().await, 1);
+        assert_eq!(indexer_pool.len(), 1);
 
-        let new_indexer_node_info = indexer_pool.get("test-indexer-node").await.unwrap();
+        let new_indexer_node_info = indexer_pool.get("test-indexer-node").unwrap();
         assert!(new_indexer_node_info.indexing_tasks.is_empty());
 
         let new_indexing_task = IndexingTask {
@@ -936,7 +981,7 @@ mod tests {
             .unwrap();
         tokio::time::sleep(Duration::from_millis(1)).await;
 
-        let updated_indexer_node_info = indexer_pool.get("test-indexer-node").await.unwrap();
+        let updated_indexer_node_info = indexer_pool.get("test-indexer-node").unwrap();
         assert_eq!(updated_indexer_node_info.indexing_tasks.len(), 1);
         assert_eq!(
             updated_indexer_node_info.indexing_tasks[0],
@@ -949,7 +994,7 @@ mod tests {
             .unwrap();
         tokio::time::sleep(Duration::from_millis(1)).await;
 
-        assert!(indexer_pool.is_empty().await);
+        assert!(indexer_pool.is_empty());
     }
 
     #[tokio::test]
