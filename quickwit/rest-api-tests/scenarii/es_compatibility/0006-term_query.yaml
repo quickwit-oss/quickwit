@@ -16,3 +16,34 @@ expected:
       relation: "eq"
     hits:
       $expect: "len(val) == 3"
+---
+# Support term int value
+params:
+  size: 10
+json:
+  query:
+    term:
+      actor.id:
+        value: 10791466
+expected:
+  hits:
+    total:
+      value: 1
+      relation: "eq"
+    hits:
+      $expect: "len(val) == 1"
+---
+# Support old term query format
+params:
+  size: 10
+json:
+  query:
+    term:
+      actor.id: "10791466"
+expected:
+  hits:
+    total:
+      value: 1
+      relation: "eq"
+    hits:
+      $expect: "len(val) == 1"
