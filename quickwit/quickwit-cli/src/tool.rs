@@ -51,6 +51,7 @@ use quickwit_indexing::IndexingPipeline;
 use quickwit_ingest::IngesterPool;
 use quickwit_metastore::Metastore;
 use quickwit_proto::search::SearchResponse;
+use quickwit_proto::NodeId;
 use quickwit_search::{single_node_search, SearchResponseRest};
 use quickwit_serve::{
     search_request_from_api_request, BodyFormat, SearchRequestQueryString, SortBy,
@@ -924,8 +925,9 @@ impl ThroughputCalculator {
 }
 
 async fn create_empty_cluster(config: &NodeConfig) -> anyhow::Result<Cluster> {
+    let node_id: NodeId = config.node_id.clone().into();
     let self_node = ClusterMember::new(
-        config.node_id.clone(),
+        node_id,
         quickwit_cluster::GenerationId::now(),
         false,
         HashSet::new(),
