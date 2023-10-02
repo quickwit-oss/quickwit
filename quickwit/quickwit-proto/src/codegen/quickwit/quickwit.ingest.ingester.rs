@@ -85,7 +85,7 @@ pub mod syn_replication_message {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AckReplicationMessage {
-    #[prost(oneof = "ack_replication_message::Message", tags = "1, 3")]
+    #[prost(oneof = "ack_replication_message::Message", tags = "1, 2")]
     pub message: ::core::option::Option<ack_replication_message::Message>,
 }
 /// Nested message and enum types in `AckReplicationMessage`.
@@ -97,7 +97,7 @@ pub mod ack_replication_message {
     pub enum Message {
         #[prost(message, tag = "1")]
         OpenResponse(super::OpenReplicationStreamResponse),
-        #[prost(message, tag = "3")]
+        #[prost(message, tag = "2")]
         ReplicateResponse(super::ReplicateResponse),
     }
 }
