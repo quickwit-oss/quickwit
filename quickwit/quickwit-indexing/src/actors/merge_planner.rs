@@ -46,7 +46,6 @@ pub struct MergePlanner {
     /// A young split is a split that has not reached maturity
     /// yet and can be candidate to merge operations.
     partitioned_young_splits: HashMap<u64, Vec<SplitMetadata>>,
-    num_young_splits: usize,
 
     /// This set contains all of the split ids that we "acknowledged".
     /// The point of this set is to rapidly dismiss redundant `NewSplit` message.
@@ -95,10 +94,6 @@ impl Actor for MergePlanner {
             .iter()
             .map(|tracked_operation| tracked_operation.as_ref().clone())
             .collect_vec();
-        #[cfg(test)]
-        {
-            self.check_invariants();
-        }
         MergePlannerState {
             ongoing_merge_operations,
         }
@@ -150,10 +145,7 @@ impl Handler<PlanMerge> for MergePlanner {
             // (See comment on `Self::incarnation_start_at`.)
             self.send_merge_ops(ctx).await?;
         }
-        #[cfg(test)]
-        {
-            self.check_invariants();
-        }
+        self.recompute_known_splits_if_necessary();
         Ok(())
     }
 }
@@ -167,12 +159,12 @@ impl Handler<NewSplits> for MergePlanner {
         new_splits: NewSplits,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        self.record_splits(new_splits.new_splits);
+        self.record_splits_if_necessary(new_splits.new_splits);
         self.send_merge_ops(ctx).await?;
-        #[cfg(test)]
-        {
-            self.check_invariants();
+        if self.known_split_ids.len() >= self.num_known_splits_rebuild_threshold() {
+            self.known_split_ids = self.rebuild_known_split_ids();
         }
+        self.recompute_known_splits_if_necessary();
         Ok(())
     }
 }
@@ -205,7 +197,6 @@ impl MergePlanner {
             .collect();
         let mut merge_planner = MergePlanner {
             pipeline_id,
-            num_young_splits: 0,
             known_split_ids: Default::default(),
             partitioned_young_splits: Default::default(),
             merge_policy,
@@ -213,7 +204,7 @@ impl MergePlanner {
             ongoing_merge_operations_inventory: Inventory::default(),
             incarnation_started_at: Instant::now(),
         };
-        merge_planner.record_splits(published_splits);
+        merge_planner.record_splits_if_necessary(published_splits);
         merge_planner
     }
 
@@ -250,42 +241,31 @@ impl MergePlanner {
         if self.known_split_ids.contains(split_id) {
             return false;
         }
-        // We only rebuild `known_split_ids` when it seems too large.
-        if self.known_split_ids.len() >= self.num_known_splits_rebuild_threshold() {
-            self.known_split_ids = self.rebuild_known_split_ids();
-        }
         self.known_split_ids.insert(split_id.to_string());
         true
     }
 
-    #[cfg(test)]
-    fn check_invariants(&self) {
-        assert_eq!(
-            self.partitioned_young_splits
-                .values()
-                .map(Vec::len)
-                .sum::<usize>(),
-            self.num_young_splits,
-        );
-        let known_split_ids = self.rebuild_known_split_ids();
-        for split_id in known_split_ids {
-            self.known_split_ids.contains(&split_id);
+    fn recompute_known_splits_if_necessary(&mut self) {
+        if self.known_split_ids.len() >= self.num_known_splits_rebuild_threshold() {
+            self.known_split_ids = self.rebuild_known_split_ids();
         }
-        let merge_operation = self.ongoing_merge_operations_inventory.list();
-        let mut young_splits = HashSet::new();
-        for (&partition_id, young_splits_in_partition) in &self.partitioned_young_splits {
-            for split_metadata in young_splits_in_partition {
-                assert_eq!(split_metadata.partition_id, partition_id);
-                young_splits.insert(split_metadata.split_id());
+        if cfg!(test) {
+            let merge_operation = self.ongoing_merge_operations_inventory.list();
+            let mut young_splits = HashSet::new();
+            for (&partition_id, young_splits_in_partition) in &self.partitioned_young_splits {
+                for split_metadata in young_splits_in_partition {
+                    assert_eq!(split_metadata.partition_id, partition_id);
+                    young_splits.insert(split_metadata.split_id());
+                }
             }
-        }
-        for merge_op in merge_operation {
-            assert!(!self.known_split_ids.contains(&merge_op.merge_split_id));
-            for split_in_merge in merge_op.splits_as_slice() {
-                assert!(self.known_split_ids.contains(split_in_merge.split_id()));
+            for merge_op in merge_operation {
+                assert!(!self.known_split_ids.contains(&merge_op.merge_split_id));
+                for split_in_merge in merge_op.splits_as_slice() {
+                    assert!(self.known_split_ids.contains(split_in_merge.split_id()));
+                }
             }
+            assert!(self.known_split_ids.len() <= self.num_known_splits_rebuild_threshold() + 1);
         }
-        assert!(self.known_split_ids.len() <= self.num_known_splits_rebuild_threshold() + 1);
     }
 
     /// Whenever the number of known splits exceeds this threshold, we rebuild the `known_split_ids`
@@ -301,26 +281,17 @@ impl MergePlanner {
         //
         // We can expect a maximum of 100 ongoing splits in merge per partition. (We oversize this
         // because it actually depends on the merge factor.
-        1 + self.num_young_splits + (1 + self.partitioned_young_splits.capacity()) * 20
+        1 + self.num_young_splits() + (1 + self.partitioned_young_splits.capacity()) * 20
     }
 
+    // Record a split. This function does NOT check if the split is mature or not, or if the split
+    // is known or not.
     fn record_split(&mut self, new_split: SplitMetadata) {
-        if new_split.is_mature(OffsetDateTime::now_utc()) {
-            return;
-        }
-        // Due to the recycling of the mailbox of the merge planner, it is possible for
-        // a split already in store to be received.
-        //
-        // See `known_split_ids`.
-        if !self.acknownledge_split(new_split.split_id()) {
-            return;
-        }
         let splits_for_partition: &mut Vec<SplitMetadata> = self
             .partitioned_young_splits
             .entry(new_split.partition_id)
             .or_default();
         splits_for_partition.push(new_split);
-        self.num_young_splits += 1;
     }
 
     // Records a list of splits.
@@ -330,8 +301,18 @@ impl MergePlanner {
     // - already known
     // - mature
     // - do not belong to the current timeline.
-    fn record_splits(&mut self, split_metadatas: Vec<SplitMetadata>) {
+    fn record_splits_if_necessary(&mut self, split_metadatas: Vec<SplitMetadata>) {
         for new_split in split_metadatas {
+            if new_split.is_mature(OffsetDateTime::now_utc()) {
+                continue;
+            }
+            // Due to the recycling of the mailbox of the merge planner, it is possible for
+            // a split already in store to be received.
+            //
+            // See `known_split_ids`.
+            if !self.acknownledge_split(new_split.split_id()) {
+                continue;
+            }
             self.record_split(new_split);
         }
     }
@@ -350,12 +331,14 @@ impl MergePlanner {
         self.partitioned_young_splits
             .retain(|_, splits| !splits.is_empty());
         // We recompute the number of young splits.
-        self.num_young_splits = self
-            .partitioned_young_splits
+        Ok(merge_operations)
+    }
+
+    fn num_young_splits(&self) -> usize {
+        self.partitioned_young_splits
             .values()
             .map(|splits| splits.len())
-            .sum();
-        Ok(merge_operations)
+            .sum()
     }
 
     async fn send_merge_ops(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
@@ -402,7 +385,9 @@ impl MergePlanner {
             // We need to re-record the related split, so that we
             // perform a merge in the future.
             for merge_op in merge_ops {
-                self.record_splits(merge_op.splits);
+                for split in merge_op.splits {
+                    self.record_split(split);
+                }
             }
             // We try_self_send a `PlanMerge` message in order to ensure that
             // progress on our merges.
@@ -688,7 +673,7 @@ mod tests {
         let universe = Universe::with_accelerated_time();
         let (merge_planner_mailbox, _) = universe.spawn_builder().spawn(merge_planner);
         tokio::task::spawn(async move {
-            // Sending 200 splits offering 100 split opportunities
+            // Sending 20 splits offering 10 split opportunities
             let messages_with_merge_ops2 = NewSplits {
                 new_splits: (0..10)
                     .flat_map(|partition_id| {
@@ -696,14 +681,14 @@ mod tests {
                             split_metadata_for_test(
                                 &index_uid,
                                 &format!("{partition_id}_a_large"),
-                                2,
+                                partition_id,
                                 1_000_000,
                                 2,
                             ),
                             split_metadata_for_test(
                                 &index_uid,
                                 &format!("{partition_id}_b_large"),
-                                2,
+                                partition_id,
                                 1_000_000,
                                 2,
                             ),
@@ -722,14 +707,14 @@ mod tests {
                             split_metadata_for_test(
                                 &index_uid,
                                 &format!("{partition_id}_a_small"),
-                                2,
+                                partition_id,
                                 100_000,
                                 1,
                             ),
                             split_metadata_for_test(
                                 &index_uid,
                                 &format!("{partition_id}_b_small"),
-                                2,
+                                partition_id,
                                 100_000,
                                 1,
                             ),
