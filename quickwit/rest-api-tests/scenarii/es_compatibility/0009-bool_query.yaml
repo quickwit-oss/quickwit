@@ -107,6 +107,8 @@ expected:
       value: 100
 ---
 # Support null values
+# This format is not supported by Elasticsearch
+engines: ["quickwit"]
 json:
   query:
       bool:

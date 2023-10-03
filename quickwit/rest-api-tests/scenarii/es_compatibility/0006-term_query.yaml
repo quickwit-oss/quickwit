@@ -16,3 +16,147 @@ expected:
       relation: "eq"
     hits:
       $expect: "len(val) == 3"
+---
+# Terms must be pushed in their form post tokenization
+params:
+  size: 0
+json:
+  query:
+    term:
+      type:
+        # this does not match because push event has been lowercased by the tokenizer.
+        value: "PushEvent"
+expected:
+  hits:
+    total:
+      value: 0
+      relation: "eq"
+---
+params:
+  size: 0
+json:
+  query:
+    term:
+      type:
+        value: "pushevent"
+expected:
+  hits:
+    total:
+      value: 60
+      relation: "eq"
+---
+params:
+  size: 0
+# Testing the format without the "value" object
+json:
+  query:
+    term:
+      type: "pushevent"
+expected:
+  hits:
+    total:
+      value: 60
+      relation: "eq"
+# Also testing numbers, and numbers as string in the JSON query
+---
+engines: ["elasticsearch"]
+params:
+  size: 0
+json:
+  query:
+    term:
+      actor.id: 1762355
+expected:
+  hits:
+    total:
+      value: 1
+      relation: "eq"
+---
+params:
+  size: 0
+json:
+  query:
+    term:
+      actor.id: "1762355"
+expected:
+  hits:
+    total:
+      value: 1
+      relation: "eq"
+---
+params:
+  size: 0
+json:
+  query:
+    term:
+      actor.id:
+        value: 1762355
+expected:
+  hits:
+    total:
+      value: 1
+      relation: "eq"
+---
+params:
+  size: 0
+json:
+  query:
+    term:
+      actor.id:
+        value: "1762355"
+expected:
+  hits:
+    total:
+      value: 1
+      relation: "eq"
+---
+# id is a text field
+params:
+  size: 0
+json:
+  query:
+    term:
+      id:
+        value: "2549961272"
+expected:
+  hits:
+    total:
+      value: 1
+      relation: "eq"
+---
+params:
+  size: 0
+json:
+  query:
+    term:
+      id:
+        value: 2549961272
+expected:
+  hits:
+    total:
+      value: 1
+      relation: "eq"
+---
+params:
+  size: 0
+json:
+  query:
+    term:
+      id: 2549961272
+expected:
+  hits:
+    total:
+      value: 1
+      relation: "eq"
+---
+params:
+  size: 0
+json:
+  query:
+    term:
+      id: "2549961272"
+expected:
+  hits:
+    total:
+      value: 1
+      relation: "eq"

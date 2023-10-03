@@ -29,6 +29,7 @@ mod one_field_map;
 mod phrase_prefix_query;
 mod query_string_query;
 mod range_query;
+mod string_or_struct;
 mod term_query;
 mod terms_query;
 
@@ -37,6 +38,7 @@ pub use one_field_map::OneFieldMap;
 use phrase_prefix_query::MatchPhrasePrefixQuery;
 pub(crate) use query_string_query::QueryStringQuery;
 use range_query::RangeQuery;
+pub(crate) use string_or_struct::StringOrStructForSerialization;
 use term_query::TermQuery;
 
 use crate::elastic_query_dsl::exists_query::ExistsQuery;
