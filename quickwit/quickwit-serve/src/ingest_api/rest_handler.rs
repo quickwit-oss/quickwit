@@ -18,7 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use bytes::{Buf, BufMut, Bytes, BytesMut};
-use quickwit_config::{INGEST_SOURCE_ID, IngestApiConfig};
+use quickwit_config::{IngestApiConfig, INGEST_SOURCE_ID};
 use quickwit_ingest::{
     CommitType, DocBatchBuilder, FetchResponse, IngestRequest, IngestResponse, IngestService,
     IngestServiceClient, IngestServiceError, TailRequest,
@@ -66,7 +66,7 @@ struct IngestOptions {
 pub(crate) fn ingest_api_handlers(
     ingest_router: IngestRouterServiceClient,
     ingest_service: IngestServiceClient,
-    config: IngestApiConfig
+    config: IngestApiConfig,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     ingest_handler(ingest_service.clone(), config.clone())
         .or(tail_handler(ingest_service))
@@ -74,11 +74,13 @@ pub(crate) fn ingest_api_handlers(
 }
 
 fn ingest_filter(
-    config: IngestApiConfig
+    config: IngestApiConfig,
 ) -> impl Filter<Extract = (String, Bytes, IngestOptions), Error = Rejection> + Clone {
     warp::path!(String / "ingest")
         .and(warp::post())
-        .and(warp::body::content_length_limit(config.content_length_limit))
+        .and(warp::body::content_length_limit(
+            config.content_length_limit,
+        ))
         .and(warp::body::bytes())
         .and(serde_qs::warp::query::<IngestOptions>(
             serde_qs::Config::default(),
@@ -87,7 +89,7 @@ fn ingest_filter(
 
 fn ingest_handler(
     ingest_service: IngestServiceClient,
-    config: IngestApiConfig
+    config: IngestApiConfig,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     ingest_filter(config)
         .and(with_arg(ingest_service))
@@ -96,11 +98,13 @@ fn ingest_handler(
 }
 
 fn ingest_v2_filter(
-    config: IngestApiConfig
+    config: IngestApiConfig,
 ) -> impl Filter<Extract = (String, Bytes, IngestOptions), Error = Rejection> + Clone {
     warp::path!(String / "ingest-v2")
         .and(warp::post())
-        .and(warp::body::content_length_limit(config.content_length_limit))
+        .and(warp::body::content_length_limit(
+            config.content_length_limit,
+        ))
         .and(warp::body::bytes())
         .and(serde_qs::warp::query::<IngestOptions>(
             serde_qs::Config::default(),
@@ -109,7 +113,7 @@ fn ingest_v2_filter(
 
 fn ingest_v2_handler(
     ingest_router: IngestRouterServiceClient,
-    config: IngestApiConfig
+    config: IngestApiConfig,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     ingest_v2_filter(config)
         .and(with_arg(ingest_router))
@@ -270,7 +274,8 @@ pub(crate) mod tests {
         let (universe, _temp_dir, ingest_service, _) =
             setup_ingest_service(&["my-index"], &IngestApiConfig::default()).await;
         let ingest_router = IngestRouterServiceClient::mock().into();
-        let ingest_api_handlers = ingest_api_handlers(ingest_router,ingest_service, IngestApiConfig::default());
+        let ingest_api_handlers =
+            ingest_api_handlers(ingest_router, ingest_service, IngestApiConfig::default());
         let resp = warp::test::request()
             .path("/my-index/ingest")
             .method("POST")
@@ -305,7 +310,8 @@ pub(crate) mod tests {
         let (universe, _temp_dir, ingest_service, _) =
             setup_ingest_service(&["my-index"], &IngestApiConfig::default()).await;
         let ingest_router = IngestRouterServiceClient::mock().into();
-        let ingest_api_handlers = ingest_api_handlers(ingest_router, ingest_service, IngestApiConfig::default());
+        let ingest_api_handlers =
+            ingest_api_handlers(ingest_router, ingest_service, IngestApiConfig::default());
         let payload = r#"
             {"id": 1, "message": "push"}
             {"id": 2, "message": "push"}
@@ -332,7 +338,8 @@ pub(crate) mod tests {
         let (universe, _temp_dir, ingest_service, _) =
             setup_ingest_service(&["my-index"], &config).await;
         let ingest_router = IngestRouterServiceClient::mock().into();
-        let ingest_api_handlers = ingest_api_handlers(ingest_router, ingest_service, IngestApiConfig::default());
+        let ingest_api_handlers =
+            ingest_api_handlers(ingest_router, ingest_service, IngestApiConfig::default());
         let resp = warp::test::request()
             .path("/my-index/ingest")
             .method("POST")
@@ -345,11 +352,37 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
+    async fn test_ingest_api_return_413_if_above_content_limit() {
+        let config = IngestApiConfig {
+            content_length_limit: 1,
+            ..Default::default()
+        };
+        let (universe, _temp_dir, ingest_service, _) =
+            setup_ingest_service(&["my-index"], &IngestApiConfig::default()).await;
+        let ingest_router = IngestRouterServiceClient::mock().into();
+        let ingest_api_handlers =
+            ingest_api_handlers(ingest_router, ingest_service, config.clone());
+        let resp = warp::test::request()
+            .path("/my-index/ingest")
+            .method("POST")
+            .json(&true)
+            .body(r#"{"id": 1, "message": "push"}"#)
+            .reply(&ingest_api_handlers)
+            .await;
+        assert_eq!(resp.status(), 413);
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
     async fn test_ingest_api_blocks_when_wait_is_specified() {
         let (universe, _temp_dir, ingest_service_client, ingest_service_mailbox) =
             setup_ingest_service(&["my-index"], &IngestApiConfig::default()).await;
         let ingest_router = IngestRouterServiceClient::mock().into();
-        let ingest_api_handlers = ingest_api_handlers(ingest_router, ingest_service_client, IngestApiConfig::default());
+        let ingest_api_handlers = ingest_api_handlers(
+            ingest_router,
+            ingest_service_client,
+            IngestApiConfig::default(),
+        );
         let handle = tokio::spawn(async move {
             let resp = warp::test::request()
                 .path("/my-index/ingest?commit=wait_for")
@@ -394,7 +427,11 @@ pub(crate) mod tests {
         let (universe, _temp_dir, ingest_service_client, ingest_service_mailbox) =
             setup_ingest_service(&["my-index"], &IngestApiConfig::default()).await;
         let ingest_router = IngestRouterServiceClient::mock().into();
-        let ingest_api_handlers = ingest_api_handlers(ingest_router, ingest_service_client, IngestApiConfig::default());
+        let ingest_api_handlers = ingest_api_handlers(
+            ingest_router,
+            ingest_service_client,
+            IngestApiConfig::default(),
+        );
         let handle = tokio::spawn(async move {
             let resp = warp::test::request()
                 .path("/my-index/ingest?commit=force")
