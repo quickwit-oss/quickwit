@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 use super::StringOrStructForSerialization;
 use crate::elastic_query_dsl::one_field_map::OneFieldMap;
@@ -50,9 +50,28 @@ impl From<String> for TermQueryParams {
     }
 }
 
+#[derive(Deserialize)]
+#[serde(untagged)]
+enum TermValue {
+    I64(i64),
+    U64(u64),
+    Str(String),
+}
+
+fn deserialize_term_value<'de, D>(deserializer: D) -> Result<String, D::Error>
+where D: Deserializer<'de> {
+    let term_value = TermValue::deserialize(deserializer)?;
+    match term_value {
+        TermValue::I64(i64) => Ok(i64.to_string()),
+        TermValue::U64(u64) => Ok(u64.to_string()),
+        TermValue::Str(str) => Ok(str),
+    }
+}
+
 #[derive(PartialEq, Eq, Debug, Serialize, Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 pub struct TermQueryParams {
+    #[serde(deserialize_with = "deserialize_term_value")]
     pub value: String,
     #[serde(default)]
     pub boost: Option<NotNaNf32>,

@@ -31,6 +31,8 @@ use serde::{de, Deserialize, Deserializer};
 /// and the shorter.
 /// `{"field": "my query"}`
 ///
+/// If a integer is passed, we cast it to string. Floats are not supported.
+///
 /// We don't use untagged enum to support this, in order to keep good errors.
 ///
 /// The code below is adapted from solution described here: https://serde.rs/string-or-struct.html
@@ -69,6 +71,16 @@ where
     fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         let type_str = std::any::type_name::<T>();
         formatter.write_str(&format!("string or map to deserialize {type_str}."))
+    }
+
+    fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
+    where E: de::Error {
+        self.visit_str(&v.to_string())
+    }
+
+    fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
+    where E: de::Error {
+        self.visit_str(&v.to_string())
     }
 
     fn visit_str<E>(self, query: &str) -> Result<Self::Value, E>
