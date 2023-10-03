@@ -16,3 +16,45 @@ expected:
       relation: "eq"
     hits:
       $expect: "len(val) == 3"
+---
+# Terms must be pushed in their form post tokenization
+params:
+  size: 0
+json:
+  query:
+    term:
+      type:
+        # this does not match because push event has been lowercased by the tokenizer.
+        value: "PushEvent"
+expected:
+  hits:
+    total:
+      value: 0
+      relation: "eq"
+---
+params:
+  size: 0
+json:
+  query:
+    term:
+      type:
+        value: "pushevent"
+expected:
+  hits:
+    total:
+      value: 60
+      relation: "eq"
+---
+params:
+  size: 0
+# Testing the format without the "value" object
+json:
+  query:
+    term:
+      type: "pushevent"
+expected:
+  hits:
+    total:
+      value: 60
+      relation: "eq"
+

@@ -80,6 +80,7 @@ expected:
     total:
       value: 3
 ---
+engines: ["quickwit"]
 json:
   query:
     exists:
@@ -93,7 +94,7 @@ expected:
 json:
   query:
     exists:
-      field: public 
+      field: public
 expected:
   hits:
     total:
