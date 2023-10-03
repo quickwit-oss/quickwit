@@ -4,8 +4,7 @@ engines:
   - quickwit
 endpoint: _elastic/aggregations/_search
 json:
-  query:
-    match_all: {}
+  query: { match_all: {} }
   aggs:
     date_histo: 
       date_histogram: 
@@ -25,8 +24,7 @@ engines:
   - quickwit
 endpoint: _elastic/aggregations/_search
 json:
-  query:
-    match_all: {}
+  query: { match_all: {} }
   aggs:
     date_histo: 
       date_histogram: 
@@ -72,14 +70,36 @@ expected:
         -  { "doc_count": 3, "key": 1420070400000.0, "key_as_string": "2015-01-01T00:00:00Z", "response": { "avg": 80.0, "count": 3, "max": 120.0, "min": 20.0, "sum": 240.0 } }
         -  { "doc_count": 2, "key": 1422662400000.0, "key_as_string": "2015-01-31T00:00:00Z", "response": { "avg": 80.0, "count": 2, "max": 130.0, "min": 30.0, "sum": 160.0 }  }
 --- 
+# Test range aggregation
+method: [GET]
+engines:
+  - quickwit
+endpoint: _elastic/aggregations/_search
+json:
+  query: { match_all: {} }
+  aggs:
+    my_range:
+      range: 
+        field: response
+        ranges:
+        - { to: 50, key: fast }
+        - { from: 50, to: 80, key: medium }
+        - { from: 80, key: slow }
+expected:
+  aggregations:
+    my_range:
+      buckets:
+        - { "doc_count": 4, "key": "fast", "to": 50.0 }
+        - { "doc_count": 0, "from": 50.0, "key": "medium", "to": 80.0 }
+        - { "doc_count": 3, "from": 80.0, "key": "slow" }
+--- 
 # Test term aggs
 method: [GET]
 engines:
   - quickwit
 endpoint: _elastic/aggregations/_search
 json:
-  query:
-    match_all: {}
+  query: { match_all: {} }
   aggs:
     hosts: 
       terms: 
@@ -116,8 +136,7 @@ engines:
   - quickwit
 endpoint: _elastic/aggregations/_search
 json:
-  query:
-    match_all: {}
+  query: { match_all: {} }
   aggs:
     metrics:
       date_histogram:
@@ -149,3 +168,27 @@ expected:
           values:
           - key: 85.0
             value: 30.26717133872237
+--- 
+# Test histogram
+method: [GET]
+engines:
+  - quickwit
+endpoint: _elastic/aggregations/_search
+json:
+  query: { match_all: {} }
+  aggs:
+    metrics:
+      histogram:
+        field: response
+        interval: 50
+expected:
+  aggregations:
+    metrics:
+      buckets:
+      - doc_count: 4
+        key: 0.0
+      - doc_count: 0
+        key: 50.0
+      - doc_count: 3
+        key: 100.0
+
