@@ -436,7 +436,7 @@ pub(crate) fn rewrite_start_end_time_bounds(
 }
 
 #[derive(Debug, Clone)]
-pub enum CanSplitDoBetter {
+enum CanSplitDoBetter {
     Uninformative,
     SplitIdHigher(Option<String>),
     SplitTimestampHigher(Option<i64>),
@@ -445,28 +445,28 @@ pub enum CanSplitDoBetter {
 
 impl CanSplitDoBetter {
     /// Split metadata contains no information using for sorting
-    pub fn uninformative() -> Self {
+    fn uninformative() -> Self {
         CanSplitDoBetter::Uninformative
     }
 
     /// No order was requested, split id can be useful
-    pub fn no_order() -> Self {
+    fn no_order() -> Self {
         CanSplitDoBetter::SplitIdHigher(None)
     }
 
     /// Sorted by desc timestamp was requested
-    pub fn desc_timestamp() -> Self {
+    fn desc_timestamp() -> Self {
         CanSplitDoBetter::SplitTimestampHigher(None)
     }
 
     /// Sorted by asc timestamp was requested
-    pub fn asc_timestamp() -> Self {
+    fn asc_timestamp() -> Self {
         CanSplitDoBetter::SplitTimestampLower(None)
     }
 
     /// Returns whether the given split can possibly give documents better than the one already
     /// known to match.
-    pub fn can_be_better(&self, split: &SplitIdAndFooterOffsets) -> bool {
+    fn can_be_better(&self, split: &SplitIdAndFooterOffsets) -> bool {
         match self {
             CanSplitDoBetter::SplitIdHigher(Some(split_id)) => split.split_id >= *split_id,
             CanSplitDoBetter::SplitTimestampHigher(Some(timestamp)) => {
@@ -482,7 +482,7 @@ impl CanSplitDoBetter {
     /// Record the new worst-of-the-top document, that is, the document which would first be
     /// evicted from the list of best documents, if a better document was found. Only call this
     /// funciton if you have at least max_hits documents already.
-    pub fn record_new_worst_hit(&mut self, hit: &PartialHit) {
+    fn record_new_worst_hit(&mut self, hit: &PartialHit) {
         match self {
             CanSplitDoBetter::Uninformative => (),
             CanSplitDoBetter::SplitIdHigher(split_id) => *split_id = Some(hit.split_id.clone()),
@@ -539,10 +539,10 @@ pub async fn leaf_search(
     searcher_context: Arc<SearcherContext>,
     request: Arc<SearchRequest>,
     index_storage: Arc<dyn Storage>,
-    splits: &mut [SplitIdAndFooterOffsets],
+    mut splits: Vec<SplitIdAndFooterOffsets>,
     doc_mapper: Arc<dyn DocMapper>,
 ) -> Result<LeafSearchResponse, SearchError> {
-    info!(splits_num = splits.len(), split_offsets = ?PrettySample::new(splits, 5));
+    info!(splits_num = splits.len(), split_offsets = ?PrettySample::new(&splits, 5));
 
     // The leaf search code contains some logic that makes it possible to skip entire splits
     // when we are confident they won't make it into top K.
