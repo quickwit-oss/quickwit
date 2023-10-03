@@ -784,6 +784,7 @@ impl PartialOrd for PartialHitSortingKey {
     }
 }
 
+#[derive(Clone)]
 struct HitSortingMapper {
     order1: SortOrder,
     order2: SortOrder,
@@ -803,6 +804,7 @@ impl SortKeyMapper<PartialHit> for HitSortingMapper {
 }
 
 /// Incrementally merge segment results.
+#[derive(Clone)]
 pub(crate) struct IncrementalCollector {
     inner: QuickwitCollector,
     top_k_hits: TopK<PartialHit, PartialHitSortingKey, HitSortingMapper>,

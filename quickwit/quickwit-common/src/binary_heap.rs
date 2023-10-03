@@ -93,6 +93,8 @@ where
         .collect();
     resulting_top_k
 }
+
+#[derive(Clone)]
 struct OrderItemPair<O: Ord, T> {
     order: O,
     item: T,
@@ -124,6 +126,7 @@ pub trait SortKeyMapper<Value> {
 }
 
 /// Progressively compute top-k.
+#[derive(Clone)]
 pub struct TopK<T, O: Ord, S> {
     heap: BinaryHeap<Reverse<OrderItemPair<O, T>>>,
     sort_key_mapper: S,

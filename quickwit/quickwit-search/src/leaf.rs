@@ -20,11 +20,10 @@
 use std::collections::{HashMap, HashSet};
 use std::ops::Bound;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use anyhow::Context;
-use futures::future::{try_join_all, FutureExt};
-use futures::stream::{FuturesUnordered, StreamExt};
+use futures::future::try_join_all;
 use itertools::{Either, Itertools};
 use quickwit_common::PrettySample;
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
@@ -511,23 +510,6 @@ impl CanSplitDoBetter {
     }
 }
 
-/// Wait on a semaphore, then and then pull one item of the iterator.
-async fn split_iter_get_one<I: Iterator<Item = SplitIdAndFooterOffsets>>(
-    mut splits_iter: I,
-    semaphore: Arc<tokio::sync::Semaphore>,
-) -> Option<(
-    SplitIdAndFooterOffsets,
-    tokio::sync::OwnedSemaphorePermit,
-    I,
-)> {
-    let split = splits_iter.next()?;
-    let leaf_split_search_permit = semaphore
-        .acquire_owned()
-        .await
-        .expect("Failed to acquire permit. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.");
-    Some((split, leaf_split_search_permit, splits_iter))
-}
-
 /// `leaf` step of search.
 ///
 /// The leaf search collects all kind of information, and returns a set of
@@ -550,7 +532,7 @@ pub async fn leaf_search(
     // are the most likely to fill our Top K.
     // In the future, is split get more metadata per column, we may be able to do this more than
     // just for timestamp an "unsorted" splits.
-    let mut split_filter = if request.sort_fields.is_empty() {
+    let split_filter = if request.sort_fields.is_empty() {
         splits.sort_unstable_by(|a, b| b.split_id.cmp(&a.split_id));
         CanSplitDoBetter::no_order()
     } else if let Some((sort_by, timestamp_field)) = request
@@ -577,106 +559,95 @@ pub async fn leaf_search(
     // request.exact_count == true`
     let run_all_splits = true;
 
-    // TODO trinity-1686a: I don't really like how this code turned out. I tried numerous time with
-    // more iter/stream, but was getting Higher Ranker Lifetime Errors; dyn trait and stream of
-    // futures don't play well together :-/
-    let mut futures = FuturesUnordered::new();
-
-    futures.push(Either::Left(
-        split_iter_get_one(
-            splits.iter().cloned(),
-            searcher_context.leaf_search_split_semaphore.clone(),
-        )
-        .map(Either::Left),
-    ));
-
     // Creates a collector which merges responses into one
     let merge_collector =
         make_merge_collector(&request, &searcher_context.get_aggregation_limits())?;
-    let mut incremental_merge_collector = IncrementalCollector::new(merge_collector);
+    let incremental_merge_collector = IncrementalCollector::new(merge_collector);
 
-    while let Some(sub_task) = futures.next().await {
-        match sub_task {
-            Either::Left(None) => {
-                // no more splits to startup
+    let filter_merger_bundle = Arc::new(Mutex::new((split_filter, incremental_merge_collector)));
+    let mut leaf_search_single_split_futures: Vec<_> = Vec::with_capacity(splits.len());
+
+    for split in splits {
+        let leaf_split_search_permit = searcher_context.leaf_search_split_semaphore
+            .clone()
+            .acquire_owned()
+            .await
+            .expect("Failed to acquire permit. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.");
+
+        let mut request = (*request).clone();
+
+        if !filter_merger_bundle.lock().unwrap().0.can_be_better(&split) {
+            if !run_all_splits {
+                continue;
             }
-            Either::Left(Some((split, permit, splits_iter))) => {
-                // we got a split to run, but first setup so the split iterator is pulled for more
-                // splits to run after.
-                futures.push(Either::Left(
-                    split_iter_get_one(
-                        splits_iter,
-                        searcher_context.leaf_search_split_semaphore.clone(),
-                    )
-                    .map(Either::Left),
-                ));
+            request.max_hits = 0;
+            request.start_offset = 0;
+            request.sort_fields.clear();
+        }
 
-                let mut request = (*request).clone();
-                if !split_filter.can_be_better(&split) {
-                    if !run_all_splits {
-                        continue;
-                    }
-                    request.max_hits = 0;
-                    request.start_offset = 0;
-                    request.sort_fields.clear();
-                }
-                let searcher_context_clone = searcher_context.clone();
-                let doc_mapper_clone = doc_mapper.clone();
-                let index_storage_clone = index_storage.clone();
-
-                let leaf_search_single_split_future = tokio::spawn(
-                    async move {
-                        crate::SEARCH_METRICS.leaf_searches_splits_total.inc();
-                        let timer = crate::SEARCH_METRICS
-                            .leaf_search_split_duration_secs
-                            .start_timer();
-                        let leaf_search_single_split_res = leaf_search_single_split(
-                            &searcher_context_clone,
-                            request,
-                            index_storage_clone,
-                            split.clone(),
-                            doc_mapper_clone,
-                        )
-                        .await;
-                        if leaf_search_single_split_res.is_ok() {
-                            timer.observe_duration();
-                        }
-                        // We explicitly drop it, to highlight it to the reader and to force the
-                        // move.
-                        drop(permit);
-                        leaf_search_single_split_res.map_err(|err| (split.split_id, err))
-                    }
-                    .in_current_span(),
+        let searcher_context_clone = searcher_context.clone();
+        let split = split.clone();
+        let doc_mapper_clone = doc_mapper.clone();
+        let index_storage_clone = index_storage.clone();
+        let filter_merger_bundle = filter_merger_bundle.clone();
+        let leaf_search_single_split_future = tokio::spawn(
+            async move {
+                crate::SEARCH_METRICS.leaf_searches_splits_total.inc();
+                let timer = crate::SEARCH_METRICS
+                    .leaf_search_split_duration_secs
+                    .start_timer();
+                let leaf_search_single_split_res = leaf_search_single_split(
+                    &searcher_context_clone,
+                    request,
+                    index_storage_clone,
+                    split.clone(),
+                    doc_mapper_clone,
                 )
-                .map(Either::Right);
-                futures.push(Either::Right(leaf_search_single_split_future));
-            }
-            Either::Right(split_search_res) => {
-                // a split finished. Process the result.
-                match split_search_res {
-                    Ok(Ok(split_search_res)) => {
-                        incremental_merge_collector.add_split(split_search_res);
+                .await;
+                if leaf_search_single_split_res.is_ok() {
+                    timer.observe_duration();
+                }
+                let mut locked_filter_merger = filter_merger_bundle.lock().unwrap();
+                let (ref mut filter, ref mut merger) = *locked_filter_merger;
+                match leaf_search_single_split_res {
+                    Ok(split_search_res) => {
+                        merger.add_split(split_search_res);
                     }
-                    Ok(Err((split_id, err))) => {
-                        incremental_merge_collector.add_failed_split(SplitSearchError {
-                            split_id,
-                            error: format!("{err}"),
-                            retryable_error: true,
-                        })
-                    }
-                    Err(e) => incremental_merge_collector.add_failed_split(SplitSearchError {
-                        // we could reasonably add a wrapper to the JoinHandle to give us the
-                        // split_id anyway
-                        split_id: "unknown".to_string(),
-                        error: format!("{}", SearchError::from(e)),
+                    Err(err) => merger.add_failed_split(SplitSearchError {
+                        split_id: split.split_id.clone(),
+                        error: format!("{err}"),
                         retryable_error: true,
                     }),
                 }
-
-                if let Some(last_hit) = incremental_merge_collector.peek_worst_hit() {
-                    split_filter.record_new_worst_hit(last_hit);
+                if let Some(last_hit) = merger.peek_worst_hit() {
+                    filter.record_new_worst_hit(last_hit);
                 }
+                // We explicitly drop it, to highlight it to the reader and to force the move.
+                std::mem::drop(leaf_split_search_permit);
             }
+            .in_current_span(),
+        );
+        leaf_search_single_split_futures.push(leaf_search_single_split_future);
+    }
+
+    let split_search_results: Vec<Result<(), _>> =
+        futures::future::join_all(leaf_search_single_split_futures).await;
+
+    // we can't use unwrap_or_clone because mutexes aren't Clone
+    let mut incremental_merge_collector = match Arc::try_unwrap(filter_merger_bundle) {
+        Ok(filter_merger) => filter_merger.into_inner().unwrap().1,
+        Err(filter_merger) => filter_merger.lock().unwrap().1.clone(),
+    };
+
+    for result in split_search_results {
+        if let Err(e) = result {
+            incremental_merge_collector.add_failed_split(SplitSearchError {
+                // we could reasonably add a wrapper to the JoinHandle to give us the
+                // split_id anyway
+                split_id: "unknown".to_string(),
+                error: format!("{}", SearchError::from(e)),
+                retryable_error: true,
+            })
         }
     }
 
