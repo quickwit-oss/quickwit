@@ -443,24 +443,49 @@ enum CanSplitDoBetter {
 }
 
 impl CanSplitDoBetter {
-    /// Split metadata contains no information using for sorting
-    fn uninformative() -> Self {
-        CanSplitDoBetter::Uninformative
+    /// Create a CanSplitDoBetter from a SearchRequest
+    fn from_request(request: &SearchRequest, timestamp_field_name: Option<&str>) -> Self {
+        if request.sort_fields.is_empty() {
+            CanSplitDoBetter::SplitIdHigher(None)
+        } else if let Some((sort_by, timestamp_field)) =
+            request.sort_fields.first().zip(timestamp_field_name)
+        {
+            if sort_by.field_name == timestamp_field {
+                if sort_by.sort_order() == SortOrder::Desc {
+                    CanSplitDoBetter::SplitTimestampHigher(None)
+                } else {
+                    CanSplitDoBetter::SplitTimestampLower(None)
+                }
+            } else {
+                CanSplitDoBetter::Uninformative
+            }
+        } else {
+            CanSplitDoBetter::Uninformative
+        }
     }
 
-    /// No order was requested, split id can be useful
-    fn no_order() -> Self {
-        CanSplitDoBetter::SplitIdHigher(None)
-    }
-
-    /// Sorted by desc timestamp was requested
-    fn desc_timestamp() -> Self {
-        CanSplitDoBetter::SplitTimestampHigher(None)
-    }
-
-    /// Sorted by asc timestamp was requested
-    fn asc_timestamp() -> Self {
-        CanSplitDoBetter::SplitTimestampLower(None)
+    /// Optimize the order in which splits will get processed based on how it can skip the most
+    /// splits.
+    ///
+    /// The leaf search code contains some logic that makes it possible to skip entire splits
+    /// when we are confident they won't make it into top K.
+    /// To make this optimization as potent as possible, we sort the splits so that the first splits
+    /// are the most likely to fill our Top K.
+    /// In the future, as split get more metadata per column, we may be able to do this more than
+    /// just for timestamp and "unsorted" request.
+    fn optimize_split_order(&self, splits: &mut [SplitIdAndFooterOffsets]) {
+        match self {
+            CanSplitDoBetter::SplitIdHigher(_) => {
+                splits.sort_unstable_by(|a, b| b.split_id.cmp(&a.split_id))
+            }
+            CanSplitDoBetter::SplitTimestampHigher(_) => {
+                splits.sort_unstable_by_key(|split| std::cmp::Reverse(split.timestamp_end()))
+            }
+            CanSplitDoBetter::SplitTimestampLower(_) => {
+                splits.sort_unstable_by_key(|split| split.timestamp_start())
+            }
+            CanSplitDoBetter::Uninformative => (),
+        }
     }
 
     /// Returns whether the given split can possibly give documents better than the one already
@@ -486,9 +511,7 @@ impl CanSplitDoBetter {
             CanSplitDoBetter::Uninformative => (),
             CanSplitDoBetter::SplitIdHigher(split_id) => *split_id = Some(hit.split_id.clone()),
             CanSplitDoBetter::SplitTimestampHigher(timestamp) => {
-                if let Some(SortValue::I64(timestamp_ns)) =
-                    hit.sort_value.and_then(|v| v.sort_value)
-                {
+                if let Some(SortValue::I64(timestamp_ns)) = hit.sort_value() {
                     // if we get a timestamp of, says 1.5s, we need to check up to 2s to make
                     // sure we don't throw away something like 1.2s, so we should round up while
                     // dividing.
@@ -496,9 +519,7 @@ impl CanSplitDoBetter {
                 }
             }
             CanSplitDoBetter::SplitTimestampLower(timestamp) => {
-                if let Some(SortValue::I64(timestamp_ns)) =
-                    hit.sort_value.and_then(|v| v.sort_value)
-                {
+                if let Some(SortValue::I64(timestamp_ns)) = hit.sort_value() {
                     // if we get a timestamp of, says 1.5s, we need to check down to 1s to make
                     // sure we don't throw away something like 1.7s, so we should truncate,
                     // which is the default behavior of division
@@ -526,45 +547,21 @@ pub async fn leaf_search(
 ) -> Result<LeafSearchResponse, SearchError> {
     info!(splits_num = splits.len(), split_offsets = ?PrettySample::new(&splits, 5));
 
-    // The leaf search code contains some logic that makes it possible to skip entire splits
-    // when we are confident they won't make it into top K.
-    // To make this optimization as potent as possible, we sort the splits so that the first splits
-    // are the most likely to fill our Top K.
-    // In the future, is split get more metadata per column, we may be able to do this more than
-    // just for timestamp an "unsorted" splits.
-    let split_filter = if request.sort_fields.is_empty() {
-        splits.sort_unstable_by(|a, b| b.split_id.cmp(&a.split_id));
-        CanSplitDoBetter::no_order()
-    } else if let Some((sort_by, timestamp_field)) = request
-        .sort_fields
-        .first()
-        .zip(doc_mapper.timestamp_field_name())
-    {
-        if sort_by.field_name == timestamp_field {
-            if sort_by.sort_order() == SortOrder::Desc {
-                splits.sort_unstable_by_key(|split| std::cmp::Reverse(split.timestamp_end()));
-                CanSplitDoBetter::desc_timestamp()
-            } else {
-                splits.sort_unstable_by_key(|split| split.timestamp_start());
-                CanSplitDoBetter::asc_timestamp()
-            }
-        } else {
-            CanSplitDoBetter::uninformative()
-        }
-    } else {
-        CanSplitDoBetter::uninformative()
-    };
-
     // In the future this should become `request.aggregation_request.is_some() ||
     // request.exact_count == true`
     let run_all_splits = true;
+
+    let split_filter = CanSplitDoBetter::from_request(&request, doc_mapper.timestamp_field_name());
+    split_filter.optimize_split_order(&mut splits);
 
     // Creates a collector which merges responses into one
     let merge_collector =
         make_merge_collector(&request, &searcher_context.get_aggregation_limits())?;
     let incremental_merge_collector = IncrementalCollector::new(merge_collector);
 
-    let filter_merger_bundle = Arc::new(Mutex::new((split_filter, incremental_merge_collector)));
+    let split_filter = Arc::new(Mutex::new(split_filter));
+    let incremental_merge_collector = Arc::new(Mutex::new(incremental_merge_collector));
+
     let mut leaf_search_single_split_futures: Vec<_> = Vec::with_capacity(splits.len());
 
     for split in splits {
@@ -576,7 +573,7 @@ pub async fn leaf_search(
 
         let mut request = (*request).clone();
 
-        if !filter_merger_bundle.lock().unwrap().0.can_be_better(&split) {
+        if !split_filter.lock().unwrap().can_be_better(&split) {
             if !run_all_splits {
                 continue;
             }
@@ -589,7 +586,8 @@ pub async fn leaf_search(
         let split = split.clone();
         let doc_mapper_clone = doc_mapper.clone();
         let index_storage_clone = index_storage.clone();
-        let filter_merger_bundle = filter_merger_bundle.clone();
+        let split_filter = split_filter.clone();
+        let incremental_merge_collector = incremental_merge_collector.clone();
         let leaf_search_single_split_future = tokio::spawn(
             async move {
                 crate::SEARCH_METRICS.leaf_searches_splits_total.inc();
@@ -607,20 +605,22 @@ pub async fn leaf_search(
                 if leaf_search_single_split_res.is_ok() {
                     timer.observe_duration();
                 }
-                let mut locked_filter_merger = filter_merger_bundle.lock().unwrap();
-                let (ref mut filter, ref mut merger) = *locked_filter_merger;
+                let mut locked_incremental_merge_collector =
+                    incremental_merge_collector.lock().unwrap();
                 match leaf_search_single_split_res {
                     Ok(split_search_res) => {
-                        merger.add_split(split_search_res);
+                        locked_incremental_merge_collector.add_split(split_search_res)
                     }
-                    Err(err) => merger.add_failed_split(SplitSearchError {
-                        split_id: split.split_id.clone(),
-                        error: format!("{err}"),
-                        retryable_error: true,
-                    }),
+                    Err(err) => {
+                        locked_incremental_merge_collector.add_failed_split(SplitSearchError {
+                            split_id: split.split_id.clone(),
+                            error: format!("{err}"),
+                            retryable_error: true,
+                        })
+                    }
                 }
-                if let Some(last_hit) = merger.peek_worst_hit() {
-                    filter.record_new_worst_hit(last_hit);
+                if let Some(last_hit) = locked_incremental_merge_collector.peek_worst_hit() {
+                    split_filter.lock().unwrap().record_new_worst_hit(last_hit);
                 }
                 // We explicitly drop it, to highlight it to the reader and to force the move.
                 std::mem::drop(leaf_split_search_permit);
@@ -634,12 +634,13 @@ pub async fn leaf_search(
         futures::future::join_all(leaf_search_single_split_futures).await;
 
     // we can't use unwrap_or_clone because mutexes aren't Clone
-    let mut incremental_merge_collector = match Arc::try_unwrap(filter_merger_bundle) {
-        Ok(filter_merger) => filter_merger.into_inner().unwrap().1,
-        Err(filter_merger) => filter_merger.lock().unwrap().1.clone(),
+    let mut incremental_merge_collector = match Arc::try_unwrap(incremental_merge_collector) {
+        Ok(filter_merger) => filter_merger.into_inner().unwrap(),
+        Err(filter_merger) => filter_merger.lock().unwrap().clone(),
     };
 
     for result in split_search_results {
+        // splits that did not panic were already added to the collector
         if let Err(e) = result {
             incremental_merge_collector.add_failed_split(SplitSearchError {
                 // we could reasonably add a wrapper to the JoinHandle to give us the
