@@ -582,52 +582,16 @@ pub async fn leaf_search(
             request.sort_fields.clear();
         }
 
-        let searcher_context_clone = searcher_context.clone();
-        let split = split.clone();
-        let doc_mapper_clone = doc_mapper.clone();
-        let index_storage_clone = index_storage.clone();
-        let split_filter = split_filter.clone();
-        let incremental_merge_collector = incremental_merge_collector.clone();
-        let leaf_search_single_split_future = tokio::spawn(
-            async move {
-                crate::SEARCH_METRICS.leaf_searches_splits_total.inc();
-                let timer = crate::SEARCH_METRICS
-                    .leaf_search_split_duration_secs
-                    .start_timer();
-                let leaf_search_single_split_res = leaf_search_single_split(
-                    &searcher_context_clone,
-                    request,
-                    index_storage_clone,
-                    split.clone(),
-                    doc_mapper_clone,
-                )
-                .await;
-                if leaf_search_single_split_res.is_ok() {
-                    timer.observe_duration();
-                }
-                let mut locked_incremental_merge_collector =
-                    incremental_merge_collector.lock().unwrap();
-                match leaf_search_single_split_res {
-                    Ok(split_search_res) => {
-                        locked_incremental_merge_collector.add_split(split_search_res)
-                    }
-                    Err(err) => {
-                        locked_incremental_merge_collector.add_failed_split(SplitSearchError {
-                            split_id: split.split_id.clone(),
-                            error: format!("{err}"),
-                            retryable_error: true,
-                        })
-                    }
-                }
-                if let Some(last_hit) = locked_incremental_merge_collector.peek_worst_hit() {
-                    split_filter.lock().unwrap().record_new_worst_hit(last_hit);
-                }
-                // We explicitly drop it, to highlight it to the reader and to force the move.
-                std::mem::drop(leaf_split_search_permit);
-            }
-            .in_current_span(),
-        );
-        leaf_search_single_split_futures.push(leaf_search_single_split_future);
+        leaf_search_single_split_futures.push(launch_leaf_single_split(
+            request,
+            searcher_context.clone(),
+            index_storage.clone(),
+            doc_mapper.clone(),
+            split,
+            split_filter.clone(),
+            incremental_merge_collector.clone(),
+            leaf_split_search_permit,
+        ));
     }
 
     let split_search_results: Vec<Result<(), _>> =
@@ -656,6 +620,56 @@ pub async fn leaf_search(
         .instrument(info_span!("incremental_merge_finalize"))
         .await
         .context("failed to merge split search responses")?
+}
+
+#[allow(clippy::too_many_arguments)]
+fn launch_leaf_single_split(
+    request: SearchRequest,
+    searcher_context: Arc<SearcherContext>,
+    index_storage: Arc<dyn Storage>,
+    doc_mapper: Arc<dyn DocMapper>,
+    split: SplitIdAndFooterOffsets,
+    split_filter: Arc<Mutex<CanSplitDoBetter>>,
+    incremental_merge_collector: Arc<Mutex<IncrementalCollector>>,
+    leaf_split_search_permit: tokio::sync::OwnedSemaphorePermit,
+) -> tokio::task::JoinHandle<()> {
+    tokio::spawn(
+        async move {
+            crate::SEARCH_METRICS.leaf_searches_splits_total.inc();
+            let timer = crate::SEARCH_METRICS
+                .leaf_search_split_duration_secs
+                .start_timer();
+            let leaf_search_single_split_res = leaf_search_single_split(
+                &searcher_context,
+                request,
+                index_storage,
+                split.clone(),
+                doc_mapper,
+            )
+            .await;
+            if leaf_search_single_split_res.is_ok() {
+                timer.observe_duration();
+            }
+            let mut locked_incremental_merge_collector =
+                incremental_merge_collector.lock().unwrap();
+            match leaf_search_single_split_res {
+                Ok(split_search_res) => {
+                    locked_incremental_merge_collector.add_split(split_search_res)
+                }
+                Err(err) => locked_incremental_merge_collector.add_failed_split(SplitSearchError {
+                    split_id: split.split_id.clone(),
+                    error: format!("{err}"),
+                    retryable_error: true,
+                }),
+            }
+            if let Some(last_hit) = locked_incremental_merge_collector.peek_worst_hit() {
+                split_filter.lock().unwrap().record_new_worst_hit(last_hit);
+            }
+            // We explicitly drop it, to highlight it to the reader and to force the move.
+            std::mem::drop(leaf_split_search_permit);
+        }
+        .in_current_span(),
+    )
 }
 
 /// Apply a leaf list terms on a single split.
