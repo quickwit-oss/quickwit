@@ -1045,7 +1045,7 @@ async fn test_search_util(test_sandbox: &TestSandbox, query: &str) -> Vec<u32> {
         searcher_context,
         request,
         test_sandbox.storage(),
-        &splits_offsets,
+        splits_offsets,
         test_sandbox.doc_mapper(),
     )
     .await

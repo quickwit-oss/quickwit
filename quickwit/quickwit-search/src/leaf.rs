@@ -20,7 +20,7 @@
 use std::collections::{HashMap, HashSet};
 use std::ops::Bound;
 use std::path::PathBuf;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
 
 use anyhow::Context;
 use futures::future::try_join_all;
@@ -29,14 +29,13 @@ use quickwit_common::PrettySample;
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
 use quickwit_doc_mapper::{DocMapper, TermRange, WarmupInfo};
 use quickwit_proto::search::{
-    LeafListTermsResponse, LeafSearchResponse, ListTermsRequest, SearchRequest,
-    SplitIdAndFooterOffsets, SplitSearchError,
+    LeafListTermsResponse, LeafSearchResponse, ListTermsRequest, PartialHit, SearchRequest,
+    SortOrder, SortValue, SplitIdAndFooterOffsets, SplitSearchError,
 };
 use quickwit_query::query_ast::QueryAst;
 use quickwit_storage::{
     wrap_storage_with_cache, BundleStorage, MemorySizedCache, OwnedBytes, SplitCache, Storage,
 };
-use tantivy::collector::Collector;
 use tantivy::directory::FileSlice;
 use tantivy::fastfield::FastFieldReaders;
 use tantivy::schema::{Field, FieldType};
@@ -44,7 +43,7 @@ use tantivy::tokenizer::TokenizerManager;
 use tantivy::{Index, ReloadPolicy, Searcher, Term};
 use tracing::*;
 
-use crate::collector::{make_collector_for_split, make_merge_collector};
+use crate::collector::{make_collector_for_split, make_merge_collector, IncrementalCollector};
 use crate::service::SearcherContext;
 use crate::SearchError;
 
@@ -435,6 +434,103 @@ pub(crate) fn rewrite_start_end_time_bounds(
     }
 }
 
+#[derive(Debug, Clone)]
+enum CanSplitDoBetter {
+    Uninformative,
+    SplitIdHigher(Option<String>),
+    SplitTimestampHigher(Option<i64>),
+    SplitTimestampLower(Option<i64>),
+}
+
+impl CanSplitDoBetter {
+    /// Create a CanSplitDoBetter from a SearchRequest
+    fn from_request(request: &SearchRequest, timestamp_field_name: Option<&str>) -> Self {
+        if request.sort_fields.is_empty() {
+            CanSplitDoBetter::SplitIdHigher(None)
+        } else if let Some((sort_by, timestamp_field)) =
+            request.sort_fields.first().zip(timestamp_field_name)
+        {
+            if sort_by.field_name == timestamp_field {
+                if sort_by.sort_order() == SortOrder::Desc {
+                    CanSplitDoBetter::SplitTimestampHigher(None)
+                } else {
+                    CanSplitDoBetter::SplitTimestampLower(None)
+                }
+            } else {
+                CanSplitDoBetter::Uninformative
+            }
+        } else {
+            CanSplitDoBetter::Uninformative
+        }
+    }
+
+    /// Optimize the order in which splits will get processed based on how it can skip the most
+    /// splits.
+    ///
+    /// The leaf search code contains some logic that makes it possible to skip entire splits
+    /// when we are confident they won't make it into top K.
+    /// To make this optimization as potent as possible, we sort the splits so that the first splits
+    /// are the most likely to fill our Top K.
+    /// In the future, as split get more metadata per column, we may be able to do this more than
+    /// just for timestamp and "unsorted" request.
+    fn optimize_split_order(&self, splits: &mut [SplitIdAndFooterOffsets]) {
+        match self {
+            CanSplitDoBetter::SplitIdHigher(_) => {
+                splits.sort_unstable_by(|a, b| b.split_id.cmp(&a.split_id))
+            }
+            CanSplitDoBetter::SplitTimestampHigher(_) => {
+                splits.sort_unstable_by_key(|split| std::cmp::Reverse(split.timestamp_end()))
+            }
+            CanSplitDoBetter::SplitTimestampLower(_) => {
+                splits.sort_unstable_by_key(|split| split.timestamp_start())
+            }
+            CanSplitDoBetter::Uninformative => (),
+        }
+    }
+
+    /// Returns whether the given split can possibly give documents better than the one already
+    /// known to match.
+    fn can_be_better(&self, split: &SplitIdAndFooterOffsets) -> bool {
+        match self {
+            CanSplitDoBetter::SplitIdHigher(Some(split_id)) => split.split_id >= *split_id,
+            CanSplitDoBetter::SplitTimestampHigher(Some(timestamp)) => {
+                split.timestamp_end() > *timestamp
+            }
+            CanSplitDoBetter::SplitTimestampLower(Some(timestamp)) => {
+                split.timestamp_start() < *timestamp
+            }
+            _ => true,
+        }
+    }
+
+    /// Record the new worst-of-the-top document, that is, the document which would first be
+    /// evicted from the list of best documents, if a better document was found. Only call this
+    /// funciton if you have at least max_hits documents already.
+    fn record_new_worst_hit(&mut self, hit: &PartialHit) {
+        match self {
+            CanSplitDoBetter::Uninformative => (),
+            CanSplitDoBetter::SplitIdHigher(split_id) => *split_id = Some(hit.split_id.clone()),
+            CanSplitDoBetter::SplitTimestampHigher(timestamp) => {
+                if let Some(SortValue::I64(timestamp_ns)) = hit.sort_value() {
+                    // if we get a timestamp of, says 1.5s, we need to check up to 2s to make
+                    // sure we don't throw away something like 1.2s, so we should round up while
+                    // dividing.
+                    *timestamp = Some(quickwit_common::div_ceil(timestamp_ns, 1_000_000_000));
+                }
+            }
+            CanSplitDoBetter::SplitTimestampLower(timestamp) => {
+                if let Some(SortValue::I64(timestamp_ns)) = hit.sort_value() {
+                    // if we get a timestamp of, says 1.5s, we need to check down to 1s to make
+                    // sure we don't throw away something like 1.7s, so we should truncate,
+                    // which is the default behavior of division
+                    let timestamp_s = timestamp_ns / 1_000_000_000;
+                    *timestamp = Some(timestamp_s);
+                }
+            }
+        }
+    }
+}
+
 /// `leaf` step of search.
 ///
 /// The leaf search collects all kind of information, and returns a set of
@@ -446,88 +542,132 @@ pub async fn leaf_search(
     searcher_context: Arc<SearcherContext>,
     request: Arc<SearchRequest>,
     index_storage: Arc<dyn Storage>,
-    splits: &[SplitIdAndFooterOffsets],
+    mut splits: Vec<SplitIdAndFooterOffsets>,
     doc_mapper: Arc<dyn DocMapper>,
 ) -> Result<LeafSearchResponse, SearchError> {
-    info!(splits_num = splits.len(), split_offsets = ?PrettySample::new(splits, 5));
+    info!(splits_num = splits.len(), split_offsets = ?PrettySample::new(&splits, 5));
+
+    // In the future this should become `request.aggregation_request.is_some() ||
+    // request.exact_count == true`
+    let run_all_splits = true;
+
+    let split_filter = CanSplitDoBetter::from_request(&request, doc_mapper.timestamp_field_name());
+    split_filter.optimize_split_order(&mut splits);
+
+    // Creates a collector which merges responses into one
+    let merge_collector =
+        make_merge_collector(&request, &searcher_context.get_aggregation_limits())?;
+    let incremental_merge_collector = IncrementalCollector::new(merge_collector);
+
+    let split_filter = Arc::new(Mutex::new(split_filter));
+    let incremental_merge_collector = Arc::new(Mutex::new(incremental_merge_collector));
+
     let mut leaf_search_single_split_futures: Vec<_> = Vec::with_capacity(splits.len());
+
     for split in splits {
-        let searcher_context_clone = searcher_context.clone();
         let leaf_split_search_permit = searcher_context.leaf_search_split_semaphore
             .clone()
             .acquire_owned()
             .await
             .expect("Failed to acquire permit. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.");
-        let split = split.clone();
-        let doc_mapper_clone = doc_mapper.clone();
-        let index_storage_clone = index_storage.clone();
-        let request = request.clone();
-        let leaf_search_single_split_future = tokio::spawn(
-            async move {
-                crate::SEARCH_METRICS.leaf_searches_splits_total.inc();
-                let timer = crate::SEARCH_METRICS
-                    .leaf_search_split_duration_secs
-                    .start_timer();
-                let leaf_search_single_split_res = leaf_search_single_split(
-                    &searcher_context_clone,
-                    (*request).clone(),
-                    index_storage_clone,
-                    split.clone(),
-                    doc_mapper_clone,
-                )
-                .await;
-                // We explicitly drop it, to highlight it to the reader and to force the move.
-                if leaf_search_single_split_res.is_ok() {
-                    timer.observe_duration();
-                }
-                std::mem::drop(leaf_split_search_permit);
-                leaf_search_single_split_res.map_err(|err| (split.split_id.clone(), err))
+
+        let mut request = (*request).clone();
+
+        if !split_filter.lock().unwrap().can_be_better(&split) {
+            if !run_all_splits {
+                continue;
             }
+            request.max_hits = 0;
+            request.start_offset = 0;
+            request.sort_fields.clear();
+        }
+
+        leaf_search_single_split_futures.push(tokio::spawn(
+            leaf_search_single_split_wrapper(
+                request,
+                searcher_context.clone(),
+                index_storage.clone(),
+                doc_mapper.clone(),
+                split,
+                split_filter.clone(),
+                incremental_merge_collector.clone(),
+                leaf_split_search_permit,
+            )
             .in_current_span(),
-        );
-        leaf_search_single_split_futures.push(leaf_search_single_split_future);
+        ));
     }
-    let split_search_results: Vec<Result<Result<LeafSearchResponse, _>, _>> =
+
+    let split_search_results: Vec<Result<(), _>> =
         futures::future::join_all(leaf_search_single_split_futures).await;
 
-    // the result wrapping is only for the collector api merge_fruits
-    // (Vec<tantivy::Result<LeafSearchResponse>>)
-    let (split_search_responses, errors): (
-        Vec<tantivy::Result<LeafSearchResponse>>,
-        Vec<(String, SearchError)>,
-    ) = split_search_results
-        .into_iter()
-        .partition_map(|split_search_res| match split_search_res {
-            Ok(Ok(split_search_resp)) => Either::Left(Ok(split_search_resp)),
-            Ok(Err(err)) => Either::Right(err),
-            Err(e) => {
-                warn!("A leaf_search_single_split panicked");
-                Either::Right(("unknown".to_string(), e.into()))
-            }
-        });
+    // we can't use unwrap_or_clone because mutexes aren't Clone
+    let mut incremental_merge_collector = match Arc::try_unwrap(incremental_merge_collector) {
+        Ok(filter_merger) => filter_merger.into_inner().unwrap(),
+        Err(filter_merger) => filter_merger.lock().unwrap().clone(),
+    };
 
-    // Creates a collector which merges responses into one
-    let merge_collector =
-        make_merge_collector(&request, &searcher_context.get_aggregation_limits())?;
+    for result in split_search_results {
+        // splits that did not panic were already added to the collector
+        if let Err(e) = result {
+            incremental_merge_collector.add_failed_split(SplitSearchError {
+                // we could reasonably add a wrapper to the JoinHandle to give us the
+                // split_id anyway
+                split_id: "unknown".to_string(),
+                error: format!("{}", SearchError::from(e)),
+                retryable_error: true,
+            })
+        }
+    }
 
-    // Merging is a cpu-bound task.
-    // It should be executed by Tokio's blocking threads.
-    let span = info_span!("merge_search_responses");
-    let mut merged_search_response = crate::run_cpu_intensive(move || {
-        let _span_guard = span.enter();
-        merge_collector.merge_fruits(split_search_responses)
-    })
-    .await
-    .context("failed to merge split search responses")??;
+    crate::run_cpu_intensive(|| incremental_merge_collector.finalize().map_err(Into::into))
+        .instrument(info_span!("incremental_merge_finalize"))
+        .await
+        .context("failed to merge split search responses")?
+}
 
-    merged_search_response
-        .failed_splits
-        .extend(errors.into_iter().map(|(split_id, err)| SplitSearchError {
-            split_id,
+#[allow(clippy::too_many_arguments)]
+async fn leaf_search_single_split_wrapper(
+    request: SearchRequest,
+    searcher_context: Arc<SearcherContext>,
+    index_storage: Arc<dyn Storage>,
+    doc_mapper: Arc<dyn DocMapper>,
+    split: SplitIdAndFooterOffsets,
+    split_filter: Arc<Mutex<CanSplitDoBetter>>,
+    incremental_merge_collector: Arc<Mutex<IncrementalCollector>>,
+    leaf_split_search_permit: tokio::sync::OwnedSemaphorePermit,
+) {
+    crate::SEARCH_METRICS.leaf_searches_splits_total.inc();
+    let timer = crate::SEARCH_METRICS
+        .leaf_search_split_duration_secs
+        .start_timer();
+    let leaf_search_single_split_res = leaf_search_single_split(
+        &searcher_context,
+        request,
+        index_storage,
+        split.clone(),
+        doc_mapper,
+    )
+    .await;
+
+    // We explicitly drop it, to highlight it to the reader
+    std::mem::drop(leaf_split_search_permit);
+
+    if leaf_search_single_split_res.is_ok() {
+        timer.observe_duration();
+    }
+
+    let mut locked_incremental_merge_collector = incremental_merge_collector.lock().unwrap();
+    match leaf_search_single_split_res {
+        Ok(split_search_res) => locked_incremental_merge_collector.add_split(split_search_res),
+        Err(err) => locked_incremental_merge_collector.add_failed_split(SplitSearchError {
+            split_id: split.split_id.clone(),
             error: format!("{err}"),
             retryable_error: true,
-        }));
-    Ok(merged_search_response)
+        }),
+    }
+    if let Some(last_hit) = locked_incremental_merge_collector.peek_worst_hit() {
+        split_filter.lock().unwrap().record_new_worst_hit(last_hit);
+    }
 }
 
 /// Apply a leaf list terms on a single split.
