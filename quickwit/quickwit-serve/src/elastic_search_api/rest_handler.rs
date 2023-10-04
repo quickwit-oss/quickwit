@@ -175,6 +175,7 @@ fn build_request_for_es_api(
 
     let scroll_duration: Option<Duration> = search_params.parse_scroll_ttl()?;
     let scroll_ttl_secs: Option<u32> = scroll_duration.map(|duration| duration.as_secs() as u32);
+    // TODO validate number of params against number of sort clauses. Error on invalid search close
     let search_after = search_body
         .search_after
         .into_iter()
@@ -224,10 +225,9 @@ fn convert_hit(hit: quickwit_proto::search::Hit) -> ElasticHit {
             sort.push(sort_value2.into_json());
         }
         // TODO this is akin to a `_shard_doc`. We should only set that if the client requested it
-        sort.push(serde_json::Value::String(format!(
-            "{}:{:08x}:{:08x}",
-            partial_hit.split_id, partial_hit.segment_ord, partial_hit.doc_id
-        )))
+        sort.push(serde_json::Value::String(
+            quickwit_search::GlobalDocAddress::from_partial_hit(&partial_hit).to_string(),
+        ));
     }
 
     ElasticHit {
