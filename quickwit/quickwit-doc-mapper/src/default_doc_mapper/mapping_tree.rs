@@ -27,9 +27,9 @@ use itertools::Itertools;
 use serde_json::Value as JsonValue;
 use tantivy::schema::{
     BytesOptions, Field, IntoIpv6Addr, IpAddrOptions, JsonObjectOptions, NumericOptions,
-    SchemaBuilder, TextOptions, Value as TantivyValue,
+    OwnedValue as TantivyValue, SchemaBuilder, TextOptions,
 };
-use tantivy::{DateOptions, Document};
+use tantivy::{DateOptions, TantivyDocument as Document};
 use tracing::warn;
 
 use super::date_time_type::QuickwitDateTimeOptions;
@@ -88,7 +88,12 @@ impl LeafType {
             LeafType::Bytes(binary_options) => binary_options.input_format.parse_json(json_val),
             LeafType::Json(_) => {
                 if let JsonValue::Object(json_obj) = json_val {
-                    Ok(TantivyValue::JsonObject(json_obj))
+                    Ok(TantivyValue::Object(
+                        json_obj
+                            .into_iter()
+                            .map(|(key, val)| (key, val.into()))
+                            .collect(),
+                    ))
                 } else {
                     Err(format!("expected JSON object  got `{json_val}`"))
                 }
@@ -184,7 +189,7 @@ fn value_to_json(value: TantivyValue, leaf_type: &LeafType) -> Option<JsonValue>
         (TantivyValue::Str(_), LeafType::Text(_))
         | (TantivyValue::Bool(_), LeafType::Bool(_))
         | (TantivyValue::IpAddr(_), LeafType::IpAddr(_))
-        | (TantivyValue::JsonObject(_), LeafType::Json(_)) => {
+        | (TantivyValue::Object(_), LeafType::Json(_)) => {
             let json_value =
                 serde_json::to_value(&value).expect("Json serialization should never fail.");
             Some(json_value)

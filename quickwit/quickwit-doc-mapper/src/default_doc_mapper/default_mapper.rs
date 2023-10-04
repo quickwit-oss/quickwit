@@ -29,10 +29,10 @@ use serde::{Deserialize, Serialize};
 use serde_json::{self, Value as JsonValue};
 use tantivy::query::Query;
 use tantivy::schema::{
-    Field, FieldType, FieldValue, Schema, Value as TantivyValue, INDEXED, STORED,
+    Field, FieldType, FieldValue, OwnedValue as TantivyValue, Schema, INDEXED, STORED,
 };
 use tantivy::tokenizer::TokenizerManager;
-use tantivy::Document;
+use tantivy::TantivyDocument as Document;
 
 use super::field_mapping_entry::RAW_TOKENIZER_NAME;
 use super::DefaultDocMapperBuilder;
@@ -396,7 +396,12 @@ fn extract_single_obj(
         );
     }
     match values.pop() {
-        Some(TantivyValue::JsonObject(dynamic_json_obj)) => Ok(Some(dynamic_json_obj)),
+        Some(TantivyValue::Object(dynamic_json_obj)) => Ok(Some(
+            dynamic_json_obj
+                .into_iter()
+                .map(|(key, val)| (key, tantivy_value_to_json(val)))
+                .collect(),
+        )),
         Some(_) => {
             bail!("the `{key}` value has to be a json object");
         }
@@ -404,19 +409,50 @@ fn extract_single_obj(
     }
 }
 
+// TODO: Formatting according to mapper if applicable
+fn tantivy_value_to_json(val: TantivyValue) -> JsonValue {
+    match val {
+        TantivyValue::Null => JsonValue::Null,
+        TantivyValue::Str(val) => JsonValue::String(val),
+        TantivyValue::PreTokStr(val) => JsonValue::String(val.text),
+        TantivyValue::U64(val) => JsonValue::Number(val.into()),
+        TantivyValue::I64(val) => JsonValue::Number(val.into()),
+        TantivyValue::F64(val) => serde_json::json!(val),
+        TantivyValue::Bool(val) => JsonValue::Bool(val),
+        TantivyValue::Date(val) => JsonValue::String(format!("{:?}", val)),
+        TantivyValue::Facet(val) => JsonValue::String(val.to_string()),
+        TantivyValue::Bytes(val) => JsonValue::String(format!("{:?}", val)),
+        TantivyValue::Array(val) => val.into_iter().map(tantivy_value_to_json).collect(),
+        TantivyValue::Object(val) => val
+            .into_iter()
+            .map(|(key, val)| (key, tantivy_value_to_json(val)))
+            .collect(),
+        TantivyValue::IpAddr(val) => JsonValue::String(format!("{:?}", val)),
+    }
+}
+
 #[inline]
 fn populate_field_presence_for_json_value(
-    json_value: &JsonValue,
+    json_value: &TantivyValue,
     path_hasher: &PathHasher,
     is_expand_dots_enabled: bool,
     output: &mut FnvHashSet<u64>,
 ) {
     match json_value {
-        JsonValue::Null => {}
-        JsonValue::Bool(_) | JsonValue::Number(_) | JsonValue::String(_) => {
+        TantivyValue::Null => {}
+        TantivyValue::Bool(_)
+        | TantivyValue::F64(_)
+        | TantivyValue::I64(_)
+        | TantivyValue::U64(_)
+        | TantivyValue::PreTokStr(_)
+        | TantivyValue::Date(_)
+        | TantivyValue::Facet(_)
+        | TantivyValue::Bytes(_)
+        | TantivyValue::IpAddr(_)
+        | TantivyValue::Str(_) => {
             output.insert(path_hasher.finish());
         }
-        JsonValue::Array(items) => {
+        TantivyValue::Array(items) => {
             for item in items {
                 populate_field_presence_for_json_value(
                     item,
@@ -426,7 +462,7 @@ fn populate_field_presence_for_json_value(
                 );
             }
         }
-        JsonValue::Object(json_obj) => {
+        TantivyValue::Object(json_obj) => {
             populate_field_presence_for_json_obj(
                 json_obj,
                 path_hasher.clone(),
@@ -438,7 +474,7 @@ fn populate_field_presence_for_json_value(
 }
 
 fn populate_field_presence_for_json_obj(
-    json_obj: &JsonObject,
+    json_obj: &BTreeMap<String, TantivyValue>,
     path_hasher: PathHasher,
     is_expand_dots_enabled: bool,
     output: &mut FnvHashSet<u64>,
@@ -474,7 +510,14 @@ impl DocMapper for DefaultDocMapper {
         let mut document = Document::default();
 
         if let Some(source_field) = self.source_field {
-            document.add_json_object(source_field, json_obj.clone());
+            document.add_object(
+                source_field,
+                json_obj
+                    .clone()
+                    .into_iter()
+                    .map(|(key, val)| (key, TantivyValue::from(val)))
+                    .collect(),
+            );
         }
 
         let mode = self.mode.mode_type();
@@ -488,7 +531,13 @@ impl DocMapper for DefaultDocMapper {
 
         if let Some(dynamic_field) = self.dynamic_field {
             if !dynamic_json_obj.is_empty() {
-                document.add_json_object(dynamic_field, dynamic_json_obj);
+                document.add_object(
+                    dynamic_field,
+                    dynamic_json_obj
+                        .into_iter()
+                        .map(|(key, val)| (key, TantivyValue::from(val)))
+                        .collect(),
+                );
             }
         }
 
@@ -507,7 +556,7 @@ impl DocMapper for DefaultDocMapper {
                 }
                 let mut path_hasher: PathHasher = PathHasher::default();
                 path_hasher.append(&field.field_id().to_le_bytes()[..]);
-                if let tantivy::schema::Value::JsonObject(json_obj) = value {
+                if let TantivyValue::Object(json_obj) = value {
                     let is_expand_dots_enabled: bool =
                         if let FieldType::JsonObject(json_options) = field_entry.field_type() {
                             json_options.is_expand_dots_enabled()
