@@ -30,7 +30,7 @@ use futures::StreamExt;
 use quickwit_common::ignore_error_kind;
 use quickwit_common::uri::Uri;
 use quickwit_config::StorageBackend;
-use tokio::io::{AsyncRead, AsyncSeekExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tracing::warn;
 
 use crate::storage::SendableAsync;
@@ -239,7 +239,7 @@ impl Storage for LocalFileStorage {
         let full_path = self.full_path(path)?;
         let mut file = tokio::fs::File::open(&full_path).await?;
         file.seek(SeekFrom::Start(range.start as u64)).await?;
-        Ok(Box::new(file))
+        Ok(Box::new(file.take(range.len() as u64)))
     }
 
     async fn delete(&self, path: &Path) -> StorageResult<()> {

@@ -175,16 +175,16 @@ impl TypedSourceFactory for FileSourceFactory {
     }
 }
 
-pub fn dir_and_filename(filepath: &Path) -> anyhow::Result<(Uri, &Path)> {
+pub(crate) fn dir_and_filename(filepath: &Path) -> anyhow::Result<(Uri, &Path)> {
     let dir_uri: Uri = filepath
         .parent()
-        .ok_or_else(|| anyhow::anyhow!("Parent directory could not be resolved"))?
+        .context("Parent directory could not be resolved")?
         .to_str()
-        .ok_or_else(|| anyhow::anyhow!("Path cannot be turned to string"))?
+        .context("Path cannot be turned to string")?
         .parse()?;
     let file_name = filepath
         .file_name()
-        .ok_or_else(|| anyhow::anyhow!("Path does not appear to be a file"))?;
+        .context("Path does not appear to be a file")?;
     Ok((dir_uri, file_name.as_ref()))
 }
 

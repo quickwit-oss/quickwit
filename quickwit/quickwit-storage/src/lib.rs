@@ -149,6 +149,7 @@ pub(crate) mod test_suite {
     use std::path::Path;
 
     use anyhow::Context;
+    use tokio::io::AsyncReadExt;
 
     use crate::{Storage, StorageErrorKind};
 
@@ -171,6 +172,21 @@ pub(crate) mod test_suite {
             .await?;
         let payload = storage.get_slice(test_path, 3..6).await?;
         assert_eq!(&payload[..], b"def");
+        Ok(())
+    }
+
+    async fn test_write_and_get_slice_stream(storage: &mut dyn Storage) -> anyhow::Result<()> {
+        let test_path = Path::new("write_and_read_slice_stream");
+        storage
+            .put(
+                test_path,
+                Box::new(b"abcdefghiklmnopqrstuvxyz"[..].to_vec()),
+            )
+            .await?;
+        let mut reader = storage.get_slice_stream(test_path, 3..6).await?;
+        let mut buf = vec![0; 3];
+        reader.read_exact(&mut buf).await?;
+        assert_eq!(&buf[..], b"def");
         Ok(())
     }
 
@@ -294,6 +310,9 @@ pub(crate) mod test_suite {
         test_write_and_get_slice(storage)
             .await
             .context("write_and_get_slice")?;
+        test_write_and_get_slice_stream(storage)
+            .await
+            .context("write_and_get_slice_stream")?;
         test_write_get_all(storage)
             .await
             .context("write_and_get_all")?;
@@ -319,8 +338,6 @@ pub(crate) mod test_suite {
     #[cfg(feature = "testsuite")]
     pub async fn storage_test_single_part_upload(storage: &mut dyn Storage) -> anyhow::Result<()> {
         use std::ops::Range;
-
-        use tokio::io::AsyncReadExt;
 
         let test_path = Path::new("hello_small.txt");
         let data = b"hello, happy tax payer!";
