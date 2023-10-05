@@ -317,6 +317,7 @@ impl IndexingService {
             source_config,
             ingester_pool: self.ingester_pool.clone(),
             queues_dir_path: self.queue_dir_path.clone(),
+            source_storage_resolver: self.storage_resolver.clone(),
 
             event_broker: self.event_broker.clone(),
         };

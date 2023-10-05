@@ -19,6 +19,7 @@
 
 use std::collections::HashMap;
 use std::fmt;
+use std::io::Cursor;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -26,7 +27,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use quickwit_common::uri::Uri;
 use quickwit_config::StorageBackend;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncRead, AsyncWriteExt};
 use tokio::sync::RwLock;
 
 use crate::prefix_storage::add_prefix_to_storage;
@@ -115,6 +116,15 @@ impl Storage for RamStorage {
                 .with_error(anyhow::anyhow!("failed to find dest_path {:?}", path))
         })?;
         Ok(payload_bytes.slice(range.start..range.end))
+    }
+
+    async fn get_slice_stream(
+        &self,
+        path: &Path,
+        range: Range<usize>,
+    ) -> StorageResult<Box<dyn AsyncRead + Send + Unpin>> {
+        let bytes = self.get_slice(path, range).await?;
+        Ok(Box::new(Cursor::new(bytes)))
     }
 
     async fn delete(&self, path: &Path) -> StorageResult<()> {

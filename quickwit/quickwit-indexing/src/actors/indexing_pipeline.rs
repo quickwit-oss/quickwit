@@ -35,7 +35,7 @@ use quickwit_ingest::IngesterPool;
 use quickwit_metastore::Metastore;
 use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::metastore::MetastoreError;
-use quickwit_storage::Storage;
+use quickwit_storage::{Storage, StorageResolver};
 use tokio::sync::Semaphore;
 use tracing::{debug, error, info, instrument};
 
@@ -431,6 +431,7 @@ impl IndexingPipeline {
                     metastore: self.params.metastore.clone(),
                     ingester_pool: self.params.ingester_pool.clone(),
                     queues_dir_path: self.params.queues_dir_path.clone(),
+                    storage_resolver: self.params.source_storage_resolver.clone(),
                 }),
                 source_checkpoint,
             ))
@@ -567,6 +568,7 @@ pub struct IndexingPipelineParams {
 
     // Source-related parameters
     pub source_config: SourceConfig,
+    pub source_storage_resolver: StorageResolver,
     pub ingester_pool: IngesterPool,
     pub queues_dir_path: PathBuf,
     pub event_broker: EventBroker,
@@ -678,6 +680,7 @@ mod tests {
             pipeline_id,
             doc_mapper: Arc::new(default_doc_mapper_for_test()),
             source_config,
+            source_storage_resolver: StorageResolver::ram_and_file_for_test(),
             indexing_directory: TempDirectory::for_test(),
             indexing_settings: IndexingSettings::for_test(),
             ingester_pool: IngesterPool::default(),
@@ -780,6 +783,7 @@ mod tests {
             pipeline_id,
             doc_mapper: Arc::new(default_doc_mapper_for_test()),
             source_config,
+            source_storage_resolver: StorageResolver::ram_and_file_for_test(),
             indexing_directory: TempDirectory::for_test(),
             indexing_settings: IndexingSettings::for_test(),
             ingester_pool: IngesterPool::default(),
@@ -858,6 +862,7 @@ mod tests {
             pipeline_id,
             doc_mapper,
             source_config,
+            source_storage_resolver: StorageResolver::ram_and_file_for_test(),
             indexing_directory: TempDirectory::for_test(),
             indexing_settings: IndexingSettings::for_test(),
             ingester_pool: IngesterPool::default(),
@@ -982,6 +987,7 @@ mod tests {
             pipeline_id,
             doc_mapper: Arc::new(broken_mapper),
             source_config,
+            source_storage_resolver: StorageResolver::ram_and_file_for_test(),
             indexing_directory: TempDirectory::for_test(),
             indexing_settings: IndexingSettings::for_test(),
             ingester_pool: IngesterPool::default(),

@@ -286,7 +286,7 @@ impl IndexService {
         validate_identifier("Source ID", &source_id).map_err(|_| {
             IndexServiceError::InvalidIdentifier(format!("invalid source ID: `{source_id}`"))
         })?;
-        check_source_connectivity(&source_config)
+        check_source_connectivity(&self.storage_resolver, &source_config)
             .await
             .map_err(IndexServiceError::InvalidConfig)?;
         self.metastore
@@ -368,7 +368,7 @@ mod tests {
     #[tokio::test]
     async fn test_create_index() {
         let metastore = metastore_for_test();
-        let storage_resolver = StorageResolver::ram_for_test();
+        let storage_resolver = StorageResolver::ram_and_file_for_test();
         let index_service = IndexService::new(metastore.clone(), storage_resolver);
         let index_id = "test-index";
         let index_uri = "ram://indexes/test-index";
@@ -404,7 +404,7 @@ mod tests {
     #[tokio::test]
     async fn test_delete_index() {
         let metastore = metastore_for_test();
-        let storage_resolver = StorageResolver::ram_for_test();
+        let storage_resolver = StorageResolver::ram_and_file_for_test();
         let storage = storage_resolver
             .resolve(&Uri::for_test("ram://indexes/test-index"))
             .await

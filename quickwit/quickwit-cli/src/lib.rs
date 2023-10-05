@@ -279,13 +279,13 @@ pub async fn run_index_checklist(
     if let Some(source_config) = source_config_opt {
         checks.push((
             source_config.source_id.as_str(),
-            check_source_connectivity(source_config).await,
+            check_source_connectivity(storage_resolver, source_config).await,
         ));
     } else {
         for source_config in index_metadata.sources.values() {
             checks.push((
                 source_config.source_id.as_str(),
-                check_source_connectivity(source_config).await,
+                check_source_connectivity(storage_resolver, source_config).await,
             ));
         }
     }
