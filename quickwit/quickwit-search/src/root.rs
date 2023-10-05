@@ -718,6 +718,8 @@ pub async fn root_search(
     }
     let tag_filter_ast = extract_tags_from_query(query_ast_resolved);
 
+    // TODO if search after is set, we sort by timestamp and we don't want to count all results,
+    // we can refine more here.
     let split_metadatas: Vec<SplitMetadata> = list_relevant_splits(
         index_uids,
         search_request.start_timestamp,
