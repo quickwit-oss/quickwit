@@ -85,6 +85,34 @@ The response is a JSON object, and the content type is `application/json; charse
 | `num_hits`            | Total number of matches        | `number`   |
 | `elapsed_time_micros` | Processing time of the query   | `number`   |
 
+### Search multiple indices
+Search APIs that accept <index id> requests path parameter also support multi-target syntax.
+
+#### Multi-target syntax
+
+In multi-target syntax, you can use a comma or its URL encoded version '%2C' separated list to run a request on multiple indices: test1,test2,test3. You can also use [glob-like](https://en.wikipedia.org/wiki/Glob_(programming)) wildcard ( \* ) expressions to target indices that match a pattern: test\* or \*test or te\*t or \*test\*.
+
+The following are some constrains about the multi-target expression.
+
+    - It must follow the regex `^[a-zA-Z\*][a-zA-Z0-9-_\.\*]{0,254}$`.
+    - It cannot contain consecutive asterisks (`*`).
+    - If it contains an asterisk (`*`), the length must be greater than or equal to 3 characters.
+
+#### Examples
+```
+GET api/v1/stackoverflow-000001,stackoverflow-000002/search
+{
+    "query": "search AND engine",
+}
+```
+
+```
+GET api/v1/stackoverflow*/search
+{
+    "query": "search AND engine",
+}
+```
+
 ### Search stream in an index
 
 ```

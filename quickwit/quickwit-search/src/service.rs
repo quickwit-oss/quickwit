@@ -188,14 +188,13 @@ impl SearchService for SearchServiceImpl {
             .storage_resolver
             .resolve(&Uri::from_well_formed(leaf_search_request.index_uri))
             .await?;
-        let split_ids = leaf_search_request.split_offsets;
         let doc_mapper = deserialize_doc_mapper(&leaf_search_request.doc_mapper)?;
 
         let leaf_search_response = leaf_search(
             self.searcher_context.clone(),
             search_request,
             storage.clone(),
-            &split_ids[..],
+            leaf_search_request.split_offsets,
             doc_mapper,
         )
         .await?;
