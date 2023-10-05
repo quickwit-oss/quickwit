@@ -649,7 +649,7 @@ mod tests {
     use quickwit_common::PathHasher;
     use quickwit_query::query_ast::query_ast_from_user_text;
     use serde_json::{self, json, Value as JsonValue};
-    use tantivy::schema::{FieldType, IndexRecordOption, Type, Value as TantivyValue};
+    use tantivy::schema::{FieldType, IndexRecordOption, OwnedValue as TantivyValue, Type, Value};
 
     use super::DefaultDocMapper;
     use crate::default_doc_mapper::field_mapping_entry::DEFAULT_TOKENIZER_NAME;
@@ -724,11 +724,14 @@ mod tests {
         for field_value in document.field_values() {
             let field_name = schema.get_field_name(field_value.field());
             if field_name == SOURCE_FIELD_NAME {
-                assert_eq!(field_value.value().as_json(), json_doc.as_object());
+                assert_eq!(
+                    tantivy::schema::OwnedValue::from(field_value.value().as_value()),
+                    tantivy::schema::OwnedValue::from(json_doc.as_object().unwrap().clone())
+                );
             } else if field_name == DYNAMIC_FIELD_NAME {
                 assert_eq!(
-                    field_value.value().as_json(),
-                    json!({"response_date2": "2021-12-19T16:39:57+00:00"}).as_object()
+                    serde_json::to_string(&field_value.value()).unwrap(),
+                    r#"{"response_date2":"2021-12-19T16:39:57Z"}"#
                 );
             } else if field_name == FIELD_PRESENCE_FIELD_NAME {
                 let field_presence_u64 = field_value.value().as_u64().unwrap();
@@ -1206,7 +1209,10 @@ mod tests {
         document.field_values().iter().for_each(|field_value| {
             let field_name = schema.get_field_name(field_value.field());
             if field_name == SOURCE_FIELD_NAME {
-                assert_eq!(field_value.value().as_json(), json_doc_value.as_object());
+                assert_eq!(
+                    tantivy::schema::OwnedValue::from(field_value.value().as_value()),
+                    tantivy::schema::OwnedValue::from(json_doc_value.as_object().unwrap().clone())
+                );
             } else if field_name == FIELD_PRESENCE_FIELD_NAME {
                 let field_value_hash = field_value.value().as_u64().unwrap();
                 field_presences.insert(field_value_hash);
@@ -1518,7 +1524,7 @@ mod tests {
             .unwrap();
         let vals: Vec<&TantivyValue> = doc.get_all(dynamic_field).collect();
         assert_eq!(vals.len(), 1);
-        if let TantivyValue::JsonObject(json_val) = &vals[0] {
+        if let TantivyValue::Object(json_val) = &vals[0] {
             assert_eq!(
                 serde_json::to_value(json_val).unwrap(),
                 json!({
@@ -1564,7 +1570,7 @@ mod tests {
             .unwrap();
         let vals: Vec<&TantivyValue> = doc.get_all(dynamic_field).collect();
         assert_eq!(vals.len(), 1);
-        if let TantivyValue::JsonObject(json_val) = &vals[0] {
+        if let TantivyValue::Object(json_val) = &vals[0] {
             assert_eq!(
                 serde_json::to_value(json_val).unwrap(),
                 serde_json::json!({
@@ -1610,7 +1616,7 @@ mod tests {
             .unwrap();
         let vals: Vec<&TantivyValue> = doc.get_all(json_field).collect();
         assert_eq!(vals.len(), 1);
-        if let TantivyValue::JsonObject(json_val) = &vals[0] {
+        if let TantivyValue::Object(json_val) = &vals[0] {
             assert_eq!(
                 serde_json::to_value(json_val).unwrap(),
                 serde_json::json!({

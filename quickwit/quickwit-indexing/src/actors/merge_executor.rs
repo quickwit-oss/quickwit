@@ -40,7 +40,9 @@ use quickwit_query::get_quickwit_fastfield_normalizer_manager;
 use quickwit_query::query_ast::QueryAst;
 use tantivy::directory::{DirectoryClone, MmapDirectory, RamDirectory};
 use tantivy::tokenizer::TokenizerManager;
-use tantivy::{Advice, DateTime, Directory, Index, IndexMeta, SegmentId, SegmentReader};
+use tantivy::{
+    Advice, DateTime, Directory, Index, IndexMeta, IndexWriter, SegmentId, SegmentReader,
+};
 use tokio::runtime::Handle;
 use tracing::{debug, info, instrument, warn};
 
@@ -466,7 +468,7 @@ impl MergeExecutor {
         ctx.record_progress();
         let _protect_guard = ctx.protect_zone();
 
-        let mut index_writer = union_index.writer_with_num_threads(1, 15_000_000)?;
+        let mut index_writer: IndexWriter = union_index.writer_with_num_threads(1, 15_000_000)?;
         let num_delete_tasks = delete_tasks.len();
         if num_delete_tasks > 0 {
             let doc_mapper = doc_mapper_opt
@@ -534,7 +536,7 @@ mod tests {
     use quickwit_metastore::SplitMetadata;
     use quickwit_proto::metastore::DeleteQuery;
     use serde_json::Value as JsonValue;
-    use tantivy::{Inventory, ReloadPolicy};
+    use tantivy::{Document, Inventory, ReloadPolicy, TantivyDocument};
 
     use super::*;
     use crate::merge_policy::MergeOperation;
@@ -788,8 +790,8 @@ mod tests {
                 )?
                 .into_iter()
                 .map(|(_, doc_address)| {
-                    let doc = searcher.doc(doc_address).unwrap();
-                    let doc_json = searcher.schema().to_json(&doc);
+                    let doc: TantivyDocument = searcher.doc(doc_address).unwrap();
+                    let doc_json = doc.to_json(searcher.schema());
                     serde_json::from_str(&doc_json).unwrap()
                 })
                 .collect::<Vec<JsonValue>>();
