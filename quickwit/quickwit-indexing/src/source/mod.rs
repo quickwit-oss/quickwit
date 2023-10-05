@@ -97,6 +97,7 @@ use quickwit_metastore::checkpoint::{SourceCheckpoint, SourceCheckpointDelta};
 use quickwit_metastore::Metastore;
 use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::{IndexUid, ShardId};
+use quickwit_storage::StorageResolver;
 use serde_json::Value as JsonValue;
 pub use source_factory::{SourceFactory, SourceLoader, TypedSourceFactory};
 use tokio::runtime::Handle;
@@ -117,6 +118,7 @@ pub struct SourceRuntimeArgs {
     pub ingester_pool: IngesterPool,
     // Ingest API queues directory path.
     pub queues_dir_path: PathBuf,
+    pub storage_resolver: StorageResolver,
 }
 
 impl SourceRuntimeArgs {
@@ -147,6 +149,8 @@ impl SourceRuntimeArgs {
         metastore: Arc<dyn Metastore>,
         queues_dir_path: PathBuf,
     ) -> Arc<Self> {
+        use quickwit_storage::LocalFileStorageFactory;
+
         let pipeline_id = IndexingPipelineId {
             node_id: "test-node".to_string(),
             index_uid,
@@ -159,6 +163,13 @@ impl SourceRuntimeArgs {
             ingester_pool: IngesterPool::default(),
             queues_dir_path,
             source_config,
+            // TODO: Using local file storage to keep tests written for the file
+            // source when it only supported file storage. We might want to
+            // rethink the tests instead.
+            storage_resolver: StorageResolver::builder()
+                .register(LocalFileStorageFactory)
+                .build()
+                .unwrap(),
         })
     }
 }
