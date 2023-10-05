@@ -19,6 +19,7 @@
 
 use std::fmt;
 use std::ops::Range;
+use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -144,16 +145,7 @@ impl TypedSourceFactory for FileSourceFactory {
             {
                 offset = offset_str.parse::<usize>()?;
             }
-            let uri: Uri = filepath
-                .to_str()
-                .ok_or_else(|| anyhow::anyhow!("Path cannot be turned to string"))?
-                .parse()?;
-            let file_name = uri
-                .file_name()
-                .ok_or_else(|| anyhow::anyhow!("Path does not appear to be a file"))?;
-            let dir_uri = uri
-                .parent()
-                .ok_or_else(|| anyhow::anyhow!("Parent directory could not be resolved"))?;
+            let (dir_uri, file_name) = dir_and_filename(filepath)?;
             let storage = ctx.storage_resolver.resolve(&dir_uri).await?;
             let file_size = storage.file_num_bytes(file_name).await?.try_into().unwrap();
             storage
@@ -181,6 +173,19 @@ impl TypedSourceFactory for FileSourceFactory {
         };
         Ok(file_source)
     }
+}
+
+pub fn dir_and_filename(filepath: &Path) -> anyhow::Result<(Uri, &Path)> {
+    let dir_uri: Uri = filepath
+        .parent()
+        .ok_or_else(|| anyhow::anyhow!("Parent directory could not be resolved"))?
+        .to_str()
+        .ok_or_else(|| anyhow::anyhow!("Path cannot be turned to string"))?
+        .parse()?;
+    let file_name = filepath
+        .file_name()
+        .ok_or_else(|| anyhow::anyhow!("Path does not appear to be a file"))?;
+    Ok((dir_uri, file_name.as_ref()))
 }
 
 #[cfg(test)]

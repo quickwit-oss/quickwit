@@ -286,7 +286,7 @@ impl IndexService {
         validate_identifier("Source ID", &source_id).map_err(|_| {
             IndexServiceError::InvalidIdentifier(format!("invalid source ID: `{source_id}`"))
         })?;
-        check_source_connectivity(&source_config)
+        check_source_connectivity(&self.storage_resolver, &source_config)
             .await
             .map_err(IndexServiceError::InvalidConfig)?;
         self.metastore
