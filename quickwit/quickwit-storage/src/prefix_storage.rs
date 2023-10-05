@@ -85,7 +85,9 @@ impl Storage for PrefixStorage {
         path: &Path,
         range: Range<usize>,
     ) -> crate::StorageResult<Box<dyn AsyncRead + Send + Unpin>> {
-        self.storage.get_slice_stream(path, range).await
+        self.storage
+            .get_slice_stream(&self.prefix.join(path), range)
+            .await
     }
 
     async fn delete(&self, path: &Path) -> crate::StorageResult<()> {
