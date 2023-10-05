@@ -18,7 +18,6 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::fmt;
-use std::io::Cursor;
 use std::ops::Range;
 use std::path::Path;
 use std::sync::Arc;
@@ -76,13 +75,12 @@ impl Storage for StorageWithCache {
     async fn get_slice_stream(
         &self,
         path: &Path,
-        range: Range<usize>,
+        _range: Range<usize>,
     ) -> StorageResult<Box<dyn AsyncRead + Send + Unpin>> {
-        // TODO: using `get_slice` implies that we need to download the whole
-        // slice before being able to stream it. We might look for a mechanism
-        // to start the streaming right away and tee it output into the cache.
-        let bytes = self.get_slice(path, range).await?;
-        Ok(Box::new(Cursor::new(bytes)))
+        unimplemented!(
+            "StorageWithCache does not support streamed read yet. Failed to get {:?}",
+            path
+        )
     }
 
     async fn get_all(&self, path: &Path) -> StorageResult<OwnedBytes> {
