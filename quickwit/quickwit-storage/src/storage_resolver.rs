@@ -51,7 +51,8 @@ impl StorageResolver {
         StorageResolverBuilder::default()
     }
 
-    fn get_storage_factory(&self, uri: &Uri) -> Result<&dyn StorageFactory, StorageResolverError> {
+    /// Resolves the given URI.
+    pub async fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
         let backend = match uri.protocol() {
             Protocol::Azure => StorageBackend::Azure,
             Protocol::File => StorageBackend::File,
@@ -65,18 +66,11 @@ impl StorageResolver {
                 return Err(StorageResolverError::UnsupportedBackend(message));
             }
         };
-        self.per_backend_factories
-            .get(&backend)
-            .map(Box::as_ref)
-            .ok_or({
-                let message = format!("no storage factory is registered for {}", uri.protocol());
-                StorageResolverError::UnsupportedBackend(message)
-            })
-    }
-
-    /// Resolves the given URI.
-    pub async fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
-        let storage = self.get_storage_factory(uri)?.resolve(uri).await?;
+        let storage_factory = self.per_backend_factories.get(&backend).ok_or({
+            let message = format!("no storage factory is registered for {}", uri.protocol());
+            StorageResolverError::UnsupportedBackend(message)
+        })?;
+        let storage = storage_factory.resolve(uri).await?;
         Ok(storage)
     }
 

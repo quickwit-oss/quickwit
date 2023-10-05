@@ -21,7 +21,7 @@ use std::collections::{BTreeSet, HashMap};
 use std::fmt;
 use std::io::{ErrorKind, SeekFrom};
 use std::ops::Range;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
@@ -57,7 +57,7 @@ impl fmt::Debug for LocalFileStorage {
 
 impl LocalFileStorage {
     fn full_path(&self, relative_path: &Path) -> crate::StorageResult<PathBuf> {
-        // ensure_valid_relative_path(relative_path)?;
+        ensure_valid_relative_path(relative_path)?;
         Ok(self.root.join(relative_path))
     }
 
@@ -97,28 +97,28 @@ impl LocalFileStorage {
     }
 }
 
-// /// Ensure that the path given does not include any ".." for security reasons.
-// ///
-// /// In order to reduce the attack surface, we want to make sure the `FileStorage`
-// /// only access/delete files that are children of its root_directory.
-// fn ensure_valid_relative_path(path: &Path) -> StorageResult<()> {
-//     for component in path.components() {
-//         match component {
-//             Component::RootDir | Component::ParentDir | Component::Prefix(_) => {
-//                 // We forbid `Path` components that are breaking the assumption that
-//                 // root.join(path) is a child of root (if we omit fs links).
-//                 return Err(StorageErrorKind::Unauthorized.with_error(anyhow::anyhow!(
-//                     "path `{}` is forbidden. only simple relative path are allowed",
-//                     path.display()
-//                 )));
-//             }
-//             Component::CurDir | Component::Normal(_) => {
-//                 // we accept `./` and subdir/
-//             }
-//         }
-//     }
-//     Ok(())
-// }
+/// Ensure that the path given does not include any ".." for security reasons.
+///
+/// In order to reduce the attack surface, we want to make sure the `FileStorage`
+/// only access/delete files that are children of its root_directory.
+fn ensure_valid_relative_path(path: &Path) -> StorageResult<()> {
+    for component in path.components() {
+        match component {
+            Component::RootDir | Component::ParentDir | Component::Prefix(_) => {
+                // We forbid `Path` components that are breaking the assumption that
+                // root.join(path) is a child of root (if we omit fs links).
+                return Err(StorageErrorKind::Unauthorized.with_error(anyhow::anyhow!(
+                    "path `{}` is forbidden. only simple relative path are allowed",
+                    path.display()
+                )));
+            }
+            Component::CurDir | Component::Normal(_) => {
+                // we accept `./` and subdir/
+            }
+        }
+    }
+    Ok(())
+}
 
 /// Delete empty directories starting from `{root}/{path}` directory and stopping at `{root}`
 /// directory. Note that the `{root}` directory is not deleted.
@@ -379,24 +379,24 @@ mod tests {
         Ok(())
     }
 
-    // #[tokio::test]
-    // async fn test_local_file_storage_forbids_double_dot() {
-    //     let temp_dir = tempfile::tempdir().unwrap();
-    //     let uri = Uri::from_str(&format!("{}", temp_dir.path().display())).unwrap();
-    //     let local_file_storage = LocalFileStorage::from_uri(&uri).unwrap();
-    //     assert_eq!(
-    //         local_file_storage
-    //             .exists(Path::new("hello/toto"))
-    //             .await
-    //             .unwrap(),
-    //         false
-    //     );
-    //     let exist_error = local_file_storage
-    //         .exists(Path::new("hello/../toto"))
-    //         .await
-    //         .unwrap_err();
-    //     assert_eq!(exist_error.kind(), StorageErrorKind::Unauthorized);
-    // }
+    #[tokio::test]
+    async fn test_local_file_storage_forbids_double_dot() {
+        let temp_dir = tempfile::tempdir().unwrap();
+        let uri = Uri::from_str(&format!("{}", temp_dir.path().display())).unwrap();
+        let local_file_storage = LocalFileStorage::from_uri(&uri).unwrap();
+        assert_eq!(
+            local_file_storage
+                .exists(Path::new("hello/toto"))
+                .await
+                .unwrap(),
+            false
+        );
+        let exist_error = local_file_storage
+            .exists(Path::new("hello/../toto"))
+            .await
+            .unwrap_err();
+        assert_eq!(exist_error.kind(), StorageErrorKind::Unauthorized);
+    }
 
     #[tokio::test]
     async fn test_local_file_storage_factory() -> anyhow::Result<()> {
