@@ -19,6 +19,7 @@
 
 use std::cmp::Ordering;
 use std::collections::HashSet;
+use std::sync::Arc;
 
 use itertools::Itertools;
 use quickwit_common::binary_heap::{SortKeyMapper, TopK};
@@ -290,7 +291,7 @@ enum AggregationSegmentCollectors {
 }
 
 /// Quickwit collector working at the scale of the segment.
-pub struct QuickwitSegmentCollector {
+pub struct QuickwitFullSegmentCollector {
     num_hits: u64,
     split_id: String,
     score_extractor: SortingFieldExtractorPair,
@@ -301,7 +302,7 @@ pub struct QuickwitSegmentCollector {
     aggregation: Option<AggregationSegmentCollectors>,
 }
 
-impl QuickwitSegmentCollector {
+impl QuickwitFullSegmentCollector {
     #[inline]
     fn collect_top_k(&mut self, doc_id: DocId, score: Score) {
         let (sort_value, sort_value2) =
@@ -328,7 +329,7 @@ impl QuickwitSegmentCollector {
     }
 }
 
-impl SegmentCollector for QuickwitSegmentCollector {
+impl SegmentCollector for QuickwitFullSegmentCollector {
     type Fruit = tantivy::Result<LeafSearchResponse>;
 
     #[inline]
@@ -411,12 +412,26 @@ impl QuickwitAggregations {
     }
 }
 
+pub(crate) enum QuickwitCollector {
+    Full(QuickwitFullCollector),
+    CountOnly,
+}
+
+impl QuickwitCollector {
+    pub fn warmup_info(&self) -> WarmupInfo {
+        match self {
+            QuickwitCollector::Full(full_collector) => full_collector.warmup_info(),
+            QuickwitCollector::CountOnly => WarmupInfo::default(),
+        }
+    }
+}
+
 /// The quickwit collector is the tantivy Collector used in Quickwit.
 ///
 /// It defines the data that should be accumulated about the documents matching
 /// the query.
 #[derive(Clone)]
-pub(crate) struct QuickwitCollector {
+pub(crate) struct QuickwitFullCollector {
     pub split_id: String,
     pub start_offset: usize,
     pub max_hits: usize,
@@ -426,7 +441,7 @@ pub(crate) struct QuickwitCollector {
     pub aggregation_limits: AggregationLimits,
 }
 
-impl QuickwitCollector {
+impl QuickwitFullCollector {
     pub fn fast_field_names(&self) -> HashSet<String> {
         let mut fast_field_names = HashSet::default();
         self.sort_by.first.add_fast_field(&mut fast_field_names);
@@ -451,8 +466,8 @@ impl QuickwitCollector {
     }
 }
 
-impl Collector for QuickwitCollector {
-    type Child = QuickwitSegmentCollector;
+impl Collector for QuickwitFullCollector {
+    type Child = QuickwitFullSegmentCollector;
     type Fruit = LeafSearchResponse;
 
     fn for_segment(
@@ -488,7 +503,7 @@ impl Collector for QuickwitCollector {
         let score_extractor = get_score_extractor(&self.sort_by, segment_reader)?;
         let (order1, order2) = self.sort_by.sort_orders();
         let sort_key_mapper = HitSortingMapper { order1, order2 };
-        Ok(QuickwitSegmentCollector {
+        Ok(QuickwitFullSegmentCollector {
             num_hits: 0u64,
             split_id: self.split_id.clone(),
             score_extractor,
@@ -542,6 +557,47 @@ impl Collector for QuickwitCollector {
             )
             .count(); //< we just use count as a way to consume the entire iterator.
         Ok(merged_leaf_response)
+    }
+}
+
+pub fn map_collector<C: Collector, E>(
+    underlying: C,
+    mapping_fn: impl Fn(C::Fruit) -> E + Sync + Send + 'static,
+) -> MapCollector<C, E> {
+    MapCollector {
+        underlying,
+        mapping_fn: Arc::new(mapping_fn),
+    }
+}
+
+pub struct MapCollector<C: Collector, E> {
+    underlying: C,
+    mapping_fn: Arc<dyn Fn(C::Fruit) -> E + Sync + Send>,
+}
+
+impl<C: Collector, E: Send + 'static> Collector for MapCollector<C, E> {
+    type Fruit = E;
+
+    type Child = C::Child;
+
+    fn for_segment(
+        &self,
+        segment_local_id: SegmentOrdinal,
+        segment: &SegmentReader,
+    ) -> tantivy::Result<Self::Child> {
+        self.underlying.for_segment(segment_local_id, segment)
+    }
+
+    fn requires_scoring(&self) -> bool {
+        self.underlying.requires_scoring()
+    }
+
+    fn merge_fruits(
+        &self,
+        segment_fruits: Vec<<Self::Child as SegmentCollector>::Fruit>,
+    ) -> tantivy::Result<Self::Fruit> {
+        let underlying_fruit = self.underlying.merge_fruits(segment_fruits)?;
+        Ok((*self.mapping_fn)(underlying_fruit))
     }
 }
 
@@ -702,17 +758,26 @@ pub(crate) fn make_collector_for_split(
     search_request: &SearchRequest,
     aggregation_limits: AggregationLimits,
 ) -> crate::Result<QuickwitCollector> {
-    let aggregation = match &search_request.aggregation_request {
-        Some(aggregation) => Some(serde_json::from_str(aggregation)?),
-        None => None,
-    };
     let timestamp_filter_builder_opt = create_timestamp_filter_builder(
         doc_mapper.timestamp_field_name(),
         search_request.start_timestamp,
         search_request.end_timestamp,
     );
+
+    if search_request.max_hits == 0
+        && search_request.aggregation_request.is_none()
+        && timestamp_filter_builder_opt.is_none()
+    {
+        return Ok(QuickwitCollector::CountOnly);
+    }
+
+    let aggregation = match &search_request.aggregation_request {
+        Some(aggregation) => Some(serde_json::from_str(aggregation)?),
+        None => None,
+    };
+
     let sort_by = sort_by_from_request(search_request);
-    Ok(QuickwitCollector {
+    Ok(QuickwitCollector::Full(QuickwitFullCollector {
         split_id,
         start_offset: search_request.start_offset as usize,
         max_hits: search_request.max_hits as usize,
@@ -720,20 +785,20 @@ pub(crate) fn make_collector_for_split(
         timestamp_filter_builder_opt,
         aggregation,
         aggregation_limits,
-    })
+    }))
 }
 
 /// Builds a QuickwitCollector that's only useful for merging fruits.
 pub(crate) fn make_merge_collector(
     search_request: &SearchRequest,
     aggregation_limits: &AggregationLimits,
-) -> crate::Result<QuickwitCollector> {
+) -> crate::Result<QuickwitFullCollector> {
     let aggregation = match &search_request.aggregation_request {
         Some(aggregation) => Some(serde_json::from_str(aggregation)?),
         None => None,
     };
     let sort_by = sort_by_from_request(search_request);
-    Ok(QuickwitCollector {
+    Ok(QuickwitFullCollector {
         split_id: String::default(),
         start_offset: search_request.start_offset as usize,
         max_hits: search_request.max_hits as usize,
@@ -806,7 +871,7 @@ impl SortKeyMapper<PartialHit> for HitSortingMapper {
 /// Incrementally merge segment results.
 #[derive(Clone)]
 pub(crate) struct IncrementalCollector {
-    inner: QuickwitCollector,
+    inner: QuickwitFullCollector,
     top_k_hits: TopK<PartialHit, PartialHitSortingKey, HitSortingMapper>,
     intermediate_aggregation_results: Vec<Vec<u8>>,
     num_hits: u64,
@@ -816,7 +881,7 @@ pub(crate) struct IncrementalCollector {
 
 impl IncrementalCollector {
     /// Create a new incremental collector
-    pub(crate) fn new(inner: QuickwitCollector) -> Self {
+    pub(crate) fn new(inner: QuickwitFullCollector) -> Self {
         let (order1, order2) = inner.sort_by.sort_orders();
         let sort_key_mapper = HitSortingMapper { order1, order2 };
         IncrementalCollector {

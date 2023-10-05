@@ -36,6 +36,7 @@ use quickwit_query::query_ast::QueryAst;
 use quickwit_storage::{
     wrap_storage_with_cache, BundleStorage, MemorySizedCache, OwnedBytes, SplitCache, Storage,
 };
+use tantivy::collector::Count;
 use tantivy::directory::FileSlice;
 use tantivy::fastfield::FastFieldReaders;
 use tantivy::schema::{Field, FieldType};
@@ -43,7 +44,10 @@ use tantivy::tokenizer::TokenizerManager;
 use tantivy::{Index, ReloadPolicy, Searcher, Term};
 use tracing::*;
 
-use crate::collector::{make_collector_for_split, make_merge_collector, IncrementalCollector};
+use crate::collector::{
+    make_collector_for_split, make_merge_collector, map_collector, IncrementalCollector,
+    QuickwitCollector,
+};
 use crate::service::SearcherContext;
 use crate::SearchError;
 
@@ -362,7 +366,7 @@ async fn leaf_search_single_split(
     .await?;
     let split_schema = index.schema();
 
-    let quickwit_collector = make_collector_for_split(
+    let quickwit_collector: QuickwitCollector = make_collector_for_split(
         split_id.clone(),
         doc_mapper.as_ref(),
         &search_request,
@@ -384,7 +388,16 @@ async fn leaf_search_single_split(
     let span = info_span!("tantivy_search");
     let leaf_search_response = crate::run_cpu_intensive(move || {
         let _span_guard = span.enter();
-        searcher.search(&query, &quickwit_collector)
+        match quickwit_collector {
+            QuickwitCollector::Full(full_collector) => searcher.search(&query, &full_collector),
+            QuickwitCollector::CountOnly => searcher.search(
+                &query,
+                &map_collector(Count, |num_hits: usize| LeafSearchResponse {
+                    num_hits: num_hits as u64,
+                    ..Default::default()
+                }),
+            ),
+        }
     })
     .await
     .map_err(|_| {
