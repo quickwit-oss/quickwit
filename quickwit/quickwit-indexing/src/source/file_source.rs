@@ -148,11 +148,17 @@ impl TypedSourceFactory for FileSourceFactory {
                 .to_str()
                 .ok_or_else(|| anyhow::anyhow!("Path cannot be turned to string"))?
                 .parse()?;
-            let storage = ctx.storage_resolver.resolve(&uri).await?;
-            let file_size = storage.file_num_bytes(filepath).await?.try_into().unwrap();
+            let file_name = uri
+                .file_name()
+                .ok_or_else(|| anyhow::anyhow!("Path does not appear to be a file"))?;
+            let dir_uri = uri
+                .parent()
+                .ok_or_else(|| anyhow::anyhow!("Parent directory could not be resolved"))?;
+            let storage = ctx.storage_resolver.resolve(&dir_uri).await?;
+            let file_size = storage.file_num_bytes(file_name).await?.try_into().unwrap();
             storage
                 .get_slice_stream(
-                    filepath,
+                    file_name,
                     Range {
                         start: offset,
                         end: file_size,

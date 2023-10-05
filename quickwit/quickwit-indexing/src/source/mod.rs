@@ -149,8 +149,6 @@ impl SourceRuntimeArgs {
         metastore: Arc<dyn Metastore>,
         queues_dir_path: PathBuf,
     ) -> Arc<Self> {
-        use quickwit_storage::LocalFileStorageFactory;
-
         let pipeline_id = IndexingPipelineId {
             node_id: "test-node".to_string(),
             index_uid,
@@ -163,13 +161,7 @@ impl SourceRuntimeArgs {
             ingester_pool: IngesterPool::default(),
             queues_dir_path,
             source_config,
-            // TODO: Using local file storage to keep tests written for the file
-            // source when it only supported file storage. We might want to
-            // rethink the tests instead.
-            storage_resolver: StorageResolver::builder()
-                .register(LocalFileStorageFactory)
-                .build()
-                .unwrap(),
+            storage_resolver: StorageResolver::ram_and_file_for_test(),
         })
     }
 }

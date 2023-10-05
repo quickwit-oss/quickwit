@@ -436,7 +436,7 @@ impl Storage for AzureBlobStorage {
         let name = self.blob_name(path);
         let page_stream = self
             .container_client
-            .blob_client(&name)
+            .blob_client(name)
             .get()
             .range(range)
             .into_stream();

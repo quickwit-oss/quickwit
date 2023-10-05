@@ -532,7 +532,7 @@ mod tests {
             metastore,
             ingester_pool: ingester_pool.clone(),
             queues_dir_path: PathBuf::from("./queues"),
-            storage_resolver: StorageResolver::ram_for_test(),
+            storage_resolver: StorageResolver::ram_and_file_for_test(),
         });
         let checkpoint = SourceCheckpoint::default();
         let mut source = IngestSource::try_new(runtime_args, checkpoint)
@@ -610,7 +610,7 @@ mod tests {
             metastore,
             ingester_pool: ingester_pool.clone(),
             queues_dir_path: PathBuf::from("./queues"),
-            storage_resolver: StorageResolver::ram_for_test(),
+            storage_resolver: StorageResolver::ram_and_file_for_test(),
         });
         let checkpoint = SourceCheckpoint::default();
         let mut source = IngestSource::try_new(runtime_args, checkpoint)
@@ -763,7 +763,7 @@ mod tests {
             metastore,
             ingester_pool: ingester_pool.clone(),
             queues_dir_path: PathBuf::from("./queues"),
-            storage_resolver: StorageResolver::ram_for_test(),
+            storage_resolver: StorageResolver::ram_and_file_for_test(),
         });
         let checkpoint = SourceCheckpoint::default();
         let mut source = IngestSource::try_new(runtime_args, checkpoint)
