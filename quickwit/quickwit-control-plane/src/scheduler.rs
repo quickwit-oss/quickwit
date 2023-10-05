@@ -67,24 +67,28 @@ pub struct IndexingSchedulerState {
 ///    regularly checks if indexers are effectively running their plans (more details in the next
 ///    section).
 ///
-/// The scheduling is executed when the scheduler receives external or internal events and on
-/// certains conditions. The following events possibly trigger a scheduling:
-/// - [`NotifyIndexChangeRequest`]: this gRPC event is sent by a metastore node and will trigger a
-///   scheduling on each event. TODO(fmassot): this can be refined by adding some relevant info to
-///   the event, example: the creation of a source of type `void` should not trigger a scheduling.
-/// - [`RefreshPlanLoop`]: this event is scheduled every [`REFRESH_PLAN_LOOP_INTERVAL`] and triggers
-///   a scheduling. Due to network issues, a control plane will not always receive the gRPC events
-///   [`NotifyIndexChangeRequest`] and thus will not be aware of index changes in the metastore.
-///   TODO(fmassot): to avoid a scheduling on each [`RefreshPlanLoop`], we can store in the
-///   scheduler state a metastore version number that will be compared to the number stored in the
-///   metastore itself.
-/// - [`ControlPlanLoop`]: this event is scheduled every [`CONTROL_PLAN_LOOP_INTERVAL`] and control
-///   if the `desired plan`, that is the last applied [`PhysicalIndexingPlan`] by the scheduler, and
-///   the `running plan`, that is the indexing tasks running on all indexers and retrieved from the
-///   chitchat state, are the same:
-///   - if node IDs are different, the scheduler will trigger a scheduling.
-///   - if indexing tasks are different, the scheduler will apply again the last applied plan.
+/// All events altering the list of indexes and sources are proxied through
+/// through the control plane. The control plane state is therefore guaranteed to be up-to-date
+/// (at the cost of making the control plane a single point of failure).
 ///
+/// They then trigger the production of a new `PhysicalIndexingPlan`.
+///
+/// A [`ControlPlanLoop`]: this event is scheduled every [`CONTROL_PLAN_LOOP_INTERVAL`] and steers
+/// the cluster toward the last applied [`PhysicalIndexingPlan`].
+///
+/// This physical plan is a desired state. Even after that state is reached, it can be altered due
+/// to faulty server for instance.
+///
+/// We then need to detect deviation, possibly recompute the desired `PhysicalIndexingPlan`
+/// and steer back the cluster to the right state.
+///
+/// First to detect deviation, the control plan gathers an eventually consistent view of what is
+/// running on the different nodes of the cluster: the `running plan`. This is done via `chitchat`.
+///
+/// If the list of node ids has changed, the scheduler will retrigger a scheduling.
+/// If the indexing tasks do not match, the scheduler will apply again the last applied plan.
+/// Concretely, it will send the faulty nodes of the plan they are supposed to follow.
+//
 /// Finally, in order to give the time for each indexer to run their indexing tasks, the control
 /// plase will wait at least [`MIN_DURATION_BETWEEN_SCHEDULING`] before comparing the desired
 /// plan with the running plan.
