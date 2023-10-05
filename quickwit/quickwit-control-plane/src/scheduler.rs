@@ -73,7 +73,7 @@ pub struct IndexingSchedulerState {
 ///
 /// They then trigger the production of a new `PhysicalIndexingPlan`.
 ///
-/// A [`ControlPlanLoop`]: this event is scheduled every [`CONTROL_PLAN_LOOP_INTERVAL`] and steers
+/// A `ControlPlanLoop` event is scheduled every `CONTROL_PLAN_LOOP_INTERVAL` and steers
 /// the cluster toward the last applied [`PhysicalIndexingPlan`].
 ///
 /// This physical plan is a desired state. Even after that state is reached, it can be altered due
@@ -101,7 +101,7 @@ pub struct IndexingScheduler {
 }
 
 impl fmt::Debug for IndexingScheduler {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("IndexingScheduler")
             .field("cluster_id", &self.cluster_id)
             .field("node_id", &self.self_node_id)

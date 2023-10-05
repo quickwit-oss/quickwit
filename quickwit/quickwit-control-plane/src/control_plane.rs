@@ -32,7 +32,7 @@ use quickwit_proto::control_plane::{
     CloseShardsRequest, CloseShardsResponse, ControlPlaneError, ControlPlaneResult,
     GetOpenShardsRequest, GetOpenShardsResponse,
 };
-use quickwit_proto::metastore::events::{DeleteSourceEvent, ToggleSourceEvent};
+use quickwit_proto::metastore::events::ToggleSourceEvent;
 use quickwit_proto::metastore::{
     serde_utils as metastore_serde_utils, AddSourceRequest, CreateIndexRequest,
     CreateIndexResponse, DeleteIndexRequest, DeleteSourceRequest, EmptyResponse,
@@ -267,9 +267,7 @@ impl Handler<AddSourceRequest> for ControlPlane {
             return Ok(Err(ControlPlaneError::from(error)));
         };
 
-        self.ingest_controller
-            .add_source(&index_uid, &source_id)
-            .await;
+        self.ingest_controller.add_source(&index_uid, &source_id);
 
         // TODO: Refine the event. Notify index will have the effect to reload the entire state from
         // the metastore. We should update the state of the control plane.
@@ -330,12 +328,9 @@ impl Handler<DeleteSourceRequest> for ControlPlane {
         {
             return Ok(Err(ControlPlaneError::from(error)));
         };
-        let _event = DeleteSourceEvent {
-            index_uid,
-            source_id: request.source_id,
-        };
 
-        // the metastore. We should update the state of the control plane.
+        self.ingest_controller
+            .delete_source(&index_uid, &request.source_id);
         self.indexing_scheduler.on_index_change().await?;
         let response = EmptyResponse {};
         Ok(Ok(response))

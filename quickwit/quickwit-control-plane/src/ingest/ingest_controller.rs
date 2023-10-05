@@ -144,6 +144,11 @@ impl ShardTable {
         }
     }
 
+    fn remove_source(&mut self, index_uid: &IndexUid, source_id: &SourceId) {
+        let key = (index_uid.clone(), source_id.clone());
+        self.table_entries.remove(&key);
+    }
+
     /// Clears the shard table.
     fn clear(&mut self) {
         self.table_entries.clear();
@@ -215,7 +220,6 @@ impl ShardTable {
     /// table.
     fn remove_shards(&mut self, index_uid: &IndexUid, source_id: &SourceId, shard_ids: &[ShardId]) {
         let key = (index_uid.clone(), source_id.clone());
-
         if let Some(table_entry) = self.table_entries.get_mut(&key) {
             table_entry
                 .shard_entries
@@ -595,8 +599,12 @@ impl IngestController {
         self.shard_table.remove_index(index_uid.index_id());
     }
 
-    pub(crate) async fn add_source(&mut self, index_uid: &IndexUid, source_id: &SourceId) {
+    pub(crate) fn add_source(&mut self, index_uid: &IndexUid, source_id: &SourceId) {
         self.shard_table.add_source(index_uid, source_id);
+    }
+
+    pub(crate) fn delete_source(&mut self, index_uid: &IndexUid, source_id: &SourceId) {
+        self.shard_table.remove_source(index_uid, source_id);
     }
 
     pub fn observable_state(&self) -> IngestControllerState {
