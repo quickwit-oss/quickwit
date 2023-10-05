@@ -152,6 +152,10 @@ where
         self.heap.len() >= self.k
     }
 
+    pub fn k(&self) -> usize {
+        self.k
+    }
+
     /// Try to add new entries, if they are better than the current worst.
     pub fn add_entries(&mut self, mut items: impl Iterator<Item = T>) {
         if self.k == 0 {
@@ -185,12 +189,11 @@ where
     }
 
     /// Get a Vec of sorted entries.
-    pub fn finalize(self) -> Vec<T> {
+    pub fn finalize(self) -> impl Iterator<Item = T> {
         self.heap
             .into_sorted_vec()
             .into_iter()
             .map(|order_item| order_item.0.item)
-            .collect()
     }
 }
 

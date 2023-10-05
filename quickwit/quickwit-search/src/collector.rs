@@ -25,7 +25,8 @@ use itertools::Itertools;
 use quickwit_common::binary_heap::{SortKeyMapper, TopK};
 use quickwit_doc_mapper::{DocMapper, WarmupInfo};
 use quickwit_proto::search::{
-    LeafSearchResponse, PartialHit, SearchRequest, SortOrder, SortValue, SplitSearchError,
+    LeafSearchResponse, PartialHit, SearchRequest, SortByValue, SortOrder, SortValue,
+    SplitSearchError,
 };
 use serde::Deserialize;
 use tantivy::aggregation::agg_req::{get_fast_field_names, Aggregations};
@@ -292,14 +293,38 @@ enum AggregationSegmentCollectors {
 
 /// Quickwit collector working at the scale of the segment.
 pub struct QuickwitFullSegmentCollector {
+    filtered_docs: Box<[DocId; 64]>,
     num_hits: u64,
     split_id: String,
     score_extractor: SortingFieldExtractorPair,
     // PartialHits in this heap don't contain a split_id yet.
-    top_k_hits: TopK<PartialHit, PartialHitSortingKey, HitSortingMapper>,
+    top_k_hits: TopK<SegmentPartialHit, SegmentPartialHitSortingKey, SegmentHitSortingMapper>,
     segment_ord: u32,
     timestamp_filter_opt: Option<TimestampFilter>,
     aggregation: Option<AggregationSegmentCollectors>,
+}
+
+#[derive(Copy, Clone, Debug)]
+struct SegmentPartialHit {
+    sort_value: Option<SortValue>,
+    sort_value2: Option<SortValue>,
+    doc_id: DocId,
+}
+
+impl SegmentPartialHit {
+    fn into_partial_hit(self, split_id: String, segment_ord: SegmentOrdinal) -> PartialHit {
+        PartialHit {
+            sort_value: self.sort_value.map(|sort_value| SortByValue {
+                sort_value: Some(sort_value),
+            }),
+            sort_value2: self.sort_value2.map(|sort_value| SortByValue {
+                sort_value: Some(sort_value),
+            }),
+            doc_id: self.doc_id,
+            split_id: split_id.clone(),
+            segment_ord: segment_ord,
+        }
+    }
 }
 
 impl QuickwitFullSegmentCollector {
@@ -307,14 +332,9 @@ impl QuickwitFullSegmentCollector {
     fn collect_top_k(&mut self, doc_id: DocId, score: Score) {
         let (sort_value, sort_value2) =
             self.score_extractor.extract_typed_sort_value(doc_id, score);
-
-        let hit = PartialHit {
-            sort_value: sort_value.map(Into::into),
-            sort_value2: sort_value2.map(Into::into),
-            // we actually know the split_id, but the hit is likely to be discarded, so clonning it
-            // would cause a probably useless allocation. TODO use an Arc<str> instead?
-            split_id: String::new(),
-            segment_ord: self.segment_ord,
+        let hit = SegmentPartialHit {
+            sort_value,
+            sort_value2,
             doc_id,
         };
         self.top_k_hits.add_entry(hit);
@@ -329,8 +349,69 @@ impl QuickwitFullSegmentCollector {
     }
 }
 
+const BUFFER_LEN: usize = 64;
+fn compute_filtered_block<'a>(
+    timestamp_filter_opt: &Option<TimestampFilter>,
+    docs: &'a [DocId],
+    filtered_docs_buffer: &'a mut [DocId; BUFFER_LEN],
+) -> &'a [DocId] {
+    let Some(timestamp_filter) = &timestamp_filter_opt else {
+        return docs;
+    };
+    let mut len = 0;
+    for &doc in docs {
+        filtered_docs_buffer[len] = doc;
+        len += if timestamp_filter.is_within_range(doc) {
+            1
+        } else {
+            0
+        };
+    }
+    &filtered_docs_buffer[..len]
+}
+
+fn collect_top_k_block(
+    docs: &[DocId],
+    score_extractor: &SortingFieldExtractorPair,
+    top_k_hits: &mut TopK<SegmentPartialHit, SegmentPartialHitSortingKey, SegmentHitSortingMapper>,
+) {
+    // TODO block fetch the sort values.
+    top_k_hits.add_entries(docs.iter().copied().map(|doc_id| {
+        let (sort_value, sort_value2) = score_extractor.extract_typed_sort_value(doc_id, 0.0f32);
+        SegmentPartialHit {
+            sort_value,
+            sort_value2,
+            doc_id,
+        }
+    }));
+}
+
 impl SegmentCollector for QuickwitFullSegmentCollector {
     type Fruit = tantivy::Result<LeafSearchResponse>;
+
+    #[inline]
+    fn collect_block(&mut self, docs: &[DocId]) {
+        // We voluntarily shadow here, to make sure no-one uses the unfiltered docs.
+        let docs =
+            compute_filtered_block(&self.timestamp_filter_opt, docs, &mut self.filtered_docs);
+
+        // Update results
+        self.num_hits += docs.len() as u64;
+
+        if self.top_k_hits.k() != 0 {
+            collect_top_k_block(docs, &self.score_extractor, &mut self.top_k_hits);
+        }
+
+        match self.aggregation.as_mut() {
+            Some(AggregationSegmentCollectors::FindTraceIdsSegmentCollector(collector)) => {
+                collector.collect_block(docs)
+            }
+            Some(AggregationSegmentCollectors::TantivyAggregationSegmentCollector(collector)) => {
+                collector.collect_block(docs)
+            }
+            None => (),
+        }
+    }
 
     #[inline]
     fn collect(&mut self, doc_id: DocId, score: Score) {
@@ -353,14 +434,11 @@ impl SegmentCollector for QuickwitFullSegmentCollector {
     }
 
     fn harvest(self) -> Self::Fruit {
-        let split_id = self.split_id;
         let partial_hits: Vec<PartialHit> = self
             .top_k_hits
             .finalize()
-            .into_iter()
-            .map(|mut hit| {
-                hit.split_id = split_id.clone();
-                hit
+            .map(|segment_partial_hit: SegmentPartialHit| {
+                segment_partial_hit.into_partial_hit(self.split_id.clone(), self.segment_ord)
             })
             .collect();
 
@@ -502,8 +580,9 @@ impl Collector for QuickwitFullCollector {
         };
         let score_extractor = get_score_extractor(&self.sort_by, segment_reader)?;
         let (order1, order2) = self.sort_by.sort_orders();
-        let sort_key_mapper = HitSortingMapper { order1, order2 };
+        let sort_key_mapper = SegmentHitSortingMapper { order1, order2 };
         Ok(QuickwitFullSegmentCollector {
+            filtered_docs: Box::new([0u32; 64]),
             num_hits: 0u64,
             split_id: self.split_id.clone(),
             score_extractor,
@@ -715,7 +794,7 @@ fn top_k_partial_hits(
 
     partial_hits.for_each(|hit| top_k_hits.add_entry(hit));
 
-    top_k_hits.finalize()
+    top_k_hits.finalize().collect()
 }
 
 pub(crate) fn sort_by_from_request(search_request: &SearchRequest) -> SortByPair {
@@ -810,6 +889,42 @@ pub(crate) fn make_merge_collector(
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+struct SegmentPartialHitSortingKey {
+    sort_value: Option<SortValue>,
+    sort_value2: Option<SortValue>,
+    doc_id: DocId,
+    sort_order: SortOrder,
+    sort_order2: SortOrder,
+}
+
+impl Ord for SegmentPartialHitSortingKey {
+    fn cmp(&self, other: &SegmentPartialHitSortingKey) -> Ordering {
+        assert_eq!(
+            self.sort_order, other.sort_order,
+            "comparing two PartialHitSortingKey of different ordering"
+        );
+        assert_eq!(
+            self.sort_order2, other.sort_order2,
+            "comparing two PartialHitSortingKey of different ordering"
+        );
+        let order = self
+            .sort_order
+            .compare_opt(&self.sort_value, &other.sort_value);
+        let order2 = self
+            .sort_order2
+            .compare_opt(&self.sort_value2, &other.sort_value2);
+        let order_addr = self.sort_order.compare(&self.doc_id, &other.doc_id);
+        order.then(order2).then(order_addr)
+    }
+}
+
+impl PartialOrd for SegmentPartialHitSortingKey {
+    fn partial_cmp(&self, other: &SegmentPartialHitSortingKey) -> Option<Ordering> {
+        Some(self.cmp(other))
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 struct PartialHitSortingKey {
     sort_value: Option<SortValue>,
     sort_value2: Option<SortValue>,
@@ -846,6 +961,25 @@ impl Ord for PartialHitSortingKey {
 impl PartialOrd for PartialHitSortingKey {
     fn partial_cmp(&self, other: &PartialHitSortingKey) -> Option<Ordering> {
         Some(self.cmp(other))
+    }
+}
+
+#[derive(Clone)]
+struct SegmentHitSortingMapper {
+    order1: SortOrder,
+    order2: SortOrder,
+}
+
+impl SortKeyMapper<SegmentPartialHit> for SegmentHitSortingMapper {
+    type Key = SegmentPartialHitSortingKey;
+    fn get_sort_key(&self, partial_hit: &SegmentPartialHit) -> SegmentPartialHitSortingKey {
+        SegmentPartialHitSortingKey {
+            sort_value: partial_hit.sort_value,
+            sort_value2: partial_hit.sort_value2,
+            doc_id: partial_hit.doc_id,
+            sort_order: self.order1,
+            sort_order2: self.order2,
+        }
     }
 }
 
@@ -938,7 +1072,7 @@ impl IncrementalCollector {
                 .iter()
                 .map(|vec| vec.as_slice()),
         )?;
-        let mut partial_hits = self.top_k_hits.finalize();
+        let mut partial_hits: Vec<PartialHit> = self.top_k_hits.finalize().collect();
         if self.inner.start_offset != 0 {
             partial_hits.drain(0..self.inner.start_offset.min(partial_hits.len()));
         }
