@@ -29,6 +29,7 @@ use futures::future::{BoxFuture, WeakShared};
 use futures::{Future, FutureExt};
 use quickwit_common::uri::Uri;
 use tantivy::directory::OwnedBytes;
+use tokio::io::AsyncRead;
 
 use crate::storage::SendableAsync;
 use crate::{BulkDeleteError, Storage, StorageResult};
@@ -161,6 +162,15 @@ impl<T: Storage> Storage for DebouncedStorage<T> {
                 underlying.get_slice(&key.0, key.1).await
             })
             .await
+    }
+
+    async fn get_slice_stream(
+        &self,
+        path: &Path,
+        range: Range<usize>,
+    ) -> StorageResult<Box<dyn AsyncRead + Send + Unpin>> {
+        // Getting a stream bypasses the debouncer
+        self.underlying.get_slice_stream(path, range).await
     }
 
     async fn delete(&self, path: &Path) -> StorageResult<()> {

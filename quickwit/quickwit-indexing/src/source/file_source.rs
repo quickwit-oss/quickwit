@@ -18,7 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::fmt;
-use std::io::SeekFrom;
+use std::ops::Range;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -26,11 +26,11 @@ use anyhow::Context;
 use async_trait::async_trait;
 use bytes::Bytes;
 use quickwit_actors::{ActorExitStatus, Mailbox};
+use quickwit_common::uri::Uri;
 use quickwit_config::FileSourceParams;
 use quickwit_metastore::checkpoint::{PartitionId, Position, SourceCheckpoint};
 use serde::Serialize;
-use tokio::fs::File;
-use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncSeekExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncRead, BufReader};
 use tracing::info;
 
 use crate::actors::DocProcessor;
@@ -51,7 +51,7 @@ pub struct FileSource {
     source_id: String,
     params: FileSourceParams,
     counters: FileSourceCounters,
-    reader: BufReader<Box<dyn AsyncRead + Send + Sync + Unpin>>,
+    reader: BufReader<Box<dyn AsyncRead + Send + Unpin>>,
 }
 
 impl fmt::Debug for FileSource {
@@ -137,28 +137,37 @@ impl TypedSourceFactory for FileSourceFactory {
         checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<FileSource> {
         let mut offset = 0;
-        let reader: Box<dyn AsyncRead + Send + Sync + Unpin> =
-            if let Some(filepath) = &params.filepath {
-                let mut file = File::open(&filepath).await.with_context(|| {
-                    format!("failed to open source file `{}`", filepath.display())
-                })?;
-                let partition_id = PartitionId::from(filepath.to_string_lossy().to_string());
-                if let Some(Position::Offset(offset_str)) =
-                    checkpoint.position_for_partition(&partition_id).cloned()
-                {
-                    offset = offset_str.parse::<u64>()?;
-                    file.seek(SeekFrom::Start(offset)).await?;
-                }
-                Box::new(file)
-            } else {
-                // We cannot use the checkpoint.
-                Box::new(tokio::io::stdin())
-            };
+        let reader: Box<dyn AsyncRead + Send + Unpin> = if let Some(filepath) = &params.filepath {
+            let partition_id = PartitionId::from(filepath.to_string_lossy().to_string());
+            if let Some(Position::Offset(offset_str)) =
+                checkpoint.position_for_partition(&partition_id).cloned()
+            {
+                offset = offset_str.parse::<usize>()?;
+            }
+            let uri: Uri = filepath
+                .to_str()
+                .ok_or_else(|| anyhow::anyhow!("Path cannot be turned to string"))?
+                .parse()?;
+            let storage = ctx.storage_resolver.resolve(&uri).await?;
+            let file_size = storage.file_num_bytes(filepath).await?.try_into().unwrap();
+            storage
+                .get_slice_stream(
+                    filepath,
+                    Range {
+                        start: offset,
+                        end: file_size,
+                    },
+                )
+                .await?
+        } else {
+            // We cannot use the checkpoint.
+            Box::new(tokio::io::stdin())
+        };
         let file_source = FileSource {
             source_id: ctx.source_id().to_string(),
             counters: FileSourceCounters {
-                previous_offset: offset,
-                current_offset: offset,
+                previous_offset: offset as u64,
+                current_offset: offset as u64,
                 num_lines_processed: 0,
             },
             reader: BufReader::new(reader),

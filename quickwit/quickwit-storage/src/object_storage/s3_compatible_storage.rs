@@ -20,6 +20,8 @@
 use std::collections::HashMap;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
+use std::task::{Context, Poll};
 use std::{env, fmt, io};
 
 use anyhow::anyhow;
@@ -40,7 +42,7 @@ use quickwit_common::uri::Uri;
 use quickwit_common::{chunk_range, into_u64_range};
 use quickwit_config::S3StorageConfig;
 use regex::Regex;
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader, ReadBuf};
 use tokio::sync::Semaphore;
 use tracing::{info, instrument, warn};
 
@@ -61,6 +63,24 @@ static REQUEST_SEMAPHORE: Lazy<Semaphore> = Lazy::new(|| {
         .expect("QW_S3_MAX_CONCURRENCY value should be a number.");
     Semaphore::new(num_permits)
 });
+
+/// Wrap the async read handle together with a permit to keep the permit alive
+/// until the handle is dropped
+struct S3AsyncRead<T: AsyncRead + Send + Unpin> {
+    pub read: T,
+    pub _permit: Result<tokio::sync::SemaphorePermit<'static>, tokio::sync::AcquireError>,
+}
+
+impl<T: AsyncRead + Send + Unpin> AsyncRead for S3AsyncRead<T> {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        let self_unpin = self.get_mut();
+        Pin::new(&mut self_unpin.read).poll_read(cx, buf)
+    }
+}
 
 /// S3-compatible object storage implementation.
 pub struct S3CompatibleObjectStorage {
@@ -745,6 +765,23 @@ impl Storage for S3CompatibleObjectStorage {
                     path.display(),
                 ))
             })
+    }
+
+    #[instrument(level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
+    async fn get_slice_stream(
+        &self,
+        path: &Path,
+        range: Range<usize>,
+    ) -> crate::StorageResult<Box<dyn AsyncRead + Send + Unpin>> {
+        let permit = REQUEST_SEMAPHORE.acquire().await;
+        let get_object_output = retry(&self.retry_params, || {
+            self.create_get_object_request(path, Some(range.clone()))
+        })
+        .await?;
+        Ok(Box::new(S3AsyncRead {
+            read: get_object_output.body.into_async_read(),
+            _permit: permit,
+        }))
     }
 
     #[instrument(level = "debug", skip(self), fields(num_bytes_fetched))]

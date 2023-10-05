@@ -18,12 +18,14 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::fmt;
+use std::io::Cursor;
 use std::ops::Range;
 use std::path::Path;
 use std::sync::Arc;
 
 use async_trait::async_trait;
 use quickwit_common::uri::Uri;
+use tokio::io::AsyncRead;
 
 use crate::cache::StorageCache;
 use crate::storage::SendableAsync;
@@ -69,6 +71,18 @@ impl Storage for StorageWithCache {
                 .await;
             Ok(bytes)
         }
+    }
+
+    async fn get_slice_stream(
+        &self,
+        path: &Path,
+        range: Range<usize>,
+    ) -> StorageResult<Box<dyn AsyncRead + Send + Unpin>> {
+        // TODO: using `get_slice` implies that we need to download the whole
+        // slice before being able to stream it. We might look for a mechanism
+        // to start the streaming right away and tee it output into the cache.
+        let bytes = self.get_slice(path, range).await?;
+        Ok(Box::new(Cursor::new(bytes)))
     }
 
     async fn get_all(&self, path: &Path) -> StorageResult<OwnedBytes> {
