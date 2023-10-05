@@ -18,46 +18,70 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use anyhow::Context;
 use async_trait::async_trait;
 use quickwit_actors::{
-    Actor, ActorContext, ActorExitStatus, ActorHandle, AskError, Handler, Mailbox, Universe,
+    Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Mailbox, Universe,
 };
 use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_ingest::IngesterPool;
 use quickwit_metastore::Metastore;
 use quickwit_proto::control_plane::{
     CloseShardsRequest, CloseShardsResponse, ControlPlaneError, ControlPlaneResult,
-    GetOpenShardsRequest, GetOpenShardsResponse, NotifyIndexChangeRequest,
-    NotifyIndexChangeResponse,
+    GetOpenShardsRequest, GetOpenShardsResponse,
 };
-use quickwit_proto::metastore::events::{
-    AddSourceEvent, CreateIndexEvent, DeleteIndexEvent, DeleteSourceEvent, ToggleSourceEvent,
-};
+use quickwit_proto::metastore::events::ToggleSourceEvent;
 use quickwit_proto::metastore::{
     serde_utils as metastore_serde_utils, AddSourceRequest, CreateIndexRequest,
     CreateIndexResponse, DeleteIndexRequest, DeleteSourceRequest, EmptyResponse,
     ToggleSourceRequest,
 };
 use quickwit_proto::{IndexUid, NodeId};
-use tracing::debug;
+use serde::Serialize;
+use tracing::error;
 
+use crate::ingest::ingest_controller::IngestControllerState;
 use crate::ingest::IngestController;
-use crate::scheduler::IndexingScheduler;
+use crate::scheduler::{IndexingScheduler, IndexingSchedulerState};
 use crate::IndexerPool;
+
+/// Interval between two controls (or checks) of the desired plan VS running plan.
+pub(crate) const CONTROL_PLAN_LOOP_INTERVAL: Duration = if cfg!(any(test, feature = "testsuite")) {
+    Duration::from_millis(500)
+} else {
+    Duration::from_secs(3)
+};
+
+/// Interval between two scheduling of indexing plans. No need to be faster than the
+/// control plan loop.
+// Note: it's currently not possible to define a const duration with
+// `CONTROL_PLAN_LOOP_INTERVAL * number`.
+pub(crate) const REFRESH_PLAN_LOOP_INTERVAL: Duration = if cfg!(any(test, feature = "testsuite")) {
+    Duration::from_secs(3)
+} else {
+    Duration::from_secs(60)
+};
+
+#[derive(Debug)]
+struct RefreshPlanLoop;
+
+#[derive(Debug)]
+struct ControlPlanLoop;
 
 #[derive(Debug)]
 pub struct ControlPlane {
     metastore: Arc<dyn Metastore>,
-    // N.B.: The control plane is an actor and both the indexing scheduler and the ingest
-    // controller are also actors. It might be simpler to have a single actor for the control
-    // plane and replace message passing with function calls. The control plane would be in
-    // charge of driving the control loop of controllers.
-    indexing_scheduler_mailbox: Mailbox<IndexingScheduler>,
-    indexing_scheduler_handle: ActorHandle<IndexingScheduler>,
-    ingest_controller_mailbox: Mailbox<IngestController>,
-    ingest_controller_handle: ActorHandle<IngestController>,
+    // The control plane state is split into to independent functions, that we naturally isolated
+    // code wise and state wise.
+    //
+    // - The indexing scheduler is in charge of managing indexers: it decides which indexer should
+    // index which source/shards.
+    // - the ingest controller is in charge of managing ingesters: it opens and closes shards on
+    // the different ingesters.
+    indexing_scheduler: IndexingScheduler,
+    ingest_controller: IngestController,
 }
 
 impl ControlPlane {
@@ -72,50 +96,68 @@ impl ControlPlane {
     ) -> (Mailbox<Self>, ActorHandle<Self>) {
         let indexing_scheduler =
             IndexingScheduler::new(cluster_id, self_node_id, metastore.clone(), indexer_pool);
-        let (indexing_scheduler_mailbox, indexing_scheduler_handle) =
-            universe.spawn_builder().spawn(indexing_scheduler);
-        let ingester_controller =
+        let ingest_controller =
             IngestController::new(metastore.clone(), ingester_pool, replication_factor);
-        let (ingest_controller_mailbox, ingest_controller_handle) =
-            universe.spawn_builder().spawn(ingester_controller);
         let control_plane = Self {
             metastore,
-            indexing_scheduler_mailbox,
-            indexing_scheduler_handle,
-            ingest_controller_mailbox,
-            ingest_controller_handle,
+            indexing_scheduler,
+            ingest_controller,
         };
         universe.spawn_builder().spawn(control_plane)
     }
 }
 
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct ControlPlaneObservableState {
+    pub ingester_controller: IngestControllerState,
+    pub indexing_scheduler: IndexingSchedulerState,
+}
+
 #[async_trait]
 impl Actor for ControlPlane {
-    type ObservableState = (
-        <IndexingScheduler as Actor>::ObservableState,
-        <IngestController as Actor>::ObservableState,
-    );
+    type ObservableState = ControlPlaneObservableState;
 
     fn name(&self) -> String {
         "ControlPlane".to_string()
     }
 
     fn observable_state(&self) -> Self::ObservableState {
-        (
-            self.indexing_scheduler_handle.last_observation(),
-            self.ingest_controller_handle.last_observation(),
-        )
+        ControlPlaneObservableState {
+            ingester_controller: self.ingest_controller.observable_state(),
+            indexing_scheduler: self.indexing_scheduler.observable_state(),
+        }
+    }
+
+    async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
+        self.ingest_controller
+            .load_state(ctx.progress())
+            .await
+            .context("failed to initialize ingest controller")?;
+
+        self.handle(RefreshPlanLoop, ctx).await?;
+        ctx.schedule_self_msg(CONTROL_PLAN_LOOP_INTERVAL, ControlPlanLoop)
+            .await;
+
+        Ok(())
     }
 }
 
-macro_rules! handle_ask_res {
-    ($ask_res:expr) => {
-        match $ask_res {
-            Ok(response) => response,
-            Err(AskError::ErrorReply(error)) => return Ok(Err(error)),
-            Err(error) => return Err(ActorExitStatus::Failure(anyhow::anyhow!(error).into())),
+#[async_trait]
+impl Handler<ControlPlanLoop> for ControlPlane {
+    type Reply = ();
+
+    async fn handle(
+        &mut self,
+        _message: ControlPlanLoop,
+        ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus> {
+        if let Err(error) = self.indexing_scheduler.control_running_plan().await {
+            error!("Error when controlling the running plan: `{}`.", error);
         }
-    };
+        ctx.schedule_self_msg(CONTROL_PLAN_LOOP_INTERVAL, ControlPlanLoop)
+            .await;
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -125,7 +167,7 @@ impl Handler<CreateIndexRequest> for ControlPlane {
     async fn handle(
         &mut self,
         request: CreateIndexRequest,
-        ctx: &ActorContext<Self>,
+        _ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
         let index_config: IndexConfig =
             match metastore_serde_utils::from_json_str(&request.index_config_json) {
@@ -140,16 +182,11 @@ impl Handler<CreateIndexRequest> for ControlPlane {
                 return Ok(Err(ControlPlaneError::from(error)));
             }
         };
-        let event = CreateIndexEvent {
-            index_uid: index_uid.clone(),
-        };
-        handle_ask_res!(
-            ctx.ask_for_res(&self.ingest_controller_mailbox, event.clone())
-                .await
-        );
+        self.ingest_controller.add_index(index_uid.clone());
         let response = CreateIndexResponse {
             index_uid: index_uid.into(),
         };
+        // We do not need to inform the indexing scheduler as there are no shards at this point.
         Ok(Ok(response))
     }
 }
@@ -161,22 +198,45 @@ impl Handler<DeleteIndexRequest> for ControlPlane {
     async fn handle(
         &mut self,
         request: DeleteIndexRequest,
-        ctx: &ActorContext<Self>,
+        _ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
         let index_uid: IndexUid = request.index_uid.into();
 
         if let Err(error) = self.metastore.delete_index(index_uid.clone()).await {
             return Ok(Err(ControlPlaneError::from(error)));
         };
-        let event = DeleteIndexEvent { index_uid };
 
-        handle_ask_res!(
-            ctx.ask_for_res(&self.ingest_controller_mailbox, event.clone())
-                .await
-        );
+        self.ingest_controller.delete_index(&index_uid);
 
         let response = EmptyResponse {};
+
+        // TODO: Refine the event. Notify index will have the effect to reload the entire state from
+        // the metastore. We should update the state of the control plane.
+        self.indexing_scheduler.on_index_change().await?;
+
         Ok(Ok(response))
+    }
+}
+
+#[async_trait]
+impl Handler<RefreshPlanLoop> for ControlPlane {
+    type Reply = ();
+
+    async fn handle(
+        &mut self,
+        _message: RefreshPlanLoop,
+        ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus> {
+        if let Err(error) = self
+            .indexing_scheduler
+            .schedule_indexing_plan_if_needed()
+            .await
+        {
+            error!("Error when scheduling indexing plan: `{}`.", error);
+        }
+        ctx.schedule_self_msg(REFRESH_PLAN_LOOP_INTERVAL, RefreshPlanLoop)
+            .await;
+        Ok(())
     }
 }
 
@@ -187,7 +247,7 @@ impl Handler<AddSourceRequest> for ControlPlane {
     async fn handle(
         &mut self,
         request: AddSourceRequest,
-        ctx: &ActorContext<Self>,
+        _ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
         let index_uid: IndexUid = request.index_uid.into();
         let source_config: SourceConfig =
@@ -198,7 +258,6 @@ impl Handler<AddSourceRequest> for ControlPlane {
                 }
             };
         let source_id = source_config.source_id.clone();
-        let source_type = source_config.source_type();
 
         if let Err(error) = self
             .metastore
@@ -207,16 +266,13 @@ impl Handler<AddSourceRequest> for ControlPlane {
         {
             return Ok(Err(ControlPlaneError::from(error)));
         };
-        let event = AddSourceEvent {
-            index_uid,
-            source_id,
-            source_type,
-        };
-        handle_ask_res!(
-            ctx.ask_for_res(&self.ingest_controller_mailbox, event)
-                .await
-        );
-        // TODO: Notify indexing controller.
+
+        self.ingest_controller.add_source(&index_uid, &source_id);
+
+        // TODO: Refine the event. Notify index will have the effect to reload the entire state from
+        // the metastore. We should update the state of the control plane.
+        self.indexing_scheduler.on_index_change().await?;
+
         let response = EmptyResponse {};
         Ok(Ok(response))
     }
@@ -245,7 +301,10 @@ impl Handler<ToggleSourceRequest> for ControlPlane {
             source_id: request.source_id,
             enabled: request.enable,
         };
-        // TODO: Notify indexing controller.
+        // TODO: Refine the event. Notify index will have the effect to reload the entire state from
+        // the metastore. We should update the state of the control plane.
+        self.indexing_scheduler.on_index_change().await?;
+
         let response = EmptyResponse {};
         Ok(Ok(response))
     }
@@ -269,32 +328,12 @@ impl Handler<DeleteSourceRequest> for ControlPlane {
         {
             return Ok(Err(ControlPlaneError::from(error)));
         };
-        let _event = DeleteSourceEvent {
-            index_uid,
-            source_id: request.source_id,
-        };
-        // TODO: Notify indexing controller.
+
+        self.ingest_controller
+            .delete_source(&index_uid, &request.source_id);
+        self.indexing_scheduler.on_index_change().await?;
         let response = EmptyResponse {};
         Ok(Ok(response))
-    }
-}
-
-#[async_trait]
-impl Handler<NotifyIndexChangeRequest> for ControlPlane {
-    type Reply = ControlPlaneResult<NotifyIndexChangeResponse>;
-
-    async fn handle(
-        &mut self,
-        request: NotifyIndexChangeRequest,
-        _: &ActorContext<Self>,
-    ) -> Result<Self::Reply, ActorExitStatus> {
-        debug!("Index change notification: schedule indexing plan.");
-        // TODO: Switch from async (`send_message`) to sync (`ask_for_res`).
-        self.indexing_scheduler_mailbox
-            .send_message(request)
-            .await
-            .context("error sending index change notification to index scheduler")?;
-        Ok(Ok(NotifyIndexChangeResponse {}))
     }
 }
 
@@ -305,10 +344,12 @@ impl Handler<GetOpenShardsRequest> for ControlPlane {
     async fn handle(
         &mut self,
         request: GetOpenShardsRequest,
-        _: &ActorContext<Self>,
+        ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
-        let response = handle_ask_res!(self.ingest_controller_mailbox.ask_for_res(request).await);
-        Ok(Ok(response))
+        Ok(self
+            .ingest_controller
+            .get_open_shards(request, ctx.progress())
+            .await)
     }
 }
 
@@ -319,10 +360,15 @@ impl Handler<CloseShardsRequest> for ControlPlane {
     async fn handle(
         &mut self,
         request: CloseShardsRequest,
-        _: &ActorContext<Self>,
-    ) -> Result<Self::Reply, ActorExitStatus> {
-        let response = handle_ask_res!(self.ingest_controller_mailbox.ask_for_res(request).await);
-        Ok(Ok(response))
+        ctx: &ActorContext<Self>,
+    ) -> Result<ControlPlaneResult<CloseShardsResponse>, ActorExitStatus> {
+        // TODO decide on what the error should be.
+        let close_shards_resp = self
+            .ingest_controller
+            .close_shards(request, ctx.progress())
+            .await
+            .context("Failed to close shards")?;
+        Ok(Ok(close_shards_resp))
     }
 }
 

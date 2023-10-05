@@ -22,12 +22,6 @@ use quickwit_common::pubsub::Event;
 use super::SourceType;
 use crate::{IndexUid, SourceId};
 
-/// Create index event.
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct CreateIndexEvent {
-    pub index_uid: IndexUid,
-}
-
 /// Delete index event.
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct DeleteIndexEvent {
@@ -67,7 +61,6 @@ pub struct DeleteSourceEvent {
 }
 
 impl Event for AddSourceEvent {}
-impl Event for CreateIndexEvent {}
 impl Event for DeleteIndexEvent {}
 impl Event for DeleteSourceEvent {}
 impl Event for ToggleSourceEvent {}

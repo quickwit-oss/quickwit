@@ -25,10 +25,8 @@ use std::ops::Deref;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-use anyhow::Context;
-use async_trait::async_trait;
 use itertools::Itertools;
-use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler};
+use quickwit_common::Progress;
 use quickwit_config::INGEST_SOURCE_ID;
 use quickwit_ingest::IngesterPool;
 use quickwit_metastore::{ListIndexesQuery, Metastore};
@@ -38,14 +36,11 @@ use quickwit_proto::control_plane::{
 };
 use quickwit_proto::ingest::ingester::{IngesterService, PingRequest};
 use quickwit_proto::ingest::{IngestV2Error, Shard, ShardState};
-use quickwit_proto::metastore::events::{
-    AddSourceEvent, CreateIndexEvent, DeleteIndexEvent, DeleteSourceEvent,
-};
 use quickwit_proto::metastore::{EntityKind, MetastoreError};
 use quickwit_proto::types::{IndexId, NodeId, SourceId};
 use quickwit_proto::{metastore, IndexUid, NodeIdRef, ShardId};
 use rand::seq::SliceRandom;
-use serde_json::{json, Value as JsonValue};
+use serde::Serialize;
 use tokio::time::timeout;
 use tracing::{error, info};
 
@@ -61,7 +56,7 @@ type NextShardId = ShardId;
 struct ShardEntry(Shard);
 
 impl fmt::Debug for ShardEntry {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("ShardEntry")
             .field("shard_id", &self.0.shard_id)
             .field("leader_id", &self.0.leader_id)
@@ -126,7 +121,13 @@ struct ShardTable {
 }
 
 impl ShardTable {
+    fn len(&self) -> usize {
+        self.table_entries.len()
+    }
+
     /// Adds a new empty entry for the given index and source.
+    ///
+    /// TODO check and document the behavior on error (if the source was already here).
     fn add_source(&mut self, index_uid: &IndexUid, source_id: &SourceId) {
         let key = (index_uid.clone(), source_id.clone());
         let table_entry = ShardTableEntry::default();
@@ -141,6 +142,11 @@ impl ShardTable {
                 );
             }
         }
+    }
+
+    fn remove_source(&mut self, index_uid: &IndexUid, source_id: &SourceId) {
+        let key = (index_uid.clone(), source_id.clone());
+        self.table_entries.remove(&key);
     }
 
     /// Clears the shard table.
@@ -214,7 +220,6 @@ impl ShardTable {
     /// table.
     fn remove_shards(&mut self, index_uid: &IndexUid, source_id: &SourceId, shard_ids: &[ShardId]) {
         let key = (index_uid.clone(), source_id.clone());
-
         if let Some(table_entry) = self.table_entries.get_mut(&key) {
             table_entry
                 .shard_entries
@@ -227,11 +232,6 @@ impl ShardTable {
         self.table_entries
             .retain(|(index_uid, _), _| index_uid.index_id() != index_id);
     }
-
-    fn remove_source(&mut self, index_uid: &IndexUid, source_id: &SourceId) {
-        let key = (index_uid.clone(), source_id.clone());
-        self.table_entries.remove(&key);
-    }
 }
 
 pub struct IngestController {
@@ -240,6 +240,18 @@ pub struct IngestController {
     index_table: HashMap<IndexId, IndexUid>,
     shard_table: ShardTable,
     replication_factor: usize,
+}
+
+impl fmt::Debug for IngestController {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("IngestController")
+            .field("replication", &self.metastore)
+            .field("ingester_pool", &self.ingester_pool)
+            .field("index_table.len", &self.index_table.len())
+            .field("shard_table.len", &self.shard_table.len())
+            .field("replication_factor", &self.replication_factor)
+            .finish()
+    }
 }
 
 impl IngestController {
@@ -257,14 +269,14 @@ impl IngestController {
         }
     }
 
-    async fn load_state(&mut self, ctx: &ActorContext<Self>) -> ControlPlaneResult<()> {
+    pub(crate) async fn load_state(&mut self, progress: &Progress) -> ControlPlaneResult<()> {
         info!("syncing internal state with metastore");
         let now = Instant::now();
 
         self.index_table.clear();
         self.shard_table.clear();
 
-        let indexes = ctx
+        let indexes = progress
             .protect_future(self.metastore.list_indexes_metadatas(ListIndexesQuery::All))
             .await?;
 
@@ -294,7 +306,7 @@ impl IngestController {
         }
         if !subrequests.is_empty() {
             let list_shards_request = metastore::ListShardsRequest { subrequests };
-            let list_shard_response = ctx
+            let list_shard_response = progress
                 .protect_future(self.metastore.list_shards(list_shards_request))
                 .await?;
 
@@ -337,9 +349,9 @@ impl IngestController {
     /// well.
     async fn ping_leader_and_follower(
         &mut self,
-        ctx: &ActorContext<Self>,
         leader_id: &NodeId,
         follower_id_opt: Option<&NodeId>,
+        progress: &Progress,
     ) -> Result<(), PingError> {
         let mut leader_ingester = self
             .ingester_pool
@@ -353,7 +365,7 @@ impl IngestController {
                 .cloned()
                 .map(|follower_id| follower_id.into()),
         };
-        ctx.protect_future(timeout(
+        progress.protect_future(timeout(
             PING_LEADER_TIMEOUT,
             leader_ingester.ping(ping_request),
         ))
@@ -374,8 +386,8 @@ impl IngestController {
     /// 1, only a leader is returned. If no nodes are available, `None` is returned.
     async fn find_leader_and_follower(
         &mut self,
-        ctx: &ActorContext<Self>,
         unavailable_ingesters: &mut HashSet<NodeId>,
+        progress: &Progress,
     ) -> Option<(NodeId, Option<NodeId>)> {
         let mut candidates: Vec<NodeId> = self.ingester_pool.keys().await;
         candidates.retain(|node_id| !unavailable_ingesters.contains(node_id));
@@ -390,7 +402,7 @@ impl IngestController {
                     continue;
                 }
                 if self
-                    .ping_leader_and_follower(ctx, &leader_id, None)
+                    .ping_leader_and_follower(&leader_id, None, progress)
                     .await
                     .is_ok()
                 {
@@ -407,7 +419,7 @@ impl IngestController {
                     continue;
                 }
                 match self
-                    .ping_leader_and_follower(ctx, &leader_id, Some(&follower_id))
+                    .ping_leader_and_follower(&leader_id, Some(&follower_id), progress)
                     .await
                 {
                     Ok(_) => return Some((leader_id, Some(follower_id))),
@@ -430,10 +442,10 @@ impl IngestController {
     /// ingest router. First, the control plane checks its internal shard table to find
     /// candidates. If it does not contain any, the control plane will ask
     /// the metastore to open new shards.
-    async fn get_open_shards(
+    pub(crate) async fn get_open_shards(
         &mut self,
-        ctx: &ActorContext<Self>,
         get_open_shards_request: GetOpenShardsRequest,
+        progress: &Progress,
     ) -> ControlPlaneResult<GetOpenShardsResponse> {
         let mut get_open_shards_subresponses =
             Vec::with_capacity(get_open_shards_request.subrequests.len());
@@ -480,7 +492,7 @@ impl IngestController {
                 // TODO: Find leaders in batches.
                 // TODO: Round-robin leader-follower pairs or choose according to load.
                 let (leader_id, follower_id) = self
-                    .find_leader_and_follower(ctx, &mut unavailable_ingesters)
+                    .find_leader_and_follower(&mut unavailable_ingesters, progress)
                     .await
                     .ok_or_else(|| {
                         ControlPlaneError::Unavailable("no available ingester".to_string())
@@ -499,7 +511,7 @@ impl IngestController {
             let open_shards_request = metastore::OpenShardsRequest {
                 subrequests: open_shards_subrequests,
             };
-            let open_shards_response = ctx
+            let open_shards_response = progress
                 .protect_future(self.metastore.open_shards(open_shards_request))
                 .await?;
             for open_shards_subresponse in &open_shards_response.subresponses {
@@ -526,10 +538,10 @@ impl IngestController {
         Ok(get_open_shards_response)
     }
 
-    async fn close_shards(
+    pub(crate) async fn close_shards(
         &mut self,
-        ctx: &ActorContext<Self>,
         close_shards_request: CloseShardsRequest,
+        progress: &Progress,
     ) -> ControlPlaneResult<CloseShardsResponse> {
         let mut close_shards_subrequests =
             Vec::with_capacity(close_shards_request.subrequests.len());
@@ -547,7 +559,7 @@ impl IngestController {
         let metastore_close_shards_request = metastore::CloseShardsRequest {
             subrequests: close_shards_subrequests,
         };
-        let close_shards_response = ctx
+        let close_shards_response = progress
             .protect_future(self.metastore.close_shards(metastore_close_shards_request))
             .await?;
         for close_shards_success in close_shards_response.successes {
@@ -569,123 +581,42 @@ enum PingError {
     FollowerUnavailable,
 }
 
-#[async_trait]
-impl Actor for IngestController {
-    type ObservableState = JsonValue;
-
-    fn observable_state(&self) -> Self::ObservableState {
-        json!({
-            "num_indexes": self.index_table.len(),
-        })
-    }
-
-    fn name(&self) -> String {
-        "IngestController".to_string()
-    }
-
-    async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
-        self.load_state(ctx)
-            .await
-            .context("failed to initialize ingest controller")?;
-        Ok(())
-    }
+#[derive(Debug, Clone, Serialize, Default)]
+pub struct IngestControllerState {
+    pub num_indexes: usize,
 }
 
-#[async_trait]
-impl Handler<CreateIndexEvent> for IngestController {
-    type Reply = ControlPlaneResult<()>;
-
-    async fn handle(
-        &mut self,
-        event: CreateIndexEvent,
-        _ctx: &ActorContext<Self>,
-    ) -> Result<Self::Reply, ActorExitStatus> {
-        let index_uid = event.index_uid;
+impl IngestController {
+    pub(crate) fn add_index(&mut self, index_uid: IndexUid) {
+        let index_uid = index_uid;
         let index_id = index_uid.index_id().to_string();
-
         self.index_table.insert(index_id, index_uid);
-        Ok(Ok(()))
     }
-}
 
-#[async_trait]
-impl Handler<DeleteIndexEvent> for IngestController {
-    type Reply = ControlPlaneResult<()>;
-
-    async fn handle(
-        &mut self,
-        event: DeleteIndexEvent,
-        _ctx: &ActorContext<Self>,
-    ) -> Result<Self::Reply, ActorExitStatus> {
+    pub(crate) fn delete_index(&mut self, index_uid: &IndexUid) {
         // TODO: We need to let the routers and ingesters know.
-        self.index_table.remove(event.index_uid.index_id());
-        self.shard_table.remove_index(event.index_uid.index_id());
-        Ok(Ok(()))
+        self.index_table.remove(index_uid.index_id());
+        self.shard_table.remove_index(index_uid.index_id());
     }
-}
 
-#[async_trait]
-impl Handler<AddSourceEvent> for IngestController {
-    type Reply = ControlPlaneResult<()>;
-
-    async fn handle(
-        &mut self,
-        event: AddSourceEvent,
-        _ctx: &ActorContext<Self>,
-    ) -> Result<Self::Reply, ActorExitStatus> {
-        self.shard_table
-            .add_source(&event.index_uid, &event.source_id);
-        Ok(Ok(()))
+    pub(crate) fn add_source(&mut self, index_uid: &IndexUid, source_id: &SourceId) {
+        self.shard_table.add_source(index_uid, source_id);
     }
-}
 
-#[async_trait]
-impl Handler<DeleteSourceEvent> for IngestController {
-    type Reply = ControlPlaneResult<()>;
-
-    async fn handle(
-        &mut self,
-        event: DeleteSourceEvent,
-        _ctx: &ActorContext<Self>,
-    ) -> Result<Self::Reply, ActorExitStatus> {
-        self.shard_table
-            .remove_source(&event.index_uid, &event.source_id);
-        Ok(Ok(()))
+    pub(crate) fn delete_source(&mut self, index_uid: &IndexUid, source_id: &SourceId) {
+        self.shard_table.remove_source(index_uid, source_id);
     }
-}
 
-#[async_trait]
-impl Handler<GetOpenShardsRequest> for IngestController {
-    type Reply = ControlPlaneResult<GetOpenShardsResponse>;
-
-    async fn handle(
-        &mut self,
-        request: GetOpenShardsRequest,
-        ctx: &ActorContext<Self>,
-    ) -> Result<Self::Reply, ActorExitStatus> {
-        let response_res = self.get_open_shards(ctx, request).await;
-        Ok(response_res)
-    }
-}
-
-#[async_trait]
-impl Handler<CloseShardsRequest> for IngestController {
-    type Reply = ControlPlaneResult<CloseShardsResponse>;
-
-    async fn handle(
-        &mut self,
-        request: CloseShardsRequest,
-        ctx: &ActorContext<Self>,
-    ) -> Result<Self::Reply, ActorExitStatus> {
-        let response_res = self.close_shards(ctx, request).await;
-        Ok(response_res)
+    pub fn observable_state(&self) -> IngestControllerState {
+        IngestControllerState {
+            num_indexes: self.index_table.len(),
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
 
-    use quickwit_actors::Universe;
     use quickwit_config::SourceConfig;
     use quickwit_metastore::{IndexMetadata, MockMetastore};
     use quickwit_proto::control_plane::GetOpenShardsSubrequest;
@@ -693,7 +624,6 @@ mod tests {
         IngesterServiceClient, MockIngesterService, PingResponse,
     };
     use quickwit_proto::ingest::{IngestV2Error, Shard};
-    use tokio::sync::watch;
 
     use super::*;
 
@@ -894,10 +824,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingest_controller_load_shard_table() {
-        let universe = Universe::with_accelerated_time();
-        let (mailbox, _inbox) = universe.create_test_mailbox();
-        let (observable_state_tx, _observable_state_rx) = watch::channel(json!({}));
-        let ctx = ActorContext::for_test(&universe, mailbox, observable_state_tx);
+        let progress = Progress::default();
 
         let mut mock_metastore = MockMetastore::default();
         mock_metastore
@@ -952,7 +879,7 @@ mod tests {
         let mut ingest_controller =
             IngestController::new(metastore, ingester_pool, replication_factor);
 
-        ingest_controller.load_state(&ctx).await.unwrap();
+        ingest_controller.load_state(&progress).await.unwrap();
 
         assert_eq!(ingest_controller.index_table.len(), 2);
         assert_eq!(
@@ -990,10 +917,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingest_controller_ping_leader() {
-        let universe = Universe::new();
-        let (mailbox, _inbox) = universe.create_test_mailbox();
-        let (observable_state_tx, _observable_state_rx) = watch::channel(json!({}));
-        let ctx = ActorContext::for_test(&universe, mailbox, observable_state_tx);
+        let progress = Progress::default();
 
         let mock_metastore = MockMetastore::default();
         let metastore = Arc::new(mock_metastore);
@@ -1004,7 +928,7 @@ mod tests {
 
         let leader_id: NodeId = "test-ingester-0".into();
         let error = ingest_controller
-            .ping_leader_and_follower(&ctx, &leader_id, None)
+            .ping_leader_and_follower(&leader_id, None, &progress)
             .await
             .unwrap_err();
         assert!(matches!(error, PingError::LeaderUnavailable));
@@ -1022,7 +946,7 @@ mod tests {
             .await;
 
         ingest_controller
-            .ping_leader_and_follower(&ctx, &leader_id, None)
+            .ping_leader_and_follower(&leader_id, None, &progress)
             .await
             .unwrap();
 
@@ -1042,7 +966,7 @@ mod tests {
             .await;
 
         let error = ingest_controller
-            .ping_leader_and_follower(&ctx, &leader_id, None)
+            .ping_leader_and_follower(&leader_id, None, &progress)
             .await
             .unwrap_err();
         assert!(matches!(error, PingError::LeaderUnavailable));
@@ -1064,7 +988,7 @@ mod tests {
 
         let follower_id: NodeId = "test-ingester-1".into();
         let error = ingest_controller
-            .ping_leader_and_follower(&ctx, &leader_id, Some(&follower_id))
+            .ping_leader_and_follower(&leader_id, Some(&follower_id), &progress)
             .await
             .unwrap_err();
         assert!(matches!(error, PingError::FollowerUnavailable));
@@ -1072,10 +996,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingest_controller_find_leader_replication_factor_1() {
-        let universe = Universe::with_accelerated_time();
-        let (mailbox, _inbox) = universe.create_test_mailbox();
-        let (observable_state_tx, _observable_state_rx) = watch::channel(json!({}));
-        let ctx = ActorContext::for_test(&universe, mailbox, observable_state_tx);
+        let progress = Progress::default();
 
         let mock_metastore = MockMetastore::default();
         let metastore = Arc::new(mock_metastore);
@@ -1085,7 +1006,7 @@ mod tests {
             IngestController::new(metastore, ingester_pool.clone(), replication_factor);
 
         let leader_follower_pair = ingest_controller
-            .find_leader_and_follower(&ctx, &mut HashSet::new())
+            .find_leader_and_follower(&mut HashSet::new(), &progress)
             .await;
         assert!(leader_follower_pair.is_none());
 
@@ -1102,7 +1023,7 @@ mod tests {
             .await;
 
         let leader_follower_pair = ingest_controller
-            .find_leader_and_follower(&ctx, &mut HashSet::new())
+            .find_leader_and_follower(&mut HashSet::new(), &progress)
             .await;
         assert!(leader_follower_pair.is_none());
 
@@ -1119,7 +1040,7 @@ mod tests {
             .await;
 
         let (leader_id, follower_id) = ingest_controller
-            .find_leader_and_follower(&ctx, &mut HashSet::new())
+            .find_leader_and_follower(&mut HashSet::new(), &progress)
             .await
             .unwrap();
         assert_eq!(leader_id.as_str(), "test-ingester-1");
@@ -1128,10 +1049,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingest_controller_find_leader_replication_factor_2() {
-        let universe = Universe::with_accelerated_time();
-        let (mailbox, _inbox) = universe.create_test_mailbox();
-        let (observable_state_tx, _observable_state_rx) = watch::channel(json!({}));
-        let ctx = ActorContext::for_test(&universe, mailbox, observable_state_tx);
+        let progress = Progress::default();
 
         let mock_metastore = MockMetastore::default();
         let metastore = Arc::new(mock_metastore);
@@ -1141,7 +1059,7 @@ mod tests {
             IngestController::new(metastore, ingester_pool.clone(), replication_factor);
 
         let leader_follower_pair = ingest_controller
-            .find_leader_and_follower(&ctx, &mut HashSet::new())
+            .find_leader_and_follower(&mut HashSet::new(), &progress)
             .await;
         assert!(leader_follower_pair.is_none());
 
@@ -1169,7 +1087,7 @@ mod tests {
             .await;
 
         let leader_follower_pair = ingest_controller
-            .find_leader_and_follower(&ctx, &mut HashSet::new())
+            .find_leader_and_follower(&mut HashSet::new(), &progress)
             .await;
         assert!(leader_follower_pair.is_none());
 
@@ -1203,7 +1121,7 @@ mod tests {
             .await;
 
         let (leader_id, follower_id) = ingest_controller
-            .find_leader_and_follower(&ctx, &mut HashSet::new())
+            .find_leader_and_follower(&mut HashSet::new(), &progress)
             .await
             .unwrap();
         assert_eq!(leader_id.as_str(), "test-ingester-0");
@@ -1220,10 +1138,7 @@ mod tests {
 
         let source_id = "test-source".to_string();
 
-        let universe = Universe::with_accelerated_time();
-        let (mailbox, _inbox) = universe.create_test_mailbox();
-        let (observable_state_tx, _observable_state_rx) = watch::channel(json!({}));
-        let ctx = ActorContext::for_test(&universe, mailbox, observable_state_tx);
+        let progress = Progress::default();
 
         let mut mock_metastore = MockMetastore::default();
         mock_metastore
@@ -1308,7 +1223,7 @@ mod tests {
             unavailable_ingesters: Vec::new(),
         };
         let response = ingest_controller
-            .get_open_shards(&ctx, request)
+            .get_open_shards(request, &progress)
             .await
             .unwrap();
         assert_eq!(response.subresponses.len(), 0);
@@ -1329,7 +1244,7 @@ mod tests {
             unavailable_ingesters,
         };
         let response = ingest_controller
-            .get_open_shards(&ctx, request)
+            .get_open_shards(request, &progress)
             .await
             .unwrap();
         assert_eq!(response.subresponses.len(), 2);

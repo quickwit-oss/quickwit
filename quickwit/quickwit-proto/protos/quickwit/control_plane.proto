@@ -58,20 +58,7 @@ service ControlPlaneService {
   rpc GetOpenShards(GetOpenShardsRequest) returns (GetOpenShardsResponse);
 
   rpc CloseShards(CloseShardsRequest) returns (CloseShardsResponse);
-
-  // Notify the Control Plane that a change on an index occurred. The change
-  // can be an index creation, deletion, or update that includes a source creation/deletion/num pipeline update.
-  // Note(fmassot): it's not very clear for a user to know which change triggers a control plane notification.
-  // This can be explicited in the attributes of `NotifyIndexChangeRequest` with an enum that describes the
-  // type of change. The index ID and/or source ID could also be added.
-  // However, these attributes will not be used by the Control Plane, at least at short term.
-  rpc NotifyIndexChange(NotifyIndexChangeRequest) returns (NotifyIndexChangeResponse);
-
 }
-
-message NotifyIndexChangeRequest {}
-
-message NotifyIndexChangeResponse {}
 
 // Shard API
 
