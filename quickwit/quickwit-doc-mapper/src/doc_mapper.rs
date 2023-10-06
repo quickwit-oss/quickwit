@@ -27,9 +27,9 @@ use dyn_clone::{clone_trait_object, DynClone};
 use quickwit_query::query_ast::QueryAst;
 use serde_json::Value as JsonValue;
 use tantivy::query::Query;
-use tantivy::schema::{Field, FieldType, Schema, Value};
+use tantivy::schema::{Field, FieldType, OwnedValue as Value, Schema};
 use tantivy::tokenizer::TokenizerManager;
-use tantivy::{Document, Term};
+use tantivy::{TantivyDocument as Document, Term};
 
 pub type Partition = u64;
 

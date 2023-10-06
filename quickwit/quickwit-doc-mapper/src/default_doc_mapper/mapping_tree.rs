@@ -27,9 +27,9 @@ use itertools::Itertools;
 use serde_json::Value as JsonValue;
 use tantivy::schema::{
     BytesOptions, Field, IntoIpv6Addr, IpAddrOptions, JsonObjectOptions, NumericOptions,
-    SchemaBuilder, TextOptions, Value as TantivyValue,
+    OwnedValue as TantivyValue, SchemaBuilder, TextOptions,
 };
-use tantivy::{DateOptions, Document};
+use tantivy::{DateOptions, TantivyDocument as Document};
 use tracing::warn;
 
 use super::date_time_type::QuickwitDateTimeOptions;
@@ -88,7 +88,12 @@ impl LeafType {
             LeafType::Bytes(binary_options) => binary_options.input_format.parse_json(json_val),
             LeafType::Json(_) => {
                 if let JsonValue::Object(json_obj) = json_val {
-                    Ok(TantivyValue::JsonObject(json_obj))
+                    Ok(TantivyValue::Object(
+                        json_obj
+                            .into_iter()
+                            .map(|(key, val)| (key, val.into()))
+                            .collect(),
+                    ))
                 } else {
                     Err(format!("expected JSON object  got `{json_val}`"))
                 }
@@ -184,7 +189,7 @@ fn value_to_json(value: TantivyValue, leaf_type: &LeafType) -> Option<JsonValue>
         (TantivyValue::Str(_), LeafType::Text(_))
         | (TantivyValue::Bool(_), LeafType::Bool(_))
         | (TantivyValue::IpAddr(_), LeafType::IpAddr(_))
-        | (TantivyValue::JsonObject(_), LeafType::Json(_)) => {
+        | (TantivyValue::Object(_), LeafType::Json(_)) => {
             let json_value =
                 serde_json::to_value(&value).expect("Json serialization should never fail.");
             Some(json_value)
@@ -789,8 +794,8 @@ mod tests {
     use std::net::IpAddr;
 
     use serde_json::{json, Value as JsonValue};
-    use tantivy::schema::{Field, IntoIpv6Addr, Value as TantivyValue};
-    use tantivy::{DateTime, Document};
+    use tantivy::schema::{Field, IntoIpv6Addr, OwnedValue as TantivyValue, Value};
+    use tantivy::{DateTime, TantivyDocument as Document};
     use time::macros::datetime;
     use time::OffsetDateTime;
 
@@ -988,7 +993,7 @@ mod tests {
         assert_eq!(document.len(), 3);
         let values: Vec<bool> = document
             .get_all(field)
-            .flat_map(TantivyValue::as_bool)
+            .flat_map(|val| (&val).as_bool())
             .collect();
         assert_eq!(&values, &[true, false, true])
     }
@@ -1039,7 +1044,7 @@ mod tests {
         assert_eq!(document.len(), 2);
         let values: Vec<i64> = document
             .get_all(field)
-            .flat_map(TantivyValue::as_i64)
+            .flat_map(|val| (&val).as_i64())
             .collect();
         assert_eq!(&values, &[10i64, 20i64]);
     }
@@ -1185,7 +1190,7 @@ mod tests {
             .value_from_json(json!("dGhpcyBpcyBhIGJhc2U2NCBlbmNvZGVkIHN0cmluZw=="))
             .unwrap();
         assert_eq!(
-            value.as_bytes().unwrap(),
+            (&value).as_bytes().unwrap(),
             b"this is a base64 encoded string"
         );
     }
@@ -1201,7 +1206,10 @@ mod tests {
                 "7468697320697320612068657820656e636f64656420737472696e67"
             ))
             .unwrap();
-        assert_eq!(value.as_bytes().unwrap(), b"this is a hex encoded string");
+        assert_eq!(
+            (&value).as_bytes().unwrap(),
+            b"this is a hex encoded string"
+        );
     }
 
     #[test]
@@ -1245,7 +1253,7 @@ mod tests {
         assert_eq!(document.len(), 2);
         let bytes_vec: Vec<&[u8]> = document
             .get_all(field)
-            .flat_map(TantivyValue::as_bytes)
+            .flat_map(|val| (&val).as_bytes())
             .collect();
         assert_eq!(
             &bytes_vec[..],

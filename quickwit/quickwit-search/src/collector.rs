@@ -896,6 +896,7 @@ mod tests {
         SplitSearchError,
     };
     use tantivy::collector::Collector;
+    use tantivy::TantivyDocument;
 
     use super::{make_merge_collector, IncrementalCollector, PartialHitHeapItem};
     use crate::collector::top_k_partial_hits;
@@ -1012,12 +1013,12 @@ mod tests {
         fn doc_from_json_obj(
             &self,
             _json_obj: quickwit_doc_mapper::JsonObject,
-        ) -> Result<(u64, tantivy::Document), quickwit_doc_mapper::DocParsingError> {
+        ) -> Result<(u64, TantivyDocument), quickwit_doc_mapper::DocParsingError> {
             unimplemented!()
         }
         fn doc_to_json(
             &self,
-            _named_doc: std::collections::BTreeMap<String, Vec<tantivy::schema::Value>>,
+            _named_doc: std::collections::BTreeMap<String, Vec<tantivy::schema::OwnedValue>>,
         ) -> anyhow::Result<quickwit_doc_mapper::JsonObject> {
             unimplemented!()
         }
@@ -1102,7 +1103,7 @@ mod tests {
     }
 
     fn make_index() -> tantivy::Index {
-        use tantivy::schema::{Document, NumericOptions, Schema};
+        use tantivy::schema::{NumericOptions, Schema};
         use tantivy::{Index, UserOperation};
 
         let dataset = sort_dataset();
@@ -1125,7 +1126,7 @@ mod tests {
                 dataset
                     .into_iter()
                     .map(|(val1, val2)| {
-                        let mut doc = Document::new();
+                        let mut doc = TantivyDocument::new();
                         if let Some(val1) = val1 {
                             doc.add_u64(field1, val1);
                         }

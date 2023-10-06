@@ -30,7 +30,7 @@ use quickwit_doc_mapper::{DocMapper, DocParsingError, JsonObject};
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 use tantivy::schema::{Field, Value};
-use tantivy::{DateTime, Document};
+use tantivy::{DateTime, TantivyDocument};
 use tokio::runtime::Handle;
 use tracing::warn;
 
@@ -278,13 +278,16 @@ impl DocProcessor {
     //
     // If the timestamp is set up in the docmapper and the timestamp is missing,
     // returns an PrepareDocumentError::MissingField error.
-    fn extract_timestamp(&self, doc: &Document) -> Result<Option<DateTime>, DocProcessorError> {
+    fn extract_timestamp(
+        &self,
+        doc: &TantivyDocument,
+    ) -> Result<Option<DateTime>, DocProcessorError> {
         let Some(timestamp_field) = self.timestamp_field_opt else {
             return Ok(None);
         };
         let timestamp = doc
             .get_first(timestamp_field)
-            .and_then(Value::as_date)
+            .and_then(|val| val.as_datetime())
             .ok_or(DocProcessorError::MissingField)?;
         Ok(Some(timestamp))
     }
@@ -474,6 +477,7 @@ mod tests {
     use quickwit_metastore::checkpoint::SourceCheckpointDelta;
     use serde_json::Value as JsonValue;
     use tantivy::schema::NamedFieldDocument;
+    use tantivy::Document;
 
     use super::*;
     use crate::models::{PublishLock, RawDocBatch};
@@ -536,14 +540,14 @@ mod tests {
         assert_eq!(batch.checkpoint_delta, checkpoint_delta);
 
         let schema = doc_mapper.schema();
-        let NamedFieldDocument(named_field_doc_map) = schema.to_named_doc(&batch.docs[0].doc);
+        let NamedFieldDocument(named_field_doc_map) = batch.docs[0].doc.to_named_doc(&schema);
         let doc_json = JsonValue::Object(doc_mapper.doc_to_json(named_field_doc_map)?);
         assert_eq!(
             doc_json,
             serde_json::json!({
                 "_source": {
                     "body": "happy",
-                    "response_date": "2021-12-19T16:39:59+00:00",
+                    "response_date": "2021-12-19T16:39:59Z",
                     "response_payload": "YWJj",
                     "response_time": 2,
                     "timestamp": 1628837062
@@ -709,6 +713,7 @@ mod tests_vrl {
     use quickwit_doc_mapper::default_doc_mapper_for_test;
     use quickwit_metastore::checkpoint::SourceCheckpointDelta;
     use tantivy::schema::NamedFieldDocument;
+    use tantivy::Document;
 
     use super::*;
 
@@ -773,7 +778,7 @@ mod tests_vrl {
         );
 
         let schema = doc_mapper.schema();
-        let NamedFieldDocument(named_field_doc_map) = schema.to_named_doc(&batch.docs[0].doc);
+        let NamedFieldDocument(named_field_doc_map) = batch.docs[0].doc.to_named_doc(&schema);
         let doc_json = JsonValue::Object(doc_mapper.doc_to_json(named_field_doc_map)?);
         assert_eq!(
             doc_json,
@@ -867,7 +872,7 @@ mod tests_vrl {
         );
 
         let schema = doc_mapper.schema();
-        let NamedFieldDocument(named_field_doc_map) = schema.to_named_doc(&batch.docs[0].doc);
+        let NamedFieldDocument(named_field_doc_map) = batch.docs[0].doc.to_named_doc(&schema);
         let doc_json = JsonValue::Object(doc_mapper.doc_to_json(named_field_doc_map).unwrap());
         assert_eq!(
             doc_json,

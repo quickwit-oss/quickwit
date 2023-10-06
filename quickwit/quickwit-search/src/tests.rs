@@ -33,7 +33,7 @@ use quickwit_query::query_ast::{
     qast_helper, qast_json_helper, query_ast_from_user_text, QueryAst,
 };
 use serde_json::{json, Value as JsonValue};
-use tantivy::schema::Value as TantivyValue;
+use tantivy::schema::OwnedValue as TantivyValue;
 use tantivy::time::OffsetDateTime;
 use tantivy::Term;
 
@@ -1169,7 +1169,12 @@ fn json_value_to_tantivy_value(value: JsonValue) -> Vec<TantivyValue> {
             .flat_map(json_value_to_tantivy_value)
             .collect(),
         JsonValue::Object(object) => {
-            vec![TantivyValue::JsonObject(object)]
+            vec![TantivyValue::Object(
+                object
+                    .into_iter()
+                    .map(|(key, val)| (key, TantivyValue::from(val)))
+                    .collect(),
+            )]
         }
         JsonValue::Null => Vec::new(),
         value => vec![value.into()],

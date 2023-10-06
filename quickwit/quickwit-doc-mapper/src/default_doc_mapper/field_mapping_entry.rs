@@ -25,8 +25,8 @@ use base64::prelude::{Engine, BASE64_STANDARD};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use tantivy::schema::{
-    IndexRecordOption, JsonObjectOptions, TextFieldIndexing, TextOptions, Type,
-    Value as TantivyValue,
+    IndexRecordOption, JsonObjectOptions, OwnedValue as TantivyValue, TextFieldIndexing,
+    TextOptions, Type,
 };
 
 use super::date_time_type::QuickwitDateTimeOptions;
