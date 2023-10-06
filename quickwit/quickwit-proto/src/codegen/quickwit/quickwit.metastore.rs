@@ -364,6 +364,12 @@ pub struct CloseShardsSuccess {
     pub source_id: ::prost::alloc::string::String,
     #[prost(uint64, tag = "3")]
     pub shard_id: u64,
+    #[prost(string, tag = "4")]
+    pub leader_id: ::prost::alloc::string::String,
+    #[prost(string, optional, tag = "5")]
+    pub follower_id: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, tag = "6")]
+    pub publish_position_inclusive: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -375,10 +381,10 @@ pub struct CloseShardsFailure {
     pub source_id: ::prost::alloc::string::String,
     #[prost(uint64, tag = "3")]
     pub shard_id: u64,
-    #[prost(uint32, tag = "4")]
-    pub error_code: u32,
+    #[prost(enumeration = "CloseShardsFailureKind", tag = "4")]
+    pub failure_kind: i32,
     #[prost(string, tag = "5")]
-    pub error_message: ::prost::alloc::string::String,
+    pub failure_message: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -493,6 +499,34 @@ impl SourceType {
             "PULSAR" => Some(Self::Pulsar),
             "VEC" => Some(Self::Vec),
             "VOID" => Some(Self::Void),
+            _ => None,
+        }
+    }
+}
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum CloseShardsFailureKind {
+    InvalidArgument = 0,
+    NotFound = 1,
+}
+impl CloseShardsFailureKind {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            CloseShardsFailureKind::InvalidArgument => "INVALID_ARGUMENT",
+            CloseShardsFailureKind::NotFound => "NOT_FOUND",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "INVALID_ARGUMENT" => Some(Self::InvalidArgument),
+            "NOT_FOUND" => Some(Self::NotFound),
             _ => None,
         }
     }

@@ -57,12 +57,12 @@ pub enum IndexServiceError {
 }
 
 impl ServiceError for IndexServiceError {
-    fn status_code(&self) -> ServiceErrorCode {
+    fn error_code(&self) -> ServiceErrorCode {
         match self {
             Self::Internal(_) => ServiceErrorCode::Internal,
             Self::InvalidConfig(_) => ServiceErrorCode::BadRequest,
             Self::InvalidIdentifier(_) => ServiceErrorCode::BadRequest,
-            Self::Metastore(error) => error.status_code(),
+            Self::Metastore(error) => error.error_code(),
             Self::OperationNotAllowed(_) => ServiceErrorCode::MethodNotAllowed,
             Self::SplitDeletion(_) => ServiceErrorCode::Internal,
             Self::Storage(_) => ServiceErrorCode::Internal,

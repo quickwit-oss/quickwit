@@ -403,7 +403,7 @@ mod tests {
         let temp_dir = tempfile::tempdir()?;
         let index_uri =
             Uri::from_well_formed(format!("file://{}/foo/bar", temp_dir.path().display()));
-        let local_file_storage_factory = LocalFileStorageFactory::default();
+        let local_file_storage_factory = LocalFileStorageFactory;
         let local_file_storage = local_file_storage_factory.resolve(&index_uri).await?;
         assert_eq!(local_file_storage.uri(), &index_uri);
 

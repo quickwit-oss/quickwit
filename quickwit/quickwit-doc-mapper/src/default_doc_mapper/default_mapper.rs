@@ -700,7 +700,7 @@ mod tests {
         default_search_field_names.sort();
         assert_eq!(
             default_search_field_names,
-            ["attributes.server", r#"attributes.server\.status"#, "body"]
+            ["attributes.server", r"attributes.server\.status", "body"]
         );
         assert_eq!(config.field_mappings.num_fields(), 10);
         Ok(())
@@ -1694,7 +1694,7 @@ mod tests {
             r#"TermQuery(Term(field=2, type=Str, "toto"))"#
         );
         assert_eq!(
-            default_doc_mapper_query_aux(&doc_mapper, r#"identity\.username:toto"#).unwrap(),
+            default_doc_mapper_query_aux(&doc_mapper, r"identity\.username:toto").unwrap(),
             r#"TermQuery(Term(field=3, type=Str, "toto"))"#
         );
     }
@@ -1715,7 +1715,7 @@ mod tests {
             r#"TermQuery(Term(field=2, type=Json, path=username, type=Str, "toto"))"#
         );
         assert_eq!(
-            default_doc_mapper_query_aux(&doc_mapper, r#"identity\.username:toto"#).unwrap(),
+            default_doc_mapper_query_aux(&doc_mapper, r"identity\.username:toto").unwrap(),
             r#"TermQuery(Term(field=3, type=Str, "toto"))"#
         );
     }

@@ -29,10 +29,14 @@ use quickwit_proto::ingest::ingester::{
 };
 use quickwit_proto::ingest::{CommitTypeV2, IngestV2Error, IngestV2Result, ShardState};
 use quickwit_proto::types::NodeId;
+use quickwit_proto::QueueId;
 use tokio::sync::{mpsc, oneshot, watch, RwLock};
 use tokio::task::JoinHandle;
 
-use super::ingester::{commit_doc, IngesterState, Position, ReplicaShard, ShardStatus};
+use super::gc::{remove_shards_after, REMOVAL_GRACE_PERIOD};
+use super::ingest_metastore::IngestMetastore;
+use super::ingester::{commit_doc, IngesterState};
+use super::models::{Position, ReplicaShard, ShardStatus};
 use crate::metrics::INGEST_METRICS;
 
 /// A replication request is sent by the leader to its follower to update the state of a replica
@@ -191,6 +195,7 @@ pub(super) struct ReplicationTaskHandle {
 pub(super) struct ReplicationTask {
     leader_id: NodeId,
     follower_id: NodeId,
+    metastore: Arc<dyn IngestMetastore>,
     mrecordlog: Arc<RwLock<MultiRecordLog>>,
     state: Arc<RwLock<IngesterState>>,
     syn_replication_stream: ServiceStream<SynReplicationMessage>,
@@ -201,6 +206,7 @@ impl ReplicationTask {
     pub fn spawn(
         leader_id: NodeId,
         follower_id: NodeId,
+        metastore: Arc<dyn IngestMetastore>,
         mrecordlog: Arc<RwLock<MultiRecordLog>>,
         state: Arc<RwLock<IngesterState>>,
         syn_replication_stream: ServiceStream<SynReplicationMessage>,
@@ -209,6 +215,7 @@ impl ReplicationTask {
         let mut replication_task = Self {
             leader_id,
             follower_id,
+            metastore,
             mrecordlog,
             state,
             syn_replication_stream,
@@ -356,6 +363,7 @@ impl ReplicationTask {
         &mut self,
         truncate_request: TruncateRequest,
     ) -> IngestV2Result<TruncateResponse> {
+        let mut queues_to_remove: Vec<QueueId> = Vec::new();
         let mut mrecordlog_guard = self.mrecordlog.write().await;
         let mut state_guard = self.state.write().await;
 
@@ -371,8 +379,19 @@ impl ReplicationTask {
                     })?;
                 replica_shard
                     .set_publish_position_inclusive(truncate_subrequest.to_position_inclusive);
+
+                if replica_shard.is_gc_candidate() {
+                    queues_to_remove.push(queue_id);
+                }
             }
         }
+        remove_shards_after(
+            queues_to_remove,
+            REMOVAL_GRACE_PERIOD,
+            self.metastore.clone(),
+            self.mrecordlog.clone(),
+            self.state.clone(),
+        );
         let truncate_response = TruncateResponse {};
         Ok(truncate_response)
     }
@@ -426,6 +445,7 @@ mod tests {
     use quickwit_proto::types::queue_id;
 
     use super::*;
+    use crate::ingest_v2::ingest_metastore::MockIngestMetastore;
     use crate::ingest_v2::test_utils::{MultiRecordLogTestExt, ReplicaShardTestExt};
 
     #[tokio::test]
@@ -530,6 +550,7 @@ mod tests {
         let leader_id: NodeId = "test-leader".into();
         let follower_id: NodeId = "test-follower".into();
         let tempdir = tempfile::tempdir().unwrap();
+        let metastore = Arc::new(MockIngestMetastore::default());
         let mrecordlog = Arc::new(RwLock::new(
             MultiRecordLog::open(tempdir.path()).await.unwrap(),
         ));
@@ -544,6 +565,7 @@ mod tests {
         let _replication_task_handle = ReplicationTask::spawn(
             leader_id,
             follower_id,
+            metastore,
             mrecordlog.clone(),
             state.clone(),
             syn_replication_stream,

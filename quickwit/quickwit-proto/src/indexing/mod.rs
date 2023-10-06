@@ -113,7 +113,7 @@ impl From<tonic::Status> for IndexingError {
 }
 
 impl ServiceError for IndexingError {
-    fn status_code(&self) -> ServiceErrorCode {
+    fn error_code(&self) -> ServiceErrorCode {
         match self {
             Self::MissingPipeline { .. } => ServiceErrorCode::NotFound,
             Self::PipelineAlreadyExists { .. } => ServiceErrorCode::BadRequest,

@@ -222,11 +222,11 @@ pub fn set_parent_span_from_request_metadata(request_metadata: &tonic::metadata:
 }
 
 impl<E: fmt::Debug + ServiceError> ServiceError for quickwit_actors::AskError<E> {
-    fn status_code(&self) -> ServiceErrorCode {
+    fn error_code(&self) -> ServiceErrorCode {
         match self {
             quickwit_actors::AskError::MessageNotDelivered => ServiceErrorCode::Internal,
             quickwit_actors::AskError::ProcessMessageError => ServiceErrorCode::Internal,
-            quickwit_actors::AskError::ErrorReply(err) => err.status_code(),
+            quickwit_actors::AskError::ErrorReply(err) => err.error_code(),
         }
     }
 }

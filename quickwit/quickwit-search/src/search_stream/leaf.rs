@@ -673,7 +673,7 @@ mod tests {
         let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "", &["body"]).await?;
 
         let mut docs = Vec::new();
-        let partition_by_fast_field_values = vec![1, 2, 3, 4, 5];
+        let partition_by_fast_field_values = [1, 2, 3, 4, 5];
         let mut expected_output_tmp: HashMap<u64, Vec<u64>> = HashMap::new();
         let start_timestamp = 72057595;
         let end_timestamp: i64 = start_timestamp + 20;

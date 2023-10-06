@@ -91,7 +91,7 @@ impl From<tonic::Status> for IngestServiceError {
 }
 
 impl ServiceError for IngestServiceError {
-    fn status_code(&self) -> ServiceErrorCode {
+    fn error_code(&self) -> ServiceErrorCode {
         match self {
             IngestServiceError::Corruption(_) => ServiceErrorCode::Internal,
             IngestServiceError::IndexAlreadyExists { .. } => ServiceErrorCode::BadRequest,

@@ -212,7 +212,7 @@ mod tests {
                  checkpoint_delta_opt,
                  _publish_token_opt| {
                     let checkpoint_delta = checkpoint_delta_opt.as_ref().unwrap();
-                    index_uid.to_string() == "index:11111111111111111111111111"
+                    *index_uid == "index:11111111111111111111111111"
                         && checkpoint_delta.source_id == "source"
                         && split_ids[..] == ["split"]
                         && replaced_split_ids.is_empty()
@@ -289,7 +289,7 @@ mod tests {
                  checkpoint_delta_opt,
                  _publish_token_opt| {
                     let checkpoint_delta = checkpoint_delta_opt.as_ref().unwrap();
-                    index_uid.to_string() == "index:11111111111111111111111111"
+                    *index_uid == "index:11111111111111111111111111"
                         && checkpoint_delta.source_id == "source"
                         && split_ids.is_empty()
                         && replaced_split_ids.is_empty()
@@ -363,7 +363,7 @@ mod tests {
                  replaced_split_ids,
                  checkpoint_delta_opt,
                  _publish_token_opt| {
-                    index_uid.to_string() == "index:11111111111111111111111111"
+                    *index_uid == "index:11111111111111111111111111"
                         && new_split_ids[..] == ["split3"]
                         && replaced_split_ids[..] == ["split1", "split2"]
                         && checkpoint_delta_opt.is_none()

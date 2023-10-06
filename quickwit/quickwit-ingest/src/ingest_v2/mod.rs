@@ -18,7 +18,10 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 mod fetch;
+mod gc;
+mod ingest_metastore;
 mod ingester;
+mod models;
 mod replication;
 mod router;
 mod shard_table;
@@ -32,6 +35,7 @@ use quickwit_proto::ingest::DocBatchV2;
 use quickwit_proto::types::NodeId;
 
 pub use self::fetch::MultiFetchStream;
+pub use self::ingest_metastore::IngestMetastore;
 pub use self::ingester::Ingester;
 pub use self::router::IngestRouter;
 
@@ -66,12 +70,9 @@ impl DocBatchBuilderV2 {
         }
     }
 
+    /// Returns the capacity of the underlying buffer, expressed in bytes.
     pub fn capacity(&self) -> usize {
         self.doc_buffer.capacity()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.doc_lengths.is_empty()
     }
 
     fn num_bytes(&self) -> usize {

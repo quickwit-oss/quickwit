@@ -197,11 +197,9 @@ impl WarmupInfo {
     /// Merge other WarmupInfo into self.
     pub fn merge(&mut self, other: WarmupInfo) {
         self.term_dict_field_names
-            .extend(other.term_dict_field_names.into_iter());
-        self.posting_field_names
-            .extend(other.posting_field_names.into_iter());
-        self.fast_field_names
-            .extend(other.fast_field_names.into_iter());
+            .extend(other.term_dict_field_names);
+        self.posting_field_names.extend(other.posting_field_names);
+        self.fast_field_names.extend(other.fast_field_names);
         self.field_norms |= other.field_norms;
 
         for (field, term_and_pos) in other.terms_grouped_by_field.into_iter() {

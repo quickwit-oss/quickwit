@@ -820,13 +820,10 @@ mod tests {
             super::field_name_for_field_path(&["one", "two", "three"]),
             "one.two.three"
         );
-        assert_eq!(
-            super::field_name_for_field_path(&["one.two"]),
-            r#"one\.two"#
-        );
+        assert_eq!(super::field_name_for_field_path(&["one.two"]), r"one\.two");
         assert_eq!(
             super::field_name_for_field_path(&["one.two", "three"]),
-            r#"one\.two.three"#
+            r"one\.two.three"
         );
     }
 
@@ -1361,11 +1358,11 @@ mod tests {
             vec!["one", "two", "three"]
         );
         assert_eq!(
-            super::build_field_path_from_str(r#"one\.two"#),
+            super::build_field_path_from_str(r"one\.two"),
             vec!["one.two"]
         );
         assert_eq!(
-            super::build_field_path_from_str(r#"one\.two.three"#),
+            super::build_field_path_from_str(r"one\.two.three"),
             vec!["one.two", "three"]
         );
         assert_eq!(super::build_field_path_from_str(r#"one."#), vec!["one"]);

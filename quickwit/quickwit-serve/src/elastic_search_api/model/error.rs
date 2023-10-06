@@ -32,7 +32,7 @@ pub struct ElasticSearchError {
 
 impl From<SearchError> for ElasticSearchError {
     fn from(search_error: SearchError) -> Self {
-        let status = search_error.status_code().to_http_status_code();
+        let status = search_error.error_code().to_http_status_code();
         // Fill only reason field to keep it simple.
         let reason = ErrorCause {
             reason: Some(search_error.to_string()),

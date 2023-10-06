@@ -46,11 +46,11 @@ pub enum IngestRestApiError {
 }
 
 impl ServiceError for IngestRestApiError {
-    fn status_code(&self) -> ServiceErrorCode {
+    fn error_code(&self) -> ServiceErrorCode {
         match self {
             Self::BulkInvalidAction(_) => ServiceErrorCode::BadRequest,
             Self::BulkInvalidSource(_) => ServiceErrorCode::BadRequest,
-            Self::IngestApi(ingest_api_error) => ingest_api_error.status_code(),
+            Self::IngestApi(ingest_api_error) => ingest_api_error.error_code(),
         }
     }
 }

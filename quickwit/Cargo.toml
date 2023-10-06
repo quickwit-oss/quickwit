@@ -100,7 +100,7 @@ matches = "0.1.9"
 md5 = "0.7"
 mime_guess = "2.0.4"
 mockall = "0.11"
-mrecordlog = "0.4"
+mrecordlog = { git = "https://github.com/quickwit-oss/mrecordlog", rev = "ae1ca3f" }
 new_string_template = "1.4.0"
 nom = "7.1.3"
 num_cpus = "1"

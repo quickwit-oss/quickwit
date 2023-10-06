@@ -330,14 +330,22 @@ message CloseShardsSuccess {
     string index_uid = 1;
     string source_id = 2;
     uint64 shard_id = 3;
+    string leader_id = 4;
+    optional string follower_id = 5;
+    string publish_position_inclusive = 6;
+}
+
+enum CloseShardsFailureKind {
+    INVALID_ARGUMENT = 0;
+    NOT_FOUND = 1;
 }
 
 message CloseShardsFailure {
     string index_uid = 1;
     string source_id = 2;
     uint64 shard_id = 3;
-    uint32 error_code = 4;
-    string error_message = 5;
+    CloseShardsFailureKind failure_kind = 4;
+    string failure_message = 5;
 }
 
 message DeleteShardsRequest {

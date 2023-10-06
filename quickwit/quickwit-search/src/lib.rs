@@ -202,9 +202,7 @@ pub async fn single_node_search(
     ));
     let search_service_client =
         SearchServiceClient::from_service(search_service.clone(), socket_addr);
-    searcher_pool
-        .insert(socket_addr, search_service_client)
-        .await;
+    searcher_pool.insert(socket_addr, search_service_client);
     root_search(
         &searcher_context,
         search_request,

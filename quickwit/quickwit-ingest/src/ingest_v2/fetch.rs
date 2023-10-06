@@ -35,7 +35,7 @@ use tokio::sync::{mpsc, watch, RwLock};
 use tokio::task::JoinHandle;
 use tracing::{debug, error, warn};
 
-use super::ingester::ShardStatus;
+use super::models::ShardStatus;
 use crate::{ClientId, DocBatchBuilderV2, IngesterPool};
 
 /// A fetch task is responsible for waiting and pushing new records written to a shard's record log
@@ -270,7 +270,7 @@ impl MultiFetchStream {
 
         // Obtain a fetch stream from the preferred or failover ingester.
         let fetch_stream = loop {
-            let Some(mut ingester) = self.ingester_pool.get(&preferred_ingester_id).await else {
+            let Some(mut ingester) = self.ingester_pool.get(&preferred_ingester_id) else {
                 if let Some(failover_ingester_id) = failover_ingester_id.take() {
                     warn!(
                         client_id=%self.client_id,
@@ -449,7 +449,6 @@ async fn fault_tolerant_fetch_task(
                     );
                     let mut ingester = ingester_pool
                         .get(&preferred_ingester_id)
-                        .await
                         .expect("TODO: handle error");
                     let open_fetch_stream_request = OpenFetchStreamRequest {
                         client_id: client_id.clone(),

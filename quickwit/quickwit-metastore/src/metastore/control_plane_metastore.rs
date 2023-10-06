@@ -238,15 +238,15 @@ impl Metastore for ControlPlaneMetastore {
         self.metastore.acquire_shards(request).await
     }
 
+    async fn list_shards(&self, request: ListShardsRequest) -> MetastoreResult<ListShardsResponse> {
+        self.metastore.list_shards(request).await
+    }
+
     async fn close_shards(
         &self,
         request: CloseShardsRequest,
     ) -> MetastoreResult<CloseShardsResponse> {
         self.metastore.close_shards(request).await
-    }
-
-    async fn list_shards(&self, request: ListShardsRequest) -> MetastoreResult<ListShardsResponse> {
-        self.metastore.list_shards(request).await
     }
 
     async fn delete_shards(

@@ -623,7 +623,7 @@ mod tests {
             .expect_stage_splits()
             .withf(move |index_uid, metadata_list| -> bool {
                 let is_metadata_valid = metadata_list.iter().all(|metadata| {
-                    vec!["test-split-1", "test-split-2"].contains(&metadata.split_id())
+                    ["test-split-1", "test-split-2"].contains(&metadata.split_id())
                         && metadata.time_range == Some(1628203589..=1628203640)
                 });
 

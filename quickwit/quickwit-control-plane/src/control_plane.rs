@@ -29,14 +29,14 @@ use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_ingest::IngesterPool;
 use quickwit_metastore::Metastore;
 use quickwit_proto::control_plane::{
-    CloseShardsRequest, CloseShardsResponse, ControlPlaneError, ControlPlaneResult,
-    GetOpenShardsRequest, GetOpenShardsResponse,
+    ControlPlaneError, ControlPlaneResult, GetOrCreateOpenShardsRequest,
+    GetOrCreateOpenShardsResponse,
 };
 use quickwit_proto::metastore::events::ToggleSourceEvent;
 use quickwit_proto::metastore::{
-    serde_utils as metastore_serde_utils, AddSourceRequest, CreateIndexRequest,
-    CreateIndexResponse, DeleteIndexRequest, DeleteSourceRequest, EmptyResponse,
-    ToggleSourceRequest,
+    serde_utils as metastore_serde_utils, AddSourceRequest, CloseShardsRequest, CreateIndexRequest,
+    CreateIndexResponse, DeleteIndexRequest, DeleteShardsRequest, DeleteSourceRequest,
+    EmptyResponse, ToggleSourceRequest,
 };
 use quickwit_proto::{IndexUid, NodeId};
 use serde::Serialize;
@@ -147,7 +147,7 @@ impl Handler<ControlPlanLoop> for ControlPlane {
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         if let Err(error) = self.indexing_scheduler.control_running_plan().await {
-            error!("Error when controlling the running plan: `{}`.", error);
+            error!("error when controlling the running plan: `{}`", error);
         }
         ctx.schedule_self_msg(CONTROL_PLAN_LOOP_INTERVAL, ControlPlanLoop)
             .await;
@@ -155,6 +155,8 @@ impl Handler<ControlPlanLoop> for ControlPlane {
     }
 }
 
+// This handler is a metastore call proxied through the control plane: we must first forward the
+// request to the metastore, and then act on the event.
 #[async_trait]
 impl Handler<CreateIndexRequest> for ControlPlane {
     type Reply = ControlPlaneResult<CreateIndexResponse>;
@@ -177,7 +179,8 @@ impl Handler<CreateIndexRequest> for ControlPlane {
                 return Ok(Err(ControlPlaneError::from(error)));
             }
         };
-        self.ingest_controller.add_index(index_uid.clone());
+        self.ingest_controller.create_index(index_uid.clone());
+
         let response = CreateIndexResponse {
             index_uid: index_uid.into(),
         };
@@ -186,6 +189,8 @@ impl Handler<CreateIndexRequest> for ControlPlane {
     }
 }
 
+// This handler is a metastore call proxied through the control plane: we must first forward the
+// request to the metastore, and then act on the event.
 #[async_trait]
 impl Handler<DeleteIndexRequest> for ControlPlane {
     type Reply = ControlPlaneResult<EmptyResponse>;
@@ -213,6 +218,8 @@ impl Handler<DeleteIndexRequest> for ControlPlane {
     }
 }
 
+// This handler is a metastore call proxied through the control plane: we must first forward the
+// request to the metastore, and then act on the event.
 #[async_trait]
 impl Handler<AddSourceRequest> for ControlPlane {
     type Reply = ControlPlaneResult<EmptyResponse>;
@@ -251,6 +258,8 @@ impl Handler<AddSourceRequest> for ControlPlane {
     }
 }
 
+// This handler is a metastore call proxied through the control plane: we must first forward the
+// request to the metastore, and then act on the event.
 #[async_trait]
 impl Handler<ToggleSourceRequest> for ControlPlane {
     type Reply = ControlPlaneResult<EmptyResponse>;
@@ -283,6 +292,8 @@ impl Handler<ToggleSourceRequest> for ControlPlane {
     }
 }
 
+// This handler is a metastore call proxied through the control plane: we must first forward the
+// request to the metastore, and then act on the event.
 #[async_trait]
 impl Handler<DeleteSourceRequest> for ControlPlane {
     type Reply = ControlPlaneResult<EmptyResponse>;
@@ -301,7 +312,6 @@ impl Handler<DeleteSourceRequest> for ControlPlane {
         {
             return Ok(Err(ControlPlaneError::from(error)));
         };
-
         self.ingest_controller
             .delete_source(&index_uid, &request.source_id);
 
@@ -311,38 +321,60 @@ impl Handler<DeleteSourceRequest> for ControlPlane {
     }
 }
 
+// This is neither a proxied call nor a metastore callback.
 #[async_trait]
-impl Handler<GetOpenShardsRequest> for ControlPlane {
-    type Reply = ControlPlaneResult<GetOpenShardsResponse>;
+impl Handler<GetOrCreateOpenShardsRequest> for ControlPlane {
+    type Reply = ControlPlaneResult<GetOrCreateOpenShardsResponse>;
 
     async fn handle(
         &mut self,
-        request: GetOpenShardsRequest,
+        request: GetOrCreateOpenShardsRequest,
         ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
         Ok(self
             .ingest_controller
-            .get_open_shards(request, ctx.progress())
+            .get_or_create_open_shards(request, ctx.progress())
             .await)
     }
 }
 
+// This is a metastore callback. Ingesters call the metastore to close shards directly, then the
+// metastore notifies the control plane of the event.
 #[async_trait]
 impl Handler<CloseShardsRequest> for ControlPlane {
-    type Reply = ControlPlaneResult<CloseShardsResponse>;
+    type Reply = ControlPlaneResult<EmptyResponse>;
 
     async fn handle(
         &mut self,
         request: CloseShardsRequest,
-        ctx: &ActorContext<Self>,
-    ) -> Result<ControlPlaneResult<CloseShardsResponse>, ActorExitStatus> {
-        // TODO decide on what the error should be.
+        _ctx: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus> {
         let close_shards_resp = self
             .ingest_controller
-            .close_shards(request, ctx.progress())
+            .close_shards(request)
             .await
-            .context("Failed to close shards")?;
+            .context("failed to close shards")?;
         Ok(Ok(close_shards_resp))
+    }
+}
+
+// This is a metastore callback. Ingesters call the metastore to delete shards directly, then the
+// metastore notifies the control plane of the event.
+#[async_trait]
+impl Handler<DeleteShardsRequest> for ControlPlane {
+    type Reply = ControlPlaneResult<EmptyResponse>;
+
+    async fn handle(
+        &mut self,
+        request: DeleteShardsRequest,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        let delete_shards_resp = self
+            .ingest_controller
+            .delete_shards(request)
+            .await
+            .context("failed to delete shards")?;
+        Ok(Ok(delete_shards_resp))
     }
 }
 
@@ -350,7 +382,7 @@ impl Handler<CloseShardsRequest> for ControlPlane {
 mod tests {
     use quickwit_config::{SourceParams, INGEST_SOURCE_ID};
     use quickwit_metastore::{IndexMetadata, MockMetastore};
-    use quickwit_proto::control_plane::GetOpenShardsSubrequest;
+    use quickwit_proto::control_plane::GetOrCreateOpenShardsSubrequest;
     use quickwit_proto::ingest::Shard;
     use quickwit_proto::metastore::{ListShardsResponse, ListShardsSubresponse, SourceType};
 
@@ -640,10 +672,11 @@ mod tests {
             metastore,
             replication_factor,
         );
-        let get_open_shards_request = GetOpenShardsRequest {
-            subrequests: vec![GetOpenShardsSubrequest {
+        let get_open_shards_request = GetOrCreateOpenShardsRequest {
+            subrequests: vec![GetOrCreateOpenShardsSubrequest {
                 index_id: "test-index".to_string(),
                 source_id: INGEST_SOURCE_ID.to_string(),
+                closed_shards: Vec::new(),
             }],
             unavailable_ingesters: Vec::new(),
         };

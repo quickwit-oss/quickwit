@@ -633,7 +633,7 @@ mod tests {
         metastore
             .expect_stage_splits()
             .withf(|index_uid, _metadata| -> bool {
-                index_uid.to_string() == "test-index:11111111111111111111111111"
+                *index_uid == "test-index:11111111111111111111111111"
             })
             .returning(|_, _| Ok(()));
         metastore
@@ -646,7 +646,7 @@ mod tests {
                  _publish_token_opt|
                  -> bool {
                     let checkpoint_delta = checkpoint_delta_opt.as_ref().unwrap();
-                    index_uid.to_string() == "test-index:11111111111111111111111111"
+                    *index_uid == "test-index:11111111111111111111111111"
                         && checkpoint_delta.source_id == "test-source"
                         && splits.len() == 1
                         && replaced_splits.is_empty()
@@ -735,9 +735,7 @@ mod tests {
             });
         metastore
             .expect_stage_splits()
-            .withf(|index_uid, _metadata| {
-                index_uid.to_string() == "test-index:11111111111111111111111111"
-            })
+            .withf(|index_uid, _metadata| *index_uid == "test-index:11111111111111111111111111")
             .returning(|_, _| Ok(()));
         metastore
             .expect_publish_splits()
@@ -749,7 +747,7 @@ mod tests {
                  _publish_token_opt|
                  -> bool {
                     let checkpoint_delta = checkpoint_delta_opt.as_ref().unwrap();
-                    index_uid.to_string() == "test-index:11111111111111111111111111"
+                    *index_uid == "test-index:11111111111111111111111111"
                         && splits.len() == 1
                         && replaced_split_ids.is_empty()
                         && checkpoint_delta.source_id == "test-source"
@@ -935,7 +933,7 @@ mod tests {
                  _publish_token_opt|
                  -> bool {
                     let checkpoint_delta = checkpoint_delta_opt.as_ref().unwrap();
-                    index_uid.to_string() == "test-index:11111111111111111111111111"
+                    *index_uid == "test-index:11111111111111111111111111"
                         && splits.is_empty()
                         && replaced_split_ids.is_empty()
                         && checkpoint_delta.source_id == "test-source"

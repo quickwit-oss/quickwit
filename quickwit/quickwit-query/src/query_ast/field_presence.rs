@@ -129,7 +129,7 @@ mod tests {
     #[test]
     fn test_field_presence_hash_escaped_dot() {
         let field_presence_term: u64 =
-            compute_field_presence_hash(Field::from_field_id(17u32), r#"attributes\.color.hello"#);
+            compute_field_presence_hash(Field::from_field_id(17u32), r"attributes\.color.hello");
         assert_eq!(
             field_presence_term,
             PathHasher::hash_path(&[&17u32.to_le_bytes()[..], b"attributes.color", b"hello"])
