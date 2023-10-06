@@ -99,14 +99,6 @@ impl SynReplicationMessage {
             )),
         }
     }
-
-    pub fn new_truncate_request(truncate_request: TruncateRequest) -> Self {
-        Self {
-            message: Some(syn_replication_message::Message::TruncateRequest(
-                truncate_request,
-            )),
-        }
-    }
 }
 
 impl AckReplicationMessage {
@@ -131,14 +123,6 @@ impl AckReplicationMessage {
         Self {
             message: Some(ack_replication_message::Message::ReplicateResponse(
                 replicate_response,
-            )),
-        }
-    }
-
-    pub fn new_truncate_response(truncate_response: TruncateResponse) -> Self {
-        Self {
-            message: Some(ack_replication_message::Message::TruncateResponse(
-                truncate_response,
             )),
         }
     }

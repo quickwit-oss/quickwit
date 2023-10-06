@@ -65,7 +65,7 @@ pub struct PersistFailure {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SynReplicationMessage {
-    #[prost(oneof = "syn_replication_message::Message", tags = "1, 2, 3")]
+    #[prost(oneof = "syn_replication_message::Message", tags = "1, 2")]
     pub message: ::core::option::Option<syn_replication_message::Message>,
 }
 /// Nested message and enum types in `SynReplicationMessage`.
@@ -79,15 +79,13 @@ pub mod syn_replication_message {
         OpenRequest(super::OpenReplicationStreamRequest),
         #[prost(message, tag = "2")]
         ReplicateRequest(super::ReplicateRequest),
-        #[prost(message, tag = "3")]
-        TruncateRequest(super::TruncateRequest),
     }
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AckReplicationMessage {
-    #[prost(oneof = "ack_replication_message::Message", tags = "1, 3, 4")]
+    #[prost(oneof = "ack_replication_message::Message", tags = "1, 3")]
     pub message: ::core::option::Option<ack_replication_message::Message>,
 }
 /// Nested message and enum types in `AckReplicationMessage`.
@@ -101,8 +99,6 @@ pub mod ack_replication_message {
         OpenResponse(super::OpenReplicationStreamResponse),
         #[prost(message, tag = "3")]
         ReplicateResponse(super::ReplicateResponse),
-        #[prost(message, tag = "4")]
-        TruncateResponse(super::TruncateResponse),
     }
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
@@ -188,7 +184,7 @@ pub struct ReplicateFailure {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct TruncateRequest {
     #[prost(string, tag = "1")]
-    pub leader_id: ::prost::alloc::string::String,
+    pub ingester_id: ::prost::alloc::string::String,
     #[prost(message, repeated, tag = "2")]
     pub subrequests: ::prost::alloc::vec::Vec<TruncateSubrequest>,
 }

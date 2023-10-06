@@ -131,7 +131,7 @@ pub(super) struct PrimaryShard {
 }
 
 impl PrimaryShard {
-    pub fn is_gc_candidate(&self) -> bool {
+    pub fn is_removable(&self) -> bool {
         self.shard_state.is_closed()
             && self.publish_position_inclusive >= self.primary_position_inclusive
     }
@@ -178,7 +178,7 @@ impl PrimaryShard {
 /// Records the state of a replica shard managed by a follower. See [`PrimaryShard`] for more
 /// details about the fields.
 pub(super) struct ReplicaShard {
-    pub leader_id: NodeId,
+    pub _leader_id: NodeId,
     pub shard_state: ShardState,
     pub publish_position_inclusive: Position,
     pub replica_position_inclusive: Position,
@@ -187,7 +187,7 @@ pub(super) struct ReplicaShard {
 }
 
 impl ReplicaShard {
-    pub fn is_gc_candidate(&self) -> bool {
+    pub fn is_removable(&self) -> bool {
         self.shard_state.is_closed()
             && self.publish_position_inclusive >= self.replica_position_inclusive
     }
@@ -267,7 +267,7 @@ impl ReplicaShard {
         let (shard_status_tx, shard_status_rx) = watch::channel(shard_status);
 
         Self {
-            leader_id: leader_id.into(),
+            _leader_id: leader_id.into(),
             shard_state,
             publish_position_inclusive,
             replica_position_inclusive,

@@ -202,7 +202,8 @@ mod tests {
             mrecordlog.clone(),
             state.clone(),
         );
-        tokio::time::sleep(REMOVAL_GRACE_PERIOD * 2).await;
+        // Wait for the removal task to run.
+        tokio::time::sleep(Duration::from_millis(100)).await;
 
         let state_guard = state.read().await;
         assert!(state_guard.primary_shards.is_empty());
