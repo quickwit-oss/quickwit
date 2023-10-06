@@ -200,8 +200,8 @@ impl FileBackedIndex {
     }
 
     /// Index UID accessor.
-    pub fn index_uid(&self) -> IndexUid {
-        self.metadata.index_uid.clone()
+    pub fn index_uid(&self) -> &IndexUid {
+        &self.metadata.index_uid
     }
 
     /// Index metadata accessor.
@@ -445,12 +445,13 @@ impl FileBackedIndex {
 
     /// Adds a source.
     pub(crate) fn add_source(&mut self, source_config: SourceConfig) -> MetastoreResult<()> {
+        let index_uid = self.index_uid().clone();
         let source_id = source_config.source_id.clone();
+
         self.metadata.add_source(source_config)?;
-        self.per_source_shards.insert(
-            source_id.clone(),
-            Shards::empty(self.index_uid(), source_id),
-        );
+
+        self.per_source_shards
+            .insert(source_id.clone(), Shards::empty(index_uid, source_id));
         Ok(())
     }
 
@@ -543,41 +544,105 @@ impl FileBackedIndex {
 
     pub(crate) fn open_shards(
         &mut self,
-        subrequest: OpenShardsSubrequest,
-    ) -> MetastoreResult<MutationOccurred<OpenShardsSubresponse>> {
-        self.get_shards_for_source_mut(&subrequest.source_id)?
-            .open_shards(subrequest)
+        subrequests: Vec<OpenShardsSubrequest>,
+    ) -> MetastoreResult<MutationOccurred<Vec<OpenShardsSubresponse>>> {
+        let mut mutation_occurred = false;
+        let mut subresponses = Vec::with_capacity(subrequests.len());
+
+        for subrequest in subrequests {
+            let subresponse = match self
+                .get_shards_for_source_mut(&subrequest.source_id)?
+                .open_shards(subrequest)?
+            {
+                MutationOccurred::Yes(subresponse) => {
+                    mutation_occurred = true;
+                    subresponse
+                }
+                MutationOccurred::No(subresponse) => subresponse,
+            };
+            subresponses.push(subresponse);
+        }
+        if mutation_occurred {
+            Ok(MutationOccurred::Yes(subresponses))
+        } else {
+            Ok(MutationOccurred::No(subresponses))
+        }
     }
 
     pub(crate) fn acquire_shards(
         &mut self,
-        subrequest: AcquireShardsSubrequest,
-    ) -> MetastoreResult<MutationOccurred<AcquireShardsSubresponse>> {
-        self.get_shards_for_source_mut(&subrequest.source_id)?
-            .acquire_shards(subrequest)
+        subrequests: Vec<AcquireShardsSubrequest>,
+    ) -> MetastoreResult<MutationOccurred<Vec<AcquireShardsSubresponse>>> {
+        let mut mutation_occurred = false;
+        let mut subresponses = Vec::with_capacity(subrequests.len());
+
+        for subrequest in subrequests {
+            let subresponse = match self
+                .get_shards_for_source_mut(&subrequest.source_id)?
+                .acquire_shards(subrequest)?
+            {
+                MutationOccurred::Yes(subresponse) => {
+                    mutation_occurred = true;
+                    subresponse
+                }
+                MutationOccurred::No(subresponse) => subresponse,
+            };
+            subresponses.push(subresponse);
+        }
+        if mutation_occurred {
+            Ok(MutationOccurred::Yes(subresponses))
+        } else {
+            Ok(MutationOccurred::No(subresponses))
+        }
     }
 
     pub(crate) fn close_shards(
         &mut self,
-        subrequest: CloseShardsSubrequest,
-    ) -> MetastoreResult<MutationOccurred<Either<CloseShardsSuccess, CloseShardsFailure>>> {
-        self.get_shards_for_source_mut(&subrequest.source_id)?
-            .close_shards(subrequest)
+        subrequests: Vec<CloseShardsSubrequest>,
+    ) -> MetastoreResult<MutationOccurred<Vec<Either<CloseShardsSuccess, CloseShardsFailure>>>>
+    {
+        let mut mutation_occurred = false;
+        let mut subresponses = Vec::with_capacity(subrequests.len());
+
+        for subrequest in subrequests {
+            let subresponse = match self
+                .get_shards_for_source_mut(&subrequest.source_id)?
+                .close_shards(subrequest)?
+            {
+                MutationOccurred::Yes(subresponse) => {
+                    mutation_occurred = true;
+                    subresponse
+                }
+                MutationOccurred::No(subresponse) => subresponse,
+            };
+            subresponses.push(subresponse);
+        }
+        if mutation_occurred {
+            Ok(MutationOccurred::Yes(subresponses))
+        } else {
+            Ok(MutationOccurred::No(subresponses))
+        }
     }
 
     pub(crate) fn delete_shards(
         &mut self,
-        subrequest: DeleteShardsSubrequest,
+        subrequests: Vec<DeleteShardsSubrequest>,
         force: bool,
     ) -> MetastoreResult<MutationOccurred<()>> {
-        self.get_shards_for_source_mut(&subrequest.source_id)?
-            .delete_shards(subrequest, force)
+        let mut mutation_occurred = MutationOccurred::No(());
+
+        for subrequest in subrequests {
+            mutation_occurred = self
+                .get_shards_for_source_mut(&subrequest.source_id)?
+                .delete_shards(subrequest, force)?
+        }
+        Ok(mutation_occurred)
     }
 
     pub(crate) fn list_shards(
-        &mut self,
+        &self,
         subrequest: ListShardsSubrequest,
-    ) -> MetastoreResult<MutationOccurred<ListShardsSubresponse>> {
+    ) -> MetastoreResult<ListShardsSubresponse> {
         self.get_shards_for_source(&subrequest.source_id)?
             .list_shards(subrequest)
     }
