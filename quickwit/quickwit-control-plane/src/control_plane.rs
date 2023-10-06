@@ -54,19 +54,6 @@ pub(crate) const CONTROL_PLAN_LOOP_INTERVAL: Duration = if cfg!(any(test, featur
     Duration::from_secs(3)
 };
 
-/// Interval between two scheduling of indexing plans. No need to be faster than the
-/// control plan loop.
-// Note: it's currently not possible to define a const duration with
-// `CONTROL_PLAN_LOOP_INTERVAL * number`.
-pub(crate) const REFRESH_PLAN_LOOP_INTERVAL: Duration = if cfg!(any(test, feature = "testsuite")) {
-    Duration::from_secs(3)
-} else {
-    Duration::from_secs(60)
-};
-
-#[derive(Debug)]
-struct RefreshPlanLoop;
-
 #[derive(Debug)]
 struct ControlPlanLoop;
 
@@ -134,7 +121,15 @@ impl Actor for ControlPlane {
             .await
             .context("failed to initialize ingest controller")?;
 
-        self.handle(RefreshPlanLoop, ctx).await?;
+        if let Err(error) = self
+            .indexing_scheduler
+            .schedule_indexing_plan_if_needed()
+            .await
+        {
+            // TODO inspect error.
+            error!("Error when scheduling indexing plan: `{}`.", error);
+        }
+
         ctx.schedule_self_msg(CONTROL_PLAN_LOOP_INTERVAL, ControlPlanLoop)
             .await;
 
@@ -215,28 +210,6 @@ impl Handler<DeleteIndexRequest> for ControlPlane {
         self.indexing_scheduler.on_index_change().await?;
 
         Ok(Ok(response))
-    }
-}
-
-#[async_trait]
-impl Handler<RefreshPlanLoop> for ControlPlane {
-    type Reply = ();
-
-    async fn handle(
-        &mut self,
-        _message: RefreshPlanLoop,
-        ctx: &ActorContext<Self>,
-    ) -> Result<(), ActorExitStatus> {
-        if let Err(error) = self
-            .indexing_scheduler
-            .schedule_indexing_plan_if_needed()
-            .await
-        {
-            error!("Error when scheduling indexing plan: `{}`.", error);
-        }
-        ctx.schedule_self_msg(REFRESH_PLAN_LOOP_INTERVAL, RefreshPlanLoop)
-            .await;
-        Ok(())
     }
 }
 
@@ -331,6 +304,7 @@ impl Handler<DeleteSourceRequest> for ControlPlane {
 
         self.ingest_controller
             .delete_source(&index_uid, &request.source_id);
+
         self.indexing_scheduler.on_index_change().await?;
         let response = EmptyResponse {};
         Ok(Ok(response))

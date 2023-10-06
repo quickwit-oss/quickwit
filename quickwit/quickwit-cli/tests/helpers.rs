@@ -260,3 +260,25 @@ pub async fn create_test_env(
         storage,
     })
 }
+
+/// TODO: this should be part of the test env setup
+pub async fn upload_test_file(
+    storage_resolver: StorageResolver,
+    local_src_path: PathBuf,
+    bucket: &str,
+    prefix: &str,
+    filename: &str,
+) -> PathBuf {
+    let test_data = tokio::fs::read(local_src_path).await.unwrap();
+    let mut src_location: PathBuf = [r"s3://", bucket, prefix].iter().collect();
+    let storage = storage_resolver
+        .resolve(&Uri::from_well_formed(src_location.to_string_lossy()))
+        .await
+        .unwrap();
+    storage
+        .put(&PathBuf::from(filename), Box::new(test_data))
+        .await
+        .unwrap();
+    src_location.push(filename);
+    src_location
+}

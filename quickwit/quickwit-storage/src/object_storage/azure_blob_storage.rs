@@ -43,8 +43,9 @@ use quickwit_config::{AzureStorageConfig, StorageBackend};
 use regex::Regex;
 use tantivy::directory::OwnedBytes;
 use thiserror::Error;
-use tokio::io::{AsyncWriteExt, BufReader};
+use tokio::io::{AsyncRead, AsyncWriteExt, BufReader};
 use tokio_util::compat::FuturesAsyncReadCompatExt;
+use tokio_util::io::StreamReader;
 use tracing::{instrument, warn};
 
 use crate::debouncer::DebouncedStorage;
@@ -424,6 +425,45 @@ impl Storage for AzureBlobStorage {
                     path.display(),
                 ))
             })
+    }
+
+    #[instrument(level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
+    async fn get_slice_stream(
+        &self,
+        path: &Path,
+        range: Range<usize>,
+    ) -> StorageResult<Box<dyn AsyncRead + Send + Unpin>> {
+        retry(&self.retry_params, || async {
+            let range = range.clone();
+            let name = self.blob_name(path);
+            let page_stream = self
+                .container_client
+                .blob_client(name)
+                .get()
+                .range(range)
+                .into_stream();
+            let mut bytes_stream = page_stream
+                .map(|page_res| {
+                    page_res
+                        .map(|page| page.data)
+                        .map_err(|err| FutureError::new(FutureErrorKind::Other, err))
+                })
+                .try_flatten()
+                .map(|e| e.map_err(|err| FutureError::new(FutureErrorKind::Other, err)));
+            // Peek into the stream so that any early error can be retried
+            let first_chunk = bytes_stream.next().await;
+            let reader: Box<dyn AsyncRead + Send + Unpin> = if let Some(res) = first_chunk {
+                let first_chunk = res.map_err(AzureErrorWrapper::from)?;
+                let reconstructed_stream =
+                    Box::pin(futures::stream::once(async { Ok(first_chunk) }).chain(bytes_stream));
+                Box::new(StreamReader::new(reconstructed_stream))
+            } else {
+                Box::new(tokio::io::empty())
+            };
+            Result::<Box<dyn AsyncRead + Send + Unpin>, AzureErrorWrapper>::Ok(reader)
+        })
+        .await
+        .map_err(|e| e.into())
     }
 
     #[instrument(level = "debug", skip(self), fields(fetched_bytes_len))]

@@ -92,7 +92,7 @@ impl TestSandbox {
         let temp_dir = tempfile::tempdir()?;
         let indexer_config = IndexerConfig::for_test()?;
         let num_blocking_threads = 1;
-        let storage_resolver = StorageResolver::ram_for_test();
+        let storage_resolver = StorageResolver::ram_and_file_for_test();
         let metastore_resolver =
             MetastoreResolver::configured(storage_resolver.clone(), &MetastoreConfigs::default());
         let metastore = metastore_resolver
