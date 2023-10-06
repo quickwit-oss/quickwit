@@ -46,7 +46,7 @@ use quickwit_proto::metastore::{EntityKind, MetastoreError};
 use serde_json::{json, Number, Value};
 use tokio::time::{sleep, Duration};
 
-use crate::helpers::{create_test_env, PACKAGE_BIN_NAME};
+use crate::helpers::{create_test_env, upload_test_file, PACKAGE_BIN_NAME};
 
 async fn create_logs_index(test_env: &TestEnv) -> anyhow::Result<()> {
     let args = CreateIndexArgs {
@@ -893,9 +893,16 @@ async fn test_all_with_s3_localstack_cli() {
     test_env.start_server().await.unwrap();
     create_logs_index(&test_env).await.unwrap();
 
-    local_ingest_docs(test_env.resource_files["logs"].as_path(), &test_env)
-        .await
-        .unwrap();
+    let s3_path = upload_test_file(
+        test_env.storage_resolver.clone(),
+        test_env.resource_files["logs"].clone(),
+        "quickwit-integration-tests",
+        "sources/",
+        &append_random_suffix("test-all--cli-s3-localstack"),
+    )
+    .await;
+
+    local_ingest_docs(&s3_path, &test_env).await.unwrap();
 
     // Cli search
     let args = SearchIndexArgs {

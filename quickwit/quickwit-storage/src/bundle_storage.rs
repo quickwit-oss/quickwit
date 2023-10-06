@@ -33,7 +33,7 @@ use serde::{Deserialize, Serialize};
 use tantivy::directory::FileSlice;
 use tantivy::HasLen;
 use thiserror::Error;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncRead, AsyncWriteExt};
 use tracing::error;
 
 use crate::storage::SendableAsync;
@@ -248,6 +248,14 @@ impl Storage for BundleStorage {
         self.storage
             .get_slice(&self.bundle_filepath, new_range)
             .await
+    }
+
+    async fn get_slice_stream(
+        &self,
+        path: &Path,
+        _range: Range<usize>,
+    ) -> StorageResult<Box<dyn AsyncRead + Send + Unpin>> {
+        Err(unsupported_operation(&[path]))
     }
 
     async fn get_all(&self, path: &Path) -> crate::StorageResult<OwnedBytes> {

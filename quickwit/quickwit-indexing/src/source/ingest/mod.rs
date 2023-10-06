@@ -427,6 +427,7 @@ mod tests {
     use quickwit_proto::ingest::ingester::{IngesterServiceClient, TruncateResponse};
     use quickwit_proto::ingest::{DocBatchV2, Shard};
     use quickwit_proto::metastore::{AcquireShardsResponse, AcquireShardsSubresponse};
+    use quickwit_storage::StorageResolver;
     use tokio::sync::watch;
 
     use super::*;
@@ -531,6 +532,7 @@ mod tests {
             metastore,
             ingester_pool: ingester_pool.clone(),
             queues_dir_path: PathBuf::from("./queues"),
+            storage_resolver: StorageResolver::ram_and_file_for_test(),
         });
         let checkpoint = SourceCheckpoint::default();
         let mut source = IngestSource::try_new(runtime_args, checkpoint)
@@ -608,6 +610,7 @@ mod tests {
             metastore,
             ingester_pool: ingester_pool.clone(),
             queues_dir_path: PathBuf::from("./queues"),
+            storage_resolver: StorageResolver::ram_and_file_for_test(),
         });
         let checkpoint = SourceCheckpoint::default();
         let mut source = IngestSource::try_new(runtime_args, checkpoint)
@@ -760,6 +763,7 @@ mod tests {
             metastore,
             ingester_pool: ingester_pool.clone(),
             queues_dir_path: PathBuf::from("./queues"),
+            storage_resolver: StorageResolver::ram_and_file_for_test(),
         });
         let checkpoint = SourceCheckpoint::default();
         let mut source = IngestSource::try_new(runtime_args, checkpoint)

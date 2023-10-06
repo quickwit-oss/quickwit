@@ -30,8 +30,7 @@ use futures::StreamExt;
 use quickwit_common::ignore_error_kind;
 use quickwit_common::uri::Uri;
 use quickwit_config::StorageBackend;
-use tokio::fs;
-use tokio::io::AsyncWriteExt;
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncSeekExt, AsyncWriteExt};
 use tracing::warn;
 
 use crate::storage::SendableAsync;
@@ -79,7 +78,7 @@ impl LocalFileStorage {
     /// from here is an external path, and to is an internal path.
     pub async fn move_into(&self, from_external: &Path, to: &Path) -> crate::StorageResult<()> {
         let to_full_path = self.full_path(to)?;
-        fs::rename(from_external, to_full_path).await?;
+        tokio::fs::rename(from_external, to_full_path).await?;
         Ok(())
     }
 
@@ -87,13 +86,13 @@ impl LocalFileStorage {
     /// from here is an internal path, and to is an external path.
     pub async fn move_out(&self, from_internal: &Path, to: &Path) -> crate::StorageResult<()> {
         let from_full_path = self.full_path(from_internal)?;
-        fs::rename(from_full_path, to).await?;
+        tokio::fs::rename(from_full_path, to).await?;
         Ok(())
     }
 
     async fn delete_single_file(&self, relative_path: &Path) -> StorageResult<()> {
         let full_path = self.full_path(relative_path)?;
-        ignore_error_kind!(ErrorKind::NotFound, fs::remove_file(full_path).await)?;
+        ignore_error_kind!(ErrorKind::NotFound, tokio::fs::remove_file(full_path).await)?;
         Ok(())
     }
 }
@@ -142,7 +141,7 @@ fn delete_all_dirs_if_empty<'a>(
             return Ok(());
         }
 
-        let delete_result = fs::remove_dir(full_path).await;
+        let delete_result = tokio::fs::remove_dir(full_path).await;
         if let Err(err) = &delete_result {
             // Ignore `ErrorKind::NotFound` as this could be deleted by another concurrent task.
             if err.kind() == ErrorKind::NotFound {
@@ -171,7 +170,7 @@ impl Storage for LocalFileStorage {
     async fn check_connectivity(&self) -> anyhow::Result<()> {
         if !self.root.try_exists()? {
             // By creating directories, we check if we have the right permissions.
-            fs::create_dir_all(&self.root).await?
+            tokio::fs::create_dir_all(&self.root).await?
         }
         Ok(())
     }
@@ -187,7 +186,7 @@ impl Storage for LocalFileStorage {
             StorageErrorKind::Internal.with_error(err)
         })?;
 
-        fs::create_dir_all(parent_dir).await?;
+        tokio::fs::create_dir_all(parent_dir).await?;
         let mut reader = payload.byte_stream().await?.into_async_read();
         let named_temp_file = tempfile::NamedTempFile::new_in(parent_dir)?;
         let (temp_std_file, temp_filepath) = named_temp_file.into_parts();
@@ -229,6 +228,18 @@ impl Storage for LocalFileStorage {
         .map_err(|_| {
             StorageErrorKind::Internal.with_error(anyhow::anyhow!("reading file panicked"))
         })?
+    }
+
+    #[tracing::instrument(skip(self), level = "debug")]
+    async fn get_slice_stream(
+        &self,
+        path: &Path,
+        range: Range<usize>,
+    ) -> StorageResult<Box<dyn AsyncRead + Send + Unpin>> {
+        let full_path = self.full_path(path)?;
+        let mut file = tokio::fs::File::open(&full_path).await?;
+        file.seek(SeekFrom::Start(range.start as u64)).await?;
+        Ok(Box::new(file.take(range.len() as u64)))
     }
 
     async fn delete(&self, path: &Path) -> StorageResult<()> {
@@ -297,7 +308,7 @@ impl Storage for LocalFileStorage {
 
     async fn get_all(&self, path: &Path) -> StorageResult<OwnedBytes> {
         let full_path = self.full_path(path)?;
-        let content_bytes = fs::read(full_path).await.map_err(|err| {
+        let content_bytes = tokio::fs::read(full_path).await.map_err(|err| {
             StorageError::from(err).add_context(format!(
                 "failed to read file {}/{}",
                 self.uri(),
@@ -313,7 +324,7 @@ impl Storage for LocalFileStorage {
 
     async fn file_num_bytes(&self, path: &Path) -> StorageResult<u64> {
         let full_path = self.full_path(path)?;
-        match fs::metadata(full_path).await {
+        match tokio::fs::metadata(full_path).await {
             Ok(metadata) => {
                 if metadata.is_file() {
                     Ok(metadata.len())
