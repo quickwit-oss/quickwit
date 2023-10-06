@@ -41,7 +41,9 @@ use crate::GlobalDocAddress;
 
 #[derive(Clone, Debug)]
 pub(crate) enum SortByComponent {
-    DocId,
+    DocId {
+        order: SortOrder,
+    },
     FastField {
         field_name: String,
         order: SortOrder,
@@ -57,7 +59,7 @@ impl SortByComponent {
         segment_reader: &SegmentReader,
     ) -> tantivy::Result<SortingFieldExtractorComponent> {
         match self {
-            SortByComponent::DocId => Ok(SortingFieldExtractorComponent::DocId),
+            SortByComponent::DocId { .. } => Ok(SortingFieldExtractorComponent::DocId),
             SortByComponent::FastField { field_name, .. } => {
                 let sort_column_opt: Option<(Column<u64>, ColumnType)> =
                     segment_reader.fast_fields().u64_lenient(field_name)?;
@@ -78,7 +80,7 @@ impl SortByComponent {
     }
     pub fn requires_scoring(&self) -> bool {
         match self {
-            SortByComponent::DocId => false,
+            SortByComponent::DocId { .. } => false,
             SortByComponent::FastField { .. } => false,
             SortByComponent::Score { .. } => true,
         }
@@ -94,7 +96,7 @@ impl SortByComponent {
     }
     pub fn sort_order(&self) -> SortOrder {
         match self {
-            SortByComponent::DocId => SortOrder::Desc,
+            SortByComponent::DocId { order } => *order,
             SortByComponent::FastField { order, .. } => *order,
             SortByComponent::Score { order } => *order,
         }
@@ -237,7 +239,7 @@ pub struct QuickwitSegmentCollector {
     segment_ord: u32,
     timestamp_filter_opt: Option<TimestampFilter>,
     aggregation: Option<AggregationSegmentCollectors>,
-    search_after: Option<Vec<Option<SortValue>>>,
+    search_after: Option<PartialHit>,
 }
 
 impl QuickwitSegmentCollector {
@@ -249,8 +251,32 @@ impl QuickwitSegmentCollector {
             .map(|extractor| extractor.extract_typed_sort_value_opt(doc_id, score))
             .collect();
 
-        if let Some(_search_after) = &self.search_after {
-            // TODO compare and return if should be skipped
+        if let Some(search_after) = &self.search_after {
+            let search_after_values = [
+                search_after.sort_value.and_then(|v| v.sort_value),
+                search_after.sort_value2.and_then(|v| v.sort_value),
+            ];
+            let mut cmp_result = compare_fields(
+                &self.top_k_hits.sort_key_mapper.orders,
+                &sort_values,
+                &search_after_values,
+            );
+            if !search_after.split_id.is_empty() {
+                let order = self
+                    .top_k_hits
+                    .sort_key_mapper
+                    .orders
+                    .first()
+                    .unwrap_or(&SortOrder::Desc);
+                cmp_result = cmp_result
+                    .then_with(|| order.compare(&self.split_id, &search_after.split_id))
+                    .then_with(|| order.compare(&self.segment_ord, &search_after.segment_ord))
+                    .then_with(|| order.compare(&doc_id, &search_after.doc_id))
+            }
+
+            if cmp_result != Ordering::Less {
+                return;
+            }
         }
 
         // TODO better partial hit, again
@@ -376,7 +402,7 @@ pub(crate) struct QuickwitCollector {
     timestamp_filter_builder_opt: Option<TimestampFilterBuilder>,
     pub aggregation: Option<QuickwitAggregations>,
     pub aggregation_limits: AggregationLimits,
-    search_after: Option<Vec<Option<SortValue>>>,
+    search_after: Option<PartialHit>,
 }
 
 impl QuickwitCollector {
@@ -612,6 +638,8 @@ pub(crate) fn sort_by_from_request(search_request: &SearchRequest) -> Vec<SortBy
     let to_sort_by_component = |field_name: &str, order| {
         if field_name == "_score" {
             SortByComponent::Score { order }
+        } else if field_name == "_shard_doc" || field_name == "_doc" {
+            SortByComponent::DocId { order }
         } else {
             SortByComponent::FastField {
                 field_name: field_name.to_string(),
@@ -623,7 +651,9 @@ pub(crate) fn sort_by_from_request(search_request: &SearchRequest) -> Vec<SortBy
     if search_request.sort_fields.is_empty() {
         // TODO removing that branch makes root::tests::test_root_search_with_scroll and I don't
         // know why.
-        vec![SortByComponent::DocId]
+        vec![SortByComponent::DocId {
+            order: SortOrder::Desc,
+        }]
     } else {
         search_request
             .sort_fields
@@ -654,18 +684,6 @@ pub(crate) fn make_collector_for_split(
     );
     let sort_by = sort_by_from_request(search_request);
 
-    let search_after = if search_request.search_after.is_empty() {
-        None
-    } else {
-        Some(
-            search_request
-                .search_after
-                .iter()
-                .map(|sort_by_value| sort_by_value.sort_value)
-                .collect(),
-        )
-    };
-
     Ok(QuickwitCollector {
         split_id,
         start_offset: search_request.start_offset as usize,
@@ -674,7 +692,7 @@ pub(crate) fn make_collector_for_split(
         timestamp_filter_builder_opt,
         aggregation,
         aggregation_limits,
-        search_after,
+        search_after: search_request.search_after.clone(),
     })
 }
 
@@ -688,17 +706,6 @@ pub(crate) fn make_merge_collector(
         None => None,
     };
     let sort_by = sort_by_from_request(search_request);
-    let search_after = if search_request.search_after.is_empty() {
-        None
-    } else {
-        Some(
-            search_request
-                .search_after
-                .iter()
-                .map(|sort_by_value| sort_by_value.sort_value)
-                .collect(),
-        )
-    };
 
     Ok(QuickwitCollector {
         split_id: String::default(),
@@ -708,14 +715,31 @@ pub(crate) fn make_merge_collector(
         timestamp_filter_builder_opt: None,
         aggregation,
         aggregation_limits: aggregation_limits.clone(),
-        search_after,
+        search_after: search_request.search_after.clone(),
     })
+}
+
+/// Compare list of fields. Assumes all three lists are of the same length
+fn compare_fields(
+    sort_orders: &[SortOrder],
+    left: &[Option<SortValue>],
+    right: &[Option<SortValue>],
+) -> Ordering {
+    for (order, (left, right)) in sort_orders.iter().zip(left.iter().zip(right)) {
+        match order.compare_opt(left, right) {
+            Ordering::Equal => continue,
+            other => return other,
+        }
+    }
+    Ordering::Equal
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct PartialHitSortingKey {
+    // good candidate for a SmallVec
     sort_values: Vec<Option<SortValue>>,
     address: GlobalDocAddress,
+    // good candidate for a SmallVec
     sort_orders: Vec<SortOrder>,
 }
 
@@ -726,19 +750,18 @@ impl Ord for PartialHitSortingKey {
             "comparing two PartialHitSortingKey of different ordering"
         );
 
-        for (index, order) in self.sort_orders.iter().enumerate() {
-            match order.compare_opt(&self.sort_values[index], &other.sort_values[index]) {
-                Ordering::Equal => continue,
-                other => return other,
-            }
-        }
+        let fields_res = compare_fields(&self.sort_orders, &self.sort_values, &other.sort_values);
 
         // TODO unwrap or &SortOrder::Asc makes this work for
         // root::tests::test_root_search_with_scroll, but it seems wrong
-        self.sort_orders
-            .first()
-            .unwrap_or(&SortOrder::Desc)
-            .compare(&self.address, &other.address)
+        let doc_id_res = || {
+            self.sort_orders
+                .first()
+                .unwrap_or(&SortOrder::Desc)
+                .compare(&self.address, &other.address)
+        };
+
+        fields_res.then_with(doc_id_res)
     }
 }
 

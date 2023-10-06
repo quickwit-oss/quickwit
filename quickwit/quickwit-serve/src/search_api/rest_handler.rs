@@ -243,7 +243,7 @@ pub fn search_request_from_api_request(
         scroll_ttl_secs: None,
         // TODO do we want to support search_after on QW api? If so, what should the request look
         // like????
-        search_after: Vec::new(),
+        search_after: None,
     };
     Ok(search_request)
 }

@@ -291,9 +291,9 @@ fn simplify_search_request_for_scroll_api(req: &SearchRequest) -> SearchRequest 
         snippet_fields: Vec::new(),
         // We remove the scroll ttl parameter. It is irrelevant to process later request
         scroll_ttl_secs: None,
-        // TODO not currently used, but should probably be stripped as it will end up being
-        // generated internally in the future
-        search_after: Vec::new(),
+        // TODO unclear as to what we should do when scroll and search after are mixed. I guess
+        // honor search_after?
+        search_after: req.search_after.clone(),
     }
 }
 
@@ -719,7 +719,7 @@ pub async fn root_search(
     let tag_filter_ast = extract_tags_from_query(query_ast_resolved);
 
     // TODO if search after is set, we sort by timestamp and we don't want to count all results,
-    // we can refine more here.
+    // we can refine more here. Same if we sort by _shard_doc
     let split_metadatas: Vec<SplitMetadata> = list_relevant_splits(
         index_uids,
         search_request.start_timestamp,

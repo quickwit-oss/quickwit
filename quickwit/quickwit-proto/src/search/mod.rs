@@ -104,7 +104,6 @@ impl SortByValue {
                     return None;
                 }
             }
-            // TODO this means we actually ignore _shard_doc
             String(_) | Array(_) | Object(_) => return None,
         };
         Some(SortByValue { sort_value })
