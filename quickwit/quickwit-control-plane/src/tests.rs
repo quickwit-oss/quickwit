@@ -37,7 +37,7 @@ use quickwit_proto::metastore::ListShardsResponse;
 use quickwit_proto::NodeId;
 use serde_json::json;
 
-use crate::control_plane::{ControlPlane, CONTROL_PLAN_LOOP_INTERVAL, REFRESH_PLAN_LOOP_INTERVAL};
+use crate::control_plane::{ControlPlane, CONTROL_PLAN_LOOP_INTERVAL};
 use crate::scheduler::MIN_DURATION_BETWEEN_SCHEDULING;
 use crate::IndexerNodeInfo;
 
@@ -270,9 +270,9 @@ async fn test_scheduler_scheduling_no_indexer() {
     assert_eq!(scheduler_state.num_schedule_indexing_plan, 0);
     assert!(scheduler_state.last_applied_physical_plan.is_none());
 
-    // Wait REFRESH_PLAN_LOOP_INTERVAL * 2, as there is no indexer, we should observe no
+    // There is no indexer, we should observe no
     // scheduling.
-    universe.sleep(REFRESH_PLAN_LOOP_INTERVAL * 2).await;
+    universe.sleep(Duration::from_secs(60)).await;
     let scheduler_state = scheduler_handler
         .process_pending_and_observe()
         .await
