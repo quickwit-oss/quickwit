@@ -106,7 +106,11 @@ pub(crate) async fn start_rest_server(
         .or(search_stream_handler(
             quickwit_services.search_service.clone(),
         ))
-        .or(ingest_api_handlers(ingest_router, ingest_service.clone()))
+        .or(ingest_api_handlers(
+            ingest_router,
+            ingest_service.clone(),
+            quickwit_services.node_config.ingest_api_config.clone(),
+        ))
         .or(index_management_handlers(
             quickwit_services.index_manager.clone(),
             quickwit_services.node_config.clone(),
