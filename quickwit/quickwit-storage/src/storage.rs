@@ -26,7 +26,7 @@ use async_trait::async_trait;
 use quickwit_common::uri::Uri;
 use tempfile::TempPath;
 use tokio::fs::File;
-use tokio::io::AsyncWrite;
+use tokio::io::{AsyncRead, AsyncWrite};
 use tracing::error;
 
 use crate::{BulkDeleteError, OwnedBytes, PutPayload, StorageErrorKind, StorageResult};
@@ -102,6 +102,13 @@ pub trait Storage: fmt::Debug + Send + Sync + 'static {
 
     /// Downloads a slice of a file from the storage, and returns an in memory buffer
     async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes>;
+
+    /// Open a stream handle on the file from the storage
+    async fn get_slice_stream(
+        &self,
+        path: &Path,
+        range: Range<usize>,
+    ) -> StorageResult<Box<dyn AsyncRead + Send + Unpin>>;
 
     /// Downloads the entire content of a "small" file, returns an in memory buffer.
     /// For large files prefer `copy_to_file`.

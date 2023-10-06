@@ -63,7 +63,7 @@ use quickwit_common::tower::{
 use quickwit_config::service::QuickwitService;
 use quickwit_config::NodeConfig;
 use quickwit_control_plane::control_plane::ControlPlane;
-use quickwit_control_plane::{ControlPlaneEventSubscriber, IndexerNodeInfo, IndexerPool};
+use quickwit_control_plane::{IndexerNodeInfo, IndexerPool};
 use quickwit_index_management::{IndexService as IndexManager, IndexServiceError};
 use quickwit_indexing::actors::IndexingService;
 use quickwit_indexing::start_indexing_service;
@@ -81,9 +81,6 @@ use quickwit_proto::control_plane::ControlPlaneServiceClient;
 use quickwit_proto::indexing::IndexingServiceClient;
 use quickwit_proto::ingest::ingester::IngesterServiceClient;
 use quickwit_proto::ingest::router::IngestRouterServiceClient;
-use quickwit_proto::metastore::events::{
-    AddSourceEvent, DeleteIndexEvent, DeleteSourceEvent, ToggleSourceEvent,
-};
 use quickwit_proto::metastore::{EntityKind, MetastoreError};
 use quickwit_proto::search::ReportSplitsRequest;
 use quickwit_proto::NodeId;
@@ -134,7 +131,6 @@ struct QuickwitServices {
     /// The control plane listens to metastore events.
     /// We must maintain a reference to the subscription handles to continue receiving
     /// notifications. Otherwise, the subscriptions are dropped.
-    _control_plane_event_subscription_handles_opt: Option<ControlPlaneEventSubscriptionHandles>,
     _report_splits_subscription_handle_opt: Option<EventSubscriptionHandle<ReportSplitsRequest>>,
 }
 
@@ -312,13 +308,6 @@ pub async fn serve_quickwit(
     )
     .await?;
 
-    // Setup control plane event subscriptions.
-    let control_plane_event_subscription_handles_opt = setup_control_plane_event_subscriptions(
-        &node_config,
-        &event_broker,
-        &control_plane_service,
-    );
-
     // Set up the "control plane proxy" for the metastore.
     let metastore_through_control_plane: Arc<dyn Metastore> = Arc::new(ControlPlaneMetastore::new(
         control_plane_service.clone(),
@@ -457,7 +446,6 @@ pub async fn serve_quickwit(
         metastore_server_opt,
         metastore_client: metastore_through_control_plane.clone(),
         control_plane_service,
-        _control_plane_event_subscription_handles_opt: control_plane_event_subscription_handles_opt,
         _report_splits_subscription_handle_opt: report_splits_subscription_handle_opt,
         index_manager,
         indexing_service_opt,
@@ -539,43 +527,6 @@ pub async fn serve_quickwit(
     }
     let actor_exit_statuses = shutdown_handle.await?;
     Ok(actor_exit_statuses)
-}
-
-#[allow(dead_code)]
-#[derive(Debug)]
-struct ControlPlaneEventSubscriptionHandles {
-    delete_index_event_subscription_handle: EventSubscriptionHandle<DeleteIndexEvent>,
-    add_source_event_subscription_handle: EventSubscriptionHandle<AddSourceEvent>,
-    toggle_source_event_subscription_handle: EventSubscriptionHandle<ToggleSourceEvent>,
-    delete_source_event_subscription_handle: EventSubscriptionHandle<DeleteSourceEvent>,
-}
-
-fn setup_control_plane_event_subscriptions(
-    config: &NodeConfig,
-    event_broker: &EventBroker,
-    control_plane_service: &ControlPlaneServiceClient,
-) -> Option<ControlPlaneEventSubscriptionHandles> {
-    if !config.is_service_enabled(QuickwitService::Metastore) {
-        return None;
-    }
-    let control_plane_event_subscriber =
-        ControlPlaneEventSubscriber::new(control_plane_service.clone());
-
-    let delete_index_event_subscription_handle =
-        event_broker.subscribe::<DeleteIndexEvent>(control_plane_event_subscriber.clone());
-    let add_source_event_subscription_handle =
-        event_broker.subscribe::<AddSourceEvent>(control_plane_event_subscriber.clone());
-    let toggle_source_event_subscription_handle =
-        event_broker.subscribe::<ToggleSourceEvent>(control_plane_event_subscriber.clone());
-    let delete_source_event_subscription_handle =
-        event_broker.subscribe::<DeleteSourceEvent>(control_plane_event_subscriber);
-    let control_plane_subscription_handles = ControlPlaneEventSubscriptionHandles {
-        delete_index_event_subscription_handle,
-        add_source_event_subscription_handle,
-        toggle_source_event_subscription_handle,
-        delete_source_event_subscription_handle,
-    };
-    Some(control_plane_subscription_handles)
 }
 
 async fn setup_ingest_v2(

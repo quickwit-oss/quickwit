@@ -72,10 +72,11 @@ mod source_factory;
 mod vec_source;
 mod void_source;
 
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
+#[cfg(not(any(feature = "kafka", feature = "kinesis", feature = "pulsar")))]
 use anyhow::bail;
 use async_trait::async_trait;
 use bytes::Bytes;
@@ -97,6 +98,7 @@ use quickwit_metastore::checkpoint::{SourceCheckpoint, SourceCheckpointDelta};
 use quickwit_metastore::Metastore;
 use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::{IndexUid, ShardId};
+use quickwit_storage::StorageResolver;
 use serde_json::Value as JsonValue;
 pub use source_factory::{SourceFactory, SourceLoader, TypedSourceFactory};
 use tokio::runtime::Handle;
@@ -104,6 +106,7 @@ use tracing::error;
 pub use vec_source::{VecSource, VecSourceFactory};
 pub use void_source::{VoidSource, VoidSourceFactory};
 
+use self::file_source::dir_and_filename;
 use crate::actors::DocProcessor;
 use crate::models::RawDocBatch;
 use crate::source::ingest::IngestSourceFactory;
@@ -117,6 +120,7 @@ pub struct SourceRuntimeArgs {
     pub ingester_pool: IngesterPool,
     // Ingest API queues directory path.
     pub queues_dir_path: PathBuf,
+    pub storage_resolver: StorageResolver,
 }
 
 impl SourceRuntimeArgs {
@@ -159,6 +163,7 @@ impl SourceRuntimeArgs {
             ingester_pool: IngesterPool::default(),
             queues_dir_path,
             source_config,
+            storage_resolver: StorageResolver::ram_and_file_for_test(),
         })
     }
 }
@@ -377,13 +382,16 @@ pub fn quickwit_supported_sources() -> &'static SourceLoader {
     })
 }
 
-pub async fn check_source_connectivity(source_config: &SourceConfig) -> anyhow::Result<()> {
+pub async fn check_source_connectivity(
+    storage_resolver: &StorageResolver,
+    source_config: &SourceConfig,
+) -> anyhow::Result<()> {
     match &source_config.source_params {
         SourceParams::File(params) => {
             if let Some(filepath) = &params.filepath {
-                if !Path::new(filepath).try_exists()? {
-                    bail!("file `{}` does not exist", filepath.display())
-                }
+                let (dir_uri, file_name) = dir_and_filename(filepath)?;
+                let storage = storage_resolver.resolve(&dir_uri).await?;
+                storage.file_num_bytes(file_name).await?;
             }
             Ok(())
         }
@@ -495,7 +503,8 @@ mod tests {
                 transform_config: None,
                 input_format: SourceInputFormat::Json,
             };
-            check_source_connectivity(&source_config).await?;
+            check_source_connectivity(&StorageResolver::ram_and_file_for_test(), &source_config)
+                .await?;
         }
         {
             let source_config = SourceConfig {
@@ -507,7 +516,8 @@ mod tests {
                 transform_config: None,
                 input_format: SourceInputFormat::Json,
             };
-            check_source_connectivity(&source_config).await?;
+            check_source_connectivity(&StorageResolver::ram_and_file_for_test(), &source_config)
+                .await?;
         }
         {
             let source_config = SourceConfig {
@@ -519,7 +529,12 @@ mod tests {
                 transform_config: None,
                 input_format: SourceInputFormat::Json,
             };
-            assert!(check_source_connectivity(&source_config).await.is_err());
+            assert!(check_source_connectivity(
+                &StorageResolver::ram_and_file_for_test(),
+                &source_config
+            )
+            .await
+            .is_err());
         }
         {
             let source_config = SourceConfig {
@@ -531,7 +546,12 @@ mod tests {
                 transform_config: None,
                 input_format: SourceInputFormat::Json,
             };
-            assert!(check_source_connectivity(&source_config).await.is_ok());
+            assert!(check_source_connectivity(
+                &StorageResolver::ram_and_file_for_test(),
+                &source_config
+            )
+            .await
+            .is_ok());
         }
         Ok(())
     }

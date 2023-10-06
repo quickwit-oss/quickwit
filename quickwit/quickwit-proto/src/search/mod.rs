@@ -117,3 +117,14 @@ impl PartialOrd for SortValue {
         Some(self.cmp(other))
     }
 }
+
+impl PartialHit {
+    /// Helper to get access to the 1st sort value
+    pub fn sort_value(&self) -> Option<SortValue> {
+        if let Some(sort_value) = self.sort_value {
+            sort_value.sort_value
+        } else {
+            None
+        }
+    }
+}

@@ -24,6 +24,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use quickwit_common::uri::Uri;
+use tokio::io::AsyncRead;
 
 use crate::storage::SendableAsync;
 use crate::{BulkDeleteError, OwnedBytes, Storage};
@@ -77,6 +78,16 @@ impl Storage for PrefixStorage {
 
     async fn get_all(&self, path: &Path) -> crate::StorageResult<OwnedBytes> {
         self.storage.get_all(&self.prefix.join(path)).await
+    }
+
+    async fn get_slice_stream(
+        &self,
+        path: &Path,
+        range: Range<usize>,
+    ) -> crate::StorageResult<Box<dyn AsyncRead + Send + Unpin>> {
+        self.storage
+            .get_slice_stream(&self.prefix.join(path), range)
+            .await
     }
 
     async fn delete(&self, path: &Path) -> crate::StorageResult<()> {

@@ -17,22 +17,16 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::fmt;
+use serde::Deserialize;
 
-use serde::de::{self, MapAccess, Visitor};
-use serde::{Deserialize, Deserializer};
-
-use crate::elastic_query_dsl::ConvertableToQueryAst;
+use crate::elastic_query_dsl::{ConvertableToQueryAst, StringOrStructForSerialization};
 use crate::query_ast::{FullTextMode, FullTextParams, FullTextQuery, QueryAst};
 use crate::{MatchAllOrNone, OneFieldMap};
 
 /// `MatchPhraseQuery` as defined in
 /// <https://www.elastic.co/guide/en/elasticsearch/reference/current/query-dsl-match-query-phrase.html>
 #[derive(Deserialize, Clone, Eq, PartialEq, Debug)]
-#[serde(
-    from = "OneFieldMap<MatchPhraseQueryParamsForDeserialization>",
-    into = "OneFieldMap<MatchPhraseQueryParams>"
-)]
+#[serde(from = "OneFieldMap<StringOrStructForSerialization<MatchPhraseQueryParams>>")]
 pub(crate) struct MatchPhraseQuery {
     pub(crate) field: String,
     pub(crate) params: MatchPhraseQueryParams,
@@ -67,36 +61,12 @@ impl ConvertableToQueryAst for MatchPhraseQuery {
     }
 }
 
-// --------------
-//
-// Below is the Deserialization code
-// The difficulty here is to support the two following formats:
-//
-// `{"field": {"query": "my query", "default_operator": "OR"}}`
-// `{"field": "my query"}`
-//
-// We don't use untagged enum to support this, in order to keep good errors.
-//
-// The code below is adapted from solution described here: https://serde.rs/string-or-struct.html
-
-#[derive(Deserialize)]
-#[serde(transparent)]
-struct MatchPhraseQueryParamsForDeserialization {
-    #[serde(deserialize_with = "string_or_struct")]
-    inner: MatchPhraseQueryParams,
-}
-
-impl From<MatchPhraseQuery> for OneFieldMap<MatchPhraseQueryParams> {
-    fn from(match_phrase_query: MatchPhraseQuery) -> OneFieldMap<MatchPhraseQueryParams> {
-        OneFieldMap {
-            field: match_phrase_query.field,
-            value: match_phrase_query.params,
-        }
-    }
-}
-
-impl From<OneFieldMap<MatchPhraseQueryParamsForDeserialization>> for MatchPhraseQuery {
-    fn from(match_query_params: OneFieldMap<MatchPhraseQueryParamsForDeserialization>) -> Self {
+impl From<OneFieldMap<StringOrStructForSerialization<MatchPhraseQueryParams>>>
+    for MatchPhraseQuery
+{
+    fn from(
+        match_query_params: OneFieldMap<StringOrStructForSerialization<MatchPhraseQueryParams>>,
+    ) -> Self {
         let OneFieldMap { field, value } = match_query_params;
         MatchPhraseQuery {
             field,
@@ -105,34 +75,15 @@ impl From<OneFieldMap<MatchPhraseQueryParamsForDeserialization>> for MatchPhrase
     }
 }
 
-struct MatchQueryParamsStringOrStructVisitor;
-
-impl<'de> Visitor<'de> for MatchQueryParamsStringOrStructVisitor {
-    type Value = MatchPhraseQueryParams;
-
-    fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
-        formatter.write_str("string or map containing the parameters of a match query.")
-    }
-
-    fn visit_str<E>(self, query: &str) -> Result<Self::Value, E>
-    where E: serde::de::Error {
-        Ok(MatchPhraseQueryParams {
-            query: query.to_string(),
+impl From<String> for MatchPhraseQueryParams {
+    fn from(query: String) -> MatchPhraseQueryParams {
+        MatchPhraseQueryParams {
+            query,
             zero_terms_query: Default::default(),
             analyzer: None,
             slop: 0,
-        })
+        }
     }
-
-    fn visit_map<M>(self, map: M) -> Result<MatchPhraseQueryParams, M::Error>
-    where M: MapAccess<'de> {
-        Deserialize::deserialize(de::value::MapAccessDeserializer::new(map))
-    }
-}
-
-fn string_or_struct<'de, D>(deserializer: D) -> Result<MatchPhraseQueryParams, D::Error>
-where D: Deserializer<'de> {
-    deserializer.deserialize_any(MatchQueryParamsStringOrStructVisitor)
 }
 
 #[cfg(test)]

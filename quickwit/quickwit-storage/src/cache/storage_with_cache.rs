@@ -24,6 +24,7 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use quickwit_common::uri::Uri;
+use tokio::io::AsyncRead;
 
 use crate::cache::StorageCache;
 use crate::storage::SendableAsync;
@@ -69,6 +70,17 @@ impl Storage for StorageWithCache {
                 .await;
             Ok(bytes)
         }
+    }
+
+    async fn get_slice_stream(
+        &self,
+        path: &Path,
+        _range: Range<usize>,
+    ) -> StorageResult<Box<dyn AsyncRead + Send + Unpin>> {
+        unimplemented!(
+            "StorageWithCache does not support streamed read yet. Failed to get {:?}",
+            path
+        )
     }
 
     async fn get_all(&self, path: &Path) -> StorageResult<OwnedBytes> {

@@ -44,7 +44,7 @@ pub struct ControlPlaneMetastore {
 }
 
 impl fmt::Debug for ControlPlaneMetastore {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("ControlPlaneMetastore").finish()
     }
 }
