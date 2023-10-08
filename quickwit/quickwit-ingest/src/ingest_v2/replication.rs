@@ -25,16 +25,13 @@ use mrecordlog::MultiRecordLog;
 use quickwit_common::ServiceStream;
 use quickwit_proto::ingest::ingester::{
     ack_replication_message, syn_replication_message, AckReplicationMessage, ReplicateRequest,
-    ReplicateResponse, ReplicateSuccess, SynReplicationMessage, TruncateRequest, TruncateResponse,
+    ReplicateResponse, ReplicateSuccess, SynReplicationMessage,
 };
 use quickwit_proto::ingest::{CommitTypeV2, IngestV2Error, IngestV2Result, ShardState};
 use quickwit_proto::types::NodeId;
-use quickwit_proto::QueueId;
 use tokio::sync::{mpsc, oneshot, watch, RwLock};
 use tokio::task::JoinHandle;
 
-use super::gc::{remove_shards_after, REMOVAL_GRACE_PERIOD};
-use super::ingest_metastore::IngestMetastore;
 use super::ingester::{commit_doc, IngesterState};
 use super::models::{Position, ReplicaShard, ShardStatus};
 use crate::metrics::INGEST_METRICS;
@@ -44,27 +41,17 @@ use crate::metrics::INGEST_METRICS;
 #[derive(Debug)]
 pub(super) enum ReplicationRequest {
     Replicate(ReplicateRequest),
-    Truncate(TruncateRequest),
 }
 
 #[derive(Debug)]
 pub(super) enum ReplicationResponse {
     Replicate(ReplicateResponse),
-    Truncate(TruncateResponse),
 }
 
 impl ReplicationResponse {
     pub fn into_replicate_response(self) -> Option<ReplicateResponse> {
         match self {
             ReplicationResponse::Replicate(replicate_response) => Some(replicate_response),
-            ReplicationResponse::Truncate(_) => None,
-        }
-    }
-
-    pub fn into_truncate_response(self) -> Option<TruncateResponse> {
-        match self {
-            ReplicationResponse::Replicate(_) => None,
-            ReplicationResponse::Truncate(truncate_response) => Some(truncate_response),
         }
     }
 }
@@ -96,25 +83,6 @@ impl ReplicationClient {
             .into_replicate_response()
             .expect("TODO");
         Ok(replicate_response)
-    }
-
-    /// Replicates a truncate request from a leader to its follower and waits for its response.
-    pub async fn truncate(
-        &self,
-        truncate_request: TruncateRequest,
-    ) -> IngestV2Result<TruncateResponse> {
-        let replication_request = ReplicationRequest::Truncate(truncate_request);
-        let (replication_response_tx, replication_response_rx) = oneshot::channel();
-        self.oneshot_replication_request_tx
-            .clone()
-            .send((replication_request, replication_response_tx))
-            .expect("TODO");
-        let truncate_response = replication_response_rx
-            .await
-            .expect("TODO")
-            .into_truncate_response()
-            .expect("TODO");
-        Ok(truncate_response)
     }
 }
 
@@ -164,9 +132,6 @@ impl ReplicationClientTask {
                 ReplicationRequest::Replicate(replication_request) => {
                     SynReplicationMessage::new_replicate_request(replication_request)
                 }
-                ReplicationRequest::Truncate(truncate_request) => {
-                    SynReplicationMessage::new_truncate_request(truncate_request)
-                }
             };
             self.syn_replication_stream_tx
                 .send(syn_replication_message)
@@ -195,7 +160,6 @@ pub(super) struct ReplicationTaskHandle {
 pub(super) struct ReplicationTask {
     leader_id: NodeId,
     follower_id: NodeId,
-    metastore: Arc<dyn IngestMetastore>,
     mrecordlog: Arc<RwLock<MultiRecordLog>>,
     state: Arc<RwLock<IngesterState>>,
     syn_replication_stream: ServiceStream<SynReplicationMessage>,
@@ -206,7 +170,6 @@ impl ReplicationTask {
     pub fn spawn(
         leader_id: NodeId,
         follower_id: NodeId,
-        metastore: Arc<dyn IngestMetastore>,
         mrecordlog: Arc<RwLock<MultiRecordLog>>,
         state: Arc<RwLock<IngesterState>>,
         syn_replication_stream: ServiceStream<SynReplicationMessage>,
@@ -215,7 +178,6 @@ impl ReplicationTask {
         let mut replication_task = Self {
             leader_id,
             follower_id,
-            metastore,
             mrecordlog,
             state,
             syn_replication_stream,
@@ -265,7 +227,7 @@ impl ReplicationTask {
                         let (shard_status_tx, shard_status_rx) =
                             watch::channel(ShardStatus::default());
                         ReplicaShard {
-                            leader_id: replicate_request.leader_id.clone().into(),
+                            _leader_id: replicate_request.leader_id.clone().into(),
                             shard_state: ShardState::Open,
                             publish_position_inclusive: Position::default(),
                             replica_position_inclusive: Position::default(),
@@ -359,43 +321,6 @@ impl ReplicationTask {
         Ok(replicate_response)
     }
 
-    async fn truncate(
-        &mut self,
-        truncate_request: TruncateRequest,
-    ) -> IngestV2Result<TruncateResponse> {
-        let mut queues_to_remove: Vec<QueueId> = Vec::new();
-        let mut mrecordlog_guard = self.mrecordlog.write().await;
-        let mut state_guard = self.state.write().await;
-
-        for truncate_subrequest in truncate_request.subrequests {
-            let queue_id = truncate_subrequest.queue_id();
-
-            if let Some(replica_shard) = state_guard.replica_shards.get_mut(&queue_id) {
-                mrecordlog_guard
-                    .truncate(&queue_id, truncate_subrequest.to_position_inclusive)
-                    .await
-                    .map_err(|error| {
-                        IngestV2Error::Internal(format!("Failed to truncate: {error:?}"))
-                    })?;
-                replica_shard
-                    .set_publish_position_inclusive(truncate_subrequest.to_position_inclusive);
-
-                if replica_shard.is_gc_candidate() {
-                    queues_to_remove.push(queue_id);
-                }
-            }
-        }
-        remove_shards_after(
-            queues_to_remove,
-            REMOVAL_GRACE_PERIOD,
-            self.metastore.clone(),
-            self.mrecordlog.clone(),
-            self.state.clone(),
-        );
-        let truncate_response = TruncateResponse {};
-        Ok(truncate_response)
-    }
-
     async fn run(&mut self) -> IngestV2Result<()> {
         while let Some(syn_replication_message) = self.syn_replication_stream.next().await {
             let ack_replication_message = match syn_replication_message.message {
@@ -403,10 +328,6 @@ impl ReplicationTask {
                     .replicate(replicate_request)
                     .await
                     .map(AckReplicationMessage::new_replicate_response),
-                Some(syn_replication_message::Message::TruncateRequest(truncate_request)) => self
-                    .truncate(truncate_request)
-                    .await
-                    .map(AckReplicationMessage::new_truncate_response),
                 _ => panic!("TODO"),
             };
             if self
@@ -427,9 +348,6 @@ fn into_replication_response(outer_message: AckReplicationMessage) -> Option<Rep
         Some(ack_replication_message::Message::ReplicateResponse(replicate_response)) => {
             Some(ReplicationResponse::Replicate(replicate_response))
         }
-        Some(ack_replication_message::Message::TruncateResponse(truncate_response)) => {
-            Some(ReplicationResponse::Truncate(truncate_response))
-        }
         _ => None,
     }
 }
@@ -445,7 +363,6 @@ mod tests {
     use quickwit_proto::types::queue_id;
 
     use super::*;
-    use crate::ingest_v2::ingest_metastore::MockIngestMetastore;
     use crate::ingest_v2::test_utils::{MultiRecordLogTestExt, ReplicaShardTestExt};
 
     #[tokio::test]
@@ -550,7 +467,6 @@ mod tests {
         let leader_id: NodeId = "test-leader".into();
         let follower_id: NodeId = "test-follower".into();
         let tempdir = tempfile::tempdir().unwrap();
-        let metastore = Arc::new(MockIngestMetastore::default());
         let mrecordlog = Arc::new(RwLock::new(
             MultiRecordLog::open(tempdir.path()).await.unwrap(),
         ));
@@ -565,7 +481,6 @@ mod tests {
         let _replication_task_handle = ReplicationTask::spawn(
             leader_id,
             follower_id,
-            metastore,
             mrecordlog.clone(),
             state.clone(),
             syn_replication_stream,

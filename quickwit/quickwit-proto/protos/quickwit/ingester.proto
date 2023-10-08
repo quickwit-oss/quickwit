@@ -85,7 +85,6 @@ message SynReplicationMessage {
     oneof message {
         OpenReplicationStreamRequest open_request = 1;
         ReplicateRequest replicate_request = 2;
-        TruncateRequest truncate_request = 3;
     }
 }
 
@@ -93,7 +92,6 @@ message AckReplicationMessage {
     oneof message {
         OpenReplicationStreamResponse open_response = 1;
         ReplicateResponse replicate_response = 3;
-        TruncateResponse truncate_response = 4;
     }
 }
 
@@ -142,7 +140,7 @@ message ReplicateFailure {
 }
 
 message TruncateRequest {
-    string leader_id = 1;
+    string ingester_id = 1;
     repeated TruncateSubrequest subrequests = 2;
 }
 
