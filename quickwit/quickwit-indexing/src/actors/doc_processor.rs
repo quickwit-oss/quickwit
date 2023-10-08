@@ -785,7 +785,7 @@ mod tests_vrl {
             serde_json::json!({
                 "_source": {
                     "body": "HAPPY USING VRL",
-                    "response_date": "2021-12-19T16:39:59+00:00",
+                    "response_date": "2021-12-19T16:39:59Z",
                     "response_payload": "YWJj",
                     "response_time": 2,
                     "timestamp": 1628837062
@@ -879,7 +879,7 @@ mod tests_vrl {
             serde_json::json!({
                 "_source": {
                     "body": "HAPPY USING VRL",
-                    "response_date": "2021-12-19T16:39:59+00:00",
+                    "response_date": "2021-12-19T16:39:59Z",
                     "response_payload": "YWJj",
                     "response_time": 2,
                     "timestamp": 1628837062
