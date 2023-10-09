@@ -24,7 +24,9 @@ use std::str::FromStr;
 use async_trait::async_trait;
 use quickwit_common::uri::Uri;
 use quickwit_config::{load_index_config_from_user_config, ConfigFormat, IndexConfig};
-use quickwit_ingest::{CommitType, DocBatch, DocBatchBuilder, IngestRequest, IngestServiceClient};
+use quickwit_ingest::{
+    CommitType, DocBatch, DocBatchBuilder, IngestRequest, IngestService, IngestServiceClient,
+};
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::trace_service_server::TraceService;
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::{
     ExportTracePartialSuccess, ExportTraceServiceRequest, ExportTraceServiceResponse,

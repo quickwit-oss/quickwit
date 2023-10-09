@@ -24,11 +24,11 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
-use quickwit_common::uri::Uri;
 use quickwit_proto::control_plane::{
-    ControlPlaneServiceClient, GetOrCreateOpenShardsRequest, GetOrCreateOpenShardsSubrequest,
+    ControlPlaneService, ControlPlaneServiceClient, GetOrCreateOpenShardsRequest,
+    GetOrCreateOpenShardsSubrequest,
 };
-use quickwit_proto::ingest::ingester::{PersistRequest, PersistSubrequest};
+use quickwit_proto::ingest::ingester::{IngesterService, PersistRequest, PersistSubrequest};
 use quickwit_proto::ingest::router::{
     IngestRequestV2, IngestResponseV2, IngestRouterService, IngestSubrequest,
 };
@@ -143,14 +143,6 @@ impl IngestRouter {
 
 #[async_trait]
 impl IngestRouterService for IngestRouter {
-    async fn check_connectivity(&mut self) -> anyhow::Result<()> {
-        todo!()
-    }
-
-    fn uris(&self) -> Vec<Uri> {
-        todo!()
-    }
-
     async fn ingest(
         &mut self,
         ingest_request: IngestRequestV2,

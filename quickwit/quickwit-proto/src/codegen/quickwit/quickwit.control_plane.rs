@@ -83,8 +83,6 @@ pub trait ControlPlaneService: std::fmt::Debug + dyn_clone::DynClone + Send + Sy
         &mut self,
         request: super::metastore::DeleteShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse>;
-    async fn check_connectivity(&mut self) -> anyhow::Result<()>;
-    fn uris(&self) -> Vec<quickwit_common::uri::Uri>;
 }
 dyn_clone::clone_trait_object!(ControlPlaneService);
 #[cfg(any(test, feature = "testsuite"))]
@@ -104,17 +102,12 @@ impl ControlPlaneServiceClient {
     {
         Self { inner: Box::new(instance) }
     }
-    pub fn from_boxed(instance: Box<dyn ControlPlaneService>) -> Self {
-        Self { inner: instance }
-    }
     pub fn as_grpc_service(
         &self,
     ) -> control_plane_service_grpc_server::ControlPlaneServiceGrpcServer<
         ControlPlaneServiceGrpcServerAdapter,
     > {
-        let adapter = ControlPlaneServiceGrpcServerAdapter::build_from_boxed(
-            self.inner.clone(),
-        );
+        let adapter = ControlPlaneServiceGrpcServerAdapter::new(self.clone());
         control_plane_service_grpc_server::ControlPlaneServiceGrpcServer::new(adapter)
     }
     pub fn from_channel<C>(channel: C) -> Self
@@ -169,15 +162,57 @@ impl ControlPlaneServiceClient {
         MockControlPlaneService::new()
     }
 }
-impl std::ops::Deref for ControlPlaneServiceClient {
-    type Target = Box<dyn ControlPlaneService>;
-    fn deref(&self) -> &Self::Target {
-        &self.inner
+#[async_trait::async_trait]
+impl ControlPlaneService for ControlPlaneServiceClient {
+    async fn create_index(
+        &mut self,
+        request: super::metastore::CreateIndexRequest,
+    ) -> crate::control_plane::ControlPlaneResult<
+        super::metastore::CreateIndexResponse,
+    > {
+        self.inner.create_index(request).await
     }
-}
-impl std::ops::DerefMut for ControlPlaneServiceClient {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.inner
+    async fn delete_index(
+        &mut self,
+        request: super::metastore::DeleteIndexRequest,
+    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
+        self.inner.delete_index(request).await
+    }
+    async fn add_source(
+        &mut self,
+        request: super::metastore::AddSourceRequest,
+    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
+        self.inner.add_source(request).await
+    }
+    async fn toggle_source(
+        &mut self,
+        request: super::metastore::ToggleSourceRequest,
+    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
+        self.inner.toggle_source(request).await
+    }
+    async fn delete_source(
+        &mut self,
+        request: super::metastore::DeleteSourceRequest,
+    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
+        self.inner.delete_source(request).await
+    }
+    async fn get_or_create_open_shards(
+        &mut self,
+        request: GetOrCreateOpenShardsRequest,
+    ) -> crate::control_plane::ControlPlaneResult<GetOrCreateOpenShardsResponse> {
+        self.inner.get_or_create_open_shards(request).await
+    }
+    async fn close_shards(
+        &mut self,
+        request: super::metastore::CloseShardsRequest,
+    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
+        self.inner.close_shards(request).await
+    }
+    async fn delete_shards(
+        &mut self,
+        request: super::metastore::DeleteShardsRequest,
+    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
+        self.inner.delete_shards(request).await
     }
 }
 #[cfg(any(test, feature = "testsuite"))]
@@ -252,12 +287,6 @@ pub mod control_plane_service_mock {
             super::super::metastore::EmptyResponse,
         > {
             self.inner.lock().await.delete_shards(request).await
-        }
-        async fn check_connectivity(&mut self) -> anyhow::Result<()> {
-            self.inner.lock().await.check_connectivity().await
-        }
-        fn uris(&self) -> Vec<quickwit_common::uri::Uri> {
-            self.inner.blocking_lock().uris()
         }
     }
     impl From<MockControlPlaneService> for ControlPlaneServiceClient {
@@ -518,12 +547,6 @@ impl ControlPlaneService for ControlPlaneServiceTowerBlock {
         request: super::metastore::DeleteShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
         self.delete_shards_svc.ready().await?.call(request).await
-    }
-    async fn check_connectivity(&mut self) -> anyhow::Result<()> {
-        self.inner.check_connectivity().await
-    }
-    fn uris(&self) -> Vec<quickwit_common::uri::Uri> {
-        self.inner.uris()
     }
 }
 #[derive(Debug, Default)]
@@ -846,27 +869,15 @@ impl ControlPlaneServiceTowerBlockBuilder {
                 >,
             > + Send + 'static,
     {
-        let (_, num_connections_watcher) = tokio::sync::watch::channel(1);
-        let adapter = ControlPlaneServiceGrpcClientAdapter::new(
-            control_plane_service_grpc_client::ControlPlaneServiceGrpcClient::new(
-                channel,
-            ),
-            num_connections_watcher,
-        );
-        self.build_from_boxed(Box::new(adapter))
+        self.build_from_boxed(Box::new(ControlPlaneServiceClient::from_channel(channel)))
     }
     pub fn build_from_balanced_channel<K: std::hash::Hash + Eq + Send + Clone + 'static>(
         self,
         balanced_channel: quickwit_common::tower::BalanceChannel<K>,
     ) -> ControlPlaneServiceClient {
-        let num_connections_watcher = balanced_channel.num_connections_watcher();
-        let adapter = ControlPlaneServiceGrpcClientAdapter::new(
-            control_plane_service_grpc_client::ControlPlaneServiceGrpcClient::new(
-                balanced_channel,
-            ),
-            num_connections_watcher,
-        );
-        self.build_from_boxed(Box::new(adapter))
+        self.build_from_boxed(
+            Box::new(ControlPlaneServiceClient::from_balanced_channel(balanced_channel)),
+        )
     }
     pub fn build_from_mailbox<A>(
         self,
@@ -1133,21 +1144,11 @@ where
     ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
         self.call(request).await
     }
-    async fn check_connectivity(&mut self) -> anyhow::Result<()> {
-        if self.inner.is_disconnected() {
-            anyhow::bail!(
-                "Mailbox of actor `{}` is disconnected", self.inner.actor_instance_id()
-            )
-        }
-        Ok(())
-    }
-    fn uris(&self) -> Vec<quickwit_common::uri::Uri> {
-        Vec::new()
-    }
 }
 #[derive(Debug, Clone)]
 pub struct ControlPlaneServiceGrpcClientAdapter<T> {
     inner: T,
+    #[allow(dead_code)]
     num_connections_rx: tokio::sync::watch::Receiver<usize>,
 }
 impl<T> ControlPlaneServiceGrpcClientAdapter<T> {
@@ -1256,18 +1257,6 @@ where
             .map(|response| response.into_inner())
             .map_err(|error| error.into())
     }
-    async fn check_connectivity(&mut self) -> anyhow::Result<()> {
-        if *self.num_connections_rx.borrow() == 0 {
-            anyhow::bail!("No connection to the server")
-        }
-        Ok(())
-    }
-    fn uris(&self) -> Vec<quickwit_common::uri::Uri> {
-        vec![
-            quickwit_common::uri::Uri::from_well_formed(&
-            format!("grpc://{}.service.cluster", "controlplaneservice"))
-        ]
-    }
 }
 #[derive(Debug)]
 pub struct ControlPlaneServiceGrpcServerAdapter {
@@ -1279,9 +1268,6 @@ impl ControlPlaneServiceGrpcServerAdapter {
         T: ControlPlaneService,
     {
         Self { inner: Box::new(instance) }
-    }
-    pub fn build_from_boxed(instance: Box<dyn ControlPlaneService>) -> Self {
-        Self { inner: instance }
     }
 }
 #[async_trait::async_trait]

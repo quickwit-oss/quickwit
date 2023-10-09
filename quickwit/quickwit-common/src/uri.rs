@@ -37,6 +37,7 @@ pub enum Protocol {
     Azure,
     File,
     Grpc,
+    Mailbox,
     PostgreSQL,
     Ram,
     S3,
@@ -48,6 +49,7 @@ impl Protocol {
             Protocol::Azure => "azure",
             Protocol::File => "file",
             Protocol::Grpc => "grpc",
+            Protocol::Mailbox => "mailbox",
             Protocol::PostgreSQL => "postgresql",
             Protocol::Ram => "ram",
             Protocol::S3 => "s3",
@@ -105,6 +107,7 @@ impl FromStr for Protocol {
             "azure" => Ok(Protocol::Azure),
             "file" => Ok(Protocol::File),
             "grpc" => Ok(Protocol::Grpc),
+            "mailbox" => Ok(Protocol::Mailbox),
             "pg" | "postgres" | "postgresql" => Ok(Protocol::PostgreSQL),
             "ram" => Ok(Protocol::Ram),
             "s3" => Ok(Protocol::S3),
@@ -485,6 +488,10 @@ mod tests {
         assert_eq!(
             Uri::from_str("azure://account/container/homer/docs/../dognuts").unwrap(),
             "azure://account/container/homer/docs/../dognuts"
+        );
+        assert_eq!(
+            Uri::from_str("mailbox://localhost/an-actor-id").unwrap(),
+            "mailbox://localhost/an-actor-id"
         );
 
         assert_eq!(

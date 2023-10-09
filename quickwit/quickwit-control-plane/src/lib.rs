@@ -25,7 +25,7 @@ pub mod scheduler;
 use async_trait::async_trait;
 use quickwit_common::pubsub::EventSubscriber;
 use quickwit_common::tower::Pool;
-use quickwit_proto::control_plane::ControlPlaneServiceClient;
+use quickwit_proto::control_plane::{ControlPlaneService, ControlPlaneServiceClient};
 use quickwit_proto::indexing::{IndexingServiceClient, IndexingTask};
 use quickwit_proto::metastore::{CloseShardsRequest, DeleteShardsRequest};
 use tracing::error;

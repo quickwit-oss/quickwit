@@ -33,7 +33,7 @@ use quickwit_proto::control_plane::{
     ControlPlaneError, ControlPlaneResult, GetOpenShardsSubresponse, GetOrCreateOpenShardsRequest,
     GetOrCreateOpenShardsResponse,
 };
-use quickwit_proto::ingest::ingester::PingRequest;
+use quickwit_proto::ingest::ingester::{IngesterService, PingRequest};
 use quickwit_proto::ingest::{IngestV2Error, Shard, ShardState};
 use quickwit_proto::metastore::{
     CloseShardsRequest, DeleteShardsRequest, EmptyResponse, EntityKind, MetastoreError,

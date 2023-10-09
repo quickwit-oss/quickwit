@@ -20,11 +20,12 @@
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use quickwit_config::{IngestApiConfig, INGEST_SOURCE_ID};
 use quickwit_ingest::{
-    CommitType, DocBatchBuilder, FetchResponse, IngestRequest, IngestResponse, IngestServiceClient,
-    IngestServiceError, TailRequest,
+    CommitType, DocBatchBuilder, FetchResponse, IngestRequest, IngestResponse, IngestService,
+    IngestServiceClient, IngestServiceError, TailRequest,
 };
 use quickwit_proto::ingest::router::{
-    IngestRequestV2, IngestResponseV2, IngestRouterServiceClient, IngestSubrequest,
+    IngestRequestV2, IngestResponseV2, IngestRouterService, IngestRouterServiceClient,
+    IngestSubrequest,
 };
 use quickwit_proto::ingest::{DocBatchV2, IngestV2Error};
 use quickwit_proto::IndexId;

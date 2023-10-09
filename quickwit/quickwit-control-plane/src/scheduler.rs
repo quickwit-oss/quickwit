@@ -27,7 +27,7 @@ use anyhow::Context;
 use itertools::Itertools;
 use quickwit_config::{SourceConfig, INGEST_SOURCE_ID};
 use quickwit_metastore::{ListIndexesQuery, Metastore};
-use quickwit_proto::indexing::{ApplyIndexingPlanRequest, IndexingTask};
+use quickwit_proto::indexing::{ApplyIndexingPlanRequest, IndexingService, IndexingTask};
 use quickwit_proto::metastore::{ListShardsRequest, ListShardsSubrequest};
 use quickwit_proto::{NodeId, ShardId};
 use serde::Serialize;

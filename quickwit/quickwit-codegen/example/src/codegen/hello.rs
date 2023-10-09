@@ -82,13 +82,10 @@ impl HelloClient {
     {
         Self { inner: Box::new(instance) }
     }
-    pub fn from_boxed(instance: Box<dyn Hello>) -> Self {
-        Self { inner: instance }
-    }
     pub fn as_grpc_service(
         &self,
     ) -> hello_grpc_server::HelloGrpcServer<HelloGrpcServerAdapter> {
-        let adapter = HelloGrpcServerAdapter::build_from_boxed(self.inner.clone());
+        let adapter = HelloGrpcServerAdapter::new(self.clone());
         hello_grpc_server::HelloGrpcServer::new(adapter)
     }
     pub fn from_channel<C>(channel: C) -> Self
@@ -139,15 +136,31 @@ impl HelloClient {
         MockHello::new()
     }
 }
-impl std::ops::Deref for HelloClient {
-    type Target = Box<dyn Hello>;
-    fn deref(&self) -> &Self::Target {
-        &self.inner
+#[async_trait::async_trait]
+impl Hello for HelloClient {
+    async fn hello(
+        &mut self,
+        request: HelloRequest,
+    ) -> crate::HelloResult<HelloResponse> {
+        self.inner.hello(request).await
     }
-}
-impl std::ops::DerefMut for HelloClient {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        &mut self.inner
+    async fn goodbye(
+        &mut self,
+        request: GoodbyeRequest,
+    ) -> crate::HelloResult<GoodbyeResponse> {
+        self.inner.goodbye(request).await
+    }
+    async fn ping(
+        &mut self,
+        request: quickwit_common::ServiceStream<PingRequest>,
+    ) -> crate::HelloResult<HelloStream<PingResponse>> {
+        self.inner.ping(request).await
+    }
+    async fn check_connectivity(&mut self) -> anyhow::Result<()> {
+        self.inner.check_connectivity().await
+    }
+    fn uris(&self) -> Vec<quickwit_common::uri::Uri> {
+        self.inner.uris()
     }
 }
 #[cfg(any(test, feature = "testsuite"))]
@@ -427,23 +440,15 @@ impl HelloTowerBlockBuilder {
                 >,
             > + Send + 'static,
     {
-        let (_, num_connections_watcher) = tokio::sync::watch::channel(1);
-        let adapter = HelloGrpcClientAdapter::new(
-            hello_grpc_client::HelloGrpcClient::new(channel),
-            num_connections_watcher,
-        );
-        self.build_from_boxed(Box::new(adapter))
+        self.build_from_boxed(Box::new(HelloClient::from_channel(channel)))
     }
     pub fn build_from_balanced_channel<K: std::hash::Hash + Eq + Send + Clone + 'static>(
         self,
         balanced_channel: quickwit_common::tower::BalanceChannel<K>,
     ) -> HelloClient {
-        let num_connections_watcher = balanced_channel.num_connections_watcher();
-        let adapter = HelloGrpcClientAdapter::new(
-            hello_grpc_client::HelloGrpcClient::new(balanced_channel),
-            num_connections_watcher,
-        );
-        self.build_from_boxed(Box::new(adapter))
+        self.build_from_boxed(
+            Box::new(HelloClient::from_balanced_channel(balanced_channel)),
+        )
     }
     pub fn build_from_mailbox<A>(
         self,
@@ -598,12 +603,16 @@ where
         Ok(())
     }
     fn uris(&self) -> Vec<quickwit_common::uri::Uri> {
-        Vec::new()
+        vec![
+            quickwit_common::uri::Uri::from_well_formed(&
+            format!("mailbox://localhost/{}", self.inner.actor_instance_id()))
+        ]
     }
 }
 #[derive(Debug, Clone)]
 pub struct HelloGrpcClientAdapter<T> {
     inner: T,
+    #[allow(dead_code)]
     num_connections_rx: tokio::sync::watch::Receiver<usize>,
 }
 impl<T> HelloGrpcClientAdapter<T> {
@@ -670,7 +679,7 @@ where
     fn uris(&self) -> Vec<quickwit_common::uri::Uri> {
         vec![
             quickwit_common::uri::Uri::from_well_formed(&
-            format!("grpc://{}.service.cluster", "hello"))
+            format!("grpc://{}.service.cluster", "Hello"))
         ]
     }
 }
@@ -684,9 +693,6 @@ impl HelloGrpcServerAdapter {
         T: Hello,
     {
         Self { inner: Box::new(instance) }
-    }
-    pub fn build_from_boxed(instance: Box<dyn Hello>) -> Self {
-        Self { inner: instance }
     }
 }
 #[async_trait::async_trait]

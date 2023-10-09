@@ -113,6 +113,22 @@ fn spawn_ping_response_stream(
     service_stream
 }
 
+#[async_trait]
+trait HelloClientExt {
+    async fn check_hello(&mut self, request: HelloRequest) -> anyhow::Result<()>;
+}
+
+#[async_trait]
+impl HelloClientExt for HelloClient {
+    async fn check_hello(&mut self, request: HelloRequest) -> anyhow::Result<()> {
+        let response = self.hello(request).await;
+        if response.is_err() {
+            return Err(anyhow::anyhow!("Hello failed."));
+        }
+        Ok(())
+    }
+}
+
 #[derive(Debug, Clone)]
 struct HelloImpl;
 
@@ -252,9 +268,26 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_check_hello() {
+        let mut mock_hello = MockHello::new();
+
+        mock_hello
+            .expect_hello()
+            .returning(|_| Err(HelloError::InternalError("Mock error".to_string())));
+
+        let mut client = HelloClient::new(mock_hello);
+        assert!(client
+            .check_hello(HelloRequest {
+                name: "World".to_string()
+            })
+            .await
+            .is_err());
+    }
+    #[tokio::test]
     async fn test_hello_codegen_grpc() {
         let grpc_server_adapter = HelloGrpcServerAdapter::new(HelloImpl);
-        let grpc_server = HelloGrpcServer::new(grpc_server_adapter);
+        let grpc_server: HelloGrpcServer<HelloGrpcServerAdapter> =
+            HelloGrpcServer::new(grpc_server_adapter);
         let addr: SocketAddr = "127.0.0.1:6666".parse().unwrap();
 
         tokio::spawn({
@@ -310,6 +343,24 @@ mod tests {
             })
             .unwrap_err();
         assert!(matches!(error, TrySendError::Closed(_)));
+
+        grpc_client.check_connectivity().await.unwrap();
+        assert_eq!(
+            grpc_client.uris(),
+            vec![Uri::from_well_formed("grpc://Hello.service.cluster")]
+        );
+
+        // Connectivity fails if there is no client.
+        let (balanced_channel, _): (BalanceChannel<SocketAddr>, _) = BalanceChannel::new();
+        let mut grpc_client = HelloClient::from_balanced_channel(balanced_channel);
+        assert_eq!(
+            grpc_client
+                .check_connectivity()
+                .await
+                .unwrap_err()
+                .to_string(),
+            "No connection to the server"
+        );
     }
 
     #[tokio::test]
@@ -383,6 +434,15 @@ mod tests {
             }
         );
 
+        actor_client.check_connectivity().await.unwrap();
+        assert_eq!(
+            actor_client.uris(),
+            vec![Uri::from_well_formed(&format!(
+                "mailbox://localhost/{}",
+                actor_mailbox.actor_instance_id()
+            ))]
+        );
+
         let (ping_stream_tx, ping_stream) = ServiceStream::new_bounded(1);
         let mut pong_stream = actor_client.ping(ping_stream).await.unwrap();
 
@@ -436,6 +496,8 @@ mod tests {
         );
 
         universe.assert_quit().await;
+
+        actor_client.check_connectivity().await.unwrap_err();
     }
 
     #[tokio::test]
@@ -580,6 +642,7 @@ mod tests {
                 message: "Hello, mock!".to_string(),
             })
         });
+        hello_mock.expect_check_connectivity().returning(|| Ok(()));
         let mut hello: HelloClient = hello_mock.into();
         assert_eq!(
             hello
@@ -604,5 +667,6 @@ mod tests {
                 message: "Hello, mock!".to_string()
             }
         );
+        hello.check_connectivity().await.unwrap();
     }
 }

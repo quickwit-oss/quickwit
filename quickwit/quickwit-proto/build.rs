@@ -31,6 +31,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "src/codegen/quickwit",
         "crate::control_plane::ControlPlaneResult",
         "crate::control_plane::ControlPlaneError",
+        false,
         &["protos"],
     )
     .unwrap();
@@ -41,6 +42,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "src/codegen/quickwit",
         "crate::indexing::IndexingResult",
         "crate::indexing::IndexingError",
+        false,
         &[],
     )
     .unwrap();
@@ -57,6 +59,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "src/codegen/quickwit",
         "crate::ingest::IngestV2Result",
         "crate::ingest::IngestV2Error",
+        false,
         &["protos"],
         prost_config,
     )

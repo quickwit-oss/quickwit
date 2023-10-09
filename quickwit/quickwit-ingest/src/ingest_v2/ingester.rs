@@ -31,7 +31,6 @@ use futures::StreamExt;
 use mrecordlog::error::{DeleteQueueError, TruncateError};
 use mrecordlog::MultiRecordLog;
 use quickwit_common::tower::Pool;
-use quickwit_common::uri::Uri;
 use quickwit_common::ServiceStream;
 use quickwit_proto::ingest::ingester::{
     AckReplicationMessage, FetchResponseV2, IngesterService, IngesterServiceClient,
@@ -332,14 +331,6 @@ impl Ingester {
 
 #[async_trait]
 impl IngesterService for Ingester {
-    async fn check_connectivity(&mut self) -> anyhow::Result<()> {
-        todo!()
-    }
-
-    fn uris(&self) -> Vec<Uri> {
-        todo!()
-    }
-
     async fn persist(
         &mut self,
         persist_request: PersistRequest,

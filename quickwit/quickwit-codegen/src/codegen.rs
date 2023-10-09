@@ -33,6 +33,7 @@ impl Codegen {
         out_dir: &str,
         result_type_path: &str,
         error_type_path: &str,
+        additional_service_methods: bool,
         includes: &[&str],
     ) -> anyhow::Result<()> {
         Self::run_with_config(
@@ -40,6 +41,7 @@ impl Codegen {
             out_dir,
             result_type_path,
             error_type_path,
+            additional_service_methods,
             includes,
             ProstConfig::default(),
         )
@@ -50,12 +52,14 @@ impl Codegen {
         out_dir: &str,
         result_type_path: &str,
         error_type_path: &str,
+        additional_service_methods: bool,
         includes: &[&str],
         mut prost_config: ProstConfig,
     ) -> anyhow::Result<()> {
         let service_generator = Box::new(QuickwitServiceGenerator::new(
             result_type_path,
             error_type_path,
+            additional_service_methods,
         ));
 
         prost_config
@@ -83,11 +87,16 @@ impl Codegen {
 struct QuickwitServiceGenerator {
     result_type_path: String,
     error_type_path: String,
+    additional_service_methods: bool,
     inner: Box<dyn ServiceGenerator>,
 }
 
 impl QuickwitServiceGenerator {
-    fn new(result_type_path: &str, error_type_path: &str) -> Self {
+    fn new(
+        result_type_path: &str,
+        error_type_path: &str,
+        additional_service_methods: bool,
+    ) -> Self {
         let inner = Box::new(WithSuffixServiceGenerator::new(
             "Grpc",
             tonic_build::configure().service_generator(),
@@ -95,6 +104,7 @@ impl QuickwitServiceGenerator {
         Self {
             result_type_path: result_type_path.to_string(),
             error_type_path: error_type_path.to_string(),
+            additional_service_methods,
             inner,
         }
     }
@@ -102,7 +112,12 @@ impl QuickwitServiceGenerator {
 
 impl ServiceGenerator for QuickwitServiceGenerator {
     fn generate(&mut self, service: Service, buf: &mut String) {
-        let tokens = generate_all(&service, &self.result_type_path, &self.error_type_path);
+        let tokens = generate_all(
+            &service,
+            &self.result_type_path,
+            &self.error_type_path,
+            self.additional_service_methods,
+        );
         let ast: syn::File = syn::parse2(tokens).expect("Tokenstream should be a valid Syn AST.");
         let pretty_code = prettyplease::unparse(&ast);
         buf.push_str(&pretty_code);
@@ -135,10 +150,16 @@ struct CodegenContext {
     grpc_server_adapter_name: Ident,
     grpc_server_package_name: Ident,
     grpc_service_name: Ident,
+    additional_service_methods: bool,
 }
 
 impl CodegenContext {
-    fn from_service(service: &Service, result_type_path: &str, error_type_path: &str) -> Self {
+    fn from_service(
+        service: &Service,
+        result_type_path: &str,
+        error_type_path: &str,
+        additional_service_methods: bool,
+    ) -> Self {
         let service_name = quote::format_ident!("{}", service.name);
         let mock_mod_name = quote::format_ident!("{}_mock", service.name.to_snake_case());
         let mock_name = quote::format_ident!("Mock{}", service.name);
@@ -195,12 +216,23 @@ impl CodegenContext {
             grpc_server_adapter_name,
             grpc_server_package_name,
             grpc_service_name,
+            additional_service_methods,
         }
     }
 }
 
-fn generate_all(service: &Service, result_type_path: &str, error_type_path: &str) -> TokenStream {
-    let context = CodegenContext::from_service(service, result_type_path, error_type_path);
+fn generate_all(
+    service: &Service,
+    result_type_path: &str,
+    error_type_path: &str,
+    additional_service_methods: bool,
+) -> TokenStream {
+    let context = CodegenContext::from_service(
+        service,
+        result_type_path,
+        error_type_path,
+        additional_service_methods,
+    );
     let stream_type_alias = &context.stream_type_alias;
     let service_trait = generate_service_trait(&context);
     let client = generate_client(&context);
@@ -321,16 +353,21 @@ fn generate_service_trait(context: &CodegenContext) -> TokenStream {
     let service_name = &context.service_name;
     let trait_methods = generate_service_trait_methods(context);
     let mock_name = &context.mock_name;
+    let additionl_trait_methods = if context.additional_service_methods {
+        quote! {
+            async fn check_connectivity(&mut self) -> anyhow::Result<()>;
+            fn uris(&self) -> Vec<quickwit_common::uri::Uri>;
+        }
+    } else {
+        TokenStream::new()
+    };
 
     quote! {
         #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
         #[async_trait::async_trait]
         pub trait #service_name: std::fmt::Debug + dyn_clone::DynClone + Send + Sync + 'static {
             #trait_methods
-
-            async fn check_connectivity(&mut self) -> anyhow::Result<()>;
-
-            fn uris(&self) -> Vec<quickwit_common::uri::Uri>;
+            #additionl_trait_methods
         }
 
         dyn_clone::clone_trait_object!(#service_name);
@@ -363,6 +400,18 @@ fn generate_service_trait_methods(context: &CodegenContext) -> TokenStream {
     stream
 }
 
+fn generate_additional_methods_calling_inner() -> TokenStream {
+    quote! {
+        async fn check_connectivity(&mut self) -> anyhow::Result<()> {
+            self.inner.check_connectivity().await
+        }
+
+        fn uris(&self) -> Vec<quickwit_common::uri::Uri> {
+            self.inner.uris()
+        }
+    }
+}
+
 fn generate_client(context: &CodegenContext) -> TokenStream {
     let service_name = &context.service_name;
     let client_name = &context.client_name;
@@ -375,12 +424,32 @@ fn generate_client(context: &CodegenContext) -> TokenStream {
     let grpc_server_adapter_name = &context.grpc_server_adapter_name;
     let grpc_server_package_name = &context.grpc_server_package_name;
 
+    let client_methods = generate_client_methods(context, false);
     let mock_mod_name = &context.mock_mod_name;
     let mock_methods = generate_client_methods(context, true);
     let mailbox_name = &context.mailbox_name;
     let tower_block_builder_name = &context.tower_block_builder_name;
     let mock_name = &context.mock_name;
     let mock_wrapper_name = quote::format_ident!("{}Wrapper", mock_name);
+
+    let additional_client_methods = if context.additional_service_methods {
+        generate_additional_methods_calling_inner()
+    } else {
+        TokenStream::new()
+    };
+    let additional_mock_methods = if context.additional_service_methods {
+        quote! {
+            async fn check_connectivity(&mut self) -> anyhow::Result<()> {
+                self.inner.lock().await.check_connectivity().await
+            }
+
+            fn uris(&self) -> Vec<quickwit_common::uri::Uri> {
+                self.inner.blocking_lock().uris()
+            }
+        }
+    } else {
+        TokenStream::new()
+    };
 
     quote! {
         #[derive(Debug, Clone)]
@@ -398,14 +467,8 @@ fn generate_client(context: &CodegenContext) -> TokenStream {
                 }
             }
 
-            pub fn from_boxed(instance: Box<dyn #service_name>) -> Self {
-                Self {
-                    inner: instance,
-                }
-            }
-
             pub fn as_grpc_service(&self) -> #grpc_server_package_name::#grpc_server_name<#grpc_server_adapter_name> {
-                let adapter = #grpc_server_adapter_name::build_from_boxed(self.inner.clone());
+                let adapter = #grpc_server_adapter_name::new(self.clone());
                 #grpc_server_package_name::#grpc_server_name::new(adapter)
             }
 
@@ -451,18 +514,10 @@ fn generate_client(context: &CodegenContext) -> TokenStream {
             }
         }
 
-        impl std::ops::Deref for #client_name {
-            type Target = Box<dyn #service_name>;
-
-            fn deref(&self) -> &Self::Target {
-                &self.inner
-            }
-        }
-
-        impl std::ops::DerefMut for #client_name {
-            fn deref_mut(&mut self) -> &mut Self::Target {
-                &mut self.inner
-            }
+        #[async_trait::async_trait]
+        impl #service_name for #client_name {
+            #client_methods
+            #additional_client_methods
         }
 
         #[cfg(any(test, feature = "testsuite"))]
@@ -477,14 +532,7 @@ fn generate_client(context: &CodegenContext) -> TokenStream {
             #[async_trait::async_trait]
             impl #service_name for #mock_wrapper_name {
                 #mock_methods
-
-                async fn check_connectivity(&mut self) -> anyhow::Result<()> {
-                    self.inner.lock().await.check_connectivity().await
-                }
-
-                fn uris(&self) -> Vec<quickwit_common::uri::Uri> {
-                    self.inner.blocking_lock().uris()
-                }
+                #additional_mock_methods
             }
 
             impl From<#mock_name> for #client_name {
@@ -632,9 +680,12 @@ fn generate_tower_block_clone_impl(context: &CodegenContext) -> TokenStream {
 fn generate_tower_block_service_impl(context: &CodegenContext) -> TokenStream {
     let service_name = &context.service_name;
     let tower_block_name = &context.tower_block_name;
-
     let result_type = &context.result_type;
-
+    let additional_client_methods = if context.additional_service_methods {
+        generate_additional_methods_calling_inner()
+    } else {
+        TokenStream::new()
+    };
     let mut methods = TokenStream::new();
 
     for syn_method in &context.methods {
@@ -654,15 +705,8 @@ fn generate_tower_block_service_impl(context: &CodegenContext) -> TokenStream {
     quote! {
         #[async_trait::async_trait]
         impl #service_name for #tower_block_name {
-            # methods
-
-            async fn check_connectivity(&mut self) -> anyhow::Result<()> {
-                self.inner.check_connectivity().await
-            }
-
-            fn uris(&self) -> Vec<quickwit_common::uri::Uri> {
-                self.inner.uris()
-            }
+            #methods
+            #additional_client_methods
         }
     }
 }
@@ -706,9 +750,6 @@ fn generate_tower_block_builder_impl(context: &CodegenContext) -> TokenStream {
     let service_name = &context.service_name;
     let client_name = &context.client_name;
     let mailbox_name = &context.mailbox_name;
-    let grpc_client_adapter_name = &context.grpc_client_adapter_name;
-    let grpc_client_package_name = &context.grpc_client_package_name;
-    let grpc_client_name = &context.grpc_client_name;
     let tower_block_name = &context.tower_block_name;
     let tower_block_builder_name = &context.tower_block_builder_name;
     let error_type = &context.error_type;
@@ -801,16 +842,12 @@ fn generate_tower_block_builder_impl(context: &CodegenContext) -> TokenStream {
                         Output = Result<http::Response<hyper::Body>, quickwit_common::tower::BoxError>,
                     > + Send + 'static,
             {
-                let (_, num_connections_watcher) = tokio::sync::watch::channel(1);
-                let adapter = #grpc_client_adapter_name::new(#grpc_client_package_name::#grpc_client_name::new(channel), num_connections_watcher);
-                self.build_from_boxed(Box::new(adapter))
+                self.build_from_boxed(Box::new(#client_name::from_channel(channel)))
             }
 
             pub fn build_from_balanced_channel<K: std::hash::Hash + Eq + Send + Clone + 'static>(self, balanced_channel: quickwit_common::tower::BalanceChannel<K>) -> #client_name
             {
-                let num_connections_watcher = balanced_channel.num_connections_watcher();
-                let adapter = #grpc_client_adapter_name::new(#grpc_client_package_name::#grpc_client_name::new(balanced_channel), num_connections_watcher);
-                self.build_from_boxed(Box::new(adapter))
+                self.build_from_boxed(Box::new(#client_name::from_balanced_channel(balanced_channel)))
             }
 
             pub fn build_from_mailbox<A>(self, mailbox: quickwit_actors::Mailbox<A>) -> #client_name
@@ -839,6 +876,22 @@ fn generate_tower_mailbox(context: &CodegenContext) -> TokenStream {
     let service_name = &context.service_name;
     let mailbox_name = &context.mailbox_name;
     let error_type = &context.error_type;
+    let additional_mailbox_methods = if context.additional_service_methods {
+        quote! {
+            async fn check_connectivity(&mut self) -> anyhow::Result<()> {
+                if self.inner.is_disconnected() {
+                    anyhow::bail!("Mailbox of actor `{}` is disconnected", self.inner.actor_instance_id())
+                }
+                Ok(())
+            }
+
+            fn uris(&self) -> Vec<quickwit_common::uri::Uri> {
+                vec![quickwit_common::uri::Uri::from_well_formed(&format!("mailbox://localhost/{}", self.inner.actor_instance_id()))]
+            }
+        }
+    } else {
+        TokenStream::new()
+    };
 
     let (mailbox_bounds, mailbox_methods) = generate_mailbox_bounds_and_methods(context);
 
@@ -922,20 +975,7 @@ fn generate_tower_mailbox(context: &CodegenContext) -> TokenStream {
             #mailbox_name<A>: #(#mailbox_bounds)+*,
         {
             #mailbox_methods
-
-            async fn check_connectivity(&mut self) -> anyhow::Result<()> {
-                if self.inner.is_disconnected() {
-                    // TODO: add actor id to the error message.
-                    anyhow::bail!("Mailbox of actor `{}` is disconnected", self.inner.actor_instance_id())
-                }
-                Ok(())
-            }
-
-            fn uris(&self) -> Vec<quickwit_common::uri::Uri> {
-                // TODO: accept `mailbox` scheme?
-                // vec![format!(quickwit_common::uri::Uri::from_well_formed("mailbox://{}", self.inner.actor_instance_id())]
-                Vec::new()
-            }
+            #additional_mailbox_methods
         }
     }
 }
@@ -971,16 +1011,35 @@ fn generate_mailbox_bounds_and_methods(
 
 fn generate_grpc_client_adapter(context: &CodegenContext) -> TokenStream {
     let service_name = &context.service_name;
-    let service_name_string = service_name.to_string().to_lowercase();
+    let service_name_string = service_name.to_string();
     let grpc_client_package_name = &context.grpc_client_package_name;
     let grpc_client_name = &context.grpc_client_name;
     let grpc_client_adapter_name = &context.grpc_client_adapter_name;
     let grpc_server_adapter_methods = generate_grpc_client_adapter_methods(context);
+    let additional_grpc_server_adapter_methods = if context.additional_service_methods {
+        quote! {
+            async fn check_connectivity(&mut self) -> anyhow::Result<()> {
+                if *self.num_connections_rx.borrow() == 0 {
+                    anyhow::bail!("No connection to the server")
+                }
+                Ok(())
+            }
+
+            fn uris(&self) -> Vec<quickwit_common::uri::Uri> {
+                // TODO: use real uris.
+                vec![quickwit_common::uri::Uri::from_well_formed(&format!("grpc://{}.service.cluster", #service_name_string))]
+            }
+        }
+    } else {
+        TokenStream::new()
+    };
 
     quote! {
         #[derive(Debug, Clone)]
         pub struct #grpc_client_adapter_name<T> {
             inner: T,
+            // TODO: remove this fields once check_connectivity is used for all services.
+            #[allow(dead_code)]
             num_connections_rx: tokio::sync::watch::Receiver<usize>,
         }
 
@@ -1002,18 +1061,7 @@ fn generate_grpc_client_adapter(context: &CodegenContext) -> TokenStream {
             T::Future: Send
         {
             #grpc_server_adapter_methods
-
-            async fn check_connectivity(&mut self) -> anyhow::Result<()> {
-                if *self.num_connections_rx.borrow() == 0 {
-                    anyhow::bail!("No connection to the server")
-                }
-                Ok(())
-            }
-
-            fn uris(&self) -> Vec<quickwit_common::uri::Uri> {
-                // TODO: use real uris.
-                vec![quickwit_common::uri::Uri::from_well_formed(&format!("grpc://{}.service.cluster", #service_name_string))]
-            }
+            #additional_grpc_server_adapter_methods
         }
     }
 }
@@ -1071,12 +1119,6 @@ fn generate_grpc_server_adapter(context: &CodegenContext) -> TokenStream {
             where T: #service_name {
                 Self {
                     inner: Box::new(instance),
-                }
-            }
-
-            pub fn build_from_boxed(instance: Box<dyn #service_name>) -> Self {
-                Self {
-                    inner: instance,
                 }
             }
         }
