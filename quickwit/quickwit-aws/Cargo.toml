@@ -27,6 +27,8 @@ tokio = { workspace = true }
 tower = { workspace = true }
 tracing = { workspace = true }
 
+quickwit-common = { workspace = true }
+
 [dev-dependencies]
 quickwit-actors = { workspace = true, features = ["testsuite"] }
 

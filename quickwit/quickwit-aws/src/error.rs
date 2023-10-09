@@ -36,14 +36,15 @@ use aws_sdk_s3::operation::head_object::HeadObjectError;
 use aws_sdk_s3::operation::put_object::PutObjectError;
 use aws_sdk_s3::operation::upload_part::UploadPartError;
 use aws_smithy_client::SdkError;
+use quickwit_common::retry::Retryable;
 
-use crate::retry::Retryable;
+pub struct RetryableWrapper<T>(T);
 
-impl<E> Retryable for SdkError<E>
+impl<E> Retryable for RetryableWrapper<SdkError<E>>
 where E: Retryable
 {
     fn is_retryable(&self) -> bool {
-        match self {
+        match &self.0 {
             SdkError::ConstructionFailure(_) => false,
             SdkError::TimeoutError(_) => true,
             SdkError::DispatchFailure(_) => false,
@@ -54,64 +55,64 @@ where E: Retryable
     }
 }
 
-impl Retryable for GetObjectError {
+impl Retryable for RetryableWrapper<GetObjectError> {
     fn is_retryable(&self) -> bool {
         false
     }
 }
 
-impl Retryable for DeleteObjectError {
+impl Retryable for RetryableWrapper<DeleteObjectError> {
     fn is_retryable(&self) -> bool {
         false
     }
 }
 
-impl Retryable for DeleteObjectsError {
+impl Retryable for RetryableWrapper<DeleteObjectsError> {
     fn is_retryable(&self) -> bool {
         false
     }
 }
 
-impl Retryable for UploadPartError {
+impl Retryable for RetryableWrapper<UploadPartError> {
     fn is_retryable(&self) -> bool {
         false
     }
 }
 
-impl Retryable for CompleteMultipartUploadError {
+impl Retryable for RetryableWrapper<CompleteMultipartUploadError> {
     fn is_retryable(&self) -> bool {
         false
     }
 }
 
-impl Retryable for AbortMultipartUploadError {
+impl Retryable for RetryableWrapper<AbortMultipartUploadError> {
     fn is_retryable(&self) -> bool {
         false
     }
 }
 
-impl Retryable for CreateMultipartUploadError {
+impl Retryable for RetryableWrapper<CreateMultipartUploadError> {
     fn is_retryable(&self) -> bool {
         false
     }
 }
 
-impl Retryable for PutObjectError {
+impl Retryable for RetryableWrapper<PutObjectError> {
     fn is_retryable(&self) -> bool {
         false
     }
 }
 
-impl Retryable for HeadObjectError {
+impl Retryable for RetryableWrapper<HeadObjectError> {
     fn is_retryable(&self) -> bool {
         false
     }
 }
 
 #[cfg(feature = "kinesis")]
-impl Retryable for GetRecordsError {
+impl Retryable for RetryableWrapper<GetRecordsError> {
     fn is_retryable(&self) -> bool {
-        match self {
+        match &self.0 {
             GetRecordsError::KmsThrottlingException(_) => true,
             GetRecordsError::ProvisionedThroughputExceededException(_) => true,
             _ => false,
@@ -120,30 +121,30 @@ impl Retryable for GetRecordsError {
 }
 
 #[cfg(feature = "kinesis")]
-impl Retryable for GetShardIteratorError {
+impl Retryable for RetryableWrapper<GetShardIteratorError> {
     fn is_retryable(&self) -> bool {
         matches!(
-            self,
+            &self.0,
             GetShardIteratorError::ProvisionedThroughputExceededException(_)
         )
     }
 }
 
 #[cfg(feature = "kinesis")]
-impl Retryable for ListShardsError {
+impl Retryable for RetryableWrapper<ListShardsError> {
     fn is_retryable(&self) -> bool {
         matches!(
-            self,
+            &self.0,
             ListShardsError::ResourceInUseException(_) | ListShardsError::LimitExceededException(_)
         )
     }
 }
 
 #[cfg(feature = "kinesis")]
-impl Retryable for CreateStreamError {
+impl Retryable for RetryableWrapper<CreateStreamError> {
     fn is_retryable(&self) -> bool {
         matches!(
-            self,
+            &self.0,
             CreateStreamError::ResourceInUseException(_)
                 | CreateStreamError::LimitExceededException(_)
         )
@@ -151,10 +152,10 @@ impl Retryable for CreateStreamError {
 }
 
 #[cfg(feature = "kinesis")]
-impl Retryable for DeleteStreamError {
+impl Retryable for RetryableWrapper<DeleteStreamError> {
     fn is_retryable(&self) -> bool {
         matches!(
-            self,
+            &self.0,
             DeleteStreamError::ResourceInUseException(_)
                 | DeleteStreamError::LimitExceededException(_)
         )
@@ -162,24 +163,24 @@ impl Retryable for DeleteStreamError {
 }
 
 #[cfg(feature = "kinesis")]
-impl Retryable for DescribeStreamError {
+impl Retryable for RetryableWrapper<DescribeStreamError> {
     fn is_retryable(&self) -> bool {
-        matches!(self, DescribeStreamError::LimitExceededException(_))
+        matches!(&self.0, DescribeStreamError::LimitExceededException(_))
     }
 }
 
 #[cfg(feature = "kinesis")]
-impl Retryable for ListStreamsError {
+impl Retryable for RetryableWrapper<ListStreamsError> {
     fn is_retryable(&self) -> bool {
-        matches!(self, ListStreamsError::LimitExceededException(_))
+        matches!(&self.0, ListStreamsError::LimitExceededException(_))
     }
 }
 
 #[cfg(feature = "kinesis")]
-impl Retryable for MergeShardsError {
+impl Retryable for RetryableWrapper<MergeShardsError> {
     fn is_retryable(&self) -> bool {
         matches!(
-            self,
+            &self.0,
             MergeShardsError::ResourceInUseException(_)
                 | MergeShardsError::LimitExceededException(_)
         )
@@ -187,10 +188,10 @@ impl Retryable for MergeShardsError {
 }
 
 #[cfg(feature = "kinesis")]
-impl Retryable for SplitShardError {
+impl Retryable for RetryableWrapper<SplitShardError> {
     fn is_retryable(&self) -> bool {
         matches!(
-            self,
+            &self.0,
             SplitShardError::ResourceInUseException(_) | SplitShardError::LimitExceededException(_)
         )
     }

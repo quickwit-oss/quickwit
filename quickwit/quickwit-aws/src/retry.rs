@@ -22,71 +22,9 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::Future;
+use quickwit_common::retry::{RetryParams, Retryable};
 use rand::Rng;
 use tracing::{debug, warn};
-
-const DEFAULT_MAX_RETRY_ATTEMPTS: usize = 30;
-const DEFAULT_BASE_DELAY: Duration = Duration::from_millis(if cfg!(test) { 50 } else { 250 });
-const DEFAULT_MAX_DELAY: Duration = Duration::from_millis(if cfg!(test) { 1_000 } else { 20_000 });
-
-pub trait Retryable {
-    fn is_retryable(&self) -> bool {
-        false
-    }
-}
-
-#[derive(Debug, Eq, PartialEq)]
-pub enum Retry<E> {
-    Transient(E),
-    Permanent(E),
-}
-
-impl<E> Retry<E> {
-    pub fn into_inner(self) -> E {
-        match self {
-            Self::Transient(error) => error,
-            Self::Permanent(error) => error,
-        }
-    }
-}
-
-impl<E> Retryable for Retry<E> {
-    fn is_retryable(&self) -> bool {
-        match self {
-            Retry::Transient(_) => true,
-            Retry::Permanent(_) => false,
-        }
-    }
-}
-
-impl<E> From<E> for Retry<E>
-where E: Retryable
-{
-    fn from(error: E) -> Self {
-        if error.is_retryable() {
-            Retry::Transient(error)
-        } else {
-            Retry::Permanent(error)
-        }
-    }
-}
-
-#[derive(Clone)]
-pub struct RetryParams {
-    pub base_delay: Duration,
-    pub max_delay: Duration,
-    pub max_attempts: usize,
-}
-
-impl Default for RetryParams {
-    fn default() -> Self {
-        Self {
-            base_delay: DEFAULT_BASE_DELAY,
-            max_delay: DEFAULT_MAX_DELAY,
-            max_attempts: DEFAULT_MAX_RETRY_ATTEMPTS,
-        }
-    }
-}
 
 #[async_trait]
 trait MockableTime {
@@ -164,28 +102,43 @@ mod tests {
     use std::sync::RwLock;
     use std::time::Duration;
 
-    use async_trait::async_trait;
     use futures::future::ready;
-    use quickwit_actors::{start_scheduler, SchedulerClient};
+    use quickwit_common::retry::Retryable;
 
-    use super::{Retry, RetryParams};
+    use super::RetryParams;
     use crate::retry::retry_with_mockable_time;
 
-    #[async_trait]
-    impl super::MockableTime for SchedulerClient {
-        async fn sleep(&self, duration: Duration) {
-            SchedulerClient::sleep(self, duration).await;
+    #[derive(Debug, Eq, PartialEq)]
+    pub enum Retry<E> {
+        Permanent(E),
+        Transient(E),
+    }
+
+    impl<E> Retryable for Retry<E> {
+        fn is_retryable(&self) -> bool {
+            match self {
+                Retry::Permanent(_) => false,
+                Retry::Transient(_) => true,
+            }
+        }
+    }
+
+    struct NoopTimeMock;
+
+    #[async_trait::async_trait]
+    impl super::MockableTime for NoopTimeMock {
+        async fn sleep(&self, _duration: Duration) {
+            // This is a no-op implementation, so we do nothing here.
         }
     }
 
     async fn simulate_retries<T>(values: Vec<Result<T, Retry<usize>>>) -> Result<T, Retry<usize>> {
-        let scheduler_client = start_scheduler();
-        scheduler_client.accelerate_time();
+        let noop_mock = NoopTimeMock;
         let values_it = RwLock::new(values.into_iter());
         retry_with_mockable_time(
             &RetryParams::default(),
             || ready(values_it.write().unwrap().next().unwrap()),
-            scheduler_client,
+            noop_mock,
         )
         .await
     }
