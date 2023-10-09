@@ -33,6 +33,8 @@ pub trait IndexingService: std::fmt::Debug + dyn_clone::DynClone + Send + Sync +
         &mut self,
         request: ApplyIndexingPlanRequest,
     ) -> crate::indexing::IndexingResult<ApplyIndexingPlanResponse>;
+    async fn check_connectivity(&mut self) -> anyhow::Result<()>;
+    fn uris(&self) -> Vec<quickwit_common::uri::Uri>;
 }
 dyn_clone::clone_trait_object!(IndexingService);
 #[cfg(any(test, feature = "testsuite"))]
@@ -51,6 +53,9 @@ impl IndexingServiceClient {
         T: IndexingService,
     {
         Self { inner: Box::new(instance) }
+    }
+    pub fn from_boxed(instance: Box<dyn IndexingService>) -> Self {
+        Self { inner: instance }
     }
     pub fn as_grpc_service(
         &self,
@@ -78,11 +83,24 @@ impl IndexingServiceClient {
                 >,
             > + Send + 'static,
     {
-        IndexingServiceClient::new(
-            IndexingServiceGrpcClientAdapter::new(
-                indexing_service_grpc_client::IndexingServiceGrpcClient::new(channel),
+        let (_, num_connections_watcher) = tokio::sync::watch::channel(1);
+        let adapter = IndexingServiceGrpcClientAdapter::new(
+            indexing_service_grpc_client::IndexingServiceGrpcClient::new(channel),
+            num_connections_watcher,
+        );
+        Self::new(adapter)
+    }
+    pub fn from_balanced_channel<K: std::hash::Hash + Eq + Send + Clone + 'static>(
+        balanced_channel: quickwit_common::tower::BalanceChannel<K>,
+    ) -> IndexingServiceClient {
+        let num_connections_watcher = balanced_channel.num_connections_watcher();
+        let adapter = IndexingServiceGrpcClientAdapter::new(
+            indexing_service_grpc_client::IndexingServiceGrpcClient::new(
+                balanced_channel,
             ),
-        )
+            num_connections_watcher,
+        );
+        Self::new(adapter)
     }
     pub fn from_mailbox<A>(mailbox: quickwit_actors::Mailbox<A>) -> Self
     where
@@ -125,6 +143,12 @@ pub mod indexing_service_mock {
         ) -> crate::indexing::IndexingResult<super::ApplyIndexingPlanResponse> {
             self.inner.lock().await.apply_indexing_plan(request).await
         }
+        async fn check_connectivity(&mut self) -> anyhow::Result<()> {
+            self.inner.lock().await.check_connectivity().await
+        }
+        fn uris(&self) -> Vec<quickwit_common::uri::Uri> {
+            self.inner.blocking_lock().uris()
+        }
     }
     impl From<MockIndexingService> for IndexingServiceClient {
         fn from(mock: MockIndexingService) -> Self {
@@ -157,6 +181,7 @@ impl tower::Service<ApplyIndexingPlanRequest> for Box<dyn IndexingService> {
 /// A tower block is a set of towers. Each tower is stack of layers (middlewares) that are applied to a service.
 #[derive(Debug)]
 struct IndexingServiceTowerBlock {
+    inner: Box<dyn IndexingService>,
     apply_indexing_plan_svc: quickwit_common::tower::BoxService<
         ApplyIndexingPlanRequest,
         ApplyIndexingPlanResponse,
@@ -166,6 +191,7 @@ struct IndexingServiceTowerBlock {
 impl Clone for IndexingServiceTowerBlock {
     fn clone(&self) -> Self {
         Self {
+            inner: self.inner.clone(),
             apply_indexing_plan_svc: self.apply_indexing_plan_svc.clone(),
         }
     }
@@ -177,6 +203,12 @@ impl IndexingService for IndexingServiceTowerBlock {
         request: ApplyIndexingPlanRequest,
     ) -> crate::indexing::IndexingResult<ApplyIndexingPlanResponse> {
         self.apply_indexing_plan_svc.ready().await?.call(request).await
+    }
+    async fn check_connectivity(&mut self) -> anyhow::Result<()> {
+        self.inner.check_connectivity().await
+    }
+    fn uris(&self) -> Vec<quickwit_common::uri::Uri> {
+        self.inner.uris()
     }
 }
 #[derive(Debug, Default)]
@@ -246,13 +278,25 @@ impl IndexingServiceTowerBlockBuilder {
                 >,
             > + Send + 'static,
     {
-        self.build_from_boxed(
-            Box::new(
-                IndexingServiceGrpcClientAdapter::new(
-                    indexing_service_grpc_client::IndexingServiceGrpcClient::new(channel),
-                ),
+        let (_, num_connections_watcher) = tokio::sync::watch::channel(1);
+        let adapter = IndexingServiceGrpcClientAdapter::new(
+            indexing_service_grpc_client::IndexingServiceGrpcClient::new(channel),
+            num_connections_watcher,
+        );
+        self.build_from_boxed(Box::new(adapter))
+    }
+    pub fn build_from_balanced_channel<K: std::hash::Hash + Eq + Send + Clone + 'static>(
+        self,
+        balanced_channel: quickwit_common::tower::BalanceChannel<K>,
+    ) -> IndexingServiceClient {
+        let num_connections_watcher = balanced_channel.num_connections_watcher();
+        let adapter = IndexingServiceGrpcClientAdapter::new(
+            indexing_service_grpc_client::IndexingServiceGrpcClient::new(
+                balanced_channel,
             ),
-        )
+            num_connections_watcher,
+        );
+        self.build_from_boxed(Box::new(adapter))
     }
     pub fn build_from_mailbox<A>(
         self,
@@ -275,6 +319,7 @@ impl IndexingServiceTowerBlockBuilder {
             quickwit_common::tower::BoxService::new(boxed_instance.clone())
         };
         let tower_block = IndexingServiceTowerBlock {
+            inner: boxed_instance.clone(),
             apply_indexing_plan_svc,
         };
         IndexingServiceClient::new(tower_block)
@@ -365,14 +410,32 @@ where
     ) -> crate::indexing::IndexingResult<ApplyIndexingPlanResponse> {
         self.call(request).await
     }
+    async fn check_connectivity(&mut self) -> anyhow::Result<()> {
+        if self.inner.is_disconnected() {
+            anyhow::bail!(
+                "Mailbox of actor `{}` is disconnected", self.inner.actor_instance_id()
+            )
+        }
+        Ok(())
+    }
+    fn uris(&self) -> Vec<quickwit_common::uri::Uri> {
+        Vec::new()
+    }
 }
 #[derive(Debug, Clone)]
 pub struct IndexingServiceGrpcClientAdapter<T> {
     inner: T,
+    num_connections_rx: tokio::sync::watch::Receiver<usize>,
 }
 impl<T> IndexingServiceGrpcClientAdapter<T> {
-    pub fn new(instance: T) -> Self {
-        Self { inner: instance }
+    pub fn new(
+        instance: T,
+        num_connections_rx: tokio::sync::watch::Receiver<usize>,
+    ) -> Self {
+        Self {
+            inner: instance,
+            num_connections_rx,
+        }
     }
 }
 #[async_trait::async_trait]
@@ -397,6 +460,18 @@ where
             .await
             .map(|response| response.into_inner())
             .map_err(|error| error.into())
+    }
+    async fn check_connectivity(&mut self) -> anyhow::Result<()> {
+        if *self.num_connections_rx.borrow() == 0 {
+            anyhow::bail!("No connection to the server")
+        }
+        Ok(())
+    }
+    fn uris(&self) -> Vec<quickwit_common::uri::Uri> {
+        vec![
+            quickwit_common::uri::Uri::from_well_formed(&
+            format!("grpc://{}.service.cluster", "indexingservice"))
+        ]
     }
 }
 #[derive(Debug)]

@@ -180,6 +180,8 @@ pub trait IngestService: std::fmt::Debug + dyn_clone::DynClone + Send + Sync + '
     /// to the oldest, and stops as soon as `FETCH_PAYLOAD_LIMIT` (2MB)
     /// is exceeded.
     async fn tail(&mut self, request: TailRequest) -> crate::Result<FetchResponse>;
+    async fn check_connectivity(&mut self) -> anyhow::Result<()>;
+    fn uris(&self) -> Vec<quickwit_common::uri::Uri>;
 }
 dyn_clone::clone_trait_object!(IngestService);
 #[cfg(any(test, feature = "testsuite"))]
@@ -198,6 +200,9 @@ impl IngestServiceClient {
         T: IngestService,
     {
         Self { inner: Box::new(instance) }
+    }
+    pub fn from_boxed(instance: Box<dyn IngestService>) -> Self {
+        Self { inner: instance }
     }
     pub fn as_grpc_service(
         &self,
@@ -225,11 +230,22 @@ impl IngestServiceClient {
                 >,
             > + Send + 'static,
     {
-        IngestServiceClient::new(
-            IngestServiceGrpcClientAdapter::new(
-                ingest_service_grpc_client::IngestServiceGrpcClient::new(channel),
-            ),
-        )
+        let (_, num_connections_watcher) = tokio::sync::watch::channel(1);
+        let adapter = IngestServiceGrpcClientAdapter::new(
+            ingest_service_grpc_client::IngestServiceGrpcClient::new(channel),
+            num_connections_watcher,
+        );
+        Self::new(adapter)
+    }
+    pub fn from_balanced_channel<K: std::hash::Hash + Eq + Send + Clone + 'static>(
+        balanced_channel: quickwit_common::tower::BalanceChannel<K>,
+    ) -> IngestServiceClient {
+        let num_connections_watcher = balanced_channel.num_connections_watcher();
+        let adapter = IngestServiceGrpcClientAdapter::new(
+            ingest_service_grpc_client::IngestServiceGrpcClient::new(balanced_channel),
+            num_connections_watcher,
+        );
+        Self::new(adapter)
     }
     pub fn from_mailbox<A>(mailbox: quickwit_actors::Mailbox<A>) -> Self
     where
@@ -283,6 +299,12 @@ pub mod ingest_service_mock {
             request: super::TailRequest,
         ) -> crate::Result<super::FetchResponse> {
             self.inner.lock().await.tail(request).await
+        }
+        async fn check_connectivity(&mut self) -> anyhow::Result<()> {
+            self.inner.lock().await.check_connectivity().await
+        }
+        fn uris(&self) -> Vec<quickwit_common::uri::Uri> {
+            self.inner.blocking_lock().uris()
         }
     }
     impl From<MockIngestService> for IngestServiceClient {
@@ -348,6 +370,7 @@ impl tower::Service<TailRequest> for Box<dyn IngestService> {
 /// A tower block is a set of towers. Each tower is stack of layers (middlewares) that are applied to a service.
 #[derive(Debug)]
 struct IngestServiceTowerBlock {
+    inner: Box<dyn IngestService>,
     ingest_svc: quickwit_common::tower::BoxService<
         IngestRequest,
         IngestResponse,
@@ -367,6 +390,7 @@ struct IngestServiceTowerBlock {
 impl Clone for IngestServiceTowerBlock {
     fn clone(&self) -> Self {
         Self {
+            inner: self.inner.clone(),
             ingest_svc: self.ingest_svc.clone(),
             fetch_svc: self.fetch_svc.clone(),
             tail_svc: self.tail_svc.clone(),
@@ -383,6 +407,12 @@ impl IngestService for IngestServiceTowerBlock {
     }
     async fn tail(&mut self, request: TailRequest) -> crate::Result<FetchResponse> {
         self.tail_svc.ready().await?.call(request).await
+    }
+    async fn check_connectivity(&mut self) -> anyhow::Result<()> {
+        self.inner.check_connectivity().await
+    }
+    fn uris(&self) -> Vec<quickwit_common::uri::Uri> {
+        self.inner.uris()
     }
 }
 #[derive(Debug, Default)]
@@ -504,13 +534,23 @@ impl IngestServiceTowerBlockBuilder {
                 >,
             > + Send + 'static,
     {
-        self.build_from_boxed(
-            Box::new(
-                IngestServiceGrpcClientAdapter::new(
-                    ingest_service_grpc_client::IngestServiceGrpcClient::new(channel),
-                ),
-            ),
-        )
+        let (_, num_connections_watcher) = tokio::sync::watch::channel(1);
+        let adapter = IngestServiceGrpcClientAdapter::new(
+            ingest_service_grpc_client::IngestServiceGrpcClient::new(channel),
+            num_connections_watcher,
+        );
+        self.build_from_boxed(Box::new(adapter))
+    }
+    pub fn build_from_balanced_channel<K: std::hash::Hash + Eq + Send + Clone + 'static>(
+        self,
+        balanced_channel: quickwit_common::tower::BalanceChannel<K>,
+    ) -> IngestServiceClient {
+        let num_connections_watcher = balanced_channel.num_connections_watcher();
+        let adapter = IngestServiceGrpcClientAdapter::new(
+            ingest_service_grpc_client::IngestServiceGrpcClient::new(balanced_channel),
+            num_connections_watcher,
+        );
+        self.build_from_boxed(Box::new(adapter))
     }
     pub fn build_from_mailbox<A>(
         self,
@@ -542,6 +582,7 @@ impl IngestServiceTowerBlockBuilder {
             quickwit_common::tower::BoxService::new(boxed_instance.clone())
         };
         let tower_block = IngestServiceTowerBlock {
+            inner: boxed_instance.clone(),
             ingest_svc,
             fetch_svc,
             tail_svc,
@@ -649,14 +690,32 @@ where
     async fn tail(&mut self, request: TailRequest) -> crate::Result<FetchResponse> {
         self.call(request).await
     }
+    async fn check_connectivity(&mut self) -> anyhow::Result<()> {
+        if self.inner.is_disconnected() {
+            anyhow::bail!(
+                "Mailbox of actor `{}` is disconnected", self.inner.actor_instance_id()
+            )
+        }
+        Ok(())
+    }
+    fn uris(&self) -> Vec<quickwit_common::uri::Uri> {
+        Vec::new()
+    }
 }
 #[derive(Debug, Clone)]
 pub struct IngestServiceGrpcClientAdapter<T> {
     inner: T,
+    num_connections_rx: tokio::sync::watch::Receiver<usize>,
 }
 impl<T> IngestServiceGrpcClientAdapter<T> {
-    pub fn new(instance: T) -> Self {
-        Self { inner: instance }
+    pub fn new(
+        instance: T,
+        num_connections_rx: tokio::sync::watch::Receiver<usize>,
+    ) -> Self {
+        Self {
+            inner: instance,
+            num_connections_rx,
+        }
     }
 }
 #[async_trait::async_trait]
@@ -692,6 +751,18 @@ where
             .await
             .map(|response| response.into_inner())
             .map_err(|error| error.into())
+    }
+    async fn check_connectivity(&mut self) -> anyhow::Result<()> {
+        if *self.num_connections_rx.borrow() == 0 {
+            anyhow::bail!("No connection to the server")
+        }
+        Ok(())
+    }
+    fn uris(&self) -> Vec<quickwit_common::uri::Uri> {
+        vec![
+            quickwit_common::uri::Uri::from_well_formed(&
+            format!("grpc://{}.service.cluster", "ingestservice"))
+        ]
     }
 }
 #[derive(Debug)]

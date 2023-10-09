@@ -327,6 +327,10 @@ fn generate_service_trait(context: &CodegenContext) -> TokenStream {
         #[async_trait::async_trait]
         pub trait #service_name: std::fmt::Debug + dyn_clone::DynClone + Send + Sync + 'static {
             #trait_methods
+
+            async fn check_connectivity(&mut self) -> anyhow::Result<()>;
+
+            fn uris(&self) -> Vec<quickwit_common::uri::Uri>;
         }
 
         dyn_clone::clone_trait_object!(#service_name);
@@ -394,6 +398,12 @@ fn generate_client(context: &CodegenContext) -> TokenStream {
                 }
             }
 
+            pub fn from_boxed(instance: Box<dyn #service_name>) -> Self {
+                Self {
+                    inner: instance,
+                }
+            }
+
             pub fn as_grpc_service(&self) -> #grpc_server_package_name::#grpc_server_name<#grpc_server_adapter_name> {
                 let adapter = #grpc_server_adapter_name::build_from_boxed(self.inner.clone());
                 #grpc_server_package_name::#grpc_server_name::new(adapter)
@@ -411,7 +421,16 @@ fn generate_client(context: &CodegenContext) -> TokenStream {
                         Output = Result<http::Response<hyper::Body>, quickwit_common::tower::BoxError>,
                     > + Send + 'static,
             {
-                #client_name::new(#grpc_client_adapter_name::new(#grpc_client_package_name::#grpc_client_name::new(channel)))
+                let (_, num_connections_watcher) = tokio::sync::watch::channel(1);
+                let adapter = #grpc_client_adapter_name::new(#grpc_client_package_name::#grpc_client_name::new(channel), num_connections_watcher);
+                Self::new(adapter)
+            }
+
+            pub fn from_balanced_channel<K: std::hash::Hash + Eq + Send + Clone + 'static>(balanced_channel: quickwit_common::tower::BalanceChannel<K>) -> #client_name
+            {
+                let num_connections_watcher = balanced_channel.num_connections_watcher();
+                let adapter = #grpc_client_adapter_name::new(#grpc_client_package_name::#grpc_client_name::new(balanced_channel), num_connections_watcher);
+                Self::new(adapter)
             }
 
             pub fn from_mailbox<A>(mailbox: quickwit_actors::Mailbox<A>) -> Self
@@ -458,6 +477,14 @@ fn generate_client(context: &CodegenContext) -> TokenStream {
             #[async_trait::async_trait]
             impl #service_name for #mock_wrapper_name {
                 #mock_methods
+
+                async fn check_connectivity(&mut self) -> anyhow::Result<()> {
+                    self.inner.lock().await.check_connectivity().await
+                }
+
+                fn uris(&self) -> Vec<quickwit_common::uri::Uri> {
+                    self.inner.blocking_lock().uris()
+                }
             }
 
             impl From<#mock_name> for #client_name {
@@ -539,6 +566,7 @@ fn generate_tower_services(context: &CodegenContext) -> TokenStream {
 
 fn generate_tower_block(context: &CodegenContext) -> TokenStream {
     let tower_block_name = &context.tower_block_name;
+    let service_name = &context.service_name;
     let tower_block_attributes = generate_tower_block_attributes(context);
     let tower_block_clone_impl = generate_tower_block_clone_impl(context);
     let tower_block_service_impl = generate_tower_block_service_impl(context);
@@ -547,6 +575,8 @@ fn generate_tower_block(context: &CodegenContext) -> TokenStream {
         /// A tower block is a set of towers. Each tower is stack of layers (middlewares) that are applied to a service.
         #[derive(Debug)]
         struct #tower_block_name {
+            inner: Box<dyn #service_name>,
+
             #tower_block_attributes
         }
 
@@ -591,6 +621,7 @@ fn generate_tower_block_clone_impl(context: &CodegenContext) -> TokenStream {
         impl Clone for #tower_block_name {
             fn clone(&self) -> Self {
                 Self {
+                    inner: self.inner.clone(),
                     #cloned_attributes
                 }
             }
@@ -624,6 +655,14 @@ fn generate_tower_block_service_impl(context: &CodegenContext) -> TokenStream {
         #[async_trait::async_trait]
         impl #service_name for #tower_block_name {
             # methods
+
+            async fn check_connectivity(&mut self) -> anyhow::Result<()> {
+                self.inner.check_connectivity().await
+            }
+
+            fn uris(&self) -> Vec<quickwit_common::uri::Uri> {
+                self.inner.uris()
+            }
         }
     }
 }
@@ -762,7 +801,16 @@ fn generate_tower_block_builder_impl(context: &CodegenContext) -> TokenStream {
                         Output = Result<http::Response<hyper::Body>, quickwit_common::tower::BoxError>,
                     > + Send + 'static,
             {
-                self.build_from_boxed(Box::new(#grpc_client_adapter_name::new(#grpc_client_package_name::#grpc_client_name::new(channel))))
+                let (_, num_connections_watcher) = tokio::sync::watch::channel(1);
+                let adapter = #grpc_client_adapter_name::new(#grpc_client_package_name::#grpc_client_name::new(channel), num_connections_watcher);
+                self.build_from_boxed(Box::new(adapter))
+            }
+
+            pub fn build_from_balanced_channel<K: std::hash::Hash + Eq + Send + Clone + 'static>(self, balanced_channel: quickwit_common::tower::BalanceChannel<K>) -> #client_name
+            {
+                let num_connections_watcher = balanced_channel.num_connections_watcher();
+                let adapter = #grpc_client_adapter_name::new(#grpc_client_package_name::#grpc_client_name::new(balanced_channel), num_connections_watcher);
+                self.build_from_boxed(Box::new(adapter))
             }
 
             pub fn build_from_mailbox<A>(self, mailbox: quickwit_actors::Mailbox<A>) -> #client_name
@@ -778,6 +826,7 @@ fn generate_tower_block_builder_impl(context: &CodegenContext) -> TokenStream {
                 #svc_statements
 
                 let tower_block = #tower_block_name {
+                    inner: boxed_instance.clone(),
                     #(#svc_attribute_idents),*
                 };
                 #client_name::new(tower_block)
@@ -873,6 +922,20 @@ fn generate_tower_mailbox(context: &CodegenContext) -> TokenStream {
             #mailbox_name<A>: #(#mailbox_bounds)+*,
         {
             #mailbox_methods
+
+            async fn check_connectivity(&mut self) -> anyhow::Result<()> {
+                if self.inner.is_disconnected() {
+                    // TODO: add actor id to the error message.
+                    anyhow::bail!("Mailbox of actor `{}` is disconnected", self.inner.actor_instance_id())
+                }
+                Ok(())
+            }
+
+            fn uris(&self) -> Vec<quickwit_common::uri::Uri> {
+                // TODO: accept `mailbox` scheme?
+                // vec![format!(quickwit_common::uri::Uri::from_well_formed("mailbox://{}", self.inner.actor_instance_id())]
+                Vec::new()
+            }
         }
     }
 }
@@ -908,6 +971,7 @@ fn generate_mailbox_bounds_and_methods(
 
 fn generate_grpc_client_adapter(context: &CodegenContext) -> TokenStream {
     let service_name = &context.service_name;
+    let service_name_string = service_name.to_string().to_lowercase();
     let grpc_client_package_name = &context.grpc_client_package_name;
     let grpc_client_name = &context.grpc_client_name;
     let grpc_client_adapter_name = &context.grpc_client_adapter_name;
@@ -916,13 +980,15 @@ fn generate_grpc_client_adapter(context: &CodegenContext) -> TokenStream {
     quote! {
         #[derive(Debug, Clone)]
         pub struct #grpc_client_adapter_name<T> {
-            inner: T
+            inner: T,
+            num_connections_rx: tokio::sync::watch::Receiver<usize>,
         }
 
         impl<T> #grpc_client_adapter_name<T> {
-            pub fn new(instance: T) -> Self {
+            pub fn new(instance: T, num_connections_rx: tokio::sync::watch::Receiver<usize>) -> Self {
                 Self {
-                    inner: instance
+                    inner: instance,
+                    num_connections_rx
                 }
             }
         }
@@ -936,6 +1002,18 @@ fn generate_grpc_client_adapter(context: &CodegenContext) -> TokenStream {
             T::Future: Send
         {
             #grpc_server_adapter_methods
+
+            async fn check_connectivity(&mut self) -> anyhow::Result<()> {
+                if *self.num_connections_rx.borrow() == 0 {
+                    anyhow::bail!("No connection to the server")
+                }
+                Ok(())
+            }
+
+            fn uris(&self) -> Vec<quickwit_common::uri::Uri> {
+                // TODO: use real uris.
+                vec![quickwit_common::uri::Uri::from_well_formed(&format!("grpc://{}.service.cluster", #service_name_string))]
+            }
         }
     }
 }

@@ -29,6 +29,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::StreamExt;
+use quickwit_common::uri::Uri;
 use quickwit_common::ServiceStream;
 use tower::{Layer, Service};
 
@@ -134,6 +135,14 @@ impl Hello for HelloImpl {
         request: ServiceStream<PingRequest>,
     ) -> HelloResult<HelloStream<PingResponse>> {
         Ok(spawn_ping_response_stream(request))
+    }
+
+    async fn check_connectivity(&mut self) -> anyhow::Result<()> {
+        Ok(())
+    }
+
+    fn uris(&self) -> Vec<Uri> {
+        vec![]
     }
 }
 

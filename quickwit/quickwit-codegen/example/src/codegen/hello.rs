@@ -61,6 +61,8 @@ pub trait Hello: std::fmt::Debug + dyn_clone::DynClone + Send + Sync + 'static {
         &mut self,
         request: quickwit_common::ServiceStream<PingRequest>,
     ) -> crate::HelloResult<HelloStream<PingResponse>>;
+    async fn check_connectivity(&mut self) -> anyhow::Result<()>;
+    fn uris(&self) -> Vec<quickwit_common::uri::Uri>;
 }
 dyn_clone::clone_trait_object!(Hello);
 #[cfg(any(test, feature = "testsuite"))]
@@ -79,6 +81,9 @@ impl HelloClient {
         T: Hello,
     {
         Self { inner: Box::new(instance) }
+    }
+    pub fn from_boxed(instance: Box<dyn Hello>) -> Self {
+        Self { inner: instance }
     }
     pub fn as_grpc_service(
         &self,
@@ -102,9 +107,22 @@ impl HelloClient {
                 >,
             > + Send + 'static,
     {
-        HelloClient::new(
-            HelloGrpcClientAdapter::new(hello_grpc_client::HelloGrpcClient::new(channel)),
-        )
+        let (_, num_connections_watcher) = tokio::sync::watch::channel(1);
+        let adapter = HelloGrpcClientAdapter::new(
+            hello_grpc_client::HelloGrpcClient::new(channel),
+            num_connections_watcher,
+        );
+        Self::new(adapter)
+    }
+    pub fn from_balanced_channel<K: std::hash::Hash + Eq + Send + Clone + 'static>(
+        balanced_channel: quickwit_common::tower::BalanceChannel<K>,
+    ) -> HelloClient {
+        let num_connections_watcher = balanced_channel.num_connections_watcher();
+        let adapter = HelloGrpcClientAdapter::new(
+            hello_grpc_client::HelloGrpcClient::new(balanced_channel),
+            num_connections_watcher,
+        );
+        Self::new(adapter)
     }
     pub fn from_mailbox<A>(mailbox: quickwit_actors::Mailbox<A>) -> Self
     where
@@ -158,6 +176,12 @@ pub mod hello_mock {
             request: quickwit_common::ServiceStream<super::PingRequest>,
         ) -> crate::HelloResult<HelloStream<super::PingResponse>> {
             self.inner.lock().await.ping(request).await
+        }
+        async fn check_connectivity(&mut self) -> anyhow::Result<()> {
+            self.inner.lock().await.check_connectivity().await
+        }
+        fn uris(&self) -> Vec<quickwit_common::uri::Uri> {
+            self.inner.blocking_lock().uris()
         }
     }
     impl From<MockHello> for HelloClient {
@@ -226,6 +250,7 @@ impl tower::Service<quickwit_common::ServiceStream<PingRequest>> for Box<dyn Hel
 /// A tower block is a set of towers. Each tower is stack of layers (middlewares) that are applied to a service.
 #[derive(Debug)]
 struct HelloTowerBlock {
+    inner: Box<dyn Hello>,
     hello_svc: quickwit_common::tower::BoxService<
         HelloRequest,
         HelloResponse,
@@ -245,6 +270,7 @@ struct HelloTowerBlock {
 impl Clone for HelloTowerBlock {
     fn clone(&self) -> Self {
         Self {
+            inner: self.inner.clone(),
             hello_svc: self.hello_svc.clone(),
             goodbye_svc: self.goodbye_svc.clone(),
             ping_svc: self.ping_svc.clone(),
@@ -270,6 +296,12 @@ impl Hello for HelloTowerBlock {
         request: quickwit_common::ServiceStream<PingRequest>,
     ) -> crate::HelloResult<HelloStream<PingResponse>> {
         self.ping_svc.ready().await?.call(request).await
+    }
+    async fn check_connectivity(&mut self) -> anyhow::Result<()> {
+        self.inner.check_connectivity().await
+    }
+    fn uris(&self) -> Vec<quickwit_common::uri::Uri> {
+        self.inner.uris()
     }
 }
 #[derive(Debug, Default)]
@@ -395,13 +427,23 @@ impl HelloTowerBlockBuilder {
                 >,
             > + Send + 'static,
     {
-        self.build_from_boxed(
-            Box::new(
-                HelloGrpcClientAdapter::new(
-                    hello_grpc_client::HelloGrpcClient::new(channel),
-                ),
-            ),
-        )
+        let (_, num_connections_watcher) = tokio::sync::watch::channel(1);
+        let adapter = HelloGrpcClientAdapter::new(
+            hello_grpc_client::HelloGrpcClient::new(channel),
+            num_connections_watcher,
+        );
+        self.build_from_boxed(Box::new(adapter))
+    }
+    pub fn build_from_balanced_channel<K: std::hash::Hash + Eq + Send + Clone + 'static>(
+        self,
+        balanced_channel: quickwit_common::tower::BalanceChannel<K>,
+    ) -> HelloClient {
+        let num_connections_watcher = balanced_channel.num_connections_watcher();
+        let adapter = HelloGrpcClientAdapter::new(
+            hello_grpc_client::HelloGrpcClient::new(balanced_channel),
+            num_connections_watcher,
+        );
+        self.build_from_boxed(Box::new(adapter))
     }
     pub fn build_from_mailbox<A>(
         self,
@@ -430,6 +472,7 @@ impl HelloTowerBlockBuilder {
             quickwit_common::tower::BoxService::new(boxed_instance.clone())
         };
         let tower_block = HelloTowerBlock {
+            inner: boxed_instance.clone(),
             hello_svc,
             goodbye_svc,
             ping_svc,
@@ -546,14 +589,32 @@ where
     ) -> crate::HelloResult<HelloStream<PingResponse>> {
         self.call(request).await
     }
+    async fn check_connectivity(&mut self) -> anyhow::Result<()> {
+        if self.inner.is_disconnected() {
+            anyhow::bail!(
+                "Mailbox of actor `{}` is disconnected", self.inner.actor_instance_id()
+            )
+        }
+        Ok(())
+    }
+    fn uris(&self) -> Vec<quickwit_common::uri::Uri> {
+        Vec::new()
+    }
 }
 #[derive(Debug, Clone)]
 pub struct HelloGrpcClientAdapter<T> {
     inner: T,
+    num_connections_rx: tokio::sync::watch::Receiver<usize>,
 }
 impl<T> HelloGrpcClientAdapter<T> {
-    pub fn new(instance: T) -> Self {
-        Self { inner: instance }
+    pub fn new(
+        instance: T,
+        num_connections_rx: tokio::sync::watch::Receiver<usize>,
+    ) -> Self {
+        Self {
+            inner: instance,
+            num_connections_rx,
+        }
     }
 }
 #[async_trait::async_trait]
@@ -599,6 +660,18 @@ where
                 stream.map_err(|error| error.into())
             })
             .map_err(|error| error.into())
+    }
+    async fn check_connectivity(&mut self) -> anyhow::Result<()> {
+        if *self.num_connections_rx.borrow() == 0 {
+            anyhow::bail!("No connection to the server")
+        }
+        Ok(())
+    }
+    fn uris(&self) -> Vec<quickwit_common::uri::Uri> {
+        vec![
+            quickwit_common::uri::Uri::from_well_formed(&
+            format!("grpc://{}.service.cluster", "hello"))
+        ]
     }
 }
 #[derive(Debug)]
