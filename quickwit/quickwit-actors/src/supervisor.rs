@@ -27,10 +27,25 @@ use crate::{
 };
 
 #[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Serialize)]
-pub struct SupervisorState {
+pub struct SupervisorMetrics {
     pub num_panics: usize,
     pub num_errors: usize,
     pub num_kills: usize,
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize)]
+pub struct SupervisorState<S> {
+    pub metrics: SupervisorMetrics,
+    pub state_opt: Option<S>,
+}
+
+impl<S> Default for SupervisorState<S> {
+    fn default() -> Self {
+        SupervisorState {
+            metrics: Default::default(),
+            state_opt: None,
+        }
+    }
 }
 
 pub struct Supervisor<A: Actor> {
@@ -38,7 +53,7 @@ pub struct Supervisor<A: Actor> {
     actor_factory: Box<dyn Fn() -> A + Send>,
     inbox: Inbox<A>,
     handle_opt: Option<ActorHandle<A>>,
-    state: SupervisorState,
+    metrics: SupervisorMetrics,
 }
 
 #[derive(Debug, Copy, Clone)]
@@ -46,10 +61,17 @@ struct SuperviseLoop;
 
 #[async_trait]
 impl<A: Actor> Actor for Supervisor<A> {
-    type ObservableState = SupervisorState;
+    type ObservableState = SupervisorState<A::ObservableState>;
 
     fn observable_state(&self) -> Self::ObservableState {
-        self.state
+        let state_opt: Option<A::ObservableState> = self
+            .handle_opt
+            .as_ref()
+            .map(|handle| handle.last_observation());
+        SupervisorState {
+            metrics: self.metrics,
+            state_opt,
+        }
     }
 
     fn name(&self) -> String {
@@ -99,13 +121,12 @@ impl<A: Actor> Supervisor<A> {
         inbox: Inbox<A>,
         handle: ActorHandle<A>,
     ) -> Self {
-        let state = Default::default();
         Supervisor {
             actor_name,
             actor_factory,
             inbox,
             handle_opt: Some(handle),
-            state,
+            metrics: Default::default(),
         }
     }
 
@@ -113,13 +134,13 @@ impl<A: Actor> Supervisor<A> {
         &mut self,
         ctx: &ActorContext<Supervisor<A>>,
     ) -> Result<(), ActorExitStatus> {
-        match self
+        let handle_ref = self
             .handle_opt
             .as_ref()
-            .expect("The actor handle should always be set.")
-            .check_health(true)
-        {
+            .expect("The actor handle should always be set.");
+        match handle_ref.check_health(true) {
             Health::Healthy => {
+                handle_ref.refresh_observe();
                 return Ok(());
             }
             Health::FailureOrUnhealthy => {}
@@ -150,13 +171,13 @@ impl<A: Actor> Supervisor<A> {
                 return Err(ActorExitStatus::DownstreamClosed);
             }
             ActorExitStatus::Killed => {
-                self.state.num_kills += 1;
+                self.metrics.num_kills += 1;
             }
             ActorExitStatus::Failure(_err) => {
-                self.state.num_errors += 1;
+                self.metrics.num_errors += 1;
             }
             ActorExitStatus::Panicked => {
-                self.state.num_panics += 1;
+                self.metrics.num_panics += 1;
             }
         }
         info!("respawning-actor");
@@ -193,8 +214,9 @@ mod tests {
     use async_trait::async_trait;
     use tracing::info;
 
-    use crate::supervisor::SupervisorState;
-    use crate::{Actor, ActorContext, ActorExitStatus, AskError, Handler, Universe};
+    use crate::supervisor::SupervisorMetrics;
+    use crate::tests::{Ping, PingReceiverActor};
+    use crate::{Actor, ActorContext, ActorExitStatus, AskError, Handler, Observe, Universe};
 
     #[derive(Copy, Clone, Debug)]
     enum FailingActorMessage {
@@ -280,8 +302,8 @@ mod tests {
             1
         );
         assert_eq!(
-            *supervisor_handle.observe().await,
-            SupervisorState {
+            supervisor_handle.observe().await.metrics,
+            SupervisorMetrics {
                 num_panics: 1,
                 num_errors: 0,
                 num_kills: 0
@@ -312,8 +334,8 @@ mod tests {
             1
         );
         assert_eq!(
-            *supervisor_handle.observe().await,
-            SupervisorState {
+            supervisor_handle.observe().await.metrics,
+            SupervisorMetrics {
                 num_panics: 0,
                 num_errors: 1,
                 num_kills: 0
@@ -339,8 +361,8 @@ mod tests {
             2
         );
         assert_eq!(
-            *supervisor_handle.observe().await,
-            SupervisorState {
+            supervisor_handle.observe().await.metrics,
+            SupervisorMetrics {
                 num_panics: 0,
                 num_errors: 0,
                 num_kills: 0
@@ -357,8 +379,8 @@ mod tests {
             1
         );
         assert_eq!(
-            *supervisor_handle.observe().await,
-            SupervisorState {
+            supervisor_handle.observe().await.metrics,
+            SupervisorMetrics {
                 num_panics: 0,
                 num_errors: 0,
                 num_kills: 1
@@ -420,5 +442,23 @@ mod tests {
         let (_, supervisor_handle) = universe.spawn_builder().supervise(actor);
         let (exit_status, _state) = supervisor_handle.join().await;
         assert!(matches!(exit_status, ActorExitStatus::Success));
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_supervisor_state() {
+        quickwit_common::setup_logging_for_tests();
+        let universe = Universe::with_accelerated_time();
+        let ping_actor = PingReceiverActor::default();
+        let (mailbox, handler) = universe.spawn_builder().supervise(ping_actor);
+        let obs = handler.observe().await;
+        assert_eq!(obs.state.state_opt, Some(0));
+        let _ = mailbox.ask(Ping).await;
+        assert_eq!(mailbox.ask(Observe).await.unwrap(), 1);
+        universe.sleep(Duration::from_secs(60)).await;
+        let obs = handler.observe().await;
+        assert_eq!(obs.state.state_opt, Some(1));
+        handler.quit().await;
+        universe.assert_quit().await;
     }
 }

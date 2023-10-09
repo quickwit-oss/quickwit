@@ -31,7 +31,8 @@ use quickwit_common::temp_dir::{self};
 use quickwit_common::uri::Uri;
 use quickwit_config::build_doc_mapper;
 use quickwit_indexing::actors::{
-    MergeExecutor, MergeSplitDownloader, Packager, Publisher, Uploader, UploaderType,
+    MergeExecutor, MergeSplitDownloader, Packager, Publisher, PublisherCounters, Uploader,
+    UploaderCounters, UploaderType,
 };
 use quickwit_indexing::merge_policy::merge_policy_from_settings;
 use quickwit_indexing::{IndexingSplitStore, PublisherType, SplitsUpdateMailbox};
@@ -45,6 +46,7 @@ use tokio::join;
 use tracing::info;
 
 use super::delete_task_planner::DeleteTaskPlanner;
+use crate::actors::delete_task_planner::DeleteTaskPlannerState;
 
 const OBSERVE_PIPELINE_INTERVAL: Duration = if cfg!(any(test, feature = "testsuite")) {
     Duration::from_millis(500)
@@ -66,12 +68,12 @@ struct DeletePipelineHandle {
 /// A Struct to hold all statistical data about deletes.
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct DeleteTaskPipelineState {
-    pub delete_task_planner: SupervisorState,
-    pub downloader: SupervisorState,
-    pub delete_task_executor: SupervisorState,
-    pub packager: SupervisorState,
-    pub uploader: SupervisorState,
-    pub publisher: SupervisorState,
+    pub delete_task_planner: SupervisorState<DeleteTaskPlannerState>,
+    pub downloader: SupervisorState<()>,
+    pub delete_task_executor: SupervisorState<()>,
+    pub packager: SupervisorState<()>,
+    pub uploader: SupervisorState<UploaderCounters>,
+    pub publisher: SupervisorState<PublisherCounters>,
 }
 
 pub struct DeleteTaskPipeline {
@@ -404,12 +406,12 @@ mod tests {
             .sleep(OBSERVE_PIPELINE_INTERVAL * 3)
             .await;
         let pipeline_state = pipeline_handler.process_pending_and_observe().await.state;
-        assert_eq!(pipeline_state.delete_task_planner.num_errors, 1);
-        assert_eq!(pipeline_state.downloader.num_errors, 0);
-        assert_eq!(pipeline_state.delete_task_executor.num_errors, 0);
-        assert_eq!(pipeline_state.packager.num_errors, 0);
-        assert_eq!(pipeline_state.uploader.num_errors, 0);
-        assert_eq!(pipeline_state.publisher.num_errors, 0);
+        assert_eq!(pipeline_state.delete_task_planner.metrics.num_errors, 1);
+        assert_eq!(pipeline_state.downloader.metrics.num_errors, 0);
+        assert_eq!(pipeline_state.delete_task_executor.metrics.num_errors, 0);
+        assert_eq!(pipeline_state.packager.metrics.num_errors, 0);
+        assert_eq!(pipeline_state.uploader.metrics.num_errors, 0);
+        assert_eq!(pipeline_state.publisher.metrics.num_errors, 0);
         let _ = pipeline_mailbox.ask(GracefulShutdown).await;
 
         let splits = metastore.list_all_splits(index_uid).await?;
