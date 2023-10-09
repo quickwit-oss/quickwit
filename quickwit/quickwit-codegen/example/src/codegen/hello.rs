@@ -83,7 +83,7 @@ impl HelloClient {
     pub fn as_grpc_service(
         &self,
     ) -> hello_grpc_server::HelloGrpcServer<HelloGrpcServerAdapter> {
-        let adapter = HelloGrpcServerAdapter::new(self.clone());
+        let adapter = HelloGrpcServerAdapter::build_from_boxed(self.inner.clone());
         hello_grpc_server::HelloGrpcServer::new(adapter)
     }
     pub fn from_channel<C>(channel: C) -> Self
@@ -121,25 +121,15 @@ impl HelloClient {
         MockHello::new()
     }
 }
-#[async_trait::async_trait]
-impl Hello for HelloClient {
-    async fn hello(
-        &mut self,
-        request: HelloRequest,
-    ) -> crate::HelloResult<HelloResponse> {
-        self.inner.hello(request).await
+impl std::ops::Deref for HelloClient {
+    type Target = Box<dyn Hello>;
+    fn deref(&self) -> &Self::Target {
+        &self.inner
     }
-    async fn goodbye(
-        &mut self,
-        request: GoodbyeRequest,
-    ) -> crate::HelloResult<GoodbyeResponse> {
-        self.inner.goodbye(request).await
-    }
-    async fn ping(
-        &mut self,
-        request: quickwit_common::ServiceStream<PingRequest>,
-    ) -> crate::HelloResult<HelloStream<PingResponse>> {
-        self.inner.ping(request).await
+}
+impl std::ops::DerefMut for HelloClient {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
     }
 }
 #[cfg(any(test, feature = "testsuite"))]
@@ -405,7 +395,13 @@ impl HelloTowerBlockBuilder {
                 >,
             > + Send + 'static,
     {
-        self.build_from_boxed(Box::new(HelloClient::from_channel(channel)))
+        self.build_from_boxed(
+            Box::new(
+                HelloGrpcClientAdapter::new(
+                    hello_grpc_client::HelloGrpcClient::new(channel),
+                ),
+            ),
+        )
     }
     pub fn build_from_mailbox<A>(
         self,
@@ -415,7 +411,7 @@ impl HelloTowerBlockBuilder {
         A: quickwit_actors::Actor + std::fmt::Debug + Send + 'static,
         HelloMailbox<A>: Hello,
     {
-        self.build_from_boxed(Box::new(HelloClient::from_mailbox(mailbox)))
+        self.build_from_boxed(Box::new(HelloMailbox::new(mailbox)))
     }
     fn build_from_boxed(self, boxed_instance: Box<dyn Hello>) -> HelloClient {
         let hello_svc = if let Some(layer) = self.hello_layer {
@@ -615,6 +611,9 @@ impl HelloGrpcServerAdapter {
         T: Hello,
     {
         Self { inner: Box::new(instance) }
+    }
+    pub fn build_from_boxed(instance: Box<dyn Hello>) -> Self {
+        Self { inner: instance }
     }
 }
 #[async_trait::async_trait]

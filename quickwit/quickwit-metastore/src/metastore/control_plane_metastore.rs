@@ -23,7 +23,7 @@ use std::sync::Arc;
 use async_trait::async_trait;
 use quickwit_common::uri::Uri;
 use quickwit_config::{IndexConfig, SourceConfig};
-use quickwit_proto::control_plane::{ControlPlaneService, ControlPlaneServiceClient};
+use quickwit_proto::control_plane::ControlPlaneServiceClient;
 use quickwit_proto::metastore::{
     serde_utils as metastore_serde_utils, AcquireShardsRequest, AcquireShardsResponse,
     AddSourceRequest, CloseShardsRequest, CloseShardsResponse, CreateIndexRequest,

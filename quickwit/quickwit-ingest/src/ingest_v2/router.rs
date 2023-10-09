@@ -25,10 +25,9 @@ use async_trait::async_trait;
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use quickwit_proto::control_plane::{
-    ControlPlaneService, ControlPlaneServiceClient, GetOrCreateOpenShardsRequest,
-    GetOrCreateOpenShardsSubrequest,
+    ControlPlaneServiceClient, GetOrCreateOpenShardsRequest, GetOrCreateOpenShardsSubrequest,
 };
-use quickwit_proto::ingest::ingester::{IngesterService, PersistRequest, PersistSubrequest};
+use quickwit_proto::ingest::ingester::{PersistRequest, PersistSubrequest};
 use quickwit_proto::ingest::router::{
     IngestRequestV2, IngestResponseV2, IngestRouterService, IngestSubrequest,
 };

@@ -21,7 +21,7 @@ use std::collections::HashMap;
 
 use bytes::Bytes;
 use quickwit_ingest::{
-    CommitType, DocBatchBuilder, IngestRequest, IngestResponse, IngestService, IngestServiceClient,
+    CommitType, DocBatchBuilder, IngestRequest, IngestResponse, IngestServiceClient,
     IngestServiceError,
 };
 use quickwit_proto::{ServiceError, ServiceErrorCode};

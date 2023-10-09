@@ -339,7 +339,9 @@ impl IngesterServiceClient {
     ) -> ingester_service_grpc_server::IngesterServiceGrpcServer<
         IngesterServiceGrpcServerAdapter,
     > {
-        let adapter = IngesterServiceGrpcServerAdapter::new(self.clone());
+        let adapter = IngesterServiceGrpcServerAdapter::build_from_boxed(
+            self.inner.clone(),
+        );
         ingester_service_grpc_server::IngesterServiceGrpcServer::new(adapter)
     }
     pub fn from_channel<C>(channel: C) -> Self
@@ -379,37 +381,15 @@ impl IngesterServiceClient {
         MockIngesterService::new()
     }
 }
-#[async_trait::async_trait]
-impl IngesterService for IngesterServiceClient {
-    async fn persist(
-        &mut self,
-        request: PersistRequest,
-    ) -> crate::ingest::IngestV2Result<PersistResponse> {
-        self.inner.persist(request).await
+impl std::ops::Deref for IngesterServiceClient {
+    type Target = Box<dyn IngesterService>;
+    fn deref(&self) -> &Self::Target {
+        &self.inner
     }
-    async fn open_replication_stream(
-        &mut self,
-        request: quickwit_common::ServiceStream<SynReplicationMessage>,
-    ) -> crate::ingest::IngestV2Result<IngesterServiceStream<AckReplicationMessage>> {
-        self.inner.open_replication_stream(request).await
-    }
-    async fn open_fetch_stream(
-        &mut self,
-        request: OpenFetchStreamRequest,
-    ) -> crate::ingest::IngestV2Result<IngesterServiceStream<FetchResponseV2>> {
-        self.inner.open_fetch_stream(request).await
-    }
-    async fn ping(
-        &mut self,
-        request: PingRequest,
-    ) -> crate::ingest::IngestV2Result<PingResponse> {
-        self.inner.ping(request).await
-    }
-    async fn truncate(
-        &mut self,
-        request: TruncateRequest,
-    ) -> crate::ingest::IngestV2Result<TruncateResponse> {
-        self.inner.truncate(request).await
+}
+impl std::ops::DerefMut for IngesterServiceClient {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
     }
 }
 #[cfg(any(test, feature = "testsuite"))]
@@ -818,7 +798,13 @@ impl IngesterServiceTowerBlockBuilder {
                 >,
             > + Send + 'static,
     {
-        self.build_from_boxed(Box::new(IngesterServiceClient::from_channel(channel)))
+        self.build_from_boxed(
+            Box::new(
+                IngesterServiceGrpcClientAdapter::new(
+                    ingester_service_grpc_client::IngesterServiceGrpcClient::new(channel),
+                ),
+            ),
+        )
     }
     pub fn build_from_mailbox<A>(
         self,
@@ -828,7 +814,7 @@ impl IngesterServiceTowerBlockBuilder {
         A: quickwit_actors::Actor + std::fmt::Debug + Send + 'static,
         IngesterServiceMailbox<A>: IngesterService,
     {
-        self.build_from_boxed(Box::new(IngesterServiceClient::from_mailbox(mailbox)))
+        self.build_from_boxed(Box::new(IngesterServiceMailbox::new(mailbox)))
     }
     fn build_from_boxed(
         self,
@@ -1102,6 +1088,9 @@ impl IngesterServiceGrpcServerAdapter {
         T: IngesterService,
     {
         Self { inner: Box::new(instance) }
+    }
+    pub fn build_from_boxed(instance: Box<dyn IngesterService>) -> Self {
+        Self { inner: instance }
     }
 }
 #[async_trait::async_trait]

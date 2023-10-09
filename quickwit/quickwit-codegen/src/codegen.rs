@@ -371,7 +371,6 @@ fn generate_client(context: &CodegenContext) -> TokenStream {
     let grpc_server_adapter_name = &context.grpc_server_adapter_name;
     let grpc_server_package_name = &context.grpc_server_package_name;
 
-    let client_methods = generate_client_methods(context, false);
     let mock_mod_name = &context.mock_mod_name;
     let mock_methods = generate_client_methods(context, true);
     let mailbox_name = &context.mailbox_name;
@@ -396,7 +395,7 @@ fn generate_client(context: &CodegenContext) -> TokenStream {
             }
 
             pub fn as_grpc_service(&self) -> #grpc_server_package_name::#grpc_server_name<#grpc_server_adapter_name> {
-                let adapter = #grpc_server_adapter_name::new(self.clone());
+                let adapter = #grpc_server_adapter_name::build_from_boxed(self.inner.clone());
                 #grpc_server_package_name::#grpc_server_name::new(adapter)
             }
 
@@ -433,9 +432,18 @@ fn generate_client(context: &CodegenContext) -> TokenStream {
             }
         }
 
-        #[async_trait::async_trait]
-        impl #service_name for #client_name {
-            #client_methods
+        impl std::ops::Deref for #client_name {
+            type Target = Box<dyn #service_name>;
+
+            fn deref(&self) -> &Self::Target {
+                &self.inner
+            }
+        }
+
+        impl std::ops::DerefMut for #client_name {
+            fn deref_mut(&mut self) -> &mut Self::Target {
+                &mut self.inner
+            }
         }
 
         #[cfg(any(test, feature = "testsuite"))]
@@ -659,6 +667,9 @@ fn generate_tower_block_builder_impl(context: &CodegenContext) -> TokenStream {
     let service_name = &context.service_name;
     let client_name = &context.client_name;
     let mailbox_name = &context.mailbox_name;
+    let grpc_client_adapter_name = &context.grpc_client_adapter_name;
+    let grpc_client_package_name = &context.grpc_client_package_name;
+    let grpc_client_name = &context.grpc_client_name;
     let tower_block_name = &context.tower_block_name;
     let tower_block_builder_name = &context.tower_block_builder_name;
     let error_type = &context.error_type;
@@ -751,7 +762,7 @@ fn generate_tower_block_builder_impl(context: &CodegenContext) -> TokenStream {
                         Output = Result<http::Response<hyper::Body>, quickwit_common::tower::BoxError>,
                     > + Send + 'static,
             {
-                self.build_from_boxed(Box::new(#client_name::from_channel(channel)))
+                self.build_from_boxed(Box::new(#grpc_client_adapter_name::new(#grpc_client_package_name::#grpc_client_name::new(channel))))
             }
 
             pub fn build_from_mailbox<A>(self, mailbox: quickwit_actors::Mailbox<A>) -> #client_name
@@ -759,7 +770,7 @@ fn generate_tower_block_builder_impl(context: &CodegenContext) -> TokenStream {
                 A: quickwit_actors::Actor + std::fmt::Debug + Send + 'static,
                 #mailbox_name<A>: #service_name,
             {
-                self.build_from_boxed(Box::new(#client_name::from_mailbox(mailbox)))
+                self.build_from_boxed(Box::new(#mailbox_name::new(mailbox)))
             }
 
             fn build_from_boxed(self, boxed_instance: Box<dyn #service_name>) -> #client_name
@@ -982,6 +993,12 @@ fn generate_grpc_server_adapter(context: &CodegenContext) -> TokenStream {
             where T: #service_name {
                 Self {
                     inner: Box::new(instance),
+                }
+            }
+
+            pub fn build_from_boxed(instance: Box<dyn #service_name>) -> Self {
+                Self {
+                    inner: instance,
                 }
             }
         }

@@ -107,7 +107,9 @@ impl ControlPlaneServiceClient {
     ) -> control_plane_service_grpc_server::ControlPlaneServiceGrpcServer<
         ControlPlaneServiceGrpcServerAdapter,
     > {
-        let adapter = ControlPlaneServiceGrpcServerAdapter::new(self.clone());
+        let adapter = ControlPlaneServiceGrpcServerAdapter::build_from_boxed(
+            self.inner.clone(),
+        );
         control_plane_service_grpc_server::ControlPlaneServiceGrpcServer::new(adapter)
     }
     pub fn from_channel<C>(channel: C) -> Self
@@ -149,57 +151,15 @@ impl ControlPlaneServiceClient {
         MockControlPlaneService::new()
     }
 }
-#[async_trait::async_trait]
-impl ControlPlaneService for ControlPlaneServiceClient {
-    async fn create_index(
-        &mut self,
-        request: super::metastore::CreateIndexRequest,
-    ) -> crate::control_plane::ControlPlaneResult<
-        super::metastore::CreateIndexResponse,
-    > {
-        self.inner.create_index(request).await
+impl std::ops::Deref for ControlPlaneServiceClient {
+    type Target = Box<dyn ControlPlaneService>;
+    fn deref(&self) -> &Self::Target {
+        &self.inner
     }
-    async fn delete_index(
-        &mut self,
-        request: super::metastore::DeleteIndexRequest,
-    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
-        self.inner.delete_index(request).await
-    }
-    async fn add_source(
-        &mut self,
-        request: super::metastore::AddSourceRequest,
-    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
-        self.inner.add_source(request).await
-    }
-    async fn toggle_source(
-        &mut self,
-        request: super::metastore::ToggleSourceRequest,
-    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
-        self.inner.toggle_source(request).await
-    }
-    async fn delete_source(
-        &mut self,
-        request: super::metastore::DeleteSourceRequest,
-    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
-        self.inner.delete_source(request).await
-    }
-    async fn get_or_create_open_shards(
-        &mut self,
-        request: GetOrCreateOpenShardsRequest,
-    ) -> crate::control_plane::ControlPlaneResult<GetOrCreateOpenShardsResponse> {
-        self.inner.get_or_create_open_shards(request).await
-    }
-    async fn close_shards(
-        &mut self,
-        request: super::metastore::CloseShardsRequest,
-    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
-        self.inner.close_shards(request).await
-    }
-    async fn delete_shards(
-        &mut self,
-        request: super::metastore::DeleteShardsRequest,
-    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
-        self.inner.delete_shards(request).await
+}
+impl std::ops::DerefMut for ControlPlaneServiceClient {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
     }
 }
 #[cfg(any(test, feature = "testsuite"))]
@@ -854,7 +814,15 @@ impl ControlPlaneServiceTowerBlockBuilder {
                 >,
             > + Send + 'static,
     {
-        self.build_from_boxed(Box::new(ControlPlaneServiceClient::from_channel(channel)))
+        self.build_from_boxed(
+            Box::new(
+                ControlPlaneServiceGrpcClientAdapter::new(
+                    control_plane_service_grpc_client::ControlPlaneServiceGrpcClient::new(
+                        channel,
+                    ),
+                ),
+            ),
+        )
     }
     pub fn build_from_mailbox<A>(
         self,
@@ -864,7 +832,7 @@ impl ControlPlaneServiceTowerBlockBuilder {
         A: quickwit_actors::Actor + std::fmt::Debug + Send + 'static,
         ControlPlaneServiceMailbox<A>: ControlPlaneService,
     {
-        self.build_from_boxed(Box::new(ControlPlaneServiceClient::from_mailbox(mailbox)))
+        self.build_from_boxed(Box::new(ControlPlaneServiceMailbox::new(mailbox)))
     }
     fn build_from_boxed(
         self,
@@ -1236,6 +1204,9 @@ impl ControlPlaneServiceGrpcServerAdapter {
         T: ControlPlaneService,
     {
         Self { inner: Box::new(instance) }
+    }
+    pub fn build_from_boxed(instance: Box<dyn ControlPlaneService>) -> Self {
+        Self { inner: instance }
     }
 }
 #[async_trait::async_trait]

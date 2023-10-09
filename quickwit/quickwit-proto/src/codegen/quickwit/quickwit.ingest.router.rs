@@ -87,7 +87,9 @@ impl IngestRouterServiceClient {
     ) -> ingest_router_service_grpc_server::IngestRouterServiceGrpcServer<
         IngestRouterServiceGrpcServerAdapter,
     > {
-        let adapter = IngestRouterServiceGrpcServerAdapter::new(self.clone());
+        let adapter = IngestRouterServiceGrpcServerAdapter::build_from_boxed(
+            self.inner.clone(),
+        );
         ingest_router_service_grpc_server::IngestRouterServiceGrpcServer::new(adapter)
     }
     pub fn from_channel<C>(channel: C) -> Self
@@ -129,13 +131,15 @@ impl IngestRouterServiceClient {
         MockIngestRouterService::new()
     }
 }
-#[async_trait::async_trait]
-impl IngestRouterService for IngestRouterServiceClient {
-    async fn ingest(
-        &mut self,
-        request: IngestRequestV2,
-    ) -> crate::ingest::IngestV2Result<IngestResponseV2> {
-        self.inner.ingest(request).await
+impl std::ops::Deref for IngestRouterServiceClient {
+    type Target = Box<dyn IngestRouterService>;
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+impl std::ops::DerefMut for IngestRouterServiceClient {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
     }
 }
 #[cfg(any(test, feature = "testsuite"))]
@@ -268,7 +272,15 @@ impl IngestRouterServiceTowerBlockBuilder {
                 >,
             > + Send + 'static,
     {
-        self.build_from_boxed(Box::new(IngestRouterServiceClient::from_channel(channel)))
+        self.build_from_boxed(
+            Box::new(
+                IngestRouterServiceGrpcClientAdapter::new(
+                    ingest_router_service_grpc_client::IngestRouterServiceGrpcClient::new(
+                        channel,
+                    ),
+                ),
+            ),
+        )
     }
     pub fn build_from_mailbox<A>(
         self,
@@ -278,7 +290,7 @@ impl IngestRouterServiceTowerBlockBuilder {
         A: quickwit_actors::Actor + std::fmt::Debug + Send + 'static,
         IngestRouterServiceMailbox<A>: IngestRouterService,
     {
-        self.build_from_boxed(Box::new(IngestRouterServiceClient::from_mailbox(mailbox)))
+        self.build_from_boxed(Box::new(IngestRouterServiceMailbox::new(mailbox)))
     }
     fn build_from_boxed(
         self,
@@ -424,6 +436,9 @@ impl IngestRouterServiceGrpcServerAdapter {
         T: IngestRouterService,
     {
         Self { inner: Box::new(instance) }
+    }
+    pub fn build_from_boxed(instance: Box<dyn IngestRouterService>) -> Self {
+        Self { inner: instance }
     }
 }
 #[async_trait::async_trait]

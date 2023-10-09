@@ -29,9 +29,7 @@ use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_ingest::{decoded_mrecords, IngesterPool, MRecord, MultiFetchStream};
 use quickwit_metastore::checkpoint::{PartitionId, Position, SourceCheckpoint};
 use quickwit_metastore::Metastore;
-use quickwit_proto::ingest::ingester::{
-    FetchResponseV2, IngesterService, TruncateRequest, TruncateSubrequest,
-};
+use quickwit_proto::ingest::ingester::{FetchResponseV2, TruncateRequest, TruncateSubrequest};
 use quickwit_proto::metastore::{AcquireShardsRequest, AcquireShardsSubrequest};
 use quickwit_proto::types::NodeId;
 use quickwit_proto::{IndexUid, PublishToken, ShardId, SourceId};

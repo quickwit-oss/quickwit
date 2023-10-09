@@ -57,7 +57,9 @@ impl IndexingServiceClient {
     ) -> indexing_service_grpc_server::IndexingServiceGrpcServer<
         IndexingServiceGrpcServerAdapter,
     > {
-        let adapter = IndexingServiceGrpcServerAdapter::new(self.clone());
+        let adapter = IndexingServiceGrpcServerAdapter::build_from_boxed(
+            self.inner.clone(),
+        );
         indexing_service_grpc_server::IndexingServiceGrpcServer::new(adapter)
     }
     pub fn from_channel<C>(channel: C) -> Self
@@ -97,13 +99,15 @@ impl IndexingServiceClient {
         MockIndexingService::new()
     }
 }
-#[async_trait::async_trait]
-impl IndexingService for IndexingServiceClient {
-    async fn apply_indexing_plan(
-        &mut self,
-        request: ApplyIndexingPlanRequest,
-    ) -> crate::indexing::IndexingResult<ApplyIndexingPlanResponse> {
-        self.inner.apply_indexing_plan(request).await
+impl std::ops::Deref for IndexingServiceClient {
+    type Target = Box<dyn IndexingService>;
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+impl std::ops::DerefMut for IndexingServiceClient {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
     }
 }
 #[cfg(any(test, feature = "testsuite"))]
@@ -242,7 +246,13 @@ impl IndexingServiceTowerBlockBuilder {
                 >,
             > + Send + 'static,
     {
-        self.build_from_boxed(Box::new(IndexingServiceClient::from_channel(channel)))
+        self.build_from_boxed(
+            Box::new(
+                IndexingServiceGrpcClientAdapter::new(
+                    indexing_service_grpc_client::IndexingServiceGrpcClient::new(channel),
+                ),
+            ),
+        )
     }
     pub fn build_from_mailbox<A>(
         self,
@@ -252,7 +262,7 @@ impl IndexingServiceTowerBlockBuilder {
         A: quickwit_actors::Actor + std::fmt::Debug + Send + 'static,
         IndexingServiceMailbox<A>: IndexingService,
     {
-        self.build_from_boxed(Box::new(IndexingServiceClient::from_mailbox(mailbox)))
+        self.build_from_boxed(Box::new(IndexingServiceMailbox::new(mailbox)))
     }
     fn build_from_boxed(
         self,
@@ -399,6 +409,9 @@ impl IndexingServiceGrpcServerAdapter {
         T: IndexingService,
     {
         Self { inner: Box::new(instance) }
+    }
+    pub fn build_from_boxed(instance: Box<dyn IndexingService>) -> Self {
+        Self { inner: instance }
     }
 }
 #[async_trait::async_trait]
