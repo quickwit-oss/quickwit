@@ -2193,25 +2193,13 @@ dependencies = [
 
 [[package]]
 name = "flume"
-version = "0.10.14"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1657b4441c3403d9f7b3409e47575237dac27b1b5726df654a6ecbf92f0f7577"
-dependencies = [
- "futures-core",
- "futures-sink",
- "nanorand",
- "pin-project",
- "spin 0.9.8",
-]
-
-[[package]]
-name = "flume"
 version = "0.11.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "55ac459de2512911e4b674ce33cf20befaba382d05b62b008afc1c8b57cbf181"
 dependencies = [
  "futures-core",
  "futures-sink",
+ "nanorand",
  "spin 0.9.8",
 ]
 
@@ -4914,7 +4902,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "criterion",
- "flume 0.10.14",
+ "flume",
  "futures",
  "once_cell",
  "quickwit-common",
@@ -5295,7 +5283,7 @@ dependencies = [
  "chitchat",
  "criterion",
  "fail",
- "flume 0.10.14",
+ "flume",
  "fnv",
  "futures",
  "google-cloud-auth 0.12.0",
@@ -5350,7 +5338,7 @@ dependencies = [
  "byte-unit",
  "bytes",
  "dyn-clone",
- "flume 0.10.14",
+ "flume",
  "futures",
  "http",
  "hyper",
@@ -7086,7 +7074,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d59dc83cf45d89c555a577694534fcd1b55c545a816c816ce51f20bbe56a4f3f"
 dependencies = [
  "atoi",
- "flume 0.11.0",
+ "flume",
  "futures-channel",
  "futures-core",
  "futures-executor",
