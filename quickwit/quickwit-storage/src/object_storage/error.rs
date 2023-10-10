@@ -28,7 +28,7 @@ use aws_sdk_s3::operation::head_object::HeadObjectError;
 use aws_sdk_s3::operation::put_object::PutObjectError;
 use aws_sdk_s3::operation::upload_part::UploadPartError;
 use hyper::http::StatusCode;
-use quickwit_aws::retry::Retryable;
+use quickwit_common::retry::Retryable;
 
 use crate::{StorageError, StorageErrorKind};
 

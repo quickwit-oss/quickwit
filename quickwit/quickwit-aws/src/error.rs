@@ -38,7 +38,7 @@ use aws_sdk_s3::operation::upload_part::UploadPartError;
 use aws_smithy_client::SdkError;
 use quickwit_common::retry::Retryable;
 
-pub struct RetryableWrapper<T>(T);
+pub struct RetryableWrapper<T>(pub T);
 
 impl<E> Retryable for RetryableWrapper<SdkError<E>>
 where E: Retryable
