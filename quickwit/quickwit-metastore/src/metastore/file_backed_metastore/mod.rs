@@ -37,10 +37,11 @@ use itertools::{Either, Itertools};
 use quickwit_common::uri::Uri;
 use quickwit_config::{validate_index_id_pattern, IndexConfig, SourceConfig};
 use quickwit_proto::metastore::{
-    AcquireShardsRequest, AcquireShardsResponse, CloseShardsRequest, CloseShardsResponse,
-    DeleteQuery, DeleteShardsRequest, DeleteShardsResponse, DeleteTask, EntityKind,
-    ListShardsRequest, ListShardsResponse, MetastoreError, MetastoreResult, OpenShardsRequest,
-    OpenShardsResponse,
+    AcquireShardsRequest, AcquireShardsResponse, AcquireShardsSubrequest, CloseShardsRequest,
+    CloseShardsResponse, CloseShardsSubrequest, DeleteQuery, DeleteShardsRequest,
+    DeleteShardsResponse, DeleteShardsSubrequest, DeleteTask, EntityKind, ListShardsRequest,
+    ListShardsResponse, MetastoreError, MetastoreResult, OpenShardsRequest, OpenShardsResponse,
+    OpenShardsSubrequest,
 };
 use quickwit_proto::{IndexUid, PublishToken};
 use quickwit_storage::Storage;
@@ -178,7 +179,7 @@ impl FileBackedMetastore {
     ) -> MetastoreResult<T> {
         let index_id = index_uid.index_id();
         let mut locked_index = self.get_locked_index(index_id).await?;
-        if locked_index.index_uid() != index_uid {
+        if *locked_index.index_uid() != index_uid {
             return Err(MetastoreError::NotFound(EntityKind::Index {
                 index_id: index_id.to_string(),
             }));
@@ -225,7 +226,7 @@ impl FileBackedMetastore {
     where F: FnOnce(&FileBackedIndex) -> MetastoreResult<T> {
         let index_id = index_uid.index_id();
         let locked_index = self.get_locked_index(index_id).await?;
-        if locked_index.index_uid() == index_uid {
+        if *locked_index.index_uid() == index_uid {
             view(&locked_index)
         } else {
             Err(MetastoreError::NotFound(EntityKind::Index {
@@ -654,16 +655,22 @@ impl Metastore for FileBackedMetastore {
     // Shard API
 
     async fn open_shards(&self, request: OpenShardsRequest) -> MetastoreResult<OpenShardsResponse> {
-        let mut subresponses = Vec::with_capacity(request.subrequests.len());
+        let mut response = OpenShardsResponse {
+            subresponses: Vec::with_capacity(request.subrequests.len()),
+        };
+        // We must group the subrequests by `index_uid` to mutate each index only once, since each
+        // mutation triggers an IO.
+        let grouped_subrequests: HashMap<IndexUid, Vec<OpenShardsSubrequest>> = request
+            .subrequests
+            .into_iter()
+            .into_group_map_by(|subrequest| IndexUid::new(subrequest.index_uid.clone()));
 
-        for subrequest in request.subrequests {
-            let index_uid: IndexUid = subrequest.index_uid.clone().into();
-            let subresponse = self
-                .mutate(index_uid, |index| index.open_shards(subrequest))
+        for (index_uid, subrequests) in grouped_subrequests {
+            let subresponses = self
+                .mutate(index_uid, |index| index.open_shards(subrequests))
                 .await?;
-            subresponses.push(subresponse);
+            response.subresponses.extend(subresponses);
         }
-        let response = OpenShardsResponse { subresponses };
         Ok(response)
     }
 
@@ -671,16 +678,22 @@ impl Metastore for FileBackedMetastore {
         &self,
         request: AcquireShardsRequest,
     ) -> MetastoreResult<AcquireShardsResponse> {
-        let mut subresponses = Vec::with_capacity(request.subrequests.len());
+        let mut response = AcquireShardsResponse {
+            subresponses: Vec::with_capacity(request.subrequests.len()),
+        };
+        // We must group the subrequests by `index_uid` to mutate each index only once, since each
+        // mutation triggers an IO.
+        let grouped_subrequests: HashMap<IndexUid, Vec<AcquireShardsSubrequest>> = request
+            .subrequests
+            .into_iter()
+            .into_group_map_by(|subrequest| IndexUid::new(subrequest.index_uid.clone()));
 
-        for subrequest in request.subrequests {
-            let index_uid: IndexUid = subrequest.index_uid.clone().into();
-            let subresponse = self
-                .mutate(index_uid, |index| index.acquire_shards(subrequest))
+        for (index_uid, subrequests) in grouped_subrequests {
+            let subresponses = self
+                .mutate(index_uid, |index| index.acquire_shards(subrequests))
                 .await?;
-            subresponses.push(subresponse);
+            response.subresponses.extend(subresponses);
         }
-        let response = AcquireShardsResponse { subresponses };
         Ok(response)
     }
 
@@ -688,28 +701,28 @@ impl Metastore for FileBackedMetastore {
         &self,
         request: CloseShardsRequest,
     ) -> MetastoreResult<CloseShardsResponse> {
-        let mut successes = Vec::with_capacity(request.subrequests.len());
-        let mut failures = Vec::new();
+        let mut response = CloseShardsResponse {
+            successes: Vec::with_capacity(request.subrequests.len()),
+            failures: Vec::new(),
+        };
+        // We must group the subrequests by `index_uid` to mutate each index only once, since each
+        // mutation triggers an IO.
+        let grouped_subrequests: HashMap<IndexUid, Vec<CloseShardsSubrequest>> = request
+            .subrequests
+            .into_iter()
+            .into_group_map_by(|subrequest| IndexUid::new(subrequest.index_uid.clone()));
 
-        for subrequest in request.subrequests {
-            let index_uid: IndexUid = subrequest.index_uid.clone().into();
-            match self
-                .mutate(index_uid, |index| index.close_shards(subrequest))
-                .await
-            {
-                Ok(Either::Left(success)) => {
-                    successes.push(success);
+        for (index_uid, subrequests) in grouped_subrequests {
+            let subresponses = self
+                .mutate(index_uid, |index| index.close_shards(subrequests))
+                .await?;
+            for subresponse in subresponses {
+                match subresponse {
+                    Either::Left(success) => response.successes.push(success),
+                    Either::Right(failure) => response.failures.push(failure),
                 }
-                Ok(Either::Right(failure)) => {
-                    failures.push(failure);
-                }
-                Err(error) => return Err(error),
             }
         }
-        let response = CloseShardsResponse {
-            successes,
-            failures,
-        };
         Ok(response)
     }
 
@@ -719,11 +732,17 @@ impl Metastore for FileBackedMetastore {
     ) -> MetastoreResult<DeleteShardsResponse> {
         let mut subresponses = Vec::with_capacity(request.subrequests.len());
 
-        for subrequest in request.subrequests {
-            let index_uid: IndexUid = subrequest.index_uid.clone().into();
+        // We must group the subrequests by `index_uid` to mutate each index only once, since each
+        // mutation triggers an IO.
+        let grouped_subrequests: HashMap<IndexUid, Vec<DeleteShardsSubrequest>> = request
+            .subrequests
+            .into_iter()
+            .into_group_map_by(|subrequest| IndexUid::new(subrequest.index_uid.clone()));
+
+        for (index_uid, subrequests) in grouped_subrequests {
             let subresponse = self
                 .mutate(index_uid, |index| {
-                    index.delete_shards(subrequest, request.force)
+                    index.delete_shards(subrequests, request.force)
                 })
                 .await?;
             subresponses.push(subresponse);
@@ -738,7 +757,7 @@ impl Metastore for FileBackedMetastore {
         for subrequest in request.subrequests {
             let index_uid: IndexUid = subrequest.index_uid.clone().into();
             let subresponse = self
-                .mutate(index_uid, |index| index.list_shards(subrequest))
+                .read(index_uid, |index| index.list_shards(subrequest))
                 .await?;
             subresponses.push(subresponse);
         }
@@ -1569,9 +1588,12 @@ mod tests {
         assert_eq!(indexes_metadatas.len(), 2);
 
         // Let's delete indexes.
-        metastore.delete_index(index_uid_alive).await.unwrap();
         metastore
-            .delete_index(index_uid_unregistered)
+            .delete_index(index_uid_alive.clone())
+            .await
+            .unwrap();
+        metastore
+            .delete_index(index_uid_unregistered.clone())
             .await
             .unwrap();
         let no_more_indexes = metastore
