@@ -670,7 +670,6 @@ mod tests {
     };
     use quickwit_proto::types::queue_id;
     use tonic::transport::{Endpoint, Server};
-    use tower::timeout::Timeout;
 
     use super::*;
     use crate::ingest_v2::ingest_metastore::MockIngestMetastore;
@@ -1147,11 +1146,11 @@ mod tests {
                     .unwrap();
             }
         });
-        let follower_channel = Timeout::new(
-            Endpoint::from_static("http://127.0.0.1:7777").connect_lazy(),
-            Duration::from_secs(1),
+        let follower_channel = Endpoint::from_static("http://127.0.0.1:7777").connect_lazy();
+        let follower_grpc_client = IngesterServiceClient::from_channel(
+            "127.0.0.1:7777".parse().unwrap(),
+            follower_channel,
         );
-        let follower_grpc_client = IngesterServiceClient::from_channel(follower_channel);
 
         ingester_pool.insert(follower_id.clone(), follower_grpc_client);
 

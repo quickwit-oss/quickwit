@@ -207,36 +207,26 @@ impl IngestServiceClient {
         let adapter = IngestServiceGrpcServerAdapter::new(self.clone());
         ingest_service_grpc_server::IngestServiceGrpcServer::new(adapter)
     }
-    pub fn from_channel<C>(channel: C) -> Self
-    where
-        C: tower::Service<
-                http::Request<tonic::body::BoxBody>,
-                Response = http::Response<hyper::Body>,
-                Error = quickwit_common::tower::BoxError,
-            > + std::fmt::Debug + Clone + Send + Sync + 'static,
-        <C as tower::Service<
-            http::Request<tonic::body::BoxBody>,
-        >>::Future: std::future::Future<
-                Output = Result<
-                    http::Response<hyper::Body>,
-                    quickwit_common::tower::BoxError,
-                >,
-            > + Send + 'static,
-    {
-        let (_, num_connections_watcher) = tokio::sync::watch::channel(1);
+    pub fn from_channel(
+        addr: std::net::SocketAddr,
+        channel: tonic::transport::Channel,
+    ) -> Self {
+        let (_, connection_keys_watcher) = tokio::sync::watch::channel(
+            std::collections::HashSet::from_iter(vec![addr]),
+        );
         let adapter = IngestServiceGrpcClientAdapter::new(
             ingest_service_grpc_client::IngestServiceGrpcClient::new(channel),
-            num_connections_watcher,
+            connection_keys_watcher,
         );
         Self::new(adapter)
     }
-    pub fn from_balanced_channel<K: std::hash::Hash + Eq + Send + Clone + 'static>(
-        balanced_channel: quickwit_common::tower::BalanceChannel<K>,
+    pub fn from_balanced_channel(
+        balanced_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
     ) -> IngestServiceClient {
-        let num_connections_watcher = balanced_channel.num_connections_watcher();
+        let connection_keys_watcher = balanced_channel.connection_keys_watcher();
         let adapter = IngestServiceGrpcClientAdapter::new(
             ingest_service_grpc_client::IngestServiceGrpcClient::new(balanced_channel),
-            num_connections_watcher,
+            connection_keys_watcher,
         );
         Self::new(adapter)
     }
@@ -500,27 +490,16 @@ impl IngestServiceTowerBlockBuilder {
     {
         self.build_from_boxed(Box::new(instance))
     }
-    pub fn build_from_channel<T, C>(self, channel: C) -> IngestServiceClient
-    where
-        C: tower::Service<
-                http::Request<tonic::body::BoxBody>,
-                Response = http::Response<hyper::Body>,
-                Error = quickwit_common::tower::BoxError,
-            > + std::fmt::Debug + Clone + Send + Sync + 'static,
-        <C as tower::Service<
-            http::Request<tonic::body::BoxBody>,
-        >>::Future: std::future::Future<
-                Output = Result<
-                    http::Response<hyper::Body>,
-                    quickwit_common::tower::BoxError,
-                >,
-            > + Send + 'static,
-    {
-        self.build_from_boxed(Box::new(IngestServiceClient::from_channel(channel)))
-    }
-    pub fn build_from_balanced_channel<K: std::hash::Hash + Eq + Send + Clone + 'static>(
+    pub fn build_from_channel(
         self,
-        balanced_channel: quickwit_common::tower::BalanceChannel<K>,
+        addr: std::net::SocketAddr,
+        channel: tonic::transport::Channel,
+    ) -> IngestServiceClient {
+        self.build_from_boxed(Box::new(IngestServiceClient::from_channel(addr, channel)))
+    }
+    pub fn build_from_balanced_channel(
+        self,
+        balanced_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
     ) -> IngestServiceClient {
         self.build_from_boxed(
             Box::new(IngestServiceClient::from_balanced_channel(balanced_channel)),
@@ -669,16 +648,20 @@ where
 pub struct IngestServiceGrpcClientAdapter<T> {
     inner: T,
     #[allow(dead_code)]
-    num_connections_rx: tokio::sync::watch::Receiver<usize>,
+    connection_addrs_rx: tokio::sync::watch::Receiver<
+        std::collections::HashSet<std::net::SocketAddr>,
+    >,
 }
 impl<T> IngestServiceGrpcClientAdapter<T> {
     pub fn new(
         instance: T,
-        num_connections_rx: tokio::sync::watch::Receiver<usize>,
+        connection_addrs_rx: tokio::sync::watch::Receiver<
+            std::collections::HashSet<std::net::SocketAddr>,
+        >,
     ) -> Self {
         Self {
             inner: instance,
-            num_connections_rx,
+            connection_addrs_rx,
         }
     }
 }

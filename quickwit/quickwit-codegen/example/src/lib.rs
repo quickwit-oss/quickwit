@@ -113,22 +113,6 @@ fn spawn_ping_response_stream(
     service_stream
 }
 
-#[async_trait]
-trait HelloClientExt {
-    async fn check_hello(&mut self, request: HelloRequest) -> anyhow::Result<()>;
-}
-
-#[async_trait]
-impl HelloClientExt for HelloClient {
-    async fn check_hello(&mut self, request: HelloRequest) -> anyhow::Result<()> {
-        let response = self.hello(request).await;
-        if response.is_err() {
-            return Err(anyhow::anyhow!("Hello failed."));
-        }
-        Ok(())
-    }
-}
-
 #[derive(Debug, Clone)]
 struct HelloImpl;
 
@@ -157,7 +141,7 @@ impl Hello for HelloImpl {
         Ok(())
     }
 
-    fn uris(&self) -> Vec<Uri> {
+    fn endpoints(&self) -> Vec<Uri> {
         Vec::new()
     }
 }
@@ -166,14 +150,12 @@ impl Hello for HelloImpl {
 mod tests {
     use std::net::SocketAddr;
     use std::sync::atomic::Ordering;
-    use std::time::Duration;
 
     use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Universe};
     use quickwit_common::tower::{BalanceChannel, Change};
     use tokio::sync::mpsc::error::TrySendError;
     use tokio_stream::StreamExt;
     use tonic::transport::{Endpoint, Server};
-    use tower::timeout::Timeout;
 
     use super::*;
     use crate::hello::hello_grpc_server::HelloGrpcServer;
@@ -268,22 +250,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_check_hello() {
-        let mut mock_hello = MockHello::new();
-
-        mock_hello
-            .expect_hello()
-            .returning(|_| Err(HelloError::InternalError("Mock error".to_string())));
-
-        let mut client = HelloClient::new(mock_hello);
-        assert!(client
-            .check_hello(HelloRequest {
-                name: "World".to_string()
-            })
-            .await
-            .is_err());
-    }
-    #[tokio::test]
     async fn test_hello_codegen_grpc() {
         let grpc_server_adapter = HelloGrpcServerAdapter::new(HelloImpl);
         let grpc_server: HelloGrpcServer<HelloGrpcServerAdapter> =
@@ -299,11 +265,11 @@ mod tests {
                     .unwrap();
             }
         });
-        let channel = Timeout::new(
+        let channel = BalanceChannel::from_channel(
+            "127.0.0.1:6666".parse().unwrap(),
             Endpoint::from_static("http://127.0.0.1:6666").connect_lazy(),
-            Duration::from_secs(1),
         );
-        let mut grpc_client = HelloClient::from_channel(channel);
+        let mut grpc_client = HelloClient::from_balanced_channel(channel);
 
         assert_eq!(
             grpc_client
@@ -346,8 +312,8 @@ mod tests {
 
         grpc_client.check_connectivity().await.unwrap();
         assert_eq!(
-            grpc_client.uris(),
-            vec![Uri::from_well_formed("grpc://Hello.service.cluster")]
+            grpc_client.endpoints(),
+            vec![Uri::from_well_formed("grpc://127.0.0.1:6666/hello.Hello")]
         );
 
         // The connectivity check fails if there is no client behind the channel.
@@ -359,7 +325,7 @@ mod tests {
                 .await
                 .unwrap_err()
                 .to_string(),
-            "No connection to the server"
+            "no server currently available"
         );
     }
 
@@ -436,9 +402,9 @@ mod tests {
 
         actor_client.check_connectivity().await.unwrap();
         assert_eq!(
-            actor_client.uris(),
-            vec![Uri::from_well_formed(&format!(
-                "mailbox://localhost/{}",
+            actor_client.endpoints(),
+            vec![Uri::from_well_formed(format!(
+                "actor://localhost/{}",
                 actor_mailbox.actor_instance_id()
             ))]
         );
@@ -584,15 +550,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_from_channel() {
-        let timeout_channel = Timeout::new(
+        let balance_channed = BalanceChannel::from_channel(
+            "127.0.0.1:7777".parse().unwrap(),
             Endpoint::from_static("http://127.0.0.1:7777").connect_lazy(),
-            Duration::from_secs(1),
         );
-        HelloClient::from_channel(timeout_channel);
-
-        let channel = Endpoint::from_static("http://127.0.0.1:7777").connect_lazy();
-        let balance_channel = BalanceChannel::from_channel("test-node", channel);
-        HelloClient::from_channel(balance_channel);
+        HelloClient::from_balanced_channel(balance_channed);
     }
 
     #[tokio::test]
