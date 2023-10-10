@@ -24,7 +24,7 @@ use std::time::{Duration, Instant};
 
 use bytes::Bytes;
 use elasticsearch_dsl::search::{Hit as ElasticHit, SearchResponse as ElasticSearchResponse};
-use elasticsearch_dsl::{HitsMetadata, Source, TotalHits, TotalHitsRelation};
+use elasticsearch_dsl::{ErrorCause, HitsMetadata, Source, TotalHits, TotalHitsRelation};
 use futures_util::StreamExt;
 use hyper::StatusCode;
 use itertools::Itertools;
@@ -211,7 +211,19 @@ fn partial_hit_from_search_after_param(
     for (value, field) in search_after.into_iter().zip(sort_order) {
         if field_is_doc_id(field) {
             if let Some(value_str) = value.as_str() {
-                let address: quickwit_search::GlobalDocAddress = value_str.parse().expect("TODO");
+                let address: quickwit_search::GlobalDocAddress =
+                    value_str.parse().map_err(|_| ElasticSearchError {
+                        status: StatusCode::BAD_REQUEST,
+                        error: ErrorCause {
+                            reason: Some("invalid search_after doc id".to_string()),
+                            caused_by: None,
+                            root_cause: vec![],
+                            stack_trace: None,
+                            suppressed: vec![],
+                            ty: None,
+                            additional_details: Default::default(),
+                        },
+                    })?;
                 parsed_search_after.split_id = address.split;
                 parsed_search_after.segment_ord = address.doc_addr.segment_ord;
                 parsed_search_after.doc_id = address.doc_addr.doc_id;
@@ -220,7 +232,18 @@ fn partial_hit_from_search_after_param(
                 todo!();
             }
         } else {
-            let value = SortByValue::try_from_json(value).expect("TODO");
+            let value = SortByValue::try_from_json(value).ok_or_else(|| ElasticSearchError {
+                status: StatusCode::BAD_REQUEST,
+                error: ErrorCause {
+                    reason: Some("invalid search_after field value".to_string()),
+                    caused_by: None,
+                    root_cause: vec![],
+                    stack_trace: None,
+                    suppressed: vec![],
+                    ty: None,
+                    additional_details: Default::default(),
+                },
+            })?;
             // TODO make cleaner once we support Vec
             if parsed_search_after.sort_value.is_none() {
                 parsed_search_after.sort_value = Some(value);
@@ -388,7 +411,7 @@ async fn es_scroll(
         scroll_ttl_secs,
     };
     let search_response: SearchResponse = search_service.scroll(scroll_request).await?;
-    // TODO maybe put _shard_doc??
+    // TODO append_shard_doc depends on the initial request, but we don't have access to it
     let mut search_response_rest: ElasticSearchResponse =
         convert_to_es_search_response(search_response, false);
     search_response_rest.took = start_instant.elapsed().as_millis() as u32;
