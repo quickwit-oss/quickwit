@@ -1020,7 +1020,7 @@ fn generate_grpc_client_adapter(context: &CodegenContext) -> TokenStream {
         quote! {
             async fn check_connectivity(&mut self) -> anyhow::Result<()> {
                 if *self.num_connections_rx.borrow() == 0 {
-                    anyhow::bail!("No connection to the server")
+                    anyhow::bail!("no server currently available")
                 }
                 Ok(())
             }

@@ -158,7 +158,7 @@ impl Hello for HelloImpl {
     }
 
     fn uris(&self) -> Vec<Uri> {
-        vec![]
+        Vec::new()
     }
 }
 
@@ -350,7 +350,7 @@ mod tests {
             vec![Uri::from_well_formed("grpc://Hello.service.cluster")]
         );
 
-        // Connectivity fails if there is no client.
+        // The connectivity check fails if there is no client behind the channel.
         let (balanced_channel, _): (BalanceChannel<SocketAddr>, _) = BalanceChannel::new();
         let mut grpc_client = HelloClient::from_balanced_channel(balanced_channel);
         assert_eq!(

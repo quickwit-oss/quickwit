@@ -597,7 +597,7 @@ where
     async fn check_connectivity(&mut self) -> anyhow::Result<()> {
         if self.inner.is_disconnected() {
             anyhow::bail!(
-                "Mailbox of actor `{}` is disconnected", self.inner.actor_instance_id()
+                "mailbox of actor `{}` is disconnected", self.inner.actor_instance_id()
             )
         }
         Ok(())
