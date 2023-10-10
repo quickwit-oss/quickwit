@@ -236,7 +236,7 @@ pub struct FetchResponseV2 {
     #[prost(uint64, tag = "4")]
     pub from_position_inclusive: u64,
     #[prost(message, optional, tag = "5")]
-    pub doc_batch: ::core::option::Option<super::DocBatchV2>,
+    pub mrecord_batch: ::core::option::Option<super::MRecordBatch>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]

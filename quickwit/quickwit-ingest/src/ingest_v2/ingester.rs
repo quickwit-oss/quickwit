@@ -26,7 +26,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use bytes::{Bytes, BytesMut};
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use mrecordlog::error::{DeleteQueueError, TruncateError};
@@ -53,13 +52,13 @@ use super::fetch::FetchTask;
 use super::gc::remove_shards_after;
 use super::ingest_metastore::IngestMetastore;
 use super::models::{Position, PrimaryShard, ReplicaShard, ShardStatus};
+use super::mrecord::MRecord;
 use super::replication::{
     ReplicationClient, ReplicationClientTask, ReplicationTask, ReplicationTaskHandle,
 };
 use super::IngesterPool;
 use crate::ingest_v2::gc::REMOVAL_GRACE_PERIOD;
 use crate::metrics::INGEST_METRICS;
-use crate::DocCommand;
 
 #[derive(Clone)]
 pub struct Ingester {
@@ -381,17 +380,20 @@ impl IngesterService for Ingester {
                 continue;
             };
             let primary_position_inclusive = if force_commit {
-                let docs = doc_batch.docs().chain(once(commit_doc()));
+                let encoded_mrecords = doc_batch
+                    .docs()
+                    .map(|doc| MRecord::Doc(doc).encode())
+                    .chain(once(MRecord::Commit.encode()));
                 state_guard
                     .mrecordlog
-                    .append_records(&queue_id, None, docs)
+                    .append_records(&queue_id, None, encoded_mrecords)
                     .await
                     .expect("TODO") // TODO: Io error, close shard?
             } else {
-                let docs = doc_batch.docs();
+                let encoded_mrecords = doc_batch.docs().map(|doc| MRecord::Doc(doc).encode());
                 state_guard
                     .mrecordlog
-                    .append_records(&queue_id, None, docs)
+                    .append_records(&queue_id, None, encoded_mrecords)
                     .await
                     .expect("TODO") // TODO: Io error, close shard?
             };
@@ -632,19 +634,12 @@ impl IngesterService for Ingester {
     }
 }
 
-// TODO
-pub(super) fn commit_doc() -> Bytes {
-    let mut buffer = BytesMut::with_capacity(1);
-    let command = DocCommand::<BytesMut>::Commit;
-    command.write(&mut buffer);
-    Bytes::from(buffer)
-}
-
 #[cfg(test)]
 mod tests {
     use std::net::SocketAddr;
     use std::time::Duration;
 
+    use bytes::Bytes;
     use quickwit_proto::ingest::ingester::{
         IngesterServiceGrpcServer, IngesterServiceGrpcServerAdapter, PersistSubrequest,
         TruncateSubrequest,
@@ -765,8 +760,8 @@ mod tests {
             state_guard.mrecordlog.create_queue(queue_id).await.unwrap();
         }
         let records = [
-            Bytes::from_static(b"test-doc-200"),
-            Bytes::from_static(b"test-doc-201"),
+            MRecord::new_doc("test-doc-200").encode(),
+            MRecord::new_doc("test-doc-201").encode(),
         ];
         state_guard
             .mrecordlog
@@ -774,8 +769,8 @@ mod tests {
             .await
             .unwrap();
         let records = [
-            Bytes::from_static(b"test-doc-300"),
-            Bytes::from_static(b"test-doc-301"),
+            MRecord::new_doc("test-doc-300").encode(),
+            MRecord::new_doc("test-doc-301").encode(),
         ];
         state_guard
             .mrecordlog
@@ -783,8 +778,8 @@ mod tests {
             .await
             .unwrap();
         let records = [
-            Bytes::from_static(b"test-doc-400"),
-            Bytes::from_static(b"test-doc-401"),
+            MRecord::new_doc("test-doc-400").encode(),
+            MRecord::new_doc("test-doc-401").encode(),
         ];
         state_guard
             .mrecordlog
@@ -861,7 +856,7 @@ mod tests {
 
         let persist_request = PersistRequest {
             leader_id: self_node_id.to_string(),
-            commit_type: CommitTypeV2::Auto as i32,
+            commit_type: CommitTypeV2::Force as i32,
             subrequests: vec![
                 PersistSubrequest {
                     index_uid: "test-index:0".to_string(),
@@ -875,20 +870,14 @@ mod tests {
                     source_id: "test-source".to_string(),
                     shard_id: 1,
                     follower_id: None,
-                    doc_batch: Some(DocBatchV2 {
-                        doc_buffer: Bytes::from_static(b"test-doc-010"),
-                        doc_lengths: vec![12],
-                    }),
+                    doc_batch: Some(DocBatchV2::for_test(["test-doc-010"])),
                 },
                 PersistSubrequest {
                     index_uid: "test-index:1".to_string(),
                     source_id: "test-source".to_string(),
                     shard_id: 0,
                     follower_id: None,
-                    doc_batch: Some(DocBatchV2 {
-                        doc_buffer: Bytes::from_static(b"test-doc-100test-doc-101"),
-                        doc_lengths: vec![12, 12],
-                    }),
+                    doc_batch: Some(DocBatchV2::for_test(["test-doc-100", "test-doc-101"])),
                 },
             ],
         };
@@ -908,22 +897,28 @@ mod tests {
 
         let queue_id_01 = queue_id("test-index:0", "test-source", 1);
         let primary_shard_01 = state_guard.primary_shards.get(&queue_id_01).unwrap();
-        primary_shard_01.assert_positions(0, NONE_REPLICA_POSITION);
-        primary_shard_01.assert_is_open(0);
+        primary_shard_01.assert_positions(1, NONE_REPLICA_POSITION);
+        primary_shard_01.assert_is_open(1);
 
-        state_guard
-            .mrecordlog
-            .assert_records_eq(&queue_id_01, .., &[(0, "test-doc-010")]);
+        state_guard.mrecordlog.assert_records_eq(
+            &queue_id_01,
+            ..,
+            &[(0, "\0\0test-doc-010"), (1, "\0\u{1}")],
+        );
 
         let queue_id_10 = queue_id("test-index:1", "test-source", 0);
         let primary_shard_10 = state_guard.primary_shards.get(&queue_id_10).unwrap();
-        primary_shard_10.assert_positions(1, NONE_REPLICA_POSITION);
-        primary_shard_10.assert_is_open(1);
+        primary_shard_10.assert_positions(2, NONE_REPLICA_POSITION);
+        primary_shard_10.assert_is_open(2);
 
         state_guard.mrecordlog.assert_records_eq(
             &queue_id_10,
             ..,
-            &[(0, "test-doc-100"), (1, "test-doc-101")],
+            &[
+                (0, "\0\0test-doc-100"),
+                (1, "\0\0test-doc-101"),
+                (2, "\0\u{1}"),
+            ],
         );
     }
 
@@ -1023,20 +1018,14 @@ mod tests {
                     source_id: "test-source".to_string(),
                     shard_id: 1,
                     follower_id: Some(follower_id.to_string()),
-                    doc_batch: Some(DocBatchV2 {
-                        doc_buffer: Bytes::from_static(b"test-doc-010"),
-                        doc_lengths: vec![12],
-                    }),
+                    doc_batch: Some(DocBatchV2::for_test(["test-doc-010"])),
                 },
                 PersistSubrequest {
                     index_uid: "test-index:1".to_string(),
                     source_id: "test-source".to_string(),
                     shard_id: 0,
                     follower_id: Some(follower_id.to_string()),
-                    doc_batch: Some(DocBatchV2 {
-                        doc_buffer: Bytes::from_static(b"test-doc-100test-doc-101"),
-                        doc_lengths: vec![12, 12],
-                    }),
+                    doc_batch: Some(DocBatchV2::for_test(["test-doc-100", "test-doc-101"])),
                 },
             ],
         };
@@ -1062,9 +1051,11 @@ mod tests {
         primary_shard_01.assert_positions(0, Some(0));
         primary_shard_01.assert_is_open(0);
 
-        leader_state_guard
-            .mrecordlog
-            .assert_records_eq(&queue_id_01, .., &[(0, "test-doc-010")]);
+        leader_state_guard.mrecordlog.assert_records_eq(
+            &queue_id_01,
+            ..,
+            &[(0, "\0\0test-doc-010")],
+        );
 
         let queue_id_10 = queue_id("test-index:1", "test-source", 0);
         let primary_shard_10 = leader_state_guard.primary_shards.get(&queue_id_10).unwrap();
@@ -1074,7 +1065,7 @@ mod tests {
         leader_state_guard.mrecordlog.assert_records_eq(
             &queue_id_10,
             ..,
-            &[(0, "test-doc-100"), (1, "test-doc-101")],
+            &[(0, "\0\0test-doc-100"), (1, "\0\0test-doc-101")],
         );
     }
 
@@ -1161,20 +1152,14 @@ mod tests {
                     source_id: "test-source".to_string(),
                     shard_id: 1,
                     follower_id: Some(follower_id.to_string()),
-                    doc_batch: Some(DocBatchV2 {
-                        doc_buffer: Bytes::from_static(b"test-doc-010"),
-                        doc_lengths: vec![12],
-                    }),
+                    doc_batch: Some(DocBatchV2::for_test(["test-doc-010"])),
                 },
                 PersistSubrequest {
                     index_uid: "test-index:1".to_string(),
                     source_id: "test-source".to_string(),
                     shard_id: 0,
                     follower_id: Some(follower_id.to_string()),
-                    doc_batch: Some(DocBatchV2 {
-                        doc_buffer: Bytes::from_static(b"test-doc-100test-doc-101"),
-                        doc_lengths: vec![12, 12],
-                    }),
+                    doc_batch: Some(DocBatchV2::for_test(["test-doc-100", "test-doc-101"])),
                 },
             ],
         };
@@ -1204,17 +1189,21 @@ mod tests {
         let queue_id_01 = queue_id("test-index:0", "test-source", 1);
 
         let leader_state_guard = leader.state.read().await;
-        leader_state_guard
-            .mrecordlog
-            .assert_records_eq(&queue_id_01, .., &[(0, "test-doc-010")]);
+        leader_state_guard.mrecordlog.assert_records_eq(
+            &queue_id_01,
+            ..,
+            &[(0, "\0\0test-doc-010")],
+        );
 
         let primary_shard = leader_state_guard.primary_shards.get(&queue_id_01).unwrap();
         primary_shard.assert_positions(0, Some(0));
         primary_shard.assert_is_open(0);
 
-        follower_state_guard
-            .mrecordlog
-            .assert_records_eq(&queue_id_01, .., &[(0, "test-doc-010")]);
+        follower_state_guard.mrecordlog.assert_records_eq(
+            &queue_id_01,
+            ..,
+            &[(0, "\0\0test-doc-010")],
+        );
 
         let replica_shard = follower_state_guard
             .replica_shards
@@ -1228,7 +1217,7 @@ mod tests {
         leader_state_guard.mrecordlog.assert_records_eq(
             &queue_id_10,
             ..,
-            &[(0, "test-doc-100"), (1, "test-doc-101")],
+            &[(0, "\0\0test-doc-100"), (1, "\0\0test-doc-101")],
         );
 
         let primary_shard = leader_state_guard.primary_shards.get(&queue_id_10).unwrap();
@@ -1238,7 +1227,7 @@ mod tests {
         follower_state_guard.mrecordlog.assert_records_eq(
             &queue_id_10,
             ..,
-            &[(0, "test-doc-100"), (1, "test-doc-101")],
+            &[(0, "\0\0test-doc-100"), (1, "\0\0test-doc-101")],
         );
 
         let replica_shard = follower_state_guard
@@ -1276,20 +1265,14 @@ mod tests {
                     source_id: "test-source".to_string(),
                     shard_id: 0,
                     follower_id: None,
-                    doc_batch: Some(DocBatchV2 {
-                        doc_buffer: Bytes::from_static(b"test-doc-000"),
-                        doc_lengths: vec![12],
-                    }),
+                    doc_batch: Some(DocBatchV2::for_test(["test-doc-000"])),
                 },
                 PersistSubrequest {
                     index_uid: "test-index:0".to_string(),
                     source_id: "test-source".to_string(),
                     shard_id: 1,
                     follower_id: None,
-                    doc_batch: Some(DocBatchV2 {
-                        doc_buffer: Bytes::from_static(b"test-doc-010"),
-                        doc_lengths: vec![12],
-                    }),
+                    doc_batch: Some(DocBatchV2::for_test(["test-doc-010"])),
                 },
             ],
         };
@@ -1309,9 +1292,12 @@ mod tests {
             .await
             .unwrap();
         let fetch_response = fetch_stream.next().await.unwrap().unwrap();
-        let doc_batch = fetch_response.doc_batch.unwrap();
-        assert_eq!(doc_batch.doc_buffer, Bytes::from_static(b"test-doc-000"));
-        assert_eq!(doc_batch.doc_lengths, [12]);
+        let mrecord_batch = fetch_response.mrecord_batch.unwrap();
+        assert_eq!(
+            mrecord_batch.mrecord_buffer,
+            Bytes::from_static(b"\0\0test-doc-000")
+        );
+        assert_eq!(mrecord_batch.mrecord_lengths, [14]);
         assert_eq!(fetch_response.from_position_inclusive, 0);
 
         let persist_request = PersistRequest {
@@ -1322,21 +1308,18 @@ mod tests {
                 source_id: "test-source".to_string(),
                 shard_id: 0,
                 follower_id: None,
-                doc_batch: Some(DocBatchV2 {
-                    doc_buffer: Bytes::from_static(b"test-doc-001test-doc-002"),
-                    doc_lengths: vec![12, 12],
-                }),
+                doc_batch: Some(DocBatchV2::for_test(["test-doc-001", "test-doc-002"])),
             }],
         };
         ingester.persist(persist_request).await.unwrap();
 
         let fetch_response = fetch_stream.next().await.unwrap().unwrap();
-        let doc_batch = fetch_response.doc_batch.unwrap();
+        let mrecord_batch = fetch_response.mrecord_batch.unwrap();
         assert_eq!(
-            doc_batch.doc_buffer,
-            Bytes::from_static(b"test-doc-001test-doc-002")
+            mrecord_batch.mrecord_buffer,
+            Bytes::from_static(b"\0\0test-doc-001\0\0test-doc-002")
         );
-        assert_eq!(doc_batch.doc_lengths, [12, 12]);
+        assert_eq!(mrecord_batch.mrecord_lengths, [14, 14]);
         assert_eq!(fetch_response.from_position_inclusive, 1);
     }
 
@@ -1385,7 +1368,6 @@ mod tests {
             .init_primary_shard(&mut state_guard, &queue_id_02, &self_node_id, None)
             .await
             .unwrap();
-
         state_guard
             .primary_shards
             .get_mut(&queue_id_02)

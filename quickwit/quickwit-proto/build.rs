@@ -47,7 +47,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Ingest service
     let mut prost_config = prost_build::Config::default();
-    prost_config.bytes(["DocBatchV2.doc_buffer"]);
+    prost_config.bytes(["DocBatchV2.doc_buffer", "MRecordBatch.mrecord_buffer"]);
 
     Codegen::run_with_config(
         &[
@@ -65,7 +65,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // "Classic" prost + tonic codegen for metastore and search services.
     let mut prost_config = prost_build::Config::default();
     prost_config
-        .bytes(["DocBatchV2.doc_buffer"])
+        .bytes(["DocBatchV2.doc_buffer", "MRecordBatch.mrecord_buffer"])
         .protoc_arg("--experimental_allow_proto3_optional");
 
     tonic_build::configure()

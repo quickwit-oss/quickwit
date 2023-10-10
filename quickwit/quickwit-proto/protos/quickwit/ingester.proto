@@ -169,7 +169,7 @@ message FetchResponseV2 {
     string source_id = 2;
     uint64 shard_id = 3;
     uint64 from_position_inclusive = 4;
-    ingest.DocBatchV2 doc_batch = 5;
+    quickwit.ingest.MRecordBatch mrecord_batch = 5;
 }
 
 message PingRequest {

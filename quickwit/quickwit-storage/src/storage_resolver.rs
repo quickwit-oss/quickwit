@@ -116,7 +116,8 @@ impl StorageResolver {
 
     /// Returns a [`StorageResolver`] for testing purposes. Unlike
     /// [`StorageResolver::unconfigured`], this resolver does not return a singleton.
-    pub fn ram_and_file_for_test() -> Self {
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn for_test() -> Self {
         StorageResolver::builder()
             .register(RamStorageFactory::default())
             .register(LocalFileStorageFactory)
