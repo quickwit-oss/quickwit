@@ -517,7 +517,7 @@ mod tests {
             mrecordlog,
             primary_shards: HashMap::new(),
             replica_shards: HashMap::new(),
-            replication_clients: HashMap::new(),
+            replication_streams: HashMap::new(),
             replication_tasks: HashMap::new(),
         }));
         let (mut fetch_stream, fetch_task_handle) = FetchTask::spawn(
@@ -646,7 +646,7 @@ mod tests {
             mrecordlog,
             primary_shards: HashMap::new(),
             replica_shards: HashMap::new(),
-            replication_clients: HashMap::new(),
+            replication_streams: HashMap::new(),
             replication_tasks: HashMap::new(),
         }));
         let (shard_status_tx, shard_status_rx) = watch::channel(ShardStatus::default());
@@ -728,7 +728,7 @@ mod tests {
             mrecordlog,
             primary_shards: HashMap::new(),
             replica_shards: HashMap::new(),
-            replication_clients: HashMap::new(),
+            replication_streams: HashMap::new(),
             replication_tasks: HashMap::new(),
         }));
         let (shard_status_tx, shard_status_rx) = watch::channel(ShardStatus::default());

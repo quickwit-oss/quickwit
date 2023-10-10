@@ -169,7 +169,7 @@ mod tests {
             mrecordlog,
             primary_shards: HashMap::new(),
             replica_shards: HashMap::new(),
-            replication_clients: HashMap::new(),
+            replication_streams: HashMap::new(),
             replication_tasks: HashMap::new(),
         };
         let primary_shard_0 = PrimaryShard::for_test(
