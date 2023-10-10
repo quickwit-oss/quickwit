@@ -648,22 +648,14 @@ pub(crate) fn sort_by_from_request(search_request: &SearchRequest) -> Vec<SortBy
         }
     };
 
-    if search_request.sort_fields.is_empty() {
-        // TODO removing that branch makes root::tests::test_root_search_with_scroll and I don't
-        // know why.
-        vec![SortByComponent::DocId {
-            order: SortOrder::Desc,
-        }]
-    } else {
-        search_request
-            .sort_fields
-            .iter()
-            .map(|sort_field| {
-                let order = SortOrder::from_i32(sort_field.sort_order).unwrap_or(SortOrder::Desc);
-                to_sort_by_component(&sort_field.field_name, order)
-            })
-            .collect()
-    }
+    search_request
+        .sort_fields
+        .iter()
+        .map(|sort_field| {
+            let order = SortOrder::from_i32(sort_field.sort_order).unwrap_or(SortOrder::Desc);
+            to_sort_by_component(&sort_field.field_name, order)
+        })
+        .collect()
 }
 
 /// Builds the QuickwitCollector, in function of the information that was requested by the user.
@@ -752,8 +744,6 @@ impl Ord for PartialHitSortingKey {
 
         let fields_res = compare_fields(&self.sort_orders, &self.sort_values, &other.sort_values);
 
-        // TODO unwrap or &SortOrder::Asc makes this work for
-        // root::tests::test_root_search_with_scroll, but it seems wrong
         let doc_id_res = || {
             self.sort_orders
                 .first()
