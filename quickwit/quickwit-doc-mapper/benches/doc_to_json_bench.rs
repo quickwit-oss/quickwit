@@ -19,6 +19,7 @@
 
 use criterion::{criterion_group, criterion_main, Criterion, Throughput};
 use quickwit_doc_mapper::DocMapper;
+use tantivy::TantivyDocument;
 
 const JSON_TEST_DATA: &str = include_str!("data/simple-parse-bench.json");
 
@@ -40,25 +41,18 @@ pub fn simple_json_to_doc_benchmark(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("simple-json-to-doc");
     group.throughput(Throughput::Bytes(JSON_TEST_DATA.len() as u64));
-    group.bench_function("simple-json-to-doc-donothing", |b| {
-        b.iter(|| {
-            let _lines: Vec<String> = lines.iter().map(|line| line.to_string()).collect();
-        })
-    });
     group.bench_function("simple-json-to-doc", |b| {
         b.iter(|| {
-            let lines: Vec<String> = lines.iter().map(|line| line.to_string()).collect();
-            for line in lines {
-                doc_mapper.doc_from_json_str(&line).unwrap();
+            for line in &lines {
+                doc_mapper.doc_from_json_str(line).unwrap();
             }
         })
     });
     group.bench_function("simple-json-to-doc-tantivy", |b| {
         b.iter(|| {
-            let lines: Vec<String> = lines.iter().map(|line| line.to_string()).collect();
             let schema = doc_mapper.schema();
-            for line in lines {
-                let _doc = schema.parse_document(&line).unwrap();
+            for line in &lines {
+                let _doc = TantivyDocument::parse_json(&schema, line).unwrap();
             }
         })
     });
