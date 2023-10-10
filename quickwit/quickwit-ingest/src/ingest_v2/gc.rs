@@ -37,7 +37,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use mrecordlog::error::DeleteQueueError;
-use mrecordlog::MultiRecordLog;
 use once_cell::sync::Lazy;
 use quickwit_proto::metastore::{DeleteShardsRequest, DeleteShardsSubrequest};
 use quickwit_proto::{split_queue_id, IndexUid, QueueId, ShardId, SourceId};
@@ -66,7 +65,6 @@ pub(super) fn remove_shards_after(
     queues_to_remove: Vec<QueueId>,
     grace_period: Duration,
     metastore: Arc<dyn IngestMetastore>,
-    mrecordlog: Arc<RwLock<MultiRecordLog>>,
     state: Arc<RwLock<IngesterState>>,
 ) {
     if queues_to_remove.is_empty() {
@@ -116,13 +114,9 @@ pub(super) fn remove_shards_after(
                 state_guard.replica_shards.remove(queue_id);
             }
         }
-        drop(state_guard);
-
-        let mut mrecordlog_guard = mrecordlog.write().await;
-
         for queue_id in &queues_to_remove {
             if let Err(DeleteQueueError::IoError(error)) =
-                mrecordlog_guard.delete_queue(queue_id).await
+                state_guard.mrecordlog.delete_queue(queue_id).await
             {
                 error!("failed to delete mrecordlog queue: `{}`", error);
             }
@@ -134,6 +128,7 @@ pub(super) fn remove_shards_after(
 
 #[cfg(test)]
 mod tests {
+    use mrecordlog::MultiRecordLog;
     use quickwit_proto::ingest::ShardState;
     use quickwit_proto::metastore::DeleteShardsResponse;
     use quickwit_proto::queue_id;
@@ -169,9 +164,9 @@ mod tests {
         for queue_id in [&queue_id_0, &queue_id_1] {
             mrecordlog.create_queue(queue_id).await.unwrap();
         }
-        let mrecordlog = Arc::new(RwLock::new(mrecordlog));
 
         let mut state = IngesterState {
+            mrecordlog,
             primary_shards: HashMap::new(),
             replica_shards: HashMap::new(),
             replication_clients: HashMap::new(),
@@ -199,7 +194,6 @@ mod tests {
             vec![queue_id_0, queue_id_1],
             REMOVAL_GRACE_PERIOD,
             metastore,
-            mrecordlog.clone(),
             state.clone(),
         );
         // Wait for the removal task to run.
@@ -209,10 +203,6 @@ mod tests {
         assert!(state_guard.primary_shards.is_empty());
         assert!(state_guard.replica_shards.is_empty());
 
-        let mrecordlog_guard = mrecordlog.read().await;
-        assert!(mrecordlog_guard
-            .list_queues()
-            .collect::<Vec<_>>()
-            .is_empty());
+        assert_eq!(state_guard.mrecordlog.list_queues().count(), 0);
     }
 }

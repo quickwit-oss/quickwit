@@ -25,7 +25,6 @@ use std::ops::RangeInclusive;
 use std::sync::Arc;
 
 use futures::StreamExt;
-use mrecordlog::MultiRecordLog;
 use quickwit_common::ServiceStream;
 use quickwit_proto::ingest::ingester::{FetchResponseV2, IngesterService, OpenFetchStreamRequest};
 use quickwit_proto::ingest::{IngestV2Error, IngestV2Result};
@@ -35,6 +34,7 @@ use tokio::sync::{mpsc, watch, RwLock};
 use tokio::task::JoinHandle;
 use tracing::{debug, error, warn};
 
+use super::ingester::IngesterState;
 use super::models::ShardStatus;
 use crate::{ClientId, DocBatchBuilderV2, IngesterPool};
 
@@ -50,7 +50,7 @@ pub(super) struct FetchTask {
     /// Range of records to fetch. When there is no upper bound, the end of the range is set to
     /// `u64::MAX`.
     fetch_range: RangeInclusive<u64>,
-    mrecordlog: Arc<RwLock<MultiRecordLog>>,
+    state: Arc<RwLock<IngesterState>>,
     fetch_response_tx: mpsc::Sender<IngestV2Result<FetchResponseV2>>,
     /// This channel notifies the fetch task when new records are available. This way the fetch
     /// task does not need to grab the lock and poll the log unnecessarily.
@@ -81,7 +81,7 @@ impl FetchTask {
 
     pub fn spawn(
         open_fetch_stream_request: OpenFetchStreamRequest,
-        mrecordlog: Arc<RwLock<MultiRecordLog>>,
+        state: Arc<RwLock<IngesterState>>,
         shard_status_rx: watch::Receiver<ShardStatus>,
         batch_num_bytes: usize,
     ) -> (
@@ -103,7 +103,7 @@ impl FetchTask {
             source_id: open_fetch_stream_request.source_id,
             shard_id: open_fetch_stream_request.shard_id,
             fetch_range: from_position_inclusive..=to_position_inclusive,
-            mrecordlog,
+            state,
             fetch_response_tx,
             shard_status_rx,
             batch_num_bytes,
@@ -155,9 +155,9 @@ impl FetchTask {
                 break;
             }
             let fetch_range = self.fetch_range.clone();
-            let mrecordlog_guard = self.mrecordlog.read().await;
+            let state_guard = self.state.read().await;
 
-            let Ok(docs) = mrecordlog_guard.range(&self.queue_id, fetch_range) else {
+            let Ok(docs) = state_guard.mrecordlog.range(&self.queue_id, fetch_range) else {
                 warn!(
                     client_id=%self.client_id,
                     index_uid=%self.index_uid,
@@ -176,7 +176,7 @@ impl FetchTask {
                 doc_batch_builder.add_doc(doc.borrow());
             }
             // Drop the lock while we send the message.
-            drop(mrecordlog_guard);
+            drop(state_guard);
 
             let doc_batch = doc_batch_builder.build();
             let num_docs = doc_batch.num_docs() as u64;
@@ -494,9 +494,7 @@ mod tests {
     #[tokio::test]
     async fn test_fetch_task() {
         let tempdir = tempfile::tempdir().unwrap();
-        let mrecordlog = Arc::new(RwLock::new(
-            MultiRecordLog::open(tempdir.path()).await.unwrap(),
-        ));
+        let mrecordlog = MultiRecordLog::open(tempdir.path()).await.unwrap();
         let client_id = "test-client".to_string();
         let index_uid = "test-index:0".to_string();
         let source_id = "test-source".to_string();
@@ -504,22 +502,35 @@ mod tests {
             client_id: client_id.clone(),
             index_uid: index_uid.clone(),
             source_id: source_id.clone(),
-            shard_id: 0,
+            shard_id: 1,
             from_position_exclusive: None,
             to_position_inclusive: None,
         };
         let (shard_status_tx, shard_status_rx) = watch::channel(ShardStatus::default());
+        let state = Arc::new(RwLock::new(IngesterState {
+            mrecordlog,
+            primary_shards: HashMap::new(),
+            replica_shards: HashMap::new(),
+            replication_clients: HashMap::new(),
+            replication_tasks: HashMap::new(),
+        }));
         let (mut fetch_stream, fetch_task_handle) = FetchTask::spawn(
             open_fetch_stream_request,
-            mrecordlog.clone(),
+            state.clone(),
             shard_status_rx,
             1024,
         );
-        let mut mrecordlog_guard = mrecordlog.write().await;
+        let queue_id = queue_id(&index_uid, &source_id, 1);
 
-        let queue_id = queue_id(&index_uid, &source_id, 0);
-        mrecordlog_guard.create_queue(&queue_id).await.unwrap();
-        mrecordlog_guard
+        let mut state_guard = state.write().await;
+
+        state_guard
+            .mrecordlog
+            .create_queue(&queue_id)
+            .await
+            .unwrap();
+        state_guard
+            .mrecordlog
             .append_record(&queue_id, None, Bytes::from_static(b"test-doc-000"))
             .await
             .unwrap();
@@ -528,7 +539,7 @@ mod tests {
             ..Default::default()
         };
         shard_status_tx.send(shard_status).unwrap();
-        drop(mrecordlog_guard);
+        drop(state_guard);
 
         let fetch_response = timeout(Duration::from_millis(100), fetch_stream.next())
             .await
@@ -537,7 +548,7 @@ mod tests {
             .unwrap();
         assert_eq!(fetch_response.index_uid, "test-index:0");
         assert_eq!(fetch_response.source_id, "test-source");
-        assert_eq!(fetch_response.shard_id, 0);
+        assert_eq!(fetch_response.shard_id, 1);
         assert_eq!(fetch_response.from_position_inclusive, 0);
         assert_eq!(fetch_response.doc_batch.as_ref().unwrap().doc_lengths, [12]);
         assert_eq!(
@@ -545,13 +556,14 @@ mod tests {
             "test-doc-000"
         );
 
-        let mut mrecordlog_guard = mrecordlog.write().await;
+        let mut state_guard = state.write().await;
 
-        mrecordlog_guard
+        state_guard
+            .mrecordlog
             .append_record(&queue_id, None, Bytes::from_static(b"test-doc-001"))
             .await
             .unwrap();
-        drop(mrecordlog_guard);
+        drop(state_guard);
 
         timeout(Duration::from_millis(100), fetch_stream.next())
             .await
@@ -590,9 +602,7 @@ mod tests {
     #[tokio::test]
     async fn test_fetch_task_up_to_position() {
         let tempdir = tempfile::tempdir().unwrap();
-        let mrecordlog = Arc::new(RwLock::new(
-            MultiRecordLog::open(tempdir.path()).await.unwrap(),
-        ));
+        let mrecordlog = MultiRecordLog::open(tempdir.path()).await.unwrap();
         let client_id = "test-client".to_string();
         let index_uid = "test-index:0".to_string();
         let source_id = "test-source".to_string();
@@ -600,22 +610,35 @@ mod tests {
             client_id: client_id.clone(),
             index_uid: index_uid.clone(),
             source_id: source_id.clone(),
-            shard_id: 0,
+            shard_id: 1,
             from_position_exclusive: None,
             to_position_inclusive: Some(0),
         };
+        let state = Arc::new(RwLock::new(IngesterState {
+            mrecordlog,
+            primary_shards: HashMap::new(),
+            replica_shards: HashMap::new(),
+            replication_clients: HashMap::new(),
+            replication_tasks: HashMap::new(),
+        }));
         let (shard_status_tx, shard_status_rx) = watch::channel(ShardStatus::default());
         let (mut fetch_stream, fetch_task_handle) = FetchTask::spawn(
             open_fetch_stream_request,
-            mrecordlog.clone(),
+            state.clone(),
             shard_status_rx,
             1024,
         );
-        let mut mrecordlog_guard = mrecordlog.write().await;
+        let queue_id = queue_id(&index_uid, &source_id, 1);
 
-        let queue_id = queue_id(&index_uid, &source_id, 0);
-        mrecordlog_guard.create_queue(&queue_id).await.unwrap();
-        mrecordlog_guard
+        let mut state_guard = state.write().await;
+
+        state_guard
+            .mrecordlog
+            .create_queue(&queue_id)
+            .await
+            .unwrap();
+        state_guard
+            .mrecordlog
             .append_record(&queue_id, None, Bytes::from_static(b"test-doc-000"))
             .await
             .unwrap();
@@ -625,7 +648,7 @@ mod tests {
             ..Default::default()
         };
         shard_status_tx.send(shard_status).unwrap();
-        drop(mrecordlog_guard);
+        drop(state_guard);
 
         let fetch_response = timeout(Duration::from_millis(100), fetch_stream.next())
             .await
@@ -634,7 +657,7 @@ mod tests {
             .unwrap();
         assert_eq!(fetch_response.index_uid, "test-index:0");
         assert_eq!(fetch_response.source_id, "test-source");
-        assert_eq!(fetch_response.shard_id, 0);
+        assert_eq!(fetch_response.shard_id, 1);
         assert_eq!(fetch_response.from_position_inclusive, 0);
         assert_eq!(fetch_response.doc_batch.as_ref().unwrap().doc_lengths, [12]);
         assert_eq!(
@@ -650,9 +673,7 @@ mod tests {
     #[tokio::test]
     async fn test_fetch_task_batch_num_bytes() {
         let tempdir = tempfile::tempdir().unwrap();
-        let mrecordlog = Arc::new(RwLock::new(
-            MultiRecordLog::open(tempdir.path()).await.unwrap(),
-        ));
+        let mrecordlog = MultiRecordLog::open(tempdir.path()).await.unwrap();
         let client_id = "test-client".to_string();
         let index_uid = "test-index:0".to_string();
         let source_id = "test-source".to_string();
@@ -660,30 +681,45 @@ mod tests {
             client_id: client_id.clone(),
             index_uid: index_uid.clone(),
             source_id: source_id.clone(),
-            shard_id: 0,
+            shard_id: 1,
             from_position_exclusive: None,
             to_position_inclusive: Some(2),
         };
+        let state = Arc::new(RwLock::new(IngesterState {
+            mrecordlog,
+            primary_shards: HashMap::new(),
+            replica_shards: HashMap::new(),
+            replication_clients: HashMap::new(),
+            replication_tasks: HashMap::new(),
+        }));
         let (shard_status_tx, shard_status_rx) = watch::channel(ShardStatus::default());
         let (mut fetch_stream, fetch_task_handle) = FetchTask::spawn(
             open_fetch_stream_request,
-            mrecordlog.clone(),
+            state.clone(),
             shard_status_rx,
             30,
         );
-        let mut mrecordlog_guard = mrecordlog.write().await;
+        let queue_id = queue_id(&index_uid, &source_id, 1);
 
-        let queue_id = queue_id(&index_uid, &source_id, 0);
-        mrecordlog_guard.create_queue(&queue_id).await.unwrap();
-        mrecordlog_guard
+        let mut state_guard = state.write().await;
+
+        state_guard
+            .mrecordlog
+            .create_queue(&queue_id)
+            .await
+            .unwrap();
+        state_guard
+            .mrecordlog
             .append_record(&queue_id, None, Bytes::from_static(b"test-doc-000"))
             .await
             .unwrap();
-        mrecordlog_guard
+        state_guard
+            .mrecordlog
             .append_record(&queue_id, None, Bytes::from_static(b"test-doc-001"))
             .await
             .unwrap();
-        mrecordlog_guard
+        state_guard
+            .mrecordlog
             .append_record(&queue_id, None, Bytes::from_static(b"test-doc-002"))
             .await
             .unwrap();
@@ -693,7 +729,7 @@ mod tests {
             ..Default::default()
         };
         shard_status_tx.send(shard_status).unwrap();
-        drop(mrecordlog_guard);
+        drop(state_guard);
 
         let fetch_response = timeout(Duration::from_millis(100), fetch_stream.next())
             .await
@@ -702,7 +738,7 @@ mod tests {
             .unwrap();
         assert_eq!(fetch_response.index_uid, "test-index:0");
         assert_eq!(fetch_response.source_id, "test-source");
-        assert_eq!(fetch_response.shard_id, 0);
+        assert_eq!(fetch_response.shard_id, 1);
         assert_eq!(fetch_response.from_position_inclusive, 0);
         assert_eq!(
             fetch_response.doc_batch.as_ref().unwrap().doc_lengths,
@@ -719,7 +755,7 @@ mod tests {
             .unwrap();
         assert_eq!(fetch_response.index_uid, "test-index:0");
         assert_eq!(fetch_response.source_id, "test-source");
-        assert_eq!(fetch_response.shard_id, 0);
+        assert_eq!(fetch_response.shard_id, 1);
         assert_eq!(fetch_response.from_position_inclusive, 2);
         assert_eq!(fetch_response.doc_batch.as_ref().unwrap().doc_lengths, [12]);
         assert_eq!(

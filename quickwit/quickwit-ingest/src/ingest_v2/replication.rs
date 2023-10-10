@@ -21,7 +21,6 @@ use std::iter::once;
 use std::sync::Arc;
 
 use futures::StreamExt;
-use mrecordlog::MultiRecordLog;
 use quickwit_common::ServiceStream;
 use quickwit_proto::ingest::ingester::{
     ack_replication_message, syn_replication_message, AckReplicationMessage, ReplicateRequest,
@@ -160,7 +159,6 @@ pub(super) struct ReplicationTaskHandle {
 pub(super) struct ReplicationTask {
     leader_id: NodeId,
     follower_id: NodeId,
-    mrecordlog: Arc<RwLock<MultiRecordLog>>,
     state: Arc<RwLock<IngesterState>>,
     syn_replication_stream: ServiceStream<SynReplicationMessage>,
     ack_replication_stream_tx: mpsc::Sender<IngestV2Result<AckReplicationMessage>>,
@@ -170,7 +168,6 @@ impl ReplicationTask {
     pub fn spawn(
         leader_id: NodeId,
         follower_id: NodeId,
-        mrecordlog: Arc<RwLock<MultiRecordLog>>,
         state: Arc<RwLock<IngesterState>>,
         syn_replication_stream: ServiceStream<SynReplicationMessage>,
         ack_replication_stream_tx: mpsc::Sender<IngestV2Result<AckReplicationMessage>>,
@@ -178,7 +175,6 @@ impl ReplicationTask {
         let mut replication_task = Self {
             leader_id,
             follower_id,
-            mrecordlog,
             state,
             syn_replication_stream,
             ack_replication_stream_tx,
@@ -214,9 +210,9 @@ impl ReplicationTask {
             let queue_id = subrequest.queue_id();
 
             let replica_shard: &mut ReplicaShard = if subrequest.from_position_exclusive.is_none() {
-                let mut mrecordlog_guard = self.mrecordlog.write().await;
                 // Initialize the replica shard and corresponding mrecordlog queue.
-                mrecordlog_guard
+                state_guard
+                    .mrecordlog
                     .create_queue(&queue_id)
                     .await
                     .expect("TODO");
@@ -264,23 +260,21 @@ impl ReplicationTask {
                 replicate_successes.push(replicate_success);
                 continue;
             };
-            let mut mrecordlog_guard = self.mrecordlog.write().await;
-
             let replica_position_inclusive = if force_commit {
                 let docs = doc_batch.docs().chain(once(commit_doc()));
-                mrecordlog_guard
+                state_guard
+                    .mrecordlog
                     .append_records(&queue_id, None, docs)
                     .await
                     .expect("TODO")
             } else {
                 let docs = doc_batch.docs();
-                mrecordlog_guard
+                state_guard
+                    .mrecordlog
                     .append_records(&queue_id, None, docs)
                     .await
                     .expect("TODO")
             };
-            drop(mrecordlog_guard);
-
             let batch_num_bytes = doc_batch.num_bytes() as u64;
             let batch_num_docs = doc_batch.num_docs() as u64;
 
@@ -467,10 +461,9 @@ mod tests {
         let leader_id: NodeId = "test-leader".into();
         let follower_id: NodeId = "test-follower".into();
         let tempdir = tempfile::tempdir().unwrap();
-        let mrecordlog = Arc::new(RwLock::new(
-            MultiRecordLog::open(tempdir.path()).await.unwrap(),
-        ));
+        let mrecordlog = MultiRecordLog::open(tempdir.path()).await.unwrap();
         let state = Arc::new(RwLock::new(IngesterState {
+            mrecordlog,
             primary_shards: HashMap::new(),
             replica_shards: HashMap::new(),
             replication_clients: HashMap::new(),
@@ -481,7 +474,6 @@ mod tests {
         let _replication_task_handle = ReplicationTask::spawn(
             leader_id,
             follower_id,
-            mrecordlog.clone(),
             state.clone(),
             syn_replication_stream,
             ack_replication_stream_tx,
@@ -554,7 +546,6 @@ mod tests {
         assert_eq!(replicate_success_1.shard_id, 1);
         assert_eq!(replicate_success_1.replica_position_inclusive, Some(1));
 
-        let mrecordlog_guard = mrecordlog.read().await;
         let state_guard = state.read().await;
 
         assert!(state_guard.primary_shards.is_empty());
@@ -564,24 +555,27 @@ mod tests {
         let replica_shard_00 = state_guard.replica_shards.get(&queue_id_00).unwrap();
         replica_shard_00.assert_is_open(None);
 
-        mrecordlog_guard.assert_records_eq(&queue_id_00, .., &[]);
+        state_guard
+            .mrecordlog
+            .assert_records_eq(&queue_id_00, .., &[]);
 
         let queue_id_01 = queue_id("test-index:0", "test-source", 1);
         let replica_shard_01 = state_guard.replica_shards.get(&queue_id_01).unwrap();
         replica_shard_01.assert_is_open(0);
 
-        mrecordlog_guard.assert_records_eq(&queue_id_01, .., &[(0, "test-doc-010")]);
+        state_guard
+            .mrecordlog
+            .assert_records_eq(&queue_id_01, .., &[(0, "test-doc-010")]);
 
         let queue_id_11 = queue_id("test-index:1", "test-source", 1);
         let replica_shard_11 = state_guard.replica_shards.get(&queue_id_11).unwrap();
         replica_shard_11.assert_is_open(1);
 
-        mrecordlog_guard.assert_records_eq(
+        state_guard.mrecordlog.assert_records_eq(
             &queue_id_11,
             ..,
             &[(0, "test-doc-110"), (1, "test-doc-111")],
         );
-        drop(mrecordlog_guard);
         drop(state_guard);
 
         let replicate_request = ReplicateRequest {
@@ -621,10 +615,9 @@ mod tests {
         assert_eq!(replicate_success_0.shard_id, 1);
         assert_eq!(replicate_success_0.replica_position_inclusive, Some(1));
 
-        let mrecordlog_guard = mrecordlog.read().await;
         let state_guard = state.read().await;
 
-        mrecordlog_guard.assert_records_eq(
+        state_guard.mrecordlog.assert_records_eq(
             &queue_id_01,
             ..,
             &[(0, "test-doc-010"), (1, "test-doc-011")],

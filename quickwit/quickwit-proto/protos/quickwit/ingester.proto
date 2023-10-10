@@ -91,7 +91,7 @@ message SynReplicationMessage {
 message AckReplicationMessage {
     oneof message {
         OpenReplicationStreamResponse open_response = 1;
-        ReplicateResponse replicate_response = 3;
+        ReplicateResponse replicate_response = 2;
     }
 }
 
