@@ -18,18 +18,16 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::cmp::Ordering;
-use std::collections::HashMap;
-use std::hash::Hash;
 
+use fnv::FnvHashMap;
 use itertools::Itertools;
 use quickwit_common::rendezvous_hasher::sort_by_rendez_vous_hash;
 use quickwit_config::{SourceConfig, CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID, INGEST_SOURCE_ID};
 use quickwit_proto::indexing::IndexingTask;
 use quickwit_proto::metastore::SourceType;
-use quickwit_proto::{IndexUid, SourceId};
 use serde::Serialize;
 
-use crate::IndexerNodeInfo;
+use crate::{IndexerNodeInfo, SourceUid};
 
 /// A [`PhysicalIndexingPlan`] defines the list of indexing tasks
 /// each indexer, identified by its node ID, should run.
@@ -37,7 +35,7 @@ use crate::IndexerNodeInfo;
 /// to identify if the plan is up to date with the metastore.
 #[derive(Debug, PartialEq, Clone, Serialize, Default)]
 pub struct PhysicalIndexingPlan {
-    indexing_tasks_per_node_id: HashMap<String, Vec<IndexingTask>>,
+    indexing_tasks_per_node_id: FnvHashMap<String, Vec<IndexingTask>>,
 }
 
 impl PhysicalIndexingPlan {
@@ -84,7 +82,7 @@ impl PhysicalIndexingPlan {
     }
 
     /// Returns the hashmap of (node ID, indexing tasks).
-    pub fn indexing_tasks_per_node(&self) -> &HashMap<String, Vec<IndexingTask>> {
+    pub fn indexing_tasks_per_node(&self) -> &FnvHashMap<String, Vec<IndexingTask>> {
         &self.indexing_tasks_per_node_id
     }
 
@@ -140,7 +138,7 @@ impl PhysicalIndexingPlan {
 /// task.
 pub(crate) fn build_physical_indexing_plan(
     indexers: &[(String, IndexerNodeInfo)],
-    source_configs: &HashMap<SourceUid, SourceConfig>,
+    source_configs: &FnvHashMap<SourceUid, SourceConfig>,
     mut indexing_tasks: Vec<IndexingTask>,
 ) -> PhysicalIndexingPlan {
     // Sort by (index_id, source_id) to make the algorithm deterministic.
@@ -244,12 +242,6 @@ fn compute_node_score(node_id: &str, physical_plan: &PhysicalIndexingPlan) -> f3
         - physical_plan.num_indexing_tasks_for_node(node_id) as f32
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
-pub(crate) struct SourceUid {
-    pub index_uid: IndexUid,
-    pub source_id: SourceId,
-}
-
 impl From<IndexingTask> for SourceUid {
     fn from(indexing_task: IndexingTask) -> Self {
         Self {
@@ -273,7 +265,7 @@ impl From<IndexingTask> for SourceUid {
 /// - Ignore disabled sources, `CLI_INGEST_SOURCE_ID` and files sources (Quickwit is not aware of
 ///   the files locations and thus are ignored).
 pub(crate) fn build_indexing_plan(
-    source_configs: &HashMap<SourceUid, SourceConfig>,
+    source_configs: &FnvHashMap<SourceUid, SourceConfig>,
     num_indexers: usize,
 ) -> Vec<IndexingTask> {
     let mut indexing_tasks: Vec<IndexingTask> = Vec::new();
@@ -314,10 +306,10 @@ pub(crate) fn build_indexing_plan(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
     use std::num::NonZeroUsize;
     use std::time::Duration;
 
+    use fnv::FnvHashMap;
     use itertools::Itertools;
     use proptest::prelude::*;
     use quickwit_common::rand::append_random_suffix;
@@ -372,7 +364,7 @@ mod tests {
 
     fn count_indexing_tasks_count_for_test(
         num_indexers: usize,
-        source_configs: &HashMap<SourceUid, SourceConfig>,
+        source_configs: &FnvHashMap<SourceUid, SourceConfig>,
     ) -> usize {
         source_configs
             .iter()
@@ -388,7 +380,7 @@ mod tests {
     #[tokio::test]
     async fn test_build_indexing_plan_one_source() {
         let indexers = cluster_members_for_test(4, QuickwitService::Indexer).await;
-        let mut source_configs_map = HashMap::new();
+        let mut source_configs_map = FnvHashMap::default();
         let index_source_id = SourceUid {
             index_uid: "one-source-index:11111111111111111111111111"
                 .to_string()
@@ -426,7 +418,7 @@ mod tests {
     #[tokio::test]
     async fn test_build_indexing_plan_with_ingest_api_source() {
         let indexers = cluster_members_for_test(4, QuickwitService::Indexer).await;
-        let mut source_configs_map = HashMap::new();
+        let mut source_configs_map = FnvHashMap::default();
         let index_source_id = SourceUid {
             index_uid: "ingest-api-index:11111111111111111111111111"
                 .to_string()
@@ -464,7 +456,7 @@ mod tests {
     #[tokio::test]
     async fn test_build_indexing_plan_with_sources_to_ignore() {
         let indexers = cluster_members_for_test(4, QuickwitService::Indexer).await;
-        let mut source_configs_map = HashMap::new();
+        let mut source_configs_map = FnvHashMap::default();
         let file_index_source_id = SourceUid {
             index_uid: "one-source-index:11111111111111111111111111"
                 .to_string()
@@ -533,7 +525,7 @@ mod tests {
         // Rdv hashing for (index 2, source) returns [node 1, node 2].
         let index_2 = "2";
         let source_2 = "0";
-        let mut source_configs_map = HashMap::new();
+        let mut source_configs_map = FnvHashMap::default();
         let kafka_index_source_id_1 = SourceUid {
             index_uid: IndexUid::from_parts(index_1, "11111111111111111111111111"),
             source_id: source_1.to_string(),
@@ -627,7 +619,7 @@ mod tests {
         quickwit_common::setup_logging_for_tests();
         let index_1 = "test-indexing-plan-1";
         let source_1 = "source-1";
-        let mut source_configs_map = HashMap::new();
+        let mut source_configs_map = FnvHashMap::default();
         let kafka_index_source_id_1 = SourceUid {
             index_uid: IndexUid::from_parts(index_1, "11111111111111111111111111"),
             source_id: source_1.to_string(),
@@ -672,7 +664,7 @@ mod tests {
             let mut indexers = tokio::runtime::Runtime::new().unwrap().block_on(
                 cluster_members_for_test(num_indexers, QuickwitService::Indexer)
             );
-            let source_configs: HashMap<SourceUid, SourceConfig> = index_id_sources
+            let source_configs: FnvHashMap<SourceUid, SourceConfig> = index_id_sources
                 .into_iter()
                 .map(|(index_uid, source_config)| {
                     (SourceUid { index_uid: index_uid.into(), source_id: source_config.source_id.to_string(), }, source_config)

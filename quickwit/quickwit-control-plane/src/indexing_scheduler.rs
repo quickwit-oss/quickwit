@@ -18,25 +18,27 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::cmp::Ordering;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 use std::fmt;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::Context;
+use fnv::FnvHashMap;
 use itertools::Itertools;
 use quickwit_config::{SourceConfig, INGEST_SOURCE_ID};
-use quickwit_metastore::{ListIndexesQuery, Metastore};
+use quickwit_metastore::Metastore;
 use quickwit_proto::indexing::{ApplyIndexingPlanRequest, IndexingService, IndexingTask};
 use quickwit_proto::metastore::{ListShardsRequest, ListShardsSubrequest};
 use quickwit_proto::{NodeId, ShardId};
 use serde::Serialize;
 use tracing::{debug, error, info, warn};
 
+use crate::control_plane_model::ControlPlaneModel;
 use crate::indexing_plan::{
-    build_indexing_plan, build_physical_indexing_plan, PhysicalIndexingPlan, SourceUid,
+    build_indexing_plan, build_physical_indexing_plan, PhysicalIndexingPlan,
 };
-use crate::{IndexerNodeInfo, IndexerPool};
+use crate::{IndexerNodeInfo, IndexerPool, SourceUid};
 
 pub(crate) const MIN_DURATION_BETWEEN_SCHEDULING: Duration =
     if cfg!(any(test, feature = "testsuite")) {
@@ -134,13 +136,16 @@ impl IndexingScheduler {
         self.state.clone()
     }
 
-    pub(crate) async fn schedule_indexing_plan_if_needed(&mut self) -> anyhow::Result<()> {
+    pub(crate) async fn schedule_indexing_plan_if_needed(
+        &mut self,
+        model: &ControlPlaneModel,
+    ) -> anyhow::Result<()> {
         let mut indexers = self.get_indexers_from_indexer_pool();
         if indexers.is_empty() {
             warn!("No indexer available, cannot schedule an indexing plan.");
             return Ok(());
         };
-        let source_configs: HashMap<SourceUid, SourceConfig> = self.fetch_source_configs().await?;
+        let source_configs: FnvHashMap<SourceUid, SourceConfig> = model.fetch_source_configs();
         let mut indexing_tasks = build_indexing_plan(&source_configs, indexers.len());
 
         // TODO: This is a temporary hack to always create an indexing pipeline for the shards that
@@ -171,36 +176,11 @@ impl IndexingScheduler {
         Ok(())
     }
 
-    async fn fetch_source_configs(&self) -> anyhow::Result<HashMap<SourceUid, SourceConfig>> {
-        let indexes_metadatas = self
-            .metastore
-            .list_indexes_metadatas(ListIndexesQuery::All)
-            .await?;
-        let source_configs: HashMap<SourceUid, SourceConfig> = indexes_metadatas
-            .into_iter()
-            .flat_map(|index_metadata| {
-                index_metadata
-                    .sources
-                    .into_iter()
-                    .map(move |(source_id, source_config)| {
-                        (
-                            SourceUid {
-                                index_uid: index_metadata.index_uid.clone(),
-                                source_id,
-                            },
-                            source_config,
-                        )
-                    })
-            })
-            .collect();
-        Ok(source_configs)
-    }
-
     /// Returns, for all of the ingest api source, a map with the list of their available shard ids.
     async fn fetch_shards(
         &self,
-        source_configs: &HashMap<SourceUid, SourceConfig>,
-    ) -> anyhow::Result<HashMap<SourceUid, Vec<ShardId>>> {
+        source_configs: &FnvHashMap<SourceUid, SourceConfig>,
+    ) -> anyhow::Result<FnvHashMap<SourceUid, Vec<ShardId>>> {
         let mut list_shards_subrequests = Vec::new();
 
         for (source_uid, source_config) in source_configs {
@@ -226,7 +206,7 @@ impl IndexingScheduler {
             .await
             .context("failed to list shards from metastore")?;
 
-        let mut shards = HashMap::new();
+        let mut shards = FnvHashMap::default();
 
         for list_shards_subresponse in list_shards_response.subresponses {
             let source_uid = SourceUid {
@@ -251,7 +231,10 @@ impl IndexingScheduler {
     /// chitchat cluster state. If true, do nothing.
     /// - If node IDs differ, schedule a new indexing plan.
     /// - If indexing tasks differ, apply again the last plan.
-    pub(crate) async fn control_running_plan(&mut self) -> anyhow::Result<()> {
+    pub(crate) async fn control_running_plan(
+        &mut self,
+        model: &ControlPlaneModel,
+    ) -> anyhow::Result<()> {
         let last_applied_plan =
             if let Some(last_applied_plan) = self.state.last_applied_physical_plan.as_ref() {
                 last_applied_plan
@@ -259,7 +242,7 @@ impl IndexingScheduler {
                 // If there is no plan, the node is probably starting and the scheduler did not find
                 // indexers yet. In this case, we want to schedule as soon as possible to find new
                 // indexers.
-                self.schedule_indexing_plan_if_needed().await?;
+                self.schedule_indexing_plan_if_needed(model).await?;
                 return Ok(());
             };
 
@@ -272,7 +255,7 @@ impl IndexingScheduler {
         }
 
         let mut indexers = self.get_indexers_from_indexer_pool();
-        let running_indexing_tasks_by_node_id: HashMap<String, Vec<IndexingTask>> = indexers
+        let running_indexing_tasks_by_node_id: FnvHashMap<String, Vec<IndexingTask>> = indexers
             .iter()
             .map(|indexer| (indexer.0.clone(), indexer.1.indexing_tasks.clone()))
             .collect();
@@ -283,7 +266,7 @@ impl IndexingScheduler {
         );
         if !indexing_plans_diff.has_same_nodes() {
             info!(plans_diff=?indexing_plans_diff, "Running plan and last applied plan node IDs differ: schedule an indexing plan.");
-            self.schedule_indexing_plan_if_needed().await?;
+            self.schedule_indexing_plan_if_needed(model).await?;
         } else if !indexing_plans_diff.has_same_tasks() {
             // Some nodes may have not received their tasks, apply it again.
             info!(plans_diff=?indexing_plans_diff, "Running tasks and last applied tasks differ: reapply last plan.");
@@ -332,8 +315,11 @@ impl IndexingScheduler {
 
     // Should be called whenever a change in the list of index/shard
     // has happened
-    pub(crate) async fn on_index_change(&mut self) -> anyhow::Result<()> {
-        self.schedule_indexing_plan_if_needed()
+    pub(crate) async fn on_index_change(
+        &mut self,
+        model: &ControlPlaneModel,
+    ) -> anyhow::Result<()> {
+        self.schedule_indexing_plan_if_needed(model)
             .await
             .context("error when scheduling indexing plan")?;
         Ok(())
@@ -343,8 +329,8 @@ impl IndexingScheduler {
 struct IndexingPlansDiff<'a> {
     pub missing_node_ids: HashSet<&'a str>,
     pub unplanned_node_ids: HashSet<&'a str>,
-    pub missing_tasks_by_node_id: HashMap<&'a str, Vec<&'a IndexingTask>>,
-    pub unplanned_tasks_by_node_id: HashMap<&'a str, Vec<&'a IndexingTask>>,
+    pub missing_tasks_by_node_id: FnvHashMap<&'a str, Vec<&'a IndexingTask>>,
+    pub unplanned_tasks_by_node_id: FnvHashMap<&'a str, Vec<&'a IndexingTask>>,
 }
 
 impl<'a> IndexingPlansDiff<'a> {
@@ -412,8 +398,8 @@ impl<'a> fmt::Debug for IndexingPlansDiff<'a> {
 /// Returns the difference between the `running_plan` retrieved from the chitchat state and
 /// the last plan applied by the scheduler.
 fn get_indexing_plans_diff<'a>(
-    running_plan: &'a HashMap<String, Vec<IndexingTask>>,
-    last_applied_plan: &'a HashMap<String, Vec<IndexingTask>>,
+    running_plan: &'a FnvHashMap<String, Vec<IndexingTask>>,
+    last_applied_plan: &'a FnvHashMap<String, Vec<IndexingTask>>,
 ) -> IndexingPlansDiff<'a> {
     // Nodes diff.
     let running_node_ids: HashSet<&str> = running_plan
@@ -433,8 +419,8 @@ fn get_indexing_plans_diff<'a>(
         .copied()
         .collect();
     // Tasks diff.
-    let mut missing_tasks_by_node_id: HashMap<&str, Vec<&IndexingTask>> = HashMap::new();
-    let mut unplanned_tasks_by_node_id: HashMap<&str, Vec<&IndexingTask>> = HashMap::new();
+    let mut missing_tasks_by_node_id: FnvHashMap<&str, Vec<&IndexingTask>> = FnvHashMap::default();
+    let mut unplanned_tasks_by_node_id: FnvHashMap<&str, Vec<&IndexingTask>> = FnvHashMap::default();
     for node_id in running_node_ids.iter().chain(planned_node_ids.iter()) {
         let running_tasks = running_plan
             .get(*node_id)
@@ -466,13 +452,13 @@ fn get_indexing_tasks_diff<'a>(
 ) -> (Vec<&'a IndexingTask>, Vec<&'a IndexingTask>) {
     let mut missing_tasks: Vec<&IndexingTask> = Vec::new();
     let mut unplanned_tasks: Vec<&IndexingTask> = Vec::new();
-    let grouped_running_tasks: HashMap<&IndexingTask, usize> = running_tasks
+    let grouped_running_tasks: FnvHashMap<&IndexingTask, usize> = running_tasks
         .iter()
         .group_by(|&task| task)
         .into_iter()
         .map(|(key, group)| (key, group.count()))
         .collect();
-    let grouped_last_applied_tasks: HashMap<&IndexingTask, usize> = last_applied_tasks
+    let grouped_last_applied_tasks: FnvHashMap<&IndexingTask, usize> = last_applied_tasks
         .iter()
         .group_by(|&task| task)
         .into_iter()
@@ -506,14 +492,14 @@ mod tests {
     #[test]
     fn test_indexing_plans_diff() {
         {
-            let running_plan = HashMap::new();
-            let desired_plan = HashMap::new();
+            let running_plan = FnvHashMap::default();
+            let desired_plan = FnvHashMap::default();
             let indexing_plans_diff = get_indexing_plans_diff(&running_plan, &desired_plan);
             assert!(indexing_plans_diff.is_empty());
         }
         {
-            let mut running_plan = HashMap::new();
-            let mut desired_plan = HashMap::new();
+            let mut running_plan = FnvHashMap::default();
+            let mut desired_plan = FnvHashMap::default();
             let task_1 = IndexingTask {
                 index_uid: "index-1:11111111111111111111111111".to_string(),
                 source_id: "source-1".to_string(),
@@ -536,8 +522,8 @@ mod tests {
             assert!(indexing_plans_diff.is_empty());
         }
         {
-            let mut running_plan = HashMap::new();
-            let mut desired_plan = HashMap::new();
+            let mut running_plan = FnvHashMap::default();
+            let mut desired_plan = FnvHashMap::default();
             let task_1 = IndexingTask {
                 index_uid: "index-1:11111111111111111111111111".to_string(),
                 source_id: "source-1".to_string(),
@@ -557,17 +543,17 @@ mod tests {
             assert!(!indexing_plans_diff.has_same_tasks());
             assert_eq!(
                 indexing_plans_diff.unplanned_tasks_by_node_id,
-                HashMap::from_iter([("indexer-1", vec![&task_1])])
+                FnvHashMap::from_iter([("indexer-1", vec![&task_1])])
             );
             assert_eq!(
                 indexing_plans_diff.missing_tasks_by_node_id,
-                HashMap::from_iter([("indexer-1", vec![&task_2])])
+                FnvHashMap::from_iter([("indexer-1", vec![&task_2])])
             );
         }
         {
             // Task assigned to indexer-1 in desired plan but another one running.
-            let mut running_plan = HashMap::new();
-            let mut desired_plan = HashMap::new();
+            let mut running_plan = FnvHashMap::default();
+            let mut desired_plan = FnvHashMap::default();
             let task_1 = IndexingTask {
                 index_uid: "index-1:11111111111111111111111111".to_string(),
                 source_id: "source-1".to_string(),
@@ -595,17 +581,17 @@ mod tests {
             );
             assert_eq!(
                 indexing_plans_diff.missing_tasks_by_node_id,
-                HashMap::from_iter([("indexer-1", vec![&task_1]), ("indexer-2", Vec::new())])
+                FnvHashMap::from_iter([("indexer-1", vec![&task_1]), ("indexer-2", Vec::new())])
             );
             assert_eq!(
                 indexing_plans_diff.unplanned_tasks_by_node_id,
-                HashMap::from_iter([("indexer-2", vec![&task_2]), ("indexer-1", Vec::new())])
+                FnvHashMap::from_iter([("indexer-2", vec![&task_2]), ("indexer-1", Vec::new())])
             );
         }
         {
             // Diff with 3 same tasks running but only one on the desired plan.
-            let mut running_plan = HashMap::new();
-            let mut desired_plan = HashMap::new();
+            let mut running_plan = FnvHashMap::default();
+            let mut desired_plan = FnvHashMap::default();
             let task_1 = IndexingTask {
                 index_uid: "index-1:11111111111111111111111111".to_string(),
                 source_id: "source-1".to_string(),
@@ -623,13 +609,13 @@ mod tests {
             assert!(!indexing_plans_diff.has_same_tasks());
             assert_eq!(
                 indexing_plans_diff.missing_tasks_by_node_id,
-                HashMap::from_iter([("indexer-1", vec![&task_1, &task_1])])
+                FnvHashMap::from_iter([("indexer-1", vec![&task_1, &task_1])])
             );
         }
         {
             // Diff with 3 same tasks on desired plan but only one running.
-            let mut running_plan = HashMap::new();
-            let mut desired_plan = HashMap::new();
+            let mut running_plan = FnvHashMap::default();
+            let mut desired_plan = FnvHashMap::default();
             let task_1 = IndexingTask {
                 index_uid: "index-1:11111111111111111111111111".to_string(),
                 source_id: "source-1".to_string(),
@@ -647,7 +633,7 @@ mod tests {
             assert!(!indexing_plans_diff.has_same_tasks());
             assert_eq!(
                 indexing_plans_diff.unplanned_tasks_by_node_id,
-                HashMap::from_iter([("indexer-1", vec![&task_1, &task_1])])
+                FnvHashMap::from_iter([("indexer-1", vec![&task_1, &task_1])])
             );
         }
     }

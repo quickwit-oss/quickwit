@@ -38,7 +38,7 @@ use quickwit_proto::NodeId;
 use serde_json::json;
 
 use crate::control_plane::{ControlPlane, CONTROL_PLAN_LOOP_INTERVAL};
-use crate::scheduler::MIN_DURATION_BETWEEN_SCHEDULING;
+use crate::indexing_scheduler::MIN_DURATION_BETWEEN_SCHEDULING;
 use crate::IndexerNodeInfo;
 
 fn index_metadata_for_test(
