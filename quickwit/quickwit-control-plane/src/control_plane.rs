@@ -27,7 +27,7 @@ use quickwit_actors::{
 };
 use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_ingest::IngesterPool;
-use quickwit_metastore::Metastore;
+use quickwit_metastore::{IndexMetadata, Metastore};
 use quickwit_proto::control_plane::{
     ControlPlaneError, ControlPlaneResult, GetOrCreateOpenShardsRequest,
     GetOrCreateOpenShardsResponse,
@@ -42,8 +42,8 @@ use serde::Serialize;
 use tracing::error;
 
 use crate::control_plane_model::{ControlPlaneModel, ControlPlaneModelMetrics};
+use crate::indexing_scheduler::{IndexingScheduler, IndexingSchedulerState};
 use crate::ingest::IngestController;
-use crate::scheduler::{IndexingScheduler, IndexingSchedulerState};
 use crate::IndexerPool;
 
 /// Interval between two controls (or checks) of the desired plan VS running plan.
@@ -130,8 +130,7 @@ impl Actor for ControlPlane {
 
         if let Err(error) = self
             .indexing_scheduler
-            .schedule_indexing_plan_if_needed()
-            .await
+            .schedule_indexing_plan_if_needed(&self.model)
         {
             // TODO inspect error.
             error!("Error when scheduling indexing plan: `{}`.", error);
@@ -153,7 +152,7 @@ impl Handler<ControlPlanLoop> for ControlPlane {
         _message: ControlPlanLoop,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        if let Err(error) = self.indexing_scheduler.control_running_plan().await {
+        if let Err(error) = self.indexing_scheduler.control_running_plan(&self.model) {
             error!("error when controlling the running plan: `{}`", error);
         }
         ctx.schedule_self_msg(CONTROL_PLAN_LOOP_INTERVAL, ControlPlanLoop)
@@ -222,14 +221,17 @@ impl Handler<CreateIndexRequest> for ControlPlane {
                 }
             };
 
-        let index_uid = match self.metastore.create_index(index_config).await {
+        let index_uid = match self.metastore.create_index(index_config.clone()).await {
             Ok(index_uid) => index_uid,
             Err(metastore_error) => {
                 return convert_metastore_error(metastore_error);
             }
         };
 
-        self.model.add_index(index_uid.clone());
+        let index_metadata: IndexMetadata =
+            IndexMetadata::new_with_index_uid(index_uid.clone(), index_config);
+
+        self.model.add_index(index_metadata);
 
         let response = CreateIndexResponse {
             index_uid: index_uid.into(),
@@ -262,7 +264,7 @@ impl Handler<DeleteIndexRequest> for ControlPlane {
 
         // TODO: Refine the event. Notify index will have the effect to reload the entire state from
         // the metastore. We should update the state of the control plane.
-        self.indexing_scheduler.on_index_change().await?;
+        self.indexing_scheduler.on_index_change(&self.model).await?;
 
         Ok(Ok(response))
     }
@@ -287,21 +289,22 @@ impl Handler<AddSourceRequest> for ControlPlane {
                     return Ok(Err(ControlPlaneError::from(error)));
                 }
             };
-        let source_id = source_config.source_id.clone();
 
         if let Err(metastore_error) = self
             .metastore
-            .add_source(index_uid.clone(), source_config)
+            .add_source(index_uid.clone(), source_config.clone())
             .await
         {
             return convert_metastore_error(metastore_error);
         };
 
-        self.model.add_source(&index_uid, &source_id);
+        self.model
+            .add_source(&index_uid, source_config)
+            .context("Failed to add source.")?;
 
         // TODO: Refine the event. Notify index will have the effect to reload the entire state from
         // the metastore. We should update the state of the control plane.
-        self.indexing_scheduler.on_index_change().await?;
+        self.indexing_scheduler.on_index_change(&self.model).await?;
 
         let response = EmptyResponse {};
         Ok(Ok(response))
@@ -333,7 +336,7 @@ impl Handler<ToggleSourceRequest> for ControlPlane {
 
         // TODO: Refine the event. Notify index will have the effect to reload the entire state from
         // the metastore. We should update the state of the control plane.
-        self.indexing_scheduler.on_index_change().await?;
+        self.indexing_scheduler.on_index_change(&self.model).await?;
 
         let response = EmptyResponse {};
         Ok(Ok(response))
@@ -362,7 +365,7 @@ impl Handler<DeleteSourceRequest> for ControlPlane {
         }
 
         self.model.delete_source(&index_uid, &request.source_id);
-        self.indexing_scheduler.on_index_change().await?;
+        self.indexing_scheduler.on_index_change(&self.model).await?;
         let response = EmptyResponse {};
         Ok(Ok(response))
     }
@@ -542,6 +545,9 @@ mod tests {
         let indexer_pool = IndexerPool::default();
         let ingester_pool = IngesterPool::default();
 
+        let index_metadata = IndexMetadata::for_test("test-index", "ram://test");
+        let index_uid = index_metadata.index_uid.clone();
+
         let mut mock_metastore = MockMetastore::default();
         mock_metastore
             .expect_add_source()
@@ -553,7 +559,7 @@ mod tests {
             });
         mock_metastore
             .expect_list_indexes_metadatas()
-            .returning(|_| Ok(Vec::new()));
+            .returning(move |_| Ok(vec![index_metadata.clone()]));
         let metastore = Arc::new(mock_metastore);
         let replication_factor = 1;
 
@@ -568,7 +574,7 @@ mod tests {
         );
         let source_config = SourceConfig::for_test("test-source", SourceParams::void());
         let add_source_request = AddSourceRequest {
-            index_uid: "test-index:0".to_string(),
+            index_uid: index_uid.to_string(),
             source_config_json: serde_json::to_string(&source_config).unwrap(),
         };
         control_plane_mailbox

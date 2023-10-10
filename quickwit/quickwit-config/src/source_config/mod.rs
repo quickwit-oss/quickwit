@@ -43,6 +43,7 @@ pub const CLI_INGEST_SOURCE_ID: &str = "_ingest-cli-source";
 pub const INGEST_API_SOURCE_ID: &str = "_ingest-api-source";
 
 /// Reserved source ID used for native Quickwit ingest.
+/// (this is for ingest v2)
 pub const INGEST_SOURCE_ID: &str = "_ingest-source";
 
 pub const RESERVED_SOURCE_IDS: &[&str] =

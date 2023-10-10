@@ -20,8 +20,8 @@
 pub mod control_plane;
 pub(crate) mod control_plane_model;
 pub mod indexing_plan;
+pub mod indexing_scheduler;
 pub mod ingest;
-pub mod scheduler;
 
 use async_trait::async_trait;
 use quickwit_common::pubsub::EventSubscriber;
@@ -29,7 +29,16 @@ use quickwit_common::tower::Pool;
 use quickwit_proto::control_plane::{ControlPlaneService, ControlPlaneServiceClient};
 use quickwit_proto::indexing::{IndexingServiceClient, IndexingTask};
 use quickwit_proto::metastore::{CloseShardsRequest, DeleteShardsRequest};
+use quickwit_proto::{IndexUid, SourceId};
 use tracing::error;
+
+/// It can however appear only once in a given index.
+/// In itself, `SourceId` is not unique, but the pair `(IndexUid, SourceId)` is.
+#[derive(PartialEq, Eq, Debug, PartialOrd, Ord, Hash, Clone)]
+pub struct SourceUid {
+    pub index_uid: IndexUid,
+    pub source_id: SourceId,
+}
 
 /// Indexer-node specific information stored in the pool of available indexer nodes
 #[derive(Debug, Clone)]
