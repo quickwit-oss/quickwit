@@ -43,3 +43,7 @@ pub type IngesterPool = Pool<NodeId, IngesterServiceClient>;
 
 /// Identifies an ingester client, typically a source, for logging and debugging purposes.
 pub type ClientId = String;
+
+pub type LeaderId = NodeId;
+
+pub type FollowerId = NodeId;

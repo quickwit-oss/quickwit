@@ -126,6 +126,9 @@ pub struct ReplicateRequest {
     pub commit_type: i32,
     #[prost(message, repeated, tag = "4")]
     pub subrequests: ::prost::alloc::vec::Vec<ReplicateSubrequest>,
+    /// Position of the request in the replication stream.
+    #[prost(uint64, tag = "5")]
+    pub replication_seqno: u64,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -152,6 +155,9 @@ pub struct ReplicateResponse {
     pub successes: ::prost::alloc::vec::Vec<ReplicateSuccess>,
     #[prost(message, repeated, tag = "3")]
     pub failures: ::prost::alloc::vec::Vec<ReplicateFailure>,
+    /// Position of the response in the replication stream. It should match the position of the request.
+    #[prost(uint64, tag = "4")]
+    pub replication_seqno: u64,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
