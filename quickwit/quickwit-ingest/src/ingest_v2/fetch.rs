@@ -24,10 +24,11 @@ use std::fmt;
 use std::ops::RangeInclusive;
 use std::sync::Arc;
 
+use bytes::{BufMut, BytesMut};
 use futures::StreamExt;
 use quickwit_common::ServiceStream;
 use quickwit_proto::ingest::ingester::{FetchResponseV2, IngesterService, OpenFetchStreamRequest};
-use quickwit_proto::ingest::{IngestV2Error, IngestV2Result};
+use quickwit_proto::ingest::{IngestV2Error, IngestV2Result, MRecordBatch};
 use quickwit_proto::types::{queue_id, NodeId, QueueId, ShardId, SourceId};
 use quickwit_proto::IndexUid;
 use tokio::sync::{mpsc, watch, RwLock};
@@ -36,7 +37,7 @@ use tracing::{debug, error, warn};
 
 use super::ingester::IngesterState;
 use super::models::ShardStatus;
-use crate::{ClientId, DocBatchBuilderV2, IngesterPool};
+use crate::{ClientId, IngesterPool};
 
 /// A fetch task is responsible for waiting and pushing new records written to a shard's record log
 /// into a channel named `fetch_response_tx`.
@@ -146,9 +147,9 @@ impl FetchTask {
             source_id=%self.source_id,
             shard_id=%self.shard_id,
             fetch_range=?self.fetch_range,
-            "Spawning fetch task."
+            "spawning fetch task"
         );
-        let mut total_num_docs = 0;
+        let mut total_num_records = 0;
 
         while !self.fetch_range.is_empty() {
             if !self.wait_for_new_records().await {
@@ -157,39 +158,44 @@ impl FetchTask {
             let fetch_range = self.fetch_range.clone();
             let state_guard = self.state.read().await;
 
-            let Ok(docs) = state_guard.mrecordlog.range(&self.queue_id, fetch_range) else {
+            let Ok(mrecords) = state_guard.mrecordlog.range(&self.queue_id, fetch_range) else {
                 warn!(
                     client_id=%self.client_id,
                     index_uid=%self.index_uid,
                     source_id=%self.source_id,
                     shard_id=%self.shard_id,
-                    "Failed to read from record log because it was dropped."
+                    "failed to read from record log because it was dropped."
                 );
                 break;
             };
-            let mut doc_batch_builder = DocBatchBuilderV2::with_capacity(self.batch_num_bytes);
+            let mut mrecord_buffer = BytesMut::with_capacity(self.batch_num_bytes);
+            let mut mrecord_lengths = Vec::new();
 
-            for (_position, doc) in docs {
-                if doc_batch_builder.num_bytes() + doc.len() > doc_batch_builder.capacity() {
+            for (_position, mrecord) in mrecords {
+                if mrecord_buffer.len() + mrecord.len() > mrecord_buffer.capacity() {
                     break;
                 }
-                doc_batch_builder.add_doc(doc.borrow());
+                mrecord_buffer.put(mrecord.borrow());
+                mrecord_lengths.push(mrecord.len() as u32);
             }
             // Drop the lock while we send the message.
             drop(state_guard);
 
-            let doc_batch = doc_batch_builder.build();
-            let num_docs = doc_batch.num_docs() as u64;
-            total_num_docs += num_docs;
+            let mrecord_batch = MRecordBatch {
+                mrecord_buffer: mrecord_buffer.freeze(),
+                mrecord_lengths,
+            };
+            let num_records = mrecord_batch.num_mrecords() as u64;
+            total_num_records += num_records;
 
             let fetch_response = FetchResponseV2 {
                 index_uid: self.index_uid.clone().into(),
                 source_id: self.source_id.clone(),
                 shard_id: self.shard_id,
-                doc_batch: Some(doc_batch),
+                mrecord_batch: Some(mrecord_batch),
                 from_position_inclusive: *self.fetch_range.start(),
             };
-            advance_by(&mut self.fetch_range, num_docs);
+            advance_by(&mut self.fetch_range, num_records);
 
             if self
                 .fetch_response_tx
@@ -206,12 +212,12 @@ impl FetchTask {
             index_uid=%self.index_uid,
             source_id=%self.source_id,
             shard_id=%self.shard_id,
-            "Fetch task completed."
+            "fetch task completed"
         );
-        if total_num_docs == 0 {
+        if total_num_records == 0 {
             (0, None)
         } else {
-            (total_num_docs, Some(*self.fetch_range.start() - 1))
+            (total_num_records, Some(*self.fetch_range.start() - 1))
         }
     }
 }
@@ -550,9 +556,20 @@ mod tests {
         assert_eq!(fetch_response.source_id, "test-source");
         assert_eq!(fetch_response.shard_id, 1);
         assert_eq!(fetch_response.from_position_inclusive, 0);
-        assert_eq!(fetch_response.doc_batch.as_ref().unwrap().doc_lengths, [12]);
         assert_eq!(
-            fetch_response.doc_batch.as_ref().unwrap().doc_buffer,
+            fetch_response
+                .mrecord_batch
+                .as_ref()
+                .unwrap()
+                .mrecord_lengths,
+            [12]
+        );
+        assert_eq!(
+            fetch_response
+                .mrecord_batch
+                .as_ref()
+                .unwrap()
+                .mrecord_buffer,
             "test-doc-000"
         );
 
@@ -581,9 +598,20 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!(fetch_response.from_position_inclusive, 1);
-        assert_eq!(fetch_response.doc_batch.as_ref().unwrap().doc_lengths, [12]);
         assert_eq!(
-            fetch_response.doc_batch.as_ref().unwrap().doc_buffer,
+            fetch_response
+                .mrecord_batch
+                .as_ref()
+                .unwrap()
+                .mrecord_lengths,
+            [12]
+        );
+        assert_eq!(
+            fetch_response
+                .mrecord_batch
+                .as_ref()
+                .unwrap()
+                .mrecord_buffer,
             "test-doc-001"
         );
 
@@ -594,8 +622,8 @@ mod tests {
         };
         shard_status_tx.send(shard_status).unwrap();
 
-        let (num_docs, last_position) = fetch_task_handle.await.unwrap();
-        assert_eq!(num_docs, 2);
+        let (num_records, last_position) = fetch_task_handle.await.unwrap();
+        assert_eq!(num_records, 2);
         assert_eq!(last_position, Some(1));
     }
 
@@ -659,14 +687,25 @@ mod tests {
         assert_eq!(fetch_response.source_id, "test-source");
         assert_eq!(fetch_response.shard_id, 1);
         assert_eq!(fetch_response.from_position_inclusive, 0);
-        assert_eq!(fetch_response.doc_batch.as_ref().unwrap().doc_lengths, [12]);
         assert_eq!(
-            fetch_response.doc_batch.as_ref().unwrap().doc_buffer,
+            fetch_response
+                .mrecord_batch
+                .as_ref()
+                .unwrap()
+                .mrecord_lengths,
+            [12]
+        );
+        assert_eq!(
+            fetch_response
+                .mrecord_batch
+                .as_ref()
+                .unwrap()
+                .mrecord_buffer,
             "test-doc-000"
         );
 
-        let (num_docs, last_position) = fetch_task_handle.await.unwrap();
-        assert_eq!(num_docs, 1);
+        let (num_records, last_position) = fetch_task_handle.await.unwrap();
+        assert_eq!(num_records, 1);
         assert_eq!(last_position, Some(0));
     }
 
@@ -741,11 +780,19 @@ mod tests {
         assert_eq!(fetch_response.shard_id, 1);
         assert_eq!(fetch_response.from_position_inclusive, 0);
         assert_eq!(
-            fetch_response.doc_batch.as_ref().unwrap().doc_lengths,
+            fetch_response
+                .mrecord_batch
+                .as_ref()
+                .unwrap()
+                .mrecord_lengths,
             [12, 12]
         );
         assert_eq!(
-            fetch_response.doc_batch.as_ref().unwrap().doc_buffer,
+            fetch_response
+                .mrecord_batch
+                .as_ref()
+                .unwrap()
+                .mrecord_buffer,
             "test-doc-000test-doc-001"
         );
         let fetch_response = timeout(Duration::from_millis(100), fetch_stream.next())
@@ -757,14 +804,25 @@ mod tests {
         assert_eq!(fetch_response.source_id, "test-source");
         assert_eq!(fetch_response.shard_id, 1);
         assert_eq!(fetch_response.from_position_inclusive, 2);
-        assert_eq!(fetch_response.doc_batch.as_ref().unwrap().doc_lengths, [12]);
         assert_eq!(
-            fetch_response.doc_batch.as_ref().unwrap().doc_buffer,
+            fetch_response
+                .mrecord_batch
+                .as_ref()
+                .unwrap()
+                .mrecord_lengths,
+            [12]
+        );
+        assert_eq!(
+            fetch_response
+                .mrecord_batch
+                .as_ref()
+                .unwrap()
+                .mrecord_buffer,
             "test-doc-002"
         );
 
-        let (num_docs, last_position) = fetch_task_handle.await.unwrap();
-        assert_eq!(num_docs, 3);
+        let (num_records, last_position) = fetch_task_handle.await.unwrap();
+        assert_eq!(num_records, 3);
         assert_eq!(last_position, Some(2));
     }
 

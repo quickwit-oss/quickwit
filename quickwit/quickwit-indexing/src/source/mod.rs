@@ -163,7 +163,7 @@ impl SourceRuntimeArgs {
             ingester_pool: IngesterPool::default(),
             queues_dir_path,
             source_config,
-            storage_resolver: StorageResolver::ram_and_file_for_test(),
+            storage_resolver: StorageResolver::for_test(),
         })
     }
 }
@@ -455,10 +455,11 @@ impl Handler<SuggestTruncate> for SourceActor {
 }
 
 #[derive(Debug, Default)]
-pub struct BatchBuilder {
+pub(crate) struct BatchBuilder {
     docs: Vec<Bytes>,
     num_bytes: u64,
     checkpoint_delta: SourceCheckpointDelta,
+    force_commit: bool,
 }
 
 impl BatchBuilder {
@@ -467,14 +468,19 @@ impl BatchBuilder {
         self.docs.push(doc);
     }
 
+    pub fn force_commit(&mut self) {
+        self.force_commit = true;
+    }
+
     pub fn build(self) -> RawDocBatch {
         RawDocBatch {
             docs: self.docs,
             checkpoint_delta: self.checkpoint_delta,
-            force_commit: false,
+            force_commit: self.force_commit,
         }
     }
 
+    #[cfg(feature = "kafka")]
     pub fn clear(&mut self) {
         self.docs.clear();
         self.num_bytes = 0;
@@ -503,8 +509,7 @@ mod tests {
                 transform_config: None,
                 input_format: SourceInputFormat::Json,
             };
-            check_source_connectivity(&StorageResolver::ram_and_file_for_test(), &source_config)
-                .await?;
+            check_source_connectivity(&StorageResolver::for_test(), &source_config).await?;
         }
         {
             let source_config = SourceConfig {
@@ -516,8 +521,7 @@ mod tests {
                 transform_config: None,
                 input_format: SourceInputFormat::Json,
             };
-            check_source_connectivity(&StorageResolver::ram_and_file_for_test(), &source_config)
-                .await?;
+            check_source_connectivity(&StorageResolver::for_test(), &source_config).await?;
         }
         {
             let source_config = SourceConfig {
@@ -529,12 +533,11 @@ mod tests {
                 transform_config: None,
                 input_format: SourceInputFormat::Json,
             };
-            assert!(check_source_connectivity(
-                &StorageResolver::ram_and_file_for_test(),
-                &source_config
-            )
-            .await
-            .is_err());
+            assert!(
+                check_source_connectivity(&StorageResolver::for_test(), &source_config)
+                    .await
+                    .is_err()
+            );
         }
         {
             let source_config = SourceConfig {
@@ -546,12 +549,11 @@ mod tests {
                 transform_config: None,
                 input_format: SourceInputFormat::Json,
             };
-            assert!(check_source_connectivity(
-                &StorageResolver::ram_and_file_for_test(),
-                &source_config
-            )
-            .await
-            .is_ok());
+            assert!(
+                check_source_connectivity(&StorageResolver::for_test(), &source_config)
+                    .await
+                    .is_ok()
+            );
         }
         Ok(())
     }

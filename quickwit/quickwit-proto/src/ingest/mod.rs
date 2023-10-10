@@ -133,6 +133,31 @@ impl DocBatchV2 {
     }
 }
 
+impl MRecordBatch {
+    pub fn encoded_mrecords(&self) -> impl Iterator<Item = Bytes> + '_ {
+        self.mrecord_lengths
+            .iter()
+            .scan(0, |start_offset, mrecord_length| {
+                let start = *start_offset;
+                let end = start + *mrecord_length as usize;
+                *start_offset = end;
+                Some(self.mrecord_buffer.slice(start..end))
+            })
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.mrecord_lengths.is_empty()
+    }
+
+    pub fn num_bytes(&self) -> usize {
+        self.mrecord_buffer.len()
+    }
+
+    pub fn num_mrecords(&self) -> usize {
+        self.mrecord_lengths.len()
+    }
+}
+
 impl Shard {
     pub fn is_open(&self) -> bool {
         self.shard_state() == ShardState::Open

@@ -8,6 +8,17 @@ pub struct DocBatchV2 {
     pub doc_lengths: ::prost::alloc::vec::Vec<u32>,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct MRecordBatch {
+    /// Buffer of encoded and then concatenated mrecords.
+    #[prost(bytes = "bytes", tag = "1")]
+    pub mrecord_buffer: ::prost::bytes::Bytes,
+    /// Lengths of the mrecords in the buffer.
+    #[prost(uint32, repeated, tag = "2")]
+    pub mrecord_lengths: ::prost::alloc::vec::Vec<u32>,
+}
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[derive(Eq)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]

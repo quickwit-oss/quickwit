@@ -31,8 +31,9 @@ use quickwit_proto::types::NodeId;
 use tokio::sync::{mpsc, oneshot, watch, RwLock};
 use tokio::task::JoinHandle;
 
-use super::ingester::{commit_doc, IngesterState};
+use super::ingester::IngesterState;
 use super::models::{Position, ReplicaShard, ShardStatus};
+use super::mrecord::MRecord;
 use crate::metrics::INGEST_METRICS;
 
 /// A replication request is sent by the leader to its follower to update the state of a replica
@@ -261,17 +262,20 @@ impl ReplicationTask {
                 continue;
             };
             let replica_position_inclusive = if force_commit {
-                let docs = doc_batch.docs().chain(once(commit_doc()));
+                let encoded_mrecords = doc_batch
+                    .docs()
+                    .map(|doc| MRecord::Doc(doc).encode())
+                    .chain(once(MRecord::Commit.encode()));
                 state_guard
                     .mrecordlog
-                    .append_records(&queue_id, None, docs)
+                    .append_records(&queue_id, None, encoded_mrecords)
                     .await
                     .expect("TODO")
             } else {
-                let docs = doc_batch.docs();
+                let encoded_mrecords = doc_batch.docs().map(|doc| MRecord::Doc(doc).encode());
                 state_guard
                     .mrecordlog
-                    .append_records(&queue_id, None, docs)
+                    .append_records(&queue_id, None, encoded_mrecords)
                     .await
                     .expect("TODO")
             };
@@ -565,7 +569,7 @@ mod tests {
 
         state_guard
             .mrecordlog
-            .assert_records_eq(&queue_id_01, .., &[(0, "test-doc-010")]);
+            .assert_records_eq(&queue_id_01, .., &[(0, "\0\0test-doc-010")]);
 
         let queue_id_11 = queue_id("test-index:1", "test-source", 1);
         let replica_shard_11 = state_guard.replica_shards.get(&queue_id_11).unwrap();
@@ -574,7 +578,7 @@ mod tests {
         state_guard.mrecordlog.assert_records_eq(
             &queue_id_11,
             ..,
-            &[(0, "test-doc-110"), (1, "test-doc-111")],
+            &[(0, "\0\0test-doc-110"), (1, "\0\0test-doc-111")],
         );
         drop(state_guard);
 
@@ -620,7 +624,7 @@ mod tests {
         state_guard.mrecordlog.assert_records_eq(
             &queue_id_01,
             ..,
-            &[(0, "test-doc-010"), (1, "test-doc-011")],
+            &[(0, "\0\0test-doc-010"), (1, "\0\0test-doc-011")],
         );
         let replica_shard_01 = state_guard.replica_shards.get(&queue_id_01).unwrap();
         replica_shard_01.assert_is_open(1);

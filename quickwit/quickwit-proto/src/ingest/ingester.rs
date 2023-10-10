@@ -17,8 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use bytes::Bytes;
-
 use crate::types::{queue_id, QueueId};
 
 include!("../codegen/quickwit/quickwit.ingest.ingester.rs");
@@ -30,24 +28,20 @@ impl FetchResponseV2 {
         queue_id(&self.index_uid, &self.source_id, self.shard_id)
     }
 
-    pub fn docs(&self) -> impl Iterator<Item = Bytes> + '_ {
-        self.doc_batch.iter().flat_map(|doc_batch| doc_batch.docs())
-    }
-
-    pub fn num_docs(&self) -> usize {
-        if let Some(doc_batch) = &self.doc_batch {
-            doc_batch.doc_lengths.len()
+    pub fn num_mrecords(&self) -> usize {
+        if let Some(mrecord_batch) = &self.mrecord_batch {
+            mrecord_batch.mrecord_lengths.len()
         } else {
             0
         }
     }
 
     pub fn to_position_inclusive(&self) -> Option<u64> {
-        let Some(doc_batch) = &self.doc_batch else {
+        let Some(mrecord_batch) = &self.mrecord_batch else {
             return None;
         };
-        let num_docs = doc_batch.num_docs() as u64;
-        Some(self.from_position_inclusive + num_docs - 1)
+        let num_mrecords = mrecord_batch.num_mrecords() as u64;
+        Some(self.from_position_inclusive + num_mrecords - 1)
     }
 }
 
@@ -154,8 +148,10 @@ impl TruncateSubrequest {
 
 #[cfg(test)]
 mod tests {
+    use bytes::Bytes;
+
     use super::*;
-    use crate::ingest::DocBatchV2;
+    use crate::ingest::{DocBatchV2, MRecordBatch};
 
     #[test]
     fn test_fetch_response_to_position_inclusive() {
@@ -164,19 +160,19 @@ mod tests {
             source_id: "test-source".to_string(),
             shard_id: 0,
             from_position_inclusive: 0,
-            doc_batch: None,
+            mrecord_batch: None,
         };
         assert_eq!(response.to_position_inclusive(), None);
 
-        response.doc_batch = Some(DocBatchV2 {
-            doc_buffer: Bytes::from_static(b"test-doc"),
-            doc_lengths: vec![8],
+        response.mrecord_batch = Some(MRecordBatch {
+            mrecord_buffer: Bytes::from_static(b"\0\0test-doc"),
+            mrecord_lengths: vec![10],
         });
         assert_eq!(response.to_position_inclusive(), Some(0));
 
-        response.doc_batch = Some(DocBatchV2 {
-            doc_buffer: Bytes::from_static(b"test-doctest-doc"),
-            doc_lengths: vec![8, 8],
+        response.mrecord_batch = Some(MRecordBatch {
+            mrecord_buffer: Bytes::from_static(b"\0\0test-doc\0\0test-doc"),
+            mrecord_lengths: vec![10, 10],
         });
         assert_eq!(response.to_position_inclusive(), Some(1));
     }
