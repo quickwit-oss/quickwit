@@ -477,12 +477,12 @@ fn generate_client(context: &CodegenContext) -> TokenStream {
 
             pub fn from_channel(addr: std::net::SocketAddr, channel: tonic::transport::Channel) -> Self
             {
-                let (_, connection_keys_watcher) = tokio::sync::watch::channel(std::collections::HashSet::from_iter(vec![addr]));
+                let (_, connection_keys_watcher) = tokio::sync::watch::channel(std::collections::HashSet::from_iter([addr]));
                 let adapter = #grpc_client_adapter_name::new(#grpc_client_package_name::#grpc_client_name::new(channel), connection_keys_watcher);
                 Self::new(adapter)
             }
 
-            pub fn from_balanced_channel(balanced_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>) -> #client_name
+            pub fn from_balance_channel(balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>) -> #client_name
             {
                 let connection_keys_watcher = balanced_channel.connection_keys_watcher();
                 let adapter = #grpc_client_adapter_name::new(#grpc_client_package_name::#grpc_client_name::new(balanced_channel), connection_keys_watcher);
@@ -863,7 +863,7 @@ fn generate_tower_mailbox(context: &CodegenContext) -> TokenStream {
         quote! {
             async fn check_connectivity(&mut self) -> anyhow::Result<()> {
                 if self.inner.is_disconnected() {
-                    anyhow::bail!("Mailbox of actor `{}` is disconnected", self.inner.actor_instance_id())
+                    anyhow::bail!("actor `{}` is disconnected", self.inner.actor_instance_id())
                 }
                 Ok(())
             }

@@ -233,7 +233,7 @@ mod tests {
         assert!(matches!(change, TowerChange::Insert("foo", _)));
         assert_eq!(
             *connection_keys_rx.borrow(),
-            HashSet::from_iter(vec!["foo"])
+            HashSet::from_iter(["foo"])
         );
 
         let channel = Endpoint::from_static("http://[::1]:1337").connect_lazy();
@@ -243,7 +243,7 @@ mod tests {
         assert!(matches!(change, TowerChange::Insert("foo", _)));
         assert_eq!(
             *connection_keys_rx.borrow(),
-            HashSet::from_iter(vec!["foo"])
+            HashSet::from_iter(["foo"])
         );
 
         change_tx.send(Change::Remove("bar")).unwrap();
@@ -252,7 +252,7 @@ mod tests {
         assert!(matches!(change, TowerChange::Remove("bar")));
         assert_eq!(
             *connection_keys_rx.borrow(),
-            HashSet::from_iter(vec!["foo"])
+            HashSet::from_iter(["foo"])
         );
 
         change_tx.send(Change::Remove("foo")).unwrap();
