@@ -85,7 +85,7 @@ pub mod syn_replication_message {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AckReplicationMessage {
-    #[prost(oneof = "ack_replication_message::Message", tags = "1, 3")]
+    #[prost(oneof = "ack_replication_message::Message", tags = "1, 2")]
     pub message: ::core::option::Option<ack_replication_message::Message>,
 }
 /// Nested message and enum types in `AckReplicationMessage`.
@@ -97,7 +97,7 @@ pub mod ack_replication_message {
     pub enum Message {
         #[prost(message, tag = "1")]
         OpenResponse(super::OpenReplicationStreamResponse),
-        #[prost(message, tag = "3")]
+        #[prost(message, tag = "2")]
         ReplicateResponse(super::ReplicateResponse),
     }
 }
@@ -126,6 +126,9 @@ pub struct ReplicateRequest {
     pub commit_type: i32,
     #[prost(message, repeated, tag = "4")]
     pub subrequests: ::prost::alloc::vec::Vec<ReplicateSubrequest>,
+    /// Position of the request in the replication stream.
+    #[prost(uint64, tag = "5")]
+    pub replication_seqno: u64,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -152,6 +155,9 @@ pub struct ReplicateResponse {
     pub successes: ::prost::alloc::vec::Vec<ReplicateSuccess>,
     #[prost(message, repeated, tag = "3")]
     pub failures: ::prost::alloc::vec::Vec<ReplicateFailure>,
+    /// Position of the response in the replication stream. It should match the position of the request.
+    #[prost(uint64, tag = "4")]
+    pub replication_seqno: u64,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -236,7 +242,7 @@ pub struct FetchResponseV2 {
     #[prost(uint64, tag = "4")]
     pub from_position_inclusive: u64,
     #[prost(message, optional, tag = "5")]
-    pub doc_batch: ::core::option::Option<super::DocBatchV2>,
+    pub mrecord_batch: ::core::option::Option<super::MRecordBatch>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]

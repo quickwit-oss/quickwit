@@ -368,7 +368,7 @@ mod tests {
     #[tokio::test]
     async fn test_create_index() {
         let metastore = metastore_for_test();
-        let storage_resolver = StorageResolver::ram_and_file_for_test();
+        let storage_resolver = StorageResolver::for_test();
         let index_service = IndexService::new(metastore.clone(), storage_resolver);
         let index_id = "test-index";
         let index_uri = "ram://indexes/test-index";
@@ -404,7 +404,7 @@ mod tests {
     #[tokio::test]
     async fn test_delete_index() {
         let metastore = metastore_for_test();
-        let storage_resolver = StorageResolver::ram_and_file_for_test();
+        let storage_resolver = StorageResolver::for_test();
         let storage = storage_resolver
             .resolve(&Uri::for_test("ram://indexes/test-index"))
             .await
