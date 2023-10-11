@@ -17,11 +17,11 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::HashSet;
 use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 
+use fnv::FnvHashSet;
 use itertools::Itertools;
 use quickwit_common::Progress;
 use quickwit_ingest::IngesterPool;
@@ -116,7 +116,7 @@ impl IngestController {
     /// 1, only a leader is returned. If no nodes are available, `None` is returned.
     async fn find_leader_and_follower(
         &mut self,
-        unavailable_ingesters: &mut HashSet<NodeId>,
+        unavailable_ingesters: &mut FnvHashSet<NodeId>,
         progress: &Progress,
     ) -> Option<(NodeId, Option<NodeId>)> {
         let mut candidates: Vec<NodeId> = self
@@ -185,7 +185,7 @@ impl IngestController {
         let mut get_open_shards_subresponses =
             Vec::with_capacity(get_open_shards_request.subrequests.len());
 
-        let mut unavailable_ingesters: HashSet<NodeId> = get_open_shards_request
+        let mut unavailable_ingesters: FnvHashSet<NodeId> = get_open_shards_request
             .unavailable_ingesters
             .into_iter()
             .map(|ingester_id| ingester_id.into())
@@ -375,7 +375,7 @@ mod tests {
             IngestController::new(metastore, ingester_pool.clone(), replication_factor);
 
         let leader_follower_pair = ingest_controller
-            .find_leader_and_follower(&mut HashSet::new(), &progress)
+            .find_leader_and_follower(&mut FnvHashSet::default(), &progress)
             .await;
         assert!(leader_follower_pair.is_none());
 
@@ -390,7 +390,7 @@ mod tests {
         ingester_pool.insert("test-ingester-0".into(), ingester.clone());
 
         let leader_follower_pair = ingest_controller
-            .find_leader_and_follower(&mut HashSet::new(), &progress)
+            .find_leader_and_follower(&mut FnvHashSet::default(), &progress)
             .await;
         assert!(leader_follower_pair.is_none());
 
@@ -405,7 +405,7 @@ mod tests {
         ingester_pool.insert("test-ingester-1".into(), ingester);
 
         let (leader_id, follower_id) = ingest_controller
-            .find_leader_and_follower(&mut HashSet::new(), &progress)
+            .find_leader_and_follower(&mut FnvHashSet::default(), &progress)
             .await
             .unwrap();
         assert_eq!(leader_id.as_str(), "test-ingester-1");
@@ -424,7 +424,7 @@ mod tests {
             IngestController::new(metastore, ingester_pool.clone(), replication_factor);
 
         let leader_follower_pair = ingest_controller
-            .find_leader_and_follower(&mut HashSet::new(), &progress)
+            .find_leader_and_follower(&mut FnvHashSet::default(), &progress)
             .await;
         assert!(leader_follower_pair.is_none());
 
@@ -448,7 +448,7 @@ mod tests {
         ingester_pool.insert("test-ingester-1".into(), ingester.clone());
 
         let leader_follower_pair = ingest_controller
-            .find_leader_and_follower(&mut HashSet::new(), &progress)
+            .find_leader_and_follower(&mut FnvHashSet::default(), &progress)
             .await;
         assert!(leader_follower_pair.is_none());
 
@@ -478,7 +478,7 @@ mod tests {
         ingester_pool.insert("test-ingester-2".into(), ingester.clone());
 
         let (leader_id, follower_id) = ingest_controller
-            .find_leader_and_follower(&mut HashSet::new(), &progress)
+            .find_leader_and_follower(&mut FnvHashSet::default(), &progress)
             .await
             .unwrap();
         assert_eq!(leader_id.as_str(), "test-ingester-0");

@@ -18,10 +18,9 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::hash_map::Entry;
-use std::collections::{HashMap, HashSet};
 use std::time::Instant;
 
-use fnv::FnvHashMap;
+use fnv::{FnvHashMap, FnvHashSet};
 #[cfg(test)]
 use itertools::Itertools;
 use quickwit_common::Progress;
@@ -83,7 +82,7 @@ impl ShardTableEntry {
 /// Upon starts, it loads its entire state from the metastore.
 #[derive(Default, Debug)]
 pub struct ControlPlaneModel {
-    index_table: HashMap<IndexId, IndexUid>,
+    index_table: FnvHashMap<IndexId, IndexUid>,
     shard_table: ShardTable,
 }
 
@@ -243,7 +242,7 @@ impl ControlPlaneModel {
         &self,
         index_uid: &IndexUid,
         source_id: &SourceId,
-        unavailable_ingesters: &HashSet<NodeId>,
+        unavailable_ingesters: &FnvHashSet<NodeId>,
     ) -> Option<(Vec<Shard>, NextShardId)> {
         self.shard_table
             .find_open_shards(index_uid, source_id, unavailable_ingesters)
@@ -253,7 +252,7 @@ impl ControlPlaneModel {
 // A table that keeps track of the existing shards for each index and source.
 #[derive(Debug, Default)]
 struct ShardTable {
-    table_entries: HashMap<(IndexUid, SourceId), ShardTableEntry>,
+    table_entries: FnvHashMap<(IndexUid, SourceId), ShardTableEntry>,
 }
 
 impl ShardTable {
@@ -293,7 +292,7 @@ impl ShardTable {
         &self,
         index_uid: &IndexUid,
         source_id: &SourceId,
-        unavailable_ingesters: &HashSet<NodeId>,
+        unavailable_ingesters: &FnvHashSet<NodeId>,
     ) -> Option<(Vec<Shard>, NextShardId)> {
         let key = (index_uid.clone(), source_id.clone());
         let table_entry = self.table_entries.get(&key)?;
@@ -414,7 +413,7 @@ mod tests {
         let mut shard_table = ShardTable::default();
         shard_table.add_source(&index_uid, &source_id);
 
-        let mut unavailable_ingesters = HashSet::new();
+        let mut unavailable_ingesters = FnvHashSet::default();
 
         let (open_shards, next_shard_id) = shard_table
             .find_open_shards(&index_uid, &source_id, &unavailable_ingesters)

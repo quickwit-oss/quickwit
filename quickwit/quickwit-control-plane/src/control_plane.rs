@@ -162,6 +162,15 @@ impl Handler<ControlPlanLoop> for ControlPlane {
     }
 }
 
+/// This function converts a metastore error into an actor error.
+///
+/// If the metastore error is implying the transaction has not been
+/// successful, then we do not need to restart the metastore.
+/// If the metastore error does not let us know whether the transaction was
+/// successful or not, we need to restart the actor and have it load its state from
+/// the metastore.
+///
+/// This function also logs errors.
 fn convert_metastore_error<T>(
     metastore_error: MetastoreError,
 ) -> Result<ControlPlaneResult<T>, ActorExitStatus> {
@@ -184,10 +193,12 @@ fn convert_metastore_error<T>(
     if metastore_failure_is_certain {
         // If the metastore failure is certain, this is actually a good thing.
         // We do not need to restart the control plane.
+        error!(err=?metastore_error, transaction_outcome="certainly-failed", "metastore-error: The transaction certainly failed. We do not need to restart the control plane.");
         Ok(Err(ControlPlaneError::Metastore(metastore_error)))
     } else {
         // If the metastore failure is uncertain, we need to restart the control plane
         // so that it gets resynced with the metastore state.
+        error!(err=?metastore_error, transaction_outcome="uncertain", "metastore-error: Transaction outcome is uncertain. Restarting control plane.");
         Err(ActorExitStatus::from(anyhow::anyhow!(metastore_error)))
     }
 }
