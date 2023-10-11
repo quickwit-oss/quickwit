@@ -201,7 +201,7 @@ async fn start_ingest_client_if_needed(
         Ok(ingest_service)
     } else {
         let balance_channel = balance_channel_for_service(cluster, QuickwitService::Indexer).await;
-        let ingest_service = IngestServiceClient::from_channel(balance_channel);
+        let ingest_service = IngestServiceClient::from_balance_channel(balance_channel);
         Ok(ingest_service)
     }
 }
@@ -246,7 +246,9 @@ async fn start_control_plane_if_needed(
     } else {
         let balance_channel =
             balance_channel_for_service(cluster, QuickwitService::ControlPlane).await;
-        Ok(ControlPlaneServiceClient::from_channel(balance_channel))
+        Ok(ControlPlaneServiceClient::from_balance_channel(
+            balance_channel,
+        ))
     }
 }
 
@@ -629,8 +631,10 @@ async fn setup_ingest_v2(
                             .expect("the ingester service should be initialized");
                         Some(Change::Insert(node_id, ingester_service))
                     } else {
-                        let timeout_channel = Timeout::new(node.channel(), Duration::from_secs(30));
-                        let ingester_service = IngesterServiceClient::from_channel(timeout_channel);
+                        let ingester_service = IngesterServiceClient::from_channel(
+                            node.grpc_advertise_addr(),
+                            node.channel(),
+                        );
                         Some(Change::Insert(node_id, ingester_service))
                     }
                 }
@@ -742,8 +746,10 @@ fn setup_indexer_pool(
                             None
                         }
                     } else {
-                        let timeout_channel = Timeout::new(node.channel(), Duration::from_secs(30));
-                        let client = IndexingServiceClient::from_channel(timeout_channel);
+                        let client = IndexingServiceClient::from_channel(
+                            node.grpc_advertise_addr(),
+                            node.channel(),
+                        );
                         Some(Change::Insert(
                             node_id,
                             IndexerNodeInfo {

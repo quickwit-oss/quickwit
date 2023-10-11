@@ -110,29 +110,32 @@ impl ControlPlaneServiceClient {
         let adapter = ControlPlaneServiceGrpcServerAdapter::new(self.clone());
         control_plane_service_grpc_server::ControlPlaneServiceGrpcServer::new(adapter)
     }
-    pub fn from_channel<C>(channel: C) -> Self
-    where
-        C: tower::Service<
-                http::Request<tonic::body::BoxBody>,
-                Response = http::Response<hyper::Body>,
-                Error = quickwit_common::tower::BoxError,
-            > + std::fmt::Debug + Clone + Send + Sync + 'static,
-        <C as tower::Service<
-            http::Request<tonic::body::BoxBody>,
-        >>::Future: std::future::Future<
-                Output = Result<
-                    http::Response<hyper::Body>,
-                    quickwit_common::tower::BoxError,
-                >,
-            > + Send + 'static,
-    {
-        ControlPlaneServiceClient::new(
-            ControlPlaneServiceGrpcClientAdapter::new(
-                control_plane_service_grpc_client::ControlPlaneServiceGrpcClient::new(
-                    channel,
-                ),
+    pub fn from_channel(
+        addr: std::net::SocketAddr,
+        channel: tonic::transport::Channel,
+    ) -> Self {
+        let (_, connection_keys_watcher) = tokio::sync::watch::channel(
+            std::collections::HashSet::from_iter([addr]),
+        );
+        let adapter = ControlPlaneServiceGrpcClientAdapter::new(
+            control_plane_service_grpc_client::ControlPlaneServiceGrpcClient::new(
+                channel,
             ),
-        )
+            connection_keys_watcher,
+        );
+        Self::new(adapter)
+    }
+    pub fn from_balance_channel(
+        balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
+    ) -> ControlPlaneServiceClient {
+        let connection_keys_watcher = balance_channel.connection_keys_watcher();
+        let adapter = ControlPlaneServiceGrpcClientAdapter::new(
+            control_plane_service_grpc_client::ControlPlaneServiceGrpcClient::new(
+                balance_channel,
+            ),
+            connection_keys_watcher,
+        );
+        Self::new(adapter)
     }
     pub fn from_mailbox<A>(mailbox: quickwit_actors::Mailbox<A>) -> Self
     where
@@ -426,6 +429,7 @@ for Box<dyn ControlPlaneService> {
 /// A tower block is a set of towers. Each tower is stack of layers (middlewares) that are applied to a service.
 #[derive(Debug)]
 struct ControlPlaneServiceTowerBlock {
+    inner: Box<dyn ControlPlaneService>,
     create_index_svc: quickwit_common::tower::BoxService<
         super::metastore::CreateIndexRequest,
         super::metastore::CreateIndexResponse,
@@ -470,6 +474,7 @@ struct ControlPlaneServiceTowerBlock {
 impl Clone for ControlPlaneServiceTowerBlock {
     fn clone(&self) -> Self {
         Self {
+            inner: self.inner.clone(),
             create_index_svc: self.create_index_svc.clone(),
             delete_index_svc: self.delete_index_svc.clone(),
             add_source_svc: self.add_source_svc.clone(),
@@ -838,23 +843,22 @@ impl ControlPlaneServiceTowerBlockBuilder {
     {
         self.build_from_boxed(Box::new(instance))
     }
-    pub fn build_from_channel<T, C>(self, channel: C) -> ControlPlaneServiceClient
-    where
-        C: tower::Service<
-                http::Request<tonic::body::BoxBody>,
-                Response = http::Response<hyper::Body>,
-                Error = quickwit_common::tower::BoxError,
-            > + std::fmt::Debug + Clone + Send + Sync + 'static,
-        <C as tower::Service<
-            http::Request<tonic::body::BoxBody>,
-        >>::Future: std::future::Future<
-                Output = Result<
-                    http::Response<hyper::Body>,
-                    quickwit_common::tower::BoxError,
-                >,
-            > + Send + 'static,
-    {
-        self.build_from_boxed(Box::new(ControlPlaneServiceClient::from_channel(channel)))
+    pub fn build_from_channel(
+        self,
+        addr: std::net::SocketAddr,
+        channel: tonic::transport::Channel,
+    ) -> ControlPlaneServiceClient {
+        self.build_from_boxed(
+            Box::new(ControlPlaneServiceClient::from_channel(addr, channel)),
+        )
+    }
+    pub fn build_from_balance_channel(
+        self,
+        balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
+    ) -> ControlPlaneServiceClient {
+        self.build_from_boxed(
+            Box::new(ControlPlaneServiceClient::from_balance_channel(balance_channel)),
+        )
     }
     pub fn build_from_mailbox<A>(
         self,
@@ -864,7 +868,7 @@ impl ControlPlaneServiceTowerBlockBuilder {
         A: quickwit_actors::Actor + std::fmt::Debug + Send + 'static,
         ControlPlaneServiceMailbox<A>: ControlPlaneService,
     {
-        self.build_from_boxed(Box::new(ControlPlaneServiceClient::from_mailbox(mailbox)))
+        self.build_from_boxed(Box::new(ControlPlaneServiceMailbox::new(mailbox)))
     }
     fn build_from_boxed(
         self,
@@ -913,6 +917,7 @@ impl ControlPlaneServiceTowerBlockBuilder {
             quickwit_common::tower::BoxService::new(boxed_instance.clone())
         };
         let tower_block = ControlPlaneServiceTowerBlock {
+            inner: boxed_instance.clone(),
             create_index_svc,
             delete_index_svc,
             add_source_svc,
@@ -1124,10 +1129,22 @@ where
 #[derive(Debug, Clone)]
 pub struct ControlPlaneServiceGrpcClientAdapter<T> {
     inner: T,
+    #[allow(dead_code)]
+    connection_addrs_rx: tokio::sync::watch::Receiver<
+        std::collections::HashSet<std::net::SocketAddr>,
+    >,
 }
 impl<T> ControlPlaneServiceGrpcClientAdapter<T> {
-    pub fn new(instance: T) -> Self {
-        Self { inner: instance }
+    pub fn new(
+        instance: T,
+        connection_addrs_rx: tokio::sync::watch::Receiver<
+            std::collections::HashSet<std::net::SocketAddr>,
+        >,
+    ) -> Self {
+        Self {
+            inner: instance,
+            connection_addrs_rx,
+        }
     }
 }
 #[async_trait::async_trait]

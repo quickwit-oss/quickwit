@@ -5040,6 +5040,7 @@ dependencies = [
 name = "quickwit-codegen-example"
 version = "0.6.3"
 dependencies = [
+ "anyhow",
  "async-trait",
  "dyn-clone",
  "futures",
