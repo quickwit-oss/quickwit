@@ -884,8 +884,8 @@ mod tests {
     use std::cmp::Ordering;
 
     use quickwit_proto::search::{
-        LeafSearchResponse, PartialHit, SearchRequest, SortField, SortOrder, SortValue,
-        SplitSearchError,
+        LeafSearchResponse, PartialHit, SearchRequest, SortByValue, SortField, SortOrder,
+        SortValue, SplitSearchError,
     };
     use tantivy::collector::Collector;
     use tantivy::TantivyDocument;
@@ -1251,9 +1251,9 @@ mod tests {
                     Default::default(),
                 )
                 .unwrap();
-                let res = dbg!(searcher
+                let res = searcher
                     .search(&tantivy::query::AllQuery, &collector)
-                    .unwrap());
+                    .unwrap();
                 assert_eq!(res.partial_hits.len(), len);
                 for (expected, got) in dataset.iter().zip(res.partial_hits.iter()) {
                     assert_eq!(
@@ -1262,6 +1262,141 @@ mod tests {
                     );
                 }
             }
+        }
+    }
+
+    #[test]
+    fn test_search_after() {
+        let index = make_index();
+
+        let reader = index.reader().unwrap();
+        let searcher = reader.searcher();
+
+        // tuple of DocId and sort value
+        type Doc = (usize, (Option<u64>, Option<u64>));
+
+        let mut dataset: Vec<Doc> = sort_dataset().into_iter().enumerate().collect();
+
+        let reverse_int = |val: &Option<u64>| val.as_ref().map(|val| u64::MAX - val);
+        let cmp_doc_id_desc = |a: &Doc, b: &Doc| b.0.cmp(&a.0);
+        let cmp_1_desc = |a: &Doc, b: &Doc| b.1 .0.cmp(&a.1 .0);
+        let cmp_2_asc = |a: &Doc, b: &Doc| reverse_int(&b.1 .1).cmp(&reverse_int(&a.1 .1));
+
+        let sort_function =
+            |a: &Doc, b: &Doc| cmp_1_desc(a, b).then(cmp_2_asc(a, b).then(cmp_doc_id_desc(a, b)));
+        dataset.sort_by(sort_function);
+        let partial_sort_value = dataset
+            .iter()
+            .map(|(doc_id, (val1, val2))| PartialHit {
+                split_id: "fake_split_id".to_string(),
+                segment_ord: 0,
+                doc_id: *doc_id as u32,
+                sort_value: Some(SortByValue {
+                    sort_value: val1.map(SortValue::U64),
+                }),
+                sort_value2: Some(SortByValue {
+                    sort_value: val2.map(SortValue::U64),
+                }),
+            })
+            .collect::<Vec<_>>();
+        // we eliminte based on sort value
+        for (i, search_after) in partial_sort_value.into_iter().enumerate() {
+            let request = SearchRequest {
+                max_hits: 1000,
+                sort_fields: vec![
+                    SortField {
+                        field_name: "sort1".to_string(),
+                        sort_order: SortOrder::Desc.into(),
+                    },
+                    SortField {
+                        field_name: "sort2".to_string(),
+                        sort_order: SortOrder::Asc.into(),
+                    },
+                ],
+                search_after: Some(search_after),
+                ..SearchRequest::default()
+            };
+            let collector = super::make_collector_for_split(
+                "fake_split_id".to_string(),
+                &MockDocMapper,
+                &request,
+                Default::default(),
+            )
+            .unwrap();
+            let res = searcher
+                .search(&tantivy::query::AllQuery, &collector)
+                .unwrap();
+            // we count results even if they were removed due to search_after
+            assert_eq!(res.num_hits, dataset.len() as u64);
+            // we get as many result as expected
+            assert_eq!(res.partial_hits.len(), dataset.len() - i - 1);
+            for (expected, got) in dataset[i + 1..].iter().zip(res.partial_hits.iter()) {
+                assert_eq!(expected.0 as u32, got.doc_id,);
+            }
+        }
+
+        // we eliminte based on split id
+        {
+            let search_after = PartialHit {
+                split_id: "fake_split_id2".to_string(),
+                segment_ord: 0,
+                doc_id: 5,
+                sort_value: None,
+                sort_value2: None,
+            };
+            let request = SearchRequest {
+                max_hits: 1000,
+                sort_fields: vec![SortField {
+                    field_name: "_shard_doc".to_string(),
+                    sort_order: SortOrder::Desc.into(),
+                }],
+                search_after: Some(search_after),
+                ..SearchRequest::default()
+            };
+
+            let collector = super::make_collector_for_split(
+                "fake_split_id1".to_string(),
+                &MockDocMapper,
+                &request,
+                Default::default(),
+            )
+            .unwrap();
+            let res = searcher
+                .search(&tantivy::query::AllQuery, &collector)
+                .unwrap();
+            assert_eq!(res.num_hits, dataset.len() as u64);
+            // we are searching split id1, and we remove anything before id2 in descending order
+            // (i.e. higher than id2 lexicographically), so every document matches
+            assert_eq!(res.partial_hits.len(), dataset.len());
+
+            let collector = super::make_collector_for_split(
+                "fake_split_id2".to_string(),
+                &MockDocMapper,
+                &request,
+                Default::default(),
+            )
+            .unwrap();
+            let res = searcher
+                .search(&tantivy::query::AllQuery, &collector)
+                .unwrap();
+            assert_eq!(res.num_hits, dataset.len() as u64);
+            // we are searching the limit split, but only doc_id in 0..5
+            assert_eq!(res.partial_hits.len(), 5);
+
+            let collector = super::make_collector_for_split(
+                "fake_split_id3".to_string(),
+                &MockDocMapper,
+                &request,
+                Default::default(),
+            )
+            .unwrap();
+            let res = searcher
+                .search(&tantivy::query::AllQuery, &collector)
+                .unwrap();
+            assert_eq!(res.num_hits, dataset.len() as u64);
+            // we are searching split id3, and we remove anything before id2 in descending order
+            // (i.e. higher than id2 lexicographically), so everything is removed
+            assert_eq!(res.partial_hits.len(), 0);
         }
     }
 
