@@ -356,7 +356,7 @@ fn generate_service_trait(context: &CodegenContext) -> TokenStream {
     let service_name = &context.service_name;
     let trait_methods = generate_service_trait_methods(context);
     let mock_name = &context.mock_name;
-    let additionl_trait_methods = if context.generate_extra_service_methods {
+    let additional_trait_methods = if context.generate_extra_service_methods {
         quote! {
             async fn check_connectivity(&mut self) -> anyhow::Result<()>;
             fn endpoints(&self) -> Vec<quickwit_common::uri::Uri>;
@@ -370,7 +370,7 @@ fn generate_service_trait(context: &CodegenContext) -> TokenStream {
         #[async_trait::async_trait]
         pub trait #service_name: std::fmt::Debug + dyn_clone::DynClone + Send + Sync + 'static {
             #trait_methods
-            #additionl_trait_methods
+            #additional_trait_methods
         }
 
         dyn_clone::clone_trait_object!(#service_name);
