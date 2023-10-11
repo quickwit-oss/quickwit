@@ -95,7 +95,7 @@ impl IngestRouterServiceClient {
         channel: tonic::transport::Channel,
     ) -> Self {
         let (_, connection_keys_watcher) = tokio::sync::watch::channel(
-            std::collections::HashSet::from_iter(vec![addr]),
+            std::collections::HashSet::from_iter([addr]),
         );
         let adapter = IngestRouterServiceGrpcClientAdapter::new(
             ingest_router_service_grpc_client::IngestRouterServiceGrpcClient::new(
@@ -105,13 +105,13 @@ impl IngestRouterServiceClient {
         );
         Self::new(adapter)
     }
-    pub fn from_balanced_channel(
-        balanced_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
+    pub fn from_balance_channel(
+        balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
     ) -> IngestRouterServiceClient {
-        let connection_keys_watcher = balanced_channel.connection_keys_watcher();
+        let connection_keys_watcher = balance_channel.connection_keys_watcher();
         let adapter = IngestRouterServiceGrpcClientAdapter::new(
             ingest_router_service_grpc_client::IngestRouterServiceGrpcClient::new(
-                balanced_channel,
+                balance_channel,
             ),
             connection_keys_watcher,
         );
@@ -266,12 +266,12 @@ impl IngestRouterServiceTowerBlockBuilder {
             Box::new(IngestRouterServiceClient::from_channel(addr, channel)),
         )
     }
-    pub fn build_from_balanced_channel(
+    pub fn build_from_balance_channel(
         self,
-        balanced_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
+        balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
     ) -> IngestRouterServiceClient {
         self.build_from_boxed(
-            Box::new(IngestRouterServiceClient::from_balanced_channel(balanced_channel)),
+            Box::new(IngestRouterServiceClient::from_balance_channel(balance_channel)),
         )
     }
     pub fn build_from_mailbox<A>(

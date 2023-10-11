@@ -61,15 +61,17 @@ where K: Hash + Eq + Clone
             Poll::Ready(Some(change)) => match change {
                 Change::Insert(key, channel) => {
                     if self.keys.insert(key.clone()) {
-                        // TODO: log debug error
-                        let _ = self.connection_keys_tx.send(self.keys.clone());
+                        self.connection_keys_tx.send_modify(|connection_keys| {
+                            connection_keys.insert(key.clone());
+                        });
                     }
                     Poll::Ready(Some(Ok(TowerChange::Insert(key, channel))))
                 }
                 Change::Remove(key) => {
                     if self.keys.remove(&key) {
-                        // TODO: log debug error
-                        let _ = self.connection_keys_tx.send(self.keys.clone());
+                        self.connection_keys_tx.send_modify(|connection_keys| {
+                            connection_keys.remove(&key);
+                        });
                     }
                     Poll::Ready(Some(Ok(TowerChange::Remove(key))))
                 }
@@ -231,29 +233,20 @@ mod tests {
 
         let change = channel_discover.next().await.unwrap().unwrap();
         assert!(matches!(change, TowerChange::Insert("foo", _)));
-        assert_eq!(
-            *connection_keys_rx.borrow(),
-            HashSet::from_iter(["foo"])
-        );
+        assert_eq!(*connection_keys_rx.borrow(), HashSet::from_iter(["foo"]));
 
         let channel = Endpoint::from_static("http://[::1]:1337").connect_lazy();
         change_tx.send(Change::Insert("foo", channel)).unwrap();
 
         let change = channel_discover.next().await.unwrap().unwrap();
         assert!(matches!(change, TowerChange::Insert("foo", _)));
-        assert_eq!(
-            *connection_keys_rx.borrow(),
-            HashSet::from_iter(["foo"])
-        );
+        assert_eq!(*connection_keys_rx.borrow(), HashSet::from_iter(["foo"]));
 
         change_tx.send(Change::Remove("bar")).unwrap();
         let change = channel_discover.next().await.unwrap().unwrap();
 
         assert!(matches!(change, TowerChange::Remove("bar")));
-        assert_eq!(
-            *connection_keys_rx.borrow(),
-            HashSet::from_iter(["foo"])
-        );
+        assert_eq!(*connection_keys_rx.borrow(), HashSet::from_iter(["foo"]));
 
         change_tx.send(Change::Remove("foo")).unwrap();
         let change = channel_discover.next().await.unwrap().unwrap();

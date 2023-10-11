@@ -212,7 +212,7 @@ impl IngestServiceClient {
         channel: tonic::transport::Channel,
     ) -> Self {
         let (_, connection_keys_watcher) = tokio::sync::watch::channel(
-            std::collections::HashSet::from_iter(vec![addr]),
+            std::collections::HashSet::from_iter([addr]),
         );
         let adapter = IngestServiceGrpcClientAdapter::new(
             ingest_service_grpc_client::IngestServiceGrpcClient::new(channel),
@@ -220,12 +220,12 @@ impl IngestServiceClient {
         );
         Self::new(adapter)
     }
-    pub fn from_balanced_channel(
-        balanced_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
+    pub fn from_balance_channel(
+        balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
     ) -> IngestServiceClient {
-        let connection_keys_watcher = balanced_channel.connection_keys_watcher();
+        let connection_keys_watcher = balance_channel.connection_keys_watcher();
         let adapter = IngestServiceGrpcClientAdapter::new(
-            ingest_service_grpc_client::IngestServiceGrpcClient::new(balanced_channel),
+            ingest_service_grpc_client::IngestServiceGrpcClient::new(balance_channel),
             connection_keys_watcher,
         );
         Self::new(adapter)
@@ -497,12 +497,12 @@ impl IngestServiceTowerBlockBuilder {
     ) -> IngestServiceClient {
         self.build_from_boxed(Box::new(IngestServiceClient::from_channel(addr, channel)))
     }
-    pub fn build_from_balanced_channel(
+    pub fn build_from_balance_channel(
         self,
-        balanced_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
+        balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
     ) -> IngestServiceClient {
         self.build_from_boxed(
-            Box::new(IngestServiceClient::from_balanced_channel(balanced_channel)),
+            Box::new(IngestServiceClient::from_balance_channel(balance_channel)),
         )
     }
     pub fn build_from_mailbox<A>(

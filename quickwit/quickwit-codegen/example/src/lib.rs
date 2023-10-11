@@ -269,7 +269,7 @@ mod tests {
             "127.0.0.1:6666".parse().unwrap(),
             Endpoint::from_static("http://127.0.0.1:6666").connect_lazy(),
         );
-        let mut grpc_client = HelloClient::from_balanced_channel(channel);
+        let mut grpc_client = HelloClient::from_balance_channel(channel);
 
         assert_eq!(
             grpc_client
@@ -317,8 +317,8 @@ mod tests {
         );
 
         // The connectivity check fails if there is no client behind the channel.
-        let (balanced_channel, _): (BalanceChannel<SocketAddr>, _) = BalanceChannel::new();
-        let mut grpc_client = HelloClient::from_balanced_channel(balanced_channel);
+        let (balance_channel, _): (BalanceChannel<SocketAddr>, _) = BalanceChannel::new();
+        let mut grpc_client = HelloClient::from_balance_channel(balance_channel);
         assert_eq!(
             grpc_client
                 .check_connectivity()
@@ -554,7 +554,7 @@ mod tests {
             "127.0.0.1:7777".parse().unwrap(),
             Endpoint::from_static("http://127.0.0.1:7777").connect_lazy(),
         );
-        HelloClient::from_balanced_channel(balance_channed);
+        HelloClient::from_balance_channel(balance_channed);
     }
 
     #[tokio::test]

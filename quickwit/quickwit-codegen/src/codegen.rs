@@ -484,8 +484,8 @@ fn generate_client(context: &CodegenContext) -> TokenStream {
 
             pub fn from_balance_channel(balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>) -> #client_name
             {
-                let connection_keys_watcher = balanced_channel.connection_keys_watcher();
-                let adapter = #grpc_client_adapter_name::new(#grpc_client_package_name::#grpc_client_name::new(balanced_channel), connection_keys_watcher);
+                let connection_keys_watcher = balance_channel.connection_keys_watcher();
+                let adapter = #grpc_client_adapter_name::new(#grpc_client_package_name::#grpc_client_name::new(balance_channel), connection_keys_watcher);
                 Self::new(adapter)
             }
 
@@ -828,9 +828,9 @@ fn generate_tower_block_builder_impl(context: &CodegenContext) -> TokenStream {
                 self.build_from_boxed(Box::new(#client_name::from_channel(addr, channel)))
             }
 
-            pub fn build_from_balanced_channel(self, balanced_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>) -> #client_name
+            pub fn build_from_balance_channel(self, balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>) -> #client_name
             {
-                self.build_from_boxed(Box::new(#client_name::from_balanced_channel(balanced_channel)))
+                self.build_from_boxed(Box::new(#client_name::from_balance_channel(balance_channel)))
             }
 
             pub fn build_from_mailbox<A>(self, mailbox: quickwit_actors::Mailbox<A>) -> #client_name

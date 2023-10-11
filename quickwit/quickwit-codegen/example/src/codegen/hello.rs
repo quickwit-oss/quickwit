@@ -93,7 +93,7 @@ impl HelloClient {
         channel: tonic::transport::Channel,
     ) -> Self {
         let (_, connection_keys_watcher) = tokio::sync::watch::channel(
-            std::collections::HashSet::from_iter(vec![addr]),
+            std::collections::HashSet::from_iter([addr]),
         );
         let adapter = HelloGrpcClientAdapter::new(
             hello_grpc_client::HelloGrpcClient::new(channel),
@@ -101,12 +101,12 @@ impl HelloClient {
         );
         Self::new(adapter)
     }
-    pub fn from_balanced_channel(
-        balanced_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
+    pub fn from_balance_channel(
+        balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
     ) -> HelloClient {
-        let connection_keys_watcher = balanced_channel.connection_keys_watcher();
+        let connection_keys_watcher = balance_channel.connection_keys_watcher();
         let adapter = HelloGrpcClientAdapter::new(
-            hello_grpc_client::HelloGrpcClient::new(balanced_channel),
+            hello_grpc_client::HelloGrpcClient::new(balance_channel),
             connection_keys_watcher,
         );
         Self::new(adapter)
@@ -421,12 +421,12 @@ impl HelloTowerBlockBuilder {
     ) -> HelloClient {
         self.build_from_boxed(Box::new(HelloClient::from_channel(addr, channel)))
     }
-    pub fn build_from_balanced_channel(
+    pub fn build_from_balance_channel(
         self,
-        balanced_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
+        balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
     ) -> HelloClient {
         self.build_from_boxed(
-            Box::new(HelloClient::from_balanced_channel(balanced_channel)),
+            Box::new(HelloClient::from_balance_channel(balance_channel)),
         )
     }
     pub fn build_from_mailbox<A>(
@@ -575,9 +575,7 @@ where
     }
     async fn check_connectivity(&mut self) -> anyhow::Result<()> {
         if self.inner.is_disconnected() {
-            anyhow::bail!(
-                "Mailbox of actor `{}` is disconnected", self.inner.actor_instance_id()
-            )
+            anyhow::bail!("actor `{}` is disconnected", self.inner.actor_instance_id())
         }
         Ok(())
     }

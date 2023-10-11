@@ -201,7 +201,7 @@ async fn start_ingest_client_if_needed(
         Ok(ingest_service)
     } else {
         let balance_channel = balance_channel_for_service(cluster, QuickwitService::Indexer).await;
-        let ingest_service = IngestServiceClient::from_balanced_channel(balance_channel);
+        let ingest_service = IngestServiceClient::from_balance_channel(balance_channel);
         Ok(ingest_service)
     }
 }
@@ -246,7 +246,7 @@ async fn start_control_plane_if_needed(
     } else {
         let balance_channel =
             balance_channel_for_service(cluster, QuickwitService::ControlPlane).await;
-        Ok(ControlPlaneServiceClient::from_balanced_channel(
+        Ok(ControlPlaneServiceClient::from_balance_channel(
             balance_channel,
         ))
     }
