@@ -99,13 +99,14 @@ doc_mapping:
       output_format: unix_timestamp_nanos
       indexed: false
       fast: true
-      precision: milliseconds
+      precision: nanoseconds
     - name: span_end_timestamp_nanos
       type: datetime
       input_formats: [unix_timestamp]
       output_format: unix_timestamp_nanos
       indexed: false
       fast: false
+      precision: nanoseconds
     - name: span_duration_millis
       type: u64
       indexed: false
