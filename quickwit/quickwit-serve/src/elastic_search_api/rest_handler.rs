@@ -166,6 +166,7 @@ fn build_request_for_es_api(
             field_name: sort_field.field.to_string(),
             sort_order: sort_field.order as i32,
         })
+        .take_while_inclusive(|sort_field| !is_doc_field(sort_field))
         .collect();
     if sort_fields.len() >= 3 {
         return Err(ElasticSearchError::from(SearchError::InvalidArgument(
@@ -175,8 +176,9 @@ fn build_request_for_es_api(
 
     let scroll_duration: Option<Duration> = search_params.parse_scroll_ttl()?;
     let scroll_ttl_secs: Option<u32> = scroll_duration.map(|duration| duration.as_secs() as u32);
-    let (search_after, include_shard_doc) =
-        partial_hit_from_search_after_param(search_body.search_after, &sort_fields)?;
+
+    let has_doc_id_field = sort_fields.iter().any(is_doc_field);
+    let search_after = partial_hit_from_search_after_param(search_body.search_after, &sort_fields)?;
 
     Ok((
         quickwit_proto::search::SearchRequest {
@@ -192,24 +194,39 @@ fn build_request_for_es_api(
             scroll_ttl_secs,
             search_after,
         },
-        include_shard_doc,
+        has_doc_id_field,
     ))
+}
+
+fn is_doc_field(field: &quickwit_proto::search::SortField) -> bool {
+    field.field_name == "_shard_doc" || field.field_name == "_doc"
 }
 
 fn partial_hit_from_search_after_param(
     search_after: Vec<serde_json::Value>,
     sort_order: &[quickwit_proto::search::SortField],
-) -> Result<(Option<PartialHit>, bool), ElasticSearchError> {
-    let field_is_doc_id = |field: &quickwit_proto::search::SortField| {
-        field.field_name == "_shard_doc" || field.field_name == "_doc"
-    };
+) -> Result<Option<PartialHit>, ElasticSearchError> {
     if search_after.is_empty() {
-        return Ok((None, sort_order.iter().any(field_is_doc_id)));
+        return Ok(None);
+    }
+    if search_after.len() != sort_order.len() {
+        return Err(ElasticSearchError {
+            status: StatusCode::BAD_REQUEST,
+            error: ErrorCause {
+                reason: Some("sort and search_after are of different length".to_string()),
+                caused_by: None,
+                root_cause: vec![],
+                stack_trace: None,
+                suppressed: vec![],
+                ty: None,
+                additional_details: Default::default(),
+            },
+        });
     }
 
     let mut parsed_search_after = PartialHit::default();
     for (value, field) in search_after.into_iter().zip(sort_order) {
-        if field_is_doc_id(field) {
+        if is_doc_field(field) {
             if let Some(value_str) = value.as_str() {
                 let address: quickwit_search::GlobalDocAddress =
                     value_str.parse().map_err(|_| ElasticSearchError {
@@ -227,7 +244,7 @@ fn partial_hit_from_search_after_param(
                 parsed_search_after.split_id = address.split;
                 parsed_search_after.segment_ord = address.doc_addr.segment_ord;
                 parsed_search_after.doc_id = address.doc_addr.doc_id;
-                return Ok((Some(parsed_search_after), true));
+                return Ok(Some(parsed_search_after));
             } else {
                 todo!();
             }
@@ -252,7 +269,7 @@ fn partial_hit_from_search_after_param(
             }
         }
     }
-    Ok((Some(parsed_search_after), false))
+    Ok(Some(parsed_search_after))
 }
 
 async fn es_compat_index_search(

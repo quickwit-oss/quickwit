@@ -262,6 +262,8 @@ impl QuickwitSegmentCollector {
                 &search_after_values,
             );
             if !search_after.split_id.is_empty() {
+                // TODO actually it's not first, it should be what's in _shard_doc then first then
+                // default
                 let order = self
                     .top_k_hits
                     .sort_key_mapper
@@ -745,6 +747,8 @@ impl Ord for PartialHitSortingKey {
         let fields_res = compare_fields(&self.sort_orders, &self.sort_values, &other.sort_values);
 
         let doc_id_res = || {
+            // TODO actually it's not first, it should be what's in _shard_doc then first then
+            // default
             self.sort_orders
                 .first()
                 .unwrap_or(&SortOrder::Desc)
