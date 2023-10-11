@@ -24,7 +24,7 @@ use std::time::Duration;
 
 use chitchat::transport::ChannelTransport;
 use futures::{Stream, StreamExt};
-use quickwit_actors::{ActorHandle, Inbox, Mailbox, Universe};
+use quickwit_actors::{Inbox, Mailbox, Observe, Universe};
 use quickwit_cluster::{create_cluster_for_test, Cluster, ClusterChange};
 use quickwit_common::test_utils::wait_until_predicate;
 use quickwit_common::tower::{Change, Pool};
@@ -104,7 +104,7 @@ async fn start_control_plane(
     cluster: Cluster,
     indexers: &[&Cluster],
     universe: &Universe,
-) -> (Vec<Inbox<IndexingService>>, ActorHandle<ControlPlane>) {
+) -> (Vec<Inbox<IndexingService>>, Mailbox<ControlPlane>) {
     let index_1 = "test-indexing-plan-1";
     let source_1 = "source-1";
     let index_2 = "test-indexing-plan-2";
@@ -139,7 +139,7 @@ async fn start_control_plane(
     indexer_pool.listen_for_changes(indexer_change_stream);
 
     let self_node_id: NodeId = cluster.self_node_id().to_string().into();
-    let (_, control_plane_handle) = ControlPlane::spawn(
+    let (control_plane_mailbox, _control_plane_handle) = ControlPlane::spawn(
         universe,
         cluster.cluster_id().to_string(),
         self_node_id,
@@ -149,7 +149,7 @@ async fn start_control_plane(
         1,
     );
 
-    (indexer_inboxes, control_plane_handle)
+    (indexer_inboxes, control_plane_mailbox)
 }
 
 #[tokio::test]
@@ -165,13 +165,13 @@ async fn test_scheduler_scheduling_and_control_loop_apply_plan_again() {
         .await
         .unwrap();
     let universe = Universe::with_accelerated_time();
-    let (indexing_service_inboxes, control_plane_handler) =
+    let (indexing_service_inboxes, control_plane_mailbox) =
         start_control_plane(cluster.clone(), &[&cluster.clone()], &universe).await;
     let indexing_service_inbox = indexing_service_inboxes[0].clone();
-    let scheduler_state = control_plane_handler
-        .process_pending_and_observe()
+    let scheduler_state = control_plane_mailbox
+        .ask(Observe)
         .await
-        .state
+        .unwrap()
         .indexing_scheduler;
     let indexing_service_inbox_messages =
         indexing_service_inbox.drain_for_test_typed::<ApplyIndexingPlanRequest>();
@@ -186,20 +186,20 @@ async fn test_scheduler_scheduling_and_control_loop_apply_plan_again() {
     // the same plan.
     // Check first the plan is not updated before `MIN_DURATION_BETWEEN_SCHEDULING`.
     tokio::time::sleep(MIN_DURATION_BETWEEN_SCHEDULING.mul_f32(0.5)).await;
-    let scheduler_state = control_plane_handler
-        .process_pending_and_observe()
+    let scheduler_state = control_plane_mailbox
+        .ask(Observe)
         .await
-        .state
+        .unwrap()
         .indexing_scheduler;
     assert_eq!(scheduler_state.num_schedule_indexing_plan, 1);
     assert_eq!(scheduler_state.num_applied_physical_indexing_plan, 1);
 
     // After `MIN_DURATION_BETWEEN_SCHEDULING`, we should see a plan update.
     tokio::time::sleep(MIN_DURATION_BETWEEN_SCHEDULING.mul_f32(0.7)).await;
-    let scheduler_state = control_plane_handler
-        .process_pending_and_observe()
+    let scheduler_state = control_plane_mailbox
+        .ask(Observe)
         .await
-        .state
+        .unwrap()
         .indexing_scheduler;
     let indexing_service_inbox_messages =
         indexing_service_inbox.drain_for_test_typed::<ApplyIndexingPlanRequest>();
@@ -218,10 +218,10 @@ async fn test_scheduler_scheduling_and_control_loop_apply_plan_again() {
         .update_self_node_indexing_tasks(&indexing_tasks)
         .await
         .unwrap();
-    let scheduler_state = control_plane_handler
-        .process_pending_and_observe()
+    let scheduler_state = control_plane_mailbox
+        .ask(Observe)
         .await
-        .state
+        .unwrap()
         .indexing_scheduler;
     assert_eq!(scheduler_state.num_applied_physical_indexing_plan, 2);
     let indexing_service_inbox_messages =
@@ -235,10 +235,10 @@ async fn test_scheduler_scheduling_and_control_loop_apply_plan_again() {
         .await
         .unwrap();
     tokio::time::sleep(MIN_DURATION_BETWEEN_SCHEDULING.mul_f32(1.2)).await;
-    let scheduler_state = control_plane_handler
-        .process_pending_and_observe()
+    let scheduler_state = control_plane_mailbox
+        .ask(Observe)
         .await
-        .state
+        .unwrap()
         .indexing_scheduler;
     assert_eq!(scheduler_state.num_applied_physical_indexing_plan, 3);
     let indexing_service_inbox_messages =
@@ -255,16 +255,16 @@ async fn test_scheduler_scheduling_no_indexer() {
         .await
         .unwrap();
     let universe = Universe::with_accelerated_time();
-    let (indexing_service_inboxes, scheduler_handler) =
+    let (indexing_service_inboxes, control_plane_mailbox) =
         start_control_plane(cluster.clone(), &[], &universe).await;
     assert_eq!(indexing_service_inboxes.len(), 0);
 
     // No indexer.
     universe.sleep(CONTROL_PLAN_LOOP_INTERVAL).await;
-    let scheduler_state = scheduler_handler
-        .process_pending_and_observe()
+    let scheduler_state = control_plane_mailbox
+        .ask(Observe)
         .await
-        .state
+        .unwrap()
         .indexing_scheduler;
     assert_eq!(scheduler_state.num_applied_physical_indexing_plan, 0);
     assert_eq!(scheduler_state.num_schedule_indexing_plan, 0);
@@ -273,10 +273,10 @@ async fn test_scheduler_scheduling_no_indexer() {
     // There is no indexer, we should observe no
     // scheduling.
     universe.sleep(Duration::from_secs(60)).await;
-    let scheduler_state = scheduler_handler
-        .process_pending_and_observe()
+    let scheduler_state = control_plane_mailbox
+        .ask(Observe)
         .await
-        .state
+        .unwrap()
         .indexing_scheduler;
     assert_eq!(scheduler_state.num_applied_physical_indexing_plan, 0);
     assert_eq!(scheduler_state.num_schedule_indexing_plan, 0);
@@ -308,7 +308,7 @@ async fn test_scheduler_scheduling_multiple_indexers() {
     .await
     .unwrap();
     let universe = Universe::new();
-    let (indexing_service_inboxes, scheduler_handler) = start_control_plane(
+    let (indexing_service_inboxes, control_plane_mailbox) = start_control_plane(
         cluster.clone(),
         &[&cluster_indexer_1, &cluster_indexer_2],
         &universe,
@@ -316,13 +316,12 @@ async fn test_scheduler_scheduling_multiple_indexers() {
     .await;
     let indexing_service_inbox_1 = indexing_service_inboxes[0].clone();
     let indexing_service_inbox_2 = indexing_service_inboxes[1].clone();
-    let scheduler_handler_arc = Arc::new(scheduler_handler);
 
     // No indexer.
-    let scheduler_state = scheduler_handler_arc
-        .process_pending_and_observe()
+    let scheduler_state = control_plane_mailbox
+        .ask(Observe)
         .await
-        .state
+        .unwrap()
         .indexing_scheduler;
     let indexing_service_inbox_messages =
         indexing_service_inbox_1.drain_for_test_typed::<ApplyIndexingPlanRequest>();
@@ -346,12 +345,12 @@ async fn test_scheduler_scheduling_multiple_indexers() {
     // Wait for chitchat update, sheduler will detect new indexers and schedule a plan.
     wait_until_predicate(
         || {
-            let scheduler_handler_arc_clone = scheduler_handler_arc.clone();
+            let control_plane_mailbox_clone = control_plane_mailbox.clone();
             async move {
-                let scheduler_state = scheduler_handler_arc_clone
-                    .process_pending_and_observe()
+                let scheduler_state = control_plane_mailbox_clone
+                    .ask(Observe)
                     .await
-                    .state
+                    .unwrap()
                     .indexing_scheduler;
                 scheduler_state.num_schedule_indexing_plan == 1
             }
@@ -361,10 +360,10 @@ async fn test_scheduler_scheduling_multiple_indexers() {
     )
     .await
     .unwrap();
-    let scheduler_state = scheduler_handler_arc
-        .process_pending_and_observe()
+    let scheduler_state = control_plane_mailbox
+        .ask(Observe)
         .await
-        .state
+        .unwrap()
         .indexing_scheduler;
     assert_eq!(scheduler_state.num_applied_physical_indexing_plan, 1);
     let indexing_service_inbox_messages_1 =
@@ -385,10 +384,10 @@ async fn test_scheduler_scheduling_multiple_indexers() {
     // Wait 2 CONTROL_PLAN_LOOP_INTERVAL again and check the scheduler will not apply the plan
     // several times.
     universe.sleep(CONTROL_PLAN_LOOP_INTERVAL * 2).await;
-    let scheduler_state = scheduler_handler_arc
-        .process_pending_and_observe()
+    let scheduler_state = control_plane_mailbox
+        .ask(Observe)
         .await
-        .state
+        .unwrap()
         .indexing_scheduler;
     assert_eq!(scheduler_state.num_schedule_indexing_plan, 1);
 
@@ -411,12 +410,12 @@ async fn test_scheduler_scheduling_multiple_indexers() {
 
     wait_until_predicate(
         || {
-            let scheduler_handler_arc_clone = scheduler_handler_arc.clone();
+            let scheduler_handler_mailbox_clone = control_plane_mailbox.clone();
             async move {
-                let scheduler_state = scheduler_handler_arc_clone
-                    .process_pending_and_observe()
+                let scheduler_state = scheduler_handler_mailbox_clone
+                    .ask(Observe)
                     .await
-                    .state
+                    .unwrap()
                     .indexing_scheduler;
                 scheduler_state.num_schedule_indexing_plan == 2
             }
