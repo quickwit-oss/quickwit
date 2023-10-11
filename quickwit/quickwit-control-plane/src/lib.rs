@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 pub mod control_plane;
+pub(crate) mod control_plane_model;
 pub mod indexing_plan;
 pub mod ingest;
 pub mod scheduler;

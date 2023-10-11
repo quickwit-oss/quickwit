@@ -196,6 +196,7 @@ impl IndexingScheduler {
         Ok(source_configs)
     }
 
+    /// Returns, for all of the ingest api source, a map with the list of their available shard ids.
     async fn fetch_shards(
         &self,
         source_configs: &HashMap<SourceUid, SourceConfig>,
@@ -328,9 +329,7 @@ impl IndexingScheduler {
         self.state.last_applied_plan_timestamp = Some(Instant::now());
         self.state.last_applied_physical_plan = Some(new_physical_plan);
     }
-}
 
-impl IndexingScheduler {
     // Should be called whenever a change in the list of index/shard
     // has happened
     pub(crate) async fn on_index_change(&mut self) -> anyhow::Result<()> {
