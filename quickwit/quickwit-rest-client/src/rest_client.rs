@@ -26,7 +26,7 @@ use quickwit_indexing::actors::IndexingServiceCounters;
 pub use quickwit_ingest::CommitType;
 use quickwit_metastore::{IndexMetadata, Split, SplitInfo};
 use quickwit_search::SearchResponseRest;
-use quickwit_serve::{ListSplitsQueryParams, SearchRequestQueryString};
+use quickwit_serve::{ListSplitsQueryParams, ListSplitsResponse, SearchRequestQueryString};
 use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
 use reqwest::{Client, ClientBuilder, Method, StatusCode, Url};
 use serde::Serialize;
@@ -427,8 +427,8 @@ impl<'a, 'b> SplitClient<'a, 'b> {
                 self.timeout,
             )
             .await?;
-        let splits = response.deserialize().await?;
-        Ok(splits)
+        let list_splits_response: ListSplitsResponse = response.deserialize().await?;
+        Ok(list_splits_response.splits)
     }
 
     pub async fn mark_for_deletion(&self, split_ids: Vec<String>) -> Result<(), Error> {

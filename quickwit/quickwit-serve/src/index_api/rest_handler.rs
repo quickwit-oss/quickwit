@@ -241,6 +241,14 @@ fn describe_index_handler(
 #[derive(Debug, Clone, Deserialize, Serialize, utoipa::IntoParams, utoipa::ToSchema, Default)]
 #[into_params(parameter_in = Query)]
 pub struct ListSplitsQueryParams {
+    /// If set, restrict the number of splits to skip
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    pub offset: Option<usize>,
+    /// If set, restrict maximum number of splits to retrieve
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    pub limit: Option<usize>,
     /// A specific split state(s) to filter by.
     #[serde(deserialize_with = "from_simple_list")]
     #[serde(serialize_with = "to_simple_list")]
@@ -263,12 +271,22 @@ pub struct ListSplitsQueryParams {
     pub end_create_timestamp: Option<i64>,
 }
 
+#[derive(Serialize, Deserialize, Debug, utoipa::ToSchema)]
+pub struct ListSplitsResponse {
+    #[serde(default)]
+    pub offset: usize,
+    #[serde(default)]
+    pub size: usize,
+    #[serde(default)]
+    pub splits: Vec<Split>,
+}
+
 #[utoipa::path(
     get,
     tag = "Indexes",
     path = "/indexes/{index_id}/splits",
     responses(
-        (status = 200, description = "Successfully fetched splits.", body = [Split])
+        (status = 200, description = "Successfully fetched splits.", body = [ListSplitsResponse])
     ),
     params(
         ListSplitsQueryParams,
@@ -281,10 +299,17 @@ async fn list_splits(
     index_id: String,
     list_split_query: ListSplitsQueryParams,
     metastore: Arc<dyn Metastore>,
-) -> MetastoreResult<Vec<Split>> {
+) -> MetastoreResult<ListSplitsResponse> {
     let index_uid: IndexUid = metastore.index_metadata(&index_id).await?.index_uid;
     info!(index_id = %index_id, list_split_query = ?list_split_query, "get-splits");
     let mut query = ListSplitsQuery::for_index(index_uid);
+
+    if let Some(offset) = list_split_query.offset {
+        query = query.with_offset(offset);
+    }
+    if let Some(limit) = list_split_query.limit {
+        query = query.with_limit(limit);
+    }
     if let Some(split_states) = list_split_query.split_states {
         query = query.with_split_states(split_states);
     }
@@ -297,7 +322,13 @@ async fn list_splits(
     if let Some(end_created_timestamp) = list_split_query.end_create_timestamp {
         query = query.with_create_timestamp_lt(end_created_timestamp);
     }
-    metastore.list_splits(query).await
+    let splits = metastore.list_splits(query.clone()).await?;
+
+    Ok(ListSplitsResponse {
+        offset: query.offset.unwrap_or_default(),
+        size: splits.len(),
+        splits,
+    })
 }
 
 fn list_splits_handler(
