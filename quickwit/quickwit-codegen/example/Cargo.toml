@@ -10,6 +10,7 @@ homepage = "https://quickwit.io/"
 documentation = "https://quickwit.io/docs/"
 
 [dependencies]
+anyhow = { workspace = true }
 async-trait = { workspace = true }
 dyn-clone = { workspace = true }
 futures = { workspace = true }

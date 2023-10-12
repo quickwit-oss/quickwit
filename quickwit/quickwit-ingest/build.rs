@@ -29,6 +29,7 @@ fn main() {
         "src/codegen/",
         "crate::Result",
         "crate::IngestServiceError",
+        false,
         &[],
         prost_config,
     )
