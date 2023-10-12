@@ -647,6 +647,8 @@ Lists the splits of an index.
 ```bash
 quickwit split list
     --index <index>
+    [--offset <offset>]
+    [--limit <limit>]
     [--states <states>]
     [--create-date <create-date>]
     [--start-date <start-date>]
@@ -659,6 +661,8 @@ quickwit split list
 | Option | Description |
 |-----------------|-------------|
 | `--index` | Target index ID |
+| `--offset` | Number of splits to skip |
+| `--limit` | Maximum number of splits to retrieve |
 | `--states` | Selects the splits whose states are included in this comma-separated list of states. Possible values are `staged`, `published`, and `marked`. |
 | `--create-date` | Selects the splits whose creation dates are before this date. |
 | `--start-date` | Selects the splits that contain documents after this date (time-series indexes only). |
