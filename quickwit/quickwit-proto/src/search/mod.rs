@@ -191,13 +191,16 @@ impl std::hash::Hash for SortValue {
 }
 
 impl SortValue {
+    /// Where multiple variant could represent the same logical value, convert to a canonical form.
+    ///
+    /// For number, we prefer to represent them, in order, as i64, then as u64 and finaly as f64.
     pub fn normalize(&self) -> Self {
         match self {
-            SortValue::U64(_) => *self,
+            SortValue::I64(_) => *self,
             SortValue::Boolean(_) => *self,
-            SortValue::I64(number) => {
+            SortValue::U64(number) => {
                 if let Ok(number) = (*number).try_into() {
-                    SortValue::U64(number)
+                    SortValue::I64(number)
                 } else {
                     *self
                 }
@@ -206,19 +209,10 @@ impl SortValue {
                 let number = *number;
                 if number.ceil() == number {
                     // number is not NaN, and is a natural number
-                    if number.is_sign_positive() && number <= u64::MAX as f64 {
-                        // number is positive (including positive zero) and less than u64::MAX, we
-                        // can convert it safely
+                    if number >= i64::MIN as f64 && number <= i64::MAX as f64 {
+                        return SortValue::I64(number as i64);
+                    } else if number.is_sign_positive() && number <= u64::MAX as f64 {
                         return SortValue::U64(number as u64);
-                    } else if number.is_sign_negative() && number >= i64::MIN as f64 {
-                        // number is negative (including negative zero)  and more than i64::MIN, we
-                        // check for zero, and convert it
-                        let number = number as i64;
-                        if number == 0 {
-                            return SortValue::U64(0);
-                        } else {
-                            return SortValue::I64(number);
-                        }
                     }
                 }
                 *self

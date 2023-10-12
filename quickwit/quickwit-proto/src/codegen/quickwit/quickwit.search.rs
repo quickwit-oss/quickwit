@@ -104,7 +104,7 @@ pub struct SearchRequest {
     pub scroll_ttl_secs: ::core::option::Option<u32>,
     /// Document with sort tuple smaller or equal to this are discarded to
     /// enable pagination.
-    /// If split_id is empty, no comparhison with _shard_doc should be done
+    /// If split_id is empty, no comparison with _shard_doc should be done
     #[prost(message, optional, tag = "16")]
     pub search_after: ::core::option::Option<PartialHit>,
 }

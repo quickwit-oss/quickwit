@@ -168,7 +168,7 @@ message SearchRequest {
 
   // Document with sort tuple smaller or equal to this are discarded to
   // enable pagination.
-  // If split_id is empty, no comparhison with _shard_doc should be done
+  // If split_id is empty, no comparison with _shard_doc should be done
   optional PartialHit search_after = 16;
 }
 
