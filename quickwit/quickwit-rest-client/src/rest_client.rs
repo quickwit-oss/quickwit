@@ -652,7 +652,7 @@ mod test {
     use quickwit_ingest::CommitType;
     use quickwit_metastore::IndexMetadata;
     use quickwit_search::SearchResponseRest;
-    use quickwit_serve::{ListSplitsQueryParams, SearchRequestQueryString};
+    use quickwit_serve::{ListSplitsQueryParams, ListSplitsResponse, SearchRequestQueryString};
     use reqwest::header::CONTENT_TYPE;
     use reqwest::{StatusCode, Url};
     use serde_json::json;
@@ -969,10 +969,15 @@ mod test {
             start_timestamp: Some(1),
             ..Default::default()
         };
+        let response = ListSplitsResponse {
+            offset: 0,
+            size: 1,
+            splits: vec![split.clone()],
+        };
         Mock::given(method("GET"))
             .and(path("/api/v1/indexes/my-index/splits"))
             .and(query_param("start_timestamp", "1"))
-            .respond_with(ResponseTemplate::new(StatusCode::OK).set_body_json(vec![split.clone()]))
+            .respond_with(ResponseTemplate::new(StatusCode::OK).set_body_json(response))
             .up_to_n_times(1)
             .mount(&mock_server)
             .await;
