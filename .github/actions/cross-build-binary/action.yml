@@ -20,6 +20,8 @@ runs:
         node-version: 18
         cache: "yarn"
         cache-dependency-path: quickwit/quickwit-ui/yarn.lock
+    - run: yarn global add node-gyp
+      shell: bash
     - run: make build-ui
       shell: bash
     - name: Install rustup
