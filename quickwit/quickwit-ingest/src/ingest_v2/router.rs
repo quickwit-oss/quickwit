@@ -72,7 +72,10 @@ impl IngestRouter {
         replication_factor: usize,
     ) -> Self {
         let state = RouterState {
-            shard_table: ShardTable::default(),
+            shard_table: ShardTable {
+                self_node_id: self_node_id.clone(),
+                table: HashMap::default(),
+            },
         };
         Self {
             self_node_id,
