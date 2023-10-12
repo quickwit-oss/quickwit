@@ -21,8 +21,23 @@ use std::fmt::Debug;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use futures::Future;
+use futures::{Future, TryFutureExt};
 use quickwit_common::retry::{retry_with_mockable_time, MockableTime, RetryParams, Retryable};
+
+pub trait AwsRetryable {
+    fn is_retryable(&self) -> bool {
+        false
+    }
+}
+
+#[derive(Debug)]
+struct AwsRetryableWrapper<E>(E);
+
+impl<E> Retryable for AwsRetryableWrapper<E> where E: AwsRetryable {
+    fn is_retryable(&self) -> bool {
+        self.0.is_retryable()
+    }
+}
 
 struct TokioTime;
 
@@ -43,8 +58,34 @@ where
     retry_with_mockable_time(retry_params, f, TokioTime).await
 }
 
+pub async fn with_retry<U, E, Fut>(retry_params: &RetryParams, f: impl Fn() -> Fut) -> Result<U, E>
+    where
+        Fut: Future<Output = Result<U, E>>,
+        E: AwsRetryable + Debug + 'static,
+{
+    retry(retry_params, || f().map_err(AwsRetryableWrapper)).await.map_err(|error| error.0)
+}
+
 #[derive(Debug, Eq, PartialEq)]
 pub enum Retry<E> {
     Permanent(E),
     Transient(E),
+}
+
+impl<E> Retry<E> {
+    pub fn into_inner(self) -> E {
+        match self {
+            Self::Transient(error) => error,
+            Self::Permanent(error) => error,
+        }
+    }
+}
+
+impl<E> AwsRetryable for Retry<E> {
+    fn is_retryable(&self) -> bool {
+        match self {
+            Retry::Transient(_) => true,
+            Retry::Permanent(_) => false,
+        }
+    }
 }

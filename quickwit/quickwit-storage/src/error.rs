@@ -37,7 +37,7 @@ pub enum StorageErrorKind {
     Service,
     /// Any generic internal error.
     Internal,
-    /// A timeout occured during the operation.
+    /// A timeout occurred during the operation.
     Timeout,
     /// Io error.
     Io,
