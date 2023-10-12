@@ -169,10 +169,10 @@ pub struct DeleteTask {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteQuery {
-    /// Index ID.
-    #[prost(string, tag = "1")]
+    /// Index UID.
+    #[prost(message, optional, tag = "1")]
     #[serde(alias = "index_id")]
-    pub index_uid: ::prost::alloc::string::String,
+    pub index_uid: ::core::option::Option<crate::types::IndexUid>,
     /// If set, restrict search to documents with a `timestamp >= start_timestamp`.
     #[prost(int64, optional, tag = "2")]
     #[serde(skip_serializing_if = "Option::is_none")]

@@ -130,9 +130,8 @@ impl TryFrom<metastore::DeleteQuery> for search::SearchRequest {
     type Error = anyhow::Error;
 
     fn try_from(delete_query: metastore::DeleteQuery) -> anyhow::Result<Self> {
-        let index_uid: IndexUid = delete_query.index_uid.into();
         Ok(Self {
-            index_id_patterns: vec![index_uid.index_id().to_string()],
+            index_id_patterns: vec![index_uid!(delete_query).index_id],
             query_ast: delete_query.query_ast,
             start_timestamp: delete_query.start_timestamp,
             end_timestamp: delete_query.end_timestamp,

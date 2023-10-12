@@ -23,6 +23,11 @@ package quickwit.metastore;
 
 import "quickwit/ingest.proto";
 
+message IndexUid {
+  string index_id = 1;
+  uint64 incarnation_id_high = 2;
+  uint64 incarnation_id_low = 3;
+}
 
 enum SourceType {
   CLI = 0;
@@ -216,8 +221,8 @@ message DeleteTask {
 }
 
 message DeleteQuery {
-  // Index ID.
-  string index_uid = 1;
+  // Index UID.
+  IndexUid index_uid = 1;
   // If set, restrict search to documents with a `timestamp >= start_timestamp`.
   optional int64 start_timestamp = 2;
   // If set, restrict search to documents with a `timestamp < end_timestamp``.

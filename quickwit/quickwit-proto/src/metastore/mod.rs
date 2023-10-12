@@ -22,7 +22,9 @@ use std::fmt;
 use quickwit_common::retry::Retryable;
 use serde::{Deserialize, Serialize};
 
-use crate::{queue_id, IndexId, QueueId, ServiceError, ServiceErrorCode, SourceId, SplitId};
+use crate::{
+    queue_id, IndexId, IndexUid, QueueId, ServiceError, ServiceErrorCode, SourceId, SplitId,
+};
 
 pub mod events;
 
@@ -218,6 +220,14 @@ impl CloseShardsSuccess {
 impl CloseShardsFailure {
     pub fn queue_id(&self) -> QueueId {
         queue_id(&self.index_uid, &self.source_id, self.shard_id)
+    }
+}
+
+impl DeleteQuery {
+    pub fn index_uid(&self) -> &IndexUid {
+        self.index_uid
+            .as_ref()
+            .expect("`index_uid` should be a required field")
     }
 }
 
