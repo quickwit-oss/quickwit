@@ -903,10 +903,14 @@ mod tests {
                 .await;
             assert_eq!(resp.status(), 200);
             let actual_response_json: JsonValue = serde_json::from_slice(resp.body()).unwrap();
-            let expected_response_json = serde_json::json!([{
-                "create_timestamp": 0,
-                "split_id": "split_1",
-            }]);
+            let expected_response_json = serde_json::json!({
+                "splits": [
+                    {
+                        "create_timestamp": 0,
+                        "split_id": "split_1",
+                    }
+                ]
+            });
             assert_json_include!(
                 actual: actual_response_json,
                 expected: expected_response_json
