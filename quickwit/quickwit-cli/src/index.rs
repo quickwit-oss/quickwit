@@ -136,11 +136,6 @@ pub fn build_index_command() -> Command {
                         .help("Force a commit after the last document is sent, and wait for all documents to be committed and available for search before exiting")
                         .action(ArgAction::SetTrue)
                         .conflicts_with("wait"),
-                    Arg::new("commit-timeout")
-                        .long("commit-timeout")
-                        .help("Duration of the commit timeout operation.")
-                        .required(false)
-                        .global(true),
                 ])
             )
         .subcommand(
@@ -341,10 +336,6 @@ impl IndexCliCommand {
             (true, false) => CommitType::WaitFor,
             (true, true) => bail!("`--wait` and `--force` are mutually exclusive options"),
         };
-
-        if commit_type == CommitType::Auto && client_args.commit_timeout.is_some() {
-            bail!("`--commit-timeout` can only be used with --wait or --force options");
-        }
 
         Ok(Self::Ingest(IngestDocsArgs {
             client_args,

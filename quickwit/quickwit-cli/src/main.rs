@@ -305,8 +305,6 @@ mod tests {
             "--wait",
             "--connect-timeout",
             "15s",
-            "--commit-timeout",
-            "4h",
         ])?;
         let command = CliCommand::parse_cli_args(matches)?;
         assert!(matches!(

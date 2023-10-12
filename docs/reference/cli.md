@@ -324,7 +324,6 @@ quickwit index ingest
     [--batch-size-limit <batch-size-limit>]
     [--wait]
     [--force]
-    [--commit-timeout <commit-timeout>]
 ```
 
 *Options*
@@ -336,7 +335,6 @@ quickwit index ingest
 | `--batch-size-limit` | Size limit of each submitted document batch. |
 | `--wait` | Wait for all documents to be commited and available for search before exiting |
 | `--force` | Force a commit after the last document is sent, and wait for all documents to be committed and available for search before exiting |
-| `--commit-timeout` | Duration of the commit timeout operation. |
 
 *Examples*
 
