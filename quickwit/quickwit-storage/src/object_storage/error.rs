@@ -32,7 +32,7 @@ use hyper::http::StatusCode;
 use crate::{StorageError, StorageErrorKind};
 
 impl<E> From<SdkError<E>> for StorageError
-where E: Send + Sync + std::error::Error + 'static + ToStorageErrorKind
+where E: std::error::Error + ToStorageErrorKind + Send + Sync + 'static
 {
     fn from(error: SdkError<E>) -> StorageError {
         let error_kind = match &error {

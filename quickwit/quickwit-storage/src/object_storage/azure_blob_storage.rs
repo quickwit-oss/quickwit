@@ -36,8 +36,7 @@ use futures::io::{Error as FutureError, ErrorKind as FutureErrorKind};
 use futures::stream::{StreamExt, TryStreamExt};
 use md5::Digest;
 use once_cell::sync::OnceCell;
-use quickwit_aws::retry::{with_retry, AwsRetryable};
-use quickwit_common::retry::RetryParams;
+use quickwit_common::retry::{retry, RetryParams, Retryable};
 use quickwit_common::uri::Uri;
 use quickwit_common::{chunk_range, ignore_error_kind, into_u64_range};
 use quickwit_config::{AzureStorageConfig, StorageBackend};
@@ -195,7 +194,7 @@ impl AzureBlobStorage {
         let name = self.blob_name(path);
         let capacity = range_opt.as_ref().map(Range::len).unwrap_or(0);
 
-        with_retry(&self.retry_params, || async {
+        retry(&self.retry_params, || async {
             let mut response_stream = if let Some(range) = range_opt.as_ref() {
                 self.container_client
                     .blob_client(&name)
@@ -225,7 +224,7 @@ impl AzureBlobStorage {
         crate::STORAGE_METRICS
             .object_storage_upload_num_bytes
             .inc_by(payload.len());
-        with_retry(&self.retry_params, || async {
+        retry(&self.retry_params, || async {
             let data = Bytes::from(payload.read_all().await?.to_vec());
             let hash = azure_storage_blobs::prelude::Hash::from(md5::compute(&data[..]).0);
             self.container_client
@@ -262,7 +261,7 @@ impl AzureBlobStorage {
                     .object_storage_upload_num_bytes
                     .inc_by(range.end - range.start);
                 async move {
-                    with_retry(&self.retry_params, || async {
+                    retry(&self.retry_params, || async {
                         let block_id = format!("block:{num}");
                         let (data, hash_digest) =
                             extract_range_data_and_hash(moved_payload.box_clone(), range.clone())
@@ -434,7 +433,7 @@ impl Storage for AzureBlobStorage {
         path: &Path,
         range: Range<usize>,
     ) -> StorageResult<Box<dyn AsyncRead + Send + Unpin>> {
-        with_retry(&self.retry_params, || async {
+        retry(&self.retry_params, || async {
             let range = range.clone();
             let name = self.blob_name(path);
             let page_stream = self
@@ -568,7 +567,7 @@ struct AzureErrorWrapper {
     inner: AzureError,
 }
 
-impl AwsRetryable for AzureErrorWrapper {
+impl Retryable for AzureErrorWrapper {
     fn is_retryable(&self) -> bool {
         match self.inner.kind() {
             ErrorKind::HttpResponse { status, .. } => !matches!(

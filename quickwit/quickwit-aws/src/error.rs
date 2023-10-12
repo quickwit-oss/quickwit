@@ -40,7 +40,7 @@ use aws_smithy_client::SdkError;
 use crate::retry::AwsRetryable;
 
 impl<E> AwsRetryable for SdkError<E>
-    where E: AwsRetryable
+where E: AwsRetryable
 {
     fn is_retryable(&self) -> bool {
         match self {
