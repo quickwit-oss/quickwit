@@ -27,7 +27,7 @@ use quickwit_actors::{
 };
 use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_ingest::IngesterPool;
-use quickwit_metastore::Metastore;
+use quickwit_metastore::{IndexMetadata, Metastore};
 use quickwit_proto::control_plane::{
     ControlPlaneError, ControlPlaneResult, GetOrCreateOpenShardsRequest,
     GetOrCreateOpenShardsResponse,
@@ -42,8 +42,8 @@ use serde::Serialize;
 use tracing::error;
 
 use crate::control_plane_model::{ControlPlaneModel, ControlPlaneModelMetrics};
+use crate::indexing_scheduler::{IndexingScheduler, IndexingSchedulerState};
 use crate::ingest::IngestController;
-use crate::scheduler::{IndexingScheduler, IndexingSchedulerState};
 use crate::IndexerPool;
 
 /// Interval between two controls (or checks) of the desired plan VS running plan.
@@ -126,15 +126,14 @@ impl Actor for ControlPlane {
         self.model
             .load_from_metastore(&*self.metastore, ctx.progress())
             .await
-            .context("Failed to intiialize the model")?;
+            .context("failed to intialize the model")?;
 
         if let Err(error) = self
             .indexing_scheduler
-            .schedule_indexing_plan_if_needed()
-            .await
+            .schedule_indexing_plan_if_needed(&self.model)
         {
             // TODO inspect error.
-            error!("Error when scheduling indexing plan: `{}`.", error);
+            error!("error when scheduling indexing plan: `{}`.", error);
         }
 
         ctx.schedule_self_msg(CONTROL_PLAN_LOOP_INTERVAL, ControlPlanLoop)
@@ -153,7 +152,7 @@ impl Handler<ControlPlanLoop> for ControlPlane {
         _message: ControlPlanLoop,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        if let Err(error) = self.indexing_scheduler.control_running_plan().await {
+        if let Err(error) = self.indexing_scheduler.control_running_plan(&self.model) {
             error!("error when controlling the running plan: `{}`", error);
         }
         ctx.schedule_self_msg(CONTROL_PLAN_LOOP_INTERVAL, ControlPlanLoop)
@@ -176,7 +175,7 @@ fn convert_metastore_error<T>(
 ) -> Result<ControlPlaneResult<T>, ActorExitStatus> {
     // If true, we know that the transactions has not been recorded in the Metastore.
     // If false, we simply are not sure whether the transaction has been recorded or not.
-    let metastore_failure_is_certain = match &metastore_error {
+    let is_transaction_certainly_aborted = match &metastore_error {
         MetastoreError::AlreadyExists(_)
         | MetastoreError::FailedPrecondition { .. }
         | MetastoreError::Forbidden { .. }
@@ -190,15 +189,16 @@ fn convert_metastore_error<T>(
         | MetastoreError::Connection { .. }
         | MetastoreError::Db { .. } => false,
     };
-    if metastore_failure_is_certain {
-        // If the metastore failure is certain, this is actually a good thing.
+    if is_transaction_certainly_aborted {
+        // If the metastore transaction is certain to have been aborted,
+        // this is actually a good thing.
         // We do not need to restart the control plane.
-        error!(err=?metastore_error, transaction_outcome="certainly-failed", "metastore-error: The transaction certainly failed. We do not need to restart the control plane.");
+        error!(err=?metastore_error, transaction_outcome="aborted", "metastore error");
         Ok(Err(ControlPlaneError::Metastore(metastore_error)))
     } else {
-        // If the metastore failure is uncertain, we need to restart the control plane
+        // If the metastore transaction may have been executed, we need to restart the control plane
         // so that it gets resynced with the metastore state.
-        error!(err=?metastore_error, transaction_outcome="uncertain", "metastore-error: Transaction outcome is uncertain. Restarting control plane.");
+        error!(err=?metastore_error, transaction_outcome="maybe-executed", "metastore error");
         Err(ActorExitStatus::from(anyhow::anyhow!(metastore_error)))
     }
 }
@@ -222,14 +222,17 @@ impl Handler<CreateIndexRequest> for ControlPlane {
                 }
             };
 
-        let index_uid = match self.metastore.create_index(index_config).await {
+        let index_uid = match self.metastore.create_index(index_config.clone()).await {
             Ok(index_uid) => index_uid,
             Err(metastore_error) => {
                 return convert_metastore_error(metastore_error);
             }
         };
 
-        self.model.add_index(index_uid.clone());
+        let index_metadata: IndexMetadata =
+            IndexMetadata::new_with_index_uid(index_uid.clone(), index_config);
+
+        self.model.add_index(index_metadata);
 
         let response = CreateIndexResponse {
             index_uid: index_uid.into(),
@@ -262,7 +265,7 @@ impl Handler<DeleteIndexRequest> for ControlPlane {
 
         // TODO: Refine the event. Notify index will have the effect to reload the entire state from
         // the metastore. We should update the state of the control plane.
-        self.indexing_scheduler.on_index_change().await?;
+        self.indexing_scheduler.on_index_change(&self.model).await?;
 
         Ok(Ok(response))
     }
@@ -287,21 +290,22 @@ impl Handler<AddSourceRequest> for ControlPlane {
                     return Ok(Err(ControlPlaneError::from(error)));
                 }
             };
-        let source_id = source_config.source_id.clone();
 
         if let Err(metastore_error) = self
             .metastore
-            .add_source(index_uid.clone(), source_config)
+            .add_source(index_uid.clone(), source_config.clone())
             .await
         {
             return convert_metastore_error(metastore_error);
         };
 
-        self.model.add_source(&index_uid, &source_id);
+        self.model
+            .add_source(&index_uid, source_config)
+            .context("failed to add source")?;
 
         // TODO: Refine the event. Notify index will have the effect to reload the entire state from
         // the metastore. We should update the state of the control plane.
-        self.indexing_scheduler.on_index_change().await?;
+        self.indexing_scheduler.on_index_change(&self.model).await?;
 
         let response = EmptyResponse {};
         Ok(Ok(response))
@@ -333,7 +337,7 @@ impl Handler<ToggleSourceRequest> for ControlPlane {
 
         // TODO: Refine the event. Notify index will have the effect to reload the entire state from
         // the metastore. We should update the state of the control plane.
-        self.indexing_scheduler.on_index_change().await?;
+        self.indexing_scheduler.on_index_change(&self.model).await?;
 
         let response = EmptyResponse {};
         Ok(Ok(response))
@@ -362,7 +366,7 @@ impl Handler<DeleteSourceRequest> for ControlPlane {
         }
 
         self.model.delete_source(&index_uid, &request.source_id);
-        self.indexing_scheduler.on_index_change().await?;
+        self.indexing_scheduler.on_index_change(&self.model).await?;
         let response = EmptyResponse {};
         Ok(Ok(response))
     }
@@ -542,6 +546,9 @@ mod tests {
         let indexer_pool = IndexerPool::default();
         let ingester_pool = IngesterPool::default();
 
+        let index_metadata = IndexMetadata::for_test("test-index", "ram://test");
+        let index_uid = index_metadata.index_uid.clone();
+
         let mut mock_metastore = MockMetastore::default();
         mock_metastore
             .expect_add_source()
@@ -553,7 +560,7 @@ mod tests {
             });
         mock_metastore
             .expect_list_indexes_metadatas()
-            .returning(|_| Ok(Vec::new()));
+            .returning(move |_| Ok(vec![index_metadata.clone()]));
         let metastore = Arc::new(mock_metastore);
         let replication_factor = 1;
 
@@ -568,7 +575,7 @@ mod tests {
         );
         let source_config = SourceConfig::for_test("test-source", SourceParams::void());
         let add_source_request = AddSourceRequest {
-            index_uid: "test-index:0".to_string(),
+            index_uid: index_uid.to_string(),
             source_config_json: serde_json::to_string(&source_config).unwrap(),
         };
         control_plane_mailbox

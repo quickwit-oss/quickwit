@@ -24,15 +24,17 @@ use fnv::{FnvHashMap, FnvHashSet};
 #[cfg(test)]
 use itertools::Itertools;
 use quickwit_common::Progress;
-use quickwit_config::INGEST_SOURCE_ID;
-use quickwit_metastore::{ListIndexesQuery, Metastore};
+use quickwit_config::{SourceConfig, INGEST_SOURCE_ID};
+use quickwit_metastore::{IndexMetadata, ListIndexesQuery, Metastore};
 use quickwit_proto::control_plane::ControlPlaneResult;
 use quickwit_proto::ingest::{Shard, ShardState};
-use quickwit_proto::metastore::ListShardsSubrequest;
+use quickwit_proto::metastore::{EntityKind, ListShardsSubrequest, MetastoreError};
 use quickwit_proto::types::IndexId;
 use quickwit_proto::{metastore, IndexUid, NodeId, NodeIdRef, ShardId, SourceId};
 use serde::Serialize;
 use tracing::{error, info};
+
+use crate::SourceUid;
 
 type NextShardId = ShardId;
 #[derive(Debug, Eq, PartialEq)]
@@ -82,7 +84,8 @@ impl ShardTableEntry {
 /// Upon starts, it loads its entire state from the metastore.
 #[derive(Default, Debug)]
 pub struct ControlPlaneModel {
-    index_table: FnvHashMap<IndexId, IndexUid>,
+    index_uid_table: FnvHashMap<IndexId, IndexUid>,
+    index_table: FnvHashMap<IndexUid, IndexMetadata>,
     shard_table: ShardTable,
 }
 
@@ -110,33 +113,35 @@ impl ControlPlaneModel {
     ) -> ControlPlaneResult<()> {
         let now = Instant::now();
         self.clear();
-        let indexes = progress
+        let index_metadatas = progress
             .protect_future(metastore.list_indexes_metadatas(ListIndexesQuery::All))
             .await?;
 
-        self.index_table.reserve(indexes.len());
+        let num_indexes = index_metadatas.len();
+        self.index_table.reserve(num_indexes);
 
-        let num_indexes = indexes.len();
         let mut num_sources = 0;
         let mut num_shards = 0;
 
-        let mut subrequests = Vec::with_capacity(indexes.len());
+        let mut subrequests = Vec::with_capacity(index_metadatas.len());
 
-        for index in indexes {
-            for source_id in index.sources.into_keys() {
+        for index_metadata in index_metadatas {
+            self.add_index(index_metadata);
+        }
+
+        for index_metadata in self.index_table.values() {
+            for source_id in index_metadata.sources.keys() {
                 if source_id != INGEST_SOURCE_ID {
                     continue;
                 }
                 let request = ListShardsSubrequest {
-                    index_uid: index.index_uid.clone().into(),
-                    source_id,
+                    index_uid: index_metadata.index_uid.clone().into(),
+                    source_id: source_id.to_string(),
                     shard_state: Some(ShardState::Open as i32),
                 };
                 num_sources += 1;
                 subrequests.push(request);
             }
-            self.index_table
-                .insert(index.index_config.index_id, index.index_uid);
         }
         if !subrequests.is_empty() {
             let list_shards_request = metastore::ListShardsRequest { subrequests };
@@ -151,10 +156,10 @@ impl ControlPlaneModel {
             for list_shards_subresponse in list_shard_response.subresponses {
                 num_shards += list_shards_subresponse.shards.len();
 
-                let key = (
-                    list_shards_subresponse.index_uid.into(),
-                    list_shards_subresponse.source_id,
-                );
+                let source_uid = SourceUid {
+                    index_uid: list_shards_subresponse.index_uid.into(),
+                    source_id: list_shards_subresponse.source_id,
+                };
                 let shards: FnvHashMap<ShardId, Shard> = list_shards_subresponse
                     .shards
                     .into_iter()
@@ -164,7 +169,9 @@ impl ControlPlaneModel {
                     shards,
                     next_shard_id: list_shards_subresponse.next_shard_id,
                 };
-                self.shard_table.table_entries.insert(key, table_entry);
+                self.shard_table
+                    .table_entries
+                    .insert(source_uid, table_entry);
             }
         }
         info!(
@@ -178,19 +185,58 @@ impl ControlPlaneModel {
         Ok(())
     }
 
-    pub(crate) fn add_index(&mut self, index_uid: IndexUid) {
-        let index_id = index_uid.index_id().to_string();
-        self.index_table.insert(index_id, index_uid);
+    pub fn list_shards(&self, source_uid: &SourceUid) -> Vec<ShardId> {
+        self.shard_table.list_shards(source_uid)
+    }
+
+    pub(crate) fn get_source_configs(
+        &self,
+    ) -> impl Iterator<Item = (SourceUid, &SourceConfig)> + '_ {
+        self.index_table.values().flat_map(|index_metadata| {
+            index_metadata
+                .sources
+                .iter()
+                .map(move |(source_id, source_config)| {
+                    (
+                        SourceUid {
+                            index_uid: index_metadata.index_uid.clone(),
+                            source_id: source_id.clone(),
+                        },
+                        source_config,
+                    )
+                })
+        })
+    }
+
+    pub(crate) fn add_index(&mut self, index_metadata: IndexMetadata) {
+        let index_uid = index_metadata.index_uid.clone();
+        self.index_uid_table
+            .insert(index_metadata.index_id().to_string(), index_uid.clone());
+        self.index_table.insert(index_uid, index_metadata);
     }
 
     pub(crate) fn delete_index(&mut self, index_uid: &IndexUid) {
         // TODO: We need to let the routers and ingesters know.
-        self.index_table.remove(index_uid.index_id());
+        self.index_table.remove(index_uid);
         self.shard_table.delete_index(index_uid.index_id());
     }
 
-    pub(crate) fn add_source(&mut self, index_uid: &IndexUid, source_id: &SourceId) {
-        self.shard_table.add_source(index_uid, source_id);
+    /// Adds a source to a given index. Returns an error if a source with the same source_id already
+    /// exists.
+    pub(crate) fn add_source(
+        &mut self,
+        index_uid: &IndexUid,
+        source_config: SourceConfig,
+    ) -> ControlPlaneResult<()> {
+        self.shard_table
+            .add_source(index_uid, &source_config.source_id);
+        let index_metadata = self.index_table.get_mut(index_uid).ok_or_else(|| {
+            MetastoreError::NotFound(EntityKind::Index {
+                index_id: index_uid.to_string(),
+            })
+        })?;
+        index_metadata.add_source(source_config)?;
+        Ok(())
     }
 
     pub(crate) fn delete_source(&mut self, index_uid: &IndexUid, source_id: &SourceId) {
@@ -221,7 +267,7 @@ impl ControlPlaneModel {
     }
 
     pub fn index_uid(&self, index_id: &str) -> Option<IndexUid> {
-        self.index_table.get(index_id).cloned()
+        self.index_uid_table.get(index_id).cloned()
     }
 
     /// Updates the shard table.
@@ -252,7 +298,7 @@ impl ControlPlaneModel {
 // A table that keeps track of the existing shards for each index and source.
 #[derive(Debug, Default)]
 struct ShardTable {
-    table_entries: FnvHashMap<(IndexUid, SourceId), ShardTableEntry>,
+    table_entries: FnvHashMap<SourceUid, ShardTableEntry>,
 }
 
 impl ShardTable {
@@ -260,10 +306,12 @@ impl ShardTable {
     ///
     /// TODO check and document the behavior on error (if the source was already here).
     fn add_source(&mut self, index_uid: &IndexUid, source_id: &SourceId) {
-        let key = (index_uid.clone(), source_id.clone());
+        let source_uid = SourceUid {
+            index_uid: index_uid.clone(),
+            source_id: source_id.clone(),
+        };
         let table_entry = ShardTableEntry::default();
-        let previous_table_entry_opt = self.table_entries.insert(key, table_entry);
-
+        let previous_table_entry_opt = self.table_entries.insert(source_uid, table_entry);
         if let Some(previous_table_entry) = previous_table_entry_opt {
             if !previous_table_entry.is_default() {
                 error!(
@@ -276,14 +324,28 @@ impl ShardTable {
     }
 
     fn delete_source(&mut self, index_uid: &IndexUid, source_id: &SourceId) {
-        let key = (index_uid.clone(), source_id.clone());
-        self.table_entries.remove(&key);
+        let source_uid = SourceUid {
+            index_uid: index_uid.clone(),
+            source_id: source_id.clone(),
+        };
+        self.table_entries.remove(&source_uid);
     }
 
     /// Removes all the entries that match the target index ID.
     fn delete_index(&mut self, index_id: &str) {
         self.table_entries
-            .retain(|(index_uid, _), _| index_uid.index_id() != index_id);
+            .retain(|source_uid, _| source_uid.index_uid.index_id() != index_id);
+    }
+
+    fn list_shards(&self, source_uid: &SourceUid) -> Vec<ShardId> {
+        let Some(shard_table_entry) = self.table_entries.get(source_uid) else {
+            return Vec::new();
+        };
+        shard_table_entry
+            .shards
+            .values()
+            .map(|shard| shard.shard_id)
+            .collect()
     }
 
     /// Finds open shards for a given index and source and whose leaders are not in the set of
@@ -294,8 +356,11 @@ impl ShardTable {
         source_id: &SourceId,
         unavailable_ingesters: &FnvHashSet<NodeId>,
     ) -> Option<(Vec<Shard>, NextShardId)> {
-        let key = (index_uid.clone(), source_id.clone());
-        let table_entry = self.table_entries.get(&key)?;
+        let source_uid = SourceUid {
+            index_uid: index_uid.clone(),
+            source_id: source_id.clone(),
+        };
+        let table_entry = self.table_entries.get(&source_uid)?;
         let open_shards: Vec<Shard> = table_entry
             .shards
             .values()
@@ -323,8 +388,11 @@ impl ShardTable {
         shards: &[Shard],
         next_shard_id: NextShardId,
     ) {
-        let key = (index_uid.clone(), source_id.clone());
-        match self.table_entries.entry(key) {
+        let source_uid = SourceUid {
+            index_uid: index_uid.clone(),
+            source_id: source_id.clone(),
+        };
+        match self.table_entries.entry(source_uid) {
             Entry::Occupied(mut entry) => {
                 for shard in shards {
                     let table_entry = entry.get_mut();
@@ -358,8 +426,11 @@ impl ShardTable {
         source_id: &SourceId,
         shard_ids: &[ShardId],
     ) {
-        let key = (index_uid.clone(), source_id.clone());
-        if let Some(table_entry) = self.table_entries.get_mut(&key) {
+        let source_uid = SourceUid {
+            index_uid: index_uid.clone(),
+            source_id: source_id.clone(),
+        };
+        if let Some(table_entry) = self.table_entries.get_mut(&source_uid) {
             for shard_id in shard_ids {
                 if let Some(shard) = table_entry.shards.get_mut(shard_id) {
                     shard.shard_state = ShardState::Closed as i32;
@@ -375,8 +446,11 @@ impl ShardTable {
         source_id: &SourceId,
         shard_ids: &[ShardId],
     ) {
-        let key = (index_uid.clone(), source_id.clone());
-        if let Some(table_entry) = self.table_entries.get_mut(&key) {
+        let source_uid = SourceUid {
+            index_uid: index_uid.clone(),
+            source_id: source_id.clone(),
+        };
+        if let Some(table_entry) = self.table_entries.get_mut(&source_uid) {
             for shard_id in shard_ids {
                 table_entry.shards.remove(shard_id);
             }
@@ -399,8 +473,11 @@ mod tests {
         let mut shard_table = ShardTable::default();
         shard_table.add_source(&index_uid, &source_id);
         assert_eq!(shard_table.table_entries.len(), 1);
-        let key = (index_uid.clone(), source_id.clone());
-        let table_entry = shard_table.table_entries.get(&key).unwrap();
+        let source_uid = SourceUid {
+            index_uid: index_uid.clone(),
+            source_id: source_id.clone(),
+        };
+        let table_entry = shard_table.table_entries.get(&source_uid).unwrap();
         assert!(table_entry.shards.is_empty());
         assert_eq!(table_entry.next_shard_id, 1);
     }
@@ -496,8 +573,11 @@ mod tests {
 
         assert_eq!(shard_table.table_entries.len(), 1);
 
-        let key = (index_uid_0.clone(), source_id.clone());
-        let table_entry = shard_table.table_entries.get(&key).unwrap();
+        let source_uid = SourceUid {
+            index_uid: index_uid_0.clone(),
+            source_id: source_id.clone(),
+        };
+        let table_entry = shard_table.table_entries.get(&source_uid).unwrap();
         let shards = table_entry.shards();
         assert_eq!(shards.len(), 1);
         assert_eq!(shards[0], shard_01);
@@ -523,8 +603,11 @@ mod tests {
 
         assert_eq!(shard_table.table_entries.len(), 1);
 
-        let key = (index_uid_0.clone(), source_id.clone());
-        let table_entry = shard_table.table_entries.get(&key).unwrap();
+        let source_uid = SourceUid {
+            index_uid: index_uid_0.clone(),
+            source_id: source_id.clone(),
+        };
+        let table_entry = shard_table.table_entries.get(&source_uid).unwrap();
         let shards = table_entry.shards();
         assert_eq!(shards.len(), 2);
         assert_eq!(shards[0], shard_01);
@@ -571,15 +654,21 @@ mod tests {
 
         assert_eq!(shard_table.table_entries.len(), 2);
 
-        let key = (index_uid_0.clone(), source_id.clone());
-        let table_entry = shard_table.table_entries.get(&key).unwrap();
+        let source_uid_0 = SourceUid {
+            index_uid: index_uid_0.clone(),
+            source_id: source_id.clone(),
+        };
+        let table_entry = shard_table.table_entries.get(&source_uid_0).unwrap();
         let shards = table_entry.shards();
         assert_eq!(shards.len(), 1);
         assert_eq!(shards[0], shard_01);
         assert_eq!(table_entry.next_shard_id, 3);
 
-        let key = (index_uid_1.clone(), source_id.clone());
-        let table_entry = shard_table.table_entries.get(&key).unwrap();
+        let source_uid_1 = SourceUid {
+            index_uid: index_uid_1.clone(),
+            source_id: source_id.clone(),
+        };
+        let table_entry = shard_table.table_entries.get(&source_uid_1).unwrap();
         assert!(table_entry.is_empty());
         assert_eq!(table_entry.next_shard_id, 2);
     }
@@ -643,25 +732,31 @@ mod tests {
 
         assert_eq!(model.index_table.len(), 2);
         assert_eq!(
-            model.index_table["test-index-0"],
+            model.index_uid("test-index-0").unwrap(),
             IndexUid::from("test-index-0:0".to_string())
         );
         assert_eq!(
-            model.index_table["test-index-1"],
+            model.index_uid("test-index-1").unwrap(),
             IndexUid::from("test-index-1:0".to_string())
         );
 
         assert_eq!(model.shard_table.table_entries.len(), 2);
 
-        let key = ("test-index-0:0".into(), INGEST_SOURCE_ID.to_string());
-        let table_entry = model.shard_table.table_entries.get(&key).unwrap();
+        let source_uid_0 = SourceUid {
+            index_uid: "test-index-0:0".into(),
+            source_id: INGEST_SOURCE_ID.to_string(),
+        };
+        let table_entry = model.shard_table.table_entries.get(&source_uid_0).unwrap();
         let shards = table_entry.shards();
         assert_eq!(shards.len(), 1);
         assert_eq!(shards[0].shard_id, 42);
         assert_eq!(table_entry.next_shard_id, 43);
 
-        let key = ("test-index-1:0".into(), INGEST_SOURCE_ID.to_string());
-        let table_entry = model.shard_table.table_entries.get(&key).unwrap();
+        let source_uid_1 = SourceUid {
+            index_uid: "test-index-1:0".into(),
+            source_id: INGEST_SOURCE_ID.to_string(),
+        };
+        let table_entry = model.shard_table.table_entries.get(&source_uid_1).unwrap();
         let shards = table_entry.shards();
         assert_eq!(shards.len(), 0);
         assert_eq!(table_entry.next_shard_id, 1);
