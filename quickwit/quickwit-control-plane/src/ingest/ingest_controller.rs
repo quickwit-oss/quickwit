@@ -214,6 +214,7 @@ impl IngestController {
                         source_id: get_open_shards_subrequest.source_id.clone(),
                     })
                 })?;
+
             if !open_shards.is_empty() {
                 let get_open_shards_subresponse = GetOpenShardsSubresponse {
                     index_uid: index_uid.into(),
@@ -237,9 +238,11 @@ impl IngestController {
                     follower_id: follower_id.map(|follower_id| follower_id.into()),
                     next_shard_id,
                 };
+
                 open_shards_subrequests.push(open_shards_subrequest);
             }
         }
+
         if !open_shards_subrequests.is_empty() {
             let open_shards_request = metastore::OpenShardsRequest {
                 subrequests: open_shards_subrequests,
@@ -265,10 +268,9 @@ impl IngestController {
                 get_open_shards_subresponses.push(get_open_shards_subresponse);
             }
         }
-        let get_open_shards_response = GetOrCreateOpenShardsResponse {
+        Ok(GetOrCreateOpenShardsResponse {
             subresponses: get_open_shards_subresponses,
-        };
-        Ok(get_open_shards_response)
+        })
     }
 }
 
@@ -281,7 +283,8 @@ pub enum PingError {
 #[cfg(test)]
 mod tests {
 
-    use quickwit_metastore::MockMetastore;
+    use quickwit_config::{SourceConfig, SourceParams};
+    use quickwit_metastore::{IndexMetadata, MockMetastore};
     use quickwit_proto::control_plane::GetOrCreateOpenShardsSubrequest;
     use quickwit_proto::ingest::ingester::{
         IngesterServiceClient, MockIngesterService, PingResponse,
@@ -487,25 +490,31 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingest_controller_get_open_shards() {
-        let index_uid_0_str: &'static str = "test-index-0:0";
-        let index_uid_0: IndexUid = index_uid_0_str.to_string().into();
-        let index_uid_1_str: &'static str = "test-index-1:0";
-        let index_uid_1: IndexUid = index_uid_1_str.to_string().into();
         let source_id: &'static str = "test-source";
+
+        let index_0 = "test-index-0";
+        let index_metadata_0 = IndexMetadata::for_test(index_0, "ram://indexes/test-index0");
+        let index_uid_0 = index_metadata_0.index_uid.clone();
+        let index_uid_0_str = index_uid_0.to_string();
+        let index_1 = "test-index-1";
+        let index_metadata_1 = IndexMetadata::for_test(index_1, "ram://indexes/test-index1");
+        let index_uid_1 = index_metadata_1.index_uid.clone();
+        let index_uid_1_str = index_uid_1.to_string();
 
         let progress = Progress::default();
 
+        let index_uid_1_str_clone = index_uid_1_str.clone();
         let mut mock_metastore = MockMetastore::default();
         mock_metastore
             .expect_open_shards()
             .once()
             .returning(move |request| {
                 assert_eq!(request.subrequests.len(), 1);
-                assert_eq!(&request.subrequests[0].index_uid, index_uid_1_str);
+                assert_eq!(&request.subrequests[0].index_uid, &index_uid_1_str_clone);
                 assert_eq!(&request.subrequests[0].source_id, source_id);
 
                 let subresponses = vec![metastore::OpenShardsSubresponse {
-                    index_uid: index_uid_1_str.to_string(),
+                    index_uid: index_uid_1_str_clone.to_string(),
                     source_id: "test-source".to_string(),
                     open_shards: vec![Shard {
                         shard_id: 1,
@@ -540,10 +549,14 @@ mod tests {
 
         let mut model = ControlPlaneModel::default();
 
-        model.add_index(index_uid_0.clone());
-        model.add_index(index_uid_1.clone());
-        model.add_source(&index_uid_0, &source_id.into());
-        model.add_source(&index_uid_1, &source_id.into());
+        let source_config = SourceConfig::for_test(source_id, SourceParams::stdin());
+
+        model.add_index(index_metadata_0.clone());
+        model.add_index(index_metadata_1.clone());
+        model
+            .add_source(&index_uid_0, source_config.clone())
+            .unwrap();
+        model.add_source(&index_uid_1, source_config).unwrap();
 
         let shards = vec![
             Shard {
@@ -559,16 +572,19 @@ mod tests {
                 ..Default::default()
             },
         ];
+
         model.update_shards(&index_uid_0, &source_id.into(), &shards, 3);
 
         let request = GetOrCreateOpenShardsRequest {
             subrequests: Vec::new(),
             unavailable_ingesters: Vec::new(),
         };
+
         let response = ingest_controller
             .get_or_create_open_shards(request, &mut model, &progress)
             .await
             .unwrap();
+
         assert_eq!(response.subresponses.len(), 0);
 
         let subrequests = vec![
@@ -592,6 +608,7 @@ mod tests {
             .get_or_create_open_shards(request, &mut model, &progress)
             .await
             .unwrap();
+
         assert_eq!(response.subresponses.len(), 2);
 
         assert_eq!(response.subresponses[0].index_uid, index_uid_0_str);
@@ -603,7 +620,7 @@ mod tests {
             "test-ingester-1"
         );
 
-        assert_eq!(response.subresponses[1].index_uid, index_uid_1_str);
+        assert_eq!(&response.subresponses[1].index_uid, &index_uid_1_str);
         assert_eq!(response.subresponses[1].source_id, source_id);
         assert_eq!(response.subresponses[1].open_shards.len(), 1);
         assert_eq!(response.subresponses[1].open_shards[0].shard_id, 1);

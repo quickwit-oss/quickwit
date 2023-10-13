@@ -18,18 +18,17 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::cmp::Ordering;
-use std::collections::HashMap;
-use std::hash::Hash;
+use std::num::NonZeroUsize;
 
+use fnv::FnvHashMap;
 use itertools::Itertools;
 use quickwit_common::rendezvous_hasher::sort_by_rendez_vous_hash;
-use quickwit_config::{SourceConfig, CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID, INGEST_SOURCE_ID};
 use quickwit_proto::indexing::IndexingTask;
 use quickwit_proto::metastore::SourceType;
-use quickwit_proto::{IndexUid, SourceId};
 use serde::Serialize;
 
-use crate::IndexerNodeInfo;
+use crate::control_plane_model::ControlPlaneModel;
+use crate::{IndexerNodeInfo, SourceUid};
 
 /// A [`PhysicalIndexingPlan`] defines the list of indexing tasks
 /// each indexer, identified by its node ID, should run.
@@ -37,7 +36,7 @@ use crate::IndexerNodeInfo;
 /// to identify if the plan is up to date with the metastore.
 #[derive(Debug, PartialEq, Clone, Serialize, Default)]
 pub struct PhysicalIndexingPlan {
-    indexing_tasks_per_node_id: HashMap<String, Vec<IndexingTask>>,
+    indexing_tasks_per_node_id: FnvHashMap<String, Vec<IndexingTask>>,
 }
 
 impl PhysicalIndexingPlan {
@@ -63,11 +62,20 @@ impl PhysicalIndexingPlan {
             .unwrap_or(0)
     }
 
-    pub fn assign_indexing_task(&mut self, node_id: String, indexing_task: IndexingTask) {
+    fn assign_indexing_task(
+        &mut self,
+        node_id: String,
+        logical_indexing_task: LogicalIndexingTask,
+    ) {
+        let physical_indexing_task = IndexingTask {
+            index_uid: logical_indexing_task.source_uid.index_uid.to_string(),
+            source_id: logical_indexing_task.source_uid.source_id,
+            shard_ids: logical_indexing_task.shard_ids,
+        };
         self.indexing_tasks_per_node_id
             .entry(node_id)
             .or_default()
-            .push(indexing_task);
+            .push(physical_indexing_task);
     }
 
     /// Returns the number of indexing tasks for the given node ID, index ID and source ID.
@@ -84,7 +92,7 @@ impl PhysicalIndexingPlan {
     }
 
     /// Returns the hashmap of (node ID, indexing tasks).
-    pub fn indexing_tasks_per_node(&self) -> &HashMap<String, Vec<IndexingTask>> {
+    pub fn indexing_tasks_per_node(&self) -> &FnvHashMap<String, Vec<IndexingTask>> {
         &self.indexing_tasks_per_node_id
     }
 
@@ -140,13 +148,10 @@ impl PhysicalIndexingPlan {
 /// task.
 pub(crate) fn build_physical_indexing_plan(
     indexers: &[(String, IndexerNodeInfo)],
-    source_configs: &HashMap<SourceUid, SourceConfig>,
-    mut indexing_tasks: Vec<IndexingTask>,
+    mut indexing_tasks: Vec<LogicalIndexingTask>,
 ) -> PhysicalIndexingPlan {
     // Sort by (index_id, source_id) to make the algorithm deterministic.
-    indexing_tasks.sort_by(|left, right| {
-        (&left.index_uid, &left.source_id).cmp(&(&right.index_uid, &right.source_id))
-    });
+    indexing_tasks.sort_by(|left, right| left.source_uid.cmp(&right.source_uid));
     let mut node_ids = indexers
         .iter()
         .map(|indexer| indexer.0.clone())
@@ -156,11 +161,7 @@ pub(crate) fn build_physical_indexing_plan(
     let mut plan = PhysicalIndexingPlan::new(node_ids.clone());
     for indexing_task in indexing_tasks {
         sort_by_rendez_vous_hash(&mut node_ids, &indexing_task);
-        let source_config = source_configs
-            // TODO(fmassot): remove this lame allocation to access the source...
-            .get(&SourceUid::from(indexing_task.clone()))
-            .expect("SourceConfig should always be present.");
-        let candidates = select_node_candidates(&node_ids, &plan, source_config, &indexing_task);
+        let candidates = select_node_candidates(&node_ids, &plan, &indexing_task);
 
         // It's theoretically possible to have no candidate as all indexers can already
         // have more than `max_num_pipelines_per_indexer` assigned for a given source.
@@ -219,18 +220,18 @@ impl<'a> Ord for NodeScore<'a> {
 fn select_node_candidates<'a>(
     node_ids: &'a [String],
     physical_plan: &PhysicalIndexingPlan,
-    source_config: &SourceConfig,
-    indexing_task: &IndexingTask,
+    indexing_task: &LogicalIndexingTask,
 ) -> Vec<&'a str> {
+    let index_uid_str: String = indexing_task.source_uid.index_uid.to_string();
     node_ids
         .iter()
         .map(String::as_str)
         .filter(|node_id| {
             physical_plan.num_indexing_tasks_for(
                 node_id,
-                &indexing_task.index_uid,
-                &indexing_task.source_id,
-            ) < source_config.max_num_pipelines_per_indexer.get()
+                &index_uid_str,
+                &indexing_task.source_uid.source_id,
+            ) < indexing_task.max_num_pipelines_per_indexer.get()
         })
         .collect_vec()
 }
@@ -244,12 +245,6 @@ fn compute_node_score(node_id: &str, physical_plan: &PhysicalIndexingPlan) -> f3
         - physical_plan.num_indexing_tasks_for_node(node_id) as f32
 }
 
-#[derive(PartialEq, Eq, PartialOrd, Ord, Hash, Clone)]
-pub(crate) struct SourceUid {
-    pub index_uid: IndexUid,
-    pub source_id: SourceId,
-}
-
 impl From<IndexingTask> for SourceUid {
     fn from(indexing_task: IndexingTask) -> Self {
         Self {
@@ -257,6 +252,13 @@ impl From<IndexingTask> for SourceUid {
             source_id: indexing_task.source_id,
         }
     }
+}
+
+#[derive(Hash, Debug, Clone, Eq, PartialEq)]
+pub(crate) struct LogicalIndexingTask {
+    pub source_uid: SourceUid,
+    pub shard_ids: Vec<u64>,
+    pub max_num_pipelines_per_indexer: NonZeroUsize,
 }
 
 /// Builds the indexing plan = `[Vec<IndexingTask]` from the given sources,
@@ -272,41 +274,76 @@ impl From<IndexingTask> for SourceUid {
 ///   forward documents to the right indexers.
 /// - Ignore disabled sources, `CLI_INGEST_SOURCE_ID` and files sources (Quickwit is not aware of
 ///   the files locations and thus are ignored).
-pub(crate) fn build_indexing_plan(
-    source_configs: &HashMap<SourceUid, SourceConfig>,
+pub(crate) fn list_indexing_tasks(
     num_indexers: usize,
-) -> Vec<IndexingTask> {
-    let mut indexing_tasks: Vec<IndexingTask> = Vec::new();
-    for (source_uid, source_config) in source_configs
-        .iter()
+    model: &ControlPlaneModel,
+) -> Vec<LogicalIndexingTask> {
+    let mut indexing_tasks: Vec<LogicalIndexingTask> = Vec::new();
+    for (source_uid, source_config) in model
+        .get_source_configs()
         .sorted_by(|(left, _), (right, _)| left.cmp(right))
     {
         if !source_config.enabled {
             continue;
         }
-        if [CLI_INGEST_SOURCE_ID, INGEST_SOURCE_ID].contains(&source_config.source_id.as_str()) {
-            continue;
-        }
-        // Ignore file sources as we don't know the file location.
-        if source_config.source_type() == SourceType::File {
-            continue;
-        }
-        let num_pipelines = if source_config.source_id == INGEST_API_SOURCE_ID {
-            num_indexers
-        } else {
-            // The num desired pipelines is constrained by the number of indexer and the maximum
-            // of pipelines that can run on each indexer.
-            std::cmp::min(
-                source_config.desired_num_pipelines.get(),
-                source_config.max_num_pipelines_per_indexer.get() * num_indexers,
-            )
-        };
-        for _ in 0..num_pipelines {
-            indexing_tasks.push(IndexingTask {
-                index_uid: source_uid.index_uid.to_string(),
-                source_id: source_uid.source_id.clone(),
-                shard_ids: Vec::new(),
-            });
+        match source_config.source_type() {
+            SourceType::Cli | SourceType::File | SourceType::Vec | SourceType::Void => {
+                continue;
+            }
+            SourceType::IngestV1 => {
+                let logical_indexing_task = LogicalIndexingTask {
+                    source_uid: source_uid.clone(),
+                    shard_ids: Vec::new(),
+                    max_num_pipelines_per_indexer: source_config.max_num_pipelines_per_indexer,
+                };
+                // TODO fix that ugly logic.
+                indexing_tasks.extend(std::iter::repeat(logical_indexing_task).take(num_indexers));
+            }
+            SourceType::IngestV2 => {
+                // TODO for the moment for ingest v2 we create one indexing task with all of the
+                // shards. We probably want to have something more unified between
+                // IngestV2 and kafka-alike... e.g. one indexing task with a bunch
+                // of weighted shards, one indexing task.
+                //
+                // The construction of the physical plan would then have to split that into more
+                // chewable physical tasks (one per pipeline, one per reasonable
+                // subset of shards).
+
+                // TODO: More precisely, we want the shards that are open or closing or such that
+                // `shard.publish_position_inclusive`
+                // < `shard.replication_position_inclusive`.
+                // let list_shard_subrequest = ListShardsSubrequest {
+                //     index_uid: source_uid.index_uid.clone().into(),
+                //     source_id: source_uid.source_id.clone(),
+                //     shard_state: None,
+                // };
+                let shard_ids = model.list_shards(&source_uid);
+                let indexing_task = LogicalIndexingTask {
+                    source_uid: source_uid.clone(),
+                    shard_ids,
+                    max_num_pipelines_per_indexer: source_config.max_num_pipelines_per_indexer,
+                };
+                indexing_tasks.push(indexing_task);
+            }
+            SourceType::Kafka
+            | SourceType::Kinesis
+            | SourceType::GcpPubsub
+            | SourceType::Nats
+            | SourceType::Pulsar => {
+                let num_pipelines =
+                    // The num desired pipelines is constrained by the number of indexer and the maximum
+                    // of pipelines that can run on each indexer.
+                    std::cmp::min(
+                    source_config.desired_num_pipelines.get(),
+                    source_config.max_num_pipelines_per_indexer.get() * num_indexers,
+                    );
+                let logical_indexing_task = LogicalIndexingTask {
+                    source_uid: source_uid.clone(),
+                    shard_ids: Vec::new(),
+                    max_num_pipelines_per_indexer: source_config.max_num_pipelines_per_indexer,
+                };
+                indexing_tasks.extend(std::iter::repeat(logical_indexing_task).take(num_pipelines));
+            }
         }
     }
     indexing_tasks
@@ -314,17 +351,18 @@ pub(crate) fn build_indexing_plan(
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
     use std::num::NonZeroUsize;
 
+    use fnv::FnvHashMap;
     use itertools::Itertools;
     use proptest::prelude::*;
     use quickwit_common::rand::append_random_suffix;
     use quickwit_config::service::QuickwitService;
     use quickwit_config::{
-        FileSourceParams, KafkaSourceParams, SourceConfig, SourceInputFormat, SourceParams,
-        CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID,
+        FileSourceParams, IndexConfig, KafkaSourceParams, SourceConfig, SourceInputFormat,
+        SourceParams, CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID,
     };
+    use quickwit_metastore::IndexMetadata;
     use quickwit_proto::indexing::{IndexingServiceClient, IndexingTask};
     use quickwit_proto::IndexUid;
     use rand::seq::SliceRandom;
@@ -332,7 +370,8 @@ mod tests {
     use tonic::transport::Endpoint;
 
     use super::{build_physical_indexing_plan, SourceUid};
-    use crate::indexing_plan::build_indexing_plan;
+    use crate::control_plane_model::ControlPlaneModel;
+    use crate::indexing_plan::{list_indexing_tasks, LogicalIndexingTask};
     use crate::IndexerNodeInfo;
 
     fn kafka_source_params_for_test() -> SourceParams {
@@ -368,7 +407,7 @@ mod tests {
 
     fn count_indexing_tasks_count_for_test(
         num_indexers: usize,
-        source_configs: &HashMap<SourceUid, SourceConfig>,
+        source_configs: &FnvHashMap<SourceUid, SourceConfig>,
     ) -> usize {
         source_configs
             .iter()
@@ -383,37 +422,33 @@ mod tests {
 
     #[tokio::test]
     async fn test_build_indexing_plan_one_source() {
-        let indexers = cluster_members_for_test(4, QuickwitService::Indexer).await;
-        let mut source_configs_map = HashMap::new();
-        let index_source_id = SourceUid {
-            index_uid: "one-source-index:11111111111111111111111111"
-                .to_string()
-                .into(),
-            source_id: "source-0".to_string(),
+        let source_config = SourceConfig {
+            source_id: "source_id".to_string(),
+            max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+            desired_num_pipelines: NonZeroUsize::new(3).unwrap(),
+            enabled: true,
+            source_params: kafka_source_params_for_test(),
+            transform_config: None,
+            input_format: SourceInputFormat::Json,
         };
-        source_configs_map.insert(
-            index_source_id.clone(),
-            SourceConfig {
-                source_id: index_source_id.source_id.to_string(),
-                max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
-                desired_num_pipelines: NonZeroUsize::new(3).unwrap(),
-                enabled: true,
-                source_params: kafka_source_params_for_test(),
-                transform_config: None,
-                input_format: SourceInputFormat::Json,
-            },
-        );
-
-        let indexing_tasks = build_indexing_plan(&source_configs_map, indexers.len());
-
+        let mut model = ControlPlaneModel::default();
+        let index_metadata = IndexMetadata::for_test("test-index", "ram://test");
+        let index_uid = index_metadata.index_uid.clone();
+        let source_uid = SourceUid {
+            index_uid: index_uid.clone(),
+            source_id: source_config.source_id.clone(),
+        };
+        model.add_index(index_metadata);
+        model.add_source(&index_uid, source_config).unwrap();
+        let indexing_tasks = list_indexing_tasks(4, &model);
         assert_eq!(indexing_tasks.len(), 3);
         for indexing_task in indexing_tasks {
             assert_eq!(
                 indexing_task,
-                IndexingTask {
-                    index_uid: index_source_id.index_uid.to_string(),
-                    source_id: index_source_id.source_id.to_string(),
+                LogicalIndexingTask {
+                    source_uid: source_uid.clone(),
                     shard_ids: Vec::new(),
+                    max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
                 }
             );
         }
@@ -422,36 +457,40 @@ mod tests {
     #[tokio::test]
     async fn test_build_indexing_plan_with_ingest_api_source() {
         let indexers = cluster_members_for_test(4, QuickwitService::Indexer).await;
-        let mut source_configs_map = HashMap::new();
-        let index_source_id = SourceUid {
-            index_uid: "ingest-api-index:11111111111111111111111111"
-                .to_string()
-                .into(),
+
+        let index_metadata = IndexMetadata::for_test("test-index", "ram://test");
+        let index_uid = index_metadata.index_uid.clone();
+        let source_uid = SourceUid {
+            index_uid: index_uid.clone(),
             source_id: INGEST_API_SOURCE_ID.to_string(),
         };
-        source_configs_map.insert(
-            index_source_id.clone(),
-            SourceConfig {
-                source_id: index_source_id.source_id.to_string(),
-                max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
-                desired_num_pipelines: NonZeroUsize::new(3).unwrap(),
-                enabled: true,
-                source_params: SourceParams::IngestApi,
-                transform_config: None,
-                input_format: SourceInputFormat::Json,
-            },
-        );
 
-        let indexing_tasks = build_indexing_plan(&source_configs_map, indexers.len());
+        let source_config = SourceConfig {
+            source_id: source_uid.source_id.to_string(),
+            max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
+            desired_num_pipelines: NonZeroUsize::new(3).unwrap(),
+            enabled: true,
+            source_params: SourceParams::IngestApi,
+            transform_config: None,
+            input_format: SourceInputFormat::Json,
+        };
+
+        let mut control_plane_model = ControlPlaneModel::default();
+        control_plane_model.add_index(index_metadata);
+        control_plane_model
+            .add_source(&index_uid, source_config)
+            .unwrap();
+        let indexing_tasks: Vec<LogicalIndexingTask> =
+            list_indexing_tasks(indexers.len(), &control_plane_model);
 
         assert_eq!(indexing_tasks.len(), 4);
         for indexing_task in indexing_tasks {
             assert_eq!(
                 indexing_task,
-                IndexingTask {
-                    index_uid: index_source_id.index_uid.to_string(),
-                    source_id: index_source_id.source_id.to_string(),
+                LogicalIndexingTask {
+                    source_uid: source_uid.clone(),
                     shard_ids: Vec::new(),
+                    max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
                 }
             );
         }
@@ -460,7 +499,7 @@ mod tests {
     #[tokio::test]
     async fn test_build_indexing_plan_with_sources_to_ignore() {
         let indexers = cluster_members_for_test(4, QuickwitService::Indexer).await;
-        let mut source_configs_map = HashMap::new();
+        let mut source_configs_map = FnvHashMap::default();
         let file_index_source_id = SourceUid {
             index_uid: "one-source-index:11111111111111111111111111"
                 .to_string()
@@ -515,7 +554,9 @@ mod tests {
                 input_format: SourceInputFormat::Json,
             },
         );
-        let indexing_tasks = build_indexing_plan(&source_configs_map, indexers.len());
+
+        let control_plane_model = ControlPlaneModel::default();
+        let indexing_tasks = list_indexing_tasks(indexers.len(), &control_plane_model);
 
         assert_eq!(indexing_tasks.len(), 0);
     }
@@ -529,7 +570,7 @@ mod tests {
         // Rdv hashing for (index 2, source) returns [node 1, node 2].
         let index_2 = "2";
         let source_2 = "0";
-        let mut source_configs_map = HashMap::new();
+        // let mut source_configs_map = FnvHashMap::default();
         let kafka_index_source_id_1 = SourceUid {
             index_uid: IndexUid::from_parts(index_1, "11111111111111111111111111"),
             source_id: source_1.to_string(),
@@ -538,57 +579,24 @@ mod tests {
             index_uid: IndexUid::from_parts(index_2, "11111111111111111111111111"),
             source_id: source_2.to_string(),
         };
-        source_configs_map.insert(
-            kafka_index_source_id_1.clone(),
-            SourceConfig {
-                source_id: kafka_index_source_id_1.source_id,
-                max_num_pipelines_per_indexer: NonZeroUsize::new(2).unwrap(),
-                desired_num_pipelines: NonZeroUsize::new(4).unwrap(),
-                enabled: true,
-                source_params: kafka_source_params_for_test(),
-                transform_config: None,
-                input_format: SourceInputFormat::Json,
-            },
-        );
-        source_configs_map.insert(
-            kafka_index_source_id_2.clone(),
-            SourceConfig {
-                source_id: kafka_index_source_id_2.source_id,
-                max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
-                desired_num_pipelines: NonZeroUsize::new(2).unwrap(),
-                enabled: true,
-                source_params: kafka_source_params_for_test(),
-                transform_config: None,
-                input_format: SourceInputFormat::Json,
-            },
-        );
         let mut indexing_tasks = Vec::new();
         for _ in 0..3 {
-            indexing_tasks.push(IndexingTask {
-                index_uid: IndexUid::from_parts(
-                    index_1.to_string(),
-                    "11111111111111111111111111".to_string(),
-                )
-                .to_string(),
-                source_id: source_1.to_string(),
+            indexing_tasks.push(LogicalIndexingTask {
+                source_uid: kafka_index_source_id_1.clone(),
                 shard_ids: Vec::new(),
+                max_num_pipelines_per_indexer: NonZeroUsize::new(2).unwrap(),
             });
         }
         for _ in 0..2 {
-            indexing_tasks.push(IndexingTask {
-                index_uid: IndexUid::from_parts(
-                    index_2.to_string(),
-                    "11111111111111111111111111".to_string(),
-                )
-                .to_string(),
-                source_id: source_2.to_string(),
+            indexing_tasks.push(LogicalIndexingTask {
+                source_uid: kafka_index_source_id_2.clone(),
                 shard_ids: Vec::new(),
+                max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
             });
         }
 
         let indexers = cluster_members_for_test(2, QuickwitService::Indexer).await;
-        let physical_plan =
-            build_physical_indexing_plan(&indexers, &source_configs_map, indexing_tasks.clone());
+        let physical_plan = build_physical_indexing_plan(&indexers, indexing_tasks.clone());
         assert_eq!(physical_plan.indexing_tasks_per_node_id.len(), 2);
         let indexer_1_tasks = physical_plan
             .indexing_tasks_per_node_id
@@ -600,22 +608,32 @@ mod tests {
             .unwrap();
         // (index 1, source) tasks are first placed on indexer 2 by rdv hashing.
         // Thus task 0 => indexer 2, task 1 => indexer 1, task 2 => indexer 2, task 3 => indexer 1.
-        let expected_indexer_1_tasks = indexing_tasks
+        let expected_indexer_1_tasks: Vec<IndexingTask> = indexing_tasks
             .iter()
             .cloned()
             .enumerate()
             .filter(|(idx, _)| idx % 2 == 1)
-            .map(|(_, task)| task)
+            .map(|(_, task)| task.into())
             .collect_vec();
         assert_eq!(indexer_1_tasks, &expected_indexer_1_tasks);
         // (index 1, source) tasks are first placed on node 1 by rdv hashing.
-        let expected_indexer_2_tasks = indexing_tasks
+        let expected_indexer_2_tasks: Vec<IndexingTask> = indexing_tasks
             .into_iter()
             .enumerate()
             .filter(|(idx, _)| idx % 2 == 0)
-            .map(|(_, task)| task)
+            .map(|(_, task)| task.into())
             .collect_vec();
         assert_eq!(indexer_2_tasks, &expected_indexer_2_tasks);
+    }
+
+    impl From<LogicalIndexingTask> for IndexingTask {
+        fn from(task: LogicalIndexingTask) -> Self {
+            IndexingTask {
+                index_uid: task.source_uid.index_uid.to_string(),
+                source_id: task.source_uid.source_id.clone(),
+                shard_ids: task.shard_ids,
+            }
+        }
     }
 
     #[tokio::test]
@@ -623,41 +641,27 @@ mod tests {
         quickwit_common::setup_logging_for_tests();
         let index_1 = "test-indexing-plan-1";
         let source_1 = "source-1";
-        let mut source_configs_map = HashMap::new();
-        let kafka_index_source_id_1 = SourceUid {
+        let source_uid = SourceUid {
             index_uid: IndexUid::from_parts(index_1, "11111111111111111111111111"),
             source_id: source_1.to_string(),
         };
-        source_configs_map.insert(
-            kafka_index_source_id_1.clone(),
-            SourceConfig {
-                source_id: kafka_index_source_id_1.source_id,
-                max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
-                desired_num_pipelines: NonZeroUsize::new(2).unwrap(),
-                enabled: true,
-                source_params: kafka_source_params_for_test(),
-                transform_config: None,
-                input_format: SourceInputFormat::Json,
-            },
-        );
         let indexing_tasks = vec![
-            IndexingTask {
-                index_uid: IndexUid::from_parts(index_1, "11111111111111111111111111").to_string(),
-                source_id: source_1.to_string(),
+            LogicalIndexingTask {
+                source_uid: source_uid.clone(),
                 shard_ids: Vec::new(),
+                max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
             },
-            IndexingTask {
-                index_uid: IndexUid::from_parts(index_1, "11111111111111111111111111").to_string(),
-                source_id: source_1.to_string(),
+            LogicalIndexingTask {
+                source_uid: source_uid.clone(),
                 shard_ids: Vec::new(),
+                max_num_pipelines_per_indexer: NonZeroUsize::new(1).unwrap(),
             },
         ];
 
         let indexers = cluster_members_for_test(1, QuickwitService::Indexer).await;
         // This case should never happens but we just check that the plan building is resilient
         // enough, it will ignore the tasks that cannot be allocated.
-        let physical_plan =
-            build_physical_indexing_plan(&indexers, &source_configs_map, indexing_tasks);
+        let physical_plan = build_physical_indexing_plan(&indexers, indexing_tasks);
         assert_eq!(physical_plan.num_indexing_tasks(), 1);
     }
 
@@ -668,19 +672,36 @@ mod tests {
             let mut indexers = tokio::runtime::Runtime::new().unwrap().block_on(
                 cluster_members_for_test(num_indexers, QuickwitService::Indexer)
             );
-            let source_configs: HashMap<SourceUid, SourceConfig> = index_id_sources
+
+            let index_uids: fnv::FnvHashSet<IndexUid> =
+                index_id_sources.iter()
+                    .map(|(index_uid, _)| index_uid.clone())
+                    .collect();
+
+            let mut control_plane_model = ControlPlaneModel::default();
+            for index_uid in index_uids {
+                let index_config = IndexConfig::for_test(index_uid.index_id(), &format!("ram://test/{index_uid}"));
+                control_plane_model.add_index(IndexMetadata::new_with_index_uid(index_uid, index_config));
+            }
+            for (index_uid, source_config) in &index_id_sources {
+                control_plane_model.add_source(index_uid, source_config.clone()).unwrap();
+            }
+
+            let source_configs: FnvHashMap<SourceUid, SourceConfig> = index_id_sources
                 .into_iter()
                 .map(|(index_uid, source_config)| {
-                    (SourceUid { index_uid: index_uid.into(), source_id: source_config.source_id.to_string(), }, source_config)
+                    (SourceUid { index_uid: index_uid.clone(), source_id: source_config.source_id.to_string(), }, source_config)
                 })
                 .collect();
-            let mut indexing_tasks = build_indexing_plan(&source_configs, indexers.len());
+
+
+            let mut indexing_tasks = list_indexing_tasks(indexers.len(), &control_plane_model);
             let num_indexing_tasks = indexing_tasks.len();
             assert_eq!(indexing_tasks.len(), count_indexing_tasks_count_for_test(indexers.len(), &source_configs));
-            let physical_indexing_plan = build_physical_indexing_plan(&indexers, &source_configs, indexing_tasks.clone());
+            let physical_indexing_plan = build_physical_indexing_plan(&indexers, indexing_tasks.clone());
             indexing_tasks.shuffle(&mut rand::thread_rng());
             indexers.shuffle(&mut rand::thread_rng());
-            let physical_indexing_plan_with_shuffle = build_physical_indexing_plan(&indexers, &source_configs, indexing_tasks.clone());
+            let physical_indexing_plan_with_shuffle = build_physical_indexing_plan(&indexers, indexing_tasks.clone());
             assert_eq!(physical_indexing_plan, physical_indexing_plan_with_shuffle);
             // All indexing tasks must have been assigned to an indexer.
             assert_eq!(physical_indexing_plan.num_indexing_tasks(), num_indexing_tasks);
@@ -694,10 +715,10 @@ mod tests {
 
     prop_compose! {
       fn gen_kafka_source()
-        (index_idx in 0usize..100usize, desired_num_pipelines in 1usize..51usize, max_num_pipelines_per_indexer in 1usize..5usize) -> (String, SourceConfig) {
-          let index_id = format!("index-id-{index_idx}");
+        (index_idx in 0usize..100usize, desired_num_pipelines in 1usize..51usize, max_num_pipelines_per_indexer in 1usize..5usize) -> (IndexUid, SourceConfig) {
+          let index_uid = IndexUid::from_parts(format!("index-id-{index_idx}"), "" /* this is the index uid */);
           let source_id = append_random_suffix("kafka-source");
-          (index_id, SourceConfig {
+          (index_uid, SourceConfig {
               source_id,
               desired_num_pipelines: NonZeroUsize::new(desired_num_pipelines).unwrap(),
               max_num_pipelines_per_indexer: NonZeroUsize::new(max_num_pipelines_per_indexer).unwrap(),
