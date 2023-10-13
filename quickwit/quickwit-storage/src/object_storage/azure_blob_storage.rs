@@ -36,7 +36,7 @@ use futures::io::{Error as FutureError, ErrorKind as FutureErrorKind};
 use futures::stream::{StreamExt, TryStreamExt};
 use md5::Digest;
 use once_cell::sync::OnceCell;
-use quickwit_aws::retry::{retry, RetryParams, Retryable};
+use quickwit_common::retry::{retry, RetryParams, Retryable};
 use quickwit_common::uri::Uri;
 use quickwit_common::{chunk_range, ignore_error_kind, into_u64_range};
 use quickwit_config::{AzureStorageConfig, StorageBackend};

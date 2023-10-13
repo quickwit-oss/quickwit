@@ -58,8 +58,8 @@ pub(crate) mod tests {
     use aws_sdk_kinesis::types::{PutRecordsRequestEntry, StreamStatus};
     use aws_sdk_kinesis::Client as KinesisClient;
     use once_cell::sync::Lazy;
-    use quickwit_aws::retry::RetryParams;
     use quickwit_common::rand::append_random_suffix;
+    use quickwit_common::retry::RetryParams;
     use quickwit_config::RegionOrEndpoint;
     use tracing::error;
 

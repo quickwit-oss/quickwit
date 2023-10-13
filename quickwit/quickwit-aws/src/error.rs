@@ -37,10 +37,10 @@ use aws_sdk_s3::operation::put_object::PutObjectError;
 use aws_sdk_s3::operation::upload_part::UploadPartError;
 use aws_smithy_client::SdkError;
 
-use crate::retry::Retryable;
+use crate::retry::AwsRetryable;
 
-impl<E> Retryable for SdkError<E>
-where E: Retryable
+impl<E> AwsRetryable for SdkError<E>
+where E: AwsRetryable
 {
     fn is_retryable(&self) -> bool {
         match self {
@@ -54,62 +54,62 @@ where E: Retryable
     }
 }
 
-impl Retryable for GetObjectError {
+impl AwsRetryable for GetObjectError {
     fn is_retryable(&self) -> bool {
         false
     }
 }
 
-impl Retryable for DeleteObjectError {
+impl AwsRetryable for DeleteObjectError {
     fn is_retryable(&self) -> bool {
         false
     }
 }
 
-impl Retryable for DeleteObjectsError {
+impl AwsRetryable for DeleteObjectsError {
     fn is_retryable(&self) -> bool {
         false
     }
 }
 
-impl Retryable for UploadPartError {
+impl AwsRetryable for UploadPartError {
     fn is_retryable(&self) -> bool {
         false
     }
 }
 
-impl Retryable for CompleteMultipartUploadError {
+impl AwsRetryable for CompleteMultipartUploadError {
     fn is_retryable(&self) -> bool {
         false
     }
 }
 
-impl Retryable for AbortMultipartUploadError {
+impl AwsRetryable for AbortMultipartUploadError {
     fn is_retryable(&self) -> bool {
         false
     }
 }
 
-impl Retryable for CreateMultipartUploadError {
+impl AwsRetryable for CreateMultipartUploadError {
     fn is_retryable(&self) -> bool {
         false
     }
 }
 
-impl Retryable for PutObjectError {
+impl AwsRetryable for PutObjectError {
     fn is_retryable(&self) -> bool {
         false
     }
 }
 
-impl Retryable for HeadObjectError {
+impl AwsRetryable for HeadObjectError {
     fn is_retryable(&self) -> bool {
         false
     }
 }
 
 #[cfg(feature = "kinesis")]
-impl Retryable for GetRecordsError {
+impl AwsRetryable for GetRecordsError {
     fn is_retryable(&self) -> bool {
         match self {
             GetRecordsError::KmsThrottlingException(_) => true,
@@ -120,7 +120,7 @@ impl Retryable for GetRecordsError {
 }
 
 #[cfg(feature = "kinesis")]
-impl Retryable for GetShardIteratorError {
+impl AwsRetryable for GetShardIteratorError {
     fn is_retryable(&self) -> bool {
         matches!(
             self,
@@ -130,7 +130,7 @@ impl Retryable for GetShardIteratorError {
 }
 
 #[cfg(feature = "kinesis")]
-impl Retryable for ListShardsError {
+impl AwsRetryable for ListShardsError {
     fn is_retryable(&self) -> bool {
         matches!(
             self,
@@ -140,7 +140,7 @@ impl Retryable for ListShardsError {
 }
 
 #[cfg(feature = "kinesis")]
-impl Retryable for CreateStreamError {
+impl AwsRetryable for CreateStreamError {
     fn is_retryable(&self) -> bool {
         matches!(
             self,
@@ -151,7 +151,7 @@ impl Retryable for CreateStreamError {
 }
 
 #[cfg(feature = "kinesis")]
-impl Retryable for DeleteStreamError {
+impl AwsRetryable for DeleteStreamError {
     fn is_retryable(&self) -> bool {
         matches!(
             self,
@@ -162,21 +162,21 @@ impl Retryable for DeleteStreamError {
 }
 
 #[cfg(feature = "kinesis")]
-impl Retryable for DescribeStreamError {
+impl AwsRetryable for DescribeStreamError {
     fn is_retryable(&self) -> bool {
         matches!(self, DescribeStreamError::LimitExceededException(_))
     }
 }
 
 #[cfg(feature = "kinesis")]
-impl Retryable for ListStreamsError {
+impl AwsRetryable for ListStreamsError {
     fn is_retryable(&self) -> bool {
         matches!(self, ListStreamsError::LimitExceededException(_))
     }
 }
 
 #[cfg(feature = "kinesis")]
-impl Retryable for MergeShardsError {
+impl AwsRetryable for MergeShardsError {
     fn is_retryable(&self) -> bool {
         matches!(
             self,
@@ -187,7 +187,7 @@ impl Retryable for MergeShardsError {
 }
 
 #[cfg(feature = "kinesis")]
-impl Retryable for SplitShardError {
+impl AwsRetryable for SplitShardError {
     fn is_retryable(&self) -> bool {
         matches!(
             self,

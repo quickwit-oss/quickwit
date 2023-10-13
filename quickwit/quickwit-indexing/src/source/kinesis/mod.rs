@@ -22,7 +22,7 @@ mod helpers;
 pub mod kinesis_source;
 mod shard_consumer;
 
-use quickwit_aws::retry::RetryParams;
+use quickwit_common::retry::RetryParams;
 use quickwit_config::KinesisSourceParams;
 
 use crate::source::kinesis::api::{get_records, get_shard_iterator, list_shards};
