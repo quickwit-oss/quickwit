@@ -100,7 +100,7 @@ matches = "0.1.9"
 md5 = "0.7"
 mime_guess = "2.0.4"
 mockall = "0.11"
-mrecordlog = { git = "https://github.com/quickwit-oss/mrecordlog", rev = "ae1ca3f" }
+mrecordlog = { git = "https://github.com/quickwit-oss/mrecordlog", rev = "0d1a7aa" }
 new_string_template = "1.4.0"
 nom = "7.1.3"
 num_cpus = "1"
@@ -416,4 +416,3 @@ sasl2-sys = { git = "https://github.com/quickwit-oss/rust-sasl/", rev = "daca921
 #tracing-log = { git = "https://github.com/trinity-1686a/tracing.git", rev = "6806cac3" }
 #tracing-opentelemetry = { git = "https://github.com/trinity-1686a/tracing.git", rev = "6806cac3" }
 #tracing-subscriber = { git = "https://github.com/trinity-1686a/tracing.git", rev = "6806cac3" }
-
