@@ -300,7 +300,7 @@ impl Handler<AddSourceRequest> for ControlPlane {
 
         self.model
             .add_source(&index_uid, source_config)
-            .context("Failed to add source.")?;
+            .context("failed to add source")?;
 
         // TODO: Refine the event. Notify index will have the effect to reload the entire state from
         // the metastore. We should update the state of the control plane.
