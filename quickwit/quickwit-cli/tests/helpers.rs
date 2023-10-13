@@ -50,7 +50,7 @@ const DEFAULT_INDEX_CONFIG: &str = r#"
           input_formats:
             - unix_timestamp
           output_format: unix_timestamp_secs
-          precision: seconds
+          fast_precision: seconds
           fast: true
         - name: level
           type: text
