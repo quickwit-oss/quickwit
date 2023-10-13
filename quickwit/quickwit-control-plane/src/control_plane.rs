@@ -126,14 +126,14 @@ impl Actor for ControlPlane {
         self.model
             .load_from_metastore(&*self.metastore, ctx.progress())
             .await
-            .context("Failed to intiialize the model")?;
+            .context("failed to intialize the model")?;
 
         if let Err(error) = self
             .indexing_scheduler
             .schedule_indexing_plan_if_needed(&self.model)
         {
             // TODO inspect error.
-            error!("Error when scheduling indexing plan: `{}`.", error);
+            error!("error when scheduling indexing plan: `{}`.", error);
         }
 
         ctx.schedule_self_msg(CONTROL_PLAN_LOOP_INTERVAL, ControlPlanLoop)
@@ -175,7 +175,7 @@ fn convert_metastore_error<T>(
 ) -> Result<ControlPlaneResult<T>, ActorExitStatus> {
     // If true, we know that the transactions has not been recorded in the Metastore.
     // If false, we simply are not sure whether the transaction has been recorded or not.
-    let metastore_failure_is_certain = match &metastore_error {
+    let is_transaction_certainly_aborted = match &metastore_error {
         MetastoreError::AlreadyExists(_)
         | MetastoreError::FailedPrecondition { .. }
         | MetastoreError::Forbidden { .. }
@@ -189,15 +189,16 @@ fn convert_metastore_error<T>(
         | MetastoreError::Connection { .. }
         | MetastoreError::Db { .. } => false,
     };
-    if metastore_failure_is_certain {
-        // If the metastore failure is certain, this is actually a good thing.
+    if is_transaction_certainly_aborted {
+        // If the metastore transaction is certain to have been aborted,
+        // this is actually a good thing.
         // We do not need to restart the control plane.
-        error!(err=?metastore_error, transaction_outcome="certainly-failed", "metastore-error: The transaction certainly failed. We do not need to restart the control plane.");
+        error!(err=?metastore_error, transaction_outcome="aborted", "metastore error");
         Ok(Err(ControlPlaneError::Metastore(metastore_error)))
     } else {
-        // If the metastore failure is uncertain, we need to restart the control plane
+        // If the metastore transaction may have been executed, we need to restart the control plane
         // so that it gets resynced with the metastore state.
-        error!(err=?metastore_error, transaction_outcome="uncertain", "metastore-error: Transaction outcome is uncertain. Restarting control plane.");
+        error!(err=?metastore_error, transaction_outcome="maybe-executed", "metastore error");
         Err(ActorExitStatus::from(anyhow::anyhow!(metastore_error)))
     }
 }
