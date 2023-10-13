@@ -44,7 +44,8 @@ pub struct QuickwitDateTimeOptions {
 
     /// Internal storage precision.
     #[serde(default)]
-    pub precision: DateTimePrecision,
+    #[serde(alias = "precision")]
+    pub fast_precision: DateTimePrecision,
 
     #[serde(default = "default_as_true")]
     pub indexed: bool,
@@ -62,7 +63,7 @@ impl Default for QuickwitDateTimeOptions {
             description: None,
             input_formats: InputFormats::default(),
             output_format: DateTimeOutputFormat::default(),
-            precision: DateTimePrecision::default(),
+            fast_precision: DateTimePrecision::default(),
             indexed: true,
             stored: true,
             fast: false,
@@ -114,7 +115,9 @@ impl Default for InputFormats {
 
 impl<'de> Deserialize<'de> for InputFormats {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where D: Deserializer<'de> {
+    where
+        D: Deserializer<'de>,
+    {
         let date_time_formats = IndexSet::<DateTimeInputFormat>::deserialize(deserializer)?;
 
         if date_time_formats.is_empty() {
@@ -135,6 +138,47 @@ mod tests {
 
     #[test]
     fn test_date_time_options_single_value_deser() {
+        let field_mapping_entry = serde_json::from_str::<FieldMappingEntry>(
+            r#"
+            {
+                "name": "updated_at",
+                "type": "datetime",
+                "description": "When the record was last updated.",
+                "input_formats": [
+                    "rfc3339"
+                ],
+                "fast_precision": "milliseconds",
+                "indexed": true,
+                "fast": true,
+                "stored": false
+            }
+            "#,
+        )
+        .unwrap();
+
+        assert_eq!(field_mapping_entry.name, "updated_at");
+
+        let date_time_options = match field_mapping_entry.mapping_type {
+            FieldMappingType::DateTime(date_time_options, Cardinality::SingleValue) => {
+                date_time_options
+            }
+            _ => panic!("Expected a date time field mapping."),
+        };
+        let expected_input_formats = InputFormats(vec![DateTimeInputFormat::Rfc3339]);
+        let expected_date_time_options = QuickwitDateTimeOptions {
+            description: Some("When the record was last updated.".to_string()),
+            input_formats: expected_input_formats,
+            output_format: DateTimeOutputFormat::Rfc3339,
+            fast_precision: DateTimePrecision::Milliseconds,
+            indexed: true,
+            fast: true,
+            stored: false,
+        };
+        assert_eq!(date_time_options, expected_date_time_options);
+    }
+
+    #[test]
+    fn test_date_time_options_single_value_deser_backward_compatible() {
         let field_mapping_entry = serde_json::from_str::<FieldMappingEntry>(
             r#"
             {
@@ -166,7 +210,7 @@ mod tests {
             description: Some("When the record was last updated.".to_string()),
             input_formats: expected_input_formats,
             output_format: DateTimeOutputFormat::Rfc3339,
-            precision: DateTimePrecision::Milliseconds,
+            fast_precision: DateTimePrecision::Milliseconds,
             indexed: true,
             fast: true,
             stored: false,
@@ -176,6 +220,48 @@ mod tests {
 
     #[test]
     fn test_date_time_options_multi_values_deser() {
+        let field_mapping_entry = serde_json::from_str::<FieldMappingEntry>(
+            r#"
+            {
+                "name": "updated_at",
+                "type": "array<datetime>",
+                "description": "When the record was last updated.",
+                "input_formats": [
+                    "rfc3339"
+                ],
+                "output_format": "unix_timestamp_secs",
+                "fast_precision": "milliseconds",
+                "indexed": true,
+                "fast": true,
+                "stored": false
+            }
+            "#,
+        )
+        .unwrap();
+
+        assert_eq!(field_mapping_entry.name, "updated_at");
+
+        let date_time_options = match field_mapping_entry.mapping_type {
+            FieldMappingType::DateTime(date_time_options, Cardinality::MultiValues) => {
+                date_time_options
+            }
+            _ => panic!("Expected a date time field mapping."),
+        };
+        let expected_input_formats = InputFormats(vec![DateTimeInputFormat::Rfc3339]);
+        let expected_date_time_options = QuickwitDateTimeOptions {
+            description: Some("When the record was last updated.".to_string()),
+            input_formats: expected_input_formats,
+            output_format: DateTimeOutputFormat::TimestampSecs,
+            fast_precision: DateTimePrecision::Milliseconds,
+            indexed: true,
+            fast: true,
+            stored: false,
+        };
+        assert_eq!(date_time_options, expected_date_time_options);
+    }
+
+    #[test]
+    fn test_date_time_options_multi_values_deser_backward_compatible() {
         let field_mapping_entry = serde_json::from_str::<FieldMappingEntry>(
             r#"
             {
@@ -208,7 +294,7 @@ mod tests {
             description: Some("When the record was last updated.".to_string()),
             input_formats: expected_input_formats,
             output_format: DateTimeOutputFormat::TimestampSecs,
-            precision: DateTimePrecision::Milliseconds,
+            fast_precision: DateTimePrecision::Milliseconds,
             indexed: true,
             fast: true,
             stored: false,
@@ -228,7 +314,7 @@ mod tests {
             date_time_options.output_format,
             DateTimeOutputFormat::Rfc3339
         );
-        assert_eq!(date_time_options.precision, DateTimePrecision::Seconds);
+        assert_eq!(date_time_options.fast_precision, DateTimePrecision::Seconds);
         assert!(date_time_options.indexed);
         assert!(date_time_options.stored);
         assert!(!date_time_options.fast);
@@ -236,6 +322,31 @@ mod tests {
 
     #[test]
     fn test_date_time_options_deser_denies_unknown_fields() {
+        let error = serde_json::from_str::<QuickwitDateTimeOptions>(
+            r#"
+            {
+                "tokenizer": "raw",
+            }
+            "#,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(error.contains("unknown field `tokenizer`"));
+
+        let error = serde_json::from_str::<QuickwitDateTimeOptions>(
+            r#"
+            {
+                "fast_precision": "hours",
+            }
+            "#,
+        )
+        .unwrap_err()
+        .to_string();
+        assert!(error.contains("unknown variant `hours`"));
+    }
+
+    #[test]
+    fn test_date_time_options_deser_denies_unknown_fields_backward_compatible() {
         let error = serde_json::from_str::<QuickwitDateTimeOptions>(
             r#"
             {
@@ -281,7 +392,7 @@ mod tests {
                 "description": "When the record was last updated.",
                 "input_formats": ["iso8601"],
                 "output_format": "rfc3339",
-                "precision": "seconds",
+                "fast_precision": "seconds",
                 "indexed": true,
                 "fast": false,
                 "stored": true

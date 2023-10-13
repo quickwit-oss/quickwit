@@ -95,7 +95,7 @@ doc_mapping:
       input_formats:
         - unix_timestamp
       output_format: unix_timestamp_secs
-      precision: seconds
+      fast_precision: seconds
       fast: true
     - name: tenant_id
       type: u64

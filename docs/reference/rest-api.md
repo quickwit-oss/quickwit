@@ -262,7 +262,7 @@ curl -XPOST http://0.0.0.0:8080/api/v1/indexes --data @index_config.json -H "Con
                 "name": "timestamp",
                 "type": "datetime",
                 "input_formats": ["unix_timestamp"],
-                "precision": "seconds",
+                "fast_precision": "seconds",
                 "fast": true
             },
             {

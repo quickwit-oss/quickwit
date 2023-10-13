@@ -56,7 +56,7 @@ doc_mapping:
       output_format: unix_timestamp_nanos
       indexed: false
       fast: true
-      precision: milliseconds
+      fast_precision: milliseconds
     - name: observed_timestamp_nanos
       type: datetime
       input_formats: [unix_timestamp]
