@@ -32,14 +32,14 @@ use crate::retry::{RetryParams, Retryable};
 
 #[derive(Debug, Clone, Copy, Default)]
 pub struct RetryPolicy {
-    num_retries: usize,
+    num_attempts: usize,
     retry_params: RetryParams,
 }
 
 impl From<RetryParams> for RetryPolicy {
     fn from(retry_params: RetryParams) -> Self {
         Self {
-            num_retries: 0,
+            num_attempts: 0,
             retry_params,
         }
     }
@@ -72,12 +72,12 @@ where
         match result {
             Ok(_) => None,
             Err(error) => {
-                let num_attempts = self.num_retries + 1;
+                let num_attempts = self.num_attempts + 1;
 
                 if !error.is_retryable() || num_attempts >= self.retry_params.max_attempts {
                     None
                 } else {
-                    let delay = self.retry_params.compute_delay(self.num_retries);
+                    let delay = self.retry_params.compute_delay(num_attempts);
                     debug!(
                         num_attempts=%num_attempts,
                         delay_millis=%delay.as_millis(),
@@ -85,7 +85,7 @@ where
                         "{} request failed, retrying.", type_name::<R>()
                     );
                     let retry_policy = Self {
-                        num_retries: num_attempts,
+                        num_attempts,
                         retry_params: self.retry_params,
                     };
                     let sleep_fut = tokio::time::sleep(delay);

@@ -27,8 +27,7 @@ tokio = { workspace = true }
 tower = { workspace = true }
 tracing = { workspace = true }
 
-[dev-dependencies]
-quickwit-actors = { workspace = true, features = ["testsuite"] }
+quickwit-common = { workspace = true }
 
 [features]
 kinesis = ["aws-sdk-kinesis"]

@@ -4930,7 +4930,7 @@ dependencies = [
  "hyper",
  "hyper-rustls 0.24.1",
  "once_cell",
- "quickwit-actors",
+ "quickwit-common",
  "rand 0.8.5",
  "tokio",
  "tower",
