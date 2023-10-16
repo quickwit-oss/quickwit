@@ -52,7 +52,30 @@ pub(crate) enum SortByComponent {
         order: SortOrder,
     },
 }
-
+impl From<SortByComponent> for SortByPair {
+    fn from(value: SortByComponent) -> Self {
+        Self {
+            first: value,
+            second: None,
+        }
+    }
+}
+#[derive(Clone)]
+pub(crate) struct SortByPair {
+    first: SortByComponent,
+    second: Option<SortByComponent>,
+}
+impl SortByPair {
+    pub fn sort_orders(&self) -> (SortOrder, SortOrder) {
+        (
+            self.first.sort_order(),
+            self.second
+                .as_ref()
+                .map(|sort_by| sort_by.sort_order())
+                .unwrap_or(SortOrder::Desc),
+        )
+    }
+}
 impl SortByComponent {
     fn to_sorting_field_extractor_component(
         &self,
@@ -152,6 +175,39 @@ impl SortingFieldExtractorComponent {
     }
 }
 
+impl From<SortingFieldExtractorComponent> for SortingFieldExtractorPair {
+    fn from(value: SortingFieldExtractorComponent) -> Self {
+        Self {
+            first: value,
+            second: None,
+        }
+    }
+}
+
+pub(crate) struct SortingFieldExtractorPair {
+    first: SortingFieldExtractorComponent,
+    second: Option<SortingFieldExtractorComponent>,
+}
+
+impl SortingFieldExtractorPair {
+    /// Returns the list of sort values for the given element
+    ///
+    /// See also [`SortingFieldExtractorComponent::extract_typed_sort_value_opt`] for more
+    /// information.
+    fn extract_typed_sort_value(
+        &self,
+        doc_id: DocId,
+        score: Score,
+    ) -> (Option<SortValue>, Option<SortValue>) {
+        let first = self.first.extract_typed_sort_value_opt(doc_id, score);
+        let second = self
+            .second
+            .as_ref()
+            .and_then(|second| second.extract_typed_sort_value_opt(doc_id, score));
+        (first, second)
+    }
+}
+
 impl TryFrom<ColumnType> for SortFieldType {
     type Error = tantivy::TantivyError;
 
@@ -173,13 +229,19 @@ impl TryFrom<ColumnType> for SortFieldType {
 /// Takes a user-defined sorting criteria and resolves it to a
 /// segment specific `SortingFieldExtractorPair`.
 fn get_score_extractor(
-    sort_by: &[SortByComponent],
+    sort_by: &SortByPair,
     segment_reader: &SegmentReader,
-) -> tantivy::Result<Vec<SortingFieldExtractorComponent>> {
-    sort_by
-        .iter()
-        .map(|sort_by| sort_by.to_sorting_field_extractor_component(segment_reader))
-        .collect()
+) -> tantivy::Result<SortingFieldExtractorPair> {
+    Ok(SortingFieldExtractorPair {
+        first: sort_by
+            .first
+            .to_sorting_field_extractor_component(segment_reader)?,
+        second: sort_by
+            .second
+            .as_ref()
+            .map(|first| first.to_sorting_field_extractor_component(segment_reader))
+            .transpose()?,
+    })
 }
 
 /// PartialHitHeapItem order is the inverse of the natural order
@@ -233,7 +295,7 @@ enum AggregationSegmentCollectors {
 pub struct QuickwitSegmentCollector {
     num_hits: u64,
     split_id: String,
-    score_extractors: Vec<SortingFieldExtractorComponent>,
+    score_extractor: SortingFieldExtractorPair,
     // PartialHits in this heap don't contain a split_id yet.
     top_k_hits: TopK<PartialHit, PartialHitSortingKey, HitSortingMapper>,
     segment_ord: u32,
@@ -245,31 +307,25 @@ pub struct QuickwitSegmentCollector {
 impl QuickwitSegmentCollector {
     #[inline]
     fn collect_top_k(&mut self, doc_id: DocId, score: Score) {
-        let sort_values: Vec<_> = self
-            .score_extractors
-            .iter()
-            .map(|extractor| extractor.extract_typed_sort_value_opt(doc_id, score))
-            .collect();
+        let (sort_value, sort_value2) =
+            self.score_extractor.extract_typed_sort_value(doc_id, score);
 
         if let Some(search_after) = &self.search_after {
-            let search_after_values = [
-                search_after.sort_value.and_then(|v| v.sort_value),
-                search_after.sort_value2.and_then(|v| v.sort_value),
-            ];
-            let mut cmp_result = compare_fields(
-                &self.top_k_hits.sort_key_mapper.orders,
-                &sort_values,
-                &search_after_values,
-            );
+            let search_after_value1 = search_after.sort_value.and_then(|v| v.sort_value);
+            let search_after_value2 = search_after.sort_value2.and_then(|v| v.sort_value);
+            let orders = &self.top_k_hits.sort_key_mapper;
+            let mut cmp_result = orders
+                .order1
+                .compare_opt(&sort_value, &search_after_value1)
+                .then_with(|| {
+                    orders
+                        .order2
+                        .compare_opt(&sort_value2, &search_after_value2)
+                });
             if !search_after.split_id.is_empty() {
                 // TODO actually it's not first, it should be what's in _shard_doc then first then
                 // default
-                let order = self
-                    .top_k_hits
-                    .sort_key_mapper
-                    .orders
-                    .first()
-                    .unwrap_or(&SortOrder::Desc);
+                let order = orders.order1;
                 cmp_result = cmp_result
                     .then_with(|| order.compare(&self.split_id, &search_after.split_id))
                     .then_with(|| order.compare(&self.segment_ord, &search_after.segment_ord))
@@ -280,11 +336,6 @@ impl QuickwitSegmentCollector {
                 return;
             }
         }
-
-        // TODO better partial hit, again
-        let mut sort_values = sort_values.into_iter();
-        let sort_value = sort_values.next().flatten();
-        let sort_value2 = sort_values.next().flatten();
 
         let hit = PartialHit {
             sort_value: sort_value.map(Into::into),
@@ -300,7 +351,6 @@ impl QuickwitSegmentCollector {
 
     #[inline]
     fn accept_document(&self, doc_id: DocId) -> bool {
-        // We don't reject document based on search after because they should be counted.
         if let Some(ref timestamp_filter) = self.timestamp_filter_opt {
             return timestamp_filter.is_within_range(doc_id);
         }
@@ -400,7 +450,7 @@ pub(crate) struct QuickwitCollector {
     pub split_id: String,
     pub start_offset: usize,
     pub max_hits: usize,
-    pub sort_by: Vec<SortByComponent>,
+    pub sort_by: SortByPair,
     timestamp_filter_builder_opt: Option<TimestampFilterBuilder>,
     pub aggregation: Option<QuickwitAggregations>,
     pub aggregation_limits: AggregationLimits,
@@ -410,8 +460,9 @@ pub(crate) struct QuickwitCollector {
 impl QuickwitCollector {
     pub fn fast_field_names(&self) -> HashSet<String> {
         let mut fast_field_names = HashSet::default();
-        for sort_by in &self.sort_by {
-            sort_by.add_fast_field(&mut fast_field_names);
+        self.sort_by.first.add_fast_field(&mut fast_field_names);
+        if let Some(sort_by_second) = &self.sort_by.second {
+            sort_by_second.add_fast_field(&mut fast_field_names);
         }
         if let Some(aggregations) = &self.aggregation {
             fast_field_names.extend(aggregations.fast_field_names());
@@ -465,17 +516,13 @@ impl Collector for QuickwitCollector {
             ),
             None => None,
         };
-        let score_extractors = get_score_extractor(&self.sort_by, segment_reader)?;
-        let orders = self
-            .sort_by
-            .iter()
-            .map(|sort_by| sort_by.sort_order())
-            .collect();
-        let sort_key_mapper = HitSortingMapper { orders };
+        let score_extractor = get_score_extractor(&self.sort_by, segment_reader)?;
+        let (order1, order2) = self.sort_by.sort_orders();
+        let sort_key_mapper = HitSortingMapper { order1, order2 };
         Ok(QuickwitSegmentCollector {
             num_hits: 0u64,
             split_id: self.split_id.clone(),
-            score_extractors,
+            score_extractor,
             top_k_hits: TopK::new(leaf_max_hits, sort_key_mapper),
             segment_ord,
             timestamp_filter_opt,
@@ -488,9 +535,13 @@ impl Collector for QuickwitCollector {
         // We do not need BM25 scoring in Quickwit if it is not opted-in.
         // By returning false, we inform tantivy that it does not need to decompress
         // term frequencies.
-        self.sort_by
-            .iter()
-            .any(|sort_by| sort_by.requires_scoring())
+        self.sort_by.first.requires_scoring()
+            || self
+                .sort_by
+                .second
+                .as_ref()
+                .map(|sort_by| sort_by.requires_scoring())
+                .unwrap_or(false)
     }
 
     fn merge_fruits(
@@ -503,13 +554,14 @@ impl Collector for QuickwitCollector {
         // All leaves will return their top [0..start_offset + max_hits) documents.
         // We compute the overall [0..start_offset + max_hits) documents ...
         let num_hits = self.start_offset + self.max_hits;
-        let sort_orders = self
-            .sort_by
-            .iter()
-            .map(|sort_by| sort_by.sort_order())
-            .collect();
-        let mut merged_leaf_response =
-            merge_leaf_responses(&self.aggregation, segment_fruits?, sort_orders, num_hits)?;
+        let (sort_order1, sort_order2) = self.sort_by.sort_orders();
+        let mut merged_leaf_response = merge_leaf_responses(
+            &self.aggregation,
+            segment_fruits?,
+            sort_order1,
+            sort_order2,
+            num_hits,
+        )?;
         // ... and drop the first [..start_offsets) hits.
         // note that self.start_offset is 0 when merging from leaf_search, and is only set when
         // merging from root_search, so as to remove the firsts elements only once.
@@ -577,7 +629,8 @@ fn merge_intermediate_aggregation_result<'a>(
 fn merge_leaf_responses(
     aggregations_opt: &Option<QuickwitAggregations>,
     mut leaf_responses: Vec<LeafSearchResponse>,
-    sort_orders: Vec<SortOrder>,
+    sort_order1: SortOrder,
+    sort_order2: SortOrder,
     max_hits: usize,
 ) -> tantivy::Result<LeafSearchResponse> {
     // Optimization: No merging needed if there is only one result.
@@ -608,8 +661,12 @@ fn merge_leaf_responses(
         .into_iter()
         .flat_map(|leaf_response| leaf_response.partial_hits)
         .collect();
-    let top_k_partial_hits: Vec<PartialHit> =
-        top_k_partial_hits(all_partial_hits.into_iter(), sort_orders, max_hits);
+    let top_k_partial_hits: Vec<PartialHit> = top_k_partial_hits(
+        all_partial_hits.into_iter(),
+        sort_order1,
+        sort_order2,
+        max_hits,
+    );
     Ok(LeafSearchResponse {
         intermediate_aggregation_result: merged_intermediate_aggregation_result,
         num_hits,
@@ -625,10 +682,11 @@ fn merge_leaf_responses(
 /// TODO we could possibly optimize the sort away (but I doubt it matters).
 fn top_k_partial_hits(
     partial_hits: impl Iterator<Item = PartialHit>,
-    orders: Vec<SortOrder>,
+    order1: SortOrder,
+    order2: SortOrder,
     num_hits: usize,
 ) -> Vec<PartialHit> {
-    let sort_key_mapper = HitSortingMapper { orders };
+    let sort_key_mapper = HitSortingMapper { order1, order2 };
     let mut top_k_hits = TopK::new(num_hits, sort_key_mapper);
 
     partial_hits.for_each(|hit| top_k_hits.add_entry(hit));
@@ -636,7 +694,7 @@ fn top_k_partial_hits(
     top_k_hits.finalize()
 }
 
-pub(crate) fn sort_by_from_request(search_request: &SearchRequest) -> Vec<SortByComponent> {
+pub(crate) fn sort_by_from_request(search_request: &SearchRequest) -> SortByPair {
     let to_sort_by_component = |field_name: &str, order| {
         if field_name == "_score" {
             SortByComponent::Score { order }
@@ -650,14 +708,28 @@ pub(crate) fn sort_by_from_request(search_request: &SearchRequest) -> Vec<SortBy
         }
     };
 
-    search_request
-        .sort_fields
-        .iter()
-        .map(|sort_field| {
-            let order = SortOrder::from_i32(sort_field.sort_order).unwrap_or(SortOrder::Desc);
-            to_sort_by_component(&sort_field.field_name, order)
-        })
-        .collect()
+    let num_sort_fields = search_request.sort_fields.len();
+    if num_sort_fields == 0 {
+        SortByComponent::DocId {
+            order: SortOrder::Desc,
+        }
+        .into()
+    } else if num_sort_fields == 1 {
+        let sort_field = &search_request.sort_fields[0];
+        let order = SortOrder::from_i32(sort_field.sort_order).unwrap_or(SortOrder::Desc);
+        to_sort_by_component(&sort_field.field_name, order).into()
+    } else if num_sort_fields == 2 {
+        let sort_field1 = &search_request.sort_fields[0];
+        let order1 = SortOrder::from_i32(sort_field1.sort_order).unwrap_or(SortOrder::Desc);
+        let sort_field2 = &search_request.sort_fields[1];
+        let order2 = SortOrder::from_i32(sort_field2.sort_order).unwrap_or(SortOrder::Desc);
+        SortByPair {
+            first: to_sort_by_component(&sort_field1.field_name, order1),
+            second: Some(to_sort_by_component(&sort_field2.field_name, order2)),
+        }
+    } else {
+        panic!("Sort by more than 2 fields is not supported yet.")
+    }
 }
 
 /// Builds the QuickwitCollector, in function of the information that was requested by the user.
@@ -677,7 +749,6 @@ pub(crate) fn make_collector_for_split(
         search_request.end_timestamp,
     );
     let sort_by = sort_by_from_request(search_request);
-
     Ok(QuickwitCollector {
         split_id,
         start_offset: search_request.start_offset as usize,
@@ -700,7 +771,6 @@ pub(crate) fn make_merge_collector(
         None => None,
     };
     let sort_by = sort_by_from_request(search_request);
-
     Ok(QuickwitCollector {
         split_id: String::default(),
         start_offset: search_request.start_offset as usize,
@@ -713,49 +783,37 @@ pub(crate) fn make_merge_collector(
     })
 }
 
-/// Compare list of fields. Assumes all three lists are of the same length
-fn compare_fields(
-    sort_orders: &[SortOrder],
-    left: &[Option<SortValue>],
-    right: &[Option<SortValue>],
-) -> Ordering {
-    for (order, (left, right)) in sort_orders.iter().zip(left.iter().zip(right)) {
-        match order.compare_opt(left, right) {
-            Ordering::Equal => continue,
-            other => return other,
-        }
-    }
-    Ordering::Equal
-}
-
 #[derive(Clone, Debug, PartialEq, Eq)]
 struct PartialHitSortingKey {
-    // good candidate for a SmallVec
-    sort_values: Vec<Option<SortValue>>,
+    sort_value: Option<SortValue>,
+    sort_value2: Option<SortValue>,
     address: GlobalDocAddress,
-    // good candidate for a SmallVec
-    sort_orders: Vec<SortOrder>,
+    sort_order: SortOrder,
+    sort_order2: SortOrder,
 }
 
 impl Ord for PartialHitSortingKey {
     fn cmp(&self, other: &PartialHitSortingKey) -> Ordering {
         assert_eq!(
-            self.sort_orders, other.sort_orders,
+            self.sort_order, other.sort_order,
+            "comparing two PartialHitSortingKey of different ordering"
+        );
+        assert_eq!(
+            self.sort_order2, other.sort_order2,
             "comparing two PartialHitSortingKey of different ordering"
         );
 
-        let fields_res = compare_fields(&self.sort_orders, &self.sort_values, &other.sort_values);
+        let order = self
+            .sort_order
+            .compare_opt(&self.sort_value, &other.sort_value);
 
-        let doc_id_res = || {
-            // TODO actually it's not first, it should be what's in _shard_doc then first then
-            // default
-            self.sort_orders
-                .first()
-                .unwrap_or(&SortOrder::Desc)
-                .compare(&self.address, &other.address)
-        };
+        let order2 = self
+            .sort_order2
+            .compare_opt(&self.sort_value2, &other.sort_value2);
 
-        fields_res.then_with(doc_id_res)
+        let order_addr = self.sort_order.compare(&self.address, &other.address);
+
+        order.then(order2).then(order_addr)
     }
 }
 
@@ -767,26 +825,19 @@ impl PartialOrd for PartialHitSortingKey {
 
 #[derive(Clone)]
 struct HitSortingMapper {
-    // good candidate for a SmallVec
-    orders: Vec<SortOrder>,
+    order1: SortOrder,
+    order2: SortOrder,
 }
 
 impl SortKeyMapper<PartialHit> for HitSortingMapper {
     type Key = PartialHitSortingKey;
     fn get_sort_key(&self, partial_hit: &PartialHit) -> PartialHitSortingKey {
-        let sort_values = match self.orders.len() {
-            0 => Vec::new(),
-            1 => vec![partial_hit.sort_value.and_then(|v| v.sort_value)],
-            2 => vec![
-                partial_hit.sort_value.and_then(|v| v.sort_value),
-                partial_hit.sort_value2.and_then(|v| v.sort_value),
-            ],
-            _ => todo!("use Vec in PartialHit too"),
-        };
         PartialHitSortingKey {
-            sort_values,
+            sort_value: partial_hit.sort_value.and_then(|v| v.sort_value),
+            sort_value2: partial_hit.sort_value2.and_then(|v| v.sort_value),
             address: GlobalDocAddress::from_partial_hit(partial_hit),
-            sort_orders: self.orders.clone(),
+            sort_order: self.order1,
+            sort_order2: self.order2,
         }
     }
 }
@@ -805,12 +856,8 @@ pub(crate) struct IncrementalCollector {
 impl IncrementalCollector {
     /// Create a new incremental collector
     pub(crate) fn new(inner: QuickwitCollector) -> Self {
-        let orders = inner
-            .sort_by
-            .iter()
-            .map(|sort_by| sort_by.sort_order())
-            .collect();
-        let sort_key_mapper = HitSortingMapper { orders };
+        let (order1, order2) = inner.sort_by.sort_orders();
+        let sort_key_mapper = HitSortingMapper { order1, order2 };
         IncrementalCollector {
             top_k_hits: TopK::new(inner.max_hits + inner.start_offset, sort_key_mapper),
             inner,
@@ -948,7 +995,8 @@ mod tests {
         assert_eq!(
             top_k_partial_hits(
                 vec![make_doc(1u64), make_doc(3u64), make_doc(2u64),].into_iter(),
-                vec![SortOrder::Asc, SortOrder::Asc],
+                SortOrder::Asc,
+                SortOrder::Asc,
                 2
             ),
             vec![make_doc(1), make_doc(2)]
@@ -972,7 +1020,8 @@ mod tests {
                     make_hit_given_split_id(2u64),
                 ]
                 .into_iter(),
-                vec![SortOrder::Desc, SortOrder::Desc],
+                SortOrder::Desc,
+                SortOrder::Desc,
                 2
             ),
             &[make_hit_given_split_id(3), make_hit_given_split_id(2)]
@@ -985,7 +1034,8 @@ mod tests {
                     make_hit_given_split_id(2u64),
                 ]
                 .into_iter(),
-                vec![SortOrder::Asc, SortOrder::Asc],
+                SortOrder::Asc,
+                SortOrder::Asc,
                 2
             ),
             &[make_hit_given_split_id(1), make_hit_given_split_id(2)]
