@@ -302,6 +302,7 @@ pub struct QuickwitSegmentCollector {
     timestamp_filter_opt: Option<TimestampFilter>,
     aggregation: Option<AggregationSegmentCollectors>,
     search_after: Option<PartialHit>,
+    split_search_after_order: Ordering,
 }
 
 impl QuickwitSegmentCollector {
@@ -327,7 +328,7 @@ impl QuickwitSegmentCollector {
                 // default
                 let order = orders.order1;
                 cmp_result = cmp_result
-                    .then_with(|| order.compare(&self.split_id, &search_after.split_id))
+                    .then(self.split_search_after_order)
                     .then_with(|| order.compare(&self.segment_ord, &search_after.segment_ord))
                     .then_with(|| order.compare(&doc_id, &search_after.doc_id))
             }
@@ -519,6 +520,18 @@ impl Collector for QuickwitCollector {
         let score_extractor = get_score_extractor(&self.sort_by, segment_reader)?;
         let (order1, order2) = self.sort_by.sort_orders();
         let sort_key_mapper = HitSortingMapper { order1, order2 };
+        let split_search_after_order = if let Some(search_after) = &self.search_after {
+            if !search_after.split_id.is_empty() {
+                order1.compare(&self.split_id, &search_after.split_id)
+            } else {
+                // so we don't reject document based on their split_id if we don't have one in
+                // search_after
+                Ordering::Greater
+            }
+        } else {
+            // this value isn't actually used.
+            Ordering::Equal
+        };
         Ok(QuickwitSegmentCollector {
             num_hits: 0u64,
             split_id: self.split_id.clone(),
@@ -528,6 +541,7 @@ impl Collector for QuickwitCollector {
             timestamp_filter_opt,
             aggregation,
             search_after: self.search_after.clone(),
+            split_search_after_order,
         })
     }
 
