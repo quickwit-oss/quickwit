@@ -25,6 +25,14 @@ The source ID is a string that uniquely identifies the source within an index. I
 
 The source type designates the kind of source being configured. As of version 0.5, available source types are `ingest-api`, `kafka`, `kinesis`, and `pulsar`. The `file` type is also supported but only for local ingestion from [the CLI](/docs/reference/cli.md#tool-local-ingest).
 
+## Maximum number of pipelines per indexer
+
+Maximum number of indexing pipelines spawned for the source on a given indexer. The maximum is reached only if there is enough `desired_num_pipelines` to run. The value is only used by sources that Quickwit knows how to distribute across pipelines/nodes, that is for Kafka sources only.
+
+## Desired number of pipelines
+
+Number of desired indexing pipelines to run on a cluster for the source. This number could not be reach if there is not enough indexers. The value is only used by sources that Quickwit knows how to distribute across pipelines/nodes, that is for Kafka sources only.
+
 ## Source parameters
 
 The source parameters indicate how to connect to a data store and are specific to the source type.
@@ -80,6 +88,8 @@ cat << EOF > source-config.yaml
 version: 0.6
 source_id: my-kafka-source
 source_type: kafka
+max_num_pipelines_per_indexer: 2
+desired_num_pipelines: 4
 params:
   topic: my-topic
   client_params:
