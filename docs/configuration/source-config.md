@@ -80,8 +80,8 @@ cat << EOF > source-config.yaml
 version: 0.6
 source_id: my-kafka-source
 source_type: kafka
-max_num_pipelines_per_indexer: 2
-desired_num_pipelines: 4
+max_num_pipelines_per_indexer: 1
+desired_num_pipelines: 2
 params:
   topic: my-topic
   client_params:
