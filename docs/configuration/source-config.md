@@ -163,7 +163,7 @@ EOF
 
 ## Maximum number of pipelines per indexer
 
-The `max_num_pipelines_per_indexer` parameter is only available for sources that can be distributed: Kafka and (coming soon) Pulsar.
+The `max_num_pipelines_per_indexer` parameter is only available for sources that can be distributed: Kafka, GCP PubSub and Pulsar(coming soon).
 
 The maximum number of indexing pipelines defines the limit of pipelines spawned for the source on a given indexer.
 This maximum can be reached only if there are enough `desired_num_pipelines` to run.
@@ -179,7 +179,7 @@ With the following parameters, only one pipeline will run on one indexer.
 
 ## Desired number of pipelines
 
-`desired_num_pipelines` parameter is only available for sources that can be distributed: Kafka and Pulsar (coming soon).
+`desired_num_pipelines` parameter is only available for sources that can be distributed: Kafka, GCP PubSub and Pulsar (coming soon).
 
 The desired number of indexing pipelines defines the number of pipelines to run on a cluster for the source. It is a "desired"
 number as it cannot be reach it there is not enough indexers in
