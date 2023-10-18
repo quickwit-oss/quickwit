@@ -19,7 +19,7 @@ json:
         type: datetime
         input_formats:
           - rfc3339
-        precision: seconds
+        fast_precision: seconds
         fast: true
 ---
 # Ingest documents

@@ -34,7 +34,7 @@ doc_mapping:
       input_formats:
         - unix_timestamp
       output_format: unix_timestamp_secs
-      precision: seconds
+      fast_precision: seconds
       fast: true
     - name: severity_text
       type: text
@@ -222,7 +222,7 @@ The timezone name format specifier (`%Z`) is not supported currently.
 Converting timestamps from float to integer values may occurs with a loss of precision.
 :::
 
-When a `datetime` field is stored as a fast field, the `precision` parameter indicates the precision used to truncate the values before encoding, which improves compression (truncation here means zeroing). The `precision` parameter can take the following values: `seconds`, `milliseconds`, `microseconds`, or `nanoseconds`. It only affects what is stored in fast fields when a `datetime` field is marked as "fast". Finally, operations on `datetime` fast fields, e.g. via aggregations, need to be done at the nanosecond level.
+When a `datetime` field is stored as a fast field, the `fast_precision` parameter indicates the precision used to truncate the values before encoding, which improves compression (truncation here means zeroing). The `fast_precision` parameter can take the following values: `seconds`, `milliseconds`, `microseconds`, or `nanoseconds`. It only affects what is stored in fast fields when a `datetime` field is marked as "fast". Finally, operations on `datetime` fast fields, e.g. via aggregations, need to be done at the nanosecond level.
 
 :::info
 Internally `datetime` is stored in `nanoseconds` in fast fields and in the docstore, and in `seconds` in the term dictionary.
@@ -248,7 +248,7 @@ output_format: unix_timestamp_secs
 stored: true
 indexed: true
 fast: true
-precision: milliseconds
+fast_precision: milliseconds
 ```
 
 **Parameters for datetime field**
@@ -260,7 +260,7 @@ precision: milliseconds
 | `stored`        | Whether the field values are stored in the document store | `true` |
 | `indexed`       | Whether the field values are indexed | `true` |
 | `fast`          | Whether the field values are stored in a fast field | `false` |
-| `precision`     | The precision (`seconds`, `milliseconds`, `microseconds`, or `nanoseconds`) used to store the fast values. | `seconds` |
+| `fast_precision`     | The precision (`seconds`, `milliseconds`, `microseconds`, or `nanoseconds`) used to store the fast values. | `seconds` |
 
 #### `bool` type
 

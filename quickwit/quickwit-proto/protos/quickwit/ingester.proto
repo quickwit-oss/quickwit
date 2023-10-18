@@ -108,6 +108,8 @@ message ReplicateRequest {
     string follower_id = 2;
     quickwit.ingest.CommitTypeV2 commit_type = 3;
     repeated ReplicateSubrequest subrequests = 4;
+    // Position of the request in the replication stream.
+    uint64 replication_seqno = 5;
 }
 
 message ReplicateSubrequest {
@@ -122,6 +124,8 @@ message ReplicateResponse {
     string follower_id = 1;
     repeated ReplicateSuccess successes = 2;
     repeated ReplicateFailure failures = 3;
+    // Position of the response in the replication stream. It should match the position of the request.
+    uint64 replication_seqno = 4;
 }
 
 message ReplicateSuccess {

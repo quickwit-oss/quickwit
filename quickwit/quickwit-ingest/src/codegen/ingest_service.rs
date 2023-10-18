@@ -207,27 +207,28 @@ impl IngestServiceClient {
         let adapter = IngestServiceGrpcServerAdapter::new(self.clone());
         ingest_service_grpc_server::IngestServiceGrpcServer::new(adapter)
     }
-    pub fn from_channel<C>(channel: C) -> Self
-    where
-        C: tower::Service<
-                http::Request<tonic::body::BoxBody>,
-                Response = http::Response<hyper::Body>,
-                Error = quickwit_common::tower::BoxError,
-            > + std::fmt::Debug + Clone + Send + Sync + 'static,
-        <C as tower::Service<
-            http::Request<tonic::body::BoxBody>,
-        >>::Future: std::future::Future<
-                Output = Result<
-                    http::Response<hyper::Body>,
-                    quickwit_common::tower::BoxError,
-                >,
-            > + Send + 'static,
-    {
-        IngestServiceClient::new(
-            IngestServiceGrpcClientAdapter::new(
-                ingest_service_grpc_client::IngestServiceGrpcClient::new(channel),
-            ),
-        )
+    pub fn from_channel(
+        addr: std::net::SocketAddr,
+        channel: tonic::transport::Channel,
+    ) -> Self {
+        let (_, connection_keys_watcher) = tokio::sync::watch::channel(
+            std::collections::HashSet::from_iter([addr]),
+        );
+        let adapter = IngestServiceGrpcClientAdapter::new(
+            ingest_service_grpc_client::IngestServiceGrpcClient::new(channel),
+            connection_keys_watcher,
+        );
+        Self::new(adapter)
+    }
+    pub fn from_balance_channel(
+        balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
+    ) -> IngestServiceClient {
+        let connection_keys_watcher = balance_channel.connection_keys_watcher();
+        let adapter = IngestServiceGrpcClientAdapter::new(
+            ingest_service_grpc_client::IngestServiceGrpcClient::new(balance_channel),
+            connection_keys_watcher,
+        );
+        Self::new(adapter)
     }
     pub fn from_mailbox<A>(mailbox: quickwit_actors::Mailbox<A>) -> Self
     where
@@ -347,6 +348,7 @@ impl tower::Service<TailRequest> for Box<dyn IngestService> {
 /// A tower block is a set of towers. Each tower is stack of layers (middlewares) that are applied to a service.
 #[derive(Debug)]
 struct IngestServiceTowerBlock {
+    inner: Box<dyn IngestService>,
     ingest_svc: quickwit_common::tower::BoxService<
         IngestRequest,
         IngestResponse,
@@ -366,6 +368,7 @@ struct IngestServiceTowerBlock {
 impl Clone for IngestServiceTowerBlock {
     fn clone(&self) -> Self {
         Self {
+            inner: self.inner.clone(),
             ingest_svc: self.ingest_svc.clone(),
             fetch_svc: self.fetch_svc.clone(),
             tail_svc: self.tail_svc.clone(),
@@ -487,23 +490,20 @@ impl IngestServiceTowerBlockBuilder {
     {
         self.build_from_boxed(Box::new(instance))
     }
-    pub fn build_from_channel<T, C>(self, channel: C) -> IngestServiceClient
-    where
-        C: tower::Service<
-                http::Request<tonic::body::BoxBody>,
-                Response = http::Response<hyper::Body>,
-                Error = quickwit_common::tower::BoxError,
-            > + std::fmt::Debug + Clone + Send + Sync + 'static,
-        <C as tower::Service<
-            http::Request<tonic::body::BoxBody>,
-        >>::Future: std::future::Future<
-                Output = Result<
-                    http::Response<hyper::Body>,
-                    quickwit_common::tower::BoxError,
-                >,
-            > + Send + 'static,
-    {
-        self.build_from_boxed(Box::new(IngestServiceClient::from_channel(channel)))
+    pub fn build_from_channel(
+        self,
+        addr: std::net::SocketAddr,
+        channel: tonic::transport::Channel,
+    ) -> IngestServiceClient {
+        self.build_from_boxed(Box::new(IngestServiceClient::from_channel(addr, channel)))
+    }
+    pub fn build_from_balance_channel(
+        self,
+        balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
+    ) -> IngestServiceClient {
+        self.build_from_boxed(
+            Box::new(IngestServiceClient::from_balance_channel(balance_channel)),
+        )
     }
     pub fn build_from_mailbox<A>(
         self,
@@ -513,7 +513,7 @@ impl IngestServiceTowerBlockBuilder {
         A: quickwit_actors::Actor + std::fmt::Debug + Send + 'static,
         IngestServiceMailbox<A>: IngestService,
     {
-        self.build_from_boxed(Box::new(IngestServiceClient::from_mailbox(mailbox)))
+        self.build_from_boxed(Box::new(IngestServiceMailbox::new(mailbox)))
     }
     fn build_from_boxed(
         self,
@@ -535,6 +535,7 @@ impl IngestServiceTowerBlockBuilder {
             quickwit_common::tower::BoxService::new(boxed_instance.clone())
         };
         let tower_block = IngestServiceTowerBlock {
+            inner: boxed_instance.clone(),
             ingest_svc,
             fetch_svc,
             tail_svc,
@@ -646,10 +647,22 @@ where
 #[derive(Debug, Clone)]
 pub struct IngestServiceGrpcClientAdapter<T> {
     inner: T,
+    #[allow(dead_code)]
+    connection_addrs_rx: tokio::sync::watch::Receiver<
+        std::collections::HashSet<std::net::SocketAddr>,
+    >,
 }
 impl<T> IngestServiceGrpcClientAdapter<T> {
-    pub fn new(instance: T) -> Self {
-        Self { inner: instance }
+    pub fn new(
+        instance: T,
+        connection_addrs_rx: tokio::sync::watch::Receiver<
+            std::collections::HashSet<std::net::SocketAddr>,
+        >,
+    ) -> Self {
+        Self {
+            inner: instance,
+            connection_addrs_rx,
+        }
     }
 }
 #[async_trait::async_trait]

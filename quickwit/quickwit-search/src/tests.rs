@@ -1771,7 +1771,7 @@ async fn test_single_node_find_trace_ids_collector() {
               - name: span_timestamp_secs
                 type: datetime
                 fast: true
-                precision: seconds
+                fast_precision: seconds
         "#;
     let foo_trace_id = TraceId::new([1u8; 16]);
     let bar_trace_id = TraceId::new([2u8; 16]);

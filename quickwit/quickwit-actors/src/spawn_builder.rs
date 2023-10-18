@@ -201,7 +201,13 @@ impl<A: Actor + Default> SpawnBuilder<A> {
     }
 }
 
-/// Returns `None` if no message is available at the moment.
+/// Receives an envelope from either the high priority queue or the low priority queue.
+///
+/// In the paused state, the actor will only attempt to receive high priority messages.
+///
+/// If no message is available, this function will yield until a message arrives.
+/// If a high priority message is arrives first it is guaranteed to be processed first.
+/// This other way around is however not guaranteed.
 async fn recv_envelope<A: Actor>(inbox: &mut Inbox<A>, ctx: &ActorContext<A>) -> Envelope<A> {
     if ctx.state().is_running() {
         ctx.protect_future(inbox.recv()).await.expect(

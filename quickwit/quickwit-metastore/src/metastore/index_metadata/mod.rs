@@ -55,8 +55,14 @@ pub struct IndexMetadata {
 impl IndexMetadata {
     /// Panics if `index_config` is missing `index_uri`.
     pub fn new(index_config: IndexConfig) -> Self {
+        let index_uid = IndexUid::new(index_config.index_id.clone());
+        IndexMetadata::new_with_index_uid(index_uid, index_config)
+    }
+
+    /// Panics if `index_config` is missing `index_uri`.
+    pub fn new_with_index_uid(index_uid: IndexUid, index_config: IndexConfig) -> Self {
         IndexMetadata {
-            index_uid: IndexUid::new(index_config.index_id.clone()),
+            index_uid,
             index_config,
             checkpoint: Default::default(),
             create_timestamp: OffsetDateTime::now_utc().unix_timestamp(),
@@ -65,6 +71,8 @@ impl IndexMetadata {
     }
 
     /// Returns an [`IndexMetadata`] object with multiple hard coded values for tests.
+    ///
+    /// An incarnation id of `0` will be used to complete the index id into a index uuid.
     #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test(index_id: &str, index_uri: &str) -> Self {
         let index_uid = IndexUid::from_parts(index_id, "0");

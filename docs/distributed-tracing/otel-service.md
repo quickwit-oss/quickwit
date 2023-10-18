@@ -84,7 +84,7 @@ doc_mapping:
       input_formats: [unix_timestamp]
       indexed: false
       fast: true
-      precision: seconds
+      fast_precision: seconds
       stored: false
     - name: span_duration_millis
       type: u64

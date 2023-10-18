@@ -179,7 +179,7 @@ mod tests {
         let metastore_resolver = MetastoreResolver::unconfigured();
         let tmp_dir = tempfile::tempdir().unwrap();
         let metastore_filepath = format!("file://{}/metastore", tmp_dir.path().display());
-        let metastore_uri = Uri::from_well_formed(&metastore_filepath);
+        let metastore_uri = Uri::from_well_formed(metastore_filepath);
         metastore_resolver.resolve(&metastore_uri).await.unwrap();
     }
 
