@@ -274,9 +274,15 @@ fn validate_sort_by_fields(sort_fields: &[SortField], schema: &Schema) -> crate:
     Ok(())
 }
 
-fn simplify_search_request_for_scroll_api(req: &SearchRequest) -> SearchRequest {
+fn simplify_search_request_for_scroll_api(req: &SearchRequest) -> crate::Result<SearchRequest> {
+    if req.search_after.is_some() {
+        return Err(SearchError::InvalidArgument(
+            "search_after cannot be used in a scroll context".to_string(),
+        ));
+    }
+
     // We do not mutate
-    SearchRequest {
+    Ok(SearchRequest {
         index_id_patterns: req.index_id_patterns.clone(),
         query_ast: req.query_ast.clone(),
         start_timestamp: req.start_timestamp,
@@ -291,10 +297,8 @@ fn simplify_search_request_for_scroll_api(req: &SearchRequest) -> SearchRequest 
         snippet_fields: Vec::new(),
         // We remove the scroll ttl parameter. It is irrelevant to process later request
         scroll_ttl_secs: None,
-        // TODO unclear as to what we should do when scroll and search after are mixed. I guess
-        // honor search_after?
-        search_after: req.search_after.clone(),
-    }
+        search_after: None,
+    })
 }
 
 fn validate_sort_by_field(field_name: &str, schema: &Schema) -> crate::Result<()> {
@@ -408,7 +412,8 @@ async fn search_partial_hits_phase_with_scroll(
         let cached_partial_hits = leaf_search_resp.partial_hits.clone();
         leaf_search_resp.partial_hits.truncate(max_hits as usize);
 
-        let scroll_context_search_request = simplify_search_request_for_scroll_api(&search_request);
+        let scroll_context_search_request =
+            simplify_search_request_for_scroll_api(&search_request)?;
         let scroll_ctx = ScrollContext {
             indexes_metas_for_leaf_search: indexes_metas_for_leaf_search.clone(),
             split_metadatas: split_metadatas.to_vec(),
