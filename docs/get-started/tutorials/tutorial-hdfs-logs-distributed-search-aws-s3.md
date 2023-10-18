@@ -190,7 +190,8 @@ which returns the json
 }
 ```
 
-You can see that this query has 345 hits and that the server responds in 523 milliseconds.
+You can see that this query has 345 hits. In this case for the first run, the server responded in 523 milliseconds.
+Subsequent runs use the cached metastore and can be resolved in under 100 milliseconds.
 
 Now that we have indexed the logs and can search from one instance, it's time to configure and start two other instances to form a cluster.
 
