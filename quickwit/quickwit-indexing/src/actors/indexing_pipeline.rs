@@ -404,7 +404,7 @@ impl IndexingPipeline {
             self.params.doc_mapper.clone(),
             indexer_mailbox,
             self.params.source_config.transform_config.clone(),
-            self.params.source_config.input_format.clone(),
+            self.params.source_config.input_format,
         )?;
         let (doc_processor_mailbox, doc_processor_handle) = ctx
             .spawn_actor()
