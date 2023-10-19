@@ -102,6 +102,11 @@ pub struct SearchRequest {
     /// in a consistent manner.
     #[prost(uint32, optional, tag = "15")]
     pub scroll_ttl_secs: ::core::option::Option<u32>,
+    /// Document with sort tuple smaller or equal to this are discarded to
+    /// enable pagination.
+    /// If split_id is empty, no comparison with _shard_doc should be done
+    #[prost(message, optional, tag = "16")]
+    pub search_after: ::core::option::Option<PartialHit>,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[derive(Eq, Hash)]
@@ -249,6 +254,7 @@ pub struct Hit {
 /// - the segment_ord,
 /// - the doc id.
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Eq, Hash)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PartialHit {

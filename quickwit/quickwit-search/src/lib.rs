@@ -88,13 +88,20 @@ pub type SearcherPool = Pool<SocketAddr, SearchServiceClient>;
 
 /// GlobalDocAddress serves as a hit address.
 #[derive(Clone, Eq, Debug, PartialEq, Hash, Ord, PartialOrd)]
-pub(crate) struct GlobalDocAddress {
+pub struct GlobalDocAddress {
+    /// Split containing the document
     pub split: String,
+    /// Document address inside the split
     pub doc_addr: DocAddress,
 }
 
+/// An error happened converting a string to a GLobalDocAddress
+#[derive(Debug, Clone, Copy)]
+pub struct GlobalDocAddressParseError;
+
 impl GlobalDocAddress {
-    fn from_partial_hit(partial_hit: &PartialHit) -> Self {
+    /// Extract a GlobalDocAddress from a PartialHit
+    pub fn from_partial_hit(partial_hit: &PartialHit) -> Self {
         Self {
             split: partial_hit.split_id.to_string(),
             doc_addr: DocAddress {
@@ -102,6 +109,40 @@ impl GlobalDocAddress {
                 doc_id: partial_hit.doc_id,
             },
         }
+    }
+}
+
+impl std::fmt::Display for GlobalDocAddress {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.split)?;
+        write!(
+            f,
+            ":{:08x}:{:08x}",
+            self.doc_addr.segment_ord, self.doc_addr.doc_id
+        )
+    }
+}
+
+impl std::str::FromStr for GlobalDocAddress {
+    type Err = GlobalDocAddressParseError;
+
+    fn from_str(s: &str) -> std::result::Result<Self, Self::Err> {
+        let mut s_iter = s.splitn(3, ':');
+        let split = s_iter.next().ok_or(GlobalDocAddressParseError)?.to_string();
+        let segment = s_iter.next().ok_or(GlobalDocAddressParseError)?;
+        let doc_id = s_iter.next().ok_or(GlobalDocAddressParseError)?;
+
+        let segment_ord =
+            u32::from_str_radix(segment, 16).map_err(|_| GlobalDocAddressParseError)?;
+        let doc_id = u32::from_str_radix(doc_id, 16).map_err(|_| GlobalDocAddressParseError)?;
+
+        Ok(GlobalDocAddress {
+            split,
+            doc_addr: DocAddress {
+                segment_ord,
+                doc_id,
+            },
+        })
     }
 }
 

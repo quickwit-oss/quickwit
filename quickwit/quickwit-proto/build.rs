@@ -100,6 +100,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "#[serde(default, skip_serializing_if = \"Option::is_none\")]",
         )
         .type_attribute(".", "#[derive(Serialize, Deserialize, utoipa::ToSchema)]")
+        .type_attribute("PartialHit", "#[derive(Eq, Hash)]")
         .type_attribute("PartialHit.sort_value", "#[derive(Copy)]")
         .type_attribute("SearchRequest", "#[derive(Eq, Hash)]")
         .type_attribute("Shard", "#[derive(Eq)]")

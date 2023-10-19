@@ -42,7 +42,9 @@ use crate::GlobalDocAddress;
 
 #[derive(Clone, Debug)]
 pub(crate) enum SortByComponent {
-    DocId,
+    DocId {
+        order: SortOrder,
+    },
     FastField {
         field_name: String,
         order: SortOrder,
@@ -81,7 +83,7 @@ impl SortByComponent {
         segment_reader: &SegmentReader,
     ) -> tantivy::Result<SortingFieldExtractorComponent> {
         match self {
-            SortByComponent::DocId => Ok(SortingFieldExtractorComponent::DocId),
+            SortByComponent::DocId { .. } => Ok(SortingFieldExtractorComponent::DocId),
             SortByComponent::FastField { field_name, .. } => {
                 let sort_column_opt: Option<(Column<u64>, ColumnType)> =
                     segment_reader.fast_fields().u64_lenient(field_name)?;
@@ -102,7 +104,7 @@ impl SortByComponent {
     }
     pub fn requires_scoring(&self) -> bool {
         match self {
-            SortByComponent::DocId => false,
+            SortByComponent::DocId { .. } => false,
             SortByComponent::FastField { .. } => false,
             SortByComponent::Score { .. } => true,
         }
@@ -118,7 +120,7 @@ impl SortByComponent {
     }
     pub fn sort_order(&self) -> SortOrder {
         match self {
-            SortByComponent::DocId => SortOrder::Desc,
+            SortByComponent::DocId { order } => *order,
             SortByComponent::FastField { order, .. } => *order,
             SortByComponent::Score { order } => *order,
         }
@@ -300,6 +302,8 @@ pub struct QuickwitSegmentCollector {
     segment_ord: u32,
     timestamp_filter_opt: Option<TimestampFilter>,
     aggregation: Option<AggregationSegmentCollectors>,
+    search_after: Option<PartialHit>,
+    split_search_after_order: Ordering,
 }
 
 impl QuickwitSegmentCollector {
@@ -307,6 +311,33 @@ impl QuickwitSegmentCollector {
     fn collect_top_k(&mut self, doc_id: DocId, score: Score) {
         let (sort_value, sort_value2) =
             self.score_extractor.extract_typed_sort_value(doc_id, score);
+
+        if let Some(search_after) = &self.search_after {
+            let search_after_value1 = search_after.sort_value.and_then(|v| v.sort_value);
+            let search_after_value2 = search_after.sort_value2.and_then(|v| v.sort_value);
+            let orders = &self.top_k_hits.sort_key_mapper;
+            let mut cmp_result = orders
+                .order1
+                .compare_opt(&sort_value, &search_after_value1)
+                .then_with(|| {
+                    orders
+                        .order2
+                        .compare_opt(&sort_value2, &search_after_value2)
+                });
+            if !search_after.split_id.is_empty() {
+                // TODO actually it's not first, it should be what's in _shard_doc then first then
+                // default
+                let order = orders.order1;
+                cmp_result = cmp_result
+                    .then(self.split_search_after_order)
+                    .then_with(|| order.compare(&self.segment_ord, &search_after.segment_ord))
+                    .then_with(|| order.compare(&doc_id, &search_after.doc_id))
+            }
+
+            if cmp_result != Ordering::Less {
+                return;
+            }
+        }
 
         let hit = SegmentPartialHit {
             sort_value: sort_value.map(Into::into),
@@ -442,6 +473,7 @@ pub(crate) struct QuickwitCollector {
     timestamp_filter_builder_opt: Option<TimestampFilterBuilder>,
     pub aggregation: Option<QuickwitAggregations>,
     pub aggregation_limits: AggregationLimits,
+    search_after: Option<PartialHit>,
 }
 
 impl QuickwitCollector {
@@ -506,6 +538,18 @@ impl Collector for QuickwitCollector {
         let score_extractor = get_score_extractor(&self.sort_by, segment_reader)?;
         let (order1, order2) = self.sort_by.sort_orders();
         let sort_key_mapper = HitSortingMapper { order1, order2 };
+        let split_search_after_order = if let Some(search_after) = &self.search_after {
+            if !search_after.split_id.is_empty() {
+                order1.compare(&self.split_id, &search_after.split_id)
+            } else {
+                // so we don't reject document based on their split_id if we don't have one in
+                // search_after
+                Ordering::Greater
+            }
+        } else {
+            // this value isn't actually used.
+            Ordering::Equal
+        };
         Ok(QuickwitSegmentCollector {
             num_hits: 0u64,
             split_id: self.split_id.clone(),
@@ -514,6 +558,8 @@ impl Collector for QuickwitCollector {
             segment_ord,
             timestamp_filter_opt,
             aggregation,
+            search_after: self.search_after.clone(),
+            split_search_after_order,
         })
     }
 
@@ -684,6 +730,8 @@ pub(crate) fn sort_by_from_request(search_request: &SearchRequest) -> SortByPair
     let to_sort_by_component = |field_name: &str, order| {
         if field_name == "_score" {
             SortByComponent::Score { order }
+        } else if field_name == "_shard_doc" || field_name == "_doc" {
+            SortByComponent::DocId { order }
         } else {
             SortByComponent::FastField {
                 field_name: field_name.to_string(),
@@ -694,7 +742,10 @@ pub(crate) fn sort_by_from_request(search_request: &SearchRequest) -> SortByPair
 
     let num_sort_fields = search_request.sort_fields.len();
     if num_sort_fields == 0 {
-        SortByComponent::DocId.into()
+        SortByComponent::DocId {
+            order: SortOrder::Desc,
+        }
+        .into()
     } else if num_sort_fields == 1 {
         let sort_field = &search_request.sort_fields[0];
         let order = SortOrder::from_i32(sort_field.sort_order).unwrap_or(SortOrder::Desc);
@@ -738,6 +789,7 @@ pub(crate) fn make_collector_for_split(
         timestamp_filter_builder_opt,
         aggregation,
         aggregation_limits,
+        search_after: search_request.search_after.clone(),
     })
 }
 
@@ -759,6 +811,7 @@ pub(crate) fn make_merge_collector(
         timestamp_filter_builder_opt: None,
         aggregation,
         aggregation_limits: aggregation_limits.clone(),
+        search_after: search_request.search_after.clone(),
     })
 }
 
@@ -962,8 +1015,8 @@ mod tests {
     use std::cmp::Ordering;
 
     use quickwit_proto::search::{
-        LeafSearchResponse, PartialHit, SearchRequest, SortField, SortOrder, SortValue,
-        SplitSearchError,
+        LeafSearchResponse, PartialHit, SearchRequest, SortByValue, SortField, SortOrder,
+        SortValue, SplitSearchError,
     };
     use tantivy::collector::Collector;
     use tantivy::TantivyDocument;
@@ -1332,9 +1385,9 @@ mod tests {
                     Default::default(),
                 )
                 .unwrap();
-                let res = dbg!(searcher
+                let res = searcher
                     .search(&tantivy::query::AllQuery, &collector)
-                    .unwrap());
+                    .unwrap();
                 assert_eq!(res.partial_hits.len(), len);
                 for (expected, got) in dataset.iter().zip(res.partial_hits.iter()) {
                     assert_eq!(
@@ -1343,6 +1396,141 @@ mod tests {
                     );
                 }
             }
+        }
+    }
+
+    #[test]
+    fn test_search_after() {
+        let index = make_index();
+
+        let reader = index.reader().unwrap();
+        let searcher = reader.searcher();
+
+        // tuple of DocId and sort value
+        type Doc = (usize, (Option<u64>, Option<u64>));
+
+        let mut dataset: Vec<Doc> = sort_dataset().into_iter().enumerate().collect();
+
+        let reverse_int = |val: &Option<u64>| val.as_ref().map(|val| u64::MAX - val);
+        let cmp_doc_id_desc = |a: &Doc, b: &Doc| b.0.cmp(&a.0);
+        let cmp_1_desc = |a: &Doc, b: &Doc| b.1 .0.cmp(&a.1 .0);
+        let cmp_2_asc = |a: &Doc, b: &Doc| reverse_int(&b.1 .1).cmp(&reverse_int(&a.1 .1));
+
+        let sort_function =
+            |a: &Doc, b: &Doc| cmp_1_desc(a, b).then(cmp_2_asc(a, b).then(cmp_doc_id_desc(a, b)));
+        dataset.sort_by(sort_function);
+        let partial_sort_value = dataset
+            .iter()
+            .map(|(doc_id, (val1, val2))| PartialHit {
+                split_id: "fake_split_id".to_string(),
+                segment_ord: 0,
+                doc_id: *doc_id as u32,
+                sort_value: Some(SortByValue {
+                    sort_value: val1.map(SortValue::U64),
+                }),
+                sort_value2: Some(SortByValue {
+                    sort_value: val2.map(SortValue::U64),
+                }),
+            })
+            .collect::<Vec<_>>();
+        // we eliminte based on sort value
+        for (i, search_after) in partial_sort_value.into_iter().enumerate() {
+            let request = SearchRequest {
+                max_hits: 1000,
+                sort_fields: vec![
+                    SortField {
+                        field_name: "sort1".to_string(),
+                        sort_order: SortOrder::Desc.into(),
+                    },
+                    SortField {
+                        field_name: "sort2".to_string(),
+                        sort_order: SortOrder::Asc.into(),
+                    },
+                ],
+                search_after: Some(search_after),
+                ..SearchRequest::default()
+            };
+            let collector = super::make_collector_for_split(
+                "fake_split_id".to_string(),
+                &MockDocMapper,
+                &request,
+                Default::default(),
+            )
+            .unwrap();
+            let res = searcher
+                .search(&tantivy::query::AllQuery, &collector)
+                .unwrap();
+            // we count results even if they were removed due to search_after
+            assert_eq!(res.num_hits, dataset.len() as u64);
+            // we get as many result as expected
+            assert_eq!(res.partial_hits.len(), dataset.len() - i - 1);
+            for (expected, got) in dataset[i + 1..].iter().zip(res.partial_hits.iter()) {
+                assert_eq!(expected.0 as u32, got.doc_id,);
+            }
+        }
+
+        // we eliminte based on split id
+        {
+            let search_after = PartialHit {
+                split_id: "fake_split_id2".to_string(),
+                segment_ord: 0,
+                doc_id: 5,
+                sort_value: None,
+                sort_value2: None,
+            };
+            let request = SearchRequest {
+                max_hits: 1000,
+                sort_fields: vec![SortField {
+                    field_name: "_shard_doc".to_string(),
+                    sort_order: SortOrder::Desc.into(),
+                }],
+                search_after: Some(search_after),
+                ..SearchRequest::default()
+            };
+
+            let collector = super::make_collector_for_split(
+                "fake_split_id1".to_string(),
+                &MockDocMapper,
+                &request,
+                Default::default(),
+            )
+            .unwrap();
+            let res = searcher
+                .search(&tantivy::query::AllQuery, &collector)
+                .unwrap();
+            assert_eq!(res.num_hits, dataset.len() as u64);
+            // we are searching split id1, and we remove anything before id2 in descending order
+            // (i.e. higher than id2 lexicographically), so every document matches
+            assert_eq!(res.partial_hits.len(), dataset.len());
+
+            let collector = super::make_collector_for_split(
+                "fake_split_id2".to_string(),
+                &MockDocMapper,
+                &request,
+                Default::default(),
+            )
+            .unwrap();
+            let res = searcher
+                .search(&tantivy::query::AllQuery, &collector)
+                .unwrap();
+            assert_eq!(res.num_hits, dataset.len() as u64);
+            // we are searching the limit split, but only doc_id in 0..5
+            assert_eq!(res.partial_hits.len(), 5);
+
+            let collector = super::make_collector_for_split(
+                "fake_split_id3".to_string(),
+                &MockDocMapper,
+                &request,
+                Default::default(),
+            )
+            .unwrap();
+            let res = searcher
+                .search(&tantivy::query::AllQuery, &collector)
+                .unwrap();
+            assert_eq!(res.num_hits, dataset.len() as u64);
+            // we are searching split id3, and we remove anything before id2 in descending order
+            // (i.e. higher than id2 lexicographically), so everything is removed
+            assert_eq!(res.partial_hits.len(), 0);
         }
     }
 

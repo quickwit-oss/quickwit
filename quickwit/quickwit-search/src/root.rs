@@ -274,9 +274,15 @@ fn validate_sort_by_fields(sort_fields: &[SortField], schema: &Schema) -> crate:
     Ok(())
 }
 
-fn simplify_search_request_for_scroll_api(req: &SearchRequest) -> SearchRequest {
+fn simplify_search_request_for_scroll_api(req: &SearchRequest) -> crate::Result<SearchRequest> {
+    if req.search_after.is_some() {
+        return Err(SearchError::InvalidArgument(
+            "search_after cannot be used in a scroll context".to_string(),
+        ));
+    }
+
     // We do not mutate
-    SearchRequest {
+    Ok(SearchRequest {
         index_id_patterns: req.index_id_patterns.clone(),
         query_ast: req.query_ast.clone(),
         start_timestamp: req.start_timestamp,
@@ -291,7 +297,8 @@ fn simplify_search_request_for_scroll_api(req: &SearchRequest) -> SearchRequest 
         snippet_fields: Vec::new(),
         // We remove the scroll ttl parameter. It is irrelevant to process later request
         scroll_ttl_secs: None,
-    }
+        search_after: None,
+    })
 }
 
 fn validate_sort_by_field(field_name: &str, schema: &Schema) -> crate::Result<()> {
@@ -405,7 +412,8 @@ async fn search_partial_hits_phase_with_scroll(
         let cached_partial_hits = leaf_search_resp.partial_hits.clone();
         leaf_search_resp.partial_hits.truncate(max_hits as usize);
 
-        let scroll_context_search_request = simplify_search_request_for_scroll_api(&search_request);
+        let scroll_context_search_request =
+            simplify_search_request_for_scroll_api(&search_request)?;
         let scroll_ctx = ScrollContext {
             indexes_metas_for_leaf_search: indexes_metas_for_leaf_search.clone(),
             split_metadatas: split_metadatas.to_vec(),
@@ -715,6 +723,8 @@ pub async fn root_search(
     }
     let tag_filter_ast = extract_tags_from_query(query_ast_resolved);
 
+    // TODO if search after is set, we sort by timestamp and we don't want to count all results,
+    // we can refine more here. Same if we sort by _shard_doc
     let split_metadatas: Vec<SplitMetadata> = list_relevant_splits(
         index_uids,
         search_request.start_timestamp,
@@ -1303,6 +1313,20 @@ mod tests {
     ) -> quickwit_proto::search::PartialHit {
         quickwit_proto::search::PartialHit {
             sort_value: Some(SortValue::U64(sort_value).into()),
+            sort_value2: None,
+            split_id: split_id.to_string(),
+            segment_ord: 1,
+            doc_id,
+        }
+    }
+
+    fn mock_partial_hit_opt_sort_value(
+        split_id: &str,
+        sort_value: Option<u64>,
+        doc_id: u32,
+    ) -> quickwit_proto::search::PartialHit {
+        quickwit_proto::search::PartialHit {
+            sort_value: sort_value.map(|sort_value| SortValue::U64(sort_value).into()),
             sort_value2: None,
             split_id: split_id.to_string(),
             segment_ord: 1,
@@ -2713,18 +2737,15 @@ mod tests {
             "ram:///test-index-2" => (TOTAL_NUM_HITS_INDEX_2, "split2"),
             _ => panic!("unexpected index uri"),
         };
-        let truncate_range = hit_range.start.min(num_total_hits)..hit_range.end.min(num_total_hits);
+
+        let doc_ids = (0..num_total_hits)
+            .rev()
+            .skip(hit_range.start)
+            .take(hit_range.end - hit_range.start);
         quickwit_proto::search::LeafSearchResponse {
             num_hits: num_total_hits as u64,
-            partial_hits: truncate_range
-                .map(|doc_id| {
-                    let sort_value = match index_uri {
-                        "ram:///test-index-1" => u64::MAX - doc_id as u64,
-                        "ram:///test-index-2" => (TOTAL_NUM_HITS_INDEX_2 - doc_id) as u64,
-                        _ => panic!("unexpected index uri"),
-                    };
-                    mock_partial_hit(split_id, sort_value, doc_id as u32)
-                })
+            partial_hits: doc_ids
+                .map(|doc_id| mock_partial_hit_opt_sort_value(split_id, None, doc_id as u32))
                 .collect(),
             num_attempted_splits: 1,
             ..Default::default()
@@ -2849,10 +2870,18 @@ mod tests {
                 (TOTAL_NUM_HITS_INDEX_1 + TOTAL_NUM_HITS_INDEX_2) as u64
             );
             assert_eq!(search_response.hits.len(), MAX_HITS_PER_PAGE);
-            for (i, hit) in search_response.hits.iter().enumerate() {
+            let expected = (0..TOTAL_NUM_HITS_INDEX_2)
+                .rev()
+                .zip(std::iter::repeat("split2"))
+                .chain(
+                    (0..TOTAL_NUM_HITS_INDEX_1)
+                        .rev()
+                        .zip(std::iter::repeat("split1")),
+                );
+            for (hit, (doc_id, split)) in search_response.hits.iter().zip(expected) {
                 assert_eq!(
                     hit.partial_hit.as_ref().unwrap(),
-                    &mock_partial_hit("split1", u64::MAX - i as u64, i as u32)
+                    &mock_partial_hit_opt_sort_value(split, None, doc_id as u32)
                 );
             }
             count_seen_hits += search_response.hits.len();
@@ -2871,25 +2900,20 @@ mod tests {
                 scroll_resp.num_hits,
                 (TOTAL_NUM_HITS_INDEX_1 + TOTAL_NUM_HITS_INDEX_2) as u64
             );
-            for (i, hit) in scroll_resp.hits.iter().enumerate() {
-                let doc = (page * MAX_HITS_PER_PAGE as u64) + i as u64;
-                if doc < TOTAL_NUM_HITS_INDEX_1 as u64 {
-                    assert_eq!(
-                        hit.partial_hit.as_ref().unwrap(),
-                        &mock_partial_hit("split1", u64::MAX - doc, doc as u32)
-                    );
-                } else {
-                    // Docs from index 2 come after the ones from index 1.
-                    let doc = doc - TOTAL_NUM_HITS_INDEX_1 as u64;
-                    assert_eq!(
-                        hit.partial_hit.as_ref().unwrap(),
-                        &mock_partial_hit(
-                            "split2",
-                            TOTAL_NUM_HITS_INDEX_2 as u64 - doc,
-                            doc as u32
-                        )
-                    );
-                }
+            let expected = (0..TOTAL_NUM_HITS_INDEX_2)
+                .rev()
+                .zip(std::iter::repeat("split2"))
+                .chain(
+                    (0..TOTAL_NUM_HITS_INDEX_1)
+                        .rev()
+                        .zip(std::iter::repeat("split1")),
+                )
+                .skip(page * MAX_HITS_PER_PAGE);
+            for (hit, (doc_id, split)) in scroll_resp.hits.iter().zip(expected) {
+                assert_eq!(
+                    hit.partial_hit.as_ref().unwrap(),
+                    &mock_partial_hit_opt_sort_value(split, None, doc_id as u32)
+                );
             }
             scroll_id = scroll_resp.scroll_id.unwrap();
             count_seen_hits += scroll_resp.hits.len();

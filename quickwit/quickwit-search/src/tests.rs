@@ -1870,3 +1870,17 @@ async fn test_search_in_text_field_with_custom_tokenizer() -> anyhow::Result<()>
     test_sandbox.assert_quit().await;
     Ok(())
 }
+
+#[test]
+fn test_global_doc_address_ser_deser() {
+    let doc_address = GlobalDocAddress {
+        split: "split_id".to_string(),
+        doc_addr: DocAddress {
+            segment_ord: 0,
+            doc_id: 123456,
+        },
+    };
+    let doc_address_string = doc_address.to_string();
+    let doc_address_deser: GlobalDocAddress = doc_address_string.parse().unwrap();
+    assert_eq!(doc_address_deser, doc_address);
+}
