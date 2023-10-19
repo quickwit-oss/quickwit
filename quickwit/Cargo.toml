@@ -183,7 +183,7 @@ typetag = "0.2"
 ulid = "1.1"
 username = "0.2"
 utoipa = "3.5.0"
-uuid = { version = "1.4", features = ["v4", "serde"] }
+uuid = { version = "1.5", features = ["v4", "serde"] }
 warp = "0.3"
 whichlang = { git = "https://github.com/quickwit-oss/whichlang", rev = "fe406416" }
 wiremock = "0.5"
