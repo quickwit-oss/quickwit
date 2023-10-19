@@ -342,7 +342,7 @@ mod expression_dsl {
     // RoutingExpr := RoutingSubExpr [ , RoutingExpr ]
     // RougingSubExpr := Identifier [ \( Arguments \) ]
     // Identifier := FieldChar [ Identifier ]
-    // FieldChar := { a..z | A..Z | 0..9 | _ }
+    // FieldChar := { a..z | A..Z | 0..9 | _ | . }
     // Arguments := Argument [ , Arguments ]
     // Argument := { \( RoutingExpr \) | RoutingSubExpr | DirectValue }
     // # We may want other DirectValue in the future
@@ -369,7 +369,7 @@ mod expression_dsl {
 
     fn identifier(input: &str) -> IResult<&str, &str> {
         input.split_at_position1_complete(
-            |item| !(item.is_alphanum() || item == '_'),
+            |item| !(item.is_alphanum() || item == '_' || item == '.'),
             ErrorKind::AlphaNumeric,
         )
     }
@@ -441,6 +441,12 @@ mod tests {
     }
 
     #[test]
+    fn test_routing_expr_single_field_with_dot() {
+        let routing_expr = deser_util("app.id");
+        assert_eq!(routing_expr, InnerRoutingExpr::Field("app.id".to_owned()));
+    }
+
+    #[test]
     fn test_routing_expr_modulo_field() {
         let routing_expr = deser_util("hash_mod(tenant_id, 4)");
         assert_eq!(
@@ -483,6 +489,18 @@ mod tests {
         );
     }
 
+    #[test]
+    fn test_routing_expr_multiple_field_with_dot() {
+        let routing_expr = deser_util("tenant.id,app.id");
+
+        assert_eq!(
+            routing_expr,
+            InnerRoutingExpr::Composite(vec![
+                InnerRoutingExpr::Field("tenant.id".to_owned()),
+                InnerRoutingExpr::Field("app.id".to_owned()),
+            ])
+        );
+    }
     // This unit test is here to ensure that the routing expr hash depends on
     // the expression itself as well as the expression value.
     #[test]
