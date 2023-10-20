@@ -30,6 +30,7 @@ use chitchat::transport::UdpTransport;
 use chitchat::FailureDetectorConfig;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::NodeConfig;
+use quickwit_proto::NodeId;
 use time::OffsetDateTime;
 
 pub use crate::change::ClusterChange;
@@ -64,7 +65,7 @@ pub async fn start_cluster_service(node_config: &NodeConfig) -> anyhow::Result<C
     let peer_seed_addrs = node_config.peer_seed_addrs().await?;
     let indexing_tasks = Vec::new();
 
-    let node_id = node_config.node_id.clone();
+    let node_id: NodeId = node_config.node_id.clone().into();
     let generation_id = GenerationId::now();
     let is_ready = false;
     let self_node = ClusterMember::new(
