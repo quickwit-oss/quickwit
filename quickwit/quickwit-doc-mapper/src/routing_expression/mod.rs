@@ -69,11 +69,32 @@ fn hash_json_val<H: Hasher>(json_val: &JsonValue, hasher: &mut H) {
     }
 }
 
+fn extract_nested_value(data: &JsonValue, keys: &[&str]) -> Option<JsonValue> {
+    match keys {
+        [key, rest @ ..] => {
+            if let JsonValue::Object(obj) = data {
+                if let Some(value) = obj.get(key.to_owned()) {
+                    extract_nested_value(value, rest)
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        }
+        [] => Some(data.clone()), // No more keys, return the current value
+    }
+}
+
 impl RoutingExprContext for serde_json::Map<String, JsonValue> {
     fn hash_attribute<H: Hasher>(&self, attr_name: &str, hasher: &mut H) {
-        if let Some(json_val) = self.get(attr_name) {
-            hasher.write_u8(1u8);
-            hash_json_val(json_val, hasher);
+        if let Ok(keys) = expression_dsl::parse_keys(attr_name) {
+            if let Some(json_val) = extract_nested_value(&JsonValue::Object(self.clone()), &keys) {
+                hasher.write_u8(1u8);
+                hash_json_val(&json_val, hasher);
+            } else {
+                hasher.write_u8(0u8);
+            }
         } else {
             hasher.write_u8(0u8);
         }
@@ -307,7 +328,7 @@ enum ExprType {
 }
 
 mod expression_dsl {
-    use nom::bytes::complete::tag;
+    use nom::bytes::complete::{escaped, tag};
     use nom::character::complete::multispace0;
     use nom::combinator::{eof, opt};
     use nom::error::ErrorKind;
@@ -369,7 +390,7 @@ mod expression_dsl {
 
     fn identifier(input: &str) -> IResult<&str, &str> {
         input.split_at_position1_complete(
-            |item| !(item.is_alphanum() || item == '_' || item == '.'),
+            |item| !(item.is_alphanum() || item == '_' || item == '.' || item == '\\'),
             ErrorKind::AlphaNumeric,
         )
     }
@@ -398,6 +419,25 @@ mod expression_dsl {
         t: &'a str,
     ) -> impl FnMut(&'a str) -> IResult<&'a str, &'a str, Error> {
         delimited(multispace0, tag(t), multispace0)
+    }
+
+    fn key_identifier(input: &str) -> IResult<&str, &str> {
+        input.split_at_position1_complete(
+            |item| !(item.is_alphanum() || item == '_'),
+            ErrorKind::Fail,
+        )
+    }
+
+    fn escaped_key(input: &str) -> IResult<&str, &str> {
+        escaped(key_identifier, '\\', tag("."))(input)
+    }
+
+    pub(crate) fn parse_keys(input: &str) -> anyhow::Result<Vec<&str>> {
+        let (i, res) = separated_list0(tag("."), escaped_key)(input)
+            .finish()
+            .map_err(|e| anyhow::anyhow!("error parsing key expression: {e}"))?;
+        eof::<_, ()>(i)?;
+        Ok(res)
     }
 }
 
@@ -500,6 +540,22 @@ mod tests {
                 InnerRoutingExpr::Field("app.id".to_owned()),
             ])
         );
+    }
+
+    #[test]
+    fn test_parse_keys() {
+        let keys = expression_dsl::parse_keys("abc").unwrap();
+        assert_eq!(keys, vec!["abc"]);
+    }
+
+    fn test_parse_keys_multiple() {
+        let keys = expression_dsl::parse_keys("abc.def").unwrap();
+        assert_eq!(keys, vec!["abc", "def"]);
+    }
+    #[test]
+    fn test_parse_keys_with_escaped_dot() {
+        let keys = expression_dsl::parse_keys("abc\\.def.hij").unwrap();
+        assert_eq!(keys, vec!["abc\\.def", "hij"]);
     }
     // This unit test is here to ensure that the routing expr hash depends on
     // the expression itself as well as the expression value.
