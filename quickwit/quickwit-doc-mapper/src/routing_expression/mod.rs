@@ -548,6 +548,7 @@ mod tests {
         assert_eq!(keys, vec!["abc"]);
     }
 
+    #[test]
     fn test_parse_keys_multiple() {
         let keys = expression_dsl::parse_keys("abc.def").unwrap();
         assert_eq!(keys, vec!["abc", "def"]);
