@@ -422,7 +422,7 @@ async fn get_indexes_metadatas(
 ) -> MetastoreResult<Vec<IndexMetadata>> {
     info!("get-indexes-metadatas");
     metastore
-        .list_indexes_metadatas(ListIndexesMetadataRequest::all())
+        .list_indexes_metadata(ListIndexesMetadataRequest::all())
         .await
         .and_then(|response| response.deserialize_indexes_metadata())
 }
@@ -1163,7 +1163,7 @@ mod tests {
     async fn test_get_list_indexes() -> anyhow::Result<()> {
         let mut mock_metastore = MetastoreServiceClient::mock();
         mock_metastore
-            .expect_list_indexes_metadatas()
+            .expect_list_indexes_metadata()
             .return_once(|_list_indexes_request| {
                 let index_metadata =
                     IndexMetadata::for_test("test-index", "ram:///indexes/test-index");
@@ -1211,7 +1211,7 @@ mod tests {
                 .unwrap(),
             )
         });
-        mock_metastore.expect_list_all_splits().return_once(|_| {
+        mock_metastore.expect_list_splits().return_once(|_| {
             Ok(ListSplitsResponse::try_from_splits(vec![mock_split("split_1")]).unwrap())
         });
         mock_metastore
@@ -1254,15 +1254,12 @@ mod tests {
                 )
             })
             .times(2);
-        mock_metastore.expect_list_all_splits().return_once(|_| {
-            Ok(ListSplitsResponse::try_from_splits(vec![mock_split("split_1")]).unwrap())
-        });
         mock_metastore
             .expect_list_splits()
             .returning(|_| {
                 Ok(ListSplitsResponse::try_from_splits(vec![mock_split("split_1")]).unwrap())
             })
-            .times(2);
+            .times(3);
         mock_metastore
             .expect_mark_splits_for_deletion()
             .return_once(|_| Ok(EmptyResponse {}));
@@ -1485,7 +1482,7 @@ mod tests {
             .await;
         assert_eq!(resp.status(), 200);
         let indexes = metastore
-            .list_indexes_metadatas(ListIndexesMetadataRequest::all())
+            .list_indexes_metadata(ListIndexesMetadataRequest::all())
             .await
             .unwrap()
             .deserialize_indexes_metadata()

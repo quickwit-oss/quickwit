@@ -25,7 +25,6 @@ use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
 use quickwit_doc_mapper::DefaultDocMapper;
 use quickwit_indexing::TestSandbox;
 use quickwit_opentelemetry::otlp::TraceId;
-use quickwit_proto::metastore::ListAllSplitsRequest;
 use quickwit_proto::search::{
     LeafListTermsResponse, ListTermsRequest, SearchRequest, SortByValue, SortField, SortOrder,
     SortValue,
@@ -1027,7 +1026,7 @@ async fn test_single_node_split_pruning_by_tags() -> anyhow::Result<()> {
 async fn test_search_util(test_sandbox: &TestSandbox, query: &str) -> Vec<u32> {
     let splits = test_sandbox
         .metastore()
-        .list_all_splits(ListAllSplitsRequest::from(&test_sandbox.index_uid()))
+        .list_splits(ListSplitsRequest::try_from_index_uid(test_sandbox.index_uid()).unwrap())
         .await
         .unwrap()
         .deserialize_splits()
@@ -1666,7 +1665,7 @@ async fn test_single_node_list_terms() -> anyhow::Result<()> {
 
     let splits = test_sandbox
         .metastore()
-        .list_all_splits(ListAllSplitsRequest::from(&test_sandbox.index_uid()))
+        .list_splits(ListSplitsRequest::try_from_index_uid(test_sandbox.index_uid()).unwrap())
         .await?
         .deserialize_splits()?;
     let splits_offsets: Vec<_> = splits

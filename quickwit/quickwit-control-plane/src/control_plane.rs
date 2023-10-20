@@ -451,7 +451,7 @@ mod tests {
                 })
             });
         mock_metastore
-            .expect_list_indexes_metadatas()
+            .expect_list_indexes_metadata()
             .returning(|_| {
                 Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(Vec::new()).unwrap())
             });
@@ -496,7 +496,7 @@ mod tests {
             .withf(|delete_index_request| delete_index_request.index_uid == "test-index:0")
             .returning(|_| Ok(EmptyResponse {}));
         mock_metastore
-            .expect_list_indexes_metadatas()
+            .expect_list_indexes_metadata()
             .returning(|_| {
                 Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(Vec::new()).unwrap())
             });
@@ -548,7 +548,7 @@ mod tests {
             })
             .returning(|_| Ok(EmptyResponse {}));
         mock_metastore
-            .expect_list_indexes_metadatas()
+            .expect_list_indexes_metadata()
             .returning(move |_| {
                 Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(vec![
                     index_metadata.clone()
@@ -601,7 +601,7 @@ mod tests {
             })
             .returning(|_| Ok(EmptyResponse {}));
         mock_metastore
-            .expect_list_indexes_metadatas()
+            .expect_list_indexes_metadata()
             .returning(|_| {
                 Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(Vec::new()).unwrap())
             });
@@ -650,7 +650,7 @@ mod tests {
             })
             .returning(|_| Ok(EmptyResponse {}));
         mock_metastore
-            .expect_list_indexes_metadatas()
+            .expect_list_indexes_metadata()
             .returning(|_| {
                 Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(Vec::new()).unwrap())
             });
@@ -690,7 +690,7 @@ mod tests {
 
         let mut mock_metastore = MetastoreServiceClient::mock();
         mock_metastore
-            .expect_list_indexes_metadatas()
+            .expect_list_indexes_metadata()
             .returning(|_| {
                 let mut index_metadata = IndexMetadata::for_test("test-index", "ram:///test-index");
                 let source_config = SourceConfig::for_test(INGEST_SOURCE_ID, SourceParams::void());
@@ -773,7 +773,7 @@ mod tests {
         index_0.add_source(source.clone()).unwrap();
 
         mock_metastore
-            .expect_list_indexes_metadatas()
+            .expect_list_indexes_metadata()
             .times(2) // 1 for the first initialization, 1 after the respawn of the control plane.
             .returning(|list_indexes_request: ListIndexesMetadataRequest| {
                 assert_eq!(list_indexes_request, ListIndexesMetadataRequest::all());

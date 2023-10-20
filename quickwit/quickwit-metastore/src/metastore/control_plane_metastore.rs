@@ -27,12 +27,12 @@ use quickwit_proto::metastore::{
     CloseShardsResponse, CreateIndexRequest, CreateIndexResponse, DeleteIndexRequest, DeleteQuery,
     DeleteShardsRequest, DeleteShardsResponse, DeleteSourceRequest, DeleteSplitsRequest,
     DeleteTask, EmptyResponse, IndexMetadataRequest, IndexMetadataResponse,
-    LastDeleteOpstampRequest, LastDeleteOpstampResponse, ListAllSplitsRequest,
-    ListDeleteTasksRequest, ListDeleteTasksResponse, ListIndexesMetadataRequest,
-    ListIndexesMetadataResponse, ListShardsRequest, ListShardsResponse, ListSplitsRequest,
-    ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreResult,
-    MetastoreService, MetastoreServiceClient, OpenShardsRequest, OpenShardsResponse,
-    PublishSplitsRequest, ResetSourceCheckpointRequest, StageSplitsRequest, ToggleSourceRequest,
+    LastDeleteOpstampRequest, LastDeleteOpstampResponse, ListDeleteTasksRequest,
+    ListDeleteTasksResponse, ListIndexesMetadataRequest, ListIndexesMetadataResponse,
+    ListShardsRequest, ListShardsResponse, ListSplitsRequest, ListSplitsResponse,
+    ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreResult, MetastoreService,
+    MetastoreServiceClient, OpenShardsRequest, OpenShardsResponse, PublishSplitsRequest,
+    ResetSourceCheckpointRequest, StageSplitsRequest, ToggleSourceRequest,
     UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
 };
 
@@ -121,11 +121,11 @@ impl MetastoreService for ControlPlaneMetastore {
         self.metastore.index_metadata(request).await
     }
 
-    async fn list_indexes_metadatas(
+    async fn list_indexes_metadata(
         &mut self,
         request: ListIndexesMetadataRequest,
     ) -> MetastoreResult<ListIndexesMetadataResponse> {
-        self.metastore.list_indexes_metadatas(request).await
+        self.metastore.list_indexes_metadata(request).await
     }
 
     async fn stage_splits(
@@ -147,13 +147,6 @@ impl MetastoreService for ControlPlaneMetastore {
         request: ListSplitsRequest,
     ) -> MetastoreResult<ListSplitsResponse> {
         self.metastore.list_splits(request).await
-    }
-
-    async fn list_all_splits(
-        &mut self,
-        request: ListAllSplitsRequest,
-    ) -> MetastoreResult<ListSplitsResponse> {
-        self.metastore.list_all_splits(request).await
     }
 
     async fn list_stale_splits(

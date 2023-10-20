@@ -31,12 +31,19 @@ use tracing::debug;
 
 use crate::retry::{RetryParams, Retryable};
 
-/// Retry requests based on a policy.
-/// Taken from tower
-/// FIXME(fmassot): I tried to use directly tower retry layer
-/// but when trying to set it for the MetastoreService, the
-/// compiler complains that the RetryLayer was not clonable.
-/// I don't understand why.
+/// Retry layer copy/pasted from `tower::retry::RetryLayer`
+/// but which implements `Clone`.
+impl<P, S> Layer<S> for RetryLayer<P>
+where P: Clone
+{
+    type Service = Retry<P, S>;
+
+    fn layer(&self, service: S) -> Self::Service {
+        let policy = self.policy.clone();
+        Retry::new(policy, service)
+    }
+}
+
 #[derive(Clone, Debug)]
 pub struct RetryLayer<P> {
     policy: P,
@@ -49,18 +56,7 @@ impl<P> RetryLayer<P> {
     }
 }
 
-impl<P, S> Layer<S> for RetryLayer<P>
-where P: Clone
-{
-    type Service = Retry<P, S>;
-
-    fn layer(&self, service: S) -> Self::Service {
-        let policy = self.policy.clone();
-        Retry::new(policy, service)
-    }
-}
-
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Clone, Copy, Debug, Default)]
 pub struct RetryPolicy {
     num_attempts: usize,
     retry_params: RetryParams,

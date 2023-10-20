@@ -41,11 +41,11 @@ use quickwit_proto::metastore::{
     CreateIndexResponse, DeleteIndexRequest, DeleteQuery, DeleteShardsRequest,
     DeleteShardsResponse, DeleteShardsSubrequest, DeleteSourceRequest, DeleteSplitsRequest,
     DeleteTask, EmptyResponse, EntityKind, IndexMetadataRequest, IndexMetadataResponse,
-    LastDeleteOpstampRequest, LastDeleteOpstampResponse, ListAllSplitsRequest,
-    ListDeleteTasksRequest, ListDeleteTasksResponse, ListIndexesMetadataRequest,
-    ListIndexesMetadataResponse, ListShardsRequest, ListShardsResponse, ListSplitsRequest,
-    ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError,
-    MetastoreResult, MetastoreService, OpenShardsRequest, OpenShardsResponse, OpenShardsSubrequest,
+    LastDeleteOpstampRequest, LastDeleteOpstampResponse, ListDeleteTasksRequest,
+    ListDeleteTasksResponse, ListIndexesMetadataRequest, ListIndexesMetadataResponse,
+    ListShardsRequest, ListShardsResponse, ListSplitsRequest, ListSplitsResponse,
+    ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError, MetastoreResult,
+    MetastoreService, OpenShardsRequest, OpenShardsResponse, OpenShardsSubrequest,
     PublishSplitsRequest, ResetSourceCheckpointRequest, StageSplitsRequest, ToggleSourceRequest,
     UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
 };
@@ -632,15 +632,6 @@ impl MetastoreService for FileBackedMetastore {
         Ok(response)
     }
 
-    async fn list_all_splits(
-        &mut self,
-        request: ListAllSplitsRequest,
-    ) -> MetastoreResult<ListSplitsResponse> {
-        let list_splits_query = ListSplitsQuery::for_index(request.index_uid.into());
-        let list_splits_request = ListSplitsRequest::try_from_list_splits_query(list_splits_query)?;
-        self.list_splits(list_splits_request).await
-    }
-
     async fn list_stale_splits(
         &mut self,
         request: ListStaleSplitsRequest,
@@ -666,7 +657,7 @@ impl MetastoreService for FileBackedMetastore {
         Ok(response)
     }
 
-    async fn list_indexes_metadatas(
+    async fn list_indexes_metadata(
         &mut self,
         request: ListIndexesMetadataRequest,
     ) -> MetastoreResult<ListIndexesMetadataResponse> {
@@ -1073,7 +1064,7 @@ mod tests {
 
         // Check index is returned by list indexes.
         let indexes_metadata = metastore
-            .list_indexes_metadatas(ListIndexesMetadataRequest::all())
+            .list_indexes_metadata(ListIndexesMetadataRequest::all())
             .await
             .unwrap()
             .deserialize_indexes_metadata()
@@ -1226,7 +1217,7 @@ mod tests {
         let index_uid: IndexUid = create_index_response.index_uid.into();
 
         let list_splits_response = metastore
-            .list_all_splits(ListAllSplitsRequest::from(&index_uid))
+            .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
             .await
             .unwrap();
         let splits = list_splits_response.deserialize_splits().unwrap();
@@ -1245,7 +1236,7 @@ mod tests {
         metastore.stage_splits(stage_splits_request).await?;
 
         let list_splits_response = metastore
-            .list_all_splits(ListAllSplitsRequest::from(&index_uid))
+            .list_splits(ListSplitsRequest::try_from_index_uid(index_uid).unwrap())
             .await
             .unwrap();
         let splits = list_splits_response.deserialize_splits().unwrap();
@@ -1274,14 +1265,14 @@ mod tests {
         let index_uid: IndexUid = create_index_response.index_uid.into();
 
         let list_splits_response = metastore_write
-            .list_all_splits(ListAllSplitsRequest::from(&index_uid))
+            .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
             .await
             .unwrap();
         let splits = list_splits_response.deserialize_splits().unwrap();
         assert!(splits.is_empty());
 
         let list_splits_response = metastore_read
-            .list_all_splits(ListAllSplitsRequest::from(&index_uid))
+            .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
             .await
             .unwrap();
         let splits = list_splits_response.deserialize_splits().unwrap();
@@ -1300,7 +1291,7 @@ mod tests {
         metastore_write.stage_splits(stage_splits_request).await?;
 
         let list_splits_response = metastore_read
-            .list_all_splits(ListAllSplitsRequest::from(&index_uid))
+            .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
             .await
             .unwrap();
         let splits = list_splits_response.deserialize_splits().unwrap();
@@ -1310,7 +1301,7 @@ mod tests {
             tokio::time::sleep(polling_interval).await;
 
             let list_splits_response = metastore_read
-                .list_all_splits(ListAllSplitsRequest::from(&index_uid))
+                .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
                 .await
                 .unwrap();
             let splits = list_splits_response.deserialize_splits().unwrap();
@@ -1417,7 +1408,7 @@ mod tests {
                 let mut metastore = metastore.clone();
                 let handle = tokio::spawn(async move {
                     metastore
-                        .list_indexes_metadatas(ListIndexesMetadataRequest::all())
+                        .list_indexes_metadata(ListIndexesMetadataRequest::all())
                         .await
                         .unwrap();
                 });
@@ -1755,7 +1746,7 @@ mod tests {
             .await
             .unwrap();
         let indexes_metadata = metastore
-            .list_indexes_metadatas(ListIndexesMetadataRequest::all())
+            .list_indexes_metadata(ListIndexesMetadataRequest::all())
             .await
             .unwrap()
             .deserialize_indexes_metadata()
@@ -1771,7 +1762,7 @@ mod tests {
         // Now list indexes return 2 indexes metadatas as the metastore is now aware of
         // 2 alive indexes.
         let indexes_metadata = metastore
-            .list_indexes_metadatas(ListIndexesMetadataRequest::all())
+            .list_indexes_metadata(ListIndexesMetadataRequest::all())
             .await
             .unwrap()
             .deserialize_indexes_metadata()
@@ -1789,7 +1780,7 @@ mod tests {
         };
         metastore.delete_index(delete_request).await.unwrap();
         let indexes_metadata = metastore
-            .list_indexes_metadatas(ListIndexesMetadataRequest::all())
+            .list_indexes_metadata(ListIndexesMetadataRequest::all())
             .await
             .unwrap()
             .deserialize_indexes_metadata()

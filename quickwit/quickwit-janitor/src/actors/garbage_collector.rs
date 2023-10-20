@@ -90,7 +90,7 @@ impl GarbageCollector {
 
         let indexes = match self
             .metastore
-            .list_indexes_metadatas(ListIndexesMetadataRequest::all())
+            .list_indexes_metadata(ListIndexesMetadataRequest::all())
             .await
             .and_then(|list_indexes_metadata_response| {
                 list_indexes_metadata_response.deserialize_indexes_metadata()
@@ -344,7 +344,7 @@ mod tests {
         let storage_resolver = StorageResolver::unconfigured();
         let mut mock_metastore = MetastoreServiceClient::mock();
         mock_metastore
-            .expect_list_indexes_metadatas()
+            .expect_list_indexes_metadata()
             .times(1)
             .returning(|_list_indexes_request| {
                 let indexes_metadata = vec![IndexMetadata::for_test(
@@ -419,7 +419,7 @@ mod tests {
         let storage_resolver = StorageResolver::unconfigured();
         let mut mock_metastore = MetastoreServiceClient::mock();
         mock_metastore
-            .expect_list_indexes_metadatas()
+            .expect_list_indexes_metadata()
             .times(3)
             .returning(|_list_indexes_metadata| {
                 let indexes_metadata = vec![IndexMetadata::for_test(
@@ -519,7 +519,7 @@ mod tests {
         let storage_resolver = StorageResolver::unconfigured();
         let mut mock_metastore = MetastoreServiceClient::mock();
         mock_metastore
-            .expect_list_indexes_metadatas()
+            .expect_list_indexes_metadata()
             .times(4)
             .returning(|_list_indexes_request| {
                 Err(MetastoreError::Db {
@@ -552,7 +552,7 @@ mod tests {
         let storage_resolver = StorageResolver::unconfigured();
         let mut mock_metastore = MetastoreServiceClient::mock();
         mock_metastore
-            .expect_list_indexes_metadatas()
+            .expect_list_indexes_metadata()
             .times(1)
             .returning(move |_list_indexes_request| {
                 let indexes_metadata = vec![IndexMetadata::for_test(
@@ -588,7 +588,7 @@ mod tests {
         let storage_resolver = StorageResolver::unconfigured();
         let mut mock_metastore = MetastoreServiceClient::mock();
         mock_metastore
-            .expect_list_indexes_metadatas()
+            .expect_list_indexes_metadata()
             .times(1)
             .returning(|_list_indexes_request| {
                 let indexes_metadata = vec![
@@ -669,7 +669,7 @@ mod tests {
         let storage_resolver = StorageResolver::unconfigured();
         let mut mock_metastore = MetastoreServiceClient::mock();
         mock_metastore
-            .expect_list_indexes_metadatas()
+            .expect_list_indexes_metadata()
             .times(1)
             .returning(|_list_indexes_request| {
                 let indexes_metadata = vec![

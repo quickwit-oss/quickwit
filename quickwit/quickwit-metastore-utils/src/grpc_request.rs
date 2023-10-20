@@ -69,7 +69,6 @@ generate_req_enum!(
     IndexMetadataRequest,
     ListIndexesMetadataRequest,
     DeleteIndexRequest,
-    ListAllSplitsRequest,
     ListSplitsRequest,
     StageSplitsRequest,
     PublishSplitsRequest,

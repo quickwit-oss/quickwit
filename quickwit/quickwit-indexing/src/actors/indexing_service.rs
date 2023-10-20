@@ -663,7 +663,7 @@ impl IndexingService {
         let indexes_metadatas = self
             .metastore
             .clone()
-            .list_indexes_metadatas(ListIndexesMetadataRequest::all())
+            .list_indexes_metadata(ListIndexesMetadataRequest::all())
             .await?
             .deserialize_indexes_metadata()?;
         let index_ids: HashSet<String> = indexes_metadatas
@@ -1407,7 +1407,7 @@ mod tests {
         let mut metastore = MetastoreServiceClient::mock();
         let index_metadata_clone = index_metadata.clone();
         metastore
-            .expect_list_indexes_metadatas()
+            .expect_list_indexes_metadata()
             .returning(move |_request| {
                 let list_indexes_metadatas_response =
                     ListIndexesMetadataResponse::try_from_indexes_metadata(vec![

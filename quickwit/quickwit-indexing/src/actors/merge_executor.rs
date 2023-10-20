@@ -542,9 +542,11 @@ fn open_index<T: Into<Box<dyn Directory>>>(
 mod tests {
     use quickwit_actors::Universe;
     use quickwit_common::split_file;
-    use quickwit_metastore::{ListSplitsResponseExt, SplitMetadata, StageSplitsRequestExt};
+    use quickwit_metastore::{
+        ListSplitsRequestExt, ListSplitsResponseExt, SplitMetadata, StageSplitsRequestExt,
+    };
     use quickwit_proto::metastore::{
-        DeleteQuery, ListAllSplitsRequest, PublishSplitsRequest, StageSplitsRequest,
+        DeleteQuery, ListSplitsRequest, PublishSplitsRequest, StageSplitsRequest,
     };
     use serde_json::Value as JsonValue;
     use tantivy::{Document, Inventory, ReloadPolicy, TantivyDocument};
@@ -582,16 +584,13 @@ mod tests {
             test_sandbox.add_documents(single_doc).await?;
         }
         let mut metastore = test_sandbox.metastore();
-        let list_splits_request = ListAllSplitsRequest::from(&index_uid);
+        let list_splits_request = ListSplitsRequest::try_from_index_uid(index_uid).unwrap();
         let split_metas: Vec<SplitMetadata> = metastore
-            .list_all_splits(list_splits_request)
+            .list_splits(list_splits_request)
             .await
             .unwrap()
-            .deserialize_splits()
-            .unwrap()
-            .into_iter()
-            .map(|split| split.split_metadata)
-            .collect();
+            .deserialize_splits_metadata()
+            .unwrap();
         assert_eq!(split_metas.len(), 4);
         let merge_scratch_directory = TempDirectory::for_test();
         let downloaded_splits_directory =
@@ -713,9 +712,8 @@ mod tests {
                 query_ast: quickwit_query::query_ast::qast_json_helper(delete_query, &["body"]),
             })
             .await?;
-        let list_splits_request = ListAllSplitsRequest::from(&index_uid);
         let split = metastore
-            .list_all_splits(list_splits_request)
+            .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
             .await
             .unwrap()
             .deserialize_splits()
@@ -828,7 +826,7 @@ mod tests {
             assert!(packager_msgs.is_empty());
             let mut metastore = test_sandbox.metastore();
             assert!(metastore
-                .list_all_splits(ListAllSplitsRequest::from(&index_uid))
+                .list_splits(ListSplitsRequest::try_from_index_uid(index_uid).unwrap())
                 .await
                 .unwrap()
                 .deserialize_splits()

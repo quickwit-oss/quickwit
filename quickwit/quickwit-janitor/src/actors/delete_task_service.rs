@@ -116,7 +116,7 @@ impl DeleteTaskService {
     ) -> anyhow::Result<()> {
         let mut index_config_by_index_id: HashMap<IndexUid, IndexConfig> = self
             .metastore
-            .list_indexes_metadatas(ListIndexesMetadataRequest::all())
+            .list_indexes_metadata(ListIndexesMetadataRequest::all())
             .await?
             .deserialize_indexes_metadata()?
             .into_iter()

@@ -278,8 +278,8 @@ pub fn mock_split_meta(split_id: &str, index_uid: &IndexUid) -> SplitMetadata {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_metastore::ListSplitsResponseExt;
-    use quickwit_proto::metastore::{ListAllSplitsRequest, MetastoreService};
+    use quickwit_metastore::{ListSplitsRequestExt, ListSplitsResponseExt};
+    use quickwit_proto::metastore::{ListSplitsRequest, MetastoreService};
 
     use super::TestSandbox;
 
@@ -304,9 +304,10 @@ mod tests {
         assert_eq!(statistics.num_uploaded_splits, 1);
         let mut metastore = test_sandbox.metastore();
         {
-            let list_all_splits_request = ListAllSplitsRequest::from(&test_sandbox.index_uid());
             let splits = metastore
-                .list_all_splits(list_all_splits_request)
+                .list_splits(
+                    ListSplitsRequest::try_from_index_uid(test_sandbox.index_uid()).unwrap(),
+                )
                 .await?
                 .deserialize_splits()?;
             assert_eq!(splits.len(), 1);
@@ -315,9 +316,10 @@ mod tests {
         ]).await?;
         }
         {
-            let list_all_splits_request = ListAllSplitsRequest::from(&test_sandbox.index_uid());
             let splits = metastore
-                .list_all_splits(list_all_splits_request)
+                .list_splits(
+                    ListSplitsRequest::try_from_index_uid(test_sandbox.index_uid()).unwrap(),
+                )
                 .await?
                 .deserialize_splits()?;
             assert_eq!(splits.len(), 2);

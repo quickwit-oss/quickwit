@@ -85,7 +85,7 @@ impl RetentionPolicyExecutor {
 
         let index_metadatas = match self
             .metastore
-            .list_indexes_metadatas(ListIndexesMetadataRequest::all())
+            .list_indexes_metadata(ListIndexesMetadataRequest::all())
             .await
             .and_then(|response| response.deserialize_indexes_metadata())
         {
@@ -351,7 +351,7 @@ mod tests {
             .times(..)
             .returning(|_| Ok(ListSplitsResponse::empty()));
         mock_metastore
-            .expect_list_indexes_metadatas()
+            .expect_list_indexes_metadata()
             .times(1)
             .in_sequence(&mut sequence)
             .returning(|_list_indexes_request| {
@@ -367,7 +367,7 @@ mod tests {
             });
 
         mock_metastore
-            .expect_list_indexes_metadatas()
+            .expect_list_indexes_metadata()
             .times(1)
             .in_sequence(&mut sequence)
             .returning(|_list_indexes_request| {
@@ -383,7 +383,7 @@ mod tests {
             });
 
         mock_metastore
-            .expect_list_indexes_metadatas()
+            .expect_list_indexes_metadata()
             .times(1)
             .in_sequence(&mut sequence)
             .returning(|_list_indexes_request| {
@@ -441,7 +441,7 @@ mod tests {
     async fn test_retention_policy_execution_calls_dependencies() -> anyhow::Result<()> {
         let mut mock_metastore = MetastoreServiceClient::mock();
         mock_metastore
-            .expect_list_indexes_metadatas()
+            .expect_list_indexes_metadata()
             .times(..)
             .returning(|_list_indexes_request| {
                 let indexes_metadata = make_indexes(&[

@@ -42,11 +42,11 @@ use quickwit_common::rand::append_random_suffix;
 use quickwit_common::uri::Uri;
 use quickwit_config::{SourceInputFormat, CLI_INGEST_SOURCE_ID};
 use quickwit_metastore::{
-    ListSplitsResponseExt, MetastoreResolver, MetastoreServiceExt, SplitState,
-    StageSplitsRequestExt,
+    ListSplitsRequestExt, ListSplitsResponseExt, MetastoreResolver, MetastoreServiceExt,
+    SplitState, StageSplitsRequestExt,
 };
 use quickwit_proto::metastore::{
-    DeleteSplitsRequest, EntityKind, IndexMetadataRequest, ListAllSplitsRequest,
+    DeleteSplitsRequest, EntityKind, IndexMetadataRequest, ListSplitsRequest,
     MarkSplitsForDeletionRequest, MetastoreError, MetastoreService, StageSplitsRequest,
 };
 use serde_json::{json, Number, Value};
@@ -252,7 +252,7 @@ async fn test_ingest_docs_cli() {
     let splits: Vec<_> = test_env
         .metastore()
         .await
-        .list_all_splits(ListAllSplitsRequest::from(&index_uid))
+        .list_splits(ListSplitsRequest::try_from_index_uid(index_uid).unwrap())
         .await
         .unwrap()
         .deserialize_splits()
@@ -670,7 +670,7 @@ async fn test_garbage_collect_cli_no_grace() {
     };
 
     let splits = metastore
-        .list_all_splits(ListAllSplitsRequest::from(&index_uid))
+        .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
         .await
         .unwrap()
         .deserialize_splits()
@@ -721,7 +721,7 @@ async fn test_garbage_collect_cli_no_grace() {
     let mut metastore = refresh_metastore(metastore).await.unwrap();
     assert_eq!(
         metastore
-            .list_all_splits(ListAllSplitsRequest::from(&index_uid))
+            .list_splits(ListSplitsRequest::try_from_index_uid(index_uid).unwrap())
             .await
             .unwrap()
             .deserialize_splits()
@@ -783,7 +783,7 @@ async fn test_garbage_collect_index_cli() {
         .unwrap();
 
     let splits = metastore
-        .list_all_splits(ListAllSplitsRequest::from(&index_uid))
+        .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
         .await
         .unwrap()
         .deserialize_splits()
@@ -802,7 +802,7 @@ async fn test_garbage_collect_index_cli() {
     // Split should still exists within grace period.
     let mut metastore = refresh_metastore(metastore).await.unwrap();
     let splits = metastore
-        .list_all_splits(ListAllSplitsRequest::from(&index_uid))
+        .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
         .await
         .unwrap()
         .deserialize_splits()
@@ -843,7 +843,7 @@ async fn test_garbage_collect_index_cli() {
 
     let mut metastore = refresh_metastore(metastore).await.unwrap();
     let splits = metastore
-        .list_all_splits(ListAllSplitsRequest::from(&index_uid))
+        .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
         .await
         .unwrap()
         .deserialize_splits()
@@ -858,7 +858,7 @@ async fn test_garbage_collect_index_cli() {
     // Staged splits should still exist within grace period.
     let mut metastore = refresh_metastore(metastore).await.unwrap();
     let splits = metastore
-        .list_all_splits(ListAllSplitsRequest::from(&index_uid))
+        .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
         .await
         .unwrap()
         .deserialize_splits()
@@ -876,7 +876,7 @@ async fn test_garbage_collect_index_cli() {
 
     let mut metastore = refresh_metastore(metastore).await.unwrap();
     let splits = metastore
-        .list_all_splits(ListAllSplitsRequest::from(&index_uid))
+        .list_splits(ListSplitsRequest::try_from_index_uid(index_uid).unwrap())
         .await
         .unwrap()
         .deserialize_splits()

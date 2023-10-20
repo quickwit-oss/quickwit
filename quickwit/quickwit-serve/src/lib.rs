@@ -825,8 +825,7 @@ async fn node_readiness_reporting_task(
                 true
             }
             Err(error) => {
-                warn!(metastore_endpoints=?metastore.endpoints(), error=?error, "Metastore service is
-        unavailable.");
+                warn!(metastore_endpoints=?metastore.endpoints(), error=?error, "Metastore service is unavailable.");
                 false
             }
         };
@@ -855,7 +854,7 @@ async fn check_cluster_configuration(
             Running multiple file-backed metastores simultaneously can lead to data loss.");
     }
     let file_backed_indexes = metastore
-        .list_indexes_metadatas(ListIndexesMetadataRequest::all())
+        .list_indexes_metadata(ListIndexesMetadataRequest::all())
         .await?
         .deserialize_indexes_metadata()?
         .into_iter()
@@ -904,7 +903,7 @@ mod tests {
             .expect_endpoints()
             .return_const(vec![Uri::for_test("file:///qwdata/indexes")]);
         mock_metastore
-            .expect_list_indexes_metadatas()
+            .expect_list_indexes_metadata()
             .return_once(|_| {
                 Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(vec![
                     IndexMetadata::for_test("test-index", "file:///qwdata/indexes/test-index"),

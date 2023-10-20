@@ -53,7 +53,7 @@ use quickwit_metastore::{
     ListSplitsQuery, ListSplitsRequestExt, ListSplitsResponseExt, Split, SplitMetadata, SplitState,
 };
 use quickwit_proto::indexing::IndexingPipelineId;
-use quickwit_proto::metastore::{ListAllSplitsRequest, ListSplitsRequest, MetastoreService};
+use quickwit_proto::metastore::{ListSplitsRequest, MetastoreService};
 use quickwit_proto::IndexUid;
 use serde_json::Value as JsonValue;
 use tantivy::{Directory, Inventory};
@@ -267,17 +267,11 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
     tokio::time::sleep(Duration::from_millis(10)).await;
 
     let mut metastore = test_index_builder.metastore();
-    let splits: Vec<Split> = metastore
-        .list_all_splits(ListAllSplitsRequest {
-            index_uid: test_index_builder.index_uid().to_string(),
-        })
+    let split_metadatas: Vec<Split> = metastore
+        .list_splits(ListSplitsRequest::try_from_index_uid(test_index_builder.index_uid()).unwrap())
         .await?
-        .deserialize_splits()
+        .deserialize_splits_metadata()
         .unwrap();
-    let split_metadatas: Vec<SplitMetadata> = splits
-        .into_iter()
-        .map(|split| split.split_metadata)
-        .collect();
     let merge_scratch_directory = TempDirectory::for_test();
 
     let downloaded_splits_directory =

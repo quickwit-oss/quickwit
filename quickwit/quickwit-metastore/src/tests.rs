@@ -32,10 +32,10 @@ pub mod test_suite {
     use quickwit_proto::metastore::{
         AddSourceRequest, CreateIndexRequest, DeleteIndexRequest, DeleteQuery, DeleteSourceRequest,
         DeleteSplitsRequest, EntityKind, IndexMetadataRequest, LastDeleteOpstampRequest,
-        ListAllSplitsRequest, ListDeleteTasksRequest, ListIndexesMetadataRequest,
-        ListSplitsRequest, ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError,
-        MetastoreService, PublishSplitsRequest, ResetSourceCheckpointRequest, SourceType,
-        StageSplitsRequest, ToggleSourceRequest, UpdateSplitsDeleteOpstampRequest,
+        ListDeleteTasksRequest, ListIndexesMetadataRequest, ListSplitsRequest,
+        ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError, MetastoreService,
+        PublishSplitsRequest, ResetSourceCheckpointRequest, SourceType, StageSplitsRequest,
+        ToggleSourceRequest, UpdateSplitsDeleteOpstampRequest,
     };
     use quickwit_proto::IndexUid;
     use quickwit_query::query_ast::qast_json_helper;
@@ -73,7 +73,7 @@ pub mod test_suite {
     async fn cleanup_index(metastore: &mut dyn MetastoreService, index_uid: IndexUid) {
         // List all splits.
         let all_splits = metastore
-            .list_all_splits(ListAllSplitsRequest::from(&index_uid))
+            .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
             .await
             .unwrap()
             .deserialize_splits()
@@ -272,7 +272,7 @@ pub mod test_suite {
         let index_uri_2 = format!("ram:///indexes/{index_id_2}");
         let index_config_2 = IndexConfig::for_test(&index_id_2, &index_uri_2);
         let indexes_count = metastore
-            .list_indexes_metadatas(ListIndexesMetadataRequest::all())
+            .list_indexes_metadata(ListIndexesMetadataRequest::all())
             .await
             .unwrap()
             .deserialize_indexes_metadata()
@@ -296,7 +296,7 @@ pub mod test_suite {
             .into();
 
         let indexes_count = metastore
-            .list_indexes_metadatas(ListIndexesMetadataRequest::all())
+            .list_indexes_metadata(ListIndexesMetadataRequest::all())
             .await
             .unwrap()
             .deserialize_indexes_metadata()
@@ -335,7 +335,7 @@ pub mod test_suite {
             format!("prefix*{index_id_fragment}*suffix-*"),
         ]);
         let indexes_count = metastore
-            .list_indexes_metadatas(
+            .list_indexes_metadata(
                 ListIndexesMetadataRequest::try_from_list_indexes_query(list_index_metadata_query)
                     .unwrap(),
             )
@@ -375,7 +375,7 @@ pub mod test_suite {
             "prefix-*-{index_id_fragment}-suffix-*"
         )]);
         let indexes_count = metastore
-            .list_indexes_metadatas(
+            .list_indexes_metadata(
                 ListIndexesMetadataRequest::try_from_list_indexes_query(list_indexes_query)
                     .unwrap(),
             )
@@ -2304,7 +2304,7 @@ pub mod test_suite {
 
         assert_eq!(
             metastore
-                .list_all_splits(ListAllSplitsRequest::from(&index_uid))
+                .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
                 .await
                 .unwrap()
                 .deserialize_splits()
@@ -2337,7 +2337,7 @@ pub mod test_suite {
 
         assert_eq!(
             metastore
-                .list_all_splits(ListAllSplitsRequest::from(&index_uid))
+                .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
                 .await
                 .unwrap()
                 .deserialize_splits()
@@ -2397,9 +2397,7 @@ pub mod test_suite {
         };
 
         let error = metastore
-            .list_all_splits(ListAllSplitsRequest {
-                index_uid: "index-not-found".to_string(),
-            })
+            .list_splits(ListSplitsRequest::try_from_index_uid("index-not-found".into()).unwrap())
             .await
             .unwrap_err();
         assert!(matches!(
@@ -2450,7 +2448,7 @@ pub mod test_suite {
             .unwrap();
 
         let splits = metastore
-            .list_all_splits(ListAllSplitsRequest::from(&index_uid))
+            .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
             .await
             .unwrap()
             .deserialize_splits()
@@ -2468,7 +2466,7 @@ pub mod test_suite {
             ]
         );
 
-        cleanup_index(&mut metastore, index_uid).await;
+        cleanup_index(&mut metastore, index_uid.clone()).await;
     }
 
     pub async fn test_metastore_list_splits<MetastoreToTest: MetastoreService + DefaultForTest>() {
@@ -3144,7 +3142,7 @@ pub mod test_suite {
 
         sleep(Duration::from_secs(1)).await;
         let split_meta = metastore
-            .list_all_splits(ListAllSplitsRequest::from(&index_uid))
+            .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
             .await
             .unwrap()
             .deserialize_splits()
@@ -3172,7 +3170,7 @@ pub mod test_suite {
             .await
             .unwrap();
         let split_meta = metastore
-            .list_all_splits(ListAllSplitsRequest::from(&index_uid))
+            .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
             .await
             .unwrap()
             .deserialize_splits()
@@ -3196,7 +3194,7 @@ pub mod test_suite {
             .await
             .unwrap();
         let split_meta = metastore
-            .list_all_splits(ListAllSplitsRequest::from(&index_uid))
+            .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
             .await
             .unwrap()
             .deserialize_splits()

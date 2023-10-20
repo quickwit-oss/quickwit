@@ -119,7 +119,7 @@ impl ControlPlaneModel {
         let now = Instant::now();
         self.clear();
         let index_metadatas = progress
-            .protect_future(metastore.list_indexes_metadatas(ListIndexesMetadataRequest::all()))
+            .protect_future(metastore.list_indexes_metadata(ListIndexesMetadataRequest::all()))
             .await?
             .deserialize_indexes_metadata()?;
         let num_indexes = index_metadatas.len();
@@ -685,7 +685,7 @@ mod tests {
 
         let mut mock_metastore = MetastoreServiceClient::mock();
         mock_metastore
-            .expect_list_indexes_metadatas()
+            .expect_list_indexes_metadata()
             .returning(|request| {
                 assert_eq!(request, ListIndexesMetadataRequest::all());
 

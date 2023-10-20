@@ -290,8 +290,8 @@ mod tests {
     use quickwit_common::pubsub::EventBroker;
     use quickwit_common::temp_dir::TempDirectory;
     use quickwit_indexing::TestSandbox;
-    use quickwit_metastore::{ListSplitsResponseExt, SplitState};
-    use quickwit_proto::metastore::{DeleteQuery, ListAllSplitsRequest, MetastoreService};
+    use quickwit_metastore::{ListSplitsRequestExt, ListSplitsResponseExt, SplitState};
+    use quickwit_proto::metastore::{DeleteQuery, ListSplitsRequest, MetastoreService};
     use quickwit_proto::search::{LeafSearchRequest, LeafSearchResponse};
     use quickwit_search::{
         searcher_pool_for_test, MockSearchService, SearchError, SearchJobPlacer,
@@ -416,7 +416,7 @@ mod tests {
         let _ = pipeline_mailbox.ask(GracefulShutdown).await;
 
         let splits = metastore
-            .list_all_splits(ListAllSplitsRequest::from(&index_uid))
+            .list_splits(ListSplitsRequest::try_from_index_uid(index_uid).unwrap())
             .await
             .unwrap()
             .deserialize_splits()

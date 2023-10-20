@@ -451,8 +451,8 @@ mod tests {
 
     use itertools::Itertools;
     use quickwit_indexing::TestSandbox;
-    use quickwit_metastore::ListSplitsResponseExt;
-    use quickwit_proto::metastore::{ListAllSplitsRequest, MetastoreService};
+    use quickwit_metastore::{ListSplitsRequestExt, ListSplitsResponseExt};
+    use quickwit_proto::metastore::{ListSplitsRequest, MetastoreService};
     use quickwit_query::query_ast::qast_json_helper;
     use serde_json::json;
     use tantivy::time::{Duration, OffsetDateTime};
@@ -500,7 +500,7 @@ mod tests {
         };
         let splits = test_sandbox
             .metastore()
-            .list_all_splits(ListAllSplitsRequest::from(&test_sandbox.index_uid()))
+            .list_splits(ListSplitsRequest::try_from_index_uid(test_sandbox.index_uid()).unwrap())
             .await?
             .deserialize_splits()?;
         let splits_offsets = splits
@@ -577,7 +577,7 @@ mod tests {
         };
         let splits = test_sandbox
             .metastore()
-            .list_all_splits(ListAllSplitsRequest::from(&test_sandbox.index_uid()))
+            .list_splits(ListSplitsRequest::try_from_index_uid(test_sandbox.index_uid()).unwrap())
             .await?
             .deserialize_splits()?;
         let splits_offsets = splits
@@ -633,7 +633,7 @@ mod tests {
         };
         let splits = test_sandbox
             .metastore()
-            .list_all_splits(ListAllSplitsRequest::from(&test_sandbox.index_uid()))
+            .list_splits(ListSplitsRequest::try_from_index_uid(test_sandbox.index_uid()).unwrap())
             .await?
             .deserialize_splits()?;
         let splits_offsets = splits
@@ -722,7 +722,7 @@ mod tests {
         };
         let splits = test_sandbox
             .metastore()
-            .list_all_splits(ListAllSplitsRequest::from(&test_sandbox.index_uid()))
+            .list_splits(ListSplitsRequest::try_from_index_uid(test_sandbox.index_uid()).unwrap())
             .await?
             .deserialize_splits()?;
         let splits_offsets = splits

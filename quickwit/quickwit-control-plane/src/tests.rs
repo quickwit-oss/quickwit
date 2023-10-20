@@ -114,7 +114,7 @@ async fn start_control_plane(
     let mut index_metadata_2 = index_metadata_for_test(index_2, source_2, 1, 1);
     index_metadata_2.create_timestamp = index_metadata_1.create_timestamp + 1;
     let mut metastore = MetastoreServiceClient::mock();
-    metastore.expect_list_indexes_metadatas().returning(
+    metastore.expect_list_indexes_metadata().returning(
         move |_list_indexes_request: quickwit_proto::metastore::ListIndexesMetadataRequest| {
             let indexes_metadata = vec![index_metadata_2.clone(), index_metadata_1.clone()];
             Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(indexes_metadata).unwrap())

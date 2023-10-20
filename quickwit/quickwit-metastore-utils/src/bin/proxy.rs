@@ -95,13 +95,13 @@ impl MetastoreService for MetastoreProxyService {
         Ok(resp)
     }
     /// Gets an indexes metadatas.
-    async fn list_indexes_metadatas(
+    async fn list_indexes_metadata(
         &self,
         request: tonic::Request<ListIndexesMetadataRequest>,
     ) -> Result<tonic::Response<ListIndexesMetadataResponse>, tonic::Status> {
         let mut lock = self.inner.lock().await;
         lock.record(request.get_ref().clone()).await.unwrap();
-        let resp = lock.client.list_indexes_metadatas(request).await?;
+        let resp = lock.client.list_indexes_metadata(request).await?;
         Ok(resp)
     }
     /// Deletes an index
@@ -112,16 +112,6 @@ impl MetastoreService for MetastoreProxyService {
         let mut lock = self.inner.lock().await;
         lock.record(request.get_ref().clone()).await.unwrap();
         let resp = lock.client.delete_index(request).await?;
-        Ok(resp)
-    }
-    /// Gets all splits from index.
-    async fn list_all_splits(
-        &self,
-        request: tonic::Request<ListAllSplitsRequest>,
-    ) -> Result<tonic::Response<ListSplitsResponse>, tonic::Status> {
-        let mut lock = self.inner.lock().await;
-        lock.record(request.get_ref().clone()).await.unwrap();
-        let resp = lock.client.list_all_splits(request).await?;
         Ok(resp)
     }
     /// Gets splits from index.

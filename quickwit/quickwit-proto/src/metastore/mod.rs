@@ -217,10 +217,10 @@ impl SourceType {
     }
 }
 
-impl From<&IndexUid> for ListAllSplitsRequest {
-    fn from(index_uid: &IndexUid) -> Self {
+impl IndexMetadataRequest {
+    pub fn new(index_uid: &IndexUid) -> Self {
         Self {
-            index_uid: index_uid.to_string(),
+            index_id: index_uid.index_id().to_string(),
         }
     }
 }

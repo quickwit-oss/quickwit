@@ -42,7 +42,7 @@ use quickwit_proto::metastore::{
     MetastoreResult, MetastoreService, MetastoreServiceClient, PublishSplitsRequest,
     StageSplitsRequest,
 };
-use quickwit_proto::IndexUid;
+use quickwit_proto::{IndexUid, SplitId};
 use time::OffsetDateTime;
 
 use crate::checkpoint::IndexCheckpointDelta;
@@ -353,6 +353,9 @@ impl StageSplitsRequestExt for StageSplitsRequest {
 
 /// Helper trait to build a [`ListSplitsRequest`] and deserialize its payload.
 pub trait ListSplitsRequestExt {
+    /// Creates a new [`ListSplitsRequest`] from an [`IndexUid`].
+    fn try_from_index_uid(index_uid: IndexUid) -> MetastoreResult<ListSplitsRequest>;
+
     /// Creates a new [`ListSplitsRequest`] from a [`ListSplitsQuery`].
     fn try_from_list_splits_query(
         list_splits_query: ListSplitsQuery,
@@ -363,6 +366,11 @@ pub trait ListSplitsRequestExt {
 }
 
 impl ListSplitsRequestExt for ListSplitsRequest {
+    fn try_from_index_uid(index_uid: IndexUid) -> MetastoreResult<ListSplitsRequest> {
+        let list_splits_query = ListSplitsQuery::for_index(index_uid);
+        Self::try_from_list_splits_query(list_splits_query)
+    }
+
     fn try_from_list_splits_query(
         list_splits_query: ListSplitsQuery,
     ) -> MetastoreResult<ListSplitsRequest> {
@@ -392,6 +400,26 @@ pub trait ListSplitsResponseExt {
     /// Deserializes the `splits_serialized_json` field of a [`ListSplitsResponse`] into a list of
     /// [`Split`].
     fn deserialize_splits(&self) -> MetastoreResult<Vec<Split>>;
+
+    /// Deserializes the `splits_serialized_json` field of a [`ListSplitsResponse`] into a list of
+    /// [`SplitMetadata`].
+    fn deserialize_splits_metadata(&self) -> MetastoreResult<Vec<SplitMetadata>> {
+        let splits = self.deserialize_splits()?;
+        Ok(splits
+            .into_iter()
+            .map(|split| split.split_metadata)
+            .collect())
+    }
+
+    /// Deserializes the `splits_serialized_json` field of a [`ListSplitsResponse`] into a list of
+    /// [`SplitId`].
+    fn deserialize_split_ids(&self) -> MetastoreResult<Vec<SplitId>> {
+        let splits = self.deserialize_splits()?;
+        Ok(splits
+            .into_iter()
+            .map(|split| split.split_metadata.split_id)
+            .collect())
+    }
 
     /// Creates an empty [`ListSplitsResponse`].
     fn empty() -> Self;

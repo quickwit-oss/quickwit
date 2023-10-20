@@ -32,7 +32,7 @@ use quickwit_proto::metastore::{
     DeleteSplitsRequest, ListSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError,
     MetastoreService, MetastoreServiceClient,
 };
-use quickwit_proto::IndexUid;
+use quickwit_proto::{IndexUid, SplitId};
 use quickwit_storage::{BulkDeleteError, Storage};
 use thiserror::Error;
 use time::OffsetDateTime;
@@ -106,10 +106,7 @@ pub async fn run_garbage_collect(
         metastore.list_splits(list_deletable_staged_request),
     )
     .await?
-    .deserialize_splits()?
-    .into_iter()
-    .map(|split| split.split_metadata)
-    .collect();
+    .deserialize_splits_metadata()?;
 
     if dry_run {
         let marked_for_deletion_query = ListSplitsQuery::for_index(index_uid.clone())
@@ -121,10 +118,7 @@ pub async fn run_garbage_collect(
             metastore.list_splits(marked_for_deletion_request),
         )
         .await?
-        .deserialize_splits()?
-        .into_iter()
-        .map(|split| split.split_metadata)
-        .collect();
+        .deserialize_splits_metadata()?;
         splits_marked_for_deletion.extend(deletable_staged_splits);
 
         let candidate_entries: Vec<SplitInfo> = splits_marked_for_deletion
@@ -138,7 +132,7 @@ pub async fn run_garbage_collect(
     }
 
     // Schedule all eligible staged splits for delete
-    let split_ids: Vec<String> = deletable_staged_splits
+    let split_ids: Vec<SplitId> = deletable_staged_splits
         .iter()
         .map(|split| split.split_id.to_string())
         .collect();
@@ -195,7 +189,7 @@ async fn delete_splits_marked_for_deletion(
         let list_splits_request = match ListSplitsRequest::try_from_list_splits_query(query) {
             Ok(request) => request,
             Err(error) => {
-                error!(error = ?error, "Failed to build list splits request.");
+                error!(error = ?error, "failed to build list splits request");
                 break;
             }
         };
@@ -307,7 +301,7 @@ pub async fn delete_splits_from_storage_and_metastore(
         }
     };
     if !successes.is_empty() {
-        let split_ids: Vec<String> = successes
+        let split_ids: Vec<SplitId> = successes
             .iter()
             .map(|split_info| split_info.split_id.to_string())
             .collect();
@@ -359,8 +353,7 @@ mod tests {
         StageSplitsRequestExt,
     };
     use quickwit_proto::metastore::{
-        CreateIndexRequest, EntityKind, ListAllSplitsRequest, ListSplitsResponse,
-        StageSplitsRequest,
+        CreateIndexRequest, EntityKind, ListSplitsResponse, StageSplitsRequest,
     };
     use quickwit_proto::IndexUid;
     use quickwit_storage::{
@@ -631,7 +624,7 @@ mod tests {
         assert!(storage.exists(split_path).await.unwrap());
 
         let splits = metastore
-            .list_all_splits(ListAllSplitsRequest::from(&index_uid))
+            .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
             .await
             .unwrap()
             .deserialize_splits()
@@ -656,7 +649,7 @@ mod tests {
         );
         assert!(!storage.exists(split_path).await.unwrap());
         assert!(metastore
-            .list_all_splits(ListAllSplitsRequest::from(&index_uid))
+            .list_splits(ListSplitsRequest::try_from_index_uid(index_uid).unwrap())
             .await
             .unwrap()
             .deserialize_splits()
@@ -749,7 +742,7 @@ mod tests {
         assert_eq!(error.metastore_failures.len(), 0);
 
         let splits = metastore
-            .list_all_splits(ListAllSplitsRequest::from(&index_uid))
+            .list_splits(ListSplitsRequest::try_from_index_uid(index_uid).unwrap())
             .await
             .unwrap()
             .deserialize_splits()

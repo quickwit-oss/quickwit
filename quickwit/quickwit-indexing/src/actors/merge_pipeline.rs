@@ -226,10 +226,7 @@ impl MergePipeline {
         let published_splits_metadata: Vec<SplitMetadata> = ctx
             .protect_future(self.params.metastore.list_splits(list_splits_request))
             .await?
-            .deserialize_splits()?
-            .into_iter()
-            .map(|split| split.split_metadata)
-            .collect();
+            .deserialize_splits_metadata()?;
 
         info!(
             "splits_metadata.len() = {}",

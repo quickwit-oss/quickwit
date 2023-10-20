@@ -38,13 +38,10 @@ async fn replay_grpc_request(
             client.index_metadata(req).await?;
         }
         GrpcRequest::ListIndexesMetadataRequest(req) => {
-            client.list_indexes_metadatas(req).await?;
+            client.list_indexes_metadata(req).await?;
         }
         GrpcRequest::DeleteIndexRequest(req) => {
             client.delete_index(req).await?;
-        }
-        GrpcRequest::ListAllSplitsRequest(req) => {
-            client.list_all_splits(req).await?;
         }
         GrpcRequest::ListSplitsRequest(req) => {
             client.list_splits(req).await?;

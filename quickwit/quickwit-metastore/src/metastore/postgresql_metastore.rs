@@ -37,13 +37,13 @@ use quickwit_proto::metastore::{
     CloseShardsResponse, CreateIndexRequest, CreateIndexResponse, DeleteIndexRequest, DeleteQuery,
     DeleteShardsRequest, DeleteShardsResponse, DeleteSourceRequest, DeleteSplitsRequest,
     DeleteTask, EmptyResponse, EntityKind, IndexMetadataRequest, IndexMetadataResponse,
-    LastDeleteOpstampRequest, LastDeleteOpstampResponse, ListAllSplitsRequest,
-    ListDeleteTasksRequest, ListDeleteTasksResponse, ListIndexesMetadataRequest,
-    ListIndexesMetadataResponse, ListShardsRequest, ListShardsResponse, ListSplitsRequest,
-    ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError,
-    MetastoreResult, MetastoreService, MetastoreServiceClient, OpenShardsRequest,
-    OpenShardsResponse, PublishSplitsRequest, ResetSourceCheckpointRequest, StageSplitsRequest,
-    ToggleSourceRequest, UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
+    LastDeleteOpstampRequest, LastDeleteOpstampResponse, ListDeleteTasksRequest,
+    ListDeleteTasksResponse, ListIndexesMetadataRequest, ListIndexesMetadataResponse,
+    ListShardsRequest, ListShardsResponse, ListSplitsRequest, ListSplitsResponse,
+    ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError, MetastoreResult,
+    MetastoreService, MetastoreServiceClient, OpenShardsRequest, OpenShardsResponse,
+    PublishSplitsRequest, ResetSourceCheckpointRequest, StageSplitsRequest, ToggleSourceRequest,
+    UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
 };
 use quickwit_proto::IndexUid;
 use sqlx::migrate::Migrator;
@@ -484,7 +484,7 @@ impl MetastoreService for PostgresqlMetastore {
     }
 
     #[instrument(skip(self))]
-    async fn list_indexes_metadatas(
+    async fn list_indexes_metadata(
         &mut self,
         request: ListIndexesMetadataRequest,
     ) -> MetastoreResult<ListIndexesMetadataResponse> {
@@ -807,15 +807,6 @@ impl MetastoreService for PostgresqlMetastore {
         })
     }
 
-    async fn list_all_splits(
-        &mut self,
-        request: ListAllSplitsRequest,
-    ) -> MetastoreResult<ListSplitsResponse> {
-        let query = ListSplitsQuery::for_index(request.index_uid.into());
-        let list_splits_requset = ListSplitsRequest::try_from_list_splits_query(query)?;
-        self.list_splits(list_splits_requset).await
-    }
-
     #[instrument(skip(self))]
     async fn list_splits(
         &mut self,
@@ -844,7 +835,7 @@ impl MetastoreService for PostgresqlMetastore {
                     ListIndexesQuery::IndexIdPatterns(index_ids_str.clone()),
                 )?;
             let found_index_ids: HashSet<String> = self
-                .list_indexes_metadatas(list_indexes_metadata_request)
+                .list_indexes_metadata(list_indexes_metadata_request)
                 .await?
                 .deserialize_indexes_metadata()?
                 .into_iter()

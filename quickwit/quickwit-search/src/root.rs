@@ -707,7 +707,7 @@ pub async fn root_search(
         ListIndexesQuery::IndexIdPatterns(search_request.index_id_patterns.clone()),
     )?;
     let indexes_metadata = metastore
-        .list_indexes_metadatas(list_indexes_metadatas_request)
+        .list_indexes_metadata(list_indexes_metadatas_request)
         .await?
         .deserialize_indexes_metadata()?;
     if indexes_metadata.is_empty() {
@@ -942,10 +942,7 @@ pub async fn root_list_terms(
         .clone()
         .list_splits(list_splits_request)
         .await?
-        .deserialize_splits()?
-        .into_iter()
-        .map(|split| split.split_metadata)
-        .collect();
+        .deserialize_splits_metadata()?;
 
     let index_uri = &index_config.index_uri;
 
@@ -1381,14 +1378,14 @@ mod tests {
         let mut mock_metastore = MetastoreServiceClient::mock();
         let index_metadata = IndexMetadata::for_test("test-index", "ram:///test-index");
         let index_uid = index_metadata.index_uid.clone();
-        mock_metastore.expect_list_indexes_metadatas().returning(
-            move |_indexes_metadata_request| {
+        mock_metastore
+            .expect_list_indexes_metadata()
+            .returning(move |_indexes_metadata_request| {
                 Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(vec![
                     index_metadata.clone()
                 ])
                 .unwrap())
-            },
-        );
+            });
         mock_metastore
             .expect_list_splits()
             .returning(move |_filter| {
@@ -1479,7 +1476,7 @@ mod tests {
         let index_metadata = IndexMetadata::for_test("test-index", "ram:///test-index");
         let index_uid = index_metadata.index_uid.clone();
         metastore
-            .expect_list_indexes_metadatas()
+            .expect_list_indexes_metadata()
             .returning(move |_index_ids_query| {
                 Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(vec![
                     index_metadata.clone()
@@ -1547,7 +1544,7 @@ mod tests {
         let index_metadata = IndexMetadata::for_test("test-index", "ram:///test-index");
         let index_uid = index_metadata.index_uid.clone();
         metastore
-            .expect_list_indexes_metadatas()
+            .expect_list_indexes_metadata()
             .returning(move |_index_ids_query| {
                 Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(vec![
                     index_metadata.clone()
@@ -1642,7 +1639,7 @@ mod tests {
         let index_metadata = IndexMetadata::for_test("test-index", "ram:///test-index");
         let index_uid = index_metadata.index_uid.clone();
         metastore
-            .expect_list_indexes_metadatas()
+            .expect_list_indexes_metadata()
             .returning(move |_index_ids_query| {
                 Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(vec![
                     index_metadata.clone()
@@ -1821,7 +1818,7 @@ mod tests {
         let index_metadata = IndexMetadata::for_test("test-index", "ram:///test-index");
         let index_uid = index_metadata.index_uid.clone();
         metastore
-            .expect_list_indexes_metadatas()
+            .expect_list_indexes_metadata()
             .returning(move |_index_ids_query| {
                 Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(vec![
                     index_metadata.clone()
@@ -1995,7 +1992,7 @@ mod tests {
         let index_metadata = IndexMetadata::for_test("test-index", "ram:///test-index");
         let index_uid = index_metadata.index_uid.clone();
         metastore
-            .expect_list_indexes_metadatas()
+            .expect_list_indexes_metadata()
             .returning(move |_index_ids_query| {
                 Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(vec![
                     index_metadata.clone()
@@ -2115,7 +2112,7 @@ mod tests {
         let index_metadata = IndexMetadata::for_test("test-index", "ram:///test-index");
         let index_uid = index_metadata.index_uid.clone();
         metastore
-            .expect_list_indexes_metadatas()
+            .expect_list_indexes_metadata()
             .returning(move |_indexes_metadata_request| {
                 Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(vec![
                     index_metadata.clone()
@@ -2245,7 +2242,7 @@ mod tests {
         let index_metadata = IndexMetadata::for_test("test-index", "ram:///test-index");
         let index_uid = index_metadata.index_uid.clone();
         metastore
-            .expect_list_indexes_metadatas()
+            .expect_list_indexes_metadata()
             .returning(move |_index_ids_query| {
                 Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(vec![
                     index_metadata.clone()
@@ -2324,7 +2321,7 @@ mod tests {
         let index_metadata = IndexMetadata::for_test("test-index", "ram:///test-index");
         let index_uid = index_metadata.index_uid.clone();
         metastore
-            .expect_list_indexes_metadatas()
+            .expect_list_indexes_metadata()
             .returning(move |_index_ids_query| {
                 Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(vec![
                     index_metadata.clone()
@@ -2386,7 +2383,7 @@ mod tests {
         let index_metadata = IndexMetadata::for_test("test-index", "ram:///test-index");
         let index_uid = index_metadata.index_uid.clone();
         metastore
-            .expect_list_indexes_metadatas()
+            .expect_list_indexes_metadata()
             .returning(move |_index_ids_query| {
                 Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(vec![
                     index_metadata.clone()
@@ -2474,7 +2471,7 @@ mod tests {
         let index_metadata = IndexMetadata::for_test("test-index", "ram:///test-index");
         let index_uid = index_metadata.index_uid.clone();
         metastore
-            .expect_list_indexes_metadatas()
+            .expect_list_indexes_metadata()
             .returning(move |_index_ids_query| {
                 Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(vec![
                     index_metadata.clone()
@@ -2545,7 +2542,7 @@ mod tests {
         let index_metadata = IndexMetadata::for_test("test-index", "ram:///test-index");
         let index_uid = index_metadata.index_uid.clone();
         mock_metastore
-            .expect_list_indexes_metadatas()
+            .expect_list_indexes_metadata()
             .returning(move |_index_ids_query| {
                 Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(vec![
                     index_metadata.clone()
@@ -2630,7 +2627,7 @@ mod tests {
         let index_metadata = IndexMetadata::for_test("test-index", "ram:///test-index");
         let index_uid = index_metadata.index_uid.clone();
         metastore
-            .expect_list_indexes_metadatas()
+            .expect_list_indexes_metadata()
             .returning(move |_index_ids_query| {
                 Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(vec![
                     index_metadata.clone()
@@ -2676,7 +2673,7 @@ mod tests {
         let index_metadata = IndexMetadata::for_test("test-index", "ram:///test-index");
         let index_uid = index_metadata.index_uid.clone();
         mock_metastore
-            .expect_list_indexes_metadatas()
+            .expect_list_indexes_metadata()
             .returning(move |_index_ids_query| {
                 Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(vec![
                     index_metadata.clone()
@@ -2876,7 +2873,7 @@ mod tests {
         let index_metadata_2 = IndexMetadata::for_test("test-index-2", "ram:///test-index-2");
         let index_uid_2 = index_metadata_2.index_uid.clone();
         metastore
-            .expect_list_indexes_metadatas()
+            .expect_list_indexes_metadata()
             .returning(move |_index_ids_query| {
                 let indexes_metadata = vec![index_metadata.clone(), index_metadata_2.clone()];
                 Ok(
@@ -3062,7 +3059,7 @@ mod tests {
         let index_metadata_3 =
             index_metadata_for_multi_indexes_test("test-index-3", "ram:///test-index-3");
         let index_uid_3 = index_metadata_3.index_uid.clone();
-        metastore.expect_list_indexes_metadatas().return_once(
+        metastore.expect_list_indexes_metadata().return_once(
             move |list_indexes_metadata_request: ListIndexesMetadataRequest| {
                 let query = list_indexes_metadata_request
                     .deserialize_list_indexes_query()

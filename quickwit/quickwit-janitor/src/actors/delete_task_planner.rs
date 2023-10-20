@@ -422,8 +422,8 @@ mod tests {
     use quickwit_config::build_doc_mapper;
     use quickwit_indexing::merge_policy::MergeOperation;
     use quickwit_indexing::TestSandbox;
-    use quickwit_metastore::{IndexMetadataResponseExt, SplitMetadata};
-    use quickwit_proto::metastore::{DeleteQuery, IndexMetadataRequest, ListAllSplitsRequest};
+    use quickwit_metastore::{IndexMetadataResponseExt, ListSplitsRequestExt, SplitMetadata};
+    use quickwit_proto::metastore::{DeleteQuery, IndexMetadataRequest, ListSplitsRequest};
     use quickwit_proto::search::{LeafSearchRequest, LeafSearchResponse};
     use quickwit_search::{searcher_pool_for_test, MockSearchService};
     use tantivy::TrackedObject;
@@ -475,14 +475,11 @@ mod tests {
         let index_uid = index_metadata.index_uid.clone();
         let index_config = index_metadata.into_index_config();
         let split_metas: Vec<SplitMetadata> = metastore
-            .list_all_splits(ListAllSplitsRequest::from(&index_uid))
+            .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
             .await
             .unwrap()
-            .deserialize_splits()
-            .unwrap()
-            .into_iter()
-            .map(|split| split.split_metadata)
-            .collect();
+            .deserialize_splits_metadata()
+            .unwrap();
         assert_eq!(split_metas.len(), 3);
         let doc_mapper =
             build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)?;
@@ -594,7 +591,7 @@ mod tests {
         // The other splits has just their delete opstamps updated to the last opstamps which is 2
         // as there are 2 delete tasks. The last split
         let all_splits = metastore
-            .list_all_splits(ListAllSplitsRequest::from(&index_uid))
+            .list_splits(ListSplitsRequest::try_from_index_uid(index_uid).unwrap())
             .await
             .unwrap()
             .deserialize_splits()

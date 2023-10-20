@@ -30,10 +30,10 @@ use quickwit_metastore::{
 };
 use quickwit_proto::metastore::{
     AddSourceRequest, CreateIndexRequest, DeleteIndexRequest, EntityKind, IndexMetadataRequest,
-    ListAllSplitsRequest, ListSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError,
-    MetastoreService, MetastoreServiceClient, ResetSourceCheckpointRequest,
+    ListSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError, MetastoreService,
+    MetastoreServiceClient, ResetSourceCheckpointRequest,
 };
-use quickwit_proto::{IndexUid, ServiceError, ServiceErrorCode};
+use quickwit_proto::{IndexUid, ServiceError, ServiceErrorCode, SplitId};
 use quickwit_storage::{StorageResolver, StorageResolverError};
 use thiserror::Error;
 use tracing::{error, info};
@@ -174,9 +174,10 @@ impl IndexService {
         let storage = self.storage_resolver.resolve(&index_uri).await?;
 
         if dry_run {
+            let list_splits_request = ListSplitsRequest::try_from_index_uid(index_uid)?;
             let splits_to_delete = self
                 .metastore
-                .list_all_splits(ListAllSplitsRequest::from(&index_uid))
+                .list_splits(list_splits_request)
                 .await?
                 .deserialize_splits()?
                 .into_iter()
@@ -188,15 +189,11 @@ impl IndexService {
         let query = ListSplitsQuery::for_index(index_uid.clone())
             .with_split_states([SplitState::Staged, SplitState::Published]);
         let list_splits_request = ListSplitsRequest::try_from_list_splits_query(query)?;
-        let splits_metadata = self
+        let split_ids = self
             .metastore
             .list_splits(list_splits_request)
             .await?
-            .deserialize_splits()?;
-        let split_ids = splits_metadata
-            .iter()
-            .map(|split| split.split_id().to_string())
-            .collect::<Vec<_>>();
+            .deserialize_split_ids()?;
         let mark_splits_for_deletion_request = MarkSplitsForDeletionRequest {
             index_uid: index_uid.to_string(),
             split_ids,
@@ -213,10 +210,7 @@ impl IndexService {
             .metastore
             .list_splits(list_splits_request)
             .await?
-            .deserialize_splits()?
-            .into_iter()
-            .map(|split| split.split_metadata)
-            .collect();
+            .deserialize_splits_metadata()?;
 
         let deleted_splits = delete_splits_from_storage_and_metastore(
             index_uid.clone(),
@@ -299,15 +293,13 @@ impl IndexService {
             .storage_resolver
             .resolve(index_metadata.index_uri())
             .await?;
+        let list_splits_request = ListSplitsRequest::try_from_index_uid(index_uid.clone())?;
         let splits_metadata: Vec<SplitMetadata> = self
             .metastore
-            .list_all_splits(ListAllSplitsRequest::from(&index_uid))
+            .list_splits(list_splits_request)
             .await?
-            .deserialize_splits()?
-            .into_iter()
-            .map(|split| split.split_metadata)
-            .collect();
-        let split_ids: Vec<String> = splits_metadata
+            .deserialize_splits_metadata()?;
+        let split_ids: Vec<SplitId> = splits_metadata
             .iter()
             .map(|split| split.split_id.to_string())
             .collect();
@@ -516,7 +508,7 @@ mod tests {
         metastore.stage_splits(stage_splits_request).await.unwrap();
 
         let splits = metastore
-            .list_all_splits(ListAllSplitsRequest::from(&index_uid))
+            .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
             .await
             .unwrap()
             .deserialize_splits()
@@ -533,7 +525,7 @@ mod tests {
         assert_eq!(split_infos.len(), 1);
 
         let error = metastore
-            .list_all_splits(ListAllSplitsRequest::from(&index_uid))
+            .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
             .await
             .unwrap_err();
         assert!(

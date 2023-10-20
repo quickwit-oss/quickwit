@@ -54,13 +54,6 @@ pub struct IndexMetadataResponse {
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ListAllSplitsRequest {
-    #[prost(string, tag = "1")]
-    pub index_uid: ::prost::alloc::string::String,
-}
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListSplitsRequest {
     #[prost(string, tag = "1")]
     pub query_json: ::prost::alloc::string::String,
@@ -554,11 +547,6 @@ impl PrometheusLabels<1> for DeleteIndexRequest {
         OwnedPrometheusLabels::new([std::borrow::Cow::Borrowed("delete_index")])
     }
 }
-impl PrometheusLabels<1> for ListAllSplitsRequest {
-    fn labels(&self) -> OwnedPrometheusLabels<1usize> {
-        OwnedPrometheusLabels::new([std::borrow::Cow::Borrowed("list_all_splits")])
-    }
-}
 impl PrometheusLabels<1> for ListSplitsRequest {
     fn labels(&self) -> OwnedPrometheusLabels<1usize> {
         OwnedPrometheusLabels::new([std::borrow::Cow::Borrowed("list_splits")])
@@ -674,7 +662,7 @@ pub trait MetastoreService: std::fmt::Debug + dyn_clone::DynClone + Send + Sync 
         request: IndexMetadataRequest,
     ) -> crate::metastore::MetastoreResult<IndexMetadataResponse>;
     /// Gets an indexes metadatas.
-    async fn list_indexes_metadatas(
+    async fn list_indexes_metadata(
         &mut self,
         request: ListIndexesMetadataRequest,
     ) -> crate::metastore::MetastoreResult<ListIndexesMetadataResponse>;
@@ -683,11 +671,6 @@ pub trait MetastoreService: std::fmt::Debug + dyn_clone::DynClone + Send + Sync 
         &mut self,
         request: DeleteIndexRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse>;
-    /// Gets all splits from index.
-    async fn list_all_splits(
-        &mut self,
-        request: ListAllSplitsRequest,
-    ) -> crate::metastore::MetastoreResult<ListSplitsResponse>;
     /// Gets splits from index.
     async fn list_splits(
         &mut self,
@@ -870,23 +853,17 @@ impl MetastoreService for MetastoreServiceClient {
     ) -> crate::metastore::MetastoreResult<IndexMetadataResponse> {
         self.inner.index_metadata(request).await
     }
-    async fn list_indexes_metadatas(
+    async fn list_indexes_metadata(
         &mut self,
         request: ListIndexesMetadataRequest,
     ) -> crate::metastore::MetastoreResult<ListIndexesMetadataResponse> {
-        self.inner.list_indexes_metadatas(request).await
+        self.inner.list_indexes_metadata(request).await
     }
     async fn delete_index(
         &mut self,
         request: DeleteIndexRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
         self.inner.delete_index(request).await
-    }
-    async fn list_all_splits(
-        &mut self,
-        request: ListAllSplitsRequest,
-    ) -> crate::metastore::MetastoreResult<ListSplitsResponse> {
-        self.inner.list_all_splits(request).await
     }
     async fn list_splits(
         &mut self,
@@ -1030,23 +1007,17 @@ pub mod metastore_service_mock {
         ) -> crate::metastore::MetastoreResult<super::IndexMetadataResponse> {
             self.inner.lock().await.index_metadata(request).await
         }
-        async fn list_indexes_metadatas(
+        async fn list_indexes_metadata(
             &mut self,
             request: super::ListIndexesMetadataRequest,
         ) -> crate::metastore::MetastoreResult<super::ListIndexesMetadataResponse> {
-            self.inner.lock().await.list_indexes_metadatas(request).await
+            self.inner.lock().await.list_indexes_metadata(request).await
         }
         async fn delete_index(
             &mut self,
             request: super::DeleteIndexRequest,
         ) -> crate::metastore::MetastoreResult<super::EmptyResponse> {
             self.inner.lock().await.delete_index(request).await
-        }
-        async fn list_all_splits(
-            &mut self,
-            request: super::ListAllSplitsRequest,
-        ) -> crate::metastore::MetastoreResult<super::ListSplitsResponse> {
-            self.inner.lock().await.list_all_splits(request).await
         }
         async fn list_splits(
             &mut self,
@@ -1227,7 +1198,7 @@ impl tower::Service<ListIndexesMetadataRequest> for Box<dyn MetastoreService> {
     }
     fn call(&mut self, request: ListIndexesMetadataRequest) -> Self::Future {
         let mut svc = self.clone();
-        let fut = async move { svc.list_indexes_metadatas(request).await };
+        let fut = async move { svc.list_indexes_metadata(request).await };
         Box::pin(fut)
     }
 }
@@ -1244,22 +1215,6 @@ impl tower::Service<DeleteIndexRequest> for Box<dyn MetastoreService> {
     fn call(&mut self, request: DeleteIndexRequest) -> Self::Future {
         let mut svc = self.clone();
         let fut = async move { svc.delete_index(request).await };
-        Box::pin(fut)
-    }
-}
-impl tower::Service<ListAllSplitsRequest> for Box<dyn MetastoreService> {
-    type Response = ListSplitsResponse;
-    type Error = crate::metastore::MetastoreError;
-    type Future = BoxFuture<Self::Response, Self::Error>;
-    fn poll_ready(
-        &mut self,
-        _cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<(), Self::Error>> {
-        std::task::Poll::Ready(Ok(()))
-    }
-    fn call(&mut self, request: ListAllSplitsRequest) -> Self::Future {
-        let mut svc = self.clone();
-        let fut = async move { svc.list_all_splits(request).await };
         Box::pin(fut)
     }
 }
@@ -1581,7 +1536,7 @@ struct MetastoreServiceTowerBlock {
         IndexMetadataResponse,
         crate::metastore::MetastoreError,
     >,
-    list_indexes_metadatas_svc: quickwit_common::tower::BoxService<
+    list_indexes_metadata_svc: quickwit_common::tower::BoxService<
         ListIndexesMetadataRequest,
         ListIndexesMetadataResponse,
         crate::metastore::MetastoreError,
@@ -1589,11 +1544,6 @@ struct MetastoreServiceTowerBlock {
     delete_index_svc: quickwit_common::tower::BoxService<
         DeleteIndexRequest,
         EmptyResponse,
-        crate::metastore::MetastoreError,
-    >,
-    list_all_splits_svc: quickwit_common::tower::BoxService<
-        ListAllSplitsRequest,
-        ListSplitsResponse,
         crate::metastore::MetastoreError,
     >,
     list_splits_svc: quickwit_common::tower::BoxService<
@@ -1698,9 +1648,8 @@ impl Clone for MetastoreServiceTowerBlock {
             inner: self.inner.clone(),
             create_index_svc: self.create_index_svc.clone(),
             index_metadata_svc: self.index_metadata_svc.clone(),
-            list_indexes_metadatas_svc: self.list_indexes_metadatas_svc.clone(),
+            list_indexes_metadata_svc: self.list_indexes_metadata_svc.clone(),
             delete_index_svc: self.delete_index_svc.clone(),
-            list_all_splits_svc: self.list_all_splits_svc.clone(),
             list_splits_svc: self.list_splits_svc.clone(),
             stage_splits_svc: self.stage_splits_svc.clone(),
             publish_splits_svc: self.publish_splits_svc.clone(),
@@ -1739,23 +1688,17 @@ impl MetastoreService for MetastoreServiceTowerBlock {
     ) -> crate::metastore::MetastoreResult<IndexMetadataResponse> {
         self.index_metadata_svc.ready().await?.call(request).await
     }
-    async fn list_indexes_metadatas(
+    async fn list_indexes_metadata(
         &mut self,
         request: ListIndexesMetadataRequest,
     ) -> crate::metastore::MetastoreResult<ListIndexesMetadataResponse> {
-        self.list_indexes_metadatas_svc.ready().await?.call(request).await
+        self.list_indexes_metadata_svc.ready().await?.call(request).await
     }
     async fn delete_index(
         &mut self,
         request: DeleteIndexRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
         self.delete_index_svc.ready().await?.call(request).await
-    }
-    async fn list_all_splits(
-        &mut self,
-        request: ListAllSplitsRequest,
-    ) -> crate::metastore::MetastoreResult<ListSplitsResponse> {
-        self.list_all_splits_svc.ready().await?.call(request).await
     }
     async fn list_splits(
         &mut self,
@@ -1899,7 +1842,7 @@ pub struct MetastoreServiceTowerBlockBuilder {
         >,
     >,
     #[allow(clippy::type_complexity)]
-    list_indexes_metadatas_layer: Option<
+    list_indexes_metadata_layer: Option<
         quickwit_common::tower::BoxLayer<
             Box<dyn MetastoreService>,
             ListIndexesMetadataRequest,
@@ -1913,15 +1856,6 @@ pub struct MetastoreServiceTowerBlockBuilder {
             Box<dyn MetastoreService>,
             DeleteIndexRequest,
             EmptyResponse,
-            crate::metastore::MetastoreError,
-        >,
-    >,
-    #[allow(clippy::type_complexity)]
-    list_all_splits_layer: Option<
-        quickwit_common::tower::BoxLayer<
-            Box<dyn MetastoreService>,
-            ListAllSplitsRequest,
-            ListSplitsResponse,
             crate::metastore::MetastoreError,
         >,
     >,
@@ -2128,12 +2062,6 @@ impl MetastoreServiceTowerBlockBuilder {
             > + Clone + Send + Sync + 'static,
         <L::Service as tower::Service<DeleteIndexRequest>>::Future: Send + 'static,
         L::Service: tower::Service<
-                ListAllSplitsRequest,
-                Response = ListSplitsResponse,
-                Error = crate::metastore::MetastoreError,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<ListAllSplitsRequest>>::Future: Send + 'static,
-        L::Service: tower::Service<
                 ListSplitsRequest,
                 Response = ListSplitsResponse,
                 Error = crate::metastore::MetastoreError,
@@ -2263,15 +2191,11 @@ impl MetastoreServiceTowerBlockBuilder {
             quickwit_common::tower::BoxLayer::new(layer.clone()),
         );
         self
-            .list_indexes_metadatas_layer = Some(
+            .list_indexes_metadata_layer = Some(
             quickwit_common::tower::BoxLayer::new(layer.clone()),
         );
         self
             .delete_index_layer = Some(
-            quickwit_common::tower::BoxLayer::new(layer.clone()),
-        );
-        self
-            .list_all_splits_layer = Some(
             quickwit_common::tower::BoxLayer::new(layer.clone()),
         );
         self
@@ -2375,7 +2299,7 @@ impl MetastoreServiceTowerBlockBuilder {
         self.index_metadata_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
-    pub fn list_indexes_metadatas_layer<L>(mut self, layer: L) -> Self
+    pub fn list_indexes_metadata_layer<L>(mut self, layer: L) -> Self
     where
         L: tower::Layer<Box<dyn MetastoreService>> + Send + Sync + 'static,
         L::Service: tower::Service<
@@ -2388,7 +2312,7 @@ impl MetastoreServiceTowerBlockBuilder {
         >>::Future: Send + 'static,
     {
         self
-            .list_indexes_metadatas_layer = Some(
+            .list_indexes_metadata_layer = Some(
             quickwit_common::tower::BoxLayer::new(layer),
         );
         self
@@ -2404,19 +2328,6 @@ impl MetastoreServiceTowerBlockBuilder {
         <L::Service as tower::Service<DeleteIndexRequest>>::Future: Send + 'static,
     {
         self.delete_index_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
-        self
-    }
-    pub fn list_all_splits_layer<L>(mut self, layer: L) -> Self
-    where
-        L: tower::Layer<Box<dyn MetastoreService>> + Send + Sync + 'static,
-        L::Service: tower::Service<
-                ListAllSplitsRequest,
-                Response = ListSplitsResponse,
-                Error = crate::metastore::MetastoreError,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<ListAllSplitsRequest>>::Future: Send + 'static,
-    {
-        self.list_all_splits_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
     pub fn list_splits_layer<L>(mut self, layer: L) -> Self
@@ -2740,19 +2651,14 @@ impl MetastoreServiceTowerBlockBuilder {
         } else {
             quickwit_common::tower::BoxService::new(boxed_instance.clone())
         };
-        let list_indexes_metadatas_svc = if let Some(layer)
-            = self.list_indexes_metadatas_layer
+        let list_indexes_metadata_svc = if let Some(layer)
+            = self.list_indexes_metadata_layer
         {
             layer.layer(boxed_instance.clone())
         } else {
             quickwit_common::tower::BoxService::new(boxed_instance.clone())
         };
         let delete_index_svc = if let Some(layer) = self.delete_index_layer {
-            layer.layer(boxed_instance.clone())
-        } else {
-            quickwit_common::tower::BoxService::new(boxed_instance.clone())
-        };
-        let list_all_splits_svc = if let Some(layer) = self.list_all_splits_layer {
             layer.layer(boxed_instance.clone())
         } else {
             quickwit_common::tower::BoxService::new(boxed_instance.clone())
@@ -2863,9 +2769,8 @@ impl MetastoreServiceTowerBlockBuilder {
             inner: boxed_instance.clone(),
             create_index_svc,
             index_metadata_svc,
-            list_indexes_metadatas_svc,
+            list_indexes_metadata_svc,
             delete_index_svc,
-            list_all_splits_svc,
             list_splits_svc,
             stage_splits_svc,
             publish_splits_svc,
@@ -2987,12 +2892,6 @@ where
             Response = EmptyResponse,
             Error = crate::metastore::MetastoreError,
             Future = BoxFuture<EmptyResponse, crate::metastore::MetastoreError>,
-        >
-        + tower::Service<
-            ListAllSplitsRequest,
-            Response = ListSplitsResponse,
-            Error = crate::metastore::MetastoreError,
-            Future = BoxFuture<ListSplitsResponse, crate::metastore::MetastoreError>,
         >
         + tower::Service<
             ListSplitsRequest,
@@ -3127,7 +3026,7 @@ where
     ) -> crate::metastore::MetastoreResult<IndexMetadataResponse> {
         self.call(request).await
     }
-    async fn list_indexes_metadatas(
+    async fn list_indexes_metadata(
         &mut self,
         request: ListIndexesMetadataRequest,
     ) -> crate::metastore::MetastoreResult<ListIndexesMetadataResponse> {
@@ -3137,12 +3036,6 @@ where
         &mut self,
         request: DeleteIndexRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
-        self.call(request).await
-    }
-    async fn list_all_splits(
-        &mut self,
-        request: ListAllSplitsRequest,
-    ) -> crate::metastore::MetastoreResult<ListSplitsResponse> {
         self.call(request).await
     }
     async fn list_splits(
@@ -3326,12 +3219,12 @@ where
             .map(|response| response.into_inner())
             .map_err(|error| error.into())
     }
-    async fn list_indexes_metadatas(
+    async fn list_indexes_metadata(
         &mut self,
         request: ListIndexesMetadataRequest,
     ) -> crate::metastore::MetastoreResult<ListIndexesMetadataResponse> {
         self.inner
-            .list_indexes_metadatas(request)
+            .list_indexes_metadata(request)
             .await
             .map(|response| response.into_inner())
             .map_err(|error| error.into())
@@ -3342,16 +3235,6 @@ where
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
         self.inner
             .delete_index(request)
-            .await
-            .map(|response| response.into_inner())
-            .map_err(|error| error.into())
-    }
-    async fn list_all_splits(
-        &mut self,
-        request: ListAllSplitsRequest,
-    ) -> crate::metastore::MetastoreResult<ListSplitsResponse> {
-        self.inner
-            .list_all_splits(request)
             .await
             .map(|response| response.into_inner())
             .map_err(|error| error.into())
@@ -3601,13 +3484,13 @@ for MetastoreServiceGrpcServerAdapter {
             .map(tonic::Response::new)
             .map_err(|error| error.into())
     }
-    async fn list_indexes_metadatas(
+    async fn list_indexes_metadata(
         &self,
         request: tonic::Request<ListIndexesMetadataRequest>,
     ) -> Result<tonic::Response<ListIndexesMetadataResponse>, tonic::Status> {
         self.inner
             .clone()
-            .list_indexes_metadatas(request.into_inner())
+            .list_indexes_metadata(request.into_inner())
             .await
             .map(tonic::Response::new)
             .map_err(|error| error.into())
@@ -3619,17 +3502,6 @@ for MetastoreServiceGrpcServerAdapter {
         self.inner
             .clone()
             .delete_index(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(|error| error.into())
-    }
-    async fn list_all_splits(
-        &self,
-        request: tonic::Request<ListAllSplitsRequest>,
-    ) -> Result<tonic::Response<ListSplitsResponse>, tonic::Status> {
-        self.inner
-            .clone()
-            .list_all_splits(request.into_inner())
             .await
             .map(tonic::Response::new)
             .map_err(|error| error.into())
@@ -3948,15 +3820,12 @@ pub mod metastore_service_grpc_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/quickwit.metastore.MetastoreService/create_index",
+                "/quickwit.metastore.MetastoreService/CreateIndex",
             );
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(
-                    GrpcMethod::new(
-                        "quickwit.metastore.MetastoreService",
-                        "create_index",
-                    ),
+                    GrpcMethod::new("quickwit.metastore.MetastoreService", "CreateIndex"),
                 );
             self.inner.unary(req, path, codec).await
         }
@@ -3979,20 +3848,20 @@ pub mod metastore_service_grpc_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/quickwit.metastore.MetastoreService/index_metadata",
+                "/quickwit.metastore.MetastoreService/IndexMetadata",
             );
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(
                     GrpcMethod::new(
                         "quickwit.metastore.MetastoreService",
-                        "index_metadata",
+                        "IndexMetadata",
                     ),
                 );
             self.inner.unary(req, path, codec).await
         }
         /// Gets an indexes metadatas.
-        pub async fn list_indexes_metadatas(
+        pub async fn list_indexes_metadata(
             &mut self,
             request: impl tonic::IntoRequest<super::ListIndexesMetadataRequest>,
         ) -> std::result::Result<
@@ -4010,14 +3879,14 @@ pub mod metastore_service_grpc_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/quickwit.metastore.MetastoreService/list_indexes_metadatas",
+                "/quickwit.metastore.MetastoreService/ListIndexesMetadata",
             );
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(
                     GrpcMethod::new(
                         "quickwit.metastore.MetastoreService",
-                        "list_indexes_metadatas",
+                        "ListIndexesMetadata",
                     ),
                 );
             self.inner.unary(req, path, codec).await
@@ -4038,46 +3907,12 @@ pub mod metastore_service_grpc_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/quickwit.metastore.MetastoreService/delete_index",
+                "/quickwit.metastore.MetastoreService/DeleteIndex",
             );
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(
-                    GrpcMethod::new(
-                        "quickwit.metastore.MetastoreService",
-                        "delete_index",
-                    ),
-                );
-            self.inner.unary(req, path, codec).await
-        }
-        /// Gets all splits from index.
-        pub async fn list_all_splits(
-            &mut self,
-            request: impl tonic::IntoRequest<super::ListAllSplitsRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::ListSplitsResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/quickwit.metastore.MetastoreService/list_all_splits",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new(
-                        "quickwit.metastore.MetastoreService",
-                        "list_all_splits",
-                    ),
+                    GrpcMethod::new("quickwit.metastore.MetastoreService", "DeleteIndex"),
                 );
             self.inner.unary(req, path, codec).await
         }
@@ -4100,12 +3935,12 @@ pub mod metastore_service_grpc_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/quickwit.metastore.MetastoreService/list_splits",
+                "/quickwit.metastore.MetastoreService/ListSplits",
             );
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(
-                    GrpcMethod::new("quickwit.metastore.MetastoreService", "list_splits"),
+                    GrpcMethod::new("quickwit.metastore.MetastoreService", "ListSplits"),
                 );
             self.inner.unary(req, path, codec).await
         }
@@ -4125,15 +3960,12 @@ pub mod metastore_service_grpc_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/quickwit.metastore.MetastoreService/stage_splits",
+                "/quickwit.metastore.MetastoreService/StageSplits",
             );
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(
-                    GrpcMethod::new(
-                        "quickwit.metastore.MetastoreService",
-                        "stage_splits",
-                    ),
+                    GrpcMethod::new("quickwit.metastore.MetastoreService", "StageSplits"),
                 );
             self.inner.unary(req, path, codec).await
         }
@@ -4153,14 +3985,14 @@ pub mod metastore_service_grpc_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/quickwit.metastore.MetastoreService/publish_splits",
+                "/quickwit.metastore.MetastoreService/PublishSplits",
             );
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(
                     GrpcMethod::new(
                         "quickwit.metastore.MetastoreService",
-                        "publish_splits",
+                        "PublishSplits",
                     ),
                 );
             self.inner.unary(req, path, codec).await
@@ -4181,14 +4013,14 @@ pub mod metastore_service_grpc_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/quickwit.metastore.MetastoreService/mark_splits_for_deletion",
+                "/quickwit.metastore.MetastoreService/MarkSplitsForDeletion",
             );
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(
                     GrpcMethod::new(
                         "quickwit.metastore.MetastoreService",
-                        "mark_splits_for_deletion",
+                        "MarkSplitsForDeletion",
                     ),
                 );
             self.inner.unary(req, path, codec).await
@@ -4209,14 +4041,14 @@ pub mod metastore_service_grpc_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/quickwit.metastore.MetastoreService/delete_splits",
+                "/quickwit.metastore.MetastoreService/DeleteSplits",
             );
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(
                     GrpcMethod::new(
                         "quickwit.metastore.MetastoreService",
-                        "delete_splits",
+                        "DeleteSplits",
                     ),
                 );
             self.inner.unary(req, path, codec).await
@@ -4237,12 +4069,12 @@ pub mod metastore_service_grpc_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/quickwit.metastore.MetastoreService/add_source",
+                "/quickwit.metastore.MetastoreService/AddSource",
             );
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(
-                    GrpcMethod::new("quickwit.metastore.MetastoreService", "add_source"),
+                    GrpcMethod::new("quickwit.metastore.MetastoreService", "AddSource"),
                 );
             self.inner.unary(req, path, codec).await
         }
@@ -4262,14 +4094,14 @@ pub mod metastore_service_grpc_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/quickwit.metastore.MetastoreService/toggle_source",
+                "/quickwit.metastore.MetastoreService/ToggleSource",
             );
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(
                     GrpcMethod::new(
                         "quickwit.metastore.MetastoreService",
-                        "toggle_source",
+                        "ToggleSource",
                     ),
                 );
             self.inner.unary(req, path, codec).await
@@ -4290,14 +4122,14 @@ pub mod metastore_service_grpc_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/quickwit.metastore.MetastoreService/delete_source",
+                "/quickwit.metastore.MetastoreService/DeleteSource",
             );
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(
                     GrpcMethod::new(
                         "quickwit.metastore.MetastoreService",
-                        "delete_source",
+                        "DeleteSource",
                     ),
                 );
             self.inner.unary(req, path, codec).await
@@ -4318,14 +4150,14 @@ pub mod metastore_service_grpc_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/quickwit.metastore.MetastoreService/reset_source_checkpoint",
+                "/quickwit.metastore.MetastoreService/ResetSourceCheckpoint",
             );
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(
                     GrpcMethod::new(
                         "quickwit.metastore.MetastoreService",
-                        "reset_source_checkpoint",
+                        "ResetSourceCheckpoint",
                     ),
                 );
             self.inner.unary(req, path, codec).await
@@ -4349,14 +4181,14 @@ pub mod metastore_service_grpc_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/quickwit.metastore.MetastoreService/last_delete_opstamp",
+                "/quickwit.metastore.MetastoreService/LastDeleteOpstamp",
             );
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(
                     GrpcMethod::new(
                         "quickwit.metastore.MetastoreService",
-                        "last_delete_opstamp",
+                        "LastDeleteOpstamp",
                     ),
                 );
             self.inner.unary(req, path, codec).await
@@ -4377,14 +4209,14 @@ pub mod metastore_service_grpc_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/quickwit.metastore.MetastoreService/create_delete_task",
+                "/quickwit.metastore.MetastoreService/CreateDeleteTask",
             );
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(
                     GrpcMethod::new(
                         "quickwit.metastore.MetastoreService",
-                        "create_delete_task",
+                        "CreateDeleteTask",
                     ),
                 );
             self.inner.unary(req, path, codec).await
@@ -4408,14 +4240,14 @@ pub mod metastore_service_grpc_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/quickwit.metastore.MetastoreService/update_splits_delete_opstamp",
+                "/quickwit.metastore.MetastoreService/UpdateSplitsDeleteOpstamp",
             );
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(
                     GrpcMethod::new(
                         "quickwit.metastore.MetastoreService",
-                        "update_splits_delete_opstamp",
+                        "UpdateSplitsDeleteOpstamp",
                     ),
                 );
             self.inner.unary(req, path, codec).await
@@ -4439,14 +4271,14 @@ pub mod metastore_service_grpc_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/quickwit.metastore.MetastoreService/list_delete_tasks",
+                "/quickwit.metastore.MetastoreService/ListDeleteTasks",
             );
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(
                     GrpcMethod::new(
                         "quickwit.metastore.MetastoreService",
-                        "list_delete_tasks",
+                        "ListDeleteTasks",
                     ),
                 );
             self.inner.unary(req, path, codec).await
@@ -4470,14 +4302,14 @@ pub mod metastore_service_grpc_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/quickwit.metastore.MetastoreService/list_stale_splits",
+                "/quickwit.metastore.MetastoreService/ListStaleSplits",
             );
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(
                     GrpcMethod::new(
                         "quickwit.metastore.MetastoreService",
-                        "list_stale_splits",
+                        "ListStaleSplits",
                     ),
                 );
             self.inner.unary(req, path, codec).await
@@ -4652,7 +4484,7 @@ pub mod metastore_service_grpc_server {
             tonic::Status,
         >;
         /// Gets an indexes metadatas.
-        async fn list_indexes_metadatas(
+        async fn list_indexes_metadata(
             &self,
             request: tonic::Request<super::ListIndexesMetadataRequest>,
         ) -> std::result::Result<
@@ -4664,14 +4496,6 @@ pub mod metastore_service_grpc_server {
             &self,
             request: tonic::Request<super::DeleteIndexRequest>,
         ) -> std::result::Result<tonic::Response<super::EmptyResponse>, tonic::Status>;
-        /// Gets all splits from index.
-        async fn list_all_splits(
-            &self,
-            request: tonic::Request<super::ListAllSplitsRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::ListSplitsResponse>,
-            tonic::Status,
-        >;
         /// Gets splits from index.
         async fn list_splits(
             &self,
@@ -4876,13 +4700,13 @@ pub mod metastore_service_grpc_server {
         fn call(&mut self, req: http::Request<B>) -> Self::Future {
             let inner = self.inner.clone();
             match req.uri().path() {
-                "/quickwit.metastore.MetastoreService/create_index" => {
+                "/quickwit.metastore.MetastoreService/CreateIndex" => {
                     #[allow(non_camel_case_types)]
-                    struct create_indexSvc<T: MetastoreServiceGrpc>(pub Arc<T>);
+                    struct CreateIndexSvc<T: MetastoreServiceGrpc>(pub Arc<T>);
                     impl<
                         T: MetastoreServiceGrpc,
                     > tonic::server::UnaryService<super::CreateIndexRequest>
-                    for create_indexSvc<T> {
+                    for CreateIndexSvc<T> {
                         type Response = super::CreateIndexResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
@@ -4906,7 +4730,7 @@ pub mod metastore_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
-                        let method = create_indexSvc(inner);
+                        let method = CreateIndexSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -4922,13 +4746,13 @@ pub mod metastore_service_grpc_server {
                     };
                     Box::pin(fut)
                 }
-                "/quickwit.metastore.MetastoreService/index_metadata" => {
+                "/quickwit.metastore.MetastoreService/IndexMetadata" => {
                     #[allow(non_camel_case_types)]
-                    struct index_metadataSvc<T: MetastoreServiceGrpc>(pub Arc<T>);
+                    struct IndexMetadataSvc<T: MetastoreServiceGrpc>(pub Arc<T>);
                     impl<
                         T: MetastoreServiceGrpc,
                     > tonic::server::UnaryService<super::IndexMetadataRequest>
-                    for index_metadataSvc<T> {
+                    for IndexMetadataSvc<T> {
                         type Response = super::IndexMetadataResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
@@ -4952,7 +4776,7 @@ pub mod metastore_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
-                        let method = index_metadataSvc(inner);
+                        let method = IndexMetadataSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -4968,15 +4792,13 @@ pub mod metastore_service_grpc_server {
                     };
                     Box::pin(fut)
                 }
-                "/quickwit.metastore.MetastoreService/list_indexes_metadatas" => {
+                "/quickwit.metastore.MetastoreService/ListIndexesMetadata" => {
                     #[allow(non_camel_case_types)]
-                    struct list_indexes_metadatasSvc<T: MetastoreServiceGrpc>(
-                        pub Arc<T>,
-                    );
+                    struct ListIndexesMetadataSvc<T: MetastoreServiceGrpc>(pub Arc<T>);
                     impl<
                         T: MetastoreServiceGrpc,
                     > tonic::server::UnaryService<super::ListIndexesMetadataRequest>
-                    for list_indexes_metadatasSvc<T> {
+                    for ListIndexesMetadataSvc<T> {
                         type Response = super::ListIndexesMetadataResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
@@ -4988,7 +4810,7 @@ pub mod metastore_service_grpc_server {
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
                             let fut = async move {
-                                (*inner).list_indexes_metadatas(request).await
+                                (*inner).list_indexes_metadata(request).await
                             };
                             Box::pin(fut)
                         }
@@ -5000,7 +4822,7 @@ pub mod metastore_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
-                        let method = list_indexes_metadatasSvc(inner);
+                        let method = ListIndexesMetadataSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -5016,13 +4838,13 @@ pub mod metastore_service_grpc_server {
                     };
                     Box::pin(fut)
                 }
-                "/quickwit.metastore.MetastoreService/delete_index" => {
+                "/quickwit.metastore.MetastoreService/DeleteIndex" => {
                     #[allow(non_camel_case_types)]
-                    struct delete_indexSvc<T: MetastoreServiceGrpc>(pub Arc<T>);
+                    struct DeleteIndexSvc<T: MetastoreServiceGrpc>(pub Arc<T>);
                     impl<
                         T: MetastoreServiceGrpc,
                     > tonic::server::UnaryService<super::DeleteIndexRequest>
-                    for delete_indexSvc<T> {
+                    for DeleteIndexSvc<T> {
                         type Response = super::EmptyResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
@@ -5046,7 +4868,7 @@ pub mod metastore_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
-                        let method = delete_indexSvc(inner);
+                        let method = DeleteIndexSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -5062,59 +4884,13 @@ pub mod metastore_service_grpc_server {
                     };
                     Box::pin(fut)
                 }
-                "/quickwit.metastore.MetastoreService/list_all_splits" => {
+                "/quickwit.metastore.MetastoreService/ListSplits" => {
                     #[allow(non_camel_case_types)]
-                    struct list_all_splitsSvc<T: MetastoreServiceGrpc>(pub Arc<T>);
-                    impl<
-                        T: MetastoreServiceGrpc,
-                    > tonic::server::UnaryService<super::ListAllSplitsRequest>
-                    for list_all_splitsSvc<T> {
-                        type Response = super::ListSplitsResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::ListAllSplitsRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                (*inner).list_all_splits(request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let inner = inner.0;
-                        let method = list_all_splitsSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/quickwit.metastore.MetastoreService/list_splits" => {
-                    #[allow(non_camel_case_types)]
-                    struct list_splitsSvc<T: MetastoreServiceGrpc>(pub Arc<T>);
+                    struct ListSplitsSvc<T: MetastoreServiceGrpc>(pub Arc<T>);
                     impl<
                         T: MetastoreServiceGrpc,
                     > tonic::server::UnaryService<super::ListSplitsRequest>
-                    for list_splitsSvc<T> {
+                    for ListSplitsSvc<T> {
                         type Response = super::ListSplitsResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
@@ -5136,7 +4912,7 @@ pub mod metastore_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
-                        let method = list_splitsSvc(inner);
+                        let method = ListSplitsSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -5152,13 +4928,13 @@ pub mod metastore_service_grpc_server {
                     };
                     Box::pin(fut)
                 }
-                "/quickwit.metastore.MetastoreService/stage_splits" => {
+                "/quickwit.metastore.MetastoreService/StageSplits" => {
                     #[allow(non_camel_case_types)]
-                    struct stage_splitsSvc<T: MetastoreServiceGrpc>(pub Arc<T>);
+                    struct StageSplitsSvc<T: MetastoreServiceGrpc>(pub Arc<T>);
                     impl<
                         T: MetastoreServiceGrpc,
                     > tonic::server::UnaryService<super::StageSplitsRequest>
-                    for stage_splitsSvc<T> {
+                    for StageSplitsSvc<T> {
                         type Response = super::EmptyResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
@@ -5182,7 +4958,7 @@ pub mod metastore_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
-                        let method = stage_splitsSvc(inner);
+                        let method = StageSplitsSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -5198,13 +4974,13 @@ pub mod metastore_service_grpc_server {
                     };
                     Box::pin(fut)
                 }
-                "/quickwit.metastore.MetastoreService/publish_splits" => {
+                "/quickwit.metastore.MetastoreService/PublishSplits" => {
                     #[allow(non_camel_case_types)]
-                    struct publish_splitsSvc<T: MetastoreServiceGrpc>(pub Arc<T>);
+                    struct PublishSplitsSvc<T: MetastoreServiceGrpc>(pub Arc<T>);
                     impl<
                         T: MetastoreServiceGrpc,
                     > tonic::server::UnaryService<super::PublishSplitsRequest>
-                    for publish_splitsSvc<T> {
+                    for PublishSplitsSvc<T> {
                         type Response = super::EmptyResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
@@ -5228,7 +5004,7 @@ pub mod metastore_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
-                        let method = publish_splitsSvc(inner);
+                        let method = PublishSplitsSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -5244,15 +5020,13 @@ pub mod metastore_service_grpc_server {
                     };
                     Box::pin(fut)
                 }
-                "/quickwit.metastore.MetastoreService/mark_splits_for_deletion" => {
+                "/quickwit.metastore.MetastoreService/MarkSplitsForDeletion" => {
                     #[allow(non_camel_case_types)]
-                    struct mark_splits_for_deletionSvc<T: MetastoreServiceGrpc>(
-                        pub Arc<T>,
-                    );
+                    struct MarkSplitsForDeletionSvc<T: MetastoreServiceGrpc>(pub Arc<T>);
                     impl<
                         T: MetastoreServiceGrpc,
                     > tonic::server::UnaryService<super::MarkSplitsForDeletionRequest>
-                    for mark_splits_for_deletionSvc<T> {
+                    for MarkSplitsForDeletionSvc<T> {
                         type Response = super::EmptyResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
@@ -5276,7 +5050,7 @@ pub mod metastore_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
-                        let method = mark_splits_for_deletionSvc(inner);
+                        let method = MarkSplitsForDeletionSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -5292,13 +5066,13 @@ pub mod metastore_service_grpc_server {
                     };
                     Box::pin(fut)
                 }
-                "/quickwit.metastore.MetastoreService/delete_splits" => {
+                "/quickwit.metastore.MetastoreService/DeleteSplits" => {
                     #[allow(non_camel_case_types)]
-                    struct delete_splitsSvc<T: MetastoreServiceGrpc>(pub Arc<T>);
+                    struct DeleteSplitsSvc<T: MetastoreServiceGrpc>(pub Arc<T>);
                     impl<
                         T: MetastoreServiceGrpc,
                     > tonic::server::UnaryService<super::DeleteSplitsRequest>
-                    for delete_splitsSvc<T> {
+                    for DeleteSplitsSvc<T> {
                         type Response = super::EmptyResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
@@ -5322,7 +5096,7 @@ pub mod metastore_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
-                        let method = delete_splitsSvc(inner);
+                        let method = DeleteSplitsSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -5338,13 +5112,13 @@ pub mod metastore_service_grpc_server {
                     };
                     Box::pin(fut)
                 }
-                "/quickwit.metastore.MetastoreService/add_source" => {
+                "/quickwit.metastore.MetastoreService/AddSource" => {
                     #[allow(non_camel_case_types)]
-                    struct add_sourceSvc<T: MetastoreServiceGrpc>(pub Arc<T>);
+                    struct AddSourceSvc<T: MetastoreServiceGrpc>(pub Arc<T>);
                     impl<
                         T: MetastoreServiceGrpc,
                     > tonic::server::UnaryService<super::AddSourceRequest>
-                    for add_sourceSvc<T> {
+                    for AddSourceSvc<T> {
                         type Response = super::EmptyResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
@@ -5366,7 +5140,7 @@ pub mod metastore_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
-                        let method = add_sourceSvc(inner);
+                        let method = AddSourceSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -5382,13 +5156,13 @@ pub mod metastore_service_grpc_server {
                     };
                     Box::pin(fut)
                 }
-                "/quickwit.metastore.MetastoreService/toggle_source" => {
+                "/quickwit.metastore.MetastoreService/ToggleSource" => {
                     #[allow(non_camel_case_types)]
-                    struct toggle_sourceSvc<T: MetastoreServiceGrpc>(pub Arc<T>);
+                    struct ToggleSourceSvc<T: MetastoreServiceGrpc>(pub Arc<T>);
                     impl<
                         T: MetastoreServiceGrpc,
                     > tonic::server::UnaryService<super::ToggleSourceRequest>
-                    for toggle_sourceSvc<T> {
+                    for ToggleSourceSvc<T> {
                         type Response = super::EmptyResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
@@ -5412,7 +5186,7 @@ pub mod metastore_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
-                        let method = toggle_sourceSvc(inner);
+                        let method = ToggleSourceSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -5428,13 +5202,13 @@ pub mod metastore_service_grpc_server {
                     };
                     Box::pin(fut)
                 }
-                "/quickwit.metastore.MetastoreService/delete_source" => {
+                "/quickwit.metastore.MetastoreService/DeleteSource" => {
                     #[allow(non_camel_case_types)]
-                    struct delete_sourceSvc<T: MetastoreServiceGrpc>(pub Arc<T>);
+                    struct DeleteSourceSvc<T: MetastoreServiceGrpc>(pub Arc<T>);
                     impl<
                         T: MetastoreServiceGrpc,
                     > tonic::server::UnaryService<super::DeleteSourceRequest>
-                    for delete_sourceSvc<T> {
+                    for DeleteSourceSvc<T> {
                         type Response = super::EmptyResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
@@ -5458,7 +5232,7 @@ pub mod metastore_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
-                        let method = delete_sourceSvc(inner);
+                        let method = DeleteSourceSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -5474,15 +5248,13 @@ pub mod metastore_service_grpc_server {
                     };
                     Box::pin(fut)
                 }
-                "/quickwit.metastore.MetastoreService/reset_source_checkpoint" => {
+                "/quickwit.metastore.MetastoreService/ResetSourceCheckpoint" => {
                     #[allow(non_camel_case_types)]
-                    struct reset_source_checkpointSvc<T: MetastoreServiceGrpc>(
-                        pub Arc<T>,
-                    );
+                    struct ResetSourceCheckpointSvc<T: MetastoreServiceGrpc>(pub Arc<T>);
                     impl<
                         T: MetastoreServiceGrpc,
                     > tonic::server::UnaryService<super::ResetSourceCheckpointRequest>
-                    for reset_source_checkpointSvc<T> {
+                    for ResetSourceCheckpointSvc<T> {
                         type Response = super::EmptyResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
@@ -5506,7 +5278,7 @@ pub mod metastore_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
-                        let method = reset_source_checkpointSvc(inner);
+                        let method = ResetSourceCheckpointSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -5522,13 +5294,13 @@ pub mod metastore_service_grpc_server {
                     };
                     Box::pin(fut)
                 }
-                "/quickwit.metastore.MetastoreService/last_delete_opstamp" => {
+                "/quickwit.metastore.MetastoreService/LastDeleteOpstamp" => {
                     #[allow(non_camel_case_types)]
-                    struct last_delete_opstampSvc<T: MetastoreServiceGrpc>(pub Arc<T>);
+                    struct LastDeleteOpstampSvc<T: MetastoreServiceGrpc>(pub Arc<T>);
                     impl<
                         T: MetastoreServiceGrpc,
                     > tonic::server::UnaryService<super::LastDeleteOpstampRequest>
-                    for last_delete_opstampSvc<T> {
+                    for LastDeleteOpstampSvc<T> {
                         type Response = super::LastDeleteOpstampResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
@@ -5552,7 +5324,7 @@ pub mod metastore_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
-                        let method = last_delete_opstampSvc(inner);
+                        let method = LastDeleteOpstampSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -5568,13 +5340,13 @@ pub mod metastore_service_grpc_server {
                     };
                     Box::pin(fut)
                 }
-                "/quickwit.metastore.MetastoreService/create_delete_task" => {
+                "/quickwit.metastore.MetastoreService/CreateDeleteTask" => {
                     #[allow(non_camel_case_types)]
-                    struct create_delete_taskSvc<T: MetastoreServiceGrpc>(pub Arc<T>);
+                    struct CreateDeleteTaskSvc<T: MetastoreServiceGrpc>(pub Arc<T>);
                     impl<
                         T: MetastoreServiceGrpc,
                     > tonic::server::UnaryService<super::DeleteQuery>
-                    for create_delete_taskSvc<T> {
+                    for CreateDeleteTaskSvc<T> {
                         type Response = super::DeleteTask;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
@@ -5598,7 +5370,7 @@ pub mod metastore_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
-                        let method = create_delete_taskSvc(inner);
+                        let method = CreateDeleteTaskSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -5614,16 +5386,16 @@ pub mod metastore_service_grpc_server {
                     };
                     Box::pin(fut)
                 }
-                "/quickwit.metastore.MetastoreService/update_splits_delete_opstamp" => {
+                "/quickwit.metastore.MetastoreService/UpdateSplitsDeleteOpstamp" => {
                     #[allow(non_camel_case_types)]
-                    struct update_splits_delete_opstampSvc<T: MetastoreServiceGrpc>(
+                    struct UpdateSplitsDeleteOpstampSvc<T: MetastoreServiceGrpc>(
                         pub Arc<T>,
                     );
                     impl<
                         T: MetastoreServiceGrpc,
                     > tonic::server::UnaryService<
                         super::UpdateSplitsDeleteOpstampRequest,
-                    > for update_splits_delete_opstampSvc<T> {
+                    > for UpdateSplitsDeleteOpstampSvc<T> {
                         type Response = super::UpdateSplitsDeleteOpstampResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
@@ -5649,7 +5421,7 @@ pub mod metastore_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
-                        let method = update_splits_delete_opstampSvc(inner);
+                        let method = UpdateSplitsDeleteOpstampSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -5665,13 +5437,13 @@ pub mod metastore_service_grpc_server {
                     };
                     Box::pin(fut)
                 }
-                "/quickwit.metastore.MetastoreService/list_delete_tasks" => {
+                "/quickwit.metastore.MetastoreService/ListDeleteTasks" => {
                     #[allow(non_camel_case_types)]
-                    struct list_delete_tasksSvc<T: MetastoreServiceGrpc>(pub Arc<T>);
+                    struct ListDeleteTasksSvc<T: MetastoreServiceGrpc>(pub Arc<T>);
                     impl<
                         T: MetastoreServiceGrpc,
                     > tonic::server::UnaryService<super::ListDeleteTasksRequest>
-                    for list_delete_tasksSvc<T> {
+                    for ListDeleteTasksSvc<T> {
                         type Response = super::ListDeleteTasksResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
@@ -5695,7 +5467,7 @@ pub mod metastore_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
-                        let method = list_delete_tasksSvc(inner);
+                        let method = ListDeleteTasksSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
@@ -5711,13 +5483,13 @@ pub mod metastore_service_grpc_server {
                     };
                     Box::pin(fut)
                 }
-                "/quickwit.metastore.MetastoreService/list_stale_splits" => {
+                "/quickwit.metastore.MetastoreService/ListStaleSplits" => {
                     #[allow(non_camel_case_types)]
-                    struct list_stale_splitsSvc<T: MetastoreServiceGrpc>(pub Arc<T>);
+                    struct ListStaleSplitsSvc<T: MetastoreServiceGrpc>(pub Arc<T>);
                     impl<
                         T: MetastoreServiceGrpc,
                     > tonic::server::UnaryService<super::ListStaleSplitsRequest>
-                    for list_stale_splitsSvc<T> {
+                    for ListStaleSplitsSvc<T> {
                         type Response = super::ListSplitsResponse;
                         type Future = BoxFuture<
                             tonic::Response<Self::Response>,
@@ -5741,7 +5513,7 @@ pub mod metastore_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
-                        let method = list_stale_splitsSvc(inner);
+                        let method = ListStaleSplitsSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
