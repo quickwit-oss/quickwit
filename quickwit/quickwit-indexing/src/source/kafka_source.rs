@@ -30,6 +30,8 @@ use oneshot;
 use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_config::KafkaSourceParams;
 use quickwit_metastore::checkpoint::{PartitionId, Position, SourceCheckpoint};
+use quickwit_metastore::IndexMetadataResponseExt;
+use quickwit_proto::metastore::{IndexMetadataRequest, MetastoreService};
 use quickwit_proto::IndexUid;
 use rdkafka::config::{ClientConfig, RDKafkaLogLevel};
 use rdkafka::consumer::{
@@ -346,19 +348,17 @@ impl KafkaSource {
         partitions: &[i32],
         assignment_tx: oneshot::Sender<Vec<(i32, Offset)>>,
     ) -> anyhow::Result<()> {
+        let index_metadata_request =
+            IndexMetadataRequest::for_index_uid(self.ctx.index_uid().to_string());
         let index_metadata = ctx
             .protect_future(
                 self.ctx
                     .metastore
-                    .index_metadata_strict(self.ctx.index_uid()),
+                    .clone()
+                    .index_metadata(index_metadata_request),
             )
-            .await
-            .with_context(|| {
-                format!(
-                    "failed to fetch index metadata for index `{}`",
-                    self.ctx.index_id()
-                )
-            })?;
+            .await?
+            .deserialize_index_metadata()?;
         let checkpoint = index_metadata
             .checkpoint
             .source_checkpoint(self.ctx.source_id())
@@ -785,7 +785,13 @@ mod kafka_broker_tests {
     use quickwit_common::rand::append_random_suffix;
     use quickwit_config::{IndexConfig, SourceConfig, SourceInputFormat, SourceParams};
     use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
-    use quickwit_metastore::{metastore_for_test, Metastore, SplitMetadata};
+    use quickwit_metastore::{
+        metastore_for_test, CreateIndexRequestExt, SplitMetadata, StageSplitsRequestExt,
+    };
+    use quickwit_proto::metastore::{
+        CreateIndexRequest, MetastoreService, MetastoreServiceClient, PublishSplitsRequest,
+        StageSplitsRequest,
+    };
     use quickwit_proto::IndexUid;
     use rdkafka::admin::{AdminClient, AdminOptions, NewTopic, TopicReplication};
     use rdkafka::client::DefaultClientContext;
@@ -926,24 +932,29 @@ mod kafka_broker_tests {
     }
 
     async fn setup_index(
-        metastore: Arc<dyn Metastore>,
+        mut metastore: MetastoreServiceClient,
         index_id: &str,
         source_id: &str,
         partition_deltas: &[(u64, i64, i64)],
     ) -> IndexUid {
         let index_uri = format!("ram:///indexes/{index_id}");
         let index_config = IndexConfig::for_test(index_id, &index_uri);
-        let index_uid = metastore.create_index(index_config).await.unwrap();
+        let create_index_request = CreateIndexRequest::try_from_index_config(index_config).unwrap();
+        let index_uid: IndexUid = metastore
+            .create_index(create_index_request)
+            .await
+            .unwrap()
+            .index_uid
+            .into();
 
         if partition_deltas.is_empty() {
             return index_uid;
         }
         let split_id = new_split_id();
         let split_metadata = SplitMetadata::for_test(split_id.clone());
-        metastore
-            .stage_splits(index_uid.clone(), vec![split_metadata])
-            .await
-            .unwrap();
+        let stage_splits_request =
+            StageSplitsRequest::try_from_split_metadata(index_uid.clone(), split_metadata).unwrap();
+        metastore.stage_splits(stage_splits_request).await.unwrap();
 
         let mut source_delta = SourceCheckpointDelta::default();
         for (partition_id, from_position, to_position) in partition_deltas {
@@ -965,14 +976,16 @@ mod kafka_broker_tests {
             source_id: source_id.to_string(),
             source_delta,
         };
+        let checkpoint_delta_json = serde_json::to_string(&checkpoint_delta).unwrap();
+        let publish_splits_request = PublishSplitsRequest {
+            index_uid: index_uid.to_string(),
+            index_checkpoint_delta_json_opt: Some(checkpoint_delta_json),
+            staged_split_ids: vec![split_id.clone()],
+            replaced_split_ids: Vec::new(),
+            publish_token_opt: None,
+        };
         metastore
-            .publish_splits(
-                index_uid.clone(),
-                &[&split_id],
-                &[],
-                Some(checkpoint_delta),
-                None,
-            )
+            .publish_splits(publish_splits_request)
             .await
             .unwrap();
         index_uid

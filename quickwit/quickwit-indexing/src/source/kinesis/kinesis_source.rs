@@ -29,7 +29,7 @@ use bytes::Bytes;
 use itertools::Itertools;
 use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_aws::get_aws_config;
-use quickwit_aws::retry::RetryParams;
+use quickwit_common::retry::RetryParams;
 use quickwit_config::{KinesisSourceParams, RegionOrEndpoint};
 use quickwit_metastore::checkpoint::{
     PartitionId, Position, SourceCheckpoint, SourceCheckpointDelta,
@@ -161,7 +161,7 @@ impl KinesisSource {
             self.backfill_mode_enabled,
             self.kinesis_client.clone(),
             self.shard_consumers_tx.clone(),
-            self.retry_params.clone(),
+            self.retry_params,
         );
         let _shard_consumer_handle = shard_consumer.spawn(ctx);
         let shard_consumer_state = ShardConsumerState {

@@ -17,12 +17,13 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::sync::Arc;
-
 use quickwit_config::build_doc_mapper;
 use quickwit_janitor::error::JanitorError;
-use quickwit_metastore::Metastore;
-use quickwit_proto::metastore::{DeleteQuery, DeleteTask, MetastoreResult};
+use quickwit_metastore::IndexMetadataResponseExt;
+use quickwit_proto::metastore::{
+    DeleteQuery, DeleteTask, IndexMetadataRequest, ListDeleteTasksRequest, MetastoreResult,
+    MetastoreService, MetastoreServiceClient,
+};
 use quickwit_proto::search::SearchRequest;
 use quickwit_proto::IndexUid;
 use quickwit_query::query_ast::{query_ast_from_user_text, QueryAst};
@@ -58,13 +59,13 @@ pub struct DeleteQueryRequest {
 
 /// Delete query API handlers.
 pub fn delete_task_api_handlers(
-    metastore: Arc<dyn Metastore>,
+    metastore: MetastoreServiceClient,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     get_delete_tasks_handler(metastore.clone()).or(post_delete_tasks_handler(metastore.clone()))
 }
 
 pub fn get_delete_tasks_handler(
-    metastore: Arc<dyn Metastore>,
+    metastore: MetastoreServiceClient,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     warp::path!(String / "delete-tasks")
         .and(warp::get())
@@ -94,15 +95,24 @@ pub fn get_delete_tasks_handler(
 // `get_delete_tasks_handler` and consequently we get the mailbox in `get_delete_tasks` signature.
 pub async fn get_delete_tasks(
     index_id: String,
-    metastore: Arc<dyn Metastore>,
+    mut metastore: MetastoreServiceClient,
 ) -> MetastoreResult<Vec<DeleteTask>> {
-    let index_uid: IndexUid = metastore.index_metadata(&index_id).await?.index_uid;
-    let delete_tasks = metastore.list_delete_tasks(index_uid, 0).await?;
+    let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
+    let index_uid: IndexUid = metastore
+        .index_metadata(index_metadata_request)
+        .await?
+        .deserialize_index_metadata()?
+        .index_uid;
+    let list_delete_tasks_request = ListDeleteTasksRequest::new(index_uid.to_string(), 0);
+    let delete_tasks = metastore
+        .list_delete_tasks(list_delete_tasks_request)
+        .await?
+        .delete_tasks;
     Ok(delete_tasks)
 }
 
 pub fn post_delete_tasks_handler(
-    metastore: Arc<dyn Metastore>,
+    metastore: MetastoreServiceClient,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     warp::path!(String / "delete-tasks")
         .and(warp::body::json())
@@ -132,9 +142,13 @@ pub fn post_delete_tasks_handler(
 pub async fn post_delete_request(
     index_id: String,
     delete_request: DeleteQueryRequest,
-    metastore: Arc<dyn Metastore>,
+    mut metastore: MetastoreServiceClient,
 ) -> Result<DeleteTask, JanitorError> {
-    let metadata = metastore.index_metadata(&index_id).await?;
+    let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
+    let metadata = metastore
+        .index_metadata(index_metadata_request)
+        .await?
+        .deserialize_index_metadata()?;
     let index_uid: IndexUid = metadata.index_uid.clone();
     let query_ast = query_ast_from_user_text(&delete_request.query, Some(Vec::new()))
         .parse_user_query(&[])

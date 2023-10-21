@@ -40,61 +40,58 @@ enum SourceType {
 
 service MetastoreService {
   // Creates an index.
-  rpc create_index(CreateIndexRequest) returns (CreateIndexResponse);
+  rpc CreateIndex(CreateIndexRequest) returns (CreateIndexResponse);
 
   // Gets an index metadata.
-  rpc index_metadata(IndexMetadataRequest) returns (IndexMetadataResponse);
+  rpc IndexMetadata(IndexMetadataRequest) returns (IndexMetadataResponse);
 
   // Gets an indexes metadatas.
-  rpc list_indexes_metadatas(ListIndexesMetadatasRequest) returns (ListIndexesMetadatasResponse);
+  rpc ListIndexesMetadata(ListIndexesMetadataRequest) returns (ListIndexesMetadataResponse);
 
   // Deletes an index
-  rpc delete_index(DeleteIndexRequest) returns (EmptyResponse);
-
-  // Gets all splits from index.
-  rpc list_all_splits(ListAllSplitsRequest) returns (ListSplitsResponse);
+  rpc DeleteIndex(DeleteIndexRequest) returns (EmptyResponse);
 
   // Gets splits from index.
-  rpc list_splits(ListSplitsRequest) returns (ListSplitsResponse);
+  rpc ListSplits(ListSplitsRequest) returns (ListSplitsResponse);
 
   // Stages several splits.
-  rpc stage_splits(StageSplitsRequest) returns (EmptyResponse);
+  rpc StageSplits(StageSplitsRequest) returns (EmptyResponse);
 
   // Publishes split.
-  rpc publish_splits(PublishSplitsRequest) returns (EmptyResponse);
+  rpc PublishSplits(PublishSplitsRequest) returns (EmptyResponse);
 
   // Marks splits for deletion.
-  rpc mark_splits_for_deletion(MarkSplitsForDeletionRequest) returns (EmptyResponse);
+  rpc MarkSplitsForDeletion(MarkSplitsForDeletionRequest) returns (EmptyResponse);
 
   // Deletes splits.
-  rpc delete_splits(DeleteSplitsRequest) returns (EmptyResponse);
+  rpc DeleteSplits(DeleteSplitsRequest) returns (EmptyResponse);
 
   // Adds source.
-  rpc add_source(AddSourceRequest) returns (EmptyResponse);
+  rpc AddSource(AddSourceRequest) returns (EmptyResponse);
 
   // Toggles source.
-  rpc toggle_source(ToggleSourceRequest) returns (EmptyResponse);
+  rpc ToggleSource(ToggleSourceRequest) returns (EmptyResponse);
 
   // Removes source.
-  rpc delete_source(DeleteSourceRequest) returns (EmptyResponse);
+  rpc DeleteSource(DeleteSourceRequest) returns (EmptyResponse);
 
   // Resets source checkpoint.
-  rpc reset_source_checkpoint(ResetSourceCheckpointRequest) returns (EmptyResponse);
+  rpc ResetSourceCheckpoint(ResetSourceCheckpointRequest) returns (EmptyResponse);
 
   // Gets last opstamp for a given `index_id`.
-  rpc last_delete_opstamp(LastDeleteOpstampRequest) returns (LastDeleteOpstampResponse);
+  rpc LastDeleteOpstamp(LastDeleteOpstampRequest) returns (LastDeleteOpstampResponse);
 
   // Creates a delete task.
-  rpc create_delete_task(DeleteQuery) returns (DeleteTask);
+  rpc CreateDeleteTask(DeleteQuery) returns (DeleteTask);
 
   // Updates splits `delete_opstamp`.
-  rpc update_splits_delete_opstamp(UpdateSplitsDeleteOpstampRequest) returns (UpdateSplitsDeleteOpstampResponse);
+  rpc UpdateSplitsDeleteOpstamp(UpdateSplitsDeleteOpstampRequest) returns (UpdateSplitsDeleteOpstampResponse);
 
   // Lists delete tasks with `delete_task.opstamp` > `opstamp_start` for a given `index_id`.
-  rpc list_delete_tasks(ListDeleteTasksRequest) returns (ListDeleteTasksResponse);
+  rpc ListDeleteTasks(ListDeleteTasksRequest) returns (ListDeleteTasksResponse);
 
   /// Lists splits with `split.delete_opstamp` < `delete_opstamp` for a given `index_id`.
-  rpc list_stale_splits(ListStaleSplitsRequest) returns (ListSplitsResponse);
+  rpc ListStaleSplits(ListStaleSplitsRequest) returns (ListSplitsResponse);
 
   ///
   /// Shard API
@@ -129,12 +126,12 @@ message CreateIndexResponse {
   string index_uid = 1;
 }
 
-message ListIndexesMetadatasRequest {
+message ListIndexesMetadataRequest {
   string query_json = 1;
 }
 
-message ListIndexesMetadatasResponse {
-  string indexes_metadatas_serialized_json = 1;
+message ListIndexesMetadataResponse {
+  string indexes_metadata_serialized_json = 1;
 }
 
 message DeleteIndexRequest {
@@ -142,15 +139,12 @@ message DeleteIndexRequest {
 }
 
 message IndexMetadataRequest {
-  string index_id = 1;
+  optional string index_id = 1;
+  optional string index_uid = 2;
 }
 
 message IndexMetadataResponse {
   string index_metadata_serialized_json = 1;
-}
-
-message ListAllSplitsRequest {
-  string index_uid = 1;
 }
 
 message ListSplitsRequest {

@@ -332,6 +332,12 @@ impl IngesterServiceClient {
     where
         T: IngesterService,
     {
+        #[cfg(any(test, feature = "testsuite"))]
+        assert!(
+            std::any::TypeId::of:: < T > () != std::any::TypeId::of:: <
+            MockIngesterService > (),
+            "`MockIngesterService` must be wrapped in a `MockIngesterServiceWrapper`. Use `MockIngesterService::from(mock)` to instantiate the client."
+        );
         Self { inner: Box::new(instance) }
     }
     pub fn as_grpc_service(

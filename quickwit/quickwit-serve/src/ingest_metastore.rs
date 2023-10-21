@@ -17,13 +17,11 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::sync::Arc;
-
 use async_trait::async_trait;
-use quickwit_metastore::Metastore;
 use quickwit_proto::ingest::{IngestV2Error, IngestV2Result};
 use quickwit_proto::metastore::{
     CloseShardsRequest, CloseShardsResponse, DeleteShardsRequest, DeleteShardsResponse,
+    MetastoreService, MetastoreServiceClient,
 };
 
 // TODO: Remove when the metastore is code generated in `quickwit-proto`.
@@ -32,11 +30,11 @@ use quickwit_proto::metastore::{
 /// where it is defined for more details about why this is required.
 #[derive(Clone)]
 pub(crate) struct IngestMetastoreImpl {
-    metastore: Arc<dyn Metastore>,
+    metastore: MetastoreServiceClient,
 }
 
 impl IngestMetastoreImpl {
-    pub fn new(metastore: Arc<dyn Metastore>) -> Self {
+    pub fn new(metastore: MetastoreServiceClient) -> Self {
         Self { metastore }
     }
 }
@@ -48,6 +46,7 @@ impl quickwit_ingest::IngestMetastore for IngestMetastoreImpl {
         request: CloseShardsRequest,
     ) -> IngestV2Result<CloseShardsResponse> {
         self.metastore
+            .clone()
             .close_shards(request)
             .await
             .map_err(|error| IngestV2Error::Internal(error.to_string()))
@@ -58,6 +57,7 @@ impl quickwit_ingest::IngestMetastore for IngestMetastoreImpl {
         request: DeleteShardsRequest,
     ) -> IngestV2Result<DeleteShardsResponse> {
         self.metastore
+            .clone()
             .delete_shards(request)
             .await
             .map_err(|error| IngestV2Error::Internal(error.to_string()))

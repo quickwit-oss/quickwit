@@ -19,12 +19,11 @@
 
 #![deny(clippy::disallowed_methods)]
 
-use std::sync::Arc;
-
 use quickwit_actors::{Mailbox, Universe};
 use quickwit_common::pubsub::EventBroker;
 use quickwit_config::NodeConfig;
-use quickwit_metastore::{Metastore, SplitInfo};
+use quickwit_metastore::SplitInfo;
+use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_search::SearchJobPlacer;
 use quickwit_storage::StorageResolver;
 use tracing::info;
@@ -47,7 +46,7 @@ pub struct JanitorApiSchemas;
 pub async fn start_janitor_service(
     universe: &Universe,
     config: &NodeConfig,
-    metastore: Arc<dyn Metastore>,
+    metastore: MetastoreServiceClient,
     search_job_placer: SearchJobPlacer,
     storage_resolver: StorageResolver,
     event_broker: EventBroker,

@@ -31,7 +31,7 @@ use quickwit_storage::Storage;
 use tantivy::query::Query;
 use tantivy::schema::{Document as DocumentTrait, Field, OwnedValue, TantivyDocument, Value};
 use tantivy::{ReloadPolicy, Score, Searcher, SnippetGenerator, Term};
-use tracing::error;
+use tracing::{error, Instrument};
 
 use crate::leaf::open_index_with_caches;
 use crate::service::SearcherContext;
@@ -151,7 +151,7 @@ pub async fn fetch_docs(
 }
 
 // number of concurrent fetch allowed for a single split.
-const NUM_CONCURRENT_REQUESTS: usize = 10;
+const NUM_CONCURRENT_REQUESTS: usize = 30;
 
 /// A struct for holding a fetched document's content and snippet.
 #[derive(Debug)]
@@ -198,7 +198,7 @@ async fn fetch_docs_in_split(
         let moved_searcher = searcher.clone();
         let moved_doc_mapper = doc_mapper.clone();
         let fields_snippet_generator_opt_clone = fields_snippet_generator_opt.clone();
-        tokio::spawn(async move {
+        async move {
             let doc: TantivyDocument = moved_searcher
                 .doc_async(global_doc_addr.doc_addr)
                 .await
@@ -245,12 +245,12 @@ async fn fetch_docs_in_split(
                     snippet_json: Some(snippet_json),
                 },
             ))
-        })
+        }
+        .in_current_span()
     });
 
     futures::stream::iter(doc_futures)
         .buffer_unordered(NUM_CONCURRENT_REQUESTS)
-        .map(|res| res?)
         .try_collect::<Vec<_>>()
         .await
 }

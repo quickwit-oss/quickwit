@@ -17,335 +17,62 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-pub mod control_plane_metastore;
 pub mod file_backed_metastore;
-pub mod grpc_metastore;
 pub(crate) mod index_metadata;
-mod instrumented_metastore;
-pub mod metastore_event_publisher;
 #[cfg(feature = "postgres")]
 pub mod postgresql_metastore;
 #[cfg(feature = "postgres")]
 mod postgresql_model;
-pub mod retrying_metastore;
 
-use std::fmt;
+pub mod control_plane_metastore;
+
 use std::ops::{Bound, RangeInclusive};
 
 use async_trait::async_trait;
 pub use index_metadata::IndexMetadata;
-use quickwit_common::uri::Uri;
+use itertools::Itertools;
+use once_cell::sync::Lazy;
+use quickwit_common::tower::PrometheusMetricsLayer;
 use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_proto::metastore::{
-    AcquireShardsRequest, AcquireShardsResponse, CloseShardsRequest, CloseShardsResponse,
-    DeleteQuery, DeleteShardsRequest, DeleteShardsResponse, DeleteTask, EntityKind,
-    ListShardsRequest, ListShardsResponse, MetastoreError, MetastoreResult, OpenShardsRequest,
-    OpenShardsResponse,
+    serde_utils, AddSourceRequest, CreateIndexRequest, DeleteTask, IndexMetadataRequest,
+    IndexMetadataResponse, ListIndexesMetadataRequest, ListIndexesMetadataResponse,
+    ListSplitsRequest, ListSplitsResponse, MetastoreError, MetastoreResult, MetastoreService,
+    MetastoreServiceClient, PublishSplitsRequest, StageSplitsRequest,
 };
-use quickwit_proto::{IndexUid, PublishToken};
+use quickwit_proto::{IndexUid, SplitId};
 use time::OffsetDateTime;
 
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{Split, SplitMetadata, SplitState};
 
-/// Metastore meant to manage Quickwit's indexes, their splits and delete tasks.
-///
-/// I. Index and splits management.
-///
-/// Quickwit needs a way to ensure that we can cleanup unused files,
-/// and this process needs to be resilient to any fail-stop failures.
-/// We rely on atomically transitioning the status of splits.
-///
-/// The split state goes through the following life cycle:
-/// 1. `Staged`
-///   - Start uploading the split files.
-/// 2. `Published`
-///   - Uploading the split files is complete and the split is searchable.
-/// 3. `MarkedForDeletion`
-///   - Mark the split for deletion.
-///
-/// If a split has a file in the storage, it MUST be registered in the metastore,
-/// and its state can be as follows:
-/// - `Staged`: The split is almost ready. Some of its files may have been uploaded in the storage.
-/// - `Published`: The split is ready and published.
-/// - `MarkedForDeletion`: The split is marked for deletion.
-///
-/// Before creating any file, we need to stage the split. If there is a failure, upon recovery, we
-/// schedule for deletion all the staged splits. A client may not necessarily remove files from
-/// storage right after marking it for deletion. A CLI client may delete files right away, but a
-/// more serious deployment should probably only delete those files after a grace period so that the
-/// running search queries can complete.
-///
-/// II. Delete tasks management.
-///
-/// A delete task is defined on a given index and by a search query. It can be
-/// applied to all the splits of the index.
-///
-/// Quickwit needs a way to track that a delete task has been applied to a split. This is ensured
-/// by two mechanisms:
-/// - On creation of a delete task, we give to the task a monotically increasing opstamp (uniqueness
-///   and monotonically increasing must be true at the index level).
-/// - When a delete task is executed on a split, that is when the documents matched by the search
-///   query are removed from the splits, we update the split's `delete_opstamp` to the value of the
-///   task's opstamp. This marks the split as "up-to-date" regarding this delete task. If new delete
-///   tasks are added, we will know that we need to run these delete tasks on the splits as its
-///   `delete_optstamp` will be inferior to the `opstamp` of the new tasks.
-///
-/// For splits created after a given delete task, Quickwit's indexing ensures that these splits
-/// are created with a `delete_optstamp` equal the latest opstamp of the tasks of the
-/// corresponding index.
-#[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
+static METASTORE_METRICS_LAYER: Lazy<PrometheusMetricsLayer<1>> =
+    Lazy::new(|| PrometheusMetricsLayer::new("metastore", ["request"]));
+
+pub(crate) fn instrument_metastore(
+    metastore_impl: impl MetastoreService,
+) -> MetastoreServiceClient {
+    MetastoreServiceClient::tower()
+        .shared_layer(METASTORE_METRICS_LAYER.clone())
+        .build(metastore_impl)
+}
+
+/// An extended trait for [`MetastoreService`].
 #[async_trait]
-pub trait Metastore: fmt::Debug + Send + Sync + 'static {
-    /// Returns the metastore's uri.
-    fn uri(&self) -> &Uri;
-
-    /// Checks whether the metastore is available.
-    async fn check_connectivity(&self) -> anyhow::Result<()>;
-
-    // Index API
-
-    /// Creates an index.
-    ///
-    /// This API creates a new index in the metastore.
-    /// An error will occur if an index that already exists in the storage is specified.
-    async fn create_index(&self, index_config: IndexConfig) -> MetastoreResult<IndexUid>;
-
+pub trait MetastoreServiceExt: MetastoreService {
     /// Returns whether the index `index_id` exists in the metastore.
-    async fn index_exists(&self, index_id: &str) -> MetastoreResult<bool> {
-        match self.index_metadata(index_id).await {
+    async fn index_exists(&mut self, index_id: &str) -> MetastoreResult<bool> {
+        let request = IndexMetadataRequest::for_index_id(index_id.to_string());
+        match self.index_metadata(request).await {
             Ok(_) => Ok(true),
             Err(MetastoreError::NotFound { .. }) => Ok(false),
             Err(error) => Err(error),
         }
     }
-
-    /// Returns index uid for the given index.
-    async fn index_uid(&self, index_id: &str) -> MetastoreResult<IndexUid> {
-        let index_uid = self.index_metadata(index_id).await?.index_uid;
-        Ok(index_uid)
-    }
-
-    /// Returns the [`IndexMetadata`] of an index identified by its ID.
-    /// TODO consider merging with list_splits to remove one round-trip
-    async fn index_metadata(&self, index_id: &str) -> MetastoreResult<IndexMetadata>;
-
-    /// Returns the [`IndexMetadata`] of an index identified by its UID.
-    async fn index_metadata_strict(&self, index_uid: &IndexUid) -> MetastoreResult<IndexMetadata> {
-        let index_metadata = self.index_metadata(index_uid.index_id()).await?;
-
-        if index_metadata.index_uid != *index_uid {
-            let index_id = index_uid.index_id().to_string();
-            return Err(MetastoreError::NotFound(EntityKind::Index { index_id }));
-        }
-        Ok(index_metadata)
-    }
-
-    /// Lists the indexes.
-    ///
-    /// This API lists the indexes stored in the metastore and returns a collection of
-    /// [`IndexMetadata`].
-    async fn list_indexes_metadatas(
-        &self,
-        query: ListIndexesQuery,
-    ) -> MetastoreResult<Vec<IndexMetadata>>;
-
-    /// Deletes an index.
-    ///
-    /// This API removes the specified  from the metastore, but does not remove the index from the
-    /// storage. An error will occur if an index that does not exist in the storage is
-    /// specified.
-    async fn delete_index(&self, index_uid: IndexUid) -> MetastoreResult<()>;
-
-    // Split API
-
-    /// Stages multiple splits.
-    ///
-    /// If a split already exists and is not in the `Staged` state, a `SplitsNotStaged` error
-    /// will be returned.
-    /// Attempting to re-stage any split which is not currently `Staged` is incorrect and should not
-    /// be attempted.
-    ///
-    /// A split needs to be staged before uploading any of its files to the storage.
-    /// An error will occur if an index that does not exist in the storage is specified.
-    async fn stage_splits(
-        &self,
-        index_uid: IndexUid,
-        split_metadata_list: Vec<SplitMetadata>,
-    ) -> MetastoreResult<()>;
-
-    /// Publishes a set of staged splits while optionally marking another set of published splits
-    /// for deletion.
-    ///
-    /// This API merely updates the state of the staged splits from [`SplitState::Staged`] to
-    /// [`SplitState::Published`]. At this point, the split files are assumed to have already
-    /// been uploaded.
-    /// An error will occur if you specify an index or split that does not exist in the storage.
-    ///
-    /// This method can be used to advance the checkpoint, by supplying an empty array for
-    /// `staged_split_ids`.
-    async fn publish_splits<'a>(
-        &self,
-        index_uid: IndexUid,
-        staged_split_ids: &[&'a str],
-        replaced_split_ids: &[&'a str],
-        checkpoint_delta_opt: Option<IndexCheckpointDelta>,
-        publish_token_opt: Option<PublishToken>,
-    ) -> MetastoreResult<()>;
-
-    /// Lists the splits.
-    ///
-    /// Returns a list of splits that intersects the given `time_range`, `split_state`, and `tag`.
-    /// Regardless of the time range filter, if a split has no timestamp it is always returned.
-    /// An error will occur if an index that does not exist in the storage is specified.
-    async fn list_splits(&self, query: ListSplitsQuery) -> MetastoreResult<Vec<Split>>;
-
-    /// Lists all the splits without filtering.
-    ///
-    /// Returns a list of all splits currently known to the metastore regardless of their state.
-    async fn list_all_splits(&self, index_uid: IndexUid) -> MetastoreResult<Vec<Split>> {
-        let query = ListSplitsQuery::for_index(index_uid);
-        self.list_splits(query).await
-    }
-
-    /// Lists splits with `split.delete_opstamp` < `delete_opstamp` for a given `index_uid`.
-    /// These splits are called "stale" as they have an `delete_opstamp` strictly inferior
-    /// to the given `delete_opstamp`.
-    async fn list_stale_splits(
-        &self,
-        index_uid: IndexUid,
-        delete_opstamp: u64,
-        num_splits: usize,
-    ) -> MetastoreResult<Vec<Split>> {
-        let query = ListSplitsQuery::for_index(index_uid)
-            .with_delete_opstamp_lt(delete_opstamp)
-            .with_split_state(SplitState::Published)
-            .retain_mature(OffsetDateTime::now_utc());
-
-        let mut splits = self.list_splits(query).await?;
-        splits.sort_by(|split_left, split_right| {
-            split_left
-                .split_metadata
-                .delete_opstamp
-                .cmp(&split_right.split_metadata.delete_opstamp)
-                .then_with(|| {
-                    split_left
-                        .publish_timestamp
-                        .cmp(&split_right.publish_timestamp)
-                })
-        });
-        splits.truncate(num_splits);
-        Ok(splits)
-    }
-
-    /// Marks a list of splits for deletion.
-    ///
-    /// This API will change the state to [`SplitState::MarkedForDeletion`] so that it is not
-    /// referenced by the client anymore. It actually does not remove the split from storage. An
-    /// error will occur if you specify an index or split that does not exist in the storage.
-    async fn mark_splits_for_deletion<'a>(
-        &self,
-        index_uid: IndexUid,
-        split_ids: &[&'a str],
-    ) -> MetastoreResult<()>;
-
-    /// Deletes a list of splits.
-    ///
-    /// This API only accepts splits that are in [`SplitState::Staged`] or
-    /// [`SplitState::MarkedForDeletion`] state. This removes the split metadata from the
-    /// metastore, but does not remove the split from storage. An error will occur if you
-    /// specify an index or split that does not exist in the storage.
-    async fn delete_splits<'a>(
-        &self,
-        index_uid: IndexUid,
-        split_ids: &[&'a str],
-    ) -> MetastoreResult<()>;
-
-    // Source API
-
-    /// Adds a new source. Fails with [`MetastoreError::NotFound`] if a source with the same ID is
-    /// already defined for the index.
-    ///
-    /// If a checkpoint is already registered for the source, it is kept.
-    async fn add_source(&self, index_uid: IndexUid, source: SourceConfig) -> MetastoreResult<()>;
-
-    /// Enables or Disables a source.
-    /// Fails with `SourceDoesNotExist` error if the specified source doesn't exist.
-    async fn toggle_source(
-        &self,
-        index_uid: IndexUid,
-        source_id: &str,
-        enable: bool,
-    ) -> MetastoreResult<()>;
-
-    /// Resets the checkpoint of a source identified by `index_uid` and `source_id`.
-    async fn reset_source_checkpoint(
-        &self,
-        index_uid: IndexUid,
-        source_id: &str,
-    ) -> MetastoreResult<()>;
-
-    /// Deletes a source. Fails with [`MetastoreError::NotFound`] if the specified source does not
-    /// exist.
-    ///
-    /// The checkpoint associated to the source is deleted as well.
-    /// If the checkpoint is missing, this does not trigger an error.
-    async fn delete_source(&self, index_uid: IndexUid, source_id: &str) -> MetastoreResult<()>;
-
-    // Delete tasks API
-
-    /// Creates a new [`DeleteTask`] from a [`DeleteQuery`].
-    async fn create_delete_task(&self, delete_query: DeleteQuery) -> MetastoreResult<DeleteTask>;
-
-    /// Retrieves the last delete opstamp for a given `index_uid`.
-    async fn last_delete_opstamp(&self, index_uid: IndexUid) -> MetastoreResult<u64>;
-
-    /// Updates splits `split_metadata.delete_opstamp` to the value `delete_opstamp`.
-    async fn update_splits_delete_opstamp<'a>(
-        &self,
-        index_uid: IndexUid,
-        split_ids: &[&'a str],
-        delete_opstamp: u64,
-    ) -> MetastoreResult<()>;
-
-    /// Lists [`DeleteTask`] with `delete_task.opstamp` > `opstamp_start` for a given `index_id`.
-    async fn list_delete_tasks(
-        &self,
-        index_uid: IndexUid,
-        opstamp_start: u64,
-    ) -> MetastoreResult<Vec<DeleteTask>>;
-
-    // Shard API:
-    // - `open_shards`
-    // - `close_shards`
-    // - `list_shards`
-    // - `delete_shards`
-
-    /// Creates new open shards for one or multiple indexes.
-    async fn open_shards(&self, request: OpenShardsRequest) -> MetastoreResult<OpenShardsResponse>;
-
-    ///
-    async fn acquire_shards(
-        &self,
-        request: AcquireShardsRequest,
-    ) -> MetastoreResult<AcquireShardsResponse>;
-
-    /// Closes some shards, i.e. changes their state from `Open` to `Closing` or `Closed`.
-    async fn close_shards(
-        &self,
-        request: CloseShardsRequest,
-    ) -> MetastoreResult<CloseShardsResponse>;
-
-    /// Lists the shards of one or multiple indexes.
-    async fn list_shards(&self, request: ListShardsRequest) -> MetastoreResult<ListShardsResponse>;
-
-    /// Deletes some shards.
-    async fn delete_shards(
-        &self,
-        request: DeleteShardsRequest,
-    ) -> MetastoreResult<DeleteShardsResponse>;
 }
+
+impl MetastoreServiceExt for MetastoreServiceClient {}
 
 /// A query object for listing indexes stored in the metastore.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -357,8 +84,313 @@ pub enum ListIndexesQuery {
     IndexIdPatterns(Vec<String>),
 }
 
-/// A query object for listing splits stored in the metastore.
+//// Helper trait to build a [`ListIndexesMetadataRequest`]
+/// and deserialize its payload.
+pub trait ListIndexesMetadataRequestExt {
+    /// Creates a new [`ListIndexesMetadataRequest`] from a [`ListIndexesQuery`].
+    fn try_from_list_indexes_query(
+        list_indexes_query: ListIndexesQuery,
+    ) -> MetastoreResult<ListIndexesMetadataRequest>;
+
+    /// Creates a new [`ListIndexesMetadataRequest`] that matches all indexes.
+    fn all() -> ListIndexesMetadataRequest;
+
+    /// Deserializes the `query_json` field of a [`ListIndexesMetadataRequest`] into a
+    /// [`ListIndexesQuery`].
+    fn deserialize_list_indexes_query(&self) -> MetastoreResult<ListIndexesQuery>;
+}
+
+impl ListIndexesMetadataRequestExt for ListIndexesMetadataRequest {
+    fn try_from_list_indexes_query(
+        list_indexes_query: ListIndexesQuery,
+    ) -> MetastoreResult<ListIndexesMetadataRequest> {
+        let query_json = serde_utils::to_json_str(&list_indexes_query)?;
+        Ok(Self { query_json })
+    }
+
+    fn all() -> ListIndexesMetadataRequest {
+        Self::try_from_list_indexes_query(ListIndexesQuery::All).expect("should never fail")
+    }
+
+    fn deserialize_list_indexes_query(&self) -> MetastoreResult<ListIndexesQuery> {
+        serde_utils::from_json_str(&self.query_json)
+    }
+}
+
+/// Helper trait to build a [`CreateIndexRequest`] and deserialize its payload.
+pub trait CreateIndexRequestExt {
+    /// Creates a new [`CreateIndexRequest`] from an [`IndexConfig`].
+    fn try_from_index_config(index_config: IndexConfig) -> MetastoreResult<CreateIndexRequest>;
+
+    /// Deserializes the `index_config_json` field of a [`CreateIndexRequest`] into an
+    /// [`IndexConfig`].
+    fn deserialize_index_config(&self) -> MetastoreResult<IndexConfig>;
+}
+
+impl CreateIndexRequestExt for CreateIndexRequest {
+    fn try_from_index_config(index_config: IndexConfig) -> MetastoreResult<CreateIndexRequest> {
+        let index_config_json = serde_utils::to_json_str(&index_config)?;
+        let request = Self { index_config_json };
+        Ok(request)
+    }
+
+    fn deserialize_index_config(&self) -> MetastoreResult<IndexConfig> {
+        serde_utils::from_json_str(&self.index_config_json)
+    }
+}
+
+/// Helper trait to build a [`IndexMetadataResponse`] and deserialize its payload.
+pub trait IndexMetadataResponseExt {
+    /// Creates a new [`IndexMetadataResponse`] from an [`IndexMetadata`].
+    fn try_from_index_metadata(
+        index_metadata: IndexMetadata,
+    ) -> MetastoreResult<IndexMetadataResponse>;
+
+    /// Deserializes the `index_metadata_serialized_json` field of a [`IndexMetadataResponse`] into
+    /// an [`IndexMetadata`].
+    fn deserialize_index_metadata(&self) -> MetastoreResult<IndexMetadata>;
+}
+
+impl IndexMetadataResponseExt for IndexMetadataResponse {
+    fn try_from_index_metadata(index_metadata: IndexMetadata) -> MetastoreResult<Self> {
+        let index_metadata_serialized_json = serde_utils::to_json_str(&index_metadata)?;
+        let request = Self {
+            index_metadata_serialized_json,
+        };
+        Ok(request)
+    }
+
+    fn deserialize_index_metadata(&self) -> MetastoreResult<IndexMetadata> {
+        serde_utils::from_json_str(&self.index_metadata_serialized_json)
+    }
+}
+
+/// Helper trait to build a `ListIndexesResponse` and deserialize its payload.
+pub trait ListIndexesMetadataResponseExt {
+    /// Creates a new `ListIndexesResponse` from a list of [`IndexMetadata`].
+    fn try_from_indexes_metadata(
+        indexes_metadata: impl IntoIterator<Item = IndexMetadata>,
+    ) -> MetastoreResult<ListIndexesMetadataResponse>;
+
+    /// Deserializes the `indexes_metadata_serialized_json` field of a `ListIndexesResponse` into
+    /// a list of [`IndexMetadata`].
+    fn deserialize_indexes_metadata(&self) -> MetastoreResult<Vec<IndexMetadata>>;
+
+    /// Creates an empty `ListIndexesResponse`.
+    fn empty() -> Self;
+}
+
+impl ListIndexesMetadataResponseExt for ListIndexesMetadataResponse {
+    fn try_from_indexes_metadata(
+        indexes_metadata: impl IntoIterator<Item = IndexMetadata>,
+    ) -> MetastoreResult<Self> {
+        let indexes_metadata: Vec<IndexMetadata> = indexes_metadata.into_iter().collect();
+        let indexes_metadata_serialized_json = serde_utils::to_json_str(&indexes_metadata)?;
+        let request = Self {
+            indexes_metadata_serialized_json,
+        };
+        Ok(request)
+    }
+
+    fn empty() -> Self {
+        Self {
+            indexes_metadata_serialized_json: "[]".to_string(),
+        }
+    }
+
+    fn deserialize_indexes_metadata(&self) -> MetastoreResult<Vec<IndexMetadata>> {
+        serde_utils::from_json_str(&self.indexes_metadata_serialized_json)
+    }
+}
+
+/// Helper trait to build a [`AddSourceRequest`] and deserialize its payload.
+pub trait AddSourceRequestExt {
+    /// Creates a new [`AddSourceRequest`] from a [`SourceConfig`].
+    fn try_from_source_config(
+        index_uid: impl Into<IndexUid>,
+        source_config: SourceConfig,
+    ) -> MetastoreResult<AddSourceRequest>;
+
+    /// Deserializes the `source_config_json` field of a [`AddSourceRequest`] into a
+    /// [`SourceConfig`].
+    fn deserialize_source_config(&self) -> MetastoreResult<SourceConfig>;
+}
+
+impl AddSourceRequestExt for AddSourceRequest {
+    fn try_from_source_config(
+        index_uid: impl Into<IndexUid>,
+        source_config: SourceConfig,
+    ) -> MetastoreResult<AddSourceRequest> {
+        let source_config_json = serde_utils::to_json_str(&source_config)?;
+        let request = Self {
+            index_uid: index_uid.into().into(),
+            source_config_json,
+        };
+        Ok(request)
+    }
+
+    fn deserialize_source_config(&self) -> MetastoreResult<SourceConfig> {
+        serde_utils::from_json_str(&self.source_config_json)
+    }
+}
+
+/// Helper trait to build a [`DeleteTask`] and deserialize its payload.
+pub trait StageSplitsRequestExt {
+    /// Creates a new [`StageSplitsRequest`] from a [`SplitMetadata`].
+    fn try_from_split_metadata(
+        index_uid: impl Into<IndexUid>,
+        split_metadata: SplitMetadata,
+    ) -> MetastoreResult<StageSplitsRequest>;
+
+    /// Creates a new [`StageSplitsRequest`] from a list of [`SplitMetadata`].
+    fn try_from_splits_metadata(
+        index_uid: impl Into<IndexUid>,
+        splits_metadata: impl IntoIterator<Item = SplitMetadata>,
+    ) -> MetastoreResult<StageSplitsRequest>;
+
+    /// Deserializes the `split_metadata_list_serialized_json` field of a [`StageSplitsRequest`]
+    /// into a list of [`SplitMetadata`].
+    fn deserialize_splits_metadata(&self) -> MetastoreResult<Vec<SplitMetadata>>;
+}
+
+impl StageSplitsRequestExt for StageSplitsRequest {
+    fn try_from_split_metadata(
+        index_uid: impl Into<IndexUid>,
+        split_metadata: SplitMetadata,
+    ) -> MetastoreResult<StageSplitsRequest> {
+        let split_metadata_list_serialized_json = serde_utils::to_json_str(&[split_metadata])?;
+        let request = Self {
+            index_uid: index_uid.into().into(),
+            split_metadata_list_serialized_json,
+        };
+        Ok(request)
+    }
+
+    fn try_from_splits_metadata(
+        index_uid: impl Into<IndexUid>,
+        splits_metadata: impl IntoIterator<Item = SplitMetadata>,
+    ) -> MetastoreResult<StageSplitsRequest> {
+        let splits_metadata: Vec<SplitMetadata> = splits_metadata.into_iter().collect();
+        let split_metadata_list_serialized_json = serde_utils::to_json_str(&splits_metadata)?;
+        let request = Self {
+            index_uid: index_uid.into().into(),
+            split_metadata_list_serialized_json,
+        };
+        Ok(request)
+    }
+
+    fn deserialize_splits_metadata(&self) -> MetastoreResult<Vec<SplitMetadata>> {
+        serde_utils::from_json_str(&self.split_metadata_list_serialized_json)
+    }
+}
+
+/// Helper trait to build a [`ListSplitsRequest`] and deserialize its payload.
+pub trait ListSplitsRequestExt {
+    /// Creates a new [`ListSplitsRequest`] from an [`IndexUid`].
+    fn try_from_index_uid(index_uid: IndexUid) -> MetastoreResult<ListSplitsRequest>;
+
+    /// Creates a new [`ListSplitsRequest`] from a [`ListSplitsQuery`].
+    fn try_from_list_splits_query(
+        list_splits_query: ListSplitsQuery,
+    ) -> MetastoreResult<ListSplitsRequest>;
+
+    /// Deserializes the `query_json` field of a [`ListSplitsRequest`] into a [`ListSplitsQuery`].
+    fn deserialize_list_splits_query(&self) -> MetastoreResult<ListSplitsQuery>;
+}
+
+impl ListSplitsRequestExt for ListSplitsRequest {
+    fn try_from_index_uid(index_uid: IndexUid) -> MetastoreResult<ListSplitsRequest> {
+        let list_splits_query = ListSplitsQuery::for_index(index_uid);
+        Self::try_from_list_splits_query(list_splits_query)
+    }
+
+    fn try_from_list_splits_query(
+        list_splits_query: ListSplitsQuery,
+    ) -> MetastoreResult<ListSplitsRequest> {
+        let query_json = serde_utils::to_json_str(&list_splits_query)?;
+        let request = Self { query_json };
+        Ok(request)
+    }
+
+    fn deserialize_list_splits_query(&self) -> MetastoreResult<ListSplitsQuery> {
+        let list_splits_query = serde_utils::from_json_str(&self.query_json)?;
+        Ok(list_splits_query)
+    }
+}
+
+/// Helper trait to build a [`ListSplitsResponse`] and deserialize its payload.
+pub trait ListSplitsResponseExt {
+    /// Creates a new [`ListSplitsResponse`] from a list of [`Split`].
+    fn try_from_splits(
+        splits: impl IntoIterator<Item = Split>,
+    ) -> MetastoreResult<ListSplitsResponse>;
+
+    /// Deserializes the `splits_serialized_json` field of a [`ListSplitsResponse`] into a list of
+    /// [`Split`].
+    fn deserialize_splits(&self) -> MetastoreResult<Vec<Split>>;
+
+    /// Deserializes the `splits_serialized_json` field of a [`ListSplitsResponse`] into a list of
+    /// [`SplitMetadata`].
+    fn deserialize_splits_metadata(&self) -> MetastoreResult<Vec<SplitMetadata>> {
+        let splits = self.deserialize_splits()?;
+        Ok(splits
+            .into_iter()
+            .map(|split| split.split_metadata)
+            .collect())
+    }
+
+    /// Deserializes the `splits_serialized_json` field of a [`ListSplitsResponse`] into a list of
+    /// [`SplitId`].
+    fn deserialize_split_ids(&self) -> MetastoreResult<Vec<SplitId>> {
+        let splits = self.deserialize_splits()?;
+        Ok(splits
+            .into_iter()
+            .map(|split| split.split_metadata.split_id)
+            .collect())
+    }
+
+    /// Creates an empty [`ListSplitsResponse`].
+    fn empty() -> Self;
+}
+
+/// Helper trait for [`PublishSplitsRequest`] to deserialize its payload.
+pub trait PublishSplitsRequestExt {
+    /// Deserializes the `index_checkpoint_delta_json_opt` field of a [`PublishSplitsRequest`] into
+    /// an [`Option<IndexCheckpointDelta>`].
+    fn deserialize_index_checkpoint(&self) -> MetastoreResult<Option<IndexCheckpointDelta>>;
+}
+
+impl PublishSplitsRequestExt for PublishSplitsRequest {
+    fn deserialize_index_checkpoint(&self) -> MetastoreResult<Option<IndexCheckpointDelta>> {
+        self.index_checkpoint_delta_json_opt
+            .as_ref()
+            .map(|value| serde_utils::from_json_str(value))
+            .transpose()
+    }
+}
+
+impl ListSplitsResponseExt for ListSplitsResponse {
+    fn empty() -> Self {
+        Self {
+            splits_serialized_json: "[]".to_string(),
+        }
+    }
+
+    fn try_from_splits(splits: impl IntoIterator<Item = Split>) -> MetastoreResult<Self> {
+        let splits_serialized_json = serde_utils::to_json_str(&splits.into_iter().collect_vec())?;
+        let request = Self {
+            splits_serialized_json,
+        };
+        Ok(request)
+    }
+
+    fn deserialize_splits(&self) -> MetastoreResult<Vec<Split>> {
+        serde_utils::from_json_str(&self.splits_serialized_json)
+    }
+}
+
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+/// A query builder for listing splits within the metastore.
 pub struct ListSplitsQuery {
     /// A non-empty list of index UIDs to get splits from.
     pub index_uids: Vec<IndexUid>,
@@ -389,6 +421,10 @@ pub struct ListSplitsQuery {
 
     /// The datetime at which you include or exclude mature splits.
     pub mature: Bound<OffsetDateTime>,
+
+    /// Sorts the splits by staleness, i.e. by delete opstamp and publish timestamp in ascending
+    /// order.
+    pub sort_by_staleness: bool,
 }
 
 #[allow(unused_attributes)]
@@ -406,6 +442,7 @@ impl ListSplitsQuery {
             update_timestamp: Default::default(),
             create_timestamp: Default::default(),
             mature: Bound::Unbounded,
+            sort_by_staleness: false,
         }
     }
 
@@ -429,6 +466,7 @@ impl ListSplitsQuery {
             update_timestamp: Default::default(),
             create_timestamp: Default::default(),
             mature: Bound::Unbounded,
+            sort_by_staleness: false,
         })
     }
 
@@ -585,6 +623,13 @@ impl ListSplitsQuery {
         self.mature = Bound::Excluded(now);
         self
     }
+
+    /// Sorts the splits by staleness, i.e. by delete opstamp and publish timestamp in ascending
+    /// order.
+    pub fn sort_by_staleness(mut self) -> Self {
+        self.sort_by_staleness = true;
+        self
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -658,7 +703,7 @@ impl<T> Default for FilterRange<T> {
 }
 
 #[cfg(test)]
-mod list_splits_query_tests {
+mod tests {
     use super::*;
 
     #[test]
@@ -746,5 +791,17 @@ mod list_splits_query_tests {
         assert!(filter.overlaps_with(74..=124));
         assert!(!filter.overlaps_with(0..=49));
         assert!(!filter.overlaps_with(75..=124));
+    }
+
+    #[test]
+    fn test_list_splits_response_empty() {
+        let response = ListSplitsResponse::empty();
+        assert_eq!(response.deserialize_splits().unwrap(), vec![]);
+    }
+
+    #[test]
+    fn test_list_indexes_metadata_empty() {
+        let response = ListIndexesMetadataResponse::empty();
+        assert_eq!(response.deserialize_indexes_metadata().unwrap(), vec![]);
     }
 }

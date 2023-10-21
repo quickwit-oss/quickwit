@@ -129,7 +129,7 @@ pub trait SortKeyMapper<Value> {
 #[derive(Clone)]
 pub struct TopK<T, O: Ord, S> {
     heap: BinaryHeap<Reverse<OrderItemPair<O, T>>>,
-    sort_key_mapper: S,
+    pub sort_key_mapper: S,
     k: usize,
 }
 

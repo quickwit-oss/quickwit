@@ -108,7 +108,7 @@ doc_mapping:
       fast: true
       input_formats:
         - rfc3339
-      precision: seconds
+      fast_precision: seconds
   timestamp_field: creationDate
 
 search_settings:

@@ -980,7 +980,7 @@ async fn test_single_node_split_pruning_by_tags() -> anyhow::Result<()> {
         None,
         None,
         extract_tags_from_query(query_ast),
-        &*test_sandbox.metastore(),
+        &mut test_sandbox.metastore(),
     )
     .await?;
     assert!(selected_splits.is_empty());
@@ -992,7 +992,7 @@ async fn test_single_node_split_pruning_by_tags() -> anyhow::Result<()> {
         None,
         None,
         extract_tags_from_query(query_ast),
-        &*test_sandbox.metastore(),
+        &mut test_sandbox.metastore(),
     )
     .await?;
     assert_eq!(selected_splits.len(), 2);
@@ -1004,7 +1004,7 @@ async fn test_single_node_split_pruning_by_tags() -> anyhow::Result<()> {
         None,
         None,
         extract_tags_from_query(query_ast),
-        &*test_sandbox.metastore(),
+        &mut test_sandbox.metastore(),
     )
     .await?;
     assert_eq!(selected_splits.len(), 2);
@@ -1026,12 +1026,14 @@ async fn test_single_node_split_pruning_by_tags() -> anyhow::Result<()> {
 async fn test_search_util(test_sandbox: &TestSandbox, query: &str) -> Vec<u32> {
     let splits = test_sandbox
         .metastore()
-        .list_all_splits(test_sandbox.index_uid())
+        .list_splits(ListSplitsRequest::try_from_index_uid(test_sandbox.index_uid()).unwrap())
         .await
+        .unwrap()
+        .deserialize_splits()
         .unwrap();
     let splits_offsets: Vec<_> = splits
         .into_iter()
-        .map(|split_meta| extract_split_and_footer_offsets(&split_meta.split_metadata))
+        .map(|split| extract_split_and_footer_offsets(&split.split_metadata))
         .collect();
     let request = Arc::new(SearchRequest {
         index_id_patterns: vec![test_sandbox.index_uid().index_id().to_string()],
@@ -1663,12 +1665,12 @@ async fn test_single_node_list_terms() -> anyhow::Result<()> {
 
     let splits = test_sandbox
         .metastore()
-        .list_all_splits(test_sandbox.index_uid())
-        .await
-        .unwrap();
+        .list_splits(ListSplitsRequest::try_from_index_uid(test_sandbox.index_uid()).unwrap())
+        .await?
+        .deserialize_splits()?;
     let splits_offsets: Vec<_> = splits
         .into_iter()
-        .map(|split_meta| extract_split_and_footer_offsets(&split_meta.split_metadata))
+        .map(|split| extract_split_and_footer_offsets(&split.split_metadata))
         .collect();
     let searcher_context = Arc::new(SearcherContext::new(SearcherConfig::default(), None));
 
@@ -1771,7 +1773,7 @@ async fn test_single_node_find_trace_ids_collector() {
               - name: span_timestamp_secs
                 type: datetime
                 fast: true
-                precision: seconds
+                fast_precision: seconds
         "#;
     let foo_trace_id = TraceId::new([1u8; 16]);
     let bar_trace_id = TraceId::new([2u8; 16]);
@@ -1869,4 +1871,18 @@ async fn test_search_in_text_field_with_custom_tokenizer() -> anyhow::Result<()>
     }
     test_sandbox.assert_quit().await;
     Ok(())
+}
+
+#[test]
+fn test_global_doc_address_ser_deser() {
+    let doc_address = GlobalDocAddress {
+        split: "split_id".to_string(),
+        doc_addr: DocAddress {
+            segment_ord: 0,
+            doc_id: 123456,
+        },
+    };
+    let doc_address_string = doc_address.to_string();
+    let doc_address_deser: GlobalDocAddress = doc_address_string.parse().unwrap();
+    assert_eq!(doc_address_deser, doc_address);
 }

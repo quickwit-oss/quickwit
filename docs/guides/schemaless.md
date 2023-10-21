@@ -37,7 +37,7 @@ doc_mapping:
       input_formats:
         - unix_timestamp
       output_format: unix_timestamp_secs
-      precision: seconds
+      fast_precision: seconds
       fast: true
     - name: server
       type: text
@@ -125,7 +125,7 @@ doc_mapping:
       input_formats:
         - unix_timestamp
       output_format: unix_timestamp_secs
-      precision: seconds
+      fast_precision: seconds
       fast: true
     - name: user_id
       type: text
@@ -159,7 +159,7 @@ doc_mapping:
       input_formats:
         - unix_timestamp
       output_format: unix_timestamp_secs
-      precision: seconds
+      fast_precision: seconds
       fast: true
     - name: user_id
       type: text
@@ -230,7 +230,7 @@ doc_mapping:
       input_formats:
         - unix_timestamp
       output_format: unix_timestamp_secs
-      precision: seconds
+      fast_precision: seconds
       fast: true
     - name: Attributes
       type: json

@@ -3509,9 +3509,9 @@ dependencies = [
 
 [[package]]
 name = "lru"
-version = "0.11.1"
+version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a4a83fb7698b3643a0e34f9ae6f2e8f0178c0fd42f8b59d493aa271ff3a5bf21"
+checksum = "1efa59af2ddfad1854ae27d75009d538d0998b4b2fd47083e743ac1a10e46c60"
 dependencies = [
  "hashbrown 0.14.1",
 ]
@@ -3691,7 +3691,7 @@ dependencies = [
 [[package]]
 name = "mrecordlog"
 version = "0.4.0"
-source = "git+https://github.com/quickwit-oss/mrecordlog?rev=ae1ca3f#ae1ca3f08fdfd721feec7a6bfab481df5ddb7f75"
+source = "git+https://github.com/quickwit-oss/mrecordlog?rev=0d1a7aa#0d1a7aa2bdf11aec832919503cefaf282d70e0d8"
 dependencies = [
  "async-trait",
  "bytes",
@@ -4200,7 +4200,7 @@ checksum = "b15813163c1d831bf4a13c3610c05c0d03b39feb07f7e09fa234dac9b15aaf39"
 [[package]]
 name = "ownedbytes"
 version = "0.6.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=b700c42#b700c42246f4352dccb8fbd481f80a2a66bbdfb6"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=ecb9a89#ecb9a89a9ff0573fba5c2cf8b83f353f35022310"
 dependencies = [
  "stable_deref_trait",
 ]
@@ -4721,7 +4721,7 @@ dependencies = [
  "byteorder",
  "hex",
  "lazy_static",
- "rustix 0.36.15",
+ "rustix 0.36.16",
 ]
 
 [[package]]
@@ -4930,7 +4930,7 @@ dependencies = [
  "hyper",
  "hyper-rustls 0.24.1",
  "once_cell",
- "quickwit-actors",
+ "quickwit-common",
  "rand 0.8.5",
  "tokio",
  "tower",
@@ -5025,6 +5025,7 @@ name = "quickwit-codegen"
 version = "0.6.3"
 dependencies = [
  "anyhow",
+ "futures",
  "heck",
  "prettyplease 0.2.15",
  "proc-macro2",
@@ -5051,6 +5052,7 @@ dependencies = [
  "quickwit-actors",
  "quickwit-codegen",
  "quickwit-common",
+ "quickwit-macros",
  "serde",
  "thiserror",
  "tokio",
@@ -5118,7 +5120,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
- "serde_with 3.3.0",
+ "serde_with 3.4.0",
  "serde_yaml 0.9.25",
  "tokio",
  "toml 0.7.8",
@@ -5513,7 +5515,7 @@ dependencies = [
  "regex",
  "serde",
  "serde_json",
- "serde_with 3.3.0",
+ "serde_with 3.4.0",
  "sqlx",
  "tempfile",
  "thiserror",
@@ -5558,6 +5560,7 @@ dependencies = [
  "async-trait",
  "bytes",
  "dyn-clone",
+ "futures",
  "glob",
  "http",
  "hyper",
@@ -5601,7 +5604,7 @@ dependencies = [
  "quickwit-datetime",
  "serde",
  "serde_json",
- "serde_with 3.3.0",
+ "serde_with 3.4.0",
  "tantivy",
  "thiserror",
  "time",
@@ -5668,7 +5671,7 @@ dependencies = [
  "rayon",
  "serde",
  "serde_json",
- "serde_with 3.3.0",
+ "serde_with 3.4.0",
  "tantivy",
  "tempfile",
  "thiserror",
@@ -5731,7 +5734,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_qs 0.12.0",
- "serde_with 3.3.0",
+ "serde_with 3.4.0",
  "tempfile",
  "termcolor",
  "thiserror",
@@ -6293,9 +6296,9 @@ dependencies = [
 
 [[package]]
 name = "rustix"
-version = "0.36.15"
+version = "0.36.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c37f1bd5ef1b5422177b7646cba67430579cfe2ace80f284fee876bca52ad941"
+checksum = "6da3636faa25820d8648e0e31c5d519bbb01f72fdf57131f0f5f7da5fed36eab"
 dependencies = [
  "bitflags 1.3.2",
  "errno",
@@ -6612,9 +6615,9 @@ dependencies = [
 
 [[package]]
 name = "serde_with"
-version = "3.3.0"
+version = "3.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1ca3b16a3d82c4088f343b7480a93550b3eabe1a358569c2dfe38bbcead07237"
+checksum = "64cd236ccc1b7a29e7e2739f27c0b2dd199804abc4290e32f59f3b68d6405c23"
 dependencies = [
  "base64 0.21.4",
  "chrono",
@@ -6623,7 +6626,7 @@ dependencies = [
  "indexmap 2.0.2",
  "serde",
  "serde_json",
- "serde_with_macros 3.3.0",
+ "serde_with_macros 3.4.0",
  "time",
 ]
 
@@ -6641,9 +6644,9 @@ dependencies = [
 
 [[package]]
 name = "serde_with_macros"
-version = "3.3.0"
+version = "3.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "2e6be15c453eb305019bfa438b1593c731f36a289a7853f7707ee29e870b3b3c"
+checksum = "93634eb5f75a2323b16de4748022ac4297f9e76b6dced2be287a099f41b5e788"
 dependencies = [
  "darling 0.20.3",
  "proc-macro2",
@@ -7241,7 +7244,7 @@ dependencies = [
 [[package]]
 name = "tantivy"
 version = "0.21.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=b700c42#b700c42246f4352dccb8fbd481f80a2a66bbdfb6"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=ecb9a89#ecb9a89a9ff0573fba5c2cf8b83f353f35022310"
 dependencies = [
  "aho-corasick",
  "arc-swap",
@@ -7254,6 +7257,7 @@ dependencies = [
  "crossbeam-channel",
  "downcast-rs",
  "fastdivide",
+ "fnv",
  "fs4",
  "futures-util",
  "htmlescape",
@@ -7289,13 +7293,13 @@ dependencies = [
  "time",
  "uuid",
  "winapi 0.3.9",
- "zstd 0.12.4",
+ "zstd 0.13.0",
 ]
 
 [[package]]
 name = "tantivy-bitpacker"
 version = "0.5.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=b700c42#b700c42246f4352dccb8fbd481f80a2a66bbdfb6"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=ecb9a89#ecb9a89a9ff0573fba5c2cf8b83f353f35022310"
 dependencies = [
  "bitpacking",
 ]
@@ -7303,7 +7307,7 @@ dependencies = [
 [[package]]
 name = "tantivy-columnar"
 version = "0.2.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=b700c42#b700c42246f4352dccb8fbd481f80a2a66bbdfb6"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=ecb9a89#ecb9a89a9ff0573fba5c2cf8b83f353f35022310"
 dependencies = [
  "fastdivide",
  "fnv",
@@ -7318,7 +7322,7 @@ dependencies = [
 [[package]]
 name = "tantivy-common"
 version = "0.6.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=b700c42#b700c42246f4352dccb8fbd481f80a2a66bbdfb6"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=ecb9a89#ecb9a89a9ff0573fba5c2cf8b83f353f35022310"
 dependencies = [
  "async-trait",
  "byteorder",
@@ -7341,7 +7345,7 @@ dependencies = [
 [[package]]
 name = "tantivy-query-grammar"
 version = "0.21.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=b700c42#b700c42246f4352dccb8fbd481f80a2a66bbdfb6"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=ecb9a89#ecb9a89a9ff0573fba5c2cf8b83f353f35022310"
 dependencies = [
  "nom",
 ]
@@ -7349,17 +7353,17 @@ dependencies = [
 [[package]]
 name = "tantivy-sstable"
 version = "0.2.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=b700c42#b700c42246f4352dccb8fbd481f80a2a66bbdfb6"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=ecb9a89#ecb9a89a9ff0573fba5c2cf8b83f353f35022310"
 dependencies = [
  "tantivy-common",
  "tantivy-fst",
- "zstd 0.12.4",
+ "zstd 0.13.0",
 ]
 
 [[package]]
 name = "tantivy-stacker"
 version = "0.2.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=b700c42#b700c42246f4352dccb8fbd481f80a2a66bbdfb6"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=ecb9a89#ecb9a89a9ff0573fba5c2cf8b83f353f35022310"
 dependencies = [
  "murmurhash32",
  "tantivy-common",
@@ -7368,7 +7372,7 @@ dependencies = [
 [[package]]
 name = "tantivy-tokenizer-api"
 version = "0.2.0"
-source = "git+https://github.com/quickwit-oss/tantivy/?rev=b700c42#b700c42246f4352dccb8fbd481f80a2a66bbdfb6"
+source = "git+https://github.com/quickwit-oss/tantivy/?rev=ecb9a89#ecb9a89a9ff0573fba5c2cf8b83f353f35022310"
 dependencies = [
  "serde",
 ]
@@ -8201,9 +8205,9 @@ dependencies = [
 
 [[package]]
 name = "uuid"
-version = "1.4.1"
+version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "79daa5ed5740825c40b389c5e50312b9c86df53fccd33f281df655642b43869d"
+checksum = "88ad59a7560b41a70d191093a945f0b87bc1deeda46fb237479708a1d6b6cdfc"
 dependencies = [
  "getrandom 0.2.10",
  "rand 0.8.5",
@@ -8955,6 +8959,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "zstd"
+version = "0.13.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bffb3309596d527cfcba7dfc6ed6052f1d39dfbd7c867aa2e865e4a449c10110"
+dependencies = [
+ "zstd-safe 7.0.0",
+]
+
+[[package]]
 name = "zstd-safe"
 version = "5.0.2+zstd.1.5.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8971,6 +8984,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ee98ffd0b48ee95e6c5168188e44a54550b1564d9d530ee21d5f0eaed1069581"
 dependencies = [
  "libc",
+ "zstd-sys",
+]
+
+[[package]]
+name = "zstd-safe"
+version = "7.0.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "43747c7422e2924c11144d5229878b98180ef8b06cca4ab5af37afc8a8d8ea3e"
+dependencies = [
  "zstd-sys",
 ]
 

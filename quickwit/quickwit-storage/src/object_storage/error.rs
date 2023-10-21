@@ -28,12 +28,11 @@ use aws_sdk_s3::operation::head_object::HeadObjectError;
 use aws_sdk_s3::operation::put_object::PutObjectError;
 use aws_sdk_s3::operation::upload_part::UploadPartError;
 use hyper::http::StatusCode;
-use quickwit_aws::retry::Retryable;
 
 use crate::{StorageError, StorageErrorKind};
 
 impl<E> From<SdkError<E>> for StorageError
-where E: Send + Sync + std::error::Error + 'static + ToStorageErrorKind + Retryable
+where E: std::error::Error + ToStorageErrorKind + Send + Sync + 'static
 {
     fn from(error: SdkError<E>) -> StorageError {
         let error_kind = match &error {

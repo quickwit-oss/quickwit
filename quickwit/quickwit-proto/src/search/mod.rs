@@ -52,11 +52,6 @@ impl fmt::Display for SplitSearchError {
     }
 }
 
-// !!! Disclaimer !!!
-//
-// Prost imposes the PartialEq derived implementation.
-// This is terrible because this means Eq, PartialEq are not really in line with Ord's
-// implementation. if in presence of NaN.
 impl Eq for SortByValue {}
 impl Copy for SortByValue {}
 impl From<SortValue> for SortByValue {
@@ -67,8 +62,61 @@ impl From<SortValue> for SortByValue {
     }
 }
 
-impl Copy for SortValue {}
+impl std::hash::Hash for SortByValue {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.sort_value.hash(state);
+    }
+}
+
+impl SortByValue {
+    pub fn into_json(self) -> serde_json::Value {
+        use serde_json::Value::*;
+        match self.sort_value {
+            Some(SortValue::U64(num)) => Number(num.into()),
+            Some(SortValue::I64(num)) => Number(num.into()),
+            Some(SortValue::F64(num)) => {
+                if let Some(num) = serde_json::Number::from_f64(num) {
+                    Number(num)
+                } else {
+                    // TODO is there a better way to handle infinite/nan?
+                    Null
+                }
+            }
+            Some(SortValue::Boolean(b)) => Bool(b),
+            None => Null,
+        }
+    }
+
+    pub fn try_from_json(value: serde_json::Value) -> Option<Self> {
+        use serde_json::Value::*;
+        let sort_value = match value {
+            Null => None,
+            Bool(b) => Some(SortValue::Boolean(b)),
+            Number(number) => {
+                if let Some(number) = number.as_u64() {
+                    Some(SortValue::U64(number))
+                } else if let Some(number) = number.as_i64() {
+                    Some(SortValue::I64(number))
+                } else if let Some(number) = number.as_f64() {
+                    Some(SortValue::F64(number))
+                } else {
+                    // this should never happen as we don't emit such number ourselves
+                    return None;
+                }
+            }
+            String(_) | Array(_) | Object(_) => return None,
+        };
+        Some(SortByValue { sort_value })
+    }
+}
+
+// !!! Disclaimer !!!
+//
+// Prost imposes the PartialEq derived implementation.
+// This is terrible because this means Eq, PartialEq are not really in line with Ord's
+// implementation. if in presence of NaN.
 impl Eq for SortValue {}
+impl Copy for SortValue {}
 
 impl Ord for SortValue {
     fn cmp(&self, other: &Self) -> Ordering {
@@ -115,6 +163,61 @@ impl Ord for SortValue {
 impl PartialOrd for SortValue {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         Some(self.cmp(other))
+    }
+}
+
+impl std::hash::Hash for SortValue {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        let this = self.normalize();
+        match this {
+            SortValue::U64(number) => {
+                0u8.hash(state);
+                number.hash(state);
+            }
+            SortValue::I64(number) => {
+                1u8.hash(state);
+                number.hash(state);
+            }
+            SortValue::F64(number) => {
+                2u8.hash(state);
+                number.to_bits().hash(state);
+            }
+            SortValue::Boolean(b) => {
+                3u8.hash(state);
+                b.hash(state);
+            }
+        }
+    }
+}
+
+impl SortValue {
+    /// Where multiple variant could represent the same logical value, convert to a canonical form.
+    ///
+    /// For number, we prefer to represent them, in order, as i64, then as u64 and finaly as f64.
+    pub fn normalize(&self) -> Self {
+        match self {
+            SortValue::I64(_) => *self,
+            SortValue::Boolean(_) => *self,
+            SortValue::U64(number) => {
+                if let Ok(number) = (*number).try_into() {
+                    SortValue::I64(number)
+                } else {
+                    *self
+                }
+            }
+            SortValue::F64(number) => {
+                let number = *number;
+                if number.ceil() == number {
+                    // number is not NaN, and is a natural number
+                    if number >= i64::MIN as f64 && number <= i64::MAX as f64 {
+                        return SortValue::I64(number as i64);
+                    } else if number.is_sign_positive() && number <= u64::MAX as f64 {
+                        return SortValue::U64(number as u64);
+                    }
+                }
+                *self
+            }
+        }
     }
 }
 

@@ -232,6 +232,7 @@ impl<E: fmt::Debug + ServiceError> ServiceError for quickwit_actors::AskError<E>
 }
 
 impl search::SortOrder {
+    #[inline(always)]
     pub fn compare_opt<T: Ord>(&self, this: &Option<T>, other: &Option<T>) -> Ordering {
         match (this, other) {
             (Some(this), Some(other)) => self.compare(this, other),

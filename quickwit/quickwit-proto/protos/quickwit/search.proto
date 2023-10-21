@@ -165,6 +165,11 @@ message SearchRequest {
   // that will make it possible to paginate through the results
   // in a consistent manner.
   optional uint32 scroll_ttl_secs = 15;
+
+  // Document with sort tuple smaller or equal to this are discarded to
+  // enable pagination.
+  // If split_id is empty, no comparison with _shard_doc should be done
+  optional PartialHit search_after = 16;
 }
 
 message SortField {

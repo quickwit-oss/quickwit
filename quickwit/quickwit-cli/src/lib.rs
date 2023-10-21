@@ -34,7 +34,8 @@ use quickwit_config::{
     DEFAULT_QW_CONFIG_PATH,
 };
 use quickwit_indexing::check_source_connectivity;
-use quickwit_metastore::{Metastore, MetastoreResolver};
+use quickwit_metastore::{IndexMetadataResponseExt, MetastoreResolver};
+use quickwit_proto::metastore::{IndexMetadataRequest, MetastoreService, MetastoreServiceClient};
 use quickwit_rest_client::models::Timeout;
 use quickwit_rest_client::rest_client::{QuickwitClient, QuickwitClientBuilder, DEFAULT_BASE_URL};
 use quickwit_storage::{load_file, StorageResolver};
@@ -256,23 +257,29 @@ fn get_resolvers(
 /// Optionally, it takes a `SourceConfig` that will be checked instead
 /// of the index's sources.
 pub async fn run_index_checklist(
-    metastore: &dyn Metastore,
+    metastore: &mut MetastoreServiceClient,
     storage_resolver: &StorageResolver,
     index_id: &str,
     source_config_opt: Option<&SourceConfig>,
 ) -> anyhow::Result<()> {
     let mut checks: Vec<(&str, anyhow::Result<()>)> = Vec::new();
-
-    // The metastore is file-backed, so we must check the storage first.
-    if !metastore.uri().protocol().is_database() {
-        let metastore_storage = storage_resolver.resolve(metastore.uri()).await?;
-        checks.push((
-            "metastore storage",
-            metastore_storage.check_connectivity().await,
-        ));
+    for metastore_endpoint in metastore.endpoints() {
+        // If it's not a database, the metastore is file-backed. To display a nicer message to the
+        // user, we check the metastore storage connectivity before the mestastore check
+        // connectivity which will check the storage anyway.
+        if !metastore_endpoint.protocol().is_database() {
+            let metastore_storage = storage_resolver.resolve(&metastore_endpoint).await?;
+            checks.push((
+                "metastore storage",
+                metastore_storage.check_connectivity().await,
+            ));
+        }
     }
     checks.push(("metastore", metastore.check_connectivity().await));
-    let index_metadata = metastore.index_metadata(index_id).await?;
+    let index_metadata = metastore
+        .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
+        .await?
+        .deserialize_index_metadata()?;
     let index_storage = storage_resolver.resolve(index_metadata.index_uri()).await?;
     checks.push(("index storage", index_storage.check_connectivity().await));
 

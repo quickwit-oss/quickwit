@@ -16,6 +16,7 @@ bytes = { workspace = true }
 dyn-clone = { workspace = true }
 http = { workspace = true }
 hyper = { workspace = true }
+futures = { workspace = true, optional = true }
 mockall = { workspace = true, optional = true }
 opentelemetry = { workspace = true }
 prost = { workspace = true }
@@ -37,6 +38,7 @@ quickwit-common = { workspace = true }
 
 [dev-dependencies]
 mockall = { workspace = true }
+futures = { workspace = true }
 
 [build-dependencies]
 glob = "0.3.1"
@@ -47,4 +49,4 @@ quickwit-codegen = { workspace = true }
 
 [features]
 postgres = [ "sqlx" ]
-testsuite = [ "mockall" ]
+testsuite = [ "mockall", "futures" ]

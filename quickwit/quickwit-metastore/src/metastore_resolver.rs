@@ -25,18 +25,19 @@ use anyhow::ensure;
 use once_cell::sync::Lazy;
 use quickwit_common::uri::{Protocol, Uri};
 use quickwit_config::{MetastoreBackend, MetastoreConfig, MetastoreConfigs};
+use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_storage::StorageResolver;
 
 use crate::metastore::file_backed_metastore::FileBackedMetastoreFactory;
 #[cfg(feature = "postgres")]
 use crate::metastore::postgresql_metastore::PostgresqlMetastoreFactory;
-use crate::{Metastore, MetastoreFactory, MetastoreResolverError};
+use crate::{MetastoreFactory, MetastoreResolverError};
 
 type FactoryAndConfig = (Box<dyn MetastoreFactory>, MetastoreConfig);
 
-/// Returns the [`Metastore`] instance associated with the protocol of a URI. The actual creation of
-/// metastore objects is delegated to pre-registered [`MetastoreFactory`]. The resolver is only
-/// responsible for dispatching to the appropriate factory.
+/// Returns the [`MetastoreServiceClient`] instance associated with the protocol of a URI. The
+/// actual creation of metastore objects is delegated to pre-registered [`MetastoreFactory`]. The
+/// resolver is only responsible for dispatching to the appropriate factory.
 #[derive(Clone)]
 pub struct MetastoreResolver {
     per_backend_factories: Arc<HashMap<MetastoreBackend, FactoryAndConfig>>,
@@ -55,7 +56,10 @@ impl MetastoreResolver {
     }
 
     /// Resolves the given `uri`.
-    pub async fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Metastore>, MetastoreResolverError> {
+    pub async fn resolve(
+        &self,
+        uri: &Uri,
+    ) -> Result<MetastoreServiceClient, MetastoreResolverError> {
         let backend = match uri.protocol() {
             Protocol::Azure => MetastoreBackend::File,
             Protocol::File => MetastoreBackend::File,

@@ -23,10 +23,6 @@ use std::sync::Arc;
 
 use async_trait::async_trait;
 use quickwit_metastore_utils::{GrpcCall, GrpcRequest};
-use quickwit_proto::metastore::metastore_service_client::MetastoreServiceClient;
-use quickwit_proto::metastore::metastore_service_server::{
-    MetastoreService, MetastoreServiceServer,
-};
 use quickwit_proto::metastore::*;
 use quickwit_proto::tonic;
 use quickwit_proto::tonic::transport::Channel;
@@ -39,7 +35,7 @@ use tokio::time::Instant;
 
 struct Inner {
     start: Instant,
-    client: MetastoreServiceClient<Channel>,
+    client: MetastoreServiceClient,
     file: BufWriter<File>,
 }
 
@@ -48,7 +44,7 @@ struct MetastoreProxyService {
 }
 
 impl MetastoreProxyService {
-    pub fn new(client: MetastoreServiceClient<Channel>, record_file: File) -> Self {
+    pub fn new(client: MetastoreServiceClient, record_file: File) -> Self {
         let inner = Inner {
             start: Instant::now(),
             client,
@@ -99,13 +95,13 @@ impl MetastoreService for MetastoreProxyService {
         Ok(resp)
     }
     /// Gets an indexes metadatas.
-    async fn list_indexes_metadatas(
+    async fn list_indexes_metadata(
         &self,
-        request: tonic::Request<ListIndexesMetadatasRequest>,
-    ) -> Result<tonic::Response<ListIndexesMetadatasResponse>, tonic::Status> {
+        request: tonic::Request<ListIndexesMetadataRequest>,
+    ) -> Result<tonic::Response<ListIndexesMetadataResponse>, tonic::Status> {
         let mut lock = self.inner.lock().await;
         lock.record(request.get_ref().clone()).await.unwrap();
-        let resp = lock.client.list_indexes_metadatas(request).await?;
+        let resp = lock.client.list_indexes_metadata(request).await?;
         Ok(resp)
     }
     /// Deletes an index
@@ -116,16 +112,6 @@ impl MetastoreService for MetastoreProxyService {
         let mut lock = self.inner.lock().await;
         lock.record(request.get_ref().clone()).await.unwrap();
         let resp = lock.client.delete_index(request).await?;
-        Ok(resp)
-    }
-    /// Gets all splits from index.
-    async fn list_all_splits(
-        &self,
-        request: tonic::Request<ListAllSplitsRequest>,
-    ) -> Result<tonic::Response<ListSplitsResponse>, tonic::Status> {
-        let mut lock = self.inner.lock().await;
-        lock.record(request.get_ref().clone()).await.unwrap();
-        let resp = lock.client.list_all_splits(request).await?;
         Ok(resp)
     }
     /// Gets splits from index.

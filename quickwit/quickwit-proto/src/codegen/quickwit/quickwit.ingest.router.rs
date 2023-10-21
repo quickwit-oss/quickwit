@@ -80,6 +80,12 @@ impl IngestRouterServiceClient {
     where
         T: IngestRouterService,
     {
+        #[cfg(any(test, feature = "testsuite"))]
+        assert!(
+            std::any::TypeId::of:: < T > () != std::any::TypeId::of:: <
+            MockIngestRouterService > (),
+            "`MockIngestRouterService` must be wrapped in a `MockIngestRouterServiceWrapper`. Use `MockIngestRouterService::from(mock)` to instantiate the client."
+        );
         Self { inner: Box::new(instance) }
     }
     pub fn as_grpc_service(

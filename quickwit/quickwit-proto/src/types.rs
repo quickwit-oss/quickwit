@@ -60,13 +60,14 @@ pub fn split_queue_id(queue_id: &str) -> Option<(IndexUid, SourceId, ShardId)> {
 pub struct IndexUid(String);
 
 impl fmt::Display for IndexUid {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.0)
     }
 }
 
 impl IndexUid {
-    /// Creates a new index uid form index_id and incarnation_id
+    /// Creates a new index uid from index_id.
+    /// A random UUID will be used as incarnation
     pub fn new(index_id: impl Into<String>) -> Self {
         Self::from_parts(index_id, Ulid::new().to_string())
     }
@@ -161,7 +162,7 @@ impl AsRef<NodeIdRef> for NodeId {
 
 impl Borrow<str> for NodeId {
     fn borrow(&self) -> &str {
-        self.as_str()
+        &self.0
     }
 }
 
@@ -249,6 +250,12 @@ impl NodeIdRef {
 
 impl AsRef<str> for NodeIdRef {
     fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Borrow<String> for NodeId {
+    fn borrow(&self) -> &String {
         &self.0
     }
 }

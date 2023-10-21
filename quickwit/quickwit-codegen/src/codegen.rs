@@ -17,6 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::HashSet;
+
 use heck::ToSnakeCase;
 use proc_macro2::TokenStream;
 use prost_build::{Comments, Method, Service, ServiceGenerator};
@@ -34,6 +36,7 @@ impl Codegen {
         result_type_path: &str,
         error_type_path: &str,
         generate_extra_service_methods: bool,
+        generate_prom_labels_for_requests: bool,
         includes: &[&str],
     ) -> anyhow::Result<()> {
         Self::run_with_config(
@@ -42,17 +45,20 @@ impl Codegen {
             result_type_path,
             error_type_path,
             generate_extra_service_methods,
+            generate_prom_labels_for_requests,
             includes,
             ProstConfig::default(),
         )
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn run_with_config(
         protos: &[&str],
         out_dir: &str,
         result_type_path: &str,
         error_type_path: &str,
         generate_extra_service_methods: bool,
+        generate_prom_label_for_requests: bool,
         includes: &[&str],
         mut prost_config: ProstConfig,
     ) -> anyhow::Result<()> {
@@ -60,6 +66,7 @@ impl Codegen {
             result_type_path,
             error_type_path,
             generate_extra_service_methods,
+            generate_prom_label_for_requests,
         ));
 
         prost_config
@@ -88,6 +95,7 @@ struct QuickwitServiceGenerator {
     result_type_path: String,
     error_type_path: String,
     generate_extra_service_methods: bool,
+    generate_prom_labels_for_requests: bool,
     inner: Box<dyn ServiceGenerator>,
 }
 
@@ -96,6 +104,7 @@ impl QuickwitServiceGenerator {
         result_type_path: &str,
         error_type_path: &str,
         generate_extra_service_methods: bool,
+        generate_prom_labels_for_requests: bool,
     ) -> Self {
         let inner = Box::new(WithSuffixServiceGenerator::new(
             "Grpc",
@@ -105,6 +114,7 @@ impl QuickwitServiceGenerator {
             result_type_path: result_type_path.to_string(),
             error_type_path: error_type_path.to_string(),
             generate_extra_service_methods,
+            generate_prom_labels_for_requests,
             inner,
         }
     }
@@ -117,6 +127,7 @@ impl ServiceGenerator for QuickwitServiceGenerator {
             &self.result_type_path,
             &self.error_type_path,
             self.generate_extra_service_methods,
+            self.generate_prom_labels_for_requests,
         );
         let ast: syn::File = syn::parse2(tokens).expect("Tokenstream should be a valid Syn AST.");
         let pretty_code = prettyplease::unparse(&ast);
@@ -229,6 +240,7 @@ fn generate_all(
     result_type_path: &str,
     error_type_path: &str,
     generate_extra_service_methods: bool,
+    implement_prom_labels_for_requests: bool,
 ) -> TokenStream {
     let context = CodegenContext::from_service(
         service,
@@ -245,12 +257,17 @@ fn generate_all(
     let tower_mailbox = generate_tower_mailbox(&context);
     let grpc_client_adapter = generate_grpc_client_adapter(&context);
     let grpc_server_adapter = generate_grpc_server_adapter(&context);
+    let prom_labels_impl = if implement_prom_labels_for_requests {
+        generate_prom_labels_impl_for_requests(&context)
+    } else {
+        TokenStream::new()
+    };
 
     quote! {
         // The line below is necessary to opt out of the license header check.
         /// BEGIN quickwit-codegen
-
         use tower::{Layer, Service, ServiceExt};
+        #prom_labels_impl
 
         #stream_type_alias
 
@@ -285,6 +302,17 @@ struct SynMethod {
 }
 
 impl SynMethod {
+    fn request_prom_label(&self) -> String {
+        self.request_type
+            .segments
+            .last()
+            .unwrap()
+            .ident
+            .to_string()
+            .trim_end_matches("Request")
+            .to_snake_case()
+    }
+
     fn request_type(&self, mock: bool) -> TokenStream {
         let request_type = if mock {
             let request_type = &self.request_type;
@@ -337,6 +365,35 @@ impl SynMethod {
         }
         syn_methods
     }
+}
+
+fn generate_prom_labels_impl_for_requests(context: &CodegenContext) -> TokenStream {
+    let mut stream = TokenStream::new();
+    stream.extend(quote! {
+        use quickwit_common::metrics::{PrometheusLabels, OwnedPrometheusLabels};
+    });
+    let mut implemented_request_types: HashSet<String> = HashSet::new();
+    for syn_method in &context.methods {
+        if syn_method.client_streaming {
+            continue;
+        }
+        let request_type = syn_method.request_type(false);
+        let request_type_snake_case = syn_method.request_prom_label();
+        if implemented_request_types.contains(&request_type_snake_case) {
+            continue;
+        } else {
+            implemented_request_types.insert(request_type_snake_case.clone());
+            let method = quote! {
+                impl PrometheusLabels<1> for #request_type {
+                    fn labels(&self) -> OwnedPrometheusLabels<1usize> {
+                        OwnedPrometheusLabels::new([std::borrow::Cow::Borrowed(#request_type_snake_case),])
+                    }
+                }
+            };
+            stream.extend(method);
+        }
+    }
+    stream
 }
 
 fn generate_comment_attributes(comments: &Comments) -> Vec<syn::Attribute> {
@@ -434,7 +491,10 @@ fn generate_client(context: &CodegenContext) -> TokenStream {
     let tower_block_builder_name = &context.tower_block_builder_name;
     let mock_name = &context.mock_name;
     let mock_wrapper_name = quote::format_ident!("{}Wrapper", mock_name);
-
+    let error_mesage = format!(
+        "`{}` must be wrapped in a `{}`. Use `{}::from(mock)` to instantiate the client.",
+        mock_name, mock_wrapper_name, mock_name
+    );
     let additional_client_methods = if context.generate_extra_service_methods {
         generate_additional_methods_calling_inner()
     } else {
@@ -447,7 +507,7 @@ fn generate_client(context: &CodegenContext) -> TokenStream {
             }
 
             fn endpoints(&self) -> Vec<quickwit_common::uri::Uri> {
-                self.inner.blocking_lock().endpoints()
+                futures::executor::block_on(self.inner.lock()).endpoints()
             }
         }
     } else {
@@ -465,6 +525,8 @@ fn generate_client(context: &CodegenContext) -> TokenStream {
             where
                 T: #service_name,
             {
+                #[cfg(any(test, feature = "testsuite"))]
+                assert!(std::any::TypeId::of::<T>() != std::any::TypeId::of::<#mock_name>(), #error_mesage);
                 Self {
                     inner: Box::new(instance),
                 }

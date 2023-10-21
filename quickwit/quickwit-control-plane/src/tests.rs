@@ -17,12 +17,11 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::HashMap;
 use std::num::NonZeroUsize;
-use std::sync::Arc;
 use std::time::Duration;
 
 use chitchat::transport::ChannelTransport;
+use fnv::FnvHashMap;
 use futures::{Stream, StreamExt};
 use quickwit_actors::{Inbox, Mailbox, Observe, Universe};
 use quickwit_cluster::{create_cluster_for_test, Cluster, ClusterChange};
@@ -31,14 +30,16 @@ use quickwit_common::tower::{Change, Pool};
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{KafkaSourceParams, SourceConfig, SourceInputFormat, SourceParams};
 use quickwit_indexing::IndexingService;
-use quickwit_metastore::{IndexMetadata, ListIndexesQuery, MockMetastore};
+use quickwit_metastore::{IndexMetadata, ListIndexesMetadataResponseExt};
 use quickwit_proto::indexing::{ApplyIndexingPlanRequest, IndexingServiceClient};
-use quickwit_proto::metastore::ListShardsResponse;
+use quickwit_proto::metastore::{
+    ListIndexesMetadataResponse, ListShardsResponse, MetastoreServiceClient,
+};
 use quickwit_proto::NodeId;
 use serde_json::json;
 
 use crate::control_plane::{ControlPlane, CONTROL_PLAN_LOOP_INTERVAL};
-use crate::scheduler::MIN_DURATION_BETWEEN_SCHEDULING;
+use crate::indexing_scheduler::MIN_DURATION_BETWEEN_SCHEDULING;
 use crate::IndexerNodeInfo;
 
 fn index_metadata_for_test(
@@ -72,7 +73,7 @@ fn index_metadata_for_test(
 
 pub fn test_indexer_change_stream(
     cluster_change_stream: impl Stream<Item = ClusterChange> + Send + 'static,
-    indexing_clients: HashMap<String, Mailbox<IndexingService>>,
+    indexing_clients: FnvHashMap<String, Mailbox<IndexingService>>,
 ) -> impl Stream<Item = Change<String, IndexerNodeInfo>> + Send + 'static {
     cluster_change_stream.filter_map(move |cluster_change| {
         let indexing_clients = indexing_clients.clone();
@@ -112,10 +113,11 @@ async fn start_control_plane(
     let index_metadata_1 = index_metadata_for_test(index_1, source_1, 2, 2);
     let mut index_metadata_2 = index_metadata_for_test(index_2, source_2, 1, 1);
     index_metadata_2.create_timestamp = index_metadata_1.create_timestamp + 1;
-    let mut metastore = MockMetastore::default();
-    metastore.expect_list_indexes_metadatas().returning(
-        move |_list_indexes_query: ListIndexesQuery| {
-            Ok(vec![index_metadata_2.clone(), index_metadata_1.clone()])
+    let mut metastore = MetastoreServiceClient::mock();
+    metastore.expect_list_indexes_metadata().returning(
+        move |_list_indexes_request: quickwit_proto::metastore::ListIndexesMetadataRequest| {
+            let indexes_metadata = vec![index_metadata_2.clone(), index_metadata_1.clone()];
+            Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(indexes_metadata).unwrap())
         },
     );
     metastore.expect_list_shards().returning(|_| {
@@ -128,7 +130,7 @@ async fn start_control_plane(
     let indexer_pool = Pool::default();
     let ingester_pool = Pool::default();
     let change_stream = cluster.ready_nodes_change_stream().await;
-    let mut indexing_clients = HashMap::new();
+    let mut indexing_clients = FnvHashMap::default();
 
     for indexer in indexers {
         let (indexing_service_mailbox, indexing_service_inbox) = universe.create_test_mailbox();
@@ -145,7 +147,7 @@ async fn start_control_plane(
         self_node_id,
         indexer_pool,
         ingester_pool,
-        Arc::new(metastore),
+        MetastoreServiceClient::from(metastore),
         1,
     );
 
