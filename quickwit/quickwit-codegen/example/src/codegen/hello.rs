@@ -42,6 +42,17 @@ pub struct PingResponse {
 }
 /// BEGIN quickwit-codegen
 use tower::{Layer, Service, ServiceExt};
+use quickwit_common::metrics::{PrometheusLabels, OwnedPrometheusLabels};
+impl PrometheusLabels<1> for HelloRequest {
+    fn labels(&self) -> OwnedPrometheusLabels<1usize> {
+        OwnedPrometheusLabels::new([std::borrow::Cow::Borrowed("hello")])
+    }
+}
+impl PrometheusLabels<1> for GoodbyeRequest {
+    fn labels(&self) -> OwnedPrometheusLabels<1usize> {
+        OwnedPrometheusLabels::new([std::borrow::Cow::Borrowed("goodbye")])
+    }
+}
 pub type HelloStream<T> = quickwit_common::ServiceStream<crate::HelloResult<T>>;
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait::async_trait]
@@ -80,6 +91,11 @@ impl HelloClient {
     where
         T: Hello,
     {
+        #[cfg(any(test, feature = "testsuite"))]
+        assert!(
+            std::any::TypeId::of:: < T > () != std::any::TypeId::of:: < MockHello > (),
+            "`MockHello` must be wrapped in a `MockHelloWrapper`. Use `MockHello::from(mock)` to instantiate the client."
+        );
         Self { inner: Box::new(instance) }
     }
     pub fn as_grpc_service(
@@ -184,7 +200,7 @@ pub mod hello_mock {
             self.inner.lock().await.check_connectivity().await
         }
         fn endpoints(&self) -> Vec<quickwit_common::uri::Uri> {
-            self.inner.blocking_lock().endpoints()
+            futures::executor::block_on(self.inner.lock()).endpoints()
         }
     }
     impl From<MockHello> for HelloClient {

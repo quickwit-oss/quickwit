@@ -49,6 +49,7 @@ pub use collector::QuickwitAggregations;
 use metrics::SEARCH_METRICS;
 use quickwit_common::tower::Pool;
 use quickwit_doc_mapper::DocMapper;
+use quickwit_proto::metastore::{ListSplitsRequest, MetastoreService, MetastoreServiceClient};
 use tantivy::schema::NamedFieldDocument;
 
 /// Refer to this as `crate::Result<T>`.
@@ -60,7 +61,9 @@ use std::sync::Arc;
 pub use find_trace_ids_collector::FindTraceIdsCollector;
 use quickwit_config::SearcherConfig;
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
-use quickwit_metastore::{ListSplitsQuery, Metastore, SplitMetadata, SplitState};
+use quickwit_metastore::{
+    ListSplitsQuery, ListSplitsRequestExt, ListSplitsResponseExt, SplitMetadata, SplitState,
+};
 use quickwit_proto::search::{PartialHit, SearchRequest, SearchResponse, SplitIdAndFooterOffsets};
 use quickwit_proto::IndexUid;
 use quickwit_storage::StorageResolver;
@@ -168,7 +171,7 @@ async fn list_relevant_splits(
     start_timestamp: Option<i64>,
     end_timestamp: Option<i64>,
     tags_filter_opt: Option<TagFilterAst>,
-    metastore: &dyn Metastore,
+    metastore: &mut MetastoreServiceClient,
 ) -> crate::Result<Vec<SplitMetadata>> {
     let mut query =
         ListSplitsQuery::try_from_index_uids(index_uids)?.with_split_state(SplitState::Published);
@@ -182,11 +185,15 @@ async fn list_relevant_splits(
     if let Some(tags_filter) = tags_filter_opt {
         query = query.with_tags_filter(tags_filter);
     }
-    let splits = metastore.list_splits(query).await?;
-    Ok(splits
+    let list_splits_request = ListSplitsRequest::try_from_list_splits_query(query)?;
+    let splits_metadata: Vec<SplitMetadata> = metastore
+        .list_splits(list_splits_request)
+        .await?
+        .deserialize_splits()?
         .into_iter()
         .map(|split| split.split_metadata)
-        .collect::<Vec<_>>())
+        .collect();
+    Ok(splits_metadata)
 }
 
 /// Converts a Tantivy `NamedFieldDocument` into a json string using the
@@ -207,7 +214,7 @@ fn convert_document_to_json_string(
 
 /// Starts a search node, aka a `searcher`.
 pub async fn start_searcher_service(
-    metastore: Arc<dyn Metastore>,
+    metastore: MetastoreServiceClient,
     storage_resolver: StorageResolver,
     search_job_placer: SearchJobPlacer,
     searcher_context: Arc<SearcherContext>,
@@ -226,7 +233,7 @@ pub async fn start_searcher_service(
 /// See also `[distributed_search]`.
 pub async fn single_node_search(
     search_request: SearchRequest,
-    metastore: Arc<dyn Metastore>,
+    metastore: MetastoreServiceClient,
     storage_resolver: StorageResolver,
 ) -> crate::Result<SearchResponse> {
     let socket_addr = SocketAddr::new(Ipv4Addr::new(127, 0, 0, 1).into(), 7280u16);
@@ -247,7 +254,7 @@ pub async fn single_node_search(
     root_search(
         &searcher_context,
         search_request,
-        &*metastore,
+        metastore,
         &cluster_client,
     )
     .await

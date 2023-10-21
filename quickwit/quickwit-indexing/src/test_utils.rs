@@ -34,7 +34,10 @@ use quickwit_config::{
 };
 use quickwit_doc_mapper::DocMapper;
 use quickwit_ingest::{init_ingest_api, IngesterPool, QUEUES_DIR_NAME};
-use quickwit_metastore::{Metastore, MetastoreResolver, Split, SplitMetadata, SplitState};
+use quickwit_metastore::{
+    CreateIndexRequestExt, MetastoreResolver, Split, SplitMetadata, SplitState,
+};
+use quickwit_proto::metastore::{CreateIndexRequest, MetastoreService, MetastoreServiceClient};
 use quickwit_proto::IndexUid;
 use quickwit_storage::{Storage, StorageResolver};
 use serde_json::Value as JsonValue;
@@ -51,7 +54,7 @@ pub struct TestSandbox {
     index_uid: IndexUid,
     indexing_service: Mailbox<IndexingService>,
     doc_mapper: Arc<dyn DocMapper>,
-    metastore: Arc<dyn Metastore>,
+    metastore: MetastoreServiceClient,
     storage_resolver: StorageResolver,
     storage: Arc<dyn Storage>,
     add_docs_id: AtomicUsize,
@@ -95,10 +98,15 @@ impl TestSandbox {
         let storage_resolver = StorageResolver::for_test();
         let metastore_resolver =
             MetastoreResolver::configured(storage_resolver.clone(), &MetastoreConfigs::default());
-        let metastore = metastore_resolver
+        let mut metastore = metastore_resolver
             .resolve(&Uri::from_well_formed(METASTORE_URI))
             .await?;
-        let index_uid = metastore.create_index(index_config.clone()).await?;
+        let create_index_request = CreateIndexRequest::try_from_index_config(index_config.clone())?;
+        let index_uid: IndexUid = metastore
+            .create_index(create_index_request)
+            .await?
+            .index_uid
+            .into();
         let storage = storage_resolver.resolve(&index_uri).await?;
         let universe = Universe::with_accelerated_time();
         let queues_dir_path = temp_dir.path().join(QUEUES_DIR_NAME);
@@ -182,7 +190,7 @@ impl TestSandbox {
     /// The metastore is a file-backed metastore.
     /// Its data can be found via the `storage` in
     /// the `ram://quickwit-test-indexes` directory.
-    pub fn metastore(&self) -> Arc<dyn Metastore> {
+    pub fn metastore(&self) -> MetastoreServiceClient {
         self.metastore.clone()
     }
 
@@ -270,6 +278,9 @@ pub fn mock_split_meta(split_id: &str, index_uid: &IndexUid) -> SplitMetadata {
 
 #[cfg(test)]
 mod tests {
+    use quickwit_metastore::{ListSplitsRequestExt, ListSplitsResponseExt};
+    use quickwit_proto::metastore::{ListSplitsRequest, MetastoreService};
+
     use super::TestSandbox;
 
     #[tokio::test]
@@ -291,16 +302,26 @@ mod tests {
             serde_json::json!({"title": "Ganimede", "body": "...", "url": "http://ganimede"}),
         ]).await?;
         assert_eq!(statistics.num_uploaded_splits, 1);
-        let metastore = test_sandbox.metastore();
+        let mut metastore = test_sandbox.metastore();
         {
-            let splits = metastore.list_all_splits(test_sandbox.index_uid()).await?;
+            let splits = metastore
+                .list_splits(
+                    ListSplitsRequest::try_from_index_uid(test_sandbox.index_uid()).unwrap(),
+                )
+                .await?
+                .deserialize_splits()?;
             assert_eq!(splits.len(), 1);
             test_sandbox.add_documents(vec![
             serde_json::json!({"title": "Byzantine-Ottoman wars", "body": "...", "url": "http://biz-ottoman"}),
         ]).await?;
         }
         {
-            let splits = metastore.list_all_splits(test_sandbox.index_uid()).await?;
+            let splits = metastore
+                .list_splits(
+                    ListSplitsRequest::try_from_index_uid(test_sandbox.index_uid()).unwrap(),
+                )
+                .await?
+                .deserialize_splits()?;
             assert_eq!(splits.len(), 2);
         }
         test_sandbox.assert_quit().await;

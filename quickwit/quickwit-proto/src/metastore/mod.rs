@@ -22,14 +22,13 @@ use std::fmt;
 use quickwit_common::retry::Retryable;
 use serde::{Deserialize, Serialize};
 
-use crate::{queue_id, IndexId, QueueId, ServiceError, ServiceErrorCode, SourceId, SplitId};
+use crate::{
+    queue_id, IndexId, IndexUid, QueueId, ServiceError, ServiceErrorCode, SourceId, SplitId,
+};
 
 pub mod events;
 
 include!("../codegen/quickwit/quickwit.metastore.rs");
-
-pub use metastore_service_client::MetastoreServiceClient;
-pub use metastore_service_server::{MetastoreService, MetastoreServiceServer};
 
 pub type MetastoreResult<T> = Result<T, MetastoreError>;
 
@@ -151,6 +150,15 @@ impl From<sqlx::Error> for MetastoreError {
     }
 }
 
+impl From<tonic::Status> for MetastoreError {
+    fn from(status: tonic::Status) -> Self {
+        serde_json::from_str(status.message()).unwrap_or_else(|_| MetastoreError::Internal {
+            message: "failed to deserialize metastore error".to_string(),
+            cause: status.message().to_string(),
+        })
+    }
+}
+
 impl From<MetastoreError> for tonic::Status {
     fn from(metastore_error: MetastoreError) -> Self {
         let grpc_code = metastore_error.error_code().to_grpc_status_code();
@@ -205,6 +213,64 @@ impl SourceType {
             SourceType::Pulsar => "pulsar",
             SourceType::Vec => "vec",
             SourceType::Void => "void",
+        }
+    }
+}
+
+impl IndexMetadataRequest {
+    pub fn for_index_uid(index_uid: String) -> Self {
+        Self {
+            index_uid: Some(index_uid),
+            index_id: None,
+        }
+    }
+
+    pub fn for_index_id(index_id: String) -> Self {
+        Self {
+            index_uid: None,
+            index_id: Some(index_id),
+        }
+    }
+
+    /// Returns the index id either from the `index_id` or the `index_uid`.
+    /// If none of them is set, an error is returned.
+    pub fn get_index_id(&self) -> MetastoreResult<String> {
+        if let Some(index_id) = &self.index_id {
+            Ok(index_id.to_string())
+        } else if let Some(index_uid) = &self.index_uid {
+            let index_uid: IndexUid = index_uid.clone().into();
+            Ok(index_uid.index_id().to_string())
+        } else {
+            Err(MetastoreError::Internal {
+                message: "index_id or index_uid must be set".to_string(),
+                cause: "".to_string(),
+            })
+        }
+    }
+}
+
+impl MarkSplitsForDeletionRequest {
+    pub fn new(index_uid: String, split_ids: Vec<String>) -> Self {
+        Self {
+            index_uid,
+            split_ids,
+        }
+    }
+}
+
+impl LastDeleteOpstampResponse {
+    pub fn new(last_delete_opstamp: u64) -> Self {
+        Self {
+            last_delete_opstamp,
+        }
+    }
+}
+
+impl ListDeleteTasksRequest {
+    pub fn new(index_uid: String, opstamp_start: u64) -> Self {
+        Self {
+            index_uid,
+            opstamp_start,
         }
     }
 }

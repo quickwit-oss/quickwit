@@ -49,8 +49,11 @@ use quickwit_indexing::actors::MergeExecutor;
 use quickwit_indexing::merge_policy::MergeOperation;
 use quickwit_indexing::models::MergeScratch;
 use quickwit_indexing::{get_tantivy_directory_from_split_bundle, TestSandbox};
-use quickwit_metastore::{ListSplitsQuery, Split, SplitMetadata, SplitState};
+use quickwit_metastore::{
+    ListSplitsQuery, ListSplitsRequestExt, ListSplitsResponseExt, Split, SplitMetadata, SplitState,
+};
 use quickwit_proto::indexing::IndexingPipelineId;
+use quickwit_proto::metastore::{ListSplitsRequest, MetastoreService};
 use quickwit_proto::IndexUid;
 use serde_json::Value as JsonValue;
 use tantivy::{Directory, Inventory};
@@ -184,7 +187,14 @@ async fn aux_test_failpoints() -> anyhow::Result<()> {
     test_index_builder.add_documents(batch_2).await?;
     let query = ListSplitsQuery::for_index(test_index_builder.index_uid())
         .with_split_state(SplitState::Published);
-    let mut splits = test_index_builder.metastore().list_splits(query).await?;
+    let list_splits_request = ListSplitsRequest::try_from_list_splits_query(query).unwrap();
+    let mut splits = test_index_builder
+        .metastore()
+        .list_splits(list_splits_request)
+        .await
+        .unwrap()
+        .deserialize_splits()
+        .unwrap();
     splits.sort_by_key(|split| *split.split_metadata.time_range.clone().unwrap().start());
     assert_eq!(splits.len(), 2);
     assert_eq!(
@@ -256,14 +266,12 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
     }
     tokio::time::sleep(Duration::from_millis(10)).await;
 
-    let metastore = test_index_builder.metastore();
-    let splits: Vec<Split> = metastore
-        .list_all_splits(test_index_builder.index_uid())
-        .await?;
-    let split_metadatas: Vec<SplitMetadata> = splits
-        .into_iter()
-        .map(|split| split.split_metadata)
-        .collect();
+    let mut metastore = test_index_builder.metastore();
+    let split_metadatas: Vec<Split> = metastore
+        .list_splits(ListSplitsRequest::try_from_index_uid(test_index_builder.index_uid()).unwrap())
+        .await?
+        .deserialize_splits_metadata()
+        .unwrap();
     let merge_scratch_directory = TempDirectory::for_test();
 
     let downloaded_splits_directory =
