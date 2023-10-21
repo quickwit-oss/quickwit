@@ -724,9 +724,7 @@ async fn extract_split_cli(args: ExtractSplitArgs) -> anyhow::Result<()> {
         get_resolvers(&config.storage_configs, &config.metastore_configs);
     let mut metastore = metastore_resolver.resolve(&config.metastore_uri).await?;
     let index_metadata = metastore
-        .index_metadata(IndexMetadataRequest {
-            index_id: args.index_id,
-        })
+        .index_metadata(IndexMetadataRequest::for_index_id(args.index_id))
         .await?
         .deserialize_index_metadata()?;
     let index_storage = storage_resolver.resolve(index_metadata.index_uri()).await?;

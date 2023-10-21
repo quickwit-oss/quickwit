@@ -44,9 +44,8 @@ pub async fn root_search_stream(
 ) -> crate::Result<impl futures::Stream<Item = crate::Result<Bytes>>> {
     // TODO: building a search request should not be necessary for listing splits.
     // This needs some refactoring: relevant splits, metadata_map, jobs...
-    let index_metadata_request = IndexMetadataRequest {
-        index_id: search_stream_request.index_id.clone(),
-    };
+    let index_metadata_request =
+        IndexMetadataRequest::for_index_id(search_stream_request.index_id.clone());
     let index_metadata = metastore
         .index_metadata(index_metadata_request)
         .await?

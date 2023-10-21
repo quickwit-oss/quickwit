@@ -168,9 +168,8 @@ impl DeleteTaskService {
     ) -> anyhow::Result<()> {
         let index_uri = index_config.index_uri.clone();
         let index_storage = self.storage_resolver.resolve(&index_uri).await?;
-        let index_metadata_request = IndexMetadataRequest {
-            index_id: index_config.index_id.clone(),
-        };
+        let index_metadata_request =
+            IndexMetadataRequest::for_index_id(index_config.index_id.to_string());
         let index_metadata = self
             .metastore
             .index_metadata(index_metadata_request)
@@ -274,10 +273,7 @@ mod tests {
         // Just test creation of delete query.
         assert_eq!(
             metastore
-                .list_delete_tasks(ListDeleteTasksRequest {
-                    index_uid: index_uid.to_string(),
-                    opstamp_start: 0,
-                })
+                .list_delete_tasks(ListDeleteTasksRequest::new(index_uid.to_string(), 0))
                 .await
                 .unwrap()
                 .delete_tasks

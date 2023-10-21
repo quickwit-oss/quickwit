@@ -142,7 +142,7 @@ impl IndexService {
             SourceConfig::cli_ingest_source(),
         )?;
         metastore.add_source(add_ingest_cli_source_request).await?;
-        let index_metadata_request = IndexMetadataRequest { index_id };
+        let index_metadata_request = IndexMetadataRequest::for_index_id(index_id);
         let index_metadata = metastore
             .index_metadata(index_metadata_request)
             .await?
@@ -161,9 +161,7 @@ impl IndexService {
         index_id: &str,
         dry_run: bool,
     ) -> Result<Vec<SplitInfo>, IndexServiceError> {
-        let index_metadata_request = IndexMetadataRequest {
-            index_id: index_id.to_string(),
-        };
+        let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
         let index_metadata = self
             .metastore
             .index_metadata(index_metadata_request)
@@ -194,10 +192,8 @@ impl IndexService {
             .list_splits(list_splits_request)
             .await?
             .deserialize_split_ids()?;
-        let mark_splits_for_deletion_request = MarkSplitsForDeletionRequest {
-            index_uid: index_uid.to_string(),
-            split_ids,
-        };
+        let mark_splits_for_deletion_request =
+            MarkSplitsForDeletionRequest::new(index_uid.to_string(), split_ids);
         self.metastore
             .mark_splits_for_deletion(mark_splits_for_deletion_request)
             .await?;
@@ -239,9 +235,7 @@ impl IndexService {
         grace_period: Duration,
         dry_run: bool,
     ) -> anyhow::Result<SplitRemovalInfo> {
-        let index_metadata_request = IndexMetadataRequest {
-            index_id: index_id.to_string(),
-        };
+        let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
         let index_metadata = self
             .metastore
             .index_metadata(index_metadata_request)
@@ -280,9 +274,7 @@ impl IndexService {
     /// * `index_id` - The target index Id.
     /// * `storage_resolver` - A storage resolver object to access the storage.
     pub async fn clear_index(&mut self, index_id: &str) -> Result<(), IndexServiceError> {
-        let index_metadata_request = IndexMetadataRequest {
-            index_id: index_id.to_string(),
-        };
+        let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
         let index_metadata = self
             .metastore
             .index_metadata(index_metadata_request)
@@ -303,10 +295,8 @@ impl IndexService {
             .iter()
             .map(|split| split.split_id.to_string())
             .collect();
-        let mark_splits_for_deletion_request = MarkSplitsForDeletionRequest {
-            index_uid: index_uid.to_string(),
-            split_ids: split_ids.clone(),
-        };
+        let mark_splits_for_deletion_request =
+            MarkSplitsForDeletionRequest::new(index_uid.to_string(), split_ids.clone());
         self.metastore
             .mark_splits_for_deletion(mark_splits_for_deletion_request)
             .await?;
@@ -358,9 +348,8 @@ impl IndexService {
             source_id,
             index_uid.index_id()
         );
-        let index_metadata_request = IndexMetadataRequest {
-            index_id: index_uid.index_id().to_string(),
-        };
+        let index_metadata_request =
+            IndexMetadataRequest::for_index_id(index_uid.index_id().to_string());
         let source = self
             .metastore
             .index_metadata(index_metadata_request)
@@ -382,9 +371,7 @@ impl IndexService {
         index_id: &str,
         source_id: &str,
     ) -> Result<SourceConfig, IndexServiceError> {
-        let index_metadata_request = IndexMetadataRequest {
-            index_id: index_id.to_string(),
-        };
+        let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
         let source_config = self
             .metastore
             .index_metadata(index_metadata_request)
@@ -450,9 +437,7 @@ mod tests {
         assert_eq!(index_metadata_0.index_id(), index_id);
         assert_eq!(index_metadata_0.index_uri(), &index_uri);
         assert!(metastore
-            .index_metadata(IndexMetadataRequest {
-                index_id: index_id.to_string()
-            })
+            .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
             .await
             .is_ok());
 

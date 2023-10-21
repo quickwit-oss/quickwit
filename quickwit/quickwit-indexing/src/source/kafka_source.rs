@@ -30,7 +30,8 @@ use oneshot;
 use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_config::KafkaSourceParams;
 use quickwit_metastore::checkpoint::{PartitionId, Position, SourceCheckpoint};
-use quickwit_metastore::MetastoreServiceExt;
+use quickwit_metastore::IndexMetadataResponseExt;
+use quickwit_proto::metastore::{IndexMetadataRequest, MetastoreService};
 use quickwit_proto::IndexUid;
 use rdkafka::config::{ClientConfig, RDKafkaLogLevel};
 use rdkafka::consumer::{
@@ -347,14 +348,17 @@ impl KafkaSource {
         partitions: &[i32],
         assignment_tx: oneshot::Sender<Vec<(i32, Offset)>>,
     ) -> anyhow::Result<()> {
+        let index_metadata_request =
+            IndexMetadataRequest::for_index_uid(self.ctx.index_uid().to_string());
         let index_metadata = ctx
             .protect_future(
                 self.ctx
                     .metastore
                     .clone()
-                    .index_metadata_strict(self.ctx.index_uid()),
+                    .index_metadata(index_metadata_request),
             )
-            .await?;
+            .await?
+            .deserialize_index_metadata()?;
         let checkpoint = index_metadata
             .checkpoint
             .source_checkpoint(self.ctx.source_id())

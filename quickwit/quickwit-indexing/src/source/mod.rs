@@ -73,8 +73,6 @@ mod vec_source;
 mod void_source;
 
 use std::path::PathBuf;
-#[cfg(test)]
-use std::sync::Arc;
 use std::time::Duration;
 
 #[cfg(not(any(feature = "kafka", feature = "kinesis", feature = "pulsar")))]
@@ -151,7 +149,8 @@ impl SourceRuntimeArgs {
         source_config: SourceConfig,
         metastore: MetastoreServiceClient,
         queues_dir_path: PathBuf,
-    ) -> Arc<Self> {
+    ) -> std::sync::Arc<Self> {
+        use std::sync::Arc;
         let pipeline_id = IndexingPipelineId {
             node_id: "test-node".to_string(),
             index_uid,

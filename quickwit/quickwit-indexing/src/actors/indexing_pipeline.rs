@@ -417,9 +417,7 @@ impl IndexingPipeline {
             .spawn(doc_processor);
 
         // Fetch index_metadata to be sure to have the last updated checkpoint.
-        let index_metadata_request = IndexMetadataRequest {
-            index_id: index_id.to_string(),
-        };
+        let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
         let index_metadata = ctx
             .protect_future(self.params.metastore.index_metadata(index_metadata_request))
             .await?
@@ -590,7 +588,7 @@ mod tests {
     use quickwit_config::{IndexingSettings, SourceInputFormat, SourceParams, VoidSourceParams};
     use quickwit_doc_mapper::{default_doc_mapper_for_test, DefaultDocMapper};
     use quickwit_metastore::checkpoint::IndexCheckpointDelta;
-    use quickwit_metastore::{IndexMetadata, ListSplitsResponseExt};
+    use quickwit_metastore::{IndexMetadata, ListSplitsResponseExt, PublishSplitsRequestExt};
     use quickwit_proto::metastore::{
         EmptyResponse, IndexMetadataResponse, LastDeleteOpstampResponse, ListSplitsResponse,
         MetastoreError,
@@ -619,7 +617,9 @@ mod tests {
         let mut metastore = MetastoreServiceClient::mock();
         metastore
             .expect_index_metadata()
-            .withf(|index_metadata_request| index_metadata_request.index_id == "test-index")
+            .withf(|index_metadata_request| {
+                index_metadata_request.index_id.as_ref().unwrap() == "test-index"
+            })
             .returning(move |_| {
                 if num_fails == 0 {
                     let index_metadata =
@@ -635,11 +635,7 @@ mod tests {
             });
         metastore
             .expect_last_delete_opstamp()
-            .returning(move |_last_delete_opstamp_request| {
-                Ok(LastDeleteOpstampResponse {
-                    last_delete_opstamp: 10,
-                })
-            });
+            .returning(move |_last_delete_opstamp_request| Ok(LastDeleteOpstampResponse::new(10)));
         metastore
             .expect_mark_splits_for_deletion()
             .returning(|_| Ok(EmptyResponse {}));
@@ -653,9 +649,8 @@ mod tests {
             .expect_publish_splits()
             .withf(|publish_splits_request| -> bool {
                 let checkpoint_delta: IndexCheckpointDelta = publish_splits_request
-                    .index_checkpoint_delta_json_opt
-                    .as_ref()
-                    .map(|value| serde_json::from_str(value).unwrap())
+                    .deserialize_index_checkpoint()
+                    .unwrap()
                     .unwrap();
                 publish_splits_request.index_uid == "test-index:11111111111111111111111111"
                     && checkpoint_delta.source_id == "test-source"
@@ -729,7 +724,9 @@ mod tests {
         let mut metastore = MetastoreServiceClient::mock();
         metastore
             .expect_index_metadata()
-            .withf(|index_metadata_request| index_metadata_request.index_id == "test-index")
+            .withf(|index_metadata_request| {
+                index_metadata_request.index_id.as_ref().unwrap() == "test-index"
+            })
             .returning(|_| {
                 let index_metadata =
                     IndexMetadata::for_test("test-index", "ram:///indexes/test-index");
@@ -740,11 +737,7 @@ mod tests {
             .withf(|last_delete_opstamp| {
                 last_delete_opstamp.index_uid == "test-index:11111111111111111111111111"
             })
-            .returning(move |_| {
-                Ok(LastDeleteOpstampResponse {
-                    last_delete_opstamp: 10,
-                })
-            });
+            .returning(move |_| Ok(LastDeleteOpstampResponse::new(10)));
         metastore
             .expect_stage_splits()
             .withf(|stage_splits_request| {
@@ -755,9 +748,8 @@ mod tests {
             .expect_publish_splits()
             .withf(|publish_splits_request| -> bool {
                 let checkpoint_delta: IndexCheckpointDelta = publish_splits_request
-                    .index_checkpoint_delta_json_opt
-                    .as_ref()
-                    .map(|value| serde_json::from_str(value).unwrap())
+                    .deserialize_index_checkpoint()
+                    .unwrap()
                     .unwrap();
                 publish_splits_request.index_uid == "test-index:11111111111111111111111111"
                     && publish_splits_request.staged_split_ids.len() == 1
@@ -822,7 +814,9 @@ mod tests {
         let mut mock_metastore = MetastoreServiceClient::mock();
         mock_metastore
             .expect_index_metadata()
-            .withf(|index_metadata_request| index_metadata_request.index_id == "test-index")
+            .withf(|index_metadata_request| {
+                index_metadata_request.index_id.as_ref().unwrap() == "test-index"
+            })
             .returning(|_| {
                 let index_metadata =
                     IndexMetadata::for_test("test-index", "ram:///indexes/test-index");
@@ -917,7 +911,9 @@ mod tests {
         let mut metastore = MetastoreServiceClient::mock();
         metastore
             .expect_index_metadata()
-            .withf(|index_metadata_request| index_metadata_request.index_id == "test-index")
+            .withf(|index_metadata_request| {
+                index_metadata_request.index_id.as_ref().unwrap() == "test-index"
+            })
             .returning(|_| {
                 let index_metadata =
                     IndexMetadata::for_test("test-index", "ram:///indexes/test-index");
@@ -928,11 +924,7 @@ mod tests {
             .withf(|last_delete_opstamp| {
                 last_delete_opstamp.index_uid == "test-index:11111111111111111111111111"
             })
-            .returning(move |_| {
-                Ok(LastDeleteOpstampResponse {
-                    last_delete_opstamp: 10,
-                })
-            });
+            .returning(move |_| Ok(LastDeleteOpstampResponse::new(10)));
         metastore
             .expect_stage_splits()
             .never()
@@ -941,9 +933,8 @@ mod tests {
             .expect_publish_splits()
             .withf(|publish_splits_request| -> bool {
                 let checkpoint_delta: IndexCheckpointDelta = publish_splits_request
-                    .index_checkpoint_delta_json_opt
-                    .as_ref()
-                    .map(|value| serde_json::from_str(value).unwrap())
+                    .deserialize_index_checkpoint()
+                    .unwrap()
                     .unwrap();
                 publish_splits_request.index_uid == "test-index:11111111111111111111111111"
                     && publish_splits_request.staged_split_ids.is_empty()

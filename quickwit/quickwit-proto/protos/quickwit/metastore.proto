@@ -139,7 +139,8 @@ message DeleteIndexRequest {
 }
 
 message IndexMetadataRequest {
-  string index_id = 1;
+  optional string index_id = 1;
+  optional string index_uid = 2;
 }
 
 message IndexMetadataResponse {

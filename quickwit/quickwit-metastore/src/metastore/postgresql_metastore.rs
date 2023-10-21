@@ -476,11 +476,12 @@ where
 #[async_trait]
 impl MetastoreService for PostgresqlMetastore {
     async fn check_connectivity(&mut self) -> anyhow::Result<()> {
-        todo!()
+        self.connection_pool.acquire().await?;
+        Ok(())
     }
 
     fn endpoints(&self) -> Vec<quickwit_common::uri::Uri> {
-        todo!()
+        vec![self.uri.clone()]
     }
 
     #[instrument(skip(self))]
@@ -1029,11 +1030,21 @@ impl MetastoreService for PostgresqlMetastore {
         &mut self,
         request: IndexMetadataRequest,
     ) -> MetastoreResult<IndexMetadataResponse> {
-        let index_metadata = index_opt(&self.connection_pool, &request.index_id)
-            .await?
+        let response = if let Some(index_id) = &request.index_id {
+            index_opt(&self.connection_pool, index_id).await?
+        } else if let Some(index_uid) = &request.index_uid {
+            let index_uid: IndexUid = index_uid.to_string().into();
+            index_opt_for_uid(&self.connection_pool, index_uid).await?
+        } else {
+            return Err(MetastoreError::Internal {
+                message: "either `index_id` or `index_uid` must be set".to_string(),
+                cause: "missing index identifier".to_string(),
+            });
+        };
+        let index_metadata = response
             .ok_or({
                 MetastoreError::NotFound(EntityKind::Index {
-                    index_id: request.index_id,
+                    index_id: request.get_index_id().expect("index_id is set").to_string(),
                 })
             })?
             .index_metadata()?;
@@ -1128,9 +1139,7 @@ impl MetastoreService for PostgresqlMetastore {
             message: error.to_string(),
         })?;
 
-        Ok(LastDeleteOpstampResponse {
-            last_delete_opstamp: max_opstamp as u64,
-        })
+        Ok(LastDeleteOpstampResponse::new(max_opstamp as u64))
     }
 
     /// Creates a delete task from a delete query.
@@ -1511,12 +1520,21 @@ metastore_test_suite!(crate::PostgresqlMetastore);
 #[cfg(test)]
 mod tests {
     use quickwit_doc_mapper::tag_pruning::{no_tag, tag, TagFilterAst};
+    use quickwit_proto::metastore::MetastoreService;
     use quickwit_proto::IndexUid;
     use time::OffsetDateTime;
 
-    use super::{build_query_filter, tags_filter_expression_helper};
+    use super::{build_query_filter, tags_filter_expression_helper, PostgresqlMetastore};
     use crate::metastore::postgresql_metastore::build_index_id_patterns_sql_query;
+    use crate::tests::test_suite::DefaultForTest;
     use crate::{ListSplitsQuery, SplitState};
+
+    #[tokio::test]
+    async fn test_metastore_connectivity_and_endpoints() {
+        let mut metastore = PostgresqlMetastore::default_for_test().await;
+        metastore.check_connectivity().await.unwrap();
+        assert!(metastore.endpoints()[0].protocol().is_postgresql());
+    }
 
     fn test_tags_filter_expression_helper(tags_ast: TagFilterAst, expected: &str) {
         assert_eq!(tags_filter_expression_helper(&tags_ast), expected);

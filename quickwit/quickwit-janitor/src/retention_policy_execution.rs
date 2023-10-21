@@ -26,7 +26,7 @@ use quickwit_metastore::{
 use quickwit_proto::metastore::{
     ListSplitsRequest, MarkSplitsForDeletionRequest, MetastoreService, MetastoreServiceClient,
 };
-use quickwit_proto::IndexUid;
+use quickwit_proto::{IndexUid, SplitId};
 use time::OffsetDateTime;
 use tracing::{info, warn};
 
@@ -79,7 +79,7 @@ pub async fn run_execute_retention_policy(
         return Ok(expired_splits);
     }
     // Mark the expired splits for deletion.
-    let expired_split_ids: Vec<String> = expired_splits
+    let expired_split_ids: Vec<SplitId> = expired_splits
         .iter()
         .map(|split_metadata| split_metadata.split_id.to_string())
         .collect();
@@ -89,10 +89,8 @@ pub async fn run_execute_retention_policy(
         "Marking {} splits for deletion based on retention policy.",
         expired_split_ids.len()
     );
-    let mark_splits_for_deletion_request = MarkSplitsForDeletionRequest {
-        index_uid: index_uid.to_string(),
-        split_ids: expired_split_ids.clone(),
-    };
+    let mark_splits_for_deletion_request =
+        MarkSplitsForDeletionRequest::new(index_uid.to_string(), expired_split_ids);
     ctx.protect_future(metastore.mark_splits_for_deletion(mark_splits_for_deletion_request))
         .await?;
     Ok(expired_splits)

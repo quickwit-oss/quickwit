@@ -141,9 +141,7 @@ async fn get_index_metadata(
     mut metastore: MetastoreServiceClient,
 ) -> MetastoreResult<IndexMetadata> {
     info!(index_id = %index_id, "get-index-metadata");
-    let index_metadata_request = IndexMetadataRequest {
-        index_id: index_id.clone(),
-    };
+    let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
     let index_metadata = metastore
         .index_metadata(index_metadata_request)
         .await?
@@ -194,9 +192,7 @@ async fn describe_index(
     index_id: String,
     mut metastore: MetastoreServiceClient,
 ) -> MetastoreResult<IndexStats> {
-    let index_metadata_request = IndexMetadataRequest {
-        index_id: index_id.clone(),
-    };
+    let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
     let index_metadata = metastore
         .index_metadata(index_metadata_request)
         .await?
@@ -305,9 +301,7 @@ async fn list_splits(
     list_split_query: ListSplitsQueryParams,
     mut metastore: MetastoreServiceClient,
 ) -> MetastoreResult<Vec<Split>> {
-    let index_metadata_request = IndexMetadataRequest {
-        index_id: index_id.clone(),
-    };
+    let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
     let index_uid: IndexUid = metastore
         .index_metadata(index_metadata_request)
         .await?
@@ -371,9 +365,7 @@ async fn mark_splits_for_deletion(
     splits_for_deletion: SplitsForDeletion,
     mut metastore: MetastoreServiceClient,
 ) -> MetastoreResult<()> {
-    let index_metadata_request = IndexMetadataRequest {
-        index_id: index_id.clone(),
-    };
+    let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
     let index_uid: IndexUid = metastore
         .index_metadata(index_metadata_request)
         .await?
@@ -385,10 +377,8 @@ async fn mark_splits_for_deletion(
         .iter()
         .map(|split_id| split_id.to_string())
         .collect();
-    let mark_splits_for_deletion_request = MarkSplitsForDeletionRequest {
-        index_uid: index_uid.to_string(),
-        split_ids: split_ids.clone(),
-    };
+    let mark_splits_for_deletion_request =
+        MarkSplitsForDeletionRequest::new(index_uid.to_string(), split_ids.clone());
     metastore
         .mark_splits_for_deletion(mark_splits_for_deletion_request)
         .await?;
@@ -604,9 +594,7 @@ async fn create_source(
                 .to_string(),
         ));
     }
-    let index_metadata_request = IndexMetadataRequest {
-        index_id: index_id.clone(),
-    };
+    let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
     let index_uid: IndexUid = index_service
         .metastore()
         .index_metadata(index_metadata_request)
@@ -634,9 +622,7 @@ async fn get_source(
     mut metastore: MetastoreServiceClient,
 ) -> MetastoreResult<SourceConfig> {
     info!(index_id = %index_id, source_id = %source_id, "get-source");
-    let index_metadata_request = IndexMetadataRequest {
-        index_id: index_id.clone(),
-    };
+    let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
     let source_config = metastore
         .index_metadata(index_metadata_request)
         .await?
@@ -681,9 +667,7 @@ async fn reset_source_checkpoint(
     source_id: String,
     mut metastore: MetastoreServiceClient,
 ) -> MetastoreResult<()> {
-    let index_metadata_resquest = IndexMetadataRequest {
-        index_id: index_id.clone(),
-    };
+    let index_metadata_resquest = IndexMetadataRequest::for_index_id(index_id.to_string());
     let index_uid: IndexUid = metastore
         .index_metadata(index_metadata_resquest)
         .await?
@@ -739,9 +723,7 @@ async fn toggle_source(
     mut metastore: MetastoreServiceClient,
 ) -> Result<(), IndexServiceError> {
     info!(index_id = %index_id, source_id = %source_id, enable = toggle_source.enable, "toggle-source");
-    let index_metadata_request = IndexMetadataRequest {
-        index_id: index_id.clone(),
-    };
+    let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
     let index_uid: IndexUid = metastore
         .index_metadata(index_metadata_request)
         .await?
@@ -792,9 +774,7 @@ async fn delete_source(
     mut metastore: MetastoreServiceClient,
 ) -> Result<(), IndexServiceError> {
     info!(index_id = %index_id, source_id = %source_id, "delete-source");
-    let index_metadata_request = IndexMetadataRequest {
-        index_id: index_id.clone(),
-    };
+    let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
     let index_uid: IndexUid = metastore
         .index_metadata(index_metadata_request)
         .await?
@@ -1410,9 +1390,7 @@ mod tests {
 
         // Check that the source has been added to index metadata.
         let index_metadata = metastore
-            .index_metadata(IndexMetadataRequest {
-                index_id: "hdfs-logs".to_string(),
-            })
+            .index_metadata(IndexMetadataRequest::for_index_id("hdfs-logs".to_string()))
             .await
             .unwrap()
             .deserialize_index_metadata()
@@ -1438,9 +1416,7 @@ mod tests {
             .await;
         assert_eq!(resp.status(), 200);
         let index_metadata = metastore
-            .index_metadata(IndexMetadataRequest {
-                index_id: "hdfs-logs".to_string(),
-            })
+            .index_metadata(IndexMetadataRequest::for_index_id("hdfs-logs".to_string()))
             .await
             .unwrap()
             .deserialize_index_metadata()

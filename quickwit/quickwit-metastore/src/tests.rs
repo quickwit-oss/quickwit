@@ -86,10 +86,8 @@ pub mod test_suite {
                 .collect();
 
             // Mark splits for deletion.
-            let mark_splits_for_deletion_request = MarkSplitsForDeletionRequest {
-                index_uid: index_uid.to_string(),
-                split_ids: all_split_ids.clone(),
-            };
+            let mark_splits_for_deletion_request =
+                MarkSplitsForDeletionRequest::new(index_uid.to_string(), all_split_ids.clone());
             metastore
                 .mark_splits_for_deletion(mark_splits_for_deletion_request)
                 .await
@@ -143,9 +141,7 @@ pub mod test_suite {
         assert!(metastore.index_exists(&index_id).await.unwrap());
 
         let index_metadata = metastore
-            .index_metadata(IndexMetadataRequest {
-                index_id: index_id.to_string(),
-            })
+            .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
             .await
             .unwrap()
             .deserialize_index_metadata()
@@ -224,9 +220,7 @@ pub mod test_suite {
         let index_config = IndexConfig::for_test(&index_id, &index_uri);
 
         let error = metastore
-            .index_metadata(IndexMetadataRequest {
-                index_id: "index-not-found".to_string(),
-            })
+            .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
             .await
             .unwrap_err();
         assert!(matches!(
@@ -244,9 +238,7 @@ pub mod test_suite {
             .into();
 
         let index_metadata = metastore
-            .index_metadata(IndexMetadataRequest {
-                index_id: index_id.to_string(),
-            })
+            .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
             .await
             .unwrap()
             .deserialize_index_metadata()
@@ -500,9 +492,7 @@ pub mod test_suite {
 
         assert_eq!(
             metastore
-                .index_metadata(IndexMetadataRequest {
-                    index_id: index_id.to_string()
-                })
+                .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
                 .await
                 .unwrap()
                 .deserialize_index_metadata()
@@ -517,9 +507,7 @@ pub mod test_suite {
         metastore.add_source(add_source_request).await.unwrap();
 
         let index_metadata = metastore
-            .index_metadata(IndexMetadataRequest {
-                index_id: index_id.to_string(),
-            })
+            .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
             .await
             .unwrap()
             .deserialize_index_metadata()
@@ -606,9 +594,7 @@ pub mod test_suite {
             AddSourceRequest::try_from_source_config(index_uid.clone(), source.clone()).unwrap();
         metastore.add_source(add_source_request).await.unwrap();
         let index_metadata = metastore
-            .index_metadata(IndexMetadataRequest {
-                index_id: index_id.to_string(),
-            })
+            .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
             .await
             .unwrap()
             .deserialize_index_metadata()
@@ -626,9 +612,7 @@ pub mod test_suite {
             .await
             .unwrap();
         let index_metadata = metastore
-            .index_metadata(IndexMetadataRequest {
-                index_id: index_id.to_string(),
-            })
+            .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
             .await
             .unwrap()
             .deserialize_index_metadata()
@@ -646,9 +630,7 @@ pub mod test_suite {
             .await
             .unwrap();
         let index_metadata = metastore
-            .index_metadata(IndexMetadataRequest {
-                index_id: index_id.to_string(),
-            })
+            .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
             .await
             .unwrap()
             .deserialize_index_metadata()
@@ -731,9 +713,7 @@ pub mod test_suite {
             .unwrap();
 
         let sources = metastore
-            .index_metadata(IndexMetadataRequest {
-                index_id: index_id.to_string(),
-            })
+            .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
             .await
             .unwrap()
             .deserialize_index_metadata()
@@ -834,9 +814,7 @@ pub mod test_suite {
                 .unwrap();
         }
         assert!(!metastore
-            .index_metadata(IndexMetadataRequest {
-                index_id: index_id.to_string()
-            })
+            .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
             .await
             .unwrap()
             .deserialize_index_metadata()
@@ -853,9 +831,7 @@ pub mod test_suite {
             .unwrap();
 
         let index_metadata = metastore
-            .index_metadata(IndexMetadataRequest {
-                index_id: index_id.to_string(),
-            })
+            .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
             .await
             .unwrap()
             .deserialize_index_metadata()
@@ -901,9 +877,7 @@ pub mod test_suite {
             .unwrap();
 
         assert!(metastore
-            .index_metadata(IndexMetadataRequest {
-                index_id: index_id.to_string(),
-            })
+            .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
             .await
             .unwrap()
             .deserialize_index_metadata()
@@ -972,9 +946,7 @@ pub mod test_suite {
                 .unwrap();
 
             let index_metadata = metastore
-                .index_metadata(IndexMetadataRequest {
-                    index_id: index_id.to_string(),
-                })
+                .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
                 .await
                 .unwrap()
                 .deserialize_index_metadata()
@@ -1215,10 +1187,8 @@ pub mod test_suite {
                 .await
                 .unwrap();
 
-            let mark_splits_for_deletion_request = MarkSplitsForDeletionRequest {
-                index_uid: index_uid.clone().to_string(),
-                split_ids: vec![split_id_1.clone()],
-            };
+            let mark_splits_for_deletion_request =
+                MarkSplitsForDeletionRequest::new(index_uid.to_string(), vec![split_id_1.clone()]);
             metastore
                 .mark_splits_for_deletion(mark_splits_for_deletion_request)
                 .await
@@ -1377,10 +1347,8 @@ pub mod test_suite {
                 .await
                 .unwrap();
 
-            let mark_splits_for_deletion_request = MarkSplitsForDeletionRequest {
-                index_uid: index_uid.clone().to_string(),
-                split_ids: vec![split_id_1.clone()],
-            };
+            let mark_splits_for_deletion_request =
+                MarkSplitsForDeletionRequest::new(index_uid.to_string(), vec![split_id_1.clone()]);
             metastore
                 .mark_splits_for_deletion(mark_splits_for_deletion_request)
                 .await
@@ -1642,9 +1610,7 @@ pub mod test_suite {
         try_join_all(join_handles).await.unwrap();
 
         let index_metadata = metastore
-            .index_metadata(IndexMetadataRequest {
-                index_id: index_id.to_string(),
-            })
+            .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
             .await
             .unwrap()
             .deserialize_index_metadata()
@@ -1821,10 +1787,8 @@ pub mod test_suite {
                 .await
                 .unwrap();
 
-            let mark_splits_for_deletion_request = MarkSplitsForDeletionRequest {
-                index_uid: index_uid.clone().to_string(),
-                split_ids: vec![split_id_2.clone()],
-            };
+            let mark_splits_for_deletion_request =
+                MarkSplitsForDeletionRequest::new(index_uid.to_string(), vec![split_id_2.clone()]);
             metastore
                 .mark_splits_for_deletion(mark_splits_for_deletion_request)
                 .await
@@ -1933,10 +1897,8 @@ pub mod test_suite {
                 .await
                 .unwrap();
 
-            let mark_splits_for_deletion_request = MarkSplitsForDeletionRequest {
-                index_uid: index_uid.clone().to_string(),
-                split_ids: vec![split_id_1.clone()],
-            };
+            let mark_splits_for_deletion_request =
+                MarkSplitsForDeletionRequest::new(index_uid.to_string(), vec![split_id_1.clone()]);
             metastore
                 .mark_splits_for_deletion(mark_splits_for_deletion_request)
                 .await
@@ -2037,10 +1999,8 @@ pub mod test_suite {
             .index_uid
             .into();
 
-        let mark_splits_for_deletion_request = MarkSplitsForDeletionRequest {
-            index_uid: "index-not-found".to_string(),
-            ..Default::default()
-        };
+        let mark_splits_for_deletion_request =
+            MarkSplitsForDeletionRequest::new("index-not-found".to_string(), Vec::new());
         let error = metastore
             .mark_splits_for_deletion(mark_splits_for_deletion_request)
             .await
@@ -2050,10 +2010,10 @@ pub mod test_suite {
             MetastoreError::NotFound(EntityKind::Index { .. })
         ));
 
-        let mark_splits_for_deletion_request = MarkSplitsForDeletionRequest {
-            index_uid: index_uid.clone().to_string(),
-            split_ids: vec!["split-not-found".to_string()],
-        };
+        let mark_splits_for_deletion_request = MarkSplitsForDeletionRequest::new(
+            index_uid.to_string(),
+            vec!["split-not-found".to_string()],
+        );
         metastore
             .mark_splits_for_deletion(mark_splits_for_deletion_request)
             .await
@@ -2122,10 +2082,10 @@ pub mod test_suite {
         // Sleep for 1s so we can observe the timestamp update.
         sleep(Duration::from_secs(1)).await;
 
-        let mark_splits_for_deletion_request = MarkSplitsForDeletionRequest {
-            index_uid: index_uid.clone().to_string(),
-            split_ids: vec![split_id_3.clone()],
-        };
+        let mark_splits_for_deletion_request = MarkSplitsForDeletionRequest::new(
+            index_uid.clone().to_string(),
+            vec![split_id_3.clone()],
+        );
         metastore
             .mark_splits_for_deletion(mark_splits_for_deletion_request)
             .await
@@ -2152,15 +2112,15 @@ pub mod test_suite {
         // Sleep for 1s so we can observe the timestamp update.
         sleep(Duration::from_secs(1)).await;
 
-        let mark_splits_for_deletion_request = MarkSplitsForDeletionRequest {
-            index_uid: index_uid.clone().to_string(),
-            split_ids: vec![
+        let mark_splits_for_deletion_request = MarkSplitsForDeletionRequest::new(
+            index_uid.to_string(),
+            vec![
                 split_id_1.clone(),
                 split_id_2.clone(),
                 split_id_3.clone(),
                 "split-not-found".to_string(),
             ],
-        };
+        );
         metastore
             .mark_splits_for_deletion(mark_splits_for_deletion_request)
             .await
@@ -2313,10 +2273,10 @@ pub mod test_suite {
             2
         );
 
-        let mark_splits_for_deletion_request = MarkSplitsForDeletionRequest {
-            index_uid: index_uid.clone().to_string(),
-            split_ids: vec![split_id_1.clone(), split_id_2.clone()],
-        };
+        let mark_splits_for_deletion_request = MarkSplitsForDeletionRequest::new(
+            index_uid.to_string(),
+            vec![split_id_1.clone(), split_id_2.clone()],
+        );
         metastore
             .mark_splits_for_deletion(mark_splits_for_deletion_request)
             .await
@@ -2438,10 +2398,10 @@ pub mod test_suite {
             .await
             .unwrap();
 
-        let mark_splits_for_deletion = MarkSplitsForDeletionRequest {
-            index_uid: index_uid.clone().to_string(),
-            split_ids: vec![split_id_3.clone(), split_id_4.clone()],
-        };
+        let mark_splits_for_deletion = MarkSplitsForDeletionRequest::new(
+            index_uid.clone().to_string(),
+            vec![split_id_3.clone(), split_id_4.clone()],
+        );
         metastore
             .mark_splits_for_deletion(mark_splits_for_deletion)
             .await
@@ -3185,10 +3145,8 @@ pub mod test_suite {
 
         // wait for 1s, mark split for deletion & check `update_timestamp`
         sleep(Duration::from_secs(1)).await;
-        let mark_splits_for_deletion_request = MarkSplitsForDeletionRequest {
-            index_uid: index_uid.to_string(),
-            split_ids: vec![split_id.clone()],
-        };
+        let mark_splits_for_deletion_request =
+            MarkSplitsForDeletionRequest::new(index_uid.to_string(), vec![split_id.clone()]);
         metastore
             .mark_splits_for_deletion(mark_splits_for_deletion_request)
             .await
@@ -3448,20 +3406,17 @@ pub mod test_suite {
             .unwrap();
 
         let all_index_id_1_delete_tasks = metastore
-            .list_delete_tasks(ListDeleteTasksRequest {
-                index_uid: index_uid_1.to_string(),
-                opstamp_start: 0,
-            })
+            .list_delete_tasks(ListDeleteTasksRequest::new(index_uid_1.to_string(), 0))
             .await
             .unwrap()
             .delete_tasks;
         assert_eq!(all_index_id_1_delete_tasks.len(), 2);
 
         let recent_index_id_1_delete_tasks = metastore
-            .list_delete_tasks(ListDeleteTasksRequest {
-                index_uid: index_uid_1.to_string(),
-                opstamp_start: delete_task_1.opstamp,
-            })
+            .list_delete_tasks(ListDeleteTasksRequest::new(
+                index_uid_1.to_string(),
+                delete_task_1.opstamp,
+            ))
             .await
             .unwrap()
             .delete_tasks;
@@ -3911,10 +3866,8 @@ pub mod test_suite {
             }
         ),);
 
-        let mark_splits_for_deletion_request = MarkSplitsForDeletionRequest {
-            index_uid: index_uid.to_string(),
-            split_ids: vec![split_id_2.clone()],
-        };
+        let mark_splits_for_deletion_request =
+            MarkSplitsForDeletionRequest::new(index_uid.to_string(), vec![split_id_2.clone()]);
         metastore
             .mark_splits_for_deletion(mark_splits_for_deletion_request)
             .await

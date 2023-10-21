@@ -897,9 +897,8 @@ pub async fn root_list_terms(
     cluster_client: &ClusterClient,
 ) -> crate::Result<ListTermsResponse> {
     let start_instant = tokio::time::Instant::now();
-    let index_metadata_request = IndexMetadataRequest {
-        index_id: list_terms_request.index_id.clone(),
-    };
+    let index_metadata_request =
+        IndexMetadataRequest::for_index_id(list_terms_request.index_id.clone());
     let index_metadata = metastore
         .index_metadata(index_metadata_request)
         .await?

@@ -224,10 +224,10 @@ impl DeleteTaskPlanner {
         let mut splits_with_deletes: Vec<Split> = Vec::new();
 
         for stale_split in stale_splits {
-            let list_delete_tasks_request = ListDeleteTasksRequest {
-                index_uid: self.index_uid.to_string(),
-                opstamp_start: stale_split.split_metadata.delete_opstamp,
-            };
+            let list_delete_tasks_request = ListDeleteTasksRequest::new(
+                self.index_uid.to_string(),
+                stale_split.split_metadata.delete_opstamp,
+            );
             let pending_tasks = ctx
                 .protect_future(self.metastore.list_delete_tasks(list_delete_tasks_request))
                 .await?
@@ -463,9 +463,7 @@ mod tests {
             test_sandbox.add_documents(vec![doc]).await?;
         }
         let mut metastore = test_sandbox.metastore();
-        let index_metadata_request = IndexMetadataRequest {
-            index_id: index_id.to_string(),
-        };
+        let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
         let index_metadata = metastore
             .index_metadata(index_metadata_request)
             .await

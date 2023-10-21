@@ -97,18 +97,13 @@ pub async fn get_delete_tasks(
     index_id: String,
     mut metastore: MetastoreServiceClient,
 ) -> MetastoreResult<Vec<DeleteTask>> {
-    let index_metadata_request = IndexMetadataRequest {
-        index_id: index_id.clone(),
-    };
+    let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
     let index_uid: IndexUid = metastore
         .index_metadata(index_metadata_request)
         .await?
         .deserialize_index_metadata()?
         .index_uid;
-    let list_delete_tasks_request = ListDeleteTasksRequest {
-        index_uid: index_uid.to_string(),
-        opstamp_start: 0,
-    };
+    let list_delete_tasks_request = ListDeleteTasksRequest::new(index_uid.to_string(), 0);
     let delete_tasks = metastore
         .list_delete_tasks(list_delete_tasks_request)
         .await?
@@ -149,9 +144,7 @@ pub async fn post_delete_request(
     delete_request: DeleteQueryRequest,
     mut metastore: MetastoreServiceClient,
 ) -> Result<DeleteTask, JanitorError> {
-    let index_metadata_request = IndexMetadataRequest {
-        index_id: index_id.clone(),
-    };
+    let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
     let metadata = metastore
         .index_metadata(index_metadata_request)
         .await?

@@ -650,9 +650,17 @@ impl MetastoreService for FileBackedMetastore {
         &mut self,
         request: IndexMetadataRequest,
     ) -> MetastoreResult<IndexMetadataResponse> {
+        let index_id = request.get_index_id()?;
         let index_metadata = self
-            .read_any(&request.index_id, |index| Ok(index.metadata().clone()))
+            .read_any(&index_id, |index| Ok(index.metadata().clone()))
             .await?;
+        if let Some(index_uid) = &request.index_uid {
+            if index_metadata.index_uid.to_string() != *index_uid {
+                return Err(MetastoreError::NotFound(EntityKind::Index {
+                    index_id: index_id.to_string(),
+                }));
+            }
+        }
         let response = IndexMetadataResponse::try_from_index_metadata(index_metadata)?;
         Ok(response)
     }
@@ -833,9 +841,7 @@ impl MetastoreService for FileBackedMetastore {
                 Ok(index.last_delete_opstamp())
             })
             .await?;
-        Ok(LastDeleteOpstampResponse {
-            last_delete_opstamp,
-        })
+        Ok(LastDeleteOpstampResponse::new(last_delete_opstamp))
     }
 
     async fn create_delete_task(
@@ -916,7 +922,7 @@ async fn get_index_metadata(
     mut metastore: FileBackedMetastore,
     index_id: String,
 ) -> MetastoreResult<Option<IndexMetadata>> {
-    let request = IndexMetadataRequest { index_id };
+    let request = IndexMetadataRequest::for_index_id(index_id);
     let index_metadata_result = metastore
         .index_metadata(request)
         .await
@@ -1001,6 +1007,13 @@ mod tests {
     use super::*;
     use crate::tests::test_suite::DefaultForTest;
     use crate::{IndexMetadata, ListSplitsQuery, SplitMetadata, SplitState};
+
+    #[tokio::test]
+    async fn test_metastore_connectivity_and_endpoints() {
+        let mut metastore = FileBackedMetastore::default_for_test().await;
+        metastore.check_connectivity().await.unwrap();
+        assert!(metastore.endpoints()[0].protocol().is_ram());
+    }
 
     #[tokio::test]
     async fn test_file_backed_metastore_connectivity_fails_if_states_file_does_not_exist() {

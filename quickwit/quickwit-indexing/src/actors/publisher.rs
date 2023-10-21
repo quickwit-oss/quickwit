@@ -123,7 +123,7 @@ impl Handler<SplitsUpdate> for Publisher {
             .as_ref()
             .map(serde_json::to_string)
             .transpose()
-            .map_err(|err| anyhow::anyhow!("failed to serialize checkpoint delta: {err}"))?;
+            .context("failed to serialize `IndexCheckpointDelta`")?;
         let split_ids: Vec<String> = new_splits
             .iter()
             .map(|split| split.split_id.clone())
@@ -195,7 +195,7 @@ mod tests {
     use quickwit_metastore::checkpoint::{
         IndexCheckpointDelta, PartitionId, Position, SourceCheckpoint, SourceCheckpointDelta,
     };
-    use quickwit_metastore::SplitMetadata;
+    use quickwit_metastore::{PublishSplitsRequestExt, SplitMetadata};
     use quickwit_proto::metastore::EmptyResponse;
     use quickwit_proto::IndexUid;
     use tracing::Span;
@@ -210,13 +210,10 @@ mod tests {
         mock_metastore
             .expect_publish_splits()
             .withf(|publish_splits_request| {
-                let checkpoint_delta: IndexCheckpointDelta = serde_json::from_str(
-                    publish_splits_request
-                        .index_checkpoint_delta_json_opt
-                        .as_ref()
-                        .unwrap(),
-                )
-                .unwrap();
+                let checkpoint_delta: IndexCheckpointDelta = publish_splits_request
+                    .deserialize_index_checkpoint()
+                    .unwrap()
+                    .unwrap();
                 publish_splits_request.index_uid == "index:11111111111111111111111111"
                     && checkpoint_delta.source_id == "source"
                     && publish_splits_request.staged_split_ids[..] == ["split"]
@@ -287,13 +284,10 @@ mod tests {
         mock_metastore
             .expect_publish_splits()
             .withf(|publish_splits_request| {
-                let checkpoint_delta: IndexCheckpointDelta = serde_json::from_str(
-                    publish_splits_request
-                        .index_checkpoint_delta_json_opt
-                        .as_ref()
-                        .unwrap(),
-                )
-                .unwrap();
+                let checkpoint_delta: IndexCheckpointDelta = publish_splits_request
+                    .deserialize_index_checkpoint()
+                    .unwrap()
+                    .unwrap();
                 publish_splits_request.index_uid == "index:11111111111111111111111111"
                     && checkpoint_delta.source_id == "source"
                     && publish_splits_request.staged_split_ids.is_empty()

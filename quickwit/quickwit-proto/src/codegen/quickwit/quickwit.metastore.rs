@@ -41,8 +41,10 @@ pub struct DeleteIndexRequest {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IndexMetadataRequest {
-    #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
+    #[prost(string, optional, tag = "1")]
+    pub index_id: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, optional, tag = "2")]
+    pub index_uid: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]

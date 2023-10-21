@@ -710,9 +710,7 @@ mod tests {
             .times(2)
             .returning(move |delete_opstamp_request| {
                 assert_eq!(delete_opstamp_request.index_uid, index_uid.to_string());
-                Ok(LastDeleteOpstampResponse {
-                    last_delete_opstamp,
-                })
+                Ok(LastDeleteOpstampResponse::new(last_delete_opstamp))
             });
         metastore.expect_publish_splits().never();
         let indexer = Indexer::new(
@@ -846,9 +844,7 @@ mod tests {
             .times(1..=2)
             .returning(move |last_delete_opstamp_request| {
                 assert_eq!(last_delete_opstamp_request.index_uid, index_uid.to_string());
-                Ok(LastDeleteOpstampResponse {
-                    last_delete_opstamp,
-                })
+                Ok(LastDeleteOpstampResponse::new(last_delete_opstamp))
             });
         metastore.expect_publish_splits().never();
         let indexer = Indexer::new(
@@ -924,9 +920,7 @@ mod tests {
         metastore
             .expect_last_delete_opstamp()
             .returning(move |_last_delete_opstamp_request| {
-                Ok(LastDeleteOpstampResponse {
-                    last_delete_opstamp,
-                })
+                Ok(LastDeleteOpstampResponse::new(last_delete_opstamp))
             });
         metastore.expect_publish_splits().never();
         let indexer = Indexer::new(
@@ -1009,9 +1003,7 @@ mod tests {
         metastore
             .expect_last_delete_opstamp()
             .returning(move |_last_delete_opstamp_request| {
-                Ok(LastDeleteOpstampResponse {
-                    last_delete_opstamp,
-                })
+                Ok(LastDeleteOpstampResponse::new(last_delete_opstamp))
             });
         let indexer = Indexer::new(
             pipeline_id,
@@ -1079,13 +1071,10 @@ mod tests {
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
         let mut metastore = MetastoreServiceClient::mock();
         metastore.expect_publish_splits().never();
-        metastore.expect_last_delete_opstamp().once().returning(
-            move |_last_delete_opstamp_request| {
-                Ok(LastDeleteOpstampResponse {
-                    last_delete_opstamp: 10,
-                })
-            },
-        );
+        metastore
+            .expect_last_delete_opstamp()
+            .once()
+            .returning(move |_last_delete_opstamp_request| Ok(LastDeleteOpstampResponse::new(10)));
         metastore.expect_publish_splits().never();
         let indexer = Indexer::new(
             pipeline_id,
@@ -1163,13 +1152,10 @@ mod tests {
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
         let mut metastore = MetastoreServiceClient::mock();
         metastore.expect_publish_splits().never();
-        metastore.expect_last_delete_opstamp().once().returning(
-            move |_last_delete_opstamp_request| {
-                Ok(LastDeleteOpstampResponse {
-                    last_delete_opstamp: 10,
-                })
-            },
-        );
+        metastore
+            .expect_last_delete_opstamp()
+            .once()
+            .returning(move |_last_delete_opstamp_request| Ok(LastDeleteOpstampResponse::new(10)));
         metastore.expect_publish_splits().never();
         let indexer = Indexer::new(
             pipeline_id,
@@ -1256,13 +1242,10 @@ mod tests {
         let indexing_directory = TempDirectory::for_test();
         let indexing_settings = IndexingSettings::for_test();
         let mut metastore = MetastoreServiceClient::mock();
-        metastore.expect_last_delete_opstamp().times(1).returning(
-            move |_last_delete_opstamp_request| {
-                Ok(LastDeleteOpstampResponse {
-                    last_delete_opstamp: 10,
-                })
-            },
-        );
+        metastore
+            .expect_last_delete_opstamp()
+            .times(1)
+            .returning(move |_last_delete_opstamp_request| Ok(LastDeleteOpstampResponse::new(10)));
         metastore.expect_publish_splits().never();
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
         let indexer = Indexer::new(
@@ -1330,13 +1313,10 @@ mod tests {
         let mut indexing_settings = IndexingSettings::for_test();
         indexing_settings.split_num_docs_target = 1;
         let mut metastore = MetastoreServiceClient::mock();
-        metastore.expect_last_delete_opstamp().times(2).returning(
-            move |_last_delete_opstamp_request| {
-                Ok(LastDeleteOpstampResponse {
-                    last_delete_opstamp: 10,
-                })
-            },
-        );
+        metastore
+            .expect_last_delete_opstamp()
+            .times(2)
+            .returning(move |_last_delete_opstamp_request| Ok(LastDeleteOpstampResponse::new(10)));
         metastore.expect_publish_splits().never();
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
         let indexer = Indexer::new(
@@ -1405,13 +1385,10 @@ mod tests {
         let mut indexing_settings = IndexingSettings::for_test();
         indexing_settings.split_num_docs_target = 1;
         let mut metastore = MetastoreServiceClient::mock();
-        metastore.expect_last_delete_opstamp().times(1).returning(
-            move |_last_delete_opstamp_request| {
-                Ok(LastDeleteOpstampResponse {
-                    last_delete_opstamp: 10,
-                })
-            },
-        );
+        metastore
+            .expect_last_delete_opstamp()
+            .times(1)
+            .returning(move |_last_delete_opstamp_request| Ok(LastDeleteOpstampResponse::new(10)));
         metastore.expect_publish_splits().never();
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
         let indexer = Indexer::new(
@@ -1472,13 +1449,10 @@ mod tests {
         let indexing_directory = TempDirectory::for_test();
         let indexing_settings = IndexingSettings::for_test();
         let mut metastore = MetastoreServiceClient::mock();
-        metastore.expect_last_delete_opstamp().times(1).returning(
-            move |_last_delete_opstamp_request| {
-                Ok(LastDeleteOpstampResponse {
-                    last_delete_opstamp: 10,
-                })
-            },
-        );
+        metastore
+            .expect_last_delete_opstamp()
+            .times(1)
+            .returning(move |_last_delete_opstamp_request| Ok(LastDeleteOpstampResponse::new(10)));
         metastore.expect_publish_splits().never();
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
         let indexer = Indexer::new(
@@ -1546,9 +1520,7 @@ mod tests {
             });
         mock_metastore.expect_last_delete_opstamp().returning(
             move |_last_delete_opstamp_request| {
-                Ok(LastDeleteOpstampResponse {
-                    last_delete_opstamp,
-                })
+                Ok(LastDeleteOpstampResponse::new(last_delete_opstamp))
             },
         );
         let indexer = Indexer::new(

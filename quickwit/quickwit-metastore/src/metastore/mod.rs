@@ -36,11 +36,10 @@ use quickwit_common::tower::PrometheusMetricsLayer;
 use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_proto::metastore::{
-    serde_utils, AddSourceRequest, CreateIndexRequest, DeleteTask, EntityKind,
-    IndexMetadataRequest, IndexMetadataResponse, ListIndexesMetadataRequest,
-    ListIndexesMetadataResponse, ListSplitsRequest, ListSplitsResponse, MetastoreError,
-    MetastoreResult, MetastoreService, MetastoreServiceClient, PublishSplitsRequest,
-    StageSplitsRequest,
+    serde_utils, AddSourceRequest, CreateIndexRequest, DeleteTask, IndexMetadataRequest,
+    IndexMetadataResponse, ListIndexesMetadataRequest, ListIndexesMetadataResponse,
+    ListSplitsRequest, ListSplitsResponse, MetastoreError, MetastoreResult, MetastoreService,
+    MetastoreServiceClient, PublishSplitsRequest, StageSplitsRequest,
 };
 use quickwit_proto::{IndexUid, SplitId};
 use time::OffsetDateTime;
@@ -64,33 +63,12 @@ pub(crate) fn instrument_metastore(
 pub trait MetastoreServiceExt: MetastoreService {
     /// Returns whether the index `index_id` exists in the metastore.
     async fn index_exists(&mut self, index_id: &str) -> MetastoreResult<bool> {
-        let request = IndexMetadataRequest {
-            index_id: index_id.to_string(),
-        };
+        let request = IndexMetadataRequest::for_index_id(index_id.to_string());
         match self.index_metadata(request).await {
             Ok(_) => Ok(true),
             Err(MetastoreError::NotFound { .. }) => Ok(false),
             Err(error) => Err(error),
         }
-    }
-
-    /// Returns the [`IndexMetadata`] of an index identified by its UID.
-    async fn index_metadata_strict(
-        &mut self,
-        index_uid: &IndexUid,
-    ) -> MetastoreResult<IndexMetadata> {
-        let request = IndexMetadataRequest {
-            index_id: index_uid.index_id().to_string(),
-        };
-        let index_metadata = self
-            .index_metadata(request)
-            .await?
-            .deserialize_index_metadata()?;
-        if index_metadata.index_uid != *index_uid {
-            let index_id = index_uid.index_id().to_string();
-            return Err(MetastoreError::NotFound(EntityKind::Index { index_id }));
-        }
-        Ok(index_metadata)
     }
 }
 
@@ -126,12 +104,7 @@ impl ListIndexesMetadataRequestExt for ListIndexesMetadataRequest {
     fn try_from_list_indexes_query(
         list_indexes_query: ListIndexesQuery,
     ) -> MetastoreResult<ListIndexesMetadataRequest> {
-        let query_json = serde_json::to_string(&list_indexes_query).map_err(|error| {
-            MetastoreError::JsonSerializeError {
-                struct_name: "ListIndexesQuery".to_string(),
-                message: format!("Failed to serialize list indexes query: {error:?}"),
-            }
-        })?;
+        let query_json = serde_utils::to_json_str(&list_indexes_query)?;
         Ok(Self { query_json })
     }
 
@@ -140,12 +113,7 @@ impl ListIndexesMetadataRequestExt for ListIndexesMetadataRequest {
     }
 
     fn deserialize_list_indexes_query(&self) -> MetastoreResult<ListIndexesQuery> {
-        serde_json::from_str(&self.query_json).map_err(|error| {
-            MetastoreError::JsonDeserializeError {
-                struct_name: "ListIndexesQuery".to_string(),
-                message: format!("Failed to deserialize list indexes query: {error:?}"),
-            }
-        })
+        serde_utils::from_json_str(&self.query_json)
     }
 }
 
@@ -161,23 +129,13 @@ pub trait CreateIndexRequestExt {
 
 impl CreateIndexRequestExt for CreateIndexRequest {
     fn try_from_index_config(index_config: IndexConfig) -> MetastoreResult<CreateIndexRequest> {
-        let index_config_json = serde_json::to_string(&index_config).map_err(|error| {
-            MetastoreError::JsonSerializeError {
-                struct_name: "IndexConfig".to_string(),
-                message: format!("Failed to serialize index config: {error:?}"),
-            }
-        })?;
+        let index_config_json = serde_utils::to_json_str(&index_config)?;
         let request = Self { index_config_json };
         Ok(request)
     }
 
     fn deserialize_index_config(&self) -> MetastoreResult<IndexConfig> {
-        serde_json::from_str(&self.index_config_json).map_err(|error| {
-            MetastoreError::JsonDeserializeError {
-                struct_name: "IndexConfig".to_string(),
-                message: format!("Failed to deserialize index config: {error:?}"),
-            }
-        })
+        serde_utils::from_json_str(&self.index_config_json)
     }
 }
 
@@ -195,13 +153,7 @@ pub trait IndexMetadataResponseExt {
 
 impl IndexMetadataResponseExt for IndexMetadataResponse {
     fn try_from_index_metadata(index_metadata: IndexMetadata) -> MetastoreResult<Self> {
-        let index_metadata_serialized_json =
-            serde_json::to_string(&index_metadata).map_err(|error| {
-                MetastoreError::JsonSerializeError {
-                    struct_name: "IndexMetadata".to_string(),
-                    message: format!("Failed to serialize index metadata: {error:?}"),
-                }
-            })?;
+        let index_metadata_serialized_json = serde_utils::to_json_str(&index_metadata)?;
         let request = Self {
             index_metadata_serialized_json,
         };
@@ -209,12 +161,7 @@ impl IndexMetadataResponseExt for IndexMetadataResponse {
     }
 
     fn deserialize_index_metadata(&self) -> MetastoreResult<IndexMetadata> {
-        serde_json::from_str(&self.index_metadata_serialized_json).map_err(|error| {
-            MetastoreError::JsonDeserializeError {
-                struct_name: "IndexMetadata".to_string(),
-                message: format!("Failed to deserialize index metadata: {error:?}"),
-            }
-        })
+        serde_utils::from_json_str(&self.index_metadata_serialized_json)
     }
 }
 
@@ -274,12 +221,7 @@ impl AddSourceRequestExt for AddSourceRequest {
         index_uid: impl Into<IndexUid>,
         source_config: SourceConfig,
     ) -> MetastoreResult<AddSourceRequest> {
-        let source_config_json = serde_json::to_string(&source_config).map_err(|error| {
-            MetastoreError::JsonSerializeError {
-                struct_name: "SourceConfig".to_string(),
-                message: format!("Failed to serialize source config: {error:?}"),
-            }
-        })?;
+        let source_config_json = serde_utils::to_json_str(&source_config)?;
         let request = Self {
             index_uid: index_uid.into().into(),
             source_config_json,
@@ -288,12 +230,7 @@ impl AddSourceRequestExt for AddSourceRequest {
     }
 
     fn deserialize_source_config(&self) -> MetastoreResult<SourceConfig> {
-        serde_json::from_str(&self.source_config_json).map_err(|error| {
-            MetastoreError::JsonDeserializeError {
-                struct_name: "SourceConfig".to_string(),
-                message: format!("Failed to deserialize source config: {error:?}"),
-            }
-        })
+        serde_utils::from_json_str(&self.source_config_json)
     }
 }
 
@@ -321,11 +258,7 @@ impl StageSplitsRequestExt for StageSplitsRequest {
         index_uid: impl Into<IndexUid>,
         split_metadata: SplitMetadata,
     ) -> MetastoreResult<StageSplitsRequest> {
-        let split_metadata_list_serialized_json = serde_json::to_string(&[split_metadata])
-            .map_err(|error| MetastoreError::JsonSerializeError {
-                struct_name: "SplitMetadata".to_string(),
-                message: format!("Failed to serialize split metadata: {error:?}"),
-            })?;
+        let split_metadata_list_serialized_json = serde_utils::to_json_str(&[split_metadata])?;
         let request = Self {
             index_uid: index_uid.into().into(),
             split_metadata_list_serialized_json,
@@ -380,12 +313,7 @@ impl ListSplitsRequestExt for ListSplitsRequest {
     }
 
     fn deserialize_list_splits_query(&self) -> MetastoreResult<ListSplitsQuery> {
-        let list_splits_query = serde_json::from_str(&self.query_json).map_err(|error| {
-            MetastoreError::JsonDeserializeError {
-                struct_name: "ListSplitsQuery".to_string(),
-                message: format!("Failed to deserialize list splits query: {error:?}"),
-            }
-        })?;
+        let list_splits_query = serde_utils::from_json_str(&self.query_json)?;
         Ok(list_splits_query)
     }
 }
@@ -427,6 +355,8 @@ pub trait ListSplitsResponseExt {
 
 /// Helper trait for [`PublishSplitsRequest`] to deserialize its payload.
 pub trait PublishSplitsRequestExt {
+    /// Deserializes the `index_checkpoint_delta_json_opt` field of a [`PublishSplitsRequest`] into
+    /// an [`Option<IndexCheckpointDelta>`].
     fn deserialize_index_checkpoint(&self) -> MetastoreResult<Option<IndexCheckpointDelta>>;
 }
 

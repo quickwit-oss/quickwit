@@ -344,9 +344,7 @@ impl IndexingService {
         let index_metadata_response = self
             .metastore
             .clone()
-            .index_metadata(IndexMetadataRequest {
-                index_id: index_id.to_string(),
-            })
+            .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
             .await
             .map_err(|err| IndexingError::MetastoreError(err.to_string()))?;
         let index_metadata = index_metadata_response
@@ -1076,9 +1074,7 @@ mod tests {
                 .unwrap();
         metastore.add_source(add_source_request).await.unwrap();
         let metadata = metastore
-            .index_metadata(IndexMetadataRequest {
-                index_id: index_id.to_string(),
-            })
+            .index_metadata(IndexMetadataRequest::for_index_id(index_id.clone()))
             .await
             .unwrap()
             .deserialize_index_metadata()

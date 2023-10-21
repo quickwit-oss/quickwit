@@ -577,9 +577,7 @@ async fn test_delete_index_cli_dry_run() {
     // On dry run index should still exist
     let mut metastore = refresh_metastore(metastore).await.unwrap();
     metastore
-        .index_metadata(IndexMetadataRequest {
-            index_id: index_id.to_string(),
-        })
+        .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
         .await
         .unwrap();
     assert!(metastore.index_exists(&index_id).await.unwrap());
@@ -595,9 +593,7 @@ async fn test_delete_index_cli_dry_run() {
     // On dry run index should still exist
     let mut metastore = refresh_metastore(metastore).await.unwrap();
     metastore
-        .index_metadata(IndexMetadataRequest {
-            index_id: index_id.to_string(),
-        })
+        .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
         .await
         .unwrap();
     assert!(metastore.index_exists(&index_id).await.unwrap());
@@ -687,10 +683,8 @@ async fn test_garbage_collect_cli_no_grace() {
 
     let split_ids = vec![splits[0].split_id().to_string()];
     let mut metastore = refresh_metastore(metastore).await.unwrap();
-    let mark_for_deletion_request = MarkSplitsForDeletionRequest {
-        index_uid: index_uid.to_string(),
-        split_ids: split_ids.clone(),
-    };
+    let mark_for_deletion_request =
+        MarkSplitsForDeletionRequest::new(index_uid.to_string(), split_ids.clone());
     metastore
         .mark_splits_for_deletion(mark_for_deletion_request)
         .await
@@ -813,10 +807,10 @@ async fn test_garbage_collect_index_cli() {
     // without deleting the files.
     let split = splits[0].clone();
     metastore
-        .mark_splits_for_deletion(MarkSplitsForDeletionRequest {
-            index_uid: index_uid.to_string(),
-            split_ids: vec![split.split_metadata.split_id.to_string()],
-        })
+        .mark_splits_for_deletion(MarkSplitsForDeletionRequest::new(
+            index_uid.to_string(),
+            vec![split.split_metadata.split_id.to_string()],
+        ))
         .await
         .unwrap();
     metastore
