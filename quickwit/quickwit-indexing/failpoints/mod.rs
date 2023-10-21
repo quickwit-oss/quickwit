@@ -50,7 +50,7 @@ use quickwit_indexing::merge_policy::MergeOperation;
 use quickwit_indexing::models::MergeScratch;
 use quickwit_indexing::{get_tantivy_directory_from_split_bundle, TestSandbox};
 use quickwit_metastore::{
-    ListSplitsQuery, ListSplitsRequestExt, ListSplitsResponseExt, Split, SplitMetadata, SplitState,
+    ListSplitsQuery, ListSplitsRequestExt, ListSplitsResponseExt, SplitMetadata, SplitState,
 };
 use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::metastore::{ListSplitsRequest, MetastoreService};
@@ -267,7 +267,7 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
     tokio::time::sleep(Duration::from_millis(10)).await;
 
     let mut metastore = test_index_builder.metastore();
-    let split_metadatas: Vec<Split> = metastore
+    let split_metadatas: Vec<SplitMetadata> = metastore
         .list_splits(ListSplitsRequest::try_from_index_uid(test_index_builder.index_uid()).unwrap())
         .await?
         .deserialize_splits_metadata()
