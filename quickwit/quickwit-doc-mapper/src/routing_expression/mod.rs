@@ -69,12 +69,12 @@ fn hash_json_val<H: Hasher>(json_val: &JsonValue, hasher: &mut H) {
     }
 }
 
-fn extract_nested_value(data: &JsonValue, keys: &[&str]) -> Option<JsonValue> {
+fn extract_value(data: &JsonValue, keys: &[String]) -> Option<JsonValue> {
     match keys {
         [key, rest @ ..] => {
             if let JsonValue::Object(obj) = data {
-                if let Some(value) = obj.get(key.to_owned()) {
-                    extract_nested_value(value, rest)
+                if let Some(value) = obj.get(key) {
+                    extract_value(value, rest)
                 } else {
                     None
                 }
@@ -89,7 +89,7 @@ fn extract_nested_value(data: &JsonValue, keys: &[&str]) -> Option<JsonValue> {
 impl RoutingExprContext for serde_json::Map<String, JsonValue> {
     fn hash_attribute<H: Hasher>(&self, attr_name: &str, hasher: &mut H) {
         if let Ok(keys) = expression_dsl::parse_keys(attr_name) {
-            if let Some(json_val) = extract_nested_value(&JsonValue::Object(self.clone()), &keys) {
+            if let Some(json_val) = extract_value(&JsonValue::Object(self.clone()), &keys) {
                 hasher.write_u8(1u8);
                 hash_json_val(&json_val, hasher);
             } else {
@@ -330,7 +330,7 @@ enum ExprType {
 mod expression_dsl {
     use nom::bytes::complete::{escaped, tag};
     use nom::character::complete::multispace0;
-    use nom::combinator::{eof, opt};
+    use nom::combinator::{eof, map, opt};
     use nom::error::ErrorKind;
     use nom::multi::separated_list0;
     use nom::sequence::{delimited, tuple};
@@ -428,11 +428,13 @@ mod expression_dsl {
         )
     }
 
-    fn escaped_key(input: &str) -> IResult<&str, &str> {
-        escaped(key_identifier, '\\', tag("."))(input)
+    fn escaped_key(input: &str) -> IResult<&str, String> {
+        map(escaped(key_identifier, '\\', tag(".")), |s: &str| {
+            s.replace("\\.", ".")
+        })(input)
     }
 
-    pub(crate) fn parse_keys(input: &str) -> anyhow::Result<Vec<&str>> {
+    pub(crate) fn parse_keys(input: &str) -> anyhow::Result<Vec<String>> {
         let (i, res) = separated_list0(tag("."), escaped_key)(input)
             .finish()
             .map_err(|e| anyhow::anyhow!("error parsing key expression: {e}"))?;
@@ -545,18 +547,39 @@ mod tests {
     #[test]
     fn test_parse_keys() {
         let keys = expression_dsl::parse_keys("abc").unwrap();
-        assert_eq!(keys, vec!["abc"]);
+        assert_eq!(keys, vec![String::from("abc")]);
     }
 
     #[test]
     fn test_parse_keys_multiple() {
         let keys = expression_dsl::parse_keys("abc.def").unwrap();
-        assert_eq!(keys, vec!["abc", "def"]);
+        assert_eq!(keys, vec![String::from("abc"), String::from("def")]);
     }
     #[test]
     fn test_parse_keys_with_escaped_dot() {
         let keys = expression_dsl::parse_keys("abc\\.def.hij").unwrap();
-        assert_eq!(keys, vec!["abc\\.def", "hij"]);
+        assert_eq!(keys, vec![String::from("abc.def"), String::from("hij")]);
+    }
+
+    #[test]
+    fn test_extract_value_with_escaped_dot() {
+        let ctx = serde_json::from_str(r#"{"tenant.id": "happy", "app": "happy"}"#).unwrap();
+        let keys = expression_dsl::parse_keys("tenant\\.id").unwrap();
+        assert_eq!(keys, vec![String::from("tenant.id")]);
+        let value = extract_value(&ctx, &keys).unwrap();
+        assert_eq!(value, JsonValue::String(String::from("happy")));
+    }
+
+    #[test]
+    fn test_extract_value_with_nested_keys() {
+        let ctx = serde_json::from_str(
+            r#"{"tenant_id": "happy", "app": {"name": "happy", "id": "123"}}"#,
+        )
+        .unwrap();
+        let keys = expression_dsl::parse_keys("app.id").unwrap();
+        assert_eq!(keys, vec![String::from("app"), String::from("id")]);
+        let value = extract_value(&ctx, &keys).unwrap();
+        assert_eq!(value, JsonValue::String(String::from("123")));
     }
     // This unit test is here to ensure that the routing expr hash depends on
     // the expression itself as well as the expression value.
