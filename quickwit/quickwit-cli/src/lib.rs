@@ -263,7 +263,18 @@ pub async fn run_index_checklist(
     source_config_opt: Option<&SourceConfig>,
 ) -> anyhow::Result<()> {
     let mut checks: Vec<(&str, anyhow::Result<()>)> = Vec::new();
-
+    for metastore_endpoint in metastore.endpoints() {
+        // If it's not a database, the metastore is file-backed. To display a nicer message to the
+        // user, we check the metastore storage connectivity before the mestastore check
+        // connectivity which will check the storage anyway.
+        if !metastore_endpoint.protocol().is_database() {
+            let metastore_storage = storage_resolver.resolve(&metastore_endpoint).await?;
+            checks.push((
+                "metastore storage",
+                metastore_storage.check_connectivity().await,
+            ));
+        }
+    }
     checks.push(("metastore", metastore.check_connectivity().await));
     let index_metadata = metastore
         .index_metadata(IndexMetadataRequest::for_index_id(index_id.to_string()))
