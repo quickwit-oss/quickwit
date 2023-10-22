@@ -70,7 +70,7 @@ impl StrptimeParser {
             .is_empty()
         {
             anyhow::bail!(
-                "The date time string `{}` does not match the format `{}`.",
+                "datetime string `{}` does not match format `{}`",
                 date_time_str,
                 self.borrow_strptime_format()
             );
@@ -450,7 +450,7 @@ mod tests {
         let error_str = parser.parse_date_time("2021-01-01TABC").unwrap_err();
         assert_eq!(
             error_str,
-            "The date time string `2021-01-01TABC` does not match the format `%Y-%m-%d`."
+            "datetime string `2021-01-01TABC` does not match format `%Y-%m-%d`"
         );
     }
 }
