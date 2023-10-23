@@ -170,6 +170,12 @@ message SearchRequest {
   // enable pagination.
   // If split_id is empty, no comparison with _shard_doc should be done
   optional PartialHit search_after = 16;
+
+  // Pick the leaf search semaphore in priority.
+  // This flag should be used when running a multi-step query.
+  // In this case, it makes sense to reduce the average latency by acquiring the permit in priority for all steps
+  // apart from the first one. This is especially useful when working with traces, as the a single
+  bool priority = 17;
 }
 
 message SortField {

@@ -107,6 +107,12 @@ pub struct SearchRequest {
     /// If split_id is empty, no comparison with _shard_doc should be done
     #[prost(message, optional, tag = "16")]
     pub search_after: ::core::option::Option<PartialHit>,
+    /// Pick the leaf search semaphore in priority.
+    /// This flag should be used when running a multi-step query.
+    /// In this case, it makes sense to reduce the average latency by acquiring the permit in priority for all steps
+    /// apart from the first one. This is especially useful when working with traces, as the a single
+    #[prost(bool, tag = "17")]
+    pub priority: bool,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[derive(Eq, Hash)]

@@ -18,7 +18,8 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashMap;
-use std::mem;
+use std::{fmt, mem};
+use std::fmt::Formatter;
 use std::ops::{Bound, RangeInclusive};
 use std::sync::Arc;
 use std::time::Instant;
@@ -77,6 +78,27 @@ pub struct JaegerService {
     lookback_period_secs: i64,
     max_trace_duration_secs: i64,
     max_fetch_spans: u64,
+}
+
+#[derive(Copy, Clone, Debug)]
+enum JaegerOperation {
+    FindTraces,
+    GetTrace,
+}
+
+impl JaegerOperation {
+    pub fn name(&self) -> &'static str {
+        match self {
+            JaegerOperation::GetTrace => "get_trace",
+            JaegerOperation::FindTraces => "find_traces",
+        }
+    }
+}
+
+impl fmt::Display for JaegerOperation {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "{}", self.name())
+    }
 }
 
 impl JaegerService {
@@ -187,7 +209,6 @@ impl JaegerService {
     async fn find_traces_inner(
         &self,
         request: FindTracesRequest,
-        operation_name: &'static str,
         request_start: Instant,
     ) -> JaegerResult<SpanStream> {
         debug!(request=?request, "`find_traces` request");
@@ -200,16 +221,15 @@ impl JaegerService {
         let end = span_timestamps_range.end() + self.max_trace_duration_secs;
         let search_window = start..=end;
         let response = self
-            .stream_spans(&trace_ids, search_window, operation_name, request_start)
+            .stream_spans(&trace_ids, search_window, JaegerOperation::FindTraces, request_start)
             .await?;
         Ok(response)
     }
 
-    #[instrument("find_traces", skip_all)]
+    #[instrument("get_trace", skip_all)]
     async fn get_trace_inner(
         &self,
         request: GetTraceRequest,
-        operation_name: &'static str,
         request_start: Instant,
     ) -> JaegerResult<SpanStream> {
         debug!(request=?request, "`get_trace` request");
@@ -220,12 +240,12 @@ impl JaegerService {
         let start = end - self.lookback_period_secs;
         let search_window = start..=end;
         let response = self
-            .stream_spans(&[trace_id], search_window, operation_name, request_start)
+            .stream_spans(&[trace_id], search_window, JaegerOperation::GetTrace, request_start)
             .await?;
         Ok(response)
     }
 
-    #[instrument("find_trace_ids", skip_all fields(service_name=%trace_query.service_name, operation_name=%trace_query.operation_name))]
+    #[instrument(skip_all, fields(service_name=%trace_query.service_name, operation_name=%trace_query.operation_name))]
     async fn find_trace_ids(
         &self,
         trace_query: TraceQueryParameters,
@@ -274,12 +294,12 @@ impl JaegerService {
         Ok(trace_ids)
     }
 
-    #[instrument("stream_spans", skip_all, fields(num_traces=%trace_ids.len(), num_spans=Empty, num_bytes=Empty))]
+    #[instrument("stream_spans", skip_all, fields(num_traces=%trace_ids.len(), operation=%operation, num_spans=Empty, num_bytes=Empty))]
     async fn stream_spans(
         &self,
         trace_ids: &[TraceId],
         search_window: TimeIntervalSecs,
-        operation_name: &'static str,
+        operation: JaegerOperation,
         request_start: Instant,
     ) -> Result<SpanStream, Status> {
         if trace_ids.is_empty() {
@@ -302,19 +322,30 @@ impl JaegerService {
         let query_ast =
             serde_json::to_string(&query_ast).map_err(|err| Status::internal(err.to_string()))?;
 
+        let priority = match operation {
+            JaegerOperation::FindTraces => {
+                // This is the second of two requests. Let's run it with a higher priority
+                // to reduce the average latency for the overall query set.
+                true
+            }
+            JaegerOperation::GetTrace => {
+                false
+            }
+        };
         let search_request = SearchRequest {
             index_id_patterns: vec![OTEL_TRACES_INDEX_ID.to_string()],
             query_ast,
             start_timestamp: Some(*search_window.start()),
             end_timestamp: Some(*search_window.end()),
             max_hits: self.max_fetch_spans,
+            priority,
             ..Default::default()
         };
         let search_response = match self.search_service.root_search(search_request).await {
             Ok(search_response) => search_response,
             Err(search_error) => {
                 error!("Failed to fetch spans: {search_error:?}");
-                record_error(operation_name, request_start);
+                record_error(operation, request_start);
                 return Err(Status::internal("Failed to fetch spans."));
             }
         };
@@ -326,7 +357,7 @@ impl JaegerService {
                     spans.push(span);
                 }
                 Err(status) => {
-                    record_error(operation_name, request_start);
+                    record_error(operation, request_start);
                     return Err(status);
                 }
             };
@@ -366,7 +397,7 @@ impl JaegerService {
                         debug!("Client disconnected: {send_error:?}");
                         return;
                     }
-                    record_send(operation_name, num_spans, chunk_num_bytes);
+                    record_send(operation, num_spans, chunk_num_bytes);
                     chunk_num_bytes = 0;
                 }
                 chunk_num_bytes += span_num_bytes;
@@ -381,20 +412,20 @@ impl JaegerService {
                     debug!("Client disconnected: {send_error:?}");
                     return;
                 }
-                record_send(operation_name, num_spans, chunk_num_bytes);
+                record_send(operation, num_spans, chunk_num_bytes);
             }
             current_span.record("num_spans", num_spans_total);
             current_span.record("num_bytes", num_bytes_total);
 
             JAEGER_SERVICE_METRICS
                 .fetched_traces_total
-                .with_label_values([operation_name, OTEL_TRACES_INDEX_ID])
+                .with_label_values([operation.name(), OTEL_TRACES_INDEX_ID])
                 .inc_by(num_traces);
 
             let elapsed = request_start.elapsed().as_secs_f64();
             JAEGER_SERVICE_METRICS
                 .request_duration_seconds
-                .with_label_values([operation_name, OTEL_TRACES_INDEX_ID, "false"])
+                .with_label_values([operation.name(), OTEL_TRACES_INDEX_ID, "false"])
                 .observe(elapsed);
         });
         Ok(ReceiverStream::new(rx))
@@ -423,27 +454,27 @@ macro_rules! metrics {
     };
 }
 
-fn record_error(operation_name: &'static str, request_start: Instant) {
+fn record_error(operation: JaegerOperation, request_start: Instant) {
     JAEGER_SERVICE_METRICS
         .request_errors_total
-        .with_label_values([operation_name, OTEL_TRACES_INDEX_ID])
+        .with_label_values([operation.name(), OTEL_TRACES_INDEX_ID])
         .inc();
 
     let elapsed = request_start.elapsed().as_secs_f64();
     JAEGER_SERVICE_METRICS
         .request_duration_seconds
-        .with_label_values([operation_name, OTEL_TRACES_INDEX_ID, "true"])
+        .with_label_values([operation.name(), OTEL_TRACES_INDEX_ID, "true"])
         .observe(elapsed);
 }
 
-fn record_send(operation_name: &'static str, num_spans: usize, num_bytes: usize) {
+fn record_send(operation: JaegerOperation, num_spans: usize, num_bytes: usize) {
     JAEGER_SERVICE_METRICS
         .fetched_spans_total
-        .with_label_values([operation_name, OTEL_TRACES_INDEX_ID])
+        .with_label_values([operation.name(), OTEL_TRACES_INDEX_ID])
         .inc_by(num_spans as u64);
     JAEGER_SERVICE_METRICS
         .transferred_bytes_total
-        .with_label_values([operation_name, OTEL_TRACES_INDEX_ID])
+        .with_label_values([operation.name(), OTEL_TRACES_INDEX_ID])
         .inc_by(num_bytes as u64);
 }
 
@@ -487,7 +518,7 @@ impl SpanReaderPlugin for JaegerService {
         &self,
         request: Request<FindTracesRequest>,
     ) -> Result<Response<Self::FindTracesStream>, Status> {
-        self.find_traces_inner(request.into_inner(), "find_traces", Instant::now())
+        self.find_traces_inner(request.into_inner(), Instant::now())
             .await
             .map(Response::new)
     }
@@ -496,7 +527,7 @@ impl SpanReaderPlugin for JaegerService {
         &self,
         request: Request<GetTraceRequest>,
     ) -> Result<Response<Self::GetTraceStream>, Status> {
-        self.get_trace_inner(request.into_inner(), "get_trace", Instant::now())
+        self.get_trace_inner(request.into_inner(), Instant::now())
             .await
             .map(Response::new)
     }
