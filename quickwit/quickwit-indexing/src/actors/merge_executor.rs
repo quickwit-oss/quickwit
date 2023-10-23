@@ -33,9 +33,12 @@ use quickwit_common::runtimes::RuntimeType;
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_directories::UnionDirectory;
 use quickwit_doc_mapper::DocMapper;
-use quickwit_metastore::{Metastore, SplitMetadata};
+use quickwit_metastore::SplitMetadata;
 use quickwit_proto::indexing::IndexingPipelineId;
-use quickwit_proto::metastore::DeleteTask;
+use quickwit_proto::metastore::{
+    DeleteTask, ListDeleteTasksRequest, MarkSplitsForDeletionRequest, MetastoreService,
+    MetastoreServiceClient,
+};
 use quickwit_query::get_quickwit_fastfield_normalizer_manager;
 use quickwit_query::query_ast::QueryAst;
 use tantivy::directory::{DirectoryClone, MmapDirectory, RamDirectory};
@@ -54,7 +57,7 @@ use crate::models::{IndexedSplit, IndexedSplitBatch, MergeScratch, PublishLock, 
 #[derive(Clone)]
 pub struct MergeExecutor {
     pipeline_id: IndexingPipelineId,
-    metastore: Arc<dyn Metastore>,
+    metastore: MetastoreServiceClient,
     doc_mapper: Arc<dyn DocMapper>,
     io_controls: IoControls,
     merge_packager_mailbox: Mailbox<Packager>,
@@ -271,7 +274,7 @@ fn max_merge_ops(splits: &[SplitMetadata]) -> usize {
 impl MergeExecutor {
     pub fn new(
         pipeline_id: IndexingPipelineId,
-        metastore: Arc<dyn Metastore>,
+        metastore: MetastoreServiceClient,
         doc_mapper: Arc<dyn DocMapper>,
         io_controls: IoControls,
         merge_packager_mailbox: Mailbox<Packager>,
@@ -334,12 +337,12 @@ impl MergeExecutor {
         merge_scratch_directory: TempDirectory,
         ctx: &ActorContext<Self>,
     ) -> anyhow::Result<Option<IndexedSplit>> {
+        let list_delete_tasks_request =
+            ListDeleteTasksRequest::new(split.index_uid.to_string(), split.delete_opstamp);
         let delete_tasks = ctx
-            .protect_future(
-                self.metastore
-                    .list_delete_tasks(split.index_uid.clone(), split.delete_opstamp),
-            )
-            .await?;
+            .protect_future(self.metastore.list_delete_tasks(list_delete_tasks_request))
+            .await?
+            .delete_tasks;
         if delete_tasks.is_empty() {
             warn!(
                 "No delete task found for split `{}` with `delete_optamp` = `{}`.",
@@ -389,8 +392,12 @@ impl MergeExecutor {
                     "All documents from split `{}` were deleted.",
                     split.split_id()
                 );
+                let mark_splits_for_deletion_request = MarkSplitsForDeletionRequest::new(
+                    split.index_uid.to_string(),
+                    vec![split.split_id.to_string()],
+                );
                 self.metastore
-                    .mark_splits_for_deletion(split.index_uid.clone(), &[split.split_id()])
+                    .mark_splits_for_deletion(mark_splits_for_deletion_request)
                     .await?;
                 return Ok(None);
             };
@@ -533,8 +540,12 @@ fn open_index<T: Into<Box<dyn Directory>>>(
 mod tests {
     use quickwit_actors::Universe;
     use quickwit_common::split_file;
-    use quickwit_metastore::SplitMetadata;
-    use quickwit_proto::metastore::DeleteQuery;
+    use quickwit_metastore::{
+        ListSplitsRequestExt, ListSplitsResponseExt, SplitMetadata, StageSplitsRequestExt,
+    };
+    use quickwit_proto::metastore::{
+        DeleteQuery, ListSplitsRequest, PublishSplitsRequest, StageSplitsRequest,
+    };
     use serde_json::Value as JsonValue;
     use tantivy::{Document, Inventory, ReloadPolicy, TantivyDocument};
 
@@ -570,13 +581,14 @@ mod tests {
             );
             test_sandbox.add_documents(single_doc).await?;
         }
-        let metastore = test_sandbox.metastore();
+        let mut metastore = test_sandbox.metastore();
+        let list_splits_request = ListSplitsRequest::try_from_index_uid(index_uid).unwrap();
         let split_metas: Vec<SplitMetadata> = metastore
-            .list_all_splits(index_uid)
-            .await?
-            .into_iter()
-            .map(|split| split.split_metadata)
-            .collect();
+            .list_splits(list_splits_request)
+            .await
+            .unwrap()
+            .deserialize_splits_metadata()
+            .unwrap();
         assert_eq!(split_metas.len(), 4);
         let merge_scratch_directory = TempDirectory::for_test();
         let downloaded_splits_directory =
@@ -689,7 +701,7 @@ mod tests {
             source_id: "unknown".to_string(),
         };
         test_sandbox.add_documents(docs).await?;
-        let metastore = test_sandbox.metastore();
+        let mut metastore = test_sandbox.metastore();
         metastore
             .create_delete_task(DeleteQuery {
                 index_uid: index_uid.to_string(),
@@ -698,29 +710,34 @@ mod tests {
                 query_ast: quickwit_query::query_ast::qast_json_helper(delete_query, &["body"]),
             })
             .await?;
-        let split_metadata = metastore
-            .list_all_splits(index_uid.clone())
-            .await?
+        let split = metastore
+            .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
+            .await
+            .unwrap()
+            .deserialize_splits()
+            .unwrap()
             .into_iter()
             .next()
-            .unwrap()
-            .split_metadata;
+            .unwrap();
         // We want to test a delete on a split with num_merge_ops > 0.
-        let mut new_split_metadata = split_metadata.clone();
+        let mut new_split_metadata = split.split_metadata.clone();
         new_split_metadata.split_id = new_split_id();
         new_split_metadata.num_merge_ops = 1;
+        let stage_splits_request = StageSplitsRequest::try_from_split_metadata(
+            index_uid.clone(),
+            new_split_metadata.clone(),
+        )
+        .unwrap();
+        metastore.stage_splits(stage_splits_request).await.unwrap();
+        let publish_splits_request = PublishSplitsRequest {
+            index_uid: index_uid.to_string(),
+            staged_split_ids: vec![new_split_metadata.split_id.to_string()],
+            replaced_split_ids: vec![split.split_metadata.split_id.to_string()],
+            index_checkpoint_delta_json_opt: None,
+            publish_token_opt: None,
+        };
         metastore
-            .stage_splits(index_uid.clone(), vec![new_split_metadata.clone()])
-            .await
-            .unwrap();
-        metastore
-            .publish_splits(
-                index_uid.clone(),
-                &[new_split_metadata.split_id()],
-                &[split_metadata.split_id()],
-                None,
-                None,
-            )
+            .publish_splits(publish_splits_request)
             .await
             .unwrap();
         let expected_uncompressed_docs_size_in_bytes =
@@ -728,7 +745,7 @@ mod tests {
         let merge_scratch_directory = TempDirectory::for_test();
         let downloaded_splits_directory =
             merge_scratch_directory.named_temp_child("downloaded-splits-")?;
-        let split_filename = split_file(split_metadata.split_id());
+        let split_filename = split_file(split.split_metadata.split_id());
         let new_split_filename = split_file(new_split_metadata.split_id());
         let dest_filepath = downloaded_splits_directory.path().join(&new_split_filename);
         test_sandbox
@@ -805,10 +822,13 @@ mod tests {
             }
         } else {
             assert!(packager_msgs.is_empty());
-            let metastore = test_sandbox.metastore();
+            let mut metastore = test_sandbox.metastore();
             assert!(metastore
-                .list_all_splits(index_uid)
-                .await?
+                .list_splits(ListSplitsRequest::try_from_index_uid(index_uid).unwrap())
+                .await
+                .unwrap()
+                .deserialize_splits()
+                .unwrap()
                 .into_iter()
                 .all(
                     |split| split.split_state == quickwit_metastore::SplitState::MarkedForDeletion

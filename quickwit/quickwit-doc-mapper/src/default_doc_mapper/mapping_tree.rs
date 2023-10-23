@@ -600,7 +600,7 @@ fn get_date_time_options(quickwit_date_time_options: &QuickwitDateTimeOptions) -
     if quickwit_date_time_options.fast {
         date_time_options = date_time_options.set_fast();
     }
-    date_time_options.set_precision(quickwit_date_time_options.precision)
+    date_time_options.set_precision(quickwit_date_time_options.fast_precision)
 }
 
 fn get_bytes_options(quickwit_numeric_options: &QuickwitBytesOptions) -> BytesOptions {

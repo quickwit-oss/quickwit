@@ -38,8 +38,10 @@ use quickwit_common::temp_dir::TempDirectory;
 use quickwit_config::IndexingSettings;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
-use quickwit_metastore::Metastore;
 use quickwit_proto::indexing::IndexingPipelineId;
+use quickwit_proto::metastore::{
+    LastDeleteOpstampRequest, MetastoreService, MetastoreServiceClient,
+};
 use quickwit_proto::PublishToken;
 use quickwit_query::get_quickwit_fastfield_normalizer_manager;
 use serde::Serialize;
@@ -81,7 +83,7 @@ pub struct IndexerCounters {
 
 struct IndexerState {
     pipeline_id: IndexingPipelineId,
-    metastore: Arc<dyn Metastore>,
+    metastore: MetastoreServiceClient,
     indexing_directory: TempDirectory,
     indexing_settings: IndexingSettings,
     publish_lock: PublishLock,
@@ -188,12 +190,17 @@ impl IndexerState {
             } else {
                 None
             };
-        let last_delete_opstamp = ctx
+        let last_delete_opstamp_request = LastDeleteOpstampRequest {
+            index_uid: self.pipeline_id.index_uid.to_string(),
+        };
+        let last_delete_opstamp_response = ctx
             .protect_future(
                 self.metastore
-                    .last_delete_opstamp(self.pipeline_id.index_uid.clone()),
+                    .clone()
+                    .last_delete_opstamp(last_delete_opstamp_request),
             )
             .await?;
+        let last_delete_opstamp = last_delete_opstamp_response.last_delete_opstamp;
 
         let checkpoint_delta = IndexCheckpointDelta {
             source_id: self.pipeline_id.source_id.clone(),
@@ -486,7 +493,7 @@ impl Indexer {
     pub fn new(
         pipeline_id: IndexingPipelineId,
         doc_mapper: Arc<dyn DocMapper>,
-        metastore: Arc<dyn Metastore>,
+        metastore: MetastoreServiceClient,
         indexing_directory: TempDirectory,
         indexing_settings: IndexingSettings,
         cooperative_indexing_permits: Option<Arc<Semaphore>>,
@@ -641,7 +648,7 @@ mod tests {
     use quickwit_actors::Universe;
     use quickwit_doc_mapper::{default_doc_mapper_for_test, DefaultDocMapper};
     use quickwit_metastore::checkpoint::SourceCheckpointDelta;
-    use quickwit_metastore::MockMetastore;
+    use quickwit_proto::metastore::{EmptyResponse, LastDeleteOpstampResponse};
     use quickwit_proto::IndexUid;
     use tantivy::{doc, DateTime};
 
@@ -679,8 +686,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_indexer_triggers_commit_on_target_num_docs() -> anyhow::Result<()> {
+        let index_uid = IndexUid::new("test-index");
         let pipeline_id = IndexingPipelineId {
-            index_uid: IndexUid::new("test-index"),
+            index_uid: index_uid.clone(),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
@@ -695,20 +703,20 @@ mod tests {
         indexing_settings.split_num_docs_target = 3;
         let universe = Universe::with_accelerated_time();
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
-        let mut metastore = MockMetastore::default();
+        let mut metastore = MetastoreServiceClient::mock();
         metastore.expect_publish_splits().never();
         metastore
             .expect_last_delete_opstamp()
             .times(2)
-            .returning(move |index_uid| {
-                assert_eq!(index_uid.index_id(), "test-index");
-                Ok(last_delete_opstamp)
+            .returning(move |delete_opstamp_request| {
+                assert_eq!(delete_opstamp_request.index_uid, index_uid.to_string());
+                Ok(LastDeleteOpstampResponse::new(last_delete_opstamp))
             });
         metastore.expect_publish_splits().never();
         let indexer = Indexer::new(
             pipeline_id,
             doc_mapper,
-            Arc::new(metastore),
+            MetastoreServiceClient::from(metastore),
             indexing_directory,
             indexing_settings,
             None,
@@ -814,8 +822,9 @@ mod tests {
     #[tokio::test]
     async fn test_indexer_triggers_commit_on_memory_limit() -> anyhow::Result<()> {
         let universe = Universe::new();
+        let index_uid = IndexUid::new("test-index");
         let pipeline_id = IndexingPipelineId {
-            index_uid: IndexUid::new("test-index"),
+            index_uid: index_uid.clone(),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
@@ -828,20 +837,20 @@ mod tests {
         let mut indexing_settings = IndexingSettings::for_test();
         indexing_settings.resources.heap_size = Byte::from_bytes(5_000_000);
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
-        let mut metastore = MockMetastore::default();
+        let mut metastore = MetastoreServiceClient::mock();
         metastore.expect_publish_splits().never();
         metastore
             .expect_last_delete_opstamp()
             .times(1..=2)
-            .returning(move |index_uid| {
-                assert_eq!(index_uid.index_id(), "test-index");
-                Ok(last_delete_opstamp)
+            .returning(move |last_delete_opstamp_request| {
+                assert_eq!(last_delete_opstamp_request.index_uid, index_uid.to_string());
+                Ok(LastDeleteOpstampResponse::new(last_delete_opstamp))
             });
         metastore.expect_publish_splits().never();
         let indexer = Indexer::new(
             pipeline_id,
             doc_mapper,
-            Arc::new(metastore),
+            MetastoreServiceClient::from(metastore),
             indexing_directory,
             indexing_settings,
             None,
@@ -906,19 +915,18 @@ mod tests {
         let mut indexing_settings = IndexingSettings::for_test();
         indexing_settings.commit_timeout_secs = 1;
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
-        let mut metastore = MockMetastore::default();
+        let mut metastore = MetastoreServiceClient::mock();
         metastore.expect_publish_splits().never();
         metastore
             .expect_last_delete_opstamp()
-            .returning(move |index_uid| {
-                assert_eq!(index_uid.index_id(), "test-index");
-                Ok(last_delete_opstamp)
+            .returning(move |_last_delete_opstamp_request| {
+                Ok(LastDeleteOpstampResponse::new(last_delete_opstamp))
             });
         metastore.expect_publish_splits().never();
         let indexer = Indexer::new(
             pipeline_id,
             doc_mapper,
-            Arc::new(metastore),
+            MetastoreServiceClient::from(metastore),
             indexing_directory,
             indexing_settings,
             None,
@@ -990,18 +998,17 @@ mod tests {
         let indexing_directory = TempDirectory::for_test();
         let indexing_settings = IndexingSettings::for_test();
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
-        let mut metastore = MockMetastore::default();
+        let mut metastore = MetastoreServiceClient::mock();
         metastore.expect_publish_splits().never();
         metastore
             .expect_last_delete_opstamp()
-            .returning(move |index_uid| {
-                assert_eq!(index_uid.index_id(), "test-index");
-                Ok(last_delete_opstamp)
+            .returning(move |_last_delete_opstamp_request| {
+                Ok(LastDeleteOpstampResponse::new(last_delete_opstamp))
             });
         let indexer = Indexer::new(
             pipeline_id,
             doc_mapper,
-            Arc::new(metastore),
+            MetastoreServiceClient::from(metastore),
             indexing_directory,
             indexing_settings,
             Some(Arc::new(Semaphore::new(1))),
@@ -1062,20 +1069,17 @@ mod tests {
         let indexing_directory = TempDirectory::for_test();
         let indexing_settings = IndexingSettings::for_test();
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
-        let mut metastore = MockMetastore::default();
+        let mut metastore = MetastoreServiceClient::mock();
         metastore.expect_publish_splits().never();
         metastore
             .expect_last_delete_opstamp()
             .once()
-            .returning(move |index_uid| {
-                assert_eq!(index_uid.index_id(), "test-index");
-                Ok(10)
-            });
+            .returning(move |_last_delete_opstamp_request| Ok(LastDeleteOpstampResponse::new(10)));
         metastore.expect_publish_splits().never();
         let indexer = Indexer::new(
             pipeline_id,
             doc_mapper,
-            Arc::new(metastore),
+            MetastoreServiceClient::from(metastore),
             indexing_directory,
             indexing_settings,
             None,
@@ -1146,20 +1150,17 @@ mod tests {
         let indexing_directory = TempDirectory::for_test();
         let indexing_settings = IndexingSettings::for_test();
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
-        let mut metastore = MockMetastore::default();
+        let mut metastore = MetastoreServiceClient::mock();
         metastore.expect_publish_splits().never();
         metastore
             .expect_last_delete_opstamp()
             .once()
-            .returning(move |index_uid| {
-                assert_eq!(index_uid.index_id(), "test-index");
-                Ok(10)
-            });
+            .returning(move |_last_delete_opstamp_request| Ok(LastDeleteOpstampResponse::new(10)));
         metastore.expect_publish_splits().never();
         let indexer = Indexer::new(
             pipeline_id,
             doc_mapper,
-            Arc::new(metastore),
+            MetastoreServiceClient::from(metastore),
             indexing_directory,
             indexing_settings,
             None,
@@ -1240,20 +1241,17 @@ mod tests {
         let body_field = doc_mapper.schema().get_field("body").unwrap();
         let indexing_directory = TempDirectory::for_test();
         let indexing_settings = IndexingSettings::for_test();
-        let mut metastore = MockMetastore::default();
+        let mut metastore = MetastoreServiceClient::mock();
         metastore
             .expect_last_delete_opstamp()
             .times(1)
-            .returning(move |index_uid| {
-                assert_eq!(index_uid.index_id(), "test-index");
-                Ok(10)
-            });
+            .returning(move |_last_delete_opstamp_request| Ok(LastDeleteOpstampResponse::new(10)));
         metastore.expect_publish_splits().never();
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
         let indexer = Indexer::new(
             pipeline_id,
             doc_mapper,
-            Arc::new(metastore),
+            MetastoreServiceClient::from(metastore),
             indexing_directory,
             indexing_settings,
             None,
@@ -1314,20 +1312,17 @@ mod tests {
         let indexing_directory = TempDirectory::for_test();
         let mut indexing_settings = IndexingSettings::for_test();
         indexing_settings.split_num_docs_target = 1;
-        let mut metastore = MockMetastore::default();
+        let mut metastore = MetastoreServiceClient::mock();
         metastore
             .expect_last_delete_opstamp()
             .times(2)
-            .returning(move |index_uid| {
-                assert_eq!(index_uid.index_id(), "test-index");
-                Ok(10)
-            });
+            .returning(move |_last_delete_opstamp_request| Ok(LastDeleteOpstampResponse::new(10)));
         metastore.expect_publish_splits().never();
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
         let indexer = Indexer::new(
             pipeline_id,
             doc_mapper,
-            Arc::new(metastore),
+            MetastoreServiceClient::from(metastore),
             indexing_directory,
             indexing_settings,
             None,
@@ -1389,20 +1384,17 @@ mod tests {
         let indexing_directory = TempDirectory::for_test();
         let mut indexing_settings = IndexingSettings::for_test();
         indexing_settings.split_num_docs_target = 1;
-        let mut metastore = MockMetastore::default();
+        let mut metastore = MetastoreServiceClient::mock();
         metastore
             .expect_last_delete_opstamp()
             .times(1)
-            .returning(move |index_uid| {
-                assert_eq!(index_uid.index_id(), "test-index");
-                Ok(10)
-            });
+            .returning(move |_last_delete_opstamp_request| Ok(LastDeleteOpstampResponse::new(10)));
         metastore.expect_publish_splits().never();
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
         let indexer = Indexer::new(
             pipeline_id,
             doc_mapper,
-            Arc::new(metastore),
+            MetastoreServiceClient::from(metastore),
             indexing_directory,
             indexing_settings,
             None,
@@ -1456,20 +1448,17 @@ mod tests {
         let body_field = doc_mapper.schema().get_field("body").unwrap();
         let indexing_directory = TempDirectory::for_test();
         let indexing_settings = IndexingSettings::for_test();
-        let mut metastore = MockMetastore::default();
+        let mut metastore = MetastoreServiceClient::mock();
         metastore
             .expect_last_delete_opstamp()
             .times(1)
-            .returning(move |index_uid| {
-                assert_eq!(index_uid.index_id(), "test-index");
-                Ok(10)
-            });
+            .returning(move |_last_delete_opstamp_request| Ok(LastDeleteOpstampResponse::new(10)));
         metastore.expect_publish_splits().never();
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
         let indexer = Indexer::new(
             pipeline_id,
             doc_mapper,
-            Arc::new(metastore),
+            MetastoreServiceClient::from(metastore),
             indexing_directory,
             indexing_settings,
             None,
@@ -1522,23 +1511,22 @@ mod tests {
         let commit_timeout = indexing_settings.commit_timeout();
         let universe = Universe::with_accelerated_time();
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
-        let mut metastore = MockMetastore::default();
-        metastore
+        let mut mock_metastore = MetastoreServiceClient::mock();
+        mock_metastore
             .expect_publish_splits()
-            .returning(move |_, splits, _, _, _| {
-                assert!(splits.is_empty());
-                Ok(())
+            .returning(move |publish_splits_request| {
+                assert!(publish_splits_request.replaced_split_ids.is_empty());
+                Ok(EmptyResponse {})
             });
-        metastore
-            .expect_last_delete_opstamp()
-            .returning(move |index_uid| {
-                assert_eq!(index_uid.index_id(), "test-index");
-                Ok(last_delete_opstamp)
-            });
+        mock_metastore.expect_last_delete_opstamp().returning(
+            move |_last_delete_opstamp_request| {
+                Ok(LastDeleteOpstampResponse::new(last_delete_opstamp))
+            },
+        );
         let indexer = Indexer::new(
             pipeline_id,
             doc_mapper,
-            Arc::new(metastore),
+            MetastoreServiceClient::from(mock_metastore),
             indexing_directory,
             indexing_settings,
             None,

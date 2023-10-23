@@ -24,13 +24,13 @@ use std::time::{Duration, Instant};
 
 use bytes::Bytes;
 use elasticsearch_dsl::search::{Hit as ElasticHit, SearchResponse as ElasticSearchResponse};
-use elasticsearch_dsl::{HitsMetadata, Source, TotalHits, TotalHitsRelation};
+use elasticsearch_dsl::{ErrorCause, HitsMetadata, Source, TotalHits, TotalHitsRelation};
 use futures_util::StreamExt;
 use hyper::StatusCode;
 use itertools::Itertools;
 use quickwit_common::truncate_str;
 use quickwit_config::{validate_index_id_pattern, NodeConfig};
-use quickwit_proto::search::{ScrollRequest, SearchResponse};
+use quickwit_proto::search::{PartialHit, ScrollRequest, SearchResponse, SortByValue};
 use quickwit_proto::ServiceErrorCode;
 use quickwit_query::query_ast::{QueryAst, UserInputQuery};
 use quickwit_query::BooleanOperand;
@@ -130,7 +130,7 @@ fn build_request_for_es_api(
     index_id_patterns: Vec<String>,
     search_params: SearchQueryParams,
     search_body: SearchBody,
-) -> Result<quickwit_proto::search::SearchRequest, ElasticSearchError> {
+) -> Result<(quickwit_proto::search::SearchRequest, bool), ElasticSearchError> {
     let default_operator = search_params.default_operator.unwrap_or(BooleanOperand::Or);
     // The query string, if present, takes priority over what can be in the request
     // body.
@@ -166,6 +166,7 @@ fn build_request_for_es_api(
             field_name: sort_field.field.to_string(),
             sort_order: sort_field.order as i32,
         })
+        .take_while_inclusive(|sort_field| !is_doc_field(sort_field))
         .collect();
     if sort_fields.len() >= 3 {
         return Err(ElasticSearchError::from(SearchError::InvalidArgument(
@@ -176,18 +177,99 @@ fn build_request_for_es_api(
     let scroll_duration: Option<Duration> = search_params.parse_scroll_ttl()?;
     let scroll_ttl_secs: Option<u32> = scroll_duration.map(|duration| duration.as_secs() as u32);
 
-    Ok(quickwit_proto::search::SearchRequest {
-        index_id_patterns,
-        query_ast: serde_json::to_string(&query_ast).expect("Failed to serialize QueryAst"),
-        max_hits,
-        start_offset,
-        aggregation_request,
-        sort_fields,
-        start_timestamp: None,
-        end_timestamp: None,
-        snippet_fields: Vec::new(),
-        scroll_ttl_secs,
-    })
+    let has_doc_id_field = sort_fields.iter().any(is_doc_field);
+    let search_after = partial_hit_from_search_after_param(search_body.search_after, &sort_fields)?;
+
+    Ok((
+        quickwit_proto::search::SearchRequest {
+            index_id_patterns,
+            query_ast: serde_json::to_string(&query_ast).expect("Failed to serialize QueryAst"),
+            max_hits,
+            start_offset,
+            aggregation_request,
+            sort_fields,
+            start_timestamp: None,
+            end_timestamp: None,
+            snippet_fields: Vec::new(),
+            scroll_ttl_secs,
+            search_after,
+        },
+        has_doc_id_field,
+    ))
+}
+
+fn is_doc_field(field: &quickwit_proto::search::SortField) -> bool {
+    field.field_name == "_shard_doc" || field.field_name == "_doc"
+}
+
+fn partial_hit_from_search_after_param(
+    search_after: Vec<serde_json::Value>,
+    sort_order: &[quickwit_proto::search::SortField],
+) -> Result<Option<PartialHit>, ElasticSearchError> {
+    if search_after.is_empty() {
+        return Ok(None);
+    }
+    if search_after.len() != sort_order.len() {
+        return Err(ElasticSearchError {
+            status: StatusCode::BAD_REQUEST,
+            error: ErrorCause {
+                reason: Some("sort and search_after are of different length".to_string()),
+                caused_by: None,
+                root_cause: vec![],
+                stack_trace: None,
+                suppressed: vec![],
+                ty: None,
+                additional_details: Default::default(),
+            },
+        });
+    }
+
+    let mut parsed_search_after = PartialHit::default();
+    for (value, field) in search_after.into_iter().zip(sort_order) {
+        if is_doc_field(field) {
+            if let Some(value_str) = value.as_str() {
+                let address: quickwit_search::GlobalDocAddress =
+                    value_str.parse().map_err(|_| ElasticSearchError {
+                        status: StatusCode::BAD_REQUEST,
+                        error: ErrorCause {
+                            reason: Some("invalid search_after doc id".to_string()),
+                            caused_by: None,
+                            root_cause: vec![],
+                            stack_trace: None,
+                            suppressed: vec![],
+                            ty: None,
+                            additional_details: Default::default(),
+                        },
+                    })?;
+                parsed_search_after.split_id = address.split;
+                parsed_search_after.segment_ord = address.doc_addr.segment_ord;
+                parsed_search_after.doc_id = address.doc_addr.doc_id;
+                return Ok(Some(parsed_search_after));
+            } else {
+                todo!();
+            }
+        } else {
+            let value = SortByValue::try_from_json(value).ok_or_else(|| ElasticSearchError {
+                status: StatusCode::BAD_REQUEST,
+                error: ErrorCause {
+                    reason: Some("invalid search_after field value".to_string()),
+                    caused_by: None,
+                    root_cause: vec![],
+                    stack_trace: None,
+                    suppressed: vec![],
+                    ty: None,
+                    additional_details: Default::default(),
+                },
+            })?;
+            // TODO make cleaner once we support Vec
+            if parsed_search_after.sort_value.is_none() {
+                parsed_search_after.sort_value = Some(value);
+            } else {
+                parsed_search_after.sort_value2 = Some(value);
+            }
+        }
+    }
+    Ok(Some(parsed_search_after))
 }
 
 async fn es_compat_index_search(
@@ -197,18 +279,34 @@ async fn es_compat_index_search(
     search_service: Arc<dyn SearchService>,
 ) -> Result<ElasticSearchResponse, ElasticSearchError> {
     let start_instant = Instant::now();
-    let search_request = build_request_for_es_api(index_id_patterns, search_params, search_body)?;
+    let (search_request, append_shard_doc) =
+        build_request_for_es_api(index_id_patterns, search_params, search_body)?;
     let search_response: SearchResponse = search_service.root_search(search_request).await?;
     let elapsed = start_instant.elapsed();
     let mut search_response_rest: ElasticSearchResponse =
-        convert_to_es_search_response(search_response);
+        convert_to_es_search_response(search_response, append_shard_doc);
     search_response_rest.took = elapsed.as_millis() as u32;
     Ok(search_response_rest)
 }
 
-fn convert_hit(hit: quickwit_proto::search::Hit) -> ElasticHit {
+fn convert_hit(hit: quickwit_proto::search::Hit, append_shard_doc: bool) -> ElasticHit {
     let fields: BTreeMap<String, serde_json::Value> =
         serde_json::from_str(&hit.json).unwrap_or_default();
+    let mut sort = Vec::new();
+    if let Some(partial_hit) = hit.partial_hit {
+        if let Some(sort_value) = partial_hit.sort_value {
+            sort.push(sort_value.into_json());
+        }
+        if let Some(sort_value2) = partial_hit.sort_value2 {
+            sort.push(sort_value2.into_json());
+        }
+        if append_shard_doc {
+            sort.push(serde_json::Value::String(
+                quickwit_search::GlobalDocAddress::from_partial_hit(&partial_hit).to_string(),
+            ));
+        }
+    }
+
     ElasticHit {
         fields,
         explanation: None,
@@ -221,7 +319,7 @@ fn convert_hit(hit: quickwit_proto::search::Hit) -> ElasticHit {
         highlight: Default::default(),
         inner_hits: Default::default(),
         matched_queries: Vec::default(),
-        sort: Vec::default(),
+        sort,
     }
 }
 
@@ -276,16 +374,23 @@ async fn es_compat_index_multi_search(
             build_request_for_es_api(index_ids_patterns, search_query_params, search_body)?;
         search_requests.push(es_request);
     }
-    let futures = search_requests.into_iter().map(|search_request| async {
-        let start_instant = Instant::now();
-        let search_response: SearchResponse =
-            search_service.clone().root_search(search_request).await?;
-        let elapsed = start_instant.elapsed();
-        let mut search_response_rest: ElasticSearchResponse =
-            convert_to_es_search_response(search_response);
-        search_response_rest.took = elapsed.as_millis() as u32;
-        Ok::<_, ElasticSearchError>(search_response_rest)
-    });
+    // TODO: forced to do weird referencing to work arround https://github.com/rust-lang/rust/issues/100905
+    // otherwise append_shard_doc is captured by ref, and we get lifetime issues
+    let futures = search_requests
+        .into_iter()
+        .map(|(search_request, append_shard_doc)| {
+            let search_service = &search_service;
+            async move {
+                let start_instant = Instant::now();
+                let search_response: SearchResponse =
+                    search_service.clone().root_search(search_request).await?;
+                let elapsed = start_instant.elapsed();
+                let mut search_response_rest: ElasticSearchResponse =
+                    convert_to_es_search_response(search_response, append_shard_doc);
+                search_response_rest.took = elapsed.as_millis() as u32;
+                Ok::<_, ElasticSearchError>(search_response_rest)
+            }
+        });
     let max_concurrent_searches =
         multi_search_params.max_concurrent_searches.unwrap_or(10) as usize;
     let search_responses = futures::stream::iter(futures)
@@ -323,14 +428,22 @@ async fn es_scroll(
         scroll_ttl_secs,
     };
     let search_response: SearchResponse = search_service.scroll(scroll_request).await?;
+    // TODO append_shard_doc depends on the initial request, but we don't have access to it
     let mut search_response_rest: ElasticSearchResponse =
-        convert_to_es_search_response(search_response);
+        convert_to_es_search_response(search_response, false);
     search_response_rest.took = start_instant.elapsed().as_millis() as u32;
     Ok(search_response_rest)
 }
 
-fn convert_to_es_search_response(resp: SearchResponse) -> ElasticSearchResponse {
-    let hits: Vec<ElasticHit> = resp.hits.into_iter().map(convert_hit).collect();
+fn convert_to_es_search_response(
+    resp: SearchResponse,
+    append_shard_doc: bool,
+) -> ElasticSearchResponse {
+    let hits: Vec<ElasticHit> = resp
+        .hits
+        .into_iter()
+        .map(|hit| convert_hit(hit, append_shard_doc))
+        .collect();
     let aggregations: Option<serde_json::Value> = if let Some(aggregation_json) = resp.aggregation {
         serde_json::from_str(&aggregation_json).ok()
     } else {

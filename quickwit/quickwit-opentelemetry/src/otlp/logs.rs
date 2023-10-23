@@ -56,7 +56,7 @@ doc_mapping:
       output_format: unix_timestamp_nanos
       indexed: false
       fast: true
-      precision: milliseconds
+      fast_precision: milliseconds
     - name: observed_timestamp_nanos
       type: datetime
       input_formats: [unix_timestamp]
@@ -465,7 +465,8 @@ impl LogsService for OtlpGrpcLogsService {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_metastore::metastore_for_test;
+    use quickwit_metastore::{metastore_for_test, CreateIndexRequestExt};
+    use quickwit_proto::metastore::{CreateIndexRequest, MetastoreService};
 
     use super::*;
 
@@ -478,9 +479,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_index() {
-        let metastore = metastore_for_test();
+        let mut metastore = metastore_for_test();
         let index_config =
             OtlpGrpcLogsService::index_config(&Uri::for_test("ram:///indexes")).unwrap();
-        metastore.create_index(index_config).await.unwrap();
+        let create_index_request = CreateIndexRequest::try_from_index_config(index_config).unwrap();
+        metastore.create_index(create_index_request).await.unwrap();
     }
 }

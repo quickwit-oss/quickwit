@@ -1,4 +1,4 @@
-#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DocBatchV2 {
@@ -7,8 +7,19 @@ pub struct DocBatchV2 {
     #[prost(uint32, repeated, tag = "2")]
     pub doc_lengths: ::prost::alloc::vec::Vec<u32>,
 }
-#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct MRecordBatch {
+    /// Buffer of encoded and then concatenated mrecords.
+    #[prost(bytes = "bytes", tag = "1")]
+    pub mrecord_buffer: ::prost::bytes::Bytes,
+    /// Lengths of the mrecords in the buffer.
+    #[prost(uint32, repeated, tag = "2")]
+    pub mrecord_lengths: ::prost::alloc::vec::Vec<u32>,
+}
 #[derive(Eq)]
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Shard {
@@ -44,7 +55,7 @@ pub struct Shard {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub publish_token: ::core::option::Option<::prost::alloc::string::String>,
 }
-#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
@@ -75,7 +86,7 @@ impl CommitTypeV2 {
         }
     }
 }
-#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]

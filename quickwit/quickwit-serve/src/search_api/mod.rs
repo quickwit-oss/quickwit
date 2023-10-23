@@ -34,7 +34,10 @@ mod tests {
 
     use futures::TryStreamExt;
     use quickwit_indexing::MockSplitBuilder;
-    use quickwit_metastore::{IndexMetadata, MockMetastore};
+    use quickwit_metastore::{IndexMetadata, IndexMetadataResponseExt, ListSplitsResponseExt};
+    use quickwit_proto::metastore::{
+        IndexMetadataResponse, ListSplitsResponse, MetastoreServiceClient,
+    };
     use quickwit_proto::search::search_service_server::SearchServiceServer;
     use quickwit_proto::search::OutputFormat;
     use quickwit_proto::tonic;
@@ -76,21 +79,22 @@ mod tests {
             output_format: OutputFormat::Csv as i32,
             partition_by_field: None,
         };
-        let mut metastore = MockMetastore::new();
+        let mut metastore = MetastoreServiceClient::mock();
         let index_metadata = IndexMetadata::for_test("test-index", "ram:///indexes/test-index");
         let index_uid = index_metadata.index_uid.clone();
-        metastore
-            .expect_index_metadata()
-            .returning(move |_index_id: &str| Ok(index_metadata.clone()));
-        metastore.expect_list_splits().returning(move |_filter| {
-            Ok(vec![
+        metastore.expect_index_metadata().returning(move |_| {
+            Ok(IndexMetadataResponse::try_from_index_metadata(index_metadata.clone()).unwrap())
+        });
+        metastore.expect_list_splits().returning(move |_| {
+            let splits = vec![
                 MockSplitBuilder::new("split_1")
                     .with_index_uid(&index_uid)
                     .build(),
                 MockSplitBuilder::new("split_2")
                     .with_index_uid(&index_uid)
                     .build(),
-            ])
+            ];
+            Ok(ListSplitsResponse::try_from_splits(splits).unwrap())
         });
         let mut mock_search_service = MockSearchService::new();
         let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();
@@ -125,7 +129,12 @@ mod tests {
         searcher_pool.insert(grpc_addr, create_search_client_from_grpc_addr(grpc_addr));
         let search_job_placer = SearchJobPlacer::new(searcher_pool);
         let cluster_client = ClusterClient::new(search_job_placer.clone());
-        let stream = root_search_stream(request, &metastore, cluster_client).await?;
+        let stream = root_search_stream(
+            request,
+            MetastoreServiceClient::from(metastore),
+            cluster_client,
+        )
+        .await?;
         let search_stream_result: Result<Vec<_>, SearchError> = stream.try_collect().await;
         let search_error = search_stream_result.unwrap_err();
         assert_eq!(

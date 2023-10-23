@@ -34,6 +34,7 @@ fn get_default_date_time_format() -> &'static [DateTimeInputFormat] {
                 DateTimeInputFormat::Rfc3339,
                 DateTimeInputFormat::Rfc2822,
                 DateTimeInputFormat::Timestamp,
+                DateTimeInputFormat::from_str("%Y-%m-%dT%H:%M:%S").unwrap(),
                 DateTimeInputFormat::from_str("%Y-%m-%d %H:%M:%S.%f").unwrap(),
                 DateTimeInputFormat::from_str("%Y-%m-%d %H:%M:%S").unwrap(),
                 DateTimeInputFormat::from_str("%Y-%m-%d").unwrap(),
@@ -209,6 +210,14 @@ mod tests {
     fn test_interpret_datetime_simple_date() {
         let dt_opt = DateTime::interpret_json(&JsonLiteral::String("2023-05-25".to_string()));
         let expected_datetime = datetime!(2023-05-25 00:00 UTC);
+        assert_eq!(dt_opt, Some(DateTime::from_utc(expected_datetime)));
+    }
+
+    #[test]
+    fn test_interpret_datetime_rfc3339_with_no_timezone() {
+        let dt_opt =
+            DateTime::interpret_json(&JsonLiteral::String("2023-05-25T18:00:00".to_string()));
+        let expected_datetime = datetime!(2023-05-25 18:00 UTC);
         assert_eq!(dt_opt, Some(DateTime::from_utc(expected_datetime)));
     }
 

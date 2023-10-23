@@ -71,7 +71,7 @@ impl ActorState {
     }
 }
 
-pub struct AtomicState(AtomicU32);
+pub(crate) struct AtomicState(AtomicU32);
 
 impl Default for AtomicState {
     fn default() -> Self {
@@ -80,7 +80,7 @@ impl Default for AtomicState {
 }
 
 impl AtomicState {
-    pub fn process(&self) {
+    pub(crate) fn process(&self) {
         let _ = self.0.compare_exchange(
             ActorState::Idle as u32,
             ActorState::Processing as u32,
@@ -89,7 +89,7 @@ impl AtomicState {
         );
     }
 
-    pub fn idle(&self) {
+    pub(crate) fn idle(&self) {
         let _ = self.0.compare_exchange(
             ActorState::Processing as u32,
             ActorState::Idle as u32,
@@ -98,7 +98,7 @@ impl AtomicState {
         );
     }
 
-    pub fn pause(&self) {
+    pub(crate) fn pause(&self) {
         let _ = self
             .0
             .fetch_update(Ordering::SeqCst, Ordering::SeqCst, |state| {
@@ -109,7 +109,7 @@ impl AtomicState {
             });
     }
 
-    pub fn resume(&self) {
+    pub(crate) fn resume(&self) {
         let _ = self.0.compare_exchange(
             ActorState::Paused as u32,
             ActorState::Processing as u32,

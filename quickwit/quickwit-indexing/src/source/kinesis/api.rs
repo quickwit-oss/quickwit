@@ -20,7 +20,8 @@
 use aws_sdk_kinesis::operation::get_records::GetRecordsOutput;
 use aws_sdk_kinesis::types::{Shard, ShardIteratorType};
 use aws_sdk_kinesis::Client as KinesisClient;
-use quickwit_aws::retry::{retry, RetryParams};
+use quickwit_aws::retry::aws_retry;
+use quickwit_common::retry::RetryParams;
 
 /// Gets records from a Kinesis data stream's shard.
 /// <https://docs.aws.amazon.com/kinesis/latest/APIReference/API_GetRecords.html>
@@ -31,7 +32,7 @@ pub(crate) async fn get_records(
 ) -> anyhow::Result<GetRecordsOutput> {
     // TODO: Return an error other than `anyhow::Error` so that expired shard iterators can be
     // handled properly.
-    let response = retry(retry_params, || async {
+    let response = aws_retry(retry_params, || async {
         kinesis_client
             .get_records()
             .shard_iterator(shard_iterator.clone())
@@ -63,7 +64,7 @@ pub(crate) async fn get_shard_iterator(
         ShardIteratorType::TrimHorizon
     };
 
-    let response = retry(retry_params, || async {
+    let response = aws_retry(retry_params, || async {
         kinesis_client
             .get_shard_iterator()
             .stream_name(stream_name)
@@ -97,7 +98,7 @@ pub(crate) async fn list_shards(
             None
         };
         let limit_per_request = limit_per_request.map(|limit| limit as i32);
-        let response = retry(retry_params, || async {
+        let response = aws_retry(retry_params, || async {
             kinesis_client
                 .list_shards()
                 .set_stream_name(stream_name.clone())
@@ -136,7 +137,7 @@ pub(crate) mod tests {
         stream_name: &str,
         num_shards: usize,
     ) -> anyhow::Result<()> {
-        retry(&DEFAULT_RETRY_PARAMS, || async {
+        aws_retry(&DEFAULT_RETRY_PARAMS, || async {
             kinesis_client
                 .create_stream()
                 .stream_name(stream_name)
@@ -155,7 +156,7 @@ pub(crate) mod tests {
         kinesis_client: &KinesisClient,
         stream_name: &str,
     ) -> anyhow::Result<()> {
-        retry(&DEFAULT_RETRY_PARAMS, || async {
+        aws_retry(&DEFAULT_RETRY_PARAMS, || async {
             kinesis_client
                 .delete_stream()
                 .stream_name(stream_name.to_string())
@@ -173,7 +174,7 @@ pub(crate) mod tests {
         kinesis_client: &KinesisClient,
         stream_name: &str,
     ) -> anyhow::Result<StreamDescription> {
-        let response = retry(&DEFAULT_RETRY_PARAMS, || async {
+        let response = aws_retry(&DEFAULT_RETRY_PARAMS, || async {
             kinesis_client
                 .describe_stream()
                 .stream_name(stream_name.to_string())
@@ -197,7 +198,7 @@ pub(crate) mod tests {
         let mut has_more_streams = true;
         let limit_per_request = limit_per_request.map(|limit| limit as i32);
         while has_more_streams {
-            let response = retry(&DEFAULT_RETRY_PARAMS, || async {
+            let response = aws_retry(&DEFAULT_RETRY_PARAMS, || async {
                 kinesis_client
                     .list_streams()
                     .set_exclusive_start_stream_name(exclusive_start_stream_name.clone())
@@ -226,7 +227,7 @@ pub(crate) mod tests {
         shard_id: &str,
         adjacent_shard_id: &str,
     ) -> anyhow::Result<()> {
-        retry(&DEFAULT_RETRY_PARAMS, || async {
+        aws_retry(&DEFAULT_RETRY_PARAMS, || async {
             kinesis_client
                 .merge_shards()
                 .stream_name(stream_name)
@@ -248,7 +249,7 @@ pub(crate) mod tests {
         shard_id: &str,
         starting_hash_key: &str,
     ) -> anyhow::Result<()> {
-        retry(&DEFAULT_RETRY_PARAMS, || async {
+        aws_retry(&DEFAULT_RETRY_PARAMS, || async {
             kinesis_client
                 .split_shard()
                 .stream_name(stream_name)

@@ -287,17 +287,13 @@ impl Shards {
                 return Err(MetastoreError::InvalidArgument { message });
             }
         }
-        if mutation_occurred {
-            Ok(MutationOccurred::Yes(()))
-        } else {
-            Ok(MutationOccurred::No(()))
-        }
+        Ok(MutationOccurred::from(mutation_occurred))
     }
 
     pub(super) fn list_shards(
         &self,
         subrequest: ListShardsSubrequest,
-    ) -> MetastoreResult<MutationOccurred<ListShardsSubresponse>> {
+    ) -> MetastoreResult<ListShardsSubresponse> {
         let shards = self.list_shards_inner(subrequest.shard_state);
         let response = ListShardsSubresponse {
             index_uid: subrequest.index_uid,
@@ -305,7 +301,7 @@ impl Shards {
             shards,
             next_shard_id: self.next_shard_id,
         };
-        Ok(MutationOccurred::No(response))
+        Ok(response)
     }
 
     pub(super) fn try_apply_delta(
@@ -465,9 +461,7 @@ mod tests {
             source_id: source_id.clone(),
             shard_state: None,
         };
-        let MutationOccurred::No(subresponse) = shards.list_shards(subrequest).unwrap() else {
-            panic!("Expected `MutationOccured::No`");
-        };
+        let subresponse = shards.list_shards(subrequest).unwrap();
         assert_eq!(subresponse.index_uid, index_uid.as_str());
         assert_eq!(subresponse.source_id, source_id);
         assert_eq!(subresponse.shards.len(), 0);
@@ -494,9 +488,7 @@ mod tests {
             source_id: source_id.clone(),
             shard_state: None,
         };
-        let MutationOccurred::No(mut subresponse) = shards.list_shards(subrequest).unwrap() else {
-            panic!("Expected `MutationOccured::No`");
-        };
+        let mut subresponse = shards.list_shards(subrequest).unwrap();
         subresponse
             .shards
             .sort_unstable_by_key(|shard| shard.shard_id);
@@ -509,9 +501,7 @@ mod tests {
             source_id,
             shard_state: Some(ShardState::Closed as i32),
         };
-        let MutationOccurred::No(subresponse) = shards.list_shards(subrequest).unwrap() else {
-            panic!("Expected `MutationOccured::No`");
-        };
+        let subresponse = shards.list_shards(subrequest).unwrap();
         assert_eq!(subresponse.shards.len(), 1);
         assert_eq!(subresponse.shards[0].shard_id, 1);
     }

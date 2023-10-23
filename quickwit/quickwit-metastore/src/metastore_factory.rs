@@ -17,28 +17,27 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::sync::Arc;
-
 use async_trait::async_trait;
 use quickwit_common::uri::Uri;
 use quickwit_config::{MetastoreBackend, MetastoreConfig};
+use quickwit_proto::metastore::MetastoreServiceClient;
 
-use crate::{Metastore, MetastoreResolverError};
+use crate::MetastoreResolverError;
 
-/// A metastore factory builds a [`Metastore`] object for a target [`MetastoreBackend`] from a
-/// [`MetastoreConfig`] and a [`Uri`].
+/// A metastore factory builds a [`MetastoreServiceClient`] object for a target [`MetastoreBackend`]
+/// from a [`MetastoreConfig`] and a [`Uri`].
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait]
 pub trait MetastoreFactory: Send + Sync + 'static {
     /// Returns the metastore backend targeted by the factory.
     fn backend(&self) -> MetastoreBackend;
 
-    /// Returns the appropriate [`Metastore`] object for the `uri`.
+    /// Returns the appropriate [`MetastoreServiceClient`] object for the `uri`.
     async fn resolve(
         &self,
         metastore_config: &MetastoreConfig,
         uri: &Uri,
-    ) -> Result<Arc<dyn Metastore>, MetastoreResolverError>;
+    ) -> Result<MetastoreServiceClient, MetastoreResolverError>;
 }
 
 /// A metastore factory for handling unsupported or unavailable metastore backends.
@@ -65,7 +64,7 @@ impl MetastoreFactory for UnsupportedMetastore {
         &self,
         _metastore_config: &MetastoreConfig,
         _uri: &Uri,
-    ) -> Result<Arc<dyn Metastore>, MetastoreResolverError> {
+    ) -> Result<MetastoreServiceClient, MetastoreResolverError> {
         Err(MetastoreResolverError::UnsupportedBackend(
             self.message.to_string(),
         ))

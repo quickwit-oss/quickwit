@@ -23,7 +23,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use aws_sdk_kinesis::types::Record;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Mailbox};
-use quickwit_aws::retry::RetryParams;
+use quickwit_common::retry::RetryParams;
 use serde_json::{json, Value as JsonValue};
 use tokio::sync::mpsc;
 
@@ -280,7 +280,7 @@ mod tests {
             true,
             kinesis_client.clone(),
             sink_tx,
-            DEFAULT_RETRY_PARAMS.clone(),
+            *DEFAULT_RETRY_PARAMS,
         );
         let (_mailbox, handle) = universe.spawn_builder().spawn(shard_consumer);
         let (exit_status, exit_state) = handle.join().await;
@@ -326,7 +326,7 @@ mod tests {
             true,
             kinesis_client.clone(),
             sink_tx,
-            DEFAULT_RETRY_PARAMS.clone(),
+            *DEFAULT_RETRY_PARAMS,
         );
         let (_mailbox, handle) = universe.spawn_builder().spawn(shard_consumer);
         let (exit_status, exit_state) = handle.join().await;
@@ -386,7 +386,7 @@ mod tests {
             true,
             kinesis_client.clone(),
             sink_tx,
-            DEFAULT_RETRY_PARAMS.clone(),
+            *DEFAULT_RETRY_PARAMS,
         );
         let (_mailbox, handle) = universe.spawn_builder().spawn(shard_consumer);
         let (exit_status, exit_state) = handle.join().await;
@@ -439,7 +439,7 @@ mod tests {
                 false,
                 kinesis_client.clone(),
                 sink_tx.clone(),
-                DEFAULT_RETRY_PARAMS.clone(),
+                *DEFAULT_RETRY_PARAMS,
             );
             let (_mailbox, handle) = universe.spawn_builder().spawn(shard_consumer_0);
             let (exit_status, _exit_state) = handle.join().await;
@@ -465,7 +465,7 @@ mod tests {
                 false,
                 kinesis_client.clone(),
                 sink_tx,
-                DEFAULT_RETRY_PARAMS.clone(),
+                *DEFAULT_RETRY_PARAMS,
             );
             let (_mailbox, handle) = universe.spawn_builder().spawn(shard_consumer_1);
             let (exit_status, _exit_state) = handle.join().await;
@@ -500,7 +500,7 @@ mod tests {
             false,
             kinesis_client.clone(),
             sink_tx,
-            DEFAULT_RETRY_PARAMS.clone(),
+            *DEFAULT_RETRY_PARAMS,
         );
         let (_mailbox, handle) = universe.spawn_builder().spawn(shard_consumer);
         let (exit_status, _exit_state) = handle.join().await;

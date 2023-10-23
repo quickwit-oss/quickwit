@@ -1455,7 +1455,7 @@ mod tests {
                 "type": "datetime",
                 "input_formats": ["rfc3339", "unix_timestamp"],
                 "output_format": "rfc3339",
-                "precision": "seconds",
+                "fast_precision": "seconds",
                 "stored": true,
                 "indexed": true,
                 "fast": false,
@@ -1470,7 +1470,7 @@ mod tests {
             {
                 "name": "my_field_name",
                 "type": "array<datetime>",
-                "precision": "milliseconds"
+                "fast_precision": "milliseconds"
             }
             "#,
         )
@@ -1483,7 +1483,7 @@ mod tests {
                 "type": "array<datetime>",
                 "input_formats": ["rfc3339", "unix_timestamp"],
                 "output_format": "rfc3339",
-                "precision": "milliseconds",
+                "fast_precision": "milliseconds",
                 "stored": true,
                 "indexed": true,
                 "fast": false,

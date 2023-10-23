@@ -28,6 +28,11 @@ pub struct LeafSearchCache {
     content: MemorySizedCache<CacheKey>,
 }
 
+// TODO we could be smarted about search_after. If we have a cached request with a search_after
+// (possibly equal to None) A, and a corresponding response with the 1st element having the value
+// B, and we receive a 2nd request with a search_after such that A <= C < B, we can serve from
+// cache directly. Only the case A = C < B is currently handled.
+
 impl LeafSearchCache {
     pub fn new(capacity: usize) -> LeafSearchCache {
         LeafSearchCache {

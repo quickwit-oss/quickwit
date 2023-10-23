@@ -10,6 +10,7 @@ jobs:
     name: Build ${{ matrix.target }}
     runs-on: macos-latest
     strategy:
+      fail-fast: false
       matrix:
         target: [x86_64-apple-darwin, aarch64-apple-darwin]
     steps:
@@ -21,6 +22,7 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
   build-linux-binaries:
     strategy:
+      fail-fast: false
       matrix:
         target: [x86_64-unknown-linux-gnu, aarch64-unknown-linux-gnu]
     name: Build ${{ matrix.target }}

@@ -17,13 +17,11 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::sync::Arc;
-
 use anyhow::Context;
 use async_trait::async_trait;
 use fail::fail_point;
 use quickwit_actors::{Actor, ActorContext, Handler, Mailbox, QueueCapacity};
-use quickwit_metastore::Metastore;
+use quickwit_proto::metastore::{MetastoreService, MetastoreServiceClient, PublishSplitsRequest};
 use serde::Serialize;
 use tracing::{info, instrument};
 
@@ -56,7 +54,7 @@ impl PublisherType {
 #[derive(Clone)]
 pub struct Publisher {
     publisher_type: PublisherType,
-    metastore: Arc<dyn Metastore>,
+    metastore: MetastoreServiceClient,
     merge_planner_mailbox_opt: Option<Mailbox<MergePlanner>>,
     source_mailbox_opt: Option<Mailbox<SourceActor>>,
     counters: PublisherCounters,
@@ -65,7 +63,7 @@ pub struct Publisher {
 impl Publisher {
     pub fn new(
         publisher_type: PublisherType,
-        metastore: Arc<dyn Metastore>,
+        metastore: MetastoreServiceClient,
         merge_planner_mailbox_opt: Option<Mailbox<MergePlanner>>,
         source_mailbox_opt: Option<Mailbox<SourceActor>>,
     ) -> Publisher {
@@ -121,21 +119,26 @@ impl Handler<SplitsUpdate> for Publisher {
             ..
         } = split_update;
 
-        let split_ids: Vec<&str> = new_splits.iter().map(|split| split.split_id()).collect();
-
-        let replaced_split_ids_ref_vec: Vec<&str> =
-            replaced_split_ids.iter().map(String::as_str).collect();
-
+        let index_checkpoint_delta_json_opt = checkpoint_delta_opt
+            .as_ref()
+            .map(serde_json::to_string)
+            .transpose()
+            .context("failed to serialize `IndexCheckpointDelta`")?;
+        let split_ids: Vec<String> = new_splits
+            .iter()
+            .map(|split| split.split_id.clone())
+            .collect();
         if let Some(_guard) = publish_lock.acquire().await {
-            ctx.protect_future(self.metastore.publish_splits(
-                index_uid,
-                &split_ids[..],
-                &replaced_split_ids_ref_vec,
-                checkpoint_delta_opt.clone(),
-                publish_token_opt,
-            ))
-            .await
-            .context("failed to publish splits")?;
+            let publish_splits_request = PublishSplitsRequest {
+                index_uid: index_uid.to_string(),
+                staged_split_ids: split_ids.clone(),
+                replaced_split_ids: replaced_split_ids.clone(),
+                index_checkpoint_delta_json_opt,
+                publish_token_opt: publish_token_opt.clone(),
+            };
+            ctx.protect_future(self.metastore.publish_splits(publish_splits_request))
+                .await
+                .context("failed to publish splits")?;
         } else {
             // TODO: Remove the junk right away?
             info!(
@@ -192,7 +195,8 @@ mod tests {
     use quickwit_metastore::checkpoint::{
         IndexCheckpointDelta, PartitionId, Position, SourceCheckpoint, SourceCheckpointDelta,
     };
-    use quickwit_metastore::{MockMetastore, SplitMetadata};
+    use quickwit_metastore::{PublishSplitsRequestExt, SplitMetadata};
+    use quickwit_proto::metastore::EmptyResponse;
     use quickwit_proto::IndexUid;
     use tracing::Span;
 
@@ -202,32 +206,29 @@ mod tests {
     #[tokio::test]
     async fn test_publisher_publish_operation() {
         let universe = Universe::with_accelerated_time();
-        let mut mock_metastore = MockMetastore::default();
+        let mut mock_metastore = MetastoreServiceClient::mock();
         mock_metastore
             .expect_publish_splits()
-            .withf(
-                |index_uid,
-                 split_ids,
-                 replaced_split_ids,
-                 checkpoint_delta_opt,
-                 _publish_token_opt| {
-                    let checkpoint_delta = checkpoint_delta_opt.as_ref().unwrap();
-                    *index_uid == "index:11111111111111111111111111"
-                        && checkpoint_delta.source_id == "source"
-                        && split_ids[..] == ["split"]
-                        && replaced_split_ids.is_empty()
-                        && checkpoint_delta.source_delta == SourceCheckpointDelta::from_range(1..3)
-                },
-            )
+            .withf(|publish_splits_request| {
+                let checkpoint_delta: IndexCheckpointDelta = publish_splits_request
+                    .deserialize_index_checkpoint()
+                    .unwrap()
+                    .unwrap();
+                publish_splits_request.index_uid == "index:11111111111111111111111111"
+                    && checkpoint_delta.source_id == "source"
+                    && publish_splits_request.staged_split_ids[..] == ["split"]
+                    && publish_splits_request.replaced_split_ids.is_empty()
+                    && checkpoint_delta.source_delta == SourceCheckpointDelta::from_range(1..3)
+            })
             .times(1)
-            .returning(|_, _, _, _, _| Ok(()));
+            .returning(|_| Ok(EmptyResponse {}));
         let (merge_planner_mailbox, merge_planner_inbox) = universe.create_test_mailbox();
 
         let (source_mailbox, source_inbox) = universe.create_test_mailbox();
 
         let publisher = Publisher::new(
             PublisherType::MainPublisher,
-            Arc::new(mock_metastore),
+            MetastoreServiceClient::from(mock_metastore),
             Some(merge_planner_mailbox),
             Some(source_mailbox),
         );
@@ -279,32 +280,29 @@ mod tests {
     #[tokio::test]
     async fn test_publisher_publish_operation_with_empty_splits() {
         let universe = Universe::with_accelerated_time();
-        let mut mock_metastore = MockMetastore::default();
+        let mut mock_metastore = MetastoreServiceClient::mock();
         mock_metastore
             .expect_publish_splits()
-            .withf(
-                |index_uid,
-                 split_ids,
-                 replaced_split_ids,
-                 checkpoint_delta_opt,
-                 _publish_token_opt| {
-                    let checkpoint_delta = checkpoint_delta_opt.as_ref().unwrap();
-                    *index_uid == "index:11111111111111111111111111"
-                        && checkpoint_delta.source_id == "source"
-                        && split_ids.is_empty()
-                        && replaced_split_ids.is_empty()
-                        && checkpoint_delta.source_delta == SourceCheckpointDelta::from_range(1..3)
-                },
-            )
+            .withf(|publish_splits_request| {
+                let checkpoint_delta: IndexCheckpointDelta = publish_splits_request
+                    .deserialize_index_checkpoint()
+                    .unwrap()
+                    .unwrap();
+                publish_splits_request.index_uid == "index:11111111111111111111111111"
+                    && checkpoint_delta.source_id == "source"
+                    && publish_splits_request.staged_split_ids.is_empty()
+                    && publish_splits_request.replaced_split_ids.is_empty()
+                    && checkpoint_delta.source_delta == SourceCheckpointDelta::from_range(1..3)
+            })
             .times(1)
-            .returning(|_, _, _, _, _| Ok(()));
+            .returning(|_| Ok(EmptyResponse {}));
         let (merge_planner_mailbox, merge_planner_inbox) = universe.create_test_mailbox();
 
         let (source_mailbox, source_inbox) = universe.create_test_mailbox();
 
         let publisher = Publisher::new(
             PublisherType::MainPublisher,
-            Arc::new(mock_metastore),
+            MetastoreServiceClient::from(mock_metastore),
             Some(merge_planner_mailbox),
             Some(source_mailbox),
         );
@@ -354,27 +352,23 @@ mod tests {
     #[tokio::test]
     async fn test_publisher_replace_operation() {
         let universe = Universe::with_accelerated_time();
-        let mut mock_metastore = MockMetastore::default();
+        let mut mock_metastore = MetastoreServiceClient::mock();
         mock_metastore
             .expect_publish_splits()
-            .withf(
-                |index_uid,
-                 new_split_ids,
-                 replaced_split_ids,
-                 checkpoint_delta_opt,
-                 _publish_token_opt| {
-                    *index_uid == "index:11111111111111111111111111"
-                        && new_split_ids[..] == ["split3"]
-                        && replaced_split_ids[..] == ["split1", "split2"]
-                        && checkpoint_delta_opt.is_none()
-                },
-            )
+            .withf(|publish_splits_requests| {
+                publish_splits_requests.index_uid == "index:11111111111111111111111111"
+                    && publish_splits_requests.staged_split_ids[..] == ["split3"]
+                    && publish_splits_requests.replaced_split_ids[..] == ["split1", "split2"]
+                    && publish_splits_requests
+                        .index_checkpoint_delta_json_opt()
+                        .is_empty()
+            })
             .times(1)
-            .returning(|_, _, _, _, _| Ok(()));
+            .returning(|_| Ok(EmptyResponse {}));
         let (merge_planner_mailbox, merge_planner_inbox) = universe.create_test_mailbox();
         let publisher = Publisher::new(
             PublisherType::MainPublisher,
-            Arc::new(mock_metastore),
+            MetastoreServiceClient::from(mock_metastore),
             Some(merge_planner_mailbox),
             None,
         );
@@ -408,13 +402,13 @@ mod tests {
     #[tokio::test]
     async fn publisher_acquires_publish_lock() {
         let universe = Universe::with_accelerated_time();
-        let mut mock_metastore = MockMetastore::default();
+        let mut mock_metastore = MetastoreServiceClient::mock();
         mock_metastore.expect_publish_splits().never();
         let (merge_planner_mailbox, merge_planner_inbox) = universe.create_test_mailbox();
 
         let publisher = Publisher::new(
             PublisherType::MainPublisher,
-            Arc::new(mock_metastore),
+            MetastoreServiceClient::from(mock_metastore),
             Some(merge_planner_mailbox),
             None,
         );
