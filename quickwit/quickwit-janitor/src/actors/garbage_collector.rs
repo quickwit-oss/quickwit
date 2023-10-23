@@ -19,7 +19,6 @@
 
 use std::collections::HashSet;
 use std::path::Path;
-use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
@@ -29,7 +28,10 @@ use quickwit_actors::{Actor, ActorContext, Handler};
 // use quickwit_index_management::run_garbage_collect;
 use quickwit_common::shared_consts::DELETION_GRACE_PERIOD;
 use quickwit_index_management::run_garbage_collect;
-use quickwit_metastore::{ListIndexesQuery, Metastore};
+use quickwit_metastore::{ListIndexesMetadataRequestExt, ListIndexesMetadataResponseExt};
+use quickwit_proto::metastore::{
+    ListIndexesMetadataRequest, MetastoreService, MetastoreServiceClient,
+};
 use quickwit_storage::StorageResolver;
 use serde::Serialize;
 use tracing::{error, info};
@@ -66,13 +68,13 @@ struct Loop;
 
 /// An actor for collecting garbage periodically from an index.
 pub struct GarbageCollector {
-    metastore: Arc<dyn Metastore>,
+    metastore: MetastoreServiceClient,
     storage_resolver: StorageResolver,
     counters: GarbageCollectorCounters,
 }
 
 impl GarbageCollector {
-    pub fn new(metastore: Arc<dyn Metastore>, storage_resolver: StorageResolver) -> Self {
+    pub fn new(metastore: MetastoreServiceClient, storage_resolver: StorageResolver) -> Self {
         Self {
             metastore,
             storage_resolver,
@@ -88,9 +90,11 @@ impl GarbageCollector {
 
         let indexes = match self
             .metastore
-            .list_indexes_metadatas(ListIndexesQuery::All)
+            .list_indexes_metadata(ListIndexesMetadataRequest::all())
             .await
-        {
+            .and_then(|list_indexes_metadata_response| {
+                list_indexes_metadata_response.deserialize_indexes_metadata()
+            }) {
             Ok(metadatas) => metadatas,
             Err(error) => {
                 error!(error=?error, "Failed to list indexes from the metastore.");
@@ -205,13 +209,18 @@ impl Handler<Loop> for GarbageCollector {
 mod tests {
     use std::ops::Bound;
     use std::path::Path;
+    use std::sync::Arc;
 
     use quickwit_actors::Universe;
     use quickwit_common::shared_consts::DELETION_GRACE_PERIOD;
     use quickwit_metastore::{
-        IndexMetadata, ListSplitsQuery, MockMetastore, Split, SplitMetadata, SplitState,
+        IndexMetadata, ListSplitsRequestExt, ListSplitsResponseExt, Split, SplitMetadata,
+        SplitState,
     };
-    use quickwit_proto::metastore::MetastoreError;
+    use quickwit_proto::metastore::{
+        EmptyResponse, ListIndexesMetadataResponse, ListSplitsResponse, MetastoreError,
+    };
+    use quickwit_proto::IndexUid;
     use quickwit_storage::MockStorage;
     use time::OffsetDateTime;
 
@@ -252,11 +261,12 @@ mod tests {
                 Ok(())
             });
 
-        let mut mock_metastore = MockMetastore::default();
+        let mut mock_metastore = MetastoreServiceClient::mock();
         mock_metastore
             .expect_list_splits()
             .times(2)
-            .returning(|query: ListSplitsQuery| {
+            .returning(|list_splits_request| {
+                let query = list_splits_request.deserialize_list_splits_query().unwrap();
                 assert_eq!(
                     query.index_uids[0].to_string(),
                     "test-index:11111111111111111111111111"
@@ -283,38 +293,43 @@ mod tests {
                     }
                     _ => panic!("only Staged and MarkedForDeletion expected."),
                 };
-                Ok(splits)
+                Ok(ListSplitsResponse::try_from_splits(splits).unwrap())
             });
         mock_metastore
             .expect_mark_splits_for_deletion()
             .times(1)
-            .returning(|index_uid, split_ids| {
+            .returning(|mark_splits_for_deletion_request| {
                 assert_eq!(
-                    index_uid.to_string(),
+                    mark_splits_for_deletion_request.index_uid,
                     "test-index:11111111111111111111111111"
                 );
-                assert_eq!(split_ids, vec!["a"]);
-                Ok(())
+                assert_eq!(mark_splits_for_deletion_request.split_ids, vec!["a"]);
+                Ok(EmptyResponse {})
             });
         mock_metastore
             .expect_delete_splits()
             .times(1)
-            .returning(|index_uid, split_ids| {
+            .returning(|delete_splits_request| {
                 assert_eq!(
-                    index_uid.to_string(),
+                    delete_splits_request.index_uid,
                     "test-index:11111111111111111111111111"
                 );
-                let split_ids = HashSet::<&str>::from_iter(split_ids.iter().copied());
+                let split_ids = HashSet::<&str>::from_iter(
+                    delete_splits_request
+                        .split_ids
+                        .iter()
+                        .map(|split_id| split_id.as_str()),
+                );
                 let expected_split_ids = HashSet::<&str>::from_iter(["a", "b", "c"]);
                 assert_eq!(split_ids, expected_split_ids);
 
-                Ok(())
+                Ok(EmptyResponse {})
             });
 
         let result = run_garbage_collect(
             "test-index:11111111111111111111111111".to_string().into(),
             Arc::new(mock_storage),
-            Arc::new(mock_metastore),
+            MetastoreServiceClient::from(mock_metastore),
             STAGED_GRACE_PERIOD,
             DELETION_GRACE_PERIOD,
             false,
@@ -327,20 +342,25 @@ mod tests {
     #[tokio::test]
     async fn test_garbage_collect_calls_dependencies_appropriately() {
         let storage_resolver = StorageResolver::unconfigured();
-        let mut mock_metastore = MockMetastore::default();
+        let mut mock_metastore = MetastoreServiceClient::mock();
         mock_metastore
-            .expect_list_indexes_metadatas()
+            .expect_list_indexes_metadata()
             .times(1)
-            .returning(move |_list_indexes_query: ListIndexesQuery| {
-                Ok(vec![IndexMetadata::for_test(
+            .returning(|_list_indexes_request| {
+                let indexes_metadata = vec![IndexMetadata::for_test(
                     "test-index",
                     "ram://indexes/test-index",
-                )])
+                )];
+                Ok(
+                    ListIndexesMetadataResponse::try_from_indexes_metadata(indexes_metadata)
+                        .unwrap(),
+                )
             });
         mock_metastore
             .expect_list_splits()
             .times(2)
-            .returning(|query| {
+            .returning(|list_splits_request| {
+                let query = list_splits_request.deserialize_list_splits_query().unwrap();
                 assert_eq!(query.index_uids[0].index_id(), "test-index");
                 let splits = match query.split_states[0] {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
@@ -349,31 +369,40 @@ mod tests {
                     }
                     _ => panic!("only Staged and MarkedForDeletion expected."),
                 };
-                Ok(splits)
+                Ok(ListSplitsResponse::try_from_splits(splits).unwrap())
             });
         mock_metastore
             .expect_mark_splits_for_deletion()
             .times(1)
-            .returning(|index_uid, split_ids| {
+            .returning(|mark_splits_for_deletion_request| {
+                let index_uid: IndexUid = mark_splits_for_deletion_request.index_uid.clone().into();
                 assert_eq!(index_uid.index_id(), "test-index");
-                assert_eq!(split_ids, vec!["a"]);
-                Ok(())
+                assert_eq!(mark_splits_for_deletion_request.split_ids, vec!["a"]);
+                Ok(EmptyResponse {})
             });
         mock_metastore
             .expect_delete_splits()
             .times(1)
-            .returning(|index_uid, split_ids| {
+            .returning(|delete_splits_request| {
+                let index_uid: IndexUid = delete_splits_request.index_uid.clone().into();
                 assert_eq!(index_uid.index_id(), "test-index");
 
-                let split_ids = HashSet::<&str>::from_iter(split_ids.iter().copied());
+                let split_ids = HashSet::<&str>::from_iter(
+                    delete_splits_request
+                        .split_ids
+                        .iter()
+                        .map(|split_id| split_id.as_str()),
+                );
                 let expected_split_ids = HashSet::<&str>::from_iter(["a", "b", "c"]);
 
                 assert_eq!(split_ids, expected_split_ids);
-                Ok(())
+                Ok(EmptyResponse {})
             });
 
-        let garbage_collect_actor =
-            GarbageCollector::new(Arc::new(mock_metastore), storage_resolver);
+        let garbage_collect_actor = GarbageCollector::new(
+            MetastoreServiceClient::from(mock_metastore),
+            storage_resolver,
+        );
         let universe = Universe::with_accelerated_time();
         let (_mailbox, handler) = universe.spawn_builder().spawn(garbage_collect_actor);
 
@@ -388,20 +417,25 @@ mod tests {
     #[tokio::test]
     async fn test_garbage_collect_get_calls_repeatedly() {
         let storage_resolver = StorageResolver::unconfigured();
-        let mut mock_metastore = MockMetastore::default();
+        let mut mock_metastore = MetastoreServiceClient::mock();
         mock_metastore
-            .expect_list_indexes_metadatas()
+            .expect_list_indexes_metadata()
             .times(3)
-            .returning(move |_list_indexes_query: ListIndexesQuery| {
-                Ok(vec![IndexMetadata::for_test(
+            .returning(|_list_indexes_metadata| {
+                let indexes_metadata = vec![IndexMetadata::for_test(
                     "test-index",
                     "ram://indexes/test-index",
-                )])
+                )];
+                Ok(
+                    ListIndexesMetadataResponse::try_from_indexes_metadata(indexes_metadata)
+                        .unwrap(),
+                )
             });
         mock_metastore
             .expect_list_splits()
             .times(6)
-            .returning(|query| {
+            .returning(|list_splits_request| {
+                let query = list_splits_request.deserialize_list_splits_query().unwrap();
                 assert_eq!(query.index_uids[0].index_id(), "test-index");
                 let splits = match query.split_states[0] {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
@@ -410,31 +444,40 @@ mod tests {
                     }
                     _ => panic!("only Staged and MarkedForDeletion expected."),
                 };
-                Ok(splits)
+                Ok(ListSplitsResponse::try_from_splits(splits).unwrap())
             });
         mock_metastore
             .expect_mark_splits_for_deletion()
             .times(3)
-            .returning(|index_uid, split_ids| {
+            .returning(|mark_splits_for_deletion_request| {
+                let index_uid: IndexUid = mark_splits_for_deletion_request.index_uid.clone().into();
                 assert_eq!(index_uid.index_id(), "test-index");
-                assert_eq!(split_ids, vec!["a"]);
-                Ok(())
+                assert_eq!(mark_splits_for_deletion_request.split_ids, vec!["a"]);
+                Ok(EmptyResponse {})
             });
         mock_metastore
             .expect_delete_splits()
             .times(3)
-            .returning(|index_uid, split_ids| {
+            .returning(|delete_splits_request| {
+                let index_uid: IndexUid = delete_splits_request.index_uid.clone().into();
                 assert_eq!(index_uid.index_id(), "test-index");
 
-                let split_ids = HashSet::<&str>::from_iter(split_ids.iter().copied());
+                let split_ids = HashSet::<&str>::from_iter(
+                    delete_splits_request
+                        .split_ids
+                        .iter()
+                        .map(|split_id| split_id.as_str()),
+                );
                 let expected_split_ids = HashSet::<&str>::from_iter(["a", "b"]);
 
                 assert_eq!(split_ids, expected_split_ids);
-                Ok(())
+                Ok(EmptyResponse {})
             });
 
-        let garbage_collect_actor =
-            GarbageCollector::new(Arc::new(mock_metastore), storage_resolver);
+        let garbage_collect_actor = GarbageCollector::new(
+            MetastoreServiceClient::from(mock_metastore),
+            storage_resolver,
+        );
         let universe = Universe::with_accelerated_time();
         let (_mailbox, handle) = universe.spawn_builder().spawn(garbage_collect_actor);
 
@@ -474,18 +517,20 @@ mod tests {
     #[tokio::test]
     async fn test_garbage_collect_get_called_repeatedly_on_failure() {
         let storage_resolver = StorageResolver::unconfigured();
-        let mut mock_metastore = MockMetastore::default();
+        let mut mock_metastore = MetastoreServiceClient::mock();
         mock_metastore
-            .expect_list_indexes_metadatas()
+            .expect_list_indexes_metadata()
             .times(4)
-            .returning(move |_list_indexes_query: ListIndexesQuery| {
+            .returning(|_list_indexes_request| {
                 Err(MetastoreError::Db {
                     message: "fail to list indexes".to_string(),
                 })
             });
 
-        let garbage_collect_actor =
-            GarbageCollector::new(Arc::new(mock_metastore), storage_resolver);
+        let garbage_collect_actor = GarbageCollector::new(
+            MetastoreServiceClient::from(mock_metastore),
+            storage_resolver,
+        );
         let universe = Universe::with_accelerated_time();
         let (_mailbox, handle) = universe.spawn_builder().spawn(garbage_collect_actor);
 
@@ -505,19 +550,25 @@ mod tests {
     #[tokio::test]
     async fn test_garbage_collect_fails_to_resolve_storage() {
         let storage_resolver = StorageResolver::unconfigured();
-        let mut mock_metastore = MockMetastore::default();
+        let mut mock_metastore = MetastoreServiceClient::mock();
         mock_metastore
-            .expect_list_indexes_metadatas()
+            .expect_list_indexes_metadata()
             .times(1)
-            .returning(move |_list_indexes_query: ListIndexesQuery| {
-                Ok(vec![IndexMetadata::for_test(
+            .returning(move |_list_indexes_request| {
+                let indexes_metadata = vec![IndexMetadata::for_test(
                     "test-index",
                     "postgresql://indexes/test-index",
-                )])
+                )];
+                Ok(
+                    ListIndexesMetadataResponse::try_from_indexes_metadata(indexes_metadata)
+                        .unwrap(),
+                )
             });
 
-        let garbage_collect_actor =
-            GarbageCollector::new(Arc::new(mock_metastore), storage_resolver);
+        let garbage_collect_actor = GarbageCollector::new(
+            MetastoreServiceClient::from(mock_metastore),
+            storage_resolver,
+        );
         let universe = Universe::with_accelerated_time();
         let (_mailbox, handle) = universe.spawn_builder().spawn(garbage_collect_actor);
 
@@ -535,20 +586,25 @@ mod tests {
     #[tokio::test]
     async fn test_garbage_collect_fails_to_run_gc_on_one_index() {
         let storage_resolver = StorageResolver::unconfigured();
-        let mut mock_metastore = MockMetastore::default();
+        let mut mock_metastore = MetastoreServiceClient::mock();
         mock_metastore
-            .expect_list_indexes_metadatas()
+            .expect_list_indexes_metadata()
             .times(1)
-            .returning(move |_list_indexes_query: ListIndexesQuery| {
-                Ok(vec![
+            .returning(|_list_indexes_request| {
+                let indexes_metadata = vec![
                     IndexMetadata::for_test("test-index-1", "ram:///indexes/test-index-1"),
                     IndexMetadata::for_test("test-index-2", "ram:///indexes/test-index-2"),
-                ])
+                ];
+                Ok(
+                    ListIndexesMetadataResponse::try_from_indexes_metadata(indexes_metadata)
+                        .unwrap(),
+                )
             });
         mock_metastore
             .expect_list_splits()
             .times(3)
-            .returning(|query| {
+            .returning(|list_splits_request| {
+                let query = list_splits_request.deserialize_list_splits_query().unwrap();
                 assert!(["test-index-1", "test-index-2"].contains(&query.index_uids[0].index_id()));
 
                 if query.index_uids[0].index_id() == "test-index-2" {
@@ -563,29 +619,37 @@ mod tests {
                     }
                     _ => panic!("only Staged and MarkedForDeletion expected."),
                 };
-                Ok(splits)
+                Ok(ListSplitsResponse::try_from_splits(splits).unwrap())
             });
         mock_metastore
             .expect_mark_splits_for_deletion()
             .once()
-            .returning(|index_uid, split_ids| {
+            .returning(|mark_splits_for_deletion_request| {
+                let index_uid: IndexUid = mark_splits_for_deletion_request.index_uid.clone().into();
                 assert!(["test-index-1", "test-index-2"].contains(&index_uid.index_id()));
-                assert_eq!(split_ids, vec!["a"]);
-                Ok(())
+                assert_eq!(mark_splits_for_deletion_request.split_ids, vec!["a"]);
+                Ok(EmptyResponse {})
             });
         mock_metastore
             .expect_delete_splits()
             .once()
-            .returning(|_index_id, split_ids| {
-                let split_ids = HashSet::<&str>::from_iter(split_ids.iter().copied());
+            .returning(|delete_splits_request| {
+                let split_ids = HashSet::<&str>::from_iter(
+                    delete_splits_request
+                        .split_ids
+                        .iter()
+                        .map(|split_id| split_id.as_str()),
+                );
                 let expected_split_ids = HashSet::<&str>::from_iter(["a", "b"]);
 
                 assert_eq!(split_ids, expected_split_ids);
-                Ok(())
+                Ok(EmptyResponse {})
             });
 
-        let garbage_collect_actor =
-            GarbageCollector::new(Arc::new(mock_metastore), storage_resolver);
+        let garbage_collect_actor = GarbageCollector::new(
+            MetastoreServiceClient::from(mock_metastore),
+            storage_resolver,
+        );
         let universe = Universe::with_accelerated_time();
         let (_mailbox, handle) = universe.spawn_builder().spawn(garbage_collect_actor);
 
@@ -603,20 +667,25 @@ mod tests {
     #[tokio::test]
     async fn test_garbage_collect_fails_to_run_delete_on_one_index() {
         let storage_resolver = StorageResolver::unconfigured();
-        let mut mock_metastore = MockMetastore::default();
+        let mut mock_metastore = MetastoreServiceClient::mock();
         mock_metastore
-            .expect_list_indexes_metadatas()
+            .expect_list_indexes_metadata()
             .times(1)
-            .returning(move |_list_indexes_query: ListIndexesQuery| {
-                Ok(vec![
+            .returning(|_list_indexes_request| {
+                let indexes_metadata = vec![
                     IndexMetadata::for_test("test-index-1", "ram://indexes/test-index-1"),
                     IndexMetadata::for_test("test-index-2", "ram://indexes/test-index-2"),
-                ])
+                ];
+                Ok(
+                    ListIndexesMetadataResponse::try_from_indexes_metadata(indexes_metadata)
+                        .unwrap(),
+                )
             });
         mock_metastore
             .expect_list_splits()
             .times(4)
-            .returning(|query| {
+            .returning(|list_splits_request| {
+                let query = list_splits_request.deserialize_list_splits_query().unwrap();
                 assert!(["test-index-1", "test-index-2"].contains(&query.index_uids[0].index_id()));
                 let splits = match query.split_states[0] {
                     SplitState::Staged => make_splits(&["a"], SplitState::Staged),
@@ -625,21 +694,28 @@ mod tests {
                     }
                     _ => panic!("only Staged and MarkedForDeletion expected."),
                 };
-                Ok(splits)
+                Ok(ListSplitsResponse::try_from_splits(splits).unwrap())
             });
         mock_metastore
             .expect_mark_splits_for_deletion()
             .times(2)
-            .returning(|index_uid, split_ids| {
+            .returning(|mark_splits_for_deletion_request| {
+                let index_uid: IndexUid = mark_splits_for_deletion_request.index_uid.clone().into();
                 assert!(["test-index-1", "test-index-2"].contains(&index_uid.index_id()));
-                assert_eq!(split_ids, vec!["a"]);
-                Ok(())
+                assert_eq!(mark_splits_for_deletion_request.split_ids, vec!["a"]);
+                Ok(EmptyResponse {})
             });
         mock_metastore
             .expect_delete_splits()
             .times(2)
-            .returning(|index_uid, split_ids| {
-                let split_ids = HashSet::<&str>::from_iter(split_ids.iter().copied());
+            .returning(|delete_splits_request| {
+                let index_uid: IndexUid = delete_splits_request.index_uid.clone().into();
+                let split_ids = HashSet::<&str>::from_iter(
+                    delete_splits_request
+                        .split_ids
+                        .iter()
+                        .map(|split_id| split_id.as_str()),
+                );
                 let expected_split_ids = HashSet::<&str>::from_iter(["a", "b"]);
 
                 assert_eq!(split_ids, expected_split_ids);
@@ -652,12 +728,14 @@ mod tests {
                         message: "fail to delete".to_string(),
                     })
                 } else {
-                    Ok(())
+                    Ok(EmptyResponse {})
                 }
             });
 
-        let garbage_collect_actor =
-            GarbageCollector::new(Arc::new(mock_metastore), storage_resolver);
+        let garbage_collect_actor = GarbageCollector::new(
+            MetastoreServiceClient::from(mock_metastore),
+            storage_resolver,
+        );
         let universe = Universe::with_accelerated_time();
         let (_mailbox, handle) = universe.spawn_builder().spawn(garbage_collect_actor);
 

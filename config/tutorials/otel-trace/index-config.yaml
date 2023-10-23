@@ -34,7 +34,7 @@ doc_mapping:
     - name: span_start_timestamp_secs
       type: datetime
       indexed: true
-      precision: seconds
+      fast_precision: seconds
       fast: true
       input_formats: [unix_timestamp]
       output_format: unix_timestamp_secs

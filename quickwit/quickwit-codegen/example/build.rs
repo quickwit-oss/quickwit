@@ -25,6 +25,8 @@ fn main() {
         "src/codegen/",
         "crate::HelloResult",
         "crate::HelloError",
+        true,
+        true,
         &[],
     )
     .unwrap();

@@ -24,6 +24,7 @@ use anyhow::{anyhow, Context};
 use chitchat::{ChitchatId, NodeState};
 use itertools::Itertools;
 use quickwit_proto::indexing::IndexingTask;
+use quickwit_proto::NodeId;
 use tracing::warn;
 
 use crate::{GenerationId, QuickwitService};
@@ -73,7 +74,7 @@ pub struct ClusterMember {
     /// A unique node ID across the cluster.
     /// The Chitchat node ID is the concatenation of the node ID and the start timestamp:
     /// `{node_id}/{start_timestamp}`.
-    pub node_id: String,
+    pub node_id: NodeId,
     /// The start timestamp (seconds) of the node.
     pub generation_id: GenerationId,
     /// Enabled services, i.e. services configured to run on the node. Depending on the node and
@@ -94,7 +95,7 @@ pub struct ClusterMember {
 
 impl ClusterMember {
     pub fn new(
-        node_id: String,
+        node_id: NodeId,
         generation_id: GenerationId,
         is_ready: bool,
         enabled_services: HashSet<QuickwitService>,
@@ -115,7 +116,7 @@ impl ClusterMember {
 
     pub fn chitchat_id(&self) -> ChitchatId {
         ChitchatId::new(
-            self.node_id.clone(),
+            self.node_id.clone().into(),
             self.generation_id.as_u64(),
             self.gossip_advertise_addr,
         )
@@ -149,7 +150,7 @@ pub(crate) fn build_cluster_member(
     let grpc_advertise_addr = node_state.grpc_advertise_addr()?;
     let indexing_tasks = parse_indexing_tasks(node_state, &chitchat_id.node_id);
     let member = ClusterMember::new(
-        chitchat_id.node_id,
+        chitchat_id.node_id.into(),
         chitchat_id.generation_id.into(),
         is_ready,
         enabled_services,

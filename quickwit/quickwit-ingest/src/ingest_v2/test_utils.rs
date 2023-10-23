@@ -22,8 +22,7 @@ use std::ops::RangeBounds;
 use mrecordlog::MultiRecordLog;
 use quickwit_proto::ingest::ShardState;
 
-use super::ingester::{PrimaryShard, ReplicaShard};
-use crate::ingest_v2::ingester::Position;
+use super::models::{Position, PrimaryShard, ReplicaShard};
 
 pub(super) trait MultiRecordLogTestExt {
     fn assert_records_eq<R>(&self, queue_id: &str, range: R, expected_records: &[(u64, &str)])

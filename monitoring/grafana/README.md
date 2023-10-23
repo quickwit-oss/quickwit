@@ -3,6 +3,6 @@
 The list of featured dashboards:
 - [x] Metastore
 - [x] Indexers
-- [ ] Searchers
+- [x] Searchers
 - [ ] Janitor
 

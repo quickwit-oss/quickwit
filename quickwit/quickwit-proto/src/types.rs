@@ -45,6 +45,14 @@ pub fn queue_id(index_uid: &str, source_id: &str, shard_id: u64) -> QueueId {
     format!("{}/{}/{}", index_uid, source_id, shard_id)
 }
 
+pub fn split_queue_id(queue_id: &str) -> Option<(IndexUid, SourceId, ShardId)> {
+    let mut parts = queue_id.split('/');
+    let index_uid = parts.next()?;
+    let source_id = parts.next()?;
+    let shard_id = parts.next()?.parse::<u64>().ok()?;
+    Some((index_uid.into(), source_id.to_string(), shard_id))
+}
+
 /// Index identifiers that uniquely identify not only the index, but also
 /// its incarnation allowing to distinguish between deleted and recreated indexes.
 /// It is represented as a stiring in index_id:incarnation_id format.
@@ -52,13 +60,14 @@ pub fn queue_id(index_uid: &str, source_id: &str, shard_id: u64) -> QueueId {
 pub struct IndexUid(String);
 
 impl fmt::Display for IndexUid {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.0)
     }
 }
 
 impl IndexUid {
-    /// Creates a new index uid form index_id and incarnation_id
+    /// Creates a new index uid from index_id.
+    /// A random UUID will be used as incarnation
     pub fn new(index_id: impl Into<String>) -> Self {
         Self::from_parts(index_id, Ulid::new().to_string())
     }
@@ -112,6 +121,12 @@ impl From<String> for IndexUid {
     }
 }
 
+impl PartialEq<&str> for IndexUid {
+    fn eq(&self, other: &&str) -> bool {
+        self.as_str() == *other
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct NodeId(String);
 
@@ -147,7 +162,7 @@ impl AsRef<NodeIdRef> for NodeId {
 
 impl Borrow<str> for NodeId {
     fn borrow(&self) -> &str {
-        self.as_str()
+        &self.0
     }
 }
 
@@ -239,6 +254,12 @@ impl AsRef<str> for NodeIdRef {
     }
 }
 
+impl Borrow<String> for NodeId {
+    fn borrow(&self) -> &String {
+        &self.0
+    }
+}
+
 impl Borrow<str> for NodeIdRef {
     fn borrow(&self) -> &str {
         &self.0
@@ -292,6 +313,32 @@ impl ToOwned for NodeIdRef {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_queue_id() {
+        assert_eq!(
+            queue_id("test-index:0", "test-source", 1),
+            "test-index:0/test-source/1"
+        );
+    }
+
+    #[test]
+    fn test_split_queue_id() {
+        let splits = split_queue_id("test-index:0");
+        assert!(splits.is_none());
+
+        let splits = split_queue_id("test-index:0/test-source");
+        assert!(splits.is_none());
+
+        let splits = split_queue_id("test-index:0/test-source/a");
+        assert!(splits.is_none());
+
+        let (index_uid, source_id, shard_id) =
+            split_queue_id("test-index:0/test-source/1").unwrap();
+        assert_eq!(index_uid, "test-index:0");
+        assert_eq!(source_id, "test-source");
+        assert_eq!(shard_id, 1);
+    }
 
     #[test]
     fn test_node_id() {

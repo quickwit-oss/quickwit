@@ -85,7 +85,7 @@ impl From<tonic::Status> for IngestV2Error {
 }
 
 impl ServiceError for IngestV2Error {
-    fn status_code(&self) -> ServiceErrorCode {
+    fn error_code(&self) -> ServiceErrorCode {
         match self {
             Self::Internal { .. } => ServiceErrorCode::Internal,
             Self::IngesterUnavailable { .. } => ServiceErrorCode::Unavailable,
@@ -115,6 +115,46 @@ impl DocBatchV2 {
 
     pub fn num_docs(&self) -> usize {
         self.doc_lengths.len()
+    }
+
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn for_test(docs: impl IntoIterator<Item = &'static str>) -> Self {
+        let mut doc_buffer = Vec::new();
+        let mut doc_lengths = Vec::new();
+
+        for doc in docs {
+            doc_buffer.extend(doc.as_bytes());
+            doc_lengths.push(doc.len() as u32);
+        }
+        Self {
+            doc_lengths,
+            doc_buffer: Bytes::from(doc_buffer),
+        }
+    }
+}
+
+impl MRecordBatch {
+    pub fn encoded_mrecords(&self) -> impl Iterator<Item = Bytes> + '_ {
+        self.mrecord_lengths
+            .iter()
+            .scan(0, |start_offset, mrecord_length| {
+                let start = *start_offset;
+                let end = start + *mrecord_length as usize;
+                *start_offset = end;
+                Some(self.mrecord_buffer.slice(start..end))
+            })
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.mrecord_lengths.is_empty()
+    }
+
+    pub fn num_bytes(&self) -> usize {
+        self.mrecord_buffer.len()
+    }
+
+    pub fn num_mrecords(&self) -> usize {
+        self.mrecord_lengths.len()
     }
 }
 

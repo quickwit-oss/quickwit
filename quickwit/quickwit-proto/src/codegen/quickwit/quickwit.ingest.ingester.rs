@@ -56,16 +56,16 @@ pub struct PersistFailure {
     pub index_uid: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,
-    /// ingest.DocBatchV2 doc_batch = 4;
-    /// ingest.IngestError error = 5;
     #[prost(uint64, tag = "3")]
     pub shard_id: u64,
+    #[prost(enumeration = "PersistFailureKind", tag = "4")]
+    pub failure_kind: i32,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SynReplicationMessage {
-    #[prost(oneof = "syn_replication_message::Message", tags = "1, 2, 3")]
+    #[prost(oneof = "syn_replication_message::Message", tags = "1, 2")]
     pub message: ::core::option::Option<syn_replication_message::Message>,
 }
 /// Nested message and enum types in `SynReplicationMessage`.
@@ -79,15 +79,13 @@ pub mod syn_replication_message {
         OpenRequest(super::OpenReplicationStreamRequest),
         #[prost(message, tag = "2")]
         ReplicateRequest(super::ReplicateRequest),
-        #[prost(message, tag = "3")]
-        TruncateRequest(super::TruncateRequest),
     }
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AckReplicationMessage {
-    #[prost(oneof = "ack_replication_message::Message", tags = "1, 3, 4")]
+    #[prost(oneof = "ack_replication_message::Message", tags = "1, 2")]
     pub message: ::core::option::Option<ack_replication_message::Message>,
 }
 /// Nested message and enum types in `AckReplicationMessage`.
@@ -99,10 +97,8 @@ pub mod ack_replication_message {
     pub enum Message {
         #[prost(message, tag = "1")]
         OpenResponse(super::OpenReplicationStreamResponse),
-        #[prost(message, tag = "3")]
+        #[prost(message, tag = "2")]
         ReplicateResponse(super::ReplicateResponse),
-        #[prost(message, tag = "4")]
-        TruncateResponse(super::TruncateResponse),
     }
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
@@ -130,6 +126,9 @@ pub struct ReplicateRequest {
     pub commit_type: i32,
     #[prost(message, repeated, tag = "4")]
     pub subrequests: ::prost::alloc::vec::Vec<ReplicateSubrequest>,
+    /// Position of the request in the replication stream.
+    #[prost(uint64, tag = "5")]
+    pub replication_seqno: u64,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -156,6 +155,9 @@ pub struct ReplicateResponse {
     pub successes: ::prost::alloc::vec::Vec<ReplicateSuccess>,
     #[prost(message, repeated, tag = "3")]
     pub failures: ::prost::alloc::vec::Vec<ReplicateFailure>,
+    /// Position of the response in the replication stream. It should match the position of the request.
+    #[prost(uint64, tag = "4")]
+    pub replication_seqno: u64,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -188,7 +190,7 @@ pub struct ReplicateFailure {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct TruncateRequest {
     #[prost(string, tag = "1")]
-    pub leader_id: ::prost::alloc::string::String,
+    pub ingester_id: ::prost::alloc::string::String,
     #[prost(message, repeated, tag = "2")]
     pub subrequests: ::prost::alloc::vec::Vec<TruncateSubrequest>,
 }
@@ -240,7 +242,7 @@ pub struct FetchResponseV2 {
     #[prost(uint64, tag = "4")]
     pub from_position_inclusive: u64,
     #[prost(message, optional, tag = "5")]
-    pub doc_batch: ::core::option::Option<super::DocBatchV2>,
+    pub mrecord_batch: ::core::option::Option<super::MRecordBatch>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -255,6 +257,31 @@ pub struct PingRequest {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PingResponse {}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum PersistFailureKind {
+    ShardClosed = 0,
+}
+impl PersistFailureKind {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            PersistFailureKind::ShardClosed => "SHARD_CLOSED",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "SHARD_CLOSED" => Some(Self::ShardClosed),
+            _ => None,
+        }
+    }
+}
 /// BEGIN quickwit-codegen
 use tower::{Layer, Service, ServiceExt};
 pub type IngesterServiceStream<T> = quickwit_common::ServiceStream<
@@ -305,6 +332,12 @@ impl IngesterServiceClient {
     where
         T: IngesterService,
     {
+        #[cfg(any(test, feature = "testsuite"))]
+        assert!(
+            std::any::TypeId::of:: < T > () != std::any::TypeId::of:: <
+            MockIngesterService > (),
+            "`MockIngesterService` must be wrapped in a `MockIngesterServiceWrapper`. Use `MockIngesterService::from(mock)` to instantiate the client."
+        );
         Self { inner: Box::new(instance) }
     }
     pub fn as_grpc_service(
@@ -315,27 +348,30 @@ impl IngesterServiceClient {
         let adapter = IngesterServiceGrpcServerAdapter::new(self.clone());
         ingester_service_grpc_server::IngesterServiceGrpcServer::new(adapter)
     }
-    pub fn from_channel<C>(channel: C) -> Self
-    where
-        C: tower::Service<
-                http::Request<tonic::body::BoxBody>,
-                Response = http::Response<hyper::Body>,
-                Error = quickwit_common::tower::BoxError,
-            > + std::fmt::Debug + Clone + Send + Sync + 'static,
-        <C as tower::Service<
-            http::Request<tonic::body::BoxBody>,
-        >>::Future: std::future::Future<
-                Output = Result<
-                    http::Response<hyper::Body>,
-                    quickwit_common::tower::BoxError,
-                >,
-            > + Send + 'static,
-    {
-        IngesterServiceClient::new(
-            IngesterServiceGrpcClientAdapter::new(
-                ingester_service_grpc_client::IngesterServiceGrpcClient::new(channel),
+    pub fn from_channel(
+        addr: std::net::SocketAddr,
+        channel: tonic::transport::Channel,
+    ) -> Self {
+        let (_, connection_keys_watcher) = tokio::sync::watch::channel(
+            std::collections::HashSet::from_iter([addr]),
+        );
+        let adapter = IngesterServiceGrpcClientAdapter::new(
+            ingester_service_grpc_client::IngesterServiceGrpcClient::new(channel),
+            connection_keys_watcher,
+        );
+        Self::new(adapter)
+    }
+    pub fn from_balance_channel(
+        balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
+    ) -> IngesterServiceClient {
+        let connection_keys_watcher = balance_channel.connection_keys_watcher();
+        let adapter = IngesterServiceGrpcClientAdapter::new(
+            ingester_service_grpc_client::IngesterServiceGrpcClient::new(
+                balance_channel,
             ),
-        )
+            connection_keys_watcher,
+        );
+        Self::new(adapter)
     }
     pub fn from_mailbox<A>(mailbox: quickwit_actors::Mailbox<A>) -> Self
     where
@@ -528,6 +564,7 @@ impl tower::Service<TruncateRequest> for Box<dyn IngesterService> {
 /// A tower block is a set of towers. Each tower is stack of layers (middlewares) that are applied to a service.
 #[derive(Debug)]
 struct IngesterServiceTowerBlock {
+    inner: Box<dyn IngesterService>,
     persist_svc: quickwit_common::tower::BoxService<
         PersistRequest,
         PersistResponse,
@@ -557,6 +594,7 @@ struct IngesterServiceTowerBlock {
 impl Clone for IngesterServiceTowerBlock {
     fn clone(&self) -> Self {
         Self {
+            inner: self.inner.clone(),
             persist_svc: self.persist_svc.clone(),
             open_replication_stream_svc: self.open_replication_stream_svc.clone(),
             open_fetch_stream_svc: self.open_fetch_stream_svc.clone(),
@@ -775,23 +813,22 @@ impl IngesterServiceTowerBlockBuilder {
     {
         self.build_from_boxed(Box::new(instance))
     }
-    pub fn build_from_channel<T, C>(self, channel: C) -> IngesterServiceClient
-    where
-        C: tower::Service<
-                http::Request<tonic::body::BoxBody>,
-                Response = http::Response<hyper::Body>,
-                Error = quickwit_common::tower::BoxError,
-            > + std::fmt::Debug + Clone + Send + Sync + 'static,
-        <C as tower::Service<
-            http::Request<tonic::body::BoxBody>,
-        >>::Future: std::future::Future<
-                Output = Result<
-                    http::Response<hyper::Body>,
-                    quickwit_common::tower::BoxError,
-                >,
-            > + Send + 'static,
-    {
-        self.build_from_boxed(Box::new(IngesterServiceClient::from_channel(channel)))
+    pub fn build_from_channel(
+        self,
+        addr: std::net::SocketAddr,
+        channel: tonic::transport::Channel,
+    ) -> IngesterServiceClient {
+        self.build_from_boxed(
+            Box::new(IngesterServiceClient::from_channel(addr, channel)),
+        )
+    }
+    pub fn build_from_balance_channel(
+        self,
+        balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
+    ) -> IngesterServiceClient {
+        self.build_from_boxed(
+            Box::new(IngesterServiceClient::from_balance_channel(balance_channel)),
+        )
     }
     pub fn build_from_mailbox<A>(
         self,
@@ -801,7 +838,7 @@ impl IngesterServiceTowerBlockBuilder {
         A: quickwit_actors::Actor + std::fmt::Debug + Send + 'static,
         IngesterServiceMailbox<A>: IngesterService,
     {
-        self.build_from_boxed(Box::new(IngesterServiceClient::from_mailbox(mailbox)))
+        self.build_from_boxed(Box::new(IngesterServiceMailbox::new(mailbox)))
     }
     fn build_from_boxed(
         self,
@@ -835,6 +872,7 @@ impl IngesterServiceTowerBlockBuilder {
             quickwit_common::tower::BoxService::new(boxed_instance.clone())
         };
         let tower_block = IngesterServiceTowerBlock {
+            inner: boxed_instance.clone(),
             persist_svc,
             open_replication_stream_svc,
             open_fetch_stream_svc,
@@ -987,10 +1025,22 @@ where
 #[derive(Debug, Clone)]
 pub struct IngesterServiceGrpcClientAdapter<T> {
     inner: T,
+    #[allow(dead_code)]
+    connection_addrs_rx: tokio::sync::watch::Receiver<
+        std::collections::HashSet<std::net::SocketAddr>,
+    >,
 }
 impl<T> IngesterServiceGrpcClientAdapter<T> {
-    pub fn new(instance: T) -> Self {
-        Self { inner: instance }
+    pub fn new(
+        instance: T,
+        connection_addrs_rx: tokio::sync::watch::Receiver<
+            std::collections::HashSet<std::net::SocketAddr>,
+        >,
+    ) -> Self {
+        Self {
+            inner: instance,
+            connection_addrs_rx,
+        }
     }
 }
 #[async_trait::async_trait]

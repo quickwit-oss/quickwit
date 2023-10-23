@@ -45,7 +45,7 @@ use crate::BoxStream;
 // Channel>, Infallible>>` while keeping track of the number of connections.
 struct ChangeStreamAdapter<K> {
     changes: BoxStream<Change<K, Channel>>,
-    num_connections_tx: watch::Sender<usize>,
+    connection_keys_tx: watch::Sender<HashSet<K>>,
     keys: HashSet<K>,
 }
 
@@ -61,15 +61,17 @@ where K: Hash + Eq + Clone
             Poll::Ready(Some(change)) => match change {
                 Change::Insert(key, channel) => {
                     if self.keys.insert(key.clone()) {
-                        self.num_connections_tx
-                            .send_modify(|num_connections| *num_connections += 1);
+                        self.connection_keys_tx.send_modify(|connection_keys| {
+                            connection_keys.insert(key.clone());
+                        });
                     }
                     Poll::Ready(Some(Ok(TowerChange::Insert(key, channel))))
                 }
                 Change::Remove(key) => {
                     if self.keys.remove(&key) {
-                        self.num_connections_tx
-                            .send_modify(|num_connections| *num_connections -= 1);
+                        self.connection_keys_tx.send_modify(|connection_keys| {
+                            connection_keys.remove(&key);
+                        });
                     }
                     Poll::Ready(Some(Ok(TowerChange::Remove(key))))
                 }
@@ -89,11 +91,11 @@ type ChannelImpl<K> = Buffer<Balance<Discover<K>, HttpRequest>, HttpRequest>;
 #[derive(Clone)]
 pub struct BalanceChannel<K: Hash + Eq + Clone> {
     inner: ChannelImpl<K>,
-    num_connections_rx: watch::Receiver<usize>,
+    connection_keys_rx: watch::Receiver<HashSet<K>>,
 }
 
 impl<K> BalanceChannel<K>
-where K: Hash + Eq + Send + Clone + 'static
+where K: Hash + Eq + Send + Sync + Clone + 'static
 {
     pub fn new() -> (Self, mpsc::UnboundedSender<Change<K, Channel>>) {
         let (change_tx, change_rx) = mpsc::unbounded_channel();
@@ -108,10 +110,10 @@ where K: Hash + Eq + Send + Clone + 'static
 
     pub fn from_stream<S>(changes: S) -> Self
     where S: Stream<Item = Change<K, Channel>> + Send + Unpin + 'static {
-        let (num_connections_tx, num_connections_rx) = watch::channel(0);
+        let (connection_keys_tx, connection_keys_rx) = watch::channel(HashSet::new());
         let change_stream = unlazy_stream(ChangeStreamAdapter::<K> {
             changes: Box::pin(changes),
-            num_connections_tx,
+            connection_keys_tx,
             keys: HashSet::new(),
         });
         let completion = CompleteOnResponse::default();
@@ -121,16 +123,16 @@ where K: Hash + Eq + Send + Clone + 'static
 
         BalanceChannel {
             inner: buffer_svc,
-            num_connections_rx,
+            connection_keys_rx,
         }
     }
 
     pub fn num_connections(&self) -> usize {
-        *self.num_connections_rx.borrow()
+        self.connection_keys_rx.borrow().len()
     }
 
-    pub fn num_connections_watcher(&self) -> watch::Receiver<usize> {
-        self.num_connections_rx.clone()
+    pub fn connection_keys_watcher(&self) -> watch::Receiver<HashSet<K>> {
+        self.connection_keys_rx.clone()
     }
 }
 
@@ -173,7 +175,7 @@ where K: Hash + Eq + Clone
 }
 
 impl<K> fmt::Debug for BalanceChannel<K>
-where K: Hash + Eq + Clone + Send + 'static
+where K: Hash + Eq + Clone + Send + Sync + 'static
 {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("BalanceChannel")
@@ -217,46 +219,46 @@ mod tests {
     #[tokio::test]
     async fn test_channel_discover() {
         let (change_tx, change_rx) = mpsc::unbounded_channel();
-        let (num_connections_tx, num_connections_rx) = watch::channel(0);
+        let (connection_keys_tx, connection_keys_rx) = watch::channel(HashSet::new());
 
         let mut channel_discover = ChangeStreamAdapter::<&str> {
             changes: Box::pin(UnboundedReceiverStream::new(change_rx)),
-            num_connections_tx,
+            connection_keys_tx,
             keys: HashSet::new(),
         };
-        assert_eq!(*num_connections_rx.borrow(), 0);
+        assert!(connection_keys_rx.borrow().is_empty());
 
         let channel = Endpoint::from_static("http://[::1]:1212").connect_lazy();
         change_tx.send(Change::Insert("foo", channel)).unwrap();
 
         let change = channel_discover.next().await.unwrap().unwrap();
         assert!(matches!(change, TowerChange::Insert("foo", _)));
-        assert_eq!(*num_connections_rx.borrow(), 1);
+        assert_eq!(*connection_keys_rx.borrow(), HashSet::from_iter(["foo"]));
 
         let channel = Endpoint::from_static("http://[::1]:1337").connect_lazy();
         change_tx.send(Change::Insert("foo", channel)).unwrap();
 
         let change = channel_discover.next().await.unwrap().unwrap();
         assert!(matches!(change, TowerChange::Insert("foo", _)));
-        assert_eq!(*num_connections_rx.borrow(), 1);
+        assert_eq!(*connection_keys_rx.borrow(), HashSet::from_iter(["foo"]));
 
         change_tx.send(Change::Remove("bar")).unwrap();
         let change = channel_discover.next().await.unwrap().unwrap();
 
         assert!(matches!(change, TowerChange::Remove("bar")));
-        assert_eq!(*num_connections_rx.borrow(), 1);
+        assert_eq!(*connection_keys_rx.borrow(), HashSet::from_iter(["foo"]));
 
         change_tx.send(Change::Remove("foo")).unwrap();
         let change = channel_discover.next().await.unwrap().unwrap();
 
         assert!(matches!(change, TowerChange::Remove("foo")));
-        assert_eq!(*num_connections_rx.borrow(), 0);
+        assert!(connection_keys_rx.borrow().is_empty());
     }
 
     #[tokio::test]
     async fn test_balance_channel() {
         let (mut balance_channel, change_tx) = BalanceChannel::<&str>::new();
-        let mut num_connections_watcher = balance_channel.num_connections_watcher();
+        let mut num_connections_watcher = balance_channel.connection_keys_watcher();
         assert_eq!(balance_channel.num_connections(), 0);
 
         let channel = Endpoint::from_static("http://[::1]:1212").connect_lazy();

@@ -403,13 +403,15 @@ Overlapping ranges are not yet supported.
     "max_hits": 0,
     "aggs": {
         "my_scores": {
-            "field": "score",
-            "ranges": [
-                { "to": 3.0, "key": "low" },
-                { "from": 3.0, "to": 7.0, "key": "medium-low" },
-                { "from": 7.0, "to": 20.0, "key": "medium-high" },
-                { "from": 20.0, "key": "high" }
-            ]
+            "range": {
+                "field": "score",
+                "ranges": [
+                    { "to": 3.0, "key": "low" },
+                    { "from": 3.0, "to": 7.0, "key": "medium-low" },
+                    { "from": 7.0, "to": 20.0, "key": "medium-high" },
+                    { "from": 20.0, "key": "high" }
+                ]
+            }
         }
     }
 }

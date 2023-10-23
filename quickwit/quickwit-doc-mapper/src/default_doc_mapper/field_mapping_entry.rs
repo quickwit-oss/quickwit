@@ -25,8 +25,8 @@ use base64::prelude::{Engine, BASE64_STANDARD};
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use tantivy::schema::{
-    IndexRecordOption, JsonObjectOptions, TextFieldIndexing, TextOptions, Type,
-    Value as TantivyValue,
+    IndexRecordOption, JsonObjectOptions, OwnedValue as TantivyValue, TextFieldIndexing,
+    TextOptions, Type,
 };
 
 use super::date_time_type::QuickwitDateTimeOptions;
@@ -1455,7 +1455,7 @@ mod tests {
                 "type": "datetime",
                 "input_formats": ["rfc3339", "unix_timestamp"],
                 "output_format": "rfc3339",
-                "precision": "seconds",
+                "fast_precision": "seconds",
                 "stored": true,
                 "indexed": true,
                 "fast": false,
@@ -1470,7 +1470,7 @@ mod tests {
             {
                 "name": "my_field_name",
                 "type": "array<datetime>",
-                "precision": "milliseconds"
+                "fast_precision": "milliseconds"
             }
             "#,
         )
@@ -1483,7 +1483,7 @@ mod tests {
                 "type": "array<datetime>",
                 "input_formats": ["rfc3339", "unix_timestamp"],
                 "output_format": "rfc3339",
-                "precision": "milliseconds",
+                "fast_precision": "milliseconds",
                 "stored": true,
                 "indexed": true,
                 "fast": false,

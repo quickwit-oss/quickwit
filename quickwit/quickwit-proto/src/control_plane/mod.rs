@@ -27,7 +27,7 @@ include!("../codegen/quickwit/quickwit.control_plane.rs");
 
 pub type ControlPlaneResult<T> = std::result::Result<T, ControlPlaneError>;
 
-#[derive(Debug, thiserror::Error)]
+#[derive(Debug, thiserror::Error, Eq, PartialEq, Serialize, Deserialize)]
 pub enum ControlPlaneError {
     #[error("an internal error occurred: {0}")]
     Internal(String),
@@ -52,22 +52,22 @@ impl From<ControlPlaneError> for MetastoreError {
 
 impl From<ControlPlaneError> for tonic::Status {
     fn from(error: ControlPlaneError) -> Self {
-        match error {
-            ControlPlaneError::Internal(message) => tonic::Status::internal(message),
-            ControlPlaneError::Metastore(error) => error.into(),
-            ControlPlaneError::Unavailable(message) => tonic::Status::unavailable(message),
-        }
+        let grpc_status_code = error.error_code().to_grpc_status_code();
+        let error_json =
+            serde_json::to_string(&error).expect("control plane error should be JSON serializable");
+
+        tonic::Status::new(grpc_status_code, error_json)
     }
 }
 
 impl From<tonic::Status> for ControlPlaneError {
     fn from(status: tonic::Status) -> Self {
-        match status.code() {
-            tonic::Code::Unavailable => {
-                ControlPlaneError::Unavailable(status.message().to_string())
-            }
-            _ => ControlPlaneError::Internal(status.message().to_string()),
-        }
+        serde_json::from_str(status.message()).unwrap_or_else(|_| {
+            ControlPlaneError::Internal(format!(
+                "failed to deserialize control plane error: `{}`",
+                status.message()
+            ))
+        })
     }
 }
 
@@ -86,10 +86,10 @@ impl From<AskError<ControlPlaneError>> for ControlPlaneError {
 }
 
 impl ServiceError for ControlPlaneError {
-    fn status_code(&self) -> ServiceErrorCode {
+    fn error_code(&self) -> ServiceErrorCode {
         match self {
             Self::Internal { .. } => ServiceErrorCode::Internal,
-            Self::Metastore(error) => error.status_code(),
+            Self::Metastore(error) => error.error_code(),
             Self::Unavailable(_) => ServiceErrorCode::Unavailable,
         }
     }

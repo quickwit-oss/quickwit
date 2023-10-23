@@ -20,6 +20,8 @@
 use std::collections::HashMap;
 use std::ops::Range;
 use std::path::{Path, PathBuf};
+use std::pin::Pin;
+use std::task::{Context, Poll};
 use std::{env, fmt, io};
 
 use anyhow::anyhow;
@@ -35,12 +37,13 @@ use base64::prelude::{Engine, BASE64_STANDARD};
 use futures::{stream, StreamExt};
 use once_cell::sync::{Lazy, OnceCell};
 use quickwit_aws::get_aws_config;
-use quickwit_aws::retry::{retry, Retry, RetryParams, Retryable};
+use quickwit_aws::retry::{aws_retry, AwsRetryable};
+use quickwit_common::retry::{Retry, RetryParams};
 use quickwit_common::uri::Uri;
 use quickwit_common::{chunk_range, into_u64_range};
 use quickwit_config::S3StorageConfig;
 use regex::Regex;
-use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWriteExt, BufReader, ReadBuf};
 use tokio::sync::Semaphore;
 use tracing::{info, instrument, warn};
 
@@ -52,7 +55,7 @@ use crate::{
 };
 
 /// Semaphore to limit the number of concurent requests to the object store. Some object stores
-/// (R2, SeaweedFs...) return errors when too many concurent requests are emitted.
+/// (R2, SeaweedFs...) return errors when too many concurrent requests are emitted.
 static REQUEST_SEMAPHORE: Lazy<Semaphore> = Lazy::new(|| {
     let num_permits: usize = env::var("QW_S3_MAX_CONCURRENCY")
         .as_deref()
@@ -61,6 +64,24 @@ static REQUEST_SEMAPHORE: Lazy<Semaphore> = Lazy::new(|| {
         .expect("QW_S3_MAX_CONCURRENCY value should be a number.");
     Semaphore::new(num_permits)
 });
+
+/// Wrap the async read handle together with a permit to keep the permit alive
+/// until the handle is dropped
+struct S3AsyncRead<T: AsyncRead + Send + Unpin> {
+    pub read: T,
+    pub _permit: Result<tokio::sync::SemaphorePermit<'static>, tokio::sync::AcquireError>,
+}
+
+impl<T: AsyncRead + Send + Unpin> AsyncRead for S3AsyncRead<T> {
+    fn poll_read(
+        self: Pin<&mut Self>,
+        cx: &mut Context<'_>,
+        buf: &mut ReadBuf<'_>,
+    ) -> Poll<io::Result<()>> {
+        let self_unpin = self.get_mut();
+        Pin::new(&mut self_unpin.read).poll_read(cx, buf)
+    }
+}
 
 /// S3-compatible object storage implementation.
 pub struct S3CompatibleObjectStorage {
@@ -299,7 +320,7 @@ impl S3CompatibleObjectStorage {
         len: u64,
     ) -> StorageResult<()> {
         let bucket = &self.bucket;
-        retry(&self.retry_params, || async {
+        aws_retry(&self.retry_params, || async {
             self.put_single_part_single_try(bucket, key, payload.clone(), len)
                 .await
         })
@@ -309,7 +330,7 @@ impl S3CompatibleObjectStorage {
     }
 
     async fn create_multipart_upload(&self, key: &str) -> StorageResult<MultipartUploadId> {
-        let upload_id = retry(&self.retry_params, || async {
+        let upload_id = aws_retry(&self.retry_params, || async {
             self.s3_client
                 .create_multipart_upload()
                 .bucket(self.bucket.clone())
@@ -417,7 +438,7 @@ impl S3CompatibleObjectStorage {
             stream::iter(parts.into_iter().map(|part| {
                 let payload = payload.clone();
                 let upload_id = upload_id.clone();
-                retry(&self.retry_params, move || {
+                aws_retry(&self.retry_params, move || {
                     self.upload_part(upload_id.clone(), key, part.clone(), payload.clone())
                 })
             }))
@@ -456,7 +477,7 @@ impl S3CompatibleObjectStorage {
         let completed_upload = CompletedMultipartUpload::builder()
             .set_parts(Some(completed_parts))
             .build();
-        retry(&self.retry_params, || async {
+        aws_retry(&self.retry_params, || async {
             self.s3_client
                 .complete_multipart_upload()
                 .bucket(self.bucket.clone())
@@ -471,7 +492,7 @@ impl S3CompatibleObjectStorage {
     }
 
     async fn abort_multipart_upload(&self, key: &str, upload_id: &str) -> StorageResult<()> {
-        retry(&self.retry_params, || async {
+        aws_retry(&self.retry_params, || async {
             self.s3_client
                 .abort_multipart_upload()
                 .bucket(self.bucket.clone())
@@ -510,7 +531,7 @@ impl S3CompatibleObjectStorage {
         range_opt: Option<Range<usize>>,
     ) -> StorageResult<Vec<u8>> {
         let cap = range_opt.as_ref().map(Range::len).unwrap_or(0);
-        let get_object_output = retry(&self.retry_params, || {
+        let get_object_output = aws_retry(&self.retry_params, || {
             self.create_get_object_request(path, range_opt.clone())
         })
         .await?;
@@ -582,7 +603,7 @@ impl S3CompatibleObjectStorage {
                 .map(|path| ObjectIdentifier::builder().key(self.key(path)).build())
                 .collect();
             let delete = Delete::builder().set_objects(Some(objects)).build();
-            let delete_objects_res = retry(&self.retry_params, || async {
+            let delete_objects_res = aws_retry(&self.retry_params, || async {
                 self.s3_client
                     .delete_objects()
                     .bucket(self.bucket.clone())
@@ -689,7 +710,7 @@ impl Storage for S3CompatibleObjectStorage {
 
     async fn copy_to(&self, path: &Path, output: &mut dyn SendableAsync) -> StorageResult<()> {
         let _permit = REQUEST_SEMAPHORE.acquire().await;
-        let get_object_output = retry(&self.retry_params, || {
+        let get_object_output = aws_retry(&self.retry_params, || {
             self.create_get_object_request(path, None)
         })
         .await?;
@@ -706,7 +727,7 @@ impl Storage for S3CompatibleObjectStorage {
         let _permit = REQUEST_SEMAPHORE.acquire().await;
         let bucket = self.bucket.clone();
         let key = self.key(path);
-        let delete_res = retry(&self.retry_params, || async {
+        let delete_res = aws_retry(&self.retry_params, || async {
             self.s3_client
                 .delete_object()
                 .bucket(&bucket)
@@ -747,6 +768,23 @@ impl Storage for S3CompatibleObjectStorage {
             })
     }
 
+    #[instrument(level = "debug", skip(self, range), fields(range.start = range.start, range.end = range.end))]
+    async fn get_slice_stream(
+        &self,
+        path: &Path,
+        range: Range<usize>,
+    ) -> crate::StorageResult<Box<dyn AsyncRead + Send + Unpin>> {
+        let permit = REQUEST_SEMAPHORE.acquire().await;
+        let get_object_output = aws_retry(&self.retry_params, || {
+            self.create_get_object_request(path, Some(range.clone()))
+        })
+        .await?;
+        Ok(Box::new(S3AsyncRead {
+            read: get_object_output.body.into_async_read(),
+            _permit: permit,
+        }))
+    }
+
     #[instrument(level = "debug", skip(self), fields(num_bytes_fetched))]
     async fn get_all(&self, path: &Path) -> StorageResult<OwnedBytes> {
         let _permit = REQUEST_SEMAPHORE.acquire().await;
@@ -769,7 +807,7 @@ impl Storage for S3CompatibleObjectStorage {
         let _permit = REQUEST_SEMAPHORE.acquire().await;
         let bucket = self.bucket.clone();
         let key = self.key(path);
-        let head_object_output = retry(&self.retry_params, || async {
+        let head_object_output = aws_retry(&self.retry_params, || async {
             self.s3_client
                 .head_object()
                 .bucket(&bucket)

@@ -32,7 +32,7 @@ use crate::{
 };
 
 // An actor that receives ping messages.
-#[derive(Default)]
+#[derive(Default, Clone)]
 pub struct PingReceiverActor {
     ping_count: usize,
 }

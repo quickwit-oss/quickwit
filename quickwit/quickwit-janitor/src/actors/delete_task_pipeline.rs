@@ -31,12 +31,14 @@ use quickwit_common::temp_dir::{self};
 use quickwit_common::uri::Uri;
 use quickwit_config::build_doc_mapper;
 use quickwit_indexing::actors::{
-    MergeExecutor, MergeSplitDownloader, Packager, Publisher, Uploader, UploaderType,
+    MergeExecutor, MergeSplitDownloader, Packager, Publisher, PublisherCounters, Uploader,
+    UploaderCounters, UploaderType,
 };
 use quickwit_indexing::merge_policy::merge_policy_from_settings;
 use quickwit_indexing::{IndexingSplitStore, PublisherType, SplitsUpdateMailbox};
-use quickwit_metastore::Metastore;
+use quickwit_metastore::IndexMetadataResponseExt;
 use quickwit_proto::indexing::IndexingPipelineId;
+use quickwit_proto::metastore::{IndexMetadataRequest, MetastoreService, MetastoreServiceClient};
 use quickwit_proto::IndexUid;
 use quickwit_search::SearchJobPlacer;
 use quickwit_storage::Storage;
@@ -45,6 +47,7 @@ use tokio::join;
 use tracing::info;
 
 use super::delete_task_planner::DeleteTaskPlanner;
+use crate::actors::delete_task_planner::DeleteTaskPlannerState;
 
 const OBSERVE_PIPELINE_INTERVAL: Duration = if cfg!(any(test, feature = "testsuite")) {
     Duration::from_millis(500)
@@ -66,17 +69,17 @@ struct DeletePipelineHandle {
 /// A Struct to hold all statistical data about deletes.
 #[derive(Clone, Debug, Default, Serialize)]
 pub struct DeleteTaskPipelineState {
-    pub delete_task_planner: SupervisorState,
-    pub downloader: SupervisorState,
-    pub delete_task_executor: SupervisorState,
-    pub packager: SupervisorState,
-    pub uploader: SupervisorState,
-    pub publisher: SupervisorState,
+    pub delete_task_planner: SupervisorState<DeleteTaskPlannerState>,
+    pub downloader: SupervisorState<()>,
+    pub delete_task_executor: SupervisorState<()>,
+    pub packager: SupervisorState<()>,
+    pub uploader: SupervisorState<UploaderCounters>,
+    pub publisher: SupervisorState<PublisherCounters>,
 }
 
 pub struct DeleteTaskPipeline {
     index_uid: IndexUid,
-    metastore: Arc<dyn Metastore>,
+    metastore: MetastoreServiceClient,
     search_job_placer: SearchJobPlacer,
     index_storage: Arc<dyn Storage>,
     delete_service_task_dir: PathBuf,
@@ -126,7 +129,7 @@ impl Actor for DeleteTaskPipeline {
 impl DeleteTaskPipeline {
     pub fn new(
         index_uid: IndexUid,
-        metastore: Arc<dyn Metastore>,
+        metastore: MetastoreServiceClient,
         search_job_placer: SearchJobPlacer,
         index_storage: Arc<dyn Storage>,
         delete_service_task_dir: PathBuf,
@@ -152,11 +155,14 @@ impl DeleteTaskPipeline {
             root_dir=%self.delete_service_task_dir.to_str().unwrap(),
             "Spawning delete tasks pipeline.",
         );
-        let index_metadata = self
+        let index_config = self
             .metastore
-            .index_metadata_strict(&self.index_uid)
-            .await?;
-        let index_config = index_metadata.into_index_config();
+            .index_metadata(IndexMetadataRequest::for_index_uid(
+                self.index_uid.to_string(),
+            ))
+            .await?
+            .deserialize_index_metadata()?
+            .into_index_config();
         let publisher = Publisher::new(
             PublisherType::MergePublisher,
             self.metastore.clone(),
@@ -287,8 +293,8 @@ mod tests {
     use quickwit_common::pubsub::EventBroker;
     use quickwit_common::temp_dir::TempDirectory;
     use quickwit_indexing::TestSandbox;
-    use quickwit_metastore::SplitState;
-    use quickwit_proto::metastore::DeleteQuery;
+    use quickwit_metastore::{ListSplitsRequestExt, ListSplitsResponseExt, SplitState};
+    use quickwit_proto::metastore::{DeleteQuery, ListSplitsRequest, MetastoreService};
     use quickwit_proto::search::{LeafSearchRequest, LeafSearchResponse};
     use quickwit_search::{
         searcher_pool_for_test, MockSearchService, SearchError, SearchJobPlacer,
@@ -347,7 +353,7 @@ mod tests {
             serde_json::json!({"body": "delete", "ts": 0 }),
         ];
         test_sandbox.add_documents(docs).await?;
-        let metastore = test_sandbox.metastore();
+        let mut metastore = test_sandbox.metastore();
         metastore
             .create_delete_task(DeleteQuery {
                 index_uid: index_uid.to_string(),
@@ -404,15 +410,20 @@ mod tests {
             .sleep(OBSERVE_PIPELINE_INTERVAL * 3)
             .await;
         let pipeline_state = pipeline_handler.process_pending_and_observe().await.state;
-        assert_eq!(pipeline_state.delete_task_planner.num_errors, 1);
-        assert_eq!(pipeline_state.downloader.num_errors, 0);
-        assert_eq!(pipeline_state.delete_task_executor.num_errors, 0);
-        assert_eq!(pipeline_state.packager.num_errors, 0);
-        assert_eq!(pipeline_state.uploader.num_errors, 0);
-        assert_eq!(pipeline_state.publisher.num_errors, 0);
+        assert_eq!(pipeline_state.delete_task_planner.metrics.num_errors, 1);
+        assert_eq!(pipeline_state.downloader.metrics.num_errors, 0);
+        assert_eq!(pipeline_state.delete_task_executor.metrics.num_errors, 0);
+        assert_eq!(pipeline_state.packager.metrics.num_errors, 0);
+        assert_eq!(pipeline_state.uploader.metrics.num_errors, 0);
+        assert_eq!(pipeline_state.publisher.metrics.num_errors, 0);
         let _ = pipeline_mailbox.ask(GracefulShutdown).await;
 
-        let splits = metastore.list_all_splits(index_uid).await?;
+        let splits = metastore
+            .list_splits(ListSplitsRequest::try_from_index_uid(index_uid).unwrap())
+            .await
+            .unwrap()
+            .deserialize_splits()
+            .unwrap();
         assert_eq!(splits.len(), 2);
         let published_split = splits
             .iter()

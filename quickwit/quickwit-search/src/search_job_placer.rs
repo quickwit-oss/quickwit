@@ -67,7 +67,7 @@ pub struct SearchJobPlacer {
 impl EventSubscriber<ReportSplitsRequest> for SearchJobPlacer {
     async fn handle_event(&mut self, evt: ReportSplitsRequest) {
         let mut nodes: HashMap<SocketAddr, SearchServiceClient> =
-            self.searcher_pool.all().await.into_iter().collect();
+            self.searcher_pool.pairs().into_iter().collect();
         if nodes.is_empty() {
             return;
         }
@@ -127,8 +127,7 @@ impl SearchJobPlacer {
     ) -> impl Iterator<Item = SearchServiceClient> {
         let mut nodes: Vec<SocketAddrAndClient> = self
             .searcher_pool
-            .all()
-            .await
+            .pairs()
             .into_iter()
             .map(|(socket_addr, client)| SocketAddrAndClient {
                 socket_addr,
@@ -150,12 +149,11 @@ impl SearchJobPlacer {
         mut jobs: Vec<J>,
         excluded_addrs: &HashSet<SocketAddr>,
     ) -> anyhow::Result<impl Iterator<Item = (SearchServiceClient, Vec<J>)>> {
-        let num_nodes = self.searcher_pool.len().await;
+        let num_nodes = self.searcher_pool.len();
 
         let mut candidate_nodes: Vec<CandidateNodes> = self
             .searcher_pool
-            .all()
-            .await
+            .pairs()
             .into_iter()
             .filter(|(grpc_addr, _)| {
                 excluded_addrs.is_empty()

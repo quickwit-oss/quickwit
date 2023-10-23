@@ -43,6 +43,7 @@ pub const CLI_INGEST_SOURCE_ID: &str = "_ingest-cli-source";
 pub const INGEST_API_SOURCE_ID: &str = "_ingest-api-source";
 
 /// Reserved source ID used for native Quickwit ingest.
+/// (this is for ingest v2)
 pub const INGEST_SOURCE_ID: &str = "_ingest-source";
 
 pub const RESERVED_SOURCE_IDS: &[&str] =
@@ -263,13 +264,16 @@ pub struct FileSourceParams {
     pub filepath: Option<PathBuf>, //< If None read from stdin.
 }
 
-// Deserializing a filepath string into an absolute filepath.
+/// Deserializing as an URI first to validate the input.
+///
+/// TODO: we might want to replace `PathBuf` with `Uri` directly in
+/// `FileSourceParams`
 fn absolute_filepath_from_str<'de, D>(deserializer: D) -> Result<Option<PathBuf>, D::Error>
 where D: Deserializer<'de> {
     let filepath_opt: Option<String> = Deserialize::deserialize(deserializer)?;
     if let Some(filepath) = filepath_opt {
         let uri = Uri::from_str(&filepath).map_err(D::Error::custom)?;
-        Ok(uri.filepath().map(|path| path.to_path_buf()))
+        Ok(Some(PathBuf::from(uri.as_str())))
     } else {
         Ok(None)
     }
@@ -800,8 +804,8 @@ mod tests {
             let uri = Uri::from_str("source-path.json").unwrap();
             assert_eq!(
                 file_params.filepath.unwrap().as_path(),
-                uri.filepath().unwrap()
-            )
+                Path::new(uri.as_str())
+            );
         }
     }
 

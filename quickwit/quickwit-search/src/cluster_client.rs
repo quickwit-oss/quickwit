@@ -483,7 +483,7 @@ mod tests {
             ("127.0.0.1:1002", mock_search_service_2),
         ]);
         let first_client_addr: SocketAddr = "127.0.0.1:1001".parse().unwrap();
-        let first_client = searcher_pool.get(&first_client_addr).await.unwrap();
+        let first_client = searcher_pool.get(&first_client_addr).unwrap();
         let search_job_placer = SearchJobPlacer::new(searcher_pool);
         let cluster_client = ClusterClient::new(search_job_placer);
         let fetch_docs_response = cluster_client
@@ -504,7 +504,7 @@ mod tests {
         );
         let searcher_pool = searcher_pool_for_test([("127.0.0.1:1001", mock_search_service)]);
         let first_client_addr: SocketAddr = "127.0.0.1:1001".parse().unwrap();
-        let first_client = searcher_pool.get(&first_client_addr).await.unwrap();
+        let first_client = searcher_pool.get(&first_client_addr).unwrap();
         let search_job_placer = SearchJobPlacer::new(searcher_pool);
         let cluster_client = ClusterClient::new(search_job_placer);
         let search_error = cluster_client
@@ -688,7 +688,7 @@ mod tests {
         drop(result_sender);
 
         let first_client_addr: SocketAddr = "127.0.0.1:1001".parse().unwrap();
-        let first_client = searcher_pool.get(&first_client_addr).await.unwrap();
+        let first_client = searcher_pool.get(&first_client_addr).unwrap();
         let result = cluster_client
             .leaf_search_stream(request, first_client)
             .await;

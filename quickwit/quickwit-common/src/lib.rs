@@ -176,6 +176,17 @@ where T: Debug
     }
 }
 
+#[inline]
+pub const fn div_ceil(lhs: i64, rhs: i64) -> i64 {
+    let d = lhs / rhs;
+    let r = lhs % rhs;
+    if (r > 0 && rhs > 0) || (r < 0 && rhs < 0) {
+        d + 1
+    } else {
+        d
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::io::ErrorKind;
@@ -230,5 +241,24 @@ mod tests {
 
         let pretty_sample = PrettySample::new(&[1, 2, 3, 4], 2);
         assert_eq!(format!("{pretty_sample:?}"), "[1, 2, and 2 more]");
+    }
+
+    #[test]
+    fn test_div_ceil() {
+        assert_eq!(div_ceil(5, 1), 5);
+        assert_eq!(div_ceil(5, 2), 3);
+        assert_eq!(div_ceil(6, 2), 3);
+
+        assert_eq!(div_ceil(-5, 1), -5);
+        assert_eq!(div_ceil(-5, 2), -2);
+        assert_eq!(div_ceil(-6, 2), -3);
+
+        assert_eq!(div_ceil(5, -1), -5);
+        assert_eq!(div_ceil(5, -2), -2);
+        assert_eq!(div_ceil(6, -2), -3);
+
+        assert_eq!(div_ceil(-5, -1), 5);
+        assert_eq!(div_ceil(-5, -2), 3);
+        assert_eq!(div_ceil(-6, -2), 3);
     }
 }

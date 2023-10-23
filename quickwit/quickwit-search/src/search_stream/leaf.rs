@@ -451,6 +451,8 @@ mod tests {
 
     use itertools::Itertools;
     use quickwit_indexing::TestSandbox;
+    use quickwit_metastore::{ListSplitsRequestExt, ListSplitsResponseExt};
+    use quickwit_proto::metastore::{ListSplitsRequest, MetastoreService};
     use quickwit_query::query_ast::qast_json_helper;
     use serde_json::json;
     use tantivy::time::{Duration, OffsetDateTime};
@@ -498,11 +500,12 @@ mod tests {
         };
         let splits = test_sandbox
             .metastore()
-            .list_all_splits(test_sandbox.index_uid())
-            .await?;
+            .list_splits(ListSplitsRequest::try_from_index_uid(test_sandbox.index_uid()).unwrap())
+            .await?
+            .deserialize_splits()?;
         let splits_offsets = splits
             .into_iter()
-            .map(|split_meta| extract_split_and_footer_offsets(&split_meta.split_metadata))
+            .map(|split| extract_split_and_footer_offsets(&split.split_metadata))
             .collect();
         let searcher_context = Arc::new(SearcherContext::for_test());
         let mut single_node_stream = leaf_search_stream(
@@ -574,11 +577,12 @@ mod tests {
         };
         let splits = test_sandbox
             .metastore()
-            .list_all_splits(test_sandbox.index_uid())
-            .await?;
+            .list_splits(ListSplitsRequest::try_from_index_uid(test_sandbox.index_uid()).unwrap())
+            .await?
+            .deserialize_splits()?;
         let splits_offsets = splits
             .into_iter()
-            .map(|split_meta| extract_split_and_footer_offsets(&split_meta.split_metadata))
+            .map(|split| extract_split_and_footer_offsets(&split.split_metadata))
             .collect();
         let searcher_context = Arc::new(SearcherContext::for_test());
         let mut single_node_stream = leaf_search_stream(
@@ -629,11 +633,12 @@ mod tests {
         };
         let splits = test_sandbox
             .metastore()
-            .list_all_splits(test_sandbox.index_uid())
-            .await?;
+            .list_splits(ListSplitsRequest::try_from_index_uid(test_sandbox.index_uid()).unwrap())
+            .await?
+            .deserialize_splits()?;
         let splits_offsets = splits
             .into_iter()
-            .map(|split_meta| extract_split_and_footer_offsets(&split_meta.split_metadata))
+            .map(|split| extract_split_and_footer_offsets(&split.split_metadata))
             .collect();
         let searcher_context = Arc::new(SearcherContext::for_test());
         let mut single_node_stream = leaf_search_stream(
@@ -673,7 +678,7 @@ mod tests {
         let test_sandbox = TestSandbox::create(index_id, doc_mapping_yaml, "", &["body"]).await?;
 
         let mut docs = Vec::new();
-        let partition_by_fast_field_values = vec![1, 2, 3, 4, 5];
+        let partition_by_fast_field_values = [1, 2, 3, 4, 5];
         let mut expected_output_tmp: HashMap<u64, Vec<u64>> = HashMap::new();
         let start_timestamp = 72057595;
         let end_timestamp: i64 = start_timestamp + 20;
@@ -717,11 +722,12 @@ mod tests {
         };
         let splits = test_sandbox
             .metastore()
-            .list_all_splits(test_sandbox.index_uid())
-            .await?;
+            .list_splits(ListSplitsRequest::try_from_index_uid(test_sandbox.index_uid()).unwrap())
+            .await?
+            .deserialize_splits()?;
         let splits_offsets = splits
             .into_iter()
-            .map(|split_meta| extract_split_and_footer_offsets(&split_meta.split_metadata))
+            .map(|split| extract_split_and_footer_offsets(&split.split_metadata))
             .collect();
         let searcher_context = Arc::new(SearcherContext::for_test());
         let mut single_node_stream = leaf_search_stream(

@@ -70,27 +70,28 @@ message PersistSuccess {
     optional uint64 replication_position_inclusive = 4;
 }
 
+enum PersistFailureKind {
+    SHARD_CLOSED = 0;
+}
+
 message PersistFailure {
     string index_uid = 1;
     string source_id = 2;
     uint64 shard_id = 3;
-    // ingest.DocBatchV2 doc_batch = 4;
-    // ingest.IngestError error = 5;
+    PersistFailureKind failure_kind = 4;
 }
 
 message SynReplicationMessage {
     oneof message {
         OpenReplicationStreamRequest open_request = 1;
         ReplicateRequest replicate_request = 2;
-        TruncateRequest truncate_request = 3;
     }
 }
 
 message AckReplicationMessage {
     oneof message {
         OpenReplicationStreamResponse open_response = 1;
-        ReplicateResponse replicate_response = 3;
-        TruncateResponse truncate_response = 4;
+        ReplicateResponse replicate_response = 2;
     }
 }
 
@@ -107,6 +108,8 @@ message ReplicateRequest {
     string follower_id = 2;
     quickwit.ingest.CommitTypeV2 commit_type = 3;
     repeated ReplicateSubrequest subrequests = 4;
+    // Position of the request in the replication stream.
+    uint64 replication_seqno = 5;
 }
 
 message ReplicateSubrequest {
@@ -121,6 +124,8 @@ message ReplicateResponse {
     string follower_id = 1;
     repeated ReplicateSuccess successes = 2;
     repeated ReplicateFailure failures = 3;
+    // Position of the response in the replication stream. It should match the position of the request.
+    uint64 replication_seqno = 4;
 }
 
 message ReplicateSuccess {
@@ -139,7 +144,7 @@ message ReplicateFailure {
 }
 
 message TruncateRequest {
-    string leader_id = 1;
+    string ingester_id = 1;
     repeated TruncateSubrequest subrequests = 2;
 }
 
@@ -168,7 +173,7 @@ message FetchResponseV2 {
     string source_id = 2;
     uint64 shard_id = 3;
     uint64 from_position_inclusive = 4;
-    ingest.DocBatchV2 doc_batch = 5;
+    quickwit.ingest.MRecordBatch mrecord_batch = 5;
 }
 
 message PingRequest {

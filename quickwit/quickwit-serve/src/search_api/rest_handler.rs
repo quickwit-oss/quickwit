@@ -241,6 +241,7 @@ pub fn search_request_from_api_request(
             .map(|agg| serde_json::to_string(&agg).expect("could not serialize JsonValue")),
         sort_fields: search_request.sort_by.sort_fields,
         scroll_ttl_secs: None,
+        search_after: None,
     };
     Ok(search_request)
 }
@@ -446,7 +447,7 @@ fn make_streaming_reply(result: Result<hyper::Body, SearchError>) -> impl Reply 
             warp::reply::Response::new(body)
         }
         Err(err) => {
-            status_code = err.status_code().to_http_status_code();
+            status_code = err.error_code().to_http_status_code();
             warp::reply::Response::new(hyper::Body::from(err.to_string()))
         }
     };

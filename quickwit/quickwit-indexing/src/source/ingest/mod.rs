@@ -22,17 +22,18 @@ use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::Context;
+use anyhow::{bail, Context};
 use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_actors::{ActorExitStatus, Mailbox};
-use quickwit_ingest::{IngesterPool, MultiFetchStream};
+use quickwit_ingest::{decoded_mrecords, IngesterPool, MRecord, MultiFetchStream};
 use quickwit_metastore::checkpoint::{PartitionId, Position, SourceCheckpoint};
-use quickwit_metastore::Metastore;
 use quickwit_proto::ingest::ingester::{
     FetchResponseV2, IngesterService, TruncateRequest, TruncateSubrequest,
 };
-use quickwit_proto::metastore::{AcquireShardsRequest, AcquireShardsSubrequest};
+use quickwit_proto::metastore::{
+    AcquireShardsRequest, AcquireShardsSubrequest, MetastoreService, MetastoreServiceClient,
+};
 use quickwit_proto::types::NodeId;
 use quickwit_proto::{IndexUid, PublishToken, ShardId, SourceId};
 use serde_json::json;
@@ -96,6 +97,7 @@ impl ClientId {
 #[derive(Debug, Eq, PartialEq)]
 struct AssignedShard {
     leader_id: NodeId,
+    follower_id_opt: Option<NodeId>,
     partition_id: PartitionId,
     current_position_inclusive: Position,
 }
@@ -103,7 +105,7 @@ struct AssignedShard {
 /// Streams documents from a set of shards.
 pub struct IngestSource {
     client_id: ClientId,
-    metastore: Arc<dyn Metastore>,
+    metastore: MetastoreServiceClient,
     ingester_pool: IngesterPool,
     assigned_shards: HashMap<ShardId, AssignedShard>,
     fetch_stream: MultiFetchStream,
@@ -153,14 +155,27 @@ impl IngestSource {
         batch_builder: &mut BatchBuilder,
         fetch_response: FetchResponseV2,
     ) -> anyhow::Result<()> {
+        let Some(mrecord_batch) = &fetch_response.mrecord_batch else {
+            return Ok(());
+        };
         let assigned_shard = self
             .assigned_shards
             .get_mut(&fetch_response.shard_id)
             .expect("shard should be assigned");
         let partition_id = assigned_shard.partition_id.clone();
 
-        for doc in fetch_response.docs() {
-            batch_builder.add_doc(doc);
+        for mrecord in decoded_mrecords(mrecord_batch) {
+            match mrecord {
+                MRecord::Doc(doc) => {
+                    batch_builder.add_doc(doc);
+                }
+                MRecord::Commit => {
+                    batch_builder.force_commit();
+                }
+                MRecord::Unknown => {
+                    bail!("source cannot decode mrecord");
+                }
+            }
         }
         let from_position_exclusive = assigned_shard.current_position_inclusive.clone();
         let to_position_inclusive = fetch_response
@@ -180,15 +195,14 @@ impl IngestSource {
     }
 
     async fn truncate(&self, truncation_point: &[(ShardId, Position)]) {
-        let mut per_leader_truncate_subrequests: HashMap<&NodeId, Vec<TruncateSubrequest>> =
+        let mut per_ingester_truncate_subrequests: HashMap<&NodeId, Vec<TruncateSubrequest>> =
             HashMap::new();
 
         for (shard_id, truncate_position) in truncation_point {
-            let Some(leader_id) = self
-                .assigned_shards
-                .get(shard_id)
-                .map(|shard| &shard.leader_id)
-            else {
+            if matches!(truncate_position, Position::Beginning) {
+                continue;
+            }
+            let Some(shard) = self.assigned_shards.get(shard_id) else {
                 warn!(
                     "failed to truncate shard: shard `{}` is no longer assigned",
                     shard_id
@@ -205,21 +219,27 @@ impl IngestSource {
                 shard_id: *shard_id,
                 to_position_inclusive,
             };
-            per_leader_truncate_subrequests
-                .entry(leader_id)
+            if let Some(follower_id) = &shard.follower_id_opt {
+                per_ingester_truncate_subrequests
+                    .entry(follower_id)
+                    .or_default()
+                    .push(truncate_subrequest.clone());
+            }
+            per_ingester_truncate_subrequests
+                .entry(&shard.leader_id)
                 .or_default()
                 .push(truncate_subrequest);
         }
-        for (leader_id, truncate_subrequests) in per_leader_truncate_subrequests {
-            let Some(mut ingester) = self.ingester_pool.get(leader_id).await else {
+        for (ingester_id, truncate_subrequests) in per_ingester_truncate_subrequests {
+            let Some(mut ingester) = self.ingester_pool.get(ingester_id) else {
                 warn!(
                     "failed to truncate shard: ingester `{}` is unavailable",
-                    leader_id
+                    ingester_id
                 );
                 continue;
             };
             let truncate_request = TruncateRequest {
-                leader_id: leader_id.clone().into(),
+                ingester_id: ingester_id.clone().into(),
                 subrequests: truncate_subrequests,
             };
             let truncate_future = async move {
@@ -346,9 +366,7 @@ impl Source for IngestSource {
 
         for acquired_shard in acquire_shards_subresponse.acquired_shards {
             let leader_id: NodeId = acquired_shard.leader_id.into();
-            let follower_id: Option<NodeId> = acquired_shard
-                .follower_id
-                .map(|follower_id| follower_id.into());
+            let follower_id_opt: Option<NodeId> = acquired_shard.follower_id.map(Into::into);
             let index_uid: IndexUid = acquired_shard.index_uid.into();
             let source_id: SourceId = acquired_shard.source_id;
             let shard_id = acquired_shard.shard_id;
@@ -361,7 +379,7 @@ impl Source for IngestSource {
             if let Err(error) = ctx
                 .protect_future(self.fetch_stream.subscribe(
                     leader_id.clone(),
-                    follower_id.clone(),
+                    follower_id_opt.clone(),
                     index_uid,
                     source_id,
                     shard_id,
@@ -377,6 +395,7 @@ impl Source for IngestSource {
 
             let assigned_shard = AssignedShard {
                 leader_id,
+                follower_id_opt,
                 partition_id,
                 current_position_inclusive,
             };
@@ -422,11 +441,11 @@ mod tests {
     use quickwit_actors::{ActorContext, Universe};
     use quickwit_common::ServiceStream;
     use quickwit_config::{SourceConfig, SourceParams};
-    use quickwit_metastore::MockMetastore;
     use quickwit_proto::indexing::IndexingPipelineId;
     use quickwit_proto::ingest::ingester::{IngesterServiceClient, TruncateResponse};
-    use quickwit_proto::ingest::{DocBatchV2, Shard};
+    use quickwit_proto::ingest::{MRecordBatch, Shard};
     use quickwit_proto::metastore::{AcquireShardsResponse, AcquireShardsSubresponse};
+    use quickwit_storage::StorageResolver;
     use tokio::sync::watch;
 
     use super::*;
@@ -442,7 +461,7 @@ mod tests {
             pipeline_ord: 0,
         };
         let source_config = SourceConfig::for_test("test-source", SourceParams::Ingest);
-        let mut mock_metastore = MockMetastore::default();
+        let mut mock_metastore = MetastoreServiceClient::mock();
         mock_metastore
             .expect_acquire_shards()
             .once()
@@ -482,8 +501,6 @@ mod tests {
                 };
                 Ok(response)
             });
-        let metastore = Arc::new(mock_metastore);
-
         let ingester_pool = IngesterPool::default();
 
         let mut ingester_mock_0 = IngesterServiceClient::mock();
@@ -507,7 +524,7 @@ mod tests {
             .expect_truncate()
             .once()
             .returning(|request| {
-                assert_eq!(request.leader_id, "test-ingester-0");
+                assert_eq!(request.ingester_id, "test-ingester-0");
                 assert_eq!(request.subrequests.len(), 1);
 
                 let subrequest = &request.subrequests[0];
@@ -521,16 +538,15 @@ mod tests {
             });
 
         let ingester_0: IngesterServiceClient = ingester_mock_0.into();
-        ingester_pool
-            .insert("test-ingester-0".into(), ingester_0.clone())
-            .await;
+        ingester_pool.insert("test-ingester-0".into(), ingester_0.clone());
 
         let runtime_args = Arc::new(SourceRuntimeArgs {
             pipeline_id,
             source_config,
-            metastore,
+            metastore: MetastoreServiceClient::from(mock_metastore),
             ingester_pool: ingester_pool.clone(),
             queues_dir_path: PathBuf::from("./queues"),
+            storage_resolver: StorageResolver::for_test(),
         });
         let checkpoint = SourceCheckpoint::default();
         let mut source = IngestSource::try_new(runtime_args, checkpoint)
@@ -580,6 +596,7 @@ mod tests {
         let assigned_shard = source.assigned_shards.get(&1).unwrap();
         let expected_assigned_shard = AssignedShard {
             leader_id: "test-ingester-0".into(),
+            follower_id_opt: None,
             partition_id: 1u64.into(),
             current_position_inclusive: Position::from(11u64),
         };
@@ -598,16 +615,16 @@ mod tests {
             pipeline_ord: 0,
         };
         let source_config = SourceConfig::for_test("test-source", SourceParams::Ingest);
-        let mock_metastore = MockMetastore::default();
-        let metastore = Arc::new(mock_metastore);
+        let mock_metastore = MetastoreServiceClient::mock();
         let ingester_pool = IngesterPool::default();
 
         let runtime_args = Arc::new(SourceRuntimeArgs {
             pipeline_id,
             source_config,
-            metastore,
+            metastore: MetastoreServiceClient::from(mock_metastore),
             ingester_pool: ingester_pool.clone(),
             queues_dir_path: PathBuf::from("./queues"),
+            storage_resolver: StorageResolver::for_test(),
         });
         let checkpoint = SourceCheckpoint::default();
         let mut source = IngestSource::try_new(runtime_args, checkpoint)
@@ -627,6 +644,7 @@ mod tests {
             1,
             AssignedShard {
                 leader_id: "test-ingester-0".into(),
+                follower_id_opt: None,
                 partition_id: 1u64.into(),
                 current_position_inclusive: Position::from(11u64),
             },
@@ -635,6 +653,7 @@ mod tests {
             2,
             AssignedShard {
                 leader_id: "test-ingester-1".into(),
+                follower_id_opt: None,
                 partition_id: 2u64.into(),
                 current_position_inclusive: Position::from(22u64),
             },
@@ -647,9 +666,9 @@ mod tests {
                 source_id: "test-source".into(),
                 shard_id: 1,
                 from_position_inclusive: 12,
-                doc_batch: Some(DocBatchV2 {
-                    doc_buffer: Bytes::from_static(b"test-doc-112test-doc-113"),
-                    doc_lengths: vec![12, 12],
+                mrecord_batch: Some(MRecordBatch {
+                    mrecord_buffer: Bytes::from_static(b"\0\0test-doc-112\0\0test-doc-113\0\x01"),
+                    mrecord_lengths: vec![14, 14, 2],
                 }),
             }))
             .await
@@ -661,9 +680,9 @@ mod tests {
                 source_id: "test-source".into(),
                 shard_id: 2,
                 from_position_inclusive: 23,
-                doc_batch: Some(DocBatchV2 {
-                    doc_buffer: Bytes::from_static(b"test-doc-223"),
-                    doc_lengths: vec![12],
+                mrecord_batch: Some(MRecordBatch {
+                    mrecord_buffer: Bytes::from_static(b"\0\0test-doc-223"),
+                    mrecord_lengths: vec![14],
                 }),
             }))
             .await
@@ -681,6 +700,7 @@ mod tests {
         assert_eq!(doc_batch.docs[0], "test-doc-112");
         assert_eq!(doc_batch.docs[1], "test-doc-113");
         assert_eq!(doc_batch.docs[2], "test-doc-223");
+        assert!(doc_batch.force_commit);
 
         let partition_deltas = doc_batch
             .checkpoint_delta
@@ -691,7 +711,7 @@ mod tests {
         assert_eq!(partition_deltas.len(), 2);
         assert_eq!(partition_deltas[0].0, 1u64.into());
         assert_eq!(partition_deltas[0].1.from, 11u64.into());
-        assert_eq!(partition_deltas[0].1.to, 13u64.into());
+        assert_eq!(partition_deltas[0].1.to, 14u64.into());
 
         assert_eq!(partition_deltas[1].0, 2u64.into());
         assert_eq!(partition_deltas[1].1.from, 22u64.into());
@@ -707,8 +727,7 @@ mod tests {
             pipeline_ord: 0,
         };
         let source_config = SourceConfig::for_test("test-source", SourceParams::Ingest);
-        let mock_metastore = MockMetastore::default();
-        let metastore = Arc::new(mock_metastore);
+        let mock_metastore = MetastoreServiceClient::mock();
 
         let ingester_pool = IngesterPool::default();
 
@@ -717,8 +736,8 @@ mod tests {
             .expect_truncate()
             .once()
             .returning(|request| {
-                assert_eq!(request.leader_id, "test-ingester-0");
-                assert_eq!(request.subrequests.len(), 2);
+                assert_eq!(request.ingester_id, "test-ingester-0");
+                assert_eq!(request.subrequests.len(), 3);
 
                 let subrequest_0 = &request.subrequests[0];
                 assert_eq!(subrequest_0.shard_id, 1);
@@ -728,38 +747,60 @@ mod tests {
                 assert_eq!(subrequest_1.shard_id, 2);
                 assert_eq!(subrequest_1.to_position_inclusive, 22);
 
+                let subrequest_2 = &request.subrequests[2];
+                assert_eq!(subrequest_2.shard_id, 3);
+                assert_eq!(subrequest_2.to_position_inclusive, 33);
+
                 Ok(TruncateResponse {})
             });
         let ingester_0: IngesterServiceClient = ingester_mock_0.into();
-        ingester_pool
-            .insert("test-ingester-0".into(), ingester_0.clone())
-            .await;
+        ingester_pool.insert("test-ingester-0".into(), ingester_0.clone());
 
         let mut ingester_mock_1 = IngesterServiceClient::mock();
         ingester_mock_1
             .expect_truncate()
             .once()
             .returning(|request| {
-                assert_eq!(request.leader_id, "test-ingester-1");
-                assert_eq!(request.subrequests.len(), 1);
+                assert_eq!(request.ingester_id, "test-ingester-1");
+                assert_eq!(request.subrequests.len(), 2);
 
                 let subrequest_0 = &request.subrequests[0];
-                assert_eq!(subrequest_0.shard_id, 3);
-                assert_eq!(subrequest_0.to_position_inclusive, 33);
+                assert_eq!(subrequest_0.shard_id, 2);
+                assert_eq!(subrequest_0.to_position_inclusive, 22);
+
+                let subrequest_1 = &request.subrequests[1];
+                assert_eq!(subrequest_1.shard_id, 3);
+                assert_eq!(subrequest_1.to_position_inclusive, 33);
 
                 Ok(TruncateResponse {})
             });
         let ingester_1: IngesterServiceClient = ingester_mock_1.into();
-        ingester_pool
-            .insert("test-ingester-1".into(), ingester_1.clone())
-            .await;
+        ingester_pool.insert("test-ingester-1".into(), ingester_1.clone());
+
+        let mut ingester_mock_3 = IngesterServiceClient::mock();
+        ingester_mock_3
+            .expect_truncate()
+            .once()
+            .returning(|request| {
+                assert_eq!(request.ingester_id, "test-ingester-3");
+                assert_eq!(request.subrequests.len(), 1);
+
+                let subrequest_0 = &request.subrequests[0];
+                assert_eq!(subrequest_0.shard_id, 4);
+                assert_eq!(subrequest_0.to_position_inclusive, 44);
+
+                Ok(TruncateResponse {})
+            });
+        let ingester_3: IngesterServiceClient = ingester_mock_3.into();
+        ingester_pool.insert("test-ingester-3".into(), ingester_3.clone());
 
         let runtime_args = Arc::new(SourceRuntimeArgs {
             pipeline_id,
             source_config,
-            metastore,
+            metastore: MetastoreServiceClient::from(mock_metastore),
             ingester_pool: ingester_pool.clone(),
             queues_dir_path: PathBuf::from("./queues"),
+            storage_resolver: StorageResolver::for_test(),
         });
         let checkpoint = SourceCheckpoint::default();
         let mut source = IngestSource::try_new(runtime_args, checkpoint)
@@ -772,11 +813,12 @@ mod tests {
         let ctx: SourceContext =
             ActorContext::for_test(&universe, source_mailbox, observable_state_tx);
 
-        // In this scenario, the ingester 2 is not available and the shard 5 is no longer assigned.
+        // In this scenario, the ingester 2 is not available and the shard 6 is no longer assigned.
         source.assigned_shards.insert(
             1,
             AssignedShard {
                 leader_id: "test-ingester-0".into(),
+                follower_id_opt: None,
                 partition_id: 1u64.into(),
                 current_position_inclusive: Position::from(11u64),
             },
@@ -785,6 +827,7 @@ mod tests {
             2,
             AssignedShard {
                 leader_id: "test-ingester-0".into(),
+                follower_id_opt: Some("test-ingester-1".into()),
                 partition_id: 2u64.into(),
                 current_position_inclusive: Position::from(22u64),
             },
@@ -793,6 +836,7 @@ mod tests {
             3,
             AssignedShard {
                 leader_id: "test-ingester-1".into(),
+                follower_id_opt: Some("test-ingester-0".into()),
                 partition_id: 3u64.into(),
                 current_position_inclusive: Position::from(33u64),
             },
@@ -801,8 +845,18 @@ mod tests {
             4,
             AssignedShard {
                 leader_id: "test-ingester-2".into(),
+                follower_id_opt: Some("test-ingester-3".into()),
                 partition_id: 4u64.into(),
                 current_position_inclusive: Position::from(44u64),
+            },
+        );
+        source.assigned_shards.insert(
+            5,
+            AssignedShard {
+                leader_id: "test-ingester-2".into(),
+                follower_id_opt: Some("test-ingester-3".into()),
+                partition_id: 4u64.into(),
+                current_position_inclusive: Position::Beginning,
             },
         );
         let checkpoint = SourceCheckpoint::from_iter(vec![
@@ -810,7 +864,8 @@ mod tests {
             (2u64.into(), 22u64.into()),
             (3u64.into(), 33u64.into()),
             (4u64.into(), 44u64.into()),
-            (5u64.into(), 55u64.into()),
+            (5u64.into(), Position::Beginning),
+            (6u64.into(), 66u64.into()),
         ]);
         source.suggest_truncate(checkpoint, &ctx).await.unwrap();
 

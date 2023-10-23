@@ -19,14 +19,12 @@
 
 #![deny(clippy::disallowed_methods)]
 
-use std::sync::Arc;
-
 use quickwit_actors::{Mailbox, Universe};
 use quickwit_cluster::Cluster;
 use quickwit_common::pubsub::EventBroker;
 use quickwit_config::NodeConfig;
 use quickwit_ingest::{IngestApiService, IngesterPool};
-use quickwit_metastore::Metastore;
+use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_storage::StorageResolver;
 use tracing::info;
 
@@ -69,7 +67,7 @@ pub async fn start_indexing_service(
     config: &NodeConfig,
     num_blocking_threads: usize,
     cluster: Cluster,
-    metastore: Arc<dyn Metastore>,
+    metastore: MetastoreServiceClient,
     ingest_api_service: Mailbox<IngestApiService>,
     ingester_pool: IngesterPool,
     storage_resolver: StorageResolver,

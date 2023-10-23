@@ -68,16 +68,16 @@ impl ServiceErrorCode {
 
 pub trait ServiceError: ToString {
     fn grpc_error(&self) -> tonic::Status {
-        let grpc_code = self.status_code().to_grpc_status_code();
+        let grpc_code = self.error_code().to_grpc_status_code();
         let error_msg = self.to_string();
         tonic::Status::new(grpc_code, error_msg)
     }
 
-    fn status_code(&self) -> ServiceErrorCode;
+    fn error_code(&self) -> ServiceErrorCode;
 }
 
 impl ServiceError for Infallible {
-    fn status_code(&self) -> ServiceErrorCode {
+    fn error_code(&self) -> ServiceErrorCode {
         unreachable!()
     }
 }

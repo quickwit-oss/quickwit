@@ -29,7 +29,8 @@ use quickwit_common::net::find_available_tcp_port;
 use quickwit_common::test_utils::wait_for_server_ready;
 use quickwit_common::uri::Uri;
 use quickwit_config::service::QuickwitService;
-use quickwit_metastore::{IndexMetadata, Metastore, MetastoreResolver};
+use quickwit_metastore::{IndexMetadata, IndexMetadataResponseExt, MetastoreResolver};
+use quickwit_proto::metastore::{IndexMetadataRequest, MetastoreService, MetastoreServiceClient};
 use quickwit_storage::{Storage, StorageResolver};
 use reqwest::Url;
 use tempfile::{tempdir, TempDir};
@@ -50,7 +51,7 @@ const DEFAULT_INDEX_CONFIG: &str = r#"
           input_formats:
             - unix_timestamp
           output_format: unix_timestamp_secs
-          precision: seconds
+          fast_precision: seconds
           fast: true
         - name: level
           type: text
@@ -111,7 +112,7 @@ pub struct TestEnv {
     /// The metastore URI.
     pub metastore_uri: Uri,
     pub metastore_resolver: MetastoreResolver,
-    pub metastore: Arc<dyn Metastore>,
+    pub metastore: MetastoreServiceClient,
     pub config_uri: Uri,
     pub cluster_endpoint: Url,
     pub index_config_uri: Uri,
@@ -125,7 +126,7 @@ pub struct TestEnv {
 
 impl TestEnv {
     // For cache reason, it's safer to always create an instance and then make your assertions.
-    pub async fn metastore(&self) -> Arc<dyn Metastore> {
+    pub async fn metastore(&self) -> MetastoreServiceClient {
         self.metastore_resolver
             .resolve(&self.metastore_uri)
             .await
@@ -142,8 +143,9 @@ impl TestEnv {
         let index_metadata = self
             .metastore()
             .await
-            .index_metadata(&self.index_id)
-            .await?;
+            .index_metadata(IndexMetadataRequest::for_index_id(self.index_id.clone()))
+            .await?
+            .deserialize_index_metadata()?;
         Ok(index_metadata)
     }
 
@@ -259,4 +261,26 @@ pub async fn create_test_env(
         storage_resolver,
         storage,
     })
+}
+
+/// TODO: this should be part of the test env setup
+pub async fn upload_test_file(
+    storage_resolver: StorageResolver,
+    local_src_path: PathBuf,
+    bucket: &str,
+    prefix: &str,
+    filename: &str,
+) -> PathBuf {
+    let test_data = tokio::fs::read(local_src_path).await.unwrap();
+    let mut src_location: PathBuf = [r"s3://", bucket, prefix].iter().collect();
+    let storage = storage_resolver
+        .resolve(&Uri::from_well_formed(src_location.to_string_lossy()))
+        .await
+        .unwrap();
+    storage
+        .put(&PathBuf::from(filename), Box::new(test_data))
+        .await
+        .unwrap();
+    src_location.push(filename);
+    src_location
 }

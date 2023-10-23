@@ -19,14 +19,11 @@
 
 use quickwit_common::pubsub::Event;
 
-use super::SourceType;
+use super::{
+    AddSourceRequest, CloseShardsRequest, CreateIndexRequest, DeleteIndexRequest,
+    DeleteShardsRequest, DeleteSourceRequest, SourceType, ToggleSourceRequest,
+};
 use crate::{IndexUid, SourceId};
-
-/// Create index event.
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub struct CreateIndexEvent {
-    pub index_uid: IndexUid,
-}
 
 /// Delete index event.
 #[derive(Debug, Clone, Eq, PartialEq)]
@@ -67,7 +64,13 @@ pub struct DeleteSourceEvent {
 }
 
 impl Event for AddSourceEvent {}
-impl Event for CreateIndexEvent {}
 impl Event for DeleteIndexEvent {}
 impl Event for DeleteSourceEvent {}
 impl Event for ToggleSourceEvent {}
+impl Event for CloseShardsRequest {}
+impl Event for DeleteShardsRequest {}
+impl Event for AddSourceRequest {}
+impl Event for CreateIndexRequest {}
+impl Event for DeleteIndexRequest {}
+impl Event for DeleteSourceRequest {}
+impl Event for ToggleSourceRequest {}

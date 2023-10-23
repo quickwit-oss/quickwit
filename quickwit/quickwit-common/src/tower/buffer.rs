@@ -166,10 +166,7 @@ impl<R> fmt::Debug for BufferLayer<R> {
 
 impl<R> Clone for BufferLayer<R> {
     fn clone(&self) -> Self {
-        Self {
-            bound: self.bound,
-            _phantom: PhantomData,
-        }
+        *self
     }
 }
 

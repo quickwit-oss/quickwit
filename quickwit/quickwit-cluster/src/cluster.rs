@@ -32,6 +32,7 @@ use chitchat::{
 use futures::Stream;
 use itertools::Itertools;
 use quickwit_proto::indexing::IndexingTask;
+use quickwit_proto::NodeId;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, watch, Mutex, RwLock};
 use tokio::time::timeout;
@@ -422,7 +423,7 @@ struct InnerCluster {
     cluster_id: String,
     self_chitchat_id: ChitchatId,
     chitchat_handle: ChitchatHandle,
-    live_nodes: BTreeMap<ChitchatId, ClusterNode>,
+    live_nodes: BTreeMap<NodeId, ClusterNode>,
     change_stream_subscribers: Vec<mpsc::UnboundedSender<ClusterChange>>,
     ready_members_rx: watch::Receiver<Vec<ClusterMember>>,
 }
@@ -496,7 +497,7 @@ pub async fn create_cluster_for_test_with_id(
     self_node_readiness: bool,
 ) -> anyhow::Result<Cluster> {
     let gossip_advertise_addr: SocketAddr = ([127, 0, 0, 1], node_id).into();
-    let node_id = format!("node_{node_id}");
+    let node_id: NodeId = format!("node_{node_id}").into();
     let self_node = ClusterMember::new(
         node_id,
         crate::GenerationId(1),

@@ -33,6 +33,13 @@ message DocBatchV2 {
     repeated uint32 doc_lengths = 2;
 }
 
+message MRecordBatch {
+    // Buffer of encoded and then concatenated mrecords.
+    bytes mrecord_buffer = 1;
+    // Lengths of the mrecords in the buffer.
+    repeated uint32 mrecord_lengths = 2;
+}
+
 enum ShardState {
     // The shard is open and accepts write requests.
     OPEN = 0;

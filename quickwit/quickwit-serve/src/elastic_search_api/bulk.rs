@@ -46,11 +46,11 @@ pub enum IngestRestApiError {
 }
 
 impl ServiceError for IngestRestApiError {
-    fn status_code(&self) -> ServiceErrorCode {
+    fn error_code(&self) -> ServiceErrorCode {
         match self {
             Self::BulkInvalidAction(_) => ServiceErrorCode::BadRequest,
             Self::BulkInvalidSource(_) => ServiceErrorCode::BadRequest,
-            Self::IngestApi(ingest_api_error) => ingest_api_error.status_code(),
+            Self::IngestApi(ingest_api_error) => ingest_api_error.error_code(),
         }
     }
 }
@@ -371,7 +371,7 @@ mod tests {
     async fn test_bulk_ingest_request_returns_400_if_action_is_malformed() {
         let config = Arc::new(NodeConfig::for_test());
         let search_service = Arc::new(MockSearchService::new());
-        let ingest_service = IngestServiceClient::new(IngestServiceClient::mock());
+        let ingest_service = IngestServiceClient::from(IngestServiceClient::mock());
         let elastic_api_handlers = elastic_api_handlers(config, search_service, ingest_service);
         let payload = r#"
             {"create": {"_index": "my-index", "_id": "1"},}
