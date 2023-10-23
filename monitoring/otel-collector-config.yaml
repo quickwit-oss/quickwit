@@ -20,6 +20,10 @@ exporters:
     tls:
       insecure: true
 
+  kafka:
+    brokers:
+      - kafka-broker:29092
+
   otlp/qw:
     endpoint: host.docker.internal:7281
     tls:
@@ -36,7 +40,7 @@ service:
     traces:
       receivers: [jaeger, otlp]
       processors: [batch]
-      exporters: [jaeger, otlp/qw]
+      exporters: [jaeger, kafka, otlp/qw]
     # metrics:
     #   receivers: [otlp]
     #   processors: [batch]

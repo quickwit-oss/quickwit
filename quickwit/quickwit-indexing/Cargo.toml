@@ -61,6 +61,7 @@ quickwit-directories = { workspace = true }
 quickwit-doc-mapper = { workspace = true }
 quickwit-ingest = { workspace = true }
 quickwit-metastore = { workspace = true }
+quickwit-opentelemetry = { workspace = true }
 quickwit-proto = { workspace = true }
 quickwit-storage = { workspace = true }
 
@@ -87,9 +88,10 @@ bytes = { workspace = true }
 criterion = { workspace = true, features = ["async_tokio"] }
 mockall = { workspace = true }
 proptest = { workspace = true }
+prost = { workspace = true }
 rand = { workspace = true }
-tempfile = { workspace = true }
 reqwest = { workspace = true }
+tempfile = { workspace = true }
 
 quickwit-actors = { workspace = true, features = ["testsuite"] }
 quickwit-cluster = { workspace = true, features = ["testsuite"] }
