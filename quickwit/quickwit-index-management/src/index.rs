@@ -24,17 +24,19 @@ use std::time::Duration;
 use futures::StreamExt;
 use itertools::Itertools;
 use quickwit_common::fs::{empty_dir, get_cache_directory_path};
+use quickwit_common::PrettySample;
 use quickwit_config::{validate_identifier, IndexConfig, SourceConfig};
 use quickwit_indexing::check_source_connectivity;
 use quickwit_metastore::{
     AddSourceRequestExt, CreateIndexRequestExt, IndexMetadata, IndexMetadataResponseExt,
+    ListIndexesMetadataRequestExt, ListIndexesMetadataResponseExt, ListIndexesQuery,
     ListSplitsQuery, ListSplitsRequestExt, ListSplitsResponseExt, SplitInfo, SplitMetadata,
     SplitState,
 };
 use quickwit_proto::metastore::{
     AddSourceRequest, CreateIndexRequest, DeleteIndexRequest, EntityKind, IndexMetadataRequest,
-    ListSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError, MetastoreService,
-    MetastoreServiceClient, ResetSourceCheckpointRequest,
+    ListIndexesMetadataRequest, ListSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError,
+    MetastoreService, MetastoreServiceClient, ResetSourceCheckpointRequest,
 };
 use quickwit_proto::{IndexUid, ServiceError, ServiceErrorCode, SplitId};
 use quickwit_storage::{StorageResolver, StorageResolverError};
@@ -237,10 +239,15 @@ impl IndexService {
         index_id_patterns: Vec<String>,
         dry_run: bool,
     ) -> Result<Vec<SplitInfo>, IndexServiceError> {
-        let indexes_metadata = self
-            .metastore
-            .list_indexes_metadatas(ListIndexesQuery::IndexIdPatterns(index_id_patterns.clone()))
-            .await?;
+        let list_indexes_metadatas_request =
+            ListIndexesMetadataRequest::try_from_list_indexes_query(
+                ListIndexesQuery::IndexIdPatterns(index_id_patterns.clone()),
+            )?;
+        let mut metastore = self.metastore.clone();
+        let indexes_metadata = metastore
+            .list_indexes_metadata(list_indexes_metadatas_request)
+            .await?
+            .deserialize_indexes_metadata()?;
 
         if indexes_metadata.is_empty() {
             return Err(IndexServiceError::Metastore(MetastoreError::NotFound(
@@ -253,13 +260,13 @@ impl IndexService {
             .iter()
             .map(|index_metadata| index_metadata.index_id())
             .collect_vec();
-        info!(index_ids = ?index_ids);
+        info!(index_ids = ?PrettySample::new(&index_ids, 5), "delete indexes");
 
         // setup delete index tasks
         let mut delete_index_tasks = Vec::new();
         for index_id in index_ids {
             let task = async move {
-                let result = self.delete_index(index_id, dry_run).await;
+                let result = self.clone().delete_index(index_id, dry_run).await;
                 (index_id, result)
             };
             delete_index_tasks.push(task);
@@ -590,5 +597,84 @@ mod tests {
             matches!(error, MetastoreError::NotFound(EntityKind::Index { index_id }) if index_id == index_uid.index_id())
         );
         assert!(!storage.exists(split_path).await.unwrap());
+    }
+
+    #[tokio::test]
+    #[allow(unused_variables)]
+    async fn test_delete_indexes() {
+        let mut metastore = metastore_for_test();
+        let storage_resolver = StorageResolver::for_test();
+        let mut index_service = IndexService::new(metastore.clone(), storage_resolver.clone());
+        let index_count = 2;
+        let mut index_ids = Vec::new();
+        let mut index_uids = Vec::new();
+        let mut split_paths = Vec::new();
+        let mut storages = Vec::new();
+        for i in 0..index_count {
+            let index_id = format!("test-index-{}", i);
+            index_ids.push(index_id.clone());
+            let index_uri = format!("ram://indexes/{}", index_id.clone());
+            let storage = storage_resolver
+                .clone()
+                .resolve(&Uri::for_test(&index_uri))
+                .await
+                .unwrap();
+            storages.push(storage.clone());
+            let index_config = IndexConfig::for_test(&index_id, &index_uri);
+            let index_uid = index_service
+                .create_index(index_config.clone(), false)
+                .await
+                .unwrap()
+                .index_uid;
+            index_uids.push(index_uid.clone());
+
+            let split_id = format!("test-split-{}", i);
+            let split_metadata = SplitMetadata {
+                split_id: split_id.to_string(),
+                index_uid: index_uid.clone(),
+                ..Default::default()
+            };
+            let stage_splits_request = StageSplitsRequest::try_from_splits_metadata(
+                index_uid.clone(),
+                vec![split_metadata.clone()],
+            )
+            .unwrap();
+            metastore.stage_splits(stage_splits_request).await.unwrap();
+
+            let splits = metastore
+                .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
+                .await
+                .unwrap()
+                .deserialize_splits()
+                .unwrap();
+            assert_eq!(splits.len(), 1);
+
+            let split_path_str = format!("{}.split", split_id);
+            let split_path = Path::new(&split_path_str);
+            split_paths.push(split_path.to_path_buf());
+            let payload: Box<dyn PutPayload> = Box::new(vec![0]);
+            storage.put(split_path, payload).await.unwrap();
+            assert!(storage.exists(split_path).await.unwrap());
+        }
+
+        let split_infos = index_service
+            .delete_indexes(vec![String::from("test-index*")], false)
+            .await
+            .unwrap();
+        assert_eq!(split_infos.len(), index_count);
+        println!("{:?}", split_infos);
+        for i in 0..index_count {
+            let error = metastore
+                .list_splits(ListSplitsRequest::try_from_index_uid(index_uids[i].clone()).unwrap())
+                .await
+                .unwrap_err();
+            let index_id = index_ids[i].clone();
+            let index_uid = index_uids[i].clone();
+            assert!(
+                matches!(error, MetastoreError::NotFound(EntityKind::Index { index_id }) if index_id == index_uid.index_id())
+            );
+            println!("{:?}", split_paths[i].as_path());
+            assert!(!storages[i].exists(split_paths[i].as_path()).await.unwrap());
+        }
     }
 }
