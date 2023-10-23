@@ -1080,6 +1080,7 @@ mod tests {
                     json: r#"{"title": "foo", "body": "foo bar baz"}"#.to_string(),
                     partial_hit: None,
                     snippet: Some(r#"{"title": [], "body": ["foo <em>bar</em> baz"]}"#.to_string()),
+                    index_id: "quickwit-demo-index".to_string(),
                 }],
                 num_hits: 1,
                 elapsed_time_micros: 16,
