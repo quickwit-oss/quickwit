@@ -241,7 +241,7 @@ fn describe_index_handler(
 #[derive(Debug, Clone, Deserialize, Serialize, utoipa::IntoParams, utoipa::ToSchema, Default)]
 #[into_params(parameter_in = Query)]
 pub struct ListSplitsQueryParams {
-    /// If set, restrict the number of splits to skip
+    /// If set, define the number of splits to skip
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(default)]
     pub offset: Option<usize>,
