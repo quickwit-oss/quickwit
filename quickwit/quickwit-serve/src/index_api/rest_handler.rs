@@ -1237,6 +1237,18 @@ mod tests {
             })
             .times(2);
         mock_metastore
+            .expect_list_indexes_metadata()
+            .return_once(|_list_indexes_request| {
+                let index_metadata = IndexMetadata::for_test(
+                    "quickwit-demo-index",
+                    "file:///path/to/index/quickwit-demo-index",
+                );
+                Ok(
+                    ListIndexesMetadataResponse::try_from_indexes_metadata(vec![index_metadata])
+                        .unwrap(),
+                )
+            });
+        mock_metastore
             .expect_list_splits()
             .returning(|_| {
                 Ok(ListSplitsResponse::try_from_splits(vec![mock_split("split_1")]).unwrap())
