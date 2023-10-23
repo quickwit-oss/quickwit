@@ -30,6 +30,7 @@ use crate::tool::{build_tool_command, ToolCliCommand};
 pub fn build_cli() -> Command {
     Command::new("Quickwit")
         .arg(
+            // Following https://no-color.org/
             Arg::new("no-color")
                 .long("no-color")
                 .help(
@@ -37,6 +38,7 @@ pub fn build_cli() -> Command {
                      output",
                 )
                 .env("NO_COLOR")
+                .value_parser(clap::builder::FalseyValueParser::new())
                 .global(true)
                 .action(ArgAction::SetTrue),
         )
