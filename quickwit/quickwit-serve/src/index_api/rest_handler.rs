@@ -544,7 +544,7 @@ fn delete_index_handler(
 async fn delete_index(
     index_id_patterns: Vec<String>,
     delete_index_query_param: DeleteIndexQueryParam,
-    mut index_service: IndexService,
+    index_service: IndexService,
 ) -> Result<Vec<SplitInfo>, IndexServiceError> {
     info!(index_id_patterns = ?index_id_patterns, dry_run = delete_index_query_param.dry_run, "delete_index");
     index_service
