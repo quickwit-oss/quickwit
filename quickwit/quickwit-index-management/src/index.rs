@@ -612,7 +612,7 @@ mod tests {
         for i in 0..index_count {
             let index_id = format!("test-index-{}", i);
             index_ids.push(index_id.clone());
-            let index_uri = format!("ram://indexes/{}", index_id.clone());
+            let index_uri = format!("ram://indexes/{}", index_id);
             let storage = storage_resolver
                 .clone()
                 .resolve(&Uri::for_test(&index_uri))
