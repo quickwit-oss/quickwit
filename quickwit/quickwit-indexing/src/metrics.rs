@@ -34,14 +34,14 @@ impl Default for IndexerMetrics {
             processed_docs_total: new_counter_vec(
                 "processed_docs_total",
                 "Number of processed docs by index, source and processed status in [valid, \
-                 missing_field, parsing_error, transform_error]",
+                 schema_error, parse_error, transform_error]",
                 "quickwit_indexing",
                 ["index", "source", "docs_processed_status"],
             ),
             processed_bytes: new_counter_vec(
                 "processed_bytes",
                 "Number of bytes of processed documents by index, source and processed status in \
-                 [valid, missing_field, parsing_error, transform_error]",
+                 [valid, schema_error, parse_error, transform_error]",
                 "quickwit_indexing",
                 ["index", "source", "docs_processed_status"],
             ),

@@ -93,6 +93,7 @@ services:
     ports:
       - "${MAP_HOST_KAFKA:-127.0.0.1}:9092:9092"
       - "${MAP_HOST_KAFKA:-127.0.0.1}:9101:9101"
+      - "${MAP_HOST_KAFKA:-127.0.0.1}:29092:29092"
     profiles:
       - all
       - kafka
@@ -100,7 +101,7 @@ services:
       KAFKA_BROKER_ID: 1
       KAFKA_ZOOKEEPER_CONNECT: "zookeeper:2181"
       KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
-      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka-broker:29092,PLAINTEXT_HOST://localhost:9092
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT_HOST://localhost:9092,PLAINTEXT://kafka-broker:29092
       KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
@@ -167,8 +168,6 @@ services:
     image: jaegertracing/all-in-one:${JAEGER_VERSION:-1.48.0}
     container_name: jaeger
     ports:
-      - "${MAP_HOST_JAEGER:-127.0.0.1}:4317:4317"   # OTLP over gRPC
-      - "${MAP_HOST_JAEGER:-127.0.0.1}:4318:4318"   # OTLP over HTTP
       - "${MAP_HOST_JAEGER:-127.0.0.1}:16686:16686" # Frontend
     profiles:
       - jaeger
@@ -206,18 +205,19 @@ services:
       - "host.docker.internal:host-gateway"
 
   gcp-pubsub-emulator:
-    profiles:
-      - gcp-pubsub
-      - all
     # It is not an official docker image
     # if we prefer we can build a docker from the official docker image (gcloud cli)
     # and install the pubsub emulator https://cloud.google.com/pubsub/docs/emulator
     image: thekevjames/gcloud-pubsub-emulator:${GCLOUD_EMULATOR:-7555256f2c}
+    container_name: gcp-pubsub-emulator
     ports:
       - "${MAP_HOST_GCLOUD_EMULATOR:-127.0.0.1}:8681:8681"
     environment:
       # create a fake gcp project and a topic / subscription
       - PUBSUB_PROJECT1=quickwit-emulator,emulator_topic:emulator_subscription
+    profiles:
+      - all
+      - gcp-pubsub
 
 volumes:
   localstack_data:

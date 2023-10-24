@@ -201,11 +201,14 @@ impl TestableForRegression for SourceConfig {
     }
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SourceInputFormat {
     #[default]
     Json,
+    OtlpTraceJson,
+    #[serde(alias = "otlp_trace_proto")]
+    OtlpTraceProtobuf,
     #[serde(alias = "plain")]
     PlainText,
 }

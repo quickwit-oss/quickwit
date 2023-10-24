@@ -269,12 +269,14 @@ message LeafHit {
 }
 
 message Hit {
-  // The actual content of the hit/
+  // The actual content of the hit
   string json = 1;
   // The partial hit (ie: the sorting field + the document address)
   PartialHit partial_hit = 2;
   // A snippet of the matching content
   optional string snippet = 3;
+  // The index id of the hit
+  string index_id = 4;
 }
 
 
