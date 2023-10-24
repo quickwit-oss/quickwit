@@ -621,7 +621,7 @@ mod tests {
             storages.push(storage.clone());
             let index_config = IndexConfig::for_test(&index_id, &index_uri);
             let index_uid = index_service
-                .create_index(index_config.clone(), false)
+                .create_index(index_config, false)
                 .await
                 .unwrap()
                 .index_uid;
