@@ -33,12 +33,11 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::future::try_join_all;
-use itertools::{Either, Itertools};
+use itertools::Itertools;
 use quickwit_config::validate_index_id_pattern;
 use quickwit_proto::metastore::{
     AcquireShardsRequest, AcquireShardsResponse, AcquireShardsSubrequest, AddSourceRequest,
-    CloseShardsRequest, CloseShardsResponse, CloseShardsSubrequest, CreateIndexRequest,
-    CreateIndexResponse, DeleteIndexRequest, DeleteQuery, DeleteShardsRequest,
+    CreateIndexRequest, CreateIndexResponse, DeleteIndexRequest, DeleteQuery, DeleteShardsRequest,
     DeleteShardsResponse, DeleteShardsSubrequest, DeleteSourceRequest, DeleteSplitsRequest,
     DeleteTask, EmptyResponse, EntityKind, IndexMetadataRequest, IndexMetadataResponse,
     LastDeleteOpstampRequest, LastDeleteOpstampResponse, ListDeleteTasksRequest,
@@ -754,35 +753,6 @@ impl MetastoreService for FileBackedMetastore {
                 .mutate(index_uid, |index| index.acquire_shards(subrequests))
                 .await?;
             response.subresponses.extend(subresponses);
-        }
-        Ok(response)
-    }
-
-    async fn close_shards(
-        &mut self,
-        request: CloseShardsRequest,
-    ) -> MetastoreResult<CloseShardsResponse> {
-        let mut response = CloseShardsResponse {
-            successes: Vec::with_capacity(request.subrequests.len()),
-            failures: Vec::new(),
-        };
-        // We must group the subrequests by `index_uid` to mutate each index only once, since each
-        // mutation triggers an IO.
-        let grouped_subrequests: HashMap<IndexUid, Vec<CloseShardsSubrequest>> = request
-            .subrequests
-            .into_iter()
-            .into_group_map_by(|subrequest| IndexUid::new(subrequest.index_uid.clone()));
-
-        for (index_uid, subrequests) in grouped_subrequests {
-            let subresponses = self
-                .mutate(index_uid, |index| index.close_shards(subrequests))
-                .await?;
-            for subresponse in subresponses {
-                match subresponse {
-                    Either::Left(success) => response.successes.push(success),
-                    Either::Right(failure) => response.failures.push(failure),
-                }
-            }
         }
         Ok(response)
     }

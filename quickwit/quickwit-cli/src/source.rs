@@ -553,7 +553,8 @@ mod tests {
     use std::str::FromStr;
 
     use quickwit_config::{SourceInputFormat, SourceParams};
-    use quickwit_metastore::checkpoint::{PartitionId, Position};
+    use quickwit_metastore::checkpoint::PartitionId;
+    use quickwit_proto::types::Position;
     use serde_json::json;
 
     use super::*;

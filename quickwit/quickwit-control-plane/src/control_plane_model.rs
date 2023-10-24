@@ -34,8 +34,7 @@ use quickwit_proto::metastore::{
     EntityKind, ListIndexesMetadataRequest, ListShardsSubrequest, MetastoreError, MetastoreService,
     MetastoreServiceClient,
 };
-use quickwit_proto::types::IndexId;
-use quickwit_proto::{metastore, IndexUid, NodeId, NodeIdRef, ShardId, SourceId};
+use quickwit_proto::{metastore, IndexId, IndexUid, NodeId, NodeIdRef, ShardId, SourceId};
 use serde::Serialize;
 use tracing::{error, info};
 
@@ -249,6 +248,7 @@ impl ControlPlaneModel {
     }
 
     /// Removes the shards identified by their index UID, source ID, and shard IDs.
+    #[allow(dead_code)] // Will remove this in a future PR.
     pub fn delete_shards(
         &mut self,
         index_uid: &IndexUid,
@@ -261,6 +261,7 @@ impl ControlPlaneModel {
 
     /// Sets the state of the shards identified by their index UID, source ID, and shard IDs to
     /// `Closed`.
+    #[allow(dead_code)] // Will remove this in a future PR.
     pub fn close_shards(
         &mut self,
         index_uid: &IndexUid,
@@ -425,6 +426,7 @@ impl ShardTable {
 
     /// Sets the state of the shards identified by their index UID, source ID, and shard IDs to
     /// `Closed`.
+    #[allow(dead_code)] // Will remove this in a future PR.
     pub fn close_shards(
         &mut self,
         index_uid: &IndexUid,
@@ -517,7 +519,7 @@ mod tests {
             source_id: source_id.clone(),
             shard_id: 2,
             leader_id: "test-leader-0".to_string(),
-            shard_state: ShardState::Closing as i32,
+            shard_state: ShardState::Unavailable as i32,
             ..Default::default()
         };
         let shard_03 = Shard {

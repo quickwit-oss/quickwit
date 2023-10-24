@@ -33,8 +33,8 @@ use pulsar::{
 };
 use quickwit_actors::{ActorContext, ActorExitStatus, Mailbox};
 use quickwit_config::{PulsarSourceAuth, PulsarSourceParams};
-use quickwit_metastore::checkpoint::{PartitionId, Position, SourceCheckpoint};
-use quickwit_proto::IndexUid;
+use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpoint};
+use quickwit_proto::types::{IndexUid, Position};
 use serde_json::{json, Value as JsonValue};
 use tokio::time;
 use tracing::{debug, info, warn};
@@ -439,7 +439,7 @@ mod pulsar_broker_tests {
     use quickwit_common::rand::append_random_suffix;
     use quickwit_config::{IndexConfig, SourceConfig, SourceInputFormat, SourceParams};
     use quickwit_metastore::checkpoint::{
-        IndexCheckpointDelta, PartitionId, Position, SourceCheckpointDelta,
+        IndexCheckpointDelta, PartitionId, SourceCheckpointDelta,
     };
     use quickwit_metastore::{
         metastore_for_test, CreateIndexRequestExt, SplitMetadata, StageSplitsRequestExt,

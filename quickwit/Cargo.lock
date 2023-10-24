@@ -1094,6 +1094,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "bytestring"
+version = "1.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "238e4886760d98c4f899360c834fa93e62cf7f721ac3c2da375cbdf4b8679aae"
+dependencies = [
+ "bytes",
+]
+
+[[package]]
 name = "bzip2"
 version = "0.4.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5562,6 +5571,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "bytes",
+ "bytestring",
  "dyn-clone",
  "futures",
  "glob",

@@ -23,7 +23,6 @@ package quickwit.ingest.ingester;
 
 import "quickwit/ingest.proto";
 
-
 service IngesterService {
     // Persists batches of documents to primary shards owned by a leader.
     rpc Persist(PersistRequest) returns (PersistResponse);
@@ -67,7 +66,7 @@ message PersistSuccess {
     string index_uid = 1;
     string source_id = 2;
     uint64 shard_id = 3;
-    optional uint64 replication_position_inclusive = 4;
+    quickwit.ingest.Position replication_position_inclusive = 4;
 }
 
 enum PersistFailureKind {
@@ -116,7 +115,8 @@ message ReplicateSubrequest {
     string index_uid = 1;
     string source_id = 2;
     uint64 shard_id = 3;
-    optional uint64 from_position_exclusive = 4;
+    quickwit.ingest.Position from_position_exclusive = 4;
+    quickwit.ingest.Position to_position_inclusive = 5;
     ingest.DocBatchV2 doc_batch = 6;
 }
 
@@ -132,7 +132,7 @@ message ReplicateSuccess {
     string index_uid = 1;
     string source_id = 2;
     uint64 shard_id = 3;
-    optional uint64 replica_position_inclusive = 4;
+    quickwit.ingest.Position replication_position_inclusive = 4;
 }
 
 message ReplicateFailure {
@@ -152,7 +152,7 @@ message TruncateSubrequest {
     string index_uid = 1;
     string source_id = 2;
     uint64 shard_id = 3;
-    uint64 to_position_inclusive = 4;
+    quickwit.ingest.Position to_position_inclusive = 4;
 }
 
 message TruncateResponse {
@@ -164,16 +164,17 @@ message OpenFetchStreamRequest {
     string index_uid = 2;
     string source_id = 3;
     uint64 shard_id = 4;
-    optional uint64 from_position_exclusive = 5;
-    optional uint64 to_position_inclusive = 6;
+    quickwit.ingest.Position from_position_exclusive = 5;
+    quickwit.ingest.Position to_position_inclusive = 6;
 }
 
 message FetchResponseV2 {
     string index_uid = 1;
     string source_id = 2;
     uint64 shard_id = 3;
-    uint64 from_position_inclusive = 4;
-    quickwit.ingest.MRecordBatch mrecord_batch = 5;
+    quickwit.ingest.MRecordBatch mrecord_batch = 4;
+    quickwit.ingest.Position from_position_exclusive = 5;
+    quickwit.ingest.Position to_position_inclusive = 6;
 }
 
 message PingRequest {

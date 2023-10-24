@@ -28,15 +28,15 @@ use quickwit_proto::ingest::ingester::{
     ack_replication_message, syn_replication_message, AckReplicationMessage, ReplicateRequest,
     ReplicateResponse, ReplicateSuccess, SynReplicationMessage,
 };
-use quickwit_proto::ingest::{CommitTypeV2, IngestV2Error, IngestV2Result, ShardState};
-use quickwit_proto::types::NodeId;
+use quickwit_proto::ingest::{CommitTypeV2, IngestV2Error, IngestV2Result};
+use quickwit_proto::types::{NodeId, Position};
 use tokio::sync::mpsc::error::TryRecvError;
-use tokio::sync::{mpsc, oneshot, watch, RwLock};
+use tokio::sync::{mpsc, oneshot, RwLock};
 use tokio::task::JoinHandle;
 use tracing::error;
 
 use super::ingester::IngesterState;
-use super::models::{Position, ReplicaShard, ShardStatus};
+use super::models::{IngesterShard, ReplicaShard};
 use super::mrecord::MRecord;
 use crate::metrics::INGEST_METRICS;
 
@@ -317,59 +317,38 @@ impl ReplicationTask {
 
         for subrequest in replicate_request.subrequests {
             let queue_id = subrequest.queue_id();
+            let from_position_exclusive = subrequest.from_position_exclusive();
+            let to_position_inclusive = subrequest.to_position_inclusive();
 
-            let replica_shard: &mut ReplicaShard = if subrequest.from_position_exclusive.is_none() {
-                // Initialize the replica shard and corresponding mrecordlog queue.
-                state_guard
-                    .mrecordlog
-                    .create_queue(&queue_id)
-                    .await
-                    .expect("TODO");
-                state_guard
-                    .replica_shards
-                    .entry(queue_id.clone())
-                    .or_insert_with(|| {
-                        let (shard_status_tx, shard_status_rx) =
-                            watch::channel(ShardStatus::default());
-                        ReplicaShard {
-                            _leader_id: replicate_request.leader_id.clone().into(),
-                            shard_state: ShardState::Open,
-                            publish_position_inclusive: Position::default(),
-                            replica_position_inclusive: Position::default(),
-                            shard_status_tx,
-                            shard_status_rx,
-                        }
-                    })
-            } else {
-                state_guard
-                    .replica_shards
-                    .get_mut(&queue_id)
-                    .expect("replica shard should be initialized")
-            };
-            if replica_shard.shard_state.is_closed() {
+            let replica_shard: &mut IngesterShard =
+                if from_position_exclusive == Position::Beginning {
+                    // Initialize the replica shard and corresponding mrecordlog queue.
+                    state_guard
+                        .mrecordlog
+                        .create_queue(&queue_id)
+                        .await
+                        .expect("TODO");
+                    let leader_id: NodeId = replicate_request.leader_id.clone().into();
+                    let replica_shard = ReplicaShard::new(leader_id);
+                    let shard = IngesterShard::Replica(replica_shard);
+                    state_guard.shards.entry(queue_id.clone()).or_insert(shard)
+                } else {
+                    state_guard
+                        .shards
+                        .get_mut(&queue_id)
+                        .expect("replica shard should be initialized")
+                };
+            if replica_shard.is_closed() {
                 // TODO
             }
-            let to_position_inclusive = subrequest.to_position_inclusive();
-            // let replica_position_inclusive = replica_shard.replica_position_inclusive;
+            if replica_shard.replication_position_inclusive() != from_position_exclusive {
+                // TODO
+            }
+            let doc_batch = subrequest
+                .doc_batch
+                .expect("leader should not send empty replicate subrequests");
 
-            // TODO: Check if subrequest.from_position_exclusive == replica_position_exclusive.
-            // If not, check if we should skip the subrequest or not.
-            // if subrequest.from_position_exclusive != replica_position_exclusive {
-            //     return Err(IngestV2Error::Internal(format!(
-            //         "Bad replica position: expected {}, got {}.",
-            //         subrequest.replica_position_inclusive, replica_position_exclusive
-            //     )));
-            let Some(doc_batch) = subrequest.doc_batch else {
-                let replicate_success = ReplicateSuccess {
-                    index_uid: subrequest.index_uid,
-                    source_id: subrequest.source_id,
-                    shard_id: subrequest.shard_id,
-                    replica_position_inclusive: subrequest.from_position_exclusive,
-                };
-                replicate_successes.push(replicate_success);
-                continue;
-            };
-            let replica_position_inclusive = if force_commit {
+            let current_position_inclusive: Position = if force_commit {
                 let encoded_mrecords = doc_batch
                     .docs()
                     .map(|doc| MRecord::Doc(doc).encode())
@@ -386,7 +365,8 @@ impl ReplicationTask {
                     .append_records(&queue_id, None, encoded_mrecords)
                     .await
                     .expect("TODO")
-            };
+            }
+            .into();
             let batch_num_bytes = doc_batch.num_bytes() as u64;
             let batch_num_docs = doc_batch.num_docs() as u64;
 
@@ -398,23 +378,23 @@ impl ReplicationTask {
                 .inc_by(batch_num_docs);
 
             let replica_shard = state_guard
-                .replica_shards
+                .shards
                 .get_mut(&queue_id)
                 .expect("replica shard should exist");
 
-            if replica_position_inclusive != to_position_inclusive {
+            if current_position_inclusive != to_position_inclusive {
                 return Err(IngestV2Error::Internal(format!(
                     "bad replica position: expected {to_position_inclusive:?}, got \
-                     {replica_position_inclusive:?}"
+                     {current_position_inclusive:?}"
                 )));
             }
-            replica_shard.set_replica_position_inclusive(replica_position_inclusive);
+            replica_shard.set_replication_position_inclusive(current_position_inclusive.clone());
 
             let replicate_success = ReplicateSuccess {
                 index_uid: subrequest.index_uid,
                 source_id: subrequest.source_id,
                 shard_id: subrequest.shard_id,
-                replica_position_inclusive,
+                replication_position_inclusive: Some(current_position_inclusive),
             };
             replicate_successes.push(replicate_success);
         }
@@ -479,14 +459,13 @@ fn into_replicate_response(ack_replication_message: AckReplicationMessage) -> Re
 mod tests {
     use std::collections::HashMap;
 
-    use bytes::Bytes;
     use mrecordlog::MultiRecordLog;
     use quickwit_proto::ingest::ingester::{ReplicateSubrequest, ReplicateSuccess};
     use quickwit_proto::ingest::DocBatchV2;
     use quickwit_proto::types::queue_id;
 
     use super::*;
-    use crate::ingest_v2::test_utils::{MultiRecordLogTestExt, ReplicaShardTestExt};
+    use crate::ingest_v2::test_utils::MultiRecordLogTestExt;
 
     #[tokio::test]
     async fn test_replication_stream_task() {
@@ -511,7 +490,7 @@ mod tests {
                         index_uid: subrequest.index_uid.clone(),
                         source_id: subrequest.source_id.clone(),
                         shard_id: subrequest.shard_id,
-                        replica_position_inclusive: subrequest.to_position_inclusive(),
+                        replication_position_inclusive: Some(subrequest.to_position_inclusive()),
                     })
                     .collect::<Vec<_>>();
 
@@ -539,29 +518,26 @@ mod tests {
                 ReplicateSubrequest {
                     index_uid: "test-index:0".to_string(),
                     source_id: "test-source".to_string(),
-                    shard_id: 0,
+                    shard_id: 1,
+                    doc_batch: Some(DocBatchV2::for_test(["test-doc-foo"])),
                     from_position_exclusive: None,
-                    doc_batch: None,
+                    to_position_inclusive: Some(Position::from(0u64)),
                 },
                 ReplicateSubrequest {
                     index_uid: "test-index:0".to_string(),
                     source_id: "test-source".to_string(),
-                    shard_id: 1,
+                    shard_id: 2,
+                    doc_batch: Some(DocBatchV2::for_test(["test-doc-bar", "test-doc-baz"])),
                     from_position_exclusive: None,
-                    doc_batch: Some(DocBatchV2 {
-                        doc_buffer: Bytes::from_static(b"test-doc-010"),
-                        doc_lengths: vec![12],
-                    }),
+                    to_position_inclusive: Some(Position::from(1u64)),
                 },
                 ReplicateSubrequest {
                     index_uid: "test-index:1".to_string(),
                     source_id: "test-source".to_string(),
                     shard_id: 1,
-                    from_position_exclusive: Some(0),
-                    doc_batch: Some(DocBatchV2 {
-                        doc_buffer: Bytes::from_static(b"test-doc-111test-doc-112"),
-                        doc_lengths: vec![12],
-                    }),
+                    doc_batch: Some(DocBatchV2::for_test(["test-qux", "test-doc-tux"])),
+                    from_position_exclusive: Some(Position::from(0u64)),
+                    to_position_inclusive: Some(Position::from(2u64)),
                 },
             ],
             replication_seqno: replication_stream_task_handle.next_replication_seqno(),
@@ -577,20 +553,20 @@ mod tests {
         let replicate_success_0 = &replicate_response.successes[0];
         assert_eq!(replicate_success_0.index_uid, "test-index:0");
         assert_eq!(replicate_success_0.source_id, "test-source");
-        assert_eq!(replicate_success_0.shard_id, 0);
-        assert_eq!(replicate_success_0.replica_position_inclusive, None);
-
-        let replicate_success_0 = &replicate_response.successes[1];
-        assert_eq!(replicate_success_0.index_uid, "test-index:0");
-        assert_eq!(replicate_success_0.source_id, "test-source");
         assert_eq!(replicate_success_0.shard_id, 1);
-        assert_eq!(replicate_success_0.replica_position_inclusive, Some(0));
+        assert_eq!(replicate_success_0.replication_position_inclusive(), 0u64);
 
-        let replicate_success_1 = &replicate_response.successes[2];
-        assert_eq!(replicate_success_1.index_uid, "test-index:1");
+        let replicate_success_1 = &replicate_response.successes[1];
+        assert_eq!(replicate_success_1.index_uid, "test-index:0");
         assert_eq!(replicate_success_1.source_id, "test-source");
-        assert_eq!(replicate_success_1.shard_id, 1);
-        assert_eq!(replicate_success_1.replica_position_inclusive, Some(1));
+        assert_eq!(replicate_success_1.shard_id, 2);
+        assert_eq!(replicate_success_1.replication_position_inclusive(), 1u64);
+
+        let replicate_success_2 = &replicate_response.successes[2];
+        assert_eq!(replicate_success_2.index_uid, "test-index:1");
+        assert_eq!(replicate_success_2.source_id, "test-source");
+        assert_eq!(replicate_success_2.shard_id, 1);
+        assert_eq!(replicate_success_2.replication_position_inclusive(), 2u64);
     }
 
     #[tokio::test]
@@ -637,8 +613,7 @@ mod tests {
         let mrecordlog = MultiRecordLog::open(tempdir.path()).await.unwrap();
         let state = Arc::new(RwLock::new(IngesterState {
             mrecordlog,
-            primary_shards: HashMap::new(),
-            replica_shards: HashMap::new(),
+            shards: HashMap::new(),
             replication_streams: HashMap::new(),
             replication_tasks: HashMap::new(),
         }));
@@ -661,29 +636,26 @@ mod tests {
                 ReplicateSubrequest {
                     index_uid: "test-index:0".to_string(),
                     source_id: "test-source".to_string(),
-                    shard_id: 0,
+                    shard_id: 1,
+                    doc_batch: Some(DocBatchV2::for_test(["test-doc-foo"])),
                     from_position_exclusive: None,
-                    doc_batch: None,
+                    to_position_inclusive: Some(Position::from(0u64)),
                 },
                 ReplicateSubrequest {
                     index_uid: "test-index:0".to_string(),
                     source_id: "test-source".to_string(),
-                    shard_id: 1,
+                    shard_id: 2,
+                    doc_batch: Some(DocBatchV2::for_test(["test-doc-bar", "test-doc-baz"])),
                     from_position_exclusive: None,
-                    doc_batch: Some(DocBatchV2 {
-                        doc_buffer: Bytes::from_static(b"test-doc-010"),
-                        doc_lengths: vec![12],
-                    }),
+                    to_position_inclusive: Some(Position::from(1u64)),
                 },
                 ReplicateSubrequest {
                     index_uid: "test-index:1".to_string(),
                     source_id: "test-source".to_string(),
                     shard_id: 1,
+                    doc_batch: Some(DocBatchV2::for_test(["test-doc-qux", "test-doc-tux"])),
                     from_position_exclusive: None,
-                    doc_batch: Some(DocBatchV2 {
-                        doc_buffer: Bytes::from_static(b"test-doc-110test-doc-111"),
-                        doc_lengths: vec![12, 12],
-                    }),
+                    to_position_inclusive: Some(Position::from(1u64)),
                 },
             ],
             replication_seqno: 0,
@@ -704,50 +676,43 @@ mod tests {
         let replicate_success_0 = &replicate_response.successes[0];
         assert_eq!(replicate_success_0.index_uid, "test-index:0");
         assert_eq!(replicate_success_0.source_id, "test-source");
-        assert_eq!(replicate_success_0.shard_id, 0);
-        assert_eq!(replicate_success_0.replica_position_inclusive, None);
+        assert_eq!(replicate_success_0.shard_id, 1);
+        assert_eq!(replicate_success_0.replication_position_inclusive(), 0u64);
 
         let replicate_success_1 = &replicate_response.successes[1];
         assert_eq!(replicate_success_1.index_uid, "test-index:0");
         assert_eq!(replicate_success_1.source_id, "test-source");
-        assert_eq!(replicate_success_1.shard_id, 1);
-        assert_eq!(replicate_success_1.replica_position_inclusive, Some(0));
+        assert_eq!(replicate_success_1.shard_id, 2);
+        assert_eq!(replicate_success_1.replication_position_inclusive(), 1u64);
 
-        let replicate_success_1 = &replicate_response.successes[2];
-        assert_eq!(replicate_success_1.index_uid, "test-index:1");
-        assert_eq!(replicate_success_1.source_id, "test-source");
-        assert_eq!(replicate_success_1.shard_id, 1);
-        assert_eq!(replicate_success_1.replica_position_inclusive, Some(1));
+        let replicate_success_2 = &replicate_response.successes[2];
+        assert_eq!(replicate_success_2.index_uid, "test-index:1");
+        assert_eq!(replicate_success_2.source_id, "test-source");
+        assert_eq!(replicate_success_2.shard_id, 1);
+        assert_eq!(replicate_success_2.replication_position_inclusive(), 1u64);
 
         let state_guard = state.read().await;
 
-        assert!(state_guard.primary_shards.is_empty());
-        assert_eq!(state_guard.replica_shards.len(), 3);
-
-        let queue_id_00 = queue_id("test-index:0", "test-source", 0);
-        let replica_shard_00 = state_guard.replica_shards.get(&queue_id_00).unwrap();
-        replica_shard_00.assert_is_open(None);
-
-        state_guard
-            .mrecordlog
-            .assert_records_eq(&queue_id_00, .., &[]);
-
         let queue_id_01 = queue_id("test-index:0", "test-source", 1);
-        let replica_shard_01 = state_guard.replica_shards.get(&queue_id_01).unwrap();
-        replica_shard_01.assert_is_open(0);
 
         state_guard
             .mrecordlog
-            .assert_records_eq(&queue_id_01, .., &[(0, "\0\0test-doc-010")]);
+            .assert_records_eq(&queue_id_01, .., &[(0, "\0\0test-doc-foo")]);
+
+        let queue_id_02 = queue_id("test-index:0", "test-source", 2);
+
+        state_guard.mrecordlog.assert_records_eq(
+            &queue_id_02,
+            ..,
+            &[(0, "\0\0test-doc-bar"), (1, "\0\0test-doc-baz")],
+        );
 
         let queue_id_11 = queue_id("test-index:1", "test-source", 1);
-        let replica_shard_11 = state_guard.replica_shards.get(&queue_id_11).unwrap();
-        replica_shard_11.assert_is_open(1);
 
         state_guard.mrecordlog.assert_records_eq(
             &queue_id_11,
             ..,
-            &[(0, "\0\0test-doc-110"), (1, "\0\0test-doc-111")],
+            &[(0, "\0\0test-doc-qux"), (1, "\0\0test-doc-tux")],
         );
         drop(state_guard);
 
@@ -759,11 +724,9 @@ mod tests {
                 index_uid: "test-index:0".to_string(),
                 source_id: "test-source".to_string(),
                 shard_id: 1,
-                from_position_exclusive: Some(0),
-                doc_batch: Some(DocBatchV2 {
-                    doc_buffer: Bytes::from_static(b"test-doc-011"),
-                    doc_lengths: vec![12],
-                }),
+                doc_batch: Some(DocBatchV2::for_test(["test-doc-moo"])),
+                from_position_exclusive: Some(Position::from(0u64)),
+                to_position_inclusive: Some(Position::from(1u64)),
             }],
             replication_seqno: 1,
         };
@@ -784,16 +747,14 @@ mod tests {
         assert_eq!(replicate_success_0.index_uid, "test-index:0");
         assert_eq!(replicate_success_0.source_id, "test-source");
         assert_eq!(replicate_success_0.shard_id, 1);
-        assert_eq!(replicate_success_0.replica_position_inclusive, Some(1));
+        assert_eq!(replicate_success_0.replication_position_inclusive(), 1u64);
 
         let state_guard = state.read().await;
 
         state_guard.mrecordlog.assert_records_eq(
             &queue_id_01,
             ..,
-            &[(0, "\0\0test-doc-010"), (1, "\0\0test-doc-011")],
+            &[(0, "\0\0test-doc-foo"), (1, "\0\0test-doc-moo")],
         );
-        let replica_shard_01 = state_guard.replica_shards.get(&queue_id_01).unwrap();
-        replica_shard_01.assert_is_open(1);
     }
 }

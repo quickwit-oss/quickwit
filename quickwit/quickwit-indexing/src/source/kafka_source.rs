@@ -29,10 +29,10 @@ use itertools::Itertools;
 use oneshot;
 use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_config::KafkaSourceParams;
-use quickwit_metastore::checkpoint::{PartitionId, Position, SourceCheckpoint};
+use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpoint};
 use quickwit_metastore::IndexMetadataResponseExt;
 use quickwit_proto::metastore::{IndexMetadataRequest, MetastoreService};
-use quickwit_proto::IndexUid;
+use quickwit_proto::{IndexUid, Position};
 use rdkafka::config::{ClientConfig, RDKafkaLogLevel};
 use rdkafka::consumer::{
     BaseConsumer, CommitMode, Consumer, ConsumerContext, DefaultConsumerContext, Rebalance,
@@ -349,7 +349,7 @@ impl KafkaSource {
         assignment_tx: oneshot::Sender<Vec<(i32, Offset)>>,
     ) -> anyhow::Result<()> {
         let index_metadata_request =
-            IndexMetadataRequest::for_index_uid(self.ctx.index_uid().to_string());
+            IndexMetadataRequest::for_index_uid(self.ctx.index_uid().clone());
         let index_metadata = ctx
             .protect_future(
                 self.ctx
@@ -379,11 +379,14 @@ impl KafkaSource {
                 .unwrap_or(Position::Beginning);
             let next_offset = match &current_position {
                 Position::Beginning => Offset::Beginning,
-                Position::Offset(_) => {
-                    let offset = current_position
+                Position::Offset(offset) => {
+                    let offset = offset
                         .as_i64()
-                        .expect("Kafka offset should be stored as i64.");
+                        .expect("Kafka offset should be stored as i64");
                     Offset::Offset(offset + 1)
+                }
+                Position::Eof => {
+                    panic!("position of a Kafka partition should never be EOF")
                 }
             };
             self.state

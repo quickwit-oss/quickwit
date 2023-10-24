@@ -21,6 +21,13 @@ syntax = "proto3";
 
 package quickwit.ingest;
 
+// The corresponding Rust struct [`crate::types::Position`] is defined manually and
+// externally provided during code generation (see `build.rs`).
+//
+// Modify at your own risk.
+message Position {
+  bytes position = 1;
+}
 
 enum CommitTypeV2 {
     AUTO = 0;
@@ -43,9 +50,8 @@ message MRecordBatch {
 enum ShardState {
     // The shard is open and accepts write requests.
     OPEN = 0;
-    // The shard is open and still accepts write requests, but should no longer be advertised to ingest routers.
-    // It is waiting for its leader or follower to close it with its final replication position, after which write requests will be rejected.
-    CLOSING = 1;
+    // The ingester hosting the shard is unavailable.
+    UNAVAILABLE = 1;
     // The shard is closed and cannot be written to.
     // It can be safely deleted if the publish position is superior or equal to the replication position.
     CLOSED = 2;
@@ -63,12 +69,10 @@ message Shard {
 
     // Mutable fields
     ShardState shard_state = 8;
-    // Position up to which the follower has acknowledged replication of the records written in its log.
-    optional uint64 replication_position_inclusive = 9;
     // Position up to which indexers have indexed and published the records stored in the shard.
     // It is updated asynchronously in a best effort manner by the indexers and indicates the position up to which the log can be safely truncated.
-    string publish_position_inclusive = 10;
+    Position publish_position_inclusive = 9;
     // A publish token that ensures only one indexer works on a given shard at a time.
     // For instance, if an indexer goes rogue, eventually the control plane will detect it and assign the shard to another indexer, which will override the publish token.
-    optional string publish_token = 11;
+    optional string publish_token = 10;
 }

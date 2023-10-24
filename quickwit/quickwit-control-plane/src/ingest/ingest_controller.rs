@@ -33,8 +33,7 @@ use quickwit_proto::ingest::IngestV2Error;
 use quickwit_proto::metastore::{
     EntityKind, MetastoreError, MetastoreService, MetastoreServiceClient,
 };
-use quickwit_proto::types::NodeId;
-use quickwit_proto::{metastore, IndexUid};
+use quickwit_proto::{metastore, IndexUid, NodeId};
 use rand::seq::SliceRandom;
 use tokio::time::timeout;
 

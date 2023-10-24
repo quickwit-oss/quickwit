@@ -24,9 +24,8 @@ use std::time::Duration;
 use async_trait::async_trait;
 use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_config::VecSourceParams;
-use quickwit_metastore::checkpoint::{
-    PartitionId, Position, SourceCheckpoint, SourceCheckpointDelta,
-};
+use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpoint, SourceCheckpointDelta};
+use quickwit_proto::types::Position;
 use serde_json::Value as JsonValue;
 use tracing::info;
 
@@ -43,7 +42,9 @@ pub struct VecSource {
 
 impl fmt::Debug for VecSource {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "VecSource {{ source_id: {} }}", self.source_id)
+        f.debug_struct("VecSource")
+            .field("source_id", &self.source_id)
+            .finish()
     }
 }
 
@@ -59,10 +60,15 @@ impl TypedSourceFactory for VecSourceFactory {
         checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self::Source> {
         let partition = PartitionId::from(params.partition.as_str());
-        let next_item_idx = match checkpoint.position_for_partition(&partition) {
-            Some(Position::Offset(offset_str)) => offset_str.parse::<usize>()? + 1,
-            Some(Position::Beginning) | None => 0,
-        };
+        let next_item_idx = checkpoint
+            .position_for_partition(&partition)
+            .map(|position| {
+                position
+                    .as_usize()
+                    .expect("offset should be stored as usize")
+                    + 1
+            })
+            .unwrap_or(0);
         Ok(VecSource {
             source_id: ctx.source_id().to_string(),
             next_item_idx,
@@ -76,7 +82,7 @@ fn position_from_offset(offset: usize) -> Position {
     if offset == 0 {
         return Position::Beginning;
     }
-    Position::from(offset as u64 - 1)
+    Position::from(offset - 1)
 }
 
 #[async_trait]
@@ -95,7 +101,7 @@ impl Source for VecSource {
                 .cloned(),
         );
         if doc_batch.docs.is_empty() {
-            info!("Reached end of source.");
+            info!("reached end of source");
             ctx.send_exit_with_success(batch_sink).await?;
             return Err(ActorExitStatus::Success);
         }

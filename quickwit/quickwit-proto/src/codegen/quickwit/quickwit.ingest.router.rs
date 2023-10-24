@@ -37,8 +37,9 @@ pub struct IngestSuccess {
     pub source_id: ::prost::alloc::string::String,
     #[prost(uint64, tag = "3")]
     pub shard_id: u64,
-    #[prost(uint64, tag = "4")]
-    pub replication_position: u64,
+    /// Replication position inclusive.
+    #[prost(message, optional, tag = "4")]
+    pub replication_position_inclusive: ::core::option::Option<crate::types::Position>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]

@@ -321,69 +321,6 @@ pub struct AcquireShardsSubresponse {
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct CloseShardsRequest {
-    #[prost(message, repeated, tag = "1")]
-    pub subrequests: ::prost::alloc::vec::Vec<CloseShardsSubrequest>,
-}
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct CloseShardsSubrequest {
-    #[prost(string, tag = "1")]
-    pub index_uid: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub source_id: ::prost::alloc::string::String,
-    #[prost(uint64, tag = "3")]
-    pub shard_id: u64,
-    #[prost(enumeration = "super::ingest::ShardState", tag = "4")]
-    pub shard_state: i32,
-    #[prost(uint64, optional, tag = "5")]
-    pub replication_position_inclusive: ::core::option::Option<u64>,
-}
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct CloseShardsResponse {
-    #[prost(message, repeated, tag = "1")]
-    pub successes: ::prost::alloc::vec::Vec<CloseShardsSuccess>,
-    #[prost(message, repeated, tag = "2")]
-    pub failures: ::prost::alloc::vec::Vec<CloseShardsFailure>,
-}
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct CloseShardsSuccess {
-    #[prost(string, tag = "1")]
-    pub index_uid: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub source_id: ::prost::alloc::string::String,
-    #[prost(uint64, tag = "3")]
-    pub shard_id: u64,
-    #[prost(string, tag = "4")]
-    pub leader_id: ::prost::alloc::string::String,
-    #[prost(string, optional, tag = "5")]
-    pub follower_id: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(string, tag = "6")]
-    pub publish_position_inclusive: ::prost::alloc::string::String,
-}
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct CloseShardsFailure {
-    #[prost(string, tag = "1")]
-    pub index_uid: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub source_id: ::prost::alloc::string::String,
-    #[prost(uint64, tag = "3")]
-    pub shard_id: u64,
-    #[prost(enumeration = "CloseShardsFailureKind", tag = "4")]
-    pub failure_kind: i32,
-    #[prost(string, tag = "5")]
-    pub failure_message: ::prost::alloc::string::String,
-}
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DeleteShardsRequest {
     #[prost(message, repeated, tag = "1")]
     pub subrequests: ::prost::alloc::vec::Vec<DeleteShardsSubrequest>,
@@ -498,34 +435,6 @@ impl SourceType {
         }
     }
 }
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[serde(rename_all = "snake_case")]
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
-#[repr(i32)]
-pub enum CloseShardsFailureKind {
-    InvalidArgument = 0,
-    NotFound = 1,
-}
-impl CloseShardsFailureKind {
-    /// String value of the enum field names used in the ProtoBuf definition.
-    ///
-    /// The values are not transformed in any way and thus are considered stable
-    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
-    pub fn as_str_name(&self) -> &'static str {
-        match self {
-            CloseShardsFailureKind::InvalidArgument => "INVALID_ARGUMENT",
-            CloseShardsFailureKind::NotFound => "NOT_FOUND",
-        }
-    }
-    /// Creates an enum from field names used in the ProtoBuf definition.
-    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
-        match value {
-            "INVALID_ARGUMENT" => Some(Self::InvalidArgument),
-            "NOT_FOUND" => Some(Self::NotFound),
-            _ => None,
-        }
-    }
-}
 /// BEGIN quickwit-codegen
 use tower::{Layer, Service, ServiceExt};
 use quickwit_common::metrics::{PrometheusLabels, OwnedPrometheusLabels};
@@ -633,11 +542,6 @@ impl PrometheusLabels<1> for OpenShardsRequest {
 impl PrometheusLabels<1> for AcquireShardsRequest {
     fn labels(&self) -> OwnedPrometheusLabels<1usize> {
         OwnedPrometheusLabels::new([std::borrow::Cow::Borrowed("acquire_shards")])
-    }
-}
-impl PrometheusLabels<1> for CloseShardsRequest {
-    fn labels(&self) -> OwnedPrometheusLabels<1usize> {
-        OwnedPrometheusLabels::new([std::borrow::Cow::Borrowed("close_shards")])
     }
 }
 impl PrometheusLabels<1> for DeleteShardsRequest {
@@ -754,10 +658,6 @@ pub trait MetastoreService: std::fmt::Debug + dyn_clone::DynClone + Send + Sync 
         &mut self,
         request: AcquireShardsRequest,
     ) -> crate::metastore::MetastoreResult<AcquireShardsResponse>;
-    async fn close_shards(
-        &mut self,
-        request: CloseShardsRequest,
-    ) -> crate::metastore::MetastoreResult<CloseShardsResponse>;
     async fn delete_shards(
         &mut self,
         request: DeleteShardsRequest,
@@ -963,12 +863,6 @@ impl MetastoreService for MetastoreServiceClient {
     ) -> crate::metastore::MetastoreResult<AcquireShardsResponse> {
         self.inner.acquire_shards(request).await
     }
-    async fn close_shards(
-        &mut self,
-        request: CloseShardsRequest,
-    ) -> crate::metastore::MetastoreResult<CloseShardsResponse> {
-        self.inner.close_shards(request).await
-    }
     async fn delete_shards(
         &mut self,
         request: DeleteShardsRequest,
@@ -1118,12 +1012,6 @@ pub mod metastore_service_mock {
             request: super::AcquireShardsRequest,
         ) -> crate::metastore::MetastoreResult<super::AcquireShardsResponse> {
             self.inner.lock().await.acquire_shards(request).await
-        }
-        async fn close_shards(
-            &mut self,
-            request: super::CloseShardsRequest,
-        ) -> crate::metastore::MetastoreResult<super::CloseShardsResponse> {
-            self.inner.lock().await.close_shards(request).await
         }
         async fn delete_shards(
             &mut self,
@@ -1476,22 +1364,6 @@ impl tower::Service<AcquireShardsRequest> for Box<dyn MetastoreService> {
         Box::pin(fut)
     }
 }
-impl tower::Service<CloseShardsRequest> for Box<dyn MetastoreService> {
-    type Response = CloseShardsResponse;
-    type Error = crate::metastore::MetastoreError;
-    type Future = BoxFuture<Self::Response, Self::Error>;
-    fn poll_ready(
-        &mut self,
-        _cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<(), Self::Error>> {
-        std::task::Poll::Ready(Ok(()))
-    }
-    fn call(&mut self, request: CloseShardsRequest) -> Self::Future {
-        let mut svc = self.clone();
-        let fut = async move { svc.close_shards(request).await };
-        Box::pin(fut)
-    }
-}
 impl tower::Service<DeleteShardsRequest> for Box<dyn MetastoreService> {
     type Response = DeleteShardsResponse;
     type Error = crate::metastore::MetastoreError;
@@ -1628,11 +1500,6 @@ struct MetastoreServiceTowerBlock {
         AcquireShardsResponse,
         crate::metastore::MetastoreError,
     >,
-    close_shards_svc: quickwit_common::tower::BoxService<
-        CloseShardsRequest,
-        CloseShardsResponse,
-        crate::metastore::MetastoreError,
-    >,
     delete_shards_svc: quickwit_common::tower::BoxService<
         DeleteShardsRequest,
         DeleteShardsResponse,
@@ -1670,7 +1537,6 @@ impl Clone for MetastoreServiceTowerBlock {
             list_stale_splits_svc: self.list_stale_splits_svc.clone(),
             open_shards_svc: self.open_shards_svc.clone(),
             acquire_shards_svc: self.acquire_shards_svc.clone(),
-            close_shards_svc: self.close_shards_svc.clone(),
             delete_shards_svc: self.delete_shards_svc.clone(),
             list_shards_svc: self.list_shards_svc.clone(),
         }
@@ -1797,12 +1663,6 @@ impl MetastoreService for MetastoreServiceTowerBlock {
         request: AcquireShardsRequest,
     ) -> crate::metastore::MetastoreResult<AcquireShardsResponse> {
         self.acquire_shards_svc.ready().await?.call(request).await
-    }
-    async fn close_shards(
-        &mut self,
-        request: CloseShardsRequest,
-    ) -> crate::metastore::MetastoreResult<CloseShardsResponse> {
-        self.close_shards_svc.ready().await?.call(request).await
     }
     async fn delete_shards(
         &mut self,
@@ -2006,15 +1866,6 @@ pub struct MetastoreServiceTowerBlockBuilder {
         >,
     >,
     #[allow(clippy::type_complexity)]
-    close_shards_layer: Option<
-        quickwit_common::tower::BoxLayer<
-            Box<dyn MetastoreService>,
-            CloseShardsRequest,
-            CloseShardsResponse,
-            crate::metastore::MetastoreError,
-        >,
-    >,
-    #[allow(clippy::type_complexity)]
     delete_shards_layer: Option<
         quickwit_common::tower::BoxLayer<
             Box<dyn MetastoreService>,
@@ -2166,12 +2017,6 @@ impl MetastoreServiceTowerBlockBuilder {
             > + Clone + Send + Sync + 'static,
         <L::Service as tower::Service<AcquireShardsRequest>>::Future: Send + 'static,
         L::Service: tower::Service<
-                CloseShardsRequest,
-                Response = CloseShardsResponse,
-                Error = crate::metastore::MetastoreError,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<CloseShardsRequest>>::Future: Send + 'static,
-        L::Service: tower::Service<
                 DeleteShardsRequest,
                 Response = DeleteShardsResponse,
                 Error = crate::metastore::MetastoreError,
@@ -2262,10 +2107,6 @@ impl MetastoreServiceTowerBlockBuilder {
         );
         self
             .acquire_shards_layer = Some(
-            quickwit_common::tower::BoxLayer::new(layer.clone()),
-        );
-        self
-            .close_shards_layer = Some(
             quickwit_common::tower::BoxLayer::new(layer.clone()),
         );
         self
@@ -2567,19 +2408,6 @@ impl MetastoreServiceTowerBlockBuilder {
         self.acquire_shards_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
-    pub fn close_shards_layer<L>(mut self, layer: L) -> Self
-    where
-        L: tower::Layer<Box<dyn MetastoreService>> + Send + Sync + 'static,
-        L::Service: tower::Service<
-                CloseShardsRequest,
-                Response = CloseShardsResponse,
-                Error = crate::metastore::MetastoreError,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<CloseShardsRequest>>::Future: Send + 'static,
-    {
-        self.close_shards_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
-        self
-    }
     pub fn delete_shards_layer<L>(mut self, layer: L) -> Self
     where
         L: tower::Layer<Box<dyn MetastoreService>> + Send + Sync + 'static,
@@ -2752,11 +2580,6 @@ impl MetastoreServiceTowerBlockBuilder {
         } else {
             quickwit_common::tower::BoxService::new(boxed_instance.clone())
         };
-        let close_shards_svc = if let Some(layer) = self.close_shards_layer {
-            layer.layer(boxed_instance.clone())
-        } else {
-            quickwit_common::tower::BoxService::new(boxed_instance.clone())
-        };
         let delete_shards_svc = if let Some(layer) = self.delete_shards_layer {
             layer.layer(boxed_instance.clone())
         } else {
@@ -2789,7 +2612,6 @@ impl MetastoreServiceTowerBlockBuilder {
             list_stale_splits_svc,
             open_shards_svc,
             acquire_shards_svc,
-            close_shards_svc,
             delete_shards_svc,
             list_shards_svc,
         };
@@ -2998,12 +2820,6 @@ where
             Future = BoxFuture<AcquireShardsResponse, crate::metastore::MetastoreError>,
         >
         + tower::Service<
-            CloseShardsRequest,
-            Response = CloseShardsResponse,
-            Error = crate::metastore::MetastoreError,
-            Future = BoxFuture<CloseShardsResponse, crate::metastore::MetastoreError>,
-        >
-        + tower::Service<
             DeleteShardsRequest,
             Response = DeleteShardsResponse,
             Error = crate::metastore::MetastoreError,
@@ -3134,12 +2950,6 @@ where
         &mut self,
         request: AcquireShardsRequest,
     ) -> crate::metastore::MetastoreResult<AcquireShardsResponse> {
-        self.call(request).await
-    }
-    async fn close_shards(
-        &mut self,
-        request: CloseShardsRequest,
-    ) -> crate::metastore::MetastoreResult<CloseShardsResponse> {
         self.call(request).await
     }
     async fn delete_shards(
@@ -3397,16 +3207,6 @@ where
     ) -> crate::metastore::MetastoreResult<AcquireShardsResponse> {
         self.inner
             .acquire_shards(request)
-            .await
-            .map(|response| response.into_inner())
-            .map_err(|error| error.into())
-    }
-    async fn close_shards(
-        &mut self,
-        request: CloseShardsRequest,
-    ) -> crate::metastore::MetastoreResult<CloseShardsResponse> {
-        self.inner
-            .close_shards(request)
             .await
             .map(|response| response.into_inner())
             .map_err(|error| error.into())
@@ -3680,17 +3480,6 @@ for MetastoreServiceGrpcServerAdapter {
         self.inner
             .clone()
             .acquire_shards(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(|error| error.into())
-    }
-    async fn close_shards(
-        &self,
-        request: tonic::Request<CloseShardsRequest>,
-    ) -> Result<tonic::Response<CloseShardsResponse>, tonic::Status> {
-        self.inner
-            .clone()
-            .close_shards(request.into_inner())
             .await
             .map(tonic::Response::new)
             .map_err(|error| error.into())
@@ -4376,33 +4165,6 @@ pub mod metastore_service_grpc_client {
                 );
             self.inner.unary(req, path, codec).await
         }
-        pub async fn close_shards(
-            &mut self,
-            request: impl tonic::IntoRequest<super::CloseShardsRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::CloseShardsResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/quickwit.metastore.MetastoreService/CloseShards",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new("quickwit.metastore.MetastoreService", "CloseShards"),
-                );
-            self.inner.unary(req, path, codec).await
-        }
         pub async fn delete_shards(
             &mut self,
             request: impl tonic::IntoRequest<super::DeleteShardsRequest>,
@@ -4598,13 +4360,6 @@ pub mod metastore_service_grpc_server {
             request: tonic::Request<super::AcquireShardsRequest>,
         ) -> std::result::Result<
             tonic::Response<super::AcquireShardsResponse>,
-            tonic::Status,
-        >;
-        async fn close_shards(
-            &self,
-            request: tonic::Request<super::CloseShardsRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::CloseShardsResponse>,
             tonic::Status,
         >;
         async fn delete_shards(
@@ -5606,52 +5361,6 @@ pub mod metastore_service_grpc_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = AcquireShardsSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/quickwit.metastore.MetastoreService/CloseShards" => {
-                    #[allow(non_camel_case_types)]
-                    struct CloseShardsSvc<T: MetastoreServiceGrpc>(pub Arc<T>);
-                    impl<
-                        T: MetastoreServiceGrpc,
-                    > tonic::server::UnaryService<super::CloseShardsRequest>
-                    for CloseShardsSvc<T> {
-                        type Response = super::CloseShardsResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<super::CloseShardsRequest>,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                (*inner).close_shards(request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let inner = inner.0;
-                        let method = CloseShardsSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

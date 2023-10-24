@@ -17,11 +17,13 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+// use quickwit_common::pubsub::Event;
+
 use quickwit_common::pubsub::Event;
 
 use super::{
-    AddSourceRequest, CloseShardsRequest, CreateIndexRequest, DeleteIndexRequest,
-    DeleteShardsRequest, DeleteSourceRequest, SourceType, ToggleSourceRequest,
+    AddSourceRequest, CreateIndexRequest, DeleteIndexRequest, DeleteSourceRequest, SourceType,
+    ToggleSourceRequest,
 };
 use crate::{IndexUid, SourceId};
 
@@ -63,12 +65,6 @@ pub struct DeleteSourceEvent {
     pub source_id: SourceId,
 }
 
-impl Event for AddSourceEvent {}
-impl Event for DeleteIndexEvent {}
-impl Event for DeleteSourceEvent {}
-impl Event for ToggleSourceEvent {}
-impl Event for CloseShardsRequest {}
-impl Event for DeleteShardsRequest {}
 impl Event for AddSourceRequest {}
 impl Event for CreateIndexRequest {}
 impl Event for DeleteIndexRequest {}

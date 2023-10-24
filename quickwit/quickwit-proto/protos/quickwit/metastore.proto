@@ -108,8 +108,6 @@ service MetastoreService {
   // list of acquired shards along with the positions to index from.
   rpc AcquireShards(AcquireShardsRequest) returns (AcquireShardsResponse);
 
-  rpc CloseShards(CloseShardsRequest) returns (CloseShardsResponse);
-
   rpc DeleteShards(DeleteShardsRequest) returns (DeleteShardsResponse);
 
   rpc ListShards(ListShardsRequest) returns (ListShardsResponse);
@@ -301,45 +299,6 @@ message AcquireShardsSubresponse {
     string index_uid = 1;
     string source_id = 2;
     repeated quickwit.ingest.Shard acquired_shards = 3;
-}
-
-message CloseShardsRequest {
-  repeated CloseShardsSubrequest subrequests = 1;
-}
-
-message CloseShardsSubrequest {
-    string index_uid = 1;
-    string source_id = 2;
-    uint64 shard_id = 3;
-    quickwit.ingest.ShardState shard_state = 4;
-    optional uint64 replication_position_inclusive = 5;
-}
-
-message CloseShardsResponse {
-  repeated CloseShardsSuccess successes = 1;
-  repeated CloseShardsFailure failures = 2;
-}
-
-message CloseShardsSuccess {
-    string index_uid = 1;
-    string source_id = 2;
-    uint64 shard_id = 3;
-    string leader_id = 4;
-    optional string follower_id = 5;
-    string publish_position_inclusive = 6;
-}
-
-enum CloseShardsFailureKind {
-    INVALID_ARGUMENT = 0;
-    NOT_FOUND = 1;
-}
-
-message CloseShardsFailure {
-    string index_uid = 1;
-    string source_id = 2;
-    uint64 shard_id = 3;
-    CloseShardsFailureKind failure_kind = 4;
-    string failure_message = 5;
 }
 
 message DeleteShardsRequest {

@@ -29,7 +29,8 @@ use bytes::Bytes;
 use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_common::uri::Uri;
 use quickwit_config::FileSourceParams;
-use quickwit_metastore::checkpoint::{PartitionId, Position, SourceCheckpoint};
+use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpoint};
+use quickwit_proto::types::Position;
 use serde::Serialize;
 use tokio::io::{AsyncBufReadExt, AsyncRead, BufReader};
 use tracing::info;
@@ -140,11 +141,14 @@ impl TypedSourceFactory for FileSourceFactory {
         let mut offset = 0;
         let reader: Box<dyn AsyncRead + Send + Unpin> = if let Some(filepath) = &params.filepath {
             let partition_id = PartitionId::from(filepath.to_string_lossy().to_string());
-            if let Some(Position::Offset(offset_str)) =
-                checkpoint.position_for_partition(&partition_id).cloned()
-            {
-                offset = offset_str.parse::<usize>()?;
-            }
+            offset = checkpoint
+                .position_for_partition(&partition_id)
+                .map(|position| {
+                    position
+                        .as_usize()
+                        .expect("file offset should be stored as usize")
+                })
+                .unwrap_or(0);
             let (dir_uri, file_name) = dir_and_filename(filepath)?;
             let storage = ctx.storage_resolver.resolve(&dir_uri).await?;
             let file_size = storage.file_num_bytes(file_name).await?.try_into().unwrap();

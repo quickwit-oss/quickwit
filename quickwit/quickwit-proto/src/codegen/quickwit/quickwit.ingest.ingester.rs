@@ -45,8 +45,8 @@ pub struct PersistSuccess {
     pub source_id: ::prost::alloc::string::String,
     #[prost(uint64, tag = "3")]
     pub shard_id: u64,
-    #[prost(uint64, optional, tag = "4")]
-    pub replication_position_inclusive: ::core::option::Option<u64>,
+    #[prost(message, optional, tag = "4")]
+    pub replication_position_inclusive: ::core::option::Option<crate::types::Position>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -140,8 +140,10 @@ pub struct ReplicateSubrequest {
     pub source_id: ::prost::alloc::string::String,
     #[prost(uint64, tag = "3")]
     pub shard_id: u64,
-    #[prost(uint64, optional, tag = "4")]
-    pub from_position_exclusive: ::core::option::Option<u64>,
+    #[prost(message, optional, tag = "4")]
+    pub from_position_exclusive: ::core::option::Option<crate::types::Position>,
+    #[prost(message, optional, tag = "5")]
+    pub to_position_inclusive: ::core::option::Option<crate::types::Position>,
     #[prost(message, optional, tag = "6")]
     pub doc_batch: ::core::option::Option<super::DocBatchV2>,
 }
@@ -169,8 +171,8 @@ pub struct ReplicateSuccess {
     pub source_id: ::prost::alloc::string::String,
     #[prost(uint64, tag = "3")]
     pub shard_id: u64,
-    #[prost(uint64, optional, tag = "4")]
-    pub replica_position_inclusive: ::core::option::Option<u64>,
+    #[prost(message, optional, tag = "4")]
+    pub replication_position_inclusive: ::core::option::Option<crate::types::Position>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -204,8 +206,8 @@ pub struct TruncateSubrequest {
     pub source_id: ::prost::alloc::string::String,
     #[prost(uint64, tag = "3")]
     pub shard_id: u64,
-    #[prost(uint64, tag = "4")]
-    pub to_position_inclusive: u64,
+    #[prost(message, optional, tag = "4")]
+    pub to_position_inclusive: ::core::option::Option<crate::types::Position>,
 }
 /// TODO
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
@@ -224,10 +226,10 @@ pub struct OpenFetchStreamRequest {
     pub source_id: ::prost::alloc::string::String,
     #[prost(uint64, tag = "4")]
     pub shard_id: u64,
-    #[prost(uint64, optional, tag = "5")]
-    pub from_position_exclusive: ::core::option::Option<u64>,
-    #[prost(uint64, optional, tag = "6")]
-    pub to_position_inclusive: ::core::option::Option<u64>,
+    #[prost(message, optional, tag = "5")]
+    pub from_position_exclusive: ::core::option::Option<crate::types::Position>,
+    #[prost(message, optional, tag = "6")]
+    pub to_position_inclusive: ::core::option::Option<crate::types::Position>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -239,10 +241,12 @@ pub struct FetchResponseV2 {
     pub source_id: ::prost::alloc::string::String,
     #[prost(uint64, tag = "3")]
     pub shard_id: u64,
-    #[prost(uint64, tag = "4")]
-    pub from_position_inclusive: u64,
-    #[prost(message, optional, tag = "5")]
+    #[prost(message, optional, tag = "4")]
     pub mrecord_batch: ::core::option::Option<super::MRecordBatch>,
+    #[prost(message, optional, tag = "5")]
+    pub from_position_exclusive: ::core::option::Option<crate::types::Position>,
+    #[prost(message, optional, tag = "6")]
+    pub to_position_inclusive: ::core::option::Option<crate::types::Position>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]

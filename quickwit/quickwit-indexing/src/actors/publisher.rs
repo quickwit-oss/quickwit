@@ -193,11 +193,11 @@ impl Handler<SplitsUpdate> for Publisher {
 mod tests {
     use quickwit_actors::Universe;
     use quickwit_metastore::checkpoint::{
-        IndexCheckpointDelta, PartitionId, Position, SourceCheckpoint, SourceCheckpointDelta,
+        IndexCheckpointDelta, PartitionId, SourceCheckpoint, SourceCheckpointDelta,
     };
     use quickwit_metastore::{PublishSplitsRequestExt, SplitMetadata};
     use quickwit_proto::metastore::EmptyResponse;
-    use quickwit_proto::IndexUid;
+    use quickwit_proto::{IndexUid, Position};
     use tracing::Span;
 
     use super::*;

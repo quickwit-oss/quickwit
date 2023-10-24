@@ -31,9 +31,8 @@ use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_aws::get_aws_config;
 use quickwit_common::retry::RetryParams;
 use quickwit_config::{KinesisSourceParams, RegionOrEndpoint};
-use quickwit_metastore::checkpoint::{
-    PartitionId, Position, SourceCheckpoint, SourceCheckpointDelta,
-};
+use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpoint, SourceCheckpointDelta};
+use quickwit_proto::types::Position;
 use serde_json::{json, Value as JsonValue};
 use tokio::sync::mpsc;
 use tokio::time;
@@ -144,15 +143,16 @@ impl KinesisSource {
     fn spawn_shard_consumer(&mut self, ctx: &SourceContext, shard_id: ShardId) {
         assert!(!self.state.shard_consumers.contains_key(&shard_id));
 
-        let partition_id = PartitionId::from(shard_id.as_ref());
+        let partition_id = PartitionId::from(shard_id.as_str());
         let position = self
             .checkpoint
             .position_for_partition(&partition_id)
             .cloned()
             .unwrap_or(Position::Beginning);
         let from_sequence_number_exclusive = match &position {
-            Position::Offset(offset) => Some(offset.to_string()),
             Position::Beginning => None,
+            Position::Offset(offset) => Some(offset.to_string()),
+            Position::Eof => panic!("position of a Kinesis shard should never be EOF"),
         };
         let shard_consumer = ShardConsumer::new(
             self.stream_name.clone(),

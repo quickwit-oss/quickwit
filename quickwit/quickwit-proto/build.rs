@@ -79,7 +79,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Ingest service (metastore service proto should be generated before ingest).
     let mut prost_config = prost_build::Config::default();
     prost_config
-        .bytes(["DocBatchV2.doc_buffer", "MRecordBatch.mrecord_buffer"])
+        .bytes([
+            "DocBatchV2.doc_buffer",
+            "MRecordBatch.mrecord_buffer",
+            "Position.position",
+        ])
+        .extern_path(".quickwit.ingest.Position", "crate::types::Position")
         .type_attribute("Shard", "#[derive(Eq)]")
         .field_attribute(
             "Shard.follower_id",
@@ -87,7 +92,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         )
         .field_attribute(
             "Shard.publish_position_inclusive",
-            "#[serde(default, skip_serializing_if = \"String::is_empty\")]",
+            "#[serde(default, skip_serializing_if = \"Option::is_none\")]",
         )
         .field_attribute(
             "Shard.publish_token",

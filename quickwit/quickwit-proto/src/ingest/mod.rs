@@ -19,9 +19,11 @@
 
 use bytes::Bytes;
 
+use self::ingester::FetchResponseV2;
 use super::types::{NodeId, ShardId, SourceId};
-use super::{IndexUid, ServiceError, ServiceErrorCode};
+use super::{ServiceError, ServiceErrorCode};
 use crate::control_plane::ControlPlaneError;
+use crate::types::{queue_id, IndexUid, Position};
 
 pub mod ingester;
 pub mod router;
@@ -133,6 +135,16 @@ impl DocBatchV2 {
     }
 }
 
+impl FetchResponseV2 {
+    pub fn from_position_exclusive(&self) -> Position {
+        self.from_position_exclusive.clone().unwrap_or_default()
+    }
+
+    pub fn to_position_inclusive(&self) -> Position {
+        self.to_position_inclusive.clone().unwrap_or_default()
+    }
+}
+
 impl MRecordBatch {
     pub fn encoded_mrecords(&self) -> impl Iterator<Item = Bytes> + '_ {
         self.mrecord_lengths
@@ -160,31 +172,23 @@ impl MRecordBatch {
 
 impl Shard {
     pub fn is_open(&self) -> bool {
-        self.shard_state() == ShardState::Open
+        self.shard_state().is_open()
     }
 
-    pub fn is_closing(&self) -> bool {
-        self.shard_state() == ShardState::Closing
+    pub fn is_unavailable(&self) -> bool {
+        self.shard_state().is_unavailable()
     }
 
     pub fn is_closed(&self) -> bool {
-        self.shard_state() == ShardState::Closed
-    }
-
-    pub fn is_deletable(&self) -> bool {
-        self.is_closed() && !self.has_unpublished_docs()
-    }
-
-    pub fn is_indexable(&self) -> bool {
-        !self.is_closed() || self.has_unpublished_docs()
-    }
-
-    pub fn has_unpublished_docs(&self) -> bool {
-        self.publish_position_inclusive.parse::<u64>().ok() < self.replication_position_inclusive
+        self.shard_state().is_closed()
     }
 
     pub fn queue_id(&self) -> super::types::QueueId {
-        super::types::queue_id(&self.index_uid, &self.source_id, self.shard_id)
+        queue_id(&self.index_uid, &self.source_id, self.shard_id)
+    }
+
+    pub fn publish_position_inclusive(&self) -> Position {
+        self.publish_position_inclusive.clone().unwrap_or_default()
     }
 }
 
@@ -193,40 +197,11 @@ impl ShardState {
         *self == ShardState::Open
     }
 
-    pub fn is_closing(&self) -> bool {
-        *self == ShardState::Closing
+    pub fn is_unavailable(&self) -> bool {
+        *self == ShardState::Unavailable
     }
 
     pub fn is_closed(&self) -> bool {
         *self == ShardState::Closed
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_shard_as_unpublished_docs() {
-        let shard = Shard {
-            publish_position_inclusive: "".to_string(),
-            replication_position_inclusive: None,
-            ..Default::default()
-        };
-        assert!(!shard.has_unpublished_docs());
-
-        let shard = Shard {
-            publish_position_inclusive: "".to_string(),
-            replication_position_inclusive: Some(0),
-            ..Default::default()
-        };
-        assert!(shard.has_unpublished_docs());
-
-        let shard = Shard {
-            publish_position_inclusive: "0".to_string(),
-            replication_position_inclusive: Some(0),
-            ..Default::default()
-        };
-        assert!(!shard.has_unpublished_docs());
     }
 }

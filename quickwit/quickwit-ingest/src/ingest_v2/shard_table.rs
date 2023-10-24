@@ -21,8 +21,7 @@ use std::collections::HashMap;
 use std::sync::atomic::{AtomicUsize, Ordering};
 
 use quickwit_proto::ingest::Shard;
-use quickwit_proto::types::SourceId;
-use quickwit_proto::{IndexId, NodeId};
+use quickwit_proto::types::{IndexId, NodeId, SourceId};
 
 /// A set of open shards for a given index and source.
 #[derive(Debug, Default)]

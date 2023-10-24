@@ -157,9 +157,7 @@ impl DeleteTaskPipeline {
         );
         let index_config = self
             .metastore
-            .index_metadata(IndexMetadataRequest::for_index_uid(
-                self.index_uid.to_string(),
-            ))
+            .index_metadata(IndexMetadataRequest::for_index_uid(self.index_uid.clone()))
             .await?
             .deserialize_index_metadata()?
             .into_index_config();

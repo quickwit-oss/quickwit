@@ -17,262 +17,178 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::cmp;
+use std::fmt;
 
 use quickwit_proto::ingest::ShardState;
-use quickwit_proto::NodeId;
+use quickwit_proto::types::{NodeId, Position};
 use tokio::sync::watch;
 
-#[derive(Debug, Clone, Eq, PartialEq)]
-pub(super) struct ShardStatus {
-    /// Current state of the shard.
+/// Shard hosted on a leader node and replicated on a follower node.
+pub(super) struct PrimaryShard {
+    pub follower_id: NodeId,
     pub shard_state: ShardState,
-    /// Position up to which indexers have indexed and published the records stored in the shard.
-    pub publish_position_inclusive: Position,
-    /// Position up to which the follower has acknowledged replication of the records written in
-    /// its log.
+    /// Position of the last record written in the shard's mrecordlog queue.
     pub replication_position_inclusive: Position,
+    pub new_records_tx: watch::Sender<()>,
+    pub new_records_rx: watch::Receiver<()>,
 }
 
-impl Default for ShardStatus {
+impl fmt::Debug for PrimaryShard {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("PrimaryShard")
+            .field("follower_id", &self.follower_id)
+            .field("shard_state", &self.shard_state)
+            .finish()
+    }
+}
+
+impl PrimaryShard {
+    pub fn new(follower_id: NodeId) -> Self {
+        let (new_records_tx, new_records_rx) = watch::channel(());
+        Self {
+            follower_id,
+            shard_state: ShardState::Open,
+            replication_position_inclusive: Position::Beginning,
+            new_records_tx,
+            new_records_rx,
+        }
+    }
+}
+
+/// Shard hosted on a follower node and replicated from a leader node.
+pub(super) struct ReplicaShard {
+    pub leader_id: NodeId,
+    pub shard_state: ShardState,
+    /// Position of the last record written in the shard's mrecordlog queue.
+    pub replication_position_inclusive: Position,
+    pub new_records_tx: watch::Sender<()>,
+    pub new_records_rx: watch::Receiver<()>,
+}
+
+impl fmt::Debug for ReplicaShard {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("ReplicaShard")
+            .field("leader_id", &self.leader_id)
+            .field("shard_state", &self.shard_state)
+            .finish()
+    }
+}
+
+impl ReplicaShard {
+    pub fn new(leader_id: NodeId) -> Self {
+        let (new_records_tx, new_records_rx) = watch::channel(());
+        Self {
+            leader_id,
+            shard_state: ShardState::Open,
+            replication_position_inclusive: Position::Beginning,
+            new_records_tx,
+            new_records_rx,
+        }
+    }
+}
+
+/// A shard hosted on a single node when the replication factor is set to 1. When a shard is
+/// recovered after a node failure, it is always recreated as a solo shard in closed state.
+pub(super) struct SoloShard {
+    pub shard_state: ShardState,
+    /// Position of the last record written in the shard's mrecordlog queue.
+    pub replication_position_inclusive: Position,
+    pub new_records_tx: watch::Sender<()>,
+    pub new_records_rx: watch::Receiver<()>,
+}
+
+impl fmt::Debug for SoloShard {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        f.debug_struct("SoloShard")
+            .field("shard_state", &self.shard_state)
+            .finish()
+    }
+}
+
+impl Default for SoloShard {
     fn default() -> Self {
+        let (new_records_tx, new_records_rx) = watch::channel(());
         Self {
             shard_state: ShardState::Open,
-            publish_position_inclusive: Position::default(),
-            replication_position_inclusive: Position::default(),
+            replication_position_inclusive: Position::Beginning,
+            new_records_tx,
+            new_records_rx,
         }
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Ord, PartialOrd, Hash)]
-pub(super) enum Position {
-    #[default]
-    Beginning,
-    Offset(u64),
-}
-
-impl Position {
-    pub fn offset(&self) -> Option<u64> {
-        match self {
-            Position::Beginning => None,
-            Position::Offset(offset) => Some(*offset),
-        }
-    }
-}
-
-impl PartialEq<u64> for Position {
-    fn eq(&self, other: &u64) -> bool {
-        match self {
-            Position::Beginning => false,
-            Position::Offset(offset) => offset == other,
-        }
-    }
-}
-
-impl PartialOrd<u64> for Position {
-    fn partial_cmp(&self, other: &u64) -> Option<cmp::Ordering> {
-        match self {
-            Position::Beginning => Some(cmp::Ordering::Less),
-            Position::Offset(offset) => offset.partial_cmp(other),
-        }
-    }
-}
-
-impl From<u64> for Position {
-    fn from(offset: u64) -> Self {
-        Position::Offset(offset)
-    }
-}
-
-impl From<Option<u64>> for Position {
-    fn from(offset_opt: Option<u64>) -> Self {
-        match offset_opt {
-            Some(offset) => Position::Offset(offset),
-            None => Position::Beginning,
-        }
-    }
-}
-
-impl From<String> for Position {
-    fn from(position_str: String) -> Self {
-        if position_str.is_empty() {
-            Position::Beginning
-        } else {
-            let offset = position_str
-                .parse::<u64>()
-                .expect("position should be a u64");
-            Position::Offset(offset)
-        }
-    }
-}
-
-/// Records the state of a primary shard managed by a leader.
-pub(super) struct PrimaryShard {
-    /// Node ID of the ingester on which the replica shard is hosted. `None` if the replication
-    /// factor is 1.
-    pub follower_id_opt: Option<NodeId>,
-    /// Current state of the shard.
-    pub shard_state: ShardState,
-    /// Position up to which indexers have indexed and published the data stored in the shard.
-    /// It is updated asynchronously in a best effort manner by the indexers and indicates the
-    /// position up to which the log can be safely truncated. When the shard is closed, the
-    /// publish position has reached the replication position, and the deletion grace period has
-    /// passed, the shard can be safely deleted (see [`GcTask`] more details about the deletion
-    /// logic).
-    pub publish_position_inclusive: Position,
-    /// Position up to which the leader has written records in its log.
-    pub primary_position_inclusive: Position,
-    /// Position up to which the follower has acknowledged replication of the records written in
-    /// its log.
-    pub replica_position_inclusive_opt: Option<Position>,
-    /// Channel to notify readers that new records have been written to the shard.
-    pub shard_status_tx: watch::Sender<ShardStatus>,
-    pub shard_status_rx: watch::Receiver<ShardStatus>,
-}
-
-impl PrimaryShard {
-    pub fn is_removable(&self) -> bool {
-        self.shard_state.is_closed()
-            && self.publish_position_inclusive >= self.primary_position_inclusive
-    }
-
-    pub fn set_publish_position_inclusive(
-        &mut self,
-        publish_position_inclusive: impl Into<Position>,
-    ) {
-        self.publish_position_inclusive = publish_position_inclusive.into();
-        self.shard_status_tx.send_modify(|shard_status| {
-            shard_status.publish_position_inclusive = self.publish_position_inclusive;
-        });
-    }
-
-    pub fn set_primary_position_inclusive(
-        &mut self,
-        primary_position_inclusive: impl Into<Position>,
-    ) {
-        self.primary_position_inclusive = primary_position_inclusive.into();
-
-        // Notify readers if the replication factor is 1.
-        if self.follower_id_opt.is_none() {
-            self.shard_status_tx.send_modify(|shard_status| {
-                shard_status.replication_position_inclusive = self.primary_position_inclusive
-            })
-        }
-    }
-
-    pub fn set_replica_position_inclusive(
-        &mut self,
-        replica_position_inclusive: impl Into<Position>,
-    ) {
-        assert!(self.follower_id_opt.is_some());
-
-        let replica_position_inclusive = replica_position_inclusive.into();
-        self.replica_position_inclusive_opt = Some(replica_position_inclusive);
-
-        self.shard_status_tx.send_modify(|shard_status| {
-            shard_status.replication_position_inclusive = replica_position_inclusive
-        })
-    }
-}
-
-/// Records the state of a replica shard managed by a follower. See [`PrimaryShard`] for more
-/// details about the fields.
-pub(super) struct ReplicaShard {
-    pub _leader_id: NodeId,
-    pub shard_state: ShardState,
-    pub publish_position_inclusive: Position,
-    pub replica_position_inclusive: Position,
-    pub shard_status_tx: watch::Sender<ShardStatus>,
-    pub shard_status_rx: watch::Receiver<ShardStatus>,
-}
-
-impl ReplicaShard {
-    pub fn is_removable(&self) -> bool {
-        self.shard_state.is_closed()
-            && self.publish_position_inclusive >= self.replica_position_inclusive
-    }
-
-    pub fn set_publish_position_inclusive(
-        &mut self,
-        publish_position_inclusive: impl Into<Position>,
-    ) {
-        self.publish_position_inclusive = publish_position_inclusive.into();
-        self.shard_status_tx.send_modify(|shard_status| {
-            shard_status.publish_position_inclusive = self.publish_position_inclusive;
-        });
-    }
-
-    pub fn set_replica_position_inclusive(
-        &mut self,
-        replica_position_inclusive: impl Into<Position>,
-    ) {
-        self.replica_position_inclusive = replica_position_inclusive.into();
-        self.shard_status_tx.send_modify(|shard_status| {
-            shard_status.replication_position_inclusive = self.replica_position_inclusive
-        });
-    }
-}
-
-#[cfg(test)]
-impl PrimaryShard {
-    pub(crate) fn for_test(
-        follower_id_opt: Option<&str>,
-        shard_state: ShardState,
-        publish_position_inclusive: impl Into<Position>,
-        primary_position_inclusive: impl Into<Position>,
-        replica_position_inclusive_opt: Option<impl Into<Position>>,
-    ) -> Self {
-        let publish_position_inclusive: Position = publish_position_inclusive.into();
-        let primary_position_inclusive: Position = primary_position_inclusive.into();
-        let replica_position_inclusive_opt: Option<Position> =
-            replica_position_inclusive_opt.map(Into::into);
-        let replication_position_inclusive =
-            replica_position_inclusive_opt.unwrap_or(primary_position_inclusive);
-
-        let shard_status = ShardStatus {
+impl SoloShard {
+    pub fn new(shard_state: ShardState, replication_position_inclusive: Position) -> Self {
+        Self {
             shard_state,
-            publish_position_inclusive,
             replication_position_inclusive,
-        };
-        let (shard_status_tx, shard_status_rx) = watch::channel(shard_status);
-
-        Self {
-            follower_id_opt: follower_id_opt.map(Into::into),
-            shard_state,
-            publish_position_inclusive,
-            primary_position_inclusive,
-            replica_position_inclusive_opt,
-            shard_status_tx,
-            shard_status_rx,
+            ..Default::default()
         }
     }
 }
 
-#[cfg(test)]
-impl ReplicaShard {
-    pub(crate) fn for_test(
-        leader_id: &str,
-        shard_state: ShardState,
-        publish_position_inclusive: impl Into<Position>,
-        replica_position_inclusive: impl Into<Position>,
-    ) -> Self {
-        let publish_position_inclusive: Position = publish_position_inclusive.into();
-        let replica_position_inclusive: Position = replica_position_inclusive.into();
+pub(super) enum IngesterShard {
+    /// A primary shard hosted on a leader and replicated on a follower.
+    Primary(PrimaryShard),
+    /// A replica shard hosted on a follower.
+    Replica(ReplicaShard),
+    /// A shard hosted on a single node when the replication factor is set to 1.
+    Solo(SoloShard),
+}
 
-        let shard_status = ShardStatus {
-            shard_state,
-            publish_position_inclusive,
-            replication_position_inclusive: replica_position_inclusive,
-        };
-        let (shard_status_tx, shard_status_rx) = watch::channel(shard_status);
-
-        Self {
-            _leader_id: leader_id.into(),
-            shard_state,
-            publish_position_inclusive,
-            replica_position_inclusive,
-            shard_status_tx,
-            shard_status_rx,
+impl IngesterShard {
+    pub fn is_closed(&self) -> bool {
+        match self {
+            IngesterShard::Primary(primary_shard) => &primary_shard.shard_state,
+            IngesterShard::Replica(replica_shard) => &replica_shard.shard_state,
+            IngesterShard::Solo(solo_shard) => &solo_shard.shard_state,
         }
+        .is_closed()
+    }
+
+    pub fn replication_position_inclusive(&self) -> Position {
+        match self {
+            IngesterShard::Primary(primary_shard) => &primary_shard.replication_position_inclusive,
+            IngesterShard::Replica(replica_shard) => &replica_shard.replication_position_inclusive,
+            IngesterShard::Solo(solo_shard) => &solo_shard.replication_position_inclusive,
+        }
+        .clone()
+    }
+
+    pub fn set_replication_position_inclusive(&mut self, replication_position_inclusive: Position) {
+        if self.replication_position_inclusive() == replication_position_inclusive {
+            return;
+        }
+        match self {
+            IngesterShard::Primary(primary_shard) => {
+                primary_shard.replication_position_inclusive = replication_position_inclusive;
+            }
+            IngesterShard::Replica(replica_shard) => {
+                replica_shard.replication_position_inclusive = replication_position_inclusive;
+            }
+            IngesterShard::Solo(solo_shard) => {
+                solo_shard.replication_position_inclusive = replication_position_inclusive;
+            }
+        };
+        self.notify_new_records();
+    }
+
+    pub fn new_records_rx(&self) -> watch::Receiver<()> {
+        match self {
+            IngesterShard::Primary(primary_shard) => &primary_shard.new_records_rx,
+            IngesterShard::Replica(replica_shard) => &replica_shard.new_records_rx,
+            IngesterShard::Solo(solo_shard) => &solo_shard.new_records_rx,
+        }
+        .clone()
+    }
+
+    pub fn notify_new_records(&self) {
+        match self {
+            IngesterShard::Primary(primary_shard) => &primary_shard.new_records_tx,
+            IngesterShard::Replica(replica_shard) => &replica_shard.new_records_tx,
+            IngesterShard::Solo(solo_shard) => &solo_shard.new_records_tx,
+        }
+        .send(())
+        .expect("channel should be open");
     }
 }

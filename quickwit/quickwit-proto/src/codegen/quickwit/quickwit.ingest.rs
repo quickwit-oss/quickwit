@@ -40,18 +40,14 @@ pub struct Shard {
     /// Mutable fields
     #[prost(enumeration = "ShardState", tag = "8")]
     pub shard_state: i32,
-    /// Position up to which the follower has acknowledged replication of the records written in its log.
-    #[prost(uint64, optional, tag = "9")]
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub replication_position_inclusive: ::core::option::Option<u64>,
     /// Position up to which indexers have indexed and published the records stored in the shard.
     /// It is updated asynchronously in a best effort manner by the indexers and indicates the position up to which the log can be safely truncated.
-    #[prost(string, tag = "10")]
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub publish_position_inclusive: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "9")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub publish_position_inclusive: ::core::option::Option<crate::types::Position>,
     /// A publish token that ensures only one indexer works on a given shard at a time.
     /// For instance, if an indexer goes rogue, eventually the control plane will detect it and assign the shard to another indexer, which will override the publish token.
-    #[prost(string, optional, tag = "11")]
+    #[prost(string, optional, tag = "10")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub publish_token: ::core::option::Option<::prost::alloc::string::String>,
 }
@@ -93,9 +89,8 @@ impl CommitTypeV2 {
 pub enum ShardState {
     /// The shard is open and accepts write requests.
     Open = 0,
-    /// The shard is open and still accepts write requests, but should no longer be advertised to ingest routers.
-    /// It is waiting for its leader or follower to close it with its final replication position, after which write requests will be rejected.
-    Closing = 1,
+    /// The ingester hosting the shard is unavailable.
+    Unavailable = 1,
     /// The shard is closed and cannot be written to.
     /// It can be safely deleted if the publish position is superior or equal to the replication position.
     Closed = 2,
@@ -108,7 +103,7 @@ impl ShardState {
     pub fn as_str_name(&self) -> &'static str {
         match self {
             ShardState::Open => "OPEN",
-            ShardState::Closing => "CLOSING",
+            ShardState::Unavailable => "UNAVAILABLE",
             ShardState::Closed => "CLOSED",
         }
     }
@@ -116,7 +111,7 @@ impl ShardState {
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
             "OPEN" => Some(Self::Open),
-            "CLOSING" => Some(Self::Closing),
+            "UNAVAILABLE" => Some(Self::Unavailable),
             "CLOSED" => Some(Self::Closed),
             _ => None,
         }
