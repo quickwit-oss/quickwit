@@ -625,7 +625,7 @@ mod tests {
                 .await
                 .unwrap()
                 .index_uid;
-            index_uids.push(index_uid.clone());
+            index_uids.push(index_uid);
 
             let split_id = format!("test-split-{}", i);
             let split_metadata = SplitMetadata {
