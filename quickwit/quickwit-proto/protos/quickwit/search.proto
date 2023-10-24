@@ -170,6 +170,16 @@ message SearchRequest {
   // enable pagination.
   // If split_id is empty, no comparison with _shard_doc should be done
   optional PartialHit search_after = 16;
+
+  CountHits count_hits = 17;
+}
+
+enum CountHits {
+  // Count all hits, querying all splits.
+  COUNT_ALL = 0;
+  // Give an underestimate of the number of hits, possibly skipping entire
+  // splits if they are otherwise not needed to fulfull a query.
+  UNDERESTIMATE = 1;
 }
 
 message SortField {

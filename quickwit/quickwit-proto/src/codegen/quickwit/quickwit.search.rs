@@ -107,6 +107,8 @@ pub struct SearchRequest {
     /// If split_id is empty, no comparison with _shard_doc should be done
     #[prost(message, optional, tag = "16")]
     pub search_after: ::core::option::Option<PartialHit>,
+    #[prost(enumeration = "CountHits", tag = "17")]
+    pub count_hits: i32,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[derive(Eq, Hash)]
@@ -496,6 +498,37 @@ pub struct LeafSearchStreamResponse {
     /// Split id.
     #[prost(string, tag = "2")]
     pub split_id: ::prost::alloc::string::String,
+}
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum CountHits {
+    /// Count all hits, querying all splits.
+    CountAll = 0,
+    /// Give an underestimate of the number of hits, possibly skipping entire
+    /// splits if they are otherwise not needed to fulfull a query.
+    Underestimate = 1,
+}
+impl CountHits {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            CountHits::CountAll => "COUNT_ALL",
+            CountHits::Underestimate => "UNDERESTIMATE",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "COUNT_ALL" => Some(Self::CountAll),
+            "UNDERESTIMATE" => Some(Self::Underestimate),
+            _ => None,
+        }
+    }
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]

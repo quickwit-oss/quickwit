@@ -25,7 +25,7 @@ use hyper::header::HeaderValue;
 use hyper::HeaderMap;
 use once_cell::sync::Lazy;
 use quickwit_config::validate_index_id_pattern;
-use quickwit_proto::search::{OutputFormat, SortField, SortOrder};
+use quickwit_proto::search::{CountHits, OutputFormat, SortField, SortOrder};
 use quickwit_proto::ServiceError;
 use quickwit_query::query_ast::query_ast_from_user_text;
 use quickwit_search::{SearchError, SearchResponseRest, SearchService};
@@ -217,6 +217,12 @@ pub struct SearchRequestQueryString {
     #[serde(skip_serializing_if = "SortBy::is_empty")]
     #[param(value_type = String)]
     pub sort_by: SortBy,
+    #[serde(default = "default_as_true")]
+    pub count_all: bool,
+}
+
+fn default_as_true() -> bool {
+    true
 }
 
 pub fn search_request_from_api_request(
@@ -227,6 +233,12 @@ pub fn search_request_from_api_request(
     // parsing of the user query will happen in the root service, and might require
     // the user of the docmapper default fields (which we do not have at this point).
     let query_ast = query_ast_from_user_text(&search_request.query, search_request.search_fields);
+    let count_hits = if search_request.count_all {
+        CountHits::CountAll
+    } else {
+        CountHits::Underestimate
+    }
+    .into();
     let query_ast_json = serde_json::to_string(&query_ast)?;
     let search_request = quickwit_proto::search::SearchRequest {
         index_id_patterns,
@@ -242,6 +254,7 @@ pub fn search_request_from_api_request(
         sort_fields: search_request.sort_by.sort_fields,
         scroll_ttl_secs: None,
         search_after: None,
+        count_hits,
     };
     Ok(search_request)
 }
@@ -565,6 +578,7 @@ mod tests {
                 format: BodyFormat::default(),
                 sort_by: SortBy::default(),
                 aggs: Some(json!({"range":[]})),
+                count_all: true,
                 ..Default::default()
             }
         );
@@ -602,6 +616,7 @@ mod tests {
                 format: BodyFormat::default(),
                 sort_by: SortBy::default(),
                 aggs: Some(json!({"range":[]})),
+                count_all: true,
                 ..Default::default()
             }
         );
@@ -651,6 +666,7 @@ mod tests {
                 start_offset: 22,
                 format: BodyFormat::default(),
                 sort_by: SortBy::default(),
+                count_all: true,
                 ..Default::default()
             }
         );
@@ -679,6 +695,7 @@ mod tests {
                 start_offset: 0,
                 format: BodyFormat::default(),
                 sort_by: SortBy::default(),
+                count_all: true,
                 ..Default::default()
             }
         );
@@ -704,6 +721,7 @@ mod tests {
                 format: BodyFormat::Json,
                 search_fields: None,
                 sort_by: SortBy::default(),
+                count_all: true,
                 ..Default::default()
             }
         );

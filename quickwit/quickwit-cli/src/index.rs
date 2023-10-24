@@ -856,6 +856,7 @@ pub async fn search_index(args: SearchIndexArgs) -> anyhow::Result<SearchRespons
         max_hits: args.max_hits as u64,
         start_offset: args.start_offset as u64,
         sort_by,
+        count_all: true,
         ..Default::default()
     };
     let qw_client = args.client_args.search_client();

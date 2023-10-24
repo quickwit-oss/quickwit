@@ -551,6 +551,7 @@ pub async fn local_search_cli(args: LocalSearchArgs) -> anyhow::Result<()> {
         aggs,
         format: BodyFormat::Json,
         sort_by,
+        count_all: true,
     };
     let search_request =
         search_request_from_api_request(vec![args.index_id], search_request_query_string)?;

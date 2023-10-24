@@ -20,7 +20,9 @@
 use std::ops::Bound;
 
 use prost::Message;
-use quickwit_proto::search::{LeafSearchResponse, SearchRequest, SplitIdAndFooterOffsets};
+use quickwit_proto::search::{
+    CountHits, LeafSearchResponse, SearchRequest, SplitIdAndFooterOffsets,
+};
 use quickwit_storage::{MemorySizedCache, OwnedBytes};
 
 /// A cache to memoize `leaf_search_single_split` results.
@@ -28,10 +30,14 @@ pub struct LeafSearchCache {
     content: MemorySizedCache<CacheKey>,
 }
 
-// TODO we could be smarted about search_after. If we have a cached request with a search_after
+// TODO we could be smarter about search_after. If we have a cached request with a search_after
 // (possibly equal to None) A, and a corresponding response with the 1st element having the value
 // B, and we receive a 2nd request with a search_after such that A <= C < B, we can serve from
 // cache directly. Only the case A = C < B is currently handled.
+// TODO if we don't request counting all results, have no aggregation, and we get a request we can
+// match, the merged_time_range is strictly smaller, and every hit we had fits in the new
+// timebound, we can reply from cache, saying we hit only result.partial_hits.len() res. It always
+// undercount, and necessarily returns the right hits.
 
 impl LeafSearchCache {
     pub fn new(capacity: usize) -> LeafSearchCache {
@@ -89,6 +95,9 @@ impl CacheKey {
 
         search_request.start_timestamp = None;
         search_request.end_timestamp = None;
+        // it doesn't matter whether or not we count all hits at the scale of a
+        // single split: either we did process it and got everything, or we didn't.
+        search_request.count_hits = CountHits::CountAll.into();
 
         CacheKey {
             split_id: split_info.split_id,
