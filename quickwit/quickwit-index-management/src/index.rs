@@ -661,7 +661,6 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(split_infos.len(), index_count);
-        println!("{:?}", split_infos);
         for i in 0..index_count {
             let error = metastore
                 .list_splits(ListSplitsRequest::try_from_index_uid(index_uids[i].clone()).unwrap())
