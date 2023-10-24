@@ -73,8 +73,7 @@ params:
 headers: {"Content-Type": "application/json"}
 ndjson:
   - {"id": 1, "created_at":"2015-02-01T00:00:14Z", "type": "CreateEvent", "actor": { "id": 1, "login": "fmassot" } }
-  - {"id": 2, "created_at":"2015-02-01T00:00:14Z", "type": "CreateEvent", "actor": { "id": 2, "login": "fulmicoton" } }
-
+  - {"id": 2, "created_at":"2015-02-01T00:00:16Z", "type": "CreateEvent", "actor": { "id": 2, "login": "fulmicoton" } }
 ---
 # Ingest documents in index 2
 method: POST
@@ -84,5 +83,5 @@ params:
   commit: "force"
 headers: {"Content-Type": "application/json"}
 ndjson:
-  - {"id": 3, "created_at":"2015-02-01T00:00:14Z", "type": "CreateEvent", "actor": { "id": 3, "login": "guilload" } }
-  - {"id": 4, "created_at":"2015-02-01T00:00:14Z", "type": "CreateEvent", "actor": { "id": 4, "login": "trinity" } }
+  - {"id": 3, "created_at":"2015-02-01T00:00:15Z", "type": "CreateEvent", "actor": { "id": 3, "login": "guilload" } }
+  - {"id": 4, "created_at":"2015-02-01T00:00:17Z", "type": "CreateEvent", "actor": { "id": 4, "login": "trinity" } }

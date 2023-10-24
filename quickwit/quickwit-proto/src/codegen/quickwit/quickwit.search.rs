@@ -228,7 +228,7 @@ pub struct LeafHit {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Hit {
-    /// The actual content of the hit/
+    /// The actual content of the hit
     #[prost(string, tag = "1")]
     pub json: ::prost::alloc::string::String,
     /// The partial hit (ie: the sorting field + the document address)
@@ -237,6 +237,9 @@ pub struct Hit {
     /// A snippet of the matching content
     #[prost(string, optional, tag = "3")]
     pub snippet: ::core::option::Option<::prost::alloc::string::String>,
+    /// The index id of the hit
+    #[prost(string, tag = "4")]
+    pub index_id: ::prost::alloc::string::String,
 }
 /// A partial hit, is a hit for which we have not fetch the content yet.
 /// Instead, it holds a document_uri which is enough information to
