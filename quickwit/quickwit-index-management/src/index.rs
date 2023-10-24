@@ -600,7 +600,6 @@ mod tests {
     }
 
     #[tokio::test]
-    #[allow(unused_variables)]
     async fn test_delete_indexes() {
         let mut metastore = metastore_for_test();
         let storage_resolver = StorageResolver::for_test();
