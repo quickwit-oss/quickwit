@@ -242,6 +242,7 @@ pub fn search_request_from_api_request(
         sort_fields: search_request.sort_by.sort_fields,
         scroll_ttl_secs: None,
         search_after: None,
+        priority: false,
     };
     Ok(search_request)
 }

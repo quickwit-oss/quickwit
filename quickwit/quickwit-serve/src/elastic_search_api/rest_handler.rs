@@ -193,6 +193,7 @@ fn build_request_for_es_api(
             snippet_fields: Vec::new(),
             scroll_ttl_secs,
             search_after,
+            priority: false,
         },
         has_doc_id_field,
     ))

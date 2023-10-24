@@ -41,6 +41,7 @@ use tantivy::fastfield::FastFieldReaders;
 use tantivy::schema::{Field, FieldType};
 use tantivy::tokenizer::TokenizerManager;
 use tantivy::{Index, ReloadPolicy, Searcher, Term};
+use tokio::sync::OwnedSemaphorePermit;
 use tracing::*;
 
 use crate::collector::{make_collector_for_split, make_merge_collector, IncrementalCollector};
@@ -565,11 +566,17 @@ pub async fn leaf_search(
     let mut leaf_search_single_split_futures: Vec<_> = Vec::with_capacity(splits.len());
 
     for split in splits {
-        let leaf_split_search_permit = searcher_context.leaf_search_split_semaphore
-            .clone()
-            .acquire_owned()
-            .await
-            .expect("Failed to acquire permit. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.");
+        let leaf_split_search_permit_opt =
+            if !request.priority {
+                Some(searcher_context.leaf_search_split_semaphore
+                    .clone()
+                    .acquire_owned()
+                    .await
+                    .expect("Failed to acquire permit. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues."))
+            } else {
+                None
+            };
+
 
         let mut request = (*request).clone();
 
@@ -591,7 +598,7 @@ pub async fn leaf_search(
                 split,
                 split_filter.clone(),
                 incremental_merge_collector.clone(),
-                leaf_split_search_permit,
+                leaf_split_search_permit_opt,
             )
             .in_current_span(),
         ));
@@ -634,7 +641,7 @@ async fn leaf_search_single_split_wrapper(
     split: SplitIdAndFooterOffsets,
     split_filter: Arc<Mutex<CanSplitDoBetter>>,
     incremental_merge_collector: Arc<Mutex<IncrementalCollector>>,
-    leaf_split_search_permit: tokio::sync::OwnedSemaphorePermit,
+    leaf_split_search_permit: Option<OwnedSemaphorePermit>,
 ) {
     crate::SEARCH_METRICS.leaf_searches_splits_total.inc();
     let timer = crate::SEARCH_METRICS
