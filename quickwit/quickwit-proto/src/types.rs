@@ -162,7 +162,7 @@ impl AsRef<NodeIdRef> for NodeId {
 
 impl Borrow<str> for NodeId {
     fn borrow(&self) -> &str {
-        self.as_str()
+        &self.0
     }
 }
 
@@ -250,6 +250,12 @@ impl NodeIdRef {
 
 impl AsRef<str> for NodeIdRef {
     fn as_ref(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Borrow<String> for NodeId {
+    fn borrow(&self) -> &String {
         &self.0
     }
 }

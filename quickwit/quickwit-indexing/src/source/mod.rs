@@ -73,7 +73,6 @@ mod vec_source;
 mod void_source;
 
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::Duration;
 
 #[cfg(not(any(feature = "kafka", feature = "kinesis", feature = "pulsar")))]
@@ -95,8 +94,8 @@ use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::{SourceConfig, SourceParams};
 use quickwit_ingest::IngesterPool;
 use quickwit_metastore::checkpoint::{SourceCheckpoint, SourceCheckpointDelta};
-use quickwit_metastore::Metastore;
 use quickwit_proto::indexing::IndexingPipelineId;
+use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_proto::{IndexUid, ShardId};
 use quickwit_storage::StorageResolver;
 use serde_json::Value as JsonValue;
@@ -116,7 +115,7 @@ use crate::source::ingest_api_source::IngestApiSourceFactory;
 pub struct SourceRuntimeArgs {
     pub pipeline_id: IndexingPipelineId,
     pub source_config: SourceConfig,
-    pub metastore: Arc<dyn Metastore>,
+    pub metastore: MetastoreServiceClient,
     pub ingester_pool: IngesterPool,
     // Ingest API queues directory path.
     pub queues_dir_path: PathBuf,
@@ -148,9 +147,10 @@ impl SourceRuntimeArgs {
     fn for_test(
         index_uid: IndexUid,
         source_config: SourceConfig,
-        metastore: Arc<dyn Metastore>,
+        metastore: MetastoreServiceClient,
         queues_dir_path: PathBuf,
-    ) -> Arc<Self> {
+    ) -> std::sync::Arc<Self> {
+        use std::sync::Arc;
         let pipeline_id = IndexingPipelineId {
             node_id: "test-node".to_string(),
             index_uid,

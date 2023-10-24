@@ -30,6 +30,7 @@ fn main() {
         "crate::Result",
         "crate::IngestServiceError",
         false,
+        false,
         &[],
         prost_config,
     )

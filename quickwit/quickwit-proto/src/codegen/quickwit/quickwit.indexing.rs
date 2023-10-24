@@ -50,6 +50,12 @@ impl IndexingServiceClient {
     where
         T: IndexingService,
     {
+        #[cfg(any(test, feature = "testsuite"))]
+        assert!(
+            std::any::TypeId::of:: < T > () != std::any::TypeId::of:: <
+            MockIndexingService > (),
+            "`MockIndexingService` must be wrapped in a `MockIndexingServiceWrapper`. Use `MockIndexingService::from(mock)` to instantiate the client."
+        );
         Self { inner: Box::new(instance) }
     }
     pub fn as_grpc_service(

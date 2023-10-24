@@ -46,6 +46,7 @@ pub use pool::Pool;
 pub use rate::{ConstantRate, Rate};
 pub use rate_estimator::{RateEstimator, SmaRateEstimator};
 pub use rate_limit::{RateLimit, RateLimitLayer};
+pub use retry::{RetryLayer, RetryPolicy};
 pub use transport::{make_channel, warmup_channel, BalanceChannel};
 
 pub type BoxError = Box<dyn error::Error + Send + Sync + 'static>;

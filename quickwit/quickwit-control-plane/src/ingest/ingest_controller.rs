@@ -18,21 +18,21 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::fmt;
-use std::sync::Arc;
 use std::time::Duration;
 
 use fnv::FnvHashSet;
 use itertools::Itertools;
 use quickwit_common::Progress;
 use quickwit_ingest::IngesterPool;
-use quickwit_metastore::Metastore;
 use quickwit_proto::control_plane::{
     ControlPlaneError, ControlPlaneResult, GetOpenShardsSubresponse, GetOrCreateOpenShardsRequest,
     GetOrCreateOpenShardsResponse,
 };
 use quickwit_proto::ingest::ingester::{IngesterService, PingRequest};
 use quickwit_proto::ingest::IngestV2Error;
-use quickwit_proto::metastore::{EntityKind, MetastoreError};
+use quickwit_proto::metastore::{
+    EntityKind, MetastoreError, MetastoreService, MetastoreServiceClient,
+};
 use quickwit_proto::types::NodeId;
 use quickwit_proto::{metastore, IndexUid};
 use rand::seq::SliceRandom;
@@ -47,7 +47,7 @@ const PING_LEADER_TIMEOUT: Duration = if cfg!(test) {
 };
 
 pub struct IngestController {
-    metastore: Arc<dyn Metastore>,
+    metastore: MetastoreServiceClient,
     ingester_pool: IngesterPool,
     replication_factor: usize,
 }
@@ -64,7 +64,7 @@ impl fmt::Debug for IngestController {
 
 impl IngestController {
     pub fn new(
-        metastore: Arc<dyn Metastore>,
+        metastore: MetastoreServiceClient,
         ingester_pool: IngesterPool,
         replication_factor: usize,
     ) -> Self {
@@ -284,7 +284,7 @@ pub enum PingError {
 mod tests {
 
     use quickwit_config::{SourceConfig, SourceParams};
-    use quickwit_metastore::{IndexMetadata, MockMetastore};
+    use quickwit_metastore::IndexMetadata;
     use quickwit_proto::control_plane::GetOrCreateOpenShardsSubrequest;
     use quickwit_proto::ingest::ingester::{
         IngesterServiceClient, MockIngesterService, PingResponse,
@@ -297,12 +297,14 @@ mod tests {
     async fn test_ingest_controller_ping_leader() {
         let progress = Progress::default();
 
-        let mock_metastore = MockMetastore::default();
-        let metastore = Arc::new(mock_metastore);
+        let mock_metastore = MetastoreServiceClient::mock();
         let ingester_pool = IngesterPool::default();
         let replication_factor = 1;
-        let mut ingest_controller =
-            IngestController::new(metastore, ingester_pool.clone(), replication_factor);
+        let mut ingest_controller = IngestController::new(
+            MetastoreServiceClient::from(mock_metastore),
+            ingester_pool.clone(),
+            replication_factor,
+        );
 
         let leader_id: NodeId = "test-ingester-0".into();
         let error = ingest_controller
@@ -370,12 +372,14 @@ mod tests {
     async fn test_ingest_controller_find_leader_replication_factor_1() {
         let progress = Progress::default();
 
-        let mock_metastore = MockMetastore::default();
-        let metastore = Arc::new(mock_metastore);
+        let mock_metastore = MetastoreServiceClient::mock();
         let ingester_pool = IngesterPool::default();
         let replication_factor = 1;
-        let mut ingest_controller =
-            IngestController::new(metastore, ingester_pool.clone(), replication_factor);
+        let mut ingest_controller = IngestController::new(
+            MetastoreServiceClient::from(mock_metastore),
+            ingester_pool.clone(),
+            replication_factor,
+        );
 
         let leader_follower_pair = ingest_controller
             .find_leader_and_follower(&mut FnvHashSet::default(), &progress)
@@ -419,12 +423,14 @@ mod tests {
     async fn test_ingest_controller_find_leader_replication_factor_2() {
         let progress = Progress::default();
 
-        let mock_metastore = MockMetastore::default();
-        let metastore = Arc::new(mock_metastore);
+        let mock_metastore = MetastoreServiceClient::mock();
         let ingester_pool = IngesterPool::default();
         let replication_factor = 2;
-        let mut ingest_controller =
-            IngestController::new(metastore, ingester_pool.clone(), replication_factor);
+        let mut ingest_controller = IngestController::new(
+            MetastoreServiceClient::from(mock_metastore),
+            ingester_pool.clone(),
+            replication_factor,
+        );
 
         let leader_follower_pair = ingest_controller
             .find_leader_and_follower(&mut FnvHashSet::default(), &progress)
@@ -504,7 +510,7 @@ mod tests {
         let progress = Progress::default();
 
         let index_uid_1_str_clone = index_uid_1_str.clone();
-        let mut mock_metastore = MockMetastore::default();
+        let mut mock_metastore = MetastoreServiceClient::mock();
         mock_metastore
             .expect_open_shards()
             .once()
@@ -526,7 +532,6 @@ mod tests {
                 let response = metastore::OpenShardsResponse { subresponses };
                 Ok(response)
             });
-        let metastore = Arc::new(mock_metastore);
         let ingester_pool = IngesterPool::default();
 
         let mut mock_ingester = MockIngesterService::default();
@@ -544,8 +549,11 @@ mod tests {
         ingester_pool.insert("test-ingester-2".into(), ingester.clone());
 
         let replication_factor = 2;
-        let mut ingest_controller =
-            IngestController::new(metastore, ingester_pool.clone(), replication_factor);
+        let mut ingest_controller = IngestController::new(
+            MetastoreServiceClient::from(mock_metastore),
+            ingester_pool.clone(),
+            replication_factor,
+        );
 
         let mut model = ControlPlaneModel::default();
 

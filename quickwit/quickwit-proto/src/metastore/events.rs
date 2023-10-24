@@ -19,7 +19,10 @@
 
 use quickwit_common::pubsub::Event;
 
-use super::{CloseShardsRequest, DeleteShardsRequest, SourceType};
+use super::{
+    AddSourceRequest, CloseShardsRequest, CreateIndexRequest, DeleteIndexRequest,
+    DeleteShardsRequest, DeleteSourceRequest, SourceType, ToggleSourceRequest,
+};
 use crate::{IndexUid, SourceId};
 
 /// Delete index event.
@@ -64,6 +67,10 @@ impl Event for AddSourceEvent {}
 impl Event for DeleteIndexEvent {}
 impl Event for DeleteSourceEvent {}
 impl Event for ToggleSourceEvent {}
-
 impl Event for CloseShardsRequest {}
 impl Event for DeleteShardsRequest {}
+impl Event for AddSourceRequest {}
+impl Event for CreateIndexRequest {}
+impl Event for DeleteIndexRequest {}
+impl Event for DeleteSourceRequest {}
+impl Event for ToggleSourceRequest {}

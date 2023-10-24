@@ -25,10 +25,15 @@ use fnv::{FnvHashMap, FnvHashSet};
 use itertools::Itertools;
 use quickwit_common::Progress;
 use quickwit_config::{SourceConfig, INGEST_SOURCE_ID};
-use quickwit_metastore::{IndexMetadata, ListIndexesQuery, Metastore};
+use quickwit_metastore::{
+    IndexMetadata, ListIndexesMetadataRequestExt, ListIndexesMetadataResponseExt,
+};
 use quickwit_proto::control_plane::ControlPlaneResult;
 use quickwit_proto::ingest::{Shard, ShardState};
-use quickwit_proto::metastore::{EntityKind, ListShardsSubrequest, MetastoreError};
+use quickwit_proto::metastore::{
+    EntityKind, ListIndexesMetadataRequest, ListShardsSubrequest, MetastoreError, MetastoreService,
+    MetastoreServiceClient,
+};
 use quickwit_proto::types::IndexId;
 use quickwit_proto::{metastore, IndexUid, NodeId, NodeIdRef, ShardId, SourceId};
 use serde::Serialize;
@@ -108,15 +113,15 @@ impl ControlPlaneModel {
 
     pub async fn load_from_metastore(
         &mut self,
-        metastore: &dyn Metastore,
+        metastore: &mut MetastoreServiceClient,
         progress: &Progress,
     ) -> ControlPlaneResult<()> {
         let now = Instant::now();
         self.clear();
         let index_metadatas = progress
-            .protect_future(metastore.list_indexes_metadatas(ListIndexesQuery::All))
-            .await?;
-
+            .protect_future(metastore.list_indexes_metadata(ListIndexesMetadataRequest::all()))
+            .await?
+            .deserialize_indexes_metadata()?;
         let num_indexes = index_metadatas.len();
         self.index_table.reserve(num_indexes);
 
@@ -461,8 +466,9 @@ impl ShardTable {
 #[cfg(test)]
 mod tests {
     use quickwit_config::SourceConfig;
-    use quickwit_metastore::{IndexMetadata, MockMetastore};
+    use quickwit_metastore::IndexMetadata;
     use quickwit_proto::ingest::Shard;
+    use quickwit_proto::metastore::ListIndexesMetadataResponse;
 
     use super::*;
 
@@ -677,11 +683,11 @@ mod tests {
     async fn test_control_plane_model_load_shard_table() {
         let progress = Progress::default();
 
-        let mut mock_metastore = MockMetastore::default();
+        let mut mock_metastore = MetastoreServiceClient::mock();
         mock_metastore
-            .expect_list_indexes_metadatas()
-            .returning(|query| {
-                assert!(matches!(query, ListIndexesQuery::All));
+            .expect_list_indexes_metadata()
+            .returning(|request| {
+                assert_eq!(request, ListIndexesMetadataRequest::all());
 
                 let mut index_0 = IndexMetadata::for_test("test-index-0", "ram:///test-index-0");
                 let source = SourceConfig::ingest_default();
@@ -691,7 +697,7 @@ mod tests {
                 index_1.add_source(source).unwrap();
 
                 let indexes = vec![index_0, index_1];
-                Ok(indexes)
+                Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(indexes).unwrap())
             });
         mock_metastore.expect_list_shards().returning(|request| {
             assert_eq!(request.subrequests.len(), 2);
@@ -725,8 +731,9 @@ mod tests {
             Ok(response)
         });
         let mut model = ControlPlaneModel::default();
+        let mut metastore_client = MetastoreServiceClient::from(mock_metastore);
         model
-            .load_from_metastore(&mock_metastore, &progress)
+            .load_from_metastore(&mut metastore_client, &progress)
             .await
             .unwrap();
 

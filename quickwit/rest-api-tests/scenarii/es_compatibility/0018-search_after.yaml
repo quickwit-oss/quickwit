@@ -1,0 +1,46 @@
+json:
+  size: 1
+  query:
+      match_all: {}
+  sort:
+    - actor.id:
+        order: desc
+expected:
+  hits:
+    total:
+      value: 100
+      relation: eq
+    hits:
+      - sort: [10791502]
+---
+json:
+  size: 1
+  query:
+      match_all: {}
+  sort:
+    - actor.id:
+        order: desc
+  search_after: [10791502]
+expected:
+  hits:
+    total:
+      value: 100
+      relation: eq
+    hits:
+      - sort: [10791466]
+---
+json:
+  size: 1
+  query:
+      match_all: {}
+  sort:
+    - actor.id:
+        order: asc
+  search_after: [5688]
+expected:
+  hits:
+    total:
+      value: 100
+      relation: eq
+    hits:
+      - sort: [9018]

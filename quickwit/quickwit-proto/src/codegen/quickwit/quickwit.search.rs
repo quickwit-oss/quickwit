@@ -102,6 +102,11 @@ pub struct SearchRequest {
     /// in a consistent manner.
     #[prost(uint32, optional, tag = "15")]
     pub scroll_ttl_secs: ::core::option::Option<u32>,
+    /// Document with sort tuple smaller or equal to this are discarded to
+    /// enable pagination.
+    /// If split_id is empty, no comparison with _shard_doc should be done
+    #[prost(message, optional, tag = "16")]
+    pub search_after: ::core::option::Option<PartialHit>,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[derive(Eq, Hash)]
@@ -223,7 +228,7 @@ pub struct LeafHit {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Hit {
-    /// The actual content of the hit/
+    /// The actual content of the hit
     #[prost(string, tag = "1")]
     pub json: ::prost::alloc::string::String,
     /// The partial hit (ie: the sorting field + the document address)
@@ -232,6 +237,9 @@ pub struct Hit {
     /// A snippet of the matching content
     #[prost(string, optional, tag = "3")]
     pub snippet: ::core::option::Option<::prost::alloc::string::String>,
+    /// The index id of the hit
+    #[prost(string, tag = "4")]
+    pub index_id: ::prost::alloc::string::String,
 }
 /// A partial hit, is a hit for which we have not fetch the content yet.
 /// Instead, it holds a document_uri which is enough information to
@@ -249,6 +257,7 @@ pub struct Hit {
 /// - the segment_ord,
 /// - the doc id.
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Eq, Hash)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PartialHit {

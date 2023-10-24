@@ -33,12 +33,15 @@ use quickwit_ingest::{
     init_ingest_api, CommitType, CreateQueueRequest, IngestApiService, IngestServiceClient,
     IngesterPool, QUEUES_DIR_NAME,
 };
-use quickwit_metastore::{FileBackedMetastore, Metastore};
+use quickwit_metastore::{AddSourceRequestExt, CreateIndexRequestExt, FileBackedMetastore};
 use quickwit_opentelemetry::otlp::OtlpGrpcTracesService;
 use quickwit_proto::jaeger::storage::v1::span_reader_plugin_server::SpanReaderPlugin;
 use quickwit_proto::jaeger::storage::v1::{
     FindTraceIDsRequest, GetOperationsRequest, GetServicesRequest, GetTraceRequest, Operation,
     SpansResponseChunk, TraceQueryParameters,
+};
+use quickwit_proto::metastore::{
+    AddSourceRequest, CreateIndexRequest, MetastoreService, MetastoreServiceClient,
 };
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::trace_service_server::TraceService;
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::ExportTraceServiceRequest;
@@ -51,6 +54,7 @@ use quickwit_proto::opentelemetry::proto::trace::v1::span::{Event as OtlpEvent, 
 use quickwit_proto::opentelemetry::proto::trace::v1::{
     ResourceSpans, ScopeSpans, Span as OtlpSpan, Status as OtlpStatus,
 };
+use quickwit_proto::IndexUid;
 use quickwit_search::{
     start_searcher_service, SearchJobPlacer, SearchService, SearchServiceClient, SearcherContext,
     SearcherPool,
@@ -326,19 +330,19 @@ async fn ingester_for_test(
     (ingester_service, ingester_client)
 }
 
-async fn metastore_for_test(storage_resolver: &StorageResolver) -> Arc<dyn Metastore> {
+async fn metastore_for_test(storage_resolver: &StorageResolver) -> MetastoreServiceClient {
     let storage = storage_resolver
         .resolve(&Uri::for_test("ram:///metastore"))
         .await
         .unwrap();
-    Arc::new(FileBackedMetastore::for_test(storage))
+    MetastoreServiceClient::new(FileBackedMetastore::for_test(storage))
 }
 
 async fn indexer_for_test(
     universe: &Universe,
     data_dir_path: &Path,
     cluster: Cluster,
-    metastore: Arc<dyn Metastore>,
+    metastore: MetastoreServiceClient,
     storage_resolver: StorageResolver,
     ingester_service: Mailbox<IngestApiService>,
     ingester_pool: IngesterPool,
@@ -363,7 +367,7 @@ async fn indexer_for_test(
 
 async fn searcher_for_test(
     cluster: &Cluster,
-    metastore: Arc<dyn Metastore>,
+    metastore: MetastoreServiceClient,
     storage_resolver: StorageResolver,
 ) -> Arc<dyn SearchService> {
     let searcher_config = SearcherConfig::default();
@@ -392,7 +396,7 @@ async fn searcher_for_test(
 
 async fn setup_traces_index(
     temp_dir: &TempDir,
-    metastore: Arc<dyn Metastore>,
+    mut metastore: MetastoreServiceClient,
     ingester_service: &Mailbox<IngestApiService>,
     indexer_service: &Mailbox<IndexingService>,
 ) {
@@ -401,12 +405,17 @@ async fn setup_traces_index(
         .unwrap();
     let index_config = OtlpGrpcTracesService::index_config(&index_root_uri).unwrap();
     let index_id = index_config.index_id.clone();
-    let index_uid = metastore.create_index(index_config.clone()).await.unwrap();
-    let source_config = SourceConfig::ingest_api_default();
-    metastore
-        .add_source(index_uid.clone(), source_config.clone())
+    let create_index_request = CreateIndexRequest::try_from_index_config(index_config).unwrap();
+    let index_uid: IndexUid = metastore
+        .create_index(create_index_request)
         .await
-        .unwrap();
+        .unwrap()
+        .index_uid
+        .into();
+    let source_config = SourceConfig::ingest_api_default();
+    let add_source_request =
+        AddSourceRequest::try_from_source_config(index_uid.clone(), source_config.clone()).unwrap();
+    metastore.add_source(add_source_request).await.unwrap();
 
     let create_queue_request = CreateQueueRequest {
         queue_id: index_id.clone(),

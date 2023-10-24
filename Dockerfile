@@ -1,4 +1,4 @@
-FROM node:18 as ui-builder
+FROM node:20 as ui-builder
 
 COPY quickwit/quickwit-ui /quickwit/quickwit-ui
 

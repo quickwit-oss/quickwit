@@ -27,7 +27,7 @@ use bytes::Bytes;
 use quickwit_common::uri::Uri;
 use quickwit_config::SearcherConfig;
 use quickwit_doc_mapper::DocMapper;
-use quickwit_metastore::Metastore;
+use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_proto::search::{
     FetchDocsRequest, FetchDocsResponse, GetKvRequest, Hit, LeafListTermsRequest,
     LeafListTermsResponse, LeafSearchRequest, LeafSearchResponse, LeafSearchStreamRequest,
@@ -54,7 +54,7 @@ use crate::{
 #[derive(Clone)]
 /// The search service implementation.
 pub struct SearchServiceImpl {
-    metastore: Arc<dyn Metastore>,
+    metastore: MetastoreServiceClient,
     storage_resolver: StorageResolver,
     cluster_client: ClusterClient,
     searcher_context: Arc<SearcherContext>,
@@ -141,7 +141,7 @@ pub trait SearchService: 'static + Send + Sync {
 impl SearchServiceImpl {
     /// Creates a new search service.
     pub fn new(
-        metastore: Arc<dyn Metastore>,
+        metastore: MetastoreServiceClient,
         storage_resolver: StorageResolver,
         cluster_client: ClusterClient,
         searcher_context: Arc<SearcherContext>,
@@ -169,7 +169,7 @@ impl SearchService for SearchServiceImpl {
         let search_result = root_search(
             &self.searcher_context,
             search_request,
-            self.metastore.as_ref(),
+            self.metastore.clone(),
             &self.cluster_client,
         )
         .await?;
@@ -232,7 +232,7 @@ impl SearchService for SearchServiceImpl {
     ) -> crate::Result<Pin<Box<dyn futures::Stream<Item = crate::Result<Bytes>> + Send>>> {
         let data = root_search_stream(
             stream_request,
-            self.metastore.as_ref(),
+            self.metastore.clone(),
             self.cluster_client.clone(),
         )
         .await?;
@@ -268,7 +268,7 @@ impl SearchService for SearchServiceImpl {
     ) -> crate::Result<ListTermsResponse> {
         let search_result = root_list_terms(
             &list_terms_request,
-            self.metastore.as_ref(),
+            self.metastore.clone(),
             &self.cluster_client,
         )
         .await?;

@@ -241,6 +241,7 @@ pub fn search_request_from_api_request(
             .map(|agg| serde_json::to_string(&agg).expect("could not serialize JsonValue")),
         sort_fields: search_request.sort_by.sort_fields,
         scroll_ttl_secs: None,
+        search_after: None,
     };
     Ok(search_request)
 }
@@ -1079,6 +1080,7 @@ mod tests {
                     json: r#"{"title": "foo", "body": "foo bar baz"}"#.to_string(),
                     partial_hit: None,
                     snippet: Some(r#"{"title": [], "body": ["foo <em>bar</em> baz"]}"#.to_string()),
+                    index_id: "quickwit-demo-index".to_string(),
                 }],
                 num_hits: 1,
                 elapsed_time_micros: 16,

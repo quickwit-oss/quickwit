@@ -37,7 +37,7 @@ use crate::QW_ENABLE_TOKIO_CONSOLE_ENV_KEY;
 
 pub fn setup_logging_and_tracing(
     level: Level,
-    ansi: bool,
+    ansi_colors: bool,
     build_info: &BuildInfo,
 ) -> anyhow::Result<()> {
     #[cfg(feature = "tokio-console")]
@@ -88,7 +88,7 @@ pub fn setup_logging_and_tracing(
             .with(
                 tracing_subscriber::fmt::layer()
                     .event_format(event_format)
-                    .with_ansi(ansi),
+                    .with_ansi(ansi_colors),
             )
             .try_init()
             .context("Failed to set up tracing.")?;
@@ -97,7 +97,7 @@ pub fn setup_logging_and_tracing(
             .with(
                 tracing_subscriber::fmt::layer()
                     .event_format(event_format)
-                    .with_ansi(ansi),
+                    .with_ansi(ansi_colors),
             )
             .try_init()
             .context("Failed to set up tracing.")?;

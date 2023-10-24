@@ -35,9 +35,16 @@ pub use logs::{OtlpGrpcLogsService, OTEL_LOGS_INDEX_ID};
 pub use span_id::{SpanId, TryFromSpanIdError};
 pub use trace_id::{TraceId, TryFromTraceIdError};
 pub use traces::{
-    Event, Link, OtlpGrpcTracesService, Span, SpanFingerprint, SpanKind, SpanStatus,
+    parse_otlp_spans_json, parse_otlp_spans_protobuf, Event, JsonSpanIterator, Link,
+    OtlpGrpcTracesService, OtlpTraceError, Span, SpanFingerprint, SpanKind, SpanStatus,
     OTEL_TRACES_INDEX_ID,
 };
+
+impl From<OtlpTraceError> for tonic::Status {
+    fn from(error: OtlpTraceError) -> Self {
+        tonic::Status::invalid_argument(error.to_string())
+    }
+}
 
 impl From<TryFromSpanIdError> for tonic::Status {
     fn from(error: TryFromSpanIdError) -> Self {
