@@ -353,9 +353,9 @@ async fn list_splits(
         .await?
         .deserialize_splits()?;
     Ok(ListSplitsResponse {
-        offset: offset,
+        offset,
         size: splits.len(),
-        splits: splits,
+        splits,
     })
 }
 
