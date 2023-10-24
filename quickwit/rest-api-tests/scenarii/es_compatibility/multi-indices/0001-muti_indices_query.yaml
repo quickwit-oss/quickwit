@@ -41,3 +41,28 @@ expected:
       relation: "eq"
     hits:
       $expect: "len(val) == 2"
+---
+# Index information
+endpoint: "gharchive-1%2Cgharchive-2/_search"
+params:
+  size: 2
+json:
+  query:
+    match_all: {}
+  sort:
+    created_at:
+      order: desc
+expected:
+  hits:
+    total:
+      value: 4
+      relation: "eq"
+    hits:
+      - _source:
+          actor:
+            login: trinity
+        _index: "gharchive-2"
+      - _source:
+          actor:
+            login: fulmicoton
+        _index: "gharchive-1"
