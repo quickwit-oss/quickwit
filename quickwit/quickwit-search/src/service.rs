@@ -214,6 +214,7 @@ impl SearchService for SearchServiceImpl {
             fetch_docs_request.snippet_request.as_ref();
         let doc_mapper = deserialize_doc_mapper(&fetch_docs_request.doc_mapper)?;
         let fetch_docs_response = fetch_docs(
+            &fetch_docs_request.index_id,
             self.searcher_context.clone(),
             fetch_docs_request.partial_hits,
             storage,

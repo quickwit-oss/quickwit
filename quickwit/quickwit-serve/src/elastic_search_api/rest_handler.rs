@@ -310,7 +310,7 @@ fn convert_hit(hit: quickwit_proto::search::Hit, append_shard_doc: bool) -> Elas
     ElasticHit {
         fields,
         explanation: None,
-        index: "".to_string(),
+        index: hit.index_id,
         id: "".to_string(),
         score: None,
         nested: None,

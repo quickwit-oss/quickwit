@@ -223,6 +223,9 @@ pub struct LeafHit {
     /// A snippet of the matching content
     #[prost(string, optional, tag = "3")]
     pub leaf_snippet_json: ::core::option::Option<::prost::alloc::string::String>,
+    /// Index uid holding the hit
+    #[prost(string, tag = "4")]
+    pub index_id: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -237,6 +240,8 @@ pub struct Hit {
     /// A snippet of the matching content
     #[prost(string, optional, tag = "3")]
     pub snippet: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(string, tag = "4")]
+    pub index_id: ::prost::alloc::string::String,
 }
 /// A partial hit, is a hit for which we have not fetch the content yet.
 /// Instead, it holds a document_uri which is enough information to
@@ -350,6 +355,8 @@ pub struct FetchDocsRequest {
     /// `DocMapper` as json serialized trait.
     #[prost(string, tag = "6")]
     pub doc_mapper: ::prost::alloc::string::String,
+    #[prost(string, tag = "8")]
+    pub index_id: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]

@@ -109,6 +109,7 @@ async fn fetch_docs_to_map(
 /// and the storage associated to an index, fetches the document from
 /// the split document stores, and returns the full hits.
 pub async fn fetch_docs(
+    index_id: &str,
     searcher_context: Arc<SearcherContext>,
     partial_hits: Vec<PartialHit>,
     index_storage: Arc<dyn Storage>,
@@ -141,6 +142,7 @@ pub async fn fetch_docs(
                     leaf_json: document.content_json,
                     partial_hit: Some(partial_hit.clone()),
                     leaf_snippet_json: document.snippet_json,
+                    index_id: index_id.to_string(),
                 })
             } else {
                 None

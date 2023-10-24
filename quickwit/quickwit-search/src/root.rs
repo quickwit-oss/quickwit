@@ -579,6 +579,7 @@ pub(crate) async fn fetch_docs_phase(
                     json: leaf_hit.leaf_json,
                     partial_hit: leaf_hit.partial_hit,
                     snippet: leaf_hit.leaf_snippet_json,
+                    index_id: leaf_hit.index_id,
                 },
             ))
         })
@@ -1118,6 +1119,7 @@ pub fn jobs_to_fetch_docs_requests(
         let fetch_docs_req = FetchDocsRequest {
             partial_hits,
             split_offsets,
+            index_id: index_uid.index_id().to_string(),
             index_uri: index_meta.index_uri.to_string(),
             snippet_request: snippet_request_opt.clone(),
             doc_mapper: index_meta.doc_mapper_str.clone(),
@@ -1361,6 +1363,7 @@ mod tests {
                 .expect("Json serialization should not fail"),
                 partial_hit: Some(req),
                 leaf_snippet_json: None,
+                index_id: fetch_docs_req.index_id.clone(),
             })
             .collect()
     }

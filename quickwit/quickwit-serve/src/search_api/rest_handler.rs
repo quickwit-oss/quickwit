@@ -1077,6 +1077,7 @@ mod tests {
         mock_search_service.expect_root_search().returning(|_| {
             Ok(quickwit_proto::search::SearchResponse {
                 hits: vec![quickwit_proto::search::Hit {
+                    index_id: "myindex".to_string(),
                     json: r#"{"title": "foo", "body": "foo bar baz"}"#.to_string(),
                     partial_hit: None,
                     snippet: Some(r#"{"title": [], "body": ["foo <em>bar</em> baz"]}"#.to_string()),
