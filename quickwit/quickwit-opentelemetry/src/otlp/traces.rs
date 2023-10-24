@@ -18,10 +18,11 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::cmp::{Ord, Ordering, PartialEq, PartialOrd};
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{btree_set, BTreeSet, HashMap};
 use std::str::FromStr;
 
 use async_trait::async_trait;
+use prost::Message;
 use quickwit_common::uri::Uri;
 use quickwit_config::{load_index_config_from_user_config, ConfigFormat, IndexConfig};
 use quickwit_ingest::{
@@ -42,7 +43,7 @@ use tonic::{Request, Response, Status};
 use tracing::field::Empty;
 use tracing::{error, instrument, warn, Span as RuntimeSpan};
 
-use super::is_zero;
+use super::{is_zero, TryFromSpanIdError, TryFromTraceIdError};
 use crate::otlp::metrics::OTLP_SERVICE_METRICS;
 use crate::otlp::{extract_attributes, SpanId, TraceId};
 
@@ -153,6 +154,18 @@ search_settings:
   default_search_fields: []
 "#;
 
+#[derive(Debug, thiserror::Error)]
+pub enum OtlpTraceError {
+    #[error("failed to deserialize JSON span: `{0}`")]
+    Json(#[from] serde_json::Error),
+    #[error("failed to deserialize Protobuf span: `{0}`")]
+    Protobuf(#[from] prost::DecodeError),
+    #[error("failed to parse span: `{0}`")]
+    SpanId(#[from] TryFromSpanIdError),
+    #[error("failed to parse span: `{0}`")]
+    TraceId(#[from] TryFromTraceIdError),
+}
+
 #[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Span {
     pub trace_id: TraceId,
@@ -215,7 +228,11 @@ pub struct Span {
 }
 
 impl Span {
-    fn from_otlp(span: OtlpSpan, resource: &Resource, scope: &Scope) -> Result<Self, Status> {
+    fn from_otlp(
+        span: OtlpSpan,
+        resource: &Resource,
+        scope: &Scope,
+    ) -> Result<Self, OtlpTraceError> {
         let trace_id = TraceId::try_from(span.trace_id)?;
         let span_id = SpanId::try_from(span.span_id)?;
         let parent_span_id = if !span.parent_span_id.is_empty() {
@@ -294,6 +311,10 @@ impl Span {
 struct OrdSpan(Span);
 
 impl Ord for OrdSpan {
+    /// Sort spans by trace ID, span name, start timestamp, and span ID in an attempt to group the
+    /// spans by trace ID and span name in the same docstore blocks. At some point, the
+    /// cost–benefit of this approach should be evaluated via a benchmark and revisited if
+    /// necessary.
     fn cmp(&self, other: &Self) -> Ordering {
         self.0
             .trace_id
@@ -594,7 +615,7 @@ pub struct Link {
 }
 
 impl Link {
-    fn try_from_otlp(link: OtlpLink) -> tonic::Result<Link> {
+    fn try_from_otlp(link: OtlpLink) -> Result<Link, OtlpTraceError> {
         let link_trace_id = TraceId::try_from(link.trace_id)?;
         let link_span_id = SpanId::try_from(link.span_id)?;
         let link = Link {
@@ -610,6 +631,27 @@ impl Link {
         };
         Ok(link)
     }
+}
+
+fn parse_otlp_spans(
+    request: ExportTraceServiceRequest,
+) -> Result<BTreeSet<OrdSpan>, OtlpTraceError> {
+    let mut spans = BTreeSet::new();
+
+    for resource_spans in request.resource_spans {
+        let resource = resource_spans
+            .resource
+            .map(Resource::from_otlp)
+            .unwrap_or_default();
+        for scope_spans in resource_spans.scope_spans {
+            let scope = scope_spans.scope.map(Scope::from_otlp).unwrap_or_default();
+            for span in scope_spans.spans {
+                let span = Span::from_otlp(span, &resource, &scope)?;
+                spans.insert(OrdSpan(span));
+            }
+        }
+    }
+    Ok(spans)
 }
 
 struct ParsedSpans {
@@ -695,32 +737,18 @@ impl OtlpGrpcTracesService {
     fn parse_spans(
         request: ExportTraceServiceRequest,
         parent_span: RuntimeSpan,
-    ) -> Result<ParsedSpans, Status> {
-        let mut ordered_spans = BTreeSet::new();
-        let mut num_spans = 0;
+    ) -> tonic::Result<ParsedSpans> {
+        let spans = parse_otlp_spans(request)?;
+        let num_spans = spans.len() as u64;
         let mut num_parse_errors = 0;
         let mut error_message = String::new();
 
-        for resource_spans in request.resource_spans {
-            let resource = resource_spans
-                .resource
-                .map(Resource::from_otlp)
-                .unwrap_or_default();
-            for scope_spans in resource_spans.scope_spans {
-                let scope = scope_spans.scope.map(Scope::from_otlp).unwrap_or_default();
-                for span in scope_spans.spans {
-                    num_spans += 1;
-                    let span = Span::from_otlp(span, &resource, &scope)?;
-                    ordered_spans.insert(OrdSpan(span));
-                }
-            }
-        }
         let mut doc_batch_builder =
             DocBatchBuilder::new(OTEL_TRACES_INDEX_ID.to_string()).json_writer();
-        for span in ordered_spans {
+        for span in spans {
             if let Err(error) = doc_batch_builder.ingest_doc(&span.0) {
-                error!(error=?error, "Failed to JSON serialize span.");
-                error_message = format!("Failed to JSON serialize span: {error:?}");
+                error!(error=?error, "failed to JSON serialize span.");
+                error_message = format!("failed to JSON serialize span: {error:?}");
                 num_parse_errors += 1;
             }
         }
@@ -795,6 +823,61 @@ impl TraceService for OtlpGrpcTracesService {
             .await
             .map(Response::new)
     }
+}
+
+/// An JSON span iterator for use in the doc processor.
+pub struct JsonSpanIterator {
+    spans: btree_set::IntoIter<OrdSpan>,
+    current_span_idx: usize,
+    num_spans: usize,
+    avg_span_size: usize,
+    avg_span_size_rem: usize,
+}
+
+impl JsonSpanIterator {
+    fn new(spans: BTreeSet<OrdSpan>, num_bytes: usize) -> Self {
+        let num_spans = spans.len();
+        let avg_span_size = num_bytes / num_spans;
+        let avg_span_size_rem = avg_span_size + num_bytes % num_spans;
+
+        Self {
+            spans: spans.into_iter(),
+            current_span_idx: 0,
+            num_spans,
+            avg_span_size,
+            avg_span_size_rem,
+        }
+    }
+}
+
+impl Iterator for JsonSpanIterator {
+    type Item = (JsonValue, usize);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let span_opt = self.spans.next().map(|OrdSpan(span)| {
+            serde_json::to_value(span).expect("`Span` should be JSON serializable")
+        });
+        if span_opt.is_some() {
+            self.current_span_idx += 1;
+        }
+        if self.current_span_idx < self.num_spans {
+            span_opt.map(|span| (span, self.avg_span_size))
+        } else {
+            span_opt.map(|span| (span, self.avg_span_size_rem))
+        }
+    }
+}
+
+pub fn parse_otlp_spans_json(payload_json: &[u8]) -> Result<JsonSpanIterator, OtlpTraceError> {
+    let request: ExportTraceServiceRequest = serde_json::from_slice(payload_json)?;
+    let spans = parse_otlp_spans(request)?;
+    Ok(JsonSpanIterator::new(spans, payload_json.len()))
+}
+
+pub fn parse_otlp_spans_protobuf(payload_proto: &[u8]) -> Result<JsonSpanIterator, OtlpTraceError> {
+    let request = ExportTraceServiceRequest::decode(payload_proto)?;
+    let spans = parse_otlp_spans(request)?;
+    Ok(JsonSpanIterator::new(spans, payload_proto.len()))
 }
 
 #[cfg(test)]

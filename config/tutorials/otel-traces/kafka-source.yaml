@@ -1,0 +1,8 @@
+version: 0.6
+source_id: kafka-source
+source_type: kafka
+input_format: otlp_trace_proto
+params:
+  topic: otlp_spans
+  client_params:
+    bootstrap.servers: localhost:9092
