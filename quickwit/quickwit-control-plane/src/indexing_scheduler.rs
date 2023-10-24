@@ -26,7 +26,7 @@ use fnv::{FnvHashMap, FnvHashSet};
 use itertools::Itertools;
 use quickwit_proto::indexing::{ApplyIndexingPlanRequest, IndexingService, IndexingTask};
 use quickwit_proto::metastore::MetastoreServiceClient;
-use quickwit_proto::NodeId;
+use quickwit_proto::types::NodeId;
 use serde::Serialize;
 use tracing::{debug, error, info, warn};
 

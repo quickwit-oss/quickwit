@@ -170,7 +170,7 @@ pub mod tests {
     use proptest::prelude::*;
     use quickwit_actors::Universe;
     use quickwit_proto::indexing::IndexingPipelineId;
-    use quickwit_proto::IndexUid;
+    use quickwit_proto::types::IndexUid;
     use rand::seq::SliceRandom;
     use tantivy::TrackedObject;
     use time::OffsetDateTime;

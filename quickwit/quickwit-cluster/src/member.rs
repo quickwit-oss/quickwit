@@ -24,7 +24,7 @@ use anyhow::{anyhow, Context};
 use chitchat::{ChitchatId, NodeState};
 use itertools::Itertools;
 use quickwit_proto::indexing::IndexingTask;
-use quickwit_proto::NodeId;
+use quickwit_proto::types::NodeId;
 use tracing::warn;
 
 use crate::{GenerationId, QuickwitService};

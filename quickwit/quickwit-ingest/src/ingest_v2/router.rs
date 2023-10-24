@@ -17,27 +17,38 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::sync::Arc;
+use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::stream::FuturesUnordered;
-use futures::StreamExt;
+use futures::{Future, StreamExt};
 use quickwit_proto::control_plane::{
-    ControlPlaneService, ControlPlaneServiceClient, GetOrCreateOpenShardsRequest,
+    ClosedShards, ControlPlaneService, ControlPlaneServiceClient, GetOrCreateOpenShardsRequest,
     GetOrCreateOpenShardsSubrequest,
 };
-use quickwit_proto::ingest::ingester::{IngesterService, PersistRequest, PersistSubrequest};
+use quickwit_proto::ingest::ingester::{
+    IngesterService, PersistFailureReason, PersistRequest, PersistResponse, PersistSubrequest,
+};
 use quickwit_proto::ingest::router::{
     IngestRequestV2, IngestResponseV2, IngestRouterService, IngestSubrequest,
 };
-use quickwit_proto::ingest::IngestV2Result;
-use quickwit_proto::types::{IndexUid, NodeId};
+use quickwit_proto::ingest::{IngestV2Error, IngestV2Result};
+use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceId};
 use tokio::sync::RwLock;
 
+use super::ingester::PERSIST_REQUEST_TIMEOUT;
 use super::shard_table::ShardTable;
 use super::IngesterPool;
+
+/// Duration after which ingest requests time out with [`IngestV2Error::Timeout`].
+pub(super) const INGEST_REQUEST_TIMEOUT: Duration = if cfg!(any(test, feature = "testsuite")) {
+    Duration::from_millis(10)
+} else {
+    Duration::from_secs(35)
+};
 
 type LeaderId = String;
 
@@ -90,19 +101,26 @@ impl IngestRouter {
     async fn make_get_or_create_open_shard_request(
         &self,
         subrequests: &[IngestSubrequest],
+        ingester_pool: &IngesterPool,
     ) -> GetOrCreateOpenShardsRequest {
         let state_guard = self.state.read().await;
         let mut get_open_shards_subrequests = Vec::new();
+        // `closed_shards` and `unavailable_leaders` are populated by calls to `has_open_shards`
+        // as we're looking for open shards to route the subrequests to.
+        let mut closed_shards: Vec<ClosedShards> = Vec::new();
+        let mut unavailable_leaders: HashSet<NodeId> = HashSet::new();
 
         for subrequest in subrequests {
-            if !state_guard
-                .shard_table
-                .contains_entry(&subrequest.index_id, &subrequest.source_id)
-            {
+            if !state_guard.shard_table.has_open_shards(
+                &subrequest.index_id,
+                &subrequest.source_id,
+                &mut closed_shards,
+                ingester_pool,
+                &mut unavailable_leaders,
+            ) {
                 let subrequest = GetOrCreateOpenShardsSubrequest {
                     index_id: subrequest.index_id.clone(),
                     source_id: subrequest.source_id.clone(),
-                    closed_shards: Vec::new(), // TODO
                 };
                 get_open_shards_subrequests.push(subrequest);
             }
@@ -110,7 +128,8 @@ impl IngestRouter {
 
         GetOrCreateOpenShardsRequest {
             subrequests: get_open_shards_subrequests,
-            unavailable_ingesters: Vec::new(),
+            closed_shards,
+            unavailable_leaders: unavailable_leaders.into_iter().map(Into::into).collect(),
         }
     }
 
@@ -131,26 +150,59 @@ impl IngestRouter {
         let mut state_guard = self.state.write().await;
 
         for subresponse in response.subresponses {
-            let index_uid: IndexUid = subresponse.index_uid.into();
-            let index_id = index_uid.index_id().to_string();
             state_guard.shard_table.insert_shards(
-                index_id,
+                subresponse.index_uid,
                 subresponse.source_id,
                 subresponse.open_shards,
             );
         }
         Ok(())
     }
-}
 
-#[async_trait]
-impl IngestRouterService for IngestRouter {
-    async fn ingest(
+    async fn process_persist_results(
+        &mut self,
+        mut persist_futures: FuturesUnordered<
+            impl Future<Output = IngestV2Result<PersistResponse>>,
+        >,
+    ) {
+        let mut closed_shards: HashMap<(IndexUid, SourceId), Vec<ShardId>> = HashMap::new();
+
+        while let Some(persist_result) = persist_futures.next().await {
+            match persist_result {
+                Ok(persist_response) => {
+                    for persist_failure in persist_response.failures {
+                        if persist_failure.failure_reason() == PersistFailureReason::ShardClosed {
+                            let index_uid: IndexUid = persist_failure.index_uid.into();
+                            let source_id: SourceId = persist_failure.source_id;
+                            closed_shards
+                                .entry((index_uid, source_id))
+                                .or_default()
+                                .push(persist_failure.shard_id);
+                        }
+                    }
+                }
+                Err(_persist_error) => {
+                    // TODO
+                }
+            };
+        }
+        if !closed_shards.is_empty() {
+            let mut state_guard = self.state.write().await;
+
+            for ((index_uid, source_id), shard_ids) in closed_shards {
+                state_guard
+                    .shard_table
+                    .close_shards(&index_uid, source_id, &shard_ids);
+            }
+        }
+    }
+
+    async fn ingest_attempt_one(
         &mut self,
         ingest_request: IngestRequestV2,
     ) -> IngestV2Result<IngestResponseV2> {
         let get_or_create_open_shards_request = self
-            .make_get_or_create_open_shard_request(&ingest_request.subrequests)
+            .make_get_or_create_open_shard_request(&ingest_request.subrequests, &self.ingester_pool)
             .await;
         self.populate_shard_table(get_or_create_open_shards_request)
             .await?;
@@ -168,7 +220,8 @@ impl IngestRouterService for IngestRouter {
                 .shard_table
                 .find_entry(&ingest_subrequest.index_id, &ingest_subrequest.source_id)
                 .expect("TODO")
-                .next_shard_round_robin();
+                .next_open_shard_round_robin(&self.ingester_pool)
+                .expect("TODO");
 
             let persist_subrequest = PersistSubrequest {
                 index_uid: shard.index_uid.clone(),
@@ -182,7 +235,7 @@ impl IngestRouterService for IngestRouter {
                 .or_default()
                 .push(persist_subrequest);
         }
-        let mut persist_futures = FuturesUnordered::new();
+        let persist_futures = FuturesUnordered::new();
 
         for (leader_id, subrequests) in per_leader_persist_subrequests {
             let leader_id: NodeId = leader_id.clone().into();
@@ -193,30 +246,66 @@ impl IngestRouterService for IngestRouter {
                 subrequests,
                 commit_type: ingest_request.commit_type,
             };
-            let persist_future = async move { ingester.persist(persist_request).await };
+            let persist_future = async move {
+                tokio::time::timeout(PERSIST_REQUEST_TIMEOUT, ingester.persist(persist_request))
+                    .await
+                    .map_err(|_| IngestV2Error::Timeout)?
+            };
             persist_futures.push(persist_future);
         }
         drop(state_guard);
 
-        while let Some(persist_result) = persist_futures.next().await {
-            // TODO: Handle errors.
-            persist_result?;
-        }
+        self.process_persist_results(persist_futures).await;
+
         Ok(IngestResponseV2 {
-            successes: Vec::new(), // TODO
-            failures: Vec::new(),
+            subresponses: Vec::new(),
         })
+    }
+
+    async fn ingest_attempt_many(
+        &mut self,
+        ingest_request: IngestRequestV2,
+    ) -> IngestV2Result<IngestResponseV2> {
+        // TODO: Introduce IngestRequestWorbench and implement retry logic and perform multiple
+        // attempts.
+        self.ingest_attempt_one(ingest_request).await
+    }
+
+    async fn ingest_timeout(
+        &mut self,
+        ingest_request: IngestRequestV2,
+        timeout_duration: Duration,
+    ) -> IngestV2Result<IngestResponseV2> {
+        tokio::time::timeout(timeout_duration, self.ingest_attempt_many(ingest_request))
+            .await
+            .map_err(|_| IngestV2Error::Timeout)?
+    }
+}
+
+#[async_trait]
+impl IngestRouterService for IngestRouter {
+    async fn ingest(
+        &mut self,
+        ingest_request: IngestRequestV2,
+    ) -> IngestV2Result<IngestResponseV2> {
+        self.ingest_timeout(ingest_request, INGEST_REQUEST_TIMEOUT)
+            .await
     }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::sync::atomic::AtomicUsize;
+
     use quickwit_proto::control_plane::{GetOpenShardsSubresponse, GetOrCreateOpenShardsResponse};
-    use quickwit_proto::ingest::ingester::{IngesterServiceClient, PersistResponse};
+    use quickwit_proto::ingest::ingester::{
+        IngesterServiceClient, PersistFailure, PersistResponse,
+    };
     use quickwit_proto::ingest::router::IngestSubrequest;
-    use quickwit_proto::ingest::{CommitTypeV2, DocBatchV2, Shard};
+    use quickwit_proto::ingest::{CommitTypeV2, DocBatchV2, Shard, ShardState};
 
     use super::*;
+    use crate::ingest_v2::shard_table::ShardTableEntry;
 
     #[tokio::test]
     async fn test_router_make_get_or_create_open_shard_request() {
@@ -230,9 +319,42 @@ mod tests {
             ingester_pool.clone(),
             replication_factor,
         );
-        let get_or_create_open_shard_request =
-            router.make_get_or_create_open_shard_request(&[]).await;
+        let get_or_create_open_shard_request = router
+            .make_get_or_create_open_shard_request(&[], &ingester_pool)
+            .await;
         assert!(get_or_create_open_shard_request.subrequests.is_empty());
+
+        let mut state_guard = router.state.write().await;
+
+        state_guard.shard_table.table.insert(
+            ("test-index-0".into(), "test-source".into()),
+            ShardTableEntry {
+                index_uid: "test-index-0:0".into(),
+                source_id: "test-source".to_string(),
+                local_shards: vec![
+                    Shard {
+                        index_uid: "test-index-0:0".to_string(),
+                        source_id: "test-source".to_string(),
+                        shard_id: 1,
+                        leader_id: "test-ingester-0".to_string(),
+                        shard_state: ShardState::Closed as i32,
+                        ..Default::default()
+                    },
+                    Shard {
+                        index_uid: "test-index-0:0".to_string(),
+                        source_id: "test-source".to_string(),
+                        shard_id: 2,
+                        leader_id: "test-ingester-0".to_string(),
+                        shard_state: ShardState::Open as i32,
+                        ..Default::default()
+                    },
+                ],
+                local_round_robin_idx: AtomicUsize::default(),
+                remote_shards: Vec::new(),
+                remote_round_robin_idx: AtomicUsize::default(),
+            },
+        );
+        drop(state_guard);
 
         let ingest_subrequests = [
             IngestSubrequest {
@@ -247,7 +369,7 @@ mod tests {
             },
         ];
         let get_or_create_open_shard_request = router
-            .make_get_or_create_open_shard_request(&ingest_subrequests)
+            .make_get_or_create_open_shard_request(&ingest_subrequests, &ingester_pool)
             .await;
 
         assert_eq!(get_or_create_open_shard_request.subrequests.len(), 2);
@@ -260,29 +382,42 @@ mod tests {
         assert_eq!(subrequest.index_id, "test-index-1");
         assert_eq!(subrequest.source_id, "test-source");
 
-        let mut state_guard = router.state.write().await;
-
-        state_guard.shard_table.insert_shards(
-            "test-index-0",
-            "test-source",
-            vec![Shard {
-                index_uid: "test-index-0:0".to_string(),
+        assert_eq!(get_or_create_open_shard_request.closed_shards.len(), 1);
+        assert_eq!(
+            get_or_create_open_shard_request.closed_shards[0],
+            ClosedShards {
+                index_uid: "test-index-0:0".into(),
                 source_id: "test-source".to_string(),
-                shard_id: 0,
-                ..Default::default()
-            }],
+                shard_ids: vec![1],
+            }
         );
-        drop(state_guard);
+        assert_eq!(
+            get_or_create_open_shard_request.unavailable_leaders.len(),
+            1
+        );
+        assert_eq!(
+            get_or_create_open_shard_request.unavailable_leaders[0],
+            "test-ingester-0"
+        );
+
+        ingester_pool.insert(
+            "test-ingester-0".into(),
+            IngesterServiceClient::mock().into(),
+        );
 
         let get_or_create_open_shard_request = router
-            .make_get_or_create_open_shard_request(&ingest_subrequests)
+            .make_get_or_create_open_shard_request(&ingest_subrequests, &ingester_pool)
             .await;
-
-        assert_eq!(get_or_create_open_shard_request.subrequests.len(), 1);
 
         let subrequest = &get_or_create_open_shard_request.subrequests[0];
         assert_eq!(subrequest.index_id, "test-index-1");
         assert_eq!(subrequest.source_id, "test-source");
+
+        assert_eq!(get_or_create_open_shard_request.subrequests.len(), 1);
+        assert_eq!(
+            get_or_create_open_shard_request.unavailable_leaders.len(),
+            0
+        );
     }
 
     #[tokio::test]
@@ -347,7 +482,8 @@ mod tests {
         );
         let get_or_create_open_shards_request = GetOrCreateOpenShardsRequest {
             subrequests: Vec::new(),
-            unavailable_ingesters: Vec::new(),
+            closed_shards: Vec::new(),
+            unavailable_leaders: Vec::new(),
         };
         router
             .populate_shard_table(get_or_create_open_shards_request)
@@ -360,20 +496,18 @@ mod tests {
                 GetOrCreateOpenShardsSubrequest {
                     index_id: "test-index-0".to_string(),
                     source_id: "test-source".to_string(),
-                    ..Default::default()
                 },
                 GetOrCreateOpenShardsSubrequest {
                     index_id: "test-index-1".to_string(),
                     source_id: "test-source".to_string(),
-                    ..Default::default()
                 },
                 GetOrCreateOpenShardsSubrequest {
                     index_id: "test-index-2".to_string(),
                     source_id: "test-source".to_string(),
-                    ..Default::default()
                 },
             ],
-            unavailable_ingesters: Vec::new(),
+            closed_shards: Vec::new(),
+            unavailable_leaders: Vec::new(),
         };
         router
             .populate_shard_table(get_or_create_open_shards_request)
@@ -399,6 +533,60 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_router_process_persist_results_closes_shards() {
+        let self_node_id = "test-router".into();
+        let control_plane = ControlPlaneServiceClient::mock().into();
+        let ingester_pool = IngesterPool::default();
+        let replication_factor = 1;
+        let mut router = IngestRouter::new(
+            self_node_id,
+            control_plane,
+            ingester_pool.clone(),
+            replication_factor,
+        );
+        let mut state_guard = router.state.write().await;
+        state_guard.shard_table.insert_shards(
+            "test-index-0:0",
+            "test-source",
+            vec![Shard {
+                index_uid: "test-index-0:0".to_string(),
+                shard_id: 1,
+                leader_id: "test-ingester-0".to_string(),
+                ..Default::default()
+            }],
+        );
+        drop(state_guard);
+
+        let persist_futures = FuturesUnordered::new();
+
+        persist_futures.push(async {
+            Ok::<_, IngestV2Error>(PersistResponse {
+                leader_id: "test-ingester-0".to_string(),
+                successes: Vec::new(),
+                failures: vec![PersistFailure {
+                    index_uid: "test-index-0:0".to_string(),
+                    source_id: "test-source".to_string(),
+                    shard_id: 1,
+                    failure_reason: PersistFailureReason::ShardClosed as i32,
+                }],
+            })
+        });
+        router.process_persist_results(persist_futures).await;
+
+        let state_guard = router.state.read().await;
+        let shard_table_entry = state_guard
+            .shard_table
+            .find_entry("test-index-0", "test-source")
+            .unwrap();
+        assert_eq!(shard_table_entry.len(), 1);
+        assert_eq!(shard_table_entry.shards()[0].shard_id, 1);
+        assert_eq!(
+            shard_table_entry.shards()[0].shard_state,
+            ShardState::Closed as i32
+        );
+    }
+
+    #[tokio::test]
     async fn test_router_ingest() {
         let self_node_id = "test-router".into();
         let control_plane = ControlPlaneServiceClient::mock().into();
@@ -410,7 +598,6 @@ mod tests {
             ingester_pool.clone(),
             replication_factor,
         );
-
         let mut state_guard = router.state.write().await;
         state_guard.shard_table.insert_shards(
             "test-index-0",

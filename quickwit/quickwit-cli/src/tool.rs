@@ -51,7 +51,7 @@ use quickwit_ingest::IngesterPool;
 use quickwit_metastore::IndexMetadataResponseExt;
 use quickwit_proto::metastore::{IndexMetadataRequest, MetastoreService, MetastoreServiceClient};
 use quickwit_proto::search::SearchResponse;
-use quickwit_proto::NodeId;
+use quickwit_proto::types::NodeId;
 use quickwit_search::{single_node_search, SearchResponseRest};
 use quickwit_serve::{
     search_request_from_api_request, BodyFormat, SearchRequestQueryString, SortBy,

@@ -593,7 +593,7 @@ mod tests {
         EmptyResponse, IndexMetadataResponse, LastDeleteOpstampResponse, ListSplitsResponse,
         MetastoreError,
     };
-    use quickwit_proto::IndexUid;
+    use quickwit_proto::types::IndexUid;
     use quickwit_storage::RamStorage;
 
     use super::{IndexingPipeline, *};

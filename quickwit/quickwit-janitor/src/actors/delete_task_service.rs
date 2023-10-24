@@ -32,7 +32,7 @@ use quickwit_metastore::{
 use quickwit_proto::metastore::{
     IndexMetadataRequest, ListIndexesMetadataRequest, MetastoreService, MetastoreServiceClient,
 };
-use quickwit_proto::IndexUid;
+use quickwit_proto::types::IndexUid;
 use quickwit_search::SearchJobPlacer;
 use quickwit_storage::StorageResolver;
 use serde::Serialize;

@@ -692,9 +692,9 @@ mod tests {
             subrequests: vec![GetOrCreateOpenShardsSubrequest {
                 index_id: "test-index".to_string(),
                 source_id: INGEST_SOURCE_ID.to_string(),
-                closed_shards: Vec::new(),
             }],
-            unavailable_ingesters: Vec::new(),
+            closed_shards: Vec::new(),
+            unavailable_leaders: Vec::new(),
         };
         let get_open_shards_response = control_plane_mailbox
             .ask_for_res(get_open_shards_request)

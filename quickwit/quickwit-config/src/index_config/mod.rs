@@ -35,7 +35,7 @@ use quickwit_doc_mapper::{
     DefaultDocMapper, DefaultDocMapperBuilder, DocMapper, FieldMappingEntry, Mode, ModeType,
     QuickwitJsonOptions, TokenizerEntry,
 };
-use quickwit_proto::IndexId;
+use quickwit_proto::types::IndexId;
 use serde::{Deserialize, Serialize};
 pub use serialize::load_index_config_from_user_config;
 

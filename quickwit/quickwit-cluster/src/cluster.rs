@@ -32,7 +32,7 @@ use chitchat::{
 use futures::Stream;
 use itertools::Itertools;
 use quickwit_proto::indexing::IndexingTask;
-use quickwit_proto::NodeId;
+use quickwit_proto::types::NodeId;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, watch, Mutex, RwLock};
 use tokio::time::timeout;

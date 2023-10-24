@@ -25,7 +25,7 @@ use super::{
     AddSourceRequest, CreateIndexRequest, DeleteIndexRequest, DeleteSourceRequest, SourceType,
     ToggleSourceRequest,
 };
-use crate::{IndexUid, SourceId};
+use crate::types::{IndexUid, SourceId};
 
 /// Delete index event.
 #[derive(Debug, Clone, Eq, PartialEq)]

@@ -28,7 +28,7 @@ use quickwit_proto::ingest::router::{
     IngestSubrequest,
 };
 use quickwit_proto::ingest::{DocBatchV2, IngestV2Error};
-use quickwit_proto::IndexId;
+use quickwit_proto::types::IndexId;
 use serde::Deserialize;
 use thiserror::Error;
 use warp::{Filter, Rejection};

@@ -44,7 +44,7 @@ use quickwit_proto::metastore::{
     OpenShardsResponse, PublishSplitsRequest, ResetSourceCheckpointRequest, StageSplitsRequest,
     ToggleSourceRequest, UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
 };
-use quickwit_proto::IndexUid;
+use quickwit_proto::types::IndexUid;
 use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgDatabaseError, PgPoolOptions};
 use sqlx::{ConnectOptions, Pool, Postgres, Transaction};
@@ -1513,7 +1513,7 @@ metastore_test_suite!(crate::PostgresqlMetastore);
 mod tests {
     use quickwit_doc_mapper::tag_pruning::{no_tag, tag, TagFilterAst};
     use quickwit_proto::metastore::MetastoreService;
-    use quickwit_proto::IndexUid;
+    use quickwit_proto::types::IndexUid;
     use time::OffsetDateTime;
 
     use super::{build_query_filter, tags_filter_expression_helper, PostgresqlMetastore};

@@ -197,7 +197,7 @@ mod tests {
     };
     use quickwit_metastore::{PublishSplitsRequestExt, SplitMetadata};
     use quickwit_proto::metastore::EmptyResponse;
-    use quickwit_proto::{IndexUid, Position};
+    use quickwit_proto::types::{IndexUid, Position};
     use tracing::Span;
 
     use super::*;

@@ -33,7 +33,8 @@ use quickwit_proto::metastore::{
     ListSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError, MetastoreService,
     MetastoreServiceClient, ResetSourceCheckpointRequest,
 };
-use quickwit_proto::{IndexUid, ServiceError, ServiceErrorCode, SplitId};
+use quickwit_proto::types::{IndexUid, SplitId};
+use quickwit_proto::{ServiceError, ServiceErrorCode};
 use quickwit_storage::{StorageResolver, StorageResolverError};
 use thiserror::Error;
 use tracing::{error, info};

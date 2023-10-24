@@ -37,7 +37,7 @@ pub mod test_suite {
         PublishSplitsRequest, ResetSourceCheckpointRequest, SourceType, StageSplitsRequest,
         ToggleSourceRequest, UpdateSplitsDeleteOpstampRequest,
     };
-    use quickwit_proto::{IndexUid, Position};
+    use quickwit_proto::types::{IndexUid, Position};
     use quickwit_query::query_ast::qast_json_helper;
     use time::OffsetDateTime;
     use tokio::time::sleep;

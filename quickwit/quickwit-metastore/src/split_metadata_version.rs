@@ -20,7 +20,7 @@
 use std::collections::BTreeSet;
 use std::ops::{Range, RangeInclusive};
 
-use quickwit_proto::IndexUid;
+use quickwit_proto::types::IndexUid;
 use serde::{Deserialize, Serialize};
 
 use crate::split_metadata::{utc_now_timestamp, SplitMaturity};

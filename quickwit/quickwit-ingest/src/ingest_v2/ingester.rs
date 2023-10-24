@@ -35,7 +35,7 @@ use quickwit_common::ServiceStream;
 use quickwit_proto::ingest::ingester::{
     AckReplicationMessage, FetchResponseV2, IngesterService, IngesterServiceClient,
     IngesterServiceStream, OpenFetchStreamRequest, OpenReplicationStreamRequest,
-    OpenReplicationStreamResponse, PersistFailure, PersistFailureKind, PersistRequest,
+    OpenReplicationStreamResponse, PersistFailure, PersistFailureReason, PersistRequest,
     PersistResponse, PersistSuccess, PingRequest, PingResponse, ReplicateRequest,
     ReplicateSubrequest, SynReplicationMessage, TruncateRequest, TruncateResponse,
 };
@@ -55,6 +55,14 @@ use super::IngesterPool;
 use crate::ingest_v2::models::SoloShard;
 use crate::metrics::INGEST_METRICS;
 use crate::{FollowerId, LeaderId};
+
+/// Duration after which persist requests time out with
+/// [`quickwit_proto::ingest::IngestV2Error::Timeout`].
+pub(super) const PERSIST_REQUEST_TIMEOUT: Duration = if cfg!(any(test, feature = "testsuite")) {
+    Duration::from_millis(10)
+} else {
+    Duration::from_secs(6)
+};
 
 #[derive(Clone)]
 pub struct Ingester {
@@ -262,7 +270,7 @@ impl IngesterService for Ingester {
                     index_uid: subrequest.index_uid,
                     source_id: subrequest.source_id,
                     shard_id: subrequest.shard_id,
-                    failure_kind: PersistFailureKind::ShardClosed as i32,
+                    failure_reason: PersistFailureReason::ShardClosed as i32,
                 };
                 persist_failures.push(persist_failure);
                 continue;
@@ -363,7 +371,7 @@ impl IngesterService for Ingester {
                     // TODO: Handle replication error:
                     // 1. Close and evict all the shards hosted by the follower.
                     // 2. Close and evict the replication client.
-                    // 3. Return `PersistFailureKind::ShardClose` to router.
+                    // 3. Return `PersistFailureReason::ShardClosed` to router.
                     continue;
                 }
             };

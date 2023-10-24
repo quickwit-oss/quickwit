@@ -30,7 +30,7 @@ use chitchat::transport::UdpTransport;
 use chitchat::FailureDetectorConfig;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::NodeConfig;
-use quickwit_proto::NodeId;
+use quickwit_proto::types::NodeId;
 use time::OffsetDateTime;
 
 pub use crate::change::ClusterChange;

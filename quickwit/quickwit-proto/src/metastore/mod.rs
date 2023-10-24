@@ -22,8 +22,8 @@ use std::fmt;
 use quickwit_common::retry::Retryable;
 use serde::{Deserialize, Serialize};
 
-use crate::types::{IndexId, QueueId, SourceId, SplitId};
-use crate::{IndexUid, ServiceError, ServiceErrorCode};
+use crate::types::{IndexId, IndexUid, QueueId, SourceId, SplitId};
+use crate::{ServiceError, ServiceErrorCode};
 
 pub mod events;
 

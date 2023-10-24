@@ -338,7 +338,7 @@ mod tests {
     use quickwit_actors::{ObservationType, Universe};
     use quickwit_metastore::checkpoint::IndexCheckpointDelta;
     use quickwit_proto::indexing::IndexingPipelineId;
-    use quickwit_proto::IndexUid;
+    use quickwit_proto::types::IndexUid;
     use tantivy::directory::MmapDirectory;
     use tantivy::schema::{NumericOptions, Schema, FAST, STRING, TEXT};
     use tantivy::{doc, DateTime, IndexBuilder, IndexSettings};

@@ -21,7 +21,7 @@ use std::convert::TryInto;
 use std::str::FromStr;
 
 use quickwit_proto::metastore::{DeleteQuery, DeleteTask, MetastoreError, MetastoreResult};
-use quickwit_proto::IndexUid;
+use quickwit_proto::types::IndexUid;
 use tracing::error;
 
 use crate::{IndexMetadata, Split, SplitMetadata, SplitState};

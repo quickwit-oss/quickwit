@@ -86,7 +86,7 @@ use quickwit_proto::metastore::{
     MetastoreServiceClient,
 };
 use quickwit_proto::search::ReportSplitsRequest;
-use quickwit_proto::NodeId;
+use quickwit_proto::types::NodeId;
 use quickwit_search::{
     create_search_client_from_channel, start_searcher_service, SearchJobPlacer, SearchService,
     SearchServiceClient, SearcherContext, SearcherPool,

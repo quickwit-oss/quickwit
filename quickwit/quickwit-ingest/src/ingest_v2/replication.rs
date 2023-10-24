@@ -42,6 +42,7 @@ use crate::metrics::INGEST_METRICS;
 
 pub(super) const SYN_REPLICATION_STREAM_CAPACITY: usize = 5;
 
+/// Duration after which replication requests time out with [`ReplicationError::Timeout`].
 const REPLICATION_REQUEST_TIMEOUT: Duration = if cfg!(any(test, feature = "testsuite")) {
     Duration::from_millis(10)
 } else {
@@ -205,6 +206,8 @@ pub(super) struct ReplicationStreamTaskHandle {
 }
 
 impl ReplicationStreamTaskHandle {
+    /// Enqueues a replication request into the replication stream and waits for the response. Times
+    /// out after [`REPLICATION_REQUEST_TIMEOUT`] seconds.
     pub fn replicate(
         &self,
         replicate_request: ReplicateRequest,

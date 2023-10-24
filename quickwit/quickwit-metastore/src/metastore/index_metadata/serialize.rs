@@ -20,7 +20,7 @@
 use std::collections::HashMap;
 
 use quickwit_config::{IndexConfig, SourceConfig};
-use quickwit_proto::IndexUid;
+use quickwit_proto::types::IndexUid;
 use serde::{self, Deserialize, Serialize};
 
 use crate::checkpoint::IndexCheckpoint;

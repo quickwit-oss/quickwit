@@ -23,8 +23,19 @@ pub struct IngestSubrequest {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IngestResponseV2 {
     #[prost(message, repeated, tag = "1")]
+    pub subresponses: ::prost::alloc::vec::Vec<IngestSubresponse>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct IngestSubresponse {
+    #[prost(string, tag = "1")]
+    pub index_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub source_id: ::prost::alloc::string::String,
+    #[prost(message, repeated, tag = "3")]
     pub successes: ::prost::alloc::vec::Vec<IngestSuccess>,
-    #[prost(message, repeated, tag = "2")]
+    #[prost(message, repeated, tag = "4")]
     pub failures: ::prost::alloc::vec::Vec<IngestFailure>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
@@ -45,12 +56,8 @@ pub struct IngestSuccess {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IngestFailure {
-    #[prost(string, tag = "1")]
-    pub index_uid: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub source_id: ::prost::alloc::string::String,
-    /// quickwit.ingest.DocBatchV2 doc_batch = 4;
-    #[prost(uint64, tag = "3")]
+    /// IngestFailureReason reason = 2;
+    #[prost(uint64, tag = "1")]
     pub shard_id: u64,
 }
 /// BEGIN quickwit-codegen

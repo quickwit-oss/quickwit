@@ -26,7 +26,7 @@ use quickwit_metastore::{
 use quickwit_proto::metastore::{
     ListSplitsRequest, MarkSplitsForDeletionRequest, MetastoreService, MetastoreServiceClient,
 };
-use quickwit_proto::{IndexUid, SplitId};
+use quickwit_proto::types::{IndexUid, SplitId};
 use time::OffsetDateTime;
 use tracing::{info, warn};
 

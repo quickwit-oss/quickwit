@@ -28,7 +28,7 @@ use quickwit_metastore::{ListIndexesMetadataRequestExt, ListIndexesMetadataRespo
 use quickwit_proto::metastore::{
     ListIndexesMetadataRequest, MetastoreService, MetastoreServiceClient,
 };
-use quickwit_proto::IndexUid;
+use quickwit_proto::types::IndexUid;
 use serde::Serialize;
 use tracing::{debug, error, info};
 

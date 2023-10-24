@@ -41,7 +41,7 @@ use quickwit_proto::metastore::{
     ListSplitsRequest, ListSplitsResponse, MetastoreError, MetastoreResult, MetastoreService,
     MetastoreServiceClient, PublishSplitsRequest, StageSplitsRequest,
 };
-use quickwit_proto::{IndexUid, SplitId};
+use quickwit_proto::types::{IndexUid, SplitId};
 use time::OffsetDateTime;
 
 use crate::checkpoint::IndexCheckpointDelta;

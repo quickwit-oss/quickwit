@@ -48,7 +48,7 @@ use quickwit_proto::metastore::{
     PublishSplitsRequest, ResetSourceCheckpointRequest, StageSplitsRequest, ToggleSourceRequest,
     UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
 };
-use quickwit_proto::IndexUid;
+use quickwit_proto::types::IndexUid;
 use quickwit_storage::Storage;
 use regex::RegexSet;
 use time::OffsetDateTime;
@@ -654,7 +654,7 @@ impl MetastoreService for FileBackedMetastore {
             .read_any(&index_id, |index| Ok(index.metadata().clone()))
             .await?;
         if let Some(index_uid) = &request.index_uid {
-            if index_metadata.index_uid.to_string() != *index_uid {
+            if index_metadata.index_uid != *index_uid {
                 return Err(MetastoreError::NotFound(EntityKind::Index {
                     index_id: index_id.to_string(),
                 }));

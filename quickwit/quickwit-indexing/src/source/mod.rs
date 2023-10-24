@@ -96,7 +96,7 @@ use quickwit_ingest::IngesterPool;
 use quickwit_metastore::checkpoint::{SourceCheckpoint, SourceCheckpointDelta};
 use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::metastore::MetastoreServiceClient;
-use quickwit_proto::{IndexUid, ShardId};
+use quickwit_proto::types::{IndexUid, ShardId};
 use quickwit_storage::StorageResolver;
 use serde_json::Value as JsonValue;
 pub use source_factory::{SourceFactory, SourceLoader, TypedSourceFactory};

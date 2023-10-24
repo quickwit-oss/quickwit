@@ -23,7 +23,6 @@ package quickwit.metastore;
 
 import "quickwit/ingest.proto";
 
-
 enum SourceType {
   CLI = 0;
   FILE = 1;

@@ -30,11 +30,12 @@ use quickwit_metastore::{
 };
 use quickwit_proto::control_plane::ControlPlaneResult;
 use quickwit_proto::ingest::{Shard, ShardState};
+use quickwit_proto::metastore;
 use quickwit_proto::metastore::{
     EntityKind, ListIndexesMetadataRequest, ListShardsSubrequest, MetastoreError, MetastoreService,
     MetastoreServiceClient,
 };
-use quickwit_proto::{metastore, IndexId, IndexUid, NodeId, NodeIdRef, ShardId, SourceId};
+use quickwit_proto::types::{IndexId, IndexUid, NodeId, NodeIdRef, ShardId, SourceId};
 use serde::Serialize;
 use tracing::{error, info};
 
@@ -87,7 +88,7 @@ impl ShardTableEntry {
 ///
 /// Upon starts, it loads its entire state from the metastore.
 #[derive(Default, Debug)]
-pub struct ControlPlaneModel {
+pub(crate) struct ControlPlaneModel {
     index_uid_table: FnvHashMap<IndexId, IndexUid>,
     index_table: FnvHashMap<IndexUid, IndexMetadata>,
     shard_table: ShardTable,
@@ -259,17 +260,31 @@ impl ControlPlaneModel {
             .delete_shards(index_uid, source_id, shard_ids);
     }
 
+    #[cfg(test)]
+    pub fn shards(&mut self) -> impl Iterator<Item = &Shard> + '_ {
+        self.shard_table
+            .table_entries
+            .values()
+            .flat_map(|table_entry| table_entry.shards.values())
+    }
+
+    pub fn shards_mut(&mut self) -> impl Iterator<Item = &mut Shard> + '_ {
+        self.shard_table
+            .table_entries
+            .values_mut()
+            .flat_map(|table_entry| table_entry.shards.values_mut())
+    }
+
     /// Sets the state of the shards identified by their index UID, source ID, and shard IDs to
     /// `Closed`.
-    #[allow(dead_code)] // Will remove this in a future PR.
     pub fn close_shards(
         &mut self,
         index_uid: &IndexUid,
         source_id: &SourceId,
         shard_ids: &[ShardId],
-    ) {
+    ) -> Vec<ShardId> {
         self.shard_table
-            .close_shards(index_uid, source_id, shard_ids);
+            .close_shards(index_uid, source_id, shard_ids)
     }
 
     pub fn index_uid(&self, index_id: &str) -> Option<IndexUid> {
@@ -426,13 +441,14 @@ impl ShardTable {
 
     /// Sets the state of the shards identified by their index UID, source ID, and shard IDs to
     /// `Closed`.
-    #[allow(dead_code)] // Will remove this in a future PR.
     pub fn close_shards(
         &mut self,
         index_uid: &IndexUid,
         source_id: &SourceId,
         shard_ids: &[ShardId],
-    ) {
+    ) -> Vec<ShardId> {
+        let mut closed_shard_ids = Vec::new();
+
         let source_uid = SourceUid {
             index_uid: index_uid.clone(),
             source_id: source_id.clone(),
@@ -440,10 +456,14 @@ impl ShardTable {
         if let Some(table_entry) = self.table_entries.get_mut(&source_uid) {
             for shard_id in shard_ids {
                 if let Some(shard) = table_entry.shards.get_mut(shard_id) {
-                    shard.shard_state = ShardState::Closed as i32;
+                    if !shard.is_closed() {
+                        shard.shard_state = ShardState::Closed as i32;
+                        closed_shard_ids.push(*shard_id);
+                    }
                 }
             }
         }
+        closed_shard_ids
     }
 
     /// Removes the shards identified by their index UID, source ID, and shard IDs.
@@ -624,6 +644,53 @@ mod tests {
     }
 
     #[test]
+    fn test_shard_table_close_shards() {
+        let index_uid_0: IndexUid = "test-index:0".into();
+        let index_uid_1: IndexUid = "test-index:1".into();
+        let source_id = "test-source".to_string();
+
+        let mut shard_table = ShardTable::default();
+
+        let shard_01 = Shard {
+            index_uid: index_uid_0.clone().into(),
+            source_id: source_id.clone(),
+            shard_id: 1,
+            leader_id: "test-leader-0".to_string(),
+            shard_state: ShardState::Open as i32,
+            ..Default::default()
+        };
+        let shard_02 = Shard {
+            index_uid: index_uid_0.clone().into(),
+            source_id: source_id.clone(),
+            shard_id: 2,
+            leader_id: "test-leader-0".to_string(),
+            shard_state: ShardState::Closed as i32,
+            ..Default::default()
+        };
+        let shard_11 = Shard {
+            index_uid: index_uid_1.clone().into(),
+            source_id: source_id.clone(),
+            shard_id: 1,
+            leader_id: "test-leader-0".to_string(),
+            shard_state: ShardState::Open as i32,
+            ..Default::default()
+        };
+        shard_table.update_shards(&index_uid_0, &source_id, &[shard_01, shard_02], 3);
+        shard_table.update_shards(&index_uid_0, &source_id, &[shard_11], 2);
+
+        let closed_shard_ids = shard_table.close_shards(&index_uid_0, &source_id, &[1, 2, 3]);
+        assert_eq!(closed_shard_ids, &[1]);
+
+        let source_uid_0 = SourceUid {
+            index_uid: index_uid_0,
+            source_id,
+        };
+        let table_entry = shard_table.table_entries.get(&source_uid_0).unwrap();
+        let shards = table_entry.shards();
+        assert_eq!(shards[0].shard_state, ShardState::Closed as i32);
+    }
+
+    #[test]
     fn test_shard_table_delete_shards() {
         let index_uid_0: IndexUid = "test-index:0".into();
         let index_uid_1: IndexUid = "test-index:1".into();
@@ -769,9 +836,5 @@ mod tests {
         let shards = table_entry.shards();
         assert_eq!(shards.len(), 0);
         assert_eq!(table_entry.next_shard_id, 1);
-    }
-    #[tokio::test]
-    async fn test_ingest_controller_close_shards() {
-        // TODO: Write test when the RPC is actually called by ingesters.
     }
 }

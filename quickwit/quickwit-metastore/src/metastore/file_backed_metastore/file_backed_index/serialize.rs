@@ -20,7 +20,7 @@
 use std::collections::HashMap;
 
 use itertools::Itertools;
-use quickwit_proto::SourceId;
+use quickwit_proto::types::SourceId;
 use serde::{Deserialize, Serialize};
 
 use super::shards::{SerdeShards, Shards};

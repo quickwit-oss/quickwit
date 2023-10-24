@@ -29,7 +29,7 @@ mod test_utils;
 
 use quickwit_common::tower::Pool;
 use quickwit_proto::ingest::ingester::IngesterServiceClient;
-use quickwit_proto::NodeId;
+use quickwit_proto::types::NodeId;
 
 pub use self::fetch::MultiFetchStream;
 pub use self::ingester::Ingester;

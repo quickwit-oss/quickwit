@@ -38,7 +38,7 @@ use quickwit_proto::metastore::{
     ListSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError, MetastoreResult,
     MetastoreService, MetastoreServiceClient, ResetSourceCheckpointRequest, ToggleSourceRequest,
 };
-use quickwit_proto::IndexUid;
+use quickwit_proto::types::IndexUid;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
