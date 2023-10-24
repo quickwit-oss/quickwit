@@ -672,7 +672,6 @@ mod tests {
             assert!(
                 matches!(error, MetastoreError::NotFound(EntityKind::Index { index_id }) if index_id == index_uid.index_id())
             );
-            println!("{:?}", split_paths[i].as_path());
             assert!(!storages[i].exists(split_paths[i].as_path()).await.unwrap());
         }
     }
