@@ -166,7 +166,7 @@ pub enum OtlpTraceError {
     TraceId(#[from] TryFromTraceIdError),
 }
 
-#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Span {
     pub trace_id: TraceId,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -418,7 +418,7 @@ impl FromStr for SpanKind {
 }
 
 /// Concatenation of the service name, span kind, and span name.
-#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SpanFingerprint(String);
 
 impl SpanFingerprint {
@@ -488,7 +488,7 @@ impl SpanFingerprint {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SpanStatus {
     pub code: OtlpStatusCode,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -588,7 +588,7 @@ impl Scope {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Event {
     pub event_timestamp_nanos: u64,
     pub event_name: String,
@@ -600,7 +600,7 @@ pub struct Event {
     pub event_dropped_attributes_count: u32,
 }
 
-#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Link {
     pub link_trace_id: TraceId,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -837,8 +837,8 @@ pub struct JsonSpanIterator {
 impl JsonSpanIterator {
     fn new(spans: BTreeSet<OrdSpan>, num_bytes: usize) -> Self {
         let num_spans = spans.len();
-        let avg_span_size = num_bytes / num_spans;
-        let avg_span_size_rem = avg_span_size + num_bytes % num_spans;
+        let avg_span_size = num_bytes.checked_div(num_spans).unwrap_or(0);
+        let avg_span_size_rem = avg_span_size + num_bytes.checked_rem(num_spans).unwrap_or(0);
 
         Self {
             spans: spans.into_iter(),
@@ -971,7 +971,7 @@ mod tests {
                 span_id: vec![2; 8],
                 parent_span_id: vec![3; 8],
                 trace_state: "".to_string(),
-                name: "publish_split".to_string(),
+                name: "publish_splits".to_string(),
                 kind: 2, // Server
                 start_time_unix_nano: 1_000_000_001,
                 end_time_unix_nano: 1_001_000_002,
@@ -1000,10 +1000,10 @@ mod tests {
             assert_eq!(span.parent_span_id, Some(SpanId::new([3; 8])));
             assert_eq!(span.span_id, SpanId::new([2; 8]));
             assert_eq!(span.span_kind, 2);
-            assert_eq!(span.span_name, "publish_split");
+            assert_eq!(span.span_name, "publish_splits");
             assert_eq!(
                 span.span_fingerprint.unwrap(),
-                SpanFingerprint::new(UNKNOWN_SERVICE, SpanKind(2), "publish_split")
+                SpanFingerprint::new(UNKNOWN_SERVICE, SpanKind(2), "publish_splits")
             );
             assert_eq!(span.span_start_timestamp_nanos, 1_000_000_001);
             assert_eq!(span.span_end_timestamp_nanos, 1_001_000_002);
@@ -1069,7 +1069,7 @@ mod tests {
                 span_id: vec![2; 8],
                 parent_span_id: vec![3; 8],
                 trace_state: "key1=value1,key2=value2".to_string(),
-                name: "publish_split".to_string(),
+                name: "publish_splits".to_string(),
                 kind: 2, // Server
                 start_time_unix_nano: 1_000_000_001,
                 end_time_unix_nano: 1_001_000_002,
@@ -1107,10 +1107,10 @@ mod tests {
             assert_eq!(span.parent_span_id, Some(SpanId::new([3; 8])));
             assert_eq!(span.span_id, SpanId::new([2; 8]));
             assert_eq!(span.span_kind, 2);
-            assert_eq!(span.span_name, "publish_split");
+            assert_eq!(span.span_name, "publish_splits");
             assert_eq!(
                 span.span_fingerprint.unwrap(),
-                SpanFingerprint::new("quickwit", SpanKind(2), "publish_split")
+                SpanFingerprint::new("quickwit", SpanKind(2), "publish_splits")
             );
             assert_eq!(span.span_start_timestamp_nanos, 1_000_000_001);
             assert_eq!(span.span_end_timestamp_nanos, 1_001_000_002);
@@ -1159,10 +1159,10 @@ mod tests {
 
     #[test]
     fn test_span_fingerprint() {
-        let span_fingerprint = SpanFingerprint::new("quickwit", SpanKind(2), "publish_split");
+        let span_fingerprint = SpanFingerprint::new("quickwit", SpanKind(2), "publish_splits");
         assert_eq!(
             span_fingerprint.as_str(),
-            "quickwit\u{0}2\u{0}publish_split"
+            "quickwit\u{0}2\u{0}publish_splits"
         );
 
         let start_key_opt = SpanFingerprint::start_key("", None);
@@ -1231,7 +1231,7 @@ mod tests {
                 scope_dropped_attributes_count: 0,
                 span_id: SpanId::new([2; 8]),
                 span_kind: 0,
-                span_name: "publish_split".to_string(),
+                span_name: "publish_splits".to_string(),
                 span_fingerprint: Some(SpanFingerprint::new(
                     "quickwit",
                     SpanKind(2),
@@ -1270,7 +1270,7 @@ mod tests {
                 scope_dropped_attributes_count: 1,
                 span_id: SpanId::new([2; 8]),
                 span_kind: 1,
-                span_name: "publish_split".to_string(),
+                span_name: "publish_splits".to_string(),
                 span_fingerprint: Some(SpanFingerprint::new(
                     "quickwit",
                     SpanKind(2),
@@ -1307,5 +1307,68 @@ mod tests {
             let span = serde_json::from_str::<Span>(&span_json).unwrap();
             assert_eq!(span, expected_span);
         }
+    }
+
+    #[test]
+    fn test_json_span_iterator() {
+        let mut json_span_iterator = JsonSpanIterator::new(BTreeSet::new(), 0);
+        assert!(json_span_iterator.next().is_none());
+
+        let span_0 = Span {
+            trace_id: TraceId::new([1; 16]),
+            trace_state: None,
+            service_name: "quickwit".to_string(),
+            resource_attributes: HashMap::new(),
+            resource_dropped_attributes_count: 0,
+            scope_name: None,
+            scope_version: None,
+            scope_attributes: HashMap::new(),
+            scope_dropped_attributes_count: 0,
+            span_id: SpanId::new([2; 8]),
+            span_kind: 0,
+            span_name: "publish_splits".to_string(),
+            span_fingerprint: Some(SpanFingerprint::new(
+                "quickwit",
+                SpanKind(2),
+                "publish_splits",
+            )),
+            span_start_timestamp_nanos: 1_000_000_001,
+            span_end_timestamp_nanos: 1_000_000_002,
+            span_duration_millis: Some(1),
+            span_attributes: HashMap::new(),
+            span_dropped_attributes_count: 0,
+            span_dropped_events_count: 0,
+            span_dropped_links_count: 0,
+            span_status: SpanStatus::default(),
+            parent_span_id: None,
+            events: Vec::new(),
+            event_names: Vec::new(),
+            links: Vec::new(),
+        };
+
+        let spans = BTreeSet::from_iter([OrdSpan(span_0.clone())]);
+        let mut json_span_iterator = JsonSpanIterator::new(spans, 3);
+
+        assert_eq!(
+            json_span_iterator.next(),
+            Some((serde_json::to_value(&span_0).unwrap(), 3))
+        );
+        assert!(json_span_iterator.next().is_none());
+
+        let mut span_1 = span_0.clone();
+        span_1.span_id = SpanId::new([3; 8]);
+
+        let spans = BTreeSet::from_iter([OrdSpan(span_0.clone()), OrdSpan(span_1.clone())]);
+        let mut json_span_iterator = JsonSpanIterator::new(spans, 7);
+
+        assert_eq!(
+            json_span_iterator.next(),
+            Some((serde_json::to_value(&span_0).unwrap(), 3))
+        );
+        assert_eq!(
+            json_span_iterator.next(),
+            Some((serde_json::to_value(&span_1).unwrap(), 4))
+        );
+        assert!(json_span_iterator.next().is_none());
     }
 }
