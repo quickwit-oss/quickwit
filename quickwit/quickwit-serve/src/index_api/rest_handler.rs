@@ -305,7 +305,7 @@ pub struct ListSplitsResponse {
     tag = "Indexes",
     path = "/indexes/{index_id}/splits",
     responses(
-        (status = 200, description = "Successfully fetched splits.", body = [ListSplitsResponse])
+        (status = 200, description = "Successfully fetched splits.", body = ListSplitsResponse)
     ),
     params(
         ListSplitsQueryParams,
@@ -318,7 +318,7 @@ async fn list_splits(
     index_id: String,
     list_split_query: ListSplitsQueryParams,
     mut metastore: MetastoreServiceClient,
-) -> MetastoreResult<Vec<Split>> {
+) -> MetastoreResult<ListSplitsResponse> {
     let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
     let index_uid: IndexUid = metastore
         .index_metadata(index_metadata_request)
@@ -327,9 +327,10 @@ async fn list_splits(
         .index_uid;
     info!(index_id = %index_id, list_split_query = ?list_split_query, "get-splits");
     let mut query = ListSplitsQuery::for_index(index_uid);
-
-    if let Some(offset) = list_split_query.offset {
-        query = query.with_offset(offset);
+    let mut offset = 0;
+    if let Some(offset_value) = list_split_query.offset {
+        query = query.with_offset(offset_value);
+        offset = offset_value;
     }
     if let Some(limit) = list_split_query.limit {
         query = query.with_limit(limit);
@@ -351,7 +352,11 @@ async fn list_splits(
         .list_splits(list_splits_request)
         .await?
         .deserialize_splits()?;
-    Ok(splits)
+    Ok(ListSplitsResponse {
+        offset: offset,
+        size: splits.len(),
+        splits: splits,
+    })
 }
 
 fn list_splits_handler(
