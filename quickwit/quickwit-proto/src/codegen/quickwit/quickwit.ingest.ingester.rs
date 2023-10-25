@@ -58,8 +58,8 @@ pub struct PersistFailure {
     pub source_id: ::prost::alloc::string::String,
     #[prost(uint64, tag = "3")]
     pub shard_id: u64,
-    #[prost(enumeration = "PersistFailureKind", tag = "4")]
-    pub failure_kind: i32,
+    #[prost(enumeration = "PersistFailureReason", tag = "4")]
+    pub failure_reason: i32,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -265,17 +265,17 @@ pub struct PingResponse {}
 #[serde(rename_all = "snake_case")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
-pub enum PersistFailureKind {
+pub enum PersistFailureReason {
     ShardClosed = 0,
 }
-impl PersistFailureKind {
+impl PersistFailureReason {
     /// String value of the enum field names used in the ProtoBuf definition.
     ///
     /// The values are not transformed in any way and thus are considered stable
     /// (if the ProtoBuf definition does not change) and safe for programmatic use.
     pub fn as_str_name(&self) -> &'static str {
         match self {
-            PersistFailureKind::ShardClosed => "SHARD_CLOSED",
+            PersistFailureReason::ShardClosed => "SHARD_CLOSED",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.

@@ -51,7 +51,7 @@ use quickwit_proto::indexing::{
 use quickwit_proto::metastore::{
     IndexMetadataRequest, ListIndexesMetadataRequest, MetastoreService, MetastoreServiceClient,
 };
-use quickwit_proto::{IndexId, IndexUid};
+use quickwit_proto::types::{IndexId, IndexUid};
 use quickwit_storage::StorageResolver;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Semaphore;

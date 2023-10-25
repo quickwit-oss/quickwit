@@ -34,7 +34,7 @@ use quickwit_proto::ingest::ingester::{
 use quickwit_proto::metastore::{
     AcquireShardsRequest, AcquireShardsSubrequest, MetastoreService, MetastoreServiceClient,
 };
-use quickwit_proto::{IndexUid, NodeId, Position, PublishToken, ShardId, SourceId};
+use quickwit_proto::types::{IndexUid, NodeId, Position, PublishToken, ShardId, SourceId};
 use serde_json::json;
 use tokio::time;
 use tracing::{debug, error, info, warn};

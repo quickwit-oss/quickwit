@@ -38,7 +38,7 @@ use quickwit_metastore::{
     CreateIndexRequestExt, MetastoreResolver, Split, SplitMetadata, SplitState,
 };
 use quickwit_proto::metastore::{CreateIndexRequest, MetastoreService, MetastoreServiceClient};
-use quickwit_proto::IndexUid;
+use quickwit_proto::types::IndexUid;
 use quickwit_storage::{Storage, StorageResolver};
 use serde_json::Value as JsonValue;
 

@@ -4,8 +4,10 @@
 pub struct GetOrCreateOpenShardsRequest {
     #[prost(message, repeated, tag = "1")]
     pub subrequests: ::prost::alloc::vec::Vec<GetOrCreateOpenShardsSubrequest>,
-    #[prost(string, repeated, tag = "2")]
-    pub unavailable_ingesters: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(message, repeated, tag = "2")]
+    pub closed_shards: ::prost::alloc::vec::Vec<ClosedShards>,
+    #[prost(string, repeated, tag = "3")]
+    pub unavailable_leaders: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -15,8 +17,17 @@ pub struct GetOrCreateOpenShardsSubrequest {
     pub index_id: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ClosedShards {
+    #[prost(string, tag = "1")]
+    pub index_uid: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub source_id: ::prost::alloc::string::String,
     #[prost(uint64, repeated, tag = "3")]
-    pub closed_shards: ::prost::alloc::vec::Vec<u64>,
+    pub shard_ids: ::prost::alloc::vec::Vec<u64>,
 }
 /// TODO: Handle partial failures.
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]

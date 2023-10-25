@@ -54,7 +54,7 @@ use quickwit_proto::opentelemetry::proto::trace::v1::span::{Event as OtlpEvent, 
 use quickwit_proto::opentelemetry::proto::trace::v1::{
     ResourceSpans, ScopeSpans, Span as OtlpSpan, Status as OtlpStatus,
 };
-use quickwit_proto::IndexUid;
+use quickwit_proto::types::IndexUid;
 use quickwit_search::{
     start_searcher_service, SearchJobPlacer, SearchService, SearchServiceClient, SearcherContext,
     SearcherPool,

@@ -22,20 +22,22 @@ use std::time::Duration;
 
 use fnv::FnvHashSet;
 use itertools::Itertools;
-use quickwit_common::Progress;
+use quickwit_common::{PrettySample, Progress};
 use quickwit_ingest::IngesterPool;
 use quickwit_proto::control_plane::{
-    ControlPlaneError, ControlPlaneResult, GetOpenShardsSubresponse, GetOrCreateOpenShardsRequest,
-    GetOrCreateOpenShardsResponse,
+    ClosedShards, ControlPlaneError, ControlPlaneResult, GetOpenShardsSubresponse,
+    GetOrCreateOpenShardsRequest, GetOrCreateOpenShardsResponse,
 };
 use quickwit_proto::ingest::ingester::{IngesterService, PingRequest};
-use quickwit_proto::ingest::IngestV2Error;
+use quickwit_proto::ingest::{IngestV2Error, ShardState};
+use quickwit_proto::metastore;
 use quickwit_proto::metastore::{
     EntityKind, MetastoreError, MetastoreService, MetastoreServiceClient,
 };
-use quickwit_proto::{metastore, IndexUid, NodeId};
+use quickwit_proto::types::{IndexUid, NodeId};
 use rand::seq::SliceRandom;
 use tokio::time::timeout;
+use tracing::info;
 
 use crate::control_plane_model::ControlPlaneModel;
 
@@ -171,6 +173,55 @@ impl IngestController {
         None
     }
 
+    fn handle_closed_shards(
+        &self,
+        closed_shards: Vec<ClosedShards>,
+        model: &mut ControlPlaneModel,
+    ) {
+        for closed_shard in closed_shards {
+            let index_uid: IndexUid = closed_shard.index_uid.into();
+            let source_id = closed_shard.source_id;
+            let closed_shard_ids =
+                model.close_shards(&index_uid, &source_id, &closed_shard.shard_ids);
+
+            if !closed_shard_ids.is_empty() {
+                info!(
+                    index_id=%index_uid.index_id(),
+                    source_id=%source_id,
+                    shard_ids=?PrettySample::new(&closed_shard_ids, 5),
+                    "closed {} shards reported by router",
+                    closed_shard_ids.len()
+                );
+            }
+        }
+    }
+
+    fn handle_unavailable_leaders(
+        &self,
+        unavailable_leaders: &FnvHashSet<NodeId>,
+        model: &mut ControlPlaneModel,
+    ) {
+        let mut confirmed_unavailable_leaders = FnvHashSet::default();
+
+        for leader_id in unavailable_leaders {
+            if !self.ingester_pool.contains_key(leader_id) {
+                confirmed_unavailable_leaders.insert(leader_id.clone());
+            } else {
+                // TODO: If a majority of ingesters consistenly reports a leader as unavailable, we
+                // should probably mark it as unavailable too.
+            }
+        }
+        if !confirmed_unavailable_leaders.is_empty() {
+            for shard in model.shards_mut() {
+                if shard.shard_state().is_open()
+                    && confirmed_unavailable_leaders.contains(&shard.leader_id)
+                {
+                    shard.shard_state = ShardState::Unavailable as i32;
+                }
+            }
+        }
+    }
+
     /// Finds the open shards that satisfies the [`GetOrCreateOpenShardsRequest`] request sent by an
     /// ingest router. First, the control plane checks its internal shard table to find
     /// candidates. If it does not contain any, the control plane will ask
@@ -184,11 +235,15 @@ impl IngestController {
         let mut get_open_shards_subresponses =
             Vec::with_capacity(get_open_shards_request.subrequests.len());
 
-        let mut unavailable_ingesters: FnvHashSet<NodeId> = get_open_shards_request
-            .unavailable_ingesters
+        self.handle_closed_shards(get_open_shards_request.closed_shards, model);
+
+        let mut unavailable_leaders: FnvHashSet<NodeId> = get_open_shards_request
+            .unavailable_leaders
             .into_iter()
             .map(|ingester_id| ingester_id.into())
             .collect();
+
+        self.handle_unavailable_leaders(&unavailable_leaders, model);
 
         let mut open_shards_subrequests = Vec::new();
 
@@ -205,7 +260,7 @@ impl IngestController {
                 .find_open_shards(
                     &index_uid,
                     &get_open_shards_subrequest.source_id,
-                    &unavailable_ingesters,
+                    &unavailable_leaders,
                 )
                 .ok_or_else(|| {
                     MetastoreError::NotFound(EntityKind::Source {
@@ -225,7 +280,7 @@ impl IngestController {
                 // TODO: Find leaders in batches.
                 // TODO: Round-robin leader-follower pairs or choose according to load.
                 let (leader_id, follower_id) = self
-                    .find_leader_and_follower(&mut unavailable_ingesters, progress)
+                    .find_leader_and_follower(&mut unavailable_leaders, progress)
                     .await
                     .ok_or_else(|| {
                         ControlPlaneError::Unavailable("no available ingester".to_string())
@@ -237,11 +292,9 @@ impl IngestController {
                     follower_id: follower_id.map(|follower_id| follower_id.into()),
                     next_shard_id,
                 };
-
                 open_shards_subrequests.push(open_shards_subrequest);
             }
         }
-
         if !open_shards_subrequests.is_empty() {
             let open_shards_request = metastore::OpenShardsRequest {
                 subrequests: open_shards_subrequests,
@@ -289,6 +342,7 @@ mod tests {
         IngesterServiceClient, MockIngesterService, PingResponse,
     };
     use quickwit_proto::ingest::{Shard, ShardState};
+    use quickwit_proto::types::SourceId;
 
     use super::*;
 
@@ -584,7 +638,8 @@ mod tests {
 
         let request = GetOrCreateOpenShardsRequest {
             subrequests: Vec::new(),
-            unavailable_ingesters: Vec::new(),
+            closed_shards: Vec::new(),
+            unavailable_leaders: Vec::new(),
         };
 
         let response = ingest_controller
@@ -598,18 +653,18 @@ mod tests {
             GetOrCreateOpenShardsSubrequest {
                 index_id: "test-index-0".to_string(),
                 source_id: source_id.to_string(),
-                closed_shards: Vec::new(),
             },
             GetOrCreateOpenShardsSubrequest {
                 index_id: "test-index-1".to_string(),
                 source_id: source_id.to_string(),
-                closed_shards: Vec::new(),
             },
         ];
-        let unavailable_ingesters = vec!["test-ingester-0".to_string()];
+        let closed_shards = Vec::new();
+        let unavailable_leaders = vec!["test-ingester-0".to_string()];
         let request = GetOrCreateOpenShardsRequest {
             subrequests,
-            unavailable_ingesters,
+            closed_shards,
+            unavailable_leaders,
         };
         let response = ingest_controller
             .get_or_create_open_shards(request, &mut model, &progress)
@@ -637,5 +692,107 @@ mod tests {
         );
 
         assert_eq!(model.observable_state().num_shards, 2);
+    }
+
+    #[tokio::test]
+    async fn test_ingest_controller_get_open_shards_handles_closed_shards() {
+        let metastore = MetastoreServiceClient::mock().into();
+        let ingester_pool = IngesterPool::default();
+        let replication_factor = 2;
+
+        let mut ingest_controller =
+            IngestController::new(metastore, ingester_pool, replication_factor);
+        let mut model = ControlPlaneModel::default();
+
+        let index_uid: IndexUid = "test-index-0:0".into();
+        let source_id: SourceId = "test-source".into();
+
+        let shards = vec![Shard {
+            shard_id: 1,
+            leader_id: "test-ingester-0".to_string(),
+            shard_state: ShardState::Open as i32,
+            ..Default::default()
+        }];
+        model.update_shards(&index_uid, &source_id, &shards, 3);
+
+        let request = GetOrCreateOpenShardsRequest {
+            subrequests: Vec::new(),
+            closed_shards: vec![ClosedShards {
+                index_uid: index_uid.clone().into(),
+                source_id: source_id.clone(),
+                shard_ids: vec![1, 2],
+            }],
+            unavailable_leaders: Vec::new(),
+        };
+        let progress = Progress::default();
+
+        ingest_controller
+            .get_or_create_open_shards(request, &mut model, &progress)
+            .await
+            .unwrap();
+
+        let shard_1 = model.shards().find(|shard| shard.shard_id == 1).unwrap();
+        assert!(shard_1.shard_state().is_closed());
+    }
+
+    #[tokio::test]
+    async fn test_ingest_controller_get_open_shards_handles_unavailable_leaders() {
+        let metastore = MetastoreServiceClient::mock().into();
+
+        let ingester_pool = IngesterPool::default();
+        let ingester_1 = IngesterServiceClient::mock().into();
+        ingester_pool.insert("test-ingester-1".into(), ingester_1);
+
+        let replication_factor = 2;
+
+        let mut ingest_controller =
+            IngestController::new(metastore, ingester_pool.clone(), replication_factor);
+        let mut model = ControlPlaneModel::default();
+
+        let index_uid: IndexUid = "test-index-0:0".into();
+        let source_id: SourceId = "test-source".into();
+
+        let shards = vec![
+            Shard {
+                shard_id: 1,
+                leader_id: "test-ingester-0".to_string(),
+                shard_state: ShardState::Open as i32,
+                ..Default::default()
+            },
+            Shard {
+                shard_id: 2,
+                leader_id: "test-ingester-0".to_string(),
+                shard_state: ShardState::Closed as i32,
+                ..Default::default()
+            },
+            Shard {
+                shard_id: 3,
+                leader_id: "test-ingester-1".to_string(),
+                shard_state: ShardState::Open as i32,
+                ..Default::default()
+            },
+        ];
+        model.update_shards(&index_uid, &source_id, &shards, 4);
+
+        let request = GetOrCreateOpenShardsRequest {
+            subrequests: Vec::new(),
+            closed_shards: Vec::new(),
+            unavailable_leaders: vec!["test-ingester-0".to_string()],
+        };
+        let progress = Progress::default();
+
+        ingest_controller
+            .get_or_create_open_shards(request, &mut model, &progress)
+            .await
+            .unwrap();
+
+        let shard_1 = model.shards().find(|shard| shard.shard_id == 1).unwrap();
+        assert!(shard_1.shard_state().is_unavailable());
+
+        let shard_2 = model.shards().find(|shard| shard.shard_id == 2).unwrap();
+        assert!(shard_2.shard_state().is_closed());
+
+        let shard_3 = model.shards().find(|shard| shard.shard_id == 3).unwrap();
+        assert!(shard_3.shard_state().is_open());
     }
 }

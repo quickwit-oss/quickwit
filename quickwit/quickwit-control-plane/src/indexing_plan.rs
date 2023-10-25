@@ -364,7 +364,7 @@ mod tests {
     };
     use quickwit_metastore::IndexMetadata;
     use quickwit_proto::indexing::{IndexingServiceClient, IndexingTask};
-    use quickwit_proto::IndexUid;
+    use quickwit_proto::types::IndexUid;
     use rand::seq::SliceRandom;
     use serde_json::json;
     use tonic::transport::Endpoint;

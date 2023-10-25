@@ -470,7 +470,7 @@ mod tests {
     use quickwit_config::IndexingSettings;
     use quickwit_metastore::{SplitMaturity, SplitMetadata};
     use quickwit_proto::indexing::IndexingPipelineId;
-    use quickwit_proto::IndexUid;
+    use quickwit_proto::types::IndexUid;
     use tantivy::TrackedObject;
     use time::OffsetDateTime;
 

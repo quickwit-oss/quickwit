@@ -43,7 +43,7 @@ use quickwit_proto::search::{
     LeafSearchRequest, LeafSearchResponse, ListTermsRequest, ListTermsResponse, PartialHit,
     SearchRequest, SearchResponse, SnippetRequest, SortField, SplitIdAndFooterOffsets,
 };
-use quickwit_proto::{IndexUid, SplitId};
+use quickwit_proto::types::{IndexUid, SplitId};
 use quickwit_query::query_ast::{
     BoolQuery, QueryAst, QueryAstVisitor, RangeQuery, TermQuery, TermSetQuery,
 };

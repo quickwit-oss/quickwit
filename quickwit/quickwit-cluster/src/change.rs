@@ -23,7 +23,7 @@ use std::collections::BTreeMap;
 use chitchat::{ChitchatId, NodeState};
 use quickwit_common::sorted_iter::{KeyDiff, SortedByKeyIterator};
 use quickwit_common::tower::{make_channel, warmup_channel};
-use quickwit_proto::NodeId;
+use quickwit_proto::types::NodeId;
 use tonic::transport::Channel;
 use tracing::{info, warn};
 

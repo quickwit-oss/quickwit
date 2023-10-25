@@ -33,6 +33,7 @@ pub enum ServiceErrorCode {
     // Used for APIs that are available in Elasticsearch but not available yet in Quickwit.
     NotSupportedYet,
     RateLimited,
+    Timeout,
     Unavailable,
     UnsupportedMediaType,
 }
@@ -47,6 +48,7 @@ impl ServiceErrorCode {
             ServiceErrorCode::NotFound => tonic::Code::NotFound,
             ServiceErrorCode::NotSupportedYet => tonic::Code::Unimplemented,
             ServiceErrorCode::RateLimited => tonic::Code::ResourceExhausted,
+            ServiceErrorCode::Timeout => tonic::Code::DeadlineExceeded,
             ServiceErrorCode::Unavailable => tonic::Code::Unavailable,
             ServiceErrorCode::UnsupportedMediaType => tonic::Code::InvalidArgument,
         }
@@ -62,6 +64,7 @@ impl ServiceErrorCode {
             ServiceErrorCode::RateLimited => http::StatusCode::TOO_MANY_REQUESTS,
             ServiceErrorCode::Unavailable => http::StatusCode::SERVICE_UNAVAILABLE,
             ServiceErrorCode::UnsupportedMediaType => http::StatusCode::UNSUPPORTED_MEDIA_TYPE,
+            ServiceErrorCode::Timeout => http::StatusCode::REQUEST_TIMEOUT,
         }
     }
 }

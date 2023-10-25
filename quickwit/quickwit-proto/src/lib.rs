@@ -41,7 +41,6 @@ pub mod search;
 pub mod types;
 
 pub use error::{ServiceError, ServiceErrorCode};
-pub use types::*;
 
 use crate::search::ReportSplitsRequest;
 
@@ -130,7 +129,7 @@ impl TryFrom<metastore::DeleteQuery> for search::SearchRequest {
     type Error = anyhow::Error;
 
     fn try_from(delete_query: metastore::DeleteQuery) -> anyhow::Result<Self> {
-        let index_uid: IndexUid = delete_query.index_uid.into();
+        let index_uid: types::IndexUid = delete_query.index_uid.into();
         Ok(Self {
             index_id_patterns: vec![index_uid.index_id().to_string()],
             query_ast: delete_query.query_ast,

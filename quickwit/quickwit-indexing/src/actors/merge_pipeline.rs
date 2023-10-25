@@ -488,7 +488,7 @@ mod tests {
     use quickwit_metastore::{ListSplitsRequestExt, ListSplitsResponseExt};
     use quickwit_proto::indexing::IndexingPipelineId;
     use quickwit_proto::metastore::{ListSplitsResponse, MetastoreServiceClient};
-    use quickwit_proto::IndexUid;
+    use quickwit_proto::types::IndexUid;
     use quickwit_storage::RamStorage;
 
     use crate::actors::merge_pipeline::{MergePipeline, MergePipelineParams};

@@ -25,7 +25,7 @@ use std::str::FromStr;
 use std::time::Duration;
 
 use byte_unit::Byte;
-use quickwit_proto::IndexUid;
+use quickwit_proto::types::IndexUid;
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, DurationMilliSeconds};
 use time::OffsetDateTime;

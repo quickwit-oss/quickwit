@@ -138,7 +138,7 @@ mod tests {
     use quickwit_actors::{Actor, Command, Universe};
     use quickwit_config::{SourceConfig, SourceInputFormat, SourceParams};
     use quickwit_metastore::metastore_for_test;
-    use quickwit_proto::IndexUid;
+    use quickwit_proto::types::IndexUid;
     use serde_json::json;
 
     use super::*;

@@ -220,7 +220,7 @@ mod tests {
     use quickwit_proto::metastore::{
         EmptyResponse, ListIndexesMetadataResponse, ListSplitsResponse, MetastoreError,
     };
-    use quickwit_proto::IndexUid;
+    use quickwit_proto::types::IndexUid;
     use quickwit_storage::MockStorage;
     use time::OffsetDateTime;
 

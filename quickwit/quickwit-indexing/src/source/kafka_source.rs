@@ -32,7 +32,7 @@ use quickwit_config::KafkaSourceParams;
 use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpoint};
 use quickwit_metastore::IndexMetadataResponseExt;
 use quickwit_proto::metastore::{IndexMetadataRequest, MetastoreService};
-use quickwit_proto::{IndexUid, Position};
+use quickwit_proto::types::{IndexUid, Position};
 use rdkafka::config::{ClientConfig, RDKafkaLogLevel};
 use rdkafka::consumer::{
     BaseConsumer, CommitMode, Consumer, ConsumerContext, DefaultConsumerContext, Rebalance,
@@ -795,7 +795,7 @@ mod kafka_broker_tests {
         CreateIndexRequest, MetastoreService, MetastoreServiceClient, PublishSplitsRequest,
         StageSplitsRequest,
     };
-    use quickwit_proto::IndexUid;
+    use quickwit_proto::types::IndexUid;
     use rdkafka::admin::{AdminClient, AdminOptions, NewTopic, TopicReplication};
     use rdkafka::client::DefaultClientContext;
     use rdkafka::message::ToBytes;

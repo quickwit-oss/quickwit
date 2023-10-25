@@ -730,7 +730,7 @@ mod tests {
     use std::collections::BTreeSet;
 
     use quickwit_doc_mapper::tag_pruning::TagFilterAst;
-    use quickwit_proto::IndexUid;
+    use quickwit_proto::types::IndexUid;
 
     use crate::file_backed_metastore::file_backed_index::split_query_predicate;
     use crate::{ListSplitsQuery, Split, SplitMetadata, SplitState};

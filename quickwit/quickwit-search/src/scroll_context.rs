@@ -28,7 +28,7 @@ use base64::prelude::BASE64_STANDARD;
 use base64::Engine;
 use quickwit_metastore::SplitMetadata;
 use quickwit_proto::search::{LeafSearchResponse, PartialHit, SearchRequest};
-use quickwit_proto::IndexUid;
+use quickwit_proto::types::IndexUid;
 use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 use ttl_cache::TtlCache;

@@ -34,7 +34,7 @@ use quickwit_proto::metastore::{
     MetastoreResult, MetastoreService, MetastoreServiceClient, UpdateSplitsDeleteOpstampRequest,
 };
 use quickwit_proto::search::SearchRequest;
-use quickwit_proto::IndexUid;
+use quickwit_proto::types::IndexUid;
 use quickwit_search::{jobs_to_leaf_requests, IndexMetasForLeafSearch, SearchJob, SearchJobPlacer};
 use serde::Serialize;
 use tantivy::Inventory;

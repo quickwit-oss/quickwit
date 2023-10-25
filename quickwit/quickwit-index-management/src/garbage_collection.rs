@@ -32,7 +32,7 @@ use quickwit_proto::metastore::{
     DeleteSplitsRequest, ListSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError,
     MetastoreService, MetastoreServiceClient,
 };
-use quickwit_proto::{IndexUid, SplitId};
+use quickwit_proto::types::{IndexUid, SplitId};
 use quickwit_storage::{BulkDeleteError, Storage};
 use thiserror::Error;
 use time::OffsetDateTime;
@@ -353,7 +353,7 @@ mod tests {
     use quickwit_proto::metastore::{
         CreateIndexRequest, EntityKind, ListSplitsResponse, StageSplitsRequest,
     };
-    use quickwit_proto::IndexUid;
+    use quickwit_proto::types::IndexUid;
     use quickwit_storage::{
         storage_for_test, BulkDeleteError, DeleteFailure, MockStorage, PutPayload,
     };
