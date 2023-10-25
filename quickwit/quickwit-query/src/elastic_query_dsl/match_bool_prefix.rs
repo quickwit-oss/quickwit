@@ -21,7 +21,7 @@ use serde::Deserialize;
 
 use super::StringOrStructForSerialization;
 use crate::elastic_query_dsl::match_query::MatchQueryParams;
-use crate::elastic_query_dsl::{default_max_expansions, ConvertableToQueryAst};
+use crate::elastic_query_dsl::ConvertableToQueryAst;
 use crate::query_ast::{FullTextParams, FullTextQuery, QueryAst};
 use crate::OneFieldMap;
 
@@ -40,7 +40,6 @@ impl ConvertableToQueryAst for MatchBoolPrefixQuery {
             tokenizer: None,
             mode: crate::query_ast::FullTextMode::BoolPrefix {
                 operator: self.params.operator,
-                max_expansions: default_max_expansions(),
             },
             zero_terms_query: self.params.zero_terms_query,
         };

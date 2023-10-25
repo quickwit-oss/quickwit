@@ -130,10 +130,7 @@ impl FullTextParams {
                     .collect();
                 Ok(TantivyBoolQuery::build_clause(operator, leaf_queries).into())
             }
-            FullTextMode::BoolPrefix {
-                operator,
-                max_expansions,
-            } => {
+            FullTextMode::BoolPrefix { operator } => {
                 let term_with_prefix = terms.pop();
                 let mut leaf_queries: Vec<TantivyQueryAst> = terms
                     .into_iter()
@@ -142,7 +139,7 @@ impl FullTextParams {
                 if let Some(term_with_prefix) = term_with_prefix {
                     let mut phrase_prefix_query =
                         TantivyPhrasePrefixQuery::new_with_offset(vec![term_with_prefix]);
-                    phrase_prefix_query.set_max_expansions(max_expansions);
+                    phrase_prefix_query.set_max_expansions(u32::MAX);
                     leaf_queries.push(phrase_prefix_query.into());
                 }
                 Ok(TantivyBoolQuery::build_clause(operator, leaf_queries).into())
@@ -182,7 +179,6 @@ pub enum FullTextMode {
     },
     BoolPrefix {
         operator: BooleanOperand,
-        max_expansions: u32,
     },
     // Act as Phrase with slop 0 if the field has positions,
     // otherwise act as an intersection.
@@ -255,11 +251,15 @@ impl FullTextQuery {
     ///
     /// This strange method is used to identify which term range should be warmed up for
     /// phrase prefix queries.
-    pub fn get_last_term(
+    pub fn get_prefix_term(
         &self,
         schema: &TantivySchema,
         tokenizer_manager: &TokenizerManager,
     ) -> Option<Term> {
+        if !matches!(self.params.mode, FullTextMode::BoolPrefix { .. }) {
+            return None;
+        }
+
         let (field, field_entry, json_path) =
             find_field_or_hit_dynamic(&self.field, schema).ok()?;
         let field_type: &FieldType = field_entry.field_type();

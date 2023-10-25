@@ -158,11 +158,11 @@ json:
     query_string:
       default_field: payload.description
       lenient: true
-      query: "Jour* unix"
+      query: "Jour* AND unix"
 expected:
   hits:
     total:
-      value: 3
+      value: 2
 ---
 # trailing wildcard
 json:
@@ -170,9 +170,9 @@ json:
     query_string:
       default_field: payload.description
       lenient: true
-      query: "jour* unix"
+      query: "jour* AND unix"
 expected:
   hits:
     total:
-      value: 3
+      value: 2
 

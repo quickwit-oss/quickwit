@@ -22,8 +22,8 @@ use std::convert::Infallible;
 use std::ops::Bound;
 
 use quickwit_query::query_ast::{
-    FieldPresenceQuery, FullTextMode, FullTextQuery, PhrasePrefixQuery, QueryAst, QueryAstVisitor,
-    RangeQuery, TermSetQuery,
+    FieldPresenceQuery, FullTextQuery, PhrasePrefixQuery, QueryAst, QueryAstVisitor, RangeQuery,
+    TermSetQuery,
 };
 use quickwit_query::{find_field_or_hit_dynamic, InvalidQuery};
 use tantivy::query::Query;
@@ -215,16 +215,10 @@ impl<'a, 'b: 'a> QueryAstVisitor<'a> for ExtractPrefixTermRanges<'b> {
     type Err = InvalidQuery;
 
     fn visit_full_text(&mut self, full_text_query: &'a FullTextQuery) -> Result<(), Self::Err> {
-        if let FullTextMode::BoolPrefix {
-            operator: _,
-            max_expansions,
-        } = &full_text_query.params.mode
+        if let Some(prefix_term) =
+            full_text_query.get_prefix_term(self.schema, self.tokenizer_manager)
         {
-            if let Some(prefix_term) =
-                full_text_query.get_last_term(self.schema, self.tokenizer_manager)
-            {
-                self.add_prefix_term(prefix_term, *max_expansions, false);
-            }
+            self.add_prefix_term(prefix_term, u32::MAX, false);
         }
         Ok(())
     }
@@ -235,7 +229,7 @@ impl<'a, 'b: 'a> QueryAstVisitor<'a> for ExtractPrefixTermRanges<'b> {
     ) -> Result<(), Self::Err> {
         let (_, terms) = phrase_prefix.get_terms(self.schema, self.tokenizer_manager)?;
         if let Some((_, term)) = terms.last() {
-            self.add_prefix_term(term.clone(), phrase_prefix.max_expansions, true);
+            self.add_prefix_term(term.clone(), phrase_prefix.max_expansions, terms.len() > 1);
         }
         Ok(())
     }
