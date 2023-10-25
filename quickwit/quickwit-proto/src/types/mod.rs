@@ -39,6 +39,8 @@ pub type SplitId = String;
 
 pub type ShardId = u64;
 
+pub type SubrequestId = u32;
+
 /// See the file `ingest.proto` for more details.
 pub type PublishToken = String;
 

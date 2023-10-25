@@ -36,6 +36,7 @@ quickwit-config = { workspace = true }
 quickwit-proto = { workspace = true }
 
 [dev-dependencies]
+itertools = { workspace = true }
 mockall = { workspace = true }
 rand = { workspace = true }
 rand_distr = { workspace = true }

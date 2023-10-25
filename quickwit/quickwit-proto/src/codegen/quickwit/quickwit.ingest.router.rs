@@ -11,11 +11,16 @@ pub struct IngestRequestV2 {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IngestSubrequest {
-    #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
+    /// The subrequest ID is used to identify the various subrequests and responses
+    /// (ingest, persist, replicate) at play during the ingest and replication
+    /// process.
+    #[prost(uint32, tag = "1")]
+    pub subrequest_id: u32,
     #[prost(string, tag = "2")]
+    pub index_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
-    #[prost(message, optional, tag = "3")]
+    #[prost(message, optional, tag = "4")]
     pub doc_batch: ::core::option::Option<super::DocBatchV2>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
@@ -23,41 +28,38 @@ pub struct IngestSubrequest {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IngestResponseV2 {
     #[prost(message, repeated, tag = "1")]
-    pub subresponses: ::prost::alloc::vec::Vec<IngestSubresponse>,
-}
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct IngestSubresponse {
-    #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub source_id: ::prost::alloc::string::String,
-    #[prost(message, repeated, tag = "3")]
     pub successes: ::prost::alloc::vec::Vec<IngestSuccess>,
-    #[prost(message, repeated, tag = "4")]
+    #[prost(message, repeated, tag = "2")]
     pub failures: ::prost::alloc::vec::Vec<IngestFailure>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IngestSuccess {
-    #[prost(string, tag = "1")]
-    pub index_uid: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "1")]
+    pub subrequest_id: u32,
     #[prost(string, tag = "2")]
+    pub index_uid: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
-    #[prost(uint64, tag = "3")]
+    #[prost(uint64, tag = "4")]
     pub shard_id: u64,
     /// Replication position inclusive.
-    #[prost(message, optional, tag = "4")]
+    #[prost(message, optional, tag = "5")]
     pub replication_position_inclusive: ::core::option::Option<crate::types::Position>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IngestFailure {
-    /// IngestFailureReason reason = 2;
-    #[prost(uint64, tag = "1")]
+    #[prost(uint32, tag = "1")]
+    pub subrequest_id: u32,
+    #[prost(string, tag = "2")]
+    pub index_uid: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub source_id: ::prost::alloc::string::String,
+    /// IngestFailureReason reason = 5;
+    #[prost(uint64, tag = "4")]
     pub shard_id: u64,
 }
 /// BEGIN quickwit-codegen

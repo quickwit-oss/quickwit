@@ -26,6 +26,7 @@ mod router;
 mod shard_table;
 #[cfg(test)]
 mod test_utils;
+mod workbench;
 
 use quickwit_common::tower::Pool;
 use quickwit_proto::ingest::ingester::IngesterServiceClient;

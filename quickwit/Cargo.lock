@@ -5359,6 +5359,7 @@ dependencies = [
  "futures",
  "http",
  "hyper",
+ "itertools 0.11.0",
  "mockall",
  "mrecordlog",
  "once_cell",
