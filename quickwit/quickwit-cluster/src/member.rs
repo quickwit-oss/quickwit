@@ -32,6 +32,8 @@ use crate::{GenerationId, QuickwitService};
 // Keys used to store member's data in chitchat state.
 pub(crate) const GRPC_ADVERTISE_ADDR_KEY: &str = "grpc_advertise_addr";
 pub(crate) const ENABLED_SERVICES_KEY: &str = "enabled_services";
+pub(crate) const PIPELINE_METRICS_KEY: &str = "pipeline_metrics";
+
 // An indexing task key is formatted as
 // `{INDEXING_TASK_PREFIX}{INDEXING_TASK_SEPARATOR}{index_id}{INDEXING_TASK_SEPARATOR}{source_id}`.
 pub(crate) const INDEXING_TASK_PREFIX: &str = "indexing_task";

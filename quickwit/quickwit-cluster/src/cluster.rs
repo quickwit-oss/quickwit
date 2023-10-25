@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::{BTreeMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::Debug;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -31,8 +31,9 @@ use chitchat::{
 };
 use futures::Stream;
 use itertools::Itertools;
-use quickwit_proto::indexing::IndexingTask;
 use quickwit_proto::types::NodeId;
+use quickwit_proto::indexing::{IndexingPipelineId, IndexingTask};
+use quickwit_proto::PipelineMetrics;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, watch, Mutex, RwLock};
 use tokio::time::timeout;
@@ -43,8 +44,8 @@ use tracing::{info, warn};
 use crate::change::{compute_cluster_change_events, ClusterChange};
 use crate::member::{
     build_cluster_member, ClusterMember, NodeStateExt, ENABLED_SERVICES_KEY,
-    GRPC_ADVERTISE_ADDR_KEY, INDEXING_TASK_PREFIX, READINESS_KEY, READINESS_VALUE_NOT_READY,
-    READINESS_VALUE_READY,
+    GRPC_ADVERTISE_ADDR_KEY, INDEXING_TASK_PREFIX, PIPELINE_METRICS_KEY, READINESS_KEY,
+    READINESS_VALUE_NOT_READY, READINESS_VALUE_READY,
 };
 use crate::ClusterNode;
 
@@ -70,7 +71,7 @@ pub struct Cluster {
 }
 
 impl Debug for Cluster {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
         formatter
             .debug_struct("Cluster")
             .field("cluster_id", &self.cluster_id)
@@ -301,6 +302,24 @@ impl Cluster {
         tokio::time::sleep(GOSSIP_INTERVAL * 2).await;
     }
 
+    /// This exposes in chitchat some metric about the cpu usage of cooperative pipelines.
+    /// The metric are exposed as follows:
+    /// Key:        pipeline_metrics:<index_uid>:<source_id>
+    /// Value:      79‰,76MB/s
+    pub async fn update_self_node_pipeline_metrics(
+        &self,
+        pipeline_metrics: &HashMap<&IndexingPipelineId, PipelineMetrics>,
+    ) {
+        let chitchat = self.chitchat().await;
+        let mut chitchat_guard = chitchat.lock().await;
+        for (pipeline_id, metrics) in pipeline_metrics {
+            let key = format!("{PIPELINE_METRICS_KEY}:{pipeline_id}");
+            chitchat_guard
+                .self_node_state()
+                .set(key, metrics.to_string());
+        }
+    }
+
     /// Updates indexing tasks in chitchat state.
     /// Tasks are grouped by (index_id, source_id), each group is stored in a key as follows:
     /// - key: `{INDEXING_TASK_PREFIX}{INDEXING_TASK_SEPARATOR}{index_id}{INDEXING_TASK_SEPARATOR}{source_id}`
@@ -321,7 +340,7 @@ impl Cluster {
         for (indexing_task, indexing_tasks_group) in
             indexing_tasks.iter().group_by(|&task| task).into_iter()
         {
-            let key = format!("{INDEXING_TASK_PREFIX}:{}", indexing_task.to_string());
+            let key = format!("{INDEXING_TASK_PREFIX}:{indexing_task}");
             current_indexing_tasks_keys.remove(&key);
             chitchat_guard
                 .self_node_state()

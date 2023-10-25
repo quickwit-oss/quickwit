@@ -214,7 +214,8 @@ impl<A: Actor> ActorContext<A> {
         self.observe_enqueued.swap(true, Ordering::Relaxed)
     }
 
-    pub(crate) fn observe(&self, actor: &mut A) -> A::ObservableState {
+    /// Updates the observable state of the actor.
+    pub fn observe(&self, actor: &mut A) -> A::ObservableState {
         let obs_state = actor.observable_state();
         self.inner.observe_enqueued.store(false, Ordering::Relaxed);
         let _ = self.observable_state_tx.send(obs_state.clone());

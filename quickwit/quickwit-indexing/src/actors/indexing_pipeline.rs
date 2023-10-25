@@ -142,11 +142,11 @@ impl Actor for IndexingPipeline {
     async fn finalize(
         &mut self,
         _exit_status: &ActorExitStatus,
-        _ctx: &ActorContext<Self>,
+        ctx: &ActorContext<Self>,
     ) -> anyhow::Result<()> {
         // We update the observation to ensure our last "black box" observation
         // is up to date.
-        self.perform_observe().await;
+        self.perform_observe(ctx).await;
         Ok(())
     }
 }
@@ -237,7 +237,7 @@ impl IndexingPipeline {
         self.statistics.generation
     }
 
-    async fn perform_observe(&mut self) {
+    async fn perform_observe(&mut self, ctx: &ActorContext<Self>) {
         let Some(handles) = &self.handles_opt else {
             return;
         };
@@ -256,6 +256,9 @@ impl IndexingPipeline {
             )
             .set_generation(self.statistics.generation)
             .set_num_spawn_attempts(self.statistics.num_spawn_attempts);
+        let pipeline_metrics_opt = handles.indexer.last_observation().pipeline_metrics_opt;
+        self.statistics.pipeline_metrics_opt = pipeline_metrics_opt;
+        ctx.observe(self);
     }
 
     /// Checks if some actors have terminated.
@@ -490,7 +493,7 @@ impl Handler<SuperviseLoop> for IndexingPipeline {
         supervise_loop_token: SuperviseLoop,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        self.perform_observe().await;
+        self.perform_observe(ctx).await;
         self.perform_health_check(ctx).await?;
         ctx.schedule_self_msg(SUPERVISE_INTERVAL, supervise_loop_token)
             .await;
@@ -575,6 +578,7 @@ pub struct IndexingPipelineParams {
     pub source_storage_resolver: StorageResolver,
     pub ingester_pool: IngesterPool,
     pub queues_dir_path: PathBuf,
+
     pub event_broker: EventBroker,
 }
 

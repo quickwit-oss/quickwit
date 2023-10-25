@@ -17,8 +17,9 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::fmt::Formatter;
 use std::hash::Hash;
-use std::io;
+use std::{fmt, io};
 
 use anyhow::anyhow;
 use quickwit_actors::AskError;
@@ -149,9 +150,15 @@ pub struct IndexingPipelineId {
     pub pipeline_ord: usize,
 }
 
-impl ToString for IndexingTask {
-    fn to_string(&self) -> String {
-        format!("{}:{}", self.index_uid, self.source_id)
+impl fmt::Display for IndexingPipelineId {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "{}:{}", self.index_uid, &self.source_id)
+    }
+}
+
+impl fmt::Display for IndexingTask {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "{}:{}", self.index_uid, &self.source_id)
     }
 }
 

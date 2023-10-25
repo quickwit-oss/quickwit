@@ -52,6 +52,7 @@ use quickwit_proto::metastore::{
     IndexMetadataRequest, ListIndexesMetadataRequest, MetastoreService, MetastoreServiceClient,
 };
 use quickwit_proto::types::{IndexId, IndexUid};
+use quickwit_proto::PipelineMetrics;
 use quickwit_storage::StorageResolver;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Semaphore;
@@ -303,6 +304,7 @@ impl IndexingService {
         let max_concurrent_split_uploads_index = (self.max_concurrent_split_uploads / 2).max(1);
         let max_concurrent_split_uploads_merge =
             (self.max_concurrent_split_uploads - max_concurrent_split_uploads_index).max(1);
+
         let pipeline_params = IndexingPipelineParams {
             pipeline_id: pipeline_id.clone(),
             metastore: self.metastore.clone(),
@@ -416,6 +418,19 @@ impl IndexingService {
             });
         self.counters.num_running_merge_pipelines = self.merge_pipeline_handles.len();
         self.update_cluster_running_indexing_tasks().await;
+
+        let pipeline_metrics: HashMap<&IndexingPipelineId, PipelineMetrics> = self
+            .indexing_pipelines
+            .iter()
+            .flat_map(|(pipeline, (_, pipeline_handle))| {
+                let indexer_metrics = pipeline_handle.last_observation();
+                let pipeline_metrics = indexer_metrics.pipeline_metrics_opt?;
+                Some((pipeline, pipeline_metrics))
+            })
+            .collect();
+        self.cluster
+            .update_self_node_pipeline_metrics(&pipeline_metrics)
+            .await;
         Ok(())
     }
 
