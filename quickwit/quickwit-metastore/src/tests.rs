@@ -37,14 +37,14 @@ pub mod test_suite {
         PublishSplitsRequest, ResetSourceCheckpointRequest, SourceType, StageSplitsRequest,
         ToggleSourceRequest, UpdateSplitsDeleteOpstampRequest,
     };
-    use quickwit_proto::IndexUid;
+    use quickwit_proto::{IndexUid, Position};
     use quickwit_query::query_ast::qast_json_helper;
     use time::OffsetDateTime;
     use tokio::time::sleep;
     use tracing::{error, info};
 
     use crate::checkpoint::{
-        IndexCheckpointDelta, PartitionId, Position, SourceCheckpoint, SourceCheckpointDelta,
+        IndexCheckpointDelta, PartitionId, SourceCheckpoint, SourceCheckpointDelta,
     };
     use crate::{
         AddSourceRequestExt, CreateIndexRequestExt, IndexMetadataResponseExt,

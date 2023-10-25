@@ -22,7 +22,7 @@ use std::fmt;
 use itertools::Itertools;
 use quickwit_metastore::checkpoint::IndexCheckpointDelta;
 use quickwit_metastore::SplitMetadata;
-use quickwit_proto::{IndexUid, PublishToken};
+use quickwit_proto::types::{IndexUid, PublishToken};
 use tantivy::TrackedObject;
 use tracing::Span;
 

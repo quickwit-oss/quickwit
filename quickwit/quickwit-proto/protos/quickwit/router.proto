@@ -50,7 +50,8 @@ message IngestSuccess {
     string index_uid = 1;
     string source_id = 2;
     uint64 shard_id = 3;
-    uint64 replication_position = 4;
+    // Replication position inclusive.
+    quickwit.ingest.Position replication_position_inclusive = 4;
 }
 
 message IngestFailure {

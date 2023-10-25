@@ -28,16 +28,15 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::ops::Bound;
 
-use itertools::{Either, Itertools};
+use itertools::Itertools;
 use quickwit_common::PrettySample;
 use quickwit_config::{SourceConfig, INGEST_SOURCE_ID};
 use quickwit_proto::metastore::{
-    AcquireShardsSubrequest, AcquireShardsSubresponse, CloseShardsFailure, CloseShardsSubrequest,
-    CloseShardsSuccess, DeleteQuery, DeleteShardsSubrequest, DeleteTask, EntityKind,
-    ListShardsSubrequest, ListShardsSubresponse, MetastoreError, MetastoreResult,
-    OpenShardsSubrequest, OpenShardsSubresponse,
+    AcquireShardsSubrequest, AcquireShardsSubresponse, DeleteQuery, DeleteShardsSubrequest,
+    DeleteTask, EntityKind, ListShardsSubrequest, ListShardsSubresponse, MetastoreError,
+    MetastoreResult, OpenShardsSubrequest, OpenShardsSubresponse,
 };
-use quickwit_proto::{IndexUid, PublishToken, SourceId, SplitId};
+use quickwit_proto::types::{IndexUid, PublishToken, SourceId, SplitId};
 use serde::{Deserialize, Serialize};
 use serialize::VersionedFileBackedIndex;
 use shards::Shards;
@@ -607,34 +606,6 @@ impl FileBackedIndex {
             let subresponse = match self
                 .get_shards_for_source_mut(&subrequest.source_id)?
                 .acquire_shards(subrequest)?
-            {
-                MutationOccurred::Yes(subresponse) => {
-                    mutation_occurred = true;
-                    subresponse
-                }
-                MutationOccurred::No(subresponse) => subresponse,
-            };
-            subresponses.push(subresponse);
-        }
-        if mutation_occurred {
-            Ok(MutationOccurred::Yes(subresponses))
-        } else {
-            Ok(MutationOccurred::No(subresponses))
-        }
-    }
-
-    pub(crate) fn close_shards(
-        &mut self,
-        subrequests: Vec<CloseShardsSubrequest>,
-    ) -> MetastoreResult<MutationOccurred<Vec<Either<CloseShardsSuccess, CloseShardsFailure>>>>
-    {
-        let mut mutation_occurred = false;
-        let mut subresponses = Vec::with_capacity(subrequests.len());
-
-        for subrequest in subrequests {
-            let subresponse = match self
-                .get_shards_for_source_mut(&subrequest.source_id)?
-                .close_shards(subrequest)?
             {
                 MutationOccurred::Yes(subresponse) => {
                     mutation_occurred = true;

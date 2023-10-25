@@ -13,6 +13,7 @@ documentation = "https://quickwit.io/docs/"
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 bytes = { workspace = true }
+bytestring = { workspace = true }
 dyn-clone = { workspace = true }
 http = { workspace = true }
 hyper = { workspace = true }

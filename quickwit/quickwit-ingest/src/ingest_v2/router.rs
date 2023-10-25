@@ -33,8 +33,7 @@ use quickwit_proto::ingest::router::{
     IngestRequestV2, IngestResponseV2, IngestRouterService, IngestSubrequest,
 };
 use quickwit_proto::ingest::IngestV2Result;
-use quickwit_proto::types::NodeId;
-use quickwit_proto::IndexUid;
+use quickwit_proto::types::{IndexUid, NodeId};
 use tokio::sync::RwLock;
 
 use super::shard_table::ShardTable;
@@ -167,7 +166,7 @@ impl IngestRouterService for IngestRouter {
         for ingest_subrequest in ingest_request.subrequests {
             let shard = state_guard
                 .shard_table
-                .find_entry(&*ingest_subrequest.index_id, &ingest_subrequest.source_id)
+                .find_entry(&ingest_subrequest.index_id, &ingest_subrequest.source_id)
                 .expect("TODO")
                 .next_shard_round_robin();
 

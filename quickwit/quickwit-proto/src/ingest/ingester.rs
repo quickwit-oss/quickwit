@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use crate::types::{queue_id, QueueId};
+use crate::types::{queue_id, Position, QueueId};
 
 include!("../codegen/quickwit/quickwit.ingest.ingester.rs");
 
@@ -35,19 +35,19 @@ impl FetchResponseV2 {
             0
         }
     }
-
-    pub fn to_position_inclusive(&self) -> Option<u64> {
-        let Some(mrecord_batch) = &self.mrecord_batch else {
-            return None;
-        };
-        let num_mrecords = mrecord_batch.num_mrecords() as u64;
-        Some(self.from_position_inclusive + num_mrecords - 1)
-    }
 }
 
 impl OpenFetchStreamRequest {
     pub fn queue_id(&self) -> QueueId {
         queue_id(&self.index_uid, &self.source_id, self.shard_id)
+    }
+
+    pub fn from_position_exclusive(&self) -> Position {
+        self.from_position_exclusive.clone().unwrap_or_default()
+    }
+
+    pub fn to_position_inclusive(&self) -> Position {
+        self.to_position_inclusive.clone().unwrap_or_default()
     }
 }
 
@@ -127,16 +127,20 @@ impl ReplicateSubrequest {
         queue_id(&self.index_uid, &self.source_id, self.shard_id)
     }
 
-    pub fn to_position_inclusive(&self) -> Option<u64> {
-        let Some(doc_batch) = &self.doc_batch else {
-            return self.from_position_exclusive;
-        };
-        let num_docs = doc_batch.num_docs() as u64;
+    pub fn from_position_exclusive(&self) -> Position {
+        self.from_position_exclusive.clone().unwrap_or_default()
+    }
 
-        match self.from_position_exclusive {
-            Some(from_position_exclusive) => Some(from_position_exclusive + num_docs),
-            None => Some(num_docs - 1),
-        }
+    pub fn to_position_inclusive(&self) -> Position {
+        self.to_position_inclusive.clone().unwrap_or_default()
+    }
+}
+
+impl ReplicateSuccess {
+    pub fn replication_position_inclusive(&self) -> Position {
+        self.replication_position_inclusive
+            .clone()
+            .unwrap_or_default()
     }
 }
 
@@ -144,60 +148,8 @@ impl TruncateSubrequest {
     pub fn queue_id(&self) -> QueueId {
         queue_id(&self.index_uid, &self.source_id, self.shard_id)
     }
-}
 
-#[cfg(test)]
-mod tests {
-    use bytes::Bytes;
-
-    use super::*;
-    use crate::ingest::{DocBatchV2, MRecordBatch};
-
-    #[test]
-    fn test_fetch_response_to_position_inclusive() {
-        let mut response = FetchResponseV2 {
-            index_uid: "test-index".to_string(),
-            source_id: "test-source".to_string(),
-            shard_id: 0,
-            from_position_inclusive: 0,
-            mrecord_batch: None,
-        };
-        assert_eq!(response.to_position_inclusive(), None);
-
-        response.mrecord_batch = Some(MRecordBatch {
-            mrecord_buffer: Bytes::from_static(b"\0\0test-doc"),
-            mrecord_lengths: vec![10],
-        });
-        assert_eq!(response.to_position_inclusive(), Some(0));
-
-        response.mrecord_batch = Some(MRecordBatch {
-            mrecord_buffer: Bytes::from_static(b"\0\0test-doc\0\0test-doc"),
-            mrecord_lengths: vec![10, 10],
-        });
-        assert_eq!(response.to_position_inclusive(), Some(1));
-    }
-
-    #[test]
-    fn test_replicate_subrequest_to_position_inclusive() {
-        let mut subrequest = ReplicateSubrequest {
-            index_uid: "test-index:0".to_string(),
-            source_id: "test-source".to_string(),
-            shard_id: 0,
-            from_position_exclusive: None,
-            doc_batch: None,
-        };
-        assert_eq!(subrequest.to_position_inclusive(), None);
-
-        subrequest.from_position_exclusive = Some(0);
-        assert_eq!(subrequest.to_position_inclusive(), Some(0));
-
-        subrequest.doc_batch = Some(DocBatchV2 {
-            doc_buffer: Bytes::from_static(b"test-doc"),
-            doc_lengths: vec![8],
-        });
-        assert_eq!(subrequest.to_position_inclusive(), Some(1));
-
-        subrequest.from_position_exclusive = None;
-        assert_eq!(subrequest.to_position_inclusive(), Some(0));
+    pub fn to_position_inclusive(&self) -> Position {
+        self.to_position_inclusive.clone().unwrap_or_default()
     }
 }

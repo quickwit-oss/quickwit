@@ -24,7 +24,8 @@ use anyhow::anyhow;
 use quickwit_actors::AskError;
 use thiserror;
 
-use crate::{IndexUid, ServiceError, ServiceErrorCode, SourceId};
+use crate::types::{IndexUid, SourceId};
+use crate::{ServiceError, ServiceErrorCode};
 
 include!("../codegen/quickwit/quickwit.indexing.rs");
 

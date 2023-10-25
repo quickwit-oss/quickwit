@@ -33,17 +33,16 @@ use quickwit_config::{
 };
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_proto::metastore::{
-    AcquireShardsRequest, AcquireShardsResponse, AddSourceRequest, CloseShardsRequest,
-    CloseShardsResponse, CreateIndexRequest, CreateIndexResponse, DeleteIndexRequest, DeleteQuery,
-    DeleteShardsRequest, DeleteShardsResponse, DeleteSourceRequest, DeleteSplitsRequest,
-    DeleteTask, EmptyResponse, EntityKind, IndexMetadataRequest, IndexMetadataResponse,
-    LastDeleteOpstampRequest, LastDeleteOpstampResponse, ListDeleteTasksRequest,
-    ListDeleteTasksResponse, ListIndexesMetadataRequest, ListIndexesMetadataResponse,
-    ListShardsRequest, ListShardsResponse, ListSplitsRequest, ListSplitsResponse,
-    ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError, MetastoreResult,
-    MetastoreService, MetastoreServiceClient, OpenShardsRequest, OpenShardsResponse,
-    PublishSplitsRequest, ResetSourceCheckpointRequest, StageSplitsRequest, ToggleSourceRequest,
-    UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
+    AcquireShardsRequest, AcquireShardsResponse, AddSourceRequest, CreateIndexRequest,
+    CreateIndexResponse, DeleteIndexRequest, DeleteQuery, DeleteShardsRequest,
+    DeleteShardsResponse, DeleteSourceRequest, DeleteSplitsRequest, DeleteTask, EmptyResponse,
+    EntityKind, IndexMetadataRequest, IndexMetadataResponse, LastDeleteOpstampRequest,
+    LastDeleteOpstampResponse, ListDeleteTasksRequest, ListDeleteTasksResponse,
+    ListIndexesMetadataRequest, ListIndexesMetadataResponse, ListShardsRequest, ListShardsResponse,
+    ListSplitsRequest, ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest,
+    MetastoreError, MetastoreResult, MetastoreService, MetastoreServiceClient, OpenShardsRequest,
+    OpenShardsResponse, PublishSplitsRequest, ResetSourceCheckpointRequest, StageSplitsRequest,
+    ToggleSourceRequest, UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
 };
 use quickwit_proto::IndexUid;
 use sqlx::migrate::Migrator;
@@ -1308,13 +1307,6 @@ impl MetastoreService for PostgresqlMetastore {
         &mut self,
         _request: AcquireShardsRequest,
     ) -> MetastoreResult<AcquireShardsResponse> {
-        unimplemented!("`close_shards` is not implemented for PostgreSQL metastore")
-    }
-
-    async fn close_shards(
-        &mut self,
-        _request: CloseShardsRequest,
-    ) -> MetastoreResult<CloseShardsResponse> {
         unimplemented!("`close_shards` is not implemented for PostgreSQL metastore")
     }
 

@@ -32,11 +32,11 @@ use quickwit_proto::control_plane::{
     GetOrCreateOpenShardsResponse,
 };
 use quickwit_proto::metastore::{
-    serde_utils as metastore_serde_utils, AddSourceRequest, CloseShardsRequest, CreateIndexRequest,
-    CreateIndexResponse, DeleteIndexRequest, DeleteShardsRequest, DeleteSourceRequest,
-    EmptyResponse, MetastoreError, MetastoreService, MetastoreServiceClient, ToggleSourceRequest,
+    serde_utils as metastore_serde_utils, AddSourceRequest, CreateIndexRequest,
+    CreateIndexResponse, DeleteIndexRequest, DeleteSourceRequest, EmptyResponse, MetastoreError,
+    MetastoreService, MetastoreServiceClient, ToggleSourceRequest,
 };
-use quickwit_proto::{IndexUid, NodeId};
+use quickwit_proto::types::{IndexUid, NodeId};
 use serde::Serialize;
 use tracing::error;
 
@@ -362,50 +362,6 @@ impl Handler<GetOrCreateOpenShardsRequest> for ControlPlane {
             .ingest_controller
             .get_or_create_open_shards(request, &mut self.model, ctx.progress())
             .await)
-    }
-}
-
-// This is a metastore callback. Ingesters call the metastore to close shards directly, then the
-// metastore notifies the control plane of the event.
-#[async_trait]
-impl Handler<CloseShardsRequest> for ControlPlane {
-    type Reply = ControlPlaneResult<EmptyResponse>;
-
-    async fn handle(
-        &mut self,
-        request: CloseShardsRequest,
-        _ctx: &ActorContext<Self>,
-    ) -> Result<Self::Reply, ActorExitStatus> {
-        for close_shards_subrequest in request.subrequests {
-            let index_uid: IndexUid = close_shards_subrequest.index_uid.into();
-            let source_id = close_shards_subrequest.source_id;
-            // TODO: Group by (index_uid, source_id) first, or change schema of
-            // `CloseShardsSubrequest`.
-            let shard_ids = [close_shards_subrequest.shard_id];
-            self.model.close_shards(&index_uid, &source_id, &shard_ids)
-        }
-        Ok(Ok(EmptyResponse {}))
-    }
-}
-
-// This is a metastore callback. Ingesters call the metastore to delete shards directly, then the
-// metastore notifies the control plane of the event.
-#[async_trait]
-impl Handler<DeleteShardsRequest> for ControlPlane {
-    type Reply = ControlPlaneResult<EmptyResponse>;
-
-    async fn handle(
-        &mut self,
-        request: DeleteShardsRequest,
-        _ctx: &ActorContext<Self>,
-    ) -> Result<Self::Reply, ActorExitStatus> {
-        for delete_shards_subrequest in request.subrequests {
-            let index_uid: IndexUid = delete_shards_subrequest.index_uid.into();
-            let source_id = delete_shards_subrequest.source_id;
-            let shard_ids = delete_shards_subrequest.shard_ids;
-            self.model.delete_shards(&index_uid, &source_id, &shard_ids)
-        }
-        Ok(Ok(EmptyResponse {}))
     }
 }
 

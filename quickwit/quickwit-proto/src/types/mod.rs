@@ -27,6 +27,10 @@ use std::str::FromStr;
 use serde::{Deserialize, Serialize};
 pub use ulid::Ulid;
 
+mod position;
+
+pub use position::Position;
+
 pub type IndexId = String;
 
 pub type SourceId = String;

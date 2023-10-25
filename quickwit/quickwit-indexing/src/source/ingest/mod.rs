@@ -27,15 +27,14 @@ use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_ingest::{decoded_mrecords, IngesterPool, MRecord, MultiFetchStream};
-use quickwit_metastore::checkpoint::{PartitionId, Position, SourceCheckpoint};
+use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpoint};
 use quickwit_proto::ingest::ingester::{
     FetchResponseV2, IngesterService, TruncateRequest, TruncateSubrequest,
 };
 use quickwit_proto::metastore::{
     AcquireShardsRequest, AcquireShardsSubrequest, MetastoreService, MetastoreServiceClient,
 };
-use quickwit_proto::types::NodeId;
-use quickwit_proto::{IndexUid, PublishToken, ShardId, SourceId};
+use quickwit_proto::{IndexUid, NodeId, Position, PublishToken, ShardId, SourceId};
 use serde_json::json;
 use tokio::time;
 use tracing::{debug, error, info, warn};
@@ -162,7 +161,10 @@ impl IngestSource {
             .assigned_shards
             .get_mut(&fetch_response.shard_id)
             .expect("shard should be assigned");
+
         let partition_id = assigned_shard.partition_id.clone();
+        let from_position_exclusive = fetch_response.from_position_exclusive();
+        let to_position_inclusive = fetch_response.to_position_inclusive();
 
         for mrecord in decoded_mrecords(mrecord_batch) {
             match mrecord {
@@ -172,16 +174,14 @@ impl IngestSource {
                 MRecord::Commit => {
                     batch_builder.force_commit();
                 }
+                MRecord::Eof => {
+                    break;
+                }
                 MRecord::Unknown => {
                     bail!("source cannot decode mrecord");
                 }
             }
         }
-        let from_position_exclusive = assigned_shard.current_position_inclusive.clone();
-        let to_position_inclusive = fetch_response
-            .to_position_inclusive()
-            .map(Position::from)
-            .unwrap_or(Position::Beginning);
         batch_builder
             .checkpoint_delta
             .record_partition_delta(
@@ -198,8 +198,8 @@ impl IngestSource {
         let mut per_ingester_truncate_subrequests: HashMap<&NodeId, Vec<TruncateSubrequest>> =
             HashMap::new();
 
-        for (shard_id, truncate_position) in truncation_point {
-            if matches!(truncate_position, Position::Beginning) {
+        for (shard_id, to_position_exclusive) in truncation_point {
+            if matches!(to_position_exclusive, Position::Beginning) {
                 continue;
             }
             let Some(shard) = self.assigned_shards.get(shard_id) else {
@@ -209,15 +209,11 @@ impl IngestSource {
                 );
                 continue;
             };
-            let to_position_inclusive = truncate_position
-                .as_u64()
-                .expect("position should be a u64");
-
             let truncate_subrequest = TruncateSubrequest {
                 index_uid: self.client_id.index_uid.clone().into(),
                 source_id: self.client_id.source_id.clone(),
                 shard_id: *shard_id,
-                to_position_inclusive,
+                to_position_inclusive: Some(to_position_exclusive.clone()),
             };
             if let Some(follower_id) = &shard.follower_id_opt {
                 per_ingester_truncate_subrequests
@@ -371,10 +367,11 @@ impl Source for IngestSource {
             let source_id: SourceId = acquired_shard.source_id;
             let shard_id = acquired_shard.shard_id;
             let partition_id = PartitionId::from(shard_id);
-            let current_position_inclusive =
-                Position::from(acquired_shard.publish_position_inclusive);
-            let from_position_exclusive = current_position_inclusive.as_u64();
-            let to_position_inclusive = None;
+            let current_position_inclusive = acquired_shard
+                .publish_position_inclusive
+                .unwrap_or_default();
+            let from_position_exclusive = current_position_inclusive.clone();
+            let to_position_inclusive = Position::Eof;
 
             if let Err(error) = ctx
                 .protect_future(self.fetch_stream.subscribe(
@@ -471,32 +468,21 @@ mod tests {
                 let subrequest = &request.subrequests[0];
                 assert_eq!(subrequest.index_uid, "test-index:0");
                 assert_eq!(subrequest.source_id, "test-source");
-                assert_eq!(subrequest.shard_ids, vec![1, 2, 3]);
+                assert_eq!(subrequest.shard_ids, vec![1, 2]);
 
                 let response = AcquireShardsResponse {
                     subresponses: vec![AcquireShardsSubresponse {
                         index_uid: "test-index:0".to_string(),
                         source_id: "test-source".to_string(),
-                        acquired_shards: vec![
-                            Shard {
-                                leader_id: "test-ingester-0".to_string(),
-                                follower_id: None,
-                                index_uid: "test-index:0".to_string(),
-                                source_id: "test-source".to_string(),
-                                shard_id: 1,
-                                publish_position_inclusive: "00000000000000000011".to_string(),
-                                ..Default::default()
-                            },
-                            Shard {
-                                leader_id: "test-ingester-1".to_string(),
-                                follower_id: None,
-                                index_uid: "test-index:0".to_string(),
-                                source_id: "test-source".to_string(),
-                                shard_id: 2,
-                                publish_position_inclusive: "00000000000000000022".to_string(),
-                                ..Default::default()
-                            },
-                        ],
+                        acquired_shards: vec![Shard {
+                            leader_id: "test-ingester-0".to_string(),
+                            follower_id: None,
+                            index_uid: "test-index:0".to_string(),
+                            source_id: "test-source".to_string(),
+                            shard_id: 1,
+                            publish_position_inclusive: Some(11u64.into()),
+                            ..Default::default()
+                        }],
                     }],
                 };
                 Ok(response)
@@ -515,7 +501,7 @@ mod tests {
                 assert_eq!(request.index_uid, "test-index:0");
                 assert_eq!(request.source_id, "test-source");
                 assert_eq!(request.shard_id, 1);
-                assert_eq!(request.from_position_exclusive, Some(11));
+                assert_eq!(request.from_position_exclusive, Some(11u64.into()));
 
                 let (_service_stream_tx, service_stream) = ServiceStream::new_bounded(1);
                 Ok(service_stream)
@@ -531,7 +517,7 @@ mod tests {
                 assert_eq!(subrequest.index_uid, "test-index:0");
                 assert_eq!(subrequest.source_id, "test-source");
                 assert_eq!(subrequest.shard_id, 1);
-                assert_eq!(subrequest.to_position_inclusive, 11);
+                assert_eq!(subrequest.to_position_inclusive, Some(11u64.into()));
 
                 let response = TruncateResponse {};
                 Ok(response)
@@ -561,10 +547,9 @@ mod tests {
         let ctx: SourceContext =
             ActorContext::for_test(&universe, source_mailbox, observable_state_tx);
 
-        // In this scenario, the indexer will only be able to acquire shard 1 and 2 and will fail to
-        // subscribe to shard 2.
+        // In this scenario, the indexer will only be able to acquire shard 1.
         let assignment = Assignment {
-            shard_ids: vec![1, 2, 3],
+            shard_ids: vec![1, 2],
         };
         let publish_lock = source.publish_lock.clone();
         let publish_token = source.publish_token.clone();
@@ -598,7 +583,7 @@ mod tests {
             leader_id: "test-ingester-0".into(),
             follower_id_opt: None,
             partition_id: 1u64.into(),
-            current_position_inclusive: Position::from(11u64),
+            current_position_inclusive: 11u64.into(),
         };
         assert_eq!(assigned_shard, &expected_assigned_shard);
 
@@ -646,7 +631,7 @@ mod tests {
                 leader_id: "test-ingester-0".into(),
                 follower_id_opt: None,
                 partition_id: 1u64.into(),
-                current_position_inclusive: Position::from(11u64),
+                current_position_inclusive: 11u64.into(),
             },
         );
         source.assigned_shards.insert(
@@ -655,7 +640,7 @@ mod tests {
                 leader_id: "test-ingester-1".into(),
                 follower_id_opt: None,
                 partition_id: 2u64.into(),
-                current_position_inclusive: Position::from(22u64),
+                current_position_inclusive: 22u64.into(),
             },
         );
         let fetch_response_tx = source.fetch_stream.fetch_response_tx();
@@ -665,11 +650,12 @@ mod tests {
                 index_uid: "test-index:0".into(),
                 source_id: "test-source".into(),
                 shard_id: 1,
-                from_position_inclusive: 12,
                 mrecord_batch: Some(MRecordBatch {
                     mrecord_buffer: Bytes::from_static(b"\0\0test-doc-112\0\0test-doc-113\0\x01"),
                     mrecord_lengths: vec![14, 14, 2],
                 }),
+                from_position_exclusive: Some(11u64.into()),
+                to_position_inclusive: Some(14u64.into()),
             }))
             .await
             .unwrap();
@@ -679,11 +665,12 @@ mod tests {
                 index_uid: "test-index:0".into(),
                 source_id: "test-source".into(),
                 shard_id: 2,
-                from_position_inclusive: 23,
                 mrecord_batch: Some(MRecordBatch {
-                    mrecord_buffer: Bytes::from_static(b"\0\0test-doc-223"),
-                    mrecord_lengths: vec![14],
+                    mrecord_buffer: Bytes::from_static(b"\0\0test-doc-223\0\x01"),
+                    mrecord_lengths: vec![14, 2],
                 }),
+                from_position_exclusive: Some(22u64.into()),
+                to_position_inclusive: Some(Position::Eof),
             }))
             .await
             .unwrap();
@@ -710,12 +697,12 @@ mod tests {
 
         assert_eq!(partition_deltas.len(), 2);
         assert_eq!(partition_deltas[0].0, 1u64.into());
-        assert_eq!(partition_deltas[0].1.from, 11u64.into());
-        assert_eq!(partition_deltas[0].1.to, 14u64.into());
+        assert_eq!(partition_deltas[0].1.from, Position::from(11u64));
+        assert_eq!(partition_deltas[0].1.to, Position::from(14u64));
 
         assert_eq!(partition_deltas[1].0, 2u64.into());
-        assert_eq!(partition_deltas[1].1.from, 22u64.into());
-        assert_eq!(partition_deltas[1].1.to, 23u64.into());
+        assert_eq!(partition_deltas[1].1.from, Position::from(22u64));
+        assert_eq!(partition_deltas[1].1.to, Position::Eof);
     }
 
     #[tokio::test]
@@ -741,15 +728,15 @@ mod tests {
 
                 let subrequest_0 = &request.subrequests[0];
                 assert_eq!(subrequest_0.shard_id, 1);
-                assert_eq!(subrequest_0.to_position_inclusive, 11);
+                assert_eq!(subrequest_0.to_position_inclusive, Some(11u64.into()));
 
                 let subrequest_1 = &request.subrequests[1];
                 assert_eq!(subrequest_1.shard_id, 2);
-                assert_eq!(subrequest_1.to_position_inclusive, 22);
+                assert_eq!(subrequest_1.to_position_inclusive, Some(22u64.into()));
 
                 let subrequest_2 = &request.subrequests[2];
                 assert_eq!(subrequest_2.shard_id, 3);
-                assert_eq!(subrequest_2.to_position_inclusive, 33);
+                assert_eq!(subrequest_2.to_position_inclusive, Some(33u64.into()));
 
                 Ok(TruncateResponse {})
             });
@@ -766,11 +753,11 @@ mod tests {
 
                 let subrequest_0 = &request.subrequests[0];
                 assert_eq!(subrequest_0.shard_id, 2);
-                assert_eq!(subrequest_0.to_position_inclusive, 22);
+                assert_eq!(subrequest_0.to_position_inclusive, Some(22u64.into()));
 
                 let subrequest_1 = &request.subrequests[1];
                 assert_eq!(subrequest_1.shard_id, 3);
-                assert_eq!(subrequest_1.to_position_inclusive, 33);
+                assert_eq!(subrequest_1.to_position_inclusive, Some(33u64.into()));
 
                 Ok(TruncateResponse {})
             });
@@ -787,7 +774,7 @@ mod tests {
 
                 let subrequest_0 = &request.subrequests[0];
                 assert_eq!(subrequest_0.shard_id, 4);
-                assert_eq!(subrequest_0.to_position_inclusive, 44);
+                assert_eq!(subrequest_0.to_position_inclusive, Some(44u64.into()));
 
                 Ok(TruncateResponse {})
             });
@@ -820,7 +807,7 @@ mod tests {
                 leader_id: "test-ingester-0".into(),
                 follower_id_opt: None,
                 partition_id: 1u64.into(),
-                current_position_inclusive: Position::from(11u64),
+                current_position_inclusive: 11u64.into(),
             },
         );
         source.assigned_shards.insert(
@@ -829,7 +816,7 @@ mod tests {
                 leader_id: "test-ingester-0".into(),
                 follower_id_opt: Some("test-ingester-1".into()),
                 partition_id: 2u64.into(),
-                current_position_inclusive: Position::from(22u64),
+                current_position_inclusive: 22u64.into(),
             },
         );
         source.assigned_shards.insert(
@@ -838,7 +825,7 @@ mod tests {
                 leader_id: "test-ingester-1".into(),
                 follower_id_opt: Some("test-ingester-0".into()),
                 partition_id: 3u64.into(),
-                current_position_inclusive: Position::from(33u64),
+                current_position_inclusive: 33u64.into(),
             },
         );
         source.assigned_shards.insert(
@@ -847,7 +834,7 @@ mod tests {
                 leader_id: "test-ingester-2".into(),
                 follower_id_opt: Some("test-ingester-3".into()),
                 partition_id: 4u64.into(),
-                current_position_inclusive: Position::from(44u64),
+                current_position_inclusive: 44u64.into(),
             },
         );
         source.assigned_shards.insert(

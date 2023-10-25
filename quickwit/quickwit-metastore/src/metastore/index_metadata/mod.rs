@@ -25,15 +25,13 @@ use std::collections::{BTreeMap, HashMap};
 use quickwit_common::uri::Uri;
 use quickwit_config::{IndexConfig, SourceConfig, TestableForRegression};
 use quickwit_proto::metastore::{EntityKind, MetastoreError, MetastoreResult};
-use quickwit_proto::{IndexUid, SourceId};
+use quickwit_proto::types::{IndexUid, Position, SourceId};
 use serde::{Deserialize, Serialize};
 use serialize::VersionedIndexMetadata;
 use time::OffsetDateTime;
 use ulid::Ulid;
 
-use crate::checkpoint::{
-    IndexCheckpoint, PartitionId, Position, SourceCheckpoint, SourceCheckpointDelta,
-};
+use crate::checkpoint::{IndexCheckpoint, PartitionId, SourceCheckpoint, SourceCheckpointDelta};
 
 /// An index metadata carries all meta data about an index.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
