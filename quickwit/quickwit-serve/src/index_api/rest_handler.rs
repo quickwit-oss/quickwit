@@ -260,6 +260,14 @@ fn describe_index_handler(
 #[derive(Debug, Clone, Deserialize, Serialize, utoipa::IntoParams, utoipa::ToSchema, Default)]
 #[into_params(parameter_in = Query)]
 pub struct ListSplitsQueryParams {
+    /// If set, define the number of splits to skip
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    pub offset: Option<usize>,
+    /// If set, restrict maximum number of splits to retrieve
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default)]
+    pub limit: Option<usize>,
     /// A specific split state(s) to filter by.
     #[serde(deserialize_with = "from_simple_list")]
     #[serde(serialize_with = "to_simple_list")]
@@ -282,12 +290,22 @@ pub struct ListSplitsQueryParams {
     pub end_create_timestamp: Option<i64>,
 }
 
+#[derive(Serialize, Deserialize, Debug, utoipa::ToSchema)]
+pub struct ListSplitsResponse {
+    #[serde(default)]
+    pub offset: usize,
+    #[serde(default)]
+    pub size: usize,
+    #[serde(default)]
+    pub splits: Vec<Split>,
+}
+
 #[utoipa::path(
     get,
     tag = "Indexes",
     path = "/indexes/{index_id}/splits",
     responses(
-        (status = 200, description = "Successfully fetched splits.", body = [Split])
+        (status = 200, description = "Successfully fetched splits.", body = ListSplitsResponse)
     ),
     params(
         ListSplitsQueryParams,
@@ -300,7 +318,7 @@ async fn list_splits(
     index_id: String,
     list_split_query: ListSplitsQueryParams,
     mut metastore: MetastoreServiceClient,
-) -> MetastoreResult<Vec<Split>> {
+) -> MetastoreResult<ListSplitsResponse> {
     let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
     let index_uid: IndexUid = metastore
         .index_metadata(index_metadata_request)
@@ -309,6 +327,14 @@ async fn list_splits(
         .index_uid;
     info!(index_id = %index_id, list_split_query = ?list_split_query, "get-splits");
     let mut query = ListSplitsQuery::for_index(index_uid);
+    let mut offset = 0;
+    if let Some(offset_value) = list_split_query.offset {
+        query = query.with_offset(offset_value);
+        offset = offset_value;
+    }
+    if let Some(limit) = list_split_query.limit {
+        query = query.with_limit(limit);
+    }
     if let Some(split_states) = list_split_query.split_states {
         query = query.with_split_states(split_states);
     }
@@ -326,7 +352,11 @@ async fn list_splits(
         .list_splits(list_splits_request)
         .await?
         .deserialize_splits()?;
-    Ok(splits)
+    Ok(ListSplitsResponse {
+        offset,
+        size: splits.len(),
+        splits,
+    })
 }
 
 fn list_splits_handler(
@@ -955,10 +985,14 @@ mod tests {
                 .await;
             assert_eq!(resp.status(), 200);
             let actual_response_json: JsonValue = serde_json::from_slice(resp.body()).unwrap();
-            let expected_response_json = serde_json::json!([{
-                "create_timestamp": 0,
-                "split_id": "split_1",
-            }]);
+            let expected_response_json = serde_json::json!({
+                "splits": [
+                    {
+                        "create_timestamp": 0,
+                        "split_id": "split_1",
+                    }
+                ]
+            });
             assert_json_include!(
                 actual: actual_response_json,
                 expected: expected_response_json
