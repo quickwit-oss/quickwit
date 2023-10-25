@@ -101,7 +101,7 @@ use tracing::{debug, error, info, warn};
 use warp::{Filter, Rejection};
 
 pub use crate::build_info::{BuildInfo, RuntimeInfo};
-pub use crate::index_api::ListSplitsQueryParams;
+pub use crate::index_api::{ListSplitsQueryParams, ListSplitsResponse};
 pub use crate::metrics::SERVE_METRICS;
 use crate::rate_modulator::RateModulator;
 #[cfg(test)]

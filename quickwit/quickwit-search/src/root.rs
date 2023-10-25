@@ -43,7 +43,7 @@ use quickwit_proto::search::{
     LeafSearchRequest, LeafSearchResponse, ListTermsRequest, ListTermsResponse, PartialHit,
     SearchRequest, SearchResponse, SnippetRequest, SortField, SplitIdAndFooterOffsets,
 };
-use quickwit_proto::IndexUid;
+use quickwit_proto::{IndexUid, SplitId};
 use quickwit_query::query_ast::{
     BoolQuery, QueryAst, QueryAstVisitor, RangeQuery, TermQuery, TermSetQuery,
 };
@@ -564,6 +564,17 @@ pub(crate) async fn fetch_docs_phase(
         .into_iter()
         .flat_map(|response| response.hits.into_iter());
 
+    // Build map of Split ID > index ID to add the index ID to the hits.
+    // Used for ES compatibility.
+    let split_id_to_index_id_map: HashMap<&SplitId, &str> = split_metadatas
+        .iter()
+        .map(|split_metadata| {
+            (
+                &split_metadata.split_id,
+                split_metadata.index_uid.index_id(),
+            )
+        })
+        .collect();
     let mut hits_with_position: Vec<(usize, Hit)> = leaf_hits
         .flat_map(|leaf_hit: LeafHit| {
             let partial_hit_ref = leaf_hit.partial_hit.as_ref()?;
@@ -573,12 +584,17 @@ pub(crate) async fn fetch_docs_phase(
                 partial_hit_ref.doc_id,
             );
             let position = *hit_order.get(&key)?;
+            let index_id = split_id_to_index_id_map
+                .get(&partial_hit_ref.split_id)
+                .map(|split_id| split_id.to_string())
+                .unwrap_or_default();
             Some((
                 position,
                 Hit {
                     json: leaf_hit.leaf_json,
                     partial_hit: leaf_hit.partial_hit,
                     snippet: leaf_hit.leaf_snippet_json,
+                    index_id,
                 },
             ))
         })
@@ -3158,6 +3174,14 @@ mod tests {
         .unwrap();
         assert_eq!(search_response.num_hits, 3);
         assert_eq!(search_response.hits.len(), 3);
+        assert_eq!(
+            search_response
+                .hits
+                .iter()
+                .map(|hit| &hit.index_id)
+                .collect_vec(),
+            vec!["test-index-2", "test-index-1", "test-index-1"]
+        );
         Ok(())
     }
 }
