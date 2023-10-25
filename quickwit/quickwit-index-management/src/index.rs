@@ -666,10 +666,11 @@ mod tests {
                 .list_splits(ListSplitsRequest::try_from_index_uid(index_uids[i].clone()).unwrap())
                 .await
                 .unwrap_err();
-            let index_id = index_ids[i].clone();
-            let index_uid = index_uids[i].clone();
-            assert!(
-                matches!(error, MetastoreError::NotFound(EntityKind::Index { index_id }) if index_id == index_uid.index_id())
+            assert_eq!(
+                error,
+                MetastoreError::NotFound(EntityKind::Index {
+                    index_id: index_ids[i].clone()
+                })
             );
             assert!(!storages[i].exists(split_paths[i].as_path()).await.unwrap());
         }
