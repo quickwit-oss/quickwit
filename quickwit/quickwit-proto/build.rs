@@ -27,28 +27,23 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // services.
     //
     // Control plane.
-    Codegen::run(
-        &["protos/quickwit/control_plane.proto"],
-        "src/codegen/quickwit",
-        "crate::control_plane::ControlPlaneResult",
-        "crate::control_plane::ControlPlaneError",
-        false,
-        false,
-        &["protos"],
-    )
-    .unwrap();
+    Codegen::builder()
+        .with_protos(&["protos/quickwit/control_plane.proto"])
+        .with_output_dir("src/codegen/quickwit")
+        .with_result_type_path("crate::control_plane::ControlPlaneResult")
+        .with_error_type_path("crate::control_plane::ControlPlaneError")
+        .with_includes(&["protos"])
+        .run()
+        .unwrap();
 
     // Indexing Service.
-    Codegen::run(
-        &["protos/quickwit/indexing.proto"],
-        "src/codegen/quickwit",
-        "crate::indexing::IndexingResult",
-        "crate::indexing::IndexingError",
-        false,
-        false,
-        &[],
-    )
-    .unwrap();
+    Codegen::builder()
+        .with_protos(&["protos/quickwit/indexing.proto"])
+        .with_output_dir("src/codegen/quickwit")
+        .with_result_type_path("crate::indexing::IndexingResult")
+        .with_error_type_path("crate::indexing::IndexingError")
+        .run()
+        .unwrap();
 
     // Metastore service.
     let mut metastore_api_config = prost_build::Config::default();
@@ -64,17 +59,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "#[serde(skip_serializing_if = \"Option::is_none\")]",
         );
 
-    Codegen::run_with_config(
-        &["protos/quickwit/metastore.proto"],
-        "src/codegen/quickwit",
-        "crate::metastore::MetastoreResult",
-        "crate::metastore::MetastoreError",
-        true,
-        true,
-        &["protos"],
-        metastore_api_config,
-    )
-    .unwrap();
+    Codegen::builder()
+        .with_protos(&["protos/quickwit/metastore.proto"])
+        .with_output_dir("src/codegen/quickwit")
+        .with_result_type_path("crate::metastore::MetastoreResult")
+        .with_error_type_path("crate::metastore::MetastoreError")
+        .enable_extra_service_methods()
+        .enable_prom_label_for_requests()
+        .with_includes(&["protos"])
+        .with_prost_config(metastore_api_config)
+        .run()
+        .unwrap();
 
     // Ingest service (metastore service proto should be generated before ingest).
     let mut prost_config = prost_build::Config::default();
@@ -103,20 +98,18 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "#[serde(default, skip_serializing_if = \"Option::is_none\")]",
         );
 
-    Codegen::run_with_config(
-        &[
+    Codegen::builder()
+        .with_protos(&[
             "protos/quickwit/ingester.proto",
             "protos/quickwit/router.proto",
-        ],
-        "src/codegen/quickwit",
-        "crate::ingest::IngestV2Result",
-        "crate::ingest::IngestV2Error",
-        false,
-        false,
-        &["protos"],
-        prost_config,
-    )
-    .unwrap();
+        ])
+        .with_output_dir("src/codegen/quickwit")
+        .with_result_type_path("crate::ingest::IngestV2Result")
+        .with_error_type_path("crate::ingest::IngestV2Error")
+        .with_includes(&["protos"])
+        .with_prost_config(prost_config)
+        .run()
+        .unwrap();
 
     // Search service.
     let mut prost_config = prost_build::Config::default();
