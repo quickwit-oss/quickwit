@@ -603,7 +603,7 @@ mod tests {
     async fn test_delete_indexes() {
         let mut metastore = metastore_for_test();
         let storage_resolver = StorageResolver::for_test();
-        let mut index_service = IndexService::new(metastore.clone(), storage_resolver);
+        let mut index_service = IndexService::new(metastore.clone(), storage_resolver.clone());
         let index_count = 2;
         let mut index_ids = Vec::new();
         let mut index_uids = Vec::new();
@@ -625,7 +625,7 @@ mod tests {
                 .await
                 .unwrap()
                 .index_uid;
-            index_uids.push(index_uid);
+            index_uids.push(index_uid.clone());
 
             let split_id = format!("test-split-{}", i);
             let split_metadata = SplitMetadata {
