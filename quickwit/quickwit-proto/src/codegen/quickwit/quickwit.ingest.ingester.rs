@@ -278,9 +278,10 @@ pub struct PingResponse {}
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum PersistFailureReason {
-    ShardClosed = 0,
-    RateLimited = 1,
-    ResourceExhausted = 2,
+    Unspecified = 0,
+    ShardClosed = 1,
+    RateLimited = 2,
+    ResourceExhausted = 3,
 }
 impl PersistFailureReason {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -289,17 +290,21 @@ impl PersistFailureReason {
     /// (if the ProtoBuf definition does not change) and safe for programmatic use.
     pub fn as_str_name(&self) -> &'static str {
         match self {
-            PersistFailureReason::ShardClosed => "SHARD_CLOSED",
-            PersistFailureReason::RateLimited => "RATE_LIMITED",
-            PersistFailureReason::ResourceExhausted => "RESOURCE_EXHAUSTED",
+            PersistFailureReason::Unspecified => "PERSIST_FAILURE_REASON_UNSPECIFIED",
+            PersistFailureReason::ShardClosed => "PERSIST_FAILURE_REASON_SHARD_CLOSED",
+            PersistFailureReason::RateLimited => "PERSIST_FAILURE_REASON_RATE_LIMITED",
+            PersistFailureReason::ResourceExhausted => {
+                "PERSIST_FAILURE_REASON_RESOURCE_EXHAUSTED"
+            }
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
-            "SHARD_CLOSED" => Some(Self::ShardClosed),
-            "RATE_LIMITED" => Some(Self::RateLimited),
-            "RESOURCE_EXHAUSTED" => Some(Self::ResourceExhausted),
+            "PERSIST_FAILURE_REASON_UNSPECIFIED" => Some(Self::Unspecified),
+            "PERSIST_FAILURE_REASON_SHARD_CLOSED" => Some(Self::ShardClosed),
+            "PERSIST_FAILURE_REASON_RATE_LIMITED" => Some(Self::RateLimited),
+            "PERSIST_FAILURE_REASON_RESOURCE_EXHAUSTED" => Some(Self::ResourceExhausted),
             _ => None,
         }
     }

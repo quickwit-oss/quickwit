@@ -180,11 +180,12 @@ fn convert_metastore_error<T>(
         | MetastoreError::JsonDeserializeError { .. }
         | MetastoreError::JsonSerializeError { .. }
         | MetastoreError::NotFound(_) => true,
-        MetastoreError::Unavailable(_)
+        MetastoreError::Connection { .. }
+        | MetastoreError::Db { .. }
+        | MetastoreError::InconsistentControlPlaneState { .. }
         | MetastoreError::Internal { .. }
         | MetastoreError::Io { .. }
-        | MetastoreError::Connection { .. }
-        | MetastoreError::Db { .. } => false,
+        | MetastoreError::Unavailable(_) => false,
     };
     if is_transaction_certainly_aborted {
         // If the metastore transaction is certain to have been aborted,
@@ -363,10 +364,22 @@ impl Handler<GetOrCreateOpenShardsRequest> for ControlPlane {
         request: GetOrCreateOpenShardsRequest,
         ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
-        Ok(self
+        let response = match self
             .ingest_controller
             .get_or_create_open_shards(request, &mut self.model, ctx.progress())
-            .await)
+            .await
+        {
+            Ok(response) => response,
+            Err(ControlPlaneError::Metastore(metastore_error)) => {
+                return convert_metastore_error(metastore_error);
+            }
+            Err(control_plane_error) => {
+                return Ok(Err(control_plane_error));
+            }
+        };
+        // TODO: Why do we return an error if the indexing scheduler fails?
+        self.indexing_scheduler.on_index_change(&self.model).await?;
+        Ok(Ok(response))
     }
 }
 
@@ -379,7 +392,7 @@ mod tests {
         ListIndexesMetadataResponseExt,
     };
     use quickwit_proto::control_plane::GetOrCreateOpenShardsSubrequest;
-    use quickwit_proto::ingest::Shard;
+    use quickwit_proto::ingest::{Shard, ShardState};
     use quickwit_proto::metastore::{
         EntityKind, ListIndexesMetadataRequest, ListIndexesMetadataResponse, ListShardsRequest,
         ListShardsResponse, ListShardsSubresponse, MetastoreError, SourceType,
@@ -641,7 +654,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_control_plane_get_open_shards() {
+    async fn test_control_plane_get_or_create_open_shards() {
         let universe = Universe::with_accelerated_time();
 
         let cluster_id = "test-cluster".to_string();
@@ -675,6 +688,7 @@ mod tests {
                     index_uid: "test-index:0".to_string(),
                     source_id: INGEST_SOURCE_ID.to_string(),
                     shard_id: 1,
+                    shard_state: ShardState::Open as i32,
                     ..Default::default()
                 }],
                 next_shard_id: 2,
@@ -714,11 +728,6 @@ mod tests {
         assert_eq!(subresponse.open_shards[0].shard_id, 1);
 
         universe.assert_quit().await;
-    }
-
-    #[tokio::test]
-    async fn test_control_plane_close_shards() {
-        // TODO: Write test when the RPC is actually called by ingesters.
     }
 
     #[tokio::test]

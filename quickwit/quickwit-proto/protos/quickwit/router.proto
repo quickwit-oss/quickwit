@@ -58,10 +58,14 @@ message IngestSuccess {
     quickwit.ingest.Position replication_position_inclusive = 5;
 }
 
+enum IngestFailureReason {
+    INGEST_FAILURE_REASON_UNSPECIFIED = 0;
+    INGEST_FAILURE_REASON_NO_SHARDS_AVAILABLE = 1;
+}
+
 message IngestFailure {
     uint32 subrequest_id = 1;
-    string index_uid = 2;
+    string index_id = 2;
     string source_id = 3;
-    uint64 shard_id = 4;
-    // IngestFailureReason reason = 5;
+    IngestFailureReason reason = 5;
 }

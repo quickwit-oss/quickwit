@@ -24,17 +24,18 @@ package quickwit.metastore;
 import "quickwit/ingest.proto";
 
 enum SourceType {
-  CLI = 0;
-  FILE = 1;
-  GCP_PUBSUB = 2;
-  INGEST_V1 = 3;
-  INGEST_V2 = 4;
-  KAFKA = 5;
-  KINESIS = 6;
-  NATS = 7;
-  PULSAR = 8;
-  VEC = 9;
-  VOID = 10;
+  SOURCE_TYPE_UNSPECIFIED = 0;
+  SOURCE_TYPE_CLI = 1;
+  SOURCE_TYPE_FILE = 2;
+  SOURCE_TYPE_GCP_PUBSUB = 3;
+  SOURCE_TYPE_INGEST_V1 = 4;
+  SOURCE_TYPE_INGEST_V2 = 5;
+  SOURCE_TYPE_KAFKA = 6;
+  SOURCE_TYPE_KINESIS = 7;
+  SOURCE_TYPE_NATS = 8;
+  SOURCE_TYPE_PULSAR = 9;
+  SOURCE_TYPE_VEC = 10;
+  SOURCE_TYPE_VOID = 11;
 }
 
 service MetastoreService {
@@ -275,7 +276,7 @@ message OpenShardsResponse {
 message OpenShardsSubresponse {
     string index_uid = 1;
     string source_id = 2;
-    repeated quickwit.ingest.Shard open_shards = 3;
+    repeated quickwit.ingest.Shard opened_shards = 3;
     uint64 next_shard_id = 4;
 }
 

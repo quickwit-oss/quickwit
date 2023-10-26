@@ -32,7 +32,7 @@ use quickwit_common::tower::Pool;
 use quickwit_proto::ingest::ingester::IngesterServiceClient;
 use quickwit_proto::types::NodeId;
 
-pub use self::fetch::MultiFetchStream;
+pub use self::fetch::{FetchStreamError, MultiFetchStream};
 pub use self::ingester::Ingester;
 pub use self::mrecord::{decoded_mrecords, MRecord};
 pub use self::router::IngestRouter;

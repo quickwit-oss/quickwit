@@ -287,7 +287,11 @@ pub(crate) fn list_indexing_tasks(
             continue;
         }
         match source_config.source_type() {
-            SourceType::Cli | SourceType::File | SourceType::Vec | SourceType::Void => {
+            SourceType::Cli
+            | SourceType::File
+            | SourceType::Unspecified
+            | SourceType::Vec
+            | SourceType::Void => {
                 continue;
             }
             SourceType::IngestV1 => {

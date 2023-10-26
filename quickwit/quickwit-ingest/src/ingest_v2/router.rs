@@ -38,6 +38,7 @@ use quickwit_proto::ingest::router::{
 use quickwit_proto::ingest::{CommitTypeV2, IngestV2Error, IngestV2Result};
 use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceId};
 use tokio::sync::RwLock;
+use tracing::warn;
 
 use super::ingester::PERSIST_REQUEST_TIMEOUT;
 use super::shard_table::ShardTable;
@@ -213,13 +214,18 @@ impl IngestRouter {
             )
             .await;
 
-        if let Err(_error) = self
+        if let Err(error) = self
             .populate_shard_table(get_or_create_open_shards_request)
             .await
         {
-            // workbench.record_?();
-            return;
+            warn!(
+                "failed to obtain open shards from control plane: `{}`",
+                error
+            );
         }
+        // List of subrequest IDs for which no shards were available to route the subrequests to.
+        let mut unavailable_subrequest_ids = Vec::new();
+
         let mut per_leader_persist_subrequests: HashMap<&LeaderId, Vec<PersistSubrequest>> =
             HashMap::new();
 
@@ -228,16 +234,16 @@ impl IngestRouter {
         // TODO: Here would be the most optimal place to split the body of the HTTP request into
         // lines, validate, transform and then pack the docs into compressed batches routed
         // to the right shards.
+
         for subrequest in workbench.pending_subrequests() {
             let Some(shard) = state_guard
                 .shard_table
                 .find_entry(&subrequest.index_id, &subrequest.source_id)
                 .and_then(|entry| entry.next_open_shard_round_robin(&self.ingester_pool))
             else {
-                // workbench.record_?();
+                unavailable_subrequest_ids.push(subrequest.subrequest_id);
                 continue;
             };
-
             let persist_subrequest = PersistSubrequest {
                 subrequest_id: subrequest.subrequest_id,
                 index_uid: shard.index_uid.clone(),
@@ -255,8 +261,13 @@ impl IngestRouter {
 
         for (leader_id, subrequests) in per_leader_persist_subrequests {
             let leader_id: NodeId = leader_id.clone().into();
-            let mut ingester = self.ingester_pool.get(&leader_id).expect("TODO");
-
+            let Some(mut ingester) = self.ingester_pool.get(&leader_id) else {
+                let subrequest_ids = subrequests
+                    .iter()
+                    .map(|subrequest| subrequest.subrequest_id);
+                unavailable_subrequest_ids.extend(subrequest_ids);
+                continue;
+            };
             let persist_request = PersistRequest {
                 leader_id: leader_id.into(),
                 subrequests,
@@ -271,6 +282,9 @@ impl IngestRouter {
         }
         drop(state_guard);
 
+        for subrequest_id in unavailable_subrequest_ids {
+            workbench.record_no_shards_available(subrequest_id);
+        }
         self.process_persist_results(workbench, persist_futures)
             .await;
     }
@@ -478,6 +492,7 @@ mod tests {
                             source_id: "test-source".to_string(),
                             open_shards: vec![Shard {
                                 shard_id: 1,
+                                shard_state: ShardState::Open as i32,
                                 ..Default::default()
                             }],
                         },
@@ -487,10 +502,12 @@ mod tests {
                             open_shards: vec![
                                 Shard {
                                     shard_id: 1,
+                                    shard_state: ShardState::Open as i32,
                                     ..Default::default()
                                 },
                                 Shard {
                                     shard_id: 2,
+                                    shard_state: ShardState::Open as i32,
                                     ..Default::default()
                                 },
                             ],
@@ -579,6 +596,7 @@ mod tests {
             vec![Shard {
                 index_uid: "test-index-0:0".to_string(),
                 shard_id: 1,
+                shard_state: ShardState::Open as i32,
                 leader_id: "test-ingester-0".to_string(),
                 ..Default::default()
             }],
@@ -637,6 +655,7 @@ mod tests {
             vec![Shard {
                 index_uid: "test-index-0:0".to_string(),
                 shard_id: 1,
+                shard_state: ShardState::Open as i32,
                 leader_id: "test-ingester-0".to_string(),
                 ..Default::default()
             }],
@@ -648,6 +667,7 @@ mod tests {
                 Shard {
                     index_uid: "test-index-1:0".to_string(),
                     shard_id: 1,
+                    shard_state: ShardState::Open as i32,
                     leader_id: "test-ingester-0".to_string(),
                     follower_id: Some("test-ingester-1".to_string()),
                     ..Default::default()
@@ -655,6 +675,7 @@ mod tests {
                 Shard {
                     index_uid: "test-index-1:0".to_string(),
                     shard_id: 2,
+                    shard_state: ShardState::Open as i32,
                     leader_id: "test-ingester-1".to_string(),
                     follower_id: Some("test-ingester-2".to_string()),
                     ..Default::default()
@@ -845,6 +866,7 @@ mod tests {
             vec![Shard {
                 index_uid: "test-index-0:0".to_string(),
                 shard_id: 1,
+                shard_state: ShardState::Open as i32,
                 leader_id: "test-ingester-0".to_string(),
                 ..Default::default()
             }],

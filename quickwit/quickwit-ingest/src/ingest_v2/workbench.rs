@@ -21,7 +21,7 @@ use std::collections::HashMap;
 
 use quickwit_proto::ingest::ingester::{PersistFailure, PersistSuccess};
 use quickwit_proto::ingest::router::{
-    IngestFailure, IngestResponseV2, IngestSubrequest, IngestSuccess,
+    IngestFailure, IngestFailureReason, IngestResponseV2, IngestSubrequest, IngestSuccess,
 };
 use quickwit_proto::ingest::IngestV2Result;
 use quickwit_proto::types::SubrequestId;
@@ -50,22 +50,6 @@ impl IngestWorkbench {
             subworkbenches,
             num_successes: 0,
         }
-    }
-
-    #[cfg(test)]
-    pub fn pending_subrequests(&self) -> impl Iterator<Item = &IngestSubrequest> {
-        use itertools::Itertools;
-
-        self.subworkbenches
-            .values()
-            .filter_map(|subworbench| {
-                if !subworbench.is_success() {
-                    Some(&subworbench.subrequest)
-                } else {
-                    None
-                }
-            })
-            .sorted_by_key(|subrequest| subrequest.subrequest_id)
     }
 
     #[cfg(not(test))]
@@ -101,7 +85,16 @@ impl IngestWorkbench {
             return;
         };
         subworkbench.num_attempts += 1;
-        subworkbench.last_attempt_failure_opt = Some(persist_failure);
+        subworkbench.last_attempt_failure_opt = Some(SubworkbenchFailure::Persist(persist_failure));
+    }
+
+    pub fn record_no_shards_available(&mut self, subrequest_id: SubrequestId) {
+        let Some(subworkbench) = self.subworkbenches.get_mut(&subrequest_id) else {
+            warn!("could not find subrequest `{}` in workbench", subrequest_id);
+            return;
+        };
+        subworkbench.num_attempts += 1;
+        subworkbench.last_attempt_failure_opt = Some(SubworkbenchFailure::NoShardsAvailable);
     }
 
     pub fn is_complete(&self) -> bool {
@@ -123,12 +116,12 @@ impl IngestWorkbench {
                     replication_position_inclusive: persist_success.replication_position_inclusive,
                 };
                 successes.push(success);
-            } else if let Some(persist_failure) = subworkbench.last_attempt_failure_opt {
+            } else if let Some(failure) = subworkbench.last_attempt_failure_opt {
                 let failure = IngestFailure {
-                    subrequest_id: persist_failure.subrequest_id,
-                    index_uid: persist_failure.index_uid,
-                    source_id: persist_failure.source_id,
-                    shard_id: persist_failure.shard_id,
+                    subrequest_id: subworkbench.subrequest.subrequest_id,
+                    index_id: subworkbench.subrequest.index_id,
+                    source_id: subworkbench.subrequest.source_id,
+                    reason: failure.reason() as i32,
                 };
                 failures.push(failure);
             }
@@ -140,12 +133,44 @@ impl IngestWorkbench {
             failures,
         })
     }
+
+    #[cfg(test)]
+    pub fn pending_subrequests(&self) -> impl Iterator<Item = &IngestSubrequest> {
+        use itertools::Itertools;
+
+        self.subworkbenches
+            .values()
+            .filter_map(|subworbench| {
+                if !subworbench.is_success() {
+                    Some(&subworbench.subrequest)
+                } else {
+                    None
+                }
+            })
+            .sorted_by_key(|subrequest| subrequest.subrequest_id)
+    }
+}
+
+#[derive(Debug)]
+enum SubworkbenchFailure {
+    NoShardsAvailable,
+    Persist(PersistFailure),
+}
+
+impl SubworkbenchFailure {
+    fn reason(&self) -> IngestFailureReason {
+        // TODO: Return a better failure reason for `Self::Persist`.
+        match self {
+            Self::NoShardsAvailable => IngestFailureReason::NoShardsAvailable,
+            Self::Persist(_) => IngestFailureReason::Unspecified,
+        }
+    }
 }
 
 pub(super) struct IngestSubworkbench {
     subrequest: IngestSubrequest,
     persist_success_opt: Option<PersistSuccess>,
-    last_attempt_failure_opt: Option<PersistFailure>,
+    last_attempt_failure_opt: Option<SubworkbenchFailure>,
     num_attempts: usize,
 }
 

@@ -30,9 +30,10 @@ message Position {
 }
 
 enum CommitTypeV2 {
-    AUTO = 0;
-    WAIT = 1;
-    FORCE = 2;
+    COMMIT_TYPE_V2_UNSPECIFIED = 0;
+    COMMIT_TYPE_V2_AUTO = 1;
+    COMMIT_TYPE_V2_WAIT = 2;
+    COMMIT_TYPE_V2_FORCE = 3;
 }
 
 message DocBatchV2 {
@@ -48,13 +49,14 @@ message MRecordBatch {
 }
 
 enum ShardState {
+    SHARD_STATE_UNSPECIFIED = 0;
     // The shard is open and accepts write requests.
-    OPEN = 0;
+    SHARD_STATE_OPEN = 1;
     // The ingester hosting the shard is unavailable.
-    UNAVAILABLE = 1;
+    SHARD_STATE_UNAVAILABLE = 2;
     // The shard is closed and cannot be written to.
     // It can be safely deleted if the publish position is superior or equal to the replication position.
-    CLOSED = 2;
+    SHARD_STATE_CLOSED = 3;
 }
 
 message Shard {

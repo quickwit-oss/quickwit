@@ -276,7 +276,7 @@ pub struct OpenShardsSubresponse {
     #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,
     #[prost(message, repeated, tag = "3")]
-    pub open_shards: ::prost::alloc::vec::Vec<super::ingest::Shard>,
+    pub opened_shards: ::prost::alloc::vec::Vec<super::ingest::Shard>,
     #[prost(uint64, tag = "4")]
     pub next_shard_id: u64,
 }
@@ -385,17 +385,18 @@ pub struct ListShardsSubresponse {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum SourceType {
-    Cli = 0,
-    File = 1,
-    GcpPubsub = 2,
-    IngestV1 = 3,
-    IngestV2 = 4,
-    Kafka = 5,
-    Kinesis = 6,
-    Nats = 7,
-    Pulsar = 8,
-    Vec = 9,
-    Void = 10,
+    Unspecified = 0,
+    Cli = 1,
+    File = 2,
+    GcpPubsub = 3,
+    IngestV1 = 4,
+    IngestV2 = 5,
+    Kafka = 6,
+    Kinesis = 7,
+    Nats = 8,
+    Pulsar = 9,
+    Vec = 10,
+    Void = 11,
 }
 impl SourceType {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -404,33 +405,35 @@ impl SourceType {
     /// (if the ProtoBuf definition does not change) and safe for programmatic use.
     pub fn as_str_name(&self) -> &'static str {
         match self {
-            SourceType::Cli => "CLI",
-            SourceType::File => "FILE",
-            SourceType::GcpPubsub => "GCP_PUBSUB",
-            SourceType::IngestV1 => "INGEST_V1",
-            SourceType::IngestV2 => "INGEST_V2",
-            SourceType::Kafka => "KAFKA",
-            SourceType::Kinesis => "KINESIS",
-            SourceType::Nats => "NATS",
-            SourceType::Pulsar => "PULSAR",
-            SourceType::Vec => "VEC",
-            SourceType::Void => "VOID",
+            SourceType::Unspecified => "SOURCE_TYPE_UNSPECIFIED",
+            SourceType::Cli => "SOURCE_TYPE_CLI",
+            SourceType::File => "SOURCE_TYPE_FILE",
+            SourceType::GcpPubsub => "SOURCE_TYPE_GCP_PUBSUB",
+            SourceType::IngestV1 => "SOURCE_TYPE_INGEST_V1",
+            SourceType::IngestV2 => "SOURCE_TYPE_INGEST_V2",
+            SourceType::Kafka => "SOURCE_TYPE_KAFKA",
+            SourceType::Kinesis => "SOURCE_TYPE_KINESIS",
+            SourceType::Nats => "SOURCE_TYPE_NATS",
+            SourceType::Pulsar => "SOURCE_TYPE_PULSAR",
+            SourceType::Vec => "SOURCE_TYPE_VEC",
+            SourceType::Void => "SOURCE_TYPE_VOID",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
-            "CLI" => Some(Self::Cli),
-            "FILE" => Some(Self::File),
-            "GCP_PUBSUB" => Some(Self::GcpPubsub),
-            "INGEST_V1" => Some(Self::IngestV1),
-            "INGEST_V2" => Some(Self::IngestV2),
-            "KAFKA" => Some(Self::Kafka),
-            "KINESIS" => Some(Self::Kinesis),
-            "NATS" => Some(Self::Nats),
-            "PULSAR" => Some(Self::Pulsar),
-            "VEC" => Some(Self::Vec),
-            "VOID" => Some(Self::Void),
+            "SOURCE_TYPE_UNSPECIFIED" => Some(Self::Unspecified),
+            "SOURCE_TYPE_CLI" => Some(Self::Cli),
+            "SOURCE_TYPE_FILE" => Some(Self::File),
+            "SOURCE_TYPE_GCP_PUBSUB" => Some(Self::GcpPubsub),
+            "SOURCE_TYPE_INGEST_V1" => Some(Self::IngestV1),
+            "SOURCE_TYPE_INGEST_V2" => Some(Self::IngestV2),
+            "SOURCE_TYPE_KAFKA" => Some(Self::Kafka),
+            "SOURCE_TYPE_KINESIS" => Some(Self::Kinesis),
+            "SOURCE_TYPE_NATS" => Some(Self::Nats),
+            "SOURCE_TYPE_PULSAR" => Some(Self::Pulsar),
+            "SOURCE_TYPE_VEC" => Some(Self::Vec),
+            "SOURCE_TYPE_VOID" => Some(Self::Void),
             _ => None,
         }
     }

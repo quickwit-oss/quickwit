@@ -112,6 +112,9 @@ pub enum MetastoreError {
     #[error("access forbidden: {message}")]
     Forbidden { message: String },
 
+    #[error("control plane state is inconsistent with that of the metastore")]
+    InconsistentControlPlaneState,
+
     #[error("internal error: {message}; cause: `{cause}`")]
     Internal { message: String, cause: String },
 
@@ -160,10 +163,10 @@ impl From<tonic::Status> for MetastoreError {
 
 impl From<MetastoreError> for tonic::Status {
     fn from(metastore_error: MetastoreError) -> Self {
-        let grpc_code = metastore_error.error_code().to_grpc_status_code();
-        let error_msg = serde_json::to_string(&metastore_error)
-            .unwrap_or_else(|_| format!("raw metastore error: {metastore_error}"));
-        tonic::Status::new(grpc_code, error_msg)
+        let grpc_status_code = metastore_error.error_code().to_grpc_status_code();
+        let message_json = serde_json::to_string(&metastore_error)
+            .unwrap_or_else(|_| format!("original metastore error: {metastore_error}"));
+        tonic::Status::new(grpc_status_code, message_json)
     }
 }
 
@@ -175,6 +178,7 @@ impl ServiceError for MetastoreError {
             Self::Db { .. } => ServiceErrorCode::Internal,
             Self::FailedPrecondition { .. } => ServiceErrorCode::BadRequest,
             Self::Forbidden { .. } => ServiceErrorCode::MethodNotAllowed,
+            Self::InconsistentControlPlaneState { .. } => ServiceErrorCode::BadRequest,
             Self::Internal { .. } => ServiceErrorCode::Internal,
             Self::InvalidArgument { .. } => ServiceErrorCode::BadRequest,
             Self::Io { .. } => ServiceErrorCode::Internal,
@@ -210,6 +214,7 @@ impl SourceType {
             SourceType::Kinesis => "kinesis",
             SourceType::Nats => "nats",
             SourceType::Pulsar => "pulsar",
+            SourceType::Unspecified => "unspecified",
             SourceType::Vec => "vec",
             SourceType::Void => "void",
         }
