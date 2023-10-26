@@ -63,10 +63,9 @@ pub struct IndexingSchedulerState {
 /// ever running. We just borrowed the terminology to Kubernetes.
 ///
 /// Scheduling executes the following steps:
-/// 1. List all of the logical indexing tasks, from the model. (See [`list_indexing_tasks`])
-/// 2. Builds a [`PhysicalIndexingPlan`] from the list of logical indexing tasks. See
+/// 1. Builds a [`PhysicalIndexingPlan`] from the list of logical indexing tasks. See
 ///    [`build_physical_indexing_plan`] for the implementation details.
-/// 3. Apply the [`PhysicalIndexingPlan`]: for each indexer, the scheduler send the indexing tasks
+/// 2. Apply the [`PhysicalIndexingPlan`]: for each indexer, the scheduler send the indexing tasks
 ///    by gRPC. An indexer immediately returns an Ok and apply asynchronously the received plan. Any
 ///    errors (network) happening in this step are ignored. The scheduler runs a control loop that
 ///    regularly checks if indexers are effectively running their plans (more details in the next
