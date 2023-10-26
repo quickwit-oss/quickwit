@@ -190,7 +190,12 @@ fn convert_metastore_error<T>(
         // If the metastore transaction is certain to have been aborted,
         // this is actually a good thing.
         // We do not need to restart the control plane.
-        error!(err=?metastore_error, transaction_outcome="aborted", "metastore error");
+        if !matches!(metastore_error, MetastoreError::AlreadyExists(_)) {
+            // This is not always an error to attempt to create an object that already exists.
+            // In particular, we create two otel indexes on startup.
+            // It will be up to the client to decide what to do there.
+            error!(err=?metastore_error, transaction_outcome="aborted", "metastore error");
+        }
         Ok(Err(ControlPlaneError::Metastore(metastore_error)))
     } else {
         // If the metastore transaction may have been executed, we need to restart the control plane
