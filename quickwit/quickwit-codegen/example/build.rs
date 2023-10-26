@@ -20,14 +20,13 @@
 use quickwit_codegen::Codegen;
 
 fn main() {
-    Codegen::run(
-        &["src/hello.proto"],
-        "src/codegen/",
-        "crate::HelloResult",
-        "crate::HelloError",
-        true,
-        true,
-        &[],
-    )
-    .unwrap();
+    Codegen::builder()
+        .with_protos(&["src/hello.proto"])
+        .with_output_dir("src/codegen/")
+        .with_result_type_path("crate::HelloResult")
+        .with_error_type_path("crate::HelloError")
+        .enable_extra_service_methods()
+        .enable_prom_label_for_requests()
+        .run()
+        .unwrap();
 }

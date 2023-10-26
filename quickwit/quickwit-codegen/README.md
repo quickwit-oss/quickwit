@@ -38,13 +38,13 @@ quickwit-codegen = { workspace = true }
 use quickwit_codegen::Codegen;
 
 fn main() {
-    Codegen::run(
-        "src/hello.proto",
-        "src/",
-        "crate::HelloResult",
-        "crate::HelloError"
-        &[],
-    ).unwrap();
+    Codegen::builder()
+        .with_protos(&["src/hello.proto"])
+        .with_output_dir("src/")
+        .with_result_type_path("crate::HelloResult")
+        .with_error_type_path("crate::HelloError")
+        .run()
+        .unwrap();
 }
 ```
 
@@ -56,14 +56,14 @@ use quickwit_codegen::Codegen;
 fn main() {
     let mut config = prost_build::Config::default();
     config.bytes(["PingRequest.name", "PingResponse.name"]);
-    Codegen::run_with_config(
-        "src/hello.proto",
-        "src/",
-        "crate::HelloResult",
-        "crate::HelloError"
-        &[],
-        config
-    ).unwrap();
+    Codegen::builder()
+        .with_protos(&["src/hello.proto"])
+        .with_output_dir("src/codegen/")
+        .with_result_type_path("crate::HelloResult")
+        .with_error_type_path("crate::HelloError")
+        .with_prost_config(config)
+        .run()
+        .unwrap();
 }
 ```
 

@@ -24,15 +24,12 @@ fn main() {
     let mut prost_config = ProstConfig::default();
     prost_config.bytes(["DocBatch.doc_buffer"]);
 
-    Codegen::run_with_config(
-        &["src/ingest_service.proto"],
-        "src/codegen/",
-        "crate::Result",
-        "crate::IngestServiceError",
-        false,
-        false,
-        &[],
-        prost_config,
-    )
-    .unwrap();
+    Codegen::builder()
+        .with_protos(&["src/ingest_service.proto"])
+        .with_output_dir("src/codegen/")
+        .with_result_type_path("crate::Result")
+        .with_error_type_path("crate::IngestServiceError")
+        .with_prost_config(prost_config)
+        .run()
+        .unwrap();
 }

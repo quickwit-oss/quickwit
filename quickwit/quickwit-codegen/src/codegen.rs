@@ -30,27 +30,6 @@ use crate::ProstConfig;
 pub struct Codegen;
 
 impl Codegen {
-    pub fn run(
-        protos: &[&str],
-        out_dir: &str,
-        result_type_path: &str,
-        error_type_path: &str,
-        generate_extra_service_methods: bool,
-        generate_prom_labels_for_requests: bool,
-        includes: &[&str],
-    ) -> anyhow::Result<()> {
-        Self::run_with_config(
-            protos,
-            out_dir,
-            result_type_path,
-            error_type_path,
-            generate_extra_service_methods,
-            generate_prom_labels_for_requests,
-            includes,
-            ProstConfig::default(),
-        )
-    }
-
     #[allow(clippy::too_many_arguments)]
     pub fn run_with_config(
         protos: &[&str],
@@ -88,6 +67,88 @@ impl Codegen {
             prost_config.compile_protos(&[proto], includes)?;
         }
         Ok(())
+    }
+
+    pub fn builder() -> CodegenBuilder {
+        CodegenBuilder::default()
+    }
+}
+
+#[derive(Default)]
+pub struct CodegenBuilder {
+    protos: Vec<String>,
+    includes: Vec<String>,
+    out_dir: String,
+    prost_config: ProstConfig,
+    result_type_path: String,
+    error_type_path: String,
+    generate_extra_service_methods: bool,
+    generate_prom_label_for_requests: bool,
+}
+
+impl CodegenBuilder {
+    pub fn with_protos(mut self, protos: &[&str]) -> Self {
+        self.protos = protos.iter().map(|protos| protos.to_string()).collect();
+        self
+    }
+
+    pub fn with_includes(mut self, includes: &[&str]) -> Self {
+        self.includes = includes
+            .iter()
+            .map(|includes| includes.to_string())
+            .collect();
+        self
+    }
+
+    pub fn with_output_dir(mut self, path: &str) -> Self {
+        self.out_dir = path.into();
+        self
+    }
+
+    pub fn with_result_type_path(mut self, path: &str) -> Self {
+        self.result_type_path = path.into();
+        self
+    }
+
+    pub fn with_error_type_path(mut self, path: &str) -> Self {
+        self.error_type_path = path.into();
+        self
+    }
+
+    pub fn with_prost_config(mut self, prost_config: ProstConfig) -> Self {
+        self.prost_config = prost_config;
+        self
+    }
+
+    pub fn enable_extra_service_methods(mut self) -> Self {
+        self.generate_extra_service_methods = true;
+        self
+    }
+
+    pub fn enable_prom_label_for_requests(mut self) -> Self {
+        self.generate_prom_label_for_requests = true;
+        self
+    }
+
+    pub fn run(self) -> anyhow::Result<()> {
+        Codegen::run_with_config(
+            self.protos
+                .iter()
+                .map(|p| p.as_str())
+                .collect::<Vec<&str>>()
+                .as_slice(),
+            &self.out_dir,
+            &self.result_type_path,
+            &self.error_type_path,
+            self.generate_extra_service_methods,
+            self.generate_prom_label_for_requests,
+            self.includes
+                .iter()
+                .map(|p| p.as_str())
+                .collect::<Vec<&str>>()
+                .as_slice(),
+            self.prost_config,
+        )
     }
 }
 
