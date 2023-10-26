@@ -217,12 +217,39 @@ pub struct SearchRequestQueryString {
     #[serde(skip_serializing_if = "SortBy::is_empty")]
     #[param(value_type = String)]
     pub sort_by: SortBy,
-    #[serde(default = "default_as_true")]
-    pub count_all: bool,
+    #[param(value_type = bool)]
+    #[schema(value_type = bool)]
+    #[serde(with = "count_hits_from_bool")]
+    #[serde(default = "count_hits_from_bool::default")]
+    pub count_all: CountHits,
 }
 
-fn default_as_true() -> bool {
-    true
+mod count_hits_from_bool {
+    use quickwit_proto::search::CountHits;
+    use serde::{self, Deserialize, Deserializer, Serializer};
+
+    pub fn serialize<S>(count_hits: &CountHits, serializer: S) -> Result<S::Ok, S::Error>
+    where S: Serializer {
+        if count_hits == &CountHits::Underestimate {
+            serializer.serialize_bool(false)
+        } else {
+            serializer.serialize_none()
+        }
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<CountHits, D::Error>
+    where D: Deserializer<'de> {
+        let count_all = Option::<bool>::deserialize(deserializer)?.unwrap_or(true);
+        Ok(if count_all {
+            CountHits::CountAll
+        } else {
+            CountHits::Underestimate
+        })
+    }
+
+    pub fn default() -> CountHits {
+        CountHits::CountAll
+    }
 }
 
 pub fn search_request_from_api_request(
@@ -233,12 +260,6 @@ pub fn search_request_from_api_request(
     // parsing of the user query will happen in the root service, and might require
     // the user of the docmapper default fields (which we do not have at this point).
     let query_ast = query_ast_from_user_text(&search_request.query, search_request.search_fields);
-    let count_hits = if search_request.count_all {
-        CountHits::CountAll
-    } else {
-        CountHits::Underestimate
-    }
-    .into();
     let query_ast_json = serde_json::to_string(&query_ast)?;
     let search_request = quickwit_proto::search::SearchRequest {
         index_id_patterns,
@@ -254,7 +275,7 @@ pub fn search_request_from_api_request(
         sort_fields: search_request.sort_by.sort_fields,
         scroll_ttl_secs: None,
         search_after: None,
-        count_hits,
+        count_hits: search_request.count_all.into(),
     };
     Ok(search_request)
 }
@@ -578,7 +599,7 @@ mod tests {
                 format: BodyFormat::default(),
                 sort_by: SortBy::default(),
                 aggs: Some(json!({"range":[]})),
-                count_all: true,
+                count_all: CountHits::CountAll,
                 ..Default::default()
             }
         );
@@ -613,7 +634,6 @@ mod tests {
                 format: BodyFormat::default(),
                 sort_by: SortBy::default(),
                 aggs: Some(json!({"range":[]})),
-                count_all: true,
                 ..Default::default()
             }
         );
@@ -663,7 +683,6 @@ mod tests {
                 start_offset: 22,
                 format: BodyFormat::default(),
                 sort_by: SortBy::default(),
-                count_all: true,
                 ..Default::default()
             }
         );
@@ -685,7 +704,7 @@ mod tests {
                 format: BodyFormat::default(),
                 sort_by: SortBy::default(),
                 max_hits: 20,
-                count_all: true,
+                count_all: CountHits::CountAll,
                 ..Default::default()
             }
         );
@@ -703,7 +722,7 @@ mod tests {
                 format: BodyFormat::default(),
                 sort_by: SortBy::default(),
                 max_hits: 20,
-                count_all: false,
+                count_all: CountHits::Underestimate,
                 ..Default::default()
             }
         );
@@ -732,7 +751,6 @@ mod tests {
                 start_offset: 0,
                 format: BodyFormat::default(),
                 sort_by: SortBy::default(),
-                count_all: true,
                 ..Default::default()
             }
         );
@@ -758,7 +776,6 @@ mod tests {
                 format: BodyFormat::Json,
                 search_fields: None,
                 sort_by: SortBy::default(),
-                count_all: true,
                 ..Default::default()
             }
         );
