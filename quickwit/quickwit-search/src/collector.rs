@@ -37,7 +37,7 @@ use tantivy::fastfield::Column;
 use tantivy::{DocId, Score, SegmentOrdinal, SegmentReader, TantivyError};
 
 use crate::filters::{create_timestamp_filter_builder, TimestampFilter, TimestampFilterBuilder};
-use crate::find_trace_ids_collector::{FindTraceIdsCollector, FindTraceIdsSegmentCollector};
+use crate::find_trace_ids_collector::{FindTraceIdsCollector, FindTraceIdsSegmentCollector, Span};
 use crate::GlobalDocAddress;
 
 #[derive(Clone, Debug)]
@@ -414,7 +414,7 @@ impl SegmentCollector for QuickwitSegmentCollector {
 
         let intermediate_aggregation_result = match self.aggregation {
             Some(AggregationSegmentCollectors::FindTraceIdsSegmentCollector(collector)) => {
-                let fruit = collector.harvest();
+                let fruit: Vec<Span> = collector.harvest();
                 let serialized =
                     postcard::to_allocvec(&fruit).expect("Collector fruit should be serializable.");
                 Some(serialized)
@@ -627,7 +627,7 @@ fn merge_intermediate_aggregation_result<'a>(
                     postcard::from_bytes(intermediate_aggregation_result).map_err(map_error)
                 })
                 .collect::<Result<_, _>>()?;
-            let merged_fruit = collector.merge_fruits(fruits)?;
+            let merged_fruit: Vec<Span> = collector.merge_fruits(fruits)?;
             let serialized = postcard::to_allocvec(&merged_fruit).map_err(map_error)?;
             Some(serialized)
         }
@@ -670,12 +670,13 @@ fn merge_leaf_responses(
         return Ok(leaf_responses.pop().unwrap());
     }
 
-    let merged_intermediate_aggregation_result = merge_intermediate_aggregation_result(
-        aggregations_opt,
-        leaf_responses
-            .iter()
-            .filter_map(|leaf_response| leaf_response.intermediate_aggregation_result.as_deref()),
-    )?;
+    let merged_intermediate_aggregation_result: Option<Vec<u8>> =
+        merge_intermediate_aggregation_result(
+            aggregations_opt,
+            leaf_responses.iter().filter_map(|leaf_response| {
+                leaf_response.intermediate_aggregation_result.as_deref()
+            }),
+        )?;
     let num_attempted_splits = leaf_responses
         .iter()
         .map(|leaf_response| leaf_response.num_attempted_splits)

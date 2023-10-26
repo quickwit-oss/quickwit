@@ -33,8 +33,8 @@ impl TraceId {
         Self(bytes)
     }
 
-    pub fn as_bytes(&self) -> &[u8] {
-        &self.0
+    pub fn into_bytes(self) -> [u8; 16] {
+        self.0
     }
 
     pub fn to_vec(&self) -> Vec<u8> {
@@ -48,34 +48,42 @@ impl TraceId {
 
 impl Serialize for TraceId {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let b64trace_id = BASE64_STANDARD.encode(self.0);
-        serializer.serialize_str(&b64trace_id)
+        if serializer.is_human_readable() {
+            let b64trace_id = BASE64_STANDARD.encode(self.0);
+            serializer.serialize_str(&b64trace_id)
+        } else {
+            self.0.serialize(serializer)
+        }
     }
 }
 
 impl<'de> Deserialize<'de> for TraceId {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where D: Deserializer<'de> {
-        let b64trace_id = String::deserialize(deserializer)?;
-
-        if b64trace_id.len() != TraceId::BASE64_LENGTH {
-            let message = format!(
-                "base64 trace ID must be {} bytes long, got {}",
-                TraceId::BASE64_LENGTH,
-                b64trace_id.len()
-            );
-            return Err(de::Error::custom(message));
+        if deserializer.is_human_readable() {
+            let b64trace_id = String::deserialize(deserializer)?;
+            if b64trace_id.len() != TraceId::BASE64_LENGTH {
+                let message = format!(
+                    "base64 trace ID must be {} bytes long, got {}",
+                    TraceId::BASE64_LENGTH,
+                    b64trace_id.len()
+                );
+                return Err(de::Error::custom(message));
+            }
+            let mut trace_id_bytes = [0u8; 16];
+            BASE64_STANDARD
+                // Using the unchecked version here because otherwise the engine gets the wrong size
+                // estimate and fails.
+                .decode_slice_unchecked(b64trace_id.as_bytes(), &mut trace_id_bytes)
+                .map_err(|error| {
+                    let message = format!("failed to decode base64 trace ID: {:?}", error);
+                    de::Error::custom(message)
+                })?;
+            Ok(TraceId(trace_id_bytes))
+        } else {
+            let trace_id_bytes: [u8; 16] = <[u8; 16]>::deserialize(deserializer)?;
+            Ok(TraceId(trace_id_bytes))
         }
-        let mut trace_id = [0u8; 16];
-        BASE64_STANDARD
-            // Using the unchecked version here because otherwise the engine gets the wrong size
-            // estimate and fails.
-            .decode_slice_unchecked(b64trace_id.as_bytes(), &mut trace_id)
-            .map_err(|error| {
-                let message = format!("failed to decode base64 trace ID: {:?}", error);
-                de::Error::custom(message)
-            })?;
-        Ok(TraceId(trace_id))
     }
 }
 
