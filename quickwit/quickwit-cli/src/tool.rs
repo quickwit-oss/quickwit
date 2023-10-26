@@ -50,7 +50,7 @@ use quickwit_indexing::IndexingPipeline;
 use quickwit_ingest::IngesterPool;
 use quickwit_metastore::IndexMetadataResponseExt;
 use quickwit_proto::metastore::{IndexMetadataRequest, MetastoreService, MetastoreServiceClient};
-use quickwit_proto::search::SearchResponse;
+use quickwit_proto::search::{CountHits, SearchResponse};
 use quickwit_proto::types::NodeId;
 use quickwit_search::{single_node_search, SearchResponseRest};
 use quickwit_serve::{
@@ -551,6 +551,7 @@ pub async fn local_search_cli(args: LocalSearchArgs) -> anyhow::Result<()> {
         aggs,
         format: BodyFormat::Json,
         sort_by,
+        count_all: CountHits::CountAll,
     };
     let search_request =
         search_request_from_api_request(vec![args.index_id], search_request_query_string)?;

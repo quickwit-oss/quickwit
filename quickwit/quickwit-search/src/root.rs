@@ -306,6 +306,7 @@ fn simplify_search_request_for_scroll_api(req: &SearchRequest) -> crate::Result<
         // We remove the scroll ttl parameter. It is irrelevant to process later request
         scroll_ttl_secs: None,
         search_after: None,
+        count_hits: req.count_hits,
     })
 }
 

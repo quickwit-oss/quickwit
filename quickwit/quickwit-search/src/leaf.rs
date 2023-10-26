@@ -29,8 +29,8 @@ use quickwit_common::PrettySample;
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
 use quickwit_doc_mapper::{DocMapper, TermRange, WarmupInfo};
 use quickwit_proto::search::{
-    LeafListTermsResponse, LeafSearchResponse, ListTermsRequest, PartialHit, SearchRequest,
-    SortOrder, SortValue, SplitIdAndFooterOffsets, SplitSearchError,
+    CountHits, LeafListTermsResponse, LeafSearchResponse, ListTermsRequest, PartialHit,
+    SearchRequest, SortOrder, SortValue, SplitIdAndFooterOffsets, SplitSearchError,
 };
 use quickwit_query::query_ast::QueryAst;
 use quickwit_storage::{
@@ -549,7 +549,8 @@ pub async fn leaf_search(
 
     // In the future this should become `request.aggregation_request.is_some() ||
     // request.exact_count == true`
-    let run_all_splits = true;
+    let run_all_splits =
+        request.aggregation_request.is_some() || request.count_hits() == CountHits::CountAll;
 
     let split_filter = CanSplitDoBetter::from_request(&request, doc_mapper.timestamp_field_name());
     split_filter.optimize_split_order(&mut splits);
@@ -597,6 +598,8 @@ pub async fn leaf_search(
         ));
     }
 
+    // TODO we could cancel running splits when !run_all_splits and the running split can no longer
+    // give better results after some other split answered.
     let split_search_results: Vec<Result<(), _>> =
         futures::future::join_all(leaf_search_single_split_futures).await;
 

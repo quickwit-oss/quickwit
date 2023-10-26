@@ -39,7 +39,7 @@ use quickwit_config::{ConfigFormat, IndexConfig};
 use quickwit_indexing::models::IndexingStatistics;
 use quickwit_indexing::IndexingPipeline;
 use quickwit_metastore::{IndexMetadata, Split, SplitState};
-use quickwit_proto::search::{SortField, SortOrder};
+use quickwit_proto::search::{CountHits, SortField, SortOrder};
 use quickwit_rest_client::models::IngestSource;
 use quickwit_rest_client::rest_client::{CommitType, IngestEvent};
 use quickwit_search::SearchResponseRest;
@@ -856,6 +856,7 @@ pub async fn search_index(args: SearchIndexArgs) -> anyhow::Result<SearchRespons
         max_hits: args.max_hits as u64,
         start_offset: args.start_offset as u64,
         sort_by,
+        count_all: CountHits::CountAll,
         ..Default::default()
     };
     let qw_client = args.client_args.search_client();

@@ -30,7 +30,7 @@ use hyper::StatusCode;
 use itertools::Itertools;
 use quickwit_common::truncate_str;
 use quickwit_config::{validate_index_id_pattern, NodeConfig};
-use quickwit_proto::search::{PartialHit, ScrollRequest, SearchResponse, SortByValue};
+use quickwit_proto::search::{CountHits, PartialHit, ScrollRequest, SearchResponse, SortByValue};
 use quickwit_proto::ServiceErrorCode;
 use quickwit_query::query_ast::{QueryAst, UserInputQuery};
 use quickwit_query::BooleanOperand;
@@ -46,6 +46,7 @@ use super::model::{
     ElasticSearchError, MultiSearchHeader, MultiSearchQueryParams, MultiSearchResponse,
     MultiSearchSingleResponse, ScrollQueryParams, SearchBody, SearchQueryParams,
 };
+use super::TrackTotalHits;
 use crate::format::BodyFormat;
 use crate::json_api_response::{make_json_api_response, ApiError, JsonApiResponse};
 use crate::{with_arg, BuildInfo};
@@ -156,6 +157,13 @@ fn build_request_for_es_api(
 
     let max_hits = search_params.size.or(search_body.size).unwrap_or(10);
     let start_offset = search_params.from.or(search_body.from).unwrap_or(0);
+    let count_hits = match search_params.track_total_hits {
+        None => CountHits::Underestimate,
+        Some(TrackTotalHits::Track(false)) => CountHits::Underestimate,
+        Some(TrackTotalHits::Count(count)) if count <= max_hits as i64 => CountHits::Underestimate,
+        Some(TrackTotalHits::Track(true) | TrackTotalHits::Count(_)) => CountHits::CountAll,
+    }
+    .into();
 
     let sort_fields: Vec<quickwit_proto::search::SortField> = search_params
         .sort_fields()?
@@ -193,6 +201,7 @@ fn build_request_for_es_api(
             snippet_fields: Vec::new(),
             scroll_ttl_secs,
             search_after,
+            count_hits,
         },
         has_doc_id_field,
     ))

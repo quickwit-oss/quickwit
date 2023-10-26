@@ -43,7 +43,7 @@ use quickwit_proto::jaeger::storage::v1::{
     SpansResponseChunk, TraceQueryParameters,
 };
 use quickwit_proto::opentelemetry::proto::trace::v1::status::StatusCode as OtlpStatusCode;
-use quickwit_proto::search::{ListTermsRequest, SearchRequest};
+use quickwit_proto::search::{CountHits, ListTermsRequest, SearchRequest};
 use quickwit_query::query_ast::{BoolQuery, QueryAst, RangeQuery, TermQuery};
 use quickwit_search::{FindTraceIdsCollector, SearchService};
 use serde::Deserialize;
@@ -261,6 +261,7 @@ impl JaegerService {
             max_hits,
             start_timestamp: min_span_start_timestamp_secs_opt,
             end_timestamp: max_span_start_timestamp_secs_opt,
+            count_hits: CountHits::Underestimate.into(),
             ..Default::default()
         };
         let search_response = self.search_service.root_search(search_request).await?;
@@ -308,6 +309,7 @@ impl JaegerService {
             start_timestamp: Some(*search_window.start()),
             end_timestamp: Some(*search_window.end()),
             max_hits: self.max_fetch_spans,
+            count_hits: CountHits::Underestimate.into(),
             ..Default::default()
         };
         let search_response = match self.search_service.root_search(search_request).await {
