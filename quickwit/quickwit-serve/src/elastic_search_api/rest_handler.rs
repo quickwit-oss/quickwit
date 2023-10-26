@@ -161,7 +161,7 @@ fn build_request_for_es_api(
         None => CountHits::Underestimate,
         Some(TrackTotalHits::Track(false)) => CountHits::Underestimate,
         Some(TrackTotalHits::Count(count)) if count <= max_hits as i64 => CountHits::Underestimate,
-        _ => CountHits::CountAll,
+        Some(TrackTotalHits::Track(true) | TrackTotalHits::Count(_)) => CountHits::CountAll,
     }
     .into();
 

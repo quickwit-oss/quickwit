@@ -561,7 +561,7 @@ mod tests {
         let rest_search_api_filter = search_post_filter();
         let (indexes, req) = warp::test::request()
             .method("POST")
-            .path("/quickwit-demo-index/search?query=*&max_hits=10")
+            .path("/quickwit-demo-index/search")
             .json(&true)
             .body(r#"{"query": "*", "max_hits":10, "aggs": {"range":[]} }"#)
             .filter(&rest_search_api_filter)
@@ -589,10 +589,7 @@ mod tests {
         let rest_search_api_filter = search_post_filter();
         let (indexes, req) = warp::test::request()
             .method("POST")
-            .path(
-                "/quickwit-demo-index,quickwit-demo,quickwit-demo-index-*/search?query=*&\
-                 max_hits=10",
-            )
+            .path("/quickwit-demo-index,quickwit-demo,quickwit-demo-index-*/search")
             .json(&true)
             .body(r#"{"query": "*", "max_hits":10, "aggs": {"range":[]} }"#)
             .filter(&rest_search_api_filter)
@@ -627,7 +624,7 @@ mod tests {
         let rest_search_api_filter = search_post_filter();
         let bad_pattern_rejection = warp::test::request()
             .method("POST")
-            .path("/quickwit-demo-index**/search?query=*&max_hits=10")
+            .path("/quickwit-demo-index**/search")
             .json(&true)
             .body(r#"{"query": "*", "max_hits":10, "aggs": {"range":[]} }"#)
             .filter(&rest_search_api_filter)
@@ -667,6 +664,46 @@ mod tests {
                 format: BodyFormat::default(),
                 sort_by: SortBy::default(),
                 count_all: true,
+                ..Default::default()
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn test_rest_search_api_route_count_all() {
+        let rest_search_api_filter = search_get_filter();
+        let (indexes, req) = warp::test::request()
+            .path("/quickwit-demo-index/search?query=*&count_all=true")
+            .filter(&rest_search_api_filter)
+            .await
+            .unwrap();
+        assert_eq!(indexes, vec!["quickwit-demo-index".to_string()]);
+        assert_eq!(
+            &req,
+            &super::SearchRequestQueryString {
+                query: "*".to_string(),
+                format: BodyFormat::default(),
+                sort_by: SortBy::default(),
+                max_hits: 20,
+                count_all: true,
+                ..Default::default()
+            }
+        );
+        let rest_search_api_filter = search_get_filter();
+        let (indexes, req) = warp::test::request()
+            .path("/quickwit-demo-index/search?query=*&count_all=false")
+            .filter(&rest_search_api_filter)
+            .await
+            .unwrap();
+        assert_eq!(indexes, vec!["quickwit-demo-index".to_string()]);
+        assert_eq!(
+            &req,
+            &super::SearchRequestQueryString {
+                query: "*".to_string(),
+                format: BodyFormat::default(),
+                sort_by: SortBy::default(),
+                max_hits: 20,
+                count_all: false,
                 ..Default::default()
             }
         );
@@ -868,7 +905,7 @@ mod tests {
     async fn test_rest_search_api_route_post_with_invalid_payload() -> anyhow::Result<()> {
         let resp = warp::test::request()
             .method("POST")
-            .path("/quickwit-demo-index/search?query=*&max_hits=10")
+            .path("/quickwit-demo-index/search")
             .json(&true)
             .body(r#"{"query": "*", "bad_param":10, "aggs": {"range":[]} }"#)
             .reply(&search_handler(MockSearchService::new()))

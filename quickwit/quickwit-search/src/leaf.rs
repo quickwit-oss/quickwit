@@ -549,8 +549,8 @@ pub async fn leaf_search(
 
     // In the future this should become `request.aggregation_request.is_some() ||
     // request.exact_count == true`
-    let run_all_splits = request.aggregation_request.is_some()
-        || request.count_hits == i32::from(CountHits::CountAll);
+    let run_all_splits =
+        request.aggregation_request.is_some() || request.count_hits() == CountHits::CountAll;
 
     let split_filter = CanSplitDoBetter::from_request(&request, doc_mapper.timestamp_field_name());
     split_filter.optimize_split_order(&mut splits);
