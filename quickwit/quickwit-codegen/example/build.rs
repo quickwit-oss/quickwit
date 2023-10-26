@@ -25,8 +25,8 @@ fn main() {
         .with_output_dir("src/codegen/")
         .with_result_type_path("crate::HelloResult")
         .with_error_type_path("crate::HelloError")
-        .enable_extra_service_methods()
-        .enable_prom_label_for_requests()
+        .generate_extra_service_methods()
+        .generate_prom_labels_for_requests()
         .run()
         .unwrap();
 }

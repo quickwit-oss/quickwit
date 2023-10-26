@@ -19,6 +19,7 @@
 
 use std::collections::HashSet;
 
+use anyhow::ensure;
 use heck::ToSnakeCase;
 use proc_macro2::TokenStream;
 use prost_build::{Comments, Method, Service, ServiceGenerator};
@@ -30,25 +31,14 @@ use crate::ProstConfig;
 pub struct Codegen;
 
 impl Codegen {
-    #[allow(clippy::too_many_arguments)]
-    pub fn run_with_config(
-        protos: &[&str],
-        out_dir: &str,
-        result_type_path: &str,
-        error_type_path: &str,
-        generate_extra_service_methods: bool,
-        generate_prom_label_for_requests: bool,
-        includes: &[&str],
-        mut prost_config: ProstConfig,
-    ) -> anyhow::Result<()> {
+    pub fn run(mut args: CodegenBuilder) -> anyhow::Result<()> {
         let service_generator = Box::new(QuickwitServiceGenerator::new(
-            result_type_path,
-            error_type_path,
-            generate_extra_service_methods,
-            generate_prom_label_for_requests,
+            args.result_type_path,
+            args.error_type_path,
+            args.generate_extra_service_methods,
+            args.generate_prom_labels_for_requests,
         ));
-
-        prost_config
+        args.prost_config
             .protoc_arg("--experimental_allow_proto3_optional")
             .type_attribute(
                 ".",
@@ -60,11 +50,11 @@ impl Codegen {
             )
             .enum_attribute(".", "#[serde(rename_all=\"snake_case\")]")
             .service_generator(service_generator)
-            .out_dir(out_dir);
+            .out_dir(args.output_dir);
 
-        for proto in protos {
+        for proto in args.protos {
             println!("cargo:rerun-if-changed={proto}");
-            prost_config.compile_protos(&[proto], includes)?;
+            args.prost_config.compile_protos(&[proto], &args.includes)?;
         }
         Ok(())
     }
@@ -78,40 +68,37 @@ impl Codegen {
 pub struct CodegenBuilder {
     protos: Vec<String>,
     includes: Vec<String>,
-    out_dir: String,
+    output_dir: String,
     prost_config: ProstConfig,
     result_type_path: String,
     error_type_path: String,
     generate_extra_service_methods: bool,
-    generate_prom_label_for_requests: bool,
+    generate_prom_labels_for_requests: bool,
 }
 
 impl CodegenBuilder {
     pub fn with_protos(mut self, protos: &[&str]) -> Self {
-        self.protos = protos.iter().map(|protos| protos.to_string()).collect();
+        self.protos = protos.iter().map(|proto| proto.to_string()).collect();
         self
     }
 
     pub fn with_includes(mut self, includes: &[&str]) -> Self {
-        self.includes = includes
-            .iter()
-            .map(|includes| includes.to_string())
-            .collect();
+        self.includes = includes.iter().map(|include| include.to_string()).collect();
         self
     }
 
     pub fn with_output_dir(mut self, path: &str) -> Self {
-        self.out_dir = path.into();
+        self.output_dir = path.to_string();
         self
     }
 
     pub fn with_result_type_path(mut self, path: &str) -> Self {
-        self.result_type_path = path.into();
+        self.result_type_path = path.to_string();
         self
     }
 
     pub fn with_error_type_path(mut self, path: &str) -> Self {
-        self.error_type_path = path.into();
+        self.error_type_path = path.to_string();
         self
     }
 
@@ -120,35 +107,26 @@ impl CodegenBuilder {
         self
     }
 
-    pub fn enable_extra_service_methods(mut self) -> Self {
+    pub fn generate_extra_service_methods(mut self) -> Self {
         self.generate_extra_service_methods = true;
         self
     }
 
-    pub fn enable_prom_label_for_requests(mut self) -> Self {
-        self.generate_prom_label_for_requests = true;
+    pub fn generate_prom_labels_for_requests(mut self) -> Self {
+        self.generate_prom_labels_for_requests = true;
         self
     }
 
     pub fn run(self) -> anyhow::Result<()> {
-        Codegen::run_with_config(
-            self.protos
-                .iter()
-                .map(|p| p.as_str())
-                .collect::<Vec<&str>>()
-                .as_slice(),
-            &self.out_dir,
-            &self.result_type_path,
-            &self.error_type_path,
-            self.generate_extra_service_methods,
-            self.generate_prom_label_for_requests,
-            self.includes
-                .iter()
-                .map(|p| p.as_str())
-                .collect::<Vec<&str>>()
-                .as_slice(),
-            self.prost_config,
-        )
+        ensure!(!self.protos.is_empty(), "proto file list is empty");
+        ensure!(!self.output_dir.is_empty(), "output directory is undefined");
+        ensure!(
+            !self.result_type_path.is_empty(),
+            "result type is undefined"
+        );
+        ensure!(!self.error_type_path.is_empty(), "error type is undefined");
+
+        Codegen::run(self)
     }
 }
 
@@ -162,8 +140,8 @@ struct QuickwitServiceGenerator {
 
 impl QuickwitServiceGenerator {
     fn new(
-        result_type_path: &str,
-        error_type_path: &str,
+        result_type_path: String,
+        error_type_path: String,
         generate_extra_service_methods: bool,
         generate_prom_labels_for_requests: bool,
     ) -> Self {
@@ -172,8 +150,8 @@ impl QuickwitServiceGenerator {
             tonic_build::configure().service_generator(),
         ));
         Self {
-            result_type_path: result_type_path.to_string(),
-            error_type_path: error_type_path.to_string(),
+            result_type_path,
+            error_type_path,
             generate_extra_service_methods,
             generate_prom_labels_for_requests,
             inner,
@@ -301,7 +279,7 @@ fn generate_all(
     result_type_path: &str,
     error_type_path: &str,
     generate_extra_service_methods: bool,
-    implement_prom_labels_for_requests: bool,
+    generate_prom_labels_for_requests: bool,
 ) -> TokenStream {
     let context = CodegenContext::from_service(
         service,
@@ -318,7 +296,7 @@ fn generate_all(
     let tower_mailbox = generate_tower_mailbox(&context);
     let grpc_client_adapter = generate_grpc_client_adapter(&context);
     let grpc_server_adapter = generate_grpc_server_adapter(&context);
-    let prom_labels_impl = if implement_prom_labels_for_requests {
+    let prom_labels_impl = if generate_prom_labels_for_requests {
         generate_prom_labels_impl_for_requests(&context)
     } else {
         TokenStream::new()

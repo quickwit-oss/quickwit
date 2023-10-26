@@ -29,10 +29,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Control plane.
     Codegen::builder()
         .with_protos(&["protos/quickwit/control_plane.proto"])
+        .with_includes(&["protos"])
         .with_output_dir("src/codegen/quickwit")
         .with_result_type_path("crate::control_plane::ControlPlaneResult")
         .with_error_type_path("crate::control_plane::ControlPlaneError")
-        .with_includes(&["protos"])
         .run()
         .unwrap();
 
@@ -46,8 +46,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .unwrap();
 
     // Metastore service.
-    let mut metastore_api_config = prost_build::Config::default();
-    metastore_api_config
+    let mut prost_config = prost_build::Config::default();
+    prost_config
         .field_attribute("DeleteQuery.index_uid", "#[serde(alias = \"index_id\")]")
         .field_attribute("DeleteQuery.query_ast", "#[serde(alias = \"query\")]")
         .field_attribute(
@@ -60,14 +60,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
 
     Codegen::builder()
+        .with_prost_config(prost_config)
         .with_protos(&["protos/quickwit/metastore.proto"])
+        .with_includes(&["protos"])
         .with_output_dir("src/codegen/quickwit")
         .with_result_type_path("crate::metastore::MetastoreResult")
         .with_error_type_path("crate::metastore::MetastoreError")
-        .enable_extra_service_methods()
-        .enable_prom_label_for_requests()
-        .with_includes(&["protos"])
-        .with_prost_config(metastore_api_config)
+        .generate_extra_service_methods()
+        .generate_prom_labels_for_requests()
         .run()
         .unwrap();
 
@@ -99,15 +99,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
 
     Codegen::builder()
+        .with_prost_config(prost_config)
         .with_protos(&[
             "protos/quickwit/ingester.proto",
             "protos/quickwit/router.proto",
         ])
+        .with_includes(&["protos"])
         .with_output_dir("src/codegen/quickwit")
         .with_result_type_path("crate::ingest::IngestV2Result")
         .with_error_type_path("crate::ingest::IngestV2Error")
-        .with_includes(&["protos"])
-        .with_prost_config(prost_config)
         .run()
         .unwrap();
 
