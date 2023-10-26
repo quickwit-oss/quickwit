@@ -7,7 +7,7 @@ This needs to be done under the constraints of:
 - not exceeding the maximum load of each node. (O)
 
 We also want to observe some interesting properties such as:
-- (A) we want to keep the current state of the cluster.
+- (A) we want to avoid moving indexing tasks from one indexer to another one needlessly.
 - (B) we want a source to be spread amongst as few nodes as possible
 - (C) we prefer to respect some margin on the capacity of all nodes.
 - (D) when we are working with the Push API source, we prefer to colocate indexers on
@@ -27,7 +27,7 @@ optimization problem. In Quickwit, we have two types of source:
   amounts of historical data. Right now, the user is therefore expected to supply a desired
   number of pipeline.
 
-Routers send their batch to the different ingesters they know off using a round-robbin logic.
+Routers send their batch to the different ingesters they know using a round-robin logic.
 We assume that routers's list of known shards gets eventually updated after a shard addition, so that
 we can assume that shard have roughly the same load.
 
