@@ -90,7 +90,7 @@ pub async fn run_execute_retention_policy(
         expired_split_ids.len()
     );
     let mark_splits_for_deletion_request =
-        MarkSplitsForDeletionRequest::new(index_uid.to_string(), expired_split_ids);
+        MarkSplitsForDeletionRequest::new(index_uid, expired_split_ids);
     ctx.protect_future(metastore.mark_splits_for_deletion(mark_splits_for_deletion_request))
         .await?;
     Ok(expired_splits)

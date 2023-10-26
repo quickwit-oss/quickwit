@@ -723,7 +723,7 @@ impl MetastoreService for FileBackedMetastore {
         let grouped_subrequests: HashMap<IndexUid, Vec<OpenShardsSubrequest>> = request
             .subrequests
             .into_iter()
-            .into_group_map_by(|subrequest| IndexUid::new(subrequest.index_uid.clone()));
+            .into_group_map_by(|subrequest| IndexUid::from(subrequest.index_uid.clone()));
 
         for (index_uid, subrequests) in grouped_subrequests {
             let subresponses = self
@@ -746,7 +746,7 @@ impl MetastoreService for FileBackedMetastore {
         let grouped_subrequests: HashMap<IndexUid, Vec<AcquireShardsSubrequest>> = request
             .subrequests
             .into_iter()
-            .into_group_map_by(|subrequest| IndexUid::new(subrequest.index_uid.clone()));
+            .into_group_map_by(|subrequest| IndexUid::from(subrequest.index_uid.clone()));
 
         for (index_uid, subrequests) in grouped_subrequests {
             let subresponses = self
@@ -768,7 +768,7 @@ impl MetastoreService for FileBackedMetastore {
         let grouped_subrequests: HashMap<IndexUid, Vec<DeleteShardsSubrequest>> = request
             .subrequests
             .into_iter()
-            .into_group_map_by(|subrequest| IndexUid::new(subrequest.index_uid.clone()));
+            .into_group_map_by(|subrequest| IndexUid::from(subrequest.index_uid.clone()));
 
         for (index_uid, subrequests) in grouped_subrequests {
             let subresponse = self
@@ -943,7 +943,7 @@ fn build_regex_exprs_from_pattern(index_pattern: &str) -> anyhow::Result<String>
 
 #[cfg(test)]
 #[async_trait]
-impl crate::tests::test_suite::DefaultForTest for FileBackedMetastore {
+impl crate::tests::DefaultForTest for FileBackedMetastore {
     async fn default_for_test() -> Self {
         use quickwit_storage::RamStorage;
         FileBackedMetastore::try_new(Arc::new(RamStorage::default()), None)
@@ -951,8 +951,6 @@ impl crate::tests::test_suite::DefaultForTest for FileBackedMetastore {
             .unwrap()
     }
 }
-
-metastore_test_suite!(crate::FileBackedMetastore);
 
 #[cfg(test)]
 mod tests {
@@ -975,8 +973,10 @@ mod tests {
         fetch_or_init_indexes_states, meta_path, put_index_given_index_id, put_indexes_states,
     };
     use super::*;
-    use crate::tests::test_suite::DefaultForTest;
-    use crate::{IndexMetadata, ListSplitsQuery, SplitMetadata, SplitState};
+    use crate::tests::DefaultForTest;
+    use crate::{metastore_test_suite, IndexMetadata, ListSplitsQuery, SplitMetadata, SplitState};
+
+    metastore_test_suite!(crate::FileBackedMetastore);
 
     #[tokio::test]
     async fn test_metastore_connectivity_and_endpoints() {

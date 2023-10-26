@@ -273,7 +273,7 @@ mod tests {
         // Just test creation of delete query.
         assert_eq!(
             metastore
-                .list_delete_tasks(ListDeleteTasksRequest::new(index_uid.to_string(), 0))
+                .list_delete_tasks(ListDeleteTasksRequest::new(index_uid.clone(), 0))
                 .await
                 .unwrap()
                 .delete_tasks

@@ -388,9 +388,6 @@ mod tests {
     }
 
     #[test]
-    fn test_close_shard() {}
-
-    #[test]
     fn test_list_shards() {
         let index_uid: IndexUid = "test-index:0".into();
         let source_id = "test-source".to_string();

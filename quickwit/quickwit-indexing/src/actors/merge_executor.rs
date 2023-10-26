@@ -338,7 +338,7 @@ impl MergeExecutor {
         ctx: &ActorContext<Self>,
     ) -> anyhow::Result<Option<IndexedSplit>> {
         let list_delete_tasks_request =
-            ListDeleteTasksRequest::new(split.index_uid.to_string(), split.delete_opstamp);
+            ListDeleteTasksRequest::new(split.index_uid.clone(), split.delete_opstamp);
         let delete_tasks = ctx
             .protect_future(self.metastore.list_delete_tasks(list_delete_tasks_request))
             .await?
@@ -393,8 +393,8 @@ impl MergeExecutor {
                     split.split_id()
                 );
                 let mark_splits_for_deletion_request = MarkSplitsForDeletionRequest::new(
-                    split.index_uid.to_string(),
-                    vec![split.split_id.to_string()],
+                    split.index_uid.clone(),
+                    vec![split.split_id.clone()],
                 );
                 self.metastore
                     .mark_splits_for_deletion(mark_splits_for_deletion_request)

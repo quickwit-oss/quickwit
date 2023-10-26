@@ -408,7 +408,7 @@ async fn mark_splits_for_deletion(
         .map(|split_id| split_id.to_string())
         .collect();
     let mark_splits_for_deletion_request =
-        MarkSplitsForDeletionRequest::new(index_uid.to_string(), split_ids.clone());
+        MarkSplitsForDeletionRequest::new(index_uid, split_ids.clone());
     metastore
         .mark_splits_for_deletion(mark_splits_for_deletion_request)
         .await?;
