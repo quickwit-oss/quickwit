@@ -138,7 +138,7 @@ pub async fn run_garbage_collect(
         .collect();
     if !split_ids.is_empty() {
         let mark_splits_for_deletion_request =
-            MarkSplitsForDeletionRequest::new(index_uid.to_string(), split_ids);
+            MarkSplitsForDeletionRequest::new(index_uid.clone(), split_ids);
         protect_future(
             progress_opt,
             metastore.mark_splits_for_deletion(mark_splits_for_deletion_request),
@@ -482,7 +482,7 @@ mod tests {
             StageSplitsRequest::try_from_split_metadata(index_uid.clone(), split_metadata).unwrap();
         metastore.stage_splits(stage_splits_request).await.unwrap();
         let mark_splits_for_deletion_request =
-            MarkSplitsForDeletionRequest::new(index_uid.to_string(), vec![split_id.to_string()]);
+            MarkSplitsForDeletionRequest::new(index_uid.clone(), vec![split_id.to_string()]);
         metastore
             .mark_splits_for_deletion(mark_splits_for_deletion_request)
             .await
@@ -605,7 +605,7 @@ mod tests {
                 .unwrap();
         metastore.stage_splits(stage_splits_request).await.unwrap();
         let mark_splits_for_deletion =
-            MarkSplitsForDeletionRequest::new(index_uid.to_string(), vec![split_id.to_string()]);
+            MarkSplitsForDeletionRequest::new(index_uid.clone(), vec![split_id.to_string()]);
         metastore
             .mark_splits_for_deletion(mark_splits_for_deletion)
             .await
@@ -713,7 +713,7 @@ mod tests {
         .unwrap();
         metastore.stage_splits(stage_splits_request).await.unwrap();
         let mark_splits_for_deletion_request = MarkSplitsForDeletionRequest::new(
-            index_uid.to_string(),
+            index_uid.clone(),
             vec![split_id_0.to_string(), split_id_1.to_string()],
         );
         metastore
