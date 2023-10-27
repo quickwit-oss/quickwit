@@ -207,7 +207,7 @@ impl TryFrom<&str> for IndexingTask {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, utoipa::ToSchema)]
 pub struct PipelineMetrics {
     pub cpu_thousandth: u16,
     pub throughput_mb_per_sec: u16,
