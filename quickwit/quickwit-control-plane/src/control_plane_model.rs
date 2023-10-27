@@ -496,7 +496,7 @@ mod tests {
 
     #[test]
     fn test_shard_table_add_source() {
-        let index_uid: IndexUid = "test-index:0".into();
+        let index_uid: IndexUid = "test-index:0".try_into().unwrap();
         let source_id = "test-source".to_string();
         let mut shard_table = ShardTable::default();
         shard_table.add_source(&index_uid, &source_id);
@@ -512,7 +512,7 @@ mod tests {
 
     #[test]
     fn test_shard_table_find_open_shards() {
-        let index_uid: IndexUid = "test-index:0".into();
+        let index_uid: IndexUid = "test-index:0".try_into().unwrap();
         let source_id = "test-source".to_string();
 
         let mut shard_table = ShardTable::default();
@@ -584,7 +584,7 @@ mod tests {
 
     #[test]
     fn test_shard_table_update_shards() {
-        let index_uid_0: IndexUid = "test-index:0".into();
+        let index_uid_0: IndexUid = "test-index:0".try_into().unwrap();
         let source_id = "test-source".to_string();
 
         let mut shard_table = ShardTable::default();
@@ -645,8 +645,8 @@ mod tests {
 
     #[test]
     fn test_shard_table_close_shards() {
-        let index_uid_0: IndexUid = "test-index:0".into();
-        let index_uid_1: IndexUid = "test-index:1".into();
+        let index_uid_0: IndexUid = "test-index:0".try_into().unwrap();
+        let index_uid_1: IndexUid = "test-index:1".try_into().unwrap();
         let source_id = "test-source".to_string();
 
         let mut shard_table = ShardTable::default();
@@ -692,8 +692,8 @@ mod tests {
 
     #[test]
     fn test_shard_table_delete_shards() {
-        let index_uid_0: IndexUid = "test-index:0".into();
-        let index_uid_1: IndexUid = "test-index:1".into();
+        let index_uid_0: IndexUid = "test-index:0".try_into().unwrap();
+        let index_uid_1: IndexUid = "test-index:1".try_into().unwrap();
         let source_id = "test-source".to_string();
 
         let mut shard_table = ShardTable::default();

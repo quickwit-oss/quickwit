@@ -323,7 +323,7 @@ mod tests {
 
     #[test]
     fn test_open_shards() {
-        let index_uid: IndexUid = "test-index:0".into();
+        let index_uid: IndexUid = "test-index:0".try_into().unwrap();
         let source_id = "test-source".to_string();
         let mut shards = Shards::empty(index_uid.clone(), source_id.clone());
 
@@ -389,7 +389,7 @@ mod tests {
 
     #[test]
     fn test_list_shards() {
-        let index_uid: IndexUid = "test-index:0".into();
+        let index_uid: IndexUid = "test-index:0".try_into().unwrap();
         let source_id = "test-source".to_string();
         let mut shards = Shards::empty(index_uid.clone(), source_id.clone());
 

@@ -136,7 +136,8 @@ pub async fn test_metastore_create_index<
         .await
         .unwrap()
         .index_uid
-        .into();
+        .try_into()
+        .unwrap();
 
     assert!(metastore.index_exists(&index_id).await.unwrap());
 
@@ -177,7 +178,8 @@ pub async fn test_metastore_create_index_with_maximum_length<
         .await
         .unwrap()
         .index_uid
-        .into();
+        .try_into()
+        .unwrap();
 
     assert!(metastore.index_exists(&index_id).await.unwrap());
 
@@ -202,7 +204,8 @@ pub async fn test_metastore_index_exists<
         .await
         .unwrap()
         .index_uid
-        .into();
+        .try_into()
+        .unwrap();
 
     assert!(metastore.index_exists(&index_id).await.unwrap());
 

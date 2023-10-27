@@ -146,12 +146,6 @@ impl TryFrom<String> for IndexUid {
     }
 }
 
-// impl PartialEq<&str> for IndexUid {
-//     fn eq(&self, other: &&str) -> bool {
-//         self.0 == *other
-//     }
-// }
-
 impl PartialEq<String> for IndexUid {
     fn eq(&self, other: &String) -> bool {
         self.0 == *other
@@ -372,7 +366,7 @@ mod tests {
 
         let (index_uid, source_id, shard_id) =
             split_queue_id("test-index:0/test-source/1").unwrap();
-        assert_eq!(index_uid, "test-index:0");
+        assert_eq!(index_uid.to_string(), "test-index:0");
         assert_eq!(source_id, "test-source");
         assert_eq!(shard_id, 1);
     }

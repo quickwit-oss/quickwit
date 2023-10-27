@@ -453,7 +453,7 @@ mod tests {
     async fn test_ingest_source_assign_shards() {
         let pipeline_id = IndexingPipelineId {
             node_id: "test-node".to_string(),
-            index_uid: "test-index:0".into(),
+            index_uid: "test-index:0".try_into().unwrap(),
             source_id: "test-source".to_string(),
             pipeline_ord: 0,
         };
@@ -595,7 +595,7 @@ mod tests {
     async fn test_ingest_source_emit_batches() {
         let pipeline_id = IndexingPipelineId {
             node_id: "test-node".to_string(),
-            index_uid: "test-index:0".into(),
+            index_uid: "test-index:0".try_into().unwrap(),
             source_id: "test-source".to_string(),
             pipeline_ord: 0,
         };
@@ -647,7 +647,7 @@ mod tests {
 
         fetch_response_tx
             .send(Ok(FetchResponseV2 {
-                index_uid: "test-index:0".into(),
+                index_uid: "test-index:0".try_into().unwrap(),
                 source_id: "test-source".into(),
                 shard_id: 1,
                 mrecord_batch: Some(MRecordBatch {
@@ -662,7 +662,7 @@ mod tests {
 
         fetch_response_tx
             .send(Ok(FetchResponseV2 {
-                index_uid: "test-index:0".into(),
+                index_uid: "test-index:0".try_into().unwrap(),
                 source_id: "test-source".into(),
                 shard_id: 2,
                 mrecord_batch: Some(MRecordBatch {
@@ -709,7 +709,7 @@ mod tests {
     async fn test_ingest_source_suggest_truncate() {
         let pipeline_id = IndexingPipelineId {
             node_id: "test-node".to_string(),
-            index_uid: "test-index:0".into(),
+            index_uid: "test-index:0".try_into().unwrap(),
             source_id: "test-source".to_string(),
             pipeline_ord: 0,
         };

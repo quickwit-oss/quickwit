@@ -599,7 +599,8 @@ mod tests {
             state.clone(),
             new_records_rx,
             1024,
-        )?;
+        )
+        .unwrap();
         let queue_id = queue_id(&index_uid, &source_id, 1);
 
         let mut state_guard = state.write().await;
@@ -937,7 +938,7 @@ mod tests {
     #[tokio::test]
     async fn test_fault_tolerant_fetch_task_happy_failover() {
         let client_id = "test-client".to_string();
-        let index_uid: IndexUid = "test-index:0".into();
+        let index_uid: IndexUid = "test-index:0".try_into().unwrap();
         let source_id: SourceId = "test-source".into();
         let shard_id: ShardId = 1;
         let from_position_exclusive = Position::from(0u64);
@@ -984,7 +985,7 @@ mod tests {
         ingester_pool.insert("test-ingester-1".into(), ingester_1);
 
         let fetch_response = FetchResponseV2 {
-            index_uid: "test-index:0".into(),
+            index_uid: "test-index:0".try_into().unwrap(),
             source_id: "test-source".into(),
             shard_id: 1,
             mrecord_batch: None,
@@ -997,7 +998,7 @@ mod tests {
         service_stream_tx_0.send(Err(ingest_error)).unwrap();
 
         let fetch_response = FetchResponseV2 {
-            index_uid: "test-index:0".into(),
+            index_uid: "test-index:0".try_into().unwrap(),
             source_id: "test-source".into(),
             shard_id: 1,
             mrecord_batch: None,
