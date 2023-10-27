@@ -82,7 +82,7 @@ impl ClusterNode {
         for (indexing_task, indexing_tasks_group) in
             indexing_tasks.iter().group_by(|&task| task).into_iter()
         {
-            let key = format!("{INDEXING_TASK_PREFIX}:{}", indexing_task.to_string());
+            let key = format!("{INDEXING_TASK_PREFIX}{}", indexing_task);
             node_state.set(key, indexing_tasks_group.count().to_string());
         }
         Self::try_new(chitchat_id, &node_state, channel, is_self_node).unwrap()

@@ -21,7 +21,7 @@ use std::collections::hash_map::Entry;
 use std::num::NonZeroU32;
 use std::ops::RangeInclusive;
 use std::sync::Arc;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use anyhow::Context;
 use async_trait::async_trait;
@@ -38,7 +38,7 @@ use quickwit_common::temp_dir::TempDirectory;
 use quickwit_config::IndexingSettings;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
-use quickwit_proto::indexing::IndexingPipelineId;
+use quickwit_proto::indexing::{IndexingPipelineId, PipelineMetrics};
 use quickwit_proto::metastore::{
     LastDeleteOpstampRequest, MetastoreService, MetastoreServiceClient,
 };
@@ -79,6 +79,10 @@ pub struct IndexerCounters {
     /// Number of (valid) documents in the current workbench.
     /// This value is used to trigger commit and for observation.
     pub num_docs_in_workbench: u64,
+
+    /// Metrics describing the load and indexing performance of the
+    /// pipeline. This is only updated for cooperative indexers.
+    pub pipeline_metrics_opt: Option<PipelineMetrics>,
 }
 
 struct IndexerState {
@@ -190,6 +194,7 @@ impl IndexerState {
             } else {
                 None
             };
+
         let last_delete_opstamp_request = LastDeleteOpstampRequest {
             index_uid: self.pipeline_id.index_uid.to_string(),
         };
@@ -383,15 +388,25 @@ impl Actor for Indexer {
         let Some(indexing_workbench) = &self.indexing_workbench_opt else {
             return Ok(());
         };
+
         let elapsed = indexing_workbench.create_instant.elapsed();
+        let uncompressed_num_bytes = indexing_workbench
+            .indexed_splits
+            .values()
+            .map(|split| split.split_attrs.uncompressed_docs_size_in_bytes)
+            .sum::<u64>();
+        self.update_pipeline_metrics(elapsed, uncompressed_num_bytes);
+
         self.send_to_serializer(CommitTrigger::Drained, ctx).await?;
 
         let commit_timeout = self.indexer_state.indexing_settings.commit_timeout();
         if elapsed >= commit_timeout {
             return Ok(());
         }
+
         // Time to take a nap.
         let sleep_for = commit_timeout - elapsed;
+
         ctx.schedule_self_msg(sleep_for, Command::Resume).await;
         self.handle(Command::Pause, ctx).await?;
         Ok(())
@@ -528,6 +543,20 @@ impl Indexer {
             indexing_workbench_opt: None,
             counters: IndexerCounters::default(),
         }
+    }
+
+    fn update_pipeline_metrics(&mut self, elapsed: Duration, uncompressed_num_bytes: u64) {
+        let commit_timeout = self.indexer_state.indexing_settings.commit_timeout();
+        let cpu_thousandth: u16 = if elapsed >= commit_timeout {
+            1_000
+        } else {
+            (elapsed.as_micros() * 1_000 / commit_timeout.as_micros()) as u16
+        };
+        self.counters.pipeline_metrics_opt = Some(PipelineMetrics {
+            cpu_thousandth,
+            throughput_mb_per_sec: (uncompressed_num_bytes / (elapsed.as_millis() as u64 * 1_000))
+                as u16,
+        });
     }
 
     fn memory_usage(&self) -> Byte {
@@ -797,6 +826,7 @@ mod tests {
                 num_splits_emitted: 1,
                 num_split_batches_emitted: 1,
                 num_docs_in_workbench: 1, //< the num docs in split counter has been reset.
+                pipeline_metrics_opt: None,
             }
         );
         let messages: Vec<IndexedSplitBatchBuilder> = index_serializer_inbox.drain_for_test_typed();
@@ -1039,6 +1069,7 @@ mod tests {
                 num_splits_emitted: 1,
                 num_split_batches_emitted: 1,
                 num_docs_in_workbench: 0,
+                pipeline_metrics_opt: None,
             }
         );
         let indexed_split_batches: Vec<IndexedSplitBatchBuilder> =
@@ -1111,6 +1142,7 @@ mod tests {
                 num_splits_emitted: 1,
                 num_split_batches_emitted: 1,
                 num_docs_in_workbench: 0,
+                pipeline_metrics_opt: None,
             }
         );
         let output_messages: Vec<IndexedSplitBatchBuilder> =
@@ -1201,6 +1233,7 @@ mod tests {
                 num_docs_in_workbench: 2,
                 num_splits_emitted: 0,
                 num_split_batches_emitted: 0,
+                pipeline_metrics_opt: None,
             }
         );
         universe.send_exit_with_success(&indexer_mailbox).await?;
@@ -1212,6 +1245,7 @@ mod tests {
                 num_docs_in_workbench: 0,
                 num_splits_emitted: 2,
                 num_split_batches_emitted: 1,
+                pipeline_metrics_opt: None,
             }
         );
         let split_batches: Vec<IndexedSplitBatchBuilder> =
@@ -1557,6 +1591,7 @@ mod tests {
                 num_splits_emitted: 0,
                 num_split_batches_emitted: 0,
                 num_docs_in_workbench: 0, //< the num docs in split counter has been reset.
+                pipeline_metrics_opt: None,
             }
         );
 

@@ -32,10 +32,11 @@ use crate::{GenerationId, QuickwitService};
 // Keys used to store member's data in chitchat state.
 pub(crate) const GRPC_ADVERTISE_ADDR_KEY: &str = "grpc_advertise_addr";
 pub(crate) const ENABLED_SERVICES_KEY: &str = "enabled_services";
+pub(crate) const PIPELINE_METRICS_PREFIX: &str = "pipeline_metrics:";
+
 // An indexing task key is formatted as
 // `{INDEXING_TASK_PREFIX}{INDEXING_TASK_SEPARATOR}{index_id}{INDEXING_TASK_SEPARATOR}{source_id}`.
-pub(crate) const INDEXING_TASK_PREFIX: &str = "indexing_task";
-pub(crate) const INDEXING_TASK_SEPARATOR: char = ':';
+pub(crate) const INDEXING_TASK_PREFIX: &str = "indexing_task:";
 
 // Readiness key and values used to store node's readiness in Chitchat state.
 pub(crate) const READINESS_KEY: &str = "readiness";
@@ -163,7 +164,7 @@ pub(crate) fn build_cluster_member(
 
 // Parses indexing task key into the IndexingTask.
 fn parse_indexing_task_key(key: &str) -> anyhow::Result<IndexingTask> {
-    let (_prefix, reminder) = key.split_once(INDEXING_TASK_SEPARATOR).ok_or_else(|| {
+    let reminder = key.strip_prefix(INDEXING_TASK_PREFIX).ok_or_else(|| {
         anyhow!(
             "indexing task must contain the delimiter character `:`: `{}`",
             key
@@ -177,7 +178,7 @@ fn parse_indexing_task_key(key: &str) -> anyhow::Result<IndexingTask> {
 /// ignored, just warnings are emitted.
 pub(crate) fn parse_indexing_tasks(node_state: &NodeState, node_id: &str) -> Vec<IndexingTask> {
     node_state
-        .key_values(|key, _| key.starts_with(INDEXING_TASK_PREFIX))
+        .iter_prefix(INDEXING_TASK_PREFIX)
         .map(|(key, versioned_value)| {
             let indexing_task = parse_indexing_task_key(key)?;
             let num_tasks: usize = versioned_value.value.parse()?;

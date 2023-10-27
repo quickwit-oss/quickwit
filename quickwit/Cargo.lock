@@ -1182,8 +1182,9 @@ dependencies = [
 
 [[package]]
 name = "chitchat"
-version = "0.5.0"
-source = "git+https://github.com/quickwit-oss/chitchat?rev=bc29598#bc295980ac2e00f389dfa7e87cf6dc7995061206"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "6e5c649e5309f040f18aa0d660e63fe913d3d642e4771dd3cb66515ad75d239d"
 dependencies = [
  "anyhow",
  "async-trait",
