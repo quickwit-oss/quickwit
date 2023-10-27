@@ -23,7 +23,7 @@ use self::ingester::FetchResponseV2;
 use super::types::{NodeId, ShardId, SourceId};
 use super::{ServiceError, ServiceErrorCode};
 use crate::control_plane::ControlPlaneError;
-use crate::types::{queue_id, IndexUid, Position};
+use crate::types::{queue_id, IndexUid, InvalidIndexUid, Position};
 
 pub mod ingester;
 pub mod router;
@@ -61,6 +61,12 @@ pub enum IngestV2Error {
     },
     #[error("request timed out")]
     Timeout,
+}
+
+impl From<InvalidIndexUid> for IngestV2Error {
+    fn from(invalid_index_uid: InvalidIndexUid) -> Self {
+        IngestV2Error::Internal(invalid_index_uid.to_string())
+    }
 }
 
 impl From<ControlPlaneError> for IngestV2Error {

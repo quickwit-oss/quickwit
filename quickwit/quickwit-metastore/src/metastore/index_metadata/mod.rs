@@ -53,7 +53,7 @@ pub struct IndexMetadata {
 impl IndexMetadata {
     /// Panics if `index_config` is missing `index_uri`.
     pub fn new(index_config: IndexConfig) -> Self {
-        let index_uid = IndexUid::new(index_config.index_id.clone());
+        let index_uid = IndexUid::from_index_id_with_random_uid(index_config.index_id.clone());
         IndexMetadata::new_with_index_uid(index_uid, index_config)
     }
 

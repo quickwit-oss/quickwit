@@ -460,7 +460,7 @@ impl IndexingService {
             let pipeline_ord = pipeline_ordinals.entry(indexing_task).or_insert(0);
             let pipeline_id = IndexingPipelineId {
                 node_id: self.node_id.clone(),
-                index_uid: IndexUid::from(indexing_task.index_uid.to_string()),
+                index_uid: indexing_task.index_uid.to_string().try_into()?,
                 source_id: indexing_task.source_id.clone(),
                 pipeline_ord: *pipeline_ord,
             };
@@ -488,7 +488,7 @@ impl IndexingService {
             }
             let pipeline_id = IndexingPipelineId {
                 node_id: self.node_id.clone(),
-                index_uid: indexing_task.index_uid.clone().into(),
+                index_uid: indexing_task.index_uid.clone().try_into()?,
                 source_id: indexing_task.source_id.clone(),
                 pipeline_ord: 0,
             };

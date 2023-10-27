@@ -413,7 +413,7 @@ impl MetastoreService for FileBackedMetastore {
         // We pick the outer lock here, so that we enter a critical section.
         let mut per_index_metastores_wlock = self.per_index_metastores.write().await;
 
-        let index_uid: IndexUid = request.index_uid.into();
+        let index_uid: IndexUid = request.index_uid.try_into()?;
         let index_id = index_uid.index_id();
         // If index is neither in `per_index_metastores_wlock` nor on the storage, it does not
         // exist.
@@ -465,7 +465,7 @@ impl MetastoreService for FileBackedMetastore {
         request: StageSplitsRequest,
     ) -> MetastoreResult<EmptyResponse> {
         let splits_metadata = request.deserialize_splits_metadata()?;
-        let index_uid: IndexUid = request.index_uid.into();
+        let index_uid: IndexUid = request.index_uid.try_into()?;
 
         self.mutate(index_uid, |index| {
             let mut failed_split_ids = Vec::new();
@@ -502,7 +502,8 @@ impl MetastoreService for FileBackedMetastore {
     ) -> MetastoreResult<EmptyResponse> {
         let index_checkpoint_delta: Option<IndexCheckpointDelta> =
             request.deserialize_index_checkpoint()?;
-        self.mutate(request.index_uid.into(), |index| {
+        let index_uid = request.index_uid.try_into()?;
+        self.mutate(index_uid, |index| {
             index.publish_splits(
                 request.staged_split_ids,
                 request.replaced_split_ids,
@@ -519,7 +520,7 @@ impl MetastoreService for FileBackedMetastore {
         &mut self,
         request: MarkSplitsForDeletionRequest,
     ) -> MetastoreResult<EmptyResponse> {
-        let index_uid: IndexUid = request.index_uid.into();
+        let index_uid: IndexUid = request.index_uid.try_into()?;
 
         self.mutate(index_uid, |index| {
             index
@@ -542,7 +543,7 @@ impl MetastoreService for FileBackedMetastore {
         &mut self,
         request: DeleteSplitsRequest,
     ) -> MetastoreResult<EmptyResponse> {
-        let index_uid: IndexUid = request.index_uid.into();
+        let index_uid: IndexUid = request.index_uid.try_into()?;
 
         self.mutate(index_uid, |index| {
             index.delete_splits(request.split_ids)?;
@@ -553,8 +554,8 @@ impl MetastoreService for FileBackedMetastore {
     }
 
     async fn add_source(&mut self, request: AddSourceRequest) -> MetastoreResult<EmptyResponse> {
+        let index_uid: IndexUid = request.index_uid.clone().try_into()?;
         let source_config = request.deserialize_source_config()?;
-        let index_uid = request.index_uid.into();
 
         self.mutate(index_uid, |index| {
             index.add_source(source_config)?;
@@ -568,7 +569,7 @@ impl MetastoreService for FileBackedMetastore {
         &mut self,
         request: ToggleSourceRequest,
     ) -> MetastoreResult<EmptyResponse> {
-        let index_uid: IndexUid = request.index_uid.into();
+        let index_uid: IndexUid = request.index_uid.try_into()?;
 
         self.mutate(index_uid, |index| {
             index
@@ -583,7 +584,7 @@ impl MetastoreService for FileBackedMetastore {
         &mut self,
         request: DeleteSourceRequest,
     ) -> MetastoreResult<EmptyResponse> {
-        let index_uid: IndexUid = request.index_uid.into();
+        let index_uid: IndexUid = request.index_uid.try_into()?;
 
         self.mutate(index_uid, |index| {
             index
@@ -598,7 +599,7 @@ impl MetastoreService for FileBackedMetastore {
         &mut self,
         request: ResetSourceCheckpointRequest,
     ) -> MetastoreResult<EmptyResponse> {
-        let index_uid: IndexUid = request.index_uid.into();
+        let index_uid: IndexUid = request.index_uid.try_into()?;
 
         self.mutate(index_uid, |index| {
             index
@@ -635,7 +636,8 @@ impl MetastoreService for FileBackedMetastore {
         &mut self,
         request: ListStaleSplitsRequest,
     ) -> MetastoreResult<ListSplitsResponse> {
-        let list_splits_query = ListSplitsQuery::for_index(request.index_uid.into())
+        let index_uid = IndexUid::try_from(request.index_uid)?;
+        let list_splits_query = ListSplitsQuery::for_index(index_uid)
             .with_delete_opstamp_lt(request.delete_opstamp)
             .with_split_state(SplitState::Published)
             .retain_mature(OffsetDateTime::now_utc())
@@ -720,10 +722,16 @@ impl MetastoreService for FileBackedMetastore {
         };
         // We must group the subrequests by `index_uid` to mutate each index only once, since each
         // mutation triggers an IO.
-        let grouped_subrequests: HashMap<IndexUid, Vec<OpenShardsSubrequest>> = request
-            .subrequests
-            .into_iter()
-            .into_group_map_by(|subrequest| IndexUid::from(subrequest.index_uid.clone()));
+        let mut grouped_subrequests: HashMap<IndexUid, Vec<OpenShardsSubrequest>> =
+            Default::default();
+
+        for subrequest in request.subrequests {
+            let index_uid: IndexUid = subrequest.index_uid.clone().try_into()?;
+            grouped_subrequests
+                .entry(index_uid)
+                .or_default()
+                .push(subrequest);
+        }
 
         for (index_uid, subrequests) in grouped_subrequests {
             let subresponses = self
@@ -743,10 +751,15 @@ impl MetastoreService for FileBackedMetastore {
         };
         // We must group the subrequests by `index_uid` to mutate each index only once, since each
         // mutation triggers an IO.
-        let grouped_subrequests: HashMap<IndexUid, Vec<AcquireShardsSubrequest>> = request
-            .subrequests
-            .into_iter()
-            .into_group_map_by(|subrequest| IndexUid::from(subrequest.index_uid.clone()));
+        let mut grouped_subrequests: HashMap<IndexUid, Vec<AcquireShardsSubrequest>> =
+            Default::default();
+        for subrequest in request.subrequests {
+            let index_uid = IndexUid::try_from(subrequest.index_uid.clone())?;
+            grouped_subrequests
+                .entry(index_uid)
+                .or_default()
+                .push(subrequest);
+        }
 
         for (index_uid, subrequests) in grouped_subrequests {
             let subresponses = self
@@ -765,10 +778,15 @@ impl MetastoreService for FileBackedMetastore {
 
         // We must group the subrequests by `index_uid` to mutate each index only once, since each
         // mutation triggers an IO.
-        let grouped_subrequests: HashMap<IndexUid, Vec<DeleteShardsSubrequest>> = request
-            .subrequests
-            .into_iter()
-            .into_group_map_by(|subrequest| IndexUid::from(subrequest.index_uid.clone()));
+        let mut grouped_subrequests: HashMap<IndexUid, Vec<DeleteShardsSubrequest>> =
+            Default::default();
+        for subrequest in request.subrequests {
+            let index_uid: IndexUid = subrequest.index_uid.clone().try_into()?;
+            grouped_subrequests
+                .entry(index_uid)
+                .or_default()
+                .push(subrequest);
+        }
 
         for (index_uid, subrequests) in grouped_subrequests {
             let subresponse = self
@@ -789,7 +807,7 @@ impl MetastoreService for FileBackedMetastore {
         let mut subresponses = Vec::with_capacity(request.subrequests.len());
 
         for subrequest in request.subrequests {
-            let index_uid: IndexUid = subrequest.index_uid.clone().into();
+            let index_uid: IndexUid = subrequest.index_uid.clone().try_into()?;
             let subresponse = self
                 .read(index_uid, |index| index.list_shards(subrequest))
                 .await?;
@@ -807,7 +825,7 @@ impl MetastoreService for FileBackedMetastore {
         request: LastDeleteOpstampRequest,
     ) -> MetastoreResult<LastDeleteOpstampResponse> {
         let last_delete_opstamp = self
-            .read(request.index_uid.into(), |index| {
+            .read(request.index_uid.try_into()?, |index| {
                 Ok(index.last_delete_opstamp())
             })
             .await?;
@@ -818,7 +836,7 @@ impl MetastoreService for FileBackedMetastore {
         &mut self,
         delete_query: DeleteQuery,
     ) -> MetastoreResult<DeleteTask> {
-        let index_uid: IndexUid = delete_query.index_uid.clone().into();
+        let index_uid: IndexUid = delete_query.index_uid.clone().try_into()?;
         let delete_task = self
             .mutate(index_uid, |index| {
                 index
@@ -833,7 +851,7 @@ impl MetastoreService for FileBackedMetastore {
         &mut self,
         request: UpdateSplitsDeleteOpstampRequest,
     ) -> MetastoreResult<UpdateSplitsDeleteOpstampResponse> {
-        let index_uid: IndexUid = request.index_uid.into();
+        let index_uid: IndexUid = request.index_uid.try_into()?;
 
         self.mutate(index_uid, |index| {
             let split_ids_str = request
@@ -853,7 +871,7 @@ impl MetastoreService for FileBackedMetastore {
         &mut self,
         request: ListDeleteTasksRequest,
     ) -> MetastoreResult<ListDeleteTasksResponse> {
-        let index_uid: IndexUid = request.index_uid.into();
+        let index_uid: IndexUid = request.index_uid.try_into()?;
 
         let delete_tasks = self
             .read(index_uid, |index| {
@@ -1056,14 +1074,16 @@ mod tests {
 
         // Open a non-existent index.
         let metastore_error = metastore
-            .get_index(IndexUid::new("index-does-not-exist"))
+            .get_index(IndexUid::from_index_id_with_random_uid(
+                "index-does-not-exist",
+            ))
             .await
             .unwrap_err();
         assert!(matches!(metastore_error, MetastoreError::NotFound { .. }));
 
         // Open a index with a different incarnation_id.
         let metastore_error = metastore
-            .get_index(IndexUid::new(index_id))
+            .get_index(IndexUid::from_index_id_with_random_uid(index_id))
             .await
             .unwrap_err();
         assert!(matches!(metastore_error, MetastoreError::NotFound { .. }));
@@ -1182,7 +1202,7 @@ mod tests {
 
         // Getting index with inconsistent index ID should raise an error.
         let metastore_error = metastore
-            .get_index(IndexUid::new(index_id))
+            .get_index(IndexUid::from_index_id_with_random_uid(index_id))
             .await
             .unwrap_err();
         assert!(matches!(metastore_error, MetastoreError::Internal { .. }));
@@ -1368,7 +1388,7 @@ mod tests {
         let mut metastore = FileBackedMetastore::default_for_test().await;
         let mut index_uids = Vec::new();
         for idx in 0..10 {
-            let index_uid = IndexUid::new(format!("test-index-{idx}"));
+            let index_uid = IndexUid::from_index_id_with_random_uid(format!("test-index-{idx}"));
             let index_config =
                 IndexConfig::for_test(index_uid.index_id(), "ram:///indexes/test-index");
             let create_index_request =
@@ -1445,7 +1465,7 @@ mod tests {
         assert!(matches!(metastore_error, MetastoreError::Internal { .. }));
         // Try fetch the not created index.
         let created_index_error = metastore
-            .get_index(IndexUid::new(index_id))
+            .get_index(IndexUid::from_index_id_with_random_uid(index_id))
             .await
             .unwrap_err();
         assert!(matches!(
@@ -1461,7 +1481,7 @@ mod tests {
         let ram_storage_clone = ram_storage.clone();
         let ram_storage_clone_2 = ram_storage.clone();
         let index_id = "test-index";
-        let index_uid = IndexUid::new(index_id);
+        let index_uid = IndexUid::from_index_id_with_random_uid(index_id);
 
         mock_storage // remove this if we end up changing the semantics of create.
             .expect_exists()
@@ -1570,7 +1590,7 @@ mod tests {
         // Let's fetch the index, we expect an internal error as the index state is in `Creating`
         // state.
         let created_index_error = metastore
-            .get_index(IndexUid::new(index_id))
+            .get_index(IndexUid::from_index_id_with_random_uid(index_id))
             .await
             .unwrap_err();
         assert!(matches!(
@@ -1585,7 +1605,7 @@ mod tests {
         let ram_storage = RamStorage::default();
         let ram_storage_clone = ram_storage.clone();
         let index_id = "test-index";
-        let index_uid = IndexUid::new(index_id);
+        let index_uid = IndexUid::from_index_id_with_random_uid(index_id);
         let index_metadata =
             IndexMetadata::for_test(index_uid.index_id(), "ram:///indexes/test-index");
         let index = FileBackedIndex::from(index_metadata);
@@ -1632,7 +1652,7 @@ mod tests {
         let ram_storage = RamStorage::default();
         let ram_storage_clone = ram_storage.clone();
         let index_id = "test-index";
-        let index_uid = IndexUid::new(index_id);
+        let index_uid = IndexUid::from_index_id_with_random_uid(index_id);
         let index_metadata =
             IndexMetadata::for_test(index_uid.index_id(), "ram:///indexes/test-index");
         let index = FileBackedIndex::from(index_metadata);

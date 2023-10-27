@@ -38,6 +38,7 @@ use quickwit_proto::ingest::router::{
 use quickwit_proto::ingest::{IngestV2Error, IngestV2Result};
 use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceId};
 use tokio::sync::RwLock;
+use tracing::error;
 
 use super::ingester::PERSIST_REQUEST_TIMEOUT;
 use super::shard_table::ShardTable;
@@ -150,8 +151,12 @@ impl IngestRouter {
         let mut state_guard = self.state.write().await;
 
         for subresponse in response.subresponses {
+            let index_uid =
+                IndexUid::try_from(subresponse.index_uid).map_err(|invalid_index_uid| {
+                    IngestV2Error::Internal(format!("Invalid index uid `{invalid_index_uid}`"))
+                })?;
             state_guard.shard_table.insert_shards(
-                subresponse.index_uid,
+                index_uid,
                 subresponse.source_id,
                 subresponse.open_shards,
             );
@@ -172,7 +177,12 @@ impl IngestRouter {
                 Ok(persist_response) => {
                     for persist_failure in persist_response.failures {
                         if persist_failure.failure_reason() == PersistFailureReason::ShardClosed {
-                            let index_uid: IndexUid = persist_failure.index_uid.into();
+                            let Ok(index_uid) = IndexUid::try_from(persist_failure.index_uid)
+                            else {
+                                // TODO
+                                error!("received invalid index uid while persisting shard.");
+                                continue;
+                            };
                             let source_id: SourceId = persist_failure.source_id;
                             closed_shards
                                 .entry((index_uid, source_id))
@@ -545,8 +555,9 @@ mod tests {
             replication_factor,
         );
         let mut state_guard = router.state.write().await;
+        let index_uid = IndexUid::from_parts("test-index-0", "0");
         state_guard.shard_table.insert_shards(
-            "test-index-0:0",
+            index_uid,
             "test-source",
             vec![Shard {
                 index_uid: "test-index-0:0".to_string(),
@@ -598,30 +609,32 @@ mod tests {
             ingester_pool.clone(),
             replication_factor,
         );
+        let test_index_0 = IndexUid::new("test-index-0");
+        let test_index_1 = IndexUid::new("test-index-1");
         let mut state_guard = router.state.write().await;
         state_guard.shard_table.insert_shards(
-            "test-index-0",
+            test_index_0.clone(),
             "test-source",
             vec![Shard {
-                index_uid: "test-index-0:0".to_string(),
+                index_uid: test_index_0.to_string(),
                 shard_id: 1,
                 leader_id: "test-ingester-0".to_string(),
                 ..Default::default()
             }],
         );
         state_guard.shard_table.insert_shards(
-            "test-index-1",
+            test_index_1.clone(),
             "test-source",
             vec![
                 Shard {
-                    index_uid: "test-index-1:1".to_string(),
+                    index_uid: test_index_1.to_string(),
                     shard_id: 1,
                     leader_id: "test-ingester-0".to_string(),
                     follower_id: Some("test-ingester-1".to_string()),
                     ..Default::default()
                 },
                 Shard {
-                    index_uid: "test-index-1:1".to_string(),
+                    index_uid: test_index_1.to_string(),
                     shard_id: 2,
                     leader_id: "test-ingester-1".to_string(),
                     follower_id: Some("test-ingester-2".to_string()),
@@ -641,7 +654,7 @@ mod tests {
                 assert_eq!(request.commit_type(), CommitTypeV2::Auto);
 
                 let subrequest = &request.subrequests[0];
-                assert_eq!(subrequest.index_uid, "test-index-0:0");
+                assert_eq!(subrequest.index_uid, test_index_0.to_string());
                 assert_eq!(subrequest.source_id, "test-source");
                 assert_eq!(subrequest.shard_id, 1);
                 assert!(subrequest.follower_id.is_none());
@@ -651,7 +664,7 @@ mod tests {
                 );
 
                 let subrequest = &request.subrequests[1];
-                assert_eq!(subrequest.index_uid, "test-index-1:1");
+                assert_eq!(subrequest.index_uid, test_index_1.to_string());
                 assert_eq!(subrequest.source_id, "test-source");
                 assert_eq!(subrequest.shard_id, 1);
                 assert_eq!(subrequest.follower_id(), "test-ingester-1");

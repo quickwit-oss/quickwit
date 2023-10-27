@@ -129,7 +129,13 @@ impl TryFrom<metastore::DeleteQuery> for search::SearchRequest {
     type Error = anyhow::Error;
 
     fn try_from(delete_query: metastore::DeleteQuery) -> anyhow::Result<Self> {
-        let index_uid: types::IndexUid = delete_query.index_uid.into();
+        let index_uid: types::IndexUid =
+            delete_query
+                .index_uid
+                .try_into()
+                .map_err(|invalid_index_uid| {
+                    anyhow::anyhow!("Invalid index uid: `{}`", invalid_index_uid)
+                })?;
         Ok(Self {
             index_id_patterns: vec![index_uid.index_id().to_string()],
             query_ast: delete_query.query_ast,

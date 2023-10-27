@@ -25,6 +25,7 @@ use std::ops::Deref;
 use std::str::FromStr;
 
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 pub use ulid::Ulid;
 
 mod position;
@@ -51,10 +52,10 @@ pub fn queue_id(index_uid: &str, source_id: &str, shard_id: u64) -> QueueId {
 
 pub fn split_queue_id(queue_id: &str) -> Option<(IndexUid, SourceId, ShardId)> {
     let mut parts = queue_id.split('/');
-    let index_uid = parts.next()?;
+    let index_uid: IndexUid = parts.next()?.to_string().try_into().ok()?;
     let source_id = parts.next()?;
     let shard_id = parts.next()?.parse::<u64>().ok()?;
-    Some((index_uid.into(), source_id.to_string(), shard_id))
+    Some((index_uid, source_id.to_string(), shard_id))
 }
 
 /// Index identifiers that uniquely identify not only the index, but also
@@ -63,7 +64,7 @@ pub fn split_queue_id(queue_id: &str) -> Option<(IndexUid, SourceId, ShardId)> {
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq, Ord, PartialOrd, Hash)]
 pub struct IndexUid(String);
 
-impl fmt::Display for IndexUid {
+impl Display for IndexUid {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "{}", self.0)
     }
@@ -72,7 +73,9 @@ impl fmt::Display for IndexUid {
 impl IndexUid {
     /// Creates a new index uid from index_id.
     /// A random UUID will be used as incarnation
-    pub fn new(index_id: impl Into<String>) -> Self {
+    pub fn from_index_id_with_random_uid(index_id: impl Into<String>) -> Self {
+        let index_id = index_id.into();
+        assert!(!index_id.contains(":"));
         Self::from_parts(index_id, Ulid::new().to_string())
     }
 
@@ -118,23 +121,36 @@ impl From<IndexUid> for String {
     }
 }
 
-impl From<&str> for IndexUid {
-    fn from(index_uid: &str) -> Self {
-        Self(index_uid.to_string())
+#[derive(Error, Debug)]
+#[error("Invalid index uid: `{invalid_uid}`")]
+pub struct InvalidIndexUid {
+    invalid_uid: String,
+}
+
+impl TryFrom<String> for IndexUid {
+    type Error = InvalidIndexUid;
+
+    fn try_from(index_uid_str: String) -> Result<Self, InvalidIndexUid> {
+        // count the number of : in index_uid
+        let count_colon = index_uid_str
+            .as_bytes()
+            .iter()
+            .filter(|&&c| c == b':')
+            .count();
+        if count_colon != 1 {
+            return Err(InvalidIndexUid {
+                invalid_uid: index_uid_str,
+            });
+        }
+        Ok(IndexUid(index_uid_str))
     }
 }
 
-impl From<String> for IndexUid {
-    fn from(index_uid: String) -> Self {
-        Self(index_uid)
-    }
-}
-
-impl PartialEq<&str> for IndexUid {
-    fn eq(&self, other: &&str) -> bool {
-        self.0 == *other
-    }
-}
+// impl PartialEq<&str> for IndexUid {
+//     fn eq(&self, other: &&str) -> bool {
+//         self.0 == *other
+//     }
+// }
 
 impl PartialEq<String> for IndexUid {
     fn eq(&self, other: &String) -> bool {

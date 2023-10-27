@@ -304,7 +304,7 @@ impl DeleteTaskPlanner {
                 .expect("Delete task must have a delete query.");
             // TODO: resolve with the default fields.
             let search_request = SearchRequest {
-                index_id_patterns: vec![IndexUid::from(delete_query.index_uid.clone())
+                index_id_patterns: vec![IndexUid::try_from(delete_query.index_uid.clone())?
                     .index_id()
                     .to_string()],
                 query_ast: delete_query.query_ast.clone(),
@@ -314,7 +314,7 @@ impl DeleteTaskPlanner {
             };
             let mut search_indexes_metas = HashMap::new();
             search_indexes_metas.insert(
-                IndexUid::from(delete_query.index_uid.clone()),
+                IndexUid::try_from(delete_query.index_uid.clone())?,
                 IndexMetasForLeafSearch {
                     doc_mapper_str: doc_mapper_str.to_string(),
                     index_uri: Uri::from_well_formed(index_uri),

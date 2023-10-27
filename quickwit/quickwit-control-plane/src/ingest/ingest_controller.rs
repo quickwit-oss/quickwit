@@ -179,7 +179,7 @@ impl IngestController {
         model: &mut ControlPlaneModel,
     ) {
         for closed_shard in closed_shards {
-            let index_uid: IndexUid = closed_shard.index_uid.into();
+            let index_uid: IndexUid = closed_shard.index_uid.try_into().unwrap();
             let source_id = closed_shard.source_id;
             let closed_shard_ids =
                 model.close_shards(&index_uid, &source_id, &closed_shard.shard_ids);
@@ -303,7 +303,7 @@ impl IngestController {
                 .protect_future(self.metastore.open_shards(open_shards_request))
                 .await?;
             for open_shards_subresponse in &open_shards_response.subresponses {
-                let index_uid: IndexUid = open_shards_subresponse.index_uid.clone().into();
+                let index_uid: IndexUid = open_shards_subresponse.index_uid.clone().try_into()?;
                 model.update_shards(
                     &index_uid,
                     &open_shards_subresponse.source_id,

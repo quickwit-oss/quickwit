@@ -463,7 +463,7 @@ impl IngesterService for Ingester {
             self.state.clone(),
             new_records_rx,
             FetchTask::DEFAULT_BATCH_NUM_BYTES,
-        );
+        )?;
         Ok(service_stream)
     }
 

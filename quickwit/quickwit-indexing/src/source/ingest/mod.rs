@@ -363,7 +363,7 @@ impl Source for IngestSource {
         for acquired_shard in acquire_shards_subresponse.acquired_shards {
             let leader_id: NodeId = acquired_shard.leader_id.into();
             let follower_id_opt: Option<NodeId> = acquired_shard.follower_id.map(Into::into);
-            let index_uid: IndexUid = acquired_shard.index_uid.into();
+            let index_uid: IndexUid = acquired_shard.index_uid.try_into()?;
             let source_id: SourceId = acquired_shard.source_id;
             let shard_id = acquired_shard.shard_id;
             let partition_id = PartitionId::from(shard_id);

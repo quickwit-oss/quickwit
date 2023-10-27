@@ -21,6 +21,7 @@ use quickwit_actors::AskError;
 use thiserror;
 
 use crate::metastore::MetastoreError;
+use crate::types::InvalidIndexUid;
 use crate::{ServiceError, ServiceErrorCode};
 
 include!("../codegen/quickwit/quickwit.control_plane.rs");
@@ -35,6 +36,12 @@ pub enum ControlPlaneError {
     Metastore(#[from] MetastoreError),
     #[error("control plane is unavailable: {0}")]
     Unavailable(String),
+}
+
+impl From<InvalidIndexUid> for ControlPlaneError {
+    fn from(invalid_index_uid: InvalidIndexUid) -> Self {
+        ControlPlaneError::Internal(invalid_index_uid.to_string())
+    }
 }
 
 impl From<ControlPlaneError> for MetastoreError {

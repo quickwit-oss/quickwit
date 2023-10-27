@@ -24,7 +24,7 @@ use anyhow::anyhow;
 use quickwit_actors::AskError;
 use thiserror;
 
-use crate::types::{IndexUid, SourceId};
+use crate::types::{IndexUid, InvalidIndexUid, SourceId};
 use crate::{ServiceError, ServiceErrorCode};
 
 include!("../codegen/quickwit/quickwit.indexing.rs");
@@ -59,6 +59,12 @@ pub enum IndexingError {
     Internal(String),
     #[error("the ingest service is unavailable")]
     Unavailable,
+}
+
+impl From<InvalidIndexUid> for IndexingError {
+    fn from(invalid_index_uid: InvalidIndexUid) -> IndexingError {
+        IndexingError::InvalidParams(invalid_index_uid.into())
+    }
 }
 
 impl From<IndexingError> for tonic::Status {

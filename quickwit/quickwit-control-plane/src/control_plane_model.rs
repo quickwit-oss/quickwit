@@ -162,7 +162,7 @@ impl ControlPlaneModel {
                 num_shards += list_shards_subresponse.shards.len();
 
                 let source_uid = SourceUid {
-                    index_uid: list_shards_subresponse.index_uid.into(),
+                    index_uid: list_shards_subresponse.index_uid.try_into()?,
                     source_id: list_shards_subresponse.source_id,
                 };
                 let shards: FnvHashMap<ShardId, Shard> = list_shards_subresponse

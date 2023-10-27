@@ -33,7 +33,7 @@ use quickwit_proto::metastore::{
     ListSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError, MetastoreService,
     MetastoreServiceClient, ResetSourceCheckpointRequest,
 };
-use quickwit_proto::types::{IndexUid, SplitId};
+use quickwit_proto::types::{IndexUid, InvalidIndexUid, SplitId};
 use quickwit_proto::{ServiceError, ServiceErrorCode};
 use quickwit_storage::{StorageResolver, StorageResolverError};
 use thiserror::Error;
@@ -60,6 +60,12 @@ pub enum IndexServiceError {
     OperationNotAllowed(String),
     #[error("internal error: {0}")]
     Internal(String),
+}
+
+impl From<InvalidIndexUid> for IndexServiceError {
+    fn from(invalid_index_uid: InvalidIndexUid) -> IndexServiceError {
+        IndexServiceError::Internal(invalid_index_uid.to_string())
+    }
 }
 
 impl ServiceError for IndexServiceError {
@@ -127,7 +133,7 @@ impl IndexService {
         let index_id = index_config.index_id.clone();
         let create_index_request = CreateIndexRequest::try_from_index_config(index_config)?;
         let create_index_response = metastore.create_index(create_index_request).await?;
-        let index_uid: IndexUid = create_index_response.index_uid.into();
+        let index_uid: IndexUid = create_index_response.index_uid.try_into()?;
         let add_ingest_api_source_request = AddSourceRequest::try_from_source_config(
             index_uid.clone(),
             SourceConfig::ingest_api_default(),

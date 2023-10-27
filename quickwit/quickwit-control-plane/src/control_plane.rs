@@ -222,10 +222,16 @@ impl Handler<CreateIndexRequest> for ControlPlane {
                 return Ok(Err(ControlPlaneError::from(error)));
             }
         };
-        let index_uid: IndexUid = match self.metastore.create_index(request).await {
-            Ok(response) => response.index_uid.into(),
+
+        let response = match self.metastore.create_index(request).await {
+            Ok(response) => response,
             Err(metastore_error) => return convert_metastore_error(metastore_error),
         };
+
+        let index_uid: IndexUid = response
+            .index_uid
+            .try_into()
+            .context("Received invalid index uri from the metastore")?;
 
         let index_metadata: IndexMetadata =
             IndexMetadata::new_with_index_uid(index_uid.clone(), index_config);
@@ -233,7 +239,7 @@ impl Handler<CreateIndexRequest> for ControlPlane {
         self.model.add_index(index_metadata);
 
         let response = CreateIndexResponse {
-            index_uid: index_uid.into(),
+            index_uid: index_uid.to_string(),
         };
         // We do not need to inform the indexing scheduler as there are no shards at this point.
         Ok(Ok(response))
@@ -250,8 +256,13 @@ impl Handler<DeleteIndexRequest> for ControlPlane {
         &mut self,
         request: DeleteIndexRequest,
         _ctx: &ActorContext<Self>,
-    ) -> Result<Self::Reply, ActorExitStatus> {
-        let index_uid: IndexUid = request.index_uid.clone().into();
+    ) -> Result<ControlPlaneResult<EmptyResponse>, ActorExitStatus> {
+        let index_uid: IndexUid = match request.index_uid.clone().try_into() {
+            Ok(index_uid) => index_uid,
+            Err(invalid_uid) => {
+                return Ok(Err(invalid_uid.into()));
+            }
+        };
 
         if let Err(error) = self.metastore.delete_index(request).await {
             return Ok(Err(ControlPlaneError::from(error)));
@@ -279,8 +290,13 @@ impl Handler<AddSourceRequest> for ControlPlane {
         &mut self,
         request: AddSourceRequest,
         _ctx: &ActorContext<Self>,
-    ) -> Result<Self::Reply, ActorExitStatus> {
-        let index_uid: IndexUid = request.index_uid.clone().into();
+    ) -> Result<ControlPlaneResult<EmptyResponse>, ActorExitStatus> {
+        let index_uid: IndexUid = match request.index_uid.clone().try_into() {
+            Ok(index_uid) => index_uid,
+            Err(invalid_index_uid) => {
+                return Ok(Err(invalid_index_uid.into()));
+            }
+        };
         let source_config: SourceConfig =
             match metastore_serde_utils::from_json_str(&request.source_config_json) {
                 Ok(source_config) => source_config,
@@ -341,7 +357,12 @@ impl Handler<DeleteSourceRequest> for ControlPlane {
         request: DeleteSourceRequest,
         _ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
-        let index_uid: IndexUid = request.index_uid.clone().into();
+        let index_uid: IndexUid = match request.index_uid.clone().try_into() {
+            Ok(index_uid) => index_uid,
+            Err(invalid_index_uid) => {
+                return Ok(Err(invalid_index_uid.into()));
+            }
+        };
         let source_id = request.source_id.clone();
         if let Err(metastore_error) = self.metastore.delete_source(request).await {
             return convert_metastore_error(metastore_error);
@@ -748,7 +769,7 @@ mod tests {
                 Ok(list_shards_resp)
             },
         );
-        let index_uid = IndexUid::new("test-index");
+        let index_uid = IndexUid::from_index_id_with_random_uid("test-index");
         let index_uid_string = index_uid.to_string();
         mock_metastore.expect_create_index().times(1).return_once(
             |_create_index_request: CreateIndexRequest| {

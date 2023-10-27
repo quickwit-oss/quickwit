@@ -22,7 +22,7 @@ use std::fmt;
 use quickwit_common::retry::Retryable;
 use serde::{Deserialize, Serialize};
 
-use crate::types::{IndexId, IndexUid, QueueId, SourceId, SplitId};
+use crate::types::{IndexId, IndexUid, InvalidIndexUid, QueueId, SourceId, SplitId};
 use crate::{ServiceError, ServiceErrorCode};
 
 pub mod events;
@@ -140,6 +140,14 @@ pub enum MetastoreError {
     Unavailable(String),
 }
 
+impl From<InvalidIndexUid> for MetastoreError {
+    fn from(invalid_index_uid: InvalidIndexUid) -> MetastoreError {
+        MetastoreError::InvalidArgument {
+            message: invalid_index_uid.to_string(),
+        }
+    }
+}
+
 #[cfg(feature = "postgres")]
 impl From<sqlx::Error> for MetastoreError {
     fn from(error: sqlx::Error) -> Self {
@@ -236,8 +244,8 @@ impl IndexMetadataRequest {
     pub fn get_index_id(&self) -> MetastoreResult<IndexId> {
         if let Some(index_id) = &self.index_id {
             Ok(index_id.to_string())
-        } else if let Some(index_uid) = &self.index_uid {
-            let index_uid: IndexUid = index_uid.clone().into();
+        } else if let Some(index_uid_str) = &self.index_uid {
+            let index_uid: IndexUid = index_uid_str.to_string().try_into()?;
             Ok(index_uid.index_id().to_string())
         } else {
             Err(MetastoreError::Internal {

@@ -222,7 +222,7 @@ impl ShardTable {
 
     pub fn insert_shards(
         &mut self,
-        index_uid: impl Into<IndexUid>,
+        index_uid: IndexUid,
         source_id: impl Into<SourceId>,
         shards: Vec<Shard>,
     ) {

@@ -248,7 +248,8 @@ fn compute_node_score(node_id: &str, physical_plan: &PhysicalIndexingPlan) -> f3
 impl From<IndexingTask> for SourceUid {
     fn from(indexing_task: IndexingTask) -> Self {
         Self {
-            index_uid: indexing_task.index_uid.into(),
+            // TODO
+            index_uid: indexing_task.index_uid.try_into().unwrap(),
             source_id: indexing_task.source_id,
         }
     }

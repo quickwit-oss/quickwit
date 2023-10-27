@@ -78,10 +78,10 @@ impl FetchTask {
         state: Arc<RwLock<IngesterState>>,
         new_records_rx: watch::Receiver<()>,
         batch_num_bytes: usize,
-    ) -> (
+    ) -> IngestV2Result<(
         ServiceStream<IngestV2Result<FetchResponseV2>>,
         FetchTaskHandle,
-    ) {
+    )> {
         let (fetch_response_tx, fetch_stream) = ServiceStream::new_bounded(3);
         let fetch_range = FetchRange::new(
             open_fetch_stream_request.from_position_exclusive(),
@@ -90,7 +90,7 @@ impl FetchTask {
         let mut fetch_task = Self {
             queue_id: open_fetch_stream_request.queue_id(),
             client_id: open_fetch_stream_request.client_id,
-            index_uid: open_fetch_stream_request.index_uid.into(),
+            index_uid: open_fetch_stream_request.index_uid.try_into()?,
             source_id: open_fetch_stream_request.source_id,
             shard_id: open_fetch_stream_request.shard_id,
             fetch_range,
@@ -101,7 +101,7 @@ impl FetchTask {
         };
         let future = async move { fetch_task.run().await };
         let fetch_task_handle: FetchTaskHandle = tokio::spawn(future);
-        (fetch_stream, fetch_task_handle)
+        Ok((fetch_stream, fetch_task_handle))
     }
 
     /// Runs the fetch task. It waits for new records in the log and pushes them into the fetch
@@ -599,7 +599,7 @@ mod tests {
             state.clone(),
             new_records_rx,
             1024,
-        );
+        )?;
         let queue_id = queue_id(&index_uid, &source_id, 1);
 
         let mut state_guard = state.write().await;
@@ -774,7 +774,7 @@ mod tests {
             state.clone(),
             new_records_rx,
             1024,
-        );
+        )?;
         let queue_id = queue_id(&index_uid, &source_id, 1);
 
         let mut state_guard = state.write().await;
@@ -836,7 +836,7 @@ mod tests {
         }));
         let (new_records_tx, new_records_rx) = watch::channel(());
         let (mut fetch_stream, _fetch_task_handle) =
-            FetchTask::spawn(open_fetch_stream_request, state.clone(), new_records_rx, 30);
+            FetchTask::spawn(open_fetch_stream_request, state.clone(), new_records_rx, 30)?;
         let queue_id = queue_id(&index_uid, &source_id, 1);
 
         let mut state_guard = state.write().await;
