@@ -32,12 +32,10 @@ use quickwit_common::temp_dir::TempDirectory;
 use quickwit_common::KillSwitch;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::{
-    ListSplitsQuery, ListSplitsRequestExt, ListSplitsResponseExt, SplitMetadata, SplitState,
+    ListSplitsQuery, ListSplitsRequestExt, MetastoreServiceExt, SplitMetadata, SplitState,
 };
 use quickwit_proto::indexing::IndexingPipelineId;
-use quickwit_proto::metastore::{
-    ListSplitsRequest, MetastoreError, MetastoreService, MetastoreServiceClient,
-};
+use quickwit_proto::metastore::{ListSplitsRequest, MetastoreError, MetastoreServiceClient};
 use time::OffsetDateTime;
 use tracing::{debug, error, info, instrument};
 
@@ -226,7 +224,9 @@ impl MergePipeline {
         let published_splits_metadata: Vec<SplitMetadata> = ctx
             .protect_future(self.params.metastore.list_splits(list_splits_request))
             .await?
-            .deserialize_splits_metadata()?;
+            .into_iter()
+            .map(|split| split.split_metadata)
+            .collect();
 
         info!(
             num_splits = published_splits_metadata.len(),
@@ -485,10 +485,11 @@ mod tests {
 
     use quickwit_actors::{ActorExitStatus, Universe};
     use quickwit_common::temp_dir::TempDirectory;
+    use quickwit_common::ServiceStream;
     use quickwit_doc_mapper::default_doc_mapper_for_test;
-    use quickwit_metastore::{ListSplitsRequestExt, ListSplitsResponseExt};
+    use quickwit_metastore::ListSplitsRequestExt;
     use quickwit_proto::indexing::IndexingPipelineId;
-    use quickwit_proto::metastore::{ListSplitsResponse, MetastoreServiceClient};
+    use quickwit_proto::metastore::MetastoreServiceClient;
     use quickwit_proto::types::{IndexUid, PipelineUid};
     use quickwit_storage::RamStorage;
 
@@ -507,7 +508,7 @@ mod tests {
             pipeline_uid: PipelineUid::default(),
         };
         metastore
-            .expect_list_splits()
+            .expect_stream_splits()
             .times(1)
             .withf(move |list_splits_request| {
                 let list_split_query = list_splits_request.deserialize_list_splits_query().unwrap();
@@ -521,7 +522,7 @@ mod tests {
                 };
                 true
             })
-            .returning(|_| Ok(ListSplitsResponse::try_from_splits(Vec::new()).unwrap()));
+            .returning(|_| Ok(ServiceStream::empty()));
         let universe = Universe::with_accelerated_time();
         let storage = Arc::new(RamStorage::default());
         let split_store = IndexingSplitStore::create_without_local_store_for_test(storage.clone());

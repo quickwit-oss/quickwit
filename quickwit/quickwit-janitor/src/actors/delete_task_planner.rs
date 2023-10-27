@@ -425,7 +425,9 @@ mod tests {
     use quickwit_config::build_doc_mapper;
     use quickwit_indexing::merge_policy::MergeOperation;
     use quickwit_indexing::TestSandbox;
-    use quickwit_metastore::{IndexMetadataResponseExt, ListSplitsRequestExt, SplitMetadata};
+    use quickwit_metastore::{
+        IndexMetadataResponseExt, ListSplitsRequestExt, MetastoreServiceExt, SplitMetadata,
+    };
     use quickwit_proto::metastore::{DeleteQuery, IndexMetadataRequest, ListSplitsRequest};
     use quickwit_proto::search::{LeafSearchRequest, LeafSearchResponse};
     use quickwit_search::{searcher_pool_for_test, MockSearchService};
@@ -479,8 +481,9 @@ mod tests {
             .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
             .await
             .unwrap()
-            .deserialize_splits_metadata()
-            .unwrap();
+            .into_iter()
+            .map(|split| split.split_metadata)
+            .collect();
         assert_eq!(split_metas.len(), 3);
         let doc_mapper =
             build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)?;
@@ -594,8 +597,6 @@ mod tests {
         let all_splits = metastore
             .list_splits(ListSplitsRequest::try_from_index_uid(index_uid).unwrap())
             .await
-            .unwrap()
-            .deserialize_splits()
             .unwrap();
         assert_eq!(all_splits[0].split_metadata.delete_opstamp, 2);
         assert_eq!(all_splits[1].split_metadata.delete_opstamp, 2);

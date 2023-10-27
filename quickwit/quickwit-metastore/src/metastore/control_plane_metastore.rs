@@ -30,9 +30,10 @@ use quickwit_proto::metastore::{
     LastDeleteOpstampResponse, ListDeleteTasksRequest, ListDeleteTasksResponse,
     ListIndexesMetadataRequest, ListIndexesMetadataResponse, ListShardsRequest, ListShardsResponse,
     ListSplitsRequest, ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest,
-    MetastoreResult, MetastoreService, MetastoreServiceClient, OpenShardsRequest,
-    OpenShardsResponse, PublishSplitsRequest, ResetSourceCheckpointRequest, StageSplitsRequest,
-    ToggleSourceRequest, UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
+    MetastoreResult, MetastoreService, MetastoreServiceClient, MetastoreServiceStream,
+    OpenShardsRequest, OpenShardsResponse, PublishSplitsRequest, ResetSourceCheckpointRequest,
+    StageSplitsRequest, ToggleSourceRequest, UpdateSplitsDeleteOpstampRequest,
+    UpdateSplitsDeleteOpstampResponse,
 };
 
 /// A [`MetastoreService`] implementation that proxies some requests to the control plane so it can
@@ -141,11 +142,11 @@ impl MetastoreService for ControlPlaneMetastore {
         self.metastore.publish_splits(request).await
     }
 
-    async fn list_splits(
+    async fn stream_splits(
         &mut self,
         request: ListSplitsRequest,
-    ) -> MetastoreResult<ListSplitsResponse> {
-        self.metastore.list_splits(request).await
+    ) -> MetastoreResult<MetastoreServiceStream<ListSplitsResponse>> {
+        self.metastore.stream_splits(request).await
     }
 
     async fn list_stale_splits(

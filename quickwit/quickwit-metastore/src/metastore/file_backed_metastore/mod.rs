@@ -34,6 +34,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use futures::future::try_join_all;
 use itertools::Itertools;
+use quickwit_common::ServiceStream;
 use quickwit_config::validate_index_id_pattern;
 use quickwit_proto::metastore::{
     AcquireShardsRequest, AcquireShardsResponse, AcquireShardsSubrequest, AddSourceRequest,
@@ -44,9 +45,9 @@ use quickwit_proto::metastore::{
     ListDeleteTasksResponse, ListIndexesMetadataRequest, ListIndexesMetadataResponse,
     ListShardsRequest, ListShardsResponse, ListSplitsRequest, ListSplitsResponse,
     ListStaleSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError, MetastoreResult,
-    MetastoreService, OpenShardsRequest, OpenShardsResponse, OpenShardsSubrequest,
-    PublishSplitsRequest, ResetSourceCheckpointRequest, StageSplitsRequest, ToggleSourceRequest,
-    UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
+    MetastoreService, MetastoreServiceStream, OpenShardsRequest, OpenShardsResponse,
+    OpenShardsSubrequest, PublishSplitsRequest, ResetSourceCheckpointRequest, StageSplitsRequest,
+    ToggleSourceRequest, UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
 };
 use quickwit_proto::types::IndexUid;
 use quickwit_storage::Storage;
@@ -64,10 +65,10 @@ use self::store_operations::{
 use super::{
     AddSourceRequestExt, CreateIndexRequestExt, IndexMetadataResponseExt,
     ListIndexesMetadataResponseExt, ListSplitsRequestExt, ListSplitsResponseExt,
-    PublishSplitsRequestExt, StageSplitsRequestExt,
+    PublishSplitsRequestExt, StageSplitsRequestExt, STREAM_SPLITS_CHUNK_SIZE,
 };
 use crate::checkpoint::IndexCheckpointDelta;
-use crate::{IndexMetadata, ListSplitsQuery, MetastoreServiceExt, SplitState};
+use crate::{IndexMetadata, ListSplitsQuery, MetastoreServiceExt, Split, SplitState};
 
 /// State of an index tracked by the metastore.
 pub(crate) enum IndexState {
@@ -316,6 +317,20 @@ impl FileBackedMetastore {
         let index_mutex = lazy_index.get().await?;
         per_index_metastores_wlock.insert(index_id.to_string(), IndexState::Alive(lazy_index));
         Ok(index_mutex)
+    }
+
+    async fn inner_list_splits(&self, request: ListSplitsRequest) -> MetastoreResult<Vec<Split>> {
+        let list_splits_query = request.deserialize_list_splits_query()?;
+        let mut all_splits = Vec::new();
+        for index_uid in &list_splits_query.index_uids {
+            let splits = self
+                .read(index_uid.clone(), |index| {
+                    index.list_splits(&list_splits_query)
+                })
+                .await?;
+            all_splits.extend(splits);
+        }
+        Ok(all_splits)
     }
 
     /// Helper used for testing to obtain the data associated with the given index.
@@ -610,23 +625,16 @@ impl MetastoreService for FileBackedMetastore {
     /// -------------------------------------------------------------------------------
     /// Read-only accessors
 
-    async fn list_splits(
+    async fn stream_splits(
         &mut self,
         request: ListSplitsRequest,
-    ) -> MetastoreResult<ListSplitsResponse> {
-        let list_splits_query = request.deserialize_list_splits_query()?;
-        let mut all_splits = Vec::new();
-
-        for index_uid in &list_splits_query.index_uids {
-            let splits = self
-                .read(index_uid.clone(), |index| {
-                    index.list_splits(&list_splits_query)
-                })
-                .await?;
-            all_splits.extend(splits);
-        }
-        let response = ListSplitsResponse::try_from_splits(all_splits)?;
-        Ok(response)
+    ) -> MetastoreResult<MetastoreServiceStream<ListSplitsResponse>> {
+        let splits = self.inner_list_splits(request).await?;
+        let chunks = splits
+            .chunks(STREAM_SPLITS_CHUNK_SIZE)
+            .map(|chunk| ListSplitsResponse::try_from_splits(chunk.to_vec()))
+            .collect_vec();
+        Ok(ServiceStream::from(chunks))
     }
 
     async fn list_stale_splits(
@@ -640,7 +648,8 @@ impl MetastoreService for FileBackedMetastore {
             .sort_by_staleness()
             .with_limit(request.num_splits as usize);
         let list_splits_request = ListSplitsRequest::try_from_list_splits_query(list_splits_query)?;
-        self.list_splits(list_splits_request).await
+        let splits = self.inner_list_splits(list_splits_request).await?;
+        ListSplitsResponse::try_from_splits(splits)
     }
 
     async fn index_metadata(
@@ -1135,16 +1144,14 @@ mod tests {
         let query =
             ListSplitsQuery::for_index(index_uid.clone()).with_split_state(SplitState::Published);
         let list_splits_request = ListSplitsRequest::try_from_list_splits_query(query).unwrap();
-        let list_splits_response = metastore.list_splits(list_splits_request).await.unwrap();
-        let splits = list_splits_response.deserialize_splits().unwrap();
+        let splits = metastore.list_splits(list_splits_request).await.unwrap();
         assert!(splits.is_empty());
 
         let list_splits_query =
             ListSplitsQuery::for_index(index_uid.clone()).with_split_state(SplitState::Staged);
         let list_splits_request =
             ListSplitsRequest::try_from_list_splits_query(list_splits_query).unwrap();
-        let list_splits_response = metastore.list_splits(list_splits_request).await.unwrap();
-        let splits = list_splits_response.deserialize_splits().unwrap();
+        let splits = metastore.list_splits(list_splits_request).await.unwrap();
         assert!(!splits.is_empty());
     }
 
@@ -1196,11 +1203,10 @@ mod tests {
         let create_index_response = metastore.create_index(create_index_request).await.unwrap();
         let index_uid: IndexUid = create_index_response.index_uid.into();
 
-        let list_splits_response = metastore
+        let splits = metastore
             .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
             .await
             .unwrap();
-        let splits = list_splits_response.deserialize_splits().unwrap();
         assert!(splits.is_empty());
 
         let split_metadata = SplitMetadata {
@@ -1215,11 +1221,10 @@ mod tests {
             StageSplitsRequest::try_from_split_metadata(index_uid.clone(), split_metadata).unwrap();
         metastore.stage_splits(stage_splits_request).await?;
 
-        let list_splits_response = metastore
+        let splits = metastore
             .list_splits(ListSplitsRequest::try_from_index_uid(index_uid).unwrap())
             .await
             .unwrap();
-        let splits = list_splits_response.deserialize_splits().unwrap();
         assert_eq!(splits.len(), 1);
         Ok(())
     }
@@ -1244,18 +1249,16 @@ mod tests {
             .unwrap();
         let index_uid: IndexUid = create_index_response.index_uid.into();
 
-        let list_splits_response = metastore_write
+        let splits = metastore_write
             .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
             .await
             .unwrap();
-        let splits = list_splits_response.deserialize_splits().unwrap();
         assert!(splits.is_empty());
 
-        let list_splits_response = metastore_read
+        let splits = metastore_read
             .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
             .await
             .unwrap();
-        let splits = list_splits_response.deserialize_splits().unwrap();
         assert!(splits.is_empty());
 
         let split_metadata = SplitMetadata {
@@ -1270,22 +1273,19 @@ mod tests {
             StageSplitsRequest::try_from_split_metadata(index_uid.clone(), split_metadata).unwrap();
         metastore_write.stage_splits(stage_splits_request).await?;
 
-        let list_splits_response = metastore_read
+        let splits = metastore_read
             .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
             .await
             .unwrap();
-        let splits = list_splits_response.deserialize_splits().unwrap();
         assert!(splits.is_empty());
 
         for _ in 0..10 {
             tokio::time::sleep(polling_interval).await;
 
-            let list_splits_response = metastore_read
+            let splits = metastore_read
                 .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
                 .await
                 .unwrap();
-            let splits = list_splits_response.deserialize_splits().unwrap();
-
             if !splits.is_empty() {
                 return Ok(());
             }
@@ -1353,8 +1353,7 @@ mod tests {
             ListSplitsQuery::for_index(index_uid.clone()).with_split_state(SplitState::Published);
         let list_splits_request =
             ListSplitsRequest::try_from_list_splits_query(list_splits_query).unwrap();
-        let list_splits_response = metastore.list_splits(list_splits_request).await.unwrap();
-        let splits = list_splits_response.deserialize_splits().unwrap();
+        let splits = metastore.list_splits(list_splits_request).await.unwrap();
 
         // Make sure that all 20 splits are in `Published` state.
         assert_eq!(splits.len(), 20);

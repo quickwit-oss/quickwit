@@ -33,6 +33,7 @@ mod tests {
     use std::sync::Arc;
 
     use futures::TryStreamExt;
+    use quickwit_common::ServiceStream;
     use quickwit_indexing::MockSplitBuilder;
     use quickwit_metastore::{IndexMetadata, IndexMetadataResponseExt, ListSplitsResponseExt};
     use quickwit_proto::metastore::{
@@ -85,7 +86,7 @@ mod tests {
         metastore.expect_index_metadata().returning(move |_| {
             Ok(IndexMetadataResponse::try_from_index_metadata(index_metadata.clone()).unwrap())
         });
-        metastore.expect_list_splits().returning(move |_| {
+        metastore.expect_stream_splits().returning(move |_| {
             let splits = vec![
                 MockSplitBuilder::new("split_1")
                     .with_index_uid(&index_uid)
@@ -94,7 +95,8 @@ mod tests {
                     .with_index_uid(&index_uid)
                     .build(),
             ];
-            Ok(ListSplitsResponse::try_from_splits(splits).unwrap())
+            let splits = ListSplitsResponse::try_from_splits(splits).unwrap();
+            Ok(ServiceStream::from(vec![Ok(splits)]))
         });
         let mut mock_search_service = MockSearchService::new();
         let (result_sender, result_receiver) = tokio::sync::mpsc::unbounded_channel();

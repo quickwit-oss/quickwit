@@ -30,7 +30,7 @@ use quickwit_doc_mapper::{analyze_text, TokenizerConfig};
 use quickwit_index_management::{IndexService, IndexServiceError};
 use quickwit_metastore::{
     IndexMetadata, IndexMetadataResponseExt, ListIndexesMetadataResponseExt, ListSplitsQuery,
-    ListSplitsRequestExt, ListSplitsResponseExt, Split, SplitInfo, SplitState,
+    ListSplitsRequestExt, MetastoreServiceExt, Split, SplitInfo, SplitState,
 };
 use quickwit_proto::metastore::{
     DeleteSourceRequest, EntityKind, IndexMetadataRequest, ListIndexesMetadataRequest,
@@ -198,10 +198,7 @@ async fn describe_index(
         .deserialize_index_metadata()?;
     let query = ListSplitsQuery::for_index(index_metadata.index_uid.clone());
     let list_splits_request = ListSplitsRequest::try_from_list_splits_query(query)?;
-    let splits = metastore
-        .list_splits(list_splits_request)
-        .await?
-        .deserialize_splits()?;
+    let splits = metastore.list_splits(list_splits_request).await?;
     let published_splits: Vec<Split> = splits
         .into_iter()
         .filter(|split| split.split_state == SplitState::Published)
@@ -347,10 +344,7 @@ async fn list_splits(
         query = query.with_create_timestamp_lt(end_created_timestamp);
     }
     let list_splits_request = ListSplitsRequest::try_from_list_splits_query(query)?;
-    let splits = metastore
-        .list_splits(list_splits_request)
-        .await?
-        .deserialize_splits()?;
+    let splits = metastore.list_splits(list_splits_request).await?;
     Ok(ListSplitsResponse {
         offset,
         size: splits.len(),
@@ -869,9 +863,10 @@ mod tests {
 
     use assert_json_diff::assert_json_include;
     use quickwit_common::uri::Uri;
+    use quickwit_common::ServiceStream;
     use quickwit_config::{SourceParams, VecSourceParams};
     use quickwit_indexing::{mock_split, MockSplitBuilder};
-    use quickwit_metastore::{metastore_for_test, IndexMetadata};
+    use quickwit_metastore::{metastore_for_test, IndexMetadata, ListSplitsResponseExt};
     use quickwit_proto::metastore::{
         EmptyResponse, IndexMetadataResponse, ListIndexesMetadataResponse, ListSplitsResponse,
         MetastoreServiceClient, SourceType,
@@ -945,7 +940,7 @@ mod tests {
             })
             .times(2);
         metastore
-            .expect_list_splits()
+            .expect_stream_splits()
             .returning(move |list_splits_request: ListSplitsRequest| {
                 let list_split_query = list_splits_request.deserialize_list_splits_query().unwrap();
                 if list_split_query.index_uids.contains(&index_uid)
@@ -958,7 +953,8 @@ mod tests {
                     let splits = vec![MockSplitBuilder::new("split_1")
                         .with_index_uid(&index_uid)
                         .build()];
-                    return Ok(ListSplitsResponse::try_from_splits(splits).unwrap());
+                    let splits = ListSplitsResponse::try_from_splits(splits).unwrap();
+                    return Ok(ServiceStream::from(vec![Ok(splits)]));
                 }
                 Err(MetastoreError::Internal {
                     message: "".to_string(),
@@ -1031,14 +1027,15 @@ mod tests {
             split_1_time_range.end() + 10,
         ));
         mock_metastore
-            .expect_list_splits()
+            .expect_stream_splits()
             .withf(move |list_split_request| -> bool {
                 let list_split_query = list_split_request.deserialize_list_splits_query().unwrap();
                 list_split_query.index_uids.contains(&index_uid)
             })
             .return_once(move |_| {
                 let splits = vec![split_1, split_2];
-                Ok(ListSplitsResponse::try_from_splits(splits).unwrap())
+                let splits = ListSplitsResponse::try_from_splits(splits).unwrap();
+                Ok(ServiceStream::from(vec![Ok(splits)]))
             });
 
         let index_service = IndexService::new(
@@ -1082,7 +1079,7 @@ mod tests {
             .return_once(move |_| {
                 Ok(IndexMetadataResponse::try_from_index_metadata(index_metadata).unwrap())
             });
-        mock_metastore.expect_list_splits().return_once(
+        mock_metastore.expect_stream_splits().return_once(
             move |list_split_request: ListSplitsRequest| {
                 let list_split_query = list_split_request.deserialize_list_splits_query().unwrap();
                 if list_split_query.index_uids.contains(&index_uid)
@@ -1090,7 +1087,7 @@ mod tests {
                     && list_split_query.time_range.is_unbounded()
                     && list_split_query.create_timestamp.is_unbounded()
                 {
-                    return Ok(ListSplitsResponse::empty());
+                    return Ok(ServiceStream::empty());
                 }
                 Err(MetastoreError::Internal {
                     message: "".to_string(),
@@ -1223,8 +1220,9 @@ mod tests {
                 .unwrap(),
             )
         });
-        mock_metastore.expect_list_splits().return_once(|_| {
-            Ok(ListSplitsResponse::try_from_splits(vec![mock_split("split_1")]).unwrap())
+        mock_metastore.expect_stream_splits().return_once(|_| {
+            let splits = ListSplitsResponse::try_from_splits(vec![mock_split("split_1")]).unwrap();
+            Ok(ServiceStream::from(vec![Ok(splits)]))
         });
         mock_metastore
             .expect_mark_splits_for_deletion()
@@ -1267,9 +1265,11 @@ mod tests {
             })
             .times(2);
         mock_metastore
-            .expect_list_splits()
+            .expect_stream_splits()
             .returning(|_| {
-                Ok(ListSplitsResponse::try_from_splits(vec![mock_split("split_1")]).unwrap())
+                let splits =
+                    ListSplitsResponse::try_from_splits(vec![mock_split("split_1")]).unwrap();
+                Ok(ServiceStream::from(vec![Ok(splits)]))
             })
             .times(3);
         mock_metastore

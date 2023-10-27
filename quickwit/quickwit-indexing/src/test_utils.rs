@@ -281,8 +281,8 @@ pub fn mock_split_meta(split_id: &str, index_uid: &IndexUid) -> SplitMetadata {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_metastore::{ListSplitsRequestExt, ListSplitsResponseExt};
-    use quickwit_proto::metastore::{ListSplitsRequest, MetastoreService};
+    use quickwit_metastore::{ListSplitsRequestExt, MetastoreServiceExt};
+    use quickwit_proto::metastore::ListSplitsRequest;
 
     use super::TestSandbox;
 
@@ -311,8 +311,7 @@ mod tests {
                 .list_splits(
                     ListSplitsRequest::try_from_index_uid(test_sandbox.index_uid()).unwrap(),
                 )
-                .await?
-                .deserialize_splits()?;
+                .await?;
             assert_eq!(splits.len(), 1);
             test_sandbox.add_documents(vec![
             serde_json::json!({"title": "Byzantine-Ottoman wars", "body": "...", "url": "http://biz-ottoman"}),
@@ -323,8 +322,7 @@ mod tests {
                 .list_splits(
                     ListSplitsRequest::try_from_index_uid(test_sandbox.index_uid()).unwrap(),
                 )
-                .await?
-                .deserialize_splits()?;
+                .await?;
             assert_eq!(splits.len(), 2);
         }
         test_sandbox.assert_quit().await;

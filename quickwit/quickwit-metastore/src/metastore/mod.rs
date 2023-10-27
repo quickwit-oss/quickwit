@@ -29,6 +29,7 @@ pub mod control_plane_metastore;
 use std::ops::{Bound, RangeInclusive};
 
 use async_trait::async_trait;
+use futures::TryStreamExt;
 pub use index_metadata::IndexMetadata;
 use itertools::Itertools;
 use once_cell::sync::Lazy;
@@ -46,6 +47,9 @@ use time::OffsetDateTime;
 
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::{Split, SplitMetadata, SplitState};
+
+/// Splits batch size returned by the stream splits API
+const STREAM_SPLITS_CHUNK_SIZE: usize = 1000;
 
 static METASTORE_METRICS_LAYER: Lazy<PrometheusMetricsLayer<1>> =
     Lazy::new(|| PrometheusMetricsLayer::new("metastore", ["request"]));
@@ -69,6 +73,20 @@ pub trait MetastoreServiceExt: MetastoreService {
             Err(MetastoreError::NotFound { .. }) => Ok(false),
             Err(error) => Err(error),
         }
+    }
+
+    /// Lists all splits matching the given query.
+    /// It calls `stream_splits` and collects the splits into a single vector.
+    /// This method is added for convenience and may be removed in the future to avoid
+    /// loading all splits in memory.
+    async fn list_splits(&mut self, query: ListSplitsRequest) -> MetastoreResult<Vec<Split>> {
+        let mut stream = self.stream_splits(query).await?;
+        let mut all_splits = Vec::new();
+        while let Some(list_splits_response) = stream.try_next().await? {
+            let splits = list_splits_response.deserialize_splits()?;
+            all_splits.extend(splits);
+        }
+        Ok(all_splits)
     }
 }
 

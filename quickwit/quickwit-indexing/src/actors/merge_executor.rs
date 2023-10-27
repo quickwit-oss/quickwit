@@ -560,7 +560,7 @@ mod tests {
     use quickwit_actors::Universe;
     use quickwit_common::split_file;
     use quickwit_metastore::{
-        ListSplitsRequestExt, ListSplitsResponseExt, SplitMetadata, StageSplitsRequestExt,
+        ListSplitsRequestExt, MetastoreServiceExt, SplitMetadata, StageSplitsRequestExt,
     };
     use quickwit_proto::metastore::{
         DeleteQuery, ListSplitsRequest, PublishSplitsRequest, StageSplitsRequest,
@@ -606,8 +606,9 @@ mod tests {
             .list_splits(list_splits_request)
             .await
             .unwrap()
-            .deserialize_splits_metadata()
-            .unwrap();
+            .into_iter()
+            .map(|split| split.split_metadata)
+            .collect();
         assert_eq!(split_metas.len(), 4);
         let merge_scratch_directory = TempDirectory::for_test();
         let downloaded_splits_directory =
@@ -733,8 +734,6 @@ mod tests {
             .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
             .await
             .unwrap()
-            .deserialize_splits()
-            .unwrap()
             .into_iter()
             .next()
             .unwrap();
@@ -845,8 +844,6 @@ mod tests {
             assert!(metastore
                 .list_splits(ListSplitsRequest::try_from_index_uid(index_uid).unwrap())
                 .await
-                .unwrap()
-                .deserialize_splits()
                 .unwrap()
                 .into_iter()
                 .all(

@@ -212,6 +212,7 @@ mod tests {
 
     use quickwit_actors::Universe;
     use quickwit_common::shared_consts::DELETION_GRACE_PERIOD;
+    use quickwit_common::ServiceStream;
     use quickwit_metastore::{
         IndexMetadata, ListSplitsRequestExt, ListSplitsResponseExt, Split, SplitMetadata,
         SplitState,
@@ -262,7 +263,7 @@ mod tests {
 
         let mut mock_metastore = MetastoreServiceClient::mock();
         mock_metastore
-            .expect_list_splits()
+            .expect_stream_splits()
             .times(2)
             .returning(|list_splits_request| {
                 let query = list_splits_request.deserialize_list_splits_query().unwrap();
@@ -292,7 +293,8 @@ mod tests {
                     }
                     _ => panic!("only Staged and MarkedForDeletion expected."),
                 };
-                Ok(ListSplitsResponse::try_from_splits(splits).unwrap())
+                let splits = ListSplitsResponse::try_from_splits(splits).unwrap();
+                Ok(ServiceStream::from(vec![Ok(splits)]))
             });
         mock_metastore
             .expect_mark_splits_for_deletion()
@@ -356,7 +358,7 @@ mod tests {
                 )
             });
         mock_metastore
-            .expect_list_splits()
+            .expect_stream_splits()
             .times(2)
             .returning(|list_splits_request| {
                 let query = list_splits_request.deserialize_list_splits_query().unwrap();
@@ -368,7 +370,8 @@ mod tests {
                     }
                     _ => panic!("only Staged and MarkedForDeletion expected."),
                 };
-                Ok(ListSplitsResponse::try_from_splits(splits).unwrap())
+                let splits = ListSplitsResponse::try_from_splits(splits).unwrap();
+                Ok(ServiceStream::from(vec![Ok(splits)]))
             });
         mock_metastore
             .expect_mark_splits_for_deletion()
@@ -431,7 +434,7 @@ mod tests {
                 )
             });
         mock_metastore
-            .expect_list_splits()
+            .expect_stream_splits()
             .times(6)
             .returning(|list_splits_request| {
                 let query = list_splits_request.deserialize_list_splits_query().unwrap();
@@ -443,7 +446,8 @@ mod tests {
                     }
                     _ => panic!("only Staged and MarkedForDeletion expected."),
                 };
-                Ok(ListSplitsResponse::try_from_splits(splits).unwrap())
+                let splits = ListSplitsResponse::try_from_splits(splits).unwrap();
+                Ok(ServiceStream::from(vec![Ok(splits)]))
             });
         mock_metastore
             .expect_mark_splits_for_deletion()
@@ -600,7 +604,7 @@ mod tests {
                 )
             });
         mock_metastore
-            .expect_list_splits()
+            .expect_stream_splits()
             .times(3)
             .returning(|list_splits_request| {
                 let query = list_splits_request.deserialize_list_splits_query().unwrap();
@@ -618,7 +622,8 @@ mod tests {
                     }
                     _ => panic!("only Staged and MarkedForDeletion expected."),
                 };
-                Ok(ListSplitsResponse::try_from_splits(splits).unwrap())
+                let splits = ListSplitsResponse::try_from_splits(splits).unwrap();
+                Ok(ServiceStream::from(vec![Ok(splits)]))
             });
         mock_metastore
             .expect_mark_splits_for_deletion()
@@ -681,7 +686,7 @@ mod tests {
                 )
             });
         mock_metastore
-            .expect_list_splits()
+            .expect_stream_splits()
             .times(4)
             .returning(|list_splits_request| {
                 let query = list_splits_request.deserialize_list_splits_query().unwrap();
@@ -693,7 +698,8 @@ mod tests {
                     }
                     _ => panic!("only Staged and MarkedForDeletion expected."),
                 };
-                Ok(ListSplitsResponse::try_from_splits(splits).unwrap())
+                let splits = ListSplitsResponse::try_from_splits(splits).unwrap();
+                Ok(ServiceStream::from(vec![Ok(splits)]))
             });
         mock_metastore
             .expect_mark_splits_for_deletion()

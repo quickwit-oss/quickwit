@@ -49,7 +49,7 @@ pub use collector::QuickwitAggregations;
 use metrics::SEARCH_METRICS;
 use quickwit_common::tower::Pool;
 use quickwit_doc_mapper::DocMapper;
-use quickwit_proto::metastore::{ListSplitsRequest, MetastoreService, MetastoreServiceClient};
+use quickwit_proto::metastore::{ListSplitsRequest, MetastoreServiceClient};
 use tantivy::schema::NamedFieldDocument;
 
 /// Refer to this as `crate::Result<T>`.
@@ -62,7 +62,7 @@ pub use find_trace_ids_collector::FindTraceIdsCollector;
 use quickwit_config::SearcherConfig;
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_metastore::{
-    ListSplitsQuery, ListSplitsRequestExt, ListSplitsResponseExt, SplitMetadata, SplitState,
+    ListSplitsQuery, ListSplitsRequestExt, MetastoreServiceExt, SplitMetadata, SplitState,
 };
 use quickwit_proto::search::{PartialHit, SearchRequest, SearchResponse, SplitIdAndFooterOffsets};
 use quickwit_proto::types::IndexUid;
@@ -189,7 +189,6 @@ async fn list_relevant_splits(
     let splits_metadata: Vec<SplitMetadata> = metastore
         .list_splits(list_splits_request)
         .await?
-        .deserialize_splits()?
         .into_iter()
         .map(|split| split.split_metadata)
         .collect();

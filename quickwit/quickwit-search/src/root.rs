@@ -31,7 +31,7 @@ use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
 use quickwit_doc_mapper::{DocMapper, DYNAMIC_FIELD_NAME};
 use quickwit_metastore::{
     IndexMetadata, IndexMetadataResponseExt, ListIndexesMetadataResponseExt, ListSplitsRequestExt,
-    ListSplitsResponseExt, SplitMetadata,
+    MetastoreServiceExt, SplitMetadata,
 };
 use quickwit_proto::metastore::{
     IndexMetadataRequest, ListIndexesMetadataRequest, ListSplitsRequest, MetastoreService,
@@ -1016,7 +1016,9 @@ pub async fn root_list_terms(
         .clone()
         .list_splits(list_splits_request)
         .await?
-        .deserialize_splits_metadata()?;
+        .into_iter()
+        .map(|split| split.split_metadata)
+        .collect();
 
     let index_uri = &index_config.index_uri;
 
@@ -1212,9 +1214,10 @@ mod tests {
     use std::sync::{Arc, RwLock};
 
     use quickwit_common::shared_consts::SCROLL_BATCH_LEN;
+    use quickwit_common::ServiceStream;
     use quickwit_config::{DocMapping, IndexingSettings, SearchSettings};
     use quickwit_indexing::MockSplitBuilder;
-    use quickwit_metastore::IndexMetadata;
+    use quickwit_metastore::{IndexMetadata, ListSplitsResponseExt};
     use quickwit_proto::metastore::{ListIndexesMetadataResponse, ListSplitsResponse};
     use quickwit_proto::search::{ScrollRequest, SortOrder, SortValue, SplitSearchError};
     use quickwit_query::query_ast::{qast_helper, qast_json_helper, query_ast_from_user_text};
@@ -1464,7 +1467,7 @@ mod tests {
                 .unwrap())
             });
         mock_metastore
-            .expect_list_splits()
+            .expect_stream_splits()
             .returning(move |_filter| {
                 let splits = vec![
                     MockSplitBuilder::new("split1")
@@ -1474,7 +1477,8 @@ mod tests {
                         .with_index_uid(&index_uid)
                         .build(),
                 ];
-                Ok(ListSplitsResponse::try_from_splits(splits).unwrap())
+                let splits_response = ListSplitsResponse::try_from_splits(splits).unwrap();
+                Ok(ServiceStream::from(vec![Ok(splits_response)]))
             });
         let mut mock_search_service_2 = MockSearchService::new();
         mock_search_service_2.expect_leaf_search().returning(
@@ -1561,12 +1565,13 @@ mod tests {
                 .unwrap())
             });
         metastore
-            .expect_list_splits()
+            .expect_stream_splits()
             .returning(move |_list_splits_request| {
                 let splits = vec![MockSplitBuilder::new("split1")
                     .with_index_uid(&index_uid)
                     .build()];
-                Ok(ListSplitsResponse::try_from_splits(splits).unwrap())
+                let splits_response = ListSplitsResponse::try_from_splits(splits).unwrap();
+                Ok(ServiceStream::from(vec![Ok(splits_response)]))
             });
         let mut mock_search_service = MockSearchService::new();
         mock_search_service.expect_leaf_search().returning(
@@ -1628,7 +1633,7 @@ mod tests {
                 ])
                 .unwrap())
             });
-        metastore.expect_list_splits().returning(move |_filter| {
+        metastore.expect_stream_splits().returning(move |_filter| {
             let splits = vec![
                 MockSplitBuilder::new("split1")
                     .with_index_uid(&index_uid)
@@ -1637,7 +1642,8 @@ mod tests {
                     .with_index_uid(&index_uid)
                     .build(),
             ];
-            Ok(ListSplitsResponse::try_from_splits(splits).unwrap())
+            let splits_response = ListSplitsResponse::try_from_splits(splits).unwrap();
+            Ok(ServiceStream::from(vec![Ok(splits_response)]))
         });
         let mut mock_search_service_1 = MockSearchService::new();
         mock_search_service_1.expect_leaf_search().returning(
@@ -1723,7 +1729,7 @@ mod tests {
                 ])
                 .unwrap())
             });
-        metastore.expect_list_splits().returning(move |_filter| {
+        metastore.expect_stream_splits().returning(move |_filter| {
             let splits = vec![
                 MockSplitBuilder::new("split1")
                     .with_index_uid(&index_uid)
@@ -1732,7 +1738,8 @@ mod tests {
                     .with_index_uid(&index_uid)
                     .build(),
             ];
-            Ok(ListSplitsResponse::try_from_splits(splits).unwrap())
+            let splits_response = ListSplitsResponse::try_from_splits(splits).unwrap();
+            Ok(ServiceStream::from(vec![Ok(splits_response)]))
         });
         let mut mock_search_service_1 = MockSearchService::new();
         mock_search_service_1.expect_leaf_search().returning(
@@ -1902,7 +1909,7 @@ mod tests {
                 ])
                 .unwrap())
             });
-        metastore.expect_list_splits().returning(move |_filter| {
+        metastore.expect_stream_splits().returning(move |_filter| {
             let splits = vec![
                 MockSplitBuilder::new("split1")
                     .with_index_uid(&index_uid)
@@ -1911,7 +1918,8 @@ mod tests {
                     .with_index_uid(&index_uid)
                     .build(),
             ];
-            Ok(ListSplitsResponse::try_from_splits(splits).unwrap())
+            let splits_response = ListSplitsResponse::try_from_splits(splits).unwrap();
+            Ok(ServiceStream::from(vec![Ok(splits_response)]))
         });
         let mut mock_search_service_1 = MockSearchService::new();
         mock_search_service_1.expect_leaf_search().returning(
@@ -2076,7 +2084,7 @@ mod tests {
                 ])
                 .unwrap())
             });
-        metastore.expect_list_splits().returning(move |_filter| {
+        metastore.expect_stream_splits().returning(move |_filter| {
             let splits = vec![
                 MockSplitBuilder::new("split1")
                     .with_index_uid(&index_uid)
@@ -2085,7 +2093,8 @@ mod tests {
                     .with_index_uid(&index_uid)
                     .build(),
             ];
-            Ok(ListSplitsResponse::try_from_splits(splits).unwrap())
+            let splits_response = ListSplitsResponse::try_from_splits(splits).unwrap();
+            Ok(ServiceStream::from(vec![Ok(splits_response)]))
         });
 
         let mut mock_search_service_1 = MockSearchService::new();
@@ -2196,7 +2205,7 @@ mod tests {
                 ])
                 .unwrap())
             });
-        metastore.expect_list_splits().returning(move |_filter| {
+        metastore.expect_stream_splits().returning(move |_filter| {
             let splits = vec![
                 MockSplitBuilder::new("split1")
                     .with_index_uid(&index_uid)
@@ -2205,7 +2214,8 @@ mod tests {
                     .with_index_uid(&index_uid)
                     .build(),
             ];
-            Ok(ListSplitsResponse::try_from_splits(splits).unwrap())
+            let splits_response = ListSplitsResponse::try_from_splits(splits).unwrap();
+            Ok(ServiceStream::from(vec![Ok(splits_response)]))
         });
         let mut mock_search_service_1 = MockSearchService::new();
         mock_search_service_1
@@ -2327,12 +2337,13 @@ mod tests {
                 .unwrap())
             });
         metastore
-            .expect_list_splits()
+            .expect_stream_splits()
             .returning(move |_list_splits_request| {
                 let splits = vec![MockSplitBuilder::new("split1")
                     .with_index_uid(&index_uid)
                     .build()];
-                Ok(ListSplitsResponse::try_from_splits(splits).unwrap())
+                let splits_response = ListSplitsResponse::try_from_splits(splits).unwrap();
+                Ok(ServiceStream::from(vec![Ok(splits_response)]))
             });
         let mut first_call = true;
         let mut mock_search_service = MockSearchService::new();
@@ -2405,11 +2416,12 @@ mod tests {
                 ])
                 .unwrap())
             });
-        metastore.expect_list_splits().returning(move |_filter| {
+        metastore.expect_stream_splits().returning(move |_filter| {
             let splits = vec![MockSplitBuilder::new("split1")
                 .with_index_uid(&index_uid)
                 .build()];
-            Ok(ListSplitsResponse::try_from_splits(splits).unwrap())
+            let splits_response = ListSplitsResponse::try_from_splits(splits).unwrap();
+            Ok(ServiceStream::from(vec![Ok(splits_response)]))
         });
 
         let mut mock_search_service = MockSearchService::new();
@@ -2467,11 +2479,12 @@ mod tests {
                 ])
                 .unwrap())
             });
-        metastore.expect_list_splits().returning(move |_filter| {
+        metastore.expect_stream_splits().returning(move |_filter| {
             let splits = vec![MockSplitBuilder::new("split1")
                 .with_index_uid(&index_uid)
                 .build()];
-            Ok(ListSplitsResponse::try_from_splits(splits).unwrap())
+            let splits_response = ListSplitsResponse::try_from_splits(splits).unwrap();
+            Ok(ServiceStream::from(vec![Ok(splits_response)]))
         });
         // Service1 - broken node.
         let mut mock_search_service_1 = MockSearchService::new();
@@ -2555,11 +2568,12 @@ mod tests {
                 ])
                 .unwrap())
             });
-        metastore.expect_list_splits().returning(move |_filter| {
+        metastore.expect_stream_splits().returning(move |_filter| {
             let splits = vec![MockSplitBuilder::new("split1")
                 .with_index_uid(&index_uid)
                 .build()];
-            Ok(ListSplitsResponse::try_from_splits(splits).unwrap())
+            let splits_response = ListSplitsResponse::try_from_splits(splits).unwrap();
+            Ok(ServiceStream::from(vec![Ok(splits_response)]))
         });
 
         // Service1 - working node.
@@ -2627,12 +2641,13 @@ mod tests {
                 .unwrap())
             });
         mock_metastore
-            .expect_list_splits()
+            .expect_stream_splits()
             .returning(move |_filter| {
                 let splits = vec![MockSplitBuilder::new("split")
                     .with_index_uid(&index_uid)
                     .build()];
-                Ok(ListSplitsResponse::try_from_splits(splits).unwrap())
+                let splits_response = ListSplitsResponse::try_from_splits(splits).unwrap();
+                Ok(ServiceStream::from(vec![Ok(splits_response)]))
             });
 
         let searcher_pool = searcher_pool_for_test([("127.0.0.1:1001", MockSearchService::new())]);
@@ -2711,11 +2726,12 @@ mod tests {
                 ])
                 .unwrap())
             });
-        metastore.expect_list_splits().returning(move |_filter| {
+        metastore.expect_stream_splits().returning(move |_filter| {
             let splits = vec![MockSplitBuilder::new("split1")
                 .with_index_uid(&index_uid)
                 .build()];
-            Ok(ListSplitsResponse::try_from_splits(splits).unwrap())
+            let splits_response = ListSplitsResponse::try_from_splits(splits).unwrap();
+            Ok(ServiceStream::from(vec![Ok(splits_response)]))
         });
         let searcher_pool = searcher_pool_for_test([("127.0.0.1:1001", MockSearchService::new())]);
         let search_job_placer = SearchJobPlacer::new(searcher_pool);
@@ -2758,12 +2774,13 @@ mod tests {
                 .unwrap())
             });
         mock_metastore
-            .expect_list_splits()
+            .expect_stream_splits()
             .returning(move |_filter| {
                 let splits = vec![MockSplitBuilder::new("split1")
                     .with_index_uid(&index_uid)
                     .build()];
-                Ok(ListSplitsResponse::try_from_splits(splits).unwrap())
+                let splits_response = ListSplitsResponse::try_from_splits(splits).unwrap();
+                Ok(ServiceStream::from(vec![Ok(splits_response)]))
             });
         let searcher_pool = searcher_pool_for_test([("127.0.0.1:1001", MockSearchService::new())]);
         let search_job_placer = SearchJobPlacer::new(searcher_pool);
@@ -2958,7 +2975,7 @@ mod tests {
                         .unwrap(),
                 )
             });
-        metastore.expect_list_splits().returning(move |_filter| {
+        metastore.expect_stream_splits().returning(move |_filter| {
             let splits = vec![
                 MockSplitBuilder::new("split1")
                     .with_index_uid(&index_uid)
@@ -2967,7 +2984,8 @@ mod tests {
                     .with_index_uid(&index_uid_2)
                     .build(),
             ];
-            Ok(ListSplitsResponse::try_from_splits(splits).unwrap())
+            let splits_response = ListSplitsResponse::try_from_splits(splits).unwrap();
+            Ok(ServiceStream::from(vec![Ok(splits_response)]))
         });
         let mut mock_search_service = MockSearchService::new();
         mock_search_service.expect_leaf_search().times(2).returning(
@@ -3149,7 +3167,7 @@ mod tests {
             },
         );
         metastore
-            .expect_list_splits()
+            .expect_stream_splits()
             .return_once(move |list_splits_request| {
                 let list_splits_query =
                     list_splits_request.deserialize_list_splits_query().unwrap();
@@ -3172,7 +3190,8 @@ mod tests {
                         .with_index_uid(&index_uid_2)
                         .build(),
                 ];
-                Ok(ListSplitsResponse::try_from_splits(splits).unwrap())
+                let splits_response = ListSplitsResponse::try_from_splits(splits).unwrap();
+                Ok(ServiceStream::from(vec![Ok(splits_response)]))
             });
         let mut mock_search_service_1 = MockSearchService::new();
         mock_search_service_1
