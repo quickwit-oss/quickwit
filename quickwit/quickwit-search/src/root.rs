@@ -615,7 +615,7 @@ pub(crate) async fn fetch_docs_phase(
 /// 2. Merges the search results.
 /// 3. Sends fetch docs requests to multiple leaf nodes.
 /// 4. Builds the response with docs and returns.
-#[instrument(skip_all)]
+#[instrument(skip_all, fields(num_splits=%split_metadatas.len()))]
 async fn root_search_aux(
     searcher_context: &SearcherContext,
     indexes_metas_for_leaf_search: &IndexesMetasForLeafSearch,
@@ -623,7 +623,7 @@ async fn root_search_aux(
     split_metadatas: Vec<SplitMetadata>,
     cluster_client: &ClusterClient,
 ) -> crate::Result<SearchResponse> {
-    info!(split_metadatas = ?PrettySample::new(&split_metadatas, 5));
+    debug!(split_metadatas = ?PrettySample::new(&split_metadatas, 5));
     let (first_phase_result, scroll_key_and_start_offset_opt): (
         LeafSearchResponse,
         Option<ScrollKeyAndStartOffset>,
