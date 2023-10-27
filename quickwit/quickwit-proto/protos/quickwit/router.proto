@@ -35,31 +35,37 @@ message IngestRequestV2 {
 }
 
 message IngestSubrequest {
-    string index_id = 1;
-    string source_id = 2;
-    quickwit.ingest.DocBatchV2 doc_batch = 3;
+    // The subrequest ID is used to identify the various subrequests and responses
+    // (ingest, persist, replicate) at play during the ingest and replication
+    // process.
+    uint32 subrequest_id = 1;
+    string index_id = 2;
+    string source_id = 3;
+    quickwit.ingest.DocBatchV2 doc_batch = 4;
 }
 
 message IngestResponseV2 {
-    repeated IngestSubresponse subresponses = 1;
-}
-
-message IngestSubresponse {
-    string index_id = 1;
-    string source_id = 2;
-    repeated IngestSuccess successes  = 3;
-    repeated IngestFailure failures  = 4;
+    repeated IngestSuccess successes  = 1;
+    repeated IngestFailure failures  = 2;
 }
 
 message IngestSuccess {
-    string index_uid = 1;
-    string source_id = 2;
-    uint64 shard_id = 3;
+    uint32 subrequest_id = 1;
+    string index_uid = 2;
+    string source_id = 3;
+    uint64 shard_id = 4;
     // Replication position inclusive.
-    quickwit.ingest.Position replication_position_inclusive = 4;
+    quickwit.ingest.Position replication_position_inclusive = 5;
+}
+
+enum IngestFailureReason {
+    INGEST_FAILURE_REASON_UNSPECIFIED = 0;
+    INGEST_FAILURE_REASON_NO_SHARDS_AVAILABLE = 1;
 }
 
 message IngestFailure {
-    uint64 shard_id = 1;
-    // IngestFailureReason reason = 2;
+    uint32 subrequest_id = 1;
+    string index_id = 2;
+    string source_id = 3;
+    IngestFailureReason reason = 5;
 }

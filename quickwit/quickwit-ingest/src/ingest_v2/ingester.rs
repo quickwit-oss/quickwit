@@ -267,10 +267,11 @@ impl IngesterService for Ingester {
 
             if shard.is_closed() {
                 let persist_failure = PersistFailure {
+                    subrequest_id: subrequest.subrequest_id,
                     index_uid: subrequest.index_uid,
                     source_id: subrequest.source_id,
                     shard_id: subrequest.shard_id,
-                    failure_reason: PersistFailureReason::ShardClosed as i32,
+                    reason: PersistFailureReason::ShardClosed as i32,
                 };
                 persist_failures.push(persist_failure);
                 continue;
@@ -312,6 +313,7 @@ impl IngesterService for Ingester {
 
             if let Some(follower_id) = follower_id_opt {
                 let replicate_subrequest = ReplicateSubrequest {
+                    subrequest_id: subrequest.subrequest_id,
                     index_uid: subrequest.index_uid,
                     source_id: subrequest.source_id,
                     shard_id: subrequest.shard_id,
@@ -325,6 +327,7 @@ impl IngesterService for Ingester {
                     .push(replicate_subrequest);
             } else {
                 let persist_success = PersistSuccess {
+                    subrequest_id: subrequest.subrequest_id,
                     index_uid: subrequest.index_uid,
                     source_id: subrequest.source_id,
                     shard_id: subrequest.shard_id,
@@ -377,6 +380,7 @@ impl IngesterService for Ingester {
             };
             for replicate_success in replicate_response.successes {
                 let persist_success = PersistSuccess {
+                    subrequest_id: replicate_success.subrequest_id,
                     index_uid: replicate_success.index_uid,
                     source_id: replicate_success.source_id,
                     shard_id: replicate_success.shard_id,
@@ -693,6 +697,7 @@ mod tests {
             commit_type: CommitTypeV2::Force as i32,
             subrequests: vec![
                 PersistSubrequest {
+                    subrequest_id: 0,
                     index_uid: "test-index:0".to_string(),
                     source_id: "test-source".to_string(),
                     shard_id: 1,
@@ -700,6 +705,7 @@ mod tests {
                     doc_batch: Some(DocBatchV2::for_test(["test-doc-010"])),
                 },
                 PersistSubrequest {
+                    subrequest_id: 1,
                     index_uid: "test-index:1".to_string(),
                     source_id: "test-source".to_string(),
                     shard_id: 1,
@@ -822,6 +828,7 @@ mod tests {
             commit_type: CommitTypeV2::Force as i32,
             subrequests: vec![
                 PersistSubrequest {
+                    subrequest_id: 0,
                     index_uid: "test-index:0".to_string(),
                     source_id: "test-source".to_string(),
                     shard_id: 1,
@@ -829,6 +836,7 @@ mod tests {
                     doc_batch: Some(DocBatchV2::for_test(["test-doc-010"])),
                 },
                 PersistSubrequest {
+                    subrequest_id: 1,
                     index_uid: "test-index:1".to_string(),
                     source_id: "test-source".to_string(),
                     shard_id: 1,
@@ -972,6 +980,7 @@ mod tests {
             commit_type: CommitTypeV2::Auto as i32,
             subrequests: vec![
                 PersistSubrequest {
+                    subrequest_id: 0,
                     index_uid: "test-index:0".to_string(),
                     source_id: "test-source".to_string(),
                     shard_id: 1,
@@ -979,6 +988,7 @@ mod tests {
                     doc_batch: Some(DocBatchV2::for_test(["test-doc-010"])),
                 },
                 PersistSubrequest {
+                    subrequest_id: 1,
                     index_uid: "test-index:1".to_string(),
                     source_id: "test-source".to_string(),
                     shard_id: 1,
@@ -1066,6 +1076,7 @@ mod tests {
             commit_type: CommitTypeV2::Auto as i32,
             subrequests: vec![
                 PersistSubrequest {
+                    subrequest_id: 0,
                     index_uid: "test-index:0".to_string(),
                     source_id: "test-source".to_string(),
                     shard_id: 1,
@@ -1073,6 +1084,7 @@ mod tests {
                     doc_batch: Some(DocBatchV2::for_test(["test-doc-010"])),
                 },
                 PersistSubrequest {
+                    subrequest_id: 1,
                     index_uid: "test-index:0".to_string(),
                     source_id: "test-source".to_string(),
                     shard_id: 2,
@@ -1116,6 +1128,7 @@ mod tests {
             leader_id: self_node_id.to_string(),
             commit_type: CommitTypeV2::Auto as i32,
             subrequests: vec![PersistSubrequest {
+                subrequest_id: 0,
                 index_uid: "test-index:0".to_string(),
                 source_id: "test-source".to_string(),
                 shard_id: 1,

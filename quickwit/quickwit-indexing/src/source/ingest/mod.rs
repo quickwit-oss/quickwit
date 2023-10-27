@@ -26,13 +26,16 @@ use anyhow::{bail, Context};
 use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_actors::{ActorExitStatus, Mailbox};
-use quickwit_ingest::{decoded_mrecords, IngesterPool, MRecord, MultiFetchStream};
+use quickwit_ingest::{
+    decoded_mrecords, FetchStreamError, IngesterPool, MRecord, MultiFetchStream,
+};
 use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpoint};
 use quickwit_proto::ingest::ingester::{
     FetchResponseV2, IngesterService, TruncateRequest, TruncateSubrequest,
 };
 use quickwit_proto::metastore::{
-    AcquireShardsRequest, AcquireShardsSubrequest, MetastoreService, MetastoreServiceClient,
+    AcquireShardsRequest, AcquireShardsSubrequest, AcquireShardsSubresponse, MetastoreService,
+    MetastoreServiceClient,
 };
 use quickwit_proto::types::{IndexUid, NodeId, Position, PublishToken, ShardId, SourceId};
 use serde_json::json;
@@ -75,6 +78,16 @@ struct ClientId {
     pipeline_ord: usize,
 }
 
+impl fmt::Display for ClientId {
+    fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            formatter,
+            "indexer/{}/{}/{}/{}",
+            self.node_id, self.index_uid, self.source_id, self.pipeline_ord
+        )
+    }
+}
+
 impl ClientId {
     fn new(node_id: NodeId, index_uid: IndexUid, source_id: SourceId, pipeline_ord: usize) -> Self {
         Self {
@@ -85,12 +98,23 @@ impl ClientId {
         }
     }
 
-    fn client_id(&self) -> String {
-        format!(
-            "indexer/{}/{}/{}/{}",
-            self.node_id, self.index_uid, self.source_id, self.pipeline_ord
-        )
+    #[cfg(not(test))]
+    fn new_publish_token(&self) -> String {
+        format!("{}/{}", self, Ulid::new())
     }
+
+    #[cfg(test)]
+    fn new_publish_token(&self) -> String {
+        format!("{}/{}", self, Ulid::nil())
+    }
+}
+
+#[derive(Debug, Clone, Copy, Default, Eq, PartialEq)]
+enum IndexingStatus {
+    #[default]
+    Active,
+    Complete,
+    Error,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -99,6 +123,7 @@ struct AssignedShard {
     follower_id_opt: Option<NodeId>,
     partition_id: PartitionId,
     current_position_inclusive: Position,
+    status: IndexingStatus,
 }
 
 /// Streams documents from a set of shards.
@@ -123,9 +148,9 @@ impl IngestSource {
         runtime_args: Arc<SourceRuntimeArgs>,
         _checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self> {
-        let node_id: NodeId = runtime_args.node_id().into();
+        let self_node_id: NodeId = runtime_args.node_id().into();
         let client_id = ClientId::new(
-            node_id.clone(),
+            self_node_id.clone(),
             runtime_args.index_uid().clone(),
             runtime_args.source_id().to_string(),
             runtime_args.pipeline_ord(),
@@ -134,9 +159,9 @@ impl IngestSource {
         let ingester_pool = runtime_args.ingester_pool.clone();
         let assigned_shards = HashMap::new();
         let fetch_stream =
-            MultiFetchStream::new(node_id, client_id.client_id(), ingester_pool.clone());
+            MultiFetchStream::new(self_node_id, client_id.to_string(), ingester_pool.clone());
         let publish_lock = PublishLock::default();
-        let publish_token = format!("{}:{}", client_id.client_id(), Ulid::new());
+        let publish_token = client_id.new_publish_token();
 
         Ok(Self {
             client_id,
@@ -175,6 +200,7 @@ impl IngestSource {
                     batch_builder.force_commit();
                 }
                 MRecord::Eof => {
+                    assigned_shard.status = IndexingStatus::Complete;
                     break;
                 }
                 MRecord::Unknown => {
@@ -192,6 +218,23 @@ impl IngestSource {
             .context("failed to record partition delta")?;
         assigned_shard.current_position_inclusive = to_position_inclusive;
         Ok(())
+    }
+
+    fn process_fetch_stream_error(&mut self, fetch_stream_error: FetchStreamError) {
+        if let Some(shard) = self.assigned_shards.get_mut(&fetch_stream_error.shard_id) {
+            if shard.status != IndexingStatus::Complete {
+                shard.status = IndexingStatus::Error;
+            }
+        }
+    }
+
+    fn contains_publish_token(&self, subresponse: &AcquireShardsSubresponse) -> bool {
+        if let Some(acquired_shard) = subresponse.acquired_shards.get(0) {
+            if let Some(publish_token) = &acquired_shard.publish_token {
+                return *publish_token == self.publish_token;
+            }
+        }
+        false
     }
 
     async fn truncate(&self, truncation_point: &[(ShardId, Position)]) {
@@ -270,10 +313,11 @@ impl Source for IngestSource {
                         break;
                     }
                 }
-                Ok(Err(error)) => {
-                    error!(error=?error, "failed to fetch payload");
+                Ok(Err(fetch_stream_error)) => {
+                    self.process_fetch_stream_error(fetch_stream_error);
                 }
                 Err(_) => {
+                    // The deadline has elapsed.
                     break;
                 }
             }
@@ -314,16 +358,18 @@ impl Source for IngestSource {
         }
         info!("new shard assignment: `{:?}`", new_assigned_shard_ids);
 
+        self.assigned_shards.clear();
+        self.fetch_stream.reset();
         self.publish_lock.kill().await;
-
         self.publish_lock = PublishLock::default();
+        self.publish_token = self.client_id.new_publish_token();
+
         ctx.send_message(
             doc_processor_mailbox,
             NewPublishLock(self.publish_lock.clone()),
         )
         .await?;
 
-        self.publish_token = format!("{}:{}", self.client_id.client_id(), Ulid::new());
         ctx.send_message(
             doc_processor_mailbox,
             NewPublishToken(self.publish_token.clone()),
@@ -344,18 +390,11 @@ impl Source for IngestSource {
             .await
             .context("failed to acquire shards")?;
 
-        let Some(acquire_shards_subresponse) = acquire_shards_response
+        let acquire_shards_subresponse = acquire_shards_response
             .subresponses
             .into_iter()
-            .find(|subresponse| {
-                self.client_id.index_uid.as_str() == subresponse.index_uid
-                    && subresponse.source_id == self.client_id.source_id
-            })
-        else {
-            return Ok(());
-        };
-        self.assigned_shards.clear();
-        self.fetch_stream.reset();
+            .find(|subresponse| self.contains_publish_token(subresponse))
+            .context("acquire shards response is empty")?;
 
         let mut truncation_point =
             Vec::with_capacity(acquire_shards_subresponse.acquired_shards.len());
@@ -373,7 +412,9 @@ impl Source for IngestSource {
             let from_position_exclusive = current_position_inclusive.clone();
             let to_position_inclusive = Position::Eof;
 
-            if let Err(error) = ctx
+            let status = if from_position_exclusive == Position::Eof {
+                IndexingStatus::Complete
+            } else if let Err(error) = ctx
                 .protect_future(self.fetch_stream.subscribe(
                     leader_id.clone(),
                     follower_id_opt.clone(),
@@ -386,8 +427,10 @@ impl Source for IngestSource {
                 .await
             {
                 error!(error=%error, "failed to subscribe to shard");
-                continue;
-            }
+                IndexingStatus::Error
+            } else {
+                IndexingStatus::Active
+            };
             truncation_point.push((shard_id, current_position_inclusive.clone()));
 
             let assigned_shard = AssignedShard {
@@ -395,6 +438,7 @@ impl Source for IngestSource {
                 follower_id_opt,
                 partition_id,
                 current_position_inclusive,
+                status,
             };
             self.assigned_shards.insert(shard_id, assigned_shard);
         }
@@ -423,7 +467,7 @@ impl Source for IngestSource {
 
     fn observable_state(&self) -> serde_json::Value {
         json!({
-            "client_id": self.client_id.client_id(),
+            "client_id": self.client_id.to_string(),
             "assigned_shards": self.assigned_shards.keys().copied().collect::<Vec<ShardId>>(),
             "publish_token": self.publish_token,
         })
@@ -440,7 +484,7 @@ mod tests {
     use quickwit_config::{SourceConfig, SourceParams};
     use quickwit_proto::indexing::IndexingPipelineId;
     use quickwit_proto::ingest::ingester::{IngesterServiceClient, TruncateResponse};
-    use quickwit_proto::ingest::{MRecordBatch, Shard};
+    use quickwit_proto::ingest::{IngestV2Error, MRecordBatch, Shard, ShardState};
     use quickwit_proto::metastore::{AcquireShardsResponse, AcquireShardsSubresponse};
     use quickwit_storage::StorageResolver;
     use tokio::sync::watch;
@@ -458,6 +502,9 @@ mod tests {
             pipeline_ord: 0,
         };
         let source_config = SourceConfig::for_test("test-source", SourceParams::Ingest);
+        let publish_token =
+            "indexer/test-node/test-index:0/test-source/0/00000000000000000000000000";
+
         let mut mock_metastore = MetastoreServiceClient::mock();
         mock_metastore
             .expect_acquire_shards()
@@ -480,8 +527,9 @@ mod tests {
                             index_uid: "test-index:0".to_string(),
                             source_id: "test-source".to_string(),
                             shard_id: 1,
+                            shard_state: ShardState::Open as i32,
                             publish_position_inclusive: Some(11u64.into()),
-                            ..Default::default()
+                            publish_token: Some(publish_token.to_string()),
                         }],
                     }],
                 };
@@ -552,7 +600,7 @@ mod tests {
             shard_ids: vec![1, 2],
         };
         let publish_lock = source.publish_lock.clone();
-        let publish_token = source.publish_token.clone();
+        // let publish_token = source.publish_token.clone();
 
         source
             .assign_shards(assignment, &doc_processor_mailbox, &ctx)
@@ -568,7 +616,7 @@ mod tests {
             .unwrap();
         assert_eq!(&source.publish_lock, &publish_lock);
 
-        assert!(publish_token != source.publish_token);
+        // assert!(publish_token != source.publish_token);
 
         let NewPublishToken(publish_token) = doc_processor_inbox
             .recv_typed_message::<NewPublishToken>()
@@ -584,6 +632,7 @@ mod tests {
             follower_id_opt: None,
             partition_id: 1u64.into(),
             current_position_inclusive: 11u64.into(),
+            status: IndexingStatus::Active,
         };
         assert_eq!(assigned_shard, &expected_assigned_shard);
 
@@ -632,6 +681,7 @@ mod tests {
                 follower_id_opt: None,
                 partition_id: 1u64.into(),
                 current_position_inclusive: 11u64.into(),
+                status: IndexingStatus::Active,
             },
         );
         source.assigned_shards.insert(
@@ -641,6 +691,7 @@ mod tests {
                 follower_id_opt: None,
                 partition_id: 2u64.into(),
                 current_position_inclusive: 22u64.into(),
+                status: IndexingStatus::Active,
             },
         );
         let fetch_response_tx = source.fetch_stream.fetch_response_tx();
@@ -666,7 +717,7 @@ mod tests {
                 source_id: "test-source".into(),
                 shard_id: 2,
                 mrecord_batch: Some(MRecordBatch {
-                    mrecord_buffer: Bytes::from_static(b"\0\0test-doc-223\0\x01"),
+                    mrecord_buffer: Bytes::from_static(b"\0\0test-doc-223\0\x02"),
                     mrecord_lengths: vec![14, 2],
                 }),
                 from_position_exclusive: Some(22u64.into()),
@@ -703,6 +754,30 @@ mod tests {
         assert_eq!(partition_deltas[1].0, 2u64.into());
         assert_eq!(partition_deltas[1].1.from, Position::from(22u64));
         assert_eq!(partition_deltas[1].1.to, Position::Eof);
+
+        source
+            .emit_batches(&doc_processor_mailbox, &ctx)
+            .await
+            .unwrap();
+        let shard = source.assigned_shards.get(&2).unwrap();
+        assert_eq!(shard.status, IndexingStatus::Complete);
+
+        fetch_response_tx
+            .send(Err(FetchStreamError {
+                index_uid: "test-index:0".into(),
+                source_id: "test-source".into(),
+                shard_id: 1,
+                ingest_error: IngestV2Error::Internal("test-error".to_string()),
+            }))
+            .await
+            .unwrap();
+
+        source
+            .emit_batches(&doc_processor_mailbox, &ctx)
+            .await
+            .unwrap();
+        let shard = source.assigned_shards.get(&1).unwrap();
+        assert_eq!(shard.status, IndexingStatus::Error);
     }
 
     #[tokio::test]
@@ -808,6 +883,7 @@ mod tests {
                 follower_id_opt: None,
                 partition_id: 1u64.into(),
                 current_position_inclusive: 11u64.into(),
+                status: IndexingStatus::Active,
             },
         );
         source.assigned_shards.insert(
@@ -817,6 +893,7 @@ mod tests {
                 follower_id_opt: Some("test-ingester-1".into()),
                 partition_id: 2u64.into(),
                 current_position_inclusive: 22u64.into(),
+                status: IndexingStatus::Active,
             },
         );
         source.assigned_shards.insert(
@@ -826,6 +903,7 @@ mod tests {
                 follower_id_opt: Some("test-ingester-0".into()),
                 partition_id: 3u64.into(),
                 current_position_inclusive: 33u64.into(),
+                status: IndexingStatus::Active,
             },
         );
         source.assigned_shards.insert(
@@ -835,6 +913,7 @@ mod tests {
                 follower_id_opt: Some("test-ingester-3".into()),
                 partition_id: 4u64.into(),
                 current_position_inclusive: 44u64.into(),
+                status: IndexingStatus::Active,
             },
         );
         source.assigned_shards.insert(
@@ -844,6 +923,7 @@ mod tests {
                 follower_id_opt: Some("test-ingester-3".into()),
                 partition_id: 4u64.into(),
                 current_position_inclusive: Position::Beginning,
+                status: IndexingStatus::Active,
             },
         );
         let checkpoint = SourceCheckpoint::from_iter(vec![

@@ -83,6 +83,7 @@ pub(crate) enum IndexState {
     Deleting,
 }
 
+#[derive(Debug)]
 pub(crate) enum MutationOccurred<T> {
     Yes(T),
     No(T),

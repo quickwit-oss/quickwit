@@ -117,9 +117,9 @@ pub async fn test_metastore_open_shards<
     assert_eq!(subresponse.index_uid, test_index.index_uid.as_str());
     assert_eq!(subresponse.source_id, test_index.source_config.source_id);
     assert_eq!(subresponse.next_shard_id, 2);
-    assert_eq!(subresponse.open_shards.len(), 1);
+    assert_eq!(subresponse.opened_shards.len(), 1);
 
-    let shard = &subresponse.open_shards[0];
+    let shard = &subresponse.opened_shards[0];
     assert_eq!(shard.index_uid, test_index.index_uid.as_str());
     assert_eq!(shard.source_id, test_index.source_config.source_id);
     assert_eq!(shard.shard_id, 1);
@@ -138,9 +138,9 @@ pub async fn test_metastore_open_shards<
     assert_eq!(open_shards_response.subresponses.len(), 1);
 
     let subresponse = &open_shards_response.subresponses[0];
-    assert_eq!(subresponse.open_shards.len(), 1);
+    assert_eq!(subresponse.opened_shards.len(), 1);
 
-    let shard = &subresponse.open_shards[0];
+    let shard = &subresponse.opened_shards[0];
     assert_eq!(shard.shard_id, 1);
     assert_eq!(shard.leader_id, "test-ingester-foo");
 

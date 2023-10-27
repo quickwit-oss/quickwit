@@ -13,15 +13,17 @@ pub struct PersistRequest {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PersistSubrequest {
-    #[prost(string, tag = "1")]
-    pub index_uid: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "1")]
+    pub subrequest_id: u32,
     #[prost(string, tag = "2")]
+    pub index_uid: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
-    #[prost(uint64, tag = "3")]
+    #[prost(uint64, tag = "4")]
     pub shard_id: u64,
-    #[prost(string, optional, tag = "4")]
+    #[prost(string, optional, tag = "5")]
     pub follower_id: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(message, optional, tag = "5")]
+    #[prost(message, optional, tag = "6")]
     pub doc_batch: ::core::option::Option<super::DocBatchV2>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
@@ -39,27 +41,31 @@ pub struct PersistResponse {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PersistSuccess {
-    #[prost(string, tag = "1")]
-    pub index_uid: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "1")]
+    pub subrequest_id: u32,
     #[prost(string, tag = "2")]
+    pub index_uid: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
-    #[prost(uint64, tag = "3")]
+    #[prost(uint64, tag = "4")]
     pub shard_id: u64,
-    #[prost(message, optional, tag = "4")]
+    #[prost(message, optional, tag = "5")]
     pub replication_position_inclusive: ::core::option::Option<crate::types::Position>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PersistFailure {
-    #[prost(string, tag = "1")]
-    pub index_uid: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "1")]
+    pub subrequest_id: u32,
     #[prost(string, tag = "2")]
+    pub index_uid: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
-    #[prost(uint64, tag = "3")]
+    #[prost(uint64, tag = "4")]
     pub shard_id: u64,
-    #[prost(enumeration = "PersistFailureReason", tag = "4")]
-    pub failure_reason: i32,
+    #[prost(enumeration = "PersistFailureReason", tag = "5")]
+    pub reason: i32,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -134,17 +140,19 @@ pub struct ReplicateRequest {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ReplicateSubrequest {
-    #[prost(string, tag = "1")]
-    pub index_uid: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "1")]
+    pub subrequest_id: u32,
     #[prost(string, tag = "2")]
+    pub index_uid: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
-    #[prost(uint64, tag = "3")]
+    #[prost(uint64, tag = "4")]
     pub shard_id: u64,
-    #[prost(message, optional, tag = "4")]
-    pub from_position_exclusive: ::core::option::Option<crate::types::Position>,
     #[prost(message, optional, tag = "5")]
-    pub to_position_inclusive: ::core::option::Option<crate::types::Position>,
+    pub from_position_exclusive: ::core::option::Option<crate::types::Position>,
     #[prost(message, optional, tag = "6")]
+    pub to_position_inclusive: ::core::option::Option<crate::types::Position>,
+    #[prost(message, optional, tag = "7")]
     pub doc_batch: ::core::option::Option<super::DocBatchV2>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
@@ -165,26 +173,30 @@ pub struct ReplicateResponse {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ReplicateSuccess {
-    #[prost(string, tag = "1")]
-    pub index_uid: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "1")]
+    pub subrequest_id: u32,
     #[prost(string, tag = "2")]
+    pub index_uid: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
-    #[prost(uint64, tag = "3")]
+    #[prost(uint64, tag = "4")]
     pub shard_id: u64,
-    #[prost(message, optional, tag = "4")]
+    #[prost(message, optional, tag = "5")]
     pub replication_position_inclusive: ::core::option::Option<crate::types::Position>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ReplicateFailure {
-    #[prost(string, tag = "1")]
-    pub index_uid: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "1")]
+    pub subrequest_id: u32,
     #[prost(string, tag = "2")]
+    pub index_uid: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
     /// ingest.DocBatchV2 doc_batch = 4;
     /// ingest.IngestError error = 5;
-    #[prost(uint64, tag = "3")]
+    #[prost(uint64, tag = "4")]
     pub shard_id: u64,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
@@ -266,7 +278,10 @@ pub struct PingResponse {}
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum PersistFailureReason {
-    ShardClosed = 0,
+    Unspecified = 0,
+    ShardClosed = 1,
+    RateLimited = 2,
+    ResourceExhausted = 3,
 }
 impl PersistFailureReason {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -275,13 +290,21 @@ impl PersistFailureReason {
     /// (if the ProtoBuf definition does not change) and safe for programmatic use.
     pub fn as_str_name(&self) -> &'static str {
         match self {
-            PersistFailureReason::ShardClosed => "SHARD_CLOSED",
+            PersistFailureReason::Unspecified => "PERSIST_FAILURE_REASON_UNSPECIFIED",
+            PersistFailureReason::ShardClosed => "PERSIST_FAILURE_REASON_SHARD_CLOSED",
+            PersistFailureReason::RateLimited => "PERSIST_FAILURE_REASON_RATE_LIMITED",
+            PersistFailureReason::ResourceExhausted => {
+                "PERSIST_FAILURE_REASON_RESOURCE_EXHAUSTED"
+            }
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
-            "SHARD_CLOSED" => Some(Self::ShardClosed),
+            "PERSIST_FAILURE_REASON_UNSPECIFIED" => Some(Self::Unspecified),
+            "PERSIST_FAILURE_REASON_SHARD_CLOSED" => Some(Self::ShardClosed),
+            "PERSIST_FAILURE_REASON_RATE_LIMITED" => Some(Self::RateLimited),
+            "PERSIST_FAILURE_REASON_RESOURCE_EXHAUSTED" => Some(Self::ResourceExhausted),
             _ => None,
         }
     }

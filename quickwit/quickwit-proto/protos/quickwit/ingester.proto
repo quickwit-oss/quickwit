@@ -49,11 +49,12 @@ message PersistRequest {
 }
 
 message PersistSubrequest {
-    string index_uid = 1;
-    string source_id = 2;
-    uint64 shard_id = 3;
-    optional string follower_id = 4;
-    quickwit.ingest.DocBatchV2 doc_batch = 5;
+    uint32 subrequest_id = 1;
+    string index_uid = 2;
+    string source_id = 3;
+    uint64 shard_id = 4;
+    optional string follower_id = 5;
+    quickwit.ingest.DocBatchV2 doc_batch = 6;
 }
 
 message PersistResponse {
@@ -63,21 +64,26 @@ message PersistResponse {
 }
 
 message PersistSuccess {
-    string index_uid = 1;
-    string source_id = 2;
-    uint64 shard_id = 3;
-    quickwit.ingest.Position replication_position_inclusive = 4;
+    uint32 subrequest_id = 1;
+    string index_uid = 2;
+    string source_id = 3;
+    uint64 shard_id = 4;
+    quickwit.ingest.Position replication_position_inclusive = 5;
 }
 
 enum PersistFailureReason {
-    SHARD_CLOSED = 0;
+    PERSIST_FAILURE_REASON_UNSPECIFIED = 0;
+    PERSIST_FAILURE_REASON_SHARD_CLOSED = 1;
+    PERSIST_FAILURE_REASON_RATE_LIMITED = 2;
+    PERSIST_FAILURE_REASON_RESOURCE_EXHAUSTED = 3;
 }
 
 message PersistFailure {
-    string index_uid = 1;
-    string source_id = 2;
-    uint64 shard_id = 3;
-    PersistFailureReason failure_reason = 4;
+    uint32 subrequest_id = 1;
+    string index_uid = 2;
+    string source_id = 3;
+    uint64 shard_id = 4;
+    PersistFailureReason reason = 5;
 }
 
 message SynReplicationMessage {
@@ -112,12 +118,13 @@ message ReplicateRequest {
 }
 
 message ReplicateSubrequest {
-    string index_uid = 1;
-    string source_id = 2;
-    uint64 shard_id = 3;
-    quickwit.ingest.Position from_position_exclusive = 4;
-    quickwit.ingest.Position to_position_inclusive = 5;
-    ingest.DocBatchV2 doc_batch = 6;
+    uint32 subrequest_id = 1;
+    string index_uid = 2;
+    string source_id = 3;
+    uint64 shard_id = 4;
+    quickwit.ingest.Position from_position_exclusive = 5;
+    quickwit.ingest.Position to_position_inclusive = 6;
+    ingest.DocBatchV2 doc_batch = 7;
 }
 
 message ReplicateResponse {
@@ -129,16 +136,18 @@ message ReplicateResponse {
 }
 
 message ReplicateSuccess {
-    string index_uid = 1;
-    string source_id = 2;
-    uint64 shard_id = 3;
-    quickwit.ingest.Position replication_position_inclusive = 4;
+    uint32 subrequest_id = 1;
+    string index_uid = 2;
+    string source_id = 3;
+    uint64 shard_id = 4;
+    quickwit.ingest.Position replication_position_inclusive = 5;
 }
 
 message ReplicateFailure {
-    string index_uid = 1;
-    string source_id = 2;
-    uint64 shard_id = 3;
+    uint32 subrequest_id = 1;
+    string index_uid = 2;
+    string source_id = 3;
+    uint64 shard_id = 4;
     // ingest.DocBatchV2 doc_batch = 4;
     // ingest.IngestError error = 5;
 }

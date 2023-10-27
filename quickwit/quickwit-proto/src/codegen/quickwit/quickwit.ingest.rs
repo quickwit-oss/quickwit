@@ -56,9 +56,10 @@ pub struct Shard {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum CommitTypeV2 {
-    Auto = 0,
-    Wait = 1,
-    Force = 2,
+    Unspecified = 0,
+    Auto = 1,
+    Wait = 2,
+    Force = 3,
 }
 impl CommitTypeV2 {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -67,17 +68,19 @@ impl CommitTypeV2 {
     /// (if the ProtoBuf definition does not change) and safe for programmatic use.
     pub fn as_str_name(&self) -> &'static str {
         match self {
-            CommitTypeV2::Auto => "AUTO",
-            CommitTypeV2::Wait => "WAIT",
-            CommitTypeV2::Force => "FORCE",
+            CommitTypeV2::Unspecified => "COMMIT_TYPE_V2_UNSPECIFIED",
+            CommitTypeV2::Auto => "COMMIT_TYPE_V2_AUTO",
+            CommitTypeV2::Wait => "COMMIT_TYPE_V2_WAIT",
+            CommitTypeV2::Force => "COMMIT_TYPE_V2_FORCE",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
-            "AUTO" => Some(Self::Auto),
-            "WAIT" => Some(Self::Wait),
-            "FORCE" => Some(Self::Force),
+            "COMMIT_TYPE_V2_UNSPECIFIED" => Some(Self::Unspecified),
+            "COMMIT_TYPE_V2_AUTO" => Some(Self::Auto),
+            "COMMIT_TYPE_V2_WAIT" => Some(Self::Wait),
+            "COMMIT_TYPE_V2_FORCE" => Some(Self::Force),
             _ => None,
         }
     }
@@ -87,13 +90,14 @@ impl CommitTypeV2 {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum ShardState {
+    Unspecified = 0,
     /// The shard is open and accepts write requests.
-    Open = 0,
+    Open = 1,
     /// The ingester hosting the shard is unavailable.
-    Unavailable = 1,
+    Unavailable = 2,
     /// The shard is closed and cannot be written to.
     /// It can be safely deleted if the publish position is superior or equal to the replication position.
-    Closed = 2,
+    Closed = 3,
 }
 impl ShardState {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -102,17 +106,19 @@ impl ShardState {
     /// (if the ProtoBuf definition does not change) and safe for programmatic use.
     pub fn as_str_name(&self) -> &'static str {
         match self {
-            ShardState::Open => "OPEN",
-            ShardState::Unavailable => "UNAVAILABLE",
-            ShardState::Closed => "CLOSED",
+            ShardState::Unspecified => "SHARD_STATE_UNSPECIFIED",
+            ShardState::Open => "SHARD_STATE_OPEN",
+            ShardState::Unavailable => "SHARD_STATE_UNAVAILABLE",
+            ShardState::Closed => "SHARD_STATE_CLOSED",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
-            "OPEN" => Some(Self::Open),
-            "UNAVAILABLE" => Some(Self::Unavailable),
-            "CLOSED" => Some(Self::Closed),
+            "SHARD_STATE_UNSPECIFIED" => Some(Self::Unspecified),
+            "SHARD_STATE_OPEN" => Some(Self::Open),
+            "SHARD_STATE_UNAVAILABLE" => Some(Self::Unavailable),
+            "SHARD_STATE_CLOSED" => Some(Self::Closed),
             _ => None,
         }
     }

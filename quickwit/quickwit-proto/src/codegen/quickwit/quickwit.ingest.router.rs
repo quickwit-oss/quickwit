@@ -11,11 +11,16 @@ pub struct IngestRequestV2 {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IngestSubrequest {
-    #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
+    /// The subrequest ID is used to identify the various subrequests and responses
+    /// (ingest, persist, replicate) at play during the ingest and replication
+    /// process.
+    #[prost(uint32, tag = "1")]
+    pub subrequest_id: u32,
     #[prost(string, tag = "2")]
+    pub index_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
-    #[prost(message, optional, tag = "3")]
+    #[prost(message, optional, tag = "4")]
     pub doc_batch: ::core::option::Option<super::DocBatchV2>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
@@ -23,42 +28,68 @@ pub struct IngestSubrequest {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IngestResponseV2 {
     #[prost(message, repeated, tag = "1")]
-    pub subresponses: ::prost::alloc::vec::Vec<IngestSubresponse>,
-}
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct IngestSubresponse {
-    #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
-    #[prost(string, tag = "2")]
-    pub source_id: ::prost::alloc::string::String,
-    #[prost(message, repeated, tag = "3")]
     pub successes: ::prost::alloc::vec::Vec<IngestSuccess>,
-    #[prost(message, repeated, tag = "4")]
+    #[prost(message, repeated, tag = "2")]
     pub failures: ::prost::alloc::vec::Vec<IngestFailure>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IngestSuccess {
-    #[prost(string, tag = "1")]
-    pub index_uid: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "1")]
+    pub subrequest_id: u32,
     #[prost(string, tag = "2")]
+    pub index_uid: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
-    #[prost(uint64, tag = "3")]
+    #[prost(uint64, tag = "4")]
     pub shard_id: u64,
     /// Replication position inclusive.
-    #[prost(message, optional, tag = "4")]
+    #[prost(message, optional, tag = "5")]
     pub replication_position_inclusive: ::core::option::Option<crate::types::Position>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IngestFailure {
-    /// IngestFailureReason reason = 2;
-    #[prost(uint64, tag = "1")]
-    pub shard_id: u64,
+    #[prost(uint32, tag = "1")]
+    pub subrequest_id: u32,
+    #[prost(string, tag = "2")]
+    pub index_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub source_id: ::prost::alloc::string::String,
+    #[prost(enumeration = "IngestFailureReason", tag = "5")]
+    pub reason: i32,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum IngestFailureReason {
+    Unspecified = 0,
+    NoShardsAvailable = 1,
+}
+impl IngestFailureReason {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            IngestFailureReason::Unspecified => "INGEST_FAILURE_REASON_UNSPECIFIED",
+            IngestFailureReason::NoShardsAvailable => {
+                "INGEST_FAILURE_REASON_NO_SHARDS_AVAILABLE"
+            }
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "INGEST_FAILURE_REASON_UNSPECIFIED" => Some(Self::Unspecified),
+            "INGEST_FAILURE_REASON_NO_SHARDS_AVAILABLE" => Some(Self::NoShardsAvailable),
+            _ => None,
+        }
+    }
 }
 /// BEGIN quickwit-codegen
 use tower::{Layer, Service, ServiceExt};
