@@ -19,7 +19,7 @@
 
 use std::sync::atomic::Ordering;
 
-use quickwit_proto::PipelineMetrics;
+use quickwit_proto::indexing::PipelineMetrics;
 use serde::Serialize;
 
 use crate::actors::{DocProcessorCounters, IndexerCounters, PublisherCounters, UploaderCounters};

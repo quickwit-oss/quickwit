@@ -31,9 +31,8 @@ use chitchat::{
 };
 use futures::Stream;
 use itertools::Itertools;
+use quickwit_proto::indexing::{IndexingPipelineId, IndexingTask, PipelineMetrics};
 use quickwit_proto::types::NodeId;
-use quickwit_proto::indexing::{IndexingPipelineId, IndexingTask};
-use quickwit_proto::PipelineMetrics;
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, watch, Mutex, RwLock};
 use tokio::time::timeout;

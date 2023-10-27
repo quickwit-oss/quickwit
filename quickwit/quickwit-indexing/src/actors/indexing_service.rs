@@ -46,13 +46,12 @@ use quickwit_metastore::{
 };
 use quickwit_proto::indexing::{
     ApplyIndexingPlanRequest, ApplyIndexingPlanResponse, IndexingError, IndexingPipelineId,
-    IndexingTask,
+    IndexingTask, PipelineMetrics,
 };
 use quickwit_proto::metastore::{
     IndexMetadataRequest, ListIndexesMetadataRequest, MetastoreService, MetastoreServiceClient,
 };
 use quickwit_proto::types::{IndexId, IndexUid};
-use quickwit_proto::PipelineMetrics;
 use quickwit_storage::StorageResolver;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Semaphore;

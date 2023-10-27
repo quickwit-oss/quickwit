@@ -38,12 +38,11 @@ use quickwit_common::temp_dir::TempDirectory;
 use quickwit_config::IndexingSettings;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
-use quickwit_proto::indexing::IndexingPipelineId;
+use quickwit_proto::indexing::{IndexingPipelineId, PipelineMetrics};
 use quickwit_proto::metastore::{
     LastDeleteOpstampRequest, MetastoreService, MetastoreServiceClient,
 };
 use quickwit_proto::types::PublishToken;
-use quickwit_proto::PipelineMetrics;
 use quickwit_query::get_quickwit_fastfield_normalizer_manager;
 use serde::Serialize;
 use tantivy::schema::Schema;
