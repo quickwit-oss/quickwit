@@ -1482,7 +1482,7 @@ impl MetastoreFactory for PostgresqlMetastoreFactory {
 
 #[cfg(test)]
 #[async_trait]
-impl crate::tests::test_suite::DefaultForTest for PostgresqlMetastore {
+impl crate::tests::DefaultForTest for PostgresqlMetastore {
     async fn default_for_test() -> Self {
         // We cannot use a singleton here,
         // because sqlx needs the runtime used to create a connection to
@@ -1507,8 +1507,6 @@ impl crate::tests::test_suite::DefaultForTest for PostgresqlMetastore {
     }
 }
 
-metastore_test_suite!(crate::PostgresqlMetastore);
-
 #[cfg(test)]
 mod tests {
     use quickwit_doc_mapper::tag_pruning::{no_tag, tag, TagFilterAst};
@@ -1518,8 +1516,10 @@ mod tests {
 
     use super::{build_query_filter, tags_filter_expression_helper, PostgresqlMetastore};
     use crate::metastore::postgresql_metastore::build_index_id_patterns_sql_query;
-    use crate::tests::test_suite::DefaultForTest;
-    use crate::{ListSplitsQuery, SplitState};
+    use crate::tests::DefaultForTest;
+    use crate::{metastore_test_suite, ListSplitsQuery, SplitState};
+
+    metastore_test_suite!(crate::PostgresqlMetastore);
 
     #[tokio::test]
     async fn test_metastore_connectivity_and_endpoints() {

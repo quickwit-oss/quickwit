@@ -194,7 +194,7 @@ impl IndexService {
             .await?
             .deserialize_split_ids()?;
         let mark_splits_for_deletion_request =
-            MarkSplitsForDeletionRequest::new(index_uid.to_string(), split_ids);
+            MarkSplitsForDeletionRequest::new(index_uid.clone(), split_ids);
         self.metastore
             .mark_splits_for_deletion(mark_splits_for_deletion_request)
             .await?;
@@ -297,7 +297,7 @@ impl IndexService {
             .map(|split| split.split_id.to_string())
             .collect();
         let mark_splits_for_deletion_request =
-            MarkSplitsForDeletionRequest::new(index_uid.to_string(), split_ids.clone());
+            MarkSplitsForDeletionRequest::new(index_uid.clone(), split_ids.clone());
         self.metastore
             .mark_splits_for_deletion(mark_splits_for_deletion_request)
             .await?;

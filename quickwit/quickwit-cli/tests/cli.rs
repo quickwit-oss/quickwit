@@ -684,7 +684,7 @@ async fn test_garbage_collect_cli_no_grace() {
     let split_ids = vec![splits[0].split_id().to_string()];
     let mut metastore = refresh_metastore(metastore).await.unwrap();
     let mark_for_deletion_request =
-        MarkSplitsForDeletionRequest::new(index_uid.to_string(), split_ids.clone());
+        MarkSplitsForDeletionRequest::new(index_uid.clone(), split_ids.clone());
     metastore
         .mark_splits_for_deletion(mark_for_deletion_request)
         .await
@@ -808,7 +808,7 @@ async fn test_garbage_collect_index_cli() {
     let split = splits[0].clone();
     metastore
         .mark_splits_for_deletion(MarkSplitsForDeletionRequest::new(
-            index_uid.to_string(),
+            index_uid.clone(),
             vec![split.split_metadata.split_id.to_string()],
         ))
         .await
@@ -817,8 +817,8 @@ async fn test_garbage_collect_index_cli() {
         .delete_splits(DeleteSplitsRequest {
             index_uid: index_uid.to_string(),
             split_ids: splits
-                .iter()
-                .map(|split| split.split_metadata.split_id.to_string())
+                .into_iter()
+                .map(|split| split.split_metadata.split_id)
                 .collect(),
         })
         .await

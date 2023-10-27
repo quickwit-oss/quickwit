@@ -103,7 +103,7 @@ pub async fn get_delete_tasks(
         .await?
         .deserialize_index_metadata()?
         .index_uid;
-    let list_delete_tasks_request = ListDeleteTasksRequest::new(index_uid.to_string(), 0);
+    let list_delete_tasks_request = ListDeleteTasksRequest::new(index_uid, 0);
     let delete_tasks = metastore
         .list_delete_tasks(list_delete_tasks_request)
         .await?

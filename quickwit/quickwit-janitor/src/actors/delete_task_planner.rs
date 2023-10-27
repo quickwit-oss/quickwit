@@ -225,7 +225,7 @@ impl DeleteTaskPlanner {
 
         for stale_split in stale_splits {
             let list_delete_tasks_request = ListDeleteTasksRequest::new(
-                self.index_uid.to_string(),
+                self.index_uid.clone(),
                 stale_split.split_metadata.delete_opstamp,
             );
             let pending_tasks = ctx

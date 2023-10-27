@@ -28,8 +28,6 @@
 //! - PostgreSQL metastore
 //! etc.
 
-#[macro_use]
-mod tests;
 #[allow(missing_docs)]
 pub mod checkpoint;
 mod error;
@@ -38,6 +36,8 @@ mod metastore_factory;
 mod metastore_resolver;
 mod split_metadata;
 mod split_metadata_version;
+#[cfg(test)]
+pub(crate) mod tests;
 
 use std::ops::Range;
 
@@ -100,21 +100,9 @@ pub fn split_tag_filter(
 mod backward_compatibility_tests;
 
 #[cfg(any(test, feature = "testsuite"))]
-mod for_test {
-    use std::sync::Arc;
-
-    use quickwit_proto::metastore::MetastoreServiceClient;
-    use quickwit_storage::RamStorage;
-
-    use super::FileBackedMetastore;
-
-    /// Returns a metastore backed by an "in-memory file" for testing.
-    pub fn metastore_for_test() -> MetastoreServiceClient {
-        MetastoreServiceClient::new(FileBackedMetastore::for_test(Arc::new(
-            RamStorage::default(),
-        )))
-    }
+/// Returns a metastore backed by an "in-memory file" for testing.
+pub fn metastore_for_test() -> quickwit_proto::metastore::MetastoreServiceClient {
+    quickwit_proto::metastore::MetastoreServiceClient::new(FileBackedMetastore::for_test(
+        std::sync::Arc::new(quickwit_storage::RamStorage::default()),
+    ))
 }
-
-#[cfg(any(test, feature = "testsuite"))]
-pub use for_test::metastore_for_test;
