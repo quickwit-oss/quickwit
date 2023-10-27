@@ -302,10 +302,10 @@ impl Cluster {
         tokio::time::sleep(GOSSIP_INTERVAL * 2).await;
     }
 
-    /// This exposes in chitchat some metric about the cpu usage of cooperative pipelines.
-    /// The metric are exposed as follows:
+    /// This exposes in chitchat some metrics about the CPU usage of cooperative pipelines.
+    /// The metrics are exposed as follows:
     /// Key:        pipeline_metrics:<index_uid>:<source_id>
-    /// Value:      79‰,76MB/s
+    /// Value:      179‰,76MB/s
     pub async fn update_self_node_pipeline_metrics(
         &self,
         pipeline_metrics: &HashMap<&IndexingPipelineId, PipelineMetrics>,
