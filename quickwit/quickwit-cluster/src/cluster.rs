@@ -43,7 +43,7 @@ use tracing::{info, warn};
 use crate::change::{compute_cluster_change_events, ClusterChange};
 use crate::member::{
     build_cluster_member, ClusterMember, NodeStateExt, ENABLED_SERVICES_KEY,
-    GRPC_ADVERTISE_ADDR_KEY, INDEXING_TASK_PREFIX, PIPELINE_METRICS_KEY, READINESS_KEY,
+    GRPC_ADVERTISE_ADDR_KEY, INDEXING_TASK_PREFIX, PIPELINE_METRICS_PREFIX, READINESS_KEY,
     READINESS_VALUE_NOT_READY, READINESS_VALUE_READY,
 };
 use crate::ClusterNode;
@@ -311,17 +311,24 @@ impl Cluster {
     ) {
         let chitchat = self.chitchat().await;
         let mut chitchat_guard = chitchat.lock().await;
+        let node_state = chitchat_guard.self_node_state();
+        let mut current_metrics_keys: HashSet<String> = node_state
+            .iter_prefix(PIPELINE_METRICS_PREFIX)
+            .map(|(key, _)| key.to_string())
+            .collect();
         for (pipeline_id, metrics) in pipeline_metrics {
-            let key = format!("{PIPELINE_METRICS_KEY}:{pipeline_id}");
-            chitchat_guard
-                .self_node_state()
-                .set(key, metrics.to_string());
+            let key = format!("{PIPELINE_METRICS_PREFIX}{pipeline_id}");
+            current_metrics_keys.remove(&key);
+            node_state.set(key, metrics.to_string());
+        }
+        for obsolete_task_key in current_metrics_keys {
+            node_state.mark_for_deletion(&obsolete_task_key);
         }
     }
 
     /// Updates indexing tasks in chitchat state.
     /// Tasks are grouped by (index_id, source_id), each group is stored in a key as follows:
-    /// - key: `{INDEXING_TASK_PREFIX}{INDEXING_TASK_SEPARATOR}{index_id}{INDEXING_TASK_SEPARATOR}{source_id}`
+    /// - key: `{INDEXING_TASK_PREFIX}{index_id}{INDEXING_TASK_SEPARATOR}{source_id}`
     /// - value: Number of indexing tasks in the group.
     /// Keys present in chitchat state but not in the given `indexing_tasks` are marked for
     /// deletion.
@@ -331,24 +338,20 @@ impl Cluster {
     ) -> anyhow::Result<()> {
         let chitchat = self.chitchat().await;
         let mut chitchat_guard = chitchat.lock().await;
-        let mut current_indexing_tasks_keys: HashSet<_> = chitchat_guard
-            .self_node_state()
-            .key_values(|key, _| key.starts_with(INDEXING_TASK_PREFIX))
+        let node_state = chitchat_guard.self_node_state();
+        let mut current_indexing_tasks_keys: HashSet<String> = node_state
+            .iter_prefix(INDEXING_TASK_PREFIX)
             .map(|(key, _)| key.to_string())
             .collect();
         for (indexing_task, indexing_tasks_group) in
             indexing_tasks.iter().group_by(|&task| task).into_iter()
         {
-            let key = format!("{INDEXING_TASK_PREFIX}:{indexing_task}");
+            let key = format!("{INDEXING_TASK_PREFIX}{indexing_task}");
             current_indexing_tasks_keys.remove(&key);
-            chitchat_guard
-                .self_node_state()
-                .set(key, indexing_tasks_group.count().to_string());
+            node_state.set(key, indexing_tasks_group.count().to_string());
         }
         for obsolete_task_key in current_indexing_tasks_keys {
-            chitchat_guard
-                .self_node_state()
-                .mark_for_deletion(&obsolete_task_key);
+            node_state.mark_for_deletion(&obsolete_task_key);
         }
         Ok(())
     }
@@ -967,13 +970,11 @@ mod tests {
             let chitchat_handle = node.inner.read().await.chitchat_handle.chitchat();
             let mut chitchat_guard = chitchat_handle.lock().await;
             chitchat_guard.self_node_state().set(
-                format!(
-                    "{INDEXING_TASK_PREFIX}:my_good_index:my_source:11111111111111111111111111"
-                ),
+                format!("{INDEXING_TASK_PREFIX}my_good_index:my_source:11111111111111111111111111"),
                 "2".to_string(),
             );
             chitchat_guard.self_node_state().set(
-                format!("{INDEXING_TASK_PREFIX}:my_bad_index:my_source:11111111111111111111111111"),
+                format!("{INDEXING_TASK_PREFIX}my_bad_index:my_source:11111111111111111111111111"),
                 "malformatted value".to_string(),
             );
         }
