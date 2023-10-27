@@ -75,9 +75,10 @@ export class Client {
   }
 
   async getAllSplits(indexId: string): Promise<Array<SplitMetadata>> {
-    const splits: Array<SplitMetadata> = await this.fetch(`${this.apiRoot()}indexes/${indexId}/splits`, {});
+    // TODO: restrieve all the splits.
+    const results: {splits: Array<SplitMetadata>} = await this.fetch(`${this.apiRoot()}indexes/${indexId}/splits?limit=10000`, {});
 
-    return splits;
+    return results['splits'];
   }
 
   async listIndexes(): Promise<Array<IndexMetadata>> {
