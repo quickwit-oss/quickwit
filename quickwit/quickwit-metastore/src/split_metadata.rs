@@ -152,24 +152,24 @@ impl fmt::Debug for SplitMetadata {
         if !self.tags.is_empty() {
             let mut tags_iter = self.tags.iter();
             let mut tags_str = String::new();
-            tags_str.push_str("{");
+            tags_str.push('{');
             for _ in 0..4 {
                 if let Some(tag) = tags_iter.next() {
-                    tags_str.push_str("\"");
+                    tags_str.push('"');
                     tags_str.push_str(tag);
                     tags_str.push_str("\", ");
                 } else {
                     break;
                 }
             }
-            if let Some(_) = tags_iter.next() {
+            if tags_iter.next().is_some() {
                 let remaining_count = self.tags.len() - 4;
                 tags_str.push_str(&format!("and {} more", remaining_count));
             } else {
                 tags_str.pop();
                 tags_str.pop();
             }
-            tags_str.push_str("}");
+            tags_str.push('}');
             debug_struct.field("tags", &tags_str);
         }
         debug_struct.field("footer_offsets", &self.footer_offsets);
