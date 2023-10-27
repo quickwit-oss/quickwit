@@ -1062,7 +1062,9 @@ mod tests {
             .await
             .unwrap();
         universe.sleep(Duration::from_secs(3)).await;
-        let indexer_counters = indexer_handle.observe().await.state;
+        let mut indexer_counters = indexer_handle.observe().await.state;
+        indexer_counters.pipeline_metrics_opt = None;
+
         assert_eq!(
             indexer_counters,
             IndexerCounters {

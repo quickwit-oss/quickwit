@@ -24,6 +24,7 @@ use quickwit_cluster::Cluster;
 use quickwit_common::pubsub::EventBroker;
 use quickwit_config::NodeConfig;
 use quickwit_ingest::{IngestApiService, IngesterPool};
+use quickwit_proto::indexing::PipelineMetrics;
 use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_storage::StorageResolver;
 use tracing::info;
@@ -53,7 +54,7 @@ use self::merge_policy::MergePolicy;
 pub use self::source::check_source_connectivity;
 
 #[derive(utoipa::OpenApi)]
-#[openapi(components(schemas(IndexingStatistics)))]
+#[openapi(components(schemas(IndexingStatistics, PipelineMetrics)))]
 /// Schema used for the OpenAPI generation which are apart of this crate.
 pub struct IndexingApiSchemas;
 
