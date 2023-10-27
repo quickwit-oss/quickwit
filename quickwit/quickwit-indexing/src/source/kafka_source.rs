@@ -1002,7 +1002,7 @@ mod kafka_broker_tests {
 
         let metastore = metastore_for_test();
         let index_id = append_random_suffix("test-kafka-source--process-message--index");
-        let index_uid = IndexUid::new(&index_id);
+        let index_uid = IndexUid::new_with_random_ulid(&index_id);
         let (_source_id, source_config) = get_source_config(&topic);
         let SourceParams::Kafka(params) = source_config.clone().source_params else {
             panic!(
@@ -1191,7 +1191,7 @@ mod kafka_broker_tests {
 
         let metastore = metastore_for_test();
         let index_id = append_random_suffix("test-kafka-source--process-revoke--partitions--index");
-        let index_uid = IndexUid::new(&index_id);
+        let index_uid = IndexUid::new_with_random_ulid(&index_id);
         let (_source_id, source_config) = get_source_config(&topic);
         let SourceParams::Kafka(params) = source_config.clone().source_params else {
             panic!(
@@ -1249,7 +1249,7 @@ mod kafka_broker_tests {
 
         let metastore = metastore_for_test();
         let index_id = append_random_suffix("test-kafka-source--process-partition-eof--index");
-        let index_uid = IndexUid::new(&index_id);
+        let index_uid = IndexUid::new_with_random_ulid(&index_id);
         let (_source_id, source_config) = get_source_config(&topic);
         let SourceParams::Kafka(params) = source_config.clone().source_params else {
             panic!(

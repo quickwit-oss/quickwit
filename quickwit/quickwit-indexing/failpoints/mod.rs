@@ -297,7 +297,7 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
         tantivy_dirs,
     };
     let pipeline_id = IndexingPipelineId {
-        index_uid: IndexUid::new(index_id.to_string()),
+        index_uid: IndexUid::new_with_random_ulid(index_id.to_string()),
         source_id: "test-source".to_string(),
         node_id: "test-node".to_string(),
         pipeline_ord: 0,

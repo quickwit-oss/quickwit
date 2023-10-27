@@ -785,7 +785,7 @@ mod tests {
                 Ok(list_shards_resp)
             },
         );
-        let index_uid = IndexUid::new("test-index");
+        let index_uid = IndexUid::new_with_random_ulid("test-index");
         let index_uid_string = index_uid.to_string();
         mock_metastore.expect_create_index().times(1).return_once(
             |_create_index_request: CreateIndexRequest| {

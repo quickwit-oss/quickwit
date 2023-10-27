@@ -715,7 +715,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_indexer_triggers_commit_on_target_num_docs() -> anyhow::Result<()> {
-        let index_uid = IndexUid::new("test-index");
+        let index_uid = IndexUid::new_with_random_ulid("test-index");
         let pipeline_id = IndexingPipelineId {
             index_uid: index_uid.clone(),
             source_id: "test-source".to_string(),
@@ -852,7 +852,7 @@ mod tests {
     #[tokio::test]
     async fn test_indexer_triggers_commit_on_memory_limit() -> anyhow::Result<()> {
         let universe = Universe::new();
-        let index_uid = IndexUid::new("test-index");
+        let index_uid = IndexUid::new_with_random_ulid("test-index");
         let pipeline_id = IndexingPipelineId {
             index_uid: index_uid.clone(),
             source_id: "test-source".to_string(),
@@ -931,7 +931,7 @@ mod tests {
     async fn test_indexer_triggers_commit_on_timeout() -> anyhow::Result<()> {
         let universe = Universe::new();
         let pipeline_id = IndexingPipelineId {
-            index_uid: IndexUid::new("test-index"),
+            index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
@@ -1015,7 +1015,7 @@ mod tests {
     async fn test_indexer_triggers_commit_on_drained_mailbox() -> anyhow::Result<()> {
         let universe = Universe::new();
         let pipeline_id = IndexingPipelineId {
-            index_uid: IndexUid::new("test-index"),
+            index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
@@ -1090,7 +1090,7 @@ mod tests {
     async fn test_indexer_triggers_commit_on_quit() -> anyhow::Result<()> {
         let universe = Universe::with_accelerated_time();
         let pipeline_id = IndexingPipelineId {
-            index_uid: IndexUid::new("test-index"),
+            index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
@@ -1169,7 +1169,7 @@ mod tests {
     async fn test_indexer_partitioning() -> anyhow::Result<()> {
         let universe = Universe::with_accelerated_time();
         let pipeline_id = IndexingPipelineId {
-            index_uid: IndexUid::new("test-index"),
+            index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
@@ -1267,7 +1267,7 @@ mod tests {
     async fn test_indexer_exceeding_max_num_partitions() {
         let universe = Universe::with_accelerated_time();
         let pipeline_id = IndexingPipelineId {
-            index_uid: IndexUid::new("test-index"),
+            index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
@@ -1337,7 +1337,7 @@ mod tests {
     async fn test_indexer_propagates_publish_lock() {
         let universe = Universe::with_accelerated_time();
         let pipeline_id = IndexingPipelineId {
-            index_uid: IndexUid::new("test-index"),
+            index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
@@ -1409,7 +1409,7 @@ mod tests {
     async fn test_indexer_ignores_messages_when_publish_lock_is_dead() {
         let universe = Universe::with_accelerated_time();
         let pipeline_id = IndexingPipelineId {
-            index_uid: IndexUid::new("test-index"),
+            index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
@@ -1474,7 +1474,7 @@ mod tests {
     async fn test_indexer_honors_batch_commit_request() {
         let universe = Universe::with_accelerated_time();
         let pipeline_id = IndexingPipelineId {
-            index_uid: IndexUid::new("test-index"),
+            index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
@@ -1535,7 +1535,7 @@ mod tests {
     #[tokio::test]
     async fn test_indexer_checkpoint_on_all_failed_docs() -> anyhow::Result<()> {
         let pipeline_id = IndexingPipelineId {
-            index_uid: IndexUid::new("test-index"),
+            index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,

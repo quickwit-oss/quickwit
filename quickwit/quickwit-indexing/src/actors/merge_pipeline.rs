@@ -499,7 +499,7 @@ mod tests {
     #[tokio::test]
     async fn test_merge_pipeline_simple() -> anyhow::Result<()> {
         let mut metastore = MetastoreServiceClient::mock();
-        let index_uid = IndexUid::new("test-index");
+        let index_uid = IndexUid::new_with_random_ulid("test-index");
         let pipeline_id = IndexingPipelineId {
             index_uid: index_uid.clone(),
             source_id: "test-source".to_string(),

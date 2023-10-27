@@ -833,7 +833,7 @@ mod tests {
         let node_id = "test-node";
         let doc_mapper = Arc::new(default_doc_mapper_for_test());
         let pipeline_id = IndexingPipelineId {
-            index_uid: IndexUid::new("test-index"),
+            index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
             node_id: node_id.to_string(),
             pipeline_ord: 0,

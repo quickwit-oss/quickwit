@@ -144,7 +144,7 @@ mod tests {
         source_loader
             .load_source(
                 SourceRuntimeArgs::for_test(
-                    IndexUid::new("test-index"),
+                    IndexUid::new_with_random_ulid("test-index"),
                     source_config,
                     metastore,
                     PathBuf::from("./queues"),

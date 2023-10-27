@@ -17,7 +17,6 @@
         "stored": true,
         "tokenizer": "raw"
       },
-      "index_field_presence": false,
       "field_mappings": [
         {
           "coerce": true,
@@ -30,6 +29,7 @@
         },
         {
           "fast": true,
+          "fast_precision": "seconds",
           "indexed": true,
           "input_formats": [
             "rfc3339",
@@ -37,7 +37,6 @@
           ],
           "name": "timestamp",
           "output_format": "rfc3339",
-          "fast_precision": "seconds",
           "stored": true,
           "type": "datetime"
         },
@@ -62,6 +61,7 @@
           "type": "text"
         }
       ],
+      "index_field_presence": false,
       "max_num_partitions": 100,
       "mode": "dynamic",
       "partition_key": "tenant",
@@ -102,7 +102,7 @@
     },
     "version": "0.6"
   },
-  "index_uid": "my-index",
+  "index_uid": "my-index:",
   "sources": [
     {
       "desired_num_pipelines": 2,

@@ -419,7 +419,7 @@ mod tests {
 
         publisher_mailbox
             .send_message(SplitsUpdate {
-                index_uid: IndexUid::new("index"),
+                index_uid: IndexUid::new_with_random_ulid("index"),
                 new_splits: vec![SplitMetadata::for_test("test-split".to_string())],
                 replaced_split_ids: Vec::new(),
                 checkpoint_delta_opt: None,

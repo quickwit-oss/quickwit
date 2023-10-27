@@ -475,7 +475,7 @@ mod tests {
         let split_id = "test-run-gc--split";
         let split_metadata = SplitMetadata {
             split_id: split_id.to_string(),
-            index_uid: IndexUid::new(index_id),
+            index_uid: IndexUid::new_with_random_ulid(index_id),
             ..Default::default()
         };
         let stage_splits_request =
@@ -566,7 +566,7 @@ mod tests {
             .times(2)
             .returning(|_| Ok(ListSplitsResponse::empty()));
         run_garbage_collect(
-            IndexUid::new("index-test-gc-deletes"),
+            IndexUid::new_with_random_ulid("index-test-gc-deletes"),
             storage.clone(),
             MetastoreServiceClient::from(metastore),
             Duration::from_secs(30),
@@ -597,7 +597,7 @@ mod tests {
         let split_id = "test-delete-splits-happy--split";
         let split_metadata = SplitMetadata {
             split_id: split_id.to_string(),
-            index_uid: IndexUid::new(index_id),
+            index_uid: IndexUid::new_with_random_ulid(index_id),
             ..Default::default()
         };
         let stage_splits_request =
@@ -772,7 +772,7 @@ mod tests {
         let storage = Arc::new(mock_storage);
 
         let index_id = "test-delete-splits-storage-error--index";
-        let index_uid = IndexUid::new(index_id.to_string());
+        let index_uid = IndexUid::new_with_random_ulid(&index_id);
 
         let mut mock_metastore = MetastoreServiceClient::mock();
         mock_metastore.expect_delete_splits().return_once(|_| {

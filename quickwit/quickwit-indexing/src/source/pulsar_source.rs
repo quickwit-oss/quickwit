@@ -815,7 +815,7 @@ mod pulsar_broker_tests {
         let topic = append_random_suffix("test-pulsar-source-topic");
 
         let index_id = append_random_suffix("test-pulsar-source-index");
-        let index_uid = IndexUid::new(&index_id);
+        let index_uid = IndexUid::new_with_random_ulid(&index_id);
         let (_source_id, source_config) = get_source_config([&topic]);
         let params = if let SourceParams::Pulsar(params) = source_config.clone().source_params {
             params

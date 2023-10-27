@@ -504,7 +504,7 @@ mod tests {
         let event_broker = EventBroker::default();
         let universe = Universe::new();
         let pipeline_id = IndexingPipelineId {
-            index_uid: IndexUid::new("test-index"),
+            index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
@@ -615,7 +615,7 @@ mod tests {
     #[tokio::test]
     async fn test_uploader_with_sequencer_emits_replace() -> anyhow::Result<()> {
         let pipeline_id = IndexingPipelineId {
-            index_uid: IndexUid::new("test-index"),
+            index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
@@ -867,7 +867,7 @@ mod tests {
         };
         uploader_mailbox
             .send_message(EmptySplit {
-                index_uid: IndexUid::new("test-index"),
+                index_uid: IndexUid::new_with_random_ulid("test-index"),
                 checkpoint_delta,
                 publish_lock: PublishLock::default(),
                 publish_token_opt: None,
@@ -943,7 +943,7 @@ mod tests {
 
         let universe = Universe::new();
         let pipeline_id = IndexingPipelineId {
-            index_uid: IndexUid::new("test-index"),
+            index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,
