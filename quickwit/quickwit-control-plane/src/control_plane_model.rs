@@ -267,10 +267,10 @@ impl ControlPlaneModel {
         enable: bool,
     ) -> anyhow::Result<bool> {
         let Some(index_model) = self.index_table.get_mut(index_uid) else {
-            bail!("Index `{}` not found.", index_uid);
+            bail!("index `{index_uid}` not found");
         };
         let Some(source_config) = index_model.sources.get_mut(source_id) else {
-            bail!("Source `{}` not found.", source_id);
+            bail!("source `{source_id}` not found.");
         };
         source_config.enabled = enable;
         Ok(enable)
