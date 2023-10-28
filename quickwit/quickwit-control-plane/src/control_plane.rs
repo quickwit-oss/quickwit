@@ -317,17 +317,21 @@ impl Handler<ToggleSourceRequest> for ControlPlane {
         request: ToggleSourceRequest,
         _ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
+        let index_uid: IndexUid = request.index_uid.clone().into();
+        let source_id = request.source_id.clone();
+        let enable = request.enable;
+
         if let Err(error) = self.metastore.toggle_source(request).await {
             return Ok(Err(ControlPlaneError::from(error)));
         };
 
-        // TODO update the internal view.
-        // TODO: Refine the event. Notify index will have the effect to reload the entire state from
-        // the metastore. We should update the state of the control plane.
-        self.indexing_scheduler.on_index_change(&self.model).await?;
+        let has_changed = self.model.toggle_source(&index_uid, &source_id, enable)?;
 
-        let response = EmptyResponse {};
-        Ok(Ok(response))
+        if has_changed {
+            self.indexing_scheduler.on_index_change(&self.model).await?;
+        }
+
+        Ok(Ok(EmptyResponse {}))
     }
 }
 
@@ -557,6 +561,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_control_plane_toggle_source() {
+        quickwit_common::setup_logging_for_tests();
         let universe = Universe::with_accelerated_time();
 
         let cluster_id = "test-cluster".to_string();
@@ -565,20 +570,36 @@ mod tests {
         let ingester_pool = IngesterPool::default();
 
         let mut mock_metastore = MetastoreServiceClient::mock();
-        mock_metastore
-            .expect_toggle_source()
-            .withf(|toggle_source_request| {
-                assert_eq!(toggle_source_request.index_uid, "test-index:0");
-                assert_eq!(toggle_source_request.source_id, "test-source");
-                assert!(toggle_source_request.enable);
-                true
-            })
-            .returning(|_| Ok(EmptyResponse {}));
+        let mut index_metadata = IndexMetadata::for_test("test-index", "ram://toto");
+        let test_source_config = SourceConfig::for_test("test-source", SourceParams::void());
+        index_metadata.add_source(test_source_config).unwrap();
         mock_metastore
             .expect_list_indexes_metadata()
-            .returning(|_| {
-                Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(Vec::new()).unwrap())
+            .return_once(|_| {
+                Ok(
+                    ListIndexesMetadataResponse::try_from_indexes_metadata(vec![index_metadata])
+                        .unwrap(),
+                )
             });
+
+        mock_metastore
+            .expect_toggle_source()
+            .times(1)
+            .return_once(|toggle_source_request| {
+                assert_eq!(toggle_source_request.index_uid, "test-index:0");
+                assert_eq!(toggle_source_request.source_id, "test-source");
+                Ok(EmptyResponse {})
+            });
+        mock_metastore
+            .expect_toggle_source()
+            .times(1)
+            .return_once(|toggle_source_request| {
+                assert_eq!(toggle_source_request.index_uid, "test-index:0");
+                assert_eq!(toggle_source_request.source_id, "test-source");
+                assert!(!toggle_source_request.enable);
+                Ok(EmptyResponse {})
+            });
+
         let replication_factor = 1;
 
         let (control_plane_mailbox, _control_plane_handle) = ControlPlane::spawn(
@@ -590,17 +611,26 @@ mod tests {
             MetastoreServiceClient::from(mock_metastore),
             replication_factor,
         );
-        let toggle_source_request = ToggleSourceRequest {
+
+        let enabling_source_req = ToggleSourceRequest {
             index_uid: "test-index:0".to_string(),
             source_id: "test-source".to_string(),
             enable: true,
         };
         control_plane_mailbox
-            .ask_for_res(toggle_source_request)
+            .ask_for_res(enabling_source_req)
             .await
             .unwrap();
 
-        // TODO: Test that delete index event is properly sent to ingest controller.
+        let disabling_source_req = ToggleSourceRequest {
+            index_uid: "test-index:0".to_string(),
+            source_id: "test-source".to_string(),
+            enable: false,
+        };
+        control_plane_mailbox
+            .ask_for_res(disabling_source_req)
+            .await
+            .unwrap();
 
         universe.assert_quit().await;
     }

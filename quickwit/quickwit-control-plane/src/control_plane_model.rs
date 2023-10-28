@@ -20,6 +20,7 @@
 use std::collections::hash_map::Entry;
 use std::time::Instant;
 
+use anyhow::bail;
 use fnv::{FnvHashMap, FnvHashSet};
 #[cfg(test)]
 use itertools::Itertools;
@@ -37,7 +38,7 @@ use quickwit_proto::metastore::{
 };
 use quickwit_proto::types::{IndexId, IndexUid, NodeId, NodeIdRef, ShardId, SourceId};
 use serde::Serialize;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::SourceUid;
 
@@ -245,7 +246,35 @@ impl ControlPlaneModel {
     }
 
     pub(crate) fn delete_source(&mut self, index_uid: &IndexUid, source_id: &SourceId) {
+        // Removing shards from shard table.
         self.shard_table.delete_source(index_uid, source_id);
+        // Remove source from index config.
+        let Some(index_model) = self.index_table.get_mut(index_uid) else {
+            warn!(index_uid=%index_uid, source_id=%source_id, "delete source: index not found");
+            return;
+        };
+        if index_model.sources.remove(source_id).is_none() {
+            warn!(index_uid=%index_uid, source_id=%source_id, "delete source: source not found");
+        };
+    }
+
+    /// Returns `true` if the source status has changed, `false` otherwise.
+    /// Returns an error if the source could not be found.
+    pub(crate) fn toggle_source(
+        &mut self,
+        index_uid: &IndexUid,
+        source_id: &SourceId,
+        enable: bool,
+    ) -> anyhow::Result<bool> {
+        let Some(index_model) = self.index_table.get_mut(index_uid) else {
+            bail!("index `{index_uid}` not found");
+        };
+        let Some(source_config) = index_model.sources.get_mut(source_id) else {
+            bail!("source `{source_id}` not found.");
+        };
+        let has_changed = source_config.enabled != enable;
+        source_config.enabled = enable;
+        Ok(has_changed)
     }
 
     /// Removes the shards identified by their index UID, source ID, and shard IDs.
@@ -492,7 +521,7 @@ impl ShardTable {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_config::SourceConfig;
+    use quickwit_config::{SourceConfig, SourceParams};
     use quickwit_metastore::IndexMetadata;
     use quickwit_proto::ingest::Shard;
     use quickwit_proto::metastore::ListIndexesMetadataResponse;
@@ -858,5 +887,51 @@ mod tests {
         let shards = table_entry.shards();
         assert_eq!(shards.len(), 0);
         assert_eq!(table_entry.next_shard_id, 1);
+    }
+
+    #[test]
+    fn test_control_plane_model_toggle_source() {
+        let mut model = ControlPlaneModel::default();
+        let index_metadata = IndexMetadata::for_test("test-index", "ram://");
+        let index_uid = index_metadata.index_uid.clone();
+        model.add_index(index_metadata);
+        let source_config = SourceConfig::for_test("test-source", SourceParams::void());
+        model.add_source(&index_uid, source_config).unwrap();
+        {
+            let has_changed = model
+                .toggle_source(&index_uid, &"test-source".to_string(), true)
+                .unwrap();
+            assert!(!has_changed);
+        }
+        {
+            let has_changed = model
+                .toggle_source(&index_uid, &"test-source".to_string(), true)
+                .unwrap();
+            assert!(!has_changed);
+        }
+        {
+            let has_changed = model
+                .toggle_source(&index_uid, &"test-source".to_string(), false)
+                .unwrap();
+            assert!(has_changed);
+        }
+        {
+            let has_changed = model
+                .toggle_source(&index_uid, &"test-source".to_string(), false)
+                .unwrap();
+            assert!(!has_changed);
+        }
+        {
+            let has_changed = model
+                .toggle_source(&index_uid, &"test-source".to_string(), true)
+                .unwrap();
+            assert!(has_changed);
+        }
+        {
+            let has_changed = model
+                .toggle_source(&index_uid, &"test-source".to_string(), true)
+                .unwrap();
+            assert!(!has_changed);
+        }
     }
 }
