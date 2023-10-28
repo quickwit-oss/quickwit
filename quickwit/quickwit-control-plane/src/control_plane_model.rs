@@ -272,8 +272,9 @@ impl ControlPlaneModel {
         let Some(source_config) = index_model.sources.get_mut(source_id) else {
             bail!("source `{source_id}` not found.");
         };
+        let has_changed = source_config.enabled != enable;
         source_config.enabled = enable;
-        Ok(enable)
+        Ok(has_changed)
     }
 
     /// Removes the shards identified by their index UID, source ID, and shard IDs.
@@ -520,7 +521,7 @@ impl ShardTable {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_config::SourceConfig;
+    use quickwit_config::{SourceConfig, SourceParams};
     use quickwit_metastore::IndexMetadata;
     use quickwit_proto::ingest::Shard;
     use quickwit_proto::metastore::ListIndexesMetadataResponse;
@@ -886,5 +887,51 @@ mod tests {
         let shards = table_entry.shards();
         assert_eq!(shards.len(), 0);
         assert_eq!(table_entry.next_shard_id, 1);
+    }
+
+    #[test]
+    fn test_control_plane_model_toggle_source() {
+        let mut model = ControlPlaneModel::default();
+        let index_metadata = IndexMetadata::for_test("test-index", "ram://");
+        let index_uid = index_metadata.index_uid.clone();
+        model.add_index(index_metadata);
+        let source_config = SourceConfig::for_test("test-source", SourceParams::void());
+        model.add_source(&index_uid, source_config).unwrap();
+        {
+            let has_changed = model
+                .toggle_source(&index_uid, &"test-source".to_string(), true)
+                .unwrap();
+            assert!(!has_changed);
+        }
+        {
+            let has_changed = model
+                .toggle_source(&index_uid, &"test-source".to_string(), true)
+                .unwrap();
+            assert!(!has_changed);
+        }
+        {
+            let has_changed = model
+                .toggle_source(&index_uid, &"test-source".to_string(), false)
+                .unwrap();
+            assert!(has_changed);
+        }
+        {
+            let has_changed = model
+                .toggle_source(&index_uid, &"test-source".to_string(), false)
+                .unwrap();
+            assert!(!has_changed);
+        }
+        {
+            let has_changed = model
+                .toggle_source(&index_uid, &"test-source".to_string(), true)
+                .unwrap();
+            assert!(has_changed);
+        }
+        {
+            let has_changed = model
+                .toggle_source(&index_uid, &"test-source".to_string(), true)
+                .unwrap();
+            assert!(!has_changed);
+        }
     }
 }
