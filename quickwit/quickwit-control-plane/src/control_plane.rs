@@ -317,14 +317,22 @@ impl Handler<ToggleSourceRequest> for ControlPlane {
         request: ToggleSourceRequest,
         _ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
+        let index_uid: IndexUid = request.index_uid.clone().into();
+        let source_id = request.source_id.clone();
+        let enable = request.enable;
+
         if let Err(error) = self.metastore.toggle_source(request).await {
             return Ok(Err(ControlPlaneError::from(error)));
         };
 
+        let has_changed = self.model.toggle_source(&index_uid, &source_id, enable)?;
+
         // TODO update the internal view.
         // TODO: Refine the event. Notify index will have the effect to reload the entire state from
         // the metastore. We should update the state of the control plane.
-        self.indexing_scheduler.on_index_change(&self.model).await?;
+        if has_changed {
+            self.indexing_scheduler.on_index_change(&self.model).await?;
+        }
 
         let response = EmptyResponse {};
         Ok(Ok(response))
