@@ -126,13 +126,8 @@ impl Actor for ControlPlane {
             .await
             .context("failed to intialize the model")?;
 
-        if let Err(error) = self
-            .indexing_scheduler
-            .schedule_indexing_plan_if_needed(&self.model)
-        {
-            // TODO inspect error.
-            error!("error when scheduling indexing plan: `{}`.", error);
-        }
+        self.indexing_scheduler
+            .schedule_indexing_plan_if_needed(&self.model);
 
         ctx.schedule_self_msg(CONTROL_PLAN_LOOP_INTERVAL, ControlPlanLoop)
             .await;
@@ -149,9 +144,7 @@ impl Handler<ControlPlanLoop> for ControlPlane {
         _message: ControlPlanLoop,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        if let Err(error) = self.indexing_scheduler.control_running_plan(&self.model) {
-            error!("error when controlling the running plan: `{}`", error);
-        }
+        self.indexing_scheduler.control_running_plan(&self.model);
         ctx.schedule_self_msg(CONTROL_PLAN_LOOP_INTERVAL, ControlPlanLoop)
             .await;
         Ok(())
@@ -264,7 +257,8 @@ impl Handler<DeleteIndexRequest> for ControlPlane {
 
         // TODO: Refine the event. Notify index will have the effect to reload the entire state from
         // the metastore. We should update the state of the control plane.
-        self.indexing_scheduler.on_index_change(&self.model).await?;
+        self.indexing_scheduler
+            .schedule_indexing_plan_if_needed(&self.model);
 
         Ok(Ok(response))
     }
@@ -299,7 +293,8 @@ impl Handler<AddSourceRequest> for ControlPlane {
 
         // TODO: Refine the event. Notify index will have the effect to reload the entire state from
         // the metastore. We should update the state of the control plane.
-        self.indexing_scheduler.on_index_change(&self.model).await?;
+        self.indexing_scheduler
+            .schedule_indexing_plan_if_needed(&self.model);
 
         let response = EmptyResponse {};
         Ok(Ok(response))
@@ -328,7 +323,8 @@ impl Handler<ToggleSourceRequest> for ControlPlane {
         let has_changed = self.model.toggle_source(&index_uid, &source_id, enable)?;
 
         if has_changed {
-            self.indexing_scheduler.on_index_change(&self.model).await?;
+            self.indexing_scheduler
+                .schedule_indexing_plan_if_needed(&self.model);
         }
 
         Ok(Ok(EmptyResponse {}))
@@ -352,7 +348,8 @@ impl Handler<DeleteSourceRequest> for ControlPlane {
             return convert_metastore_error(metastore_error);
         };
         self.model.delete_source(&index_uid, &source_id);
-        self.indexing_scheduler.on_index_change(&self.model).await?;
+        self.indexing_scheduler
+            .schedule_indexing_plan_if_needed(&self.model);
         let response = EmptyResponse {};
         Ok(Ok(response))
     }
@@ -382,7 +379,8 @@ impl Handler<GetOrCreateOpenShardsRequest> for ControlPlane {
             }
         };
         // TODO: Why do we return an error if the indexing scheduler fails?
-        self.indexing_scheduler.on_index_change(&self.model).await?;
+        self.indexing_scheduler
+            .schedule_indexing_plan_if_needed(&self.model);
         Ok(Ok(response))
     }
 }
