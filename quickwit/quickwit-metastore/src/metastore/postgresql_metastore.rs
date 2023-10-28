@@ -1596,7 +1596,7 @@ mod tests {
 
     #[test]
     fn test_single_sql_query_builder() {
-        let index_uid = IndexUid::new("test-index");
+        let index_uid = IndexUid::new_with_random_ulid("test-index");
         let query =
             ListSplitsQuery::for_index(index_uid.clone()).with_split_state(SplitState::Staged);
         let sql = build_query_filter(String::new(), &query);
@@ -1699,7 +1699,7 @@ mod tests {
 
     #[test]
     fn test_combination_sql_query_builder() {
-        let index_uid = IndexUid::new("test-index");
+        let index_uid = IndexUid::new_with_random_ulid("test-index");
         let query = ListSplitsQuery::for_index(index_uid.clone())
             .with_time_range_start_gt(0)
             .with_time_range_end_lt(40);
@@ -1751,7 +1751,7 @@ mod tests {
             )
         );
 
-        let index_uid_2 = IndexUid::new("test-index-2");
+        let index_uid_2 = IndexUid::new_with_random_ulid("test-index-2");
         let query =
             ListSplitsQuery::try_from_index_uids(vec![index_uid.clone(), index_uid_2.clone()])
                 .unwrap();

@@ -97,7 +97,7 @@ mod tests {
         };
         let metastore = metastore_for_test();
         let ctx = SourceRuntimeArgs::for_test(
-            IndexUid::new("test-index"),
+            IndexUid::new_with_random_ulid("test-index"),
             source_config,
             metastore,
             PathBuf::from("./queues"),
@@ -124,7 +124,7 @@ mod tests {
         let metastore = metastore_for_test();
         let void_source = VoidSourceFactory::typed_create_source(
             SourceRuntimeArgs::for_test(
-                IndexUid::new("test-index"),
+                IndexUid::new_with_random_ulid("test-index"),
                 source_config,
                 metastore,
                 PathBuf::from("./queues"),

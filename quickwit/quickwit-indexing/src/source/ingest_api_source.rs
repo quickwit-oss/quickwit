@@ -272,7 +272,7 @@ mod tests {
         let universe = Universe::with_accelerated_time();
         let metastore = metastore_for_test();
         let index_id = append_random_suffix("test-ingest-api-source");
-        let index_uid = IndexUid::new(&index_id);
+        let index_uid = IndexUid::new_with_random_ulid(&index_id);
         let temp_dir = tempfile::tempdir()?;
         let queues_dir_path = temp_dir.path();
 
@@ -361,7 +361,7 @@ mod tests {
         let universe = Universe::with_accelerated_time();
         let metastore = metastore_for_test();
         let index_id = append_random_suffix("test-ingest-api-source");
-        let index_uid = IndexUid::new(&index_id);
+        let index_uid = IndexUid::new_with_random_ulid(&index_id);
         let temp_dir = tempfile::tempdir()?;
         let queues_dir_path = temp_dir.path();
         let ingest_api_service =
@@ -431,7 +431,7 @@ mod tests {
         let universe = Universe::with_accelerated_time();
         let metastore = metastore_for_test();
         let index_id = append_random_suffix("test-ingest-api-source");
-        let index_uid = IndexUid::new(&index_id);
+        let index_uid = IndexUid::new_with_random_ulid(&index_id);
         let temp_dir = tempfile::tempdir()?;
         let queues_dir_path = temp_dir.path();
         let ingest_api_service =
@@ -485,7 +485,7 @@ mod tests {
         let universe = Universe::with_accelerated_time();
         let metastore = metastore_for_test();
         let index_id = append_random_suffix("test-ingest-api-source");
-        let index_uid = IndexUid::new(&index_id);
+        let index_uid = IndexUid::new_with_random_ulid(&index_id);
         let temp_dir = tempfile::tempdir()?;
         let queues_dir_path = temp_dir.path();
 
@@ -552,7 +552,7 @@ mod tests {
         let universe = Universe::with_accelerated_time();
         let metastore = metastore_for_test();
         let index_id = append_random_suffix("test-ingest-api-source");
-        let index_uid = IndexUid::new(&index_id);
+        let index_uid = IndexUid::new_with_random_ulid(&index_id);
         let temp_dir = tempfile::tempdir()?;
         let queues_dir_path = temp_dir.path();
 

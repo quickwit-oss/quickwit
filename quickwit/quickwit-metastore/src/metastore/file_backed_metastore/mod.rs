@@ -1057,14 +1057,14 @@ mod tests {
 
         // Open a non-existent index.
         let metastore_error = metastore
-            .get_index(IndexUid::new("index-does-not-exist"))
+            .get_index(IndexUid::new_with_random_ulid("index-does-not-exist"))
             .await
             .unwrap_err();
         assert!(matches!(metastore_error, MetastoreError::NotFound { .. }));
 
         // Open a index with a different incarnation_id.
         let metastore_error = metastore
-            .get_index(IndexUid::new(index_id))
+            .get_index(IndexUid::new_with_random_ulid(index_id))
             .await
             .unwrap_err();
         assert!(matches!(metastore_error, MetastoreError::NotFound { .. }));
@@ -1183,7 +1183,7 @@ mod tests {
 
         // Getting index with inconsistent index ID should raise an error.
         let metastore_error = metastore
-            .get_index(IndexUid::new(index_id))
+            .get_index(IndexUid::new_with_random_ulid(index_id))
             .await
             .unwrap_err();
         assert!(matches!(metastore_error, MetastoreError::Internal { .. }));
@@ -1369,7 +1369,7 @@ mod tests {
         let mut metastore = FileBackedMetastore::default_for_test().await;
         let mut index_uids = Vec::new();
         for idx in 0..10 {
-            let index_uid = IndexUid::new(format!("test-index-{idx}"));
+            let index_uid = IndexUid::new_with_random_ulid(&format!("test-index-{idx}"));
             let index_config =
                 IndexConfig::for_test(index_uid.index_id(), "ram:///indexes/test-index");
             let create_index_request =
@@ -1446,7 +1446,7 @@ mod tests {
         assert!(matches!(metastore_error, MetastoreError::Internal { .. }));
         // Try fetch the not created index.
         let created_index_error = metastore
-            .get_index(IndexUid::new(index_id))
+            .get_index(IndexUid::new_with_random_ulid(index_id))
             .await
             .unwrap_err();
         assert!(matches!(
@@ -1462,7 +1462,7 @@ mod tests {
         let ram_storage_clone = ram_storage.clone();
         let ram_storage_clone_2 = ram_storage.clone();
         let index_id = "test-index";
-        let index_uid = IndexUid::new(index_id);
+        let index_uid = IndexUid::new_with_random_ulid(index_id);
 
         mock_storage // remove this if we end up changing the semantics of create.
             .expect_exists()
@@ -1571,7 +1571,7 @@ mod tests {
         // Let's fetch the index, we expect an internal error as the index state is in `Creating`
         // state.
         let created_index_error = metastore
-            .get_index(IndexUid::new(index_id))
+            .get_index(IndexUid::new_with_random_ulid(index_id))
             .await
             .unwrap_err();
         assert!(matches!(
@@ -1586,7 +1586,7 @@ mod tests {
         let ram_storage = RamStorage::default();
         let ram_storage_clone = ram_storage.clone();
         let index_id = "test-index";
-        let index_uid = IndexUid::new(index_id);
+        let index_uid = IndexUid::new_with_random_ulid(index_id);
         let index_metadata =
             IndexMetadata::for_test(index_uid.index_id(), "ram:///indexes/test-index");
         let index = FileBackedIndex::from(index_metadata);
@@ -1633,7 +1633,7 @@ mod tests {
         let ram_storage = RamStorage::default();
         let ram_storage_clone = ram_storage.clone();
         let index_id = "test-index";
-        let index_uid = IndexUid::new(index_id);
+        let index_uid = IndexUid::new_with_random_ulid(index_id);
         let index_metadata =
             IndexMetadata::for_test(index_uid.index_id(), "ram:///indexes/test-index");
         let index = FileBackedIndex::from(index_metadata);

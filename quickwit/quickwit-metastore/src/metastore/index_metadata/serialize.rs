@@ -97,7 +97,7 @@ impl TryFrom<IndexMetadataV0_6> for IndexMetadata {
         }
         Ok(Self {
             index_uid: if v0_6.index_uid.is_empty() {
-                v0_6.index_config.index_id.clone().into()
+                IndexUid::from_parts(&v0_6.index_config.index_id, "")
             } else {
                 v0_6.index_uid
             },

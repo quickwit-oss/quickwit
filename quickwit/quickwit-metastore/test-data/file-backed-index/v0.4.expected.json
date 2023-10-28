@@ -40,6 +40,7 @@
           },
           {
             "fast": true,
+            "fast_precision": "seconds",
             "indexed": true,
             "input_formats": [
               "rfc3339",
@@ -47,7 +48,6 @@
             ],
             "name": "timestamp",
             "output_format": "rfc3339",
-            "fast_precision": "seconds",
             "stored": true,
             "type": "datetime"
           },
@@ -113,7 +113,7 @@
       },
       "version": "0.6"
     },
-    "index_uid": "my-index",
+    "index_uid": "my-index:",
     "sources": [
       {
         "desired_num_pipelines": 2,
@@ -139,7 +139,7 @@
         "end": 2000,
         "start": 1000
       },
-      "index_uid": "my-index",
+      "index_uid": "my-index:",
       "maturity": {
         "type": "mature"
       },

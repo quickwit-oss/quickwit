@@ -783,55 +783,54 @@ mod tests {
     fn test_single_filter_behaviour() {
         let [split_1, split_2, split_3] = make_splits();
 
-        let query = ListSplitsQuery::for_index(IndexUid::new("test-index"))
+        let query = ListSplitsQuery::for_index(IndexUid::new_with_random_ulid("test-index"))
             .with_split_state(SplitState::Staged);
         assert!(split_query_predicate(&&split_1, &query));
 
-        let query = ListSplitsQuery::for_index(IndexUid::new("test-index"))
+        let query = ListSplitsQuery::for_index(IndexUid::new_with_random_ulid("test-index"))
             .with_split_state(SplitState::Published);
         assert!(!split_query_predicate(&&split_2, &query));
 
-        let query = ListSplitsQuery::for_index(IndexUid::new("test-index"))
+        let query = ListSplitsQuery::for_index(IndexUid::new_with_random_ulid("test-index"))
             .with_split_states([SplitState::Published, SplitState::MarkedForDeletion]);
         assert!(!split_query_predicate(&&split_1, &query));
         assert!(split_query_predicate(&&split_3, &query));
 
-        let query =
-            ListSplitsQuery::for_index(IndexUid::new("test-index")).with_update_timestamp_lt(51);
+        let query = ListSplitsQuery::for_index(IndexUid::new_with_random_ulid("test-index"))
+            .with_update_timestamp_lt(51);
         assert!(!split_query_predicate(&&split_1, &query));
         assert!(split_query_predicate(&&split_2, &query));
         assert!(split_query_predicate(&&split_3, &query));
 
-        let query =
-            ListSplitsQuery::for_index(IndexUid::new("test-index")).with_create_timestamp_gte(51);
+        let query = ListSplitsQuery::for_index(IndexUid::new_with_random_ulid("test-index"))
+            .with_create_timestamp_gte(51);
         assert!(!split_query_predicate(&&split_1, &query));
         assert!(!split_query_predicate(&&split_2, &query));
         assert!(split_query_predicate(&&split_3, &query));
 
-        let query =
-            ListSplitsQuery::for_index(IndexUid::new("test-index")).with_delete_opstamp_gte(4);
+        let query = ListSplitsQuery::for_index(IndexUid::new_with_random_ulid("test-index"))
+            .with_delete_opstamp_gte(4);
         assert!(split_query_predicate(&&split_1, &query));
         assert!(split_query_predicate(&&split_2, &query));
         assert!(!split_query_predicate(&&split_3, &query));
 
-        let query =
-            ListSplitsQuery::for_index(IndexUid::new("test-index")).with_time_range_start_gt(45);
+        let query = ListSplitsQuery::for_index(IndexUid::new_with_random_ulid("test-index"))
+            .with_time_range_start_gt(45);
         assert!(!split_query_predicate(&&split_1, &query));
         assert!(split_query_predicate(&&split_2, &query));
         assert!(split_query_predicate(&&split_3, &query));
 
-        let query =
-            ListSplitsQuery::for_index(IndexUid::new("test-index")).with_time_range_end_lt(45);
+        let query = ListSplitsQuery::for_index(IndexUid::new_with_random_ulid("test-index"))
+            .with_time_range_end_lt(45);
         assert!(split_query_predicate(&&split_1, &query));
         assert!(split_query_predicate(&&split_2, &query));
         assert!(split_query_predicate(&&split_3, &query));
 
-        let query = ListSplitsQuery::for_index(IndexUid::new("test-index")).with_tags_filter(
-            TagFilterAst::Tag {
+        let query = ListSplitsQuery::for_index(IndexUid::new_with_random_ulid("test-index"))
+            .with_tags_filter(TagFilterAst::Tag {
                 is_present: false,
                 tag: "tag-2".to_string(),
-            },
-        );
+            });
         assert!(split_query_predicate(&&split_1, &query));
         assert!(!split_query_predicate(&&split_2, &query));
         assert!(!split_query_predicate(&&split_3, &query));
@@ -841,35 +840,35 @@ mod tests {
     fn test_combination_filter() {
         let [split_1, split_2, split_3] = make_splits();
 
-        let query = ListSplitsQuery::for_index(IndexUid::new("test-index"))
+        let query = ListSplitsQuery::for_index(IndexUid::new_with_random_ulid("test-index"))
             .with_time_range_start_gt(0)
             .with_time_range_end_lt(40);
         assert!(split_query_predicate(&&split_1, &query));
         assert!(split_query_predicate(&&split_2, &query));
         assert!(split_query_predicate(&&split_3, &query));
 
-        let query = ListSplitsQuery::for_index(IndexUid::new("test-index"))
+        let query = ListSplitsQuery::for_index(IndexUid::new_with_random_ulid("test-index"))
             .with_time_range_start_gt(45)
             .with_delete_opstamp_gt(0);
         assert!(!split_query_predicate(&&split_1, &query));
         assert!(split_query_predicate(&&split_2, &query));
         assert!(!split_query_predicate(&&split_3, &query));
 
-        let query = ListSplitsQuery::for_index(IndexUid::new("test-index"))
+        let query = ListSplitsQuery::for_index(IndexUid::new_with_random_ulid("test-index"))
             .with_update_timestamp_lt(51)
             .with_split_states([SplitState::Published, SplitState::MarkedForDeletion]);
         assert!(!split_query_predicate(&&split_1, &query));
         assert!(split_query_predicate(&&split_2, &query));
         assert!(split_query_predicate(&&split_3, &query));
 
-        let query = ListSplitsQuery::for_index(IndexUid::new("test-index"))
+        let query = ListSplitsQuery::for_index(IndexUid::new_with_random_ulid("test-index"))
             .with_update_timestamp_lt(51)
             .with_create_timestamp_lte(63);
         assert!(!split_query_predicate(&&split_1, &query));
         assert!(split_query_predicate(&&split_2, &query));
         assert!(!split_query_predicate(&&split_3, &query));
 
-        let query = ListSplitsQuery::for_index(IndexUid::new("test-index"))
+        let query = ListSplitsQuery::for_index(IndexUid::new_with_random_ulid("test-index"))
             .with_time_range_start_gt(90)
             .with_tags_filter(TagFilterAst::Tag {
                 is_present: true,
