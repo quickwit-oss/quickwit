@@ -439,6 +439,8 @@ impl SourceType {
     }
 }
 /// BEGIN quickwit-codegen
+#[allow(unused_imports)]
+use std::str::FromStr;
 use tower::{Layer, Service, ServiceExt};
 use quickwit_common::metrics::{PrometheusLabels, OwnedPrometheusLabels};
 impl PrometheusLabels<1> for CreateIndexRequest {
@@ -2975,8 +2977,8 @@ where
     }
     fn endpoints(&self) -> Vec<quickwit_common::uri::Uri> {
         vec![
-            quickwit_common::uri::Uri::from_well_formed(format!("actor://localhost/{}",
-            self.inner.actor_instance_id()))
+            quickwit_common::uri::Uri::from_str(& format!("actor://localhost/{}", self
+            .inner.actor_instance_id())).expect("URI should be valid")
         ]
     }
 }
@@ -3244,10 +3246,8 @@ where
         self.connection_addrs_rx
             .borrow()
             .iter()
-            .map(|addr| quickwit_common::uri::Uri::from_well_formed(
-                format!(
-                    r"grpc://{}/{}.{}", addr, "quickwit.metastore", "MetastoreService"
-                ),
+            .flat_map(|addr| quickwit_common::uri::Uri::from_str(
+                &format!("grpc://{addr}/{}.{}", "quickwit.metastore", "MetastoreService"),
             ))
             .collect()
     }

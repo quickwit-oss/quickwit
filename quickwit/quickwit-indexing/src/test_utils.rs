@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::num::NonZeroUsize;
+use std::str::FromStr;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
@@ -65,7 +66,7 @@ pub struct TestSandbox {
 const METASTORE_URI: &str = "ram://quickwit-test-indexes";
 
 fn index_uri(index_id: &str) -> Uri {
-    Uri::from_well_formed(format!("{METASTORE_URI}/{index_id}"))
+    Uri::from_str(&format!("{METASTORE_URI}/{index_id}")).unwrap()
 }
 
 impl TestSandbox {
@@ -99,7 +100,7 @@ impl TestSandbox {
         let metastore_resolver =
             MetastoreResolver::configured(storage_resolver.clone(), &MetastoreConfigs::default());
         let mut metastore = metastore_resolver
-            .resolve(&Uri::from_well_formed(METASTORE_URI))
+            .resolve(&Uri::for_test(METASTORE_URI))
             .await?;
         let create_index_request = CreateIndexRequest::try_from_index_config(index_config.clone())?;
         let index_uid: IndexUid = metastore

@@ -310,6 +310,8 @@ impl PersistFailureReason {
     }
 }
 /// BEGIN quickwit-codegen
+#[allow(unused_imports)]
+use std::str::FromStr;
 use tower::{Layer, Service, ServiceExt};
 pub type IngesterServiceStream<T> = quickwit_common::ServiceStream<
     crate::ingest::IngestV2Result<T>,

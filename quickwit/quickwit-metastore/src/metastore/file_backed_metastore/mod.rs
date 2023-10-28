@@ -961,6 +961,7 @@ mod tests {
     use std::sync::Arc;
 
     use futures::executor::block_on;
+    use quickwit_common::uri::Protocol;
     use quickwit_config::IndexConfig;
     use quickwit_proto::metastore::{DeleteQuery, MetastoreError};
     use quickwit_query::query_ast::qast_helper;
@@ -983,7 +984,7 @@ mod tests {
     async fn test_metastore_connectivity_and_endpoints() {
         let mut metastore = FileBackedMetastore::default_for_test().await;
         metastore.check_connectivity().await.unwrap();
-        assert!(metastore.endpoints()[0].protocol().is_ram());
+        assert_eq!(metastore.endpoints()[0].protocol(), Protocol::Ram);
     }
 
     #[tokio::test]

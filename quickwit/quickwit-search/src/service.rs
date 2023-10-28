@@ -182,12 +182,10 @@ impl SearchService for SearchServiceImpl {
     ) -> crate::Result<LeafSearchResponse> {
         let search_request: Arc<SearchRequest> = leaf_search_request
             .search_request
-            .ok_or_else(|| SearchError::Internal("no search request.".to_string()))?
+            .ok_or_else(|| SearchError::Internal("no search request".to_string()))?
             .into();
-        let storage = self
-            .storage_resolver
-            .resolve(&Uri::from_well_formed(leaf_search_request.index_uri))
-            .await?;
+        let index_uri = Uri::from_str(&leaf_search_request.index_uri)?;
+        let storage = self.storage_resolver.resolve(&index_uri).await?;
         let doc_mapper = deserialize_doc_mapper(&leaf_search_request.doc_mapper)?;
 
         let leaf_search_response = leaf_search(
@@ -206,10 +204,8 @@ impl SearchService for SearchServiceImpl {
         &self,
         fetch_docs_request: FetchDocsRequest,
     ) -> crate::Result<FetchDocsResponse> {
-        let storage = self
-            .storage_resolver
-            .resolve(&Uri::from_well_formed(fetch_docs_request.index_uri))
-            .await?;
+        let index_uri = Uri::from_str(&fetch_docs_request.index_uri)?;
+        let storage = self.storage_resolver.resolve(&index_uri).await?;
         let snippet_request_opt: Option<&SnippetRequest> =
             fetch_docs_request.snippet_request.as_ref();
         let doc_mapper = deserialize_doc_mapper(&fetch_docs_request.doc_mapper)?;
@@ -246,10 +242,8 @@ impl SearchService for SearchServiceImpl {
         let stream_request = leaf_stream_request
             .request
             .ok_or_else(|| SearchError::Internal("no search request".to_string()))?;
-        let storage = self
-            .storage_resolver
-            .resolve(&Uri::from_well_formed(leaf_stream_request.index_uri))
-            .await?;
+        let index_uri = Uri::from_str(&leaf_stream_request.index_uri)?;
+        let storage = self.storage_resolver.resolve(&index_uri).await?;
         let doc_mapper = deserialize_doc_mapper(&leaf_stream_request.doc_mapper)?;
         let leaf_receiver = leaf_search_stream(
             self.searcher_context.clone(),
@@ -283,10 +277,8 @@ impl SearchService for SearchServiceImpl {
         let search_request = leaf_search_request
             .list_terms_request
             .ok_or_else(|| SearchError::Internal("no search request".to_string()))?;
-        let storage = self
-            .storage_resolver
-            .resolve(&Uri::from_well_formed(leaf_search_request.index_uri))
-            .await?;
+        let index_uri = Uri::from_str(&leaf_search_request.index_uri)?;
+        let storage = self.storage_resolver.resolve(&index_uri).await?;
         let split_ids = leaf_search_request.split_offsets;
 
         let leaf_search_response = leaf_list_terms(

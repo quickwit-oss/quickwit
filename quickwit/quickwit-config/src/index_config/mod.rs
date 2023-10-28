@@ -480,7 +480,7 @@ impl TestableForRegression for IndexConfig {
         };
         IndexConfig {
             index_id: "my-index".to_string(),
-            index_uri: Uri::from_well_formed("s3://quickwit-indexes/my-index"),
+            index_uri: Uri::for_test("s3://quickwit-indexes/my-index"),
             doc_mapping,
             indexing_settings,
             retention_policy,
@@ -559,7 +559,7 @@ mod tests {
         let index_config = load_index_config_from_user_config(
             config_format,
             file.as_bytes(),
-            &Uri::from_well_formed("s3://defaultbucket/"),
+            &Uri::for_test("s3://defaultbucket/"),
         )
         .unwrap();
         assert_eq!(index_config.doc_mapping.tokenizers.len(), 1);
@@ -638,7 +638,7 @@ mod tests {
 
     #[test]
     fn test_index_config_default_values() {
-        let default_index_root_uri = Uri::from_well_formed("s3://defaultbucket/");
+        let default_index_root_uri = Uri::for_test("s3://defaultbucket/");
         {
             let index_config_filepath = get_index_config_filepath("minimal-hdfs-logs.yaml");
             let file_content = std::fs::read_to_string(index_config_filepath).unwrap();
@@ -721,7 +721,7 @@ mod tests {
         let minimal_config: IndexConfig = load_index_config_from_user_config(
             ConfigFormat::Yaml,
             config_yaml.as_bytes(),
-            &Uri::from_well_formed("s3://my-index"),
+            &Uri::for_test("s3://my-index"),
         )
         .unwrap();
         assert_eq!(
@@ -745,7 +745,7 @@ mod tests {
         let parsing_config_error = load_index_config_from_user_config(
             ConfigFormat::Yaml,
             config_yaml.as_bytes(),
-            &Uri::from_well_formed("s3://my-index"),
+            &Uri::for_test("s3://my-index"),
         )
         .unwrap_err();
         println!("{parsing_config_error:?}");
