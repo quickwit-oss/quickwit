@@ -772,7 +772,7 @@ mod tests {
         let storage = Arc::new(mock_storage);
 
         let index_id = "test-delete-splits-storage-error--index";
-        let index_uid = IndexUid::new_with_random_ulid(&index_id);
+        let index_uid = IndexUid::new_with_random_ulid(index_id);
 
         let mut mock_metastore = MetastoreServiceClient::mock();
         mock_metastore.expect_delete_splits().return_once(|_| {
