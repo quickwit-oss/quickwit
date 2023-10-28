@@ -25,7 +25,6 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
-use itertools::Itertools;
 use quickwit_common::uri::Uri;
 use quickwit_common::PrettySample;
 use quickwit_config::{
@@ -45,6 +44,10 @@ use quickwit_proto::metastore::{
     ToggleSourceRequest, UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
 };
 use quickwit_proto::types::IndexUid;
+use sea_query::{
+    all, any, Asterisk, Cond, Expr, Func, PostgresQueryBuilder, Query, SelectStatement,
+};
+use sea_query_binder::SqlxBinder;
 use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgDatabaseError, PgPoolOptions};
 use sqlx::{ConnectOptions, Pool, Postgres, Transaction};
@@ -53,7 +56,7 @@ use tracing::log::LevelFilter;
 use tracing::{debug, error, info, instrument, warn};
 
 use crate::checkpoint::IndexCheckpointDelta;
-use crate::metastore::postgresql_model::{PgDeleteTask, PgIndex, PgSplit};
+use crate::metastore::postgresql_model::{PgDeleteTask, PgIndex, PgSplit, Splits, ToTimestampFunc};
 use crate::metastore::{instrument_metastore, FilterRange, PublishSplitsRequestExt};
 use crate::{
     AddSourceRequestExt, CreateIndexRequestExt, IndexMetadata, IndexMetadataResponseExt,
@@ -222,131 +225,124 @@ async fn index_metadata(
 /// Extends an existing SQL string with the generated filter range appended to the query.
 ///
 /// This method is **not** SQL injection proof and should not be used with user-defined values.
-fn write_sql_filter<V: Display>(
-    sql: &mut String,
-    field_name: impl Display,
+fn append_range_filters<V: Display>(
+    sql: &mut SelectStatement,
+    field_name: Splits,
     filter_range: &FilterRange<V>,
-    value_formatter: impl Fn(&V) -> String,
+    value_formatter: impl Fn(&V) -> Expr,
 ) {
-    match &filter_range.start {
-        Bound::Included(value) => {
-            let _ = write!(sql, " AND {} >= {}", field_name, (value_formatter)(value));
-        }
-        Bound::Excluded(value) => {
-            let _ = write!(sql, " AND {} > {}", field_name, (value_formatter)(value));
-        }
-        Bound::Unbounded => {}
+    if let Bound::Included(value) = &filter_range.start {
+        sql.cond_where(Expr::col(field_name).gte((value_formatter)(value)));
     };
 
-    match &filter_range.end {
-        Bound::Included(value) => {
-            let _ = write!(sql, " AND {} <= {}", field_name, (value_formatter)(value));
-        }
-        Bound::Excluded(value) => {
-            let _ = write!(sql, " AND {} < {}", field_name, (value_formatter)(value));
-        }
-        Bound::Unbounded => {}
+    if let Bound::Excluded(value) = &filter_range.start {
+        sql.cond_where(Expr::col(field_name).gt((value_formatter)(value)));
+    };
+
+    if let Bound::Included(value) = &filter_range.end {
+        sql.cond_where(Expr::col(field_name).lte((value_formatter)(value)));
+    };
+
+    if let Bound::Excluded(value) = &filter_range.end {
+        sql.cond_where(Expr::col(field_name).lt((value_formatter)(value)));
     };
 }
 
-fn build_query_filter(mut sql: String, query: &ListSplitsQuery) -> String {
+fn append_query_filters(sql: &mut SelectStatement, query: &ListSplitsQuery) {
     // Note: `ListSplitsQuery` builder enforces a non empty `index_uids` list.
-    let where_predicate: String = query
+
+    let or_condition = query
         .index_uids
         .iter()
-        .map(|index_uid| format!("index_uid = '{index_uid}'"))
-        .join(" OR ");
-    sql.push_str(&format!(" WHERE ({where_predicate})"));
+        .fold(Cond::any(), |cond, index_uid| {
+            cond.add(Expr::col(Splits::IndexUid).eq(Expr::val(index_uid.to_string())))
+        });
+    sql.cond_where(or_condition);
 
     if !query.split_states.is_empty() {
-        let params = query
-            .split_states
-            .iter()
-            .map(|v| format!("'{}'", v.as_str()))
-            .join(", ");
-        let _ = write!(sql, " AND split_state IN ({params})");
-    }
+        sql.cond_where(
+            Expr::col(Splits::SplitState)
+                .is_in(query.split_states.iter().map(|val| val.to_string())),
+        );
+    };
 
     if let Some(tags) = query.tags.as_ref() {
-        sql.push_str(" AND (");
-        sql.push_str(&tags_filter_expression_helper(tags));
-        sql.push(')');
-    }
+        sql.cond_where(tags_filter_expression_helper(tags));
+    };
 
     match query.time_range.start {
         Bound::Included(v) => {
-            let _ = write!(
-                sql,
-                " AND (time_range_end >= {v} OR time_range_end IS NULL)"
-            );
+            sql.cond_where(any![
+                Expr::col(Splits::TimeRangeEnd).gte(v),
+                Expr::col(Splits::TimeRangeEnd).is_null()
+            ]);
         }
         Bound::Excluded(v) => {
-            let _ = write!(sql, " AND (time_range_end > {v} OR time_range_end IS NULL)");
+            sql.cond_where(any![
+                Expr::col(Splits::TimeRangeEnd).gt(v),
+                Expr::col(Splits::TimeRangeEnd).is_null()
+            ]);
         }
         Bound::Unbounded => {}
     };
 
     match query.time_range.end {
         Bound::Included(v) => {
-            let _ = write!(
-                sql,
-                " AND (time_range_start <= {v} OR time_range_start IS NULL)"
-            );
+            sql.cond_where(any![
+                Expr::col(Splits::TimeRangeStart).lte(v),
+                Expr::col(Splits::TimeRangeStart).is_null()
+            ]);
         }
         Bound::Excluded(v) => {
-            let _ = write!(
-                sql,
-                " AND (time_range_start < {v} OR time_range_start IS NULL)"
-            );
+            sql.cond_where(any![
+                Expr::col(Splits::TimeRangeStart).lt(v),
+                Expr::col(Splits::TimeRangeStart).is_null()
+            ]);
         }
         Bound::Unbounded => {}
     };
 
     match &query.mature {
         Bound::Included(evaluation_datetime) => {
-            let _ = write!(
-                sql,
-                " AND (maturity_timestamp = to_timestamp(0) OR to_timestamp({}) >= \
-                 maturity_timestamp)",
-                evaluation_datetime.unix_timestamp()
-            );
+            sql.cond_where(any![
+                Expr::col(Splits::MaturityTimestamp)
+                    .eq(Func::cust(ToTimestampFunc).arg(Expr::val(0))),
+                Expr::col(Splits::MaturityTimestamp).lte(
+                    Func::cust(ToTimestampFunc)
+                        .arg(Expr::val(evaluation_datetime.unix_timestamp()))
+                )
+            ]);
         }
         Bound::Excluded(evaluation_datetime) => {
-            let _ = write!(
-                sql,
-                " AND to_timestamp({}) < maturity_timestamp",
-                evaluation_datetime.unix_timestamp()
-            );
+            sql.cond_where(Expr::col(Splits::MaturityTimestamp).gt(
+                Func::cust(ToTimestampFunc).arg(Expr::val(evaluation_datetime.unix_timestamp())),
+            ));
         }
         Bound::Unbounded => {}
-    }
-
-    // WARNING: Not SQL injection proof
-    write_sql_filter(
-        &mut sql,
-        "update_timestamp",
+    };
+    append_range_filters(
+        sql,
+        Splits::UpdateTimestamp,
         &query.update_timestamp,
-        |val| format!("to_timestamp({val})"),
+        |&val| Expr::expr(Func::cust(ToTimestampFunc).arg(Expr::val(val))),
     );
-    write_sql_filter(
-        &mut sql,
-        "create_timestamp",
+    append_range_filters(
+        sql,
+        Splits::CreateTimestamp,
         &query.create_timestamp,
-        |val| format!("to_timestamp({val})"),
+        |&val| Expr::expr(Func::cust(ToTimestampFunc).arg(Expr::val(val))),
     );
-    write_sql_filter(&mut sql, "delete_opstamp", &query.delete_opstamp, |val| {
-        val.to_string()
+    append_range_filters(sql, Splits::DeleteOpstamp, &query.delete_opstamp, |&val| {
+        Expr::expr(val)
     });
 
     if let Some(limit) = query.limit {
-        let _ = write!(sql, " LIMIT {limit}");
+        sql.limit(limit as u64);
     }
 
     if let Some(offset) = query.offset {
-        let _ = write!(sql, " OFFSET {offset}");
+        sql.offset(offset as u64);
     }
-
-    sql
 }
 
 /// Returns the unix timestamp at which the split becomes mature.
@@ -813,10 +809,13 @@ impl MetastoreService for PostgresqlMetastore {
         request: ListSplitsRequest,
     ) -> MetastoreResult<ListSplitsResponse> {
         let query = request.deserialize_list_splits_query()?;
-        let sql_base = "SELECT * FROM splits".to_string();
-        let sql = build_query_filter(sql_base, &query);
+        let mut sql = Query::select();
+        sql.column(Asterisk).from(Splits::Table);
+        append_query_filters(&mut sql, &query);
 
-        let pg_splits = sqlx::query_as::<_, PgSplit>(&sql)
+        let (sql, values) = sql.build_sqlx(PostgresQueryBuilder);
+
+        let pg_splits = sqlx::query_as_with::<_, PgSplit, _>(&sql, values)
             .fetch_all(&self.connection_pool)
             .await?;
 
@@ -1350,35 +1349,38 @@ fn generate_dollar_guard(s: &str) -> String {
 
 /// Takes a tag filters AST and returns a sql expression that can be used as
 /// a filter.
-fn tags_filter_expression_helper(tags: &TagFilterAst) -> String {
+fn tags_filter_expression_helper(tags: &TagFilterAst) -> Cond {
     match tags {
         TagFilterAst::And(child_asts) => {
             if child_asts.is_empty() {
-                return "TRUE".to_string();
+                return all![Expr::cust("TRUE")];
             }
-            let expr_without_parenthesis = child_asts
+
+            child_asts
                 .iter()
                 .map(tags_filter_expression_helper)
-                .join(" AND ");
-            format!("({expr_without_parenthesis})")
+                .fold(Cond::all(), |cond, child_cond| cond.add(child_cond))
         }
         TagFilterAst::Or(child_asts) => {
             if child_asts.is_empty() {
-                return "TRUE".to_string();
+                return all![Expr::cust("TRUE")];
             }
-            let expr_without_parenthesis = child_asts
+
+            child_asts
                 .iter()
                 .map(tags_filter_expression_helper)
-                .join(" OR ");
-            format!("({expr_without_parenthesis})")
+                .fold(Cond::any(), |cond, child_cond| cond.add(child_cond))
         }
+
         TagFilterAst::Tag { is_present, tag } => {
             let dollar_guard = generate_dollar_guard(tag);
-            if *is_present {
-                format!("${dollar_guard}${tag}${dollar_guard}$ = ANY(tags)")
+            let expr_str = format!("${dollar_guard}${tag}${dollar_guard}$ = ANY(tags)");
+            let expr = if *is_present {
+                Expr::cust(&expr_str)
             } else {
-                format!("NOT (${dollar_guard}${tag}${dollar_guard}$ = ANY(tags))")
-            }
+                Expr::cust(&expr_str).not()
+            };
+            all![expr]
         }
     }
 }
@@ -1512,10 +1514,12 @@ mod tests {
     use quickwit_doc_mapper::tag_pruning::{no_tag, tag, TagFilterAst};
     use quickwit_proto::metastore::MetastoreService;
     use quickwit_proto::types::IndexUid;
+    use sea_query::{all, any, Asterisk, Cond, Expr, PostgresQueryBuilder, Query};
     use time::OffsetDateTime;
 
-    use super::{build_query_filter, tags_filter_expression_helper, PostgresqlMetastore};
+    use super::{append_query_filters, tags_filter_expression_helper, PostgresqlMetastore};
     use crate::metastore::postgresql_metastore::build_index_id_patterns_sql_query;
+    use crate::metastore::postgresql_model::Splits;
     use crate::tests::DefaultForTest;
     use crate::{metastore_test_suite, ListSplitsQuery, SplitState};
 
@@ -1528,31 +1532,37 @@ mod tests {
         assert!(metastore.endpoints()[0].protocol().is_postgresql());
     }
 
-    fn test_tags_filter_expression_helper(tags_ast: TagFilterAst, expected: &str) {
+    fn test_tags_filter_expression_helper(tags_ast: TagFilterAst, expected: Cond) {
         assert_eq!(tags_filter_expression_helper(&tags_ast), expected);
     }
 
     #[test]
     fn test_tags_filter_expression_single_tag() {
         let tags_ast = tag("my_field:titi");
-        test_tags_filter_expression_helper(tags_ast, r#"$$my_field:titi$$ = ANY(tags)"#);
+
+        let expected = all![Expr::cust("$$my_field:titi$$ = ANY(tags)")];
+
+        test_tags_filter_expression_helper(tags_ast, expected);
     }
 
     #[test]
     fn test_tags_filter_expression_not_tag() {
-        test_tags_filter_expression_helper(
-            no_tag("my_field:titi"),
-            r#"NOT ($$my_field:titi$$ = ANY(tags))"#,
-        );
+        let expected = all![Expr::cust("$$my_field:titi$$ = ANY(tags)").not()];
+
+        test_tags_filter_expression_helper(no_tag("my_field:titi"), expected);
     }
 
     #[test]
     fn test_tags_filter_expression_ands() {
         let tags_ast = TagFilterAst::And(vec![tag("tag:val1"), tag("tag:val2"), tag("tag:val3")]);
-        test_tags_filter_expression_helper(
-            tags_ast,
-            "($$tag:val1$$ = ANY(tags) AND $$tag:val2$$ = ANY(tags) AND $$tag:val3$$ = ANY(tags))",
-        );
+
+        let expected = all![
+            Expr::cust("$$tag:val1$$ = ANY(tags)"),
+            Expr::cust("$$tag:val2$$ = ANY(tags)"),
+            Expr::cust("$$tag:val3$$ = ANY(tags)"),
+        ];
+
+        test_tags_filter_expression_helper(tags_ast, expected);
     }
 
     #[test]
@@ -1561,10 +1571,16 @@ mod tests {
             TagFilterAst::And(vec![tag("tag:val1"), tag("tag:val2")]),
             tag("tag:val3"),
         ]);
-        test_tags_filter_expression_helper(
-            tags_ast,
-            "(($$tag:val1$$ = ANY(tags) AND $$tag:val2$$ = ANY(tags)) OR $$tag:val3$$ = ANY(tags))",
-        );
+
+        let expected = any![
+            all![
+                Expr::cust("$$tag:val1$$ = ANY(tags)"),
+                Expr::cust("$$tag:val2$$ = ANY(tags)"),
+            ],
+            Expr::cust("$$tag:val3$$ = ANY(tags)"),
+        ];
+
+        test_tags_filter_expression_helper(tags_ast, expected);
     }
 
     #[test]
@@ -1573,168 +1589,235 @@ mod tests {
             TagFilterAst::Or(vec![tag("tag:val1"), tag("tag:val2")]),
             tag("tag:val3"),
         ]);
-        test_tags_filter_expression_helper(
-            tags_ast,
-            r#"(($$tag:val1$$ = ANY(tags) OR $$tag:val2$$ = ANY(tags)) AND $$tag:val3$$ = ANY(tags))"#,
-        );
+
+        let expected = all![
+            any![
+                Expr::cust("$$tag:val1$$ = ANY(tags)"),
+                Expr::cust("$$tag:val2$$ = ANY(tags)"),
+            ],
+            Expr::cust("$$tag:val3$$ = ANY(tags)"),
+        ];
+
+        test_tags_filter_expression_helper(tags_ast, expected);
     }
 
     #[test]
     fn test_tags_sql_injection_attempt() {
         let tags_ast = tag("tag:$$;DELETE FROM something_evil");
-        test_tags_filter_expression_helper(
-            tags_ast,
-            "$QuickwitGuard$tag:$$;DELETE FROM something_evil$QuickwitGuard$ = ANY(tags)",
-        );
+
+        let expected = all![Expr::cust(
+            "$QuickwitGuard$tag:$$;DELETE FROM something_evil$QuickwitGuard$ = ANY(tags)"
+        ),];
+
+        test_tags_filter_expression_helper(tags_ast, expected);
+
         let tags_ast = tag("tag:$QuickwitGuard$;DELETE FROM something_evil");
-        test_tags_filter_expression_helper(
-            tags_ast,
+
+        let expected = all![Expr::cust(
             "$QuickwitGuardQuickwitGuard$tag:$QuickwitGuard$;DELETE FROM \
-             something_evil$QuickwitGuardQuickwitGuard$ = ANY(tags)",
-        );
+             something_evil$QuickwitGuardQuickwitGuard$ = ANY(tags)"
+        )];
+
+        test_tags_filter_expression_helper(tags_ast, expected);
     }
 
     #[test]
     fn test_single_sql_query_builder() {
+        let mut select_statement = Query::select();
+
+        let sql = select_statement.column(Asterisk).from(Splits::Table);
         let index_uid = IndexUid::new_with_random_ulid("test-index");
         let query =
             ListSplitsQuery::for_index(index_uid.clone()).with_split_state(SplitState::Staged);
-        let sql = build_query_filter(String::new(), &query);
-        assert_eq!(
-            sql,
-            format!(" WHERE (index_uid = '{index_uid}') AND split_state IN ('Staged')")
-        );
+        append_query_filters(sql, &query);
 
-        let query =
-            ListSplitsQuery::for_index(index_uid.clone()).with_split_state(SplitState::Published);
-        let sql = build_query_filter(String::new(), &query);
         assert_eq!(
-            sql,
-            format!(" WHERE (index_uid = '{index_uid}') AND split_state IN ('Published')")
-        );
-
-        let query = ListSplitsQuery::for_index(index_uid.clone())
-            .with_split_states([SplitState::Published, SplitState::MarkedForDeletion]);
-        let sql = build_query_filter(String::new(), &query);
-        assert_eq!(
-            sql,
+            sql.to_string(PostgresQueryBuilder),
             format!(
-                " WHERE (index_uid = '{index_uid}') AND split_state IN ('Published', \
-                 'MarkedForDeletion')"
+                r#"SELECT * FROM "splits" WHERE "index_uid" = '{index_uid}' AND "split_state" IN ('Staged')"#
             )
         );
 
-        let query = ListSplitsQuery::for_index(index_uid.clone()).with_update_timestamp_lt(51);
-        let sql = build_query_filter(String::new(), &query);
+        let mut select_statement = Query::select();
+        let sql = select_statement.column(Asterisk).from(Splits::Table);
+
+        let query =
+            ListSplitsQuery::for_index(index_uid.clone()).with_split_state(SplitState::Published);
+        append_query_filters(sql, &query);
+
         assert_eq!(
-            sql,
-            format!(" WHERE (index_uid = '{index_uid}') AND update_timestamp < to_timestamp(51)")
+            sql.to_string(PostgresQueryBuilder),
+            format!(
+                r#"SELECT * FROM "splits" WHERE "index_uid" = '{index_uid}' AND "split_state" IN ('Published')"#
+            )
         );
 
-        let query = ListSplitsQuery::for_index(index_uid.clone()).with_create_timestamp_lte(55);
-        let sql = build_query_filter(String::new(), &query);
+        let mut select_statement = Query::select();
+        let sql = select_statement.column(Asterisk).from(Splits::Table);
+
+        let query = ListSplitsQuery::for_index(index_uid.clone())
+            .with_split_states([SplitState::Published, SplitState::MarkedForDeletion]);
+        append_query_filters(sql, &query);
         assert_eq!(
-            sql,
-            format!(" WHERE (index_uid = '{index_uid}') AND create_timestamp <= to_timestamp(55)")
+            sql.to_string(PostgresQueryBuilder),
+            format!(
+                r#"SELECT * FROM "splits" WHERE "index_uid" = '{index_uid}' AND "split_state" IN ('Published', 'MarkedForDeletion')"#
+            )
         );
+
+        let mut select_statement = Query::select();
+        let sql = select_statement.column(Asterisk).from(Splits::Table);
+
+        let query = ListSplitsQuery::for_index(index_uid.clone()).with_update_timestamp_lt(51);
+        append_query_filters(sql, &query);
+        assert_eq!(
+            sql.to_string(PostgresQueryBuilder),
+            format!(
+                r#"SELECT * FROM "splits" WHERE "index_uid" = '{index_uid}' AND "update_timestamp" < TO_TIMESTAMP(51)"#
+            )
+        );
+
+        let mut select_statement = Query::select();
+        let sql = select_statement.column(Asterisk).from(Splits::Table);
+
+        let query = ListSplitsQuery::for_index(index_uid.clone()).with_create_timestamp_lte(55);
+        append_query_filters(sql, &query);
+        assert_eq!(
+            sql.to_string(PostgresQueryBuilder),
+            format!(
+                r#"SELECT * FROM "splits" WHERE "index_uid" = '{index_uid}' AND "create_timestamp" <= TO_TIMESTAMP(55)"#
+            )
+        );
+
+        let mut select_statement = Query::select();
+        let sql = select_statement.column(Asterisk).from(Splits::Table);
 
         let maturity_evaluation_datetime = OffsetDateTime::from_unix_timestamp(55).unwrap();
         let query = ListSplitsQuery::for_index(index_uid.clone())
             .retain_mature(maturity_evaluation_datetime);
-        let sql = build_query_filter(String::new(), &query);
+        append_query_filters(sql, &query);
+
         assert_eq!(
-            sql,
+            sql.to_string(PostgresQueryBuilder),
             format!(
-                " WHERE (index_uid = '{index_uid}') AND (maturity_timestamp = to_timestamp(0) OR \
-                 to_timestamp(55) >= maturity_timestamp)"
+                r#"SELECT * FROM "splits" WHERE "index_uid" = '{index_uid}' AND ("maturity_timestamp" = TO_TIMESTAMP(0) OR "maturity_timestamp" <= TO_TIMESTAMP(55))"#
             )
         );
+
+        let mut select_statement = Query::select();
+        let sql = select_statement.column(Asterisk).from(Splits::Table);
 
         let query = ListSplitsQuery::for_index(index_uid.clone())
             .retain_immature(maturity_evaluation_datetime);
-        let sql = build_query_filter(String::new(), &query);
+        append_query_filters(sql, &query);
         assert_eq!(
-            sql,
-            format!(" WHERE (index_uid = '{index_uid}') AND to_timestamp(55) < maturity_timestamp")
+            sql.to_string(PostgresQueryBuilder),
+            format!(
+                r#"SELECT * FROM "splits" WHERE "index_uid" = '{index_uid}' AND "maturity_timestamp" > TO_TIMESTAMP(55)"#
+            )
         );
+
+        let mut select_statement = Query::select();
+        let sql = select_statement.column(Asterisk).from(Splits::Table);
 
         let query = ListSplitsQuery::for_index(index_uid.clone()).with_delete_opstamp_gte(4);
-        let sql = build_query_filter(String::new(), &query);
+        append_query_filters(sql, &query);
         assert_eq!(
-            sql,
-            format!(" WHERE (index_uid = '{index_uid}') AND delete_opstamp >= 4")
+            sql.to_string(PostgresQueryBuilder),
+            format!(
+                r#"SELECT * FROM "splits" WHERE "index_uid" = '{index_uid}' AND "delete_opstamp" >= 4"#
+            )
         );
+
+        let mut select_statement = Query::select();
+        let sql = select_statement.column(Asterisk).from(Splits::Table);
 
         let query = ListSplitsQuery::for_index(index_uid.clone()).with_time_range_start_gt(45);
-        let sql = build_query_filter(String::new(), &query);
+        append_query_filters(sql, &query);
         assert_eq!(
-            sql,
+            sql.to_string(PostgresQueryBuilder),
             format!(
-                " WHERE (index_uid = '{index_uid}') AND (time_range_end > 45 OR time_range_end IS \
-                 NULL)"
+                r#"SELECT * FROM "splits" WHERE "index_uid" = '{index_uid}' AND ("time_range_end" > 45 OR "time_range_end" IS NULL)"#
             )
         );
 
+        let mut select_statement = Query::select();
+        let sql = select_statement.column(Asterisk).from(Splits::Table);
+
         let query = ListSplitsQuery::for_index(index_uid.clone()).with_time_range_end_lt(45);
-        let sql = build_query_filter(String::new(), &query);
+        append_query_filters(sql, &query);
         assert_eq!(
-            sql,
+            sql.to_string(PostgresQueryBuilder),
             format!(
-                " WHERE (index_uid = '{index_uid}') AND (time_range_start < 45 OR \
-                 time_range_start IS NULL)"
+                r#"SELECT * FROM "splits" WHERE "index_uid" = '{index_uid}' AND ("time_range_start" < 45 OR "time_range_start" IS NULL)"#
             )
         );
+
+        let mut select_statement = Query::select();
+        let sql = select_statement.column(Asterisk).from(Splits::Table);
 
         let query =
             ListSplitsQuery::for_index(index_uid.clone()).with_tags_filter(TagFilterAst::Tag {
                 is_present: false,
                 tag: "tag-2".to_string(),
             });
-        let sql = build_query_filter(String::new(), &query);
+        append_query_filters(sql, &query);
+
         assert_eq!(
-            sql,
-            format!(" WHERE (index_uid = '{index_uid}') AND (NOT ($$tag-2$$ = ANY(tags)))")
+            sql.to_string(PostgresQueryBuilder),
+            format!(
+                r#"SELECT * FROM "splits" WHERE "index_uid" = '{index_uid}' AND NOT ($$tag-2$$ = ANY(tags))"#
+            )
         );
     }
 
     #[test]
     fn test_combination_sql_query_builder() {
+        let mut select_statement = Query::select();
+        let sql = select_statement.column(Asterisk).from(Splits::Table);
+
         let index_uid = IndexUid::new_with_random_ulid("test-index");
         let query = ListSplitsQuery::for_index(index_uid.clone())
             .with_time_range_start_gt(0)
             .with_time_range_end_lt(40);
-        let sql = build_query_filter(String::new(), &query);
+        append_query_filters(sql, &query);
         assert_eq!(
-            sql,
+            sql.to_string(PostgresQueryBuilder),
             format!(
-                " WHERE (index_uid = '{index_uid}') AND (time_range_end > 0 OR time_range_end IS \
-                 NULL) AND (time_range_start < 40 OR time_range_start IS NULL)"
+                r#"SELECT * FROM "splits" WHERE "index_uid" = '{index_uid}' AND ("time_range_end" > 0 OR "time_range_end" IS NULL) AND ("time_range_start" < 40 OR "time_range_start" IS NULL)"#
             )
         );
+
+        let mut select_statement = Query::select();
+        let sql = select_statement.column(Asterisk).from(Splits::Table);
 
         let query = ListSplitsQuery::for_index(index_uid.clone())
             .with_time_range_start_gt(45)
             .with_delete_opstamp_gt(0);
-        let sql = build_query_filter(String::new(), &query);
+        append_query_filters(sql, &query);
         assert_eq!(
-            sql,
+            sql.to_string(PostgresQueryBuilder),
             format!(
-                " WHERE (index_uid = '{index_uid}') AND (time_range_end > 45 OR time_range_end IS \
-                 NULL) AND delete_opstamp > 0"
+                r#"SELECT * FROM "splits" WHERE "index_uid" = '{index_uid}' AND ("time_range_end" > 45 OR "time_range_end" IS NULL) AND "delete_opstamp" > 0"#
             )
         );
+
+        let mut select_statement = Query::select();
+        let sql = select_statement.column(Asterisk).from(Splits::Table);
 
         let query = ListSplitsQuery::for_index(index_uid.clone())
             .with_update_timestamp_lt(51)
             .with_create_timestamp_lte(63);
-        let sql = build_query_filter(String::new(), &query);
+        append_query_filters(sql, &query);
         assert_eq!(
-            sql,
+            sql.to_string(PostgresQueryBuilder),
             format!(
-                " WHERE (index_uid = '{index_uid}') AND update_timestamp < to_timestamp(51) AND \
-                 create_timestamp <= to_timestamp(63)"
+                r#"SELECT * FROM "splits" WHERE "index_uid" = '{index_uid}' AND "update_timestamp" < TO_TIMESTAMP(51) AND "create_timestamp" <= TO_TIMESTAMP(63)"#
             )
         );
+
+        let mut select_statement = Query::select();
+        let sql = select_statement.column(Asterisk).from(Splits::Table);
 
         let query = ListSplitsQuery::for_index(index_uid.clone())
             .with_time_range_start_gt(90)
@@ -1742,23 +1825,27 @@ mod tests {
                 is_present: true,
                 tag: "tag-1".to_string(),
             });
-        let sql = build_query_filter(String::new(), &query);
+        append_query_filters(sql, &query);
         assert_eq!(
-            sql,
+            sql.to_string(PostgresQueryBuilder),
             format!(
-                " WHERE (index_uid = '{index_uid}') AND ($$tag-1$$ = ANY(tags)) AND \
-                 (time_range_end > 90 OR time_range_end IS NULL)"
+                r#"SELECT * FROM "splits" WHERE "index_uid" = '{index_uid}' AND $$tag-1$$ = ANY(tags) AND ("time_range_end" > 90 OR "time_range_end" IS NULL)"#
             )
         );
+
+        let mut select_statement = Query::select();
+        let sql = select_statement.column(Asterisk).from(Splits::Table);
 
         let index_uid_2 = IndexUid::new_with_random_ulid("test-index-2");
         let query =
             ListSplitsQuery::try_from_index_uids(vec![index_uid.clone(), index_uid_2.clone()])
                 .unwrap();
-        let sql = build_query_filter(String::new(), &query);
+        append_query_filters(sql, &query);
         assert_eq!(
-            sql,
-            format!(" WHERE (index_uid = '{index_uid}' OR index_uid = '{index_uid_2}')")
+            sql.to_string(PostgresQueryBuilder),
+            format!(
+                r#"SELECT * FROM "splits" WHERE "index_uid" = '{index_uid}' OR "index_uid" = '{index_uid_2}'"#
+            )
         );
     }
 
