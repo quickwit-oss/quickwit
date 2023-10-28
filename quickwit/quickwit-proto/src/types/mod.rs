@@ -102,7 +102,7 @@ impl IndexUid {
     }
 
     pub fn from_parts(index_id: &str, incarnation_id: impl Display) -> Self {
-        assert!(!index_id.contains(':'), "Index id may not contain `:`");
+        assert!(!index_id.contains(':'), "index ID may not contain `:`");
         Self(format!("{index_id}:{incarnation_id}"))
     }
 
@@ -143,7 +143,7 @@ impl From<String> for IndexUid {
             .copied()
             .filter(|c| *c == b':')
             .count();
-        assert_eq!(count_colon, 1, "Invalid index_uid: {}", index_uid);
+        assert_eq!(count_colon, 1, "invalid index UID: `{}`", index_uid);
         IndexUid(index_uid)
     }
 }
