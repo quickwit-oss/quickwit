@@ -24,6 +24,8 @@ pub struct IndexingTask {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ApplyIndexingPlanResponse {}
 /// BEGIN quickwit-codegen
+#[allow(unused_imports)]
+use std::str::FromStr;
 use tower::{Layer, Service, ServiceExt};
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait::async_trait]

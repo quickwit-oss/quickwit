@@ -108,10 +108,10 @@ const PROTOCOL_SEPARATOR: &str = "://";
 ///
 /// Uri has to be built using `Uri::from_str`.
 /// This function has some normalization behavior.
-/// Some protocol have several acceptable string representation (postgres, pg, postgresql).
+/// Some protocol have several acceptable string representation (`pg`, `postgres`, `postgresql`).
 ///
 /// If the representation in the input string is not canonical, it will get normalized.
-/// In other words, a parsed uri may not have the exact string representation as the original
+/// In other words, a parsed URI may not have the exact string representation as the original
 /// string.
 #[derive(Clone, Eq, PartialEq, Hash)]
 pub struct Uri {
@@ -148,7 +148,7 @@ impl Uri {
             DATABASE_URI_PATTERN
                 .get_or_init(|| {
                     Regex::new("(?P<before>^.*://.*)(?P<password>:.*@)(?P<after>.*)")
-                        .expect("The regular expression should compile.")
+                        .expect("the regular expression should compile")
                 })
                 .replace(&self.uri, "$before:***redacted***@$after")
         } else {
@@ -178,6 +178,7 @@ impl Uri {
         }
         let path = self.path();
         let protocol = self.protocol();
+
         if protocol == Protocol::S3 && path.components().count() < 2 {
             return None;
         }
@@ -185,13 +186,11 @@ impl Uri {
             return None;
         }
         let parent_path = path.parent()?;
-        Some(
-            Uri::from_str(&format!(
-                "{protocol}{PROTOCOL_SEPARATOR}{}",
-                parent_path.display()
-            ))
-            .unwrap(),
-        )
+
+        Some(Self {
+            uri: format!("{protocol}{PROTOCOL_SEPARATOR}{}", parent_path.display()),
+            protocol,
+        })
     }
 
     fn path(&self) -> &Path {
@@ -204,6 +203,7 @@ impl Uri {
             return None;
         }
         let path = self.path();
+
         if self.protocol() == Protocol::S3 && path.components().count() < 2 {
             return None;
         }
@@ -727,7 +727,7 @@ mod tests {
                 ))
                 .unwrap();
                 let expected_uri =
-                    format!("postgresql://username:***redacted***@localhost:5432/metastore");
+                    "postgresql://username:***redacted***@localhost:5432/metastore".to_string();
                 assert_eq!(uri.as_redacted_str(), expected_uri);
                 assert_eq!(format!("{uri}"), expected_uri);
                 assert_eq!(

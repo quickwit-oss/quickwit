@@ -201,7 +201,7 @@ mod tests {
         });
         let (_uri_protocol, uri_path) = test_database_url.split_once("://").unwrap();
         for protocol in &["postgres", "postgresql"] {
-            let postgres_uri = Uri::for_test(format!("{protocol}://{uri_path}"));
+            let postgres_uri = Uri::from_str(&format!("{protocol}://{uri_path}")).unwrap();
             metastore_resolver.resolve(&postgres_uri).await.unwrap();
         }
     }

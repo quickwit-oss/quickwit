@@ -19,7 +19,6 @@
 
 use std::collections::{HashMap, HashSet};
 use std::str::FromStr;
-use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
@@ -316,12 +315,12 @@ impl DeleteTaskPlanner {
                 ..Default::default()
             };
             let mut search_indexes_metas = HashMap::new();
-            let index_uri = Uri::from_str(index_uri).context("Invalid index uri")?;
+            let index_uri = Uri::from_str(index_uri).context("invalid index URI")?;
             search_indexes_metas.insert(
                 IndexUid::from(delete_query.index_uid.clone()),
                 IndexMetasForLeafSearch {
                     doc_mapper_str: doc_mapper_str.to_string(),
-                    index_uri: index_uri,
+                    index_uri,
                 },
             );
             let leaf_search_request = jobs_to_leaf_requests(

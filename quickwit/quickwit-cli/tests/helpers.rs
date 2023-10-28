@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::borrow::Borrow;
 use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
@@ -273,10 +274,8 @@ pub async fn upload_test_file(
 ) -> PathBuf {
     let test_data = tokio::fs::read(local_src_path).await.unwrap();
     let mut src_location: PathBuf = [r"s3://", bucket, prefix].iter().collect();
-    let storage = storage_resolver
-        .resolve(&Uri::from_well_formed(src_location.to_string_lossy()))
-        .await
-        .unwrap();
+    let storage_uri = Uri::from_str(src_location.to_string_lossy().borrow()).unwrap();
+    let storage = storage_resolver.resolve(&storage_uri).await.unwrap();
     storage
         .put(&PathBuf::from(filename), Box::new(test_data))
         .await

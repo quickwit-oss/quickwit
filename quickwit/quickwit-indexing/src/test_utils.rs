@@ -99,7 +99,7 @@ impl TestSandbox {
         let storage_resolver = StorageResolver::for_test();
         let metastore_resolver =
             MetastoreResolver::configured(storage_resolver.clone(), &MetastoreConfigs::default());
-        let metastore = metastore_resolver
+        let mut metastore = metastore_resolver
             .resolve(&Uri::for_test(METASTORE_URI))
             .await?;
         let create_index_request = CreateIndexRequest::try_from_index_config(index_config.clone())?;

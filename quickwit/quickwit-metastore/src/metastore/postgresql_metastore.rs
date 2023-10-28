@@ -1511,6 +1511,7 @@ impl crate::tests::DefaultForTest for PostgresqlMetastore {
 
 #[cfg(test)]
 mod tests {
+    use quickwit_common::uri::Protocol;
     use quickwit_doc_mapper::tag_pruning::{no_tag, tag, TagFilterAst};
     use quickwit_proto::metastore::MetastoreService;
     use quickwit_proto::types::IndexUid;
@@ -1529,7 +1530,7 @@ mod tests {
     async fn test_metastore_connectivity_and_endpoints() {
         let mut metastore = PostgresqlMetastore::default_for_test().await;
         metastore.check_connectivity().await.unwrap();
-        assert!(metastore.endpoints()[0].protocol().is_postgresql());
+        assert_eq!(metastore.endpoints()[0].protocol(), Protocol::PostgreSQL);
     }
 
     fn test_tags_filter_expression_helper(tags_ast: TagFilterAst, expected: Cond) {

@@ -182,10 +182,10 @@ impl SearchService for SearchServiceImpl {
     ) -> crate::Result<LeafSearchResponse> {
         let search_request: Arc<SearchRequest> = leaf_search_request
             .search_request
-            .ok_or_else(|| SearchError::Internal("no search request".to_string()))?;
+            .ok_or_else(|| SearchError::Internal("no search request".to_string()))?
+            .into();
         let index_uri = Uri::from_str(&leaf_search_request.index_uri)?;
         let storage = self.storage_resolver.resolve(&index_uri).await?;
-        let split_ids = leaf_search_request.split_offsets;
         let doc_mapper = deserialize_doc_mapper(&leaf_search_request.doc_mapper)?;
 
         let leaf_search_response = leaf_search(

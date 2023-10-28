@@ -113,7 +113,7 @@ impl MetastoreFactory for FileBackedMetastoreFactory {
     ) -> Result<MetastoreServiceClient, MetastoreResolverError> {
         let (uri_stripped, polling_interval_opt) = extract_polling_interval_from_uri(uri.as_str());
         let uri = Uri::from_str(&uri_stripped).map_err(|_| {
-            MetastoreResolverError::InvalidConfig(format!("Invalid URI `{}`", uri_stripped))
+            MetastoreResolverError::InvalidConfig(format!("invalid URI: `{uri_stripped}`"))
         })?;
         if let Some(metastore) = self.get_from_cache(&uri).await {
             debug!("using metastore from cache");
