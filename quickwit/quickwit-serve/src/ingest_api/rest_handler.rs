@@ -140,6 +140,7 @@ async fn ingest_v2(
         doc_lengths,
     };
     let subrequest = IngestSubrequest {
+        subrequest_id: 0,
         index_id,
         source_id: INGEST_SOURCE_ID.to_string(),
         doc_batch: Some(doc_batch),

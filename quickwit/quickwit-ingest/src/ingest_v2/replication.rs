@@ -394,6 +394,7 @@ impl ReplicationTask {
             replica_shard.set_replication_position_inclusive(current_position_inclusive.clone());
 
             let replicate_success = ReplicateSuccess {
+                subrequest_id: subrequest.subrequest_id,
                 index_uid: subrequest.index_uid,
                 source_id: subrequest.source_id,
                 shard_id: subrequest.shard_id,
@@ -490,6 +491,7 @@ mod tests {
                     .subrequests
                     .iter()
                     .map(|subrequest| ReplicateSuccess {
+                        subrequest_id: subrequest.subrequest_id,
                         index_uid: subrequest.index_uid.clone(),
                         source_id: subrequest.source_id.clone(),
                         shard_id: subrequest.shard_id,
@@ -519,6 +521,7 @@ mod tests {
             commit_type: CommitTypeV2::Auto as i32,
             subrequests: vec![
                 ReplicateSubrequest {
+                    subrequest_id: 0,
                     index_uid: "test-index:0".to_string(),
                     source_id: "test-source".to_string(),
                     shard_id: 1,
@@ -527,6 +530,7 @@ mod tests {
                     to_position_inclusive: Some(Position::from(0u64)),
                 },
                 ReplicateSubrequest {
+                    subrequest_id: 1,
                     index_uid: "test-index:0".to_string(),
                     source_id: "test-source".to_string(),
                     shard_id: 2,
@@ -535,6 +539,7 @@ mod tests {
                     to_position_inclusive: Some(Position::from(1u64)),
                 },
                 ReplicateSubrequest {
+                    subrequest_id: 2,
                     index_uid: "test-index:1".to_string(),
                     source_id: "test-source".to_string(),
                     shard_id: 1,
@@ -637,6 +642,7 @@ mod tests {
             commit_type: CommitTypeV2::Auto as i32,
             subrequests: vec![
                 ReplicateSubrequest {
+                    subrequest_id: 0,
                     index_uid: "test-index:0".to_string(),
                     source_id: "test-source".to_string(),
                     shard_id: 1,
@@ -645,6 +651,7 @@ mod tests {
                     to_position_inclusive: Some(Position::from(0u64)),
                 },
                 ReplicateSubrequest {
+                    subrequest_id: 1,
                     index_uid: "test-index:0".to_string(),
                     source_id: "test-source".to_string(),
                     shard_id: 2,
@@ -653,6 +660,7 @@ mod tests {
                     to_position_inclusive: Some(Position::from(1u64)),
                 },
                 ReplicateSubrequest {
+                    subrequest_id: 2,
                     index_uid: "test-index:1".to_string(),
                     source_id: "test-source".to_string(),
                     shard_id: 1,
@@ -724,6 +732,7 @@ mod tests {
             follower_id: "test-follower".to_string(),
             commit_type: CommitTypeV2::Auto as i32,
             subrequests: vec![ReplicateSubrequest {
+                subrequest_id: 0,
                 index_uid: "test-index:0".to_string(),
                 source_id: "test-source".to_string(),
                 shard_id: 1,

@@ -33,14 +33,15 @@ use serde::{Deserialize, Serialize, Serializer};
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+#[repr(u8)]
 pub enum Protocol {
-    Azure,
-    File,
-    Grpc,
-    Actor,
-    PostgreSQL,
-    Ram,
-    S3,
+    Actor = 1,
+    Azure = 2,
+    File = 3,
+    Grpc = 4,
+    PostgreSQL = 5,
+    Ram = 6,
+    S3 = 7,
 }
 
 impl Protocol {
@@ -56,28 +57,8 @@ impl Protocol {
         }
     }
 
-    pub fn is_azure(&self) -> bool {
-        matches!(&self, Protocol::Azure)
-    }
-
     pub fn is_file(&self) -> bool {
         matches!(&self, Protocol::File)
-    }
-
-    pub fn is_grpc(&self) -> bool {
-        matches!(&self, Protocol::Grpc)
-    }
-
-    pub fn is_postgresql(&self) -> bool {
-        matches!(&self, Protocol::PostgreSQL)
-    }
-
-    pub fn is_ram(&self) -> bool {
-        matches!(&self, Protocol::Ram)
-    }
-
-    pub fn is_s3(&self) -> bool {
-        matches!(&self, Protocol::S3)
     }
 
     pub fn is_file_storage(&self) -> bool {
@@ -119,31 +100,30 @@ impl FromStr for Protocol {
 const PROTOCOL_SEPARATOR: &str = "://";
 
 /// Encapsulates the URI type.
+///
+/// URI's string representation are guaranteed to start
+/// by the protocol `str()` representation.
+///
+/// # Disclaimer
+///
+/// Uri has to be built using `Uri::from_str`.
+/// This function has some normalization behavior.
+/// Some protocol have several acceptable string representation (`pg`, `postgres`, `postgresql`).
+///
+/// If the representation in the input string is not canonical, it will get normalized.
+/// In other words, a parsed URI may not have the exact string representation as the original
+/// string.
 #[derive(Clone, Eq, PartialEq, Hash)]
 pub struct Uri {
     uri: String,
-    protocol_idx: usize,
+    protocol: Protocol,
 }
 
 impl Uri {
-    /// Constructs a [`Uri`] from a properly formatted string `<protocol>://<path>` where `path` is
-    /// normalized. Use this method exclusively for trusted input.
-    pub fn from_well_formed<S: ToString>(uri: S) -> Self {
-        let uri = uri.to_string();
-        let protocol_idx = uri.find(PROTOCOL_SEPARATOR).expect(
-            "URI lacks protocol separator. Use `Uri::from_well_formed` exclusively for trusted \
-             input.",
-        );
-        let protocol_str = &uri[..protocol_idx];
-        protocol_str.parse::<Protocol>().expect(
-            "URI protocol is invalid. Use `Uri::from_well_formed` exclusively for trusted input.`",
-        );
-        Self { uri, protocol_idx }
-    }
-
-    #[cfg(any(test, feature = "testsuite"))]
-    pub fn for_test(uri: &str) -> Self {
-        Uri::from_well_formed(uri)
+    /// This is only used for test. We artificially restrict the lifetime to 'static
+    /// to avoid misuses.
+    pub fn for_test(uri: &'static str) -> Self {
+        Uri::from_str(uri).unwrap()
     }
 
     /// Returns the extension of the URI.
@@ -158,7 +138,7 @@ impl Uri {
 
     /// Returns the protocol of the URI.
     pub fn protocol(&self) -> Protocol {
-        Protocol::from_str(&self.uri[..self.protocol_idx]).expect("Failed to parse URI protocol. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.")
+        self.protocol
     }
 
     /// Strips sensitive information such as credentials from URI.
@@ -168,7 +148,7 @@ impl Uri {
             DATABASE_URI_PATTERN
                 .get_or_init(|| {
                     Regex::new("(?P<before>^.*://.*)(?P<password>:.*@)(?P<after>.*)")
-                        .expect("The regular expression should compile.")
+                        .expect("the regular expression should compile")
                 })
                 .replace(&self.uri, "$before:***redacted***@$after")
         } else {
@@ -181,12 +161,10 @@ impl Uri {
     }
 
     /// Returns the file path of the URI.
-    /// Applies only to `file://` URIs.
+    /// Applies only to `file://` and `ram://` URIs.
     pub fn filepath(&self) -> Option<&Path> {
         if self.protocol().is_file_storage() {
-            Some(Path::new(
-                &self.uri[self.protocol_idx + PROTOCOL_SEPARATOR.len()..],
-            ))
+            Some(self.path())
         } else {
             None
         }
@@ -198,32 +176,38 @@ impl Uri {
         if self.protocol().is_database() {
             return None;
         }
-        let protocol = &self.uri[..self.protocol_idx];
-        let path = Path::new(&self.uri[self.protocol_idx + PROTOCOL_SEPARATOR.len()..]);
-        if self.protocol().is_s3() && path.components().count() < 2 {
+        let path = self.path();
+        let protocol = self.protocol();
+
+        if protocol == Protocol::S3 && path.components().count() < 2 {
             return None;
         }
-        if self.protocol().is_azure() && path.components().count() < 3 {
+        if protocol == Protocol::Azure && path.components().count() < 3 {
             return None;
         }
-        path.parent().map(|parent| {
-            Uri::from_well_formed(format!(
-                "{protocol}{PROTOCOL_SEPARATOR}{}",
-                parent.display()
-            ))
+        let parent_path = path.parent()?;
+
+        Some(Self {
+            uri: format!("{protocol}{PROTOCOL_SEPARATOR}{}", parent_path.display()),
+            protocol,
         })
+    }
+
+    fn path(&self) -> &Path {
+        Path::new(&self.uri[self.protocol.as_str().len() + PROTOCOL_SEPARATOR.len()..])
     }
 
     /// Returns the last component of the URI.
     pub fn file_name(&self) -> Option<&Path> {
-        if self.protocol().is_postgresql() {
+        if self.protocol() == Protocol::PostgreSQL {
             return None;
         }
-        let path = Path::new(&self.uri[self.protocol_idx + PROTOCOL_SEPARATOR.len()..]);
-        if self.protocol().is_s3() && path.components().count() < 2 {
+        let path = self.path();
+
+        if self.protocol() == Protocol::S3 && path.components().count() < 2 {
             return None;
         }
-        if self.protocol().is_azure() && path.components().count() < 3 {
+        if self.protocol() == Protocol::Azure && path.components().count() < 3 {
             return None;
         }
         path.file_name().map(Path::new)
@@ -263,7 +247,7 @@ impl Uri {
         };
         Ok(Self {
             uri: joined,
-            protocol_idx: self.protocol_idx,
+            protocol: self.protocol,
         })
     }
 
@@ -309,7 +293,7 @@ impl Uri {
         }
         Ok(Self {
             uri: format!("{protocol}{PROTOCOL_SEPARATOR}{path}"),
-            protocol_idx: protocol.as_str().len(),
+            protocol,
         })
     }
 }
@@ -730,19 +714,20 @@ mod tests {
         );
         assert_eq!(
             Uri::for_test("postgres://localhost:5432/metastore").as_redacted_str(),
-            "postgres://localhost:5432/metastore"
+            "postgresql://localhost:5432/metastore"
         );
         assert_eq!(
-            Uri::for_test("postgres://username@localhost:5432/metastore").as_redacted_str(),
-            "postgres://username@localhost:5432/metastore"
+            Uri::for_test("pg://username@localhost:5432/metastore").as_redacted_str(),
+            "postgresql://username@localhost:5432/metastore"
         );
         {
             for protocol in ["postgres", "postgresql"] {
-                let uri = Uri::from_well_formed(format!(
+                let uri = Uri::from_str(&format!(
                     "{protocol}://username:password@localhost:5432/metastore"
-                ));
+                ))
+                .unwrap();
                 let expected_uri =
-                    format!("{protocol}://username:***redacted***@localhost:5432/metastore");
+                    "postgresql://username:***redacted***@localhost:5432/metastore".to_string();
                 assert_eq!(uri.as_redacted_str(), expected_uri);
                 assert_eq!(format!("{uri}"), expected_uri);
                 assert_eq!(

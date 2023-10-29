@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashMap;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -111,7 +112,9 @@ impl MetastoreFactory for FileBackedMetastoreFactory {
         uri: &Uri,
     ) -> Result<MetastoreServiceClient, MetastoreResolverError> {
         let (uri_stripped, polling_interval_opt) = extract_polling_interval_from_uri(uri.as_str());
-        let uri = Uri::from_well_formed(uri_stripped);
+        let uri = Uri::from_str(&uri_stripped).map_err(|_| {
+            MetastoreResolverError::InvalidConfig(format!("invalid URI: `{uri_stripped}`"))
+        })?;
         if let Some(metastore) = self.get_from_cache(&uri).await {
             debug!("using metastore from cache");
             return Ok(metastore);

@@ -110,14 +110,19 @@ impl Shards {
     ) -> MetastoreResult<MutationOccurred<OpenShardsSubresponse>> {
         let mut mutation_occurred = false;
 
-        if subrequest.next_shard_id + 1 < self.next_shard_id
-            || subrequest.next_shard_id > self.next_shard_id
-        {
+        // When a response is lost, the control plane can "lag by one shard ID".
+        // The inconsistency should be resolved on the next attempt.
+        //
+        // `self.next_shard_id - 1` does not underflow because `self.next_shard_id` is always > 0.
+        let ok_next_shard_ids = self.next_shard_id - 1..=self.next_shard_id;
+
+        if !ok_next_shard_ids.contains(&subrequest.next_shard_id) {
             warn!(
-                "control plane and metastore next shard IDs do not match, expected `{}`, got `{}`",
+                "control plane state is inconsistent with that of the metastore, expected next \
+                 shard ID `{}`, got `{}`",
                 self.next_shard_id, subrequest.next_shard_id
-            )
-            // TODO: Return an error and crash the control plane.
+            );
+            return Err(MetastoreError::InconsistentControlPlaneState);
         }
 
         let entry = self.shards.entry(subrequest.next_shard_id);
@@ -128,13 +133,15 @@ impl Shards {
                     index_uid: self.index_uid.clone().into(),
                     source_id: self.source_id.clone(),
                     shard_id: self.next_shard_id,
+                    shard_state: ShardState::Open as i32,
                     leader_id: subrequest.leader_id.clone(),
                     follower_id: subrequest.follower_id.clone(),
-                    ..Default::default()
+                    publish_position_inclusive: Some(Position::Beginning),
+                    publish_token: None,
                 };
                 mutation_occurred = true;
                 entry.insert(shard.clone());
-                self.next_shard_id += 1;
+                self.next_shard_id = subrequest.next_shard_id + 1;
 
                 info!(
                     index_id=%self.index_uid.index_id(),
@@ -147,13 +154,13 @@ impl Shards {
                 shard
             }
         };
-        let open_shards = vec![shard];
+        let opened_shards = vec![shard];
         let next_shard_id = self.next_shard_id;
 
         let response = OpenShardsSubresponse {
             index_uid: subrequest.index_uid,
             source_id: subrequest.source_id,
-            open_shards,
+            opened_shards,
             next_shard_id,
         };
         if mutation_occurred {
@@ -340,26 +347,28 @@ mod tests {
         };
         assert_eq!(subresponse.index_uid, index_uid.as_str());
         assert_eq!(subresponse.source_id, source_id);
-        assert_eq!(subresponse.open_shards.len(), 1);
+        assert_eq!(subresponse.opened_shards.len(), 1);
 
-        let shard = &subresponse.open_shards[0];
+        let shard = &subresponse.opened_shards[0];
         assert_eq!(shard.index_uid, index_uid.as_str());
         assert_eq!(shard.source_id, source_id);
         assert_eq!(shard.shard_id, 1);
-        assert_eq!(shard.shard_state, 0);
+        assert_eq!(shard.shard_state(), ShardState::Open);
         assert_eq!(shard.leader_id, "leader_id");
         assert_eq!(shard.follower_id, None);
         assert_eq!(shard.publish_position_inclusive(), Position::Beginning);
 
         assert_eq!(shards.shards.get(&1).unwrap(), shard);
+        assert_eq!(shards.next_shard_id, 2);
 
         let MutationOccurred::No(subresponse) = shards.open_shards(subrequest).unwrap() else {
             panic!("Expected `MutationOccured::No`");
         };
-        assert_eq!(subresponse.open_shards.len(), 1);
+        assert_eq!(subresponse.opened_shards.len(), 1);
 
-        let shard = &subresponse.open_shards[0];
+        let shard = &subresponse.opened_shards[0];
         assert_eq!(shards.shards.get(&1).unwrap(), shard);
+        assert_eq!(shards.next_shard_id, 2);
 
         let subrequest = OpenShardsSubrequest {
             index_uid: index_uid.clone().into(),
@@ -373,18 +382,29 @@ mod tests {
         };
         assert_eq!(subresponse.index_uid, index_uid.as_str());
         assert_eq!(subresponse.source_id, source_id);
-        assert_eq!(subresponse.open_shards.len(), 1);
+        assert_eq!(subresponse.opened_shards.len(), 1);
 
-        let shard = &subresponse.open_shards[0];
+        let shard = &subresponse.opened_shards[0];
         assert_eq!(shard.index_uid, index_uid.as_str());
         assert_eq!(shard.source_id, source_id);
         assert_eq!(shard.shard_id, 2);
-        assert_eq!(shard.shard_state, 0);
+        assert_eq!(shard.shard_state(), ShardState::Open);
         assert_eq!(shard.leader_id, "leader_id");
         assert_eq!(shard.follower_id.as_ref().unwrap(), "follower_id");
         assert_eq!(shard.publish_position_inclusive(), Position::Beginning);
 
         assert_eq!(shards.shards.get(&2).unwrap(), shard);
+        assert_eq!(shards.next_shard_id, 3);
+
+        let subrequest = OpenShardsSubrequest {
+            index_uid: index_uid.clone().into(),
+            source_id: source_id.clone(),
+            leader_id: "leader_id".to_string(),
+            follower_id: Some("follower_id".to_string()),
+            next_shard_id: 1,
+        };
+        let error = shards.open_shards(subrequest).unwrap_err();
+        assert_eq!(error, MetastoreError::InconsistentControlPlaneState);
     }
 
     #[test]

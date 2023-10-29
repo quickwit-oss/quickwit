@@ -49,6 +49,8 @@ pub struct GetOpenShardsSubresponse {
     pub open_shards: ::prost::alloc::vec::Vec<super::ingest::Shard>,
 }
 /// BEGIN quickwit-codegen
+#[allow(unused_imports)]
+use std::str::FromStr;
 use tower::{Layer, Service, ServiceExt};
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait::async_trait]

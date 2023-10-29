@@ -249,7 +249,7 @@ mod test {
                 ConfigFormat::Yaml,
                 config_yaml.as_bytes(),
                 // same but without the trailing slash.
-                &Uri::from_well_formed("s3://mybucket"),
+                &Uri::for_test("s3://mybucket"),
             )
             .unwrap();
             assert_eq!(index_config.index_uri.as_str(), "s3://mybucket/hdfs-logs");

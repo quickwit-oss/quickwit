@@ -21,7 +21,6 @@ use std::cmp::Ordering;
 use std::fmt;
 use std::time::{Duration, Instant};
 
-use anyhow::Context;
 use fnv::{FnvHashMap, FnvHashSet};
 use itertools::Itertools;
 use quickwit_proto::indexing::{ApplyIndexingPlanRequest, IndexingService, IndexingTask};
@@ -134,14 +133,13 @@ impl IndexingScheduler {
         self.state.clone()
     }
 
-    pub(crate) fn schedule_indexing_plan_if_needed(
-        &mut self,
-        model: &ControlPlaneModel,
-    ) -> anyhow::Result<()> {
+    // Should be called whenever a change in the list of index/shard
+    // has happened.
+    pub(crate) fn schedule_indexing_plan_if_needed(&mut self, model: &ControlPlaneModel) {
         let mut indexers = self.get_indexers_from_indexer_pool();
         if indexers.is_empty() {
             warn!("No indexer available, cannot schedule an indexing plan.");
-            return Ok(());
+            return;
         };
         let indexing_tasks = list_indexing_tasks(indexers.len(), model);
         let new_physical_plan = build_physical_indexing_plan(&indexers, indexing_tasks);
@@ -152,19 +150,18 @@ impl IndexingScheduler {
             );
             // No need to apply the new plan as it is the same as the old one.
             if plans_diff.is_empty() {
-                return Ok(());
+                return;
             }
         }
         self.apply_physical_indexing_plan(&mut indexers, new_physical_plan);
         self.state.num_schedule_indexing_plan += 1;
-        Ok(())
     }
 
     /// Checks if the last applied plan corresponds to the running indexing tasks present in the
     /// chitchat cluster state. If true, do nothing.
     /// - If node IDs differ, schedule a new indexing plan.
     /// - If indexing tasks differ, apply again the last plan.
-    pub(crate) fn control_running_plan(&mut self, model: &ControlPlaneModel) -> anyhow::Result<()> {
+    pub(crate) fn control_running_plan(&mut self, model: &ControlPlaneModel) {
         let last_applied_plan =
             if let Some(last_applied_plan) = self.state.last_applied_physical_plan.as_ref() {
                 last_applied_plan
@@ -172,15 +169,15 @@ impl IndexingScheduler {
                 // If there is no plan, the node is probably starting and the scheduler did not find
                 // indexers yet. In this case, we want to schedule as soon as possible to find new
                 // indexers.
-                self.schedule_indexing_plan_if_needed(model)?;
-                return Ok(());
+                self.schedule_indexing_plan_if_needed(model);
+                return;
             };
 
         if let Some(last_applied_plan_timestamp) = self.state.last_applied_plan_timestamp {
             if Instant::now().duration_since(last_applied_plan_timestamp)
                 < MIN_DURATION_BETWEEN_SCHEDULING
             {
-                return Ok(());
+                return;
             }
         }
 
@@ -196,13 +193,12 @@ impl IndexingScheduler {
         );
         if !indexing_plans_diff.has_same_nodes() {
             info!(plans_diff=?indexing_plans_diff, "Running plan and last applied plan node IDs differ: schedule an indexing plan.");
-            self.schedule_indexing_plan_if_needed(model)?;
+            self.schedule_indexing_plan_if_needed(model);
         } else if !indexing_plans_diff.has_same_tasks() {
             // Some nodes may have not received their tasks, apply it again.
             info!(plans_diff=?indexing_plans_diff, "Running tasks and last applied tasks differ: reapply last plan.");
             self.apply_physical_indexing_plan(&mut indexers, last_applied_plan.clone());
         }
-        Ok(())
     }
 
     fn get_indexers_from_indexer_pool(&self) -> Vec<(String, IndexerNodeInfo)> {
@@ -242,17 +238,6 @@ impl IndexingScheduler {
         self.state.num_applied_physical_indexing_plan += 1;
         self.state.last_applied_plan_timestamp = Some(Instant::now());
         self.state.last_applied_physical_plan = Some(new_physical_plan);
-    }
-
-    // Should be called whenever a change in the list of index/shard
-    // has happened
-    pub(crate) async fn on_index_change(
-        &mut self,
-        model: &ControlPlaneModel,
-    ) -> anyhow::Result<()> {
-        self.schedule_indexing_plan_if_needed(model)
-            .context("error when scheduling indexing plan")?;
-        Ok(())
     }
 }
 

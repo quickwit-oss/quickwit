@@ -18,8 +18,10 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::{HashMap, HashSet};
+use std::str::FromStr;
 use std::time::Duration;
 
+use anyhow::Context;
 use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox, QueueCapacity};
@@ -313,11 +315,12 @@ impl DeleteTaskPlanner {
                 ..Default::default()
             };
             let mut search_indexes_metas = HashMap::new();
+            let index_uri = Uri::from_str(index_uri).context("invalid index URI")?;
             search_indexes_metas.insert(
                 IndexUid::from(delete_query.index_uid.clone()),
                 IndexMetasForLeafSearch {
                     doc_mapper_str: doc_mapper_str.to_string(),
-                    index_uri: Uri::from_well_formed(index_uri),
+                    index_uri,
                 },
             );
             let leaf_search_request = jobs_to_leaf_requests(

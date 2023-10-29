@@ -120,10 +120,7 @@ impl CodegenBuilder {
     pub fn run(self) -> anyhow::Result<()> {
         ensure!(!self.protos.is_empty(), "proto file list is empty");
         ensure!(!self.output_dir.is_empty(), "output directory is undefined");
-        ensure!(
-            !self.result_type_path.is_empty(),
-            "result type is undefined"
-        );
+        ensure!(!self.result_type_path.is_empty(),);
         ensure!(!self.error_type_path.is_empty(), "error type is undefined");
 
         Codegen::run(self)
@@ -305,6 +302,8 @@ fn generate_all(
     quote! {
         // The line below is necessary to opt out of the license header check.
         /// BEGIN quickwit-codegen
+        #[allow(unused_imports)]
+        use std::str::FromStr;
         use tower::{Layer, Service, ServiceExt};
         #prom_labels_impl
 
@@ -970,7 +969,7 @@ fn generate_tower_mailbox(context: &CodegenContext) -> TokenStream {
             }
 
             fn endpoints(&self) -> Vec<quickwit_common::uri::Uri> {
-                vec![quickwit_common::uri::Uri::from_well_formed(format!("actor://localhost/{}", self.inner.actor_instance_id()))]
+                vec![quickwit_common::uri::Uri::from_str(&format!("actor://localhost/{}", self.inner.actor_instance_id())).expect("URI should be valid")]
             }
         }
     } else {
@@ -1114,7 +1113,7 @@ fn generate_grpc_client_adapter(context: &CodegenContext) -> TokenStream {
                 self.connection_addrs_rx
                     .borrow()
                     .iter()
-                    .map(|addr| quickwit_common::uri::Uri::from_well_formed(format!(r"grpc://{}/{}.{}", addr, #grpc_client_package_name_string, #service_name_string)))
+                    .flat_map(|addr| quickwit_common::uri::Uri::from_str(&format!("grpc://{addr}/{}.{}", #grpc_client_package_name_string, #service_name_string)))
                     .collect()
             }
         }

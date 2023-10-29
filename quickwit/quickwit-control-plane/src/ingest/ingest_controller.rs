@@ -302,22 +302,26 @@ impl IngestController {
             let open_shards_response = progress
                 .protect_future(self.metastore.open_shards(open_shards_request))
                 .await?;
-            for open_shards_subresponse in &open_shards_response.subresponses {
+            for open_shards_subresponse in open_shards_response.subresponses {
                 let index_uid: IndexUid = open_shards_subresponse.index_uid.clone().into();
-                model.update_shards(
+                let source_id = open_shards_subresponse.source_id.clone();
+
+                model.insert_newly_opened_shards(
                     &index_uid,
-                    &open_shards_subresponse.source_id,
-                    &open_shards_subresponse.open_shards,
+                    &source_id,
+                    open_shards_subresponse.opened_shards,
                     open_shards_subresponse.next_shard_id,
                 );
-            }
-            for open_shards_subresponse in open_shards_response.subresponses {
-                let get_open_shards_subresponse = GetOpenShardsSubresponse {
-                    index_uid: open_shards_subresponse.index_uid,
-                    source_id: open_shards_subresponse.source_id,
-                    open_shards: open_shards_subresponse.open_shards,
-                };
-                get_open_shards_subresponses.push(get_open_shards_subresponse);
+                if let Some((open_shards, _next_shard_id)) =
+                    model.find_open_shards(&index_uid, &source_id, &unavailable_leaders)
+                {
+                    let get_open_shards_subresponse = GetOpenShardsSubresponse {
+                        index_uid: index_uid.into(),
+                        source_id,
+                        open_shards,
+                    };
+                    get_open_shards_subresponses.push(get_open_shards_subresponse);
+                }
             }
         }
         Ok(GetOrCreateOpenShardsResponse {
@@ -548,35 +552,36 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_ingest_controller_get_open_shards() {
+    async fn test_ingest_controller_get_or_create_open_shards() {
         let source_id: &'static str = "test-source";
 
-        let index_0 = "test-index-0";
-        let index_metadata_0 = IndexMetadata::for_test(index_0, "ram://indexes/test-index0");
+        let index_id_0 = "test-index-0";
+        let index_metadata_0 = IndexMetadata::for_test(index_id_0, "ram://indexes/test-index-0");
         let index_uid_0 = index_metadata_0.index_uid.clone();
-        let index_uid_0_str = index_uid_0.to_string();
-        let index_1 = "test-index-1";
-        let index_metadata_1 = IndexMetadata::for_test(index_1, "ram://indexes/test-index1");
+
+        let index_id_1 = "test-index-1";
+        let index_metadata_1 = IndexMetadata::for_test(index_id_1, "ram://indexes/test-index-1");
         let index_uid_1 = index_metadata_1.index_uid.clone();
-        let index_uid_1_str = index_uid_1.to_string();
 
         let progress = Progress::default();
 
-        let index_uid_1_str_clone = index_uid_1_str.clone();
         let mut mock_metastore = MetastoreServiceClient::mock();
-        mock_metastore
-            .expect_open_shards()
-            .once()
-            .returning(move |request| {
+        mock_metastore.expect_open_shards().once().returning({
+            let index_uid_1 = index_uid_1.clone();
+
+            move |request| {
                 assert_eq!(request.subrequests.len(), 1);
-                assert_eq!(&request.subrequests[0].index_uid, &index_uid_1_str_clone);
+                assert_eq!(&request.subrequests[0].index_uid, index_uid_1.as_str());
                 assert_eq!(&request.subrequests[0].source_id, source_id);
 
                 let subresponses = vec![metastore::OpenShardsSubresponse {
-                    index_uid: index_uid_1_str_clone.to_string(),
-                    source_id: "test-source".to_string(),
-                    open_shards: vec![Shard {
+                    index_uid: index_uid_1.clone().into(),
+                    source_id: source_id.to_string(),
+                    opened_shards: vec![Shard {
+                        index_uid: index_uid_1.clone().into(),
+                        source_id: source_id.to_string(),
                         shard_id: 1,
+                        shard_state: ShardState::Open as i32,
                         leader_id: "test-ingester-2".to_string(),
                         ..Default::default()
                     }],
@@ -584,7 +589,8 @@ mod tests {
                 }];
                 let response = metastore::OpenShardsResponse { subresponses };
                 Ok(response)
-            });
+            }
+        });
         let ingester_pool = IngesterPool::default();
 
         let mut mock_ingester = MockIngesterService::default();
@@ -621,12 +627,16 @@ mod tests {
 
         let shards = vec![
             Shard {
+                index_uid: index_uid_0.clone().into(),
+                source_id: source_id.to_string(),
                 shard_id: 1,
                 leader_id: "test-ingester-0".to_string(),
                 shard_state: ShardState::Open as i32,
                 ..Default::default()
             },
             Shard {
+                index_uid: index_uid_0.clone().into(),
+                source_id: source_id.to_string(),
                 shard_id: 2,
                 leader_id: "test-ingester-1".to_string(),
                 shard_state: ShardState::Open as i32,
@@ -634,7 +644,7 @@ mod tests {
             },
         ];
 
-        model.update_shards(&index_uid_0, &source_id.into(), &shards, 3);
+        model.insert_newly_opened_shards(&index_uid_0, &source_id.into(), shards, 3);
 
         let request = GetOrCreateOpenShardsRequest {
             subrequests: Vec::new(),
@@ -673,7 +683,7 @@ mod tests {
 
         assert_eq!(response.subresponses.len(), 2);
 
-        assert_eq!(response.subresponses[0].index_uid, index_uid_0_str);
+        assert_eq!(response.subresponses[0].index_uid, index_uid_0.as_str());
         assert_eq!(response.subresponses[0].source_id, source_id);
         assert_eq!(response.subresponses[0].open_shards.len(), 1);
         assert_eq!(response.subresponses[0].open_shards[0].shard_id, 2);
@@ -682,7 +692,7 @@ mod tests {
             "test-ingester-1"
         );
 
-        assert_eq!(&response.subresponses[1].index_uid, &index_uid_1_str);
+        assert_eq!(&response.subresponses[1].index_uid, index_uid_1.as_str());
         assert_eq!(response.subresponses[1].source_id, source_id);
         assert_eq!(response.subresponses[1].open_shards.len(), 1);
         assert_eq!(response.subresponses[1].open_shards[0].shard_id, 1);
@@ -713,7 +723,7 @@ mod tests {
             shard_state: ShardState::Open as i32,
             ..Default::default()
         }];
-        model.update_shards(&index_uid, &source_id, &shards, 3);
+        model.insert_newly_opened_shards(&index_uid, &source_id, shards, 3);
 
         let request = GetOrCreateOpenShardsRequest {
             subrequests: Vec::new(),
@@ -772,7 +782,7 @@ mod tests {
                 ..Default::default()
             },
         ];
-        model.update_shards(&index_uid, &source_id, &shards, 4);
+        model.insert_newly_opened_shards(&index_uid, &source_id, shards, 4);
 
         let request = GetOrCreateOpenShardsRequest {
             subrequests: Vec::new(),

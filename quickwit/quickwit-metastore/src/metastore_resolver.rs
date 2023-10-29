@@ -176,6 +176,8 @@ impl MetastoreResolverBuilder {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use super::*;
 
     #[tokio::test]
@@ -183,7 +185,7 @@ mod tests {
         let metastore_resolver = MetastoreResolver::unconfigured();
         let tmp_dir = tempfile::tempdir().unwrap();
         let metastore_filepath = format!("file://{}/metastore", tmp_dir.path().display());
-        let metastore_uri = Uri::from_well_formed(metastore_filepath);
+        let metastore_uri = Uri::from_str(&metastore_filepath).unwrap();
         metastore_resolver.resolve(&metastore_uri).await.unwrap();
     }
 
@@ -199,7 +201,7 @@ mod tests {
         });
         let (_uri_protocol, uri_path) = test_database_url.split_once("://").unwrap();
         for protocol in &["postgres", "postgresql"] {
-            let postgres_uri = Uri::from_well_formed(format!("{protocol}://{uri_path}"));
+            let postgres_uri = Uri::from_str(&format!("{protocol}://{uri_path}")).unwrap();
             metastore_resolver.resolve(&postgres_uri).await.unwrap();
         }
     }

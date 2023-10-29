@@ -217,7 +217,7 @@ impl MergePipeline {
             pipeline_ord=%self.params.pipeline_id.pipeline_ord,
             root_dir=%self.params.indexing_directory.path().display(),
             merge_policy=?self.params.merge_policy,
-            "Spawning merge pipeline.",
+            "spawn merge pipeline",
         );
         let query = ListSplitsQuery::for_index(self.params.pipeline_id.index_uid.clone())
             .with_split_state(SplitState::Published)
@@ -229,9 +229,10 @@ impl MergePipeline {
             .deserialize_splits_metadata()?;
 
         info!(
-            "splits_metadata.len() = {}",
-            published_splits_metadata.len()
+            num_splits = published_splits_metadata.len(),
+            "loaded list of published splits"
         );
+
         // Merge publisher
         let merge_publisher = Publisher::new(
             PublisherType::MergePublisher,
@@ -498,7 +499,7 @@ mod tests {
     #[tokio::test]
     async fn test_merge_pipeline_simple() -> anyhow::Result<()> {
         let mut metastore = MetastoreServiceClient::mock();
-        let index_uid = IndexUid::new("test-index");
+        let index_uid = IndexUid::new_with_random_ulid("test-index");
         let pipeline_id = IndexingPipelineId {
             index_uid: index_uid.clone(),
             source_id: "test-source".to_string(),

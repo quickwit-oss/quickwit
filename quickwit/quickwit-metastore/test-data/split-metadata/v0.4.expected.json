@@ -5,7 +5,7 @@
     "end": 2000,
     "start": 1000
   },
-  "index_uid": "my-index",
+  "index_uid": "my-index:",
   "maturity": {
     "type": "mature"
   },

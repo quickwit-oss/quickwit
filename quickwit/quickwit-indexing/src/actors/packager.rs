@@ -404,7 +404,7 @@ mod tests {
         }
         let index = index_writer.finalize()?;
         let pipeline_id = IndexingPipelineId {
-            index_uid: IndexUid::new("test-index"),
+            index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,

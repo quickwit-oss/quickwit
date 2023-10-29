@@ -873,29 +873,26 @@ mod tests {
     #[test]
     fn test_parse_uri() {
         assert_eq!(
-            parse_s3_uri(&Uri::from_well_formed("s3://bucket/path/to/object")),
+            parse_s3_uri(&Uri::for_test("s3://bucket/path/to/object")),
             Some(("bucket".to_string(), PathBuf::from("path/to/object")))
         );
         assert_eq!(
-            parse_s3_uri(&Uri::from_well_formed("s3://bucket/path")),
+            parse_s3_uri(&Uri::for_test("s3://bucket/path")),
             Some(("bucket".to_string(), PathBuf::from("path")))
         );
         assert_eq!(
-            parse_s3_uri(&Uri::from_well_formed("s3://bucket/path/to/object")),
+            parse_s3_uri(&Uri::for_test("s3://bucket/path/to/object")),
             Some(("bucket".to_string(), PathBuf::from("path/to/object")))
         );
         assert_eq!(
-            parse_s3_uri(&Uri::from_well_formed("s3://bucket/")),
+            parse_s3_uri(&Uri::for_test("s3://bucket/")),
             Some(("bucket".to_string(), PathBuf::from("")))
         );
         assert_eq!(
-            parse_s3_uri(&Uri::from_well_formed("s3://bucket")),
+            parse_s3_uri(&Uri::for_test("s3://bucket")),
             Some(("bucket".to_string(), PathBuf::from("")))
         );
-        assert_eq!(
-            parse_s3_uri(&Uri::from_well_formed("ram://path/to/file")),
-            None
-        );
+        assert_eq!(parse_s3_uri(&Uri::for_test("ram://path/to/file")), None);
     }
 
     #[tokio::test]

@@ -126,13 +126,8 @@ impl Actor for ControlPlane {
             .await
             .context("failed to intialize the model")?;
 
-        if let Err(error) = self
-            .indexing_scheduler
-            .schedule_indexing_plan_if_needed(&self.model)
-        {
-            // TODO inspect error.
-            error!("error when scheduling indexing plan: `{}`.", error);
-        }
+        self.indexing_scheduler
+            .schedule_indexing_plan_if_needed(&self.model);
 
         ctx.schedule_self_msg(CONTROL_PLAN_LOOP_INTERVAL, ControlPlanLoop)
             .await;
@@ -149,9 +144,7 @@ impl Handler<ControlPlanLoop> for ControlPlane {
         _message: ControlPlanLoop,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        if let Err(error) = self.indexing_scheduler.control_running_plan(&self.model) {
-            error!("error when controlling the running plan: `{}`", error);
-        }
+        self.indexing_scheduler.control_running_plan(&self.model);
         ctx.schedule_self_msg(CONTROL_PLAN_LOOP_INTERVAL, ControlPlanLoop)
             .await;
         Ok(())
@@ -180,11 +173,12 @@ fn convert_metastore_error<T>(
         | MetastoreError::JsonDeserializeError { .. }
         | MetastoreError::JsonSerializeError { .. }
         | MetastoreError::NotFound(_) => true,
-        MetastoreError::Unavailable(_)
+        MetastoreError::Connection { .. }
+        | MetastoreError::Db { .. }
+        | MetastoreError::InconsistentControlPlaneState { .. }
         | MetastoreError::Internal { .. }
         | MetastoreError::Io { .. }
-        | MetastoreError::Connection { .. }
-        | MetastoreError::Db { .. } => false,
+        | MetastoreError::Unavailable(_) => false,
     };
     if is_transaction_certainly_aborted {
         // If the metastore transaction is certain to have been aborted,
@@ -263,7 +257,8 @@ impl Handler<DeleteIndexRequest> for ControlPlane {
 
         // TODO: Refine the event. Notify index will have the effect to reload the entire state from
         // the metastore. We should update the state of the control plane.
-        self.indexing_scheduler.on_index_change(&self.model).await?;
+        self.indexing_scheduler
+            .schedule_indexing_plan_if_needed(&self.model);
 
         Ok(Ok(response))
     }
@@ -298,7 +293,8 @@ impl Handler<AddSourceRequest> for ControlPlane {
 
         // TODO: Refine the event. Notify index will have the effect to reload the entire state from
         // the metastore. We should update the state of the control plane.
-        self.indexing_scheduler.on_index_change(&self.model).await?;
+        self.indexing_scheduler
+            .schedule_indexing_plan_if_needed(&self.model);
 
         let response = EmptyResponse {};
         Ok(Ok(response))
@@ -316,17 +312,22 @@ impl Handler<ToggleSourceRequest> for ControlPlane {
         request: ToggleSourceRequest,
         _ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
+        let index_uid: IndexUid = request.index_uid.clone().into();
+        let source_id = request.source_id.clone();
+        let enable = request.enable;
+
         if let Err(error) = self.metastore.toggle_source(request).await {
             return Ok(Err(ControlPlaneError::from(error)));
         };
 
-        // TODO update the internal view.
-        // TODO: Refine the event. Notify index will have the effect to reload the entire state from
-        // the metastore. We should update the state of the control plane.
-        self.indexing_scheduler.on_index_change(&self.model).await?;
+        let has_changed = self.model.toggle_source(&index_uid, &source_id, enable)?;
 
-        let response = EmptyResponse {};
-        Ok(Ok(response))
+        if has_changed {
+            self.indexing_scheduler
+                .schedule_indexing_plan_if_needed(&self.model);
+        }
+
+        Ok(Ok(EmptyResponse {}))
     }
 }
 
@@ -347,7 +348,8 @@ impl Handler<DeleteSourceRequest> for ControlPlane {
             return convert_metastore_error(metastore_error);
         };
         self.model.delete_source(&index_uid, &source_id);
-        self.indexing_scheduler.on_index_change(&self.model).await?;
+        self.indexing_scheduler
+            .schedule_indexing_plan_if_needed(&self.model);
         let response = EmptyResponse {};
         Ok(Ok(response))
     }
@@ -363,10 +365,23 @@ impl Handler<GetOrCreateOpenShardsRequest> for ControlPlane {
         request: GetOrCreateOpenShardsRequest,
         ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
-        Ok(self
+        let response = match self
             .ingest_controller
             .get_or_create_open_shards(request, &mut self.model, ctx.progress())
-            .await)
+            .await
+        {
+            Ok(response) => response,
+            Err(ControlPlaneError::Metastore(metastore_error)) => {
+                return convert_metastore_error(metastore_error);
+            }
+            Err(control_plane_error) => {
+                return Ok(Err(control_plane_error));
+            }
+        };
+        // TODO: Why do we return an error if the indexing scheduler fails?
+        self.indexing_scheduler
+            .schedule_indexing_plan_if_needed(&self.model);
+        Ok(Ok(response))
     }
 }
 
@@ -379,7 +394,7 @@ mod tests {
         ListIndexesMetadataResponseExt,
     };
     use quickwit_proto::control_plane::GetOrCreateOpenShardsSubrequest;
-    use quickwit_proto::ingest::Shard;
+    use quickwit_proto::ingest::{Shard, ShardState};
     use quickwit_proto::metastore::{
         EntityKind, ListIndexesMetadataRequest, ListIndexesMetadataResponse, ListShardsRequest,
         ListShardsResponse, ListShardsSubresponse, MetastoreError, SourceType,
@@ -544,6 +559,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_control_plane_toggle_source() {
+        quickwit_common::setup_logging_for_tests();
         let universe = Universe::with_accelerated_time();
 
         let cluster_id = "test-cluster".to_string();
@@ -552,20 +568,36 @@ mod tests {
         let ingester_pool = IngesterPool::default();
 
         let mut mock_metastore = MetastoreServiceClient::mock();
-        mock_metastore
-            .expect_toggle_source()
-            .withf(|toggle_source_request| {
-                assert_eq!(toggle_source_request.index_uid, "test-index:0");
-                assert_eq!(toggle_source_request.source_id, "test-source");
-                assert!(toggle_source_request.enable);
-                true
-            })
-            .returning(|_| Ok(EmptyResponse {}));
+        let mut index_metadata = IndexMetadata::for_test("test-index", "ram://toto");
+        let test_source_config = SourceConfig::for_test("test-source", SourceParams::void());
+        index_metadata.add_source(test_source_config).unwrap();
         mock_metastore
             .expect_list_indexes_metadata()
-            .returning(|_| {
-                Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(Vec::new()).unwrap())
+            .return_once(|_| {
+                Ok(
+                    ListIndexesMetadataResponse::try_from_indexes_metadata(vec![index_metadata])
+                        .unwrap(),
+                )
             });
+
+        mock_metastore
+            .expect_toggle_source()
+            .times(1)
+            .return_once(|toggle_source_request| {
+                assert_eq!(toggle_source_request.index_uid, "test-index:0");
+                assert_eq!(toggle_source_request.source_id, "test-source");
+                Ok(EmptyResponse {})
+            });
+        mock_metastore
+            .expect_toggle_source()
+            .times(1)
+            .return_once(|toggle_source_request| {
+                assert_eq!(toggle_source_request.index_uid, "test-index:0");
+                assert_eq!(toggle_source_request.source_id, "test-source");
+                assert!(!toggle_source_request.enable);
+                Ok(EmptyResponse {})
+            });
+
         let replication_factor = 1;
 
         let (control_plane_mailbox, _control_plane_handle) = ControlPlane::spawn(
@@ -577,17 +609,26 @@ mod tests {
             MetastoreServiceClient::from(mock_metastore),
             replication_factor,
         );
-        let toggle_source_request = ToggleSourceRequest {
+
+        let enabling_source_req = ToggleSourceRequest {
             index_uid: "test-index:0".to_string(),
             source_id: "test-source".to_string(),
             enable: true,
         };
         control_plane_mailbox
-            .ask_for_res(toggle_source_request)
+            .ask_for_res(enabling_source_req)
             .await
             .unwrap();
 
-        // TODO: Test that delete index event is properly sent to ingest controller.
+        let disabling_source_req = ToggleSourceRequest {
+            index_uid: "test-index:0".to_string(),
+            source_id: "test-source".to_string(),
+            enable: false,
+        };
+        control_plane_mailbox
+            .ask_for_res(disabling_source_req)
+            .await
+            .unwrap();
 
         universe.assert_quit().await;
     }
@@ -641,7 +682,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_control_plane_get_open_shards() {
+    async fn test_control_plane_get_or_create_open_shards() {
         let universe = Universe::with_accelerated_time();
 
         let cluster_id = "test-cluster".to_string();
@@ -675,6 +716,7 @@ mod tests {
                     index_uid: "test-index:0".to_string(),
                     source_id: INGEST_SOURCE_ID.to_string(),
                     shard_id: 1,
+                    shard_state: ShardState::Open as i32,
                     ..Default::default()
                 }],
                 next_shard_id: 2,
@@ -717,11 +759,6 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_control_plane_close_shards() {
-        // TODO: Write test when the RPC is actually called by ingesters.
-    }
-
-    #[tokio::test]
     async fn test_control_plane_supervision_reload_from_metastore() {
         let universe = Universe::default();
         let node_id = NodeId::new("test_node".to_string());
@@ -748,7 +785,7 @@ mod tests {
                 Ok(list_shards_resp)
             },
         );
-        let index_uid = IndexUid::new("test-index");
+        let index_uid = IndexUid::new_with_random_ulid("test-index");
         let index_uid_string = index_uid.to_string();
         mock_metastore.expect_create_index().times(1).return_once(
             |_create_index_request: CreateIndexRequest| {

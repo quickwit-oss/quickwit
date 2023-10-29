@@ -19,6 +19,7 @@
 
 use std::sync::atomic::Ordering;
 
+use quickwit_proto::indexing::PipelineMetrics;
 use serde::Serialize;
 
 use crate::actors::{DocProcessorCounters, IndexerCounters, PublisherCounters, UploaderCounters};
@@ -48,6 +49,8 @@ pub struct IndexingStatistics {
     pub generation: usize,
     /// Number of successive pipeline spawn attempts.
     pub num_spawn_attempts: usize,
+    // Pipeline metrics.
+    pub pipeline_metrics_opt: Option<PipelineMetrics>,
 }
 
 impl IndexingStatistics {

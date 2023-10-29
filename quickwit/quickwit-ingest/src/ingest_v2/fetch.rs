@@ -214,6 +214,14 @@ impl FetchTask {
     }
 }
 
+#[derive(Debug)]
+pub struct FetchStreamError {
+    pub index_uid: IndexUid,
+    pub source_id: SourceId,
+    pub shard_id: ShardId,
+    pub ingest_error: IngestV2Error,
+}
+
 /// Combines multiple fetch streams originating from different ingesters into a single stream. It
 /// tolerates the failure of ingesters and automatically fails over to replica shards.
 pub struct MultiFetchStream {
@@ -221,8 +229,8 @@ pub struct MultiFetchStream {
     client_id: ClientId,
     ingester_pool: IngesterPool,
     fetch_task_handles: HashMap<QueueId, JoinHandle<()>>,
-    fetch_response_rx: mpsc::Receiver<IngestV2Result<FetchResponseV2>>,
-    fetch_response_tx: mpsc::Sender<IngestV2Result<FetchResponseV2>>,
+    fetch_response_rx: mpsc::Receiver<Result<FetchResponseV2, FetchStreamError>>,
+    fetch_response_tx: mpsc::Sender<Result<FetchResponseV2, FetchStreamError>>,
 }
 
 impl MultiFetchStream {
@@ -239,7 +247,7 @@ impl MultiFetchStream {
     }
 
     #[cfg(any(test, feature = "testsuite"))]
-    pub fn fetch_response_tx(&self) -> mpsc::Sender<IngestV2Result<FetchResponseV2>> {
+    pub fn fetch_response_tx(&self) -> mpsc::Sender<Result<FetchResponseV2, FetchStreamError>> {
         self.fetch_response_tx.clone()
     }
 
@@ -307,7 +315,7 @@ impl MultiFetchStream {
     /// # Cancel safety
     ///
     /// This method is cancel safe.
-    pub async fn next(&mut self) -> IngestV2Result<FetchResponseV2> {
+    pub async fn next(&mut self) -> Result<FetchResponseV2, FetchStreamError> {
         // Because we always hold a sender and never call `close()` on the receiver, the channel is
         // always open.
         self.fetch_response_rx
@@ -363,7 +371,7 @@ async fn fault_tolerant_fetch_task(
     to_position_inclusive: Position,
     ingester_ids: Vec<NodeId>,
     ingester_pool: IngesterPool,
-    fetch_response_tx: mpsc::Sender<IngestV2Result<FetchResponseV2>>,
+    fetch_response_tx: mpsc::Sender<Result<FetchResponseV2, FetchStreamError>>,
 ) {
     // TODO: We can probably simplify this code by breaking it into smaller functions.
     'outer: for (ingester_idx, ingester_id) in ingester_ids.iter().enumerate() {
@@ -393,7 +401,14 @@ async fn fault_tolerant_fetch_task(
                     };
                     // Attempt to send the error to the consumer in a best-effort manner before
                     // returning.
-                    let _ = fetch_response_tx.send(Err(ingest_error)).await;
+                    let fetch_stream_error = FetchStreamError {
+                        index_uid,
+                        source_id,
+                        shard_id,
+                        ingest_error,
+                    };
+                    let _ = fetch_response_tx.send(Err(fetch_stream_error)).await;
+                    return;
                 }
                 continue;
             }
@@ -427,7 +442,14 @@ async fn fault_tolerant_fetch_task(
                         error=%ingest_error,
                         "failed to open fetch stream from ingester `{ingester_id}`: closing fetch stream"
                     );
-                    let _ = fetch_response_tx.send(Err(ingest_error)).await;
+                    let fetch_stream_error = FetchStreamError {
+                        index_uid,
+                        source_id,
+                        shard_id,
+                        ingest_error,
+                    };
+                    let _ = fetch_response_tx.send(Err(fetch_stream_error)).await;
+                    return;
                 }
                 continue;
             }
@@ -466,7 +488,14 @@ async fn fault_tolerant_fetch_task(
                             error=%ingest_error,
                             "failed to fetch records from ingester `{ingester_id}`: closing fetch stream"
                         );
-                        let _ = fetch_response_tx.send(Err(ingest_error)).await;
+                        let fetch_stream_error = FetchStreamError {
+                            index_uid,
+                            source_id,
+                            shard_id,
+                            ingest_error,
+                        };
+                        let _ = fetch_response_tx.send(Err(fetch_stream_error)).await;
+                        return;
                     }
                     continue 'outer;
                 }

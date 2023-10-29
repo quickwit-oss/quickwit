@@ -178,9 +178,7 @@ mod tests {
             .register(ram_storage_factory)
             .build()
             .unwrap();
-        let storage = storage_resolver
-            .resolve(&Uri::from_well_formed("ram:///".to_string()))
-            .await?;
+        let storage = storage_resolver.resolve(&Uri::for_test("ram:///")).await?;
         let data = storage.get_all(Path::new("hello")).await?;
         assert_eq!(&data[..], b"hello_content_second");
         Ok(())
@@ -213,7 +211,7 @@ mod tests {
             .build()
             .unwrap();
         let storage = storage_resolver
-            .resolve(&Uri::from_well_formed("ram:///home".to_string()))
+            .resolve(&Uri::for_test("ram:///home"))
             .await?;
         let data = storage.get_all(Path::new("hello")).await?;
         assert_eq!(&data[..], b"hello_content_second");
@@ -223,8 +221,7 @@ mod tests {
     #[tokio::test]
     async fn test_storage_resolver_unsupported_protocol() {
         let storage_resolver = StorageResolver::unconfigured();
-        let storage_uri =
-            Uri::from_well_formed("postgresql://localhost:5432/metastore".to_string());
+        let storage_uri = Uri::for_test("postgresql://localhost:5432/metastore");
         let resolver_error = storage_resolver.resolve(&storage_uri).await.unwrap_err();
         assert!(matches!(
             resolver_error,

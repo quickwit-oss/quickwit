@@ -287,7 +287,11 @@ pub(crate) fn list_indexing_tasks(
             continue;
         }
         match source_config.source_type() {
-            SourceType::Cli | SourceType::File | SourceType::Vec | SourceType::Void => {
+            SourceType::Cli
+            | SourceType::File
+            | SourceType::Unspecified
+            | SourceType::Vec
+            | SourceType::Void => {
                 continue;
             }
             SourceType::IngestV1 => {
@@ -716,7 +720,7 @@ mod tests {
     prop_compose! {
       fn gen_kafka_source()
         (index_idx in 0usize..100usize, desired_num_pipelines in 1usize..51usize, max_num_pipelines_per_indexer in 1usize..5usize) -> (IndexUid, SourceConfig) {
-          let index_uid = IndexUid::from_parts(format!("index-id-{index_idx}"), "" /* this is the index uid */);
+          let index_uid = IndexUid::from_parts(&format!("index-id-{index_idx}"), "" /* this is the index uid */);
           let source_id = append_random_suffix("kafka-source");
           (index_uid, SourceConfig {
               source_id,
