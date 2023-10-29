@@ -41,7 +41,7 @@ use quickwit_ingest::{
     DropQueueRequest, IngestApiService, IngesterPool, ListQueuesRequest, QUEUES_DIR_NAME,
 };
 use quickwit_metastore::{
-    IndexMetadata, IndexMetadataResponseExt, ListIndexesMetadataRequestExt,
+    IndexMetadata, IndexMetadataResponseExt,
     ListIndexesMetadataResponseExt,
 };
 use quickwit_proto::indexing::{
@@ -675,7 +675,7 @@ impl IndexingService {
         let indexes_metadatas = self
             .metastore
             .clone()
-            .list_indexes_metadata(ListIndexesMetadataRequest::all())
+            .list_indexes_metadata(quickwit_metastore::list_all_indexes_request())
             .await?
             .deserialize_indexes_metadata()?;
         let index_ids: HashSet<String> = indexes_metadatas

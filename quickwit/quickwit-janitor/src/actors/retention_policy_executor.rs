@@ -24,7 +24,7 @@ use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, Handler};
 use quickwit_config::IndexConfig;
-use quickwit_metastore::{ListIndexesMetadataRequestExt, ListIndexesMetadataResponseExt};
+use quickwit_metastore::{list_all_indexes_request, ListIndexesMetadataResponseExt};
 use quickwit_proto::metastore::{
     ListIndexesMetadataRequest, MetastoreService, MetastoreServiceClient,
 };
@@ -85,7 +85,7 @@ impl RetentionPolicyExecutor {
 
         let index_metadatas = match self
             .metastore
-            .list_indexes_metadata(ListIndexesMetadataRequest::all())
+            .list_indexes_metadata(list_all_indexes_request())
             .await
             .and_then(|response| response.deserialize_indexes_metadata())
         {

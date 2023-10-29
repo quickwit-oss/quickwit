@@ -73,7 +73,7 @@ use quickwit_ingest::{
 };
 use quickwit_janitor::{start_janitor_service, JanitorService};
 use quickwit_metastore::{
-    ControlPlaneMetastore, ListIndexesMetadataRequestExt, ListIndexesMetadataResponseExt,
+    ControlPlaneMetastore, ListIndexesMetadataResponseExt,
     MetastoreResolver,
 };
 use quickwit_opentelemetry::otlp::{OtlpGrpcLogsService, OtlpGrpcTracesService};
@@ -812,7 +812,7 @@ async fn check_cluster_configuration(
             Running multiple file-backed metastores simultaneously can lead to data loss.");
     }
     let file_backed_indexes = metastore
-        .list_indexes_metadata(ListIndexesMetadataRequest::all())
+        .list_indexes_metadata(quickwit_metastore::list_all_indexes_request())
         .await?
         .deserialize_indexes_metadata()?
         .into_iter()

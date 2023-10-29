@@ -390,7 +390,7 @@ mod tests {
     use quickwit_actors::{AskError, Observe, SupervisorMetrics};
     use quickwit_config::{IndexConfig, SourceParams, INGEST_SOURCE_ID};
     use quickwit_metastore::{
-        CreateIndexRequestExt, IndexMetadata, ListIndexesMetadataRequestExt,
+        CreateIndexRequestExt, IndexMetadata,
         ListIndexesMetadataResponseExt,
     };
     use quickwit_proto::control_plane::GetOrCreateOpenShardsSubrequest;

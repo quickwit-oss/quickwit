@@ -484,18 +484,12 @@ impl MetastoreService for PostgresqlMetastore {
         &mut self,
         request: ListIndexesMetadataRequest,
     ) -> MetastoreResult<ListIndexesMetadataResponse> {
-        let query = request.deserialize_list_indexes_query()?;
-        let sql = match query {
-            ListIndexesQuery::All => "SELECT * FROM indexes".to_string(),
-            ListIndexesQuery::IndexIdPatterns(index_id_patterns) => {
-                build_index_id_patterns_sql_query(index_id_patterns).map_err(|error| {
-                    MetastoreError::Internal {
-                        message: "failed to build `list_indexes_metadatas` SQL query".to_string(),
-                        cause: error.to_string(),
-                    }
-                })?
+        let sql = build_index_id_patterns_sql_query(&request.index_ptns).map_err(|error| {
+            MetastoreError::Internal {
+                message: "failed to build `list_indexes_metadatas` SQL query".to_string(),
+                cause: error.to_string(),
             }
-        };
+        })?;
         let pg_indexes = sqlx::query_as::<_, PgIndex>(&sql)
             .fetch_all(&self.connection_pool)
             .await?;
@@ -1388,8 +1382,15 @@ fn tags_filter_expression_helper(tags: &TagFilterAst) -> Cond {
 /// Builds a SQL query that returns indexes which match at least one pattern in
 /// `index_id_patterns`. For each pattern, we check if the pattern is valid and replace `*` by `%`
 /// to build a SQL `LIKE` query.
-fn build_index_id_patterns_sql_query(index_id_patterns: Vec<String>) -> anyhow::Result<String> {
-    assert!(!index_id_patterns.is_empty());
+fn build_index_id_patterns_sql_query(index_id_patterns: &[String]) -> anyhow::Result<String> {
+    if index_id_patterns.is_empty() {
+        anyhow::bail!("The list of index id patterns may not be empty.");
+    }
+    if &index_id_patterns == &["*"] {
+        return Ok("SELECT * FROM indexes".to_string());
+    }
+    // TODO Fix me.
+    // Actually we are supposed to return an error if one non wildcard pattern matches nothing.
     if index_id_patterns.iter().any(|pattern| pattern == "*") {
         return Ok("SELECT * FROM indexes".to_string());
     }

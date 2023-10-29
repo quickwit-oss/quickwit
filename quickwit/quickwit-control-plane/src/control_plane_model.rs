@@ -27,14 +27,14 @@ use itertools::Itertools;
 use quickwit_common::Progress;
 use quickwit_config::{SourceConfig, INGEST_SOURCE_ID};
 use quickwit_metastore::{
-    IndexMetadata, ListIndexesMetadataRequestExt, ListIndexesMetadataResponseExt,
+    IndexMetadata, ListIndexesMetadataResponseExt, list_all_indexes_request,
 };
 use quickwit_proto::control_plane::ControlPlaneResult;
 use quickwit_proto::ingest::{Shard, ShardState};
 use quickwit_proto::metastore;
 use quickwit_proto::metastore::{
     EntityKind, ListIndexesMetadataRequest, ListShardsSubrequest, MetastoreError, MetastoreService,
-    MetastoreServiceClient,
+    MetastoreServiceClient
 };
 use quickwit_proto::types::{IndexId, IndexUid, NodeId, NodeIdRef, ShardId, SourceId};
 use serde::Serialize;
@@ -120,7 +120,7 @@ impl ControlPlaneModel {
         let now = Instant::now();
         self.clear();
         let index_metadatas = progress
-            .protect_future(metastore.list_indexes_metadata(ListIndexesMetadataRequest::all()))
+            .protect_future(metastore.list_indexes_metadata(list_all_indexes_request()))
             .await?
             .deserialize_indexes_metadata()?;
         let num_indexes = index_metadatas.len();

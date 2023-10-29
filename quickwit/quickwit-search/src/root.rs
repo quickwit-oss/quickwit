@@ -30,8 +30,8 @@ use quickwit_config::{build_doc_mapper, IndexConfig};
 use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
 use quickwit_doc_mapper::{DocMapper, DYNAMIC_FIELD_NAME};
 use quickwit_metastore::{
-    IndexMetadata, IndexMetadataResponseExt, ListIndexesMetadataRequestExt,
-    ListIndexesMetadataResponseExt, ListIndexesQuery, ListSplitsRequestExt, ListSplitsResponseExt,
+    IndexMetadata, IndexMetadataResponseExt,
+    ListIndexesMetadataResponseExt, ListSplitsRequestExt, ListSplitsResponseExt,
     SplitMetadata,
 };
 use quickwit_proto::metastore::{
@@ -720,9 +720,9 @@ pub async fn root_search(
 ) -> crate::Result<SearchResponse> {
     info!(searcher_context = ?searcher_context, search_request = ?search_request);
     let start_instant = tokio::time::Instant::now();
-    let list_indexes_metadatas_request = ListIndexesMetadataRequest::try_from_list_indexes_query(
-        ListIndexesQuery::IndexIdPatterns(search_request.index_id_patterns.clone()),
-    )?;
+    let list_indexes_metadatas_request = ListIndexesMetadataRequest {
+        index_ptns: search_request.index_id_patterns.clone()
+    };
     let indexes_metadata = metastore
         .list_indexes_metadata(list_indexes_metadatas_request)
         .await?
@@ -3077,17 +3077,8 @@ mod tests {
         let index_uid_3 = index_metadata_3.index_uid.clone();
         metastore.expect_list_indexes_metadata().return_once(
             move |list_indexes_metadata_request: ListIndexesMetadataRequest| {
-                let query = list_indexes_metadata_request
-                    .deserialize_list_indexes_query()
-                    .unwrap();
-                match query {
-                    ListIndexesQuery::IndexIdPatterns(index_ids_query) => {
-                        assert_eq!(index_ids_query, vec!["test-index-*".to_string()]);
-                    }
-                    ListIndexesQuery::All => {
-                        panic!("Unexpected empty index_ids_query");
-                    }
-                }
+                let index_ptns = list_indexes_metadata_request.index_ptns;
+                assert_eq!(&index_ptns, &["test-index-*".to_string()]);
                 Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(vec![
                     index_metadata_1,
                     index_metadata_2,
