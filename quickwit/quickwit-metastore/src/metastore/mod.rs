@@ -37,9 +37,9 @@ use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_proto::metastore::{
     serde_utils, AddSourceRequest, CreateIndexRequest, DeleteTask, IndexMetadataRequest,
-    IndexMetadataResponse, ListIndexesMetadataRequest, ListIndexesMetadataResponse,
-    ListSplitsRequest, ListSplitsResponse, MetastoreError, MetastoreResult, MetastoreService,
-    MetastoreServiceClient, PublishSplitsRequest, StageSplitsRequest,
+    IndexMetadataResponse, ListIndexesMetadataResponse, ListSplitsRequest, ListSplitsResponse,
+    MetastoreError, MetastoreResult, MetastoreService, MetastoreServiceClient,
+    PublishSplitsRequest, StageSplitsRequest,
 };
 use quickwit_proto::types::{IndexUid, SplitId};
 use time::OffsetDateTime;
@@ -73,12 +73,6 @@ pub trait MetastoreServiceExt: MetastoreService {
 }
 
 impl MetastoreServiceExt for MetastoreServiceClient {}
-
-pub fn list_all_indexes_request() -> ListIndexesMetadataRequest {
-    ListIndexesMetadataRequest {
-        index_ptns: vec!["*".to_string()]
-    }
-}
 
 /// Helper trait to build a [`CreateIndexRequest`] and deserialize its payload.
 pub trait CreateIndexRequestExt {

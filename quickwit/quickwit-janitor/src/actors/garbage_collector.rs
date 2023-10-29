@@ -89,7 +89,7 @@ impl GarbageCollector {
 
         let indexes = match self
             .metastore
-            .list_indexes_metadata(quickwit_metastore::list_all_indexes_request())
+            .list_indexes_metadata(ListIndexesMetadataRequest::all())
             .await
             .and_then(|list_indexes_metadata_response| {
                 list_indexes_metadata_response.deserialize_indexes_metadata()

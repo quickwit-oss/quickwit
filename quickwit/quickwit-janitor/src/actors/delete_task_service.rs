@@ -26,9 +26,7 @@ use quickwit_actors::{Actor, ActorContext, ActorExitStatus, ActorHandle, Handler
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::temp_dir::{self};
 use quickwit_config::IndexConfig;
-use quickwit_metastore::{
-    IndexMetadataResponseExt, ListIndexesMetadataResponseExt,
-};
+use quickwit_metastore::{IndexMetadataResponseExt, ListIndexesMetadataResponseExt};
 use quickwit_proto::metastore::{
     IndexMetadataRequest, ListIndexesMetadataRequest, MetastoreService, MetastoreServiceClient,
 };
@@ -116,7 +114,7 @@ impl DeleteTaskService {
     ) -> anyhow::Result<()> {
         let mut index_config_by_index_id: HashMap<IndexUid, IndexConfig> = self
             .metastore
-            .list_indexes_metadata(quickwit_metastore::list_all_indexes_request())
+            .list_indexes_metadata(ListIndexesMetadataRequest::all())
             .await?
             .deserialize_indexes_metadata()?
             .into_iter()

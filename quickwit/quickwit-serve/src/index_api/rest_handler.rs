@@ -29,9 +29,8 @@ use quickwit_config::{
 use quickwit_doc_mapper::{analyze_text, TokenizerConfig};
 use quickwit_index_management::{IndexService, IndexServiceError};
 use quickwit_metastore::{
-    IndexMetadata, IndexMetadataResponseExt,
-    ListIndexesMetadataResponseExt, ListSplitsQuery, ListSplitsRequestExt, ListSplitsResponseExt,
-    Split, SplitInfo, SplitState,
+    IndexMetadata, IndexMetadataResponseExt, ListIndexesMetadataResponseExt, ListSplitsQuery,
+    ListSplitsRequestExt, ListSplitsResponseExt, Split, SplitInfo, SplitState,
 };
 use quickwit_proto::metastore::{
     DeleteSourceRequest, EntityKind, IndexMetadataRequest, ListIndexesMetadataRequest,
@@ -442,7 +441,7 @@ async fn get_indexes_metadatas(
 ) -> MetastoreResult<Vec<IndexMetadata>> {
     info!("get-indexes-metadatas");
     metastore
-        .list_indexes_metadata(quickwit_metastore::list_all_indexes_request())
+        .list_indexes_metadata(ListIndexesMetadataRequest::all())
         .await
         .and_then(|response| response.deserialize_indexes_metadata())
 }
