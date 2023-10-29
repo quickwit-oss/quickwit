@@ -66,3 +66,53 @@ expected:
           actor:
             login: fulmicoton
         _index: "gharchive-1"
+---
+# It is valid to have a pattern that does not match
+# any index.
+endpoint: "invalidptn-*/_search"
+params:
+  size: 2
+json:
+  query:
+    match_all: {}
+  sort:
+    created_at:
+      order: desc
+expected:
+  hits:
+    total:
+      value: 0
+      relation: "eq"
+    hits: []
+---
+# If a specific index (not a pattern) does not exist,
+# this returns an error.
+endpoint: "invalidptn*-,nonexistingindex/_search"
+params:
+  size: 2
+json:
+  query:
+    match_all: {}
+  sort:
+    created_at:
+      order: desc
+status_code: 404
+---
+# If one of the pattern matches no index,
+# but another matches some indices, it is valid too.
+endpoint: "invalidptn*-,gharchive*/_search"
+params:
+  size: 2
+json:
+  query:
+    match_all: {}
+  sort:
+    created_at:
+      order: desc
+expected:
+  hits:
+    total:
+      value: 104
+      relation: "eq"
+    hits:
+      $expect: "len(val) == 2"
