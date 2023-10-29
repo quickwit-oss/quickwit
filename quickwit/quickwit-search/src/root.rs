@@ -3022,7 +3022,7 @@ mod tests {
 
         let mut scroll_id: String = {
             let search_request = quickwit_proto::search::SearchRequest {
-                index_id_patterns: vec!["test-index".to_string()],
+                index_id_patterns: vec!["test-index-*".to_string()],
                 query_ast: qast_json_helper("test", &["body"]),
                 max_hits: MAX_HITS_PER_PAGE as u64,
                 scroll_ttl_secs: Some(60),
