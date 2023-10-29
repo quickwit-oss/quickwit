@@ -67,6 +67,7 @@ impl PgIndex {
 #[allow(dead_code)]
 pub enum Splits {
     Table,
+    SplitId,
     SplitState,
     TimeRangeStart,
     TimeRangeEnd,

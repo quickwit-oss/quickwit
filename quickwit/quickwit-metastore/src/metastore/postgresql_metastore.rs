@@ -45,7 +45,7 @@ use quickwit_proto::metastore::{
 };
 use quickwit_proto::types::IndexUid;
 use sea_query::{
-    all, any, Asterisk, Cond, Expr, Func, PostgresQueryBuilder, Query, SelectStatement,
+    all, any, Asterisk, Cond, Expr, Func, Order, PostgresQueryBuilder, Query, SelectStatement,
 };
 use sea_query_binder::SqlxBinder;
 use sqlx::migrate::Migrator;
@@ -341,7 +341,8 @@ fn append_query_filters(sql: &mut SelectStatement, query: &ListSplitsQuery) {
     }
 
     if let Some(offset) = query.offset {
-        sql.offset(offset as u64);
+        sql.order_by(Splits::SplitId, Order::Asc)
+            .offset(offset as u64);
     }
 }
 
@@ -1768,6 +1769,19 @@ mod tests {
             sql.to_string(PostgresQueryBuilder),
             format!(
                 r#"SELECT * FROM "splits" WHERE "index_uid" = '{index_uid}' AND NOT ($$tag-2$$ = ANY(tags))"#
+            )
+        );
+
+        let mut select_statement = Query::select();
+        let sql = select_statement.column(Asterisk).from(Splits::Table);
+
+        let query = ListSplitsQuery::for_index(index_uid.clone()).with_offset(4);
+        append_query_filters(sql, &query);
+
+        assert_eq!(
+            sql.to_string(PostgresQueryBuilder),
+            format!(
+                r#"SELECT * FROM "splits" WHERE "index_uid" = '{index_uid}' ORDER BY "split_id" ASC OFFSET 4"#
             )
         );
     }
