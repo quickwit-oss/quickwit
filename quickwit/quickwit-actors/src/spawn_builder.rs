@@ -284,8 +284,9 @@ impl<A: Actor> ActorExecutionEnv<A> {
             while let Some(envelope) = try_recv_envelope(&mut self.inbox, &self.ctx) {
                 self.process_one_message(envelope).await?;
             }
-            self.ctx.yield_now().await;
-
+            if self.actor.get_mut().yield_after_each_message() {
+                self.ctx.yield_now().await;
+            }
             if self.inbox.is_empty() {
                 break;
             }
