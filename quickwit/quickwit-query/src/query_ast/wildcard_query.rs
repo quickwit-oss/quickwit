@@ -18,8 +18,10 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 #![allow(unreachable_code, unused_variables, unused_imports)]
 
+use anyhow::Context;
 use serde::{Deserialize, Serialize};
-use tantivy::schema::{Field, Schema as TantivySchema};
+use tantivy::json_utils::JsonTermWriter;
+use tantivy::schema::{Field, FieldType, Schema as TantivySchema};
 use tantivy::Term;
 
 use super::{BuildTantivyAst, QueryAst};
@@ -57,67 +59,99 @@ impl WildcardQuery {
     pub fn extract_prefix_term(
         &self,
         schema: &TantivySchema,
+        tokenizer_manager: &TokenizerManager,
     ) -> Result<(Field, Term), InvalidQuery> {
         let (field, field_entry, json_path) = find_field_or_hit_dynamic(&self.field, schema)?;
         let field_type = field_entry.field_type();
 
         let prefix = &self.value[..self.value.len() - 1];
 
-        // TODO have a boolean should_lowercase in the tokenizer manager, use it to choose between
-        // raw and lowercaser text options
-        // match field_type {
-        // FieldType::Str(ref text_options) => {
-        // let text_field_indexing = text_options.get_indexing_options().ok_or_else(|| {
-        // InvalidQuery::SchemaError(format!(
-        // "field {} is not full-text searchable",
-        // field_entry.name()
-        // ))
-        // })?;
-        // let terms = self.params.tokenize_text_into_terms(
-        // field,
-        // &self.phrase,
-        // text_field_indexing,
-        // tokenizer_manager,
-        // )?;
-        // if !text_field_indexing.index_option().has_positions() && terms.len() > 1 {
-        // return Err(InvalidQuery::SchemaError(
-        // "trying to run a phrase prefix query on a field which does not have \
-        // positions indexed"
-        // .to_string(),
-        // ));
-        // }
-        // Ok((field, terms))
-        // }
-        // FieldType::JsonObject(json_options) => {
-        // let text_field_indexing =
-        // json_options.get_text_indexing_options().ok_or_else(|| {
-        // InvalidQuery::SchemaError(format!(
-        // "field {} is not full-text searchable",
-        // field_entry.name()
-        // ))
-        // })?;
-        // let terms = self.params.tokenize_text_into_terms_json(
-        // field,
-        // json_path,
-        // &self.phrase,
-        // json_options,
-        // tokenizer_manager,
-        // )?;
-        // if !text_field_indexing.index_option().has_positions() && terms.len() > 1 {
-        // return Err(InvalidQuery::SchemaError(
-        // "trying to run a PhrasePrefix query on a field which does not have \
-        // positions indexed"
-        // .to_string(),
-        // ));
-        // }
-        // Ok((field, terms))
-        // }
-        // _ => Err(InvalidQuery::SchemaError(
-        // "trying to run a Wildcard query on a non-text field".to_string(),
-        // )),
-        // }
+        match field_type {
+            FieldType::Str(ref text_options) => {
+                let text_field_indexing = text_options.get_indexing_options().ok_or_else(|| {
+                    InvalidQuery::SchemaError(format!(
+                        "field {} is not full-text searchable",
+                        field_entry.name()
+                    ))
+                })?;
+                let tokenizer_name = text_field_indexing.tokenizer();
+                let analyzer_name = if tokenizer_manager
+                    .get_does_lowercasing(tokenizer_name)
+                    .with_context(|| {
+                        format!("no tokenizer named `{}` is registered", tokenizer_name)
+                    })? {
+                    "lowercase"
+                } else {
+                    "raw"
+                };
+                let mut text_analyzer = tokenizer_manager
+                    .get(analyzer_name)
+                    .with_context(|| "missing built-in tokenizer")?;
+                let mut token_stream = text_analyzer.token_stream(prefix);
+                let mut tokens = Vec::new();
+                token_stream.process(&mut |token| {
+                    let term: Term = Term::from_field_text(field, &token.text);
+                    tokens.push(term);
+                });
+                let term = tokens
+                    .pop()
+                    .with_context(|| "wildcard query generated no term")?;
+                if !tokens.is_empty() {
+                    return Err(InvalidQuery::Other(anyhow::Error::msg(
+                        "wildcard query generated more than one term",
+                    )));
+                }
+                Ok((field, term))
+            }
+            FieldType::JsonObject(json_options) => {
+                let text_field_indexing =
+                    json_options.get_text_indexing_options().ok_or_else(|| {
+                        InvalidQuery::SchemaError(format!(
+                            "field {} is not full-text searchable",
+                            field_entry.name()
+                        ))
+                    })?;
+                let tokenizer_name = text_field_indexing.tokenizer();
+                let analyzer_name = if tokenizer_manager
+                    .get_does_lowercasing(tokenizer_name)
+                    .with_context(|| {
+                        format!("no tokenizer named `{}` is registered", tokenizer_name)
+                    })? {
+                    "lowercase"
+                } else {
+                    "raw"
+                };
+                let mut text_analyzer = tokenizer_manager
+                    .get(analyzer_name)
+                    .with_context(|| "missing built-in tokenizer")?;
+                let mut token_stream = text_analyzer.token_stream(prefix);
+                let mut tokens = Vec::new();
+                let mut term = Term::with_capacity(100);
+                let mut json_term_writer = JsonTermWriter::from_field_and_json_path(
+                    field,
+                    json_path,
+                    json_options.is_expand_dots_enabled(),
+                    &mut term,
+                );
 
-        Ok((field, todo!()))
+                token_stream.process(&mut |token| {
+                    json_term_writer.set_str(&token.text);
+                    tokens.push(json_term_writer.term().clone());
+                });
+                let term = tokens
+                    .pop()
+                    .with_context(|| "wildcard query generated no term")?;
+                if !tokens.is_empty() {
+                    return Err(InvalidQuery::Other(anyhow::Error::msg(
+                        "wildcard query generated more than one term",
+                    )));
+                }
+                Ok((field, term))
+            }
+            _ => Err(InvalidQuery::SchemaError(
+                "trying to run a Wildcard query on a non-text field".to_string(),
+            )),
+        }
     }
 }
 
@@ -138,7 +172,7 @@ impl BuildTantivyAst for WildcardQuery {
             todo!("error again");
         }
 
-        let (_, term) = self.extract_prefix_term(schema)?;
+        let (_, term) = self.extract_prefix_term(schema, tokenizer_manager)?;
 
         let mut phrase_prefix_query =
             tantivy::query::PhrasePrefixQuery::new_with_offset(vec![(0, term)]);
