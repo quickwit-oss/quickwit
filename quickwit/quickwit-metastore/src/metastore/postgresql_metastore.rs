@@ -483,12 +483,13 @@ impl MetastoreService for PostgresqlMetastore {
         &mut self,
         request: ListIndexesMetadataRequest,
     ) -> MetastoreResult<ListIndexesMetadataResponse> {
-        let sql = build_index_id_patterns_sql_query(&request.index_id_patterns).map_err(|error| {
-            MetastoreError::Internal {
-                message: "failed to build `list_indexes_metadatas` SQL query".to_string(),
-                cause: error.to_string(),
-            }
-        })?;
+        let sql =
+            build_index_id_patterns_sql_query(&request.index_id_patterns).map_err(|error| {
+                MetastoreError::Internal {
+                    message: "failed to build `list_indexes_metadatas` SQL query".to_string(),
+                    cause: error.to_string(),
+                }
+            })?;
         let pg_indexes = sqlx::query_as::<_, PgIndex>(&sql)
             .fetch_all(&self.connection_pool)
             .await?;
