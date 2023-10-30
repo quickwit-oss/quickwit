@@ -86,7 +86,7 @@ The response is a JSON object, and the content type is `application/json; charse
 | `elapsed_time_micros` | Processing time of the query   | `number`   |
 
 ### Search multiple indices
-Search APIs that accept <index id> requests path parameter also support multi-target syntax.
+Search APIs that accept `index id` requests path parameter also support multi-target syntax.
 
 #### Multi-target syntax
 
