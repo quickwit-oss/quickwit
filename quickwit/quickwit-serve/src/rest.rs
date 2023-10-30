@@ -153,7 +153,7 @@ pub(crate) async fn start_rest_server(
                 .compress_when(compression_predicate),
         )
         .layer(cors)
-        .layer(DecompressionLayer::new().gzip(true))
+        .layer(DecompressionLayer::new().gzip(true).zstd(true))
         .service(warp_service);
 
     info!(
