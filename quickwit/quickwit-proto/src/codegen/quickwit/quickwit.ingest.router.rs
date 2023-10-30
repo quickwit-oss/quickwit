@@ -67,7 +67,12 @@ pub struct IngestFailure {
 #[repr(i32)]
 pub enum IngestFailureReason {
     Unspecified = 0,
-    NoShardsAvailable = 1,
+    IndexNotFound = 1,
+    SourceNotFound = 2,
+    Internal = 3,
+    NoShardsAvailable = 4,
+    RateLimited = 5,
+    ResourceExhausted = 6,
 }
 impl IngestFailureReason {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -77,8 +82,17 @@ impl IngestFailureReason {
     pub fn as_str_name(&self) -> &'static str {
         match self {
             IngestFailureReason::Unspecified => "INGEST_FAILURE_REASON_UNSPECIFIED",
+            IngestFailureReason::IndexNotFound => "INGEST_FAILURE_REASON_INDEX_NOT_FOUND",
+            IngestFailureReason::SourceNotFound => {
+                "INGEST_FAILURE_REASON_SOURCE_NOT_FOUND"
+            }
+            IngestFailureReason::Internal => "INGEST_FAILURE_REASON_INTERNAL",
             IngestFailureReason::NoShardsAvailable => {
                 "INGEST_FAILURE_REASON_NO_SHARDS_AVAILABLE"
+            }
+            IngestFailureReason::RateLimited => "INGEST_FAILURE_REASON_RATE_LIMITED",
+            IngestFailureReason::ResourceExhausted => {
+                "INGEST_FAILURE_REASON_RESOURCE_EXHAUSTED"
             }
         }
     }
@@ -86,7 +100,12 @@ impl IngestFailureReason {
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
             "INGEST_FAILURE_REASON_UNSPECIFIED" => Some(Self::Unspecified),
+            "INGEST_FAILURE_REASON_INDEX_NOT_FOUND" => Some(Self::IndexNotFound),
+            "INGEST_FAILURE_REASON_SOURCE_NOT_FOUND" => Some(Self::SourceNotFound),
+            "INGEST_FAILURE_REASON_INTERNAL" => Some(Self::Internal),
             "INGEST_FAILURE_REASON_NO_SHARDS_AVAILABLE" => Some(Self::NoShardsAvailable),
+            "INGEST_FAILURE_REASON_RATE_LIMITED" => Some(Self::RateLimited),
+            "INGEST_FAILURE_REASON_RESOURCE_EXHAUSTED" => Some(Self::ResourceExhausted),
             _ => None,
         }
     }
@@ -136,6 +155,8 @@ impl IngestRouterServiceClient {
     > {
         let adapter = IngestRouterServiceGrpcServerAdapter::new(self.clone());
         ingest_router_service_grpc_server::IngestRouterServiceGrpcServer::new(adapter)
+            .max_decoding_message_size(10 * 1024 * 1024)
+            .max_encoding_message_size(10 * 1024 * 1024)
     }
     pub fn from_channel(
         addr: std::net::SocketAddr,
@@ -156,10 +177,13 @@ impl IngestRouterServiceClient {
         balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
     ) -> IngestRouterServiceClient {
         let connection_keys_watcher = balance_channel.connection_keys_watcher();
-        let adapter = IngestRouterServiceGrpcClientAdapter::new(
-            ingest_router_service_grpc_client::IngestRouterServiceGrpcClient::new(
+        let client = ingest_router_service_grpc_client::IngestRouterServiceGrpcClient::new(
                 balance_channel,
-            ),
+            )
+            .max_decoding_message_size(10 * 1024 * 1024)
+            .max_encoding_message_size(10 * 1024 * 1024);
+        let adapter = IngestRouterServiceGrpcClientAdapter::new(
+            client,
             connection_keys_watcher,
         );
         Self::new(adapter)

@@ -70,8 +70,9 @@ message GetOrCreateOpenShardsRequest {
 }
 
 message GetOrCreateOpenShardsSubrequest {
-    string index_id = 1;
-    string source_id = 2;
+  uint32 subrequest_id = 1;
+  string index_id = 2;
+  string source_id = 3;
 }
 
 message ClosedShards {
@@ -80,13 +81,27 @@ message ClosedShards {
   repeated uint64 shard_ids = 3;
 }
 
-// TODO: Handle partial failures.
 message GetOrCreateOpenShardsResponse {
-  repeated GetOpenShardsSubresponse subresponses = 1;
+  repeated GetOrCreateOpenShardsSuccess successes = 1;
+  repeated GetOrCreateOpenShardsFailure failures = 2;
 }
 
-message GetOpenShardsSubresponse {
-    string index_uid = 1;
-    string source_id = 2;
-    repeated quickwit.ingest.Shard open_shards = 3;
+message GetOrCreateOpenShardsSuccess {
+  uint32 subrequest_id = 1;
+  string index_uid = 2;
+  string source_id = 3;
+  repeated quickwit.ingest.Shard open_shards = 4;
+}
+
+enum GetOrCreateOpenShardsFailureReason {
+  GET_OR_CREATE_OPEN_SHARDS_FAILURE_REASON_UNSPECIFIED = 0;
+  GET_OR_CREATE_OPEN_SHARDS_FAILURE_REASON_INDEX_NOT_FOUND = 1;
+  GET_OR_CREATE_OPEN_SHARDS_FAILURE_REASON_SOURCE_NOT_FOUND = 2;
+}
+
+message GetOrCreateOpenShardsFailure {
+  uint32 subrequest_id = 1;
+  string index_id = 2;
+  string source_id = 3;
+  GetOrCreateOpenShardsFailureReason reason = 4;
 }

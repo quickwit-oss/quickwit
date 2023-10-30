@@ -36,9 +36,9 @@ use quickwit_proto::ingest::router::{
     IngestRequestV2, IngestResponseV2, IngestRouterService, IngestSubrequest,
 };
 use quickwit_proto::ingest::{CommitTypeV2, IngestV2Error, IngestV2Result};
-use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceId};
+use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceId, SubrequestId};
 use tokio::sync::RwLock;
-use tracing::warn;
+use tracing::{error, warn};
 
 use super::ingester::PERSIST_REQUEST_TIMEOUT;
 use super::shard_table::ShardTable;
@@ -55,6 +55,8 @@ pub(super) const INGEST_REQUEST_TIMEOUT: Duration = if cfg!(any(test, feature = 
 const MAX_PERSIST_ATTEMPTS: usize = 5;
 
 type LeaderId = String;
+
+type PersistResult = (PersistRequestSummary, IngestV2Result<PersistResponse>);
 
 #[derive(Clone)]
 pub struct IngestRouter {
@@ -124,6 +126,7 @@ impl IngestRouter {
                 &mut unavailable_leaders,
             ) {
                 let subrequest = GetOrCreateOpenShardsSubrequest {
+                    subrequest_id: subrequest.subrequest_id,
                     index_id: subrequest.index_id.clone(),
                     source_id: subrequest.source_id.clone(),
                 };
@@ -141,42 +144,49 @@ impl IngestRouter {
     /// shard table according to the response received.
     async fn populate_shard_table(
         &mut self,
+        workbench: &mut IngestWorkbench,
         request: GetOrCreateOpenShardsRequest,
-    ) -> IngestV2Result<()> {
+    ) {
         if request.subrequests.is_empty() {
-            return Ok(());
+            return;
         }
-        let response = self
-            .control_plane
-            .get_or_create_open_shards(request)
-            .await?;
-
+        let response = match self.control_plane.get_or_create_open_shards(request).await {
+            Ok(response) => response,
+            Err(control_plane_error) => {
+                if workbench.is_last_attempt() {
+                    error!("failed to get open shards from control plane: {control_plane_error}");
+                } else {
+                    warn!("failed to get open shards from control plane: {control_plane_error}");
+                };
+                return;
+            }
+        };
         let mut state_guard = self.state.write().await;
 
-        for subresponse in response.subresponses {
+        for success in response.successes {
             state_guard.shard_table.insert_shards(
-                subresponse.index_uid,
-                subresponse.source_id,
-                subresponse.open_shards,
+                success.index_uid,
+                success.source_id,
+                success.open_shards,
             );
         }
-        Ok(())
+        for failure in response.failures {
+            workbench.record_get_or_create_open_shards_failure(failure);
+        }
     }
 
     async fn process_persist_results(
         &mut self,
         workbench: &mut IngestWorkbench,
-        mut persist_futures: FuturesUnordered<
-            impl Future<Output = IngestV2Result<PersistResponse>>,
-        >,
+        mut persist_futures: FuturesUnordered<impl Future<Output = PersistResult>>,
     ) {
         let mut closed_shards: HashMap<(IndexUid, SourceId), Vec<ShardId>> = HashMap::new();
 
-        while let Some(persist_result) = persist_futures.next().await {
+        while let Some((persist_summary, persist_result)) = persist_futures.next().await {
             match persist_result {
                 Ok(persist_response) => {
                     for persist_success in persist_response.successes {
-                        workbench.record_success(persist_success);
+                        workbench.record_persist_success(persist_success);
                     }
                     for persist_failure in persist_response.failures {
                         if persist_failure.reason() == PersistFailureReason::ShardClosed {
@@ -187,11 +197,39 @@ impl IngestRouter {
                                 .or_default()
                                 .push(persist_failure.shard_id);
                         }
-                        workbench.record_failure(persist_failure);
+                        workbench.record_persist_failure(persist_failure);
                     }
                 }
-                Err(_persist_error) => {
-                    // TODO
+                Err(persist_error) => {
+                    if workbench.is_last_attempt() {
+                        error!(
+                            "failed to persist records on ingester `{}`: {persist_error}",
+                            persist_summary.leader_id
+                        );
+                    } else {
+                        warn!(
+                            "failed to persist records on ingester `{}`: {persist_error}",
+                            persist_summary.leader_id
+                        );
+                    }
+                    match persist_error {
+                        IngestV2Error::Timeout
+                        | IngestV2Error::Transport { .. }
+                        | IngestV2Error::IngesterUnavailable { .. } => {
+                            for subrequest_id in persist_summary.subrequest_ids {
+                                workbench.record_no_shards_available(subrequest_id);
+                            }
+                            self.ingester_pool.remove(&persist_summary.leader_id);
+                        }
+                        _ => {
+                            for subrequest_id in persist_summary.subrequest_ids {
+                                workbench.record_internal_error(
+                                    subrequest_id,
+                                    persist_error.to_string(),
+                                );
+                            }
+                        }
+                    }
                 }
             };
         }
@@ -214,15 +252,9 @@ impl IngestRouter {
             )
             .await;
 
-        if let Err(error) = self
-            .populate_shard_table(get_or_create_open_shards_request)
-            .await
-        {
-            warn!(
-                "failed to obtain open shards from control plane: `{}`",
-                error
-            );
-        }
+        self.populate_shard_table(workbench, get_or_create_open_shards_request)
+            .await;
+
         // List of subrequest IDs for which no shards were available to route the subrequests to.
         let mut unavailable_subrequest_ids = Vec::new();
 
@@ -261,12 +293,17 @@ impl IngestRouter {
 
         for (leader_id, subrequests) in per_leader_persist_subrequests {
             let leader_id: NodeId = leader_id.clone().into();
+            let subrequest_ids: Vec<SubrequestId> = subrequests
+                .iter()
+                .map(|subrequest| subrequest.subrequest_id)
+                .collect();
             let Some(mut ingester) = self.ingester_pool.get(&leader_id) else {
-                let subrequest_ids = subrequests
-                    .iter()
-                    .map(|subrequest| subrequest.subrequest_id);
                 unavailable_subrequest_ids.extend(subrequest_ids);
                 continue;
+            };
+            let persist_summary = PersistRequestSummary {
+                leader_id: leader_id.clone(),
+                subrequest_ids,
             };
             let persist_request = PersistRequest {
                 leader_id: leader_id.into(),
@@ -274,9 +311,13 @@ impl IngestRouter {
                 commit_type: commit_type as i32,
             };
             let persist_future = async move {
-                tokio::time::timeout(PERSIST_REQUEST_TIMEOUT, ingester.persist(persist_request))
-                    .await
-                    .map_err(|_| IngestV2Error::Timeout)?
+                let persist_result = tokio::time::timeout(
+                    PERSIST_REQUEST_TIMEOUT,
+                    ingester.persist(persist_request),
+                )
+                .await
+                .unwrap_or_else(|_| Err(IngestV2Error::Timeout));
+                (persist_summary, persist_result)
             };
             persist_futures.push(persist_future);
         }
@@ -294,14 +335,12 @@ impl IngestRouter {
         ingest_request: IngestRequestV2,
         max_num_attempts: usize,
     ) -> IngestV2Result<IngestResponseV2> {
-        let mut num_attempts = 0;
-
         let commit_type = ingest_request.commit_type();
-        let mut workbench = IngestWorkbench::new(ingest_request.subrequests);
+        let mut workbench = IngestWorkbench::new(ingest_request.subrequests, max_num_attempts);
 
-        while !workbench.is_complete() && num_attempts < max_num_attempts {
+        while !workbench.is_complete() {
+            workbench.new_attempt();
             self.batch_persist(&mut workbench, commit_type).await;
-            num_attempts += 1;
         }
         workbench.into_ingest_response()
     }
@@ -331,12 +370,20 @@ impl IngestRouterService for IngestRouter {
     }
 }
 
+struct PersistRequestSummary {
+    leader_id: NodeId,
+    subrequest_ids: Vec<SubrequestId>,
+}
+
 #[cfg(test)]
 mod tests {
     use std::iter;
     use std::sync::atomic::AtomicUsize;
 
-    use quickwit_proto::control_plane::{GetOpenShardsSubresponse, GetOrCreateOpenShardsResponse};
+    use quickwit_proto::control_plane::{
+        GetOrCreateOpenShardsFailure, GetOrCreateOpenShardsFailureReason,
+        GetOrCreateOpenShardsResponse, GetOrCreateOpenShardsSuccess,
+    };
     use quickwit_proto::ingest::ingester::{
         IngesterServiceClient, PersistFailure, PersistResponse, PersistSuccess,
     };
@@ -346,6 +393,7 @@ mod tests {
 
     use super::*;
     use crate::ingest_v2::shard_table::ShardTableEntry;
+    use crate::ingest_v2::workbench::SubworkbenchFailure;
 
     #[tokio::test]
     async fn test_router_make_get_or_create_open_shard_request() {
@@ -471,7 +519,7 @@ mod tests {
             .expect_get_or_create_open_shards()
             .once()
             .returning(|request| {
-                assert_eq!(request.subrequests.len(), 3);
+                assert_eq!(request.subrequests.len(), 4);
 
                 let subrequest_0 = &request.subrequests[0];
                 assert_eq!(subrequest_0.index_id, "test-index-0");
@@ -482,12 +530,17 @@ mod tests {
                 assert_eq!(subrequest_1.source_id, "test-source");
 
                 let subrequest_2 = &request.subrequests[2];
-                assert_eq!(subrequest_2.index_id, "test-index-2");
+                assert_eq!(subrequest_2.index_id, "index-not-found");
                 assert_eq!(subrequest_2.source_id, "test-source");
 
+                let subrequest_3 = &request.subrequests[3];
+                assert_eq!(subrequest_3.index_id, "test-index-0");
+                assert_eq!(subrequest_3.source_id, "source-not-found");
+
                 let response = GetOrCreateOpenShardsResponse {
-                    subresponses: vec![
-                        GetOpenShardsSubresponse {
+                    successes: vec![
+                        GetOrCreateOpenShardsSuccess {
+                            subrequest_id: 0,
                             index_uid: "test-index-0:0".to_string(),
                             source_id: "test-source".to_string(),
                             open_shards: vec![Shard {
@@ -496,7 +549,8 @@ mod tests {
                                 ..Default::default()
                             }],
                         },
-                        GetOpenShardsSubresponse {
+                        GetOrCreateOpenShardsSuccess {
+                            subrequest_id: 1,
                             index_uid: "test-index-1:0".to_string(),
                             source_id: "test-source".to_string(),
                             open_shards: vec![
@@ -511,6 +565,20 @@ mod tests {
                                     ..Default::default()
                                 },
                             ],
+                        },
+                    ],
+                    failures: vec![
+                        GetOrCreateOpenShardsFailure {
+                            subrequest_id: 2,
+                            index_id: "index-not-found".to_string(),
+                            source_id: "test-source".to_string(),
+                            reason: GetOrCreateOpenShardsFailureReason::IndexNotFound as i32,
+                        },
+                        GetOrCreateOpenShardsFailure {
+                            subrequest_id: 3,
+                            index_id: "test-index-0".to_string(),
+                            source_id: "source-not-found".to_string(),
+                            reason: GetOrCreateOpenShardsFailureReason::SourceNotFound as i32,
                         },
                     ],
                 };
@@ -530,34 +598,70 @@ mod tests {
             closed_shards: Vec::new(),
             unavailable_leaders: Vec::new(),
         };
+        let mut workbench = IngestWorkbench::new(Vec::new(), 2);
+
         router
-            .populate_shard_table(get_or_create_open_shards_request)
-            .await
-            .unwrap();
+            .populate_shard_table(&mut workbench, get_or_create_open_shards_request)
+            .await;
         assert!(router.state.read().await.shard_table.is_empty());
+
+        let ingest_subrequests = vec![
+            IngestSubrequest {
+                subrequest_id: 0,
+                index_id: "test-index-0".to_string(),
+                source_id: "test-source".to_string(),
+                ..Default::default()
+            },
+            IngestSubrequest {
+                subrequest_id: 1,
+                index_id: "test-index-1".to_string(),
+                source_id: "test-source".to_string(),
+                ..Default::default()
+            },
+            IngestSubrequest {
+                subrequest_id: 2,
+                index_id: "index-not-found".to_string(),
+                source_id: "test-source".to_string(),
+                ..Default::default()
+            },
+            IngestSubrequest {
+                subrequest_id: 3,
+                index_id: "source-not-found".to_string(),
+                source_id: "test-source".to_string(),
+                ..Default::default()
+            },
+        ];
+        let mut workbench = IngestWorkbench::new(ingest_subrequests, 2);
 
         let get_or_create_open_shards_request = GetOrCreateOpenShardsRequest {
             subrequests: vec![
                 GetOrCreateOpenShardsSubrequest {
+                    subrequest_id: 0,
                     index_id: "test-index-0".to_string(),
                     source_id: "test-source".to_string(),
                 },
                 GetOrCreateOpenShardsSubrequest {
+                    subrequest_id: 1,
                     index_id: "test-index-1".to_string(),
                     source_id: "test-source".to_string(),
                 },
                 GetOrCreateOpenShardsSubrequest {
-                    index_id: "test-index-2".to_string(),
+                    subrequest_id: 2,
+                    index_id: "index-not-found".to_string(),
                     source_id: "test-source".to_string(),
+                },
+                GetOrCreateOpenShardsSubrequest {
+                    subrequest_id: 3,
+                    index_id: "test-index-0".to_string(),
+                    source_id: "source-not-found".to_string(),
                 },
             ],
             closed_shards: Vec::new(),
             unavailable_leaders: Vec::new(),
         };
         router
-            .populate_shard_table(get_or_create_open_shards_request)
-            .await
-            .unwrap();
+            .populate_shard_table(&mut workbench, get_or_create_open_shards_request)
+            .await;
 
         let state_guard = router.state.read().await;
         let shard_table = &state_guard.shard_table;
@@ -575,6 +679,118 @@ mod tests {
         assert_eq!(routing_entry_1.len(), 2);
         assert_eq!(routing_entry_1.shards()[0].shard_id, 1);
         assert_eq!(routing_entry_1.shards()[1].shard_id, 2);
+
+        let subworkbench = workbench.subworkbenches.get(&2).unwrap();
+        assert!(matches!(
+            subworkbench.last_failure_opt,
+            Some(SubworkbenchFailure::IndexNotFound)
+        ));
+
+        let subworkbench = workbench.subworkbenches.get(&3).unwrap();
+        assert!(matches!(
+            subworkbench.last_failure_opt,
+            Some(SubworkbenchFailure::SourceNotFound)
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_router_process_persist_results_record_persist_successes() {
+        let self_node_id = "test-router".into();
+        let control_plane = ControlPlaneServiceClient::mock().into();
+        let ingester_pool = IngesterPool::default();
+        let replication_factor = 1;
+        let mut router = IngestRouter::new(
+            self_node_id,
+            control_plane,
+            ingester_pool.clone(),
+            replication_factor,
+        );
+        let ingest_subrequests = vec![IngestSubrequest {
+            subrequest_id: 0,
+            index_id: "test-index-0".to_string(),
+            source_id: "test-source".to_string(),
+            ..Default::default()
+        }];
+        let mut workbench = IngestWorkbench::new(ingest_subrequests, 2);
+        let persist_futures = FuturesUnordered::new();
+
+        persist_futures.push(async {
+            let persist_summary = PersistRequestSummary {
+                leader_id: "test-ingester-0".into(),
+                subrequest_ids: vec![0],
+            };
+            let persist_result = Ok::<_, IngestV2Error>(PersistResponse {
+                leader_id: "test-ingester-0".to_string(),
+                successes: vec![PersistSuccess {
+                    subrequest_id: 0,
+                    index_uid: "test-index-0:0".to_string(),
+                    source_id: "test-source".to_string(),
+                    shard_id: 1,
+                    ..Default::default()
+                }],
+                failures: Vec::new(),
+            });
+            (persist_summary, persist_result)
+        });
+        router
+            .process_persist_results(&mut workbench, persist_futures)
+            .await;
+
+        let subworkbench = workbench.subworkbenches.get(&0).unwrap();
+        assert!(matches!(
+            subworkbench.persist_success_opt,
+            Some(PersistSuccess { .. })
+        ));
+    }
+
+    #[tokio::test]
+    async fn test_router_process_persist_results_record_persist_failures() {
+        let self_node_id = "test-router".into();
+        let control_plane = ControlPlaneServiceClient::mock().into();
+        let ingester_pool = IngesterPool::default();
+        let replication_factor = 1;
+        let mut router = IngestRouter::new(
+            self_node_id,
+            control_plane,
+            ingester_pool.clone(),
+            replication_factor,
+        );
+        let ingest_subrequests = vec![IngestSubrequest {
+            subrequest_id: 0,
+            index_id: "test-index-0".to_string(),
+            source_id: "test-source".to_string(),
+            ..Default::default()
+        }];
+        let mut workbench = IngestWorkbench::new(ingest_subrequests, 2);
+        let persist_futures = FuturesUnordered::new();
+
+        persist_futures.push(async {
+            let persist_summary = PersistRequestSummary {
+                leader_id: "test-ingester-0".into(),
+                subrequest_ids: vec![0],
+            };
+            let persist_result = Ok::<_, IngestV2Error>(PersistResponse {
+                leader_id: "test-ingester-0".to_string(),
+                successes: Vec::new(),
+                failures: vec![PersistFailure {
+                    subrequest_id: 0,
+                    index_uid: "test-index-0:0".to_string(),
+                    source_id: "test-source".to_string(),
+                    shard_id: 1,
+                    reason: PersistFailureReason::RateLimited as i32,
+                }],
+            });
+            (persist_summary, persist_result)
+        });
+        router
+            .process_persist_results(&mut workbench, persist_futures)
+            .await;
+
+        let subworkbench = workbench.subworkbenches.get(&0).unwrap();
+        assert!(matches!(
+            subworkbench.last_failure_opt,
+            Some(SubworkbenchFailure::Persist { .. })
+        ));
     }
 
     #[tokio::test]
@@ -603,11 +819,15 @@ mod tests {
         );
         drop(state_guard);
 
-        let mut workbench = IngestWorkbench::new(Vec::new());
+        let mut workbench = IngestWorkbench::new(Vec::new(), 2);
         let persist_futures = FuturesUnordered::new();
 
         persist_futures.push(async {
-            Ok::<_, IngestV2Error>(PersistResponse {
+            let persist_summary = PersistRequestSummary {
+                leader_id: "test-ingester-0".into(),
+                subrequest_ids: vec![0],
+            };
+            let persist_result = Ok::<_, IngestV2Error>(PersistResponse {
                 leader_id: "test-ingester-0".to_string(),
                 successes: Vec::new(),
                 failures: vec![PersistFailure {
@@ -617,7 +837,8 @@ mod tests {
                     shard_id: 1,
                     reason: PersistFailureReason::ShardClosed as i32,
                 }],
-            })
+            });
+            (persist_summary, persist_result)
         });
         router
             .process_persist_results(&mut workbench, persist_futures)
@@ -634,6 +855,86 @@ mod tests {
             shard_table_entry.shards()[0].shard_state,
             ShardState::Closed as i32
         );
+    }
+
+    #[tokio::test]
+    async fn test_router_process_persist_results_removes_unavailable_leaders() {
+        let self_node_id = "test-router".into();
+        let control_plane = ControlPlaneServiceClient::mock().into();
+
+        let ingester_pool = IngesterPool::default();
+        ingester_pool.insert(
+            "test-ingester-0".into(),
+            IngesterServiceClient::mock().into(),
+        );
+        ingester_pool.insert(
+            "test-ingester-1".into(),
+            IngesterServiceClient::mock().into(),
+        );
+
+        let replication_factor = 1;
+        let mut router = IngestRouter::new(
+            self_node_id,
+            control_plane,
+            ingester_pool.clone(),
+            replication_factor,
+        );
+        let ingest_subrequests = vec![
+            IngestSubrequest {
+                subrequest_id: 0,
+                index_id: "test-index-0".to_string(),
+                source_id: "test-source".to_string(),
+                ..Default::default()
+            },
+            IngestSubrequest {
+                subrequest_id: 1,
+                index_id: "test-index-1".to_string(),
+                source_id: "test-source".to_string(),
+                ..Default::default()
+            },
+        ];
+        let mut workbench = IngestWorkbench::new(ingest_subrequests, 2);
+        let persist_futures = FuturesUnordered::new();
+
+        persist_futures.push(async {
+            let persist_summary = PersistRequestSummary {
+                leader_id: "test-ingester-0".into(),
+                subrequest_ids: vec![0],
+            };
+            let persist_result = Err::<_, IngestV2Error>(IngestV2Error::Timeout);
+            (persist_summary, persist_result)
+        });
+        router
+            .process_persist_results(&mut workbench, persist_futures)
+            .await;
+
+        let subworkbench = workbench.subworkbenches.get(&0).unwrap();
+        assert!(matches!(
+            subworkbench.last_failure_opt,
+            Some(SubworkbenchFailure::NoShardsAvailable { .. })
+        ));
+
+        let persist_futures = FuturesUnordered::new();
+
+        persist_futures.push(async {
+            let persist_summary = PersistRequestSummary {
+                leader_id: "test-ingester-1".into(),
+                subrequest_ids: vec![1],
+            };
+            let persist_result =
+                Err::<_, IngestV2Error>(IngestV2Error::Transport("transport error".to_string()));
+            (persist_summary, persist_result)
+        });
+        router
+            .process_persist_results(&mut workbench, persist_futures)
+            .await;
+        let subworkbench = workbench.subworkbenches.get(&1).unwrap();
+        assert!(matches!(
+            subworkbench.last_failure_opt,
+            Some(SubworkbenchFailure::NoShardsAvailable { .. })
+        ));
+
+        assert!(ingester_pool.is_empty());
     }
 
     #[tokio::test]

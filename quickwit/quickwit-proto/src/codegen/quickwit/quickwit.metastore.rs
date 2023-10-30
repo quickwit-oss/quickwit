@@ -249,15 +249,17 @@ pub struct OpenShardsRequest {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct OpenShardsSubrequest {
-    #[prost(string, tag = "1")]
-    pub index_uid: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "1")]
+    pub subrequest_id: u32,
     #[prost(string, tag = "2")]
-    pub source_id: ::prost::alloc::string::String,
+    pub index_uid: ::prost::alloc::string::String,
     #[prost(string, tag = "3")]
+    pub source_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "4")]
     pub leader_id: ::prost::alloc::string::String,
-    #[prost(string, optional, tag = "4")]
+    #[prost(string, optional, tag = "5")]
     pub follower_id: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(uint64, tag = "5")]
+    #[prost(uint64, tag = "6")]
     pub next_shard_id: u64,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
@@ -271,13 +273,15 @@ pub struct OpenShardsResponse {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct OpenShardsSubresponse {
-    #[prost(string, tag = "1")]
-    pub index_uid: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "1")]
+    pub subrequest_id: u32,
     #[prost(string, tag = "2")]
+    pub index_uid: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
-    #[prost(message, repeated, tag = "3")]
+    #[prost(message, repeated, tag = "4")]
     pub opened_shards: ::prost::alloc::vec::Vec<super::ingest::Shard>,
-    #[prost(uint64, tag = "4")]
+    #[prost(uint64, tag = "5")]
     pub next_shard_id: u64,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
@@ -705,6 +709,8 @@ impl MetastoreServiceClient {
     > {
         let adapter = MetastoreServiceGrpcServerAdapter::new(self.clone());
         metastore_service_grpc_server::MetastoreServiceGrpcServer::new(adapter)
+            .max_decoding_message_size(10 * 1024 * 1024)
+            .max_encoding_message_size(10 * 1024 * 1024)
     }
     pub fn from_channel(
         addr: std::net::SocketAddr,
@@ -723,10 +729,13 @@ impl MetastoreServiceClient {
         balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
     ) -> MetastoreServiceClient {
         let connection_keys_watcher = balance_channel.connection_keys_watcher();
-        let adapter = MetastoreServiceGrpcClientAdapter::new(
-            metastore_service_grpc_client::MetastoreServiceGrpcClient::new(
+        let client = metastore_service_grpc_client::MetastoreServiceGrpcClient::new(
                 balance_channel,
-            ),
+            )
+            .max_decoding_message_size(10 * 1024 * 1024)
+            .max_encoding_message_size(10 * 1024 * 1024);
+        let adapter = MetastoreServiceGrpcClientAdapter::new(
+            client,
             connection_keys_watcher,
         );
         Self::new(adapter)

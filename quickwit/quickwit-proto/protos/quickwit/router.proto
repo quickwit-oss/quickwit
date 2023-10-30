@@ -24,48 +24,53 @@ package quickwit.ingest.router;
 import "quickwit/ingest.proto";
 
 service IngestRouterService {
-    // Ingests batches of documents for one or multiple indexes.
-    // TODO: Describe error cases and how to handle them.
-    rpc Ingest(IngestRequestV2) returns (IngestResponseV2);
+  // Ingests batches of documents for one or multiple indexes.
+  // TODO: Describe error cases and how to handle them.
+  rpc Ingest(IngestRequestV2) returns (IngestResponseV2);
 }
 
 message IngestRequestV2 {
-    repeated IngestSubrequest subrequests = 1;
-    quickwit.ingest.CommitTypeV2 commit_type = 2;
+  repeated IngestSubrequest subrequests = 1;
+  quickwit.ingest.CommitTypeV2 commit_type = 2;
 }
 
 message IngestSubrequest {
-    // The subrequest ID is used to identify the various subrequests and responses
-    // (ingest, persist, replicate) at play during the ingest and replication
-    // process.
-    uint32 subrequest_id = 1;
-    string index_id = 2;
-    string source_id = 3;
-    quickwit.ingest.DocBatchV2 doc_batch = 4;
+  // The subrequest ID is used to identify the various subrequests and responses
+  // (ingest, persist, replicate) at play during the ingest and replication
+  // process.
+  uint32 subrequest_id = 1;
+  string index_id = 2;
+  string source_id = 3;
+  quickwit.ingest.DocBatchV2 doc_batch = 4;
 }
 
 message IngestResponseV2 {
-    repeated IngestSuccess successes  = 1;
-    repeated IngestFailure failures  = 2;
+  repeated IngestSuccess successes  = 1;
+  repeated IngestFailure failures  = 2;
 }
 
 message IngestSuccess {
-    uint32 subrequest_id = 1;
-    string index_uid = 2;
-    string source_id = 3;
-    uint64 shard_id = 4;
-    // Replication position inclusive.
-    quickwit.ingest.Position replication_position_inclusive = 5;
+  uint32 subrequest_id = 1;
+  string index_uid = 2;
+  string source_id = 3;
+  uint64 shard_id = 4;
+  // Replication position inclusive.
+  quickwit.ingest.Position replication_position_inclusive = 5;
 }
 
 enum IngestFailureReason {
-    INGEST_FAILURE_REASON_UNSPECIFIED = 0;
-    INGEST_FAILURE_REASON_NO_SHARDS_AVAILABLE = 1;
+  INGEST_FAILURE_REASON_UNSPECIFIED = 0;
+  INGEST_FAILURE_REASON_INDEX_NOT_FOUND = 1;
+  INGEST_FAILURE_REASON_SOURCE_NOT_FOUND = 2;
+  INGEST_FAILURE_REASON_INTERNAL = 3;
+  INGEST_FAILURE_REASON_NO_SHARDS_AVAILABLE = 4;
+  INGEST_FAILURE_REASON_RATE_LIMITED = 5;
+  INGEST_FAILURE_REASON_RESOURCE_EXHAUSTED = 6;
 }
 
 message IngestFailure {
-    uint32 subrequest_id = 1;
-    string index_id = 2;
-    string source_id = 3;
-    IngestFailureReason reason = 5;
+  uint32 subrequest_id = 1;
+  string index_id = 2;
+  string source_id = 3;
+  IngestFailureReason reason = 5;
 }

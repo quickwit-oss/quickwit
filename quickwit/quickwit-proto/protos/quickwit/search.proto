@@ -76,9 +76,9 @@ service SearchService {
 
 /// Scroll Request
 message ScrollRequest {
-    /// The `scroll_id` is the given in the response of a search request including a scroll.
-    string scroll_id = 1;
-    optional uint32 scroll_ttl_secs = 2;
+  /// The `scroll_id` is the given in the response of a search request including a scroll.
+  string scroll_id = 1;
+  optional uint32 scroll_ttl_secs = 2;
 }
 
 message PutKVRequest {
@@ -90,23 +90,23 @@ message PutKVRequest {
 message PutKVResponse {}
 
 message GetKVRequest {
-    bytes key = 1;
+  bytes key = 1;
 }
 
 message GetKVResponse {
-    optional bytes payload = 1;
+  optional bytes payload = 1;
 }
 
 
 message ReportSplit {
-    // Split id (ULID format `01HAV29D4XY3D462FS3D8K5Q2H`)
-    string split_id = 2;
-    // The storage uri. This URI does NOT include the split id.
-    string storage_uri = 1;
+  // Split id (ULID format `01HAV29D4XY3D462FS3D8K5Q2H`)
+  string split_id = 2;
+  // The storage uri. This URI does NOT include the split id.
+  string storage_uri = 1;
 }
 
 message ReportSplitsRequest {
-    repeated ReportSplit report_splits = 1;
+  repeated ReportSplit report_splits = 1;
 }
 
 message ReportSplitsResponse {}
@@ -188,10 +188,10 @@ message SortField {
 }
 
 enum SortOrder {
-    // Ascending order.
-    ASC = 0;
-    // Descending order.
-    DESC = 1; //< This will be the default value;
+  // Ascending order.
+  ASC = 0;
+  // Descending order.
+  DESC = 1; //< This will be the default value;
 }
 
 message SearchResponse {
@@ -325,10 +325,10 @@ message PartialHit {
 
 message SortByValue {
   oneof sort_value {
-    uint64 u64 = 1;
-    int64 i64 = 2;
-    double f64 = 3;
-    bool boolean = 4;
+  uint64 u64 = 1;
+  int64 i64 = 2;
+  double f64 = 3;
+  bool boolean = 4;
   }
   // Room for eventual future sorted key types.
   reserved 5 to 20;
@@ -449,12 +449,12 @@ message LeafListTermsResponse {
 // -- Stream -------------------
 
 enum OutputFormat {
-    // Comma Separated Values format (https://datatracker.ietf.org/doc/html/rfc4180).
-    // The delimiter is `,`.
-    CSV = 0; //< This will be the default value
-    // Format data by row in ClickHouse binary format.
-    // https://clickhouse.tech/docs/en/interfaces/formats/#rowbinary
-    CLICK_HOUSE_ROW_BINARY = 1;
+  // Comma Separated Values format (https://datatracker.ietf.org/doc/html/rfc4180).
+  // The delimiter is `,`.
+  CSV = 0; //< This will be the default value
+  // Format data by row in ClickHouse binary format.
+  // https://clickhouse.tech/docs/en/interfaces/formats/#rowbinary
+  CLICK_HOUSE_ROW_BINARY = 1;
 }
 
 message SearchStreamRequest {
