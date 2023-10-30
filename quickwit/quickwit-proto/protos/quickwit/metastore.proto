@@ -126,7 +126,7 @@ message CreateIndexResponse {
 
 message ListIndexesMetadataRequest {
     reserved  1;
-    repeated string index_ptns = 2;
+    repeated string index_id_patterns = 2;
 }
 
 message ListIndexesMetadataResponse {

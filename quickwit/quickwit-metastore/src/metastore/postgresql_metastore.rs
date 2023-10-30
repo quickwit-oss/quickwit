@@ -483,7 +483,7 @@ impl MetastoreService for PostgresqlMetastore {
         &mut self,
         request: ListIndexesMetadataRequest,
     ) -> MetastoreResult<ListIndexesMetadataResponse> {
-        let sql = build_index_id_patterns_sql_query(&request.index_ptns).map_err(|error| {
+        let sql = build_index_id_patterns_sql_query(&request.index_id_patterns).map_err(|error| {
             MetastoreError::Internal {
                 message: "failed to build `list_indexes_metadatas` SQL query".to_string(),
                 cause: error.to_string(),
@@ -823,7 +823,7 @@ impl MetastoreService for PostgresqlMetastore {
                 .map(|index_uid| index_uid.index_id().to_string())
                 .collect();
             let list_indexes_metadata_request = ListIndexesMetadataRequest {
-                index_ptns: index_ids_str.clone(),
+                index_id_patterns: index_ids_str.clone(),
             };
             let found_index_ids: HashSet<String> = self
                 .list_indexes_metadata(list_indexes_metadata_request)
@@ -1387,8 +1387,6 @@ fn build_index_id_patterns_sql_query(index_id_patterns: &[String]) -> anyhow::Re
     if index_id_patterns == ["*"] {
         return Ok("SELECT * FROM indexes".to_string());
     }
-    // TODO Fix me.
-    // Actually we are supposed to return an error if one non wildcard pattern matches nothing.
     if index_id_patterns.iter().any(|pattern| pattern == "*") {
         return Ok("SELECT * FROM indexes".to_string());
     }

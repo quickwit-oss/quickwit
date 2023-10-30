@@ -316,12 +316,12 @@ pub async fn test_metastore_list_indexes<MetastoreToTest: MetastoreService + Def
     let index_uri_4 = format!("ram:///indexes/{index_id_4}");
     let index_config_4 = IndexConfig::for_test(&index_id_4, &index_uri_4);
 
-    let index_ptns = vec![
+    let index_id_patterns = vec![
         format!("prefix-*-{index_id_fragment}-suffix-*"),
         format!("prefix*{index_id_fragment}*suffix-*"),
     ];
     let indexes_count = metastore
-        .list_indexes_metadata(ListIndexesMetadataRequest { index_ptns })
+        .list_indexes_metadata(ListIndexesMetadataRequest { index_id_patterns })
         .await
         .unwrap()
         .deserialize_indexes_metadata()
@@ -354,9 +354,9 @@ pub async fn test_metastore_list_indexes<MetastoreToTest: MetastoreService + Def
         .index_uid
         .into();
 
-    let index_ptns = vec![format!("prefix-*-{index_id_fragment}-suffix-*")];
+    let index_id_patterns = vec![format!("prefix-*-{index_id_fragment}-suffix-*")];
     let indexes_count = metastore
-        .list_indexes_metadata(ListIndexesMetadataRequest { index_ptns })
+        .list_indexes_metadata(ListIndexesMetadataRequest { index_id_patterns })
         .await
         .unwrap()
         .deserialize_indexes_metadata()

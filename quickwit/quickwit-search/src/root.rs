@@ -715,9 +715,9 @@ fn finalize_aggregation_if_any(
 /// behaviors. This specification was principally motivated by #4042.
 fn check_all_index_metadata_found(
     index_metadatas: &[IndexMetadata],
-    index_ptns: &[String],
+    index_id_patterns: &[String],
 ) -> crate::Result<()> {
-    let mut index_ids: HashSet<&str> = index_ptns
+    let mut index_ids: HashSet<&str> = index_id_patterns
         .iter()
         .map(|index_ptn| index_ptn.as_str())
         .filter(|index_ptn| !index_ptn.contains('*'))
@@ -760,7 +760,7 @@ pub async fn root_search(
     info!(searcher_context = ?searcher_context, search_request = ?search_request);
     let start_instant = tokio::time::Instant::now();
     let list_indexes_metadatas_request = ListIndexesMetadataRequest {
-        index_ptns: search_request.index_id_patterns.clone(),
+        index_id_patterns: search_request.index_id_patterns.clone(),
     };
     let indexes_metadata: Vec<IndexMetadata> = metastore
         .list_indexes_metadata(list_indexes_metadatas_request)
@@ -3118,8 +3118,8 @@ mod tests {
         let index_uid_3 = index_metadata_3.index_uid.clone();
         metastore.expect_list_indexes_metadata().return_once(
             move |list_indexes_metadata_request: ListIndexesMetadataRequest| {
-                let index_ptns = list_indexes_metadata_request.index_ptns;
-                assert_eq!(&index_ptns, &["test-index-*".to_string()]);
+                let index_id_patterns = list_indexes_metadata_request.index_id_patterns;
+                assert_eq!(&index_id_patterns, &["test-index-*".to_string()]);
                 Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(vec![
                     index_metadata_1,
                     index_metadata_2,

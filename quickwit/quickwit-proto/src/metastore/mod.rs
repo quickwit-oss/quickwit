@@ -302,7 +302,7 @@ pub mod serde_utils {
 impl ListIndexesMetadataRequest {
     pub fn all() -> ListIndexesMetadataRequest {
         ListIndexesMetadataRequest {
-            index_ptns: vec!["*".to_string()],
+            index_id_patterns: vec!["*".to_string()],
         }
     }
 }
