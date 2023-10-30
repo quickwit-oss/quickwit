@@ -24,3 +24,17 @@ expected:
       - doc_count: 1
         key: trinity
       sum_other_doc_count: 0
+---
+# Test date histogram aggregation
+method: [POST]
+endpoint: "noindexmatching-*/_search"
+json:
+  query: { match_all: {} }
+  aggs:
+    logins:
+      terms:
+        field: "actor.login"
+        order:
+          _key: asc
+expected:
+  $expect: "not 'aggregations' in val"

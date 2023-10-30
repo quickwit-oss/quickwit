@@ -65,3 +65,16 @@ json:
 store:
   scroll_id: _scroll_id
 status_code: 404
+---
+endpoint: "non-existing-index-*/_search"
+params:
+  size: 1
+  scroll: 30m
+json:
+  query:
+    match_all: {}
+  sort:
+    - actor.id:
+        order: desc
+expected:
+  $expect: "'_scroll_id' in val"

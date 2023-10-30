@@ -770,7 +770,19 @@ pub async fn root_search(
     check_all_index_metadata_found(&indexes_metadata[..], &search_request.index_id_patterns[..])?;
 
     if indexes_metadata.is_empty() {
-        return Ok(SearchResponse::default());
+        // We go through root_search_aux instead of directly
+        // returning an empty response to make sure we generate
+        // a (pretty useless) scroll id if requested.
+        let mut search_response = root_search_aux(
+            searcher_context,
+            &HashMap::default(),
+            search_request,
+            Vec::new(),
+            cluster_client,
+        )
+        .await?;
+        search_response.elapsed_time_micros = start_instant.elapsed().as_micros() as u64;
+        return Ok(search_response);
     }
 
     let index_uids = indexes_metadata
