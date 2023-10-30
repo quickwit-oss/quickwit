@@ -258,7 +258,50 @@ impl QuickwitClient {
         on_ingest_event: Option<&(dyn Fn(IngestEvent) + Sync)>,
         last_block_commit: CommitType,
     ) -> Result<(), Error> {
-        let ingest_path = format!("{index_id}/ingest");
+        self.ingest_aux(
+            index_id,
+            ingest_source,
+            batch_size_limit_opt,
+            on_ingest_event,
+            last_block_commit,
+            false,
+        )
+        .await
+    }
+
+    pub async fn ingest_v2(
+        &self,
+        index_id: &str,
+        ingest_source: IngestSource,
+        batch_size_limit_opt: Option<usize>,
+        on_ingest_event: Option<&(dyn Fn(IngestEvent) + Sync)>,
+        last_block_commit: CommitType,
+    ) -> Result<(), Error> {
+        self.ingest_aux(
+            index_id,
+            ingest_source,
+            batch_size_limit_opt,
+            on_ingest_event,
+            last_block_commit,
+            true,
+        )
+        .await
+    }
+
+    pub async fn ingest_aux(
+        &self,
+        index_id: &str,
+        ingest_source: IngestSource,
+        batch_size_limit_opt: Option<usize>,
+        on_ingest_event: Option<&(dyn Fn(IngestEvent) + Sync)>,
+        last_block_commit: CommitType,
+        ingest_v2: bool,
+    ) -> Result<(), Error> {
+        let ingest_path = if ingest_v2 {
+            format!("{index_id}/ingest-v2")
+        } else {
+            format!("{index_id}/ingest")
+        };
         let batch_size_limit = batch_size_limit_opt.unwrap_or(INGEST_CONTENT_LENGTH_LIMIT);
         let mut batch_reader = match ingest_source {
             IngestSource::File(filepath) => {
@@ -286,7 +329,6 @@ impl QuickwitClient {
                         timeout,
                     )
                     .await?;
-
                 if response.status_code() == StatusCode::TOO_MANY_REQUESTS {
                     if let Some(event_fn) = &on_ingest_event {
                         event_fn(IngestEvent::Sleep)
