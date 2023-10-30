@@ -24,7 +24,7 @@ use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, Handler};
 use quickwit_config::IndexConfig;
-use quickwit_metastore::{ListIndexesMetadataRequestExt, ListIndexesMetadataResponseExt};
+use quickwit_metastore::ListIndexesMetadataResponseExt;
 use quickwit_proto::metastore::{
     ListIndexesMetadataRequest, MetastoreService, MetastoreServiceClient,
 };

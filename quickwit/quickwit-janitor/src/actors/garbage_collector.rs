@@ -25,10 +25,9 @@ use async_trait::async_trait;
 use futures::{stream, StreamExt};
 use itertools::Itertools;
 use quickwit_actors::{Actor, ActorContext, Handler};
-// use quickwit_index_management::run_garbage_collect;
 use quickwit_common::shared_consts::DELETION_GRACE_PERIOD;
 use quickwit_index_management::run_garbage_collect;
-use quickwit_metastore::{ListIndexesMetadataRequestExt, ListIndexesMetadataResponseExt};
+use quickwit_metastore::ListIndexesMetadataResponseExt;
 use quickwit_proto::metastore::{
     ListIndexesMetadataRequest, MetastoreService, MetastoreServiceClient,
 };

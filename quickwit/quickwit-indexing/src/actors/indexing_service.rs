@@ -40,10 +40,7 @@ use quickwit_config::{
 use quickwit_ingest::{
     DropQueueRequest, IngestApiService, IngesterPool, ListQueuesRequest, QUEUES_DIR_NAME,
 };
-use quickwit_metastore::{
-    IndexMetadata, IndexMetadataResponseExt, ListIndexesMetadataRequestExt,
-    ListIndexesMetadataResponseExt,
-};
+use quickwit_metastore::{IndexMetadata, IndexMetadataResponseExt, ListIndexesMetadataResponseExt};
 use quickwit_proto::indexing::{
     ApplyIndexingPlanRequest, ApplyIndexingPlanResponse, IndexingError, IndexingPipelineId,
     IndexingTask, PipelineMetrics,

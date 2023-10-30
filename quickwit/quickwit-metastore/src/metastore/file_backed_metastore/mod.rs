@@ -67,10 +67,7 @@ use super::{
     PublishSplitsRequestExt, StageSplitsRequestExt,
 };
 use crate::checkpoint::IndexCheckpointDelta;
-use crate::{
-    IndexMetadata, ListIndexesMetadataRequestExt, ListIndexesQuery, ListSplitsQuery,
-    MetastoreServiceExt, SplitState,
-};
+use crate::{IndexMetadata, ListSplitsQuery, MetastoreServiceExt, SplitState};
 
 /// State of an index tracked by the metastore.
 pub(crate) enum IndexState {
@@ -674,15 +671,13 @@ impl MetastoreService for FileBackedMetastore {
         // 2) Get each index metadata. Note that each get will take a read lock on
         // `per_index_metastores`. Lock is released in 1) to let a concurrent task/thread to
         // take a write lock on `per_index_metastores`.
-        let query = request.deserialize_list_indexes_query()?;
-        let index_matcher_result = match query {
-            ListIndexesQuery::IndexIdPatterns(patterns) => build_regex_set_from_patterns(patterns),
-            ListIndexesQuery::All => build_regex_set_from_patterns(vec!["*".to_string()]),
-        };
-        let index_matcher = index_matcher_result.map_err(|error| MetastoreError::Internal {
-            message: "failed to build RegexSet from index patterns`".to_string(),
-            cause: error.to_string(),
-        })?;
+        let index_matcher =
+            build_regex_set_from_patterns(request.index_id_patterns).map_err(|error| {
+                MetastoreError::Internal {
+                    message: "failed to build RegexSet from index patterns`".to_string(),
+                    cause: error.to_string(),
+                }
+            })?;
 
         let index_ids: Vec<String> = {
             let per_index_metastores_rlock = self.per_index_metastores.read().await;

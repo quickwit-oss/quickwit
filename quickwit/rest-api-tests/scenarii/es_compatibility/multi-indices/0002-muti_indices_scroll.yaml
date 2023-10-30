@@ -1,0 +1,80 @@
+endpoint: "gharchive-*/_search"
+params:
+  size: 1
+  scroll: 30m
+json:
+  query:
+    match_all: {}
+  sort:
+    - actor.id:
+        order: desc
+store:
+  scroll_id: _scroll_id
+expected:
+  _scroll_id:
+    $expect: "len(val) > 4"
+  hits:
+    hits:
+      - _source: {actor: {login: "trinity"}}
+    total:
+      value: 4
+      relation: "eq"
+---
+method: GET
+endpoint: "_search/scroll"
+params:
+  scroll: 30m
+json:
+  scroll_id:
+    $previous: "val[\"_scroll_id\"]"
+expected:
+  _scroll_id:
+    $expect: "len(val) > 4"
+  hits:
+    hits:
+      - _source: {actor: {login: "guilload"}}
+    total:
+      value: 4
+---
+method: GET
+endpoint: "_search/scroll"
+params:
+  scroll: 30m
+json:
+  scroll_id:
+    $previous: "val[\"_scroll_id\"]"
+expected:
+  _scroll_id:
+    $expect: "len(val) > 4"
+  hits:
+    hits:
+      - _source: {actor: {login: "fulmicoton"}}
+    total:
+      value: 4
+---
+endpoint: "gharchive-*,non-existing-index/_search"
+params:
+  size: 1
+  scroll: 30m
+json:
+  query:
+    match_all: {}
+  sort:
+    - actor.id:
+        order: desc
+store:
+  scroll_id: _scroll_id
+status_code: 404
+---
+endpoint: "non-existing-index-*/_search"
+params:
+  size: 1
+  scroll: 30m
+json:
+  query:
+    match_all: {}
+  sort:
+    - actor.id:
+        order: desc
+expected:
+  $expect: "'_scroll_id' in val"

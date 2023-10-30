@@ -73,8 +73,7 @@ use quickwit_ingest::{
 };
 use quickwit_janitor::{start_janitor_service, JanitorService};
 use quickwit_metastore::{
-    ControlPlaneMetastore, ListIndexesMetadataRequestExt, ListIndexesMetadataResponseExt,
-    MetastoreResolver,
+    ControlPlaneMetastore, ListIndexesMetadataResponseExt, MetastoreResolver,
 };
 use quickwit_opentelemetry::otlp::{OtlpGrpcLogsService, OtlpGrpcTracesService};
 use quickwit_proto::control_plane::ControlPlaneServiceClient;

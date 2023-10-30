@@ -60,10 +60,9 @@ use crate::metastore::postgresql_model::{PgDeleteTask, PgIndex, PgSplit, Splits,
 use crate::metastore::{instrument_metastore, FilterRange, PublishSplitsRequestExt};
 use crate::{
     AddSourceRequestExt, CreateIndexRequestExt, IndexMetadata, IndexMetadataResponseExt,
-    ListIndexesMetadataRequestExt, ListIndexesMetadataResponseExt, ListIndexesQuery,
-    ListSplitsQuery, ListSplitsRequestExt, ListSplitsResponseExt, MetastoreFactory,
-    MetastoreResolverError, MetastoreServiceExt, Split, SplitMaturity, SplitMetadata, SplitState,
-    StageSplitsRequestExt,
+    ListIndexesMetadataResponseExt, ListSplitsQuery, ListSplitsRequestExt, ListSplitsResponseExt,
+    MetastoreFactory, MetastoreResolverError, MetastoreServiceExt, Split, SplitMaturity,
+    SplitMetadata, SplitState, StageSplitsRequestExt,
 };
 
 static MIGRATOR: Migrator = sqlx::migrate!("migrations/postgresql");
@@ -485,18 +484,13 @@ impl MetastoreService for PostgresqlMetastore {
         &mut self,
         request: ListIndexesMetadataRequest,
     ) -> MetastoreResult<ListIndexesMetadataResponse> {
-        let query = request.deserialize_list_indexes_query()?;
-        let sql = match query {
-            ListIndexesQuery::All => "SELECT * FROM indexes".to_string(),
-            ListIndexesQuery::IndexIdPatterns(index_id_patterns) => {
-                build_index_id_patterns_sql_query(index_id_patterns).map_err(|error| {
-                    MetastoreError::Internal {
-                        message: "failed to build `list_indexes_metadatas` SQL query".to_string(),
-                        cause: error.to_string(),
-                    }
-                })?
-            }
-        };
+        let sql =
+            build_index_id_patterns_sql_query(&request.index_id_patterns).map_err(|error| {
+                MetastoreError::Internal {
+                    message: "failed to build `list_indexes_metadatas` SQL query".to_string(),
+                    cause: error.to_string(),
+                }
+            })?;
         let pg_indexes = sqlx::query_as::<_, PgIndex>(&sql)
             .fetch_all(&self.connection_pool)
             .await?;
@@ -830,10 +824,9 @@ impl MetastoreService for PostgresqlMetastore {
                 .iter()
                 .map(|index_uid| index_uid.index_id().to_string())
                 .collect();
-            let list_indexes_metadata_request =
-                ListIndexesMetadataRequest::try_from_list_indexes_query(
-                    ListIndexesQuery::IndexIdPatterns(index_ids_str.clone()),
-                )?;
+            let list_indexes_metadata_request = ListIndexesMetadataRequest {
+                index_id_patterns: index_ids_str.clone(),
+            };
             let found_index_ids: HashSet<String> = self
                 .list_indexes_metadata(list_indexes_metadata_request)
                 .await?
@@ -1389,8 +1382,13 @@ fn tags_filter_expression_helper(tags: &TagFilterAst) -> Cond {
 /// Builds a SQL query that returns indexes which match at least one pattern in
 /// `index_id_patterns`. For each pattern, we check if the pattern is valid and replace `*` by `%`
 /// to build a SQL `LIKE` query.
-fn build_index_id_patterns_sql_query(index_id_patterns: Vec<String>) -> anyhow::Result<String> {
-    assert!(!index_id_patterns.is_empty());
+fn build_index_id_patterns_sql_query(index_id_patterns: &[String]) -> anyhow::Result<String> {
+    if index_id_patterns.is_empty() {
+        anyhow::bail!("The list of index id patterns may not be empty.");
+    }
+    if index_id_patterns == ["*"] {
+        return Ok("SELECT * FROM indexes".to_string());
+    }
     if index_id_patterns.iter().any(|pattern| pattern == "*") {
         return Ok("SELECT * FROM indexes".to_string());
     }
@@ -1867,11 +1865,11 @@ mod tests {
     #[test]
     fn test_index_id_pattern_like_query() {
         assert_eq!(
-            &build_index_id_patterns_sql_query(vec!["*-index-*-last*".to_string()]).unwrap(),
+            &build_index_id_patterns_sql_query(&["*-index-*-last*".to_string()]).unwrap(),
             "SELECT * FROM indexes WHERE index_id LIKE '%-index-%-last%'"
         );
         assert_eq!(
-            &build_index_id_patterns_sql_query(vec![
+            &build_index_id_patterns_sql_query(&[
                 "*-index-*-last*".to_string(),
                 "another-index".to_string()
             ])
@@ -1880,7 +1878,7 @@ mod tests {
              'another-index'"
         );
         assert_eq!(
-            &build_index_id_patterns_sql_query(vec![
+            &build_index_id_patterns_sql_query(&[
                 "*-index-*-last**".to_string(),
                 "another-index".to_string(),
                 "*".to_string()
@@ -1889,7 +1887,7 @@ mod tests {
             "SELECT * FROM indexes"
         );
         assert_eq!(
-            build_index_id_patterns_sql_query(vec!["*-index-*-&-last**".to_string()])
+            build_index_id_patterns_sql_query(&["*-index-*-&-last**".to_string()])
                 .unwrap_err()
                 .to_string(),
             "internal error: failed to build list indexes query; cause: `index ID pattern \

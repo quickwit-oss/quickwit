@@ -989,7 +989,7 @@ mod tests {
         let mut mock_search_service = MockSearchService::new();
         mock_search_service.expect_root_search().returning(|_| {
             Err(SearchError::IndexesNotFound {
-                index_id_patterns: vec!["not-found-index".to_string()],
+                index_ids: vec!["not-found-index".to_string()],
             })
         });
         let rest_search_api_handler = search_handler(mock_search_service);

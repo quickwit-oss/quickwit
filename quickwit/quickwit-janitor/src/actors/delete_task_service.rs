@@ -26,9 +26,7 @@ use quickwit_actors::{Actor, ActorContext, ActorExitStatus, ActorHandle, Handler
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::temp_dir::{self};
 use quickwit_config::IndexConfig;
-use quickwit_metastore::{
-    IndexMetadataResponseExt, ListIndexesMetadataRequestExt, ListIndexesMetadataResponseExt,
-};
+use quickwit_metastore::{IndexMetadataResponseExt, ListIndexesMetadataResponseExt};
 use quickwit_proto::metastore::{
     IndexMetadataRequest, ListIndexesMetadataRequest, MetastoreService, MetastoreServiceClient,
 };

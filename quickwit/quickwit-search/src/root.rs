@@ -30,9 +30,8 @@ use quickwit_config::{build_doc_mapper, IndexConfig};
 use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
 use quickwit_doc_mapper::{DocMapper, DYNAMIC_FIELD_NAME};
 use quickwit_metastore::{
-    IndexMetadata, IndexMetadataResponseExt, ListIndexesMetadataRequestExt,
-    ListIndexesMetadataResponseExt, ListIndexesQuery, ListSplitsRequestExt, ListSplitsResponseExt,
-    SplitMetadata,
+    IndexMetadata, IndexMetadataResponseExt, ListIndexesMetadataResponseExt, ListSplitsRequestExt,
+    ListSplitsResponseExt, SplitMetadata,
 };
 use quickwit_proto::metastore::{
     IndexMetadataRequest, ListIndexesMetadataRequest, ListSplitsRequest, MetastoreService,
@@ -706,6 +705,46 @@ fn finalize_aggregation_if_any(
     Ok(Some(aggregation_result_json))
 }
 
+/// Checks that all of the index researched as found.
+///
+/// An index pattern (= containing a wildcard) not matching is not an error.
+/// A specific index id however must be found.
+///
+/// We put this check here and not in the metastore to make sure the logic is independent
+/// of the metastore implementation, and some different use cases could require different
+/// behaviors. This specification was principally motivated by #4042.
+fn check_all_index_metadata_found(
+    index_metadatas: &[IndexMetadata],
+    index_id_patterns: &[String],
+) -> crate::Result<()> {
+    let mut index_ids: HashSet<&str> = index_id_patterns
+        .iter()
+        .map(|index_ptn| index_ptn.as_str())
+        .filter(|index_ptn| !index_ptn.contains('*'))
+        .collect();
+
+    if index_ids.is_empty() {
+        // All of the patterns are wildcard patterns.
+        return Ok(());
+    }
+
+    for index_metadata in index_metadatas {
+        index_ids.remove(index_metadata.index_uid.index_id());
+    }
+
+    if !index_ids.is_empty() {
+        let missing_index_ids = index_ids
+            .into_iter()
+            .map(|missing_index_id| missing_index_id.to_string())
+            .collect();
+        return Err(SearchError::IndexesNotFound {
+            index_ids: missing_index_ids,
+        });
+    }
+
+    Ok(())
+}
+
 /// Performs a distributed search.
 /// 1. Sends leaf request over gRPC to multiple leaf nodes.
 /// 2. Merges the search results.
@@ -720,18 +759,32 @@ pub async fn root_search(
 ) -> crate::Result<SearchResponse> {
     info!(searcher_context = ?searcher_context, search_request = ?search_request);
     let start_instant = tokio::time::Instant::now();
-    let list_indexes_metadatas_request = ListIndexesMetadataRequest::try_from_list_indexes_query(
-        ListIndexesQuery::IndexIdPatterns(search_request.index_id_patterns.clone()),
-    )?;
-    let indexes_metadata = metastore
+    let list_indexes_metadatas_request = ListIndexesMetadataRequest {
+        index_id_patterns: search_request.index_id_patterns.clone(),
+    };
+    let indexes_metadata: Vec<IndexMetadata> = metastore
         .list_indexes_metadata(list_indexes_metadatas_request)
         .await?
         .deserialize_indexes_metadata()?;
+
+    check_all_index_metadata_found(&indexes_metadata[..], &search_request.index_id_patterns[..])?;
+
     if indexes_metadata.is_empty() {
-        return Err(SearchError::IndexesNotFound {
-            index_id_patterns: search_request.index_id_patterns,
-        });
+        // We go through root_search_aux instead of directly
+        // returning an empty response to make sure we generate
+        // a (pretty useless) scroll id if requested.
+        let mut search_response = root_search_aux(
+            searcher_context,
+            &HashMap::default(),
+            search_request,
+            Vec::new(),
+            cluster_client,
+        )
+        .await?;
+        search_response.elapsed_time_micros = start_instant.elapsed().as_micros() as u64;
+        return Ok(search_response);
     }
+
     let index_uids = indexes_metadata
         .iter()
         .map(|index_metadata| index_metadata.index_uid.clone())
@@ -2981,7 +3034,7 @@ mod tests {
 
         let mut scroll_id: String = {
             let search_request = quickwit_proto::search::SearchRequest {
-                index_id_patterns: vec!["test-index".to_string()],
+                index_id_patterns: vec!["test-index-*".to_string()],
                 query_ast: qast_json_helper("test", &["body"]),
                 max_hits: MAX_HITS_PER_PAGE as u64,
                 scroll_ttl_secs: Some(60),
@@ -3077,17 +3130,8 @@ mod tests {
         let index_uid_3 = index_metadata_3.index_uid.clone();
         metastore.expect_list_indexes_metadata().return_once(
             move |list_indexes_metadata_request: ListIndexesMetadataRequest| {
-                let query = list_indexes_metadata_request
-                    .deserialize_list_indexes_query()
-                    .unwrap();
-                match query {
-                    ListIndexesQuery::IndexIdPatterns(index_ids_query) => {
-                        assert_eq!(index_ids_query, vec!["test-index-*".to_string()]);
-                    }
-                    ListIndexesQuery::All => {
-                        panic!("Unexpected empty index_ids_query");
-                    }
-                }
+                let index_id_patterns = list_indexes_metadata_request.index_id_patterns;
+                assert_eq!(&index_id_patterns, &["test-index-*".to_string()]);
                 Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(vec![
                     index_metadata_1,
                     index_metadata_2,

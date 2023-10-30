@@ -37,9 +37,9 @@ use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_proto::metastore::{
     serde_utils, AddSourceRequest, CreateIndexRequest, DeleteTask, IndexMetadataRequest,
-    IndexMetadataResponse, ListIndexesMetadataRequest, ListIndexesMetadataResponse,
-    ListSplitsRequest, ListSplitsResponse, MetastoreError, MetastoreResult, MetastoreService,
-    MetastoreServiceClient, PublishSplitsRequest, StageSplitsRequest,
+    IndexMetadataResponse, ListIndexesMetadataResponse, ListSplitsRequest, ListSplitsResponse,
+    MetastoreError, MetastoreResult, MetastoreService, MetastoreServiceClient,
+    PublishSplitsRequest, StageSplitsRequest,
 };
 use quickwit_proto::types::{IndexUid, SplitId};
 use time::OffsetDateTime;
@@ -73,49 +73,6 @@ pub trait MetastoreServiceExt: MetastoreService {
 }
 
 impl MetastoreServiceExt for MetastoreServiceClient {}
-
-/// A query object for listing indexes stored in the metastore.
-#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
-pub enum ListIndexesQuery {
-    /// Matches all indexes.
-    All,
-    /// List of index ID patterns.
-    /// A pattern can contain the wildcard character `*`.
-    IndexIdPatterns(Vec<String>),
-}
-
-//// Helper trait to build a [`ListIndexesMetadataRequest`]
-/// and deserialize its payload.
-pub trait ListIndexesMetadataRequestExt {
-    /// Creates a new [`ListIndexesMetadataRequest`] from a [`ListIndexesQuery`].
-    fn try_from_list_indexes_query(
-        list_indexes_query: ListIndexesQuery,
-    ) -> MetastoreResult<ListIndexesMetadataRequest>;
-
-    /// Creates a new [`ListIndexesMetadataRequest`] that matches all indexes.
-    fn all() -> ListIndexesMetadataRequest;
-
-    /// Deserializes the `query_json` field of a [`ListIndexesMetadataRequest`] into a
-    /// [`ListIndexesQuery`].
-    fn deserialize_list_indexes_query(&self) -> MetastoreResult<ListIndexesQuery>;
-}
-
-impl ListIndexesMetadataRequestExt for ListIndexesMetadataRequest {
-    fn try_from_list_indexes_query(
-        list_indexes_query: ListIndexesQuery,
-    ) -> MetastoreResult<ListIndexesMetadataRequest> {
-        let query_json = serde_utils::to_json_str(&list_indexes_query)?;
-        Ok(Self { query_json })
-    }
-
-    fn all() -> ListIndexesMetadataRequest {
-        Self::try_from_list_indexes_query(ListIndexesQuery::All).expect("should never fail")
-    }
-
-    fn deserialize_list_indexes_query(&self) -> MetastoreResult<ListIndexesQuery> {
-        serde_utils::from_json_str(&self.query_json)
-    }
-}
 
 /// Helper trait to build a [`CreateIndexRequest`] and deserialize its payload.
 pub trait CreateIndexRequestExt {

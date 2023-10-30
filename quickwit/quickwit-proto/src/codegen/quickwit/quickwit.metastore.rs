@@ -20,8 +20,8 @@ pub struct CreateIndexResponse {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListIndexesMetadataRequest {
-    #[prost(string, tag = "1")]
-    pub query_json: ::prost::alloc::string::String,
+    #[prost(string, repeated, tag = "2")]
+    pub index_id_patterns: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]

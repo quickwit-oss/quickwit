@@ -30,8 +30,8 @@ use tokio::task::JoinError;
 #[allow(missing_docs)]
 #[derive(Error, Debug, Serialize, Deserialize, Clone)]
 pub enum SearchError {
-    #[error("could not find indexes matching the IDs or patterns `{index_id_patterns:?}`")]
-    IndexesNotFound { index_id_patterns: Vec<String> },
+    #[error("could not find indexes matching the IDs `{index_ids:?}`")]
+    IndexesNotFound { index_ids: Vec<String> },
     #[error("internal error: `{0}`")]
     Internal(String),
     #[error("invalid aggregation request: {0}")]
@@ -104,13 +104,11 @@ impl From<MetastoreError> for SearchError {
         match metastore_error {
             MetastoreError::NotFound(EntityKind::Index { index_id }) => {
                 SearchError::IndexesNotFound {
-                    index_id_patterns: vec![index_id],
+                    index_ids: vec![index_id],
                 }
             }
             MetastoreError::NotFound(EntityKind::Indexes { index_ids }) => {
-                SearchError::IndexesNotFound {
-                    index_id_patterns: index_ids,
-                }
+                SearchError::IndexesNotFound { index_ids }
             }
             _ => SearchError::Internal(metastore_error.to_string()),
         }

@@ -26,9 +26,7 @@ use fnv::{FnvHashMap, FnvHashSet};
 use itertools::Itertools;
 use quickwit_common::Progress;
 use quickwit_config::{SourceConfig, INGEST_SOURCE_ID};
-use quickwit_metastore::{
-    IndexMetadata, ListIndexesMetadataRequestExt, ListIndexesMetadataResponseExt,
-};
+use quickwit_metastore::{IndexMetadata, ListIndexesMetadataResponseExt};
 use quickwit_proto::control_plane::ControlPlaneResult;
 use quickwit_proto::ingest::{Shard, ShardState};
 use quickwit_proto::metastore;

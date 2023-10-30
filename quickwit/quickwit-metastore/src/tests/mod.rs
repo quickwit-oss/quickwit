@@ -48,9 +48,8 @@ use crate::checkpoint::{
 };
 use crate::{
     AddSourceRequestExt, CreateIndexRequestExt, IndexMetadataResponseExt,
-    ListIndexesMetadataRequestExt, ListIndexesMetadataResponseExt, ListSplitsQuery,
-    ListSplitsRequestExt, ListSplitsResponseExt, MetastoreServiceExt, Split, SplitMaturity,
-    SplitMetadata, SplitState, StageSplitsRequestExt,
+    ListIndexesMetadataResponseExt, ListSplitsQuery, ListSplitsRequestExt, ListSplitsResponseExt,
+    MetastoreServiceExt, Split, SplitMaturity, SplitMetadata, SplitState, StageSplitsRequestExt,
 };
 
 #[async_trait]
@@ -317,15 +316,12 @@ pub async fn test_metastore_list_indexes<MetastoreToTest: MetastoreService + Def
     let index_uri_4 = format!("ram:///indexes/{index_id_4}");
     let index_config_4 = IndexConfig::for_test(&index_id_4, &index_uri_4);
 
-    let list_index_metadata_query = crate::ListIndexesQuery::IndexIdPatterns(vec![
+    let index_id_patterns = vec![
         format!("prefix-*-{index_id_fragment}-suffix-*"),
         format!("prefix*{index_id_fragment}*suffix-*"),
-    ]);
+    ];
     let indexes_count = metastore
-        .list_indexes_metadata(
-            ListIndexesMetadataRequest::try_from_list_indexes_query(list_index_metadata_query)
-                .unwrap(),
-        )
+        .list_indexes_metadata(ListIndexesMetadataRequest { index_id_patterns })
         .await
         .unwrap()
         .deserialize_indexes_metadata()
@@ -358,13 +354,9 @@ pub async fn test_metastore_list_indexes<MetastoreToTest: MetastoreService + Def
         .index_uid
         .into();
 
-    let list_indexes_query = crate::ListIndexesQuery::IndexIdPatterns(vec![format!(
-        "prefix-*-{index_id_fragment}-suffix-*"
-    )]);
+    let index_id_patterns = vec![format!("prefix-*-{index_id_fragment}-suffix-*")];
     let indexes_count = metastore
-        .list_indexes_metadata(
-            ListIndexesMetadataRequest::try_from_list_indexes_query(list_indexes_query).unwrap(),
-        )
+        .list_indexes_metadata(ListIndexesMetadataRequest { index_id_patterns })
         .await
         .unwrap()
         .deserialize_indexes_metadata()

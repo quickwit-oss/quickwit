@@ -125,7 +125,8 @@ message CreateIndexResponse {
 }
 
 message ListIndexesMetadataRequest {
-  string query_json = 1;
+    reserved  1;
+    repeated string index_id_patterns = 2;
 }
 
 message ListIndexesMetadataResponse {
