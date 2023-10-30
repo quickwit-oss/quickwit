@@ -20,11 +20,11 @@
 use serde::{Deserialize, Serialize};
 use tantivy::query::PhrasePrefixQuery as TantivyPhrasePrefixQuery;
 use tantivy::schema::{Field, FieldType, Schema as TantivySchema};
-use tantivy::tokenizer::TokenizerManager;
 use tantivy::Term;
 
 use crate::query_ast::tantivy_query_ast::TantivyQueryAst;
 use crate::query_ast::{BuildTantivyAst, FullTextParams, QueryAst};
+use crate::tokenizers::TokenizerManager;
 use crate::{find_field_or_hit_dynamic, InvalidQuery};
 
 /// The PhraseQuery node is meant to be tokenized and searched.

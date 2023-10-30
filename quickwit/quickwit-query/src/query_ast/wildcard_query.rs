@@ -16,14 +16,15 @@
 //
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
+#![allow(unreachable_code, unused_variables, unused_imports)]
 
 use serde::{Deserialize, Serialize};
 use tantivy::schema::{Field, Schema as TantivySchema};
-use tantivy::tokenizer::TokenizerManager;
 use tantivy::Term;
 
 use super::{BuildTantivyAst, QueryAst};
 use crate::query_ast::{FullTextParams, TantivyQueryAst};
+use crate::tokenizers::TokenizerManager;
 use crate::{find_field_or_hit_dynamic, InvalidQuery};
 
 /// The TermQuery acts exactly like a FullTextQuery with
@@ -116,7 +117,7 @@ impl WildcardQuery {
         // )),
         // }
 
-        return Ok((field, todo!()));
+        Ok((field, todo!()))
     }
 }
 

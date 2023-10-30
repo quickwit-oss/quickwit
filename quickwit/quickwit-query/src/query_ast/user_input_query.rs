@@ -26,13 +26,13 @@ use tantivy::query_grammar::{
     Delimiter, Occur, UserInputAst, UserInputBound, UserInputLeaf, UserInputLiteral,
 };
 use tantivy::schema::Schema as TantivySchema;
-use tantivy::tokenizer::TokenizerManager;
 
 use crate::not_nan_f32::NotNaNf32;
 use crate::query_ast::tantivy_query_ast::TantivyQueryAst;
 use crate::query_ast::{
     self, BuildTantivyAst, FieldPresenceQuery, FullTextMode, FullTextParams, QueryAst,
 };
+use crate::tokenizers::TokenizerManager;
 use crate::{BooleanOperand, InvalidQuery, JsonLiteral};
 
 const DEFAULT_PHRASE_QUERY_MAX_EXPANSION: u32 = 50;

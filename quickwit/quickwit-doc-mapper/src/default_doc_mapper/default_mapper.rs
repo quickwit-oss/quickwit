@@ -25,13 +25,13 @@ use fnv::FnvHashSet;
 use quickwit_common::PathHasher;
 use quickwit_query::create_default_quickwit_tokenizer_manager;
 use quickwit_query::query_ast::QueryAst;
+use quickwit_query::tokenizers::TokenizerManager;
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value as JsonValue};
 use tantivy::query::Query;
 use tantivy::schema::{
     Field, FieldType, FieldValue, OwnedValue as TantivyValue, Schema, INDEXED, STORED,
 };
-use tantivy::tokenizer::TokenizerManager;
 use tantivy::TantivyDocument as Document;
 
 use super::field_mapping_entry::RAW_TOKENIZER_NAME;
@@ -197,7 +197,12 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
                         error
                     )
                 })?;
-            tokenizer_manager.register(&tokenizer_config_entry.name, tokenizer);
+            let does_lowercasing = tokenizer_config_entry
+                .config
+                .filters
+                .iter()
+                .any(|filter| matches!(filter, crate::TokenFilterType::LowerCaser));
+            tokenizer_manager.register(&tokenizer_config_entry.name, tokenizer, does_lowercasing);
             custom_tokenizer_names.insert(&tokenizer_config_entry.name);
         }
         validate_fields_tokenizers(&schema, &tokenizer_manager)?;

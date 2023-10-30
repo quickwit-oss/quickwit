@@ -20,7 +20,8 @@
 use serde::{Deserialize, Serialize};
 use tantivy::query::BoostQuery as TantivyBoostQuery;
 use tantivy::schema::Schema as TantivySchema;
-use tantivy::tokenizer::TokenizerManager;
+
+use crate::tokenizers::TokenizerManager;
 
 mod bool_query;
 mod field_presence;

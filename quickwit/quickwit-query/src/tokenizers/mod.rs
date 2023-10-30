@@ -21,17 +21,19 @@ mod chinese_compatible;
 mod code_tokenizer;
 #[cfg(feature = "multilang")]
 mod multilang;
+mod tokenizer_manager;
 
 use once_cell::sync::Lazy;
 use tantivy::tokenizer::{
     AsciiFoldingFilter, Language, LowerCaser, RawTokenizer, RemoveLongFilter, SimpleTokenizer,
-    Stemmer, TextAnalyzer, TokenizerManager, WhitespaceTokenizer,
+    Stemmer, TextAnalyzer, WhitespaceTokenizer,
 };
 
 use self::chinese_compatible::ChineseTokenizer;
 pub use self::code_tokenizer::CodeTokenizer;
 #[cfg(feature = "multilang")]
 pub use self::multilang::MultiLangTokenizer;
+pub use self::tokenizer_manager::TokenizerManager;
 
 pub const DEFAULT_REMOVE_TOKEN_LENGTH: usize = 255;
 
@@ -42,34 +44,34 @@ pub fn create_default_quickwit_tokenizer_manager() -> TokenizerManager {
     let raw_tokenizer = TextAnalyzer::builder(RawTokenizer::default())
         .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
         .build();
-    tokenizer_manager.register("raw", raw_tokenizer);
+    tokenizer_manager.register("raw", raw_tokenizer, false);
 
     let lower_case_tokenizer = TextAnalyzer::builder(RawTokenizer::default())
         .filter(LowerCaser)
         .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
         .build();
-    tokenizer_manager.register("lowercase", lower_case_tokenizer);
+    tokenizer_manager.register("lowercase", lower_case_tokenizer, true);
 
     let default_tokenizer = TextAnalyzer::builder(SimpleTokenizer::default())
         .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
         .filter(LowerCaser)
         .build();
-    tokenizer_manager.register("default", default_tokenizer);
+    tokenizer_manager.register("default", default_tokenizer, true);
 
     let en_stem_tokenizer = TextAnalyzer::builder(SimpleTokenizer::default())
         .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
         .filter(LowerCaser)
         .filter(Stemmer::new(Language::English))
         .build();
-    tokenizer_manager.register("en_stem", en_stem_tokenizer);
+    tokenizer_manager.register("en_stem", en_stem_tokenizer, true);
 
-    tokenizer_manager.register("whitespace", WhitespaceTokenizer::default());
+    tokenizer_manager.register("whitespace", WhitespaceTokenizer::default(), false);
 
     let chinese_tokenizer = TextAnalyzer::builder(ChineseTokenizer)
         .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
         .filter(LowerCaser)
         .build();
-    tokenizer_manager.register("chinese_compatible", chinese_tokenizer);
+    tokenizer_manager.register("chinese_compatible", chinese_tokenizer, false);
     tokenizer_manager.register(
         "source_code_default",
         TextAnalyzer::builder(CodeTokenizer::default())
@@ -77,6 +79,7 @@ pub fn create_default_quickwit_tokenizer_manager() -> TokenizerManager {
             .filter(LowerCaser)
             .filter(AsciiFoldingFilter)
             .build(),
+        true,
     );
     #[cfg(feature = "multilang")]
     tokenizer_manager.register(
@@ -85,6 +88,7 @@ pub fn create_default_quickwit_tokenizer_manager() -> TokenizerManager {
             .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
             .filter(LowerCaser)
             .build(),
+        true,
     );
     tokenizer_manager
 }
@@ -98,8 +102,8 @@ fn create_quickwit_fastfield_normalizer_manager() -> TokenizerManager {
         .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
         .build();
     let tokenizer_manager = TokenizerManager::new();
-    tokenizer_manager.register("raw", raw_tokenizer);
-    tokenizer_manager.register("lowercase", lower_case_tokenizer);
+    tokenizer_manager.register("raw", raw_tokenizer, false);
+    tokenizer_manager.register("lowercase", lower_case_tokenizer, true);
     tokenizer_manager
 }
 

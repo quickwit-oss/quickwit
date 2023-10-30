@@ -28,12 +28,13 @@ use tantivy::schema::{
     Field, FieldType, IndexRecordOption, JsonObjectOptions, Schema as TantivySchema,
     TextFieldIndexing,
 };
-use tantivy::tokenizer::{TextAnalyzer, TokenStream, TokenizerManager};
+use tantivy::tokenizer::{TextAnalyzer, TokenStream};
 use tantivy::Term;
 
 use crate::query_ast::tantivy_query_ast::{TantivyBoolQuery, TantivyQueryAst};
 use crate::query_ast::utils::full_text_query;
 use crate::query_ast::{BuildTantivyAst, QueryAst};
+use crate::tokenizers::TokenizerManager;
 use crate::{find_field_or_hit_dynamic, BooleanOperand, InvalidQuery, MatchAllOrNone};
 
 #[derive(Serialize, Deserialize, Debug, Eq, PartialEq, Clone)]

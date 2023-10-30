@@ -25,10 +25,10 @@ use quickwit_query::query_ast::{
     FieldPresenceQuery, FullTextQuery, PhrasePrefixQuery, QueryAst, QueryAstVisitor, RangeQuery,
     TermSetQuery,
 };
+use quickwit_query::tokenizers::TokenizerManager;
 use quickwit_query::{find_field_or_hit_dynamic, InvalidQuery};
 use tantivy::query::Query;
 use tantivy::schema::{Field, Schema};
-use tantivy::tokenizer::TokenizerManager;
 use tantivy::Term;
 
 use crate::{QueryParserError, TermRange, WarmupInfo};

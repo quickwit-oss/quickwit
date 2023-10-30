@@ -21,10 +21,10 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 use tantivy::schema::Schema as TantivySchema;
-use tantivy::tokenizer::TokenizerManager;
 
 use super::{BuildTantivyAst, QueryAst};
 use crate::query_ast::{FullTextParams, TantivyQueryAst};
+use crate::tokenizers::TokenizerManager;
 use crate::{BooleanOperand, InvalidQuery};
 
 /// The TermQuery acts exactly like a FullTextQuery with

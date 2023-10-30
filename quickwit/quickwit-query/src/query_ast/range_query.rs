@@ -24,12 +24,12 @@ use tantivy::query::{
     FastFieldRangeWeight as TantivyFastFieldRangeQuery, RangeQuery as TantivyRangeQuery,
 };
 use tantivy::schema::Schema as TantivySchema;
-use tantivy::tokenizer::TokenizerManager;
 
 use super::QueryAst;
 use crate::json_literal::InterpretUserInput;
 use crate::query_ast::tantivy_query_ast::{TantivyBoolQuery, TantivyQueryAst};
 use crate::query_ast::BuildTantivyAst;
+use crate::tokenizers::TokenizerManager;
 use crate::{InvalidQuery, JsonLiteral};
 
 #[derive(Serialize, Deserialize, Clone, Debug, PartialEq, Eq)]
