@@ -439,7 +439,6 @@ fn mark_splits_for_deletion_handler(
 async fn get_indexes_metadatas(
     mut metastore: MetastoreServiceClient,
 ) -> MetastoreResult<Vec<IndexMetadata>> {
-    info!("get-indexes-metadatas");
     metastore
         .list_indexes_metadata(ListIndexesMetadataRequest::all())
         .await

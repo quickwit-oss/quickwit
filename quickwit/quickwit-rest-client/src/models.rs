@@ -26,6 +26,7 @@ use serde::de::DeserializeOwned;
 
 use crate::error::{ApiError, Error, ErrorResponsePayload};
 
+#[derive(Debug)]
 pub struct ApiResponse {
     inner: reqwest::Response,
 }

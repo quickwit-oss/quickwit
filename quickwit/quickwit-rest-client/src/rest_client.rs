@@ -198,6 +198,10 @@ pub struct QuickwitClient {
 }
 
 impl QuickwitClient {
+    pub fn enable_ingest_v2(&mut self) {
+        self.ingest_v2 = true;
+    }
+
     pub async fn search(
         &self,
         index_id: &str,
@@ -288,7 +292,6 @@ impl QuickwitClient {
                         timeout,
                     )
                     .await?;
-
                 if response.status_code() == StatusCode::TOO_MANY_REQUESTS {
                     if let Some(event_fn) = &on_ingest_event {
                         event_fn(IngestEvent::Sleep)

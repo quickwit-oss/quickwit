@@ -23,9 +23,11 @@ use std::time::Duration;
 use bytes::Bytes;
 use quickwit_common::test_utils::wait_until_predicate;
 use quickwit_config::service::QuickwitService;
+use quickwit_config::ConfigFormat;
 use quickwit_indexing::actors::INDEXING_DIR_NAME;
 use quickwit_janitor::actors::DELETE_SERVICE_TASK_DIR_NAME;
 use quickwit_metastore::SplitState;
+use quickwit_rest_client::error::{ApiError, Error};
 use quickwit_rest_client::rest_client::CommitType;
 use quickwit_serve::SearchRequestQueryString;
 use serde_json::json;
@@ -60,11 +62,7 @@ async fn test_restarting_standalone_server() {
     sandbox
         .indexer_rest_client
         .indexes()
-        .create(
-            index_config.clone(),
-            quickwit_config::ConfigFormat::Yaml,
-            false,
-        )
+        .create(index_config.clone(), ConfigFormat::Yaml, false)
         .await
         .unwrap();
 
@@ -102,7 +100,7 @@ async fn test_restarting_standalone_server() {
     sandbox
         .indexer_rest_client
         .indexes()
-        .create(index_config, quickwit_config::ConfigFormat::Yaml, false)
+        .create(index_config, ConfigFormat::Yaml, false)
         .await
         .unwrap();
 
@@ -215,36 +213,124 @@ async fn test_restarting_standalone_server() {
     sandbox.shutdown().await.unwrap();
 }
 
+const TEST_INDEX_CONFIG: &str = r#"
+    version: 0.6
+    index_id: test_index
+    doc_mapping:
+      field_mappings:
+      - name: body
+        type: text
+    indexing_settings:
+      commit_timeout_secs: 1
+      merge_policy:
+        type: stable_log
+        merge_factor: 4
+        max_merge_factor: 4
+"#;
+
+#[tokio::test]
+async fn test_ingest_v2_index_not_found() {
+    // This tests checks what happens when we try to ingest into a non-existing index.
+    quickwit_common::setup_logging_for_tests();
+    let nodes_services = &[
+        HashSet::from_iter([QuickwitService::Indexer, QuickwitService::Janitor]),
+        HashSet::from_iter([QuickwitService::Indexer, QuickwitService::Janitor]),
+        HashSet::from_iter([
+            QuickwitService::ControlPlane,
+            QuickwitService::Metastore,
+            QuickwitService::Searcher,
+        ]),
+    ];
+    let mut sandbox = ClusterSandbox::start_cluster_nodes(&nodes_services[..])
+        .await
+        .unwrap();
+    sandbox.enable_ingest_v2();
+    sandbox.wait_for_cluster_num_ready_nodes(3).await.unwrap();
+    let missing_index_err: Error = sandbox
+        .indexer_rest_client
+        .ingest(
+            "missing_index",
+            ingest_json!({"body": "doc1"}),
+            None,
+            None,
+            CommitType::WaitFor,
+        )
+        .await
+        .unwrap_err();
+    let Error::Api(ApiError { message, code }) = missing_index_err else {
+        panic!("Expected an API error.");
+    };
+    assert_eq!(code, 404u16);
+    let error_message = message.unwrap();
+    assert_eq!(error_message, "index `missing_index` not found");
+    sandbox.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn test_ingest_v2_happy_path() {
+    // This tests checks our happy path for ingesting one doc.
+    quickwit_common::setup_logging_for_tests();
+    let nodes_services = &[
+        HashSet::from_iter([QuickwitService::Indexer, QuickwitService::Janitor]),
+        HashSet::from_iter([QuickwitService::Indexer, QuickwitService::Janitor]),
+        HashSet::from_iter([
+            QuickwitService::ControlPlane,
+            QuickwitService::Metastore,
+            QuickwitService::Searcher,
+        ]),
+    ];
+    let mut sandbox = ClusterSandbox::start_cluster_nodes(&nodes_services[..])
+        .await
+        .unwrap();
+    sandbox.enable_ingest_v2();
+    sandbox.wait_for_cluster_num_ready_nodes(3).await.unwrap();
+    sandbox
+        .indexer_rest_client
+        .indexes()
+        .create(TEST_INDEX_CONFIG.into(), ConfigFormat::Yaml, false)
+        .await
+        .unwrap();
+    sandbox
+        .indexer_rest_client
+        .sources("test_index")
+        .toggle("_ingest-source", true)
+        .await
+        .unwrap();
+    sandbox
+        .indexer_rest_client
+        .ingest(
+            "test_index",
+            ingest_json!({"body": "doc1"}),
+            None,
+            None,
+            CommitType::WaitFor,
+        )
+        .await
+        .unwrap();
+    let search_req = SearchRequestQueryString {
+        query: "*".to_string(),
+        ..Default::default()
+    };
+    let search_result = sandbox
+        .indexer_rest_client
+        .search("test_index", search_req)
+        .await
+        .unwrap();
+    assert_eq!(search_result.num_hits, 1);
+    sandbox.shutdown().await.unwrap();
+}
+
 #[tokio::test]
 async fn test_commit_modes() {
     quickwit_common::setup_logging_for_tests();
     let sandbox = ClusterSandbox::start_standalone_node().await.unwrap();
-    let index_id = "test_commit_modes_index";
+    let index_id = "test_index";
 
     // Create index
     sandbox
         .indexer_rest_client
         .indexes()
-        .create(
-            r#"
-            version: 0.6
-            index_id: test_commit_modes_index
-            doc_mapping:
-              field_mappings:
-              - name: body
-                type: text
-            indexing_settings:
-              commit_timeout_secs: 1
-              merge_policy:
-                type: stable_log
-                merge_factor: 4
-                max_merge_factor: 4
-
-            "#
-            .into(),
-            quickwit_config::ConfigFormat::Yaml,
-            false,
-        )
+        .create(TEST_INDEX_CONFIG.into(), ConfigFormat::Yaml, false)
         .await
         .unwrap();
 
@@ -391,7 +477,7 @@ async fn test_very_large_index_name() {
                 "#,
             )
             .into(),
-            quickwit_config::ConfigFormat::Yaml,
+            ConfigFormat::Yaml,
             false,
         )
         .await
@@ -447,7 +533,7 @@ async fn test_very_large_index_name() {
                     "#,
             )
             .into(),
-            quickwit_config::ConfigFormat::Yaml,
+            ConfigFormat::Yaml,
             false,
         )
         .await
@@ -484,7 +570,7 @@ async fn test_shutdown() {
               commit_timeout_secs: 1
             "#
             .into(),
-            quickwit_config::ConfigFormat::Yaml,
+            ConfigFormat::Yaml,
             false,
         )
         .await
