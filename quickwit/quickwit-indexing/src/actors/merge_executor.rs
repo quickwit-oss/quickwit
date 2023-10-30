@@ -41,11 +41,9 @@ use quickwit_proto::metastore::{
 };
 use quickwit_query::get_quickwit_fastfield_normalizer_manager;
 use quickwit_query::query_ast::QueryAst;
-use tantivy::directory::{DirectoryClone, MmapDirectory, RamDirectory};
+use tantivy::directory::{Advice, DirectoryClone, MmapDirectory, RamDirectory};
 use tantivy::tokenizer::TokenizerManager;
-use tantivy::{
-    Advice, DateTime, Directory, Index, IndexMeta, IndexWriter, SegmentId, SegmentReader,
-};
+use tantivy::{DateTime, Directory, Index, IndexMeta, IndexWriter, SegmentId, SegmentReader};
 use tokio::runtime::Handle;
 use tracing::{debug, info, instrument, warn};
 

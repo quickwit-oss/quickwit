@@ -30,8 +30,8 @@ use quickwit_common::io::{IoControls, IoControlsAccess};
 use quickwit_common::uri::Uri;
 use quickwit_metastore::SplitMetadata;
 use quickwit_storage::{PutPayload, Storage, StorageResult};
-use tantivy::directory::MmapDirectory;
-use tantivy::{Advice, Directory};
+use tantivy::directory::{Advice, MmapDirectory};
+use tantivy::Directory;
 use time::OffsetDateTime;
 use tracing::{info, info_span, instrument, Instrument};
 
