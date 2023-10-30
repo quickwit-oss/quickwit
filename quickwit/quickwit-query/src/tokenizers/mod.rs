@@ -44,6 +44,12 @@ pub fn create_default_quickwit_tokenizer_manager() -> TokenizerManager {
         .build();
     tokenizer_manager.register("raw", raw_tokenizer);
 
+    let lower_case_tokenizer = TextAnalyzer::builder(RawTokenizer::default())
+        .filter(LowerCaser)
+        .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
+        .build();
+    tokenizer_manager.register("lowercase", lower_case_tokenizer);
+
     let default_tokenizer = TextAnalyzer::builder(SimpleTokenizer::default())
         .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
         .filter(LowerCaser)

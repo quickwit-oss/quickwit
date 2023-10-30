@@ -33,6 +33,7 @@ mod term_set_query;
 mod user_input_query;
 pub(crate) mod utils;
 mod visitor;
+mod wildcard_query;
 
 pub use bool_query::BoolQuery;
 pub use field_presence::FieldPresenceQuery;
@@ -44,6 +45,7 @@ pub use term_query::TermQuery;
 pub use term_set_query::TermSetQuery;
 pub use user_input_query::UserInputQuery;
 pub use visitor::QueryAstVisitor;
+pub use wildcard_query::WildcardQuery;
 
 use crate::{BooleanOperand, InvalidQuery, NotNaNf32};
 
@@ -59,6 +61,7 @@ pub enum QueryAst {
     PhrasePrefix(PhrasePrefixQuery),
     Range(RangeQuery),
     UserInput(UserInputQuery),
+    Wildcard(WildcardQuery),
     MatchAll,
     MatchNone,
     Boost {
@@ -98,7 +101,8 @@ impl QueryAst {
             | ast @ QueryAst::MatchAll
             | ast @ QueryAst::MatchNone
             | ast @ QueryAst::FieldPresence(_)
-            | ast @ QueryAst::Range(_) => Ok(ast),
+            | ast @ QueryAst::Range(_)
+            | ast @ QueryAst::Wildcard(_) => Ok(ast),
             QueryAst::UserInput(user_text_query) => {
                 user_text_query.parse_user_query(default_search_fields)
             }
@@ -231,6 +235,12 @@ impl BuildTantivyAst for QueryAst {
                 with_validation,
             ),
             QueryAst::FieldPresence(field_presence) => field_presence.build_tantivy_ast_call(
+                schema,
+                tokenizer_manager,
+                search_fields,
+                with_validation,
+            ),
+            QueryAst::Wildcard(wildcard) => wildcard.build_tantivy_ast_call(
                 schema,
                 tokenizer_manager,
                 search_fields,

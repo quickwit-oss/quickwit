@@ -105,6 +105,10 @@ fn extract_unsimplified_tags_filter_ast(query_ast: QueryAst) -> UnsimplifiedTagF
                 value: phrase_prefix_query.phrase,
             }
         }
+        QueryAst::Wildcard(_) => {
+            // TODO same as above
+            todo!()
+        }
         QueryAst::Boost { underlying, .. } => extract_unsimplified_tags_filter_ast(*underlying),
         QueryAst::UserInput(_user_text_query) => {
             panic!("Extract unsimplified should only be called on AST without UserInputQuery.");
