@@ -14,9 +14,8 @@ Both dashboards relies on a prometheus datasource fed with [Quickwit metrics](..
 
 ## Screenshots
 
-![Indexers Grafana Dashboard](../assets/images/screenshot-indexers-grafana-dashboard.jpeg)
+![Indexers Grafana Dashboard](../assets/images/screenshot-indexers-grafana-dashboard.png)
 
-
-![Searchers Grafana Dashboard](../assets/images/screenshot-searchers-grafana-dashboard.jpeg)
+![Searchers Grafana Dashboard](../assets/images/screenshot-searchers-grafana-dashboard.png)
 
 ![Metastore Grafana Dashboard](../assets/images/screenshot-metastore-grafana-dashboard.png)
