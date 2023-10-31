@@ -27,7 +27,7 @@ pub type Load = u32;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Source {
-    pub source_id: SourceOrd,
+    pub source_ord: SourceOrd,
     pub load_per_shard: NonZeroU32,
     pub num_shards: u32,
 }
@@ -58,22 +58,22 @@ impl SchedulingProblem {
         self.sources.iter().copied()
     }
 
-    pub fn source(&self, source_id: SourceOrd) -> Source {
-        self.sources[source_id as usize]
+    pub fn source(&self, source_ord: SourceOrd) -> Source {
+        self.sources[source_ord as usize]
     }
 
     pub fn add_source(&mut self, num_shards: u32, load_per_shard: NonZeroU32) -> SourceOrd {
-        let source_id = self.sources.len() as SourceOrd;
+        let source_ord = self.sources.len() as SourceOrd;
         self.sources.push(Source {
-            source_id,
+            source_ord,
             num_shards,
             load_per_shard,
         });
-        source_id
+        source_ord
     }
 
-    pub fn source_load_per_shard(&self, source_id: SourceOrd) -> NonZeroU32 {
-        self.sources[source_id as usize].load_per_shard
+    pub fn source_load_per_shard(&self, source_ord: SourceOrd) -> NonZeroU32 {
+        self.sources[source_ord as usize].load_per_shard
     }
 
     pub fn num_sources(&self) -> usize {
@@ -106,25 +106,25 @@ impl IndexerAssignment {
     pub fn total_load(&self, problem: &SchedulingProblem) -> Load {
         self.num_shards_per_source
             .iter()
-            .map(|(source_id, num_shards)| {
-                problem.source_load_per_shard(*source_id).get() * num_shards
+            .map(|(source_ord, num_shards)| {
+                problem.source_load_per_shard(*source_ord).get() * num_shards
             })
             .sum()
     }
 
-    pub fn num_shards(&self, source_id: SourceOrd) -> u32 {
+    pub fn num_shards(&self, source_ord: SourceOrd) -> u32 {
         self.num_shards_per_source
-            .get(&source_id)
+            .get(&source_ord)
             .copied()
             .unwrap_or(0u32)
     }
 
-    pub fn add_shard(&mut self, source_id: u32, num_shards: u32) {
-        *self.num_shards_per_source.entry(source_id).or_default() += num_shards;
+    pub fn add_shards(&mut self, source_ord: u32, num_shards: u32) {
+        *self.num_shards_per_source.entry(source_ord).or_default() += num_shards;
     }
 
-    pub fn remove_shards(&mut self, source_id: u32, num_shards_removed: u32) {
-        let entry = self.num_shards_per_source.entry(source_id);
+    pub fn remove_shards(&mut self, source_ord: u32, num_shards_removed: u32) {
+        let entry = self.num_shards_per_source.entry(source_ord);
         let Entry::Occupied(mut occupied_entry) = entry else {
             assert_eq!(num_shards_removed, 0);
             return;

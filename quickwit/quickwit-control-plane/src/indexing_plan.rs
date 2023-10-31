@@ -25,12 +25,21 @@ use serde::Serialize;
 /// each indexer, identified by its node ID, should run.
 /// TODO(fmassot): a metastore version number will be attached to the plan
 /// to identify if the plan is up to date with the metastore.
-#[derive(Debug, PartialEq, Clone, Serialize, Default)]
+#[derive(Debug, PartialEq, Clone, Serialize)]
 pub struct PhysicalIndexingPlan {
     indexing_tasks_per_indexer_id: FnvHashMap<String, Vec<IndexingTask>>,
 }
 
 impl PhysicalIndexingPlan {
+    pub fn with_indexer_ids(indexer_ids: &[String]) -> PhysicalIndexingPlan {
+        PhysicalIndexingPlan {
+            indexing_tasks_per_indexer_id: indexer_ids
+                .iter()
+                .map(|indexer_id| (indexer_id.clone(), Vec::new()))
+                .collect(),
+        }
+    }
+
     pub fn add_indexing_task(&mut self, indexer_id: &str, indexing_task: IndexingTask) {
         self.indexing_tasks_per_indexer_id
             .entry(indexer_id.to_string())

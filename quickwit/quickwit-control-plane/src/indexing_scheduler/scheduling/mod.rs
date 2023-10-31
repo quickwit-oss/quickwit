@@ -87,15 +87,15 @@ fn populate_problem(
             load_per_shard,
         } => {
             let num_shards = shards.len() as u32;
-            let source_id = problem.add_source(num_shards, *load_per_shard);
-            Some(source_id)
+            let source_ord = problem.add_source(num_shards, *load_per_shard);
+            Some(source_ord)
         }
         SourceToScheduleType::NonSharded {
             num_pipelines,
             load_per_pipeline,
         } => {
-            let source_id = problem.add_source(*num_pipelines, *load_per_pipeline);
-            Some(source_id)
+            let source_ord = problem.add_source(*num_pipelines, *load_per_pipeline);
+            Some(source_ord)
         }
     }
 }
@@ -151,7 +151,7 @@ fn convert_physical_plan_to_solution(
                     source_id: indexing_task.source_id.clone(),
                 };
                 if let Some(source_ord) = id_to_ord_map.source_ord(&source_uid) {
-                    indexer_assignment.add_shard(source_ord, indexing_task.shard_ids.len() as u32);
+                    indexer_assignment.add_shards(source_ord, indexing_task.shard_ids.len() as u32);
                 }
             }
         }
@@ -249,7 +249,8 @@ fn convert_scheduling_solution_to_physical_plan(
             .map(|previous_plan| create_shard_to_indexer_map(previous_plan, id_to_ord_map))
             .unwrap_or_default();
 
-    let mut physical_indexing_plan = PhysicalIndexingPlan::default();
+    let mut physical_indexing_plan =
+        PhysicalIndexingPlan::with_indexer_ids(&id_to_ord_map.indexer_ids);
 
     for source in sources {
         match &source.source_type {
@@ -353,9 +354,9 @@ pub fn build_physical_indexing_plan(
     let mut problem = SchedulingProblem::with_indexer_maximum_load(indexer_max_loads);
 
     for source in sources {
-        if let Some(source_id) = populate_problem(source, &mut problem) {
-            let source_ord = id_to_ord_map.add_source_uid(source.source_uid.clone());
-            assert_eq!(source_ord, source_id);
+        if let Some(source_ord) = populate_problem(source, &mut problem) {
+            let registered_source_ord = id_to_ord_map.add_source_uid(source.source_uid.clone());
+            assert_eq!(source_ord, registered_source_ord);
         }
     }
 
