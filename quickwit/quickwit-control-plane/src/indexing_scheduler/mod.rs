@@ -168,11 +168,7 @@ fn get_sources_to_schedule(model: &ControlPlaneModel) -> Vec<SourceToSchedule> {
 }
 
 impl IndexingScheduler {
-    pub fn new(
-        cluster_id: String,
-        self_node_id: NodeId,
-        indexer_pool: IndexerPool,
-    ) -> Self {
+    pub fn new(cluster_id: String, self_node_id: NodeId, indexer_pool: IndexerPool) -> Self {
         IndexingScheduler {
             cluster_id,
             self_node_id,
