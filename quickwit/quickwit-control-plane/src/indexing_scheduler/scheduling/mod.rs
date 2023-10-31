@@ -144,7 +144,7 @@ fn convert_physical_plan_to_solution(
 ) {
     for (indexer_id, indexing_tasks) in plan.indexing_tasks_per_node() {
         if let Some(indexer_ord) = id_to_ord_map.indexer_ord(indexer_id) {
-            let node_assignment = &mut solution.node_assignments[indexer_ord];
+            let node_assignment = &mut solution.indexer_assignments[indexer_ord];
             for indexing_task in indexing_tasks {
                 let source_uid = SourceUid {
                     index_uid: IndexUid::from(indexing_task.index_uid.clone()),
@@ -263,7 +263,7 @@ fn convert_scheduling_solution_to_physical_plan(
                 // ids, without moving a shard from a node to another whenever possible.
                 let source_ord = id_to_ord_map.source_ord(&source.source_uid).unwrap();
                 let node_num_shards: FnvHashMap<IndexerOrd, NonZeroU32> =
-                    solution.node_shards(source_ord).collect();
+                    solution.indexer_shards(source_ord).collect();
 
                 let shard_to_indexer_ord = previous_shard_to_node_map
                     .remove(&source_ord)
@@ -285,7 +285,7 @@ fn convert_scheduling_solution_to_physical_plan(
                 let source_ord = id_to_ord_map.source_ord(&source.source_uid).unwrap();
 
                 let node_num_shards: FnvHashMap<IndexerOrd, NonZeroU32> =
-                    solution.node_shards(source_ord).collect();
+                    solution.indexer_shards(source_ord).collect();
 
                 for (indexer_ord, num_shards) in node_num_shards {
                     let node_id = id_to_ord_map.indexer_id(indexer_ord);

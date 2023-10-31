@@ -35,22 +35,22 @@ pub struct Source {
 #[derive(Debug)]
 pub struct SchedulingProblem {
     sources: Vec<Source>,
-    node_max_loads: Vec<Load>,
+    indexer_max_loads: Vec<Load>,
 }
 
 impl SchedulingProblem {
     pub fn new_solution(&self) -> SchedulingSolution {
-        SchedulingSolution::with_num_nodes(self.node_max_loads.len())
+        SchedulingSolution::with_num_indexers(self.indexer_max_loads.len())
     }
 
-    pub fn node_max_load(&self, node_id: IndexerOrd) -> Load {
-        self.node_max_loads[node_id]
+    pub fn indexer_max_load(&self, indexer_ord: IndexerOrd) -> Load {
+        self.indexer_max_loads[indexer_ord]
     }
 
     pub fn with_node_maximum_load(node_max_loads: Vec<Load>) -> SchedulingProblem {
         SchedulingProblem {
             sources: Vec::new(),
-            node_max_loads,
+            indexer_max_loads: node_max_loads,
         }
     }
 
@@ -80,27 +80,27 @@ impl SchedulingProblem {
         self.sources.len()
     }
 
-    pub fn num_nodes(&self) -> usize {
-        self.node_max_loads.len()
+    pub fn num_indexers(&self) -> usize {
+        self.indexer_max_loads.len()
     }
 }
 
 #[derive(Clone, Debug)]
-pub struct NodeAssignment {
-    pub node_id: IndexerOrd,
+pub struct IndexerAssignment {
+    pub indexer_ord: IndexerOrd,
     pub num_shards_per_source: BTreeMap<SourceOrd, u32>,
 }
 
-impl NodeAssignment {
-    pub fn new(node_id: IndexerOrd) -> NodeAssignment {
-        NodeAssignment {
-            node_id,
+impl IndexerAssignment {
+    pub fn new(indexer_ord: IndexerOrd) -> IndexerAssignment {
+        IndexerAssignment {
+            indexer_ord,
             num_shards_per_source: Default::default(),
         }
     }
 
     pub fn node_available_capacity(&self, problem: &SchedulingProblem) -> Load {
-        problem.node_max_loads[self.node_id].saturating_sub(self.total_load(problem))
+        problem.indexer_max_loads[self.indexer_ord].saturating_sub(self.total_load(problem))
     }
 
     pub fn total_load(&self, problem: &SchedulingProblem) -> Load {
@@ -141,33 +141,33 @@ impl NodeAssignment {
 
 #[derive(Clone, Debug)]
 pub struct SchedulingSolution {
-    pub node_assignments: Vec<NodeAssignment>,
+    pub indexer_assignments: Vec<IndexerAssignment>,
 }
 
 impl SchedulingSolution {
-    pub fn with_num_nodes(num_nodes: usize) -> SchedulingSolution {
+    pub fn with_num_indexers(num_indexers: usize) -> SchedulingSolution {
         SchedulingSolution {
-            node_assignments: (0..num_nodes).map(NodeAssignment::new).collect(),
+            indexer_assignments: (0..num_indexers).map(IndexerAssignment::new).collect(),
         }
     }
 
-    pub fn num_nodes(&self) -> usize {
-        self.node_assignments.len()
+    pub fn num_indexers(&self) -> usize {
+        self.indexer_assignments.len()
     }
 
-    pub fn node_shards(
+    pub fn indexer_shards(
         &self,
         source_ord: SourceOrd,
     ) -> impl Iterator<Item = (IndexerOrd, NonZeroU32)> + '_ {
-        self.node_assignments
+        self.indexer_assignments
             .iter()
-            .filter_map(move |node_assignment| {
-                let num_shards: NonZeroU32 = node_assignment
+            .filter_map(move |indexer_assignment| {
+                let num_shards: NonZeroU32 = indexer_assignment
                     .num_shards_per_source
                     .get(&source_ord)
                     .copied()
                     .and_then(NonZeroU32::new)?;
-                Some((node_assignment.node_id, num_shards))
+                Some((indexer_assignment.indexer_ord, num_shards))
             })
     }
 }

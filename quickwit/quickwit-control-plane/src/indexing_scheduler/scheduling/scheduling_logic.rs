@@ -27,9 +27,9 @@ use super::scheduling_logic_model::*;
 // High level algorithm
 
 fn check_contract_conditions(problem: &SchedulingProblem, solution: &SchedulingSolution) {
-    assert_eq!(problem.num_nodes(), solution.num_nodes());
-    for (node_id, node_assignment) in solution.node_assignments.iter().enumerate() {
-        assert_eq!(node_assignment.node_id, node_id);
+    assert_eq!(problem.num_indexers(), solution.num_indexers());
+    for (node_id, node_assignment) in solution.indexer_assignments.iter().enumerate() {
+        assert_eq!(node_assignment.indexer_ord, node_id);
     }
     for (source_id, source) in problem.sources().enumerate() {
         assert_eq!(source_id as SourceOrd, source.source_id);
@@ -56,7 +56,7 @@ pub fn solve(
 
 fn remove_extraneous_shards(problem: &SchedulingProblem, solution: &mut SchedulingSolution) {
     let mut num_shards_per_source: Box<[u32]> = vec![0; problem.num_sources()].into_boxed_slice();
-    for node_assignment in &mut solution.node_assignments {
+    for node_assignment in &mut solution.indexer_assignments {
         if let Some((&source_ord, _)) = node_assignment.num_shards_per_source.last_key_value() {
             assert!(source_ord < problem.num_sources() as SourceOrd);
         }
@@ -79,14 +79,14 @@ fn remove_extraneous_shards(problem: &SchedulingProblem, solution: &mut Scheduli
         .collect();
 
     let mut nodes_with_source: HashMap<SourceOrd, Vec<IndexerOrd>> = HashMap::default();
-    for (node_id, node_assignment) in solution.node_assignments.iter().enumerate() {
+    for (node_id, node_assignment) in solution.indexer_assignments.iter().enumerate() {
         for &source in node_assignment.num_shards_per_source.keys() {
             nodes_with_source.entry(source).or_default().push(node_id);
         }
     }
 
     let mut node_available_capacity: Vec<Load> = solution
-        .node_assignments
+        .indexer_assignments
         .iter()
         .map(|node_assignment| node_assignment.node_available_capacity(problem))
         .collect();
@@ -99,7 +99,7 @@ fn remove_extraneous_shards(problem: &SchedulingProblem, solution: &mut Scheduli
             .unwrap();
         nodes_with_source.sort_by_key(|&node_id| node_available_capacity[node_id]);
         for node_id in nodes_with_source.iter().copied() {
-            let node_assignment = &mut solution.node_assignments[node_id];
+            let node_assignment = &mut solution.indexer_assignments[node_id];
             let previous_num_shards = node_assignment.num_shards(source_id);
             assert!(previous_num_shards > 0);
             assert!(num_shards_to_remove > 0);
@@ -122,7 +122,7 @@ fn assert_remove_extraneous_shards_post_condition(
     solution: &SchedulingSolution,
 ) {
     let mut num_shards_per_source: Vec<u32> = vec![0; problem.num_sources()];
-    for node_assignment in &solution.node_assignments {
+    for node_assignment in &solution.indexer_assignments {
         for (&source, &load) in &node_assignment.num_shards_per_source {
             num_shards_per_source[source as usize] += load;
         }
@@ -137,8 +137,8 @@ fn assert_remove_extraneous_shards_post_condition(
 // Releave sources from the node that are exceeding their maximum load.
 
 fn enforce_nodes_max_load(problem: &SchedulingProblem, solution: &mut SchedulingSolution) {
-    for node_assignment in solution.node_assignments.iter_mut() {
-        let node_max_load: Load = problem.node_max_load(node_assignment.node_id);
+    for node_assignment in solution.indexer_assignments.iter_mut() {
+        let node_max_load: Load = problem.indexer_max_load(node_assignment.indexer_ord);
         enforce_node_max_load(problem, node_max_load, node_assignment);
     }
 }
@@ -146,7 +146,7 @@ fn enforce_nodes_max_load(problem: &SchedulingProblem, solution: &mut Scheduling
 fn enforce_node_max_load(
     problem: &SchedulingProblem,
     node_max_load: Load,
-    node_assignment: &mut NodeAssignment,
+    node_assignment: &mut IndexerAssignment,
 ) {
     let total_load = node_assignment.total_load(problem);
     if total_load <= node_max_load {
@@ -174,10 +174,10 @@ fn enforce_node_max_load(
 
 fn assert_enforce_nodes_max_load_post_condition(
     problem: &SchedulingProblem,
-    node_assignment: &NodeAssignment,
+    node_assignment: &IndexerAssignment,
 ) {
     let total_load = node_assignment.total_load(problem);
-    assert!(total_load <= problem.node_max_load(node_assignment.node_id));
+    assert!(total_load <= problem.indexer_max_load(node_assignment.indexer_ord));
 }
 
 // ----------------------------------------------------
@@ -222,7 +222,7 @@ fn assert_place_unassigned_shards_post_condition(
     // We make sure we all shard are cound as place or unassigned.
     for source in problem.sources() {
         let num_assigned_shards: u32 = solution
-            .node_assignments
+            .indexer_assignments
             .iter()
             .map(|node_assignment| node_assignment.num_shards(source.source_id))
             .sum();
@@ -236,7 +236,7 @@ fn assert_place_unassigned_shards_post_condition(
         );
     }
     // We make sure that all unassigned shard cannot be placed.
-    for node_assignment in &solution.node_assignments {
+    for node_assignment in &solution.indexer_assignments {
         let available_capacity: Load = node_assignment.node_available_capacity(problem);
         for (&source_id, &num_shards) in unassigned_shards {
             assert!(num_shards > 0);
@@ -248,12 +248,12 @@ fn assert_place_unassigned_shards_post_condition(
 
 fn place_unassigned_shards_single_source(
     source: &Source,
-    node_with_least_loads: &mut BinaryHeap<(Load, IndexerOrd)>,
+    node_available_capacities: &mut BinaryHeap<(Load, IndexerOrd)>,
     solution: &mut SchedulingSolution,
 ) -> u32 {
     let mut num_shards = source.num_shards;
     while num_shards > 0 {
-        let Some(mut node_with_least_load) = node_with_least_loads.peek_mut() else {
+        let Some(mut node_with_least_load) = node_available_capacities.peek_mut() else {
             break;
         };
         let node_id = node_with_least_load.1;
@@ -266,7 +266,7 @@ fn place_unassigned_shards_single_source(
         }
         // TODO take in account colocation.
         // Update the solution, the shard load, and the number of shards to place.
-        solution.node_assignments[node_id].add_shard(source.source_id, num_shards_to_place);
+        solution.indexer_assignments[node_id].add_shard(source.source_id, num_shards_to_place);
         *available_capacity -= num_shards_to_place * source.load_per_shard.get();
         num_shards -= num_shards_to_place;
     }
@@ -281,7 +281,7 @@ fn compute_unassigned_sources(
         .sources()
         .map(|source| (source.source_id as SourceOrd, source))
         .collect();
-    for node_assignment in &solution.node_assignments {
+    for node_assignment in &solution.indexer_assignments {
         for (&source_id, &num_shards) in &node_assignment.num_shards_per_source {
             let Entry::Occupied(mut entry) = unassigned_sources.entry(source_id) else {
                 panic!("The solution contains more shards than the actual problem.");
@@ -300,10 +300,10 @@ fn compute_node_available_capacity(
     solution: &SchedulingSolution,
 ) -> BinaryHeap<(Load, IndexerOrd)> {
     let mut node_available_capacity: BinaryHeap<(Load, IndexerOrd)> =
-        BinaryHeap::with_capacity(problem.num_nodes());
-    for node_assignment in &solution.node_assignments {
+        BinaryHeap::with_capacity(problem.num_indexers());
+    for node_assignment in &solution.indexer_assignments {
         let available_capacity = node_assignment.node_available_capacity(problem);
-        node_available_capacity.push((available_capacity, node_assignment.node_id));
+        node_available_capacity.push((available_capacity, node_assignment.indexer_ord));
     }
     node_available_capacity
 }
@@ -320,11 +320,11 @@ mod tests {
         let mut problem = SchedulingProblem::with_node_maximum_load(vec![4_000, 5_000]);
         problem.add_source(1, NonZeroU32::new(1_000u32).unwrap());
         let mut solution = problem.new_solution();
-        solution.node_assignments[0].add_shard(0, 3);
-        solution.node_assignments[1].add_shard(0, 3);
+        solution.indexer_assignments[0].add_shard(0, 3);
+        solution.indexer_assignments[1].add_shard(0, 3);
         remove_extraneous_shards(&problem, &mut solution);
-        assert_eq!(solution.node_assignments[0].num_shards(0), 0);
-        assert_eq!(solution.node_assignments[1].num_shards(0), 1);
+        assert_eq!(solution.indexer_assignments[0].num_shards(0), 0);
+        assert_eq!(solution.indexer_assignments[1].num_shards(0), 1);
     }
 
     #[test]
@@ -332,11 +332,11 @@ mod tests {
         let mut problem = SchedulingProblem::with_node_maximum_load(vec![5_000, 4_000]);
         problem.add_source(2, NonZeroU32::new(1_000).unwrap());
         let mut solution = problem.new_solution();
-        solution.node_assignments[0].add_shard(0, 3);
-        solution.node_assignments[1].add_shard(0, 3);
+        solution.indexer_assignments[0].add_shard(0, 3);
+        solution.indexer_assignments[1].add_shard(0, 3);
         remove_extraneous_shards(&problem, &mut solution);
-        assert_eq!(solution.node_assignments[0].num_shards(0), 2);
-        assert_eq!(solution.node_assignments[1].num_shards(0), 0);
+        assert_eq!(solution.indexer_assignments[0].num_shards(0), 2);
+        assert_eq!(solution.indexer_assignments[1].num_shards(0), 0);
     }
 
     #[test]
@@ -347,14 +347,14 @@ mod tests {
         // Source 1
         problem.add_source(2, NonZeroU32::new(1_000).unwrap());
         let mut solution = problem.new_solution();
-        solution.node_assignments[0].add_shard(0, 1);
-        solution.node_assignments[0].add_shard(1, 1);
-        solution.node_assignments[1].add_shard(1, 2);
+        solution.indexer_assignments[0].add_shard(0, 1);
+        solution.indexer_assignments[0].add_shard(1, 1);
+        solution.indexer_assignments[1].add_shard(1, 2);
         remove_extraneous_shards(&problem, &mut solution);
-        assert_eq!(solution.node_assignments[0].num_shards(0), 0);
-        assert_eq!(solution.node_assignments[0].num_shards(1), 1);
-        assert_eq!(solution.node_assignments[1].num_shards(0), 0);
-        assert_eq!(solution.node_assignments[1].num_shards(1), 1);
+        assert_eq!(solution.indexer_assignments[0].num_shards(0), 0);
+        assert_eq!(solution.indexer_assignments[0].num_shards(1), 1);
+        assert_eq!(solution.indexer_assignments[1].num_shards(0), 0);
+        assert_eq!(solution.indexer_assignments[1].num_shards(1), 1);
     }
 
     #[test]
@@ -363,11 +363,11 @@ mod tests {
         // Source 0
         problem.add_source(1, NonZeroU32::new(1_000).unwrap());
         let mut solution = problem.new_solution();
-        solution.node_assignments[0].add_shard(0, 1);
-        solution.node_assignments[0].add_shard(1, 1);
+        solution.indexer_assignments[0].add_shard(0, 1);
+        solution.indexer_assignments[0].add_shard(1, 1);
         remove_extraneous_shards(&problem, &mut solution);
-        assert_eq!(solution.node_assignments[0].num_shards(0), 1);
-        assert_eq!(solution.node_assignments[0].num_shards(1), 0);
+        assert_eq!(solution.indexer_assignments[0].num_shards(0), 1);
+        assert_eq!(solution.indexer_assignments[0].num_shards(1), 0);
     }
 
     #[test]
@@ -381,48 +381,48 @@ mod tests {
         let mut solution = problem.new_solution();
 
         // node 0 does not exceed its capacity
-        solution.node_assignments[0].add_shard(0, 1);
+        solution.indexer_assignments[0].add_shard(0, 1);
 
         // node 1 exceed its capacity with a single source
-        solution.node_assignments[1].add_shard(0, 2);
+        solution.indexer_assignments[1].add_shard(0, 2);
 
         // node 2 is precisely at capacity
-        solution.node_assignments[2].add_shard(0, 1);
-        solution.node_assignments[2].add_shard(1, 1);
+        solution.indexer_assignments[2].add_shard(0, 1);
+        solution.indexer_assignments[2].add_shard(1, 1);
 
         // node 3 is exceeding its capacity due with several sources
         // We choose to remove sources entirely (as opposed to removing only shards that do not fit)
-        solution.node_assignments[3].add_shard(0, 1);
-        solution.node_assignments[3].add_shard(2, 2);
+        solution.indexer_assignments[3].add_shard(0, 1);
+        solution.indexer_assignments[3].add_shard(2, 2);
 
         // node 3 is exceeding its capacity due with several sources
         // We choose to remove sources entirely (as opposed to removing only shards that do not fit)
-        solution.node_assignments[4].add_shard(0, 1);
-        solution.node_assignments[4].add_shard(1, 1);
-        solution.node_assignments[4].add_shard(2, 2);
+        solution.indexer_assignments[4].add_shard(0, 1);
+        solution.indexer_assignments[4].add_shard(1, 1);
+        solution.indexer_assignments[4].add_shard(2, 2);
 
         enforce_nodes_max_load(&problem, &mut solution);
 
-        assert_eq!(solution.node_assignments[0].num_shards(0), 1);
-        assert_eq!(solution.node_assignments[0].num_shards(1), 0);
-        assert_eq!(solution.node_assignments[0].num_shards(2), 0);
+        assert_eq!(solution.indexer_assignments[0].num_shards(0), 1);
+        assert_eq!(solution.indexer_assignments[0].num_shards(1), 0);
+        assert_eq!(solution.indexer_assignments[0].num_shards(2), 0);
 
         // We remove sources entirely!
-        assert_eq!(solution.node_assignments[1].num_shards(0), 0);
-        assert_eq!(solution.node_assignments[1].num_shards(1), 0);
-        assert_eq!(solution.node_assignments[1].num_shards(2), 0);
+        assert_eq!(solution.indexer_assignments[1].num_shards(0), 0);
+        assert_eq!(solution.indexer_assignments[1].num_shards(1), 0);
+        assert_eq!(solution.indexer_assignments[1].num_shards(2), 0);
 
-        assert_eq!(solution.node_assignments[2].num_shards(0), 1);
-        assert_eq!(solution.node_assignments[2].num_shards(1), 1);
-        assert_eq!(solution.node_assignments[2].num_shards(2), 0);
+        assert_eq!(solution.indexer_assignments[2].num_shards(0), 1);
+        assert_eq!(solution.indexer_assignments[2].num_shards(1), 1);
+        assert_eq!(solution.indexer_assignments[2].num_shards(2), 0);
 
-        assert_eq!(solution.node_assignments[3].num_shards(0), 1);
-        assert_eq!(solution.node_assignments[3].num_shards(1), 0);
-        assert_eq!(solution.node_assignments[3].num_shards(2), 0);
+        assert_eq!(solution.indexer_assignments[3].num_shards(0), 1);
+        assert_eq!(solution.indexer_assignments[3].num_shards(1), 0);
+        assert_eq!(solution.indexer_assignments[3].num_shards(2), 0);
 
-        assert_eq!(solution.node_assignments[4].num_shards(0), 1);
-        assert_eq!(solution.node_assignments[4].num_shards(1), 0);
-        assert_eq!(solution.node_assignments[4].num_shards(2), 2);
+        assert_eq!(solution.indexer_assignments[4].num_shards(0), 1);
+        assert_eq!(solution.indexer_assignments[4].num_shards(1), 0);
+        assert_eq!(solution.indexer_assignments[4].num_shards(2), 2);
     }
 
     #[test]
@@ -449,10 +449,10 @@ mod tests {
         problem.add_source(15, NonZeroU32::new(2_000).unwrap());
         let mut solution = problem.new_solution();
 
-        solution.node_assignments[0].add_shard(0, 1);
-        solution.node_assignments[0].add_shard(1, 3);
-        solution.node_assignments[1].add_shard(0, 2);
-        solution.node_assignments[1].add_shard(1, 3);
+        solution.indexer_assignments[0].add_shard(0, 1);
+        solution.indexer_assignments[0].add_shard(1, 3);
+        solution.indexer_assignments[1].add_shard(0, 2);
+        solution.indexer_assignments[1].add_shard(1, 3);
         let unassigned_shards = compute_unassigned_sources(&problem, &solution);
         assert_eq!(
             unassigned_shards[0],
@@ -478,7 +478,7 @@ mod tests {
         problem.add_source(4, NonZeroU32::new(1_000).unwrap());
         let mut solution = problem.new_solution();
         let unassigned = place_unassigned_shards(&problem, &mut solution);
-        assert_eq!(solution.node_assignments[0].num_shards(0), 4);
+        assert_eq!(solution.indexer_assignments[0].num_shards(0), 4);
         assert!(unassigned.is_empty());
     }
 
@@ -488,15 +488,15 @@ mod tests {
         problem.add_source(5, NonZeroU32::new(1_000).unwrap());
         problem.add_source(15, NonZeroU32::new(2_000).unwrap());
         let mut solution = problem.new_solution();
-        solution.node_assignments[0].add_shard(0, 1);
-        solution.node_assignments[0].add_shard(1, 3);
-        solution.node_assignments[1].add_shard(0, 2);
-        solution.node_assignments[1].add_shard(1, 3);
+        solution.indexer_assignments[0].add_shard(0, 1);
+        solution.indexer_assignments[0].add_shard(1, 3);
+        solution.indexer_assignments[1].add_shard(0, 2);
+        solution.indexer_assignments[1].add_shard(1, 3);
         let unassigned_shards = compute_unassigned_sources(&problem, &solution);
-        assert_eq!(solution.node_assignments[0].num_shards(0), 1);
-        assert_eq!(solution.node_assignments[0].num_shards(1), 3);
-        assert_eq!(solution.node_assignments[1].num_shards(0), 2);
-        assert_eq!(solution.node_assignments[1].num_shards(1), 3);
+        assert_eq!(solution.indexer_assignments[0].num_shards(0), 1);
+        assert_eq!(solution.indexer_assignments[0].num_shards(1), 3);
+        assert_eq!(solution.indexer_assignments[1].num_shards(0), 2);
+        assert_eq!(solution.indexer_assignments[1].num_shards(1), 3);
         assert_eq!(
             unassigned_shards[0],
             Source {
@@ -590,11 +590,11 @@ mod tests {
     ) -> impl Strategy<Value = SchedulingSolution> {
         proptest::collection::vec(node_assignments_strategy(num_sources), num_nodes).prop_map(
             move |node_assignments: Vec<Vec<u32>>| {
-                let mut solution = SchedulingSolution::with_num_nodes(num_nodes);
+                let mut solution = SchedulingSolution::with_num_indexers(num_nodes);
                 for (node_id, node_assignment) in node_assignments.iter().enumerate() {
                     for (source_id, num_shards) in node_assignment.iter().copied().enumerate() {
                         if num_shards > 0 {
-                            solution.node_assignments[node_id]
+                            solution.indexer_assignments[node_id]
                                 .add_shard(source_id as u32, num_shards);
                         }
                     }
