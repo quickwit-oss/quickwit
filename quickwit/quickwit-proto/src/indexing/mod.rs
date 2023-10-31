@@ -209,17 +209,13 @@ impl TryFrom<&str> for IndexingTask {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, utoipa::ToSchema)]
 pub struct PipelineMetrics {
-    pub cpu_thousandth: u16,
+    pub cpu_millis: u16,
     pub throughput_mb_per_sec: u16,
 }
 
 impl fmt::Display for PipelineMetrics {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(
-            f,
-            "{}‰,{}MB/s",
-            self.cpu_thousandth, self.throughput_mb_per_sec
-        )
+        write!(f, "{}m,{}MB/s", self.cpu_millis, self.throughput_mb_per_sec)
     }
 }
 
