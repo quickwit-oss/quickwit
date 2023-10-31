@@ -84,7 +84,6 @@ impl ControlPlane {
             let indexing_scheduler = IndexingScheduler::new(
                 cluster_id.clone(),
                 self_node_id.clone(),
-                metastore.clone(),
                 indexer_pool.clone(),
             );
             let ingest_controller =
@@ -121,6 +120,7 @@ impl Actor for ControlPlane {
     }
 
     async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
+        crate::metrics::CONTROL_PLANE_METRICS.restart_total.inc();
         self.model
             .load_from_metastore(&mut self.metastore, ctx.progress())
             .await
@@ -190,11 +190,13 @@ fn convert_metastore_error<T>(
             // It will be up to the client to decide what to do there.
             error!(err=?metastore_error, transaction_outcome="aborted", "metastore error");
         }
+        crate::metrics::CONTROL_PLANE_METRICS.metastore_error_aborted.inc();
         Ok(Err(ControlPlaneError::Metastore(metastore_error)))
     } else {
         // If the metastore transaction may have been executed, we need to restart the control plane
         // so that it gets resynced with the metastore state.
         error!(err=?metastore_error, transaction_outcome="maybe-executed", "metastore error");
+        crate::metrics::CONTROL_PLANE_METRICS.metastore_error_maybe_executed.inc();
         Err(ActorExitStatus::from(anyhow::anyhow!(metastore_error)))
     }
 }

@@ -5166,6 +5166,7 @@ dependencies = [
  "hyper",
  "itertools 0.11.0",
  "mockall",
+ "once_cell",
  "proptest",
  "prost",
  "quickwit-actors",

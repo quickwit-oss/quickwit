@@ -22,6 +22,7 @@ pub(crate) mod control_plane_model;
 pub mod indexing_plan;
 pub mod indexing_scheduler;
 pub mod ingest;
+pub(crate) mod metrics;
 
 use quickwit_common::tower::Pool;
 use quickwit_proto::indexing::{IndexingServiceClient, IndexingTask};
