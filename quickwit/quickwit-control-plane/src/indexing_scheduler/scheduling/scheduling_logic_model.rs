@@ -47,7 +47,7 @@ impl SchedulingProblem {
         self.indexer_max_loads[indexer_ord]
     }
 
-    pub fn with_node_maximum_load(node_max_loads: Vec<Load>) -> SchedulingProblem {
+    pub fn with_indexer_maximum_load(node_max_loads: Vec<Load>) -> SchedulingProblem {
         SchedulingProblem {
             sources: Vec::new(),
             indexer_max_loads: node_max_loads,
@@ -99,7 +99,7 @@ impl IndexerAssignment {
         }
     }
 
-    pub fn node_available_capacity(&self, problem: &SchedulingProblem) -> Load {
+    pub fn indexer_available_capacity(&self, problem: &SchedulingProblem) -> Load {
         problem.indexer_max_loads[self.indexer_ord].saturating_sub(self.total_load(problem))
     }
 

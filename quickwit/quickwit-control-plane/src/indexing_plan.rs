@@ -27,31 +27,31 @@ use serde::Serialize;
 /// to identify if the plan is up to date with the metastore.
 #[derive(Debug, PartialEq, Clone, Serialize, Default)]
 pub struct PhysicalIndexingPlan {
-    indexing_tasks_per_node_id: FnvHashMap<String, Vec<IndexingTask>>,
+    indexing_tasks_per_indexer_id: FnvHashMap<String, Vec<IndexingTask>>,
 }
 
 impl PhysicalIndexingPlan {
-    pub fn add_indexing_task(&mut self, node_id: &str, indexing_task: IndexingTask) {
-        self.indexing_tasks_per_node_id
-            .entry(node_id.to_string())
+    pub fn add_indexing_task(&mut self, indexer_id: &str, indexing_task: IndexingTask) {
+        self.indexing_tasks_per_indexer_id
+            .entry(indexer_id.to_string())
             .or_default()
             .push(indexing_task);
     }
 
-    /// Returns the hashmap of (node ID, indexing tasks).
-    pub fn indexing_tasks_per_node(&self) -> &FnvHashMap<String, Vec<IndexingTask>> {
-        &self.indexing_tasks_per_node_id
+    /// Returns the hashmap of (indexer ID, indexing tasks).
+    pub fn indexing_tasks_per_indexer(&self) -> &FnvHashMap<String, Vec<IndexingTask>> {
+        &self.indexing_tasks_per_indexer_id
     }
 
-    /// Returns the hashmap of (node ID, indexing tasks).
-    pub fn node(&self, node_id: &str) -> Option<&[IndexingTask]> {
-        self.indexing_tasks_per_node_id
-            .get(node_id)
+    /// Returns the hashmap of (indexer ID, indexing tasks).
+    pub fn indexer(&self, indexer_id: &str) -> Option<&[IndexingTask]> {
+        self.indexing_tasks_per_indexer_id
+            .get(indexer_id)
             .map(Vec::as_slice)
     }
 
     pub fn normalize(&mut self) {
-        for tasks in self.indexing_tasks_per_node_id.values_mut() {
+        for tasks in self.indexing_tasks_per_indexer_id.values_mut() {
             tasks.sort_by(|left, right| {
                 left.index_uid
                     .cmp(&right.index_uid)

@@ -215,8 +215,8 @@ impl IndexingScheduler {
         );
         if let Some(last_applied_plan) = &self.state.last_applied_physical_plan {
             let plans_diff = get_indexing_plans_diff(
-                last_applied_plan.indexing_tasks_per_node(),
-                new_physical_plan.indexing_tasks_per_node(),
+                last_applied_plan.indexing_tasks_per_indexer(),
+                new_physical_plan.indexing_tasks_per_indexer(),
             );
             // No need to apply the new plan as it is the same as the old one.
             if plans_diff.is_empty() {
@@ -259,7 +259,7 @@ impl IndexingScheduler {
 
         let indexing_plans_diff = get_indexing_plans_diff(
             &running_indexing_tasks_by_node_id,
-            last_applied_plan.indexing_tasks_per_node(),
+            last_applied_plan.indexing_tasks_per_indexer(),
         );
         if !indexing_plans_diff.has_same_nodes() {
             info!(plans_diff=?indexing_plans_diff, "Running plan and last applied plan node IDs differ: schedule an indexing plan.");
@@ -281,7 +281,7 @@ impl IndexingScheduler {
         new_physical_plan: PhysicalIndexingPlan,
     ) {
         debug!("Apply physical indexing plan: {:?}", new_physical_plan);
-        for (node_id, indexing_tasks) in new_physical_plan.indexing_tasks_per_node() {
+        for (node_id, indexing_tasks) in new_physical_plan.indexing_tasks_per_indexer() {
             // We don't want to block on a slow indexer so we apply this change asynchronously
             // TODO not blocking is cool, but we need to make sure there is not accumulation
             // possible here.
@@ -751,10 +751,10 @@ mod tests {
         indexer_max_loads.insert("indexer1".to_string(), 3_000);
         indexer_max_loads.insert("indexer2".to_string(), 3_000);
         let physical_plan = build_physical_indexing_plan(&sources[..], &indexer_max_loads, None);
-        assert_eq!(physical_plan.indexing_tasks_per_node().len(), 2);
-        let indexing_tasks_1 = physical_plan.node("indexer1").unwrap();
+        assert_eq!(physical_plan.indexing_tasks_per_indexer().len(), 2);
+        let indexing_tasks_1 = physical_plan.indexer("indexer1").unwrap();
         assert_eq!(indexing_tasks_1.len(), 2);
-        let indexer_2_tasks = physical_plan.node("indexer2").unwrap();
+        let indexer_2_tasks = physical_plan.indexer("indexer2").unwrap();
         assert_eq!(indexer_2_tasks.len(), 3);
     }
 
@@ -785,7 +785,7 @@ mod tests {
                 .iter()
                 .map(|source| (&source.source_uid, source))
                 .collect();
-            for (node_id, tasks) in physical_indexing_plan.indexing_tasks_per_node() {
+            for (node_id, tasks) in physical_indexing_plan.indexing_tasks_per_indexer() {
                 let mut load_in_node = 0u32;
                 for task in tasks {
                     let source_uid = SourceUid {
