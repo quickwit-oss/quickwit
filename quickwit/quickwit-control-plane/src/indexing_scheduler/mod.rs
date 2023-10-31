@@ -27,7 +27,7 @@ use std::time::{Duration, Instant};
 use fnv::{FnvHashMap, FnvHashSet};
 use itertools::Itertools;
 use quickwit_proto::indexing::{ApplyIndexingPlanRequest, IndexingService, IndexingTask};
-use quickwit_proto::metastore::{MetastoreServiceClient, SourceType};
+use quickwit_proto::metastore::SourceType;
 use quickwit_proto::types::NodeId;
 use scheduling::{SourceToSchedule, SourceToScheduleType};
 use serde::Serialize;
@@ -99,7 +99,6 @@ pub struct IndexingSchedulerState {
 pub struct IndexingScheduler {
     cluster_id: String,
     self_node_id: NodeId,
-    metastore: MetastoreServiceClient,
     indexer_pool: IndexerPool,
     state: IndexingSchedulerState,
 }
@@ -109,7 +108,6 @@ impl fmt::Debug for IndexingScheduler {
         f.debug_struct("IndexingScheduler")
             .field("cluster_id", &self.cluster_id)
             .field("node_id", &self.self_node_id)
-            .field("metastore", &self.metastore)
             .field(
                 "last_applied_plan_ts",
                 &self.state.last_applied_plan_timestamp,
@@ -173,13 +171,11 @@ impl IndexingScheduler {
     pub fn new(
         cluster_id: String,
         self_node_id: NodeId,
-        metastore: MetastoreServiceClient,
         indexer_pool: IndexerPool,
     ) -> Self {
-        Self {
+        IndexingScheduler {
             cluster_id,
             self_node_id,
-            metastore,
             indexer_pool,
             state: IndexingSchedulerState::default(),
         }
@@ -192,6 +188,7 @@ impl IndexingScheduler {
     // Should be called whenever a change in the list of index/shard
     // has happened.
     pub(crate) fn schedule_indexing_plan_if_needed(&mut self, model: &ControlPlaneModel) {
+        crate::metrics::CONTROL_PLANE_METRICS.schedule_total.inc();
         let mut indexers = self.get_indexers_from_indexer_pool();
         if indexers.is_empty() {
             warn!("No indexer available, cannot schedule an indexing plan.");

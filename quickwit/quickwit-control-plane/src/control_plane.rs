@@ -84,7 +84,6 @@ impl ControlPlane {
             let indexing_scheduler = IndexingScheduler::new(
                 cluster_id.clone(),
                 self_node_id.clone(),
-                metastore.clone(),
                 indexer_pool.clone(),
             );
             let ingest_controller =
@@ -121,6 +120,7 @@ impl Actor for ControlPlane {
     }
 
     async fn initialize(&mut self, ctx: &ActorContext<Self>) -> Result<(), ActorExitStatus> {
+        crate::metrics::CONTROL_PLANE_METRICS.restart_total.inc();
         self.model
             .load_from_metastore(&mut self.metastore, ctx.progress())
             .await
