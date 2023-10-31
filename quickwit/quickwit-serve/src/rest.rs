@@ -29,7 +29,8 @@ use tower::ServiceBuilder;
 use tower_http::compression::predicate::{DefaultPredicate, Predicate, SizeAbove};
 use tower_http::compression::CompressionLayer;
 use tower_http::cors::CorsLayer;
-use tower_http::decompression::DecompressionLayer;
+// use tower_http::decompression::DecompressionLayer;
+use tower_http::decompression::RequestDecompressionLayer;
 use tracing::{error, info};
 use warp::{redirect, Filter, Rejection, Reply};
 
@@ -153,7 +154,8 @@ pub(crate) async fn start_rest_server(
                 .compress_when(compression_predicate),
         )
         .layer(cors)
-        .layer(DecompressionLayer::new().gzip(true).zstd(true))
+        // .layer(DecompressionLayer::new().gzip(true).zstd(true))
+        .layer(RequestDecompressionLayer::new().gzip(true).zstd(true))
         .service(warp_service);
 
     info!(
