@@ -16,8 +16,6 @@
 //
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
-#![allow(unreachable_code, unused_variables, unused_imports)]
-
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use tantivy::json_utils::JsonTermWriter;
@@ -25,12 +23,13 @@ use tantivy::schema::{Field, FieldType, Schema as TantivySchema};
 use tantivy::Term;
 
 use super::{BuildTantivyAst, QueryAst};
-use crate::query_ast::{FullTextParams, TantivyQueryAst};
+use crate::query_ast::TantivyQueryAst;
 use crate::tokenizers::TokenizerManager;
 use crate::{find_field_or_hit_dynamic, InvalidQuery};
 
-/// The TermQuery acts exactly like a FullTextQuery with
-/// a raw tokenizer.
+/// A Wildcard query allows to match 'bond' with a query like 'b*d'.
+///
+/// At the moment, only wildcard at end of term is supported.
 #[derive(PartialEq, Eq, Debug, Serialize, Deserialize, Clone)]
 pub struct WildcardQuery {
     pub field: String,
@@ -165,11 +164,15 @@ impl BuildTantivyAst for WildcardQuery {
     ) -> Result<TantivyQueryAst, InvalidQuery> {
         // TODO handle escaped wildcard and questionmarks?
         let mut chars = self.value.chars();
-        if chars.next() != Some('*') {
-            todo!("error");
+        if chars.next_back() != Some('*') {
+            return Err(InvalidQuery::Other(anyhow::Error::msg(
+                "Wildcard query doesn't end with a wildcard",
+            )));
         }
         if chars.any(|c| c == '*' || c == '?') {
-            todo!("error again");
+            return Err(InvalidQuery::Other(anyhow::Error::msg(
+                "Wildcard contains wildcard in non final position",
+            )));
         }
 
         let (_, term) = self.extract_prefix_term(schema, tokenizer_manager)?;

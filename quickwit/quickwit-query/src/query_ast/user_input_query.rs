@@ -216,24 +216,33 @@ fn convert_user_input_literal(
         mode,
         zero_terms_query: crate::MatchAllOrNone::MatchNone,
     };
+    // TODO should probably check for escaped * and ?
+    let wildcard = delimiter == Delimiter::None && (phrase.contains('*') || phrase.contains('?'));
     let mut phrase_queries: Vec<QueryAst> = field_names
         .into_iter()
         .map(|field_name| {
             if prefix {
-                return query_ast::PhrasePrefixQuery {
+                query_ast::PhrasePrefixQuery {
                     field: field_name,
                     phrase: phrase.clone(),
                     params: full_text_params.clone(),
                     max_expansions: DEFAULT_PHRASE_QUERY_MAX_EXPANSION,
                 }
-                .into();
+                .into()
+            } else if wildcard {
+                query_ast::WildcardQuery {
+                    field: field_name,
+                    value: phrase.clone(),
+                }
+                .into()
+            } else {
+                query_ast::FullTextQuery {
+                    field: field_name,
+                    text: phrase.clone(),
+                    params: full_text_params.clone(),
+                }
+                .into()
             }
-            query_ast::FullTextQuery {
-                field: field_name,
-                text: phrase.clone(),
-                params: full_text_params.clone(),
-            }
-            .into()
         })
         .collect();
     if phrase_queries.is_empty() {

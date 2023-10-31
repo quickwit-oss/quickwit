@@ -23,7 +23,7 @@ use std::ops::Bound;
 
 use quickwit_query::query_ast::{
     FieldPresenceQuery, FullTextQuery, PhrasePrefixQuery, QueryAst, QueryAstVisitor, RangeQuery,
-    TermSetQuery,
+    TermSetQuery, WildcardQuery,
 };
 use quickwit_query::tokenizers::TokenizerManager;
 use quickwit_query::{find_field_or_hit_dynamic, InvalidQuery};
@@ -231,6 +231,12 @@ impl<'a, 'b: 'a> QueryAstVisitor<'a> for ExtractPrefixTermRanges<'b> {
         if let Some((_, term)) = terms.last() {
             self.add_prefix_term(term.clone(), phrase_prefix.max_expansions, terms.len() > 1);
         }
+        Ok(())
+    }
+
+    fn visit_wildcard(&mut self, wildcard_query: &'a WildcardQuery) -> Result<(), Self::Err> {
+        let (_, term) = wildcard_query.extract_prefix_term(self.schema, self.tokenizer_manager)?;
+        self.add_prefix_term(term, u32::MAX, false);
         Ok(())
     }
 }

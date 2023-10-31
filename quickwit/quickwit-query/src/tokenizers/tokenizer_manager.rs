@@ -33,6 +33,7 @@ impl TokenizerManager {
         self.inner.get(tokenizer_name)
     }
 
+    /// Query whether a given tokenizer does lowercasing
     pub fn get_does_lowercasing(&self, tokenizer_name: &str) -> Option<bool> {
         self.is_lowercaser
             .read()
@@ -41,6 +42,7 @@ impl TokenizerManager {
             .copied()
     }
 
+    /// Get the inner TokenizerManager
     pub fn tantivy_manager(&self) -> &TantivyTokenizerManager {
         &self.inner
     }
