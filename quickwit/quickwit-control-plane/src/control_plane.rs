@@ -190,11 +190,17 @@ fn convert_metastore_error<T>(
             // It will be up to the client to decide what to do there.
             error!(err=?metastore_error, transaction_outcome="aborted", "metastore error");
         }
+        crate::metrics::CONTROL_PLANE_METRICS
+            .metastore_error_aborted
+            .inc();
         Ok(Err(ControlPlaneError::Metastore(metastore_error)))
     } else {
         // If the metastore transaction may have been executed, we need to restart the control plane
         // so that it gets resynced with the metastore state.
         error!(err=?metastore_error, transaction_outcome="maybe-executed", "metastore error");
+        crate::metrics::CONTROL_PLANE_METRICS
+            .metastore_error_maybe_executed
+            .inc();
         Err(ActorExitStatus::from(anyhow::anyhow!(metastore_error)))
     }
 }
