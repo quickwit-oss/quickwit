@@ -547,13 +547,13 @@ impl Indexer {
 
     fn update_pipeline_metrics(&mut self, elapsed: Duration, uncompressed_num_bytes: u64) {
         let commit_timeout = self.indexer_state.indexing_settings.commit_timeout();
-        let cpu_thousandth: u16 = if elapsed >= commit_timeout {
+        let cpu_millis: u16 = if elapsed >= commit_timeout {
             1_000
         } else {
             (elapsed.as_micros() * 1_000 / commit_timeout.as_micros()) as u16
         };
         self.counters.pipeline_metrics_opt = Some(PipelineMetrics {
-            cpu_thousandth,
+            cpu_millis,
             throughput_mb_per_sec: (uncompressed_num_bytes / (elapsed.as_millis() as u64 * 1_000))
                 as u16,
         });
