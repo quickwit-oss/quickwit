@@ -22,7 +22,7 @@ use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 
 pub type SourceOrd = u32;
-pub type NodeOrd = usize;
+pub type IndexerOrd = usize;
 pub type Load = u32;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -43,7 +43,7 @@ impl SchedulingProblem {
         SchedulingSolution::with_num_nodes(self.node_max_loads.len())
     }
 
-    pub fn node_max_load(&self, node_id: NodeOrd) -> Load {
+    pub fn node_max_load(&self, node_id: IndexerOrd) -> Load {
         self.node_max_loads[node_id]
     }
 
@@ -87,12 +87,12 @@ impl SchedulingProblem {
 
 #[derive(Clone, Debug)]
 pub struct NodeAssignment {
-    pub node_id: NodeOrd,
+    pub node_id: IndexerOrd,
     pub num_shards_per_source: BTreeMap<SourceOrd, u32>,
 }
 
 impl NodeAssignment {
-    pub fn new(node_id: NodeOrd) -> NodeAssignment {
+    pub fn new(node_id: IndexerOrd) -> NodeAssignment {
         NodeAssignment {
             node_id,
             num_shards_per_source: Default::default(),
@@ -101,16 +101,6 @@ impl NodeAssignment {
 
     pub fn node_available_capacity(&self, problem: &SchedulingProblem) -> Load {
         problem.node_max_loads[self.node_id].saturating_sub(self.total_load(problem))
-    }
-
-    pub fn truncate_num_sources(&mut self, num_sources: usize) {
-        while let Some((&source_id, _)) = self.num_shards_per_source.last_key_value() {
-            if source_id >= num_sources as u32 {
-                self.num_shards_per_source.pop_last();
-            } else {
-                break;
-            }
-        }
     }
 
     pub fn total_load(&self, problem: &SchedulingProblem) -> Load {
@@ -168,7 +158,7 @@ impl SchedulingSolution {
     pub fn node_shards(
         &self,
         source_ord: SourceOrd,
-    ) -> impl Iterator<Item = (NodeOrd, NonZeroU32)> + '_ {
+    ) -> impl Iterator<Item = (IndexerOrd, NonZeroU32)> + '_ {
         self.node_assignments
             .iter()
             .filter_map(move |node_assignment| {

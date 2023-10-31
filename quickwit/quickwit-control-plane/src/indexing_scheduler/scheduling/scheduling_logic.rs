@@ -55,15 +55,18 @@ pub fn solve(
 // Remove shards in solution that are not needed anymore
 
 fn remove_extraneous_shards(problem: &SchedulingProblem, solution: &mut SchedulingSolution) {
-    let mut num_shards_per_source: Vec<u32> = vec![0; problem.num_sources()];
+    let mut num_shards_per_source: Box<[u32]> = vec![0; problem.num_sources()].into_boxed_slice();
     for node_assignment in &mut solution.node_assignments {
-        node_assignment.truncate_num_sources(problem.num_sources());
-        for (&source, &load) in &node_assignment.num_shards_per_source {
-            num_shards_per_source[source as usize] += load;
+        if let Some((&source_ord, _)) = node_assignment.num_shards_per_source.last_key_value() {
+            assert!(source_ord < problem.num_sources() as SourceOrd);
+        }
+        for (&source, &source_num_shards) in &node_assignment.num_shards_per_source {
+            num_shards_per_source[source as usize] += source_num_shards;
         }
     }
     let num_shards_per_source_to_remove: Vec<(SourceOrd, u32)> = num_shards_per_source
         .into_iter()
+        .copied()
         .zip(problem.sources())
         .flat_map(|(num_shards, source)| {
             let target_num_shards = source.num_shards;
@@ -75,7 +78,7 @@ fn remove_extraneous_shards(problem: &SchedulingProblem, solution: &mut Scheduli
         })
         .collect();
 
-    let mut nodes_with_source: HashMap<SourceOrd, Vec<NodeOrd>> = HashMap::default();
+    let mut nodes_with_source: HashMap<SourceOrd, Vec<IndexerOrd>> = HashMap::default();
     for (node_id, node_assignment) in solution.node_assignments.iter().enumerate() {
         for &source in node_assignment.num_shards_per_source.keys() {
             nodes_with_source.entry(source).or_default().push(node_id);
@@ -185,7 +188,7 @@ fn assert_enforce_nodes_max_load_post_condition(
 // We go through the sources in decreasing order of their load.
 //
 // We then try to place as many shards as possible in the node with the
-// highest load.
+// highest available capacity.
 
 fn place_unassigned_shards(
     problem: &SchedulingProblem,
@@ -196,7 +199,7 @@ fn place_unassigned_shards(
         let load = source.num_shards * source.load_per_shard.get();
         Reverse(load)
     });
-    let mut node_with_least_loads: BinaryHeap<(Load, NodeOrd)> =
+    let mut node_with_least_loads: BinaryHeap<(Load, IndexerOrd)> =
         compute_node_available_capacity(problem, solution);
     let mut unassignable_shards = BTreeMap::new();
     for source in unassigned_shards {
@@ -245,7 +248,7 @@ fn assert_place_unassigned_shards_post_condition(
 
 fn place_unassigned_shards_single_source(
     source: &Source,
-    node_with_least_loads: &mut BinaryHeap<(Load, NodeOrd)>,
+    node_with_least_loads: &mut BinaryHeap<(Load, IndexerOrd)>,
     solution: &mut SchedulingSolution,
 ) -> u32 {
     let mut num_shards = source.num_shards;
@@ -295,8 +298,8 @@ fn compute_unassigned_sources(
 fn compute_node_available_capacity(
     problem: &SchedulingProblem,
     solution: &SchedulingSolution,
-) -> BinaryHeap<(Load, NodeOrd)> {
-    let mut node_available_capacity: BinaryHeap<(Load, NodeOrd)> =
+) -> BinaryHeap<(Load, IndexerOrd)> {
+    let mut node_available_capacity: BinaryHeap<(Load, IndexerOrd)> =
         BinaryHeap::with_capacity(problem.num_nodes());
     for node_assignment in &solution.node_assignments {
         let available_capacity = node_assignment.node_available_capacity(problem);

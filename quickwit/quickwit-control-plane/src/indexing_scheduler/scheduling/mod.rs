@@ -27,7 +27,7 @@ use fnv::FnvHashMap;
 use quickwit_proto::indexing::IndexingTask;
 use quickwit_proto::types::{IndexUid, ShardId};
 pub use scheduling_logic_model::Load;
-use scheduling_logic_model::{NodeOrd, SourceOrd};
+use scheduling_logic_model::{IndexerOrd, SourceOrd};
 use tracing::error;
 
 use crate::indexing_plan::PhysicalIndexingPlan;
@@ -46,8 +46,8 @@ fn indexing_task(source_uid: SourceUid, shard_ids: Vec<ShardId>) -> IndexingTask
 fn create_shard_to_node_map(
     physical_plan: &PhysicalIndexingPlan,
     id_to_ord_map: &IdToOrdMap,
-) -> FnvHashMap<SourceOrd, FnvHashMap<ShardId, NodeOrd>> {
-    let mut source_to_shard_to_node: FnvHashMap<SourceOrd, FnvHashMap<ShardId, NodeOrd>> =
+) -> FnvHashMap<SourceOrd, FnvHashMap<ShardId, IndexerOrd>> {
+    let mut source_to_shard_to_node: FnvHashMap<SourceOrd, FnvHashMap<ShardId, IndexerOrd>> =
         Default::default();
     for (node_id, indexing_tasks) in physical_plan.indexing_tasks_per_node().iter() {
         for indexing_task in indexing_tasks {
@@ -102,9 +102,9 @@ fn populate_problem(
 
 #[derive(Default)]
 struct IdToOrdMap {
-    indexer_uids: Vec<String>,
+    indexer_ids: Vec<String>,
     source_uids: Vec<SourceUid>,
-    indexer_uid_to_indexer_ord: FnvHashMap<String, NodeOrd>,
+    indexer_id_to_indexer_ord: FnvHashMap<String, IndexerOrd>,
     source_uid_to_source_ord: FnvHashMap<SourceUid, SourceOrd>,
 }
 
@@ -120,19 +120,19 @@ impl IdToOrdMap {
     fn source_ord(&self, source_uid: &SourceUid) -> Option<SourceOrd> {
         self.source_uid_to_source_ord.get(source_uid).copied()
     }
-    fn indexer_id(&self, node_ord: NodeOrd) -> &String {
-        &self.indexer_uids[node_ord]
+    fn indexer_id(&self, indexer_ord: IndexerOrd) -> &String {
+        &self.indexer_ids[indexer_ord]
     }
 
-    fn indexer_ord(&self, indexer_uid: &str) -> Option<NodeOrd> {
-        self.indexer_uid_to_indexer_ord.get(indexer_uid).copied()
+    fn indexer_ord(&self, indexer_id: &str) -> Option<IndexerOrd> {
+        self.indexer_id_to_indexer_ord.get(indexer_id).copied()
     }
 
-    fn add_indexer_id(&mut self, node_id: String) -> NodeOrd {
-        let indexer_ord = self.indexer_uids.len() as NodeOrd;
-        self.indexer_uid_to_indexer_ord
+    fn add_indexer_id(&mut self, node_id: String) -> IndexerOrd {
+        let indexer_ord = self.indexer_ids.len() as IndexerOrd;
+        self.indexer_id_to_indexer_ord
             .insert(node_id.clone(), indexer_ord);
-        self.indexer_uids.push(node_id);
+        self.indexer_ids.push(node_id);
         indexer_ord
     }
 }
@@ -143,8 +143,8 @@ fn convert_physical_plan_to_solution(
     solution: &mut SchedulingSolution,
 ) {
     for (indexer_id, indexing_tasks) in plan.indexing_tasks_per_node() {
-        if let Some(node_ord) = id_to_ord_map.indexer_ord(indexer_id) {
-            let node_assignment = &mut solution.node_assignments[node_ord];
+        if let Some(indexer_ord) = id_to_ord_map.indexer_ord(indexer_id) {
+            let node_assignment = &mut solution.node_assignments[indexer_ord];
             for indexing_task in indexing_tasks {
                 let source_uid = SourceUid {
                     index_uid: IndexUid::from(indexing_task.index_uid.clone()),
@@ -159,7 +159,7 @@ fn convert_physical_plan_to_solution(
 }
 
 /// Spreads the list of shard_ids optimally amongst the different nodes.
-/// This function also receives a `previous_shard_to_node_ord` map, informing
+/// This function also receives a `previous_shard_to_indexer_ord` map, informing
 /// use of the previous configuration.
 ///
 /// Whenever possible this function tries to keep shards on the same node.
@@ -167,12 +167,12 @@ fn convert_physical_plan_to_solution(
 /// Contract:
 /// The sum of the number of shards (values of node_num_shards) should match
 /// the length of shard_ids.
-/// Note that all shards are not necessarily in previous_shard_to_node_ord.
+/// Note that all shards are not necessarily in previous_shard_to_indexer_ord.
 fn spread_shards_optimally(
     shard_ids: &[ShardId],
-    mut node_num_shards: FnvHashMap<NodeOrd, NonZeroU32>,
-    previous_shard_to_node_ord: FnvHashMap<ShardId, NodeOrd>,
-) -> FnvHashMap<NodeOrd, Vec<ShardId>> {
+    mut node_num_shards: FnvHashMap<IndexerOrd, NonZeroU32>,
+    previous_shard_to_indexer_ord: FnvHashMap<ShardId, IndexerOrd>,
+) -> FnvHashMap<IndexerOrd, Vec<ShardId>> {
     assert_eq!(
         shard_ids.len(),
         node_num_shards
@@ -180,13 +180,12 @@ fn spread_shards_optimally(
             .map(|num_shards| num_shards.get() as usize)
             .sum::<usize>(),
     );
-    let mut shard_ids_per_node: FnvHashMap<NodeOrd, Vec<ShardId>> = Default::default();
-    // let shard_ids: Vec<ShardId> = model.list_shards(source_uid);
-    // let shard_to_node_ord = previous_shard_to_node_map.remove(&source_ord).unwrap_or_default();
+    let mut shard_ids_per_node: FnvHashMap<IndexerOrd, Vec<ShardId>> = Default::default();
     let mut unassigned_shard_ids: Vec<ShardId> = Vec::new();
     for &shard_id in shard_ids {
-        if let Some(previous_node_ord) = previous_shard_to_node_ord.get(&shard_id).cloned() {
-            if let Entry::Occupied(mut num_shards_entry) = node_num_shards.entry(previous_node_ord)
+        if let Some(previous_indexer_ord) = previous_shard_to_indexer_ord.get(&shard_id).cloned() {
+            if let Entry::Occupied(mut num_shards_entry) =
+                node_num_shards.entry(previous_indexer_ord)
             {
                 if let Some(new_num_shards) = NonZeroU32::new(num_shards_entry.get().get() - 1u32) {
                     *num_shards_entry.get_mut() = new_num_shards;
@@ -195,7 +194,7 @@ fn spread_shards_optimally(
                 }
                 // We keep the shard on the node it used to be.
                 shard_ids_per_node
-                    .entry(previous_node_ord)
+                    .entry(previous_indexer_ord)
                     .or_default()
                     .push(shard_id);
                 continue;
@@ -245,7 +244,7 @@ fn convert_scheduling_solution_to_physical_plan(
     sources: &[SourceToSchedule],
     previous_plan_opt: Option<&PhysicalIndexingPlan>,
 ) -> PhysicalIndexingPlan {
-    let mut previous_shard_to_node_map: FnvHashMap<SourceOrd, FnvHashMap<ShardId, NodeOrd>> =
+    let mut previous_shard_to_node_map: FnvHashMap<SourceOrd, FnvHashMap<ShardId, IndexerOrd>> =
         previous_plan_opt
             .map(|previous_plan| create_shard_to_node_map(previous_plan, id_to_ord_map))
             .unwrap_or_default();
@@ -263,17 +262,17 @@ fn convert_scheduling_solution_to_physical_plan(
                 // be assign to each node, but we want to convert that number into a list of shard
                 // ids, without moving a shard from a node to another whenever possible.
                 let source_ord = id_to_ord_map.source_ord(&source.source_uid).unwrap();
-                let node_num_shards: FnvHashMap<NodeOrd, NonZeroU32> =
+                let node_num_shards: FnvHashMap<IndexerOrd, NonZeroU32> =
                     solution.node_shards(source_ord).collect();
 
-                let shard_to_node_ord = previous_shard_to_node_map
+                let shard_to_indexer_ord = previous_shard_to_node_map
                     .remove(&source_ord)
                     .unwrap_or_default();
                 let shard_ids_per_node =
-                    spread_shards_optimally(shards, node_num_shards, shard_to_node_ord);
+                    spread_shards_optimally(shards, node_num_shards, shard_to_indexer_ord);
 
-                for (node_ord, shard_ids_for_node) in shard_ids_per_node {
-                    let node_id = id_to_ord_map.indexer_id(node_ord);
+                for (indexer_ord, shard_ids_for_node) in shard_ids_per_node {
+                    let node_id = id_to_ord_map.indexer_id(indexer_ord);
                     let indexing_task =
                         indexing_task(source.source_uid.clone(), shard_ids_for_node);
                     physical_indexing_plan.add_indexing_task(node_id, indexing_task);
@@ -285,11 +284,11 @@ fn convert_scheduling_solution_to_physical_plan(
                 // Here one shard is one pipeline.
                 let source_ord = id_to_ord_map.source_ord(&source.source_uid).unwrap();
 
-                let node_num_shards: FnvHashMap<NodeOrd, NonZeroU32> =
+                let node_num_shards: FnvHashMap<IndexerOrd, NonZeroU32> =
                     solution.node_shards(source_ord).collect();
 
-                for (node_ord, num_shards) in node_num_shards {
-                    let node_id = id_to_ord_map.indexer_id(node_ord);
+                for (indexer_ord, num_shards) in node_num_shards {
+                    let node_id = id_to_ord_map.indexer_id(indexer_ord);
                     for _ in 0..num_shards.get() {
                         let indexing_task = indexing_task(source.source_uid.clone(), Vec::new());
                         physical_indexing_plan.add_indexing_task(node_id, indexing_task);
@@ -302,7 +301,7 @@ fn convert_scheduling_solution_to_physical_plan(
                 // This pipeline is off-the-grid: it is not taken in account in the
                 // node capacity. We start it to ensure backward compatibility
                 // a little, but we want to remove it rapidly.
-                for node_id in &id_to_ord_map.indexer_uids {
+                for node_id in &id_to_ord_map.indexer_ids {
                     let indexing_task = indexing_task(source.source_uid.clone(), Vec::new());
                     physical_indexing_plan.add_indexing_task(node_id, indexing_task);
                 }
@@ -346,8 +345,7 @@ pub fn build_physical_indexing_plan(
     let mut indexer_max_loads: Vec<Load> = Vec::with_capacity(indexer_id_to_max_load.len());
     for (indexer_id, &max_load) in indexer_id_to_max_load {
         let indexer_ord = id_to_ord_map.add_indexer_id(indexer_id.clone());
-        assert_eq!(indexer_ord, indexer_max_loads.len() as NodeOrd);
-        // TODO fix me: we should get the load from the indexer config. conveyed via chitchat.
+        assert_eq!(indexer_ord, indexer_max_loads.len() as IndexerOrd);
         indexer_max_loads.push(max_load);
     }
 
@@ -405,12 +403,12 @@ mod tests {
         let mut node_num_shards = FnvHashMap::default();
         node_num_shards.insert(0, NonZeroU32::new(2).unwrap());
         node_num_shards.insert(1, NonZeroU32::new(3).unwrap());
-        let mut shard_to_node_ord = FnvHashMap::default();
-        shard_to_node_ord.insert(0, 0);
-        shard_to_node_ord.insert(1, 2);
-        shard_to_node_ord.insert(3, 0);
+        let mut shard_to_indexer_ord = FnvHashMap::default();
+        shard_to_indexer_ord.insert(0, 0);
+        shard_to_indexer_ord.insert(1, 2);
+        shard_to_indexer_ord.insert(3, 0);
         let node_to_shards =
-            spread_shards_optimally(&[0, 1, 2, 3, 4], node_num_shards, shard_to_node_ord);
+            spread_shards_optimally(&[0, 1, 2, 3, 4], node_num_shards, shard_to_indexer_ord);
         assert_eq!(node_to_shards.get(&0), Some(&vec![0, 3]));
         assert_eq!(node_to_shards.get(&1), Some(&vec![1, 2, 4]));
     }
