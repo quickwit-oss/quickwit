@@ -36,7 +36,7 @@ This load is assumed unidimensional. This is imperfect of course: indexing consu
 Still for the sake of simplification we pick one metric, measured as the amount of CPU spent
 in the indexer. 
 
-The control plane consolidates this figure to create a load_per_shard metric.
+The control plane consolidates this figure to create a load_per_shard metric expressed in millicpu.
 
 The hypothesis above allow us to see both kafka and ingest sources through the same lens, and stop 
 making a distinction between shards.
@@ -70,8 +70,11 @@ We use the following heuristic.
 Starting from the existing solution, we first reduce it to make sure we do not have too many shards assigned.
 This is done by reducing the number of shard wherever needed, picking in priority nodes with few shards.
 
-We call the resulting solution "reduced solution". The reduced solution is usually not a valid solution as some shard may have been added.
-If we compute the distance to the previous solution, we want to use the "reduced solution" and not the actual previous solution.
+We call the resulting solution "reduced solution". The reduced solution is usually not a valid solution as some shard
+may have been added. We will add these in Phase 3.
+
+If we compute the distance to the previous solution, we want to use the "reduced solution" and not the actual
+previous solution.
 
 ## Phase 2: Enforce nodes maximum load
 
