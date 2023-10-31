@@ -50,7 +50,7 @@ And indexer has:
 - a maximum total load (that we will need to measure or configure).
 
 The problem is now greatly simplified.
-A solution is a sparse matrix of `(num_indexes, num_sources)` that holds a number of shards to be run.
+A solution is a sparse matrix of `(num_indexers, num_sources)` that holds a number of shards to be run.
 The different constraint and wanted properties can all be re-expressed. For instance:
 - We want the dot product of the load per shard vector with each row, to be lower than the maximum load
   of each node. (O)
