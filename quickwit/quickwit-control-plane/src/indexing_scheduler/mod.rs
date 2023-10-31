@@ -17,23 +17,29 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+mod scheduling;
+
 use std::cmp::Ordering;
 use std::fmt;
+use std::num::NonZeroU32;
 use std::time::{Duration, Instant};
 
 use fnv::{FnvHashMap, FnvHashSet};
 use itertools::Itertools;
 use quickwit_proto::indexing::{ApplyIndexingPlanRequest, IndexingService, IndexingTask};
-use quickwit_proto::metastore::MetastoreServiceClient;
+use quickwit_proto::metastore::{MetastoreServiceClient, SourceType};
 use quickwit_proto::types::NodeId;
+use scheduling::{SourceToSchedule, SourceToScheduleType};
 use serde::Serialize;
 use tracing::{debug, error, info, warn};
 
 use crate::control_plane_model::ControlPlaneModel;
-use crate::indexing_plan::{
-    build_physical_indexing_plan, list_indexing_tasks, PhysicalIndexingPlan,
-};
+use crate::indexing_plan::PhysicalIndexingPlan;
+use crate::indexing_scheduler::scheduling::{build_physical_indexing_plan, Load};
 use crate::{IndexerNodeInfo, IndexerPool};
+
+const PIPELINE_FULL_LOAD: Load = 1_000u32;
+const LOAD_PER_NODE: Load = 4_000u32;
 
 pub(crate) const MIN_DURATION_BETWEEN_SCHEDULING: Duration =
     if cfg!(any(test, feature = "testsuite")) {
@@ -57,10 +63,9 @@ pub struct IndexingSchedulerState {
 /// ever running. We just borrowed the terminology to Kubernetes.
 ///
 /// Scheduling executes the following steps:
-/// 1. List all of the logical indexing tasks, from the model. (See [`list_indexing_tasks`])
-/// 2. Builds a [`PhysicalIndexingPlan`] from the list of logical indexing tasks. See
+/// 1. Builds a [`PhysicalIndexingPlan`] from the list of logical indexing tasks. See
 ///    [`build_physical_indexing_plan`] for the implementation details.
-/// 3. Apply the [`PhysicalIndexingPlan`]: for each indexer, the scheduler send the indexing tasks
+/// 2. Apply the [`PhysicalIndexingPlan`]: for each indexer, the scheduler send the indexing tasks
 ///    by gRPC. An indexer immediately returns an Ok and apply asynchronously the received plan. Any
 ///    errors (network) happening in this step are ignored. The scheduler runs a control loop that
 ///    regularly checks if indexers are effectively running their plans (more details in the next
@@ -113,6 +118,57 @@ impl fmt::Debug for IndexingScheduler {
     }
 }
 
+fn get_sources_to_schedule(model: &ControlPlaneModel) -> Vec<SourceToSchedule> {
+    let mut sources = Vec::new();
+    for (source_uid, source_config) in model.get_source_configs() {
+        if !source_config.enabled {
+            continue;
+        }
+        match source_config.source_type() {
+            SourceType::Cli
+            | SourceType::File
+            | SourceType::Vec
+            | SourceType::Void
+            | SourceType::Unspecified => {
+                // We don't need to schedule those.
+            }
+            SourceType::IngestV1 => {
+                // TODO ingest v1 is scheduled differently
+                sources.push(SourceToSchedule {
+                    source_uid,
+                    source_type: SourceToScheduleType::IngestV1,
+                });
+            }
+            SourceType::IngestV2 => {
+                let shards = model.list_shards(&source_uid);
+                sources.push(SourceToSchedule {
+                    source_uid,
+                    source_type: SourceToScheduleType::Sharded {
+                        shards,
+                        // FIXME
+                        load_per_shard: NonZeroU32::new(250u32).unwrap(),
+                    },
+                });
+            }
+            SourceType::Kafka
+            | SourceType::Kinesis
+            | SourceType::GcpPubsub
+            | SourceType::Nats
+            | SourceType::Pulsar => {
+                sources.push(SourceToSchedule {
+                    source_uid,
+                    source_type: SourceToScheduleType::NonSharded {
+                        num_pipelines: source_config.desired_num_pipelines.get() as u32,
+                        // FIXME
+                        load_per_pipeline: NonZeroU32::new(PIPELINE_FULL_LOAD).unwrap(),
+                    },
+                });
+            }
+        }
+    }
+    sources
+}
+
 impl IndexingScheduler {
     pub fn new(
         cluster_id: String,
@@ -141,12 +197,26 @@ impl IndexingScheduler {
             warn!("No indexer available, cannot schedule an indexing plan.");
             return;
         };
-        let indexing_tasks = list_indexing_tasks(indexers.len(), model);
-        let new_physical_plan = build_physical_indexing_plan(&indexers, indexing_tasks);
+
+        let sources = get_sources_to_schedule(model);
+
+        let indexer_max_loads: FnvHashMap<String, Load> = indexers
+            .iter()
+            .map(|(indexer_id, _)| {
+                // TODO Get info from chitchat.
+                (indexer_id.to_string(), LOAD_PER_NODE)
+            })
+            .collect();
+
+        let new_physical_plan = build_physical_indexing_plan(
+            &sources,
+            &indexer_max_loads,
+            self.state.last_applied_physical_plan.as_ref(),
+        );
         if let Some(last_applied_plan) = &self.state.last_applied_physical_plan {
             let plans_diff = get_indexing_plans_diff(
-                last_applied_plan.indexing_tasks_per_node(),
-                new_physical_plan.indexing_tasks_per_node(),
+                last_applied_plan.indexing_tasks_per_indexer(),
+                new_physical_plan.indexing_tasks_per_indexer(),
             );
             // No need to apply the new plan as it is the same as the old one.
             if plans_diff.is_empty() {
@@ -189,7 +259,7 @@ impl IndexingScheduler {
 
         let indexing_plans_diff = get_indexing_plans_diff(
             &running_indexing_tasks_by_node_id,
-            last_applied_plan.indexing_tasks_per_node(),
+            last_applied_plan.indexing_tasks_per_indexer(),
         );
         if !indexing_plans_diff.has_same_nodes() {
             info!(plans_diff=?indexing_plans_diff, "Running plan and last applied plan node IDs differ: schedule an indexing plan.");
@@ -211,7 +281,7 @@ impl IndexingScheduler {
         new_physical_plan: PhysicalIndexingPlan,
     ) {
         debug!("Apply physical indexing plan: {:?}", new_physical_plan);
-        for (node_id, indexing_tasks) in new_physical_plan.indexing_tasks_per_node() {
+        for (node_id, indexing_tasks) in new_physical_plan.indexing_tasks_per_indexer() {
             // We don't want to block on a slow indexer so we apply this change asynchronously
             // TODO not blocking is cool, but we need to make sure there is not accumulation
             // possible here.
@@ -403,7 +473,15 @@ fn get_indexing_tasks_diff<'a>(
 
 #[cfg(test)]
 mod tests {
+    use std::num::NonZeroUsize;
+
+    use proptest::{prop_compose, proptest};
+    use quickwit_config::{IndexConfig, KafkaSourceParams, SourceConfig, SourceParams};
+    use quickwit_metastore::IndexMetadata;
+    use quickwit_proto::types::IndexUid;
+
     use super::*;
+    use crate::SourceUid;
 
     #[test]
     fn test_indexing_plans_diff() {
@@ -552,5 +630,217 @@ mod tests {
                 FnvHashMap::from_iter([("indexer-1", vec![&task_1, &task_1])])
             );
         }
+    }
+
+    #[test]
+    fn test_get_sources_to_schedule() {
+        let mut model = ControlPlaneModel::default();
+        let kafka_source_params = KafkaSourceParams {
+            topic: "kafka-topic".to_string(),
+            client_log_level: None,
+            client_params: serde_json::json!({}),
+            enable_backfill_mode: false,
+        };
+        let index_metadata = IndexMetadata::for_test("test-index", "ram:///test-index");
+        let index_uid = index_metadata.index_uid.clone();
+        model.add_index(index_metadata);
+        model
+            .add_source(
+                &index_uid,
+                SourceConfig {
+                    source_id: "source_disabled".to_string(),
+                    max_num_pipelines_per_indexer: NonZeroUsize::new(3).unwrap(),
+                    desired_num_pipelines: NonZeroUsize::new(3).unwrap(),
+                    enabled: false,
+                    source_params: SourceParams::Kafka(kafka_source_params.clone()),
+                    transform_config: None,
+                    input_format: Default::default(),
+                },
+            )
+            .unwrap();
+        model
+            .add_source(
+                &index_uid,
+                SourceConfig {
+                    source_id: "source_enabled".to_string(),
+                    max_num_pipelines_per_indexer: NonZeroUsize::new(2).unwrap(),
+                    desired_num_pipelines: NonZeroUsize::new(2).unwrap(),
+                    enabled: true,
+                    source_params: SourceParams::Kafka(kafka_source_params.clone()),
+                    transform_config: None,
+                    input_format: Default::default(),
+                },
+            )
+            .unwrap();
+        model
+            .add_source(
+                &index_uid,
+                SourceConfig {
+                    source_id: "ingest_v1".to_string(),
+                    max_num_pipelines_per_indexer: NonZeroUsize::new(2).unwrap(),
+                    desired_num_pipelines: NonZeroUsize::new(2).unwrap(),
+                    enabled: true,
+                    // ingest v1
+                    source_params: SourceParams::IngestApi,
+                    transform_config: None,
+                    input_format: Default::default(),
+                },
+            )
+            .unwrap();
+        model
+            .add_source(
+                &index_uid,
+                SourceConfig {
+                    source_id: "ingest_v2".to_string(),
+                    max_num_pipelines_per_indexer: NonZeroUsize::new(2).unwrap(),
+                    desired_num_pipelines: NonZeroUsize::new(2).unwrap(),
+                    enabled: true,
+                    // ingest v1
+                    source_params: SourceParams::Ingest,
+                    transform_config: None,
+                    input_format: Default::default(),
+                },
+            )
+            .unwrap();
+        model
+            .add_source(
+                &index_uid,
+                SourceConfig {
+                    source_id: "ingest_cli".to_string(),
+                    max_num_pipelines_per_indexer: NonZeroUsize::new(2).unwrap(),
+                    desired_num_pipelines: NonZeroUsize::new(2).unwrap(),
+                    enabled: true,
+                    // ingest v1
+                    source_params: SourceParams::IngestCli,
+                    transform_config: None,
+                    input_format: Default::default(),
+                },
+            )
+            .unwrap();
+        let shards: Vec<SourceToSchedule> = get_sources_to_schedule(&model);
+        assert_eq!(shards.len(), 3);
+    }
+
+    #[test]
+    fn test_build_physical_indexing_plan_simple() {
+        let source_1 = SourceUid {
+            index_uid: IndexUid::from_parts("index-1", "000"),
+            source_id: "source1".to_string(),
+        };
+        let source_2 = SourceUid {
+            index_uid: IndexUid::from_parts("index-2", "000"),
+            source_id: "source2".to_string(),
+        };
+        let sources = vec![
+            SourceToSchedule {
+                source_uid: source_1.clone(),
+                source_type: SourceToScheduleType::NonSharded {
+                    num_pipelines: 3,
+                    load_per_pipeline: NonZeroU32::new(1_000).unwrap(),
+                },
+            },
+            SourceToSchedule {
+                source_uid: source_2.clone(),
+                source_type: SourceToScheduleType::NonSharded {
+                    num_pipelines: 2,
+                    load_per_pipeline: NonZeroU32::new(1_000).unwrap(),
+                },
+            },
+        ];
+        let mut indexer_max_loads = FnvHashMap::default();
+        indexer_max_loads.insert("indexer1".to_string(), 3_000);
+        indexer_max_loads.insert("indexer2".to_string(), 3_000);
+        let physical_plan = build_physical_indexing_plan(&sources[..], &indexer_max_loads, None);
+        assert_eq!(physical_plan.indexing_tasks_per_indexer().len(), 2);
+        let indexing_tasks_1 = physical_plan.indexer("indexer1").unwrap();
+        assert_eq!(indexing_tasks_1.len(), 2);
+        let indexer_2_tasks = physical_plan.indexer("indexer2").unwrap();
+        assert_eq!(indexer_2_tasks.len(), 3);
+    }
+
+    proptest! {
+        #[test]
+        fn test_building_indexing_tasks_and_physical_plan(num_indexers in 1usize..50usize, index_id_sources in proptest::collection::vec(gen_kafka_source(), 1..20)) {
+            let index_uids: fnv::FnvHashSet<IndexUid> =
+                index_id_sources.iter()
+                    .map(|(index_uid, _)| index_uid.clone())
+                    .collect();
+            let mut model = ControlPlaneModel::default();
+            for index_uid in index_uids {
+                let index_config = IndexConfig::for_test(index_uid.index_id(), &format!("ram://test/{index_uid}"));
+                model.add_index(IndexMetadata::new_with_index_uid(index_uid, index_config));
+            }
+            for (index_uid, source_config) in &index_id_sources {
+                model.add_source(index_uid, source_config.clone()).unwrap();
+            }
+
+            let sources: Vec<SourceToSchedule> = get_sources_to_schedule(&model);
+            let mut indexer_max_loads = FnvHashMap::default();
+            for i in 0..num_indexers {
+                let indexer_id = format!("indexer-{i}");
+                indexer_max_loads.insert(indexer_id, 4_000);
+            }
+            let physical_indexing_plan = build_physical_indexing_plan(&sources, &indexer_max_loads, None);
+            let source_map: FnvHashMap<&SourceUid, &SourceToSchedule> = sources
+                .iter()
+                .map(|source| (&source.source_uid, source))
+                .collect();
+            for (node_id, tasks) in physical_indexing_plan.indexing_tasks_per_indexer() {
+                let mut load_in_node = 0u32;
+                for task in tasks {
+                    let source_uid = SourceUid {
+                        index_uid: IndexUid::from(task.index_uid.clone()),
+                        source_id: task.source_id.clone(),
+                    };
+                    let source_to_schedule = source_map.get(&source_uid).unwrap();
+                    match &source_to_schedule.source_type {
+                        SourceToScheduleType::IngestV1 => {}
+                        SourceToScheduleType::Sharded {
+                            shards: _,
+                            load_per_shard,
+                        } => {
+                            load_in_node += load_per_shard.get() * task.shard_ids.len() as u32;
+                        }
+                        SourceToScheduleType::NonSharded {
+                            num_pipelines: _ ,
+                            load_per_pipeline,
+                        } => {
+                            load_in_node += load_per_pipeline.get();
+                        }
+                    }
+                }
+                assert!(load_in_node <= *indexer_max_loads.get(node_id).unwrap());
+            }
+        }
+    }
+
+    use quickwit_config::SourceInputFormat;
+
+    fn kafka_source_params_for_test() -> SourceParams {
+        SourceParams::Kafka(KafkaSourceParams {
+            topic: "topic".to_string(),
+            client_log_level: None,
+            client_params: serde_json::json!({
+                "bootstrap.servers": "localhost:9092",
+            }),
+            enable_backfill_mode: true,
+        })
+    }
+
+    prop_compose! {
+      fn gen_kafka_source()
+        (index_idx in 0usize..100usize, desired_num_pipelines in 1usize..51usize, max_num_pipelines_per_indexer in 1usize..5usize) -> (IndexUid, SourceConfig) {
+          let index_uid = IndexUid::from_parts(&format!("index-id-{index_idx}"), "" /* this is the index uid */);
+          let source_id = quickwit_common::rand::append_random_suffix("kafka-source");
+          (index_uid, SourceConfig {
+              source_id,
+              desired_num_pipelines: NonZeroUsize::new(desired_num_pipelines).unwrap(),
+              max_num_pipelines_per_indexer: NonZeroUsize::new(max_num_pipelines_per_indexer).unwrap(),
+              enabled: true,
+              source_params: kafka_source_params_for_test(),
+              transform_config: None,
+              input_format: SourceInputFormat::Json,
+          })
+      }
     }
 }
