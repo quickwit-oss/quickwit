@@ -25,14 +25,13 @@ use fnv::{FnvHashMap, FnvHashSet};
 #[cfg(test)]
 use itertools::Itertools;
 use quickwit_common::Progress;
-use quickwit_config::{SourceConfig, INGEST_SOURCE_ID};
+use quickwit_config::SourceConfig;
 use quickwit_metastore::{IndexMetadata, ListIndexesMetadataResponseExt};
 use quickwit_proto::control_plane::ControlPlaneResult;
 use quickwit_proto::ingest::{Shard, ShardState};
-use quickwit_proto::metastore;
 use quickwit_proto::metastore::{
-    EntityKind, ListIndexesMetadataRequest, ListShardsSubrequest, MetastoreError, MetastoreService,
-    MetastoreServiceClient,
+    self, EntityKind, ListIndexesMetadataRequest, ListShardsSubrequest, MetastoreError,
+    MetastoreService, MetastoreServiceClient, SourceType,
 };
 use quickwit_proto::types::{IndexId, IndexUid, NodeId, NodeIdRef, ShardId, SourceId};
 use serde::Serialize;
@@ -117,10 +116,12 @@ impl ControlPlaneModel {
     ) -> ControlPlaneResult<()> {
         let now = Instant::now();
         self.clear();
+
         let index_metadatas = progress
             .protect_future(metastore.list_indexes_metadata(ListIndexesMetadataRequest::all()))
             .await?
             .deserialize_indexes_metadata()?;
+
         let num_indexes = index_metadatas.len();
         self.index_table.reserve(num_indexes);
 
@@ -134,16 +135,17 @@ impl ControlPlaneModel {
         }
 
         for index_metadata in self.index_table.values() {
-            for source_id in index_metadata.sources.keys() {
-                if source_id != INGEST_SOURCE_ID {
+            for source_config in index_metadata.sources.values() {
+                num_sources += 1;
+
+                if source_config.source_type() != SourceType::IngestV2 || !source_config.enabled {
                     continue;
                 }
                 let request = ListShardsSubrequest {
                     index_uid: index_metadata.index_uid.clone().into(),
-                    source_id: source_id.to_string(),
+                    source_id: source_config.source_id.clone(),
                     shard_state: Some(ShardState::Open as i32),
                 };
-                num_sources += 1;
                 subrequests.push(request);
             }
         }
@@ -519,7 +521,7 @@ impl ShardTable {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_config::{SourceConfig, SourceParams};
+    use quickwit_config::{SourceConfig, SourceParams, INGEST_SOURCE_ID};
     use quickwit_metastore::IndexMetadata;
     use quickwit_proto::ingest::Shard;
     use quickwit_proto::metastore::ListIndexesMetadataResponse;
@@ -808,13 +810,18 @@ mod tests {
                 assert_eq!(request, ListIndexesMetadataRequest::all());
 
                 let mut index_0 = IndexMetadata::for_test("test-index-0", "ram:///test-index-0");
-                let source = SourceConfig::ingest_default();
-                index_0.add_source(source.clone()).unwrap();
+                let mut source_config = SourceConfig::ingest_v2_default();
+                source_config.enabled = true;
+                index_0.add_source(source_config.clone()).unwrap();
 
                 let mut index_1 = IndexMetadata::for_test("test-index-1", "ram:///test-index-1");
-                index_1.add_source(source).unwrap();
+                index_1.add_source(source_config.clone()).unwrap();
 
-                let indexes = vec![index_0, index_1];
+                let mut index_2 = IndexMetadata::for_test("test-index-2", "ram:///test-index-2");
+                source_config.enabled = false;
+                index_2.add_source(source_config.clone()).unwrap();
+
+                let indexes = vec![index_0, index_1, index_2];
                 Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(indexes).unwrap())
             });
         mock_metastore.expect_list_shards().returning(|request| {
@@ -855,14 +862,18 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(model.index_table.len(), 2);
+        assert_eq!(model.index_table.len(), 3);
         assert_eq!(
-            model.index_uid("test-index-0").unwrap(),
-            IndexUid::from("test-index-0:0".to_string())
+            model.index_uid("test-index-0").unwrap().as_str(),
+            "test-index-0:0"
         );
         assert_eq!(
-            model.index_uid("test-index-1").unwrap(),
-            IndexUid::from("test-index-1:0".to_string())
+            model.index_uid("test-index-1").unwrap().as_str(),
+            "test-index-1:0"
+        );
+        assert_eq!(
+            model.index_uid("test-index-2").unwrap().as_str(),
+            "test-index-2:0"
         );
 
         assert_eq!(model.shard_table.table_entries.len(), 2);

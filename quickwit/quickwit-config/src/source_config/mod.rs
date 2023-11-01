@@ -122,8 +122,8 @@ impl SourceConfig {
         .expect("`SourceParams` should be JSON serializable")
     }
 
-    /// Creates an ingest source.
-    pub fn ingest_default() -> Self {
+    /// Creates an ingest source v2.
+    pub fn ingest_v2_default() -> Self {
         Self {
             source_id: INGEST_SOURCE_ID.to_string(),
             max_num_pipelines_per_indexer: NonZeroUsize::new(1).expect("1 should be non-zero"),
