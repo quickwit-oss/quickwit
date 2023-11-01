@@ -69,7 +69,7 @@ impl IngestController {
         ingester_pool: IngesterPool,
         replication_factor: usize,
     ) -> Self {
-        Self {
+        IngestController {
             metastore,
             ingester_pool,
             replication_factor,
