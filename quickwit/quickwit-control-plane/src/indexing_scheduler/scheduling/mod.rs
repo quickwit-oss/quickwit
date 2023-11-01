@@ -287,10 +287,8 @@ fn group_shards_into_pipelines(
     let min_num_pipelines: u32 =
         (num_shards + max_num_shards_per_pipeline.get() - 1) / max_num_shards_per_pipeline;
     assert!(min_num_pipelines > 0);
-    let max_num_pipelines: u32 = min_num_pipelines.max(
-        (num_shards * load_per_shard + LOAD_PER_PIPELINE_LOW_THRESHOLD - 1)
-            / LOAD_PER_PIPELINE_LOW_THRESHOLD,
-    );
+    let max_num_pipelines: u32 =
+        min_num_pipelines.max(num_shards * load_per_shard / LOAD_PER_PIPELINE_LOW_THRESHOLD);
     let previous_num_pipelines = previous_indexing_tasks.len() as u32;
     let num_pipelines: u32 = if previous_num_pipelines > min_num_pipelines {
         previous_num_pipelines.min(max_num_pipelines)
