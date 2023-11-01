@@ -214,6 +214,8 @@ impl IngestServiceClient {
     > {
         let adapter = IngestServiceGrpcServerAdapter::new(self.clone());
         ingest_service_grpc_server::IngestServiceGrpcServer::new(adapter)
+            .max_decoding_message_size(10 * 1024 * 1024)
+            .max_encoding_message_size(10 * 1024 * 1024)
     }
     pub fn from_channel(
         addr: std::net::SocketAddr,
@@ -232,8 +234,13 @@ impl IngestServiceClient {
         balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
     ) -> IngestServiceClient {
         let connection_keys_watcher = balance_channel.connection_keys_watcher();
+        let client = ingest_service_grpc_client::IngestServiceGrpcClient::new(
+                balance_channel,
+            )
+            .max_decoding_message_size(10 * 1024 * 1024)
+            .max_encoding_message_size(10 * 1024 * 1024);
         let adapter = IngestServiceGrpcClientAdapter::new(
-            ingest_service_grpc_client::IngestServiceGrpcClient::new(balance_channel),
+            client,
             connection_keys_watcher,
         );
         Self::new(adapter)

@@ -156,7 +156,6 @@ async fn start_control_plane(
 
 #[tokio::test]
 async fn test_scheduler_scheduling_and_control_loop_apply_plan_again() {
-    quickwit_common::setup_logging_for_tests();
     let transport = ChannelTransport::default();
     let cluster =
         create_cluster_for_test(Vec::new(), &["indexer", "control_plane"], &transport, true)
@@ -251,7 +250,6 @@ async fn test_scheduler_scheduling_and_control_loop_apply_plan_again() {
 
 #[tokio::test]
 async fn test_scheduler_scheduling_no_indexer() {
-    quickwit_common::setup_logging_for_tests();
     let transport = ChannelTransport::default();
     let cluster = create_cluster_for_test(Vec::new(), &["control_plane"], &transport, true)
         .await
@@ -288,7 +286,6 @@ async fn test_scheduler_scheduling_no_indexer() {
 
 #[tokio::test]
 async fn test_scheduler_scheduling_multiple_indexers() {
-    quickwit_common::setup_logging_for_tests();
     let transport = ChannelTransport::default();
     let cluster = create_cluster_for_test(Vec::new(), &["control_plane"], &transport, true)
         .await

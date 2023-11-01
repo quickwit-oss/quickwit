@@ -20,10 +20,10 @@
 use bytes::Bytes;
 
 use self::ingester::FetchResponseV2;
-use super::types::{NodeId, ShardId, SourceId};
+use super::types::NodeId;
 use super::{ServiceError, ServiceErrorCode};
 use crate::control_plane::ControlPlaneError;
-use crate::types::{queue_id, IndexUid, Position};
+use crate::types::{queue_id, Position};
 
 pub mod ingester;
 pub mod router;
@@ -38,29 +38,11 @@ pub enum IngestV2Error {
     Internal(String),
     #[error("failed to connect to ingester `{ingester_id}`")]
     IngesterUnavailable { ingester_id: NodeId },
-    #[error(
-        "ingest service is currently unavailable with {num_ingesters} in the cluster and a \
-         replication factor of {replication_factor}"
-    )]
-    ServiceUnavailable {
-        num_ingesters: usize,
-        replication_factor: usize,
-    },
-    // #[error("Could not find shard.")]
-    // ShardNotFound {
-    //     index_uid: IndexUid,
-    //     source_id: SourceId,
-    //     shard_id: ShardId,
-    // },
-    #[error("failed to open or write to shard")]
-    ShardUnavailable {
-        leader_id: NodeId,
-        index_uid: IndexUid,
-        source_id: SourceId,
-        shard_id: ShardId,
-    },
     #[error("request timed out")]
     Timeout,
+    // TODO: Merge `Transport` and `IngesterUnavailable` into a single `Unavailable` error.
+    #[error("transport error: {0}")]
+    Transport(String),
 }
 
 impl From<ControlPlaneError> for IngestV2Error {
@@ -74,17 +56,19 @@ impl From<IngestV2Error> for tonic::Status {
         let code = match &error {
             IngestV2Error::IngesterUnavailable { .. } => tonic::Code::Unavailable,
             IngestV2Error::Internal(_) => tonic::Code::Internal,
-            IngestV2Error::ServiceUnavailable { .. } => tonic::Code::Unavailable,
-            IngestV2Error::ShardUnavailable { .. } => tonic::Code::Unavailable,
             IngestV2Error::Timeout { .. } => tonic::Code::DeadlineExceeded,
+            IngestV2Error::Transport { .. } => tonic::Code::Unavailable,
         };
-        let message = error.to_string();
+        let message: String = error.to_string();
         tonic::Status::new(code, message)
     }
 }
 
 impl From<tonic::Status> for IngestV2Error {
     fn from(status: tonic::Status) -> Self {
+        if status.code() == tonic::Code::Unavailable {
+            return IngestV2Error::Transport(status.message().to_string());
+        }
         IngestV2Error::Internal(status.message().to_string())
     }
 }
@@ -92,11 +76,10 @@ impl From<tonic::Status> for IngestV2Error {
 impl ServiceError for IngestV2Error {
     fn error_code(&self) -> ServiceErrorCode {
         match self {
-            Self::Internal { .. } => ServiceErrorCode::Internal,
             Self::IngesterUnavailable { .. } => ServiceErrorCode::Unavailable,
-            Self::ShardUnavailable { .. } => ServiceErrorCode::Unavailable,
-            Self::ServiceUnavailable { .. } => ServiceErrorCode::Unavailable,
+            Self::Internal { .. } => ServiceErrorCode::Internal,
             Self::Timeout { .. } => ServiceErrorCode::Timeout,
+            Self::Transport { .. } => ServiceErrorCode::Unavailable,
         }
     }
 }

@@ -117,7 +117,7 @@ impl FetchTask {
             fetch_range=?self.fetch_range,
             "spawning fetch task"
         );
-        let mut has_drained_queue = true;
+        let mut has_drained_queue = false;
         let mut has_reached_eof = false;
         let mut num_records_total = 0;
 
@@ -644,12 +644,6 @@ mod tests {
             .await
             .unwrap();
         drop(state_guard);
-
-        timeout(Duration::from_millis(50), fetch_stream.next())
-            .await
-            .unwrap_err();
-
-        new_records_tx.send(()).unwrap();
 
         let fetch_response = timeout(Duration::from_millis(50), fetch_stream.next())
             .await

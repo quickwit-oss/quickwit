@@ -31,7 +31,7 @@ pub type ControlPlaneResult<T> = std::result::Result<T, ControlPlaneError>;
 pub enum ControlPlaneError {
     #[error("an internal error occurred: {0}")]
     Internal(String),
-    #[error("an internal error occurred: {0}")]
+    #[error("a metastore error occurred: {0}")]
     Metastore(#[from] MetastoreError),
     #[error("control plane is unavailable: {0}")]
     Unavailable(String),
@@ -41,7 +41,7 @@ impl From<ControlPlaneError> for MetastoreError {
     fn from(error: ControlPlaneError) -> Self {
         match error {
             ControlPlaneError::Internal(message) => MetastoreError::Internal {
-                message: "todo".to_string(),
+                message: "an internal metastore error occurred".to_string(),
                 cause: message,
             },
             ControlPlaneError::Metastore(error) => error,

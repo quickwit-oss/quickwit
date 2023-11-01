@@ -105,6 +105,8 @@ impl HelloClient {
     ) -> hello_grpc_server::HelloGrpcServer<HelloGrpcServerAdapter> {
         let adapter = HelloGrpcServerAdapter::new(self.clone());
         hello_grpc_server::HelloGrpcServer::new(adapter)
+            .max_decoding_message_size(10 * 1024 * 1024)
+            .max_encoding_message_size(10 * 1024 * 1024)
     }
     pub fn from_channel(
         addr: std::net::SocketAddr,
@@ -123,10 +125,10 @@ impl HelloClient {
         balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
     ) -> HelloClient {
         let connection_keys_watcher = balance_channel.connection_keys_watcher();
-        let adapter = HelloGrpcClientAdapter::new(
-            hello_grpc_client::HelloGrpcClient::new(balance_channel),
-            connection_keys_watcher,
-        );
+        let client = hello_grpc_client::HelloGrpcClient::new(balance_channel)
+            .max_decoding_message_size(10 * 1024 * 1024)
+            .max_encoding_message_size(10 * 1024 * 1024);
+        let adapter = HelloGrpcClientAdapter::new(client, connection_keys_watcher);
         Self::new(adapter)
     }
     pub fn from_mailbox<A>(mailbox: quickwit_actors::Mailbox<A>) -> Self

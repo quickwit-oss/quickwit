@@ -67,6 +67,8 @@ impl IndexingServiceClient {
     > {
         let adapter = IndexingServiceGrpcServerAdapter::new(self.clone());
         indexing_service_grpc_server::IndexingServiceGrpcServer::new(adapter)
+            .max_decoding_message_size(10 * 1024 * 1024)
+            .max_encoding_message_size(10 * 1024 * 1024)
     }
     pub fn from_channel(
         addr: std::net::SocketAddr,
@@ -85,10 +87,13 @@ impl IndexingServiceClient {
         balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
     ) -> IndexingServiceClient {
         let connection_keys_watcher = balance_channel.connection_keys_watcher();
-        let adapter = IndexingServiceGrpcClientAdapter::new(
-            indexing_service_grpc_client::IndexingServiceGrpcClient::new(
+        let client = indexing_service_grpc_client::IndexingServiceGrpcClient::new(
                 balance_channel,
-            ),
+            )
+            .max_decoding_message_size(10 * 1024 * 1024)
+            .max_encoding_message_size(10 * 1024 * 1024);
+        let adapter = IndexingServiceGrpcClientAdapter::new(
+            client,
             connection_keys_watcher,
         );
         Self::new(adapter)

@@ -507,7 +507,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_control_plane_add_source() {
-        quickwit_common::setup_logging_for_tests();
         let universe = Universe::with_accelerated_time();
 
         let cluster_id = "test-cluster".to_string();
@@ -564,7 +563,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_control_plane_toggle_source() {
-        quickwit_common::setup_logging_for_tests();
         let universe = Universe::with_accelerated_time();
 
         let cluster_id = "test-cluster".to_string();
@@ -743,6 +741,7 @@ mod tests {
         );
         let get_open_shards_request = GetOrCreateOpenShardsRequest {
             subrequests: vec![GetOrCreateOpenShardsSubrequest {
+                subrequest_id: 0,
                 index_id: "test-index".to_string(),
                 source_id: INGEST_SOURCE_ID.to_string(),
             }],
@@ -753,9 +752,10 @@ mod tests {
             .ask_for_res(get_open_shards_request)
             .await
             .unwrap();
-        assert_eq!(get_open_shards_response.subresponses.len(), 1);
+        assert_eq!(get_open_shards_response.successes.len(), 1);
+        assert_eq!(get_open_shards_response.failures.len(), 0);
 
-        let subresponse = &get_open_shards_response.subresponses[0];
+        let subresponse = &get_open_shards_response.successes[0];
         assert_eq!(subresponse.index_uid, "test-index:0");
         assert_eq!(subresponse.source_id, INGEST_SOURCE_ID);
         assert_eq!(subresponse.open_shards.len(), 1);
