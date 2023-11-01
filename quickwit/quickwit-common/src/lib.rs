@@ -249,6 +249,13 @@ mod tests {
         assert_eq!(div_ceil(5, 2), 3);
         assert_eq!(div_ceil(6, 2), 3);
 
+        assert_eq!(div_ceil(3, 3), 1);
+        assert_eq!(div_ceil(2, 3), 1);
+        assert_eq!(div_ceil(1, 3), 1);
+        assert_eq!(div_ceil(0, 3), 0);
+        assert_eq!(div_ceil(-1, 3), 0);
+        assert_eq!(div_ceil(-2, 3), 0);
+
         assert_eq!(div_ceil(-5, 1), -5);
         assert_eq!(div_ceil(-5, 2), -2);
         assert_eq!(div_ceil(-6, 2), -3);

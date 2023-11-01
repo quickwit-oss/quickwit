@@ -29,6 +29,7 @@ use quickwit_proto::types::{IndexUid, ShardId};
 pub use scheduling_logic_model::Load;
 use scheduling_logic_model::{IndexerOrd, SourceOrd};
 use tracing::error;
+use tracing::log::warn;
 
 use crate::indexing_plan::PhysicalIndexingPlan;
 use crate::indexing_scheduler::scheduling::scheduling_logic_model::{
@@ -265,12 +266,26 @@ fn group_shards_into_pipelines(
     if num_shards == 0 {
         return Vec::new();
     }
-    let max_num_shards_per_pipeline = MAX_LOAD_PER_PIPELINE / load_per_shard;
+    let max_num_shards_per_pipeline: NonZeroU32 =
+        NonZeroU32::new(MAX_LOAD_PER_PIPELINE / load_per_shard).unwrap_or_else(|| {
+            // We throttle shard at ingestion to ensure that a shard does not
+            // exceed 5MB/s.
+            //
+            // This value has been chosen to make sure that one full pipeline
+            // should always be able to handle the load of one shard.
+            //
+            // However it is possible for the system to take more than this
+            // when it is playing catch up.
+            //
+            // This is a transitory state, and not a problem per se.
+            warn!("load per shard is higher than `MAX_LOAD_PER_PIPELINE`");
+            NonZeroU32::new(1).unwrap()
+        });
 
     // We compute the number of pipelines we will create, cooking in some hysteresis effect here.
     // We have two different threshold to increase and to decrease the number of pipelines.
     let min_num_pipelines: u32 =
-        (num_shards + max_num_shards_per_pipeline - 1) / max_num_shards_per_pipeline;
+        (num_shards + max_num_shards_per_pipeline.get() - 1) / max_num_shards_per_pipeline;
     let max_num_pipelines: u32 = (num_shards * load_per_shard) / LOAD_PER_PIPELINE_LOW_THRESHOLD;
     let previous_num_pipelines = previous_indexing_tasks.len() as u32;
     let num_pipelines: u32 = if previous_num_pipelines > min_num_pipelines {
@@ -299,7 +314,7 @@ fn group_shards_into_pipelines(
         if let Some(pipeline_ord) = previous_pipeline_map.get(&shard).copied() {
             // Whenever possible we allocate to the previous pipeline.
             let best_pipeline_for_shard = &mut pipelines[pipeline_ord];
-            if best_pipeline_for_shard.len() < max_num_shards_per_pipeline as usize {
+            if best_pipeline_for_shard.len() < max_num_shards_per_pipeline.get() as usize {
                 best_pipeline_for_shard.push(shard);
             } else {
                 unassigned_shard_ids.push(shard);
@@ -312,8 +327,8 @@ fn group_shards_into_pipelines(
     // If needed, let's remove some pipelines. We just remove the pipelines that have
     // the least number of shards.
     pipelines.sort_by_key(|shards| std::cmp::Reverse(shards.len()));
-    for removed_pipelines in pipelines.drain(num_pipelines as usize..) {
-        unassigned_shard_ids.extend(removed_pipelines);
+    for removed_pipeline_shards in pipelines.drain(num_pipelines as usize..) {
+        unassigned_shard_ids.extend(removed_pipeline_shards);
     }
 
     // Now we need to allocate the unallocated shards.
@@ -679,6 +694,14 @@ mod tests {
         assert_eq!(&indexing_tasks[0].shard_ids, &[0, 1]);
         assert_eq!(&indexing_tasks[1].shard_ids, &[3, 4, 5]);
     }
+
+    #[test]
+    fn test_group_shards_load_per_shard_too_high() {
+        let source_uid = source_id();
+        let indexing_tasks = group_shards_into_pipelines(&source_uid, &[1, 2], &[], 1_000);
+        assert_eq!(indexing_tasks.len(), 2);
+    }
+
     #[test]
     fn test_group_shards_into_pipeline_hysteresis() {
         let source_uid = source_id();
