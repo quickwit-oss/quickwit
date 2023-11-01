@@ -135,7 +135,7 @@ impl IndexService {
         metastore.add_source(add_ingest_api_source_request).await?;
         let add_ingest_source_request = AddSourceRequest::try_from_source_config(
             index_uid.clone(),
-            SourceConfig::ingest_default(),
+            SourceConfig::ingest_v2_default(),
         )?;
         metastore.add_source(add_ingest_source_request).await?;
         let add_ingest_cli_source_request = AddSourceRequest::try_from_source_config(

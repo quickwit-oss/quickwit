@@ -700,7 +700,8 @@ mod tests {
             .expect_list_indexes_metadata()
             .returning(|_| {
                 let mut index_metadata = IndexMetadata::for_test("test-index", "ram:///test-index");
-                let source_config = SourceConfig::for_test(INGEST_SOURCE_ID, SourceParams::void());
+                let mut source_config = SourceConfig::ingest_v2_default();
+                source_config.enabled = true;
                 index_metadata.add_source(source_config).unwrap();
                 Ok(
                     ListIndexesMetadataResponse::try_from_indexes_metadata(vec![index_metadata])
@@ -772,7 +773,7 @@ mod tests {
         let mut mock_metastore = MetastoreServiceClient::mock();
 
         let mut index_0 = IndexMetadata::for_test("test-index-0", "ram:///test-index-0");
-        let source = SourceConfig::ingest_default();
+        let source = SourceConfig::ingest_v2_default();
         index_0.add_source(source.clone()).unwrap();
 
         mock_metastore

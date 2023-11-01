@@ -91,7 +91,7 @@ pub async fn test_metastore_open_shards<
     let test_index = TestIndex::create_index_with_source(
         &mut metastore,
         "test-open-shards",
-        SourceConfig::ingest_default(),
+        SourceConfig::ingest_v2_default(),
     )
     .await;
 
@@ -158,7 +158,7 @@ pub async fn test_metastore_acquire_shards<
     let test_index = TestIndex::create_index_with_source(
         &mut metastore,
         "test-acquire-shards",
-        SourceConfig::ingest_default(),
+        SourceConfig::ingest_v2_default(),
     )
     .await;
 
@@ -178,7 +178,7 @@ pub async fn test_metastore_list_shards<
     let test_index = TestIndex::create_index_with_source(
         &mut metastore,
         "test-open-shards",
-        SourceConfig::ingest_default(),
+        SourceConfig::ingest_v2_default(),
     )
     .await;
 
@@ -198,7 +198,7 @@ pub async fn test_metastore_delete_shards<
     let test_index = TestIndex::create_index_with_source(
         &mut metastore,
         "test-open-shards",
-        SourceConfig::ingest_default(),
+        SourceConfig::ingest_v2_default(),
     )
     .await;
 
