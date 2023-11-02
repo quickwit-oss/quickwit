@@ -108,7 +108,7 @@ macro_rules! ingest_json {
     };
 }
 
-pub async fn ingest_with_retry(
+pub(crate) async fn ingest_with_retry(
     client: &QuickwitClient,
     index_id: &str,
     ingest_source: IngestSource,

@@ -130,6 +130,12 @@ pub fn build_index_command() -> Command {
                         .short('w')
                         .help("Wait for all documents to be commited and available for search before exiting")
                         .action(ArgAction::SetTrue),
+                    // TODO remove me after Quickwit 0.7.
+                    Arg::new("v2")
+                        .long("v2")
+                        .help("Ingest v2 (experimental! Do not use me.)")
+                        .hide(true)
+                        .action(ArgAction::SetTrue),
                     Arg::new("force")
                         .long("force")
                         .short('f')
