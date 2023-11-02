@@ -35,9 +35,6 @@ members = [
   "quickwit-telemetry",
 ]
 
-[profile.dev]
-debug = false
-
 [workspace.dependencies]
 anyhow = "1"
 arc-swap = "1.6"

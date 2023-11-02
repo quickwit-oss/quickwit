@@ -33,6 +33,7 @@ use quickwit_proto::types::{queue_id, IndexUid, NodeId, Position, QueueId, Shard
 use tokio::sync::{mpsc, watch, RwLock};
 use tokio::task::JoinHandle;
 use tracing::{debug, error, warn};
+use tracing::log::info;
 
 use super::ingester::IngesterState;
 use crate::ingest_v2::mrecord::is_eof_mrecord;
@@ -87,7 +88,7 @@ impl FetchTask {
             open_fetch_stream_request.from_position_exclusive(),
             open_fetch_stream_request.to_position_inclusive(),
         );
-        let mut fetch_task = Self {
+        let mut fetch_task = FetchTask {
             queue_id: open_fetch_stream_request.queue_id(),
             client_id: open_fetch_stream_request.client_id,
             index_uid: open_fetch_stream_request.index_uid.into(),
@@ -122,7 +123,11 @@ impl FetchTask {
         let mut num_records_total = 0;
 
         while !has_reached_eof && !self.fetch_range.is_empty() {
-            if has_drained_queue && self.new_records_rx.changed().await.is_err() {
+            info!("new records rx changed START");
+            /// !!! Most likely culprit.
+            let has_changed = self.new_records_rx.changed().await;
+            info!("new records rx changed END");
+            if has_drained_queue && has_changed.is_err() {
                 // The shard was dropped.
                 break;
             }
@@ -130,7 +135,9 @@ impl FetchTask {
             let mut mrecord_buffer = BytesMut::with_capacity(self.batch_num_bytes);
             let mut mrecord_lengths = Vec::new();
 
+            info!("GET state readlock START");
             let state_guard = self.state.read().await;
+            info!("GET state readlock END");
 
             let Ok(mrecords) = state_guard
                 .mrecordlog
@@ -190,11 +197,14 @@ impl FetchTask {
                 from_position_exclusive: Some(from_position_exclusive),
                 to_position_inclusive: Some(to_position_inclusive),
             };
-            if self
+            info!("send response ? START");
+            /// !!! Hanging probably due to the other blocking await
+            let send_response_res = self
                 .fetch_response_tx
                 .send(Ok(fetch_response))
-                .await
-                .is_err()
+                .await;
+            info!("send response ? END");
+            if send_response_res.is_err()
             {
                 // The consumer was dropped.
                 break;
@@ -371,7 +381,7 @@ async fn fault_tolerant_fetch_task(
     to_position_inclusive: Position,
     ingester_ids: Vec<NodeId>,
     ingester_pool: IngesterPool,
-    fetch_response_tx: mpsc::Sender<Result<FetchResponseV2, FetchStreamError>>,
+    fetch_response_tx: tokio::sync::mpsc::Sender<Result<FetchResponseV2, FetchStreamError>>,
 ) {
     // TODO: We can probably simplify this code by breaking it into smaller functions.
     'outer: for (ingester_idx, ingester_id) in ingester_ids.iter().enumerate() {
@@ -454,7 +464,12 @@ async fn fault_tolerant_fetch_task(
                 continue;
             }
         };
-        while let Some(fetch_response_result) = fetch_stream.next().await {
+        loop {
+            warn!("fetching");
+            let Some(fetch_response_result) = fetch_stream.next().await else {
+                break;
+            };
+            warn!("fetching done");
             match fetch_response_result {
                 Ok(fetch_response) => {
                     let to_position_inclusive = fetch_response.to_position_inclusive();
@@ -494,7 +509,9 @@ async fn fault_tolerant_fetch_task(
                             shard_id,
                             ingest_error,
                         };
+                        warn!("sending");
                         let _ = fetch_response_tx.send(Err(fetch_stream_error)).await;
+                        warn!("sending ok");
                         return;
                     }
                     continue 'outer;

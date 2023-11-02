@@ -268,6 +268,7 @@ async fn test_ingest_v2_index_not_found() {
 #[tokio::test]
 async fn test_ingest_v2_happy_path() {
     // This tests checks our happy path for ingesting one doc.
+    console_subscriber::init();
     quickwit_common::setup_logging_for_tests();
     let nodes_services = &[
         HashSet::from_iter([QuickwitService::Indexer, QuickwitService::Janitor]),
