@@ -199,7 +199,7 @@ impl DeleteTaskPipeline {
             .resources
             .max_merge_write_throughput
             .as_ref()
-            .map(|bytes_per_sec| bytes_per_sec.get_bytes() as f64)
+            .map(|bytes_per_sec| bytes_per_sec.as_u64() as f64)
             .unwrap_or(f64::INFINITY);
         let delete_executor_io_controls = IoControls::default()
             .set_throughput_limit(throughput_limit)

@@ -19,7 +19,7 @@
 
 use std::time::Duration;
 
-use byte_unit::Byte;
+use bytesize::ByteSize;
 
 pub trait Rate: Clone {
     /// Returns the amount of work per time period.
@@ -49,8 +49,8 @@ impl ConstantRate {
         Self { work, period }
     }
 
-    pub fn from_bytes(bytes: Byte, period: Duration) -> Self {
-        let work = bytes.get_bytes();
+    pub fn from_bytes(bytes: ByteSize, period: Duration) -> Self {
+        let work = bytes.as_u64();
         Self::new(work, period)
     }
 }

@@ -690,7 +690,7 @@ pub async fn garbage_collect_index_cli(args: GarbageCollectIndexArgs) -> anyhow:
     let deleted_bytes: u64 = removal_info
         .removed_split_entries
         .iter()
-        .map(|split_info| split_info.file_size_bytes.get_bytes())
+        .map(|split_info| split_info.file_size_bytes.as_u64())
         .sum();
     println!(
         "{}MB of storage garbage collected.",

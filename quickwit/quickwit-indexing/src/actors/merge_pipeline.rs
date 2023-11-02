@@ -21,7 +21,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
-use byte_unit::Byte;
+use bytesize::ByteSize;
 use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, Inbox, Mailbox,
     SpawnContext, Supervisable, HEARTBEAT,
@@ -272,7 +272,7 @@ impl MergePipeline {
             .params
             .merge_max_io_num_bytes_per_sec
             .as_ref()
-            .map(|bytes_per_sec| bytes_per_sec.get_bytes() as f64)
+            .map(|bytes_per_sec| bytes_per_sec.as_u64() as f64)
             .unwrap_or(f64::INFINITY);
 
         let split_downloader_io_controls = IoControls::default()
@@ -474,7 +474,7 @@ pub struct MergePipelineParams {
     pub split_store: IndexingSplitStore,
     pub merge_policy: Arc<dyn MergePolicy>,
     pub max_concurrent_split_uploads: usize, //< TODO share with the indexing pipeline.
-    pub merge_max_io_num_bytes_per_sec: Option<Byte>,
+    pub merge_max_io_num_bytes_per_sec: Option<ByteSize>,
     pub event_broker: EventBroker,
 }
 

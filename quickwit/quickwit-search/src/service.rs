@@ -431,7 +431,7 @@ impl SearcherContext {
 
     /// Creates a new searcher context, given a searcher config, and an optional `SplitCache`.
     pub fn new(searcher_config: SearcherConfig, split_cache_opt: Option<Arc<SplitCache>>) -> Self {
-        let capacity_in_bytes = searcher_config.split_footer_cache_capacity.get_bytes() as usize;
+        let capacity_in_bytes = searcher_config.split_footer_cache_capacity.as_u64() as usize;
         let global_split_footer_cache = MemorySizedCache::with_capacity_in_bytes(
             capacity_in_bytes,
             &quickwit_storage::STORAGE_METRICS.split_footer_cache,
@@ -441,12 +441,10 @@ impl SearcherContext {
         ));
         let split_stream_semaphore =
             Semaphore::new(searcher_config.max_num_concurrent_split_streams);
-        let fast_field_cache_capacity =
-            searcher_config.fast_field_cache_capacity.get_bytes() as usize;
+        let fast_field_cache_capacity = searcher_config.fast_field_cache_capacity.as_u64() as usize;
         let storage_long_term_cache = Arc::new(QuickwitCache::new(fast_field_cache_capacity));
-        let leaf_search_cache = LeafSearchCache::new(
-            searcher_config.partial_request_cache_capacity.get_bytes() as usize,
-        );
+        let leaf_search_cache =
+            LeafSearchCache::new(searcher_config.partial_request_cache_capacity.as_u64() as usize);
 
         Self {
             searcher_config,
@@ -462,7 +460,7 @@ impl SearcherContext {
     /// Returns a new instance to track the aggregation memory usage.
     pub fn get_aggregation_limits(&self) -> AggregationLimits {
         AggregationLimits::new(
-            Some(self.searcher_config.aggregation_memory_limit.get_bytes()),
+            Some(self.searcher_config.aggregation_memory_limit.as_u64()),
             Some(self.searcher_config.aggregation_bucket_limit),
         )
     }

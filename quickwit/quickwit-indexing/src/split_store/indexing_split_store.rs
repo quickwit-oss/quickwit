@@ -25,7 +25,7 @@ use std::time::Instant;
 
 use anyhow::Context;
 #[cfg(any(test, feature = "testsuite"))]
-use byte_unit::Byte;
+use bytesize::ByteSize;
 use quickwit_common::io::{IoControls, IoControlsAccess};
 use quickwit_common::uri::Uri;
 use quickwit_metastore::SplitMetadata;
@@ -234,7 +234,7 @@ impl IndexingSplitStore {
 
     /// Takes a snapshot of the cache view (only used for testing).
     #[cfg(any(test, feature = "testsuite"))]
-    pub async fn inspect_local_store(&self) -> HashMap<String, Byte> {
+    pub async fn inspect_local_store(&self) -> HashMap<String, ByteSize> {
         self.inner.local_split_store.inspect().await
     }
 }
@@ -244,7 +244,7 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
-    use byte_unit::Byte;
+    use bytesize::ByteSize;
     use quickwit_common::io::IoControls;
     use quickwit_metastore::{SplitMaturity, SplitMetadata};
     use quickwit_storage::{RamStorage, SplitPayloadBuilder};
@@ -300,7 +300,7 @@ mod tests {
             assert_eq!(local_store_stats.len(), 1);
             assert_eq!(
                 local_store_stats.get(&split_id1).cloned(),
-                Some(Byte::from_bytes(4))
+                Some(ByteSize(4))
             );
         }
         {
@@ -322,11 +322,11 @@ mod tests {
         assert_eq!(local_store_stats.len(), 2);
         assert_eq!(
             local_store_stats.get(&split_id1).cloned(),
-            Some(Byte::from_bytes(4))
+            Some(ByteSize(4))
         );
         assert_eq!(
             local_store_stats.get(&split_id2).cloned(),
-            Some(Byte::from_bytes(3))
+            Some(ByteSize(3))
         );
 
         Ok(())
@@ -339,7 +339,7 @@ mod tests {
         let split_cache_dir = tempdir()?;
         let local_split_store = LocalSplitStore::open(
             split_cache_dir.path().to_path_buf(),
-            SplitStoreQuota::new(1, Byte::from_bytes(1_000_000u64)),
+            SplitStoreQuota::new(1, ByteSize::mb(1)),
         )
         .await?;
 
@@ -370,7 +370,7 @@ mod tests {
             assert_eq!(local_store_stats.len(), 1);
             assert_eq!(
                 local_store_stats.get(&split_id1).cloned(),
-                Some(Byte::from_bytes(11))
+                Some(ByteSize(11))
             );
         }
         {
@@ -395,7 +395,7 @@ mod tests {
             assert_eq!(local_store_stats.len(), 1);
             assert_eq!(
                 local_store_stats.get(&split_id2).cloned(),
-                Some(Byte::from_bytes(12))
+                Some(ByteSize(12))
             );
         }
         {

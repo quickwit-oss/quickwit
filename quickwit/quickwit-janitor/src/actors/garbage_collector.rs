@@ -161,7 +161,7 @@ impl GarbageCollector {
                 self.counters.num_deleted_files += deleted_file_entries.len();
                 self.counters.num_deleted_bytes += deleted_file_entries
                     .iter()
-                    .map(|entry| entry.file_size_bytes.get_bytes() as usize)
+                    .map(|entry| entry.file_size_bytes.as_u64() as usize)
                     .sum::<usize>();
             }
         }

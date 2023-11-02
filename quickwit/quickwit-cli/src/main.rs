@@ -92,7 +92,7 @@ mod tests {
     use std::str::FromStr;
     use std::time::Duration;
 
-    use byte_unit::Byte;
+    use bytesize::ByteSize;
     use quickwit_cli::cli::{build_cli, CliCommand};
     use quickwit_cli::index::{
         ClearIndexArgs, CreateIndexArgs, DeleteIndexArgs, DescribeIndexArgs, IndexCliCommand,
@@ -234,7 +234,7 @@ mod tests {
                         && client_args.timeout.is_none()
                         && client_args.connect_timeout.is_none()
                         && client_args.commit_timeout.is_none()
-                        && batch_size_limit == Byte::from_str("8MB").unwrap()
+                        && batch_size_limit == ByteSize::mb(8)
 
         ));
 
@@ -263,7 +263,7 @@ mod tests {
                     && client_args.timeout.is_none()
                     && client_args.connect_timeout.is_none()
                     && client_args.commit_timeout.is_none()
-                    && batch_size_limit == Byte::from_str("4KB").unwrap()
+                    && batch_size_limit == ByteSize:kb(4)
         ));
 
         let app = build_cli().no_binary_name(true);
