@@ -135,7 +135,9 @@ mod tests {
     fn test_chinese_tokenizer() {
         let text = "Hello world, 你好世界, bonjour monde";
         let tokenizer_manager = crate::create_default_quickwit_tokenizer_manager();
-        let mut tokenizer = tokenizer_manager.get("chinese_compatible").unwrap();
+        let mut tokenizer = tokenizer_manager
+            .get_tokenizer("chinese_compatible")
+            .unwrap();
         let mut text_stream = tokenizer.token_stream(text);
 
         let mut res = Vec::new();
@@ -210,7 +212,9 @@ mod tests {
     fn test_chinese_tokenizer_no_space() {
         let text = "Hello你好bonjour";
         let tokenizer_manager = crate::create_default_quickwit_tokenizer_manager();
-        let mut tokenizer = tokenizer_manager.get("chinese_compatible").unwrap();
+        let mut tokenizer = tokenizer_manager
+            .get_tokenizer("chinese_compatible")
+            .unwrap();
         let mut text_stream = tokenizer.token_stream(text);
 
         let mut res = Vec::new();
@@ -256,8 +260,8 @@ mod tests {
         #[test]
         fn test_proptest_ascii_default_chinese_equal(text in "[ -~]{0,64}") {
             let tokenizer_manager = crate::create_default_quickwit_tokenizer_manager();
-            let mut cn_tok = tokenizer_manager.get("chinese_compatible").unwrap();
-            let mut default_tok = tokenizer_manager.get("default").unwrap();
+            let mut cn_tok = tokenizer_manager.get_tokenizer("chinese_compatible").unwrap();
+            let mut default_tok = tokenizer_manager.get_tokenizer("default").unwrap();
 
             let mut text_stream = cn_tok.token_stream(&text);
 

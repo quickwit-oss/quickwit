@@ -60,7 +60,7 @@ impl FullTextParams {
             .as_deref()
             .unwrap_or(text_field_indexing.tokenizer());
         tokenizer_manager
-            .get(tokenizer_name)
+            .get_tokenizer(tokenizer_name)
             .with_context(|| format!("no tokenizer named `{}` is registered", tokenizer_name))
     }
 

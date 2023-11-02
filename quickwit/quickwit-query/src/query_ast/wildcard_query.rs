@@ -75,19 +75,12 @@ impl WildcardQuery {
                     ))
                 })?;
                 let tokenizer_name = text_field_indexing.tokenizer();
-                let analyzer_name = if tokenizer_manager
-                    .get_does_lowercasing(tokenizer_name)
+                let mut normalizer = tokenizer_manager
+                    .get_normalizer(tokenizer_name)
                     .with_context(|| {
                         format!("no tokenizer named `{}` is registered", tokenizer_name)
-                    })? {
-                    "lowercase"
-                } else {
-                    "raw"
-                };
-                let mut text_analyzer = tokenizer_manager
-                    .get(analyzer_name)
-                    .with_context(|| "missing built-in tokenizer")?;
-                let mut token_stream = text_analyzer.token_stream(prefix);
+                    })?;
+                let mut token_stream = normalizer.token_stream(prefix);
                 let mut tokens = Vec::new();
                 token_stream.process(&mut |token| {
                     let term: Term = Term::from_field_text(field, &token.text);
@@ -112,19 +105,12 @@ impl WildcardQuery {
                         ))
                     })?;
                 let tokenizer_name = text_field_indexing.tokenizer();
-                let analyzer_name = if tokenizer_manager
-                    .get_does_lowercasing(tokenizer_name)
+                let mut normalizer = tokenizer_manager
+                    .get_normalizer(tokenizer_name)
                     .with_context(|| {
                         format!("no tokenizer named `{}` is registered", tokenizer_name)
-                    })? {
-                    "lowercase"
-                } else {
-                    "raw"
-                };
-                let mut text_analyzer = tokenizer_manager
-                    .get(analyzer_name)
-                    .with_context(|| "missing built-in tokenizer")?;
-                let mut token_stream = text_analyzer.token_stream(prefix);
+                    })?;
+                let mut token_stream = normalizer.token_stream(prefix);
                 let mut tokens = Vec::new();
                 let mut term = Term::with_capacity(100);
                 let mut json_term_writer = JsonTermWriter::from_field_and_json_path(

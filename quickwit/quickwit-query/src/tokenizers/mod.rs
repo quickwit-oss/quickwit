@@ -119,9 +119,11 @@ mod tests {
     #[test]
     fn test_tokenizers_in_manager() {
         let tokenizer_manager = super::create_default_quickwit_tokenizer_manager();
-        tokenizer_manager.get("chinese_compatible").unwrap();
-        tokenizer_manager.get("default").unwrap();
-        tokenizer_manager.get("raw").unwrap();
+        tokenizer_manager
+            .get_tokenizer("chinese_compatible")
+            .unwrap();
+        tokenizer_manager.get_tokenizer("default").unwrap();
+        tokenizer_manager.get_tokenizer("raw").unwrap();
     }
 
     #[test]
@@ -136,11 +138,11 @@ mod tests {
                             it, no one shall find it. I just need some more chars, now you may \
                             not pass.";
 
-        let mut tokenizer = tokenizer_manager.get("raw").unwrap();
+        let mut tokenizer = tokenizer_manager.get_tokenizer("raw").unwrap();
         let mut haiku_stream = tokenizer.token_stream(my_haiku);
         assert!(haiku_stream.advance());
         assert!(!haiku_stream.advance());
-        let mut other_tokenizer = tokenizer_manager.get("raw").unwrap();
+        let mut other_tokenizer = tokenizer_manager.get_tokenizer("raw").unwrap();
         let mut other_stream = other_tokenizer.token_stream(my_long_text);
         assert!(other_stream.advance());
         assert!(!other_stream.advance());
@@ -149,7 +151,7 @@ mod tests {
     #[test]
     fn test_code_tokenizer_in_tokenizer_manager() {
         let mut code_tokenizer = super::create_default_quickwit_tokenizer_manager()
-            .get("source_code_default")
+            .get_tokenizer("source_code_default")
             .unwrap();
         let mut token_stream = code_tokenizer.token_stream("PigCaféFactory2");
         let mut tokens = Vec::new();

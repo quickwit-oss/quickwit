@@ -20,7 +20,15 @@
 use std::collections::HashMap;
 use std::sync::{Arc, RwLock};
 
-use tantivy::tokenizer::{TextAnalyzer, TokenizerManager as TantivyTokenizerManager};
+use tantivy::tokenizer::{
+    LowerCaser, RawTokenizer, RemoveLongFilter, TextAnalyzer,
+    TokenizerManager as TantivyTokenizerManager,
+};
+
+use crate::DEFAULT_REMOVE_TOKEN_LENGTH;
+
+const RAW_TOKENIZER_NAME: &str = "raw";
+const LOWERCASE_TOKENIZER_NAME: &str = "lowercase";
 
 #[derive(Clone)]
 pub struct TokenizerManager {
@@ -31,10 +39,24 @@ pub struct TokenizerManager {
 impl TokenizerManager {
     /// Creates an empty tokenizer manager.
     pub fn new() -> Self {
-        Self {
+        let this = Self {
             inner: TantivyTokenizerManager::new(),
             is_lowercaser: Arc::new(RwLock::new(HashMap::new())),
-        }
+        };
+
+        // in practice these will almost always be overriden in
+        // create_default_quickwit_tokenizer_manager()
+        let raw_tokenizer = TextAnalyzer::builder(RawTokenizer::default())
+            .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
+            .build();
+        this.register(RAW_TOKENIZER_NAME, raw_tokenizer, false);
+        let lower_case_tokenizer = TextAnalyzer::builder(RawTokenizer::default())
+            .filter(LowerCaser)
+            .filter(RemoveLongFilter::limit(DEFAULT_REMOVE_TOKEN_LENGTH))
+            .build();
+        this.register(LOWERCASE_TOKENIZER_NAME, lower_case_tokenizer, true);
+
+        this
     }
 
     /// Registers a new tokenizer associated with a given name.
@@ -48,17 +70,24 @@ impl TokenizerManager {
     }
 
     /// Accessing a tokenizer given its name.
-    pub fn get(&self, tokenizer_name: &str) -> Option<TextAnalyzer> {
+    pub fn get_tokenizer(&self, tokenizer_name: &str) -> Option<TextAnalyzer> {
         self.inner.get(tokenizer_name)
     }
 
     /// Query whether a given tokenizer does lowercasing
-    pub fn get_does_lowercasing(&self, tokenizer_name: &str) -> Option<bool> {
-        self.is_lowercaser
+    pub fn get_normalizer(&self, tokenizer_name: &str) -> Option<TextAnalyzer> {
+        let use_lowercaser = self
+            .is_lowercaser
             .read()
             .unwrap()
             .get(tokenizer_name)
-            .copied()
+            .copied()?;
+        let analyzer = if use_lowercaser {
+            LOWERCASE_TOKENIZER_NAME
+        } else {
+            RAW_TOKENIZER_NAME
+        };
+        self.get_tokenizer(analyzer)
     }
 
     /// Get the inner TokenizerManager
