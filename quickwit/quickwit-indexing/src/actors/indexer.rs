@@ -554,7 +554,7 @@ impl Indexer {
         };
         self.counters.pipeline_metrics_opt = Some(PipelineMetrics {
             cpu_millis,
-            throughput_mb_per_sec: (uncompressed_num_bytes / (elapsed.as_millis() as u64 * 1_000))
+            throughput_mb_per_sec: (uncompressed_num_bytes / (1u64 + elapsed.as_micros() as u64))
                 as u16,
         });
     }
