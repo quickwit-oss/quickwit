@@ -131,7 +131,10 @@ impl FullTextParams {
                     .collect();
                 Ok(TantivyBoolQuery::build_clause(operator, leaf_queries).into())
             }
-            FullTextMode::BoolPrefix { operator } => {
+            FullTextMode::BoolPrefix {
+                operator,
+                max_expansions,
+            } => {
                 let term_with_prefix = terms.pop();
                 let mut leaf_queries: Vec<TantivyQueryAst> = terms
                     .into_iter()
@@ -140,7 +143,7 @@ impl FullTextParams {
                 if let Some(term_with_prefix) = term_with_prefix {
                     let mut phrase_prefix_query =
                         TantivyPhrasePrefixQuery::new_with_offset(vec![term_with_prefix]);
-                    phrase_prefix_query.set_max_expansions(u32::MAX);
+                    phrase_prefix_query.set_max_expansions(max_expansions);
                     leaf_queries.push(phrase_prefix_query.into());
                 }
                 Ok(TantivyBoolQuery::build_clause(operator, leaf_queries).into())
@@ -180,6 +183,7 @@ pub enum FullTextMode {
     },
     BoolPrefix {
         operator: BooleanOperand,
+        max_expansions: u32,
     },
     // Act as Phrase with slop 0 if the field has positions,
     // otherwise act as an intersection.
@@ -256,10 +260,10 @@ impl FullTextQuery {
         &self,
         schema: &TantivySchema,
         tokenizer_manager: &TokenizerManager,
-    ) -> Option<Term> {
-        if !matches!(self.params.mode, FullTextMode::BoolPrefix { .. }) {
+    ) -> Option<(Term, u32)> {
+        let FullTextMode::BoolPrefix { max_expansions, .. } = self.params.mode else {
             return None;
-        }
+        };
 
         let (field, field_entry, json_path) =
             find_field_or_hit_dynamic(&self.field, schema).ok()?;
@@ -277,7 +281,7 @@ impl FullTextQuery {
                     )
                     .ok()?;
                 let (_pos, term) = terms.pop()?;
-                Some(term)
+                Some((term, max_expansions))
             }
             FieldType::JsonObject(ref json_options) => {
                 let mut terms = self
@@ -291,7 +295,7 @@ impl FullTextQuery {
                     )
                     .ok()?;
                 let (_pos, term) = terms.pop()?;
-                Some(term)
+                Some((term, max_expansions))
             }
             _ => None,
         }

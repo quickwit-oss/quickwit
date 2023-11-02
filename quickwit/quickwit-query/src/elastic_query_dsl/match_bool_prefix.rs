@@ -40,6 +40,7 @@ impl ConvertableToQueryAst for MatchBoolPrefixQuery {
             tokenizer: None,
             mode: crate::query_ast::FullTextMode::BoolPrefix {
                 operator: self.params.operator,
+                max_expansions: u32::MAX,
             },
             zero_terms_query: self.params.zero_terms_query,
         };

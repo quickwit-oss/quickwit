@@ -215,10 +215,10 @@ impl<'a, 'b: 'a> QueryAstVisitor<'a> for ExtractPrefixTermRanges<'b> {
     type Err = InvalidQuery;
 
     fn visit_full_text(&mut self, full_text_query: &'a FullTextQuery) -> Result<(), Self::Err> {
-        if let Some(prefix_term) =
+        if let Some((prefix_term, max_expansions)) =
             full_text_query.get_prefix_term(self.schema, self.tokenizer_manager)
         {
-            self.add_prefix_term(prefix_term, u32::MAX, false);
+            self.add_prefix_term(prefix_term, max_expansions, false);
         }
         Ok(())
     }
