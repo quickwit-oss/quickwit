@@ -182,6 +182,31 @@ fn convert_user_input_ast_to_query_ast(
     }
 }
 
+fn is_wildcard(phrase: &str) -> bool {
+    use std::ops::ControlFlow;
+    enum State {
+        Normal,
+        Escaped,
+    }
+
+    phrase
+        .chars()
+        .try_fold(State::Normal, |state, c| match state {
+            State::Escaped => ControlFlow::Continue(State::Normal),
+            State::Normal => {
+                if c == '*' || c == '?' {
+                    // we are in a wildcard query
+                    ControlFlow::Break(())
+                } else if c == '\\' {
+                    ControlFlow::Continue(State::Escaped)
+                } else {
+                    ControlFlow::Continue(State::Normal)
+                }
+            }
+        })
+        .is_break()
+}
+
 fn convert_user_input_literal(
     user_input_literal: UserInputLiteral,
     default_search_fields: &[String],
@@ -216,8 +241,7 @@ fn convert_user_input_literal(
         mode,
         zero_terms_query: crate::MatchAllOrNone::MatchNone,
     };
-    // TODO should probably check for escaped * and ?
-    let wildcard = delimiter == Delimiter::None && (phrase.contains('*') || phrase.contains('?'));
+    let wildcard = delimiter == Delimiter::None && is_wildcard(&phrase);
     let mut phrase_queries: Vec<QueryAst> = field_names
         .into_iter()
         .map(|field_name| {

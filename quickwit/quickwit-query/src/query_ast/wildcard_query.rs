@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use anyhow::Context;
+use anyhow::{anyhow, bail, Context};
 use serde::{Deserialize, Serialize};
 use tantivy::json_utils::JsonTermWriter;
 use tantivy::schema::{Field, FieldType, Schema as TantivySchema};
@@ -53,6 +53,64 @@ impl WildcardQuery {
     }
 }
 
+fn extract_unique_token(mut tokens: Vec<Term>) -> anyhow::Result<Term> {
+    let term = tokens
+        .pop()
+        .with_context(|| "wildcard query generated no term")?;
+    if !tokens.is_empty() {
+        anyhow::bail!("wildcard query generated more than one term");
+    }
+    Ok(term)
+}
+
+fn unescape_with_final_wildcard(phrase: &str) -> anyhow::Result<String> {
+    enum State {
+        Normal,
+        Escaped,
+    }
+
+    // we keep this state outside of scan because we want to query if after
+    let mut saw_wildcard = false;
+    let saw_wildcard = &mut saw_wildcard;
+
+    let phrase = phrase
+        .chars()
+        .scan(State::Normal, |state, c| {
+            if *saw_wildcard {
+                return Some(Some(Err(anyhow!(
+                    "Wildcard iquery contains wildcard in non final position"
+                ))));
+            }
+            match state {
+                State::Escaped => {
+                    *state = State::Normal;
+                    Some(Some(Ok(c)))
+                }
+                State::Normal => {
+                    if c == '*' {
+                        *saw_wildcard = true;
+                        Some(None)
+                    } else if c == '\\' {
+                        *state = State::Escaped;
+                        Some(None)
+                    } else if c == '?' {
+                        Some(Some(Err(anyhow!("Wildcard query contains `?`"))))
+                    } else {
+                        Some(Some(Ok(c)))
+                    }
+                }
+            }
+        })
+        // we have an iterator of Option<Result<char, anyhow::Error>>
+        .flatten()
+        // we have an iterator of Result<char, anyhow::Error>
+        .collect::<Result<String, _>>()?;
+    if !*saw_wildcard {
+        bail!("Wildcard query doesn't contain a wildcard");
+    }
+    Ok(phrase)
+}
+
 impl WildcardQuery {
     // TODO this method will probably disappear once we support the full semantic of
     // wildcard queries
@@ -64,7 +122,7 @@ impl WildcardQuery {
         let (field, field_entry, json_path) = find_field_or_hit_dynamic(&self.field, schema)?;
         let field_type = field_entry.field_type();
 
-        let prefix = &self.value[..self.value.len() - 1];
+        let prefix = unescape_with_final_wildcard(&self.value)?;
 
         match field_type {
             FieldType::Str(ref text_options) => {
@@ -80,20 +138,13 @@ impl WildcardQuery {
                     .with_context(|| {
                         format!("no tokenizer named `{}` is registered", tokenizer_name)
                     })?;
-                let mut token_stream = normalizer.token_stream(prefix);
+                let mut token_stream = normalizer.token_stream(&prefix);
                 let mut tokens = Vec::new();
                 token_stream.process(&mut |token| {
                     let term: Term = Term::from_field_text(field, &token.text);
                     tokens.push(term);
                 });
-                let term = tokens
-                    .pop()
-                    .with_context(|| "wildcard query generated no term")?;
-                if !tokens.is_empty() {
-                    return Err(InvalidQuery::Other(anyhow::Error::msg(
-                        "wildcard query generated more than one term",
-                    )));
-                }
+                let term = extract_unique_token(tokens)?;
                 Ok((field, term))
             }
             FieldType::JsonObject(json_options) => {
@@ -110,7 +161,7 @@ impl WildcardQuery {
                     .with_context(|| {
                         format!("no tokenizer named `{}` is registered", tokenizer_name)
                     })?;
-                let mut token_stream = normalizer.token_stream(prefix);
+                let mut token_stream = normalizer.token_stream(&prefix);
                 let mut tokens = Vec::new();
                 let mut term = Term::with_capacity(100);
                 let mut json_term_writer = JsonTermWriter::from_field_and_json_path(
@@ -124,14 +175,7 @@ impl WildcardQuery {
                     json_term_writer.set_str(&token.text);
                     tokens.push(json_term_writer.term().clone());
                 });
-                let term = tokens
-                    .pop()
-                    .with_context(|| "wildcard query generated no term")?;
-                if !tokens.is_empty() {
-                    return Err(InvalidQuery::Other(anyhow::Error::msg(
-                        "wildcard query generated more than one term",
-                    )));
-                }
+                let term = extract_unique_token(tokens)?;
                 Ok((field, term))
             }
             _ => Err(InvalidQuery::SchemaError(
@@ -149,19 +193,6 @@ impl BuildTantivyAst for WildcardQuery {
         _search_fields: &[String],
         _with_validation: bool,
     ) -> Result<TantivyQueryAst, InvalidQuery> {
-        // TODO handle escaped wildcard and questionmarks?
-        let mut chars = self.value.chars();
-        if chars.next_back() != Some('*') {
-            return Err(InvalidQuery::Other(anyhow::Error::msg(
-                "Wildcard query doesn't end with a wildcard",
-            )));
-        }
-        if chars.any(|c| c == '*' || c == '?') {
-            return Err(InvalidQuery::Other(anyhow::Error::msg(
-                "Wildcard contains wildcard in non final position",
-            )));
-        }
-
         let (_, term) = self.extract_prefix_term(schema, tokenizer_manager)?;
 
         let mut phrase_prefix_query =
