@@ -257,8 +257,13 @@ impl QuickwitClient {
         batch_size_limit_opt: Option<usize>,
         on_ingest_event: Option<&(dyn Fn(IngestEvent) + Sync)>,
         last_block_commit: CommitType,
+        ingest_v2: bool,
     ) -> Result<(), Error> {
-        let ingest_path = format!("{index_id}/ingest");
+        let ingest_path = if ingest_v2 {
+            format!("{index_id}/ingest-v2")
+        } else {
+            format!("{index_id}/ingest")
+        };
         let batch_size_limit = batch_size_limit_opt.unwrap_or(INGEST_CONTENT_LENGTH_LIMIT);
         let mut batch_reader = match ingest_source {
             IngestSource::File(filepath) => {

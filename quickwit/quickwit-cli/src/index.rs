@@ -130,6 +130,10 @@ pub fn build_index_command() -> Command {
                         .short('w')
                         .help("Wait for all documents to be commited and available for search before exiting")
                         .action(ArgAction::SetTrue),
+                    Arg::new("v2")
+                        .long("v2")
+                        .help("Ingest v2")
+                        .action(ArgAction::SetTrue),
                     Arg::new("force")
                         .long("force")
                         .short('f')
@@ -207,6 +211,7 @@ pub struct IngestDocsArgs {
     pub input_path_opt: Option<PathBuf>,
     pub batch_size_limit_opt: Option<Byte>,
     pub commit_type: CommitType,
+    pub v2: bool,
 }
 
 #[derive(Debug, Eq, PartialEq)]
@@ -323,6 +328,7 @@ impl IndexCliCommand {
         let index_id = matches
             .remove_one::<String>("index")
             .expect("`index` should be a required arg.");
+        let v2 = matches.get_flag("v2");
         let input_path_opt = if let Some(input_path) = matches.remove_one::<String>("input-path") {
             Uri::from_str(&input_path)?
                 .filepath()
@@ -352,6 +358,7 @@ impl IndexCliCommand {
             input_path_opt,
             batch_size_limit_opt,
             commit_type,
+            v2,
         }))
     }
 
@@ -812,6 +819,7 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
             batch_size_limit_opt,
             Some(&update_progress_bar),
             args.commit_type,
+            args.v2,
         )
         .await?;
     progress_bar.finish();
