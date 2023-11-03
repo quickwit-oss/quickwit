@@ -246,7 +246,7 @@ tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "ecb9a89", d
 encoding_rs = "=0.8.32"
 
 # vrl deps, at the end because the feature list for vrl-stdlib is long
-vrl = { git = "https://github.com/vectordotdev/vrl", rev = "v0.3.0", default-features = false, features = [
+vrl = { git = "https://github.com/vectordotdev/vrl", rev = "v0.8.1", default-features = false, features = [
   "compiler",
   "diagnostic",
   "value",
