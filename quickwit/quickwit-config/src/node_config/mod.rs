@@ -55,6 +55,8 @@ pub struct IndexerConfig {
     pub enable_otlp_endpoint: bool,
     #[serde(default = "IndexerConfig::default_enable_cooperative_indexing")]
     pub enable_cooperative_indexing: bool,
+    #[serde(default = "IndexerConfig::default_capacity")]
+    pub capacity: u32,
 }
 
 impl IndexerConfig {
@@ -93,6 +95,7 @@ impl IndexerConfig {
             split_store_max_num_bytes: ByteSize::mb(1),
             split_store_max_num_splits: 3,
             max_concurrent_split_uploads: 4,
+            capacity: 1_000,
         };
         Ok(indexer_config)
     }
@@ -106,6 +109,7 @@ impl Default for IndexerConfig {
             split_store_max_num_bytes: Self::default_split_store_max_num_bytes(),
             split_store_max_num_splits: Self::default_split_store_max_num_splits(),
             max_concurrent_split_uploads: Self::default_max_concurrent_split_uploads(),
+            capacity: Self::default_capacity(),
         }
     }
 }
@@ -366,5 +370,20 @@ impl NodeConfig {
     #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test() -> Self {
         serialize::node_config_for_test()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::IndexerConfig;
+
+    #[test]
+    fn test_default_indexing_capacity() {
+        let default_indexer_config = IndexerConfig::default();
+        let capacity = default_indexer_config.capacity;
+        assert_eq!(capacity % 250, 0);
+        let quarter_of_pipeline = capacity / 250;
+        assert!(quarter_of_pipeline > 0);
+        assert!(quarter_of_pipeline < 64);
     }
 }

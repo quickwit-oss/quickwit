@@ -91,6 +91,7 @@ pub fn test_indexer_change_stream(
                         IndexerNodeInfo {
                             client,
                             indexing_tasks,
+                            indexing_capacity: 1_000,
                         },
                     ))
                 }

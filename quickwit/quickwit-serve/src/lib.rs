@@ -694,7 +694,7 @@ fn setup_indexer_pool(
                 {
                     let node_id = node.node_id().to_string();
                     let indexing_tasks = node.indexing_tasks().to_vec();
-
+                    let indexing_capacity = node.indexing_capacity();
                     if node.is_self_node() {
                         if let Some(indexing_service_clone) = indexing_service_clone_opt {
                             let client =
@@ -704,6 +704,7 @@ fn setup_indexer_pool(
                                 IndexerNodeInfo {
                                     client,
                                     indexing_tasks,
+                                    indexing_capacity,
                                 },
                             ))
                         } else {
@@ -721,6 +722,7 @@ fn setup_indexer_pool(
                             IndexerNodeInfo {
                                 client,
                                 indexing_tasks,
+                                indexing_capacity,
                             },
                         ))
                     }

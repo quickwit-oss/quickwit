@@ -38,8 +38,7 @@ use crate::indexing_plan::PhysicalIndexingPlan;
 use crate::indexing_scheduler::scheduling::{build_physical_indexing_plan, Load};
 use crate::{IndexerNodeInfo, IndexerPool};
 
-const PIPELINE_FULL_LOAD: Load = 1_000u32;
-const LOAD_PER_NODE: Load = 2_000u32;
+const PIPELINE_FULL_LOAD: Load = 4_000u32;
 
 pub(crate) const MIN_DURATION_BETWEEN_SCHEDULING: Duration =
     if cfg!(any(test, feature = "testsuite")) {
@@ -185,7 +184,7 @@ impl IndexingScheduler {
     // has happened.
     pub(crate) fn schedule_indexing_plan_if_needed(&mut self, model: &ControlPlaneModel) {
         crate::metrics::CONTROL_PLANE_METRICS.schedule_total.inc();
-        let mut indexers = self.get_indexers_from_indexer_pool();
+        let mut indexers: Vec<(String, IndexerNodeInfo)> = self.get_indexers_from_indexer_pool();
         if indexers.is_empty() {
             warn!("No indexer available, cannot schedule an indexing plan.");
             return;
@@ -195,9 +194,8 @@ impl IndexingScheduler {
 
         let indexer_max_loads: FnvHashMap<String, Load> = indexers
             .iter()
-            .map(|(indexer_id, _)| {
-                // TODO Get info from chitchat.
-                (indexer_id.to_string(), LOAD_PER_NODE)
+            .map(|(indexer_id, indexer_node_info)| {
+                (indexer_id.to_string(), indexer_node_info.indexing_capacity)
             })
             .collect();
 

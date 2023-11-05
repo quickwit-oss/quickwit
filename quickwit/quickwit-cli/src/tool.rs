@@ -931,15 +931,16 @@ impl ThroughputCalculator {
 
 async fn create_empty_cluster(config: &NodeConfig) -> anyhow::Result<Cluster> {
     let node_id: NodeId = config.node_id.clone().into();
-    let self_node = ClusterMember::new(
+    let self_node = ClusterMember {
         node_id,
-        quickwit_cluster::GenerationId::now(),
-        false,
-        HashSet::new(),
-        config.gossip_advertise_addr,
-        config.grpc_advertise_addr,
-        Vec::new(),
-    );
+        generation_id: quickwit_cluster::GenerationId::now(),
+        is_ready: false,
+        enabled_services: HashSet::new(),
+        gossip_advertise_addr: config.gossip_advertise_addr,
+        grpc_advertise_addr: config.grpc_advertise_addr,
+        indexing_capacity: 0,
+        indexing_tasks: Vec::new(),
+    };
     let cluster = Cluster::join(
         config.cluster_id.clone(),
         self_node,
@@ -949,5 +950,6 @@ async fn create_empty_cluster(config: &NodeConfig) -> anyhow::Result<Cluster> {
         &ChannelTransport::default(),
     )
     .await?;
+
     Ok(cluster)
 }

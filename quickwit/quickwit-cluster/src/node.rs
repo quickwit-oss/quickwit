@@ -49,6 +49,7 @@ impl ClusterNode {
             enabled_services: member.enabled_services,
             grpc_advertise_addr: member.grpc_advertise_addr,
             indexing_tasks: member.indexing_tasks,
+            indexing_capacity: member.indexing_capacity,
             is_ready: member.is_ready,
             is_self_node,
         };
@@ -112,6 +113,10 @@ impl ClusterNode {
         &self.inner.indexing_tasks
     }
 
+    pub fn indexing_capacity(&self) -> u32 {
+        self.inner.indexing_capacity
+    }
+
     pub fn is_ready(&self) -> bool {
         self.inner.is_ready
     }
@@ -149,6 +154,7 @@ struct InnerNode {
     enabled_services: HashSet<QuickwitService>,
     grpc_advertise_addr: SocketAddr,
     indexing_tasks: Vec<IndexingTask>,
+    indexing_capacity: u32,
     is_ready: bool,
     is_self_node: bool,
 }

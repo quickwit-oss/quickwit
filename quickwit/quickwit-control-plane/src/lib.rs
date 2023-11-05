@@ -41,6 +41,7 @@ pub struct SourceUid {
 pub struct IndexerNodeInfo {
     pub client: IndexingServiceClient,
     pub indexing_tasks: Vec<IndexingTask>,
+    pub indexing_capacity: u32,
 }
 
 pub type IndexerPool = Pool<String, IndexerNodeInfo>;
