@@ -32,7 +32,7 @@ use quickwit_actors::{
 };
 use quickwit_cluster::Cluster;
 use quickwit_common::fs::get_cache_directory_path;
-use quickwit_common::pubsub::EventBroker;
+use quickwit_common::pubsub::{EventBroker, EventSubscriptionHandle};
 use quickwit_common::temp_dir;
 use quickwit_config::{
     build_doc_mapper, IndexConfig, IndexerConfig, SourceConfig, INGEST_API_SOURCE_ID,
@@ -56,7 +56,10 @@ use tracing::{debug, error, info, warn};
 
 use super::merge_pipeline::{MergePipeline, MergePipelineParams};
 use super::MergePlanner;
-use crate::models::{DetachIndexingPipeline, DetachMergePipeline, ObservePipeline, SpawnPipeline};
+use crate::models::{
+    DetachIndexingPipeline, DetachMergePipeline, ObservePipeline, PublishedShardPositions,
+    SpawnPipeline,
+};
 use crate::source::{AssignShards, Assignment};
 use crate::split_store::{LocalSplitStore, SplitStoreQuota};
 use crate::{IndexingPipeline, IndexingPipelineParams, IndexingSplitStore, IndexingStatistics};
@@ -117,6 +120,7 @@ pub struct IndexingService {
     merge_pipeline_handles: HashMap<MergePipelineId, MergePipelineHandle>,
     cooperative_indexing_permits: Option<Arc<Semaphore>>,
     event_broker: EventBroker,
+    _event_subscription_handle: EventSubscriptionHandle,
 }
 
 impl Debug for IndexingService {
@@ -144,6 +148,8 @@ impl IndexingService {
         storage_resolver: StorageResolver,
         event_broker: EventBroker,
     ) -> anyhow::Result<IndexingService> {
+        let published_shard_positions = PublishedShardPositions::new(cluster.clone());
+        let event_subscription_handle = event_broker.subscribe(published_shard_positions);
         let split_store_space_quota = SplitStoreQuota::new(
             indexer_config.split_store_max_num_splits,
             indexer_config.split_store_max_num_bytes,
@@ -175,6 +181,7 @@ impl IndexingService {
             merge_pipeline_handles: HashMap::new(),
             cooperative_indexing_permits,
             event_broker,
+            _event_subscription_handle: event_subscription_handle,
         })
     }
 
@@ -418,10 +425,10 @@ impl IndexingService {
         let pipeline_metrics: HashMap<&IndexingPipelineId, PipelineMetrics> = self
             .indexing_pipelines
             .iter()
-            .flat_map(|(pipeline, (_, pipeline_handle))| {
-                let indexer_metrics = pipeline_handle.last_observation();
-                let pipeline_metrics = indexer_metrics.pipeline_metrics_opt?;
-                Some((pipeline, pipeline_metrics))
+            .filter_map(|(pipeline_id, (_, pipeline_handle))| {
+                let indexing_statistics = pipeline_handle.last_observation();
+                let pipeline_metrics = indexing_statistics.pipeline_metrics_opt?;
+                Some((pipeline_id, pipeline_metrics))
             })
             .collect();
         self.cluster

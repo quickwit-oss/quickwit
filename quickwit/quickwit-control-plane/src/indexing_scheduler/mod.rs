@@ -470,11 +470,9 @@ mod tests {
     use proptest::{prop_compose, proptest};
     use quickwit_config::{IndexConfig, KafkaSourceParams, SourceConfig, SourceParams};
     use quickwit_metastore::IndexMetadata;
-    use quickwit_proto::types::IndexUid;
+    use quickwit_proto::types::{IndexUid, SourceUid};
 
     use super::*;
-    use crate::SourceUid;
-
     #[test]
     fn test_indexing_plans_diff() {
         {

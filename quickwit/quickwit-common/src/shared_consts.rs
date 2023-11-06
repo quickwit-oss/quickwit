@@ -35,3 +35,6 @@ pub const DELETION_GRACE_PERIOD: Duration = Duration::from_secs(60 * 32); // 32 
 /// In order to amortized search with scroll, we fetch more documents than are
 /// being requested.
 pub const SCROLL_BATCH_LEN: usize = 1_000;
+
+/// Prefix used in chitchat to publish the shard positions.
+pub const SHARD_POSITIONS_PREFIX: &str = "shard_positions:";

@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::fmt;
+use std::fmt::Display;
 
 use bytes::Bytes;
 use bytestring::ByteString;
@@ -115,6 +116,12 @@ impl Position {
             Self::Offset(offset) => offset.as_usize(),
             Self::Eof => None,
         }
+    }
+}
+
+impl Display for Position {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.as_str())
     }
 }
 
@@ -274,6 +281,15 @@ mod tests {
         assert_eq!(Position::from(0u64), 0i64);
         assert_eq!(Position::from(0u64), 0u64);
         assert_eq!(Position::from(0u64), 0usize);
+    }
+
+    #[test]
+    #[allow(clippy::cmp_owned)]
+    fn test_position_ord() {
+        assert!(Position::Beginning < Position::from(0u64));
+        assert!(Position::from(0u64) < Position::from(1u64));
+        assert!(Position::from(1u64) < Position::Eof);
+        assert!(Position::Beginning < Position::Eof);
     }
 
     #[test]

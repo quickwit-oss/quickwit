@@ -33,11 +33,9 @@ use quickwit_proto::metastore::{
     self, EntityKind, ListIndexesMetadataRequest, ListShardsSubrequest, MetastoreError,
     MetastoreService, MetastoreServiceClient, SourceType,
 };
-use quickwit_proto::types::{IndexId, IndexUid, NodeId, NodeIdRef, ShardId, SourceId};
+use quickwit_proto::types::{IndexId, IndexUid, NodeId, NodeIdRef, ShardId, SourceId, SourceUid};
 use serde::Serialize;
 use tracing::{error, info, warn};
-
-use crate::SourceUid;
 
 type NextShardId = ShardId;
 #[derive(Debug, Eq, PartialEq)]

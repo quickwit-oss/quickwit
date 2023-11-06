@@ -170,7 +170,6 @@ impl IndexCheckpoint {
 pub struct SourceCheckpoint {
     per_partition: BTreeMap<PartitionId, Position>,
 }
-
 impl SourceCheckpoint {
     /// Adds a partition to the checkpoint.
     pub fn add_partition(&mut self, partition_id: PartitionId, position: Position) {
