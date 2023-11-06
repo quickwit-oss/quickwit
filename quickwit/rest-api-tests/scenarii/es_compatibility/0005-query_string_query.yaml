@@ -175,4 +175,27 @@ expected:
   hits:
     total:
       value: 2
-
+---
+# trailing wildcard
+json:
+  query:
+    query_string:
+      default_field: payload.description
+      lenient: true
+      query: "jour*"
+expected:
+  hits:
+    total:
+      value: 3
+---
+# trailing wildcard
+json:
+  query:
+    query_string:
+      default_field: payload.description
+      lenient: true
+      query: "jour\\*"
+expected:
+  hits:
+    total:
+      value: 1
