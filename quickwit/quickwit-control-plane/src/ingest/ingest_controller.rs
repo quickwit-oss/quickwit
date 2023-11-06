@@ -25,12 +25,12 @@ use itertools::Itertools;
 use quickwit_common::{PrettySample, Progress};
 use quickwit_ingest::IngesterPool;
 use quickwit_proto::control_plane::{
-    ClosedShards, ControlPlaneError, ControlPlaneResult, GetOrCreateOpenShardsFailure,
+    ControlPlaneError, ControlPlaneResult, GetOrCreateOpenShardsFailure,
     GetOrCreateOpenShardsFailureReason, GetOrCreateOpenShardsRequest,
     GetOrCreateOpenShardsResponse, GetOrCreateOpenShardsSuccess,
 };
 use quickwit_proto::ingest::ingester::{IngesterService, PingRequest};
-use quickwit_proto::ingest::{IngestV2Error, ShardState};
+use quickwit_proto::ingest::{ClosedShards, IngestV2Error, ShardState};
 use quickwit_proto::metastore;
 use quickwit_proto::metastore::{MetastoreService, MetastoreServiceClient};
 use quickwit_proto::types::{IndexUid, NodeId};

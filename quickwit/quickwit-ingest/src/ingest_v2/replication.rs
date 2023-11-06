@@ -323,24 +323,23 @@ impl ReplicationTask {
             let from_position_exclusive = subrequest.from_position_exclusive();
             let to_position_inclusive = subrequest.to_position_inclusive();
 
-            let replica_shard: &mut IngesterShard =
-                if from_position_exclusive == Position::Beginning {
-                    // Initialize the replica shard and corresponding mrecordlog queue.
-                    state_guard
-                        .mrecordlog
-                        .create_queue(&queue_id)
-                        .await
-                        .expect("TODO");
-                    let leader_id: NodeId = replicate_request.leader_id.clone().into();
-                    let replica_shard = ReplicaShard::new(leader_id);
-                    let shard = IngesterShard::Replica(replica_shard);
-                    state_guard.shards.entry(queue_id.clone()).or_insert(shard)
-                } else {
-                    state_guard
-                        .shards
-                        .get_mut(&queue_id)
-                        .expect("replica shard should be initialized")
-                };
+            let replica_shard: &IngesterShard = if from_position_exclusive == Position::Beginning {
+                // Initialize the replica shard and corresponding mrecordlog queue.
+                state_guard
+                    .mrecordlog
+                    .create_queue(&queue_id)
+                    .await
+                    .expect("TODO");
+                let leader_id: NodeId = replicate_request.leader_id.clone().into();
+                let replica_shard = ReplicaShard::new(leader_id);
+                let shard = IngesterShard::Replica(replica_shard);
+                state_guard.shards.entry(queue_id.clone()).or_insert(shard)
+            } else {
+                state_guard
+                    .shards
+                    .get(&queue_id)
+                    .expect("replica shard should be initialized")
+            };
             if replica_shard.is_closed() {
                 // TODO
             }
@@ -380,17 +379,16 @@ impl ReplicationTask {
                 .replicated_num_docs_total
                 .inc_by(batch_num_docs);
 
-            let replica_shard = state_guard
-                .shards
-                .get_mut(&queue_id)
-                .expect("replica shard should exist");
-
             if current_position_inclusive != to_position_inclusive {
                 return Err(IngestV2Error::Internal(format!(
                     "bad replica position: expected {to_position_inclusive:?}, got \
                      {current_position_inclusive:?}"
                 )));
             }
+            let replica_shard = state_guard
+                .shards
+                .get_mut(&queue_id)
+                .expect("replica shard should be initialized");
             replica_shard.set_replication_position_inclusive(current_position_inclusive.clone());
 
             let replicate_success = ReplicateSuccess {
