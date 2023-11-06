@@ -22,13 +22,13 @@ use std::convert::Infallible;
 use std::ops::Bound;
 
 use quickwit_query::query_ast::{
-    FieldPresenceQuery, FullTextMode, FullTextQuery, PhrasePrefixQuery, QueryAst, QueryAstVisitor,
-    RangeQuery, TermSetQuery,
+    FieldPresenceQuery, FullTextQuery, PhrasePrefixQuery, QueryAst, QueryAstVisitor, RangeQuery,
+    TermSetQuery, WildcardQuery,
 };
+use quickwit_query::tokenizers::TokenizerManager;
 use quickwit_query::{find_field_or_hit_dynamic, InvalidQuery};
 use tantivy::query::Query;
 use tantivy::schema::{Field, Schema};
-use tantivy::tokenizer::TokenizerManager;
 use tantivy::Term;
 
 use crate::{QueryParserError, TermRange, WarmupInfo};
@@ -215,16 +215,13 @@ impl<'a, 'b: 'a> QueryAstVisitor<'a> for ExtractPrefixTermRanges<'b> {
     type Err = InvalidQuery;
 
     fn visit_full_text(&mut self, full_text_query: &'a FullTextQuery) -> Result<(), Self::Err> {
-        if let FullTextMode::BoolPrefix {
-            operator: _,
-            max_expansions,
-        } = &full_text_query.params.mode
+        if let Some(prefix_term) =
+            full_text_query.get_prefix_term(self.schema, self.tokenizer_manager)
         {
-            if let Some(prefix_term) =
-                full_text_query.get_last_term(self.schema, self.tokenizer_manager)
-            {
-                self.add_prefix_term(prefix_term, *max_expansions, false);
-            }
+            // the max_expansion expansion of a bool prefix query is used for the fuzzy part of the
+            // query, not for the expension to a range request.
+            // see https://github.com/elastic/elasticsearch/blob/6ad48306d029e6e527c0481e2e9880bd2f06b239/docs/reference/query-dsl/match-bool-prefix-query.asciidoc#parameters
+            self.add_prefix_term(prefix_term, u32::MAX, false);
         }
         Ok(())
     }
@@ -235,8 +232,14 @@ impl<'a, 'b: 'a> QueryAstVisitor<'a> for ExtractPrefixTermRanges<'b> {
     ) -> Result<(), Self::Err> {
         let (_, terms) = phrase_prefix.get_terms(self.schema, self.tokenizer_manager)?;
         if let Some((_, term)) = terms.last() {
-            self.add_prefix_term(term.clone(), phrase_prefix.max_expansions, true);
+            self.add_prefix_term(term.clone(), phrase_prefix.max_expansions, terms.len() > 1);
         }
+        Ok(())
+    }
+
+    fn visit_wildcard(&mut self, wildcard_query: &'a WildcardQuery) -> Result<(), Self::Err> {
+        let (_, term) = wildcard_query.extract_prefix_term(self.schema, self.tokenizer_manager)?;
+        self.add_prefix_term(term, u32::MAX, false);
         Ok(())
     }
 }

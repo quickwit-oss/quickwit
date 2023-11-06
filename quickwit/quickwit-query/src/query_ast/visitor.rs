@@ -22,6 +22,7 @@ use crate::query_ast::field_presence::FieldPresenceQuery;
 use crate::query_ast::user_input_query::UserInputQuery;
 use crate::query_ast::{
     BoolQuery, FullTextQuery, PhrasePrefixQuery, QueryAst, RangeQuery, TermQuery, TermSetQuery,
+    WildcardQuery,
 };
 
 /// Simple trait to implement a Visitor over the QueryAst.
@@ -43,6 +44,7 @@ pub trait QueryAstVisitor<'a> {
             QueryAst::Boost { underlying, boost } => self.visit_boost(underlying, *boost),
             QueryAst::UserInput(user_text_query) => self.visit_user_text(user_text_query),
             QueryAst::FieldPresence(exists) => self.visit_exists(exists),
+            QueryAst::Wildcard(wildcard) => self.visit_wildcard(wildcard),
         }
     }
 
@@ -103,6 +105,10 @@ pub trait QueryAstVisitor<'a> {
     }
 
     fn visit_exists(&mut self, _exists_query: &'a FieldPresenceQuery) -> Result<(), Self::Err> {
+        Ok(())
+    }
+
+    fn visit_wildcard(&mut self, _wildcard_query: &'a WildcardQuery) -> Result<(), Self::Err> {
         Ok(())
     }
 }

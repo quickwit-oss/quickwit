@@ -110,7 +110,11 @@ impl IndexerState {
             .settings(self.index_settings.clone())
             .schema(self.schema.clone())
             .tokenizers(self.tokenizer_manager.clone())
-            .fast_field_tokenizers(get_quickwit_fastfield_normalizer_manager().clone());
+            .fast_field_tokenizers(
+                get_quickwit_fastfield_normalizer_manager()
+                    .tantivy_manager()
+                    .clone(),
+            );
 
         let io_controls = IoControls::default()
             .set_progress(ctx.progress().clone())
@@ -534,7 +538,7 @@ impl Indexer {
                 publish_lock: PublishLock::default(),
                 publish_token_opt: None,
                 schema,
-                tokenizer_manager,
+                tokenizer_manager: tokenizer_manager.tantivy_manager().clone(),
                 index_settings,
                 max_num_partitions: doc_mapper.max_num_partitions(),
                 cooperative_indexing_permits,

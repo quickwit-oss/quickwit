@@ -19,10 +19,10 @@
 
 use serde::{Deserialize, Serialize};
 use tantivy::schema::Schema as TantivySchema;
-use tantivy::tokenizer::TokenizerManager;
 
 use super::{BuildTantivyAst, TantivyQueryAst};
 use crate::query_ast::QueryAst;
+use crate::tokenizers::TokenizerManager;
 use crate::InvalidQuery;
 
 /// # Unsupported features

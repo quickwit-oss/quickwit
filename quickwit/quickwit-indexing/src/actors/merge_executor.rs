@@ -296,8 +296,10 @@ impl MergeExecutor {
         merge_scratch_directory: TempDirectory,
         ctx: &ActorContext<Self>,
     ) -> anyhow::Result<IndexedSplit> {
-        let (union_index_meta, split_directories) =
-            open_split_directories(&tantivy_dirs, self.doc_mapper.tokenizer_manager())?;
+        let (union_index_meta, split_directories) = open_split_directories(
+            &tantivy_dirs,
+            self.doc_mapper.tokenizer_manager().tantivy_manager(),
+        )?;
         // TODO it would be nice if tantivy could let us run the merge in the current thread.
         fail_point!("before-merge-split");
         let controlled_directory = self
@@ -316,7 +318,7 @@ impl MergeExecutor {
         // splits.
         let merged_index = open_index(
             controlled_directory.clone(),
-            self.doc_mapper.tokenizer_manager(),
+            self.doc_mapper.tokenizer_manager().tantivy_manager(),
         )?;
         ctx.record_progress();
 
@@ -362,8 +364,10 @@ impl MergeExecutor {
             num_delete_tasks = delete_tasks.len()
         );
 
-        let (union_index_meta, split_directories) =
-            open_split_directories(&tantivy_dirs, self.doc_mapper.tokenizer_manager())?;
+        let (union_index_meta, split_directories) = open_split_directories(
+            &tantivy_dirs,
+            self.doc_mapper.tokenizer_manager().tantivy_manager(),
+        )?;
         let controlled_directory = self
             .merge_split_directories(
                 union_index_meta,
@@ -378,8 +382,17 @@ impl MergeExecutor {
         // This will have the side effect of deleting the directory containing the downloaded split.
         let mut merged_index = Index::open(controlled_directory.clone())?;
         ctx.record_progress();
-        merged_index.set_tokenizers(self.doc_mapper.tokenizer_manager().clone());
-        merged_index.set_fast_field_tokenizers(get_quickwit_fastfield_normalizer_manager().clone());
+        merged_index.set_tokenizers(
+            self.doc_mapper
+                .tokenizer_manager()
+                .tantivy_manager()
+                .clone(),
+        );
+        merged_index.set_fast_field_tokenizers(
+            get_quickwit_fastfield_normalizer_manager()
+                .tantivy_manager()
+                .clone(),
+        );
 
         ctx.record_progress();
 
@@ -470,7 +483,10 @@ impl MergeExecutor {
         ];
         directory_stack.extend(split_directories.into_iter());
         let union_directory = UnionDirectory::union_of(directory_stack);
-        let union_index = open_index(union_directory, self.doc_mapper.tokenizer_manager())?;
+        let union_index = open_index(
+            union_directory,
+            self.doc_mapper.tokenizer_manager().tantivy_manager(),
+        )?;
 
         ctx.record_progress();
         let _protect_guard = ctx.protect_zone();
@@ -532,7 +548,11 @@ fn open_index<T: Into<Box<dyn Directory>>>(
 ) -> tantivy::Result<Index> {
     let mut index = Index::open(directory)?;
     index.set_tokenizers(tokenizer_manager.clone());
-    index.set_fast_field_tokenizers(get_quickwit_fastfield_normalizer_manager().clone());
+    index.set_fast_field_tokenizers(
+        get_quickwit_fastfield_normalizer_manager()
+            .tantivy_manager()
+            .clone(),
+    );
     Ok(index)
 }
 

@@ -26,13 +26,13 @@ use tantivy::query_grammar::{
     Delimiter, Occur, UserInputAst, UserInputBound, UserInputLeaf, UserInputLiteral,
 };
 use tantivy::schema::Schema as TantivySchema;
-use tantivy::tokenizer::TokenizerManager;
 
 use crate::not_nan_f32::NotNaNf32;
 use crate::query_ast::tantivy_query_ast::TantivyQueryAst;
 use crate::query_ast::{
     self, BuildTantivyAst, FieldPresenceQuery, FullTextMode, FullTextParams, QueryAst,
 };
+use crate::tokenizers::TokenizerManager;
 use crate::{BooleanOperand, InvalidQuery, JsonLiteral};
 
 const DEFAULT_PHRASE_QUERY_MAX_EXPANSION: u32 = 50;
@@ -182,6 +182,31 @@ fn convert_user_input_ast_to_query_ast(
     }
 }
 
+fn is_wildcard(phrase: &str) -> bool {
+    use std::ops::ControlFlow;
+    enum State {
+        Normal,
+        Escaped,
+    }
+
+    phrase
+        .chars()
+        .try_fold(State::Normal, |state, c| match state {
+            State::Escaped => ControlFlow::Continue(State::Normal),
+            State::Normal => {
+                if c == '*' || c == '?' {
+                    // we are in a wildcard query
+                    ControlFlow::Break(())
+                } else if c == '\\' {
+                    ControlFlow::Continue(State::Escaped)
+                } else {
+                    ControlFlow::Continue(State::Normal)
+                }
+            }
+        })
+        .is_break()
+}
+
 fn convert_user_input_literal(
     user_input_literal: UserInputLiteral,
     default_search_fields: &[String],
@@ -216,24 +241,32 @@ fn convert_user_input_literal(
         mode,
         zero_terms_query: crate::MatchAllOrNone::MatchNone,
     };
+    let wildcard = delimiter == Delimiter::None && is_wildcard(&phrase);
     let mut phrase_queries: Vec<QueryAst> = field_names
         .into_iter()
         .map(|field_name| {
             if prefix {
-                return query_ast::PhrasePrefixQuery {
+                query_ast::PhrasePrefixQuery {
                     field: field_name,
                     phrase: phrase.clone(),
                     params: full_text_params.clone(),
                     max_expansions: DEFAULT_PHRASE_QUERY_MAX_EXPANSION,
                 }
-                .into();
+                .into()
+            } else if wildcard {
+                query_ast::WildcardQuery {
+                    field: field_name,
+                    value: phrase.clone(),
+                }
+                .into()
+            } else {
+                query_ast::FullTextQuery {
+                    field: field_name,
+                    text: phrase.clone(),
+                    params: full_text_params.clone(),
+                }
+                .into()
             }
-            query_ast::FullTextQuery {
-                field: field_name,
-                text: phrase.clone(),
-                params: full_text_params.clone(),
-            }
-            .into()
         })
         .collect();
     if phrase_queries.is_empty() {

@@ -69,9 +69,11 @@ fn process_tokens(analyzer: &mut TextAnalyzer, text: &str) -> Vec<Token> {
 pub fn tokenizers_throughput_benchmark(c: &mut Criterion) {
     let mut group = c.benchmark_group("multilang");
     let tokenizer_manager = create_default_quickwit_tokenizer_manager();
-    let mut default_tokenizer = tokenizer_manager.get("default").unwrap();
-    let mut multilang_tokenizer = tokenizer_manager.get("multilang").unwrap();
-    let mut chinese_tokenizer = tokenizer_manager.get("chinese_compatible").unwrap();
+    let mut default_tokenizer = tokenizer_manager.get_tokenizer("default").unwrap();
+    let mut multilang_tokenizer = tokenizer_manager.get_tokenizer("multilang").unwrap();
+    let mut chinese_tokenizer = tokenizer_manager
+        .get_tokenizer("chinese_compatible")
+        .unwrap();
 
     group
         .throughput(Throughput::Bytes(ASCII_SHORT.len() as u64))

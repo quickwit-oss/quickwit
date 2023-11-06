@@ -25,10 +25,10 @@ use std::ops::Bound;
 use anyhow::Context;
 use dyn_clone::{clone_trait_object, DynClone};
 use quickwit_query::query_ast::QueryAst;
+use quickwit_query::tokenizers::TokenizerManager;
 use serde_json::Value as JsonValue;
 use tantivy::query::Query;
 use tantivy::schema::{Field, FieldType, OwnedValue as Value, Schema};
-use tantivy::tokenizer::TokenizerManager;
 use tantivy::{TantivyDocument as Document, Term};
 
 pub type Partition = u64;

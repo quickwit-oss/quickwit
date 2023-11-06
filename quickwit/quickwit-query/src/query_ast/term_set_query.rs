@@ -21,10 +21,10 @@ use std::collections::{BTreeSet, HashMap, HashSet};
 
 use serde::{Deserialize, Serialize};
 use tantivy::schema::Schema as TantivySchema;
-use tantivy::tokenizer::TokenizerManager;
 use tantivy::Term;
 
 use crate::query_ast::{BuildTantivyAst, QueryAst, TantivyQueryAst, TermQuery};
+use crate::tokenizers::TokenizerManager;
 use crate::InvalidQuery;
 
 /// TermSetQuery matches the same document set as if it was a union of
