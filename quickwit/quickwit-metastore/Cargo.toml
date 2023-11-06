@@ -20,12 +20,12 @@ mockall = { workspace = true, optional = true }
 once_cell = { workspace = true }
 rand = { workspace = true }
 regex = { workspace = true }
+sea-query = { workspace = true, optional = true }
+sea-query-binder = { workspace = true, optional = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 serde_with = { workspace = true }
 sqlx = { workspace = true, optional = true }
-sea-query = { workspace = true }
-sea-query-binder = { workspace = true }
 tempfile = { workspace = true, optional = true }
 thiserror = { workspace = true }
 time = { workspace = true }
@@ -60,5 +60,5 @@ quickwit-storage = { workspace = true, features = ["testsuite"] }
 [features]
 azure = ["quickwit-storage/azure"]
 ci-test = []
-postgres = ["quickwit-proto/postgres", "sqlx"]
+postgres = ["quickwit-proto/postgres", "sea-query", "sea-query-binder", "sqlx"]
 testsuite = ["mockall", "tempfile", "quickwit-config/testsuite"]
