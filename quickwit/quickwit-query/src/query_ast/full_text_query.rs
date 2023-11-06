@@ -183,6 +183,8 @@ pub enum FullTextMode {
     },
     BoolPrefix {
         operator: BooleanOperand,
+        // max_expansions correspond to the fuzzy stop of query evalution. It's not the same as the
+        // max_expansions of a PhrasePrefixQuery, where it's used for the range expansion.
         max_expansions: u32,
     },
     // Act as Phrase with slop 0 if the field has positions,
@@ -260,8 +262,8 @@ impl FullTextQuery {
         &self,
         schema: &TantivySchema,
         tokenizer_manager: &TokenizerManager,
-    ) -> Option<(Term, u32)> {
-        let FullTextMode::BoolPrefix { max_expansions, .. } = self.params.mode else {
+    ) -> Option<Term> {
+        if !matches!(self.params.mode, FullTextMode::BoolPrefix { .. }) {
             return None;
         };
 
@@ -281,7 +283,7 @@ impl FullTextQuery {
                     )
                     .ok()?;
                 let (_pos, term) = terms.pop()?;
-                Some((term, max_expansions))
+                Some(term)
             }
             FieldType::JsonObject(ref json_options) => {
                 let mut terms = self
@@ -295,7 +297,7 @@ impl FullTextQuery {
                     )
                     .ok()?;
                 let (_pos, term) = terms.pop()?;
-                Some((term, max_expansions))
+                Some(term)
             }
             _ => None,
         }

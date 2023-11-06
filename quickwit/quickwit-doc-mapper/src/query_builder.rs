@@ -215,10 +215,13 @@ impl<'a, 'b: 'a> QueryAstVisitor<'a> for ExtractPrefixTermRanges<'b> {
     type Err = InvalidQuery;
 
     fn visit_full_text(&mut self, full_text_query: &'a FullTextQuery) -> Result<(), Self::Err> {
-        if let Some((prefix_term, max_expansions)) =
+        if let Some(prefix_term) =
             full_text_query.get_prefix_term(self.schema, self.tokenizer_manager)
         {
-            self.add_prefix_term(prefix_term, max_expansions, false);
+            // the max_expansion expansion of a bool prefix query is used for the fuzzy part of the
+            // query, not for the expension to a range request.
+            // see https://github.com/elastic/elasticsearch/blob/6ad48306d029e6e527c0481e2e9880bd2f06b239/docs/reference/query-dsl/match-bool-prefix-query.asciidoc#parameters
+            self.add_prefix_term(prefix_term, u32::MAX, false);
         }
         Ok(())
     }
