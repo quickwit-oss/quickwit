@@ -125,8 +125,8 @@ message CreateIndexResponse {
 }
 
 message ListIndexesMetadataRequest {
-    reserved  1;
-    repeated string index_id_patterns = 2;
+  reserved  1;
+  repeated string index_id_patterns = 2;
 }
 
 message ListIndexesMetadataResponse {
@@ -263,11 +263,12 @@ message OpenShardsRequest {
 }
 
 message OpenShardsSubrequest {
-    string index_uid = 1;
-    string source_id = 2;
-    string leader_id = 3;
-    optional string follower_id = 4;
-    uint64 next_shard_id = 5;
+  uint32 subrequest_id = 1;
+  string index_uid = 2;
+  string source_id = 3;
+  string leader_id = 4;
+  optional string follower_id = 5;
+  uint64 next_shard_id = 6;
 }
 
 message OpenShardsResponse {
@@ -275,10 +276,11 @@ message OpenShardsResponse {
 }
 
 message OpenShardsSubresponse {
-    string index_uid = 1;
-    string source_id = 2;
-    repeated quickwit.ingest.Shard opened_shards = 3;
-    uint64 next_shard_id = 4;
+  uint32 subrequest_id = 1;
+  string index_uid = 2;
+  string source_id = 3;
+  repeated quickwit.ingest.Shard opened_shards = 4;
+  uint64 next_shard_id = 5;
 }
 
 message AcquireShardsRequest {
@@ -286,10 +288,10 @@ message AcquireShardsRequest {
 }
 
 message AcquireShardsSubrequest {
-    string index_uid = 1;
-    string source_id = 2;
-    repeated uint64 shard_ids = 3;
-    string publish_token = 4;
+  string index_uid = 1;
+  string source_id = 2;
+  repeated uint64 shard_ids = 3;
+  string publish_token = 4;
 }
 
 message AcquireShardsResponse {
@@ -297,9 +299,9 @@ message AcquireShardsResponse {
 }
 
 message AcquireShardsSubresponse {
-    string index_uid = 1;
-    string source_id = 2;
-    repeated quickwit.ingest.Shard acquired_shards = 3;
+  string index_uid = 1;
+  string source_id = 2;
+  repeated quickwit.ingest.Shard acquired_shards = 3;
 }
 
 message DeleteShardsRequest {
@@ -308,9 +310,9 @@ message DeleteShardsRequest {
 }
 
 message DeleteShardsSubrequest {
-    string index_uid = 1;
-    string source_id = 2;
-    repeated uint64 shard_ids = 3;
+  string index_uid = 1;
+  string source_id = 2;
+  repeated uint64 shard_ids = 3;
 }
 
 message DeleteShardsResponse {
@@ -321,18 +323,18 @@ message ListShardsRequest {
 }
 
 message ListShardsSubrequest {
-    string index_uid = 1;
-    string source_id = 2;
-    optional quickwit.ingest.ShardState shard_state = 3;
+  string index_uid = 1;
+  string source_id = 2;
+  optional quickwit.ingest.ShardState shard_state = 3;
 }
 
 message ListShardsResponse {
-    repeated ListShardsSubresponse subresponses = 1;
+  repeated ListShardsSubresponse subresponses = 1;
 }
 
 message ListShardsSubresponse {
-    string index_uid = 1;
-    string source_id = 2;
-    repeated quickwit.ingest.Shard shards = 3;
-    uint64 next_shard_id = 4;
+  string index_uid = 1;
+  string source_id = 2;
+  repeated quickwit.ingest.Shard shards = 3;
+  uint64 next_shard_id = 4;
 }

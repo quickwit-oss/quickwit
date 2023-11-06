@@ -30,51 +30,51 @@ message Position {
 }
 
 enum CommitTypeV2 {
-    COMMIT_TYPE_V2_UNSPECIFIED = 0;
-    COMMIT_TYPE_V2_AUTO = 1;
-    COMMIT_TYPE_V2_WAIT = 2;
-    COMMIT_TYPE_V2_FORCE = 3;
+  COMMIT_TYPE_V2_UNSPECIFIED = 0;
+  COMMIT_TYPE_V2_AUTO = 1;
+  COMMIT_TYPE_V2_WAIT = 2;
+  COMMIT_TYPE_V2_FORCE = 3;
 }
 
 message DocBatchV2 {
-    bytes doc_buffer = 1;
-    repeated uint32 doc_lengths = 2;
+  bytes doc_buffer = 1;
+  repeated uint32 doc_lengths = 2;
 }
 
 message MRecordBatch {
-    // Buffer of encoded and then concatenated mrecords.
-    bytes mrecord_buffer = 1;
-    // Lengths of the mrecords in the buffer.
-    repeated uint32 mrecord_lengths = 2;
+  // Buffer of encoded and then concatenated mrecords.
+  bytes mrecord_buffer = 1;
+  // Lengths of the mrecords in the buffer.
+  repeated uint32 mrecord_lengths = 2;
 }
 
 enum ShardState {
-    SHARD_STATE_UNSPECIFIED = 0;
-    // The shard is open and accepts write requests.
-    SHARD_STATE_OPEN = 1;
-    // The ingester hosting the shard is unavailable.
-    SHARD_STATE_UNAVAILABLE = 2;
-    // The shard is closed and cannot be written to.
-    // It can be safely deleted if the publish position is superior or equal to the replication position.
-    SHARD_STATE_CLOSED = 3;
+  SHARD_STATE_UNSPECIFIED = 0;
+  // The shard is open and accepts write requests.
+  SHARD_STATE_OPEN = 1;
+  // The ingester hosting the shard is unavailable.
+  SHARD_STATE_UNAVAILABLE = 2;
+  // The shard is closed and cannot be written to.
+  // It can be safely deleted if the publish position is superior or equal to the replication position.
+  SHARD_STATE_CLOSED = 3;
 }
 
 message Shard {
-    // Immutable fields
-    string index_uid = 1;
-    string source_id = 2;
-    uint64 shard_id = 3;
-    // The node ID of the ingester to which all the write requests for this shard should be sent to.
-    string leader_id = 4;
-    // The node ID of the ingester holding a copy of the data.
-    optional string follower_id = 5;
+  // Immutable fields
+  string index_uid = 1;
+  string source_id = 2;
+  uint64 shard_id = 3;
+  // The node ID of the ingester to which all the write requests for this shard should be sent to.
+  string leader_id = 4;
+  // The node ID of the ingester holding a copy of the data.
+  optional string follower_id = 5;
 
-    // Mutable fields
-    ShardState shard_state = 8;
-    // Position up to which indexers have indexed and published the records stored in the shard.
-    // It is updated asynchronously in a best effort manner by the indexers and indicates the position up to which the log can be safely truncated.
-    Position publish_position_inclusive = 9;
-    // A publish token that ensures only one indexer works on a given shard at a time.
-    // For instance, if an indexer goes rogue, eventually the control plane will detect it and assign the shard to another indexer, which will override the publish token.
-    optional string publish_token = 10;
+  // Mutable fields
+  ShardState shard_state = 8;
+  // Position up to which indexers have indexed and published the records stored in the shard.
+  // It is updated asynchronously in a best effort manner by the indexers and indicates the position up to which the log can be safely truncated.
+  Position publish_position_inclusive = 9;
+  // A publish token that ensures only one indexer works on a given shard at a time.
+  // For instance, if an indexer goes rogue, eventually the control plane will detect it and assign the shard to another indexer, which will override the publish token.
+  optional string publish_token = 10;
 }

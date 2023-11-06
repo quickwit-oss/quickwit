@@ -286,7 +286,6 @@ impl SourceCheckpoint {
         &self,
         delta: &SourceCheckpointDelta,
     ) -> Result<(), IncompatibleCheckpointDelta> {
-        info!(delta=?delta, checkpoint=?self);
         for (delta_partition, delta_position) in &delta.per_partition {
             let Some(position) = self.per_partition.get(delta_partition) else {
                 continue;
@@ -329,6 +328,8 @@ impl SourceCheckpoint {
         delta: SourceCheckpointDelta,
     ) -> Result<(), IncompatibleCheckpointDelta> {
         self.check_compatibility(&delta)?;
+        info!(delta=?delta, checkpoint=?self, "applying delta to checkpoint");
+
         for (partition_id, partition_position) in delta.per_partition {
             self.per_partition
                 .insert(partition_id, partition_position.to);

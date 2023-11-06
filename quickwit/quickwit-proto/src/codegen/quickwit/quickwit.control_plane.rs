@@ -13,9 +13,11 @@ pub struct GetOrCreateOpenShardsRequest {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetOrCreateOpenShardsSubrequest {
-    #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "1")]
+    pub subrequest_id: u32,
     #[prost(string, tag = "2")]
+    pub index_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
@@ -29,24 +31,83 @@ pub struct ClosedShards {
     #[prost(uint64, repeated, tag = "3")]
     pub shard_ids: ::prost::alloc::vec::Vec<u64>,
 }
-/// TODO: Handle partial failures.
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetOrCreateOpenShardsResponse {
     #[prost(message, repeated, tag = "1")]
-    pub subresponses: ::prost::alloc::vec::Vec<GetOpenShardsSubresponse>,
+    pub successes: ::prost::alloc::vec::Vec<GetOrCreateOpenShardsSuccess>,
+    #[prost(message, repeated, tag = "2")]
+    pub failures: ::prost::alloc::vec::Vec<GetOrCreateOpenShardsFailure>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetOpenShardsSubresponse {
-    #[prost(string, tag = "1")]
-    pub index_uid: ::prost::alloc::string::String,
+pub struct GetOrCreateOpenShardsSuccess {
+    #[prost(uint32, tag = "1")]
+    pub subrequest_id: u32,
     #[prost(string, tag = "2")]
+    pub index_uid: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
-    #[prost(message, repeated, tag = "3")]
+    #[prost(message, repeated, tag = "4")]
     pub open_shards: ::prost::alloc::vec::Vec<super::ingest::Shard>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetOrCreateOpenShardsFailure {
+    #[prost(uint32, tag = "1")]
+    pub subrequest_id: u32,
+    #[prost(string, tag = "2")]
+    pub index_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub source_id: ::prost::alloc::string::String,
+    #[prost(enumeration = "GetOrCreateOpenShardsFailureReason", tag = "4")]
+    pub reason: i32,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum GetOrCreateOpenShardsFailureReason {
+    Unspecified = 0,
+    IndexNotFound = 1,
+    SourceNotFound = 2,
+}
+impl GetOrCreateOpenShardsFailureReason {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            GetOrCreateOpenShardsFailureReason::Unspecified => {
+                "GET_OR_CREATE_OPEN_SHARDS_FAILURE_REASON_UNSPECIFIED"
+            }
+            GetOrCreateOpenShardsFailureReason::IndexNotFound => {
+                "GET_OR_CREATE_OPEN_SHARDS_FAILURE_REASON_INDEX_NOT_FOUND"
+            }
+            GetOrCreateOpenShardsFailureReason::SourceNotFound => {
+                "GET_OR_CREATE_OPEN_SHARDS_FAILURE_REASON_SOURCE_NOT_FOUND"
+            }
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "GET_OR_CREATE_OPEN_SHARDS_FAILURE_REASON_UNSPECIFIED" => {
+                Some(Self::Unspecified)
+            }
+            "GET_OR_CREATE_OPEN_SHARDS_FAILURE_REASON_INDEX_NOT_FOUND" => {
+                Some(Self::IndexNotFound)
+            }
+            "GET_OR_CREATE_OPEN_SHARDS_FAILURE_REASON_SOURCE_NOT_FOUND" => {
+                Some(Self::SourceNotFound)
+            }
+            _ => None,
+        }
+    }
 }
 /// BEGIN quickwit-codegen
 #[allow(unused_imports)]
@@ -118,6 +179,8 @@ impl ControlPlaneServiceClient {
     > {
         let adapter = ControlPlaneServiceGrpcServerAdapter::new(self.clone());
         control_plane_service_grpc_server::ControlPlaneServiceGrpcServer::new(adapter)
+            .max_decoding_message_size(10 * 1024 * 1024)
+            .max_encoding_message_size(10 * 1024 * 1024)
     }
     pub fn from_channel(
         addr: std::net::SocketAddr,
@@ -138,10 +201,13 @@ impl ControlPlaneServiceClient {
         balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
     ) -> ControlPlaneServiceClient {
         let connection_keys_watcher = balance_channel.connection_keys_watcher();
-        let adapter = ControlPlaneServiceGrpcClientAdapter::new(
-            control_plane_service_grpc_client::ControlPlaneServiceGrpcClient::new(
+        let client = control_plane_service_grpc_client::ControlPlaneServiceGrpcClient::new(
                 balance_channel,
-            ),
+            )
+            .max_decoding_message_size(10 * 1024 * 1024)
+            .max_encoding_message_size(10 * 1024 * 1024);
+        let adapter = ControlPlaneServiceGrpcClientAdapter::new(
+            client,
             connection_keys_watcher,
         );
         Self::new(adapter)

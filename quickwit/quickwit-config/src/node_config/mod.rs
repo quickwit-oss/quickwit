@@ -187,7 +187,7 @@ impl Default for IngestApiConfig {
             max_queue_memory_usage: Byte::from_bytes(2 * 1024 * 1024 * 1024), /* 2 GiB // TODO maybe we want more? */
             max_queue_disk_usage: Byte::from_bytes(4 * 1024 * 1024 * 1024), /* 4 GiB // TODO maybe we want more? */
             replication_factor: 1,
-            content_length_limit: 10 * 1024 * 1024, // 10 MB
+            content_length_limit: 10 * 1024 * 1024, // 10 MiB
         }
     }
 }

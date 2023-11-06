@@ -211,7 +211,7 @@ impl Ingester {
             .next()
             .await
             .expect("TODO")
-            .expect("")
+            .expect("TODO")
             .into_open_response()
             .expect("first message should be an open response");
 

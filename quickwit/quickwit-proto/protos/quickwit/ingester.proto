@@ -24,171 +24,171 @@ package quickwit.ingest.ingester;
 import "quickwit/ingest.proto";
 
 service IngesterService {
-    // Persists batches of documents to primary shards owned by a leader.
-    rpc Persist(PersistRequest) returns (PersistResponse);
+  // Persists batches of documents to primary shards owned by a leader.
+  rpc Persist(PersistRequest) returns (PersistResponse);
 
-    // Opens a replication stream from a leader to a follower.
-    rpc OpenReplicationStream(stream SynReplicationMessage) returns (stream AckReplicationMessage);
+  // Opens a replication stream from a leader to a follower.
+  rpc OpenReplicationStream(stream SynReplicationMessage) returns (stream AckReplicationMessage);
 
-    // Streams records from a leader or a follower. The client can optionally specify a range of positions to fetch.
-    rpc OpenFetchStream(OpenFetchStreamRequest) returns (stream FetchResponseV2);
+  // Streams records from a leader or a follower. The client can optionally specify a range of positions to fetch.
+  rpc OpenFetchStream(OpenFetchStreamRequest) returns (stream FetchResponseV2);
 
-    // rpc OpenWatchStream(OpenWatchStreamRequest) returns (stream WatchMessage);
+  // rpc OpenWatchStream(OpenWatchStreamRequest) returns (stream WatchMessage);
 
-    // Pings an ingester to check if it is ready to host shards and serve requests.
-    rpc Ping(PingRequest) returns (PingResponse);
+  // Pings an ingester to check if it is ready to host shards and serve requests.
+  rpc Ping(PingRequest) returns (PingResponse);
 
-    // Truncates the shards at the given positions. Indexers should call this RPC on leaders, which will replicate the request to followers.
-    rpc Truncate(TruncateRequest) returns (TruncateResponse);
+  // Truncates the shards at the given positions. Indexers should call this RPC on leaders, which will replicate the request to followers.
+  rpc Truncate(TruncateRequest) returns (TruncateResponse);
 }
 
 message PersistRequest {
-    string leader_id = 1;
-    quickwit.ingest.CommitTypeV2 commit_type = 3;
-    repeated PersistSubrequest subrequests = 4;
+  string leader_id = 1;
+  quickwit.ingest.CommitTypeV2 commit_type = 3;
+  repeated PersistSubrequest subrequests = 4;
 }
 
 message PersistSubrequest {
-    uint32 subrequest_id = 1;
-    string index_uid = 2;
-    string source_id = 3;
-    uint64 shard_id = 4;
-    optional string follower_id = 5;
-    quickwit.ingest.DocBatchV2 doc_batch = 6;
+  uint32 subrequest_id = 1;
+  string index_uid = 2;
+  string source_id = 3;
+  uint64 shard_id = 4;
+  optional string follower_id = 5;
+  quickwit.ingest.DocBatchV2 doc_batch = 6;
 }
 
 message PersistResponse {
-    string leader_id = 1;
-    repeated PersistSuccess successes = 2;
-    repeated PersistFailure failures = 3;
+  string leader_id = 1;
+  repeated PersistSuccess successes = 2;
+  repeated PersistFailure failures = 3;
 }
 
 message PersistSuccess {
-    uint32 subrequest_id = 1;
-    string index_uid = 2;
-    string source_id = 3;
-    uint64 shard_id = 4;
-    quickwit.ingest.Position replication_position_inclusive = 5;
+  uint32 subrequest_id = 1;
+  string index_uid = 2;
+  string source_id = 3;
+  uint64 shard_id = 4;
+  quickwit.ingest.Position replication_position_inclusive = 5;
 }
 
 enum PersistFailureReason {
-    PERSIST_FAILURE_REASON_UNSPECIFIED = 0;
-    PERSIST_FAILURE_REASON_SHARD_CLOSED = 1;
-    PERSIST_FAILURE_REASON_RATE_LIMITED = 2;
-    PERSIST_FAILURE_REASON_RESOURCE_EXHAUSTED = 3;
+  PERSIST_FAILURE_REASON_UNSPECIFIED = 0;
+  PERSIST_FAILURE_REASON_SHARD_CLOSED = 1;
+  PERSIST_FAILURE_REASON_RATE_LIMITED = 2;
+  PERSIST_FAILURE_REASON_RESOURCE_EXHAUSTED = 3;
 }
 
 message PersistFailure {
-    uint32 subrequest_id = 1;
-    string index_uid = 2;
-    string source_id = 3;
-    uint64 shard_id = 4;
-    PersistFailureReason reason = 5;
+  uint32 subrequest_id = 1;
+  string index_uid = 2;
+  string source_id = 3;
+  uint64 shard_id = 4;
+  PersistFailureReason reason = 5;
 }
 
 message SynReplicationMessage {
-    oneof message {
-        OpenReplicationStreamRequest open_request = 1;
-        ReplicateRequest replicate_request = 2;
-    }
+  oneof message {
+    OpenReplicationStreamRequest open_request = 1;
+    ReplicateRequest replicate_request = 2;
+  }
 }
 
 message AckReplicationMessage {
-    oneof message {
-        OpenReplicationStreamResponse open_response = 1;
-        ReplicateResponse replicate_response = 2;
-    }
+  oneof message {
+    OpenReplicationStreamResponse open_response = 1;
+    ReplicateResponse replicate_response = 2;
+  }
 }
 
 message OpenReplicationStreamRequest {
-    string leader_id = 1;
-    string follower_id = 2;
+  string leader_id = 1;
+  string follower_id = 2;
 }
 
 message OpenReplicationStreamResponse {
 }
 
 message ReplicateRequest {
-    string leader_id = 1;
-    string follower_id = 2;
-    quickwit.ingest.CommitTypeV2 commit_type = 3;
-    repeated ReplicateSubrequest subrequests = 4;
-    // Position of the request in the replication stream.
-    uint64 replication_seqno = 5;
+  string leader_id = 1;
+  string follower_id = 2;
+  quickwit.ingest.CommitTypeV2 commit_type = 3;
+  repeated ReplicateSubrequest subrequests = 4;
+  // Position of the request in the replication stream.
+  uint64 replication_seqno = 5;
 }
 
 message ReplicateSubrequest {
-    uint32 subrequest_id = 1;
-    string index_uid = 2;
-    string source_id = 3;
-    uint64 shard_id = 4;
-    quickwit.ingest.Position from_position_exclusive = 5;
-    quickwit.ingest.Position to_position_inclusive = 6;
-    ingest.DocBatchV2 doc_batch = 7;
+  uint32 subrequest_id = 1;
+  string index_uid = 2;
+  string source_id = 3;
+  uint64 shard_id = 4;
+  quickwit.ingest.Position from_position_exclusive = 5;
+  quickwit.ingest.Position to_position_inclusive = 6;
+  ingest.DocBatchV2 doc_batch = 7;
 }
 
 message ReplicateResponse {
-    string follower_id = 1;
-    repeated ReplicateSuccess successes = 2;
-    repeated ReplicateFailure failures = 3;
-    // Position of the response in the replication stream. It should match the position of the request.
-    uint64 replication_seqno = 4;
+  string follower_id = 1;
+  repeated ReplicateSuccess successes = 2;
+  repeated ReplicateFailure failures = 3;
+  // Position of the response in the replication stream. It should match the position of the request.
+  uint64 replication_seqno = 4;
 }
 
 message ReplicateSuccess {
-    uint32 subrequest_id = 1;
-    string index_uid = 2;
-    string source_id = 3;
-    uint64 shard_id = 4;
-    quickwit.ingest.Position replication_position_inclusive = 5;
+  uint32 subrequest_id = 1;
+  string index_uid = 2;
+  string source_id = 3;
+  uint64 shard_id = 4;
+  quickwit.ingest.Position replication_position_inclusive = 5;
 }
 
 message ReplicateFailure {
-    uint32 subrequest_id = 1;
-    string index_uid = 2;
-    string source_id = 3;
-    uint64 shard_id = 4;
-    // ingest.DocBatchV2 doc_batch = 4;
-    // ingest.IngestError error = 5;
+  uint32 subrequest_id = 1;
+  string index_uid = 2;
+  string source_id = 3;
+  uint64 shard_id = 4;
+  // ingest.DocBatchV2 doc_batch = 4;
+  // ingest.IngestError error = 5;
 }
 
 message TruncateRequest {
-    string ingester_id = 1;
-    repeated TruncateSubrequest subrequests = 2;
+  string ingester_id = 1;
+  repeated TruncateSubrequest subrequests = 2;
 }
 
 message TruncateSubrequest {
-    string index_uid = 1;
-    string source_id = 2;
-    uint64 shard_id = 3;
-    quickwit.ingest.Position to_position_inclusive = 4;
+  string index_uid = 1;
+  string source_id = 2;
+  uint64 shard_id = 3;
+  quickwit.ingest.Position to_position_inclusive = 4;
 }
 
 message TruncateResponse {
-    // TODO
+  // TODO
 }
 
 message OpenFetchStreamRequest {
-    string client_id = 1;
-    string index_uid = 2;
-    string source_id = 3;
-    uint64 shard_id = 4;
-    quickwit.ingest.Position from_position_exclusive = 5;
-    quickwit.ingest.Position to_position_inclusive = 6;
+  string client_id = 1;
+  string index_uid = 2;
+  string source_id = 3;
+  uint64 shard_id = 4;
+  quickwit.ingest.Position from_position_exclusive = 5;
+  quickwit.ingest.Position to_position_inclusive = 6;
 }
 
 message FetchResponseV2 {
-    string index_uid = 1;
-    string source_id = 2;
-    uint64 shard_id = 3;
-    quickwit.ingest.MRecordBatch mrecord_batch = 4;
-    quickwit.ingest.Position from_position_exclusive = 5;
-    quickwit.ingest.Position to_position_inclusive = 6;
+  string index_uid = 1;
+  string source_id = 2;
+  uint64 shard_id = 3;
+  quickwit.ingest.MRecordBatch mrecord_batch = 4;
+  quickwit.ingest.Position from_position_exclusive = 5;
+  quickwit.ingest.Position to_position_inclusive = 6;
 }
 
 message PingRequest {
-    string leader_id = 1;
-    optional string follower_id = 2;
+  string leader_id = 1;
+  optional string follower_id = 2;
 }
 
 message PingResponse {

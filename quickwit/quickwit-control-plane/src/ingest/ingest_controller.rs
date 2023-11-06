@@ -25,15 +25,14 @@ use itertools::Itertools;
 use quickwit_common::{PrettySample, Progress};
 use quickwit_ingest::IngesterPool;
 use quickwit_proto::control_plane::{
-    ClosedShards, ControlPlaneError, ControlPlaneResult, GetOpenShardsSubresponse,
-    GetOrCreateOpenShardsRequest, GetOrCreateOpenShardsResponse,
+    ClosedShards, ControlPlaneError, ControlPlaneResult, GetOrCreateOpenShardsFailure,
+    GetOrCreateOpenShardsFailureReason, GetOrCreateOpenShardsRequest,
+    GetOrCreateOpenShardsResponse, GetOrCreateOpenShardsSuccess,
 };
 use quickwit_proto::ingest::ingester::{IngesterService, PingRequest};
 use quickwit_proto::ingest::{IngestV2Error, ShardState};
 use quickwit_proto::metastore;
-use quickwit_proto::metastore::{
-    EntityKind, MetastoreError, MetastoreService, MetastoreServiceClient,
-};
+use quickwit_proto::metastore::{MetastoreService, MetastoreServiceClient};
 use quickwit_proto::types::{IndexUid, NodeId};
 use rand::seq::SliceRandom;
 use tokio::time::timeout;
@@ -232,9 +231,6 @@ impl IngestController {
         model: &mut ControlPlaneModel,
         progress: &Progress,
     ) -> ControlPlaneResult<GetOrCreateOpenShardsResponse> {
-        let mut get_open_shards_subresponses =
-            Vec::with_capacity(get_open_shards_request.subrequests.len());
-
         self.handle_closed_shards(get_open_shards_request.closed_shards, model);
 
         let mut unavailable_leaders: FnvHashSet<NodeId> = get_open_shards_request
@@ -245,37 +241,44 @@ impl IngestController {
 
         self.handle_unavailable_leaders(&unavailable_leaders, model);
 
+        let num_subrequests = get_open_shards_request.subrequests.len();
+        let mut get_or_create_open_shards_successes = Vec::with_capacity(num_subrequests);
+        let mut get_or_create_open_shards_failures = Vec::new();
         let mut open_shards_subrequests = Vec::new();
 
         for get_open_shards_subrequest in get_open_shards_request.subrequests {
-            let index_uid = model
-                .index_uid(&get_open_shards_subrequest.index_id)
-                .ok_or_else(|| {
-                    MetastoreError::NotFound(EntityKind::Index {
-                        index_id: get_open_shards_subrequest.index_id.clone(),
-                    })
-                })?;
-
-            let (open_shards, next_shard_id) = model
-                .find_open_shards(
-                    &index_uid,
-                    &get_open_shards_subrequest.source_id,
-                    &unavailable_leaders,
-                )
-                .ok_or_else(|| {
-                    MetastoreError::NotFound(EntityKind::Source {
-                        index_id: get_open_shards_subrequest.index_id.clone(),
-                        source_id: get_open_shards_subrequest.source_id.clone(),
-                    })
-                })?;
-
+            let Some(index_uid) = model.index_uid(&get_open_shards_subrequest.index_id) else {
+                let get_or_create_open_shards_failure = GetOrCreateOpenShardsFailure {
+                    subrequest_id: get_open_shards_subrequest.subrequest_id,
+                    index_id: get_open_shards_subrequest.index_id,
+                    source_id: get_open_shards_subrequest.source_id,
+                    reason: GetOrCreateOpenShardsFailureReason::IndexNotFound as i32,
+                };
+                get_or_create_open_shards_failures.push(get_or_create_open_shards_failure);
+                continue;
+            };
+            let Some((open_shards, next_shard_id)) = model.find_open_shards(
+                &index_uid,
+                &get_open_shards_subrequest.source_id,
+                &unavailable_leaders,
+            ) else {
+                let get_or_create_open_shards_failure = GetOrCreateOpenShardsFailure {
+                    subrequest_id: get_open_shards_subrequest.subrequest_id,
+                    index_id: get_open_shards_subrequest.index_id,
+                    source_id: get_open_shards_subrequest.source_id,
+                    reason: GetOrCreateOpenShardsFailureReason::SourceNotFound as i32,
+                };
+                get_or_create_open_shards_failures.push(get_or_create_open_shards_failure);
+                continue;
+            };
             if !open_shards.is_empty() {
-                let get_open_shards_subresponse = GetOpenShardsSubresponse {
+                let get_or_create_open_shards_success = GetOrCreateOpenShardsSuccess {
+                    subrequest_id: get_open_shards_subrequest.subrequest_id,
                     index_uid: index_uid.into(),
                     source_id: get_open_shards_subrequest.source_id,
                     open_shards,
                 };
-                get_open_shards_subresponses.push(get_open_shards_subresponse);
+                get_or_create_open_shards_successes.push(get_or_create_open_shards_success);
             } else {
                 // TODO: Find leaders in batches.
                 // TODO: Round-robin leader-follower pairs or choose according to load.
@@ -286,6 +289,7 @@ impl IngestController {
                         ControlPlaneError::Unavailable("no available ingester".to_string())
                     })?;
                 let open_shards_subrequest = metastore::OpenShardsSubrequest {
+                    subrequest_id: get_open_shards_subrequest.subrequest_id,
                     index_uid: index_uid.into(),
                     source_id: get_open_shards_subrequest.source_id,
                     leader_id: leader_id.into(),
@@ -315,17 +319,19 @@ impl IngestController {
                 if let Some((open_shards, _next_shard_id)) =
                     model.find_open_shards(&index_uid, &source_id, &unavailable_leaders)
                 {
-                    let get_open_shards_subresponse = GetOpenShardsSubresponse {
+                    let get_or_create_open_shards_success = GetOrCreateOpenShardsSuccess {
+                        subrequest_id: open_shards_subresponse.subrequest_id,
                         index_uid: index_uid.into(),
-                        source_id,
+                        source_id: open_shards_subresponse.source_id,
                         open_shards,
                     };
-                    get_open_shards_subresponses.push(get_open_shards_subresponse);
+                    get_or_create_open_shards_successes.push(get_or_create_open_shards_success);
                 }
             }
         }
         Ok(GetOrCreateOpenShardsResponse {
-            subresponses: get_open_shards_subresponses,
+            successes: get_or_create_open_shards_successes,
+            failures: get_or_create_open_shards_failures,
         })
     }
 }
@@ -575,6 +581,7 @@ mod tests {
                 assert_eq!(&request.subrequests[0].source_id, source_id);
 
                 let subresponses = vec![metastore::OpenShardsSubresponse {
+                    subrequest_id: 1,
                     index_uid: index_uid_1.clone().into(),
                     source_id: source_id.to_string(),
                     opened_shards: vec![Shard {
@@ -657,16 +664,29 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(response.subresponses.len(), 0);
+        assert_eq!(response.successes.len(), 0);
+        assert_eq!(response.failures.len(), 0);
 
         let subrequests = vec![
             GetOrCreateOpenShardsSubrequest {
+                subrequest_id: 0,
                 index_id: "test-index-0".to_string(),
                 source_id: source_id.to_string(),
             },
             GetOrCreateOpenShardsSubrequest {
+                subrequest_id: 1,
                 index_id: "test-index-1".to_string(),
                 source_id: source_id.to_string(),
+            },
+            GetOrCreateOpenShardsSubrequest {
+                subrequest_id: 2,
+                index_id: "index-not-found".to_string(),
+                source_id: "source-not-found".to_string(),
+            },
+            GetOrCreateOpenShardsSubrequest {
+                subrequest_id: 3,
+                index_id: "test-index-0".to_string(),
+                source_id: "source-not-found".to_string(),
             },
         ];
         let closed_shards = Vec::new();
@@ -681,24 +701,41 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(response.subresponses.len(), 2);
+        assert_eq!(response.successes.len(), 2);
+        assert_eq!(response.failures.len(), 2);
 
-        assert_eq!(response.subresponses[0].index_uid, index_uid_0.as_str());
-        assert_eq!(response.subresponses[0].source_id, source_id);
-        assert_eq!(response.subresponses[0].open_shards.len(), 1);
-        assert_eq!(response.subresponses[0].open_shards[0].shard_id, 2);
+        let success = &response.successes[0];
+        assert_eq!(success.subrequest_id, 0);
+        assert_eq!(success.index_uid, index_uid_0.as_str());
+        assert_eq!(success.source_id, source_id);
+        assert_eq!(success.open_shards.len(), 1);
+        assert_eq!(success.open_shards[0].shard_id, 2);
+        assert_eq!(success.open_shards[0].leader_id, "test-ingester-1");
+
+        let success = &response.successes[1];
+        assert_eq!(success.subrequest_id, 1);
+        assert_eq!(success.index_uid, index_uid_1.as_str());
+        assert_eq!(success.source_id, source_id);
+        assert_eq!(success.open_shards.len(), 1);
+        assert_eq!(success.open_shards[0].shard_id, 1);
+        assert_eq!(success.open_shards[0].leader_id, "test-ingester-2");
+
+        let failure = &response.failures[0];
+        assert_eq!(failure.subrequest_id, 2);
+        assert_eq!(failure.index_id, "index-not-found");
+        assert_eq!(failure.source_id, "source-not-found");
         assert_eq!(
-            response.subresponses[0].open_shards[0].leader_id,
-            "test-ingester-1"
+            failure.reason(),
+            GetOrCreateOpenShardsFailureReason::IndexNotFound
         );
 
-        assert_eq!(&response.subresponses[1].index_uid, index_uid_1.as_str());
-        assert_eq!(response.subresponses[1].source_id, source_id);
-        assert_eq!(response.subresponses[1].open_shards.len(), 1);
-        assert_eq!(response.subresponses[1].open_shards[0].shard_id, 1);
+        let failure = &response.failures[1];
+        assert_eq!(failure.subrequest_id, 3);
+        assert_eq!(failure.index_id, index_id_0);
+        assert_eq!(failure.source_id, "source-not-found");
         assert_eq!(
-            response.subresponses[1].open_shards[0].leader_id,
-            "test-ingester-2"
+            failure.reason(),
+            GetOrCreateOpenShardsFailureReason::SourceNotFound
         );
 
         assert_eq!(model.observable_state().num_shards, 2);

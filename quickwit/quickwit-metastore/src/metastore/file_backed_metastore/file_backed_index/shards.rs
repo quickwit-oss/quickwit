@@ -158,6 +158,7 @@ impl Shards {
         let next_shard_id = self.next_shard_id;
 
         let response = OpenShardsSubresponse {
+            subrequest_id: subrequest.subrequest_id,
             index_uid: subrequest.index_uid,
             source_id: subrequest.source_id,
             opened_shards,
@@ -335,6 +336,7 @@ mod tests {
         let mut shards = Shards::empty(index_uid.clone(), source_id.clone());
 
         let subrequest = OpenShardsSubrequest {
+            subrequest_id: 0,
             index_uid: index_uid.clone().into(),
             source_id: source_id.clone(),
             leader_id: "leader_id".to_string(),
@@ -371,6 +373,7 @@ mod tests {
         assert_eq!(shards.next_shard_id, 2);
 
         let subrequest = OpenShardsSubrequest {
+            subrequest_id: 0,
             index_uid: index_uid.clone().into(),
             source_id: source_id.clone(),
             leader_id: "leader_id".to_string(),
@@ -397,6 +400,7 @@ mod tests {
         assert_eq!(shards.next_shard_id, 3);
 
         let subrequest = OpenShardsSubrequest {
+            subrequest_id: 0,
             index_uid: index_uid.clone().into(),
             source_id: source_id.clone(),
             leader_id: "leader_id".to_string(),
