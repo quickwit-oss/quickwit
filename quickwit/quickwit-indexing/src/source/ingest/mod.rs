@@ -37,7 +37,9 @@ use quickwit_proto::metastore::{
     AcquireShardsRequest, AcquireShardsSubrequest, AcquireShardsSubresponse, MetastoreService,
     MetastoreServiceClient,
 };
-use quickwit_proto::types::{IndexUid, NodeId, Position, PublishToken, ShardId, SourceId};
+use quickwit_proto::types::{
+    IndexUid, NodeId, Position, PublishToken, ShardId, SourceId, SourceUid,
+};
 use serde_json::json;
 use tokio::time;
 use tracing::{debug, error, info, warn};
@@ -73,8 +75,7 @@ impl TypedSourceFactory for IngestSourceFactory {
 #[derive(Debug, Clone)]
 struct ClientId {
     node_id: NodeId,
-    index_uid: IndexUid,
-    source_id: SourceId,
+    source_uid: SourceUid,
     pipeline_ord: usize,
 }
 
@@ -82,18 +83,17 @@ impl fmt::Display for ClientId {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         write!(
             formatter,
-            "indexer/{}/{}/{}/{}",
-            self.node_id, self.index_uid, self.source_id, self.pipeline_ord
+            "indexer/{}/{}/{}",
+            self.node_id, self.source_uid, self.pipeline_ord
         )
     }
 }
 
 impl ClientId {
-    fn new(node_id: NodeId, index_uid: IndexUid, source_id: SourceId, pipeline_ord: usize) -> Self {
+    fn new(node_id: NodeId, source_uid: SourceUid, pipeline_ord: usize) -> Self {
         Self {
             node_id,
-            index_uid,
-            source_id,
+            source_uid,
             pipeline_ord,
         }
     }
@@ -151,8 +151,10 @@ impl IngestSource {
         let self_node_id: NodeId = runtime_args.node_id().into();
         let client_id = ClientId::new(
             self_node_id.clone(),
-            runtime_args.index_uid().clone(),
-            runtime_args.source_id().to_string(),
+            SourceUid {
+                index_uid: runtime_args.index_uid().clone(),
+                source_id: runtime_args.source_id().to_string(),
+            },
             runtime_args.pipeline_ord(),
         );
         let metastore = runtime_args.metastore.clone();
@@ -253,8 +255,8 @@ impl IngestSource {
                 continue;
             };
             let truncate_subrequest = TruncateSubrequest {
-                index_uid: self.client_id.index_uid.clone().into(),
-                source_id: self.client_id.source_id.clone(),
+                index_uid: self.client_id.source_uid.index_uid.clone().into(),
+                source_id: self.client_id.source_uid.source_id.clone(),
                 shard_id: *shard_id,
                 to_position_inclusive: Some(to_position_exclusive.clone()),
             };
@@ -377,8 +379,8 @@ impl Source for IngestSource {
         .await?;
 
         let acquire_shards_subrequest = AcquireShardsSubrequest {
-            index_uid: self.client_id.index_uid.to_string(),
-            source_id: self.client_id.source_id.clone(),
+            index_uid: self.client_id.source_uid.index_uid.to_string(),
+            source_id: self.client_id.source_uid.source_id.clone(),
             shard_ids: new_assigned_shard_ids,
             publish_token: self.publish_token.clone(),
         };

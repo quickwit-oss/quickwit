@@ -25,7 +25,7 @@ use std::num::NonZeroU32;
 
 use fnv::FnvHashMap;
 use quickwit_proto::indexing::IndexingTask;
-use quickwit_proto::types::{IndexUid, ShardId};
+use quickwit_proto::types::{IndexUid, ShardId, SourceUid};
 pub use scheduling_logic_model::Load;
 use scheduling_logic_model::{IndexerOrd, SourceOrd};
 use tracing::error;
@@ -36,7 +36,6 @@ use crate::indexing_scheduler::scheduling::scheduling_logic_model::{
     SchedulingProblem, SchedulingSolution,
 };
 use crate::indexing_scheduler::PIPELINE_FULL_LOAD;
-use crate::SourceUid;
 
 /// If we have several pipelines below this threshold we
 /// reduce the number of pipelines.
@@ -529,13 +528,12 @@ mod tests {
 
     use fnv::FnvHashMap;
     use quickwit_proto::indexing::IndexingTask;
-    use quickwit_proto::types::{IndexUid, ShardId};
+    use quickwit_proto::types::{IndexUid, ShardId, SourceUid};
 
     use super::{
         build_physical_indexing_plan, group_shards_into_pipelines, indexing_task,
         spread_shards_optimally, SourceToSchedule, SourceToScheduleType,
     };
-    use crate::SourceUid;
 
     #[test]
     fn test_spread_shard_optimally() {

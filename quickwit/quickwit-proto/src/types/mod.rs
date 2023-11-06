@@ -20,7 +20,7 @@
 use std::borrow::Borrow;
 use std::convert::Infallible;
 use std::fmt;
-use std::fmt::Display;
+use std::fmt::{Display, Formatter};
 use std::ops::Deref;
 use std::str::FromStr;
 
@@ -157,6 +157,20 @@ impl PartialEq<&str> for IndexUid {
 impl PartialEq<String> for IndexUid {
     fn eq(&self, other: &String) -> bool {
         self.0 == *other
+    }
+}
+
+/// It can however appear only once in a given index.
+/// In itself, `SourceId` is not unique, but the pair `(IndexUid, SourceId)` is.
+#[derive(PartialEq, Eq, Debug, PartialOrd, Ord, Hash, Clone)]
+pub struct SourceUid {
+    pub index_uid: IndexUid,
+    pub source_id: SourceId,
+}
+
+impl Display for SourceUid {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "{}:{}", self.index_uid, self.source_id)
     }
 }
 
