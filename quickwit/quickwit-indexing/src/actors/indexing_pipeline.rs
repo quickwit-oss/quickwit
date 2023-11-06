@@ -22,6 +22,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
+use fnv::FnvHashMap;
 use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, Mailbox, QueueCapacity,
     Supervisable, HEARTBEAT,
@@ -37,6 +38,7 @@ use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::metastore::{
     IndexMetadataRequest, MetastoreError, MetastoreService, MetastoreServiceClient,
 };
+use quickwit_proto::types::ShardId;
 use quickwit_storage::{Storage, StorageResolver};
 use tokio::sync::Semaphore;
 use tracing::{debug, error, info, instrument};
@@ -49,7 +51,7 @@ use crate::actors::sequencer::Sequencer;
 use crate::actors::uploader::UploaderType;
 use crate::actors::{Indexer, Packager, Publisher, Uploader};
 use crate::merge_policy::MergePolicy;
-use crate::models::IndexingStatistics;
+use crate::models::{IndexingStatistics, IndexingStatus, IngestSourceObservableState};
 use crate::source::{quickwit_supported_sources, AssignShards, SourceActor, SourceRuntimeArgs};
 use crate::split_store::IndexingSplitStore;
 use crate::SplitsUpdateMailbox;
@@ -149,6 +151,18 @@ impl Actor for IndexingPipeline {
         self.perform_observe(ctx).await;
         Ok(())
     }
+}
+
+fn extract_shard_states(
+    source_state_json: serde_json::Value,
+) -> FnvHashMap<ShardId, IndexingStatus> {
+    let Ok(ingest_source_state) =
+        serde_json::from_value::<IngestSourceObservableState>(source_state_json)
+    else {
+        error!("failed to deserialize ingest source state");
+        return Default::default();
+    };
+    ingest_source_state.indexing_states
 }
 
 impl IndexingPipeline {
@@ -258,6 +272,8 @@ impl IndexingPipeline {
             .set_num_spawn_attempts(self.statistics.num_spawn_attempts);
         let pipeline_metrics_opt = handles.indexer.last_observation().pipeline_metrics_opt;
         self.statistics.pipeline_metrics_opt = pipeline_metrics_opt;
+        self.statistics.shard_state =
+            extract_shard_states(handles.source_handle.last_observation());
         ctx.observe(self);
     }
 
