@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::fmt;
+use std::fmt::Display;
 
 use bytes::Bytes;
 use bytestring::ByteString;
@@ -115,6 +116,12 @@ impl Position {
             Self::Offset(offset) => offset.as_usize(),
             Self::Eof => None,
         }
+    }
+}
+
+impl Display for Position {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "{}", self.as_str())
     }
 }
 

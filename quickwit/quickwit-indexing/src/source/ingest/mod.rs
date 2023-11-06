@@ -24,6 +24,7 @@ use std::time::Duration;
 
 use anyhow::{bail, Context};
 use async_trait::async_trait;
+use fnv::FnvHashMap;
 use itertools::Itertools;
 use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_ingest::{
@@ -40,6 +41,7 @@ use quickwit_proto::metastore::{
 use quickwit_proto::types::{
     IndexUid, NodeId, Position, PublishToken, ShardId, SourceId, SourceUid,
 };
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::time;
 use tracing::{debug, error, info, warn};
@@ -83,8 +85,8 @@ impl fmt::Display for ClientId {
     fn fmt(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
         write!(
             formatter,
-            "indexer/{}/{}/{}",
-            self.node_id, self.source_uid, self.pipeline_ord
+            "indexer/{}/{}/{}/{}",
+            self.node_id, self.source_uid.index_uid, self.source_uid.source_id, self.pipeline_ord
         )
     }
 }
@@ -135,6 +137,7 @@ pub struct IngestSource {
     fetch_stream: MultiFetchStream,
     publish_lock: PublishLock,
     publish_token: PublishToken,
+    shard_positions: FnvHashMap<ShardId, Position>,
 }
 
 impl fmt::Debug for IngestSource {
@@ -147,7 +150,7 @@ impl IngestSource {
     pub async fn try_new(
         runtime_args: Arc<SourceRuntimeArgs>,
         _checkpoint: SourceCheckpoint,
-    ) -> anyhow::Result<Self> {
+    ) -> anyhow::Result<IngestSource> {
         let self_node_id: NodeId = runtime_args.node_id().into();
         let client_id = ClientId::new(
             self_node_id.clone(),
@@ -165,7 +168,7 @@ impl IngestSource {
         let publish_lock = PublishLock::default();
         let publish_token = client_id.new_publish_token();
 
-        Ok(Self {
+        Ok(IngestSource {
             client_id,
             metastore,
             ingester_pool,
@@ -173,6 +176,7 @@ impl IngestSource {
             fetch_stream,
             publish_lock,
             publish_token,
+            shard_positions: FnvHashMap::default(),
         })
     }
 
@@ -239,7 +243,30 @@ impl IngestSource {
         false
     }
 
-    async fn truncate(&self, truncation_point: &[(ShardId, Position)]) {
+    fn update_shard_published_position(
+        &mut self,
+        shard_id: ShardId,
+        shard_publish_position: &Position,
+    ) {
+        if let Some(previous_shard_position) = self.shard_positions.get(&shard_id) {
+            if previous_shard_position > &shard_publish_position {
+                warn!(
+                    "shard `{}` published position `{}` is lower than previous published position \
+                     `{}`",
+                    shard_id, shard_publish_position, previous_shard_position
+                );
+                return;
+            }
+        }
+        self.shard_positions
+            .insert(shard_id, shard_publish_position.clone());
+    }
+
+    async fn truncate(&mut self, truncation_point: &[(ShardId, Position)]) {
+        for (shard_id, position) in truncation_point {
+            self.update_shard_published_position(*shard_id, position);
+        }
+
         let mut per_ingester_truncate_subrequests: HashMap<&NodeId, Vec<TruncateSubrequest>> =
             HashMap::new();
 
@@ -413,7 +440,6 @@ impl Source for IngestSource {
                 .unwrap_or_default();
             let from_position_exclusive = current_position_inclusive.clone();
             let to_position_inclusive = Position::Eof;
-
             let status = if from_position_exclusive == Position::Eof {
                 IndexingStatus::Complete
             } else if let Err(error) = ctx
@@ -468,12 +494,31 @@ impl Source for IngestSource {
     }
 
     fn observable_state(&self) -> serde_json::Value {
+        let shard_states: FnvHashMap<ShardId, ShardIngestionState> = self
+            .shard_positions
+            .iter()
+            .map(|(shard, position)| {
+                let shard_state = match position {
+                    Position::Beginning | Position::Offset(_) => ShardIngestionState::Running,
+                    Position::Eof => ShardIngestionState::Eof,
+                };
+                (*shard, shard_state)
+            })
+            .collect();
         json!({
             "client_id": self.client_id.to_string(),
             "assigned_shards": self.assigned_shards.keys().copied().collect::<Vec<ShardId>>(),
             "publish_token": self.publish_token,
+            "shard_states": shard_states,
         })
     }
+}
+
+#[derive(Serialize, Deserialize, Copy, Clone, Debug)]
+#[serde(rename_all = "snake_case")]
+enum ShardIngestionState {
+    Eof,
+    Running,
 }
 
 #[cfg(test)]
