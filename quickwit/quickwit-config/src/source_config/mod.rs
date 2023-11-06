@@ -510,7 +510,7 @@ impl TransformConfig {
         // Append "\n." to the script to return the entire document and not only the modified
         // fields.
         let vrl_script = self.vrl_script.clone() + "\n.";
-        let functions = vrl_stdlib::all();
+        let functions = vrl::stdlib::all();
 
         let compilation_res = match vrl::compiler::compile(&vrl_script, &functions) {
             Ok(compilation_res) => compilation_res,
@@ -1161,7 +1161,7 @@ mod tests {
             let transform_config = TransformConfig {
                 vrl_script: r#"
                 . = parse_json!(string!(.message))
-                .timestamp = to_unix_timestamp(to_timestamp!(.timestamp))
+                .timestamp = to_unix_timestamp(timestamp!(.timestamp))
                 del(.username)
                 .message = downcase(string!(.message))
                 "#
