@@ -25,13 +25,13 @@ use fnv::FnvHashSet;
 use quickwit_common::PathHasher;
 use quickwit_query::create_default_quickwit_tokenizer_manager;
 use quickwit_query::query_ast::QueryAst;
+use quickwit_query::tokenizers::TokenizerManager;
 use serde::{Deserialize, Serialize};
 use serde_json::{self, Value as JsonValue};
 use tantivy::query::Query;
 use tantivy::schema::{
     Field, FieldType, FieldValue, OwnedValue as TantivyValue, Schema, INDEXED, STORED,
 };
-use tantivy::tokenizer::TokenizerManager;
 use tantivy::TantivyDocument as Document;
 
 use super::field_mapping_entry::RAW_TOKENIZER_NAME;
@@ -178,7 +178,7 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
                 );
             }
             if tokenizer_manager
-                .get(&tokenizer_config_entry.name)
+                .get_tokenizer(&tokenizer_config_entry.name)
                 .is_some()
             {
                 bail!(
@@ -197,7 +197,12 @@ impl TryFrom<DefaultDocMapperBuilder> for DefaultDocMapper {
                         error
                     )
                 })?;
-            tokenizer_manager.register(&tokenizer_config_entry.name, tokenizer);
+            let does_lowercasing = tokenizer_config_entry
+                .config
+                .filters
+                .iter()
+                .any(|filter| matches!(filter, crate::TokenFilterType::LowerCaser));
+            tokenizer_manager.register(&tokenizer_config_entry.name, tokenizer, does_lowercasing);
             custom_tokenizer_names.insert(&tokenizer_config_entry.name);
         }
         validate_fields_tokenizers(&schema, &tokenizer_manager)?;
@@ -329,7 +334,7 @@ fn validate_fields_tokenizers(
             _ => None,
         };
         if let Some(tokenizer_name) = tokenizer_name_opt {
-            if tokenizer_manager.get(tokenizer_name).is_none() {
+            if tokenizer_manager.get_tokenizer(tokenizer_name).is_none() {
                 bail!(
                     "unknown tokenizer `{}` for field `{}`",
                     tokenizer_name,
@@ -1857,7 +1862,10 @@ mod tests {
             }
             _ => panic!("Expected a text field"),
         }
-        assert!(mapper.tokenizer_manager().get("my_tokenizer").is_some());
+        assert!(mapper
+            .tokenizer_manager()
+            .get_tokenizer("my_tokenizer")
+            .is_some());
     }
 
     #[test]
@@ -1902,7 +1910,10 @@ mod tests {
         }"#,
         )
         .unwrap();
-        let mut tokenizer = mapper.tokenizer_manager().get("my_tokenizer").unwrap();
+        let mut tokenizer = mapper
+            .tokenizer_manager()
+            .get_tokenizer("my_tokenizer")
+            .unwrap();
         let mut token_stream = tokenizer.token_stream("HELLO WORLD");
         assert_eq!(token_stream.next().unwrap().text, "hel");
         assert_eq!(token_stream.next().unwrap().text, "hell");
@@ -1959,8 +1970,11 @@ mod tests {
         }"#,
         )
         .unwrap();
-        let mut default_tokenizer = mapper.tokenizer_manager().get("default").unwrap();
-        let mut tokenizer = mapper.tokenizer_manager().get("my_tokenizer").unwrap();
+        let mut default_tokenizer = mapper.tokenizer_manager().get_tokenizer("default").unwrap();
+        let mut tokenizer = mapper
+            .tokenizer_manager()
+            .get_tokenizer("my_tokenizer")
+            .unwrap();
         let text = "I've seen things... seen things you little people wouldn't believe.";
         let mut default_token_stream = default_tokenizer.token_stream(text);
         let mut token_stream = tokenizer.token_stream(text);

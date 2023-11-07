@@ -5,9 +5,9 @@ sidebar_position: 2
 
 You can monitor your Quickwit cluster with Grafana.
 
-We provide two Grafana dashboards to help you monitor:
+We provide three Grafana dashboards to help you monitor:
 - [indexers performance](https://github.com/quickwit-oss/quickwit/blob/main/monitoring/grafana/dashboards/indexers.json)
-- [indexers performance](https://github.com/quickwit-oss/quickwit/blob/main/monitoring/grafana/dashboards/searchers.json)
+- [searchers performance](https://github.com/quickwit-oss/quickwit/blob/main/monitoring/grafana/dashboards/searchers.json)
 - [metastore queries](https://github.com/quickwit-oss/quickwit/blob/main/monitoring/grafana/dashboards/metastore.json)
 
 Both dashboards relies on a prometheus datasource fed with [Quickwit metrics](../reference/metrics.md).

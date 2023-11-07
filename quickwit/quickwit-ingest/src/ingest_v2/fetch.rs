@@ -338,6 +338,12 @@ impl MultiFetchStream {
     }
 }
 
+impl Drop for MultiFetchStream {
+    fn drop(&mut self) {
+        self.reset();
+    }
+}
+
 /// Chooses the ingester to stream records from, preferring "local" ingesters.
 fn select_preferred_and_failover_ingesters(
     self_node_id: &NodeId,

@@ -75,8 +75,6 @@ mod void_source;
 use std::path::PathBuf;
 use std::time::Duration;
 
-#[cfg(not(any(feature = "kafka", feature = "kinesis", feature = "pulsar")))]
-use anyhow::bail;
 use async_trait::async_trait;
 use bytes::Bytes;
 pub use file_source::{FileSource, FileSourceFactory};
@@ -398,7 +396,7 @@ pub async fn check_source_connectivity(
         #[allow(unused_variables)]
         SourceParams::Kafka(params) => {
             #[cfg(not(feature = "kafka"))]
-            bail!("Quickwit binary was not compiled with the `kafka` feature");
+            anyhow::bail!("Quickwit binary was not compiled with the `kafka` feature");
 
             #[cfg(feature = "kafka")]
             {
@@ -409,7 +407,7 @@ pub async fn check_source_connectivity(
         #[allow(unused_variables)]
         SourceParams::Kinesis(params) => {
             #[cfg(not(feature = "kinesis"))]
-            bail!("Quickwit binary was not compiled with the `kinesis` feature");
+            anyhow::bail!("Quickwit binary was not compiled with the `kinesis` feature");
 
             #[cfg(feature = "kinesis")]
             {
@@ -420,7 +418,7 @@ pub async fn check_source_connectivity(
         #[allow(unused_variables)]
         SourceParams::Pulsar(params) => {
             #[cfg(not(feature = "pulsar"))]
-            bail!("Quickwit binary was not compiled with the `pulsar` feature");
+            anyhow::bail!("Quickwit binary was not compiled with the `pulsar` feature");
 
             #[cfg(feature = "pulsar")]
             {

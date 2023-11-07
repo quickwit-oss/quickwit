@@ -368,9 +368,15 @@ mod tests {
         let index_builder = IndexBuilder::new()
             .settings(IndexSettings::default())
             .schema(schema)
-            .tokenizers(quickwit_query::create_default_quickwit_tokenizer_manager())
+            .tokenizers(
+                quickwit_query::create_default_quickwit_tokenizer_manager()
+                    .tantivy_manager()
+                    .clone(),
+            )
             .fast_field_tokenizers(
-                quickwit_query::get_quickwit_fastfield_normalizer_manager().clone(),
+                quickwit_query::get_quickwit_fastfield_normalizer_manager()
+                    .tantivy_manager()
+                    .clone(),
             );
         let index_directory = MmapDirectory::open(split_scratch_directory.path())?;
         let mut index_writer =

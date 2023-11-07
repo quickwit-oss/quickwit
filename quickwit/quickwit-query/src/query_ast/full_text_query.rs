@@ -28,12 +28,13 @@ use tantivy::schema::{
     Field, FieldType, IndexRecordOption, JsonObjectOptions, Schema as TantivySchema,
     TextFieldIndexing,
 };
-use tantivy::tokenizer::{TextAnalyzer, TokenStream, TokenizerManager};
+use tantivy::tokenizer::{TextAnalyzer, TokenStream};
 use tantivy::Term;
 
 use crate::query_ast::tantivy_query_ast::{TantivyBoolQuery, TantivyQueryAst};
 use crate::query_ast::utils::full_text_query;
 use crate::query_ast::{BuildTantivyAst, QueryAst};
+use crate::tokenizers::TokenizerManager;
 use crate::{find_field_or_hit_dynamic, BooleanOperand, InvalidQuery, MatchAllOrNone};
 
 #[derive(Serialize, Deserialize, Debug, Eq, PartialEq, Clone)]
@@ -59,7 +60,7 @@ impl FullTextParams {
             .as_deref()
             .unwrap_or(text_field_indexing.tokenizer());
         tokenizer_manager
-            .get(tokenizer_name)
+            .get_tokenizer(tokenizer_name)
             .with_context(|| format!("no tokenizer named `{}` is registered", tokenizer_name))
     }
 
@@ -182,6 +183,8 @@ pub enum FullTextMode {
     },
     BoolPrefix {
         operator: BooleanOperand,
+        // max_expansions correspond to the fuzzy stop of query evalution. It's not the same as the
+        // max_expansions of a PhrasePrefixQuery, where it's used for the range expansion.
         max_expansions: u32,
     },
     // Act as Phrase with slop 0 if the field has positions,
@@ -255,11 +258,15 @@ impl FullTextQuery {
     ///
     /// This strange method is used to identify which term range should be warmed up for
     /// phrase prefix queries.
-    pub fn get_last_term(
+    pub fn get_prefix_term(
         &self,
         schema: &TantivySchema,
         tokenizer_manager: &TokenizerManager,
     ) -> Option<Term> {
+        if !matches!(self.params.mode, FullTextMode::BoolPrefix { .. }) {
+            return None;
+        };
+
         let (field, field_entry, json_path) =
             find_field_or_hit_dynamic(&self.field, schema).ok()?;
         let field_type: &FieldType = field_entry.field_type();

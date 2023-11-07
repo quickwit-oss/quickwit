@@ -39,7 +39,7 @@ use crate::indexing_scheduler::scheduling::{build_physical_indexing_plan, Load};
 use crate::{IndexerNodeInfo, IndexerPool};
 
 const PIPELINE_FULL_LOAD: Load = 1_000u32;
-const LOAD_PER_NODE: Load = 4_000u32;
+const LOAD_PER_NODE: Load = 2_000u32;
 
 pub(crate) const MIN_DURATION_BETWEEN_SCHEDULING: Duration =
     if cfg!(any(test, feature = "testsuite")) {
