@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::{BTreeMap, HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::fmt::Debug;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -32,7 +32,7 @@ use chitchat::{
 use futures::Stream;
 use itertools::Itertools;
 use quickwit_proto::indexing::{IndexingPipelineId, IndexingTask, PipelineMetrics};
-use quickwit_proto::types::NodeId;
+use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceId};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, watch, Mutex, RwLock};
 use tokio::time::timeout;
@@ -42,9 +42,9 @@ use tracing::{info, warn};
 
 use crate::change::{compute_cluster_change_events, ClusterChange};
 use crate::member::{
-    build_cluster_member, ClusterMember, NodeStateExt, ENABLED_SERVICES_KEY,
-    GRPC_ADVERTISE_ADDR_KEY, INDEXING_TASK_PREFIX, PIPELINE_METRICS_PREFIX, READINESS_KEY,
-    READINESS_VALUE_NOT_READY, READINESS_VALUE_READY,
+    build_cluster_member, ClusterMember, NodeStateExt, COMPLETED_SHARD_PREFIX,
+    ENABLED_SERVICES_KEY, GRPC_ADVERTISE_ADDR_KEY, INDEXING_TASK_PREFIX, PIPELINE_METRICS_PREFIX,
+    READINESS_KEY, READINESS_VALUE_NOT_READY, READINESS_VALUE_READY,
 };
 use crate::ClusterNode;
 
@@ -326,6 +326,28 @@ impl Cluster {
         }
     }
 
+    pub async fn update_self_node_completed_shards(
+        &self,
+        shard_statuses: &HashMap<(&IndexUid, &SourceId), BTreeSet<ShardId>>,
+    ) {
+        let chitchat = self.chitchat().await;
+        let mut chitchat_guard = chitchat.lock().await;
+        let node_state = chitchat_guard.self_node_state();
+        let mut current_metrics_keys: HashSet<String> = node_state
+            .iter_prefix(&COMPLETED_SHARD_PREFIX)
+            .map(|(key, _)| key.to_string())
+            .collect();
+        for ((index_uid, source_id), shard_statuses) in shard_statuses {
+            let key = format!("{COMPLETED_SHARD_PREFIX}{index_uid}:{source_id}");
+            current_metrics_keys.remove(&key);
+            let shard_statuses = serde_json::to_string(&shard_statuses).unwrap();
+            node_state.set(key, shard_statuses);
+        }
+        for obsolete_task_key in current_metrics_keys {
+            node_state.mark_for_deletion(&obsolete_task_key);
+        }
+    }
+
     /// Updates indexing tasks in chitchat state.
     /// Tasks are grouped by (index_id, source_id), each group is stored in a key as follows:
     /// - key: `{INDEXING_TASK_PREFIX}{index_id}{INDEXING_TASK_SEPARATOR}{source_id}`
@@ -519,15 +541,16 @@ pub async fn create_cluster_for_test_with_id(
 ) -> anyhow::Result<Cluster> {
     let gossip_advertise_addr: SocketAddr = ([127, 0, 0, 1], node_id).into();
     let node_id: NodeId = format!("node_{node_id}").into();
-    let self_node = ClusterMember::new(
+    let self_node = ClusterMember {
         node_id,
-        crate::GenerationId(1),
-        self_node_readiness,
-        enabled_services.clone(),
+        generation_id: crate::GenerationId(1),
+        is_ready: self_node_readiness,
+        enabled_services: enabled_services.clone(),
         gossip_advertise_addr,
-        grpc_addr_from_listen_addr_for_test(gossip_advertise_addr),
-        Vec::new(),
-    );
+        grpc_advertise_addr: grpc_addr_from_listen_addr_for_test(gossip_advertise_addr),
+        indexing_tasks: Vec::new(),
+        completed_shards: HashMap::default(),
+    };
     let failure_detector_config = create_failure_detector_config_for_test();
     let cluster = Cluster::join(
         cluster_id,

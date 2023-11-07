@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::io::{stdout, IsTerminal, Stdout, Write};
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
@@ -931,15 +931,16 @@ impl ThroughputCalculator {
 
 async fn create_empty_cluster(config: &NodeConfig) -> anyhow::Result<Cluster> {
     let node_id: NodeId = config.node_id.clone().into();
-    let self_node = ClusterMember::new(
+    let self_node = ClusterMember {
         node_id,
-        quickwit_cluster::GenerationId::now(),
-        false,
-        HashSet::new(),
-        config.gossip_advertise_addr,
-        config.grpc_advertise_addr,
-        Vec::new(),
-    );
+        generation_id: quickwit_cluster::GenerationId::now(),
+        is_ready: false,
+        enabled_services: HashSet::new(),
+        gossip_advertise_addr: config.gossip_advertise_addr,
+        grpc_advertise_addr: config.grpc_advertise_addr,
+        indexing_tasks: Vec::new(),
+        completed_shards: HashMap::default(),
+    };
     let cluster = Cluster::join(
         config.cluster_id.clone(),
         self_node,

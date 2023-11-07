@@ -34,9 +34,9 @@ use quickwit_config::{IndexingSettings, SourceConfig};
 use quickwit_doc_mapper::DocMapper;
 use quickwit_ingest::IngesterPool;
 use quickwit_metastore::IndexMetadataResponseExt;
-use quickwit_proto::indexing::IndexingPipelineId;
+use quickwit_proto::indexing::{IndexingPipelineId, IndexingStatus};
 use quickwit_proto::metastore::{
-    IndexMetadataRequest, MetastoreError, MetastoreService, MetastoreServiceClient,
+    IndexMetadataRequest, MetastoreError, MetastoreService, MetastoreServiceClient, SourceType,
 };
 use quickwit_proto::types::ShardId;
 use quickwit_storage::{Storage, StorageResolver};
@@ -51,7 +51,7 @@ use crate::actors::sequencer::Sequencer;
 use crate::actors::uploader::UploaderType;
 use crate::actors::{Indexer, Packager, Publisher, Uploader};
 use crate::merge_policy::MergePolicy;
-use crate::models::{IndexingStatistics, IndexingStatus, IngestSourceObservableState};
+use crate::models::{IndexingStatistics, IngestSourceObservableState};
 use crate::source::{quickwit_supported_sources, AssignShards, SourceActor, SourceRuntimeArgs};
 use crate::split_store::IndexingSplitStore;
 use crate::SplitsUpdateMailbox;
@@ -272,8 +272,10 @@ impl IndexingPipeline {
             .set_num_spawn_attempts(self.statistics.num_spawn_attempts);
         let pipeline_metrics_opt = handles.indexer.last_observation().pipeline_metrics_opt;
         self.statistics.pipeline_metrics_opt = pipeline_metrics_opt;
-        self.statistics.shard_state =
-            extract_shard_states(handles.source_handle.last_observation());
+        if self.params.source_config.source_type() == SourceType::IngestV2 {
+            self.statistics.shard_state =
+                extract_shard_states(handles.source_handle.last_observation());
+        }
         ctx.observe(self);
     }
 

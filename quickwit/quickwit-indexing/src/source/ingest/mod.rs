@@ -30,6 +30,7 @@ use quickwit_ingest::{
     decoded_mrecords, FetchStreamError, IngesterPool, MRecord, MultiFetchStream,
 };
 use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpoint};
+use quickwit_proto::indexing::IndexingStatus;
 use quickwit_proto::ingest::ingester::{
     FetchResponseV2, IngesterService, TruncateRequest, TruncateSubrequest,
 };
@@ -48,9 +49,7 @@ use super::{
     Assignment, BatchBuilder, Source, SourceContext, SourceRuntimeArgs, TypedSourceFactory,
 };
 use crate::actors::DocProcessor;
-use crate::models::{
-    IndexingStatus, IngestSourceObservableState, NewPublishLock, NewPublishToken, PublishLock,
-};
+use crate::models::{IngestSourceObservableState, NewPublishLock, NewPublishToken, PublishLock};
 
 const EMIT_BATCHES_TIMEOUT: Duration = Duration::from_millis(if cfg!(test) { 100 } else { 1_000 });
 

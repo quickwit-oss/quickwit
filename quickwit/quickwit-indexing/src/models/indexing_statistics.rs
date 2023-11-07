@@ -20,12 +20,11 @@
 use std::sync::atomic::Ordering;
 
 use fnv::FnvHashMap;
-use quickwit_proto::indexing::PipelineMetrics;
+use quickwit_proto::indexing::{IndexingStatus, PipelineMetrics};
 use quickwit_proto::types::ShardId;
 use serde::Serialize;
 
 use crate::actors::{DocProcessorCounters, IndexerCounters, PublisherCounters, UploaderCounters};
-use crate::models::IndexingStatus;
 
 /// A Struct that holds all statistical data about indexing
 #[derive(Clone, Debug, Default, Serialize, utoipa::ToSchema)]
@@ -55,6 +54,7 @@ pub struct IndexingStatistics {
     // Pipeline metrics.
     pub pipeline_metrics_opt: Option<PipelineMetrics>,
     // Shard ingestion state
+    #[serde(skip)]
     pub shard_state: FnvHashMap<ShardId, IndexingStatus>,
 }
 

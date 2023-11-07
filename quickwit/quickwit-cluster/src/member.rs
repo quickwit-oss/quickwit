@@ -17,15 +17,15 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::HashSet;
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::net::SocketAddr;
 
 use anyhow::{anyhow, Context};
 use chitchat::{ChitchatId, NodeState};
 use itertools::Itertools;
 use quickwit_proto::indexing::IndexingTask;
-use quickwit_proto::types::NodeId;
-use tracing::warn;
+use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceUid};
+use tracing::{error, warn};
 
 use crate::{GenerationId, QuickwitService};
 
@@ -33,6 +33,8 @@ use crate::{GenerationId, QuickwitService};
 pub(crate) const GRPC_ADVERTISE_ADDR_KEY: &str = "grpc_advertise_addr";
 pub(crate) const ENABLED_SERVICES_KEY: &str = "enabled_services";
 pub(crate) const PIPELINE_METRICS_PREFIX: &str = "pipeline_metrics:";
+
+pub(crate) const COMPLETED_SHARD_PREFIX: &str = "completed_shards:";
 
 // An indexing task key is formatted as
 // `{INDEXING_TASK_PREFIX}{INDEXING_TASK_SEPARATOR}{index_id}{INDEXING_TASK_SEPARATOR}{source_id}`.
@@ -91,30 +93,13 @@ pub struct ClusterMember {
     /// None if the node is not an indexer or the indexer has not yet started some indexing
     /// pipelines.
     pub indexing_tasks: Vec<IndexingTask>,
+
+    pub completed_shards: HashMap<SourceUid, BTreeSet<ShardId>>,
+
     pub is_ready: bool,
 }
 
 impl ClusterMember {
-    pub fn new(
-        node_id: NodeId,
-        generation_id: GenerationId,
-        is_ready: bool,
-        enabled_services: HashSet<QuickwitService>,
-        gossip_advertise_addr: SocketAddr,
-        grpc_advertise_addr: SocketAddr,
-        indexing_tasks: Vec<IndexingTask>,
-    ) -> Self {
-        Self {
-            node_id,
-            generation_id,
-            is_ready,
-            enabled_services,
-            gossip_advertise_addr,
-            grpc_advertise_addr,
-            indexing_tasks,
-        }
-    }
-
     pub fn chitchat_id(&self) -> ChitchatId {
         ChitchatId::new(
             self.node_id.clone().into(),
@@ -150,15 +135,17 @@ pub(crate) fn build_cluster_member(
         })?;
     let grpc_advertise_addr = node_state.grpc_advertise_addr()?;
     let indexing_tasks = parse_indexing_tasks(node_state, &chitchat_id.node_id);
-    let member = ClusterMember::new(
-        chitchat_id.node_id.into(),
-        chitchat_id.generation_id.into(),
+    let completed_shards = parse_completed_shards(node_state);
+    let member = ClusterMember {
+        node_id: chitchat_id.node_id.into(),
+        generation_id: chitchat_id.generation_id.into(),
         is_ready,
         enabled_services,
-        chitchat_id.gossip_advertise_addr,
+        gossip_advertise_addr: chitchat_id.gossip_advertise_addr,
         grpc_advertise_addr,
         indexing_tasks,
-    );
+        completed_shards,
+    };
     Ok(member)
 }
 
@@ -201,6 +188,40 @@ pub(crate) fn parse_indexing_tasks(node_state: &NodeState, node_id: &str) -> Vec
             },
         )
         .collect()
+}
+
+fn parse_completed_shards(node_state: &NodeState) -> HashMap<SourceUid, BTreeSet<ShardId>> {
+    let mut completed_shards = HashMap::default();
+    for (key, versioned_value) in node_state.iter_prefix(COMPLETED_SHARD_PREFIX) {
+        let Some(source_uid_str) = key.strip_prefix(COMPLETED_SHARD_PREFIX) else {
+            error!("failed to strip prefix");
+            continue;
+        };
+        let Some((index_uid_str, source_id)) = source_uid_str.rsplit_once(':') else {
+            continue;
+        };
+        let index_uid = match IndexUid::parse(index_uid_str.to_string()) {
+            Ok(index_uid) => index_uid,
+            Err(invalid_index_uid) => {
+                error!(invalid_index_uid=%invalid_index_uid, "invalid index uid");
+                continue;
+            }
+        };
+        let source_id = source_id.to_string();
+        let source_uid: SourceUid = SourceUid {
+            index_uid,
+            source_id,
+        };
+        let Ok(shards) = serde_json::from_str(&versioned_value.value) else {
+            error!(
+                shard_id_set = versioned_value.value.as_str(),
+                "failed to deserialize shard id set"
+            );
+            continue;
+        };
+        completed_shards.insert(source_uid, shards);
+    }
+    completed_shards
 }
 
 fn parse_enabled_services_str(

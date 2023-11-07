@@ -48,6 +48,7 @@ pub use packaged_split::{PackagedSplit, PackagedSplitBatch};
 pub use processed_doc::{ProcessedDoc, ProcessedDocBatch};
 pub use publish_lock::{NewPublishLock, PublishLock};
 pub use publisher_message::SplitsUpdate;
+use quickwit_proto::indexing::IndexingStatus;
 use quickwit_proto::types::{PublishToken, ShardId};
 pub use raw_doc_batch::RawDocBatch;
 use serde::{Deserialize, Serialize};
@@ -55,15 +56,6 @@ pub use split_attrs::{create_split_metadata, SplitAttrs};
 
 #[derive(Debug)]
 pub struct NewPublishToken(pub PublishToken);
-
-#[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum IndexingStatus {
-    #[default]
-    Active,
-    Complete,
-    Error,
-}
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct IngestSourceObservableState {

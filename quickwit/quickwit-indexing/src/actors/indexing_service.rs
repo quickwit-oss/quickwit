@@ -17,7 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::hash_map::Entry;
+use std::collections::{BTreeSet, HashMap, HashSet};
 use std::fmt::Debug;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -43,12 +44,12 @@ use quickwit_ingest::{
 use quickwit_metastore::{IndexMetadata, IndexMetadataResponseExt, ListIndexesMetadataResponseExt};
 use quickwit_proto::indexing::{
     ApplyIndexingPlanRequest, ApplyIndexingPlanResponse, IndexingError, IndexingPipelineId,
-    IndexingTask, PipelineMetrics,
+    IndexingStatus, IndexingTask, PipelineMetrics,
 };
 use quickwit_proto::metastore::{
     IndexMetadataRequest, ListIndexesMetadataRequest, MetastoreService, MetastoreServiceClient,
 };
-use quickwit_proto::types::{IndexId, IndexUid};
+use quickwit_proto::types::{IndexId, IndexUid, ShardId, SourceId};
 use quickwit_storage::StorageResolver;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Semaphore;
@@ -415,17 +416,52 @@ impl IndexingService {
         self.counters.num_running_merge_pipelines = self.merge_pipeline_handles.len();
         self.update_cluster_running_indexing_tasks().await;
 
-        let pipeline_metrics: HashMap<&IndexingPipelineId, PipelineMetrics> = self
+        let pipeline_states: fnv::FnvHashMap<&IndexingPipelineId, IndexingStatistics> = self
             .indexing_pipelines
             .iter()
-            .flat_map(|(pipeline, (_, pipeline_handle))| {
-                let indexer_metrics = pipeline_handle.last_observation();
-                let pipeline_metrics = indexer_metrics.pipeline_metrics_opt?;
-                Some((pipeline, pipeline_metrics))
+            .map(|(pipeline_id, (_, pipeline_handle))| {
+                let observation = pipeline_handle.last_observation();
+                (pipeline_id, observation)
             })
             .collect();
+        let pipeline_metrics: HashMap<&IndexingPipelineId, PipelineMetrics> = pipeline_states
+            .iter()
+            .flat_map(|(&pipeline_id, indexing_statistics)| {
+                let pipeline_metrics = indexing_statistics.pipeline_metrics_opt?;
+                Some((pipeline_id, pipeline_metrics))
+            })
+            .collect();
+
+        let mut completed_shards: HashMap<(&IndexUid, &SourceId), BTreeSet<ShardId>> =
+            Default::default();
+        for (&pipeline_id, indexing_statistics) in &pipeline_states {
+            let mut complete_shards_for_pipeline: BTreeSet<ShardId> = BTreeSet::default();
+            for (shard_id, &indexing_status) in &indexing_statistics.shard_state {
+                if indexing_status == IndexingStatus::Complete {
+                    complete_shards_for_pipeline.insert(*shard_id);
+                }
+            }
+            if complete_shards_for_pipeline.is_empty() {
+                continue;
+            }
+            let entry = completed_shards.entry((&pipeline_id.index_uid, &pipeline_id.source_id));
+            match entry {
+                Entry::Occupied(mut occupied) => {
+                    occupied
+                        .get_mut()
+                        .extend(complete_shards_for_pipeline.into_iter());
+                }
+                Entry::Vacant(vacant) => {
+                    vacant.insert(complete_shards_for_pipeline);
+                }
+            }
+        }
+
         self.cluster
             .update_self_node_pipeline_metrics(&pipeline_metrics)
+            .await;
+        self.cluster
+            .update_self_node_completed_shards(&completed_shards)
             .await;
         Ok(())
     }

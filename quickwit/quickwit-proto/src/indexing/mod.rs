@@ -207,6 +207,15 @@ impl TryFrom<&str> for IndexingTask {
     }
 }
 
+#[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum IndexingStatus {
+    #[default]
+    Active,
+    Complete,
+    Error,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, utoipa::ToSchema)]
 pub struct PipelineMetrics {
     pub cpu_millis: u16,
