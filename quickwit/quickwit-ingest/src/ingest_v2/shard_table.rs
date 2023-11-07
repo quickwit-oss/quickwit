@@ -106,17 +106,13 @@ impl ShardTableEntry {
             if shards.is_empty() {
                 continue;
             }
-            let mut num_attempts = 0;
-            let max_num_attempts = shards.len();
-
-            while num_attempts < max_num_attempts {
+            for _attempt in 0..shards.len() {
                 let shard_idx = round_robin_idx.fetch_add(1, Ordering::Relaxed);
                 let shard = &shards[shard_idx % shards.len()];
 
                 if shard.is_open() && ingester_pool.contains_key(&shard.leader_id) {
                     return Some(shard);
                 }
-                num_attempts += 1;
             }
         }
         None
