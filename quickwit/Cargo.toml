@@ -144,7 +144,8 @@ reqwest = { version = "0.11", default-features = false, features = [
 rust-embed = "6.8.1"
 sea-query = { version = "0" }
 sea-query-binder = { version = "0", features = ["sqlx-postgres", "runtime-tokio-rustls",] }
-serde = { version = "= 1.0.171", features = ["derive", "rc"] }
+# ^1.0.184 due to serde-rs/serde#2538
+serde = { version = "1.0.184", features = ["derive", "rc"] }
 serde_json = "1.0"
 serde_qs = { version = "0.12", features = ["warp"] }
 serde_with = "3.4.0"
