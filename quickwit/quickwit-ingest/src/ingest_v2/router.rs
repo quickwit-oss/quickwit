@@ -38,7 +38,7 @@ use quickwit_proto::ingest::router::{
 use quickwit_proto::ingest::{CommitTypeV2, IngestV2Error, IngestV2Result};
 use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceId, SubrequestId};
 use tokio::sync::RwLock;
-use tracing::{error, warn};
+use tracing::{error, info, warn};
 
 use super::ingester::PERSIST_REQUEST_TIMEOUT;
 use super::shard_table::ShardTable;
@@ -132,6 +132,18 @@ impl IngestRouter {
                 };
                 get_open_shards_subrequests.push(subrequest);
             }
+        }
+        if !closed_shards.is_empty() {
+            info!(
+                "reporting {} closed shard(s) to control-plane",
+                closed_shards.len()
+            )
+        }
+        if !unavailable_leaders.is_empty() {
+            info!(
+                "reporting {} unavailable leader(s) to control-plane",
+                unavailable_leaders.len()
+            );
         }
         GetOrCreateOpenShardsRequest {
             subrequests: get_open_shards_subrequests,
