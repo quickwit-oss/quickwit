@@ -64,11 +64,14 @@ The Kafka source consumes a `topic` using the client library [librdkafka](https:
 - `bootstrap.servers`
 Comma-separated list of host and port pairs that are the addresses of a subset of the Kafka brokers in the Kafka cluster.
 
+- `auto.offset.reset`
+Defines the behavior of the source when consuming a partition for which there is no initial offset saved in the checkpoint. `earliest` consumes from the beginning of the partition, whereas `latest` (default) consumes from the end.
+
 - `enable.auto.commit`
 The Kafka source manages commit offsets manually using the [checkpoint API](../overview/concepts/indexing.md#checkpoint) and disables auto-commit.
 
 - `group.id`
-Kafka-based distributed indexing relies on consumer groups. Unless overridden in the client parameters, the default group ID assigned to each consumer managed by the source is `quickwit-{index_uid}-{source_id}`
+Kafka-based distributed indexing relies on consumer groups. Unless overridden in the client parameters, the default group ID assigned to each consumer managed by the source is `quickwit-{index_uid}-{source_id}`.
 
 - `max.poll.interval.ms`
 Short max poll interval durations may cause a source to crash when back pressure from the indexer occurs. Therefore, Quickwit recommends using the default value of `300000` (5 minutes).
