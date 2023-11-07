@@ -26,7 +26,9 @@ use std::time::{Duration, Instant};
 
 use fnv::{FnvHashMap, FnvHashSet};
 use itertools::Itertools;
-use quickwit_proto::indexing::{ApplyIndexingPlanRequest, IndexingService, IndexingTask};
+use quickwit_proto::indexing::{
+    ApplyIndexingPlanRequest, CpuCapacity, IndexingService, IndexingTask, PIPELINE_FULL_CAPACITY,
+};
 use quickwit_proto::metastore::SourceType;
 use quickwit_proto::types::NodeId;
 use scheduling::{SourceToSchedule, SourceToScheduleType};
@@ -35,10 +37,8 @@ use tracing::{debug, error, info, warn};
 
 use crate::control_plane_model::ControlPlaneModel;
 use crate::indexing_plan::PhysicalIndexingPlan;
-use crate::indexing_scheduler::scheduling::{build_physical_indexing_plan, Load};
+use crate::indexing_scheduler::scheduling::build_physical_indexing_plan;
 use crate::{IndexerNodeInfo, IndexerPool};
-
-const PIPELINE_FULL_LOAD: Load = 4_000u32;
 
 pub(crate) const MIN_DURATION_BETWEEN_SCHEDULING: Duration =
     if cfg!(any(test, feature = "testsuite")) {
@@ -157,7 +157,8 @@ fn get_sources_to_schedule(model: &ControlPlaneModel) -> Vec<SourceToSchedule> {
                     source_type: SourceToScheduleType::NonSharded {
                         num_pipelines: source_config.desired_num_pipelines.get() as u32,
                         // FIXME
-                        load_per_pipeline: NonZeroU32::new(PIPELINE_FULL_LOAD).unwrap(),
+                        load_per_pipeline: NonZeroU32::new(PIPELINE_FULL_CAPACITY.cpu_millis())
+                            .unwrap(),
                     },
                 });
             }
@@ -192,7 +193,7 @@ impl IndexingScheduler {
 
         let sources = get_sources_to_schedule(model);
 
-        let indexer_max_loads: FnvHashMap<String, Load> = indexers
+        let indexer_cpu_capacity: FnvHashMap<String, CpuCapacity> = indexers
             .iter()
             .map(|(indexer_id, indexer_node_info)| {
                 (indexer_id.to_string(), indexer_node_info.indexing_capacity)
@@ -201,7 +202,7 @@ impl IndexingScheduler {
 
         let new_physical_plan = build_physical_indexing_plan(
             &sources,
-            &indexer_max_loads,
+            &indexer_cpu_capacity,
             self.state.last_applied_physical_plan.as_ref(),
         );
         if let Some(last_applied_plan) = &self.state.last_applied_physical_plan {
@@ -739,8 +740,8 @@ mod tests {
             },
         ];
         let mut indexer_max_loads = FnvHashMap::default();
-        indexer_max_loads.insert("indexer1".to_string(), 3_000);
-        indexer_max_loads.insert("indexer2".to_string(), 3_000);
+        indexer_max_loads.insert("indexer1".to_string(), mcpu(3_000));
+        indexer_max_loads.insert("indexer2".to_string(), mcpu(3_000));
         let physical_plan = build_physical_indexing_plan(&sources[..], &indexer_max_loads, None);
         assert_eq!(physical_plan.indexing_tasks_per_indexer().len(), 2);
         let indexing_tasks_1 = physical_plan.indexer("indexer1").unwrap();
@@ -769,7 +770,7 @@ mod tests {
             let mut indexer_max_loads = FnvHashMap::default();
             for i in 0..num_indexers {
                 let indexer_id = format!("indexer-{i}");
-                indexer_max_loads.insert(indexer_id, 4_000);
+                indexer_max_loads.insert(indexer_id, mcpu(4_000));
             }
             let physical_indexing_plan = build_physical_indexing_plan(&sources, &indexer_max_loads, None);
             let source_map: FnvHashMap<&SourceUid, &SourceToSchedule> = sources
@@ -800,12 +801,13 @@ mod tests {
                         }
                     }
                 }
-                assert!(load_in_node <= *indexer_max_loads.get(node_id).unwrap());
+                assert!(load_in_node <= indexer_max_loads.get(node_id).unwrap().cpu_millis());
             }
         }
     }
 
     use quickwit_config::SourceInputFormat;
+    use quickwit_proto::indexing::mcpu;
 
     fn kafka_source_params_for_test() -> SourceParams {
         SourceParams::Kafka(KafkaSourceParams {

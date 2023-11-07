@@ -38,7 +38,9 @@ use quickwit_common::temp_dir::TempDirectory;
 use quickwit_config::IndexingSettings;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
-use quickwit_proto::indexing::{IndexingPipelineId, PipelineMetrics};
+use quickwit_proto::indexing::{
+    CpuCapacity, IndexingPipelineId, PipelineMetrics, PIPELINE_FULL_CAPACITY,
+};
 use quickwit_proto::metastore::{
     LastDeleteOpstampRequest, MetastoreService, MetastoreServiceClient,
 };
@@ -551,11 +553,9 @@ impl Indexer {
 
     fn update_pipeline_metrics(&mut self, elapsed: Duration, uncompressed_num_bytes: u64) {
         let commit_timeout = self.indexer_state.indexing_settings.commit_timeout();
-        let cpu_millis: u16 = if elapsed >= commit_timeout {
-            1_000
-        } else {
-            (elapsed.as_micros() * 1_000 / commit_timeout.as_micros()) as u16
-        };
+        let pipeline_throughput_fraction =
+            (elapsed.as_micros() as f32 / commit_timeout.as_micros() as f32).min(1.0f32);
+        let cpu_millis: CpuCapacity = PIPELINE_FULL_CAPACITY * pipeline_throughput_fraction;
         self.counters.pipeline_metrics_opt = Some(PipelineMetrics {
             cpu_millis,
             throughput_mb_per_sec: (uncompressed_num_bytes / (1u64 + elapsed.as_micros() as u64))

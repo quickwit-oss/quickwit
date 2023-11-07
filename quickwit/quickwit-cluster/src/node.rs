@@ -24,7 +24,7 @@ use std::sync::Arc;
 
 use chitchat::{ChitchatId, NodeState};
 use quickwit_config::service::QuickwitService;
-use quickwit_proto::indexing::IndexingTask;
+use quickwit_proto::indexing::{CpuCapacity, IndexingTask};
 use tonic::transport::Channel;
 
 use crate::member::build_cluster_member;
@@ -49,7 +49,7 @@ impl ClusterNode {
             enabled_services: member.enabled_services,
             grpc_advertise_addr: member.grpc_advertise_addr,
             indexing_tasks: member.indexing_tasks,
-            indexing_capacity: member.indexing_capacity,
+            indexing_capacity: member.indexing_cpu_capacity,
             is_ready: member.is_ready,
             is_self_node,
         };
@@ -113,7 +113,7 @@ impl ClusterNode {
         &self.inner.indexing_tasks
     }
 
-    pub fn indexing_capacity(&self) -> u32 {
+    pub fn indexing_capacity(&self) -> CpuCapacity {
         self.inner.indexing_capacity
     }
 
@@ -154,7 +154,7 @@ struct InnerNode {
     enabled_services: HashSet<QuickwitService>,
     grpc_advertise_addr: SocketAddr,
     indexing_tasks: Vec<IndexingTask>,
-    indexing_capacity: u32,
+    indexing_capacity: CpuCapacity,
     is_ready: bool,
     is_self_node: bool,
 }

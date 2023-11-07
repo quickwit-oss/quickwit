@@ -21,10 +21,10 @@ use std::collections::btree_map::Entry;
 use std::collections::BTreeMap;
 use std::num::NonZeroU32;
 
+use quickwit_proto::indexing::CpuCapacity;
+
 pub type SourceOrd = u32;
 pub type IndexerOrd = usize;
-pub type Load = u32;
-
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Source {
     pub source_ord: SourceOrd,
@@ -35,22 +35,24 @@ pub struct Source {
 #[derive(Debug)]
 pub struct SchedulingProblem {
     sources: Vec<Source>,
-    indexer_max_loads: Vec<Load>,
+    indexer_cpu_capacities: Vec<CpuCapacity>,
 }
 
 impl SchedulingProblem {
     pub fn new_solution(&self) -> SchedulingSolution {
-        SchedulingSolution::with_num_indexers(self.indexer_max_loads.len())
+        SchedulingSolution::with_num_indexers(self.indexer_cpu_capacities.len())
     }
 
-    pub fn indexer_max_load(&self, indexer_ord: IndexerOrd) -> Load {
-        self.indexer_max_loads[indexer_ord]
+    pub fn indexer_cpu_capacity(&self, indexer_ord: IndexerOrd) -> CpuCapacity {
+        self.indexer_cpu_capacities[indexer_ord]
     }
 
-    pub fn with_indexer_maximum_load(node_max_loads: Vec<Load>) -> SchedulingProblem {
+    pub fn with_indexer_cpu_capacities(
+        indexer_cpu_capacities: Vec<CpuCapacity>,
+    ) -> SchedulingProblem {
         SchedulingProblem {
             sources: Vec::new(),
-            indexer_max_loads: node_max_loads,
+            indexer_cpu_capacities,
         }
     }
 
@@ -81,7 +83,7 @@ impl SchedulingProblem {
     }
 
     pub fn num_indexers(&self) -> usize {
-        self.indexer_max_loads.len()
+        self.indexer_cpu_capacities.len()
     }
 }
 
@@ -99,17 +101,25 @@ impl IndexerAssignment {
         }
     }
 
-    pub fn indexer_available_capacity(&self, problem: &SchedulingProblem) -> Load {
-        problem.indexer_max_loads[self.indexer_ord].saturating_sub(self.total_load(problem))
+    pub fn indexer_available_capacity(&self, problem: &SchedulingProblem) -> CpuCapacity {
+        let total_cpu_capacity = self.total_cpu_load(problem);
+        let indexer_cpu_capacity = problem.indexer_cpu_capacities[self.indexer_ord];
+        if indexer_cpu_capacity <= total_cpu_capacity {
+            CpuCapacity::zero()
+        } else {
+            indexer_cpu_capacity - total_cpu_capacity
+        }
     }
 
-    pub fn total_load(&self, problem: &SchedulingProblem) -> Load {
-        self.num_shards_per_source
-            .iter()
-            .map(|(source_ord, num_shards)| {
-                problem.source_load_per_shard(*source_ord).get() * num_shards
-            })
-            .sum()
+    pub fn total_cpu_load(&self, problem: &SchedulingProblem) -> CpuCapacity {
+        CpuCapacity::from_cpu_millis(
+            self.num_shards_per_source
+                .iter()
+                .map(|(source_ord, num_shards)| {
+                    problem.source_load_per_shard(*source_ord).get() * num_shards
+                })
+                .sum(),
+        )
     }
 
     pub fn num_shards(&self, source_ord: SourceOrd) -> u32 {

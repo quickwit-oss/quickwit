@@ -19,11 +19,12 @@
 
 use std::collections::HashSet;
 use std::net::SocketAddr;
+use std::str::FromStr;
 
 use anyhow::{anyhow, Context};
 use chitchat::{ChitchatId, NodeState};
 use itertools::Itertools;
-use quickwit_proto::indexing::IndexingTask;
+use quickwit_proto::indexing::{CpuCapacity, IndexingTask};
 use quickwit_proto::types::NodeId;
 use tracing::{error, warn};
 
@@ -43,7 +44,7 @@ pub(crate) const READINESS_KEY: &str = "readiness";
 pub(crate) const READINESS_VALUE_READY: &str = "READY";
 pub(crate) const READINESS_VALUE_NOT_READY: &str = "NOT_READY";
 
-pub const INDEXING_CAPACITY_KEY: &str = "indexing_capacity";
+pub const INDEXING_CPU_CAPACITY_KEY: &str = "indexing_cpu_capacity";
 
 pub(crate) trait NodeStateExt {
     fn grpc_advertise_addr(&self) -> anyhow::Result<SocketAddr>;
@@ -93,9 +94,8 @@ pub struct ClusterMember {
     /// None if the node is not an indexer or the indexer has not yet started some indexing
     /// pipelines.
     pub indexing_tasks: Vec<IndexingTask>,
-    /// Indexing capacity of the node expressed in milli pipeline.
-    /// An indexer able to index 4 pipelines at full capacity should have a value of 4_000.
-    pub indexing_capacity: u32,
+    /// Indexing cpu capacity of the node expressed in milli cpu.
+    pub indexing_cpu_capacity: CpuCapacity,
     pub is_ready: bool,
 }
 
@@ -115,15 +115,15 @@ impl From<ClusterMember> for ChitchatId {
     }
 }
 
-fn parse_indexing_capacity(node_state: &NodeState) -> u32 {
-    let Some(indexing_capacity_str) = node_state.get(INDEXING_CAPACITY_KEY) else {
-        return 0;
+fn parse_indexing_cpu_capacity(node_state: &NodeState) -> CpuCapacity {
+    let Some(indexing_capacity_str) = node_state.get(INDEXING_CPU_CAPACITY_KEY) else {
+        return CpuCapacity::zero();
     };
-    if let Ok(indexing_capacity) = indexing_capacity_str.parse::<u32>() {
+    if let Ok(indexing_capacity) = CpuCapacity::from_str(indexing_capacity_str) {
         indexing_capacity
     } else {
         error!(indexing_capacity=?indexing_capacity_str, "Received an unparseable indexing capacity from node.");
-        0
+        CpuCapacity::zero()
     }
 }
 
@@ -147,7 +147,7 @@ pub(crate) fn build_cluster_member(
         })?;
     let grpc_advertise_addr = node_state.grpc_advertise_addr()?;
     let indexing_tasks = parse_indexing_tasks(node_state, &chitchat_id.node_id);
-    let indexing_capacity = parse_indexing_capacity(node_state);
+    let indexing_cpu_capacity = parse_indexing_cpu_capacity(node_state);
     let member = ClusterMember {
         node_id: chitchat_id.node_id.into(),
         generation_id: chitchat_id.generation_id.into(),
@@ -156,7 +156,7 @@ pub(crate) fn build_cluster_member(
         gossip_advertise_addr: chitchat_id.gossip_advertise_addr,
         grpc_advertise_addr,
         indexing_tasks,
-        indexing_capacity,
+        indexing_cpu_capacity,
     };
     Ok(member)
 }
