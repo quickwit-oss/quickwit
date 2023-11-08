@@ -28,7 +28,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
-use mrecordlog::error::{CreateQueueError, DeleteQueueError, TruncateError};
+use mrecordlog::error::{CreateQueueError, TruncateError};
 use mrecordlog::MultiRecordLog;
 use quickwit_common::tower::Pool;
 use quickwit_common::ServiceStream;
@@ -134,6 +134,11 @@ impl Ingester {
             .map(|queue_id| queue_id.to_string())
             .collect();
 
+        if queue_ids.is_empty() {
+            return Ok(());
+        }
+        info!("closing {} shard(s)", queue_ids.len());
+
         for queue_id in queue_ids {
             append_eof_record_if_necessary(&mut state_guard.mrecordlog, &queue_id).await;
 
@@ -171,7 +176,8 @@ impl Ingester {
             let primary_shard = PrimaryShard::new(follower_id.clone());
             IngesterShard::Primary(primary_shard)
         } else {
-            IngesterShard::Solo(SoloShard::default())
+            let solo_shard = SoloShard::new(ShardState::Open, Position::Beginning);
+            IngesterShard::Solo(solo_shard)
         };
         let entry = state.shards.entry(queue_id.clone());
         Ok(entry.or_insert(shard))
@@ -505,12 +511,20 @@ impl IngesterService for Ingester {
 
         for subrequest in truncate_request.subrequests {
             let queue_id = subrequest.queue_id();
-            let to_position_inclusive = subrequest.to_position_inclusive();
 
-            if let Some(to_offset_inclusive) = to_position_inclusive.as_u64() {
+            let truncate_position_opt = match subrequest.to_position_inclusive() {
+                Position::Beginning => None,
+                Position::Offset(offset) => offset.as_u64(),
+                Position::Eof => state_guard
+                    .mrecordlog
+                    .current_position(&queue_id)
+                    .ok()
+                    .flatten(),
+            };
+            if let Some(truncate_position) = truncate_position_opt {
                 match state_guard
                     .mrecordlog
-                    .truncate(&queue_id, to_offset_inclusive)
+                    .truncate(&queue_id, truncate_position)
                     .await
                 {
                     Ok(_) | Err(TruncateError::MissingQueue(_)) => {}
@@ -518,15 +532,7 @@ impl IngesterService for Ingester {
                         error!("failed to truncate queue `{}`: {}", queue_id, error);
                     }
                 }
-            } else if to_position_inclusive == Position::Eof {
-                match state_guard.mrecordlog.delete_queue(&queue_id).await {
-                    Ok(_) | Err(DeleteQueueError::MissingQueue(_)) => {}
-                    Err(error) => {
-                        error!("failed to delete queue `{}`: {}", queue_id, error);
-                    }
-                }
-                state_guard.shards.remove(&queue_id);
-            };
+            }
         }
         let truncate_response = TruncateResponse {};
         Ok(truncate_response)
@@ -1230,12 +1236,16 @@ mod tests {
         ingester.truncate(truncate_request).await.unwrap();
 
         let state_guard = ingester.state.read().await;
-        assert_eq!(state_guard.shards.len(), 1);
-        assert!(state_guard.shards.contains_key(&queue_id_01));
+        assert_eq!(state_guard.shards.len(), 2);
 
+        assert!(state_guard.shards.contains_key(&queue_id_01));
         state_guard
             .mrecordlog
             .assert_records_eq(&queue_id_01, .., &[(1, "\0\0test-doc-011")]);
-        assert!(!state_guard.shards.contains_key(&queue_id_02));
+
+        assert!(state_guard.shards.contains_key(&queue_id_02));
+        state_guard
+            .mrecordlog
+            .assert_records_eq(&queue_id_02, .., &[]);
     }
 }

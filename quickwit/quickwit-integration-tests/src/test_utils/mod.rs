@@ -19,4 +19,4 @@
 
 mod cluster_sandbox;
 
-pub use cluster_sandbox::{build_node_configs, ingest_with_retry, ClusterSandbox};
+pub(crate) use cluster_sandbox::{ingest_with_retry, ClusterSandbox};
