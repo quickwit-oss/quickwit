@@ -262,7 +262,7 @@ mod tests {
                         && client_args.connect_timeout.is_none()
                         && client_args.commit_timeout.is_none()
                         && !client_args.ingest_v2
-                        && batch_size_limit == batch_size_limit == ByteSize::mb(8)
+                        && batch_size_limit == ByteSize::mb(8)
         ));
 
         let app = build_cli().no_binary_name(true);

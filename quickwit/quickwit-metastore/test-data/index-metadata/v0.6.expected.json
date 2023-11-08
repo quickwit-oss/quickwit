@@ -29,6 +29,7 @@
         },
         {
           "fast": true,
+          "fast_precision": "seconds",
           "indexed": true,
           "input_formats": [
             "rfc3339",
@@ -36,7 +37,6 @@
           ],
           "name": "timestamp",
           "output_format": "rfc3339",
-          "fast_precision": "seconds",
           "stored": true,
           "type": "datetime"
         },
@@ -94,7 +94,7 @@
         "type": "stable_log"
       },
       "resources": {
-        "heap_size": 3
+        "heap_size": "50.0 MB"
       },
       "split_num_docs_target": 10000001
     },

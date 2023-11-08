@@ -86,7 +86,7 @@
           "type": "stable_log"
         },
         "resources": {
-          "heap_size": 3
+          "heap_size": 50000000
         },
         "split_num_docs_target": 10000001
       },

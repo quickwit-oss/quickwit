@@ -25,7 +25,7 @@ use std::str::FromStr;
 use std::time::{Duration, Instant};
 use std::{fmt, io};
 
-use anyhow::{bail, Context};
+use anyhow::{anyhow, bail, Context};
 use bytes::Bytes;
 use bytesize::ByteSize;
 use clap::{arg, Arg, ArgAction, ArgMatches, Command};
@@ -339,7 +339,9 @@ impl IndexCliCommand {
 
         let batch_size_limit_opt = matches
             .remove_one::<String>("batch-size-limit")
-            .map(|s| s.parse::<ByteSize>().unwrap());
+            .map(|limit| limit.parse::<ByteSize>())
+            .transpose()
+            .map_err(|error| anyhow!(error))?;
         let commit_type = match (matches.get_flag("wait"), matches.get_flag("force")) {
             (false, false) => CommitType::Auto,
             (false, true) => CommitType::Force,

@@ -476,7 +476,7 @@ async fn test_single_node_without_timestamp_with_query_start_timestamp_enabled(
     let start_timestamp = OffsetDateTime::now_utc().unix_timestamp();
     for i in 0..30 {
         let body = format!("info @ t:{}", i + 1);
-        docs.push(json!({ "body": body }));
+        docs.push(json!({"body": body}));
     }
     test_sandbox.add_documents(docs).await?;
 

@@ -465,7 +465,7 @@ impl TestableForRegression for IndexConfig {
         };
         let merge_policy = MergePolicyConfig::StableLog(stable_log_config);
         let indexing_resources = IndexingResources {
-            heap_size: ByteSize(3),
+            heap_size: ByteSize::mb(50),
             ..Default::default()
         };
         let indexing_settings = IndexingSettings {

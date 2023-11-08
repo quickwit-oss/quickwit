@@ -90,7 +90,7 @@ impl IndexerConfig {
         let indexer_config = IndexerConfig {
             enable_cooperative_indexing: false,
             enable_otlp_endpoint: true,
-            split_store_max_num_bytes: ByteSize::gb(1),
+            split_store_max_num_bytes: ByteSize::mb(1),
             split_store_max_num_splits: 3,
             max_concurrent_split_uploads: 4,
         };
