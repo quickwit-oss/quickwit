@@ -31,6 +31,7 @@ use reqwest::header::{HeaderMap, HeaderValue, CONTENT_TYPE};
 use reqwest::{Client, ClientBuilder, Method, StatusCode, Url};
 use serde::Serialize;
 use serde_json::json;
+use tracing::warn;
 
 use crate::error::Error;
 use crate::models::{ApiResponse, IngestSource, Timeout};
@@ -119,6 +120,8 @@ pub struct QuickwitClientBuilder {
     ingest_timeout: Timeout,
     /// Timeout for the ingest operations that require waiting for commit.
     commit_timeout: Timeout,
+    /// Experimental: if true, use the ingest v2 endpoint.
+    ingest_v2: bool,
 }
 
 impl QuickwitClientBuilder {
@@ -130,6 +133,7 @@ impl QuickwitClientBuilder {
             search_timeout: DEFAULT_CLIENT_SEARCH_TIMEOUT,
             ingest_timeout: DEFAULT_CLIENT_INGEST_TIMEOUT,
             commit_timeout: DEFAULT_CLIENT_COMMIT_TIMEOUT,
+            ingest_v2: false,
         }
     }
 
@@ -140,6 +144,12 @@ impl QuickwitClientBuilder {
 
     pub fn timeout(mut self, timeout: Timeout) -> Self {
         self.timeout = timeout;
+        self
+    }
+
+    pub fn enable_ingest_v2(mut self) -> Self {
+        warn!("ingest v2 experimental feature enabled!");
+        self.ingest_v2 = true;
         self
     }
 
@@ -160,13 +170,14 @@ impl QuickwitClientBuilder {
 
     pub fn build(self) -> QuickwitClient {
         let transport = Transport::new(self.base_url, self.connect_timeout);
-        QuickwitClient::new(
+        QuickwitClient {
             transport,
-            self.timeout,
-            self.search_timeout,
-            self.ingest_timeout,
-            self.commit_timeout,
-        )
+            timeout: self.timeout,
+            search_timeout: self.search_timeout,
+            ingest_timeout: self.ingest_timeout,
+            commit_timeout: self.commit_timeout,
+            ingest_v2: self.ingest_v2,
+        }
     }
 }
 
@@ -181,25 +192,12 @@ pub struct QuickwitClient {
     ingest_timeout: Timeout,
     /// Timeout for the ingest operations that require waiting for commit.
     commit_timeout: Timeout,
+    // TODO remove me after Quickwit 0.7 release.
+    // If true, rely on ingest v2
+    ingest_v2: bool,
 }
 
 impl QuickwitClient {
-    fn new(
-        transport: Transport,
-        timeout: Timeout,
-        search_timeout: Timeout,
-        ingest_timeout: Timeout,
-        commit_timeout: Timeout,
-    ) -> Self {
-        Self {
-            transport,
-            timeout,
-            search_timeout,
-            ingest_timeout,
-            commit_timeout,
-        }
-    }
-
     pub async fn search(
         &self,
         index_id: &str,
@@ -258,7 +256,11 @@ impl QuickwitClient {
         on_ingest_event: Option<&(dyn Fn(IngestEvent) + Sync)>,
         last_block_commit: CommitType,
     ) -> Result<(), Error> {
-        let ingest_path = format!("{index_id}/ingest");
+        let ingest_path = if self.ingest_v2 {
+            format!("{index_id}/ingest-v2")
+        } else {
+            format!("{index_id}/ingest")
+        };
         let batch_size_limit = batch_size_limit_opt.unwrap_or(INGEST_CONTENT_LENGTH_LIMIT);
         let mut batch_reader = match ingest_source {
             IngestSource::File(filepath) => {
