@@ -188,7 +188,7 @@ impl IngestController {
                     index_id=%index_uid.index_id(),
                     source_id=%source_id,
                     shard_ids=?PrettySample::new(&closed_shard_ids, 5),
-                    "closed {} shards reported by router",
+                    "closed {} shard(s) reported by router",
                     closed_shard_ids.len()
                 );
             }
