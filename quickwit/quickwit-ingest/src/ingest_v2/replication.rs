@@ -22,22 +22,26 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
+use bytesize::ByteSize;
 use futures::{Future, StreamExt};
 use quickwit_common::ServiceStream;
 use quickwit_proto::ingest::ingester::{
-    ack_replication_message, syn_replication_message, AckReplicationMessage, ReplicateRequest,
-    ReplicateResponse, ReplicateSuccess, SynReplicationMessage,
+    ack_replication_message, syn_replication_message, AckReplicationMessage, ReplicateFailure,
+    ReplicateFailureReason, ReplicateRequest, ReplicateResponse, ReplicateSuccess,
+    SynReplicationMessage,
 };
 use quickwit_proto::ingest::{CommitTypeV2, IngestV2Error, IngestV2Result};
 use quickwit_proto::types::{NodeId, Position};
 use tokio::sync::mpsc::error::TryRecvError;
 use tokio::sync::{mpsc, oneshot, RwLock};
 use tokio::task::JoinHandle;
-use tracing::error;
+use tracing::{error, warn};
 
 use super::ingester::IngesterState;
 use super::models::{IngesterShard, ReplicaShard};
 use super::mrecord::MRecord;
+use super::mrecordlog_utils::check_enough_capacity;
+use crate::estimate_size;
 use crate::metrics::INGEST_METRICS;
 
 pub(super) const SYN_REPLICATION_STREAM_CAPACITY: usize = 5;
@@ -265,6 +269,8 @@ pub(super) struct ReplicationTask {
     syn_replication_stream: ServiceStream<SynReplicationMessage>,
     ack_replication_stream_tx: mpsc::UnboundedSender<IngestV2Result<AckReplicationMessage>>,
     current_replication_seqno: ReplicationSeqNo,
+    disk_capacity: ByteSize,
+    memory_capacity: ByteSize,
 }
 
 impl ReplicationTask {
@@ -274,6 +280,8 @@ impl ReplicationTask {
         state: Arc<RwLock<IngesterState>>,
         syn_replication_stream: ServiceStream<SynReplicationMessage>,
         ack_replication_stream_tx: mpsc::UnboundedSender<IngestV2Result<AckReplicationMessage>>,
+        disk_capacity: ByteSize,
+        memory_capacity: ByteSize,
     ) -> ReplicationTaskHandle {
         let mut replication_task = Self {
             leader_id,
@@ -282,6 +290,8 @@ impl ReplicationTask {
             syn_replication_stream,
             ack_replication_stream_tx,
             current_replication_seqno: 0,
+            disk_capacity,
+            memory_capacity,
         };
         let join_handle = tokio::spawn(async move { replication_task.run().await });
         ReplicationTaskHandle { join_handle }
@@ -314,7 +324,9 @@ impl ReplicationTask {
 
         let commit_type = replicate_request.commit_type();
         let force_commit = commit_type == CommitTypeV2::Force;
+
         let mut replicate_successes = Vec::with_capacity(replicate_request.subrequests.len());
+        let mut replicate_failures = Vec::new();
 
         let mut state_guard = self.state.write().await;
 
@@ -341,15 +353,57 @@ impl ReplicationTask {
                     .expect("replica shard should be initialized")
             };
             if replica_shard.is_closed() {
-                // TODO
+                let replicate_failure = ReplicateFailure {
+                    subrequest_id: subrequest.subrequest_id,
+                    index_uid: subrequest.index_uid,
+                    source_id: subrequest.source_id,
+                    shard_id: subrequest.shard_id,
+                    reason: ReplicateFailureReason::ShardClosed as i32,
+                };
+                replicate_failures.push(replicate_failure);
+                continue;
             }
             if replica_shard.replication_position_inclusive() != from_position_exclusive {
                 // TODO
             }
-            let doc_batch = subrequest
-                .doc_batch
-                .expect("leader should not send empty replicate subrequests");
+            let doc_batch = match subrequest.doc_batch {
+                Some(doc_batch) if !doc_batch.is_empty() => doc_batch,
+                _ => {
+                    warn!("received empty replicate request");
 
+                    let replicate_success = ReplicateSuccess {
+                        subrequest_id: subrequest.subrequest_id,
+                        index_uid: subrequest.index_uid,
+                        source_id: subrequest.source_id,
+                        shard_id: subrequest.shard_id,
+                        replication_position_inclusive: Some(
+                            replica_shard.replication_position_inclusive(),
+                        ),
+                    };
+                    replicate_successes.push(replicate_success);
+                    continue;
+                }
+            };
+            let requested_capacity = estimate_size(&doc_batch);
+
+            if let Err(error) = check_enough_capacity(
+                &state_guard.mrecordlog,
+                self.disk_capacity,
+                self.memory_capacity,
+                requested_capacity,
+            ) {
+                warn!("failed to replicate records: {error}");
+
+                let replicate_failure = ReplicateFailure {
+                    subrequest_id: subrequest.subrequest_id,
+                    index_uid: subrequest.index_uid,
+                    source_id: subrequest.source_id,
+                    shard_id: subrequest.shard_id,
+                    reason: ReplicateFailureReason::ResourceExhausted as i32,
+                };
+                replicate_failures.push(replicate_failure);
+                continue;
+            }
             let current_position_inclusive: Position = if force_commit {
                 let encoded_mrecords = doc_batch
                     .docs()
@@ -404,7 +458,7 @@ impl ReplicationTask {
         let replicate_response = ReplicateResponse {
             follower_id,
             successes: replicate_successes,
-            failures: Vec::new(),
+            failures: replicate_failures,
             replication_seqno: replicate_request.replication_seqno,
         };
         Ok(replicate_response)
@@ -463,7 +517,7 @@ mod tests {
 
     use mrecordlog::MultiRecordLog;
     use quickwit_proto::ingest::ingester::{ReplicateSubrequest, ReplicateSuccess};
-    use quickwit_proto::ingest::DocBatchV2;
+    use quickwit_proto::ingest::{DocBatchV2, ShardState};
     use quickwit_proto::types::queue_id;
 
     use super::*;
@@ -627,12 +681,18 @@ mod tests {
             ServiceStream::new_bounded(SYN_REPLICATION_STREAM_CAPACITY);
         let (ack_replication_stream_tx, mut ack_replication_stream) =
             ServiceStream::new_unbounded();
+
+        let disk_capacity = ByteSize::mb(256);
+        let memory_capacity = ByteSize::mb(1);
+
         let _replication_task_handle = ReplicationTask::spawn(
             leader_id,
             follower_id,
             state.clone(),
             syn_replication_stream,
             ack_replication_stream_tx,
+            disk_capacity,
+            memory_capacity,
         );
         let replicate_request = ReplicateRequest {
             leader_id: "test-leader".to_string(),
@@ -765,6 +825,153 @@ mod tests {
             &queue_id_01,
             ..,
             &[(0, "\0\0test-doc-foo"), (1, "\0\0test-doc-moo")],
+        );
+    }
+
+    #[tokio::test]
+    async fn test_replication_task_shard_closed() {
+        let leader_id: NodeId = "test-leader".into();
+        let follower_id: NodeId = "test-follower".into();
+        let tempdir = tempfile::tempdir().unwrap();
+        let mrecordlog = MultiRecordLog::open(tempdir.path()).await.unwrap();
+        let state = Arc::new(RwLock::new(IngesterState {
+            mrecordlog,
+            shards: HashMap::new(),
+            replication_streams: HashMap::new(),
+            replication_tasks: HashMap::new(),
+        }));
+        let (syn_replication_stream_tx, syn_replication_stream) =
+            ServiceStream::new_bounded(SYN_REPLICATION_STREAM_CAPACITY);
+        let (ack_replication_stream_tx, mut ack_replication_stream) =
+            ServiceStream::new_unbounded();
+
+        let disk_capacity = ByteSize::mb(256);
+        let memory_capacity = ByteSize::mb(1);
+
+        let _replication_task_handle = ReplicationTask::spawn(
+            leader_id.clone(),
+            follower_id,
+            state.clone(),
+            syn_replication_stream,
+            ack_replication_stream_tx,
+            disk_capacity,
+            memory_capacity,
+        );
+
+        let queue_id_01 = queue_id("test-index:0", "test-source", 1);
+
+        let mut replica_shard = ReplicaShard::new(leader_id);
+        replica_shard.shard_state = ShardState::Closed;
+        let shard = IngesterShard::Replica(replica_shard);
+
+        state
+            .write()
+            .await
+            .shards
+            .insert(queue_id_01.clone(), shard);
+
+        let replicate_request = ReplicateRequest {
+            leader_id: "test-leader".to_string(),
+            follower_id: "test-follower".to_string(),
+            commit_type: CommitTypeV2::Auto as i32,
+            subrequests: vec![ReplicateSubrequest {
+                subrequest_id: 0,
+                index_uid: "test-index:0".to_string(),
+                source_id: "test-source".to_string(),
+                shard_id: 1,
+                doc_batch: Some(DocBatchV2::for_test(["test-doc-foo"])),
+                from_position_exclusive: Position::from(0u64).into(),
+                to_position_inclusive: Some(Position::from(1u64)),
+            }],
+            replication_seqno: 0,
+        };
+        let syn_replication_message =
+            SynReplicationMessage::new_replicate_request(replicate_request);
+        syn_replication_stream_tx
+            .send(syn_replication_message)
+            .await
+            .unwrap();
+        let ack_replication_message = ack_replication_stream.next().await.unwrap().unwrap();
+        let replicate_response = into_replicate_response(ack_replication_message);
+
+        assert_eq!(replicate_response.follower_id, "test-follower");
+        assert_eq!(replicate_response.successes.len(), 0);
+        assert_eq!(replicate_response.failures.len(), 1);
+
+        let replicate_failure = &replicate_response.failures[0];
+        assert_eq!(replicate_failure.index_uid, "test-index:0");
+        assert_eq!(replicate_failure.source_id, "test-source");
+        assert_eq!(replicate_failure.shard_id, 1);
+        assert_eq!(
+            replicate_failure.reason(),
+            ReplicateFailureReason::ShardClosed
+        );
+    }
+
+    #[tokio::test]
+    async fn test_replication_task_resource_exhausted() {
+        let leader_id: NodeId = "test-leader".into();
+        let follower_id: NodeId = "test-follower".into();
+        let tempdir = tempfile::tempdir().unwrap();
+        let mrecordlog = MultiRecordLog::open(tempdir.path()).await.unwrap();
+        let state = Arc::new(RwLock::new(IngesterState {
+            mrecordlog,
+            shards: HashMap::new(),
+            replication_streams: HashMap::new(),
+            replication_tasks: HashMap::new(),
+        }));
+        let (syn_replication_stream_tx, syn_replication_stream) =
+            ServiceStream::new_bounded(SYN_REPLICATION_STREAM_CAPACITY);
+        let (ack_replication_stream_tx, mut ack_replication_stream) =
+            ServiceStream::new_unbounded();
+
+        let disk_capacity = ByteSize(0);
+        let memory_capacity = ByteSize(0);
+
+        let _replication_task_handle = ReplicationTask::spawn(
+            leader_id,
+            follower_id,
+            state.clone(),
+            syn_replication_stream,
+            ack_replication_stream_tx,
+            disk_capacity,
+            memory_capacity,
+        );
+        let replicate_request = ReplicateRequest {
+            leader_id: "test-leader".to_string(),
+            follower_id: "test-follower".to_string(),
+            commit_type: CommitTypeV2::Auto as i32,
+            subrequests: vec![ReplicateSubrequest {
+                subrequest_id: 0,
+                index_uid: "test-index:0".to_string(),
+                source_id: "test-source".to_string(),
+                shard_id: 1,
+                doc_batch: Some(DocBatchV2::for_test(["test-doc-foo"])),
+                from_position_exclusive: None,
+                to_position_inclusive: Some(Position::from(0u64)),
+            }],
+            replication_seqno: 0,
+        };
+        let syn_replication_message =
+            SynReplicationMessage::new_replicate_request(replicate_request);
+        syn_replication_stream_tx
+            .send(syn_replication_message)
+            .await
+            .unwrap();
+        let ack_replication_message = ack_replication_stream.next().await.unwrap().unwrap();
+        let replicate_response = into_replicate_response(ack_replication_message);
+
+        assert_eq!(replicate_response.follower_id, "test-follower");
+        assert_eq!(replicate_response.successes.len(), 0);
+        assert_eq!(replicate_response.failures.len(), 1);
+
+        let replicate_failure_0 = &replicate_response.failures[0];
+        assert_eq!(replicate_failure_0.index_uid, "test-index:0");
+        assert_eq!(replicate_failure_0.source_id, "test-source");
+        assert_eq!(replicate_failure_0.shard_id, 1);
+        assert_eq!(
+            replicate_failure_0.reason(),
+            ReplicateFailureReason::ResourceExhausted
         );
     }
 }

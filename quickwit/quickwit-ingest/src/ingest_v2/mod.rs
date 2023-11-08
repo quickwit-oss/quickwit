@@ -21,6 +21,7 @@ mod fetch;
 mod ingester;
 mod models;
 mod mrecord;
+mod mrecordlog_utils;
 mod replication;
 mod router;
 mod shard_table;
@@ -28,12 +29,15 @@ mod shard_table;
 mod test_utils;
 mod workbench;
 
+use bytesize::ByteSize;
 use quickwit_common::tower::Pool;
 use quickwit_proto::ingest::ingester::IngesterServiceClient;
+use quickwit_proto::ingest::DocBatchV2;
 use quickwit_proto::types::NodeId;
 
 pub use self::fetch::{FetchStreamError, MultiFetchStream};
 pub use self::ingester::Ingester;
+use self::mrecord::MRECORD_HEADER_LEN;
 pub use self::mrecord::{decoded_mrecords, MRecord};
 pub use self::router::IngestRouter;
 
@@ -45,3 +49,28 @@ pub type ClientId = String;
 pub type LeaderId = NodeId;
 
 pub type FollowerId = NodeId;
+
+pub(super) fn estimate_size(doc_batch: &DocBatchV2) -> ByteSize {
+    let estimate = doc_batch.num_bytes() + doc_batch.num_docs() * MRECORD_HEADER_LEN;
+    ByteSize(estimate as u64)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_estimate_size() {
+        let doc_batch = DocBatchV2 {
+            doc_buffer: Vec::new().into(),
+            doc_lengths: Vec::new(),
+        };
+        assert_eq!(estimate_size(&doc_batch), ByteSize(0));
+
+        let doc_batch = DocBatchV2 {
+            doc_buffer: vec![0u8; 100].into(),
+            doc_lengths: vec![10, 20, 30],
+        };
+        assert_eq!(estimate_size(&doc_batch), ByteSize(106));
+    }
+}

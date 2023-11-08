@@ -28,14 +28,17 @@ pub enum HeaderVersion {
     V0 = 0,
 }
 
+/// Length of the header of a [`MRecord`] in bytes.
+pub(super) const MRECORD_HEADER_LEN: usize = 2;
+
 /// `Doc` header v0 composed of the header version and the `Doc = 0` record type.
-const DOC_HEADER_V0: &[u8; 2] = &[HeaderVersion::V0 as u8, 0];
+const DOC_HEADER_V0: &[u8; MRECORD_HEADER_LEN] = &[HeaderVersion::V0 as u8, 0];
 
 /// `Commit` header v0 composed of the header version and the `Commit = 1` record type.
-const COMMIT_HEADER_V0: &[u8; 2] = &[HeaderVersion::V0 as u8, 1];
+const COMMIT_HEADER_V0: &[u8; MRECORD_HEADER_LEN] = &[HeaderVersion::V0 as u8, 1];
 
 /// `Eof` header v0 composed of the header version and the `Eof = 2` record type.
-const EOF_HEADER_V0: &[u8; 2] = &[HeaderVersion::V0 as u8, 2];
+const EOF_HEADER_V0: &[u8; MRECORD_HEADER_LEN] = &[HeaderVersion::V0 as u8, 2];
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum MRecord {
