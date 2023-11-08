@@ -24,7 +24,7 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Duration;
 
-use byte_unit::Byte;
+use bytesize::ByteSize;
 use quickwit_proto::types::IndexUid;
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, DurationMilliSeconds};
@@ -231,9 +231,9 @@ impl SplitMetadata {
         let file_name = quickwit_common::split_file(self.split_id());
 
         SplitInfo {
-            uncompressed_docs_size_bytes: Byte::from_bytes(self.uncompressed_docs_size_in_bytes),
+            uncompressed_docs_size_bytes: ByteSize(self.uncompressed_docs_size_in_bytes),
             file_name: PathBuf::from(file_name),
-            file_size_bytes: Byte::from_bytes(self.footer_offsets.end),
+            file_size_bytes: ByteSize(self.footer_offsets.end),
             split_id: self.split_id.clone(),
             num_docs: self.num_docs,
         }
@@ -249,13 +249,13 @@ pub struct SplitInfo {
     pub num_docs: usize,
     /// The sum of the sizes of the original JSON payloads in bytes.
     #[schema(value_type = u64)]
-    pub uncompressed_docs_size_bytes: Byte,
+    pub uncompressed_docs_size_bytes: ByteSize,
     /// The name of the split file on disk.
     #[schema(value_type = String)]
     pub file_name: PathBuf,
     /// The size of the split file on disk in bytes.
     #[schema(value_type = u64)]
-    pub file_size_bytes: Byte,
+    pub file_size_bytes: ByteSize,
 }
 
 #[cfg(any(test, feature = "testsuite"))]

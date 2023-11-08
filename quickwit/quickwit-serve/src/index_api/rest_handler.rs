@@ -1300,7 +1300,7 @@ mod tests {
             let resp_json: serde_json::Value = serde_json::from_slice(resp.body()).unwrap();
             let expected_response_json = serde_json::json!([{
                 "file_name": "split_1.split",
-                "file_size_bytes": 800,
+                "file_size_bytes": "800 B",
             }]);
             assert_json_include!(actual: resp_json, expected: expected_response_json);
         }
@@ -1314,7 +1314,7 @@ mod tests {
             let resp_json: serde_json::Value = serde_json::from_slice(resp.body()).unwrap();
             let expected_response_json = serde_json::json!([{
                 "file_name": "split_1.split",
-                "file_size_bytes": 800,
+                "file_size_bytes": "800 B",
             }]);
             assert_json_include!(actual: resp_json, expected: expected_response_json);
         }

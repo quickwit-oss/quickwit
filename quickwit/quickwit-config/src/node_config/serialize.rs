@@ -398,7 +398,7 @@ mod tests {
     use std::num::NonZeroU64;
     use std::path::Path;
 
-    use byte_unit::Byte;
+    use bytesize::ByteSize;
     use itertools::Itertools;
 
     use super::*;
@@ -481,7 +481,7 @@ mod tests {
             config.indexer_config,
             IndexerConfig {
                 enable_otlp_endpoint: true,
-                split_store_max_num_bytes: Byte::from_str("1T").unwrap(),
+                split_store_max_num_bytes: ByteSize::tb(1),
                 split_store_max_num_splits: 10_000,
                 max_concurrent_split_uploads: 8,
                 enable_cooperative_indexing: false,
@@ -497,11 +497,11 @@ mod tests {
         assert_eq!(
             config.searcher_config,
             SearcherConfig {
-                aggregation_memory_limit: Byte::from_str("1G").unwrap(),
+                aggregation_memory_limit: ByteSize::gb(1),
                 aggregation_bucket_limit: 500_000,
-                fast_field_cache_capacity: Byte::from_str("10G").unwrap(),
-                split_footer_cache_capacity: Byte::from_str("1G").unwrap(),
-                partial_request_cache_capacity: Byte::from_str("64M").unwrap(),
+                fast_field_cache_capacity: ByteSize::gb(10),
+                split_footer_cache_capacity: ByteSize::gb(1),
+                partial_request_cache_capacity: ByteSize::mb(64),
                 max_num_concurrent_split_searches: 150,
                 max_num_concurrent_split_streams: 120,
                 split_cache: None,

@@ -230,7 +230,7 @@ pub(crate) fn lines(body: &Bytes) -> impl Iterator<Item = &[u8]> {
 pub(crate) mod tests {
     use std::time::Duration;
 
-    use byte_unit::Byte;
+    use bytesize::ByteSize;
     use quickwit_actors::{Mailbox, Universe};
     use quickwit_config::IngestApiConfig;
     use quickwit_ingest::{
@@ -333,7 +333,7 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn test_ingest_api_return_429_if_above_limits() {
         let config = IngestApiConfig {
-            max_queue_memory_usage: Byte::from_bytes(1),
+            max_queue_memory_usage: ByteSize(1),
             ..Default::default()
         };
         let (universe, _temp_dir, ingest_service, _) =

@@ -26,8 +26,8 @@ use std::time::{Duration, Instant};
 use std::{fmt, io};
 
 use anyhow::{bail, Context};
-use byte_unit::Byte;
 use bytes::Bytes;
+use bytesize::ByteSize;
 use clap::{arg, Arg, ArgAction, ArgMatches, Command};
 use colored::{ColoredString, Colorize};
 use humantime::format_duration;
@@ -211,7 +211,7 @@ pub struct IngestDocsArgs {
     pub client_args: ClientArgs,
     pub index_id: String,
     pub input_path_opt: Option<PathBuf>,
-    pub batch_size_limit_opt: Option<Byte>,
+    pub batch_size_limit_opt: Option<ByteSize>,
     pub commit_type: CommitType,
 }
 
@@ -339,8 +339,7 @@ impl IndexCliCommand {
 
         let batch_size_limit_opt = matches
             .remove_one::<String>("batch-size-limit")
-            .map(Byte::from_str)
-            .transpose()?;
+            .map(|s| s.parse::<ByteSize>().unwrap());
         let commit_type = match (matches.get_flag("wait"), matches.get_flag("force")) {
             (false, false) => CommitType::Auto,
             (false, true) => CommitType::Force,
@@ -533,9 +532,9 @@ pub struct IndexStats {
     pub index_id: String,
     pub index_uri: Uri,
     pub num_published_splits: usize,
-    pub size_published_splits: Byte,
+    pub size_published_splits: ByteSize,
     pub num_published_docs: u64,
-    pub size_published_docs_uncompressed: Byte,
+    pub size_published_docs_uncompressed: ByteSize,
     pub timestamp_field_name: Option<String>,
     pub timestamp_range: Option<(i64, i64)>,
     pub num_docs_descriptive: Option<DescriptiveStats>,
@@ -550,13 +549,9 @@ impl Tabled for IndexStats {
             self.index_id.clone(),
             self.index_uri.to_string(),
             self.num_published_docs.to_string(),
-            self.size_published_docs_uncompressed
-                .get_appropriate_unit(false)
-                .to_string(),
+            self.size_published_docs_uncompressed.to_string(),
             self.num_published_splits.to_string(),
-            self.size_published_splits
-                .get_appropriate_unit(false)
-                .to_string(),
+            self.size_published_splits.to_string(),
             display_option_in_table(&self.timestamp_field_name),
             display_timestamp_range(&self.timestamp_range),
         ]
@@ -659,9 +654,9 @@ impl IndexStats {
             index_id: index_config.index_id.clone(),
             index_uri: index_config.index_uri.clone(),
             num_published_splits: published_splits.len(),
-            size_published_splits: Byte::from(total_num_bytes),
+            size_published_splits: ByteSize(total_num_bytes),
             num_published_docs: total_num_docs,
-            size_published_docs_uncompressed: Byte::from(total_uncompressed_num_bytes),
+            size_published_docs_uncompressed: ByteSize(total_uncompressed_num_bytes),
             timestamp_field_name: index_config.doc_mapping.timestamp_field,
             timestamp_range,
             num_docs_descriptive,
@@ -810,7 +805,7 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
     };
     let batch_size_limit_opt = args
         .batch_size_limit_opt
-        .map(|batch_size_limit| batch_size_limit.get_bytes() as usize);
+        .map(|batch_size_limit| batch_size_limit.as_u64() as usize);
     qw_client
         .ingest(
             &args.index_id,
@@ -1132,13 +1127,13 @@ mod test {
 
         let split_data_1 = Split {
             split_metadata: split_metadata_1,
-            split_state: quickwit_metastore::SplitState::Published,
+            split_state: SplitState::Published,
             update_timestamp: 0,
             publish_timestamp: Some(10),
         };
         let split_data_2 = Split {
             split_metadata: split_metadata_2,
-            split_state: quickwit_metastore::SplitState::MarkedForDeletion,
+            split_state: SplitState::MarkedForDeletion,
             update_timestamp: 0,
             publish_timestamp: Some(10),
         };
@@ -1149,14 +1144,11 @@ mod test {
         assert_eq!(index_stats.index_id, index_id);
         assert_eq!(index_stats.index_uri.as_str(), index_uri);
         assert_eq!(index_stats.num_published_splits, 1);
-        assert_eq!(
-            index_stats.size_published_splits,
-            Byte::from(15_000_000usize)
-        );
+        assert_eq!(index_stats.size_published_splits, ByteSize::mb(15));
         assert_eq!(index_stats.num_published_docs, 100_000);
         assert_eq!(
             index_stats.size_published_docs_uncompressed,
-            Byte::from(19_000_000usize)
+            ByteSize::mb(19)
         );
         assert_eq!(
             index_stats.timestamp_field_name,
@@ -1171,7 +1163,7 @@ mod test {
     fn test_descriptive_stats() -> anyhow::Result<()> {
         let split_id = "stat-test-split".to_string();
         let template_split = Split {
-            split_state: quickwit_metastore::SplitState::Published,
+            split_state: SplitState::Published,
             update_timestamp: 10,
             publish_timestamp: Some(10),
             split_metadata: SplitMetadata::default(),
@@ -1207,12 +1199,12 @@ mod test {
 
         let num_docs_descriptive = DescriptiveStats::maybe_new(&splits_num_docs);
         let num_bytes_descriptive = DescriptiveStats::maybe_new(&splits_bytes);
-        let desciptive_stats_none = DescriptiveStats::maybe_new(&[]);
+        let descriptive_stats_none = DescriptiveStats::maybe_new(&[]);
 
         assert!(num_docs_descriptive.is_some());
         assert!(num_bytes_descriptive.is_some());
 
-        assert!(desciptive_stats_none.is_none());
+        assert!(descriptive_stats_none.is_none());
 
         Ok(())
     }

@@ -26,7 +26,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
-use byte_unit::Byte;
+use bytesize::ByteSize;
 use chrono::Utc;
 use cron::Schedule;
 use humantime::parse_duration;
@@ -96,7 +96,7 @@ pub struct DocMapping {
 pub struct IndexingResources {
     #[schema(value_type = String, default = "2 GB")]
     #[serde(default = "IndexingResources::default_heap_size")]
-    pub heap_size: Byte,
+    pub heap_size: ByteSize,
     /// Sets the maximum write IO throughput in bytes/sec for the merge and delete pipelines.
     /// The IO limit is applied both to the downloader and to the merge executor.
     /// On hardware where IO is limited, this parameter can help limiting the impact of
@@ -104,7 +104,7 @@ pub struct IndexingResources {
     #[schema(value_type = String)]
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub max_merge_write_throughput: Option<Byte>,
+    pub max_merge_write_throughput: Option<ByteSize>,
 }
 
 impl PartialEq for IndexingResources {
@@ -114,14 +114,14 @@ impl PartialEq for IndexingResources {
 }
 
 impl IndexingResources {
-    fn default_heap_size() -> Byte {
-        Byte::from_bytes(2_000_000_000) // 2GB
+    fn default_heap_size() -> ByteSize {
+        ByteSize::gb(2)
     }
 
     #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test() -> Self {
         Self {
-            heap_size: Byte::from_bytes(20_000_000), // 20MB
+            heap_size: ByteSize::mb(20),
             ..Default::default()
         }
     }
@@ -465,7 +465,7 @@ impl TestableForRegression for IndexConfig {
         };
         let merge_policy = MergePolicyConfig::StableLog(stable_log_config);
         let indexing_resources = IndexingResources {
-            heap_size: Byte::from_bytes(3),
+            heap_size: ByteSize(3),
             ..Default::default()
         };
         let indexing_settings = IndexingSettings {
@@ -609,7 +609,7 @@ mod tests {
         assert_eq!(
             index_config.indexing_settings.resources,
             IndexingResources {
-                heap_size: Byte::from_bytes(3_000_000_000),
+                heap_size: ByteSize::gb(3),
                 ..Default::default()
             }
         );
