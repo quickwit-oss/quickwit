@@ -27,7 +27,8 @@ use quickwit_ingest::{
     get_ingest_api_service, CreateQueueIfNotExistsRequest, DocCommand, FetchRequest, FetchResponse,
     GetPartitionId, IngestApiService, SuggestTruncateRequest,
 };
-use quickwit_metastore::checkpoint::{PartitionId, Position, SourceCheckpoint};
+use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpoint};
+use quickwit_proto::types::Position;
 use serde::Serialize;
 use serde_json::Value as JsonValue;
 
@@ -84,13 +85,9 @@ impl IngestApiSource {
         };
         ingest_api_service.ask_for_res(create_queue_req).await?;
 
-        let previous_offset = if let Some(Position::Offset(offset_str)) =
-            checkpoint.position_for_partition(&partition_id)
-        {
-            Some(offset_str.parse::<u64>()?)
-        } else {
-            None
-        };
+        let previous_offset = checkpoint
+            .position_for_partition(&partition_id)
+            .map(|position| position.as_u64().expect("offset should be stored as u64"));
         let current_offset = previous_offset;
         let ingest_api_source = IngestApiSource {
             ctx,
@@ -175,10 +172,10 @@ impl Source for IngestApiSource {
         checkpoint: SourceCheckpoint,
         ctx: &ActorContext<SourceActor>,
     ) -> anyhow::Result<()> {
-        if let Some(Position::Offset(offset_str)) =
+        if let Some(Position::Offset(offset)) =
             checkpoint.position_for_partition(&self.partition_id)
         {
-            let up_to_position_included = offset_str.parse::<u64>()?;
+            let up_to_position_included = offset.as_u64().expect("offset should be stored as u64");
             let suggest_truncate_req = SuggestTruncateRequest {
                 index_id: self.ctx.index_id().to_string(),
                 up_to_position_included,
@@ -228,7 +225,7 @@ mod tests {
     use quickwit_ingest::{init_ingest_api, CommitType, DocBatchBuilder, IngestRequest};
     use quickwit_metastore::checkpoint::{SourceCheckpoint, SourceCheckpointDelta};
     use quickwit_metastore::metastore_for_test;
-    use quickwit_proto::IndexUid;
+    use quickwit_proto::types::IndexUid;
 
     use super::*;
     use crate::source::SourceActor;
@@ -275,7 +272,7 @@ mod tests {
         let universe = Universe::with_accelerated_time();
         let metastore = metastore_for_test();
         let index_id = append_random_suffix("test-ingest-api-source");
-        let index_uid = IndexUid::new(&index_id);
+        let index_uid = IndexUid::new_with_random_ulid(&index_id);
         let temp_dir = tempfile::tempdir()?;
         let queues_dir_path = temp_dir.path();
 
@@ -364,7 +361,7 @@ mod tests {
         let universe = Universe::with_accelerated_time();
         let metastore = metastore_for_test();
         let index_id = append_random_suffix("test-ingest-api-source");
-        let index_uid = IndexUid::new(&index_id);
+        let index_uid = IndexUid::new_with_random_ulid(&index_id);
         let temp_dir = tempfile::tempdir()?;
         let queues_dir_path = temp_dir.path();
         let ingest_api_service =
@@ -434,7 +431,7 @@ mod tests {
         let universe = Universe::with_accelerated_time();
         let metastore = metastore_for_test();
         let index_id = append_random_suffix("test-ingest-api-source");
-        let index_uid = IndexUid::new(&index_id);
+        let index_uid = IndexUid::new_with_random_ulid(&index_id);
         let temp_dir = tempfile::tempdir()?;
         let queues_dir_path = temp_dir.path();
         let ingest_api_service =
@@ -488,7 +485,7 @@ mod tests {
         let universe = Universe::with_accelerated_time();
         let metastore = metastore_for_test();
         let index_id = append_random_suffix("test-ingest-api-source");
-        let index_uid = IndexUid::new(&index_id);
+        let index_uid = IndexUid::new_with_random_ulid(&index_id);
         let temp_dir = tempfile::tempdir()?;
         let queues_dir_path = temp_dir.path();
 
@@ -555,7 +552,7 @@ mod tests {
         let universe = Universe::with_accelerated_time();
         let metastore = metastore_for_test();
         let index_id = append_random_suffix("test-ingest-api-source");
-        let index_uid = IndexUid::new(&index_id);
+        let index_uid = IndexUid::new_with_random_ulid(&index_id);
         let temp_dir = tempfile::tempdir()?;
         let queues_dir_path = temp_dir.path();
 

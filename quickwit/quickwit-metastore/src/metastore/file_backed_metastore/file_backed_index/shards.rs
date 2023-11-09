@@ -21,20 +21,17 @@ use std::collections::hash_map::Entry;
 use std::collections::HashMap;
 use std::fmt;
 
-use itertools::Either;
 use quickwit_proto::ingest::{Shard, ShardState};
 use quickwit_proto::metastore::{
-    AcquireShardsSubrequest, AcquireShardsSubresponse, CloseShardsFailure, CloseShardsFailureKind,
-    CloseShardsSubrequest, CloseShardsSuccess, DeleteShardsSubrequest, EntityKind,
+    AcquireShardsSubrequest, AcquireShardsSubresponse, DeleteShardsSubrequest, EntityKind,
     ListShardsSubrequest, ListShardsSubresponse, MetastoreError, MetastoreResult,
     OpenShardsSubrequest, OpenShardsSubresponse,
 };
-use quickwit_proto::types::ShardId;
-use quickwit_proto::{queue_id, IndexUid, SourceId};
+use quickwit_proto::types::{queue_id, IndexUid, Position, ShardId, SourceId};
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
-use crate::checkpoint::{PartitionId, Position, SourceCheckpoint, SourceCheckpointDelta};
+use crate::checkpoint::{PartitionId, SourceCheckpoint, SourceCheckpointDelta};
 use crate::file_backed_metastore::MutationOccurred;
 
 /// Manages the shards of a source.
@@ -79,7 +76,7 @@ impl Shards {
         for shard in serde_shards.shards {
             checkpoint.add_partition(
                 PartitionId::from(shard.shard_id),
-                Position::from(shard.publish_position_inclusive.clone()),
+                shard.publish_position_inclusive(),
             );
             shards.insert(shard.shard_id, shard);
         }
@@ -113,14 +110,19 @@ impl Shards {
     ) -> MetastoreResult<MutationOccurred<OpenShardsSubresponse>> {
         let mut mutation_occurred = false;
 
-        if subrequest.next_shard_id + 1 < self.next_shard_id
-            || subrequest.next_shard_id > self.next_shard_id
-        {
+        // When a response is lost, the control plane can "lag by one shard ID".
+        // The inconsistency should be resolved on the next attempt.
+        //
+        // `self.next_shard_id - 1` does not underflow because `self.next_shard_id` is always > 0.
+        let ok_next_shard_ids = self.next_shard_id - 1..=self.next_shard_id;
+
+        if !ok_next_shard_ids.contains(&subrequest.next_shard_id) {
             warn!(
-                "control plane and metastore next shard IDs do not match, expected `{}`, got `{}`",
+                "control plane state is inconsistent with that of the metastore, expected next \
+                 shard ID `{}`, got `{}`",
                 self.next_shard_id, subrequest.next_shard_id
-            )
-            // TODO: Return an error and crash the control plane.
+            );
+            return Err(MetastoreError::InconsistentControlPlaneState);
         }
 
         let entry = self.shards.entry(subrequest.next_shard_id);
@@ -131,13 +133,15 @@ impl Shards {
                     index_uid: self.index_uid.clone().into(),
                     source_id: self.source_id.clone(),
                     shard_id: self.next_shard_id,
+                    shard_state: ShardState::Open as i32,
                     leader_id: subrequest.leader_id.clone(),
                     follower_id: subrequest.follower_id.clone(),
-                    ..Default::default()
+                    publish_position_inclusive: Some(Position::Beginning),
+                    publish_token: None,
                 };
                 mutation_occurred = true;
                 entry.insert(shard.clone());
-                self.next_shard_id += 1;
+                self.next_shard_id = subrequest.next_shard_id + 1;
 
                 info!(
                     index_id=%self.index_uid.index_id(),
@@ -150,13 +154,14 @@ impl Shards {
                 shard
             }
         };
-        let open_shards = vec![shard];
+        let opened_shards = vec![shard];
         let next_shard_id = self.next_shard_id;
 
         let response = OpenShardsSubresponse {
+            subrequest_id: subrequest.subrequest_id,
             index_uid: subrequest.index_uid,
             source_id: subrequest.source_id,
-            open_shards,
+            opened_shards,
             next_shard_id,
         };
         if mutation_occurred {
@@ -201,84 +206,23 @@ impl Shards {
         }
     }
 
-    pub(super) fn close_shards(
-        &mut self,
-        subrequest: CloseShardsSubrequest,
-    ) -> MetastoreResult<MutationOccurred<Either<CloseShardsSuccess, CloseShardsFailure>>> {
-        let Some(shard) = self.shards.get_mut(&subrequest.shard_id) else {
-            let failure = CloseShardsFailure {
-                index_uid: subrequest.index_uid,
-                source_id: subrequest.source_id,
-                shard_id: subrequest.shard_id,
-                failure_kind: CloseShardsFailureKind::NotFound as i32,
-                failure_message: "shard not found".to_string(),
-            };
-            return Ok(MutationOccurred::No(Either::Right(failure)));
-        };
-        match subrequest.shard_state() {
-            ShardState::Closing => {
-                shard.shard_state = ShardState::Closing as i32;
-                info!(
-                    index_id=%self.index_uid.index_id(),
-                    source_id=%shard.source_id,
-                    shard_id=%shard.shard_id,
-                    "Closing shard.",
-                );
-            }
-            ShardState::Closed => {
-                shard.shard_state = ShardState::Closed as i32;
-                shard.replication_position_inclusive = shard
-                    .replication_position_inclusive
-                    .min(subrequest.replication_position_inclusive);
-                info!(
-                    index_id=%self.index_uid.index_id(),
-                    source_id=%shard.source_id,
-                    shard_id=%shard.shard_id,
-                    "closed shard",
-                );
-            }
-            other => {
-                let failure_message = format!(
-                    "invalid `shard_state` argument: expected `Closing` or `Closed` state, got \
-                     `{other:?}`.",
-                );
-                let failure = CloseShardsFailure {
-                    index_uid: subrequest.index_uid,
-                    source_id: subrequest.source_id,
-                    shard_id: subrequest.shard_id,
-                    failure_kind: CloseShardsFailureKind::InvalidArgument as i32,
-                    failure_message,
-                };
-                return Ok(MutationOccurred::No(Either::Right(failure)));
-            }
-        }
-        let success = CloseShardsSuccess {
-            index_uid: subrequest.index_uid,
-            source_id: subrequest.source_id,
-            shard_id: subrequest.shard_id,
-            leader_id: shard.leader_id.clone(),
-            follower_id: shard.follower_id.clone(),
-            publish_position_inclusive: shard.publish_position_inclusive.clone(),
-        };
-        Ok(MutationOccurred::Yes(Either::Left(success)))
-    }
-
     pub(super) fn delete_shards(
         &mut self,
         subrequest: DeleteShardsSubrequest,
         force: bool,
     ) -> MetastoreResult<MutationOccurred<()>> {
         let mut mutation_occurred = false;
+
         for shard_id in subrequest.shard_ids {
             if let Entry::Occupied(entry) = self.shards.entry(shard_id) {
                 let shard = entry.get();
-                if force || shard.is_deletable() {
+                if force || shard.publish_position_inclusive() == Position::Eof {
                     mutation_occurred = true;
                     info!(
                         index_id=%self.index_uid.index_id(),
                         source_id=%self.source_id,
                         shard_id=%shard.shard_id,
-                        "Deleted shard.",
+                        "deleted shard",
                     );
                     entry.remove();
                     continue;
@@ -332,7 +276,7 @@ impl Shards {
                 let message = "failed to apply checkpoint delta: invalid publish token".to_string();
                 return Err(MetastoreError::InvalidArgument { message });
             }
-            let publish_position_inclusive = partition_delta.to.as_str().to_string();
+            let publish_position_inclusive = partition_delta.to;
             shard_ids.push((shard_id, publish_position_inclusive))
         }
         self.checkpoint
@@ -341,7 +285,11 @@ impl Shards {
 
         for (shard_id, publish_position_inclusive) in shard_ids {
             let shard = self.get_shard_mut(shard_id).expect("shard should exist");
-            shard.publish_position_inclusive = publish_position_inclusive
+
+            if publish_position_inclusive == Position::Eof {
+                shard.shard_state = ShardState::Closed as i32;
+            }
+            shard.publish_position_inclusive = Some(publish_position_inclusive);
         }
         Ok(MutationOccurred::Yes(()))
     }
@@ -377,6 +325,8 @@ impl From<Shards> for SerdeShards {
 
 #[cfg(test)]
 mod tests {
+    use quickwit_proto::ingest::ShardState;
+
     use super::*;
 
     #[test]
@@ -386,6 +336,7 @@ mod tests {
         let mut shards = Shards::empty(index_uid.clone(), source_id.clone());
 
         let subrequest = OpenShardsSubrequest {
+            subrequest_id: 0,
             index_uid: index_uid.clone().into(),
             source_id: source_id.clone(),
             leader_id: "leader_id".to_string(),
@@ -398,29 +349,31 @@ mod tests {
         };
         assert_eq!(subresponse.index_uid, index_uid.as_str());
         assert_eq!(subresponse.source_id, source_id);
-        assert_eq!(subresponse.open_shards.len(), 1);
+        assert_eq!(subresponse.opened_shards.len(), 1);
 
-        let shard = &subresponse.open_shards[0];
+        let shard = &subresponse.opened_shards[0];
         assert_eq!(shard.index_uid, index_uid.as_str());
         assert_eq!(shard.source_id, source_id);
         assert_eq!(shard.shard_id, 1);
-        assert_eq!(shard.shard_state, 0);
+        assert_eq!(shard.shard_state(), ShardState::Open);
         assert_eq!(shard.leader_id, "leader_id");
         assert_eq!(shard.follower_id, None);
-        assert_eq!(shard.replication_position_inclusive, None);
-        assert_eq!(shard.publish_position_inclusive, "");
+        assert_eq!(shard.publish_position_inclusive(), Position::Beginning);
 
         assert_eq!(shards.shards.get(&1).unwrap(), shard);
+        assert_eq!(shards.next_shard_id, 2);
 
         let MutationOccurred::No(subresponse) = shards.open_shards(subrequest).unwrap() else {
             panic!("Expected `MutationOccured::No`");
         };
-        assert_eq!(subresponse.open_shards.len(), 1);
+        assert_eq!(subresponse.opened_shards.len(), 1);
 
-        let shard = &subresponse.open_shards[0];
+        let shard = &subresponse.opened_shards[0];
         assert_eq!(shards.shards.get(&1).unwrap(), shard);
+        assert_eq!(shards.next_shard_id, 2);
 
         let subrequest = OpenShardsSubrequest {
+            subrequest_id: 0,
             index_uid: index_uid.clone().into(),
             source_id: source_id.clone(),
             leader_id: "leader_id".to_string(),
@@ -432,23 +385,31 @@ mod tests {
         };
         assert_eq!(subresponse.index_uid, index_uid.as_str());
         assert_eq!(subresponse.source_id, source_id);
-        assert_eq!(subresponse.open_shards.len(), 1);
+        assert_eq!(subresponse.opened_shards.len(), 1);
 
-        let shard = &subresponse.open_shards[0];
+        let shard = &subresponse.opened_shards[0];
         assert_eq!(shard.index_uid, index_uid.as_str());
         assert_eq!(shard.source_id, source_id);
         assert_eq!(shard.shard_id, 2);
-        assert_eq!(shard.shard_state, 0);
+        assert_eq!(shard.shard_state(), ShardState::Open);
         assert_eq!(shard.leader_id, "leader_id");
         assert_eq!(shard.follower_id.as_ref().unwrap(), "follower_id");
-        assert_eq!(shard.replication_position_inclusive, None);
-        assert_eq!(shard.publish_position_inclusive, "");
+        assert_eq!(shard.publish_position_inclusive(), Position::Beginning);
 
         assert_eq!(shards.shards.get(&2).unwrap(), shard);
-    }
+        assert_eq!(shards.next_shard_id, 3);
 
-    #[test]
-    fn test_close_shard() {}
+        let subrequest = OpenShardsSubrequest {
+            subrequest_id: 0,
+            index_uid: index_uid.clone().into(),
+            source_id: source_id.clone(),
+            leader_id: "leader_id".to_string(),
+            follower_id: Some("follower_id".to_string()),
+            next_shard_id: 1,
+        };
+        let error = shards.open_shards(subrequest).unwrap_err();
+        assert_eq!(error, MetastoreError::InconsistentControlPlaneState);
+    }
 
     #[test]
     fn test_list_shards() {

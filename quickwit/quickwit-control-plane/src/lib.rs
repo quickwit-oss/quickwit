@@ -22,15 +22,11 @@ pub(crate) mod control_plane_model;
 pub mod indexing_plan;
 pub mod indexing_scheduler;
 pub mod ingest;
+pub(crate) mod metrics;
 
-use async_trait::async_trait;
-use quickwit_common::pubsub::EventSubscriber;
 use quickwit_common::tower::Pool;
-use quickwit_proto::control_plane::{ControlPlaneService, ControlPlaneServiceClient};
-use quickwit_proto::indexing::{IndexingServiceClient, IndexingTask};
-use quickwit_proto::metastore::{CloseShardsRequest, DeleteShardsRequest};
-use quickwit_proto::{IndexUid, SourceId};
-use tracing::error;
+use quickwit_proto::indexing::{CpuCapacity, IndexingServiceClient, IndexingTask};
+use quickwit_proto::types::{IndexUid, SourceId};
 
 /// It can however appear only once in a given index.
 /// In itself, `SourceId` is not unique, but the pair `(IndexUid, SourceId)` is.
@@ -45,44 +41,10 @@ pub struct SourceUid {
 pub struct IndexerNodeInfo {
     pub client: IndexingServiceClient,
     pub indexing_tasks: Vec<IndexingTask>,
+    pub indexing_capacity: CpuCapacity,
 }
 
 pub type IndexerPool = Pool<String, IndexerNodeInfo>;
-
-/// Subscribes to various metastore events and forwards them to the control plane using the inner
-/// client. The actual subscriptions are set up in `quickwit-serve`.
-#[derive(Debug, Clone)]
-pub struct ControlPlaneEventSubscriber(ControlPlaneServiceClient);
-
-impl ControlPlaneEventSubscriber {
-    pub fn new(control_plane: ControlPlaneServiceClient) -> Self {
-        Self(control_plane)
-    }
-}
-
-#[async_trait]
-impl EventSubscriber<CloseShardsRequest> for ControlPlaneEventSubscriber {
-    async fn handle_event(&mut self, request: CloseShardsRequest) {
-        if let Err(error) = self.0.close_shards(request).await {
-            error!(
-                "failed to notify control plane of close shards event: `{}`",
-                error
-            );
-        }
-    }
-}
-
-#[async_trait]
-impl EventSubscriber<DeleteShardsRequest> for ControlPlaneEventSubscriber {
-    async fn handle_event(&mut self, request: DeleteShardsRequest) {
-        if let Err(error) = self.0.delete_shards(request).await {
-            error!(
-                "failed to notify control plane of delete shards event: `{}`",
-                error
-            );
-        }
-    }
-}
 
 #[cfg(test)]
 mod tests;

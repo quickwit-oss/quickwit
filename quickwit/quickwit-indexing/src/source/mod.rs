@@ -73,11 +73,8 @@ mod vec_source;
 mod void_source;
 
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::time::Duration;
 
-#[cfg(not(any(feature = "kafka", feature = "kinesis", feature = "pulsar")))]
-use anyhow::bail;
 use async_trait::async_trait;
 use bytes::Bytes;
 pub use file_source::{FileSource, FileSourceFactory};
@@ -95,9 +92,9 @@ use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::{SourceConfig, SourceParams};
 use quickwit_ingest::IngesterPool;
 use quickwit_metastore::checkpoint::{SourceCheckpoint, SourceCheckpointDelta};
-use quickwit_metastore::Metastore;
 use quickwit_proto::indexing::IndexingPipelineId;
-use quickwit_proto::{IndexUid, ShardId};
+use quickwit_proto::metastore::MetastoreServiceClient;
+use quickwit_proto::types::{IndexUid, ShardId};
 use quickwit_storage::StorageResolver;
 use serde_json::Value as JsonValue;
 pub use source_factory::{SourceFactory, SourceLoader, TypedSourceFactory};
@@ -116,7 +113,7 @@ use crate::source::ingest_api_source::IngestApiSourceFactory;
 pub struct SourceRuntimeArgs {
     pub pipeline_id: IndexingPipelineId,
     pub source_config: SourceConfig,
-    pub metastore: Arc<dyn Metastore>,
+    pub metastore: MetastoreServiceClient,
     pub ingester_pool: IngesterPool,
     // Ingest API queues directory path.
     pub queues_dir_path: PathBuf,
@@ -148,9 +145,10 @@ impl SourceRuntimeArgs {
     fn for_test(
         index_uid: IndexUid,
         source_config: SourceConfig,
-        metastore: Arc<dyn Metastore>,
+        metastore: MetastoreServiceClient,
         queues_dir_path: PathBuf,
-    ) -> Arc<Self> {
+    ) -> std::sync::Arc<Self> {
+        use std::sync::Arc;
         let pipeline_id = IndexingPipelineId {
             node_id: "test-node".to_string(),
             index_uid,
@@ -398,7 +396,7 @@ pub async fn check_source_connectivity(
         #[allow(unused_variables)]
         SourceParams::Kafka(params) => {
             #[cfg(not(feature = "kafka"))]
-            bail!("Quickwit binary was not compiled with the `kafka` feature");
+            anyhow::bail!("Quickwit binary was not compiled with the `kafka` feature");
 
             #[cfg(feature = "kafka")]
             {
@@ -409,7 +407,7 @@ pub async fn check_source_connectivity(
         #[allow(unused_variables)]
         SourceParams::Kinesis(params) => {
             #[cfg(not(feature = "kinesis"))]
-            bail!("Quickwit binary was not compiled with the `kinesis` feature");
+            anyhow::bail!("Quickwit binary was not compiled with the `kinesis` feature");
 
             #[cfg(feature = "kinesis")]
             {
@@ -420,7 +418,7 @@ pub async fn check_source_connectivity(
         #[allow(unused_variables)]
         SourceParams::Pulsar(params) => {
             #[cfg(not(feature = "pulsar"))]
-            bail!("Quickwit binary was not compiled with the `pulsar` feature");
+            anyhow::bail!("Quickwit binary was not compiled with the `pulsar` feature");
 
             #[cfg(feature = "pulsar")]
             {

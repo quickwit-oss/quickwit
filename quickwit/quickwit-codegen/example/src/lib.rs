@@ -149,6 +149,7 @@ impl Hello for HelloImpl {
 #[cfg(test)]
 mod tests {
     use std::net::SocketAddr;
+    use std::str::FromStr;
     use std::sync::atomic::Ordering;
 
     use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Universe};
@@ -313,7 +314,7 @@ mod tests {
         grpc_client.check_connectivity().await.unwrap();
         assert_eq!(
             grpc_client.endpoints(),
-            vec![Uri::from_well_formed("grpc://127.0.0.1:6666/hello.Hello")]
+            vec![Uri::from_str("grpc://127.0.0.1:6666/hello.Hello").unwrap()]
         );
 
         // The connectivity check fails if there is no client behind the channel.
@@ -403,10 +404,11 @@ mod tests {
         actor_client.check_connectivity().await.unwrap();
         assert_eq!(
             actor_client.endpoints(),
-            vec![Uri::from_well_formed(format!(
+            vec![Uri::from_str(&format!(
                 "actor://localhost/{}",
                 actor_mailbox.actor_instance_id()
-            ))]
+            ))
+            .unwrap()]
         );
 
         let (ping_stream_tx, ping_stream) = ServiceStream::new_bounded(1);

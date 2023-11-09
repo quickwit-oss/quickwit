@@ -32,9 +32,11 @@ use quickwit_common::KillSwitch;
 use quickwit_config::{IndexingSettings, SourceConfig};
 use quickwit_doc_mapper::DocMapper;
 use quickwit_ingest::IngesterPool;
-use quickwit_metastore::Metastore;
+use quickwit_metastore::IndexMetadataResponseExt;
 use quickwit_proto::indexing::IndexingPipelineId;
-use quickwit_proto::metastore::MetastoreError;
+use quickwit_proto::metastore::{
+    IndexMetadataRequest, MetastoreError, MetastoreService, MetastoreServiceClient,
+};
 use quickwit_storage::{Storage, StorageResolver};
 use tokio::sync::Semaphore;
 use tracing::{debug, error, info, instrument};
@@ -140,11 +142,11 @@ impl Actor for IndexingPipeline {
     async fn finalize(
         &mut self,
         _exit_status: &ActorExitStatus,
-        _ctx: &ActorContext<Self>,
+        ctx: &ActorContext<Self>,
     ) -> anyhow::Result<()> {
         // We update the observation to ensure our last "black box" observation
         // is up to date.
-        self.perform_observe().await;
+        self.perform_observe(ctx).await;
         Ok(())
     }
 }
@@ -235,7 +237,7 @@ impl IndexingPipeline {
         self.statistics.generation
     }
 
-    async fn perform_observe(&mut self) {
+    async fn perform_observe(&mut self, ctx: &ActorContext<Self>) {
         let Some(handles) = &self.handles_opt else {
             return;
         };
@@ -254,6 +256,9 @@ impl IndexingPipeline {
             )
             .set_generation(self.statistics.generation)
             .set_num_spawn_attempts(self.statistics.num_spawn_attempts);
+        let pipeline_metrics_opt = handles.indexer.last_observation().pipeline_metrics_opt;
+        self.statistics.pipeline_metrics_opt = pipeline_metrics_opt;
+        ctx.observe(self);
     }
 
     /// Checks if some actors have terminated.
@@ -402,7 +407,7 @@ impl IndexingPipeline {
             self.params.doc_mapper.clone(),
             indexer_mailbox,
             self.params.source_config.transform_config.clone(),
-            self.params.source_config.input_format.clone(),
+            self.params.source_config.input_format,
         )?;
         let (doc_processor_mailbox, doc_processor_handle) = ctx
             .spawn_actor()
@@ -415,9 +420,11 @@ impl IndexingPipeline {
             .spawn(doc_processor);
 
         // Fetch index_metadata to be sure to have the last updated checkpoint.
+        let index_metadata_request = IndexMetadataRequest::for_index_id(index_id.to_string());
         let index_metadata = ctx
-            .protect_future(self.params.metastore.index_metadata(index_id))
-            .await?;
+            .protect_future(self.params.metastore.index_metadata(index_metadata_request))
+            .await?
+            .deserialize_index_metadata()?;
         let source_checkpoint = index_metadata
             .checkpoint
             .source_checkpoint(source_id)
@@ -486,7 +493,7 @@ impl Handler<SuperviseLoop> for IndexingPipeline {
         supervise_loop_token: SuperviseLoop,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        self.perform_observe().await;
+        self.perform_observe(ctx).await;
         self.perform_health_check(ctx).await?;
         ctx.schedule_self_msg(SUPERVISE_INTERVAL, supervise_loop_token)
             .await;
@@ -550,7 +557,7 @@ impl Handler<AssignShards> for IndexingPipeline {
 
 pub struct IndexingPipelineParams {
     pub pipeline_id: IndexingPipelineId,
-    pub metastore: Arc<dyn Metastore>,
+    pub metastore: MetastoreServiceClient,
     pub storage: Arc<dyn Storage>,
 
     // Indexing-related parameters
@@ -571,6 +578,7 @@ pub struct IndexingPipelineParams {
     pub source_storage_resolver: StorageResolver,
     pub ingester_pool: IngesterPool,
     pub queues_dir_path: PathBuf,
+
     pub event_broker: EventBroker,
 }
 
@@ -583,9 +591,13 @@ mod tests {
     use quickwit_actors::{Command, Universe};
     use quickwit_config::{IndexingSettings, SourceInputFormat, SourceParams, VoidSourceParams};
     use quickwit_doc_mapper::{default_doc_mapper_for_test, DefaultDocMapper};
-    use quickwit_metastore::{IndexMetadata, MockMetastore};
-    use quickwit_proto::metastore::MetastoreError;
-    use quickwit_proto::IndexUid;
+    use quickwit_metastore::checkpoint::IndexCheckpointDelta;
+    use quickwit_metastore::{IndexMetadata, ListSplitsResponseExt, PublishSplitsRequestExt};
+    use quickwit_proto::metastore::{
+        EmptyResponse, IndexMetadataResponse, LastDeleteOpstampResponse, ListSplitsResponse,
+        MetastoreError,
+    };
+    use quickwit_proto::types::IndexUid;
     use quickwit_storage::RamStorage;
 
     use super::{IndexingPipeline, *};
@@ -606,15 +618,19 @@ mod tests {
         mut num_fails: usize,
     ) -> anyhow::Result<bool> {
         let universe = Universe::new();
-        let mut metastore = MockMetastore::default();
+        let mut metastore = MetastoreServiceClient::mock();
         metastore
             .expect_index_metadata()
-            .withf(|index_id| index_id == "test-index")
+            .withf(|index_metadata_request| {
+                index_metadata_request.index_id.as_ref().unwrap() == "test-index"
+            })
             .returning(move |_| {
                 if num_fails == 0 {
                     let index_metadata =
                         IndexMetadata::for_test("test-index", "ram:///indexes/test-index");
-                    return Ok(index_metadata);
+                    return Ok(
+                        IndexMetadataResponse::try_from_index_metadata(index_metadata).unwrap(),
+                    );
                 }
                 num_fails -= 1;
                 Err(MetastoreError::Connection {
@@ -623,40 +639,32 @@ mod tests {
             });
         metastore
             .expect_last_delete_opstamp()
-            .returning(move |index_uid| {
-                assert_eq!("test-index", index_uid.index_id());
-                Ok(10)
-            });
+            .returning(move |_last_delete_opstamp_request| Ok(LastDeleteOpstampResponse::new(10)));
         metastore
             .expect_mark_splits_for_deletion()
-            .returning(|_, _| Ok(()));
+            .returning(|_| Ok(EmptyResponse {}));
         metastore
             .expect_stage_splits()
-            .withf(|index_uid, _metadata| -> bool {
-                *index_uid == "test-index:11111111111111111111111111"
+            .withf(|stage_splits_request| -> bool {
+                stage_splits_request.index_uid == "test-index:11111111111111111111111111"
             })
-            .returning(|_, _| Ok(()));
+            .returning(|_| Ok(EmptyResponse {}));
         metastore
             .expect_publish_splits()
-            .withf(
-                |index_uid,
-                 splits,
-                 replaced_splits,
-                 checkpoint_delta_opt,
-                 _publish_token_opt|
-                 -> bool {
-                    let checkpoint_delta = checkpoint_delta_opt.as_ref().unwrap();
-                    *index_uid == "test-index:11111111111111111111111111"
-                        && checkpoint_delta.source_id == "test-source"
-                        && splits.len() == 1
-                        && replaced_splits.is_empty()
-                        && format!("{:?}", checkpoint_delta.source_delta)
-                            .ends_with(":(00000000000000000000..00000000000000001030])")
-                },
-            )
-            .returning(|_, _, _, _, _| Ok(()));
+            .withf(|publish_splits_request| -> bool {
+                let checkpoint_delta: IndexCheckpointDelta = publish_splits_request
+                    .deserialize_index_checkpoint()
+                    .unwrap()
+                    .unwrap();
+                publish_splits_request.index_uid == "test-index:11111111111111111111111111"
+                    && checkpoint_delta.source_id == "test-source"
+                    && publish_splits_request.staged_split_ids.len() == 1
+                    && publish_splits_request.replaced_split_ids.is_empty()
+                    && format!("{:?}", checkpoint_delta.source_delta)
+                        .ends_with(":(00000000000000000000..00000000000000001030])")
+            })
+            .returning(|_| Ok(EmptyResponse {}));
         let node_id = "test-node";
-        let metastore = Arc::new(metastore);
         let pipeline_id = IndexingPipelineId {
             index_uid: "test-index:11111111111111111111111111".to_string().into(),
             source_id: "test-source".to_string(),
@@ -684,7 +692,7 @@ mod tests {
             indexing_directory: TempDirectory::for_test(),
             indexing_settings: IndexingSettings::for_test(),
             ingester_pool: IngesterPool::default(),
-            metastore: metastore.clone(),
+            metastore: MetastoreServiceClient::from(metastore),
             storage,
             split_store,
             merge_policy: default_merge_policy(),
@@ -717,48 +725,46 @@ mod tests {
 
     #[tokio::test]
     async fn test_indexing_pipeline_simple() -> anyhow::Result<()> {
-        let mut metastore = MockMetastore::default();
+        let mut metastore = MetastoreServiceClient::mock();
         metastore
             .expect_index_metadata()
-            .withf(|index_id| index_id == "test-index")
+            .withf(|index_metadata_request| {
+                index_metadata_request.index_id.as_ref().unwrap() == "test-index"
+            })
             .returning(|_| {
-                Ok(IndexMetadata::for_test(
-                    "test-index",
-                    "ram:///indexes/test-index",
-                ))
+                let index_metadata =
+                    IndexMetadata::for_test("test-index", "ram:///indexes/test-index");
+                Ok(IndexMetadataResponse::try_from_index_metadata(index_metadata).unwrap())
             });
         metastore
             .expect_last_delete_opstamp()
-            .returning(move |index_uid| {
-                assert_eq!("test-index", index_uid.index_id());
-                Ok(10)
-            });
+            .withf(|last_delete_opstamp| {
+                last_delete_opstamp.index_uid == "test-index:11111111111111111111111111"
+            })
+            .returning(move |_| Ok(LastDeleteOpstampResponse::new(10)));
         metastore
             .expect_stage_splits()
-            .withf(|index_uid, _metadata| *index_uid == "test-index:11111111111111111111111111")
-            .returning(|_, _| Ok(()));
+            .withf(|stage_splits_request| {
+                stage_splits_request.index_uid == "test-index:11111111111111111111111111"
+            })
+            .returning(|_| Ok(EmptyResponse {}));
         metastore
             .expect_publish_splits()
-            .withf(
-                |index_uid,
-                 splits,
-                 replaced_split_ids,
-                 checkpoint_delta_opt,
-                 _publish_token_opt|
-                 -> bool {
-                    let checkpoint_delta = checkpoint_delta_opt.as_ref().unwrap();
-                    *index_uid == "test-index:11111111111111111111111111"
-                        && splits.len() == 1
-                        && replaced_split_ids.is_empty()
-                        && checkpoint_delta.source_id == "test-source"
-                        && format!("{:?}", checkpoint_delta.source_delta)
-                            .ends_with(":(00000000000000000000..00000000000000001030])")
-                },
-            )
-            .returning(|_, _, _, _, _| Ok(()));
+            .withf(|publish_splits_request| -> bool {
+                let checkpoint_delta: IndexCheckpointDelta = publish_splits_request
+                    .deserialize_index_checkpoint()
+                    .unwrap()
+                    .unwrap();
+                publish_splits_request.index_uid == "test-index:11111111111111111111111111"
+                    && publish_splits_request.staged_split_ids.len() == 1
+                    && publish_splits_request.replaced_split_ids.is_empty()
+                    && checkpoint_delta.source_id == "test-source"
+                    && format!("{:?}", checkpoint_delta.source_delta)
+                        .ends_with(":(00000000000000000000..00000000000000001030])")
+            })
+            .returning(|_| Ok(EmptyResponse {}));
         let universe = Universe::new();
         let node_id = "test-node";
-        let metastore = Arc::new(metastore);
         let pipeline_id = IndexingPipelineId {
             index_uid: "test-index:11111111111111111111111111".to_string().into(),
             source_id: "test-source".to_string(),
@@ -785,7 +791,7 @@ mod tests {
             indexing_directory: TempDirectory::for_test(),
             indexing_settings: IndexingSettings::for_test(),
             ingester_pool: IngesterPool::default(),
-            metastore: metastore.clone(),
+            metastore: MetastoreServiceClient::from(metastore),
             queues_dir_path: PathBuf::from("./queues"),
             storage,
             split_store,
@@ -809,23 +815,25 @@ mod tests {
 
     #[tokio::test]
     async fn test_merge_pipeline_does_not_stop_on_indexing_pipeline_failure() {
-        let mut metastore = MockMetastore::default();
-        metastore
+        let mut mock_metastore = MetastoreServiceClient::mock();
+        mock_metastore
             .expect_index_metadata()
-            .withf(|index_id| index_id == "test-index")
+            .withf(|index_metadata_request| {
+                index_metadata_request.index_id.as_ref().unwrap() == "test-index"
+            })
             .returning(|_| {
-                Ok(IndexMetadata::for_test(
-                    "test-index",
-                    "ram:///indexes/test-index",
-                ))
+                let index_metadata =
+                    IndexMetadata::for_test("test-index", "ram:///indexes/test-index");
+                Ok(IndexMetadataResponse::try_from_index_metadata(index_metadata).unwrap())
             });
-        metastore.expect_list_splits().returning(|_| Ok(Vec::new()));
+        mock_metastore
+            .expect_list_splits()
+            .returning(|_| Ok(ListSplitsResponse::empty()));
         let universe = Universe::with_accelerated_time();
         let node_id = "test-node";
-        let metastore = Arc::new(metastore);
         let doc_mapper = Arc::new(default_doc_mapper_for_test());
         let pipeline_id = IndexingPipelineId {
-            index_uid: IndexUid::new("test-index"),
+            index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
             node_id: node_id.to_string(),
             pipeline_ord: 0,
@@ -839,6 +847,7 @@ mod tests {
             transform_config: None,
             input_format: SourceInputFormat::Json,
         };
+        let metastore = MetastoreServiceClient::from(mock_metastore);
         let storage = Arc::new(RamStorage::default());
         let split_store = IndexingSplitStore::create_without_local_store_for_test(storage.clone());
         let merge_pipeline_params = MergePipelineParams {
@@ -864,7 +873,7 @@ mod tests {
             indexing_directory: TempDirectory::for_test(),
             indexing_settings: IndexingSettings::for_test(),
             ingester_pool: IngesterPool::default(),
-            metastore: metastore.clone(),
+            metastore,
             queues_dir_path: PathBuf::from("./queues"),
             storage,
             split_store,
@@ -903,48 +912,44 @@ mod tests {
 
     #[tokio::test]
     async fn test_indexing_pipeline_all_failures_handling() -> anyhow::Result<()> {
-        let mut metastore = MockMetastore::default();
+        let mut metastore = MetastoreServiceClient::mock();
         metastore
             .expect_index_metadata()
-            .withf(|index_id| index_id == "test-index")
+            .withf(|index_metadata_request| {
+                index_metadata_request.index_id.as_ref().unwrap() == "test-index"
+            })
             .returning(|_| {
-                Ok(IndexMetadata::for_test(
-                    "test-index",
-                    "ram:///indexes/test-index",
-                ))
+                let index_metadata =
+                    IndexMetadata::for_test("test-index", "ram:///indexes/test-index");
+                Ok(IndexMetadataResponse::try_from_index_metadata(index_metadata).unwrap())
             });
         metastore
             .expect_last_delete_opstamp()
-            .returning(move |index_uid| {
-                assert_eq!("test-index", index_uid.index_id());
-                Ok(10)
-            });
+            .withf(|last_delete_opstamp| {
+                last_delete_opstamp.index_uid == "test-index:11111111111111111111111111"
+            })
+            .returning(move |_| Ok(LastDeleteOpstampResponse::new(10)));
         metastore
             .expect_stage_splits()
             .never()
-            .returning(|_, _| Ok(()));
+            .returning(|_| Ok(EmptyResponse {}));
         metastore
             .expect_publish_splits()
-            .withf(
-                |index_uid,
-                 splits,
-                 replaced_split_ids,
-                 checkpoint_delta_opt,
-                 _publish_token_opt|
-                 -> bool {
-                    let checkpoint_delta = checkpoint_delta_opt.as_ref().unwrap();
-                    *index_uid == "test-index:11111111111111111111111111"
-                        && splits.is_empty()
-                        && replaced_split_ids.is_empty()
-                        && checkpoint_delta.source_id == "test-source"
-                        && format!("{:?}", checkpoint_delta.source_delta)
-                            .ends_with(":(00000000000000000000..00000000000000001030])")
-                },
-            )
-            .returning(|_, _, _, _, _| Ok(()));
+            .withf(|publish_splits_request| -> bool {
+                let checkpoint_delta: IndexCheckpointDelta = publish_splits_request
+                    .deserialize_index_checkpoint()
+                    .unwrap()
+                    .unwrap();
+                publish_splits_request.index_uid == "test-index:11111111111111111111111111"
+                    && publish_splits_request.staged_split_ids.is_empty()
+                    && publish_splits_request.replaced_split_ids.is_empty()
+                    && checkpoint_delta.source_id == "test-source"
+                    && format!("{:?}", checkpoint_delta.source_delta)
+                        .ends_with(":(00000000000000000000..00000000000000001030])")
+            })
+            .returning(|_| Ok(EmptyResponse {}));
         let universe = Universe::new();
         let node_id = "test-node";
-        let metastore = Arc::new(metastore);
         let pipeline_id = IndexingPipelineId {
             index_uid: "test-index:11111111111111111111111111".to_string().into(),
             source_id: "test-source".to_string(),
@@ -989,7 +994,7 @@ mod tests {
             indexing_directory: TempDirectory::for_test(),
             indexing_settings: IndexingSettings::for_test(),
             ingester_pool: IngesterPool::default(),
-            metastore: metastore.clone(),
+            metastore: MetastoreServiceClient::from(metastore),
             queues_dir_path: PathBuf::from("./queues"),
             storage,
             split_store,

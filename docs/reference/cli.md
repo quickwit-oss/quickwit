@@ -336,7 +336,7 @@ quickwit index ingest
 | `--batch-size-limit` | Size limit of each submitted document batch. |
 | `--wait` | Wait for all documents to be commited and available for search before exiting |
 | `--force` | Force a commit after the last document is sent, and wait for all documents to be committed and available for search before exiting |
-| `--commit-timeout` | Duration of the commit timeout operation. |
+| `--commit-timeout` | Timeout for ingest operations that require waiting for the final commit (`--wait` or `--force`). This is different from the `commit_timeout_secs` indexing setting which sets the maximum time before commiting splits after their creation. |
 
 *Examples*
 
@@ -647,6 +647,8 @@ Lists the splits of an index.
 ```bash
 quickwit split list
     --index <index>
+    [--offset <offset>]
+    [--limit <limit>]
     [--states <states>]
     [--create-date <create-date>]
     [--start-date <start-date>]
@@ -659,6 +661,8 @@ quickwit split list
 | Option | Description |
 |-----------------|-------------|
 | `--index` | Target index ID |
+| `--offset` | Number of splits to skip |
+| `--limit` | Maximum number of splits to retrieve |
 | `--states` | Selects the splits whose states are included in this comma-separated list of states. Possible values are `staged`, `published`, and `marked`. |
 | `--create-date` | Selects the splits whose creation dates are before this date. |
 | `--start-date` | Selects the splits that contain documents after this date (time-series indexes only). |

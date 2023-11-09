@@ -17,6 +17,9 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::HashSet;
+
+use anyhow::ensure;
 use heck::ToSnakeCase;
 use proc_macro2::TokenStream;
 use prost_build::{Comments, Method, Service, ServiceGenerator};
@@ -28,41 +31,14 @@ use crate::ProstConfig;
 pub struct Codegen;
 
 impl Codegen {
-    pub fn run(
-        protos: &[&str],
-        out_dir: &str,
-        result_type_path: &str,
-        error_type_path: &str,
-        generate_extra_service_methods: bool,
-        includes: &[&str],
-    ) -> anyhow::Result<()> {
-        Self::run_with_config(
-            protos,
-            out_dir,
-            result_type_path,
-            error_type_path,
-            generate_extra_service_methods,
-            includes,
-            ProstConfig::default(),
-        )
-    }
-
-    pub fn run_with_config(
-        protos: &[&str],
-        out_dir: &str,
-        result_type_path: &str,
-        error_type_path: &str,
-        generate_extra_service_methods: bool,
-        includes: &[&str],
-        mut prost_config: ProstConfig,
-    ) -> anyhow::Result<()> {
+    pub fn run(mut args: CodegenBuilder) -> anyhow::Result<()> {
         let service_generator = Box::new(QuickwitServiceGenerator::new(
-            result_type_path,
-            error_type_path,
-            generate_extra_service_methods,
+            args.result_type_path,
+            args.error_type_path,
+            args.generate_extra_service_methods,
+            args.generate_prom_labels_for_requests,
         ));
-
-        prost_config
+        args.prost_config
             .protoc_arg("--experimental_allow_proto3_optional")
             .type_attribute(
                 ".",
@@ -74,13 +50,80 @@ impl Codegen {
             )
             .enum_attribute(".", "#[serde(rename_all=\"snake_case\")]")
             .service_generator(service_generator)
-            .out_dir(out_dir);
+            .out_dir(args.output_dir);
 
-        for proto in protos {
+        for proto in args.protos {
             println!("cargo:rerun-if-changed={proto}");
-            prost_config.compile_protos(&[proto], includes)?;
+            args.prost_config.compile_protos(&[proto], &args.includes)?;
         }
         Ok(())
+    }
+
+    pub fn builder() -> CodegenBuilder {
+        CodegenBuilder::default()
+    }
+}
+
+#[derive(Default)]
+pub struct CodegenBuilder {
+    protos: Vec<String>,
+    includes: Vec<String>,
+    output_dir: String,
+    prost_config: ProstConfig,
+    result_type_path: String,
+    error_type_path: String,
+    generate_extra_service_methods: bool,
+    generate_prom_labels_for_requests: bool,
+}
+
+impl CodegenBuilder {
+    pub fn with_protos(mut self, protos: &[&str]) -> Self {
+        self.protos = protos.iter().map(|proto| proto.to_string()).collect();
+        self
+    }
+
+    pub fn with_includes(mut self, includes: &[&str]) -> Self {
+        self.includes = includes.iter().map(|include| include.to_string()).collect();
+        self
+    }
+
+    pub fn with_output_dir(mut self, path: &str) -> Self {
+        self.output_dir = path.to_string();
+        self
+    }
+
+    pub fn with_result_type_path(mut self, path: &str) -> Self {
+        self.result_type_path = path.to_string();
+        self
+    }
+
+    pub fn with_error_type_path(mut self, path: &str) -> Self {
+        self.error_type_path = path.to_string();
+        self
+    }
+
+    pub fn with_prost_config(mut self, prost_config: ProstConfig) -> Self {
+        self.prost_config = prost_config;
+        self
+    }
+
+    pub fn generate_extra_service_methods(mut self) -> Self {
+        self.generate_extra_service_methods = true;
+        self
+    }
+
+    pub fn generate_prom_labels_for_requests(mut self) -> Self {
+        self.generate_prom_labels_for_requests = true;
+        self
+    }
+
+    pub fn run(self) -> anyhow::Result<()> {
+        ensure!(!self.protos.is_empty(), "proto file list is empty");
+        ensure!(!self.output_dir.is_empty(), "output directory is undefined");
+        ensure!(!self.result_type_path.is_empty(),);
+        ensure!(!self.error_type_path.is_empty(), "error type is undefined");
+
+        Codegen::run(self)
     }
 }
 
@@ -88,23 +131,26 @@ struct QuickwitServiceGenerator {
     result_type_path: String,
     error_type_path: String,
     generate_extra_service_methods: bool,
+    generate_prom_labels_for_requests: bool,
     inner: Box<dyn ServiceGenerator>,
 }
 
 impl QuickwitServiceGenerator {
     fn new(
-        result_type_path: &str,
-        error_type_path: &str,
+        result_type_path: String,
+        error_type_path: String,
         generate_extra_service_methods: bool,
+        generate_prom_labels_for_requests: bool,
     ) -> Self {
         let inner = Box::new(WithSuffixServiceGenerator::new(
             "Grpc",
             tonic_build::configure().service_generator(),
         ));
         Self {
-            result_type_path: result_type_path.to_string(),
-            error_type_path: error_type_path.to_string(),
+            result_type_path,
+            error_type_path,
             generate_extra_service_methods,
+            generate_prom_labels_for_requests,
             inner,
         }
     }
@@ -117,6 +163,7 @@ impl ServiceGenerator for QuickwitServiceGenerator {
             &self.result_type_path,
             &self.error_type_path,
             self.generate_extra_service_methods,
+            self.generate_prom_labels_for_requests,
         );
         let ast: syn::File = syn::parse2(tokens).expect("Tokenstream should be a valid Syn AST.");
         let pretty_code = prettyplease::unparse(&ast);
@@ -229,6 +276,7 @@ fn generate_all(
     result_type_path: &str,
     error_type_path: &str,
     generate_extra_service_methods: bool,
+    generate_prom_labels_for_requests: bool,
 ) -> TokenStream {
     let context = CodegenContext::from_service(
         service,
@@ -245,12 +293,19 @@ fn generate_all(
     let tower_mailbox = generate_tower_mailbox(&context);
     let grpc_client_adapter = generate_grpc_client_adapter(&context);
     let grpc_server_adapter = generate_grpc_server_adapter(&context);
+    let prom_labels_impl = if generate_prom_labels_for_requests {
+        generate_prom_labels_impl_for_requests(&context)
+    } else {
+        TokenStream::new()
+    };
 
     quote! {
         // The line below is necessary to opt out of the license header check.
         /// BEGIN quickwit-codegen
-
+        #[allow(unused_imports)]
+        use std::str::FromStr;
         use tower::{Layer, Service, ServiceExt};
+        #prom_labels_impl
 
         #stream_type_alias
 
@@ -285,6 +340,17 @@ struct SynMethod {
 }
 
 impl SynMethod {
+    fn request_prom_label(&self) -> String {
+        self.request_type
+            .segments
+            .last()
+            .unwrap()
+            .ident
+            .to_string()
+            .trim_end_matches("Request")
+            .to_snake_case()
+    }
+
     fn request_type(&self, mock: bool) -> TokenStream {
         let request_type = if mock {
             let request_type = &self.request_type;
@@ -337,6 +403,35 @@ impl SynMethod {
         }
         syn_methods
     }
+}
+
+fn generate_prom_labels_impl_for_requests(context: &CodegenContext) -> TokenStream {
+    let mut stream = TokenStream::new();
+    stream.extend(quote! {
+        use quickwit_common::metrics::{PrometheusLabels, OwnedPrometheusLabels};
+    });
+    let mut implemented_request_types: HashSet<String> = HashSet::new();
+    for syn_method in &context.methods {
+        if syn_method.client_streaming {
+            continue;
+        }
+        let request_type = syn_method.request_type(false);
+        let request_type_snake_case = syn_method.request_prom_label();
+        if implemented_request_types.contains(&request_type_snake_case) {
+            continue;
+        } else {
+            implemented_request_types.insert(request_type_snake_case.clone());
+            let method = quote! {
+                impl PrometheusLabels<1> for #request_type {
+                    fn labels(&self) -> OwnedPrometheusLabels<1usize> {
+                        OwnedPrometheusLabels::new([std::borrow::Cow::Borrowed(#request_type_snake_case),])
+                    }
+                }
+            };
+            stream.extend(method);
+        }
+    }
+    stream
 }
 
 fn generate_comment_attributes(comments: &Comments) -> Vec<syn::Attribute> {
@@ -434,7 +529,10 @@ fn generate_client(context: &CodegenContext) -> TokenStream {
     let tower_block_builder_name = &context.tower_block_builder_name;
     let mock_name = &context.mock_name;
     let mock_wrapper_name = quote::format_ident!("{}Wrapper", mock_name);
-
+    let error_mesage = format!(
+        "`{}` must be wrapped in a `{}`. Use `{}::from(mock)` to instantiate the client.",
+        mock_name, mock_wrapper_name, mock_name
+    );
     let additional_client_methods = if context.generate_extra_service_methods {
         generate_additional_methods_calling_inner()
     } else {
@@ -447,7 +545,7 @@ fn generate_client(context: &CodegenContext) -> TokenStream {
             }
 
             fn endpoints(&self) -> Vec<quickwit_common::uri::Uri> {
-                self.inner.blocking_lock().endpoints()
+                futures::executor::block_on(self.inner.lock()).endpoints()
             }
         }
     } else {
@@ -465,6 +563,8 @@ fn generate_client(context: &CodegenContext) -> TokenStream {
             where
                 T: #service_name,
             {
+                #[cfg(any(test, feature = "testsuite"))]
+                assert!(std::any::TypeId::of::<T>() != std::any::TypeId::of::<#mock_name>(), #error_mesage);
                 Self {
                     inner: Box::new(instance),
                 }
@@ -473,6 +573,8 @@ fn generate_client(context: &CodegenContext) -> TokenStream {
             pub fn as_grpc_service(&self) -> #grpc_server_package_name::#grpc_server_name<#grpc_server_adapter_name> {
                 let adapter = #grpc_server_adapter_name::new(self.clone());
                 #grpc_server_package_name::#grpc_server_name::new(adapter)
+                    .max_decoding_message_size(10 * 1024 * 1024)
+                    .max_encoding_message_size(10 * 1024 * 1024)
             }
 
             pub fn from_channel(addr: std::net::SocketAddr, channel: tonic::transport::Channel) -> Self
@@ -485,7 +587,10 @@ fn generate_client(context: &CodegenContext) -> TokenStream {
             pub fn from_balance_channel(balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>) -> #client_name
             {
                 let connection_keys_watcher = balance_channel.connection_keys_watcher();
-                let adapter = #grpc_client_adapter_name::new(#grpc_client_package_name::#grpc_client_name::new(balance_channel), connection_keys_watcher);
+                let client = #grpc_client_package_name::#grpc_client_name::new(balance_channel)
+                    .max_decoding_message_size(10 * 1024 * 1024)
+                    .max_encoding_message_size(10 * 1024 * 1024);
+                let adapter = #grpc_client_adapter_name::new(client, connection_keys_watcher);
                 Self::new(adapter)
             }
 
@@ -869,7 +974,7 @@ fn generate_tower_mailbox(context: &CodegenContext) -> TokenStream {
             }
 
             fn endpoints(&self) -> Vec<quickwit_common::uri::Uri> {
-                vec![quickwit_common::uri::Uri::from_well_formed(format!("actor://localhost/{}", self.inner.actor_instance_id()))]
+                vec![quickwit_common::uri::Uri::from_str(&format!("actor://localhost/{}", self.inner.actor_instance_id())).expect("URI should be valid")]
             }
         }
     } else {
@@ -1013,7 +1118,7 @@ fn generate_grpc_client_adapter(context: &CodegenContext) -> TokenStream {
                 self.connection_addrs_rx
                     .borrow()
                     .iter()
-                    .map(|addr| quickwit_common::uri::Uri::from_well_formed(format!(r"grpc://{}/{}.{}", addr, #grpc_client_package_name_string, #service_name_string)))
+                    .flat_map(|addr| quickwit_common::uri::Uri::from_str(&format!("grpc://{addr}/{}.{}", #grpc_client_package_name_string, #service_name_string)))
                     .collect()
             }
         }

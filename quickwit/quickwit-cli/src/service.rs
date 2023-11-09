@@ -23,7 +23,7 @@ use std::str::FromStr;
 use clap::{arg, ArgAction, ArgMatches, Command};
 use itertools::Itertools;
 use quickwit_common::runtimes::RuntimesConfig;
-use quickwit_common::uri::Uri;
+use quickwit_common::uri::{Protocol, Uri};
 use quickwit_config::service::QuickwitService;
 use quickwit_config::NodeConfig;
 use quickwit_serve::serve_quickwit;
@@ -126,11 +126,12 @@ fn quickwit_telemetry_info(config: &NodeConfig) -> QuickwitTelemetryInfo {
     }
     // The metastore URI is only relevant if the metastore is enabled.
     if config.is_service_enabled(QuickwitService::Metastore) {
-        if config.metastore_uri.protocol().is_postgresql() {
-            features.insert(QuickwitFeature::PostgresqMetastore);
+        let feature = if config.metastore_uri.protocol() == Protocol::PostgreSQL {
+            QuickwitFeature::PostgresqMetastore
         } else {
-            features.insert(QuickwitFeature::FileBackedMetastore);
-        }
+            QuickwitFeature::FileBackedMetastore
+        };
+        features.insert(feature);
     }
     let services = config
         .enabled_services

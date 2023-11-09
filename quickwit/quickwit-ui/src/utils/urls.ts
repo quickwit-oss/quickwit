@@ -49,13 +49,13 @@ export function parseSearchUrl(historySearch: string): SearchRequest {
   const sortByFieldParam = searchParams.get("sort_by_field");
   if (sortByFieldParam !== null) {
     if (sortByFieldParam.startsWith('+')) {
-      const order: SortOrder = 'Asc';
-      sortByField = {field_name: sortByFieldParam.substring(1), order: order};
-    } else if (sortByFieldParam.startsWith('-')) {
       const order: SortOrder = 'Desc';
       sortByField = {field_name: sortByFieldParam.substring(1), order: order};
-    } else {
+    } else if (sortByFieldParam.startsWith('-')) {
       const order: SortOrder = 'Asc';
+      sortByField = {field_name: sortByFieldParam.substring(1), order: order};
+    } else {
+      const order: SortOrder = 'Desc';
       sortByField = {field_name: sortByFieldParam, order: order};
     }
   }
@@ -95,6 +95,6 @@ export function toUrlSearchRequestParams(request: SearchRequest): URLSearchParam
 }
 
 export function serializeSortByField(sortByField: SortByField): string {
-  const order = sortByField.order === 'Asc' ? '+' : '-';
+  const order = sortByField.order === 'Desc' ? '+' : '-';
   return `${order}${sortByField.field_name}`;
 }

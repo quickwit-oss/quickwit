@@ -17,8 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use byte_unit::Byte;
 use bytes::Bytes;
+use bytesize::ByteSize;
 use serde::de::DeserializeOwned;
 use warp::reject::LengthRequired;
 use warp::{Filter, Rejection};
@@ -29,8 +29,8 @@ use crate::elastic_search_api::model::{
 };
 use crate::search_api::extract_index_id_patterns;
 
-const BODY_LENGTH_LIMIT: Byte = byte_unit::Byte::from_bytes(1_000_000);
-const CONTENT_LENGTH_LIMIT: Byte = byte_unit::Byte::from_bytes(10 * 1024 * 1024); // 10MiB
+const BODY_LENGTH_LIMIT: ByteSize = ByteSize::mb(1);
+const CONTENT_LENGTH_LIMIT: ByteSize = ByteSize::mib(10);
 
 // TODO: Make all elastic endpoint models `utoipa` compatible
 // and register them here.
@@ -71,7 +71,7 @@ pub(crate) fn elastic_bulk_filter(
     warp::path!("_elastic" / "_bulk")
         .and(warp::post())
         .and(warp::body::content_length_limit(
-            CONTENT_LENGTH_LIMIT.get_bytes(),
+            CONTENT_LENGTH_LIMIT.as_u64(),
         ))
         .and(warp::body::bytes())
         .and(serde_qs::warp::query(serde_qs::Config::default()))
@@ -80,7 +80,7 @@ pub(crate) fn elastic_bulk_filter(
 /// Like the warp json filter, but accepts an empty body and interprets it as `T::default`.
 fn json_or_empty<T: DeserializeOwned + Send + Default>(
 ) -> impl Filter<Extract = (T,), Error = Rejection> + Copy {
-    warp::body::content_length_limit(BODY_LENGTH_LIMIT.get_bytes())
+    warp::body::content_length_limit(BODY_LENGTH_LIMIT.as_u64())
         .and(warp::body::bytes().and_then(|buf: Bytes| async move {
             if buf.is_empty() {
                 return Ok(T::default());
@@ -128,7 +128,7 @@ pub(crate) fn elastic_index_bulk_filter(
     warp::path!("_elastic" / String / "_bulk")
         .and(warp::post())
         .and(warp::body::content_length_limit(
-            CONTENT_LENGTH_LIMIT.get_bytes(),
+            CONTENT_LENGTH_LIMIT.as_u64(),
         ))
         .and(warp::body::bytes())
         .and(serde_qs::warp::query::<ElasticIngestOptions>(
@@ -140,9 +140,7 @@ pub(crate) fn elastic_index_bulk_filter(
 pub(crate) fn elastic_multi_search_filter(
 ) -> impl Filter<Extract = (Bytes, MultiSearchQueryParams), Error = Rejection> + Clone {
     warp::path!("_elastic" / "_msearch")
-        .and(warp::body::content_length_limit(
-            BODY_LENGTH_LIMIT.get_bytes(),
-        ))
+        .and(warp::body::content_length_limit(BODY_LENGTH_LIMIT.as_u64()))
         .and(warp::body::bytes())
         .and(warp::post())
         .and(serde_qs::warp::query(serde_qs::Config::default()))
@@ -162,9 +160,7 @@ fn merge_scroll_body_params(
 pub(crate) fn elastic_scroll_filter(
 ) -> impl Filter<Extract = (ScrollQueryParams,), Error = Rejection> + Clone {
     warp::path!("_elastic" / "_search" / "scroll")
-        .and(warp::body::content_length_limit(
-            BODY_LENGTH_LIMIT.get_bytes(),
-        ))
+        .and(warp::body::content_length_limit(BODY_LENGTH_LIMIT.as_u64()))
         .and(warp::get().or(warp::post()).unify())
         .and(serde_qs::warp::query(serde_qs::Config::default()))
         .and(json_or_empty())

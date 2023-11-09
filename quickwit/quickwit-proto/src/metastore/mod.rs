@@ -22,14 +22,12 @@ use std::fmt;
 use quickwit_common::retry::Retryable;
 use serde::{Deserialize, Serialize};
 
-use crate::{queue_id, IndexId, QueueId, ServiceError, ServiceErrorCode, SourceId, SplitId};
+use crate::types::{IndexId, IndexUid, QueueId, SourceId, SplitId};
+use crate::{ServiceError, ServiceErrorCode};
 
 pub mod events;
 
 include!("../codegen/quickwit/quickwit.metastore.rs");
-
-pub use metastore_service_client::MetastoreServiceClient;
-pub use metastore_service_server::{MetastoreService, MetastoreServiceServer};
 
 pub type MetastoreResult<T> = Result<T, MetastoreError>;
 
@@ -114,6 +112,9 @@ pub enum MetastoreError {
     #[error("access forbidden: {message}")]
     Forbidden { message: String },
 
+    #[error("control plane state is inconsistent with that of the metastore")]
+    InconsistentControlPlaneState,
+
     #[error("internal error: {message}; cause: `{cause}`")]
     Internal { message: String, cause: String },
 
@@ -151,12 +152,21 @@ impl From<sqlx::Error> for MetastoreError {
     }
 }
 
+impl From<tonic::Status> for MetastoreError {
+    fn from(status: tonic::Status) -> Self {
+        serde_json::from_str(status.message()).unwrap_or_else(|_| MetastoreError::Internal {
+            message: "failed to deserialize metastore error".to_string(),
+            cause: status.message().to_string(),
+        })
+    }
+}
+
 impl From<MetastoreError> for tonic::Status {
     fn from(metastore_error: MetastoreError) -> Self {
-        let grpc_code = metastore_error.error_code().to_grpc_status_code();
-        let error_msg = serde_json::to_string(&metastore_error)
-            .unwrap_or_else(|_| format!("raw metastore error: {metastore_error}"));
-        tonic::Status::new(grpc_code, error_msg)
+        let grpc_status_code = metastore_error.error_code().to_grpc_status_code();
+        let message_json = serde_json::to_string(&metastore_error)
+            .unwrap_or_else(|_| format!("original metastore error: {metastore_error}"));
+        tonic::Status::new(grpc_status_code, message_json)
     }
 }
 
@@ -168,6 +178,7 @@ impl ServiceError for MetastoreError {
             Self::Db { .. } => ServiceErrorCode::Internal,
             Self::FailedPrecondition { .. } => ServiceErrorCode::BadRequest,
             Self::Forbidden { .. } => ServiceErrorCode::MethodNotAllowed,
+            Self::InconsistentControlPlaneState { .. } => ServiceErrorCode::BadRequest,
             Self::Internal { .. } => ServiceErrorCode::Internal,
             Self::InvalidArgument { .. } => ServiceErrorCode::BadRequest,
             Self::Io { .. } => ServiceErrorCode::Internal,
@@ -203,21 +214,68 @@ impl SourceType {
             SourceType::Kinesis => "kinesis",
             SourceType::Nats => "nats",
             SourceType::Pulsar => "pulsar",
+            SourceType::Unspecified => "unspecified",
             SourceType::Vec => "vec",
             SourceType::Void => "void",
         }
     }
 }
 
-impl CloseShardsSuccess {
-    pub fn queue_id(&self) -> QueueId {
-        queue_id(&self.index_uid, &self.source_id, self.shard_id)
+impl IndexMetadataRequest {
+    pub fn for_index_id(index_id: IndexId) -> Self {
+        Self {
+            index_uid: None,
+            index_id: Some(index_id),
+        }
+    }
+
+    pub fn for_index_uid(index_uid: IndexUid) -> Self {
+        Self {
+            index_uid: Some(index_uid.into()),
+            index_id: None,
+        }
+    }
+
+    /// Returns the index id either from the `index_id` or the `index_uid`.
+    /// If none of them is set, an error is returned.
+    pub fn get_index_id(&self) -> MetastoreResult<IndexId> {
+        if let Some(index_id) = &self.index_id {
+            Ok(index_id.to_string())
+        } else if let Some(index_uid) = &self.index_uid {
+            let index_uid: IndexUid = index_uid.clone().into();
+            Ok(index_uid.index_id().to_string())
+        } else {
+            Err(MetastoreError::Internal {
+                message: "index_id or index_uid must be set".to_string(),
+                cause: "".to_string(),
+            })
+        }
     }
 }
 
-impl CloseShardsFailure {
-    pub fn queue_id(&self) -> QueueId {
-        queue_id(&self.index_uid, &self.source_id, self.shard_id)
+impl MarkSplitsForDeletionRequest {
+    pub fn new(index_uid: IndexUid, split_ids: Vec<String>) -> Self {
+        Self {
+            index_uid: index_uid.into(),
+            split_ids,
+        }
+    }
+}
+
+impl LastDeleteOpstampResponse {
+    pub fn new(last_delete_opstamp: u64) -> Self {
+        Self {
+            last_delete_opstamp,
+        }
+    }
+}
+
+impl ListDeleteTasksRequest {
+    pub fn new(index_uid: IndexUid, opstamp_start: u64) -> Self {
+        Self {
+            index_uid: index_uid.into(),
+            opstamp_start,
+        }
     }
 }
 
@@ -238,5 +296,13 @@ pub mod serde_utils {
             struct_name: std::any::type_name::<T>().to_string(),
             message: error.to_string(),
         })
+    }
+}
+
+impl ListIndexesMetadataRequest {
+    pub fn all() -> ListIndexesMetadataRequest {
+        ListIndexesMetadataRequest {
+            index_id_patterns: vec!["*".to_string()],
+        }
     }
 }

@@ -102,6 +102,13 @@ pub struct SearchRequest {
     /// in a consistent manner.
     #[prost(uint32, optional, tag = "15")]
     pub scroll_ttl_secs: ::core::option::Option<u32>,
+    /// Document with sort tuple smaller or equal to this are discarded to
+    /// enable pagination.
+    /// If split_id is empty, no comparison with _shard_doc should be done
+    #[prost(message, optional, tag = "16")]
+    pub search_after: ::core::option::Option<PartialHit>,
+    #[prost(enumeration = "CountHits", tag = "17")]
+    pub count_hits: i32,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[derive(Eq, Hash)]
@@ -223,7 +230,7 @@ pub struct LeafHit {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Hit {
-    /// The actual content of the hit/
+    /// The actual content of the hit
     #[prost(string, tag = "1")]
     pub json: ::prost::alloc::string::String,
     /// The partial hit (ie: the sorting field + the document address)
@@ -232,6 +239,9 @@ pub struct Hit {
     /// A snippet of the matching content
     #[prost(string, optional, tag = "3")]
     pub snippet: ::core::option::Option<::prost::alloc::string::String>,
+    /// The index id of the hit
+    #[prost(string, tag = "4")]
+    pub index_id: ::prost::alloc::string::String,
 }
 /// A partial hit, is a hit for which we have not fetch the content yet.
 /// Instead, it holds a document_uri which is enough information to
@@ -249,6 +259,7 @@ pub struct Hit {
 /// - the segment_ord,
 /// - the doc id.
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Eq, Hash)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PartialHit {
@@ -487,6 +498,37 @@ pub struct LeafSearchStreamResponse {
     /// Split id.
     #[prost(string, tag = "2")]
     pub split_id: ::prost::alloc::string::String,
+}
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum CountHits {
+    /// Count all hits, querying all splits.
+    CountAll = 0,
+    /// Give an underestimate of the number of hits, possibly skipping entire
+    /// splits if they are otherwise not needed to fulfull a query.
+    Underestimate = 1,
+}
+impl CountHits {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            CountHits::CountAll => "COUNT_ALL",
+            CountHits::Underestimate => "UNDERESTIMATE",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "COUNT_ALL" => Some(Self::CountAll),
+            "UNDERESTIMATE" => Some(Self::Underestimate),
+            _ => None,
+        }
+    }
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]

@@ -104,6 +104,8 @@ This tutorial assumes that the Kafka cluster is available locally on the default
 version: 0.6
 source_id: kafka-source
 source_type: kafka
+max_num_pipelines_per_indexer: 1
+desired_num_pipelines: 2
 params:
   topic: gh-archive
   client_params:

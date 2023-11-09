@@ -57,7 +57,7 @@ use std::str::FromStr;
 use std::time::{Duration, SystemTime};
 
 use anyhow::Context;
-use byte_unit::Byte;
+use bytesize::ByteSize;
 use quickwit_common::split_file;
 use quickwit_directories::BundleDirectory;
 use quickwit_storage::StorageResult;
@@ -86,7 +86,7 @@ pub fn get_tantivy_directory_from_split_bundle(
 }
 
 /// Returns the number of bytes held in a given directory.
-async fn num_bytes_in_folder(directory_path: &Path) -> io::Result<Byte> {
+async fn num_bytes_in_folder(directory_path: &Path) -> io::Result<ByteSize> {
     let mut total_bytes = 0;
     let mut read_dir = tokio::fs::read_dir(directory_path).await?;
     while let Some(dir_entry) = read_dir.next_entry().await? {
@@ -100,7 +100,7 @@ async fn num_bytes_in_folder(directory_path: &Path) -> io::Result<Byte> {
             );
         }
     }
-    Ok(Byte::from_bytes(total_bytes))
+    Ok(ByteSize(total_bytes))
 }
 
 /// The local split store is a cache for freshly indexed splits.
@@ -109,7 +109,7 @@ async fn num_bytes_in_folder(directory_path: &Path) -> io::Result<Byte> {
 /// of a directory and the splits are built on the file upon upload.
 struct SplitFolder {
     split_id: Ulid,
-    num_bytes: Byte,
+    num_bytes: ByteSize,
 }
 
 impl SplitFolder {
@@ -353,7 +353,7 @@ impl LocalSplitStore {
     }
 
     #[cfg(any(test, feature = "testsuite"))]
-    pub async fn inspect(&self) -> HashMap<String, Byte> {
+    pub async fn inspect(&self) -> HashMap<String, ByteSize> {
         self.inner
             .lock()
             .await
@@ -420,7 +420,7 @@ mod tests {
     use std::io::Write;
     use std::path::Path;
 
-    use byte_unit::Byte;
+    use bytesize::ByteSize;
     use quickwit_directories::BundleDirectory;
     use quickwit_storage::{PutPayload, SplitPayloadBuilder};
     use tantivy::directory::FileSlice;
@@ -454,14 +454,8 @@ mod tests {
             LocalSplitStore::open(temp_dir.path().to_path_buf(), split_store_space_quota).await?;
         let cache_content = split_store.inspect().await;
         assert_eq!(cache_content.len(), 2);
-        assert_eq!(
-            cache_content.get(split_id1).cloned(),
-            Some(Byte::from_bytes(15))
-        );
-        assert_eq!(
-            cache_content.get(split_id2).cloned(),
-            Some(Byte::from_bytes(13))
-        );
+        assert_eq!(cache_content.get(split_id1).cloned(), Some(ByteSize(15)));
+        assert_eq!(cache_content.get(split_id2).cloned(), Some(ByteSize(13)));
         Ok(())
     }
 
@@ -480,7 +474,7 @@ mod tests {
         create_fake_split(dir.path(), "01GF521CZC1260V8QPA81T46X7", 45)
             .await
             .unwrap(); // 2
-        let split_store_space_quota = SplitStoreQuota::new(2, Byte::from_bytes(1_000));
+        let split_store_space_quota = SplitStoreQuota::new(2, ByteSize::kb(1));
         let local_split_store =
             LocalSplitStore::open(dir.path().to_path_buf(), split_store_space_quota)
                 .await
@@ -503,14 +497,14 @@ mod tests {
         create_fake_split(dir.path(), "01GF521CZC1260V8QPA81T46X7", 45)
             .await
             .unwrap(); // 2
-        let split_store_space_quota = SplitStoreQuota::new(6, Byte::from_bytes(61));
+        let split_store_space_quota = SplitStoreQuota::new(6, ByteSize(61));
         let local_split_store =
             LocalSplitStore::open(dir.path().to_path_buf(), split_store_space_quota)
                 .await
                 .unwrap();
         let cache_content = local_split_store.inspect().await;
         assert_eq!(cache_content.len(), 2);
-        assert_eq!(cache_content.values().map(Byte::get_bytes).sum::<u64>(), 50);
+        assert_eq!(cache_content.values().map(|v| v.as_u64()).sum::<u64>(), 50);
     }
 
     #[tokio::test]
@@ -532,7 +526,7 @@ mod tests {
         create_fake_split(dir.path(), "01GF1ZJBMBMEPMAQSFD09VTST2", 1)
             .await
             .unwrap();
-        let split_store_space_quota = SplitStoreQuota::new(6, Byte::from_bytes(100));
+        let split_store_space_quota = SplitStoreQuota::new(6, ByteSize(100));
         let local_split_store =
             LocalSplitStore::open(dir.path().to_path_buf(), split_store_space_quota)
                 .await

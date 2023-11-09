@@ -19,7 +19,6 @@
 
 use std::cmp::{Ord, Ordering};
 use std::collections::HashSet;
-use std::hash::{Hash, Hasher};
 
 use fnv::{FnvHashMap, FnvHashSet};
 use itertools::Itertools;
@@ -45,12 +44,6 @@ impl Span {
             trace_id,
             span_timestamp,
         }
-    }
-}
-
-impl Hash for Span {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.trace_id.hash(state);
     }
 }
 
@@ -185,23 +178,24 @@ impl Collector for FindTraceIdsCollector {
 }
 
 fn merge_segment_fruits(mut segment_fruits: Vec<Vec<Span>>, num_traces: usize) -> Vec<Span> {
+    // Spans are ordered in reverse order of their timestamp.
     for segment_fruit in &mut segment_fruits {
         segment_fruit.sort_unstable()
     }
-    let mut trace_ids = Vec::with_capacity(num_traces);
-    let mut seen_trace_ids = FnvHashSet::default();
+    let mut spans: Vec<Span> = Vec::with_capacity(num_traces);
+    let mut seen_trace_ids: FnvHashSet<TraceId> = FnvHashSet::default();
 
-    for trace_id in segment_fruits.into_iter().kmerge() {
-        if !seen_trace_ids.contains(&trace_id.trace_id) {
-            seen_trace_ids.insert(trace_id.trace_id);
-            trace_ids.push(trace_id);
+    for span in segment_fruits.into_iter().kmerge() {
+        if !seen_trace_ids.contains(&span.trace_id) {
+            seen_trace_ids.insert(span.trace_id);
+            spans.push(span);
 
-            if trace_ids.len() == num_traces {
+            if spans.len() == num_traces {
                 break;
             }
         }
     }
-    trace_ids
+    spans
 }
 
 pub struct FindTraceIdsSegmentCollector {
@@ -258,6 +252,7 @@ struct SelectTraceIds {
     select_workbench: Vec<TraceIdTermOrd>,
     running_term_ord: Option<TermOrd>,
     running_span_timestamp: DateTime,
+    // This is the lowest timestamp required to enter our top K.
     span_timestamp_sentinel: DateTime,
 }
 
@@ -367,6 +362,7 @@ mod serde_datetime {
 #[cfg(test)]
 mod tests {
     use tantivy::time::OffsetDateTime;
+    use tantivy::DateTime;
 
     use super::*;
     use crate::collector::QuickwitAggregations;
@@ -567,6 +563,51 @@ mod tests {
                     Span::for_test(b"foo", 2)
                 ]
             );
+        }
+    }
+
+    use proptest::prelude::*;
+
+    fn span_strategy() -> impl Strategy<Value = Span> {
+        let trace_id_strat = proptest::array::uniform16(any::<u8>());
+        let span_timestamp_strat = any::<i64>();
+        (trace_id_strat, span_timestamp_strat).prop_map(|(trace_id, span_timestamp)| {
+            Span::new(
+                TraceId::new(trace_id),
+                tantivy::DateTime::from_timestamp_nanos(span_timestamp),
+            )
+        })
+    }
+
+    fn test_postcard_aux<I: Serialize + std::fmt::Debug + for<'a> Deserialize<'a> + Eq>(item: &I) {
+        let payload = postcard::to_allocvec(item).unwrap();
+        let deserialized_item: I = postcard::from_bytes(&payload).unwrap();
+        assert_eq!(item, &deserialized_item);
+    }
+
+    #[test]
+    fn test_proptest_spans_postcard_empty_vec() {
+        test_postcard_aux(&Vec::<Span>::new());
+    }
+
+    #[test]
+    fn test_proptest_spans_postcard_extreme_values() {
+        test_postcard_aux(&vec![Span {
+            trace_id: TraceId::new([255u8; 16]),
+            span_timestamp: tantivy::DateTime::from_timestamp_nanos(i64::MIN),
+        }]);
+    }
+
+    proptest::proptest! {
+
+        #[test]
+        fn test_proptest_spans_postcard_serdeser(span in span_strategy()) {
+            test_postcard_aux(&span);
+        }
+
+        #[test]
+        fn test_proptest_spans_vec_postcard_serdeser(spans in proptest::collection::vec(span_strategy(), 0..100)) {
+            test_postcard_aux(&spans);
         }
     }
 }

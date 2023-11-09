@@ -21,7 +21,8 @@ use std::convert::TryInto;
 use std::str::FromStr;
 
 use quickwit_proto::metastore::{DeleteQuery, DeleteTask, MetastoreError, MetastoreResult};
-use quickwit_proto::IndexUid;
+use quickwit_proto::types::IndexUid;
+use sea_query::{Iden, Write};
 use tracing::error;
 
 use crate::{IndexMetadata, Split, SplitMetadata, SplitState};
@@ -59,6 +60,32 @@ impl PgIndex {
         // values upon deserialization.
         index_metadata.create_timestamp = self.create_timestamp.assume_utc().unix_timestamp();
         Ok(index_metadata)
+    }
+}
+
+#[derive(Iden, Clone, Copy)]
+#[allow(dead_code)]
+pub enum Splits {
+    Table,
+    SplitId,
+    SplitState,
+    TimeRangeStart,
+    TimeRangeEnd,
+    CreateTimestamp,
+    UpdateTimestamp,
+    PublishTimestamp,
+    MaturityTimestamp,
+    Tags,
+    SplitMetadataJson,
+    IndexUid,
+    DeleteOpstamp,
+}
+
+pub struct ToTimestampFunc;
+
+impl Iden for ToTimestampFunc {
+    fn unquoted(&self, s: &mut dyn Write) {
+        write!(s, "TO_TIMESTAMP").unwrap()
     }
 }
 

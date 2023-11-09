@@ -24,8 +24,12 @@ use std::fmt::Display;
 use std::ops::Deref;
 use std::str::FromStr;
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 pub use ulid::Ulid;
+
+mod position;
+
+pub use position::Position;
 
 pub type IndexId = String;
 
@@ -34,6 +38,8 @@ pub type SourceId = String;
 pub type SplitId = String;
 
 pub type ShardId = u64;
+
+pub type SubrequestId = u32;
 
 /// See the file `ingest.proto` for more details.
 pub type PublishToken = String;
@@ -55,9 +61,23 @@ pub fn split_queue_id(queue_id: &str) -> Option<(IndexUid, SourceId, ShardId)> {
 
 /// Index identifiers that uniquely identify not only the index, but also
 /// its incarnation allowing to distinguish between deleted and recreated indexes.
-/// It is represented as a stiring in index_id:incarnation_id format.
-#[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq, Eq, Ord, PartialOrd, Hash)]
+/// It is represented as a string in index_id:incarnation_id format.
+#[derive(Clone, Debug, Default, Serialize, PartialEq, Eq, Ord, PartialOrd, Hash)]
 pub struct IndexUid(String);
+
+// It is super lame, but for backward compatibility reasons we accept having a missing ulid part.
+// TODO DEPRECATED ME and remove
+impl<'de> Deserialize<'de> for IndexUid {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where D: Deserializer<'de> {
+        let index_uid_str: String = String::deserialize(deserializer)?;
+        if !index_uid_str.contains(':') {
+            return Ok(IndexUid::from_parts(&index_uid_str, ""));
+        }
+        let index_uid = IndexUid::from(index_uid_str);
+        Ok(index_uid)
+    }
+}
 
 impl fmt::Display for IndexUid {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
@@ -67,23 +87,23 @@ impl fmt::Display for IndexUid {
 
 impl IndexUid {
     /// Creates a new index uid from index_id.
-    /// A random UUID will be used as incarnation
-    pub fn new(index_id: impl Into<String>) -> Self {
+    /// A random ULID will be used as incarnation
+    pub fn new_with_random_ulid(index_id: &str) -> Self {
         Self::from_parts(index_id, Ulid::new().to_string())
+    }
+
+    /// TODO: Remove when Trinity lands their refactor for #3943.
+    pub fn new_2(index_id: impl Into<String>, incarnation_id: impl Into<Ulid>) -> Self {
+        Self(format!("{}:{}", index_id.into(), incarnation_id.into()))
     }
 
     pub fn as_str(&self) -> &str {
         &self.0
     }
 
-    pub fn from_parts(index_id: impl Into<String>, incarnation_id: impl Into<String>) -> Self {
-        let incarnation_id = incarnation_id.into();
-        let index_id = index_id.into();
-        if incarnation_id.is_empty() {
-            Self(index_id)
-        } else {
-            Self(format!("{index_id}:{incarnation_id}"))
-        }
+    pub fn from_parts(index_id: &str, incarnation_id: impl Display) -> Self {
+        assert!(!index_id.contains(':'), "index ID may not contain `:`");
+        Self(format!("{index_id}:{incarnation_id}"))
     }
 
     pub fn index_id(&self) -> &str {
@@ -116,14 +136,27 @@ impl From<&str> for IndexUid {
 }
 
 impl From<String> for IndexUid {
-    fn from(index_uid: String) -> Self {
-        Self(index_uid)
+    fn from(index_uid: String) -> IndexUid {
+        let count_colon = index_uid
+            .as_bytes()
+            .iter()
+            .copied()
+            .filter(|c| *c == b':')
+            .count();
+        assert_eq!(count_colon, 1, "invalid index UID: `{}`", index_uid);
+        IndexUid(index_uid)
     }
 }
 
 impl PartialEq<&str> for IndexUid {
     fn eq(&self, other: &&str) -> bool {
-        self.as_str() == *other
+        self.0 == *other
+    }
+}
+
+impl PartialEq<String> for IndexUid {
+    fn eq(&self, other: &String) -> bool {
+        self.0 == *other
     }
 }
 
@@ -162,7 +195,13 @@ impl AsRef<NodeIdRef> for NodeId {
 
 impl Borrow<str> for NodeId {
     fn borrow(&self) -> &str {
-        self.as_str()
+        &self.0
+    }
+}
+
+impl Borrow<String> for NodeId {
+    fn borrow(&self) -> &String {
+        &self.0
     }
 }
 
@@ -220,6 +259,12 @@ impl FromStr for NodeId {
 
 impl PartialEq<&str> for NodeId {
     fn eq(&self, other: &&str) -> bool {
+        self.as_str() == *other
+    }
+}
+
+impl PartialEq<String> for NodeId {
+    fn eq(&self, other: &String) -> bool {
         self.as_str() == *other
     }
 }

@@ -18,10 +18,11 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::cmp::{Ord, Ordering, PartialEq, PartialOrd};
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{btree_set, BTreeSet, HashMap};
 use std::str::FromStr;
 
 use async_trait::async_trait;
+use prost::Message;
 use quickwit_common::uri::Uri;
 use quickwit_config::{load_index_config_from_user_config, ConfigFormat, IndexConfig};
 use quickwit_ingest::{
@@ -42,7 +43,7 @@ use tonic::{Request, Response, Status};
 use tracing::field::Empty;
 use tracing::{error, instrument, warn, Span as RuntimeSpan};
 
-use super::is_zero;
+use super::{is_zero, TryFromSpanIdError, TryFromTraceIdError};
 use crate::otlp::metrics::OTLP_SERVICE_METRICS;
 use crate::otlp::{extract_attributes, SpanId, TraceId};
 
@@ -153,7 +154,19 @@ search_settings:
   default_search_fields: []
 "#;
 
-#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, thiserror::Error)]
+pub enum OtlpTraceError {
+    #[error("failed to deserialize JSON span: `{0}`")]
+    Json(#[from] serde_json::Error),
+    #[error("failed to deserialize Protobuf span: `{0}`")]
+    Protobuf(#[from] prost::DecodeError),
+    #[error("failed to parse span: `{0}`")]
+    SpanId(#[from] TryFromSpanIdError),
+    #[error("failed to parse span: `{0}`")]
+    TraceId(#[from] TryFromTraceIdError),
+}
+
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Span {
     pub trace_id: TraceId,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -215,7 +228,11 @@ pub struct Span {
 }
 
 impl Span {
-    fn from_otlp(span: OtlpSpan, resource: &Resource, scope: &Scope) -> Result<Self, Status> {
+    fn from_otlp(
+        span: OtlpSpan,
+        resource: &Resource,
+        scope: &Scope,
+    ) -> Result<Self, OtlpTraceError> {
         let trace_id = TraceId::try_from(span.trace_id)?;
         let span_id = SpanId::try_from(span.span_id)?;
         let parent_span_id = if !span.parent_span_id.is_empty() {
@@ -294,6 +311,10 @@ impl Span {
 struct OrdSpan(Span);
 
 impl Ord for OrdSpan {
+    /// Sort spans by trace ID, span name, start timestamp, and span ID in an attempt to group the
+    /// spans by trace ID and span name in the same docstore blocks. At some point, the
+    /// cost–benefit of this approach should be evaluated via a benchmark and revisited if
+    /// necessary.
     fn cmp(&self, other: &Self) -> Ordering {
         self.0
             .trace_id
@@ -397,7 +418,7 @@ impl FromStr for SpanKind {
 }
 
 /// Concatenation of the service name, span kind, and span name.
-#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SpanFingerprint(String);
 
 impl SpanFingerprint {
@@ -467,7 +488,7 @@ impl SpanFingerprint {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SpanStatus {
     pub code: OtlpStatusCode,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -567,7 +588,7 @@ impl Scope {
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Event {
     pub event_timestamp_nanos: u64,
     pub event_name: String,
@@ -579,7 +600,7 @@ pub struct Event {
     pub event_dropped_attributes_count: u32,
 }
 
-#[derive(Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
 pub struct Link {
     pub link_trace_id: TraceId,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -594,7 +615,7 @@ pub struct Link {
 }
 
 impl Link {
-    fn try_from_otlp(link: OtlpLink) -> tonic::Result<Link> {
+    fn try_from_otlp(link: OtlpLink) -> Result<Link, OtlpTraceError> {
         let link_trace_id = TraceId::try_from(link.trace_id)?;
         let link_span_id = SpanId::try_from(link.span_id)?;
         let link = Link {
@@ -610,6 +631,27 @@ impl Link {
         };
         Ok(link)
     }
+}
+
+fn parse_otlp_spans(
+    request: ExportTraceServiceRequest,
+) -> Result<BTreeSet<OrdSpan>, OtlpTraceError> {
+    let mut spans = BTreeSet::new();
+
+    for resource_spans in request.resource_spans {
+        let resource = resource_spans
+            .resource
+            .map(Resource::from_otlp)
+            .unwrap_or_default();
+        for scope_spans in resource_spans.scope_spans {
+            let scope = scope_spans.scope.map(Scope::from_otlp).unwrap_or_default();
+            for span in scope_spans.spans {
+                let span = Span::from_otlp(span, &resource, &scope)?;
+                spans.insert(OrdSpan(span));
+            }
+        }
+    }
+    Ok(spans)
 }
 
 struct ParsedSpans {
@@ -695,32 +737,18 @@ impl OtlpGrpcTracesService {
     fn parse_spans(
         request: ExportTraceServiceRequest,
         parent_span: RuntimeSpan,
-    ) -> Result<ParsedSpans, Status> {
-        let mut ordered_spans = BTreeSet::new();
-        let mut num_spans = 0;
+    ) -> tonic::Result<ParsedSpans> {
+        let spans = parse_otlp_spans(request)?;
+        let num_spans = spans.len() as u64;
         let mut num_parse_errors = 0;
         let mut error_message = String::new();
 
-        for resource_spans in request.resource_spans {
-            let resource = resource_spans
-                .resource
-                .map(Resource::from_otlp)
-                .unwrap_or_default();
-            for scope_spans in resource_spans.scope_spans {
-                let scope = scope_spans.scope.map(Scope::from_otlp).unwrap_or_default();
-                for span in scope_spans.spans {
-                    num_spans += 1;
-                    let span = Span::from_otlp(span, &resource, &scope)?;
-                    ordered_spans.insert(OrdSpan(span));
-                }
-            }
-        }
         let mut doc_batch_builder =
             DocBatchBuilder::new(OTEL_TRACES_INDEX_ID.to_string()).json_writer();
-        for span in ordered_spans {
+        for span in spans {
             if let Err(error) = doc_batch_builder.ingest_doc(&span.0) {
-                error!(error=?error, "Failed to JSON serialize span.");
-                error_message = format!("Failed to JSON serialize span: {error:?}");
+                error!(error=?error, "failed to JSON serialize span.");
+                error_message = format!("failed to JSON serialize span: {error:?}");
                 num_parse_errors += 1;
             }
         }
@@ -797,9 +825,65 @@ impl TraceService for OtlpGrpcTracesService {
     }
 }
 
+/// An JSON span iterator for use in the doc processor.
+pub struct JsonSpanIterator {
+    spans: btree_set::IntoIter<OrdSpan>,
+    current_span_idx: usize,
+    num_spans: usize,
+    avg_span_size: usize,
+    avg_span_size_rem: usize,
+}
+
+impl JsonSpanIterator {
+    fn new(spans: BTreeSet<OrdSpan>, num_bytes: usize) -> Self {
+        let num_spans = spans.len();
+        let avg_span_size = num_bytes.checked_div(num_spans).unwrap_or(0);
+        let avg_span_size_rem = avg_span_size + num_bytes.checked_rem(num_spans).unwrap_or(0);
+
+        Self {
+            spans: spans.into_iter(),
+            current_span_idx: 0,
+            num_spans,
+            avg_span_size,
+            avg_span_size_rem,
+        }
+    }
+}
+
+impl Iterator for JsonSpanIterator {
+    type Item = (JsonValue, usize);
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let span_opt = self.spans.next().map(|OrdSpan(span)| {
+            serde_json::to_value(span).expect("`Span` should be JSON serializable")
+        });
+        if span_opt.is_some() {
+            self.current_span_idx += 1;
+        }
+        if self.current_span_idx < self.num_spans {
+            span_opt.map(|span| (span, self.avg_span_size))
+        } else {
+            span_opt.map(|span| (span, self.avg_span_size_rem))
+        }
+    }
+}
+
+pub fn parse_otlp_spans_json(payload_json: &[u8]) -> Result<JsonSpanIterator, OtlpTraceError> {
+    let request: ExportTraceServiceRequest = serde_json::from_slice(payload_json)?;
+    let spans = parse_otlp_spans(request)?;
+    Ok(JsonSpanIterator::new(spans, payload_json.len()))
+}
+
+pub fn parse_otlp_spans_protobuf(payload_proto: &[u8]) -> Result<JsonSpanIterator, OtlpTraceError> {
+    let request = ExportTraceServiceRequest::decode(payload_proto)?;
+    let spans = parse_otlp_spans(request)?;
+    Ok(JsonSpanIterator::new(spans, payload_proto.len()))
+}
+
 #[cfg(test)]
 mod tests {
-    use quickwit_metastore::metastore_for_test;
+    use quickwit_metastore::{metastore_for_test, CreateIndexRequestExt};
+    use quickwit_proto::metastore::{CreateIndexRequest, MetastoreService};
     use quickwit_proto::opentelemetry::proto::common::v1::any_value::Value as OtlpAnyValueValue;
     use quickwit_proto::opentelemetry::proto::common::v1::{
         AnyValue as OtlpAnyValue, KeyValue as OtlpKeyValue,
@@ -820,10 +904,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_create_index() {
-        let metastore = metastore_for_test();
+        let mut metastore = metastore_for_test();
         let index_config =
             OtlpGrpcTracesService::index_config(&Uri::for_test("ram:///indexes")).unwrap();
-        metastore.create_index(index_config).await.unwrap();
+        let create_index_request = CreateIndexRequest::try_from_index_config(index_config).unwrap();
+        metastore.create_index(create_index_request).await.unwrap();
     }
 
     #[test]
@@ -886,7 +971,7 @@ mod tests {
                 span_id: vec![2; 8],
                 parent_span_id: vec![3; 8],
                 trace_state: "".to_string(),
-                name: "publish_split".to_string(),
+                name: "publish_splits".to_string(),
                 kind: 2, // Server
                 start_time_unix_nano: 1_000_000_001,
                 end_time_unix_nano: 1_001_000_002,
@@ -915,10 +1000,10 @@ mod tests {
             assert_eq!(span.parent_span_id, Some(SpanId::new([3; 8])));
             assert_eq!(span.span_id, SpanId::new([2; 8]));
             assert_eq!(span.span_kind, 2);
-            assert_eq!(span.span_name, "publish_split");
+            assert_eq!(span.span_name, "publish_splits");
             assert_eq!(
                 span.span_fingerprint.unwrap(),
-                SpanFingerprint::new(UNKNOWN_SERVICE, SpanKind(2), "publish_split")
+                SpanFingerprint::new(UNKNOWN_SERVICE, SpanKind(2), "publish_splits")
             );
             assert_eq!(span.span_start_timestamp_nanos, 1_000_000_001);
             assert_eq!(span.span_end_timestamp_nanos, 1_001_000_002);
@@ -984,7 +1069,7 @@ mod tests {
                 span_id: vec![2; 8],
                 parent_span_id: vec![3; 8],
                 trace_state: "key1=value1,key2=value2".to_string(),
-                name: "publish_split".to_string(),
+                name: "publish_splits".to_string(),
                 kind: 2, // Server
                 start_time_unix_nano: 1_000_000_001,
                 end_time_unix_nano: 1_001_000_002,
@@ -1022,10 +1107,10 @@ mod tests {
             assert_eq!(span.parent_span_id, Some(SpanId::new([3; 8])));
             assert_eq!(span.span_id, SpanId::new([2; 8]));
             assert_eq!(span.span_kind, 2);
-            assert_eq!(span.span_name, "publish_split");
+            assert_eq!(span.span_name, "publish_splits");
             assert_eq!(
                 span.span_fingerprint.unwrap(),
-                SpanFingerprint::new("quickwit", SpanKind(2), "publish_split")
+                SpanFingerprint::new("quickwit", SpanKind(2), "publish_splits")
             );
             assert_eq!(span.span_start_timestamp_nanos, 1_000_000_001);
             assert_eq!(span.span_end_timestamp_nanos, 1_001_000_002);
@@ -1074,10 +1159,10 @@ mod tests {
 
     #[test]
     fn test_span_fingerprint() {
-        let span_fingerprint = SpanFingerprint::new("quickwit", SpanKind(2), "publish_split");
+        let span_fingerprint = SpanFingerprint::new("quickwit", SpanKind(2), "publish_splits");
         assert_eq!(
             span_fingerprint.as_str(),
-            "quickwit\u{0}2\u{0}publish_split"
+            "quickwit\u{0}2\u{0}publish_splits"
         );
 
         let start_key_opt = SpanFingerprint::start_key("", None);
@@ -1146,7 +1231,7 @@ mod tests {
                 scope_dropped_attributes_count: 0,
                 span_id: SpanId::new([2; 8]),
                 span_kind: 0,
-                span_name: "publish_split".to_string(),
+                span_name: "publish_splits".to_string(),
                 span_fingerprint: Some(SpanFingerprint::new(
                     "quickwit",
                     SpanKind(2),
@@ -1185,7 +1270,7 @@ mod tests {
                 scope_dropped_attributes_count: 1,
                 span_id: SpanId::new([2; 8]),
                 span_kind: 1,
-                span_name: "publish_split".to_string(),
+                span_name: "publish_splits".to_string(),
                 span_fingerprint: Some(SpanFingerprint::new(
                     "quickwit",
                     SpanKind(2),
@@ -1222,5 +1307,68 @@ mod tests {
             let span = serde_json::from_str::<Span>(&span_json).unwrap();
             assert_eq!(span, expected_span);
         }
+    }
+
+    #[test]
+    fn test_json_span_iterator() {
+        let mut json_span_iterator = JsonSpanIterator::new(BTreeSet::new(), 0);
+        assert!(json_span_iterator.next().is_none());
+
+        let span_0 = Span {
+            trace_id: TraceId::new([1; 16]),
+            trace_state: None,
+            service_name: "quickwit".to_string(),
+            resource_attributes: HashMap::new(),
+            resource_dropped_attributes_count: 0,
+            scope_name: None,
+            scope_version: None,
+            scope_attributes: HashMap::new(),
+            scope_dropped_attributes_count: 0,
+            span_id: SpanId::new([2; 8]),
+            span_kind: 0,
+            span_name: "publish_splits".to_string(),
+            span_fingerprint: Some(SpanFingerprint::new(
+                "quickwit",
+                SpanKind(2),
+                "publish_splits",
+            )),
+            span_start_timestamp_nanos: 1_000_000_001,
+            span_end_timestamp_nanos: 1_000_000_002,
+            span_duration_millis: Some(1),
+            span_attributes: HashMap::new(),
+            span_dropped_attributes_count: 0,
+            span_dropped_events_count: 0,
+            span_dropped_links_count: 0,
+            span_status: SpanStatus::default(),
+            parent_span_id: None,
+            events: Vec::new(),
+            event_names: Vec::new(),
+            links: Vec::new(),
+        };
+
+        let spans = BTreeSet::from_iter([OrdSpan(span_0.clone())]);
+        let mut json_span_iterator = JsonSpanIterator::new(spans, 3);
+
+        assert_eq!(
+            json_span_iterator.next(),
+            Some((serde_json::to_value(&span_0).unwrap(), 3))
+        );
+        assert!(json_span_iterator.next().is_none());
+
+        let mut span_1 = span_0.clone();
+        span_1.span_id = SpanId::new([3; 8]);
+
+        let spans = BTreeSet::from_iter([OrdSpan(span_0.clone()), OrdSpan(span_1.clone())]);
+        let mut json_span_iterator = JsonSpanIterator::new(spans, 7);
+
+        assert_eq!(
+            json_span_iterator.next(),
+            Some((serde_json::to_value(&span_0).unwrap(), 3))
+        );
+        assert_eq!(
+            json_span_iterator.next(),
+            Some((serde_json::to_value(&span_1).unwrap(), 4))
+        );
+        assert!(json_span_iterator.next().is_none());
     }
 }

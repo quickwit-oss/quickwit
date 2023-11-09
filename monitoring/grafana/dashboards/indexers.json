@@ -1,4 +1,41 @@
 {
+  "__inputs": [
+    {
+      "name": "datasource",
+      "label": "Prometheus",
+      "description": "",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
+  "__elements": {},
+  "__requires": [
+    {
+      "type": "grafana",
+      "id": "grafana",
+      "name": "Grafana",
+      "version": "10.0.1"
+    },
+    {
+      "type": "datasource",
+      "id": "prometheus",
+      "name": "Prometheus",
+      "version": "1.0.0"
+    },
+    {
+      "type": "panel",
+      "id": "stat",
+      "name": "Stat",
+      "version": ""
+    },
+    {
+      "type": "panel",
+      "id": "timeseries",
+      "name": "Time series",
+      "version": ""
+    }
+  ],
   "annotations": {
     "list": [
       {
@@ -25,7 +62,7 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
-  "id": 5,
+  "id": null,
   "links": [],
   "liveNow": false,
   "panels": [
@@ -58,8 +95,8 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 6,
-        "w": 12,
+        "h": 8,
+        "w": 6,
         "x": 0,
         "y": 0
       },
@@ -78,7 +115,7 @@
         },
         "textMode": "auto"
       },
-      "pluginVersion": "9.2.3",
+      "pluginVersion": "10.0.1",
       "targets": [
         {
           "datasource": {
@@ -86,7 +123,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "builder",
-          "expr": "sum(rate(quickwit_indexing_processed_bytes{index=~\"$index\", namespace=\"$namespace\", instance=~\"$instance\", docs_processed_status=\"valid\"}[$quickwit_rate_interval]))",
+          "expr": "sum by(docs_processed_status) (rate(quickwit_indexing_processed_bytes{index=~\"$index\", namespace=\"$namespace\", instance=~\"$instance\", pod=~\"$pod\"}[$quickwit_rate_interval]))",
           "legendFormat": "{{docs_processed_status}}",
           "range": true,
           "refId": "A"
@@ -124,9 +161,9 @@
         "overrides": []
       },
       "gridPos": {
-        "h": 6,
-        "w": 12,
-        "x": 12,
+        "h": 8,
+        "w": 6,
+        "x": 6,
         "y": 0
       },
       "id": 11,
@@ -144,7 +181,7 @@
         },
         "textMode": "auto"
       },
-      "pluginVersion": "9.2.3",
+      "pluginVersion": "10.0.1",
       "targets": [
         {
           "datasource": {
@@ -152,7 +189,7 @@
             "uid": "${datasource}"
           },
           "editorMode": "builder",
-          "expr": "rate(quickwit_indexing_processed_docs_total{index=~\"$index\", namespace=\"$namespace\", instance=~\"$instance\", docs_processed_status=\"valid\"}[$quickwit_rate_interval])",
+          "expr": "sum by(docs_processed_status) (rate(quickwit_indexing_processed_docs_total{index=~\"$index\", namespace=\"$namespace\", pod=~\"$pod\"}[$quickwit_rate_interval]))",
           "legendFormat": "{{docs_processed_status}}",
           "range": true,
           "refId": "A"
@@ -252,10 +289,10 @@
         ]
       },
       "gridPos": {
-        "h": 16,
-        "w": 24,
-        "x": 0,
-        "y": 6
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
       },
       "id": 2,
       "options": {
@@ -282,11 +319,11 @@
           },
           "editorMode": "builder",
           "exemplar": false,
-          "expr": "rate(quickwit_indexing_processed_bytes{index=~\"$index\", namespace=\"$namespace\", instance=~\"$instance\"}[$quickwit_rate_interval])",
+          "expr": "sum by(docs_processed_status, index) (rate(quickwit_indexing_processed_bytes{index=~\"$index\", namespace=\"$namespace\", pod=~\"$pod\", instance=~\"$instance\"}[$quickwit_rate_interval]))",
           "format": "time_series",
           "instant": false,
           "interval": "",
-          "legendFormat": "{{docs_processed_status}}",
+          "legendFormat": "{{docs_processed_status}}-{{index}}",
           "range": true,
           "refId": "Indexing bytes rate"
         }
@@ -301,6 +338,213 @@
         "uid": "${datasource}"
       },
       "description": "",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "decimals": 1,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "Bps"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "id": 6,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "builder",
+          "exemplar": false,
+          "expr": "rate(quickwit_write_bytes{index=~\"$index\", pod=~\"$pod\", namespace=\"$namespace\"}[$quickwit_rate_interval])",
+          "hide": false,
+          "instant": false,
+          "legendFormat": "{{component}} {{index}} pod:{{pod}}",
+          "range": true,
+          "refId": "Writes"
+        }
+      ],
+      "title": "Writes rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 12,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "decbytes"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "id": 8,
+      "options": {
+        "legend": {
+          "calcs": [
+            "min",
+            "max",
+            "mean"
+          ],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "9.2.1",
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "builder",
+          "expr": "quickwit_allocated_num_bytes{namespace=\"$namespace\", pod=~\"$pod\"}",
+          "legendFormat": "allocated-{{pod}}",
+          "range": true,
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "builder",
+          "expr": "process_resident_memory_bytes{namespace=\"$namespace\", pod=~\"$pod\"}",
+          "hide": false,
+          "legendFormat": "rss-{{pod}}",
+          "range": true,
+          "refId": "B"
+        }
+      ],
+      "title": "Memory consumption (allocated and RSS)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -333,7 +577,7 @@
             "spanNulls": false,
             "stacking": {
               "group": "A",
-              "mode": "normal"
+              "mode": "none"
             },
             "thresholdsStyle": {
               "mode": "off"
@@ -345,7 +589,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -353,30 +598,17 @@
               }
             ]
           },
-          "unit": "Bps"
+          "unit": "none"
         },
-        "overrides": [
-          {
-            "matcher": {
-              "id": "byName",
-              "options": "Upload bytes / sec"
-            },
-            "properties": [
-              {
-                "id": "custom.transform",
-                "value": "negative-Y"
-              }
-            ]
-          }
-        ]
+        "overrides": []
       },
       "gridPos": {
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 22
+        "y": 16
       },
-      "id": 6,
+      "id": 13,
       "options": {
         "legend": {
           "calcs": [
@@ -400,14 +632,14 @@
             "uid": "${datasource}"
           },
           "editorMode": "builder",
-          "expr": "rate(quickwit_write_bytes{index=~\"$index\"}[$quickwit_rate_interval])",
+          "expr": "quickwit_indexing_ongoing_merge_operations{index=~\"$index\", namespace=\"$namespace\", instance=~\"$instance\", pod=~\"$pod\"}",
           "hide": false,
-          "legendFormat": "{{component}}",
+          "legendFormat": "{{index}} {{pod}}",
           "range": true,
-          "refId": "Upload"
+          "refId": "Processed docs"
         }
       ],
-      "title": "Writes rate",
+      "title": "Ongoing merge operations",
       "type": "timeseries"
     },
     {
@@ -459,7 +691,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -488,7 +721,7 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 22
+        "y": 16
       },
       "id": 4,
       "options": {
@@ -514,8 +747,8 @@
             "uid": "${datasource}"
           },
           "editorMode": "builder",
-          "expr": "sum(rate(quickwit_storage_object_storage_download_num_bytes{namespace=\"$namespace\", instance=~\"$instance\"}[$quickwit_rate_interval]))",
-          "legendFormat": "Download bytes / sec",
+          "expr": "sum by(pod) (rate(quickwit_storage_object_storage_download_num_bytes{namespace=\"$namespace\", instance=~\"$instance\", pod=~\"$pod\"}[$quickwit_rate_interval]))",
+          "legendFormat": "Download bytes / sec - {{pod}}",
           "range": true,
           "refId": "Download"
         },
@@ -525,9 +758,9 @@
             "uid": "${datasource}"
           },
           "editorMode": "builder",
-          "expr": "rate(quickwit_storage_object_storage_upload_num_bytes[$__rate_interval])",
+          "expr": "sum by(pod) (rate(quickwit_storage_object_storage_upload_num_bytes{namespace=\"$namespace\", pod=~\"$pod\", instance=~\"$instance\"}[$__rate_interval]))",
           "hide": false,
-          "legendFormat": "Upload bytes / sec",
+          "legendFormat": "Upload bytes / sec - {{pod}}",
           "range": true,
           "refId": "Upload"
         }
@@ -584,7 +817,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -600,7 +834,7 @@
         "h": 8,
         "w": 12,
         "x": 0,
-        "y": 30
+        "y": 24
       },
       "id": 5,
       "options": {
@@ -626,14 +860,234 @@
             "uid": "${datasource}"
           },
           "editorMode": "builder",
-          "expr": "sum by(docs_processed_status) (rate(quickwit_indexing_processed_docs_total{index=~\"$index\", namespace=\"$namespace\", instance=~\"$instance\"}[$quickwit_rate_interval]))",
+          "expr": "sum by(docs_processed_status, index) (rate(quickwit_indexing_processed_docs_total{index=~\"$index\", namespace=\"$namespace\", instance=~\"$instance\", pod=~\"$pod\"}[$quickwit_rate_interval]))",
           "hide": false,
-          "legendFormat": "{{docs_processed_status}}",
+          "legendFormat": "{{docs_processed_status}}-{{index}}",
           "range": true,
           "refId": "Processed docs"
         }
       ],
       "title": "Indexed documents rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 7,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineStyle": {
+              "fill": "solid"
+            },
+            "lineWidth": 1,
+            "pointSize": 4,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "decimals": 1,
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "none"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Upload bytes / sec"
+            },
+            "properties": [
+              {
+                "id": "custom.transform",
+                "value": "negative-Y"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 24
+      },
+      "id": 14,
+      "options": {
+        "legend": {
+          "calcs": [
+            "min",
+            "max",
+            "mean"
+          ],
+          "displayMode": "table",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "builder",
+          "expr": "sum(rate(quickwit_storage_object_storage_gets_total{namespace=\"$namespace\", instance=~\"$instance\", pod=~\"$pod\"}[$quickwit_rate_interval]))",
+          "legendFormat": "GET req/sec",
+          "range": true,
+          "refId": "Download"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "builder",
+          "expr": "sum(rate(quickwit_storage_object_storage_puts_total{namespace=\"$namespace\", pod=~\"$pod\", instance=~\"$instance\"}[$__rate_interval]))",
+          "hide": false,
+          "legendFormat": "PUT req/sec",
+          "range": true,
+          "refId": "Upload"
+        }
+      ],
+      "title": "Requests on object storage",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 0,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 80
+              }
+            ]
+          },
+          "unit": "µs"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 32
+      },
+      "id": 15,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "${datasource}"
+          },
+          "editorMode": "builder",
+          "expr": "histogram_quantile(0.75, rate(quickwit_cli_thread_unpark_duration_microseconds_bucket{namespace=\"$namespace\", pod=~\"$pod\"}[5m]))",
+          "instant": false,
+          "legendFormat": "{{pod}}",
+          "range": true,
+          "refId": "A"
+        }
+      ],
+      "title": "Thread unpark duration",
       "type": "timeseries"
     },
     {
@@ -681,7 +1135,8 @@
             "mode": "absolute",
             "steps": [
               {
-                "color": "green"
+                "color": "green",
+                "value": null
               },
               {
                 "color": "red",
@@ -689,7 +1144,7 @@
               }
             ]
           },
-          "unit": "decbytes"
+          "unit": "µs"
         },
         "overrides": []
       },
@@ -697,9 +1152,9 @@
         "h": 8,
         "w": 12,
         "x": 12,
-        "y": 30
+        "y": 32
       },
-      "id": 8,
+      "id": 12,
       "options": {
         "legend": {
           "calcs": [],
@@ -720,18 +1175,18 @@
             "uid": "${datasource}"
           },
           "editorMode": "builder",
-          "expr": "avg_over_time(quickwit_allocated_num_bytes{pod=\"indexer-0\"}[$quickwit_rate_interval])",
-          "legendFormat": "__auto",
+          "expr": "rate(quickwit_indexing_backpressure_micros{namespace=\"$namespace\", pod=~\"$pod\"}[$__rate_interval])",
+          "legendFormat": "{{actor_name}}-{{pod}}",
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Allocated bytes to Quickwit",
+      "title": "Backpressure",
       "type": "timeseries"
     }
   ],
-  "refresh": false,
-  "schemaVersion": 37,
+  "refresh": "10s",
+  "schemaVersion": 38,
   "style": "dark",
   "tags": [
     "quickwit",
@@ -742,8 +1197,8 @@
       {
         "current": {
           "selected": false,
-          "text": "prometheus",
-          "value": "prometheus"
+          "text": "Prometheus",
+          "value": "Prometheus"
         },
         "hide": 0,
         "includeAll": false,
@@ -759,11 +1214,7 @@
         "type": "datasource"
       },
       {
-        "current": {
-          "selected": false,
-          "text": "indexing-demo",
-          "value": "indexing-demo"
-        },
+        "current": {},
         "datasource": {
           "type": "prometheus",
           "uid": "${datasource}"
@@ -786,11 +1237,7 @@
         "type": "query"
       },
       {
-        "current": {
-          "selected": false,
-          "text": "All",
-          "value": "$__all"
-        },
+        "current": {},
         "datasource": {
           "type": "prometheus",
           "uid": "${datasource}"
@@ -813,11 +1260,30 @@
         "type": "query"
       },
       {
-        "current": {
-          "selected": false,
-          "text": "All",
-          "value": "$__all"
+        "current": {},
+        "datasource": {
+          "type": "prometheus",
+          "uid": "${datasource}"
         },
+        "definition": "label_values(quickwit_write_bytes,pod)",
+        "hide": 0,
+        "includeAll": true,
+        "label": "Pod",
+        "multi": true,
+        "name": "pod",
+        "options": [],
+        "query": {
+          "query": "label_values(quickwit_write_bytes,pod)",
+          "refId": "PrometheusVariableQueryEditor-VariableQuery"
+        },
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "sort": 0,
+        "type": "query"
+      },
+      {
+        "current": {},
         "datasource": {
           "type": "prometheus",
           "uid": "${datasource}"
@@ -927,9 +1393,9 @@
     "to": "now"
   },
   "timepicker": {},
-  "timezone": "",
+  "timezone": "utc",
   "title": "Quickwit Indexers",
   "uid": "quickwit-indexers",
-  "version": 15,
+  "version": 50,
   "weekStart": ""
 }

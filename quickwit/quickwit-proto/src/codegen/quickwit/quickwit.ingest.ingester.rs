@@ -13,15 +13,17 @@ pub struct PersistRequest {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PersistSubrequest {
-    #[prost(string, tag = "1")]
-    pub index_uid: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "1")]
+    pub subrequest_id: u32,
     #[prost(string, tag = "2")]
+    pub index_uid: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
-    #[prost(uint64, tag = "3")]
+    #[prost(uint64, tag = "4")]
     pub shard_id: u64,
-    #[prost(string, optional, tag = "4")]
+    #[prost(string, optional, tag = "5")]
     pub follower_id: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(message, optional, tag = "5")]
+    #[prost(message, optional, tag = "6")]
     pub doc_batch: ::core::option::Option<super::DocBatchV2>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
@@ -39,27 +41,31 @@ pub struct PersistResponse {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PersistSuccess {
-    #[prost(string, tag = "1")]
-    pub index_uid: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "1")]
+    pub subrequest_id: u32,
     #[prost(string, tag = "2")]
+    pub index_uid: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
-    #[prost(uint64, tag = "3")]
+    #[prost(uint64, tag = "4")]
     pub shard_id: u64,
-    #[prost(uint64, optional, tag = "4")]
-    pub replication_position_inclusive: ::core::option::Option<u64>,
+    #[prost(message, optional, tag = "5")]
+    pub replication_position_inclusive: ::core::option::Option<crate::types::Position>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PersistFailure {
-    #[prost(string, tag = "1")]
-    pub index_uid: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "1")]
+    pub subrequest_id: u32,
     #[prost(string, tag = "2")]
+    pub index_uid: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
-    #[prost(uint64, tag = "3")]
+    #[prost(uint64, tag = "4")]
     pub shard_id: u64,
-    #[prost(enumeration = "PersistFailureKind", tag = "4")]
-    pub failure_kind: i32,
+    #[prost(enumeration = "PersistFailureReason", tag = "5")]
+    pub reason: i32,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -134,15 +140,19 @@ pub struct ReplicateRequest {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ReplicateSubrequest {
-    #[prost(string, tag = "1")]
-    pub index_uid: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "1")]
+    pub subrequest_id: u32,
     #[prost(string, tag = "2")]
+    pub index_uid: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
-    #[prost(uint64, tag = "3")]
+    #[prost(uint64, tag = "4")]
     pub shard_id: u64,
-    #[prost(uint64, optional, tag = "4")]
-    pub from_position_exclusive: ::core::option::Option<u64>,
+    #[prost(message, optional, tag = "5")]
+    pub from_position_exclusive: ::core::option::Option<crate::types::Position>,
     #[prost(message, optional, tag = "6")]
+    pub to_position_inclusive: ::core::option::Option<crate::types::Position>,
+    #[prost(message, optional, tag = "7")]
     pub doc_batch: ::core::option::Option<super::DocBatchV2>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
@@ -163,26 +173,30 @@ pub struct ReplicateResponse {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ReplicateSuccess {
-    #[prost(string, tag = "1")]
-    pub index_uid: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "1")]
+    pub subrequest_id: u32,
     #[prost(string, tag = "2")]
+    pub index_uid: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
-    #[prost(uint64, tag = "3")]
+    #[prost(uint64, tag = "4")]
     pub shard_id: u64,
-    #[prost(uint64, optional, tag = "4")]
-    pub replica_position_inclusive: ::core::option::Option<u64>,
+    #[prost(message, optional, tag = "5")]
+    pub replication_position_inclusive: ::core::option::Option<crate::types::Position>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ReplicateFailure {
-    #[prost(string, tag = "1")]
-    pub index_uid: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "1")]
+    pub subrequest_id: u32,
     #[prost(string, tag = "2")]
+    pub index_uid: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
     /// ingest.DocBatchV2 doc_batch = 4;
     /// ingest.IngestError error = 5;
-    #[prost(uint64, tag = "3")]
+    #[prost(uint64, tag = "4")]
     pub shard_id: u64,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
@@ -204,8 +218,8 @@ pub struct TruncateSubrequest {
     pub source_id: ::prost::alloc::string::String,
     #[prost(uint64, tag = "3")]
     pub shard_id: u64,
-    #[prost(uint64, tag = "4")]
-    pub to_position_inclusive: u64,
+    #[prost(message, optional, tag = "4")]
+    pub to_position_inclusive: ::core::option::Option<crate::types::Position>,
 }
 /// TODO
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
@@ -224,10 +238,10 @@ pub struct OpenFetchStreamRequest {
     pub source_id: ::prost::alloc::string::String,
     #[prost(uint64, tag = "4")]
     pub shard_id: u64,
-    #[prost(uint64, optional, tag = "5")]
-    pub from_position_exclusive: ::core::option::Option<u64>,
-    #[prost(uint64, optional, tag = "6")]
-    pub to_position_inclusive: ::core::option::Option<u64>,
+    #[prost(message, optional, tag = "5")]
+    pub from_position_exclusive: ::core::option::Option<crate::types::Position>,
+    #[prost(message, optional, tag = "6")]
+    pub to_position_inclusive: ::core::option::Option<crate::types::Position>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -239,10 +253,12 @@ pub struct FetchResponseV2 {
     pub source_id: ::prost::alloc::string::String,
     #[prost(uint64, tag = "3")]
     pub shard_id: u64,
-    #[prost(uint64, tag = "4")]
-    pub from_position_inclusive: u64,
-    #[prost(message, optional, tag = "5")]
+    #[prost(message, optional, tag = "4")]
     pub mrecord_batch: ::core::option::Option<super::MRecordBatch>,
+    #[prost(message, optional, tag = "5")]
+    pub from_position_exclusive: ::core::option::Option<crate::types::Position>,
+    #[prost(message, optional, tag = "6")]
+    pub to_position_inclusive: ::core::option::Option<crate::types::Position>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -261,28 +277,41 @@ pub struct PingResponse {}
 #[serde(rename_all = "snake_case")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
-pub enum PersistFailureKind {
-    ShardClosed = 0,
+pub enum PersistFailureReason {
+    Unspecified = 0,
+    ShardClosed = 1,
+    RateLimited = 2,
+    ResourceExhausted = 3,
 }
-impl PersistFailureKind {
+impl PersistFailureReason {
     /// String value of the enum field names used in the ProtoBuf definition.
     ///
     /// The values are not transformed in any way and thus are considered stable
     /// (if the ProtoBuf definition does not change) and safe for programmatic use.
     pub fn as_str_name(&self) -> &'static str {
         match self {
-            PersistFailureKind::ShardClosed => "SHARD_CLOSED",
+            PersistFailureReason::Unspecified => "PERSIST_FAILURE_REASON_UNSPECIFIED",
+            PersistFailureReason::ShardClosed => "PERSIST_FAILURE_REASON_SHARD_CLOSED",
+            PersistFailureReason::RateLimited => "PERSIST_FAILURE_REASON_RATE_LIMITED",
+            PersistFailureReason::ResourceExhausted => {
+                "PERSIST_FAILURE_REASON_RESOURCE_EXHAUSTED"
+            }
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
-            "SHARD_CLOSED" => Some(Self::ShardClosed),
+            "PERSIST_FAILURE_REASON_UNSPECIFIED" => Some(Self::Unspecified),
+            "PERSIST_FAILURE_REASON_SHARD_CLOSED" => Some(Self::ShardClosed),
+            "PERSIST_FAILURE_REASON_RATE_LIMITED" => Some(Self::RateLimited),
+            "PERSIST_FAILURE_REASON_RESOURCE_EXHAUSTED" => Some(Self::ResourceExhausted),
             _ => None,
         }
     }
 }
 /// BEGIN quickwit-codegen
+#[allow(unused_imports)]
+use std::str::FromStr;
 use tower::{Layer, Service, ServiceExt};
 pub type IngesterServiceStream<T> = quickwit_common::ServiceStream<
     crate::ingest::IngestV2Result<T>,
@@ -332,6 +361,12 @@ impl IngesterServiceClient {
     where
         T: IngesterService,
     {
+        #[cfg(any(test, feature = "testsuite"))]
+        assert!(
+            std::any::TypeId::of:: < T > () != std::any::TypeId::of:: <
+            MockIngesterService > (),
+            "`MockIngesterService` must be wrapped in a `MockIngesterServiceWrapper`. Use `MockIngesterService::from(mock)` to instantiate the client."
+        );
         Self { inner: Box::new(instance) }
     }
     pub fn as_grpc_service(
@@ -341,6 +376,8 @@ impl IngesterServiceClient {
     > {
         let adapter = IngesterServiceGrpcServerAdapter::new(self.clone());
         ingester_service_grpc_server::IngesterServiceGrpcServer::new(adapter)
+            .max_decoding_message_size(10 * 1024 * 1024)
+            .max_encoding_message_size(10 * 1024 * 1024)
     }
     pub fn from_channel(
         addr: std::net::SocketAddr,
@@ -359,10 +396,13 @@ impl IngesterServiceClient {
         balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
     ) -> IngesterServiceClient {
         let connection_keys_watcher = balance_channel.connection_keys_watcher();
-        let adapter = IngesterServiceGrpcClientAdapter::new(
-            ingester_service_grpc_client::IngesterServiceGrpcClient::new(
+        let client = ingester_service_grpc_client::IngesterServiceGrpcClient::new(
                 balance_channel,
-            ),
+            )
+            .max_decoding_message_size(10 * 1024 * 1024)
+            .max_encoding_message_size(10 * 1024 * 1024);
+        let adapter = IngesterServiceGrpcClientAdapter::new(
+            client,
             connection_keys_watcher,
         );
         Self::new(adapter)

@@ -19,14 +19,13 @@
 
 #![deny(clippy::disallowed_methods)]
 
-use std::sync::Arc;
-
 use quickwit_actors::{Mailbox, Universe};
 use quickwit_cluster::Cluster;
 use quickwit_common::pubsub::EventBroker;
 use quickwit_config::NodeConfig;
 use quickwit_ingest::{IngestApiService, IngesterPool};
-use quickwit_metastore::Metastore;
+use quickwit_proto::indexing::PipelineMetrics;
+use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_storage::StorageResolver;
 use tracing::info;
 
@@ -48,6 +47,7 @@ mod split_store;
 #[cfg(any(test, feature = "testsuite"))]
 mod test_utils;
 
+use quickwit_proto::indexing::CpuCapacity;
 #[cfg(any(test, feature = "testsuite"))]
 pub use test_utils::{mock_split, mock_split_meta, MockSplitBuilder, TestSandbox};
 
@@ -55,7 +55,7 @@ use self::merge_policy::MergePolicy;
 pub use self::source::check_source_connectivity;
 
 #[derive(utoipa::OpenApi)]
-#[openapi(components(schemas(IndexingStatistics)))]
+#[openapi(components(schemas(IndexingStatistics, PipelineMetrics, CpuCapacity)))]
 /// Schema used for the OpenAPI generation which are apart of this crate.
 pub struct IndexingApiSchemas;
 
@@ -69,7 +69,7 @@ pub async fn start_indexing_service(
     config: &NodeConfig,
     num_blocking_threads: usize,
     cluster: Cluster,
-    metastore: Arc<dyn Metastore>,
+    metastore: MetastoreServiceClient,
     ingest_api_service: Mailbox<IngestApiService>,
     ingester_pool: IngesterPool,
     storage_resolver: StorageResolver,

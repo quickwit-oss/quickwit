@@ -1,4 +1,4 @@
-#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct DocBatchV2 {
@@ -7,7 +7,7 @@ pub struct DocBatchV2 {
     #[prost(uint32, repeated, tag = "2")]
     pub doc_lengths: ::prost::alloc::vec::Vec<u32>,
 }
-#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct MRecordBatch {
@@ -18,8 +18,8 @@ pub struct MRecordBatch {
     #[prost(uint32, repeated, tag = "2")]
     pub mrecord_lengths: ::prost::alloc::vec::Vec<u32>,
 }
-#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[derive(Eq)]
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct Shard {
@@ -40,29 +40,26 @@ pub struct Shard {
     /// Mutable fields
     #[prost(enumeration = "ShardState", tag = "8")]
     pub shard_state: i32,
-    /// Position up to which the follower has acknowledged replication of the records written in its log.
-    #[prost(uint64, optional, tag = "9")]
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub replication_position_inclusive: ::core::option::Option<u64>,
     /// Position up to which indexers have indexed and published the records stored in the shard.
     /// It is updated asynchronously in a best effort manner by the indexers and indicates the position up to which the log can be safely truncated.
-    #[prost(string, tag = "10")]
-    #[serde(default, skip_serializing_if = "String::is_empty")]
-    pub publish_position_inclusive: ::prost::alloc::string::String,
+    #[prost(message, optional, tag = "9")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub publish_position_inclusive: ::core::option::Option<crate::types::Position>,
     /// A publish token that ensures only one indexer works on a given shard at a time.
     /// For instance, if an indexer goes rogue, eventually the control plane will detect it and assign the shard to another indexer, which will override the publish token.
-    #[prost(string, optional, tag = "11")]
+    #[prost(string, optional, tag = "10")]
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub publish_token: ::core::option::Option<::prost::alloc::string::String>,
 }
-#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum CommitTypeV2 {
-    Auto = 0,
-    Wait = 1,
-    Force = 2,
+    Unspecified = 0,
+    Auto = 1,
+    Wait = 2,
+    Force = 3,
 }
 impl CommitTypeV2 {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -71,34 +68,36 @@ impl CommitTypeV2 {
     /// (if the ProtoBuf definition does not change) and safe for programmatic use.
     pub fn as_str_name(&self) -> &'static str {
         match self {
-            CommitTypeV2::Auto => "AUTO",
-            CommitTypeV2::Wait => "WAIT",
-            CommitTypeV2::Force => "FORCE",
+            CommitTypeV2::Unspecified => "COMMIT_TYPE_V2_UNSPECIFIED",
+            CommitTypeV2::Auto => "COMMIT_TYPE_V2_AUTO",
+            CommitTypeV2::Wait => "COMMIT_TYPE_V2_WAIT",
+            CommitTypeV2::Force => "COMMIT_TYPE_V2_FORCE",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
-            "AUTO" => Some(Self::Auto),
-            "WAIT" => Some(Self::Wait),
-            "FORCE" => Some(Self::Force),
+            "COMMIT_TYPE_V2_UNSPECIFIED" => Some(Self::Unspecified),
+            "COMMIT_TYPE_V2_AUTO" => Some(Self::Auto),
+            "COMMIT_TYPE_V2_WAIT" => Some(Self::Wait),
+            "COMMIT_TYPE_V2_FORCE" => Some(Self::Force),
             _ => None,
         }
     }
 }
-#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]
 pub enum ShardState {
+    Unspecified = 0,
     /// The shard is open and accepts write requests.
-    Open = 0,
-    /// The shard is open and still accepts write requests, but should no longer be advertised to ingest routers.
-    /// It is waiting for its leader or follower to close it with its final replication position, after which write requests will be rejected.
-    Closing = 1,
+    Open = 1,
+    /// The ingester hosting the shard is unavailable.
+    Unavailable = 2,
     /// The shard is closed and cannot be written to.
     /// It can be safely deleted if the publish position is superior or equal to the replication position.
-    Closed = 2,
+    Closed = 3,
 }
 impl ShardState {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -107,17 +106,19 @@ impl ShardState {
     /// (if the ProtoBuf definition does not change) and safe for programmatic use.
     pub fn as_str_name(&self) -> &'static str {
         match self {
-            ShardState::Open => "OPEN",
-            ShardState::Closing => "CLOSING",
-            ShardState::Closed => "CLOSED",
+            ShardState::Unspecified => "SHARD_STATE_UNSPECIFIED",
+            ShardState::Open => "SHARD_STATE_OPEN",
+            ShardState::Unavailable => "SHARD_STATE_UNAVAILABLE",
+            ShardState::Closed => "SHARD_STATE_CLOSED",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
-            "OPEN" => Some(Self::Open),
-            "CLOSING" => Some(Self::Closing),
-            "CLOSED" => Some(Self::Closed),
+            "SHARD_STATE_UNSPECIFIED" => Some(Self::Unspecified),
+            "SHARD_STATE_OPEN" => Some(Self::Open),
+            "SHARD_STATE_UNAVAILABLE" => Some(Self::Unavailable),
+            "SHARD_STATE_CLOSED" => Some(Self::Closed),
             _ => None,
         }
     }

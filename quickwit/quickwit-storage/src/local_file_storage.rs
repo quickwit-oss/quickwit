@@ -402,20 +402,20 @@ mod tests {
     async fn test_local_file_storage_factory() -> anyhow::Result<()> {
         let temp_dir = tempfile::tempdir()?;
         let index_uri =
-            Uri::from_well_formed(format!("file://{}/foo/bar", temp_dir.path().display()));
+            Uri::from_str(&format!("file://{}/foo/bar", temp_dir.path().display())).unwrap();
         let local_file_storage_factory = LocalFileStorageFactory;
         let local_file_storage = local_file_storage_factory.resolve(&index_uri).await?;
         assert_eq!(local_file_storage.uri(), &index_uri);
 
         let err = local_file_storage_factory
-            .resolve(&Uri::from_well_formed("s3://foo/bar"))
+            .resolve(&Uri::for_test("s3://foo/bar"))
             .await
             .err()
             .unwrap();
         assert!(matches!(err, StorageResolverError::InvalidUri { .. }));
 
         let err = local_file_storage_factory
-            .resolve(&Uri::from_well_formed("s3://"))
+            .resolve(&Uri::for_test("s3://"))
             .await
             .err()
             .unwrap();

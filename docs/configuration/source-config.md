@@ -64,11 +64,14 @@ The Kafka source consumes a `topic` using the client library [librdkafka](https:
 - `bootstrap.servers`
 Comma-separated list of host and port pairs that are the addresses of a subset of the Kafka brokers in the Kafka cluster.
 
+- `auto.offset.reset`
+Defines the behavior of the source when consuming a partition for which there is no initial offset saved in the checkpoint. `earliest` consumes from the beginning of the partition, whereas `latest` (default) consumes from the end.
+
 - `enable.auto.commit`
 The Kafka source manages commit offsets manually using the [checkpoint API](../overview/concepts/indexing.md#checkpoint) and disables auto-commit.
 
 - `group.id`
-Kafka-based distributed indexing relies on consumer groups. Unless overridden in the client parameters, the default group ID assigned to each consumer managed by the source is `quickwit-{index_uid}-{source_id}`
+Kafka-based distributed indexing relies on consumer groups. Unless overridden in the client parameters, the default group ID assigned to each consumer managed by the source is `quickwit-{index_uid}-{source_id}`.
 
 - `max.poll.interval.ms`
 Short max poll interval durations may cause a source to crash when back pressure from the indexer occurs. Therefore, Quickwit recommends using the default value of `300000` (5 minutes).
@@ -80,6 +83,8 @@ cat << EOF > source-config.yaml
 version: 0.6
 source_id: my-kafka-source
 source_type: kafka
+max_num_pipelines_per_indexer: 1
+desired_num_pipelines: 2
 params:
   topic: my-topic
   client_params:
@@ -161,7 +166,7 @@ EOF
 
 ## Maximum number of pipelines per indexer
 
-The `max_num_pipelines_per_indexer` parameter is only available for sources that can be distributed: Kafka and (coming soon) Pulsar.
+The `max_num_pipelines_per_indexer` parameter is only available for sources that can be distributed: Kafka, GCP PubSub and Pulsar(coming soon).
 
 The maximum number of indexing pipelines defines the limit of pipelines spawned for the source on a given indexer.
 This maximum can be reached only if there are enough `desired_num_pipelines` to run.
@@ -177,7 +182,7 @@ With the following parameters, only one pipeline will run on one indexer.
 
 ## Desired number of pipelines
 
-`desired_num_pipelines` parameter is only available for sources that can be distributed: Kafka and Pulsar (coming soon).
+`desired_num_pipelines` parameter is only available for sources that can be distributed: Kafka, GCP PubSub and Pulsar (coming soon).
 
 The desired number of indexing pipelines defines the number of pipelines to run on a cluster for the source. It is a "desired"
 number as it cannot be reach it there is not enough indexers in

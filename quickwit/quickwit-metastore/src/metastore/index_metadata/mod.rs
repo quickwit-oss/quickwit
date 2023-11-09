@@ -25,15 +25,13 @@ use std::collections::{BTreeMap, HashMap};
 use quickwit_common::uri::Uri;
 use quickwit_config::{IndexConfig, SourceConfig, TestableForRegression};
 use quickwit_proto::metastore::{EntityKind, MetastoreError, MetastoreResult};
-use quickwit_proto::{IndexUid, SourceId};
+use quickwit_proto::types::{IndexUid, Position, SourceId};
 use serde::{Deserialize, Serialize};
 use serialize::VersionedIndexMetadata;
 use time::OffsetDateTime;
 use ulid::Ulid;
 
-use crate::checkpoint::{
-    IndexCheckpoint, PartitionId, Position, SourceCheckpoint, SourceCheckpointDelta,
-};
+use crate::checkpoint::{IndexCheckpoint, PartitionId, SourceCheckpoint, SourceCheckpointDelta};
 
 /// An index metadata carries all meta data about an index.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -55,7 +53,7 @@ pub struct IndexMetadata {
 impl IndexMetadata {
     /// Panics if `index_config` is missing `index_uri`.
     pub fn new(index_config: IndexConfig) -> Self {
-        let index_uid = IndexUid::new(index_config.index_id.clone());
+        let index_uid = IndexUid::new_with_random_ulid(&index_config.index_id);
         IndexMetadata::new_with_index_uid(index_uid, index_config)
     }
 
@@ -156,7 +154,7 @@ impl TestableForRegression for IndexMetadata {
         let checkpoint = IndexCheckpoint::from(per_source_checkpoint);
         let index_config = IndexConfig::sample_for_regression();
         let mut index_metadata = IndexMetadata {
-            index_uid: IndexUid::from_parts(index_config.index_id.clone(), Ulid::nil()),
+            index_uid: IndexUid::from_parts(&index_config.index_id, Ulid::nil()),
             index_config,
             checkpoint,
             create_timestamp: 1789,

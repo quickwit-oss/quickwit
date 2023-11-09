@@ -122,8 +122,8 @@ impl SourceConfig {
         .expect("`SourceParams` should be JSON serializable")
     }
 
-    /// Creates an ingest source.
-    pub fn ingest_default() -> Self {
+    /// Creates an ingest source v2.
+    pub fn ingest_v2_default() -> Self {
         Self {
             source_id: INGEST_SOURCE_ID.to_string(),
             max_num_pipelines_per_indexer: NonZeroUsize::new(1).expect("1 should be non-zero"),
@@ -201,11 +201,14 @@ impl TestableForRegression for SourceConfig {
     }
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum SourceInputFormat {
     #[default]
     Json,
+    OtlpTraceJson,
+    #[serde(alias = "otlp_trace_proto")]
+    OtlpTraceProtobuf,
     #[serde(alias = "plain")]
     PlainText,
 }
@@ -507,7 +510,7 @@ impl TransformConfig {
         // Append "\n." to the script to return the entire document and not only the modified
         // fields.
         let vrl_script = self.vrl_script.clone() + "\n.";
-        let functions = vrl_stdlib::all();
+        let functions = vrl::stdlib::all();
 
         let compilation_res = match vrl::compiler::compile(&vrl_script, &functions) {
             Ok(compilation_res) => compilation_res,
@@ -1158,7 +1161,7 @@ mod tests {
             let transform_config = TransformConfig {
                 vrl_script: r#"
                 . = parse_json!(string!(.message))
-                .timestamp = to_unix_timestamp(to_timestamp!(.timestamp))
+                .timestamp = to_unix_timestamp(timestamp!(.timestamp))
                 del(.username)
                 .message = downcase(string!(.message))
                 "#

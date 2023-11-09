@@ -29,17 +29,17 @@ use quickwit_common::PrettySample;
 use quickwit_directories::{CachingDirectory, HotDirectory, StorageDirectory};
 use quickwit_doc_mapper::{DocMapper, TermRange, WarmupInfo};
 use quickwit_proto::search::{
-    LeafListTermsResponse, LeafSearchResponse, ListTermsRequest, PartialHit, SearchRequest,
-    SortOrder, SortValue, SplitIdAndFooterOffsets, SplitSearchError,
+    CountHits, LeafListTermsResponse, LeafSearchResponse, ListTermsRequest, PartialHit,
+    SearchRequest, SortOrder, SortValue, SplitIdAndFooterOffsets, SplitSearchError,
 };
 use quickwit_query::query_ast::QueryAst;
+use quickwit_query::tokenizers::TokenizerManager;
 use quickwit_storage::{
     wrap_storage_with_cache, BundleStorage, MemorySizedCache, OwnedBytes, SplitCache, Storage,
 };
 use tantivy::directory::FileSlice;
 use tantivy::fastfield::FastFieldReaders;
 use tantivy::schema::{Field, FieldType};
-use tantivy::tokenizer::TokenizerManager;
 use tantivy::{Index, ReloadPolicy, Searcher, Term};
 use tracing::*;
 
@@ -130,10 +130,12 @@ pub(crate) async fn open_index_with_caches(
     };
     let mut index = Index::open(hot_directory)?;
     if let Some(tokenizer_manager) = tokenizer_manager {
-        index.set_tokenizers(tokenizer_manager.clone());
+        index.set_tokenizers(tokenizer_manager.tantivy_manager().clone());
     }
     index.set_fast_field_tokenizers(
-        quickwit_query::get_quickwit_fastfield_normalizer_manager().clone(),
+        quickwit_query::get_quickwit_fastfield_normalizer_manager()
+            .tantivy_manager()
+            .clone(),
     );
     Ok(index)
 }
@@ -549,7 +551,8 @@ pub async fn leaf_search(
 
     // In the future this should become `request.aggregation_request.is_some() ||
     // request.exact_count == true`
-    let run_all_splits = true;
+    let run_all_splits =
+        request.aggregation_request.is_some() || request.count_hits() == CountHits::CountAll;
 
     let split_filter = CanSplitDoBetter::from_request(&request, doc_mapper.timestamp_field_name());
     split_filter.optimize_split_order(&mut splits);
@@ -597,6 +600,8 @@ pub async fn leaf_search(
         ));
     }
 
+    // TODO we could cancel running splits when !run_all_splits and the running split can no longer
+    // give better results after some other split answered.
     let split_search_results: Vec<Result<(), _>> =
         futures::future::join_all(leaf_search_single_split_futures).await;
 

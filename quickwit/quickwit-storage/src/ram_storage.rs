@@ -25,7 +25,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use quickwit_common::uri::Uri;
+use quickwit_common::uri::{Protocol, Uri};
 use quickwit_config::StorageBackend;
 use tokio::io::{AsyncRead, AsyncWriteExt};
 use tokio::sync::RwLock;
@@ -58,7 +58,7 @@ impl fmt::Debug for RamStorage {
 impl Default for RamStorage {
     fn default() -> Self {
         Self {
-            uri: Uri::from_well_formed("ram:///"),
+            uri: Uri::for_test("ram:///"),
             files: Arc::new(RwLock::new(HashMap::new())),
         }
     }
@@ -179,7 +179,7 @@ impl RamStorageBuilder {
     /// Finalizes the [`RamStorage`] creation.
     pub fn build(self) -> RamStorage {
         RamStorage {
-            uri: Uri::from_well_formed("ram:///"),
+            uri: Uri::for_test("ram:///"),
             files: Arc::new(RwLock::new(self.files)),
         }
     }
@@ -206,7 +206,7 @@ impl StorageFactory for RamStorageFactory {
 
     async fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Storage>, StorageResolverError> {
         match uri.filepath() {
-            Some(prefix) if uri.protocol().is_ram() => Ok(add_prefix_to_storage(
+            Some(prefix) if uri.protocol() == Protocol::Ram => Ok(add_prefix_to_storage(
                 self.ram_storage.clone(),
                 prefix.to_path_buf(),
                 uri.clone(),
@@ -235,13 +235,13 @@ mod tests {
     #[tokio::test]
     async fn test_ram_storage_factory() {
         let ram_storage_factory = RamStorageFactory::default();
-        let ram_uri = Uri::from_well_formed("s3:///foo");
+        let ram_uri = Uri::for_test("s3:///foo");
         let err = ram_storage_factory.resolve(&ram_uri).await.err().unwrap();
         assert!(matches!(err, StorageResolverError::InvalidUri { .. }));
 
-        let data_uri = Uri::from_well_formed("ram:///data");
+        let data_uri = Uri::for_test("ram:///data");
         let data_storage = ram_storage_factory.resolve(&data_uri).await.ok().unwrap();
-        let home_uri = Uri::from_well_formed("ram:///home");
+        let home_uri = Uri::for_test("ram:///home");
         let home_storage = ram_storage_factory.resolve(&home_uri).await.ok().unwrap();
         assert_ne!(data_storage.uri(), home_storage.uri());
 

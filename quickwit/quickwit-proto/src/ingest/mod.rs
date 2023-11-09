@@ -19,9 +19,11 @@
 
 use bytes::Bytes;
 
-use super::types::{NodeId, ShardId, SourceId};
-use super::{IndexUid, ServiceError, ServiceErrorCode};
+use self::ingester::FetchResponseV2;
+use super::types::NodeId;
+use super::{ServiceError, ServiceErrorCode};
 use crate::control_plane::ControlPlaneError;
+use crate::types::{queue_id, Position};
 
 pub mod ingester;
 pub mod router;
@@ -36,27 +38,11 @@ pub enum IngestV2Error {
     Internal(String),
     #[error("failed to connect to ingester `{ingester_id}`")]
     IngesterUnavailable { ingester_id: NodeId },
-    #[error(
-        "ingest service is currently unavailable with {num_ingesters} in the cluster and a \
-         replication factor of {replication_factor}"
-    )]
-    ServiceUnavailable {
-        num_ingesters: usize,
-        replication_factor: usize,
-    },
-    // #[error("Could not find shard.")]
-    // ShardNotFound {
-    //     index_uid: IndexUid,
-    //     source_id: SourceId,
-    //     shard_id: ShardId,
-    // },
-    #[error("failed to open or write to shard")]
-    ShardUnavailable {
-        leader_id: NodeId,
-        index_uid: IndexUid,
-        source_id: SourceId,
-        shard_id: ShardId,
-    },
+    #[error("request timed out")]
+    Timeout,
+    // TODO: Merge `Transport` and `IngesterUnavailable` into a single `Unavailable` error.
+    #[error("transport error: {0}")]
+    Transport(String),
 }
 
 impl From<ControlPlaneError> for IngestV2Error {
@@ -68,18 +54,21 @@ impl From<ControlPlaneError> for IngestV2Error {
 impl From<IngestV2Error> for tonic::Status {
     fn from(error: IngestV2Error) -> tonic::Status {
         let code = match &error {
-            IngestV2Error::Internal(_) => tonic::Code::Internal,
             IngestV2Error::IngesterUnavailable { .. } => tonic::Code::Unavailable,
-            IngestV2Error::ShardUnavailable { .. } => tonic::Code::Unavailable,
-            IngestV2Error::ServiceUnavailable { .. } => tonic::Code::Unavailable,
+            IngestV2Error::Internal(_) => tonic::Code::Internal,
+            IngestV2Error::Timeout { .. } => tonic::Code::DeadlineExceeded,
+            IngestV2Error::Transport { .. } => tonic::Code::Unavailable,
         };
-        let message = error.to_string();
+        let message: String = error.to_string();
         tonic::Status::new(code, message)
     }
 }
 
 impl From<tonic::Status> for IngestV2Error {
     fn from(status: tonic::Status) -> Self {
+        if status.code() == tonic::Code::Unavailable {
+            return IngestV2Error::Transport(status.message().to_string());
+        }
         IngestV2Error::Internal(status.message().to_string())
     }
 }
@@ -87,10 +76,10 @@ impl From<tonic::Status> for IngestV2Error {
 impl ServiceError for IngestV2Error {
     fn error_code(&self) -> ServiceErrorCode {
         match self {
-            Self::Internal { .. } => ServiceErrorCode::Internal,
             Self::IngesterUnavailable { .. } => ServiceErrorCode::Unavailable,
-            Self::ShardUnavailable { .. } => ServiceErrorCode::Unavailable,
-            Self::ServiceUnavailable { .. } => ServiceErrorCode::Unavailable,
+            Self::Internal { .. } => ServiceErrorCode::Internal,
+            Self::Timeout { .. } => ServiceErrorCode::Timeout,
+            Self::Transport { .. } => ServiceErrorCode::Unavailable,
         }
     }
 }
@@ -133,6 +122,16 @@ impl DocBatchV2 {
     }
 }
 
+impl FetchResponseV2 {
+    pub fn from_position_exclusive(&self) -> Position {
+        self.from_position_exclusive.clone().unwrap_or_default()
+    }
+
+    pub fn to_position_inclusive(&self) -> Position {
+        self.to_position_inclusive.clone().unwrap_or_default()
+    }
+}
+
 impl MRecordBatch {
     pub fn encoded_mrecords(&self) -> impl Iterator<Item = Bytes> + '_ {
         self.mrecord_lengths
@@ -160,31 +159,23 @@ impl MRecordBatch {
 
 impl Shard {
     pub fn is_open(&self) -> bool {
-        self.shard_state() == ShardState::Open
+        self.shard_state().is_open()
     }
 
-    pub fn is_closing(&self) -> bool {
-        self.shard_state() == ShardState::Closing
+    pub fn is_unavailable(&self) -> bool {
+        self.shard_state().is_unavailable()
     }
 
     pub fn is_closed(&self) -> bool {
-        self.shard_state() == ShardState::Closed
-    }
-
-    pub fn is_deletable(&self) -> bool {
-        self.is_closed() && !self.has_unpublished_docs()
-    }
-
-    pub fn is_indexable(&self) -> bool {
-        !self.is_closed() || self.has_unpublished_docs()
-    }
-
-    pub fn has_unpublished_docs(&self) -> bool {
-        self.publish_position_inclusive.parse::<u64>().ok() < self.replication_position_inclusive
+        self.shard_state().is_closed()
     }
 
     pub fn queue_id(&self) -> super::types::QueueId {
-        super::types::queue_id(&self.index_uid, &self.source_id, self.shard_id)
+        queue_id(&self.index_uid, &self.source_id, self.shard_id)
+    }
+
+    pub fn publish_position_inclusive(&self) -> Position {
+        self.publish_position_inclusive.clone().unwrap_or_default()
     }
 }
 
@@ -193,40 +184,11 @@ impl ShardState {
         *self == ShardState::Open
     }
 
-    pub fn is_closing(&self) -> bool {
-        *self == ShardState::Closing
+    pub fn is_unavailable(&self) -> bool {
+        *self == ShardState::Unavailable
     }
 
     pub fn is_closed(&self) -> bool {
         *self == ShardState::Closed
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_shard_as_unpublished_docs() {
-        let shard = Shard {
-            publish_position_inclusive: "".to_string(),
-            replication_position_inclusive: None,
-            ..Default::default()
-        };
-        assert!(!shard.has_unpublished_docs());
-
-        let shard = Shard {
-            publish_position_inclusive: "".to_string(),
-            replication_position_inclusive: Some(0),
-            ..Default::default()
-        };
-        assert!(shard.has_unpublished_docs());
-
-        let shard = Shard {
-            publish_position_inclusive: "0".to_string(),
-            replication_position_inclusive: Some(0),
-            ..Default::default()
-        };
-        assert!(!shard.has_unpublished_docs());
     }
 }

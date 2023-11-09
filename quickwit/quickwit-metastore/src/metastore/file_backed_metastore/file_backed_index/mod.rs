@@ -28,16 +28,15 @@ use std::collections::HashMap;
 use std::fmt::Debug;
 use std::ops::Bound;
 
-use itertools::Either;
+use itertools::Itertools;
 use quickwit_common::PrettySample;
 use quickwit_config::{SourceConfig, INGEST_SOURCE_ID};
 use quickwit_proto::metastore::{
-    AcquireShardsSubrequest, AcquireShardsSubresponse, CloseShardsFailure, CloseShardsSubrequest,
-    CloseShardsSuccess, DeleteQuery, DeleteShardsSubrequest, DeleteTask, EntityKind,
-    ListShardsSubrequest, ListShardsSubresponse, MetastoreError, MetastoreResult,
-    OpenShardsSubrequest, OpenShardsSubresponse,
+    AcquireShardsSubrequest, AcquireShardsSubresponse, DeleteQuery, DeleteShardsSubrequest,
+    DeleteTask, EntityKind, ListShardsSubrequest, ListShardsSubresponse, MetastoreError,
+    MetastoreResult, OpenShardsSubrequest, OpenShardsSubresponse,
 };
-use quickwit_proto::{IndexUid, PublishToken, SourceId, SplitId};
+use quickwit_proto::types::{IndexUid, PublishToken, SourceId, SplitId};
 use serde::{Deserialize, Serialize};
 use serialize::VersionedFileBackedIndex;
 use shards::Shards;
@@ -247,8 +246,8 @@ impl FileBackedIndex {
     /// Marks the splits for deletion. Returns whether a mutation occurred.
     pub(crate) fn mark_splits_for_deletion(
         &mut self,
-        split_ids: &[&str],
-        deletable_states: &[SplitState],
+        split_ids: impl IntoIterator<Item = impl AsRef<str>>,
+        deletable_split_states: &[SplitState],
         return_error_on_splits_not_found: bool,
     ) -> MetastoreResult<bool> {
         let mut mutation_occurred = false;
@@ -256,24 +255,24 @@ impl FileBackedIndex {
         let mut non_deletable_split_ids = Vec::new();
         let now_timestamp = OffsetDateTime::now_utc().unix_timestamp();
 
-        for &split_id in split_ids {
+        for split_id in split_ids {
+            let split_id_ref = split_id.as_ref();
             // Check for the existence of split.
-            let metadata = match self.splits.get_mut(split_id) {
+            let metadata = match self.splits.get_mut(split_id_ref) {
                 Some(metadata) => metadata,
                 None => {
-                    split_not_found_ids.push(split_id.to_string());
+                    split_not_found_ids.push(split_id_ref.to_string());
                     continue;
                 }
             };
-            if !deletable_states.contains(&metadata.split_state) {
-                non_deletable_split_ids.push(split_id.to_string());
+            if !deletable_split_states.contains(&metadata.split_state) {
+                non_deletable_split_ids.push(split_id_ref.to_string());
                 continue;
             };
             if metadata.split_state == SplitState::MarkedForDeletion {
                 // If the split is already marked for deletion, This is fine, we just skip it.
                 continue;
             }
-
             metadata.split_state = SplitState::MarkedForDeletion;
             metadata.update_timestamp = now_timestamp;
             mutation_occurred = true;
@@ -304,14 +303,20 @@ impl FileBackedIndex {
 
     /// Helper to mark a list of splits as published.
     /// This function however does not update the checkpoint.
-    fn mark_splits_as_published_helper(&mut self, split_ids: &[&str]) -> MetastoreResult<()> {
+    fn mark_splits_as_published_helper(
+        &mut self,
+        staged_split_ids: impl IntoIterator<Item = impl AsRef<str>>,
+    ) -> MetastoreResult<()> {
         let mut split_not_found_ids = Vec::new();
         let mut split_not_staged_ids = Vec::new();
+
         let now_timestamp = OffsetDateTime::now_utc().unix_timestamp();
-        for &split_id in split_ids {
+
+        for staged_plit_id in staged_split_ids {
+            let staged_split_id_ref = staged_plit_id.as_ref();
             // Check for the existence of split.
-            let Some(metadata) = self.splits.get_mut(split_id) else {
-                split_not_found_ids.push(split_id.to_string());
+            let Some(metadata) = self.splits.get_mut(staged_split_id_ref) else {
+                split_not_found_ids.push(staged_split_id_ref.to_string());
                 continue;
             };
             if metadata.split_state == SplitState::Staged {
@@ -319,16 +324,14 @@ impl FileBackedIndex {
                 metadata.update_timestamp = now_timestamp;
                 metadata.publish_timestamp = Some(now_timestamp);
             } else {
-                split_not_staged_ids.push(split_id.to_string());
+                split_not_staged_ids.push(staged_split_id_ref.to_string());
             }
         }
-
         if !split_not_found_ids.is_empty() {
             return Err(MetastoreError::NotFound(EntityKind::Splits {
                 split_ids: split_not_found_ids,
             }));
         }
-
         if !split_not_staged_ids.is_empty() {
             let entity = EntityKind::Splits {
                 split_ids: split_not_staged_ids,
@@ -336,15 +339,14 @@ impl FileBackedIndex {
             let message = "splits are not staged".to_string();
             return Err(MetastoreError::FailedPrecondition { entity, message });
         }
-
         Ok(())
     }
 
     /// Publishes splits.
-    pub(crate) fn publish_splits<'a>(
+    pub(crate) fn publish_splits(
         &mut self,
-        staged_split_ids: &[&'a str],
-        replaced_split_ids: &[&'a str],
+        staged_split_ids: impl IntoIterator<Item = impl AsRef<str>>,
+        replaced_split_ids: impl IntoIterator<Item = impl AsRef<str>>,
         checkpoint_delta_opt: Option<IndexCheckpointDelta>,
         publish_token_opt: Option<PublishToken>,
     ) -> MetastoreResult<()> {
@@ -383,15 +385,34 @@ impl FileBackedIndex {
         let limit = query.limit.unwrap_or(usize::MAX);
         let offset = query.offset.unwrap_or_default();
 
-        let splits: Vec<Split> = self
-            .splits
-            .values()
-            .filter(|split| split_query_predicate(split, query))
-            .skip(offset)
-            .take(limit)
-            .cloned()
-            .collect();
-
+        let splits: Vec<Split> = if query.sort_by_staleness {
+            self.splits
+                .values()
+                .filter(|split| split_query_predicate(split, query))
+                .sorted_unstable_by(|left_split, right_split| {
+                    left_split
+                        .split_metadata
+                        .delete_opstamp
+                        .cmp(&right_split.split_metadata.delete_opstamp)
+                        .then_with(|| {
+                            left_split
+                                .publish_timestamp
+                                .cmp(&right_split.publish_timestamp)
+                        })
+                })
+                .skip(offset)
+                .take(limit)
+                .cloned()
+                .collect()
+        } else {
+            self.splits
+                .values()
+                .filter(|split| split_query_predicate(split, query))
+                .skip(offset)
+                .take(limit)
+                .cloned()
+                .collect()
+        };
         Ok(splits)
     }
 
@@ -408,18 +429,23 @@ impl FileBackedIndex {
     }
 
     /// Deletes multiple splits.
-    pub(crate) fn delete_splits(&mut self, split_ids: &[&str]) -> MetastoreResult<()> {
+    pub(crate) fn delete_splits(
+        &mut self,
+        split_ids: impl IntoIterator<Item = impl AsRef<str>>,
+    ) -> MetastoreResult<()> {
+        let num_deleted_splits = 0;
         let mut split_not_found_ids = Vec::new();
         let mut split_not_deletable_ids = Vec::new();
 
-        for &split_id in split_ids {
-            match self.delete_split(split_id) {
+        for split_id in split_ids {
+            let split_id_ref = split_id.as_ref();
+            match self.delete_split(split_id_ref) {
                 DeleteSplitOutcome::Success => {}
                 DeleteSplitOutcome::SplitNotFound => {
-                    split_not_found_ids.push(split_id);
+                    split_not_found_ids.push(split_id_ref.to_string());
                 }
                 DeleteSplitOutcome::Forbidden => {
-                    split_not_deletable_ids.push(split_id.to_string());
+                    split_not_deletable_ids.push(split_id_ref.to_string());
                 }
             }
         }
@@ -430,11 +456,11 @@ impl FileBackedIndex {
             let message = "splits are not deletable".to_string();
             return Err(MetastoreError::FailedPrecondition { entity, message });
         }
-        info!(index_id=%self.index_id(), "Deleted {} splits from index.", split_ids.len());
+        info!(index_id=%self.index_id(), "Deleted {num_deleted_splits} splits from index.");
 
         if !split_not_found_ids.is_empty() {
             warn!(
-                index_id=%self.index_id(),
+                index_id=self.index_id().to_string(),
                 split_ids=?PrettySample::new(&split_not_found_ids, 5),
                 "{} splits were not found and could not be deleted.",
                 split_not_found_ids.len()
@@ -596,34 +622,6 @@ impl FileBackedIndex {
         }
     }
 
-    pub(crate) fn close_shards(
-        &mut self,
-        subrequests: Vec<CloseShardsSubrequest>,
-    ) -> MetastoreResult<MutationOccurred<Vec<Either<CloseShardsSuccess, CloseShardsFailure>>>>
-    {
-        let mut mutation_occurred = false;
-        let mut subresponses = Vec::with_capacity(subrequests.len());
-
-        for subrequest in subrequests {
-            let subresponse = match self
-                .get_shards_for_source_mut(&subrequest.source_id)?
-                .close_shards(subrequest)?
-            {
-                MutationOccurred::Yes(subresponse) => {
-                    mutation_occurred = true;
-                    subresponse
-                }
-                MutationOccurred::No(subresponse) => subresponse,
-            };
-            subresponses.push(subresponse);
-        }
-        if mutation_occurred {
-            Ok(MutationOccurred::Yes(subresponses))
-        } else {
-            Ok(MutationOccurred::No(subresponses))
-        }
-    }
-
     pub(crate) fn delete_shards(
         &mut self,
         subrequests: Vec<DeleteShardsSubrequest>,
@@ -682,7 +680,7 @@ impl Debug for Stamper {
 }
 
 fn split_query_predicate(split: &&Split, query: &ListSplitsQuery) -> bool {
-    if !split_tag_filter(split, query.tags.as_ref()) {
+    if !split_tag_filter(&split.split_metadata, query.tags.as_ref()) {
         return false;
     }
 
@@ -732,7 +730,7 @@ mod tests {
     use std::collections::BTreeSet;
 
     use quickwit_doc_mapper::tag_pruning::TagFilterAst;
-    use quickwit_proto::IndexUid;
+    use quickwit_proto::types::IndexUid;
 
     use crate::file_backed_metastore::file_backed_index::split_query_predicate;
     use crate::{ListSplitsQuery, Split, SplitMetadata, SplitState};
@@ -785,55 +783,54 @@ mod tests {
     fn test_single_filter_behaviour() {
         let [split_1, split_2, split_3] = make_splits();
 
-        let query = ListSplitsQuery::for_index(IndexUid::new("test-index"))
+        let query = ListSplitsQuery::for_index(IndexUid::new_with_random_ulid("test-index"))
             .with_split_state(SplitState::Staged);
         assert!(split_query_predicate(&&split_1, &query));
 
-        let query = ListSplitsQuery::for_index(IndexUid::new("test-index"))
+        let query = ListSplitsQuery::for_index(IndexUid::new_with_random_ulid("test-index"))
             .with_split_state(SplitState::Published);
         assert!(!split_query_predicate(&&split_2, &query));
 
-        let query = ListSplitsQuery::for_index(IndexUid::new("test-index"))
+        let query = ListSplitsQuery::for_index(IndexUid::new_with_random_ulid("test-index"))
             .with_split_states([SplitState::Published, SplitState::MarkedForDeletion]);
         assert!(!split_query_predicate(&&split_1, &query));
         assert!(split_query_predicate(&&split_3, &query));
 
-        let query =
-            ListSplitsQuery::for_index(IndexUid::new("test-index")).with_update_timestamp_lt(51);
+        let query = ListSplitsQuery::for_index(IndexUid::new_with_random_ulid("test-index"))
+            .with_update_timestamp_lt(51);
         assert!(!split_query_predicate(&&split_1, &query));
         assert!(split_query_predicate(&&split_2, &query));
         assert!(split_query_predicate(&&split_3, &query));
 
-        let query =
-            ListSplitsQuery::for_index(IndexUid::new("test-index")).with_create_timestamp_gte(51);
+        let query = ListSplitsQuery::for_index(IndexUid::new_with_random_ulid("test-index"))
+            .with_create_timestamp_gte(51);
         assert!(!split_query_predicate(&&split_1, &query));
         assert!(!split_query_predicate(&&split_2, &query));
         assert!(split_query_predicate(&&split_3, &query));
 
-        let query =
-            ListSplitsQuery::for_index(IndexUid::new("test-index")).with_delete_opstamp_gte(4);
+        let query = ListSplitsQuery::for_index(IndexUid::new_with_random_ulid("test-index"))
+            .with_delete_opstamp_gte(4);
         assert!(split_query_predicate(&&split_1, &query));
         assert!(split_query_predicate(&&split_2, &query));
         assert!(!split_query_predicate(&&split_3, &query));
 
-        let query =
-            ListSplitsQuery::for_index(IndexUid::new("test-index")).with_time_range_start_gt(45);
+        let query = ListSplitsQuery::for_index(IndexUid::new_with_random_ulid("test-index"))
+            .with_time_range_start_gt(45);
         assert!(!split_query_predicate(&&split_1, &query));
         assert!(split_query_predicate(&&split_2, &query));
         assert!(split_query_predicate(&&split_3, &query));
 
-        let query =
-            ListSplitsQuery::for_index(IndexUid::new("test-index")).with_time_range_end_lt(45);
+        let query = ListSplitsQuery::for_index(IndexUid::new_with_random_ulid("test-index"))
+            .with_time_range_end_lt(45);
         assert!(split_query_predicate(&&split_1, &query));
         assert!(split_query_predicate(&&split_2, &query));
         assert!(split_query_predicate(&&split_3, &query));
 
-        let query = ListSplitsQuery::for_index(IndexUid::new("test-index")).with_tags_filter(
-            TagFilterAst::Tag {
+        let query = ListSplitsQuery::for_index(IndexUid::new_with_random_ulid("test-index"))
+            .with_tags_filter(TagFilterAst::Tag {
                 is_present: false,
                 tag: "tag-2".to_string(),
-            },
-        );
+            });
         assert!(split_query_predicate(&&split_1, &query));
         assert!(!split_query_predicate(&&split_2, &query));
         assert!(!split_query_predicate(&&split_3, &query));
@@ -843,35 +840,35 @@ mod tests {
     fn test_combination_filter() {
         let [split_1, split_2, split_3] = make_splits();
 
-        let query = ListSplitsQuery::for_index(IndexUid::new("test-index"))
+        let query = ListSplitsQuery::for_index(IndexUid::new_with_random_ulid("test-index"))
             .with_time_range_start_gt(0)
             .with_time_range_end_lt(40);
         assert!(split_query_predicate(&&split_1, &query));
         assert!(split_query_predicate(&&split_2, &query));
         assert!(split_query_predicate(&&split_3, &query));
 
-        let query = ListSplitsQuery::for_index(IndexUid::new("test-index"))
+        let query = ListSplitsQuery::for_index(IndexUid::new_with_random_ulid("test-index"))
             .with_time_range_start_gt(45)
             .with_delete_opstamp_gt(0);
         assert!(!split_query_predicate(&&split_1, &query));
         assert!(split_query_predicate(&&split_2, &query));
         assert!(!split_query_predicate(&&split_3, &query));
 
-        let query = ListSplitsQuery::for_index(IndexUid::new("test-index"))
+        let query = ListSplitsQuery::for_index(IndexUid::new_with_random_ulid("test-index"))
             .with_update_timestamp_lt(51)
             .with_split_states([SplitState::Published, SplitState::MarkedForDeletion]);
         assert!(!split_query_predicate(&&split_1, &query));
         assert!(split_query_predicate(&&split_2, &query));
         assert!(split_query_predicate(&&split_3, &query));
 
-        let query = ListSplitsQuery::for_index(IndexUid::new("test-index"))
+        let query = ListSplitsQuery::for_index(IndexUid::new_with_random_ulid("test-index"))
             .with_update_timestamp_lt(51)
             .with_create_timestamp_lte(63);
         assert!(!split_query_predicate(&&split_1, &query));
         assert!(split_query_predicate(&&split_2, &query));
         assert!(!split_query_predicate(&&split_3, &query));
 
-        let query = ListSplitsQuery::for_index(IndexUid::new("test-index"))
+        let query = ListSplitsQuery::for_index(IndexUid::new_with_random_ulid("test-index"))
             .with_time_range_start_gt(90)
             .with_tags_filter(TagFilterAst::Tag {
                 is_present: true,

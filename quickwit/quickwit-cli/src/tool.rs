@@ -22,7 +22,6 @@ use std::io::{stdout, IsTerminal, Stdout, Write};
 use std::num::NonZeroUsize;
 use std::path::PathBuf;
 use std::str::FromStr;
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 use std::{env, fmt, io};
 
@@ -49,8 +48,11 @@ use quickwit_indexing::models::{
 };
 use quickwit_indexing::IndexingPipeline;
 use quickwit_ingest::IngesterPool;
-use quickwit_metastore::Metastore;
-use quickwit_proto::search::SearchResponse;
+use quickwit_metastore::IndexMetadataResponseExt;
+use quickwit_proto::indexing::CpuCapacity;
+use quickwit_proto::metastore::{IndexMetadataRequest, MetastoreService, MetastoreServiceClient};
+use quickwit_proto::search::{CountHits, SearchResponse};
+use quickwit_proto::types::NodeId;
 use quickwit_search::{single_node_search, SearchResponseRest};
 use quickwit_serve::{
     search_request_from_api_request, BodyFormat, SearchRequestQueryString, SortBy,
@@ -408,7 +410,7 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
     let config = load_node_config(&args.config_uri).await?;
     let (storage_resolver, metastore_resolver) =
         get_resolvers(&config.storage_configs, &config.metastore_configs);
-    let metastore = metastore_resolver.resolve(&config.metastore_uri).await?;
+    let mut metastore = metastore_resolver.resolve(&config.metastore_uri).await?;
 
     let source_params = if let Some(filepath) = args.input_path_opt.as_ref() {
         SourceParams::file(filepath)
@@ -428,7 +430,7 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
         input_format: args.input_format,
     };
     run_index_checklist(
-        &*metastore,
+        &mut metastore,
         &storage_resolver,
         &args.index_id,
         Some(&source_config),
@@ -436,7 +438,7 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
     .await?;
 
     if args.overwrite {
-        let index_service = IndexService::new(metastore.clone(), storage_resolver.clone());
+        let mut index_service = IndexService::new(metastore.clone(), storage_resolver.clone());
         index_service.clear_index(&args.index_id).await?;
     }
     // The indexing service needs to update its cluster chitchat state so that the control plane is
@@ -532,7 +534,8 @@ pub async fn local_search_cli(args: LocalSearchArgs) -> anyhow::Result<()> {
     let config = load_node_config(&args.config_uri).await?;
     let (storage_resolver, metastore_resolver) =
         get_resolvers(&config.storage_configs, &config.metastore_configs);
-    let metastore: Arc<dyn Metastore> = metastore_resolver.resolve(&config.metastore_uri).await?;
+    let metastore: MetastoreServiceClient =
+        metastore_resolver.resolve(&config.metastore_uri).await?;
     let aggs = args
         .aggregation
         .map(|agg_string| serde_json::from_str(&agg_string))
@@ -549,6 +552,7 @@ pub async fn local_search_cli(args: LocalSearchArgs) -> anyhow::Result<()> {
         aggs,
         format: BodyFormat::Json,
         sort_by,
+        count_all: CountHits::CountAll,
     };
     let search_request =
         search_request_from_api_request(vec![args.index_id], search_request_query_string)?;
@@ -567,8 +571,8 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
     let config = load_node_config(&args.config_uri).await?;
     let (storage_resolver, metastore_resolver) =
         get_resolvers(&config.storage_configs, &config.metastore_configs);
-    let metastore = metastore_resolver.resolve(&config.metastore_uri).await?;
-    run_index_checklist(&*metastore, &storage_resolver, &args.index_id, None).await?;
+    let mut metastore = metastore_resolver.resolve(&config.metastore_uri).await?;
+    run_index_checklist(&mut metastore, &storage_resolver, &args.index_id, None).await?;
     // The indexing service needs to update its cluster chitchat state so that the control plane is
     // aware of the running tasks. We thus create a fake cluster to instantiate the indexing service
     // and avoid impacting potential control plane running on the cluster.
@@ -656,7 +660,7 @@ pub async fn garbage_collect_index_cli(args: GarbageCollectIndexArgs) -> anyhow:
     let (storage_resolver, metastore_resolver) =
         get_resolvers(&config.storage_configs, &config.metastore_configs);
     let metastore = metastore_resolver.resolve(&config.metastore_uri).await?;
-    let index_service = IndexService::new(metastore, storage_resolver);
+    let mut index_service = IndexService::new(metastore, storage_resolver);
     let removal_info = index_service
         .garbage_collect_index(&args.index_id, args.grace_period, args.dry_run)
         .await?;
@@ -687,7 +691,7 @@ pub async fn garbage_collect_index_cli(args: GarbageCollectIndexArgs) -> anyhow:
     let deleted_bytes: u64 = removal_info
         .removed_split_entries
         .iter()
-        .map(|split_info| split_info.file_size_bytes.get_bytes())
+        .map(|split_info| split_info.file_size_bytes.as_u64())
         .sum();
     println!(
         "{}MB of storage garbage collected.",
@@ -720,8 +724,11 @@ async fn extract_split_cli(args: ExtractSplitArgs) -> anyhow::Result<()> {
     let config = load_node_config(&args.config_uri).await?;
     let (storage_resolver, metastore_resolver) =
         get_resolvers(&config.storage_configs, &config.metastore_configs);
-    let metastore = metastore_resolver.resolve(&config.metastore_uri).await?;
-    let index_metadata = metastore.index_metadata(&args.index_id).await?;
+    let mut metastore = metastore_resolver.resolve(&config.metastore_uri).await?;
+    let index_metadata = metastore
+        .index_metadata(IndexMetadataRequest::for_index_id(args.index_id))
+        .await?
+        .deserialize_index_metadata()?;
     let index_storage = storage_resolver.resolve(index_metadata.index_uri()).await?;
     let split_file = PathBuf::from(format!("{}.split", args.split_id));
     let split_data = index_storage.get_all(split_file.as_path()).await?;
@@ -924,15 +931,17 @@ impl ThroughputCalculator {
 }
 
 async fn create_empty_cluster(config: &NodeConfig) -> anyhow::Result<Cluster> {
-    let self_node = ClusterMember::new(
-        config.node_id.clone(),
-        quickwit_cluster::GenerationId::now(),
-        false,
-        HashSet::new(),
-        config.gossip_advertise_addr,
-        config.grpc_advertise_addr,
-        Vec::new(),
-    );
+    let node_id: NodeId = config.node_id.clone().into();
+    let self_node = ClusterMember {
+        node_id,
+        generation_id: quickwit_cluster::GenerationId::now(),
+        is_ready: false,
+        enabled_services: HashSet::new(),
+        gossip_advertise_addr: config.gossip_advertise_addr,
+        grpc_advertise_addr: config.grpc_advertise_addr,
+        indexing_cpu_capacity: CpuCapacity::zero(),
+        indexing_tasks: Vec::new(),
+    };
     let cluster = Cluster::join(
         config.cluster_id.clone(),
         self_node,
@@ -942,5 +951,6 @@ async fn create_empty_cluster(config: &NodeConfig) -> anyhow::Result<Cluster> {
         &ChannelTransport::default(),
     )
     .await?;
+
     Ok(cluster)
 }

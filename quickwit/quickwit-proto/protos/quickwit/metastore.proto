@@ -23,78 +23,75 @@ package quickwit.metastore;
 
 import "quickwit/ingest.proto";
 
-
 enum SourceType {
-  CLI = 0;
-  FILE = 1;
-  GCP_PUBSUB = 2;
-  INGEST_V1 = 3;
-  INGEST_V2 = 4;
-  KAFKA = 5;
-  KINESIS = 6;
-  NATS = 7;
-  PULSAR = 8;
-  VEC = 9;
-  VOID = 10;
+  SOURCE_TYPE_UNSPECIFIED = 0;
+  SOURCE_TYPE_CLI = 1;
+  SOURCE_TYPE_FILE = 2;
+  SOURCE_TYPE_GCP_PUBSUB = 3;
+  SOURCE_TYPE_INGEST_V1 = 4;
+  SOURCE_TYPE_INGEST_V2 = 5;
+  SOURCE_TYPE_KAFKA = 6;
+  SOURCE_TYPE_KINESIS = 7;
+  SOURCE_TYPE_NATS = 8;
+  SOURCE_TYPE_PULSAR = 9;
+  SOURCE_TYPE_VEC = 10;
+  SOURCE_TYPE_VOID = 11;
 }
 
 service MetastoreService {
   // Creates an index.
-  rpc create_index(CreateIndexRequest) returns (CreateIndexResponse);
+  rpc CreateIndex(CreateIndexRequest) returns (CreateIndexResponse);
 
   // Gets an index metadata.
-  rpc index_metadata(IndexMetadataRequest) returns (IndexMetadataResponse);
+  rpc IndexMetadata(IndexMetadataRequest) returns (IndexMetadataResponse);
 
   // Gets an indexes metadatas.
-  rpc list_indexes_metadatas(ListIndexesMetadatasRequest) returns (ListIndexesMetadatasResponse);
+  rpc ListIndexesMetadata(ListIndexesMetadataRequest) returns (ListIndexesMetadataResponse);
 
   // Deletes an index
-  rpc delete_index(DeleteIndexRequest) returns (EmptyResponse);
-
-  // Gets all splits from index.
-  rpc list_all_splits(ListAllSplitsRequest) returns (ListSplitsResponse);
+  rpc DeleteIndex(DeleteIndexRequest) returns (EmptyResponse);
 
   // Gets splits from index.
-  rpc list_splits(ListSplitsRequest) returns (ListSplitsResponse);
+  rpc ListSplits(ListSplitsRequest) returns (ListSplitsResponse);
 
   // Stages several splits.
-  rpc stage_splits(StageSplitsRequest) returns (EmptyResponse);
+  rpc StageSplits(StageSplitsRequest) returns (EmptyResponse);
 
   // Publishes split.
-  rpc publish_splits(PublishSplitsRequest) returns (EmptyResponse);
+  rpc PublishSplits(PublishSplitsRequest) returns (EmptyResponse);
 
   // Marks splits for deletion.
-  rpc mark_splits_for_deletion(MarkSplitsForDeletionRequest) returns (EmptyResponse);
+  rpc MarkSplitsForDeletion(MarkSplitsForDeletionRequest) returns (EmptyResponse);
 
   // Deletes splits.
-  rpc delete_splits(DeleteSplitsRequest) returns (EmptyResponse);
+  rpc DeleteSplits(DeleteSplitsRequest) returns (EmptyResponse);
 
   // Adds source.
-  rpc add_source(AddSourceRequest) returns (EmptyResponse);
+  rpc AddSource(AddSourceRequest) returns (EmptyResponse);
 
   // Toggles source.
-  rpc toggle_source(ToggleSourceRequest) returns (EmptyResponse);
+  rpc ToggleSource(ToggleSourceRequest) returns (EmptyResponse);
 
   // Removes source.
-  rpc delete_source(DeleteSourceRequest) returns (EmptyResponse);
+  rpc DeleteSource(DeleteSourceRequest) returns (EmptyResponse);
 
   // Resets source checkpoint.
-  rpc reset_source_checkpoint(ResetSourceCheckpointRequest) returns (EmptyResponse);
+  rpc ResetSourceCheckpoint(ResetSourceCheckpointRequest) returns (EmptyResponse);
 
   // Gets last opstamp for a given `index_id`.
-  rpc last_delete_opstamp(LastDeleteOpstampRequest) returns (LastDeleteOpstampResponse);
+  rpc LastDeleteOpstamp(LastDeleteOpstampRequest) returns (LastDeleteOpstampResponse);
 
   // Creates a delete task.
-  rpc create_delete_task(DeleteQuery) returns (DeleteTask);
+  rpc CreateDeleteTask(DeleteQuery) returns (DeleteTask);
 
   // Updates splits `delete_opstamp`.
-  rpc update_splits_delete_opstamp(UpdateSplitsDeleteOpstampRequest) returns (UpdateSplitsDeleteOpstampResponse);
+  rpc UpdateSplitsDeleteOpstamp(UpdateSplitsDeleteOpstampRequest) returns (UpdateSplitsDeleteOpstampResponse);
 
   // Lists delete tasks with `delete_task.opstamp` > `opstamp_start` for a given `index_id`.
-  rpc list_delete_tasks(ListDeleteTasksRequest) returns (ListDeleteTasksResponse);
+  rpc ListDeleteTasks(ListDeleteTasksRequest) returns (ListDeleteTasksResponse);
 
   /// Lists splits with `split.delete_opstamp` < `delete_opstamp` for a given `index_id`.
-  rpc list_stale_splits(ListStaleSplitsRequest) returns (ListSplitsResponse);
+  rpc ListStaleSplits(ListStaleSplitsRequest) returns (ListSplitsResponse);
 
   ///
   /// Shard API
@@ -110,8 +107,6 @@ service MetastoreService {
   // the last indexer that has acquired the shards is allowed to publish. The response returns for each subrequest the
   // list of acquired shards along with the positions to index from.
   rpc AcquireShards(AcquireShardsRequest) returns (AcquireShardsResponse);
-
-  rpc CloseShards(CloseShardsRequest) returns (CloseShardsResponse);
 
   rpc DeleteShards(DeleteShardsRequest) returns (DeleteShardsResponse);
 
@@ -129,12 +124,13 @@ message CreateIndexResponse {
   string index_uid = 1;
 }
 
-message ListIndexesMetadatasRequest {
-  string query_json = 1;
+message ListIndexesMetadataRequest {
+  reserved  1;
+  repeated string index_id_patterns = 2;
 }
 
-message ListIndexesMetadatasResponse {
-  string indexes_metadatas_serialized_json = 1;
+message ListIndexesMetadataResponse {
+  string indexes_metadata_serialized_json = 1;
 }
 
 message DeleteIndexRequest {
@@ -142,15 +138,12 @@ message DeleteIndexRequest {
 }
 
 message IndexMetadataRequest {
-  string index_id = 1;
+  optional string index_id = 1;
+  optional string index_uid = 2;
 }
 
 message IndexMetadataResponse {
   string index_metadata_serialized_json = 1;
-}
-
-message ListAllSplitsRequest {
-  string index_uid = 1;
 }
 
 message ListSplitsRequest {
@@ -270,11 +263,12 @@ message OpenShardsRequest {
 }
 
 message OpenShardsSubrequest {
-    string index_uid = 1;
-    string source_id = 2;
-    string leader_id = 3;
-    optional string follower_id = 4;
-    uint64 next_shard_id = 5;
+  uint32 subrequest_id = 1;
+  string index_uid = 2;
+  string source_id = 3;
+  string leader_id = 4;
+  optional string follower_id = 5;
+  uint64 next_shard_id = 6;
 }
 
 message OpenShardsResponse {
@@ -282,10 +276,11 @@ message OpenShardsResponse {
 }
 
 message OpenShardsSubresponse {
-    string index_uid = 1;
-    string source_id = 2;
-    repeated quickwit.ingest.Shard open_shards = 3;
-    uint64 next_shard_id = 4;
+  uint32 subrequest_id = 1;
+  string index_uid = 2;
+  string source_id = 3;
+  repeated quickwit.ingest.Shard opened_shards = 4;
+  uint64 next_shard_id = 5;
 }
 
 message AcquireShardsRequest {
@@ -293,10 +288,10 @@ message AcquireShardsRequest {
 }
 
 message AcquireShardsSubrequest {
-    string index_uid = 1;
-    string source_id = 2;
-    repeated uint64 shard_ids = 3;
-    string publish_token = 4;
+  string index_uid = 1;
+  string source_id = 2;
+  repeated uint64 shard_ids = 3;
+  string publish_token = 4;
 }
 
 message AcquireShardsResponse {
@@ -304,48 +299,9 @@ message AcquireShardsResponse {
 }
 
 message AcquireShardsSubresponse {
-    string index_uid = 1;
-    string source_id = 2;
-    repeated quickwit.ingest.Shard acquired_shards = 3;
-}
-
-message CloseShardsRequest {
-  repeated CloseShardsSubrequest subrequests = 1;
-}
-
-message CloseShardsSubrequest {
-    string index_uid = 1;
-    string source_id = 2;
-    uint64 shard_id = 3;
-    quickwit.ingest.ShardState shard_state = 4;
-    optional uint64 replication_position_inclusive = 5;
-}
-
-message CloseShardsResponse {
-  repeated CloseShardsSuccess successes = 1;
-  repeated CloseShardsFailure failures = 2;
-}
-
-message CloseShardsSuccess {
-    string index_uid = 1;
-    string source_id = 2;
-    uint64 shard_id = 3;
-    string leader_id = 4;
-    optional string follower_id = 5;
-    string publish_position_inclusive = 6;
-}
-
-enum CloseShardsFailureKind {
-    INVALID_ARGUMENT = 0;
-    NOT_FOUND = 1;
-}
-
-message CloseShardsFailure {
-    string index_uid = 1;
-    string source_id = 2;
-    uint64 shard_id = 3;
-    CloseShardsFailureKind failure_kind = 4;
-    string failure_message = 5;
+  string index_uid = 1;
+  string source_id = 2;
+  repeated quickwit.ingest.Shard acquired_shards = 3;
 }
 
 message DeleteShardsRequest {
@@ -354,9 +310,9 @@ message DeleteShardsRequest {
 }
 
 message DeleteShardsSubrequest {
-    string index_uid = 1;
-    string source_id = 2;
-    repeated uint64 shard_ids = 3;
+  string index_uid = 1;
+  string source_id = 2;
+  repeated uint64 shard_ids = 3;
 }
 
 message DeleteShardsResponse {
@@ -367,18 +323,18 @@ message ListShardsRequest {
 }
 
 message ListShardsSubrequest {
-    string index_uid = 1;
-    string source_id = 2;
-    optional quickwit.ingest.ShardState shard_state = 3;
+  string index_uid = 1;
+  string source_id = 2;
+  optional quickwit.ingest.ShardState shard_state = 3;
 }
 
 message ListShardsResponse {
-    repeated ListShardsSubresponse subresponses = 1;
+  repeated ListShardsSubresponse subresponses = 1;
 }
 
 message ListShardsSubresponse {
-    string index_uid = 1;
-    string source_id = 2;
-    repeated quickwit.ingest.Shard shards = 3;
-    uint64 next_shard_id = 4;
+  string index_uid = 1;
+  string source_id = 2;
+  repeated quickwit.ingest.Shard shards = 3;
+  uint64 next_shard_id = 4;
 }

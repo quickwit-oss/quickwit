@@ -20,19 +20,22 @@
 use std::collections::hash_map::Entry;
 use std::time::Instant;
 
+use anyhow::bail;
 use fnv::{FnvHashMap, FnvHashSet};
 #[cfg(test)]
 use itertools::Itertools;
 use quickwit_common::Progress;
-use quickwit_config::{SourceConfig, INGEST_SOURCE_ID};
-use quickwit_metastore::{IndexMetadata, ListIndexesQuery, Metastore};
+use quickwit_config::SourceConfig;
+use quickwit_metastore::{IndexMetadata, ListIndexesMetadataResponseExt};
 use quickwit_proto::control_plane::ControlPlaneResult;
 use quickwit_proto::ingest::{Shard, ShardState};
-use quickwit_proto::metastore::{EntityKind, ListShardsSubrequest, MetastoreError};
-use quickwit_proto::types::IndexId;
-use quickwit_proto::{metastore, IndexUid, NodeId, NodeIdRef, ShardId, SourceId};
+use quickwit_proto::metastore::{
+    self, EntityKind, ListIndexesMetadataRequest, ListShardsSubrequest, MetastoreError,
+    MetastoreService, MetastoreServiceClient, SourceType,
+};
+use quickwit_proto::types::{IndexId, IndexUid, NodeId, NodeIdRef, ShardId, SourceId};
 use serde::Serialize;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
 use crate::SourceUid;
 
@@ -83,7 +86,7 @@ impl ShardTableEntry {
 ///
 /// Upon starts, it loads its entire state from the metastore.
 #[derive(Default, Debug)]
-pub struct ControlPlaneModel {
+pub(crate) struct ControlPlaneModel {
     index_uid_table: FnvHashMap<IndexId, IndexUid>,
     index_table: FnvHashMap<IndexUid, IndexMetadata>,
     shard_table: ShardTable,
@@ -108,14 +111,16 @@ impl ControlPlaneModel {
 
     pub async fn load_from_metastore(
         &mut self,
-        metastore: &dyn Metastore,
+        metastore: &mut MetastoreServiceClient,
         progress: &Progress,
     ) -> ControlPlaneResult<()> {
         let now = Instant::now();
         self.clear();
+
         let index_metadatas = progress
-            .protect_future(metastore.list_indexes_metadatas(ListIndexesQuery::All))
-            .await?;
+            .protect_future(metastore.list_indexes_metadata(ListIndexesMetadataRequest::all()))
+            .await?
+            .deserialize_indexes_metadata()?;
 
         let num_indexes = index_metadatas.len();
         self.index_table.reserve(num_indexes);
@@ -130,16 +135,17 @@ impl ControlPlaneModel {
         }
 
         for index_metadata in self.index_table.values() {
-            for source_id in index_metadata.sources.keys() {
-                if source_id != INGEST_SOURCE_ID {
+            for source_config in index_metadata.sources.values() {
+                num_sources += 1;
+
+                if source_config.source_type() != SourceType::IngestV2 || !source_config.enabled {
                     continue;
                 }
                 let request = ListShardsSubrequest {
                     index_uid: index_metadata.index_uid.clone().into(),
-                    source_id: source_id.to_string(),
+                    source_id: source_config.source_id.clone(),
                     shard_state: Some(ShardState::Open as i32),
                 };
-                num_sources += 1;
                 subrequests.push(request);
             }
         }
@@ -240,10 +246,39 @@ impl ControlPlaneModel {
     }
 
     pub(crate) fn delete_source(&mut self, index_uid: &IndexUid, source_id: &SourceId) {
+        // Removing shards from shard table.
         self.shard_table.delete_source(index_uid, source_id);
+        // Remove source from index config.
+        let Some(index_model) = self.index_table.get_mut(index_uid) else {
+            warn!(index_uid=%index_uid, source_id=%source_id, "delete source: index not found");
+            return;
+        };
+        if index_model.sources.remove(source_id).is_none() {
+            warn!(index_uid=%index_uid, source_id=%source_id, "delete source: source not found");
+        };
+    }
+
+    /// Returns `true` if the source status has changed, `false` otherwise.
+    /// Returns an error if the source could not be found.
+    pub(crate) fn toggle_source(
+        &mut self,
+        index_uid: &IndexUid,
+        source_id: &SourceId,
+        enable: bool,
+    ) -> anyhow::Result<bool> {
+        let Some(index_model) = self.index_table.get_mut(index_uid) else {
+            bail!("index `{index_uid}` not found");
+        };
+        let Some(source_config) = index_model.sources.get_mut(source_id) else {
+            bail!("source `{source_id}` not found.");
+        };
+        let has_changed = source_config.enabled != enable;
+        source_config.enabled = enable;
+        Ok(has_changed)
     }
 
     /// Removes the shards identified by their index UID, source ID, and shard IDs.
+    #[allow(dead_code)] // Will remove this in a future PR.
     pub fn delete_shards(
         &mut self,
         index_uid: &IndexUid,
@@ -254,6 +289,21 @@ impl ControlPlaneModel {
             .delete_shards(index_uid, source_id, shard_ids);
     }
 
+    #[cfg(test)]
+    pub fn shards(&mut self) -> impl Iterator<Item = &Shard> + '_ {
+        self.shard_table
+            .table_entries
+            .values()
+            .flat_map(|table_entry| table_entry.shards.values())
+    }
+
+    pub fn shards_mut(&mut self) -> impl Iterator<Item = &mut Shard> + '_ {
+        self.shard_table
+            .table_entries
+            .values_mut()
+            .flat_map(|table_entry| table_entry.shards.values_mut())
+    }
+
     /// Sets the state of the shards identified by their index UID, source ID, and shard IDs to
     /// `Closed`.
     pub fn close_shards(
@@ -261,25 +311,25 @@ impl ControlPlaneModel {
         index_uid: &IndexUid,
         source_id: &SourceId,
         shard_ids: &[ShardId],
-    ) {
+    ) -> Vec<ShardId> {
         self.shard_table
-            .close_shards(index_uid, source_id, shard_ids);
+            .close_shards(index_uid, source_id, shard_ids)
     }
 
     pub fn index_uid(&self, index_id: &str) -> Option<IndexUid> {
         self.index_uid_table.get(index_id).cloned()
     }
 
-    /// Updates the shard table.
-    pub fn update_shards(
+    /// Inserts the shards that have just been opened by calling `open_shards` on the metastore.
+    pub fn insert_newly_opened_shards(
         &mut self,
         index_uid: &IndexUid,
         source_id: &SourceId,
-        shards: &[Shard],
+        shards: Vec<Shard>,
         next_shard_id: NextShardId,
     ) {
         self.shard_table
-            .update_shards(index_uid, source_id, shards, next_shard_id);
+            .insert_newly_opened_shards(index_uid, source_id, shards, next_shard_id);
     }
 
     /// Finds open shards for a given index and source and whose leaders are not in the set of
@@ -288,10 +338,10 @@ impl ControlPlaneModel {
         &self,
         index_uid: &IndexUid,
         source_id: &SourceId,
-        unavailable_ingesters: &FnvHashSet<NodeId>,
+        unavailable_leaders: &FnvHashSet<NodeId>,
     ) -> Option<(Vec<Shard>, NextShardId)> {
         self.shard_table
-            .find_open_shards(index_uid, source_id, unavailable_ingesters)
+            .find_open_shards(index_uid, source_id, unavailable_leaders)
     }
 }
 
@@ -354,7 +404,7 @@ impl ShardTable {
         &self,
         index_uid: &IndexUid,
         source_id: &SourceId,
-        unavailable_ingesters: &FnvHashSet<NodeId>,
+        unavailable_leaders: &FnvHashSet<NodeId>,
     ) -> Option<(Vec<Shard>, NextShardId)> {
         let source_uid = SourceUid {
             index_uid: index_uid.clone(),
@@ -366,7 +416,7 @@ impl ShardTable {
             .values()
             .filter(|shard| {
                 shard.is_open()
-                    && !unavailable_ingesters.contains(NodeIdRef::from_str(&shard.leader_id))
+                    && !unavailable_leaders.contains(NodeIdRef::from_str(&shard.leader_id))
             })
             .cloned()
             .collect();
@@ -381,11 +431,11 @@ impl ShardTable {
     }
 
     /// Updates the shard table.
-    pub fn update_shards(
+    pub fn insert_newly_opened_shards(
         &mut self,
         index_uid: &IndexUid,
         source_id: &SourceId,
-        shards: &[Shard],
+        opened_shards: Vec<Shard>,
         next_shard_id: NextShardId,
     ) {
         let source_uid = SourceUid {
@@ -394,19 +444,24 @@ impl ShardTable {
         };
         match self.table_entries.entry(source_uid) {
             Entry::Occupied(mut entry) => {
-                for shard in shards {
-                    let table_entry = entry.get_mut();
-                    table_entry.shards.insert(shard.shard_id, shard.clone());
-                    table_entry.next_shard_id = next_shard_id;
+                let table_entry = entry.get_mut();
+
+                for opened_shard in opened_shards {
+                    // We only insert shards that we don't know about because the control plane
+                    // knows more about the state of the shards than the metastore.
+                    table_entry
+                        .shards
+                        .entry(opened_shard.shard_id)
+                        .or_insert(opened_shard);
                 }
+                table_entry.next_shard_id = next_shard_id;
             }
             // This should never happen if the control plane view is consistent with the state of
             // the metastore, so should we panic here? Warnings are most likely going to go
             // unnoticed.
             Entry::Vacant(entry) => {
-                let shards: FnvHashMap<ShardId, Shard> = shards
-                    .iter()
-                    .cloned()
+                let shards: FnvHashMap<ShardId, Shard> = opened_shards
+                    .into_iter()
                     .map(|shard| (shard.shard_id, shard))
                     .collect();
                 let table_entry = ShardTableEntry {
@@ -425,7 +480,9 @@ impl ShardTable {
         index_uid: &IndexUid,
         source_id: &SourceId,
         shard_ids: &[ShardId],
-    ) {
+    ) -> Vec<ShardId> {
+        let mut closed_shard_ids = Vec::new();
+
         let source_uid = SourceUid {
             index_uid: index_uid.clone(),
             source_id: source_id.clone(),
@@ -433,10 +490,14 @@ impl ShardTable {
         if let Some(table_entry) = self.table_entries.get_mut(&source_uid) {
             for shard_id in shard_ids {
                 if let Some(shard) = table_entry.shards.get_mut(shard_id) {
-                    shard.shard_state = ShardState::Closed as i32;
+                    if !shard.is_closed() {
+                        shard.shard_state = ShardState::Closed as i32;
+                        closed_shard_ids.push(*shard_id);
+                    }
                 }
             }
         }
+        closed_shard_ids
     }
 
     /// Removes the shards identified by their index UID, source ID, and shard IDs.
@@ -460,9 +521,10 @@ impl ShardTable {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_config::SourceConfig;
-    use quickwit_metastore::{IndexMetadata, MockMetastore};
+    use quickwit_config::{SourceConfig, SourceParams, INGEST_SOURCE_ID};
+    use quickwit_metastore::IndexMetadata;
     use quickwit_proto::ingest::Shard;
+    use quickwit_proto::metastore::ListIndexesMetadataResponse;
 
     use super::*;
 
@@ -511,7 +573,7 @@ mod tests {
             source_id: source_id.clone(),
             shard_id: 2,
             leader_id: "test-leader-0".to_string(),
-            shard_state: ShardState::Closing as i32,
+            shard_state: ShardState::Unavailable as i32,
             ..Default::default()
         };
         let shard_03 = Shard {
@@ -530,10 +592,10 @@ mod tests {
             shard_state: ShardState::Open as i32,
             ..Default::default()
         };
-        shard_table.update_shards(
+        shard_table.insert_newly_opened_shards(
             &index_uid,
             &source_id,
-            &[shard_01, shard_02, shard_03.clone(), shard_04.clone()],
+            vec![shard_01, shard_02, shard_03.clone(), shard_04.clone()],
             5,
         );
         let (open_shards, next_shard_id) = shard_table
@@ -555,13 +617,13 @@ mod tests {
     }
 
     #[test]
-    fn test_shard_table_update_shards() {
+    fn test_shard_table_insert_newly_opened_shards() {
         let index_uid_0: IndexUid = "test-index:0".into();
         let source_id = "test-source".to_string();
 
         let mut shard_table = ShardTable::default();
 
-        let mut shard_01 = Shard {
+        let shard_01 = Shard {
             index_uid: index_uid_0.clone().into(),
             source_id: source_id.clone(),
             shard_id: 1,
@@ -569,7 +631,7 @@ mod tests {
             shard_state: ShardState::Open as i32,
             ..Default::default()
         };
-        shard_table.update_shards(&index_uid_0, &source_id, &[shard_01.clone()], 2);
+        shard_table.insert_newly_opened_shards(&index_uid_0, &source_id, vec![shard_01.clone()], 2);
 
         assert_eq!(shard_table.table_entries.len(), 1);
 
@@ -583,7 +645,14 @@ mod tests {
         assert_eq!(shards[0], shard_01);
         assert_eq!(table_entry.next_shard_id, 2);
 
-        shard_01.shard_state = ShardState::Closed as i32;
+        shard_table
+            .table_entries
+            .get_mut(&source_uid)
+            .unwrap()
+            .shards
+            .get_mut(&1)
+            .unwrap()
+            .shard_state = ShardState::Unavailable as i32;
 
         let shard_02 = Shard {
             index_uid: index_uid_0.clone().into(),
@@ -594,10 +663,10 @@ mod tests {
             ..Default::default()
         };
 
-        shard_table.update_shards(
+        shard_table.insert_newly_opened_shards(
             &index_uid_0,
             &source_id,
-            &[shard_01.clone(), shard_02.clone()],
+            vec![shard_01.clone(), shard_02.clone()],
             3,
         );
 
@@ -610,9 +679,61 @@ mod tests {
         let table_entry = shard_table.table_entries.get(&source_uid).unwrap();
         let shards = table_entry.shards();
         assert_eq!(shards.len(), 2);
-        assert_eq!(shards[0], shard_01);
+        assert_eq!(shards[0].shard_state(), ShardState::Unavailable);
         assert_eq!(shards[1], shard_02);
         assert_eq!(table_entry.next_shard_id, 3);
+    }
+
+    #[test]
+    fn test_shard_table_close_shards() {
+        let index_uid_0: IndexUid = "test-index:0".into();
+        let index_uid_1: IndexUid = "test-index:1".into();
+        let source_id = "test-source".to_string();
+
+        let mut shard_table = ShardTable::default();
+
+        let shard_01 = Shard {
+            index_uid: index_uid_0.clone().into(),
+            source_id: source_id.clone(),
+            shard_id: 1,
+            leader_id: "test-leader-0".to_string(),
+            shard_state: ShardState::Open as i32,
+            ..Default::default()
+        };
+        let shard_02 = Shard {
+            index_uid: index_uid_0.clone().into(),
+            source_id: source_id.clone(),
+            shard_id: 2,
+            leader_id: "test-leader-0".to_string(),
+            shard_state: ShardState::Closed as i32,
+            ..Default::default()
+        };
+        let shard_11 = Shard {
+            index_uid: index_uid_1.clone().into(),
+            source_id: source_id.clone(),
+            shard_id: 1,
+            leader_id: "test-leader-0".to_string(),
+            shard_state: ShardState::Open as i32,
+            ..Default::default()
+        };
+        shard_table.insert_newly_opened_shards(
+            &index_uid_0,
+            &source_id,
+            vec![shard_01, shard_02],
+            3,
+        );
+        shard_table.insert_newly_opened_shards(&index_uid_0, &source_id, vec![shard_11], 2);
+
+        let closed_shard_ids = shard_table.close_shards(&index_uid_0, &source_id, &[1, 2, 3]);
+        assert_eq!(closed_shard_ids, &[1]);
+
+        let source_uid_0 = SourceUid {
+            index_uid: index_uid_0,
+            source_id,
+        };
+        let table_entry = shard_table.table_entries.get(&source_uid_0).unwrap();
+        let shards = table_entry.shards();
+        assert_eq!(shards[0].shard_state, ShardState::Closed as i32);
     }
 
     #[test]
@@ -647,8 +768,13 @@ mod tests {
             shard_state: ShardState::Open as i32,
             ..Default::default()
         };
-        shard_table.update_shards(&index_uid_0, &source_id, &[shard_01.clone(), shard_02], 3);
-        shard_table.update_shards(&index_uid_1, &source_id, &[shard_11], 2);
+        shard_table.insert_newly_opened_shards(
+            &index_uid_0,
+            &source_id,
+            vec![shard_01.clone(), shard_02],
+            3,
+        );
+        shard_table.insert_newly_opened_shards(&index_uid_1, &source_id, vec![shard_11], 2);
         shard_table.delete_shards(&index_uid_0, &source_id, &[2]);
         shard_table.delete_shards(&index_uid_1, &source_id, &[1]);
 
@@ -677,21 +803,26 @@ mod tests {
     async fn test_control_plane_model_load_shard_table() {
         let progress = Progress::default();
 
-        let mut mock_metastore = MockMetastore::default();
+        let mut mock_metastore = MetastoreServiceClient::mock();
         mock_metastore
-            .expect_list_indexes_metadatas()
-            .returning(|query| {
-                assert!(matches!(query, ListIndexesQuery::All));
+            .expect_list_indexes_metadata()
+            .returning(|request| {
+                assert_eq!(request, ListIndexesMetadataRequest::all());
 
                 let mut index_0 = IndexMetadata::for_test("test-index-0", "ram:///test-index-0");
-                let source = SourceConfig::ingest_default();
-                index_0.add_source(source.clone()).unwrap();
+                let mut source_config = SourceConfig::ingest_v2_default();
+                source_config.enabled = true;
+                index_0.add_source(source_config.clone()).unwrap();
 
                 let mut index_1 = IndexMetadata::for_test("test-index-1", "ram:///test-index-1");
-                index_1.add_source(source).unwrap();
+                index_1.add_source(source_config.clone()).unwrap();
 
-                let indexes = vec![index_0, index_1];
-                Ok(indexes)
+                let mut index_2 = IndexMetadata::for_test("test-index-2", "ram:///test-index-2");
+                source_config.enabled = false;
+                index_2.add_source(source_config.clone()).unwrap();
+
+                let indexes = vec![index_0, index_1, index_2];
+                Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(indexes).unwrap())
             });
         mock_metastore.expect_list_shards().returning(|request| {
             assert_eq!(request.subrequests.len(), 2);
@@ -725,19 +856,24 @@ mod tests {
             Ok(response)
         });
         let mut model = ControlPlaneModel::default();
+        let mut metastore_client = MetastoreServiceClient::from(mock_metastore);
         model
-            .load_from_metastore(&mock_metastore, &progress)
+            .load_from_metastore(&mut metastore_client, &progress)
             .await
             .unwrap();
 
-        assert_eq!(model.index_table.len(), 2);
+        assert_eq!(model.index_table.len(), 3);
         assert_eq!(
-            model.index_uid("test-index-0").unwrap(),
-            IndexUid::from("test-index-0:0".to_string())
+            model.index_uid("test-index-0").unwrap().as_str(),
+            "test-index-0:0"
         );
         assert_eq!(
-            model.index_uid("test-index-1").unwrap(),
-            IndexUid::from("test-index-1:0".to_string())
+            model.index_uid("test-index-1").unwrap().as_str(),
+            "test-index-1:0"
+        );
+        assert_eq!(
+            model.index_uid("test-index-2").unwrap().as_str(),
+            "test-index-2:0"
         );
 
         assert_eq!(model.shard_table.table_entries.len(), 2);
@@ -761,8 +897,50 @@ mod tests {
         assert_eq!(shards.len(), 0);
         assert_eq!(table_entry.next_shard_id, 1);
     }
-    #[tokio::test]
-    async fn test_ingest_controller_close_shards() {
-        // TODO: Write test when the RPC is actually called by ingesters.
+
+    #[test]
+    fn test_control_plane_model_toggle_source() {
+        let mut model = ControlPlaneModel::default();
+        let index_metadata = IndexMetadata::for_test("test-index", "ram://");
+        let index_uid = index_metadata.index_uid.clone();
+        model.add_index(index_metadata);
+        let source_config = SourceConfig::for_test("test-source", SourceParams::void());
+        model.add_source(&index_uid, source_config).unwrap();
+        {
+            let has_changed = model
+                .toggle_source(&index_uid, &"test-source".to_string(), true)
+                .unwrap();
+            assert!(!has_changed);
+        }
+        {
+            let has_changed = model
+                .toggle_source(&index_uid, &"test-source".to_string(), true)
+                .unwrap();
+            assert!(!has_changed);
+        }
+        {
+            let has_changed = model
+                .toggle_source(&index_uid, &"test-source".to_string(), false)
+                .unwrap();
+            assert!(has_changed);
+        }
+        {
+            let has_changed = model
+                .toggle_source(&index_uid, &"test-source".to_string(), false)
+                .unwrap();
+            assert!(!has_changed);
+        }
+        {
+            let has_changed = model
+                .toggle_source(&index_uid, &"test-source".to_string(), true)
+                .unwrap();
+            assert!(has_changed);
+        }
+        {
+            let has_changed = model
+                .toggle_source(&index_uid, &"test-source".to_string(), true)
+                .unwrap();
+            assert!(!has_changed);
+        }
     }
 }

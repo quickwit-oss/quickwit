@@ -41,7 +41,20 @@ pub struct PingResponse {
     pub message: ::prost::alloc::string::String,
 }
 /// BEGIN quickwit-codegen
+#[allow(unused_imports)]
+use std::str::FromStr;
 use tower::{Layer, Service, ServiceExt};
+use quickwit_common::metrics::{PrometheusLabels, OwnedPrometheusLabels};
+impl PrometheusLabels<1> for HelloRequest {
+    fn labels(&self) -> OwnedPrometheusLabels<1usize> {
+        OwnedPrometheusLabels::new([std::borrow::Cow::Borrowed("hello")])
+    }
+}
+impl PrometheusLabels<1> for GoodbyeRequest {
+    fn labels(&self) -> OwnedPrometheusLabels<1usize> {
+        OwnedPrometheusLabels::new([std::borrow::Cow::Borrowed("goodbye")])
+    }
+}
 pub type HelloStream<T> = quickwit_common::ServiceStream<crate::HelloResult<T>>;
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait::async_trait]
@@ -80,6 +93,11 @@ impl HelloClient {
     where
         T: Hello,
     {
+        #[cfg(any(test, feature = "testsuite"))]
+        assert!(
+            std::any::TypeId::of:: < T > () != std::any::TypeId::of:: < MockHello > (),
+            "`MockHello` must be wrapped in a `MockHelloWrapper`. Use `MockHello::from(mock)` to instantiate the client."
+        );
         Self { inner: Box::new(instance) }
     }
     pub fn as_grpc_service(
@@ -87,6 +105,8 @@ impl HelloClient {
     ) -> hello_grpc_server::HelloGrpcServer<HelloGrpcServerAdapter> {
         let adapter = HelloGrpcServerAdapter::new(self.clone());
         hello_grpc_server::HelloGrpcServer::new(adapter)
+            .max_decoding_message_size(10 * 1024 * 1024)
+            .max_encoding_message_size(10 * 1024 * 1024)
     }
     pub fn from_channel(
         addr: std::net::SocketAddr,
@@ -105,10 +125,10 @@ impl HelloClient {
         balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
     ) -> HelloClient {
         let connection_keys_watcher = balance_channel.connection_keys_watcher();
-        let adapter = HelloGrpcClientAdapter::new(
-            hello_grpc_client::HelloGrpcClient::new(balance_channel),
-            connection_keys_watcher,
-        );
+        let client = hello_grpc_client::HelloGrpcClient::new(balance_channel)
+            .max_decoding_message_size(10 * 1024 * 1024)
+            .max_encoding_message_size(10 * 1024 * 1024);
+        let adapter = HelloGrpcClientAdapter::new(client, connection_keys_watcher);
         Self::new(adapter)
     }
     pub fn from_mailbox<A>(mailbox: quickwit_actors::Mailbox<A>) -> Self
@@ -184,7 +204,7 @@ pub mod hello_mock {
             self.inner.lock().await.check_connectivity().await
         }
         fn endpoints(&self) -> Vec<quickwit_common::uri::Uri> {
-            self.inner.blocking_lock().endpoints()
+            futures::executor::block_on(self.inner.lock()).endpoints()
         }
     }
     impl From<MockHello> for HelloClient {
@@ -581,8 +601,8 @@ where
     }
     fn endpoints(&self) -> Vec<quickwit_common::uri::Uri> {
         vec![
-            quickwit_common::uri::Uri::from_well_formed(format!("actor://localhost/{}",
-            self.inner.actor_instance_id()))
+            quickwit_common::uri::Uri::from_str(& format!("actor://localhost/{}", self
+            .inner.actor_instance_id())).expect("URI should be valid")
         ]
     }
 }
@@ -661,8 +681,8 @@ where
         self.connection_addrs_rx
             .borrow()
             .iter()
-            .map(|addr| quickwit_common::uri::Uri::from_well_formed(
-                format!(r"grpc://{}/{}.{}", addr, "hello", "Hello"),
+            .flat_map(|addr| quickwit_common::uri::Uri::from_str(
+                &format!("grpc://{addr}/{}.{}", "hello", "Hello"),
             ))
             .collect()
     }

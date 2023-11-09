@@ -25,12 +25,38 @@ use std::task::{Context, Poll};
 use futures::Future;
 use pin_project::pin_project;
 use tokio::time::Sleep;
-use tower::retry::Policy;
+use tower::retry::{Policy, Retry};
+use tower::Layer;
 use tracing::debug;
 
 use crate::retry::{RetryParams, Retryable};
 
-#[derive(Debug, Clone, Copy, Default)]
+/// Retry layer copy/pasted from `tower::retry::RetryLayer`
+/// but which implements `Clone`.
+impl<P, S> Layer<S> for RetryLayer<P>
+where P: Clone
+{
+    type Service = Retry<P, S>;
+
+    fn layer(&self, service: S) -> Self::Service {
+        let policy = self.policy.clone();
+        Retry::new(policy, service)
+    }
+}
+
+#[derive(Clone, Debug)]
+pub struct RetryLayer<P> {
+    policy: P,
+}
+
+impl<P> RetryLayer<P> {
+    /// Create a new [`RetryLayer`] from a retry policy
+    pub fn new(policy: P) -> Self {
+        RetryLayer { policy }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default)]
 pub struct RetryPolicy {
     num_attempts: usize,
     retry_params: RetryParams,
@@ -110,7 +136,6 @@ mod tests {
     use std::sync::{Arc, Mutex};
 
     use futures::future::{ready, Ready};
-    use tower::retry::RetryLayer;
     use tower::{Layer, Service, ServiceExt};
 
     use super::*;

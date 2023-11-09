@@ -24,11 +24,9 @@ use std::sync::Arc;
 use quickwit_common::tower::BoxFutureInfaillible;
 use quickwit_config::service::QuickwitService;
 use quickwit_jaeger::JaegerService;
-use quickwit_metastore::GrpcMetastoreAdapter;
 use quickwit_opentelemetry::otlp::{OtlpGrpcLogsService, OtlpGrpcTracesService};
 use quickwit_proto::indexing::IndexingServiceClient;
 use quickwit_proto::jaeger::storage::v1::span_reader_plugin_server::SpanReaderPluginServer;
-use quickwit_proto::metastore::MetastoreServiceServer;
 use quickwit_proto::opentelemetry::proto::collector::logs::v1::logs_service_server::LogsServiceServer;
 use quickwit_proto::opentelemetry::proto::collector::trace::v1::trace_service_server::TraceServiceServer;
 use quickwit_proto::search::search_service_server::SearchServiceServer;
@@ -52,8 +50,7 @@ pub(crate) async fn start_grpc_server(
     // Mount gRPC metastore service if `QuickwitService::Metastore` is enabled on node.
     let metastore_grpc_service = if let Some(metastore_server) = &services.metastore_server_opt {
         enabled_grpc_services.insert("metastore");
-        let grpc_metastore_adapter = GrpcMetastoreAdapter::from(metastore_server.clone());
-        Some(MetastoreServiceServer::new(grpc_metastore_adapter))
+        Some(metastore_server.as_grpc_service())
     } else {
         None
     };

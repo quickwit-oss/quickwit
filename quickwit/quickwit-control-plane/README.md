@@ -2,11 +2,13 @@
 
 The Control Plane is responsible for scheduling indexing tasks to indexers. Its role is to ensure that the cluster is correctly running all indexing tasks on each indexer.
 
-An indexing task is simply identified by a couple `(IndexId, SourceId)`.
+An indexing task is simply identified by a couple `(IndexId, SourceId, Option<Vec<ShardId>>)`.
 
 ## Scheduling algorithm
 
-The control plane subscribes to all metastore events to keep an up to date the list of indexing tasks that should be running on the cluster.
+The control plane keeps an up to date partial view of the metastore.
+This is enforced by routing all of the index/shards/sources alternating
+command be routed through the control plane.
 
 On startup, or when a metastore event is received, the scheduler computes the list of indexing tasks.
 It then applies a placement algorithm to decide which indexer should be running each indexing task. The result of this placement is called the physical indexing plan, and associated each indexer to a list of indexing tasks.
@@ -15,15 +17,9 @@ The control plane then emits gRPC to the indexers that are not already following
 
 ```mermaid
 flowchart TB
-    StartScheduling(Start scheduling)--"(Sources, Nodes)"-->Define
+    StartScheduling(Start scheduling)--"(Sources, Nodes)"-->BuildPhysical
     style StartScheduling fill:#ff0026,fill-opacity:0.5,stroke:#ff0026,stroke-width:4px
-    Define[Define indexing tasks] --IndexingTasks--> AssignTasks
-    subgraph AssignTasks[Assign each indexing task]
-    direction LR
-    Filter[Filter nodes]--Node candidates-->Score
-    Score[Score each node]--Nodes with score-->Select[Select best node]
-    end
-    AssignTasks--PhysicalPlan-->Apply
+    BuildPhysical[Build Physical Plan]--PhysicalPlan-->Apply
     Apply[Apply plan to each indexer] --IndexerPlan--> Indexer1
     Apply --IndexerPlan--> Indexer2
     Apply --IndexerPlan--> Indexer...

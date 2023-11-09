@@ -50,7 +50,7 @@ async fn main_impl() -> anyhow::Result<()> {
 
     let app = build_cli().about(about_text).version(version_text);
     let matches = app.get_matches();
-    let ansi = !matches.get_flag("no-color");
+    let ansi_colors = !matches.get_flag("no-color");
 
     let command = match CliCommand::parse_cli_args(matches) {
         Ok(command) => command,
@@ -63,7 +63,7 @@ async fn main_impl() -> anyhow::Result<()> {
     #[cfg(feature = "jemalloc")]
     start_jemalloc_metrics_loop();
 
-    setup_logging_and_tracing(command.default_log_level(), ansi, build_info)?;
+    setup_logging_and_tracing(command.default_log_level(), ansi_colors, build_info)?;
     let return_code: i32 = if let Err(err) = command.execute().await {
         eprintln!("{} Command failed: {:?}\n", "✘".color(RED_COLOR), err);
         1
@@ -92,7 +92,7 @@ mod tests {
     use std::str::FromStr;
     use std::time::Duration;
 
-    use byte_unit::Byte;
+    use bytesize::ByteSize;
     use quickwit_cli::cli::{build_cli, CliCommand};
     use quickwit_cli::index::{
         ClearIndexArgs, CreateIndexArgs, DeleteIndexArgs, DescribeIndexArgs, IndexCliCommand,
@@ -182,6 +182,32 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_ingest_v2_args() {
+        let app = build_cli().no_binary_name(true);
+        let matches = app
+            .try_get_matches_from(["index", "ingest", "--index", "wikipedia", "--v2"])
+            .unwrap();
+        let command = CliCommand::parse_cli_args(matches).unwrap();
+        assert!(matches!(
+            command,
+            CliCommand::Index(IndexCliCommand::Ingest(
+                IngestDocsArgs {
+                    client_args,
+                    index_id,
+                    input_path_opt: None,
+                    batch_size_limit_opt: None,
+                    commit_type: CommitType::Auto,
+                })) if &index_id == "wikipedia"
+                && client_args.timeout.is_none()
+                && client_args.connect_timeout.is_none()
+                && client_args.commit_timeout.is_none()
+                && client_args.cluster_endpoint == Url::from_str("http://127.0.0.1:7280").unwrap()
+                && client_args.ingest_v2
+
+        ));
+    }
+
+    #[test]
     fn test_parse_ingest_args() -> anyhow::Result<()> {
         let app = build_cli().no_binary_name(true);
         let matches = app.try_get_matches_from([
@@ -207,6 +233,7 @@ mod tests {
                 && client_args.connect_timeout.is_none()
                 && client_args.commit_timeout.is_none()
                 && client_args.cluster_endpoint == Url::from_str("http://127.0.0.1:8000").unwrap()
+                && !client_args.ingest_v2
         ));
 
         let app = build_cli().no_binary_name(true);
@@ -234,8 +261,8 @@ mod tests {
                         && client_args.timeout.is_none()
                         && client_args.connect_timeout.is_none()
                         && client_args.commit_timeout.is_none()
-                        && batch_size_limit == Byte::from_str("8MB").unwrap()
-
+                        && !client_args.ingest_v2
+                        && batch_size_limit == ByteSize::mb(8)
         ));
 
         let app = build_cli().no_binary_name(true);
@@ -263,7 +290,8 @@ mod tests {
                     && client_args.timeout.is_none()
                     && client_args.connect_timeout.is_none()
                     && client_args.commit_timeout.is_none()
-                    && batch_size_limit == Byte::from_str("4KB").unwrap()
+                    && !client_args.ingest_v2
+                    && batch_size_limit == ByteSize::kb(4)
         ));
 
         let app = build_cli().no_binary_name(true);
@@ -703,5 +731,35 @@ mod tests {
             })) if &index_id == "wikipedia" && source_id == "ingest-source"
         ));
         Ok(())
+    }
+
+    #[test]
+    fn test_parse_no_color() {
+        let previous_no_color_res = std::env::var("NO_COLOR");
+        {
+            std::env::set_var("NO_COLOR", "whatever_interpreted_as_true");
+            let app = build_cli().no_binary_name(true);
+            let matches = app.try_get_matches_from(["run"]).unwrap();
+            let no_color = matches.get_flag("no-color");
+            assert!(no_color);
+        }
+        {
+            // empty string is false.
+            std::env::set_var("NO_COLOR", "");
+            let app = build_cli().no_binary_name(true);
+            let matches = app.try_get_matches_from(["run"]).unwrap();
+            let no_color = matches.get_flag("no-color");
+            assert!(!no_color);
+        }
+        {
+            // empty string is false.
+            let app = build_cli().no_binary_name(true);
+            let matches = app.try_get_matches_from(["run", "--no-color"]).unwrap();
+            let no_color = matches.get_flag("no-color");
+            assert!(no_color);
+        }
+        if let Ok(previous_no_color) = previous_no_color_res {
+            std::env::set_var("NO_COLOR", previous_no_color);
+        }
     }
 }

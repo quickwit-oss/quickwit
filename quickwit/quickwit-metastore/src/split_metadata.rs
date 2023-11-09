@@ -24,8 +24,8 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Duration;
 
-use byte_unit::Byte;
-use quickwit_proto::IndexUid;
+use bytesize::ByteSize;
+use quickwit_proto::types::IndexUid;
 use serde::{Deserialize, Serialize};
 use serde_with::{serde_as, DurationMilliSeconds};
 use time::OffsetDateTime;
@@ -60,7 +60,7 @@ impl Split {
 /// Carries immutable split metadata.
 /// This struct can deserialize older format automatically
 /// but can only serialize to the last version.
-#[derive(Clone, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(into = "VersionedSplitMetadata")]
 #[serde(try_from = "VersionedSplitMetadata")]
 pub struct SplitMetadata {
@@ -133,6 +133,51 @@ pub struct SplitMetadata {
     /// this split.
     pub num_merge_ops: usize,
 }
+impl fmt::Debug for SplitMetadata {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let mut debug_struct = f.debug_struct("SplitMetadata");
+        debug_struct.field("split_id", &self.split_id);
+        debug_struct.field("index_uid", &self.index_uid);
+        debug_struct.field("partition_id", &self.partition_id);
+        debug_struct.field("source_id", &self.source_id);
+        debug_struct.field("node_id", &self.node_id);
+        debug_struct.field("num_docs", &self.num_docs);
+        debug_struct.field(
+            "uncompressed_docs_size_in_bytes",
+            &self.uncompressed_docs_size_in_bytes,
+        );
+        debug_struct.field("time_range", &self.time_range);
+        debug_struct.field("create_timestamp", &self.create_timestamp);
+        debug_struct.field("maturity", &self.maturity);
+        if !self.tags.is_empty() {
+            let mut tags_iter = self.tags.iter();
+            let mut tags_str = String::new();
+            tags_str.push('{');
+            for _ in 0..4 {
+                if let Some(tag) = tags_iter.next() {
+                    tags_str.push('"');
+                    tags_str.push_str(tag);
+                    tags_str.push_str("\", ");
+                } else {
+                    break;
+                }
+            }
+            if tags_iter.next().is_some() {
+                let remaining_count = self.tags.len() - 4;
+                tags_str.push_str(&format!("and {} more", remaining_count));
+            } else {
+                tags_str.pop();
+                tags_str.pop();
+            }
+            tags_str.push('}');
+            debug_struct.field("tags", &tags_str);
+        }
+        debug_struct.field("footer_offsets", &self.footer_offsets);
+        debug_struct.field("delete_opstamp", &self.delete_opstamp);
+        debug_struct.field("num_merge_ops", &self.num_merge_ops);
+        debug_struct.finish()
+    }
+}
 
 impl SplitMetadata {
     /// Creates a new instance of split metadata.
@@ -186,9 +231,9 @@ impl SplitMetadata {
         let file_name = quickwit_common::split_file(self.split_id());
 
         SplitInfo {
-            uncompressed_docs_size_bytes: Byte::from_bytes(self.uncompressed_docs_size_in_bytes),
+            uncompressed_docs_size_bytes: ByteSize(self.uncompressed_docs_size_in_bytes),
             file_name: PathBuf::from(file_name),
-            file_size_bytes: Byte::from_bytes(self.footer_offsets.end),
+            file_size_bytes: ByteSize(self.footer_offsets.end),
             split_id: self.split_id.clone(),
             num_docs: self.num_docs,
         }
@@ -204,13 +249,13 @@ pub struct SplitInfo {
     pub num_docs: usize,
     /// The sum of the sizes of the original JSON payloads in bytes.
     #[schema(value_type = u64)]
-    pub uncompressed_docs_size_bytes: Byte,
+    pub uncompressed_docs_size_bytes: ByteSize,
     /// The name of the split file on disk.
     #[schema(value_type = String)]
     pub file_name: PathBuf,
     /// The size of the split file on disk in bytes.
     #[schema(value_type = u64)]
-    pub file_size_bytes: Byte,
+    pub file_size_bytes: ByteSize,
 }
 
 #[cfg(any(test, feature = "testsuite"))]
@@ -324,6 +369,8 @@ pub fn utc_now_timestamp() -> i64 {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+
     #[test]
     fn test_split_maturity_serialization() {
         {
@@ -345,5 +392,47 @@ mod tests {
             let deserialized: super::SplitMaturity = serde_json::from_str(&serialized).unwrap();
             assert_eq!(deserialized, split_maturity);
         }
+    }
+
+    #[test]
+    fn test_split_metadata_debug() {
+        let split_metadata = SplitMetadata {
+            split_id: "split-1".to_string(),
+            index_uid: IndexUid::from_parts(
+                "00000000-0000-0000-0000-000000000000",
+                ulid::Ulid::nil(),
+            ),
+            partition_id: 0,
+            source_id: "source-1".to_string(),
+            node_id: "node-1".to_string(),
+            num_docs: 100,
+            uncompressed_docs_size_in_bytes: 1024,
+            time_range: Some(0..=100),
+            create_timestamp: 1629867600,
+            maturity: SplitMaturity::Mature,
+            tags: {
+                let mut tags = BTreeSet::new();
+                tags.insert("🐱".to_string());
+                tags.insert("🙀".to_string());
+                tags.insert("😻".to_string());
+                tags.insert("😼".to_string());
+                tags.insert("😿".to_string());
+                tags
+            },
+            footer_offsets: 0..1024,
+            delete_opstamp: 0,
+            num_merge_ops: 0,
+        };
+
+        let expected_output = "SplitMetadata { split_id: \"split-1\", index_uid: \
+                               IndexUid(\"00000000-0000-0000-0000-000000000000:\
+                               00000000000000000000000000\"), partition_id: 0, source_id: \
+                               \"source-1\", node_id: \"node-1\", num_docs: 100, \
+                               uncompressed_docs_size_in_bytes: 1024, time_range: Some(0..=100), \
+                               create_timestamp: 1629867600, maturity: Mature, tags: \
+                               \"{\\\"🐱\\\", \\\"😻\\\", \\\"😼\\\", \\\"😿\\\", and 1 more}\", \
+                               footer_offsets: 0..1024, delete_opstamp: 0, num_merge_ops: 0 }";
+
+        assert_eq!(format!("{:?}", split_metadata), expected_output);
     }
 }

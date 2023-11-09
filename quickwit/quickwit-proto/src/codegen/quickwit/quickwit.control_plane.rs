@@ -4,40 +4,114 @@
 pub struct GetOrCreateOpenShardsRequest {
     #[prost(message, repeated, tag = "1")]
     pub subrequests: ::prost::alloc::vec::Vec<GetOrCreateOpenShardsSubrequest>,
-    #[prost(string, repeated, tag = "2")]
-    pub unavailable_ingesters: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    #[prost(message, repeated, tag = "2")]
+    pub closed_shards: ::prost::alloc::vec::Vec<ClosedShards>,
+    #[prost(string, repeated, tag = "3")]
+    pub unavailable_leaders: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetOrCreateOpenShardsSubrequest {
-    #[prost(string, tag = "1")]
+    #[prost(uint32, tag = "1")]
+    pub subrequest_id: u32,
+    #[prost(string, tag = "2")]
     pub index_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub source_id: ::prost::alloc::string::String,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ClosedShards {
+    #[prost(string, tag = "1")]
+    pub index_uid: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,
     #[prost(uint64, repeated, tag = "3")]
-    pub closed_shards: ::prost::alloc::vec::Vec<u64>,
+    pub shard_ids: ::prost::alloc::vec::Vec<u64>,
 }
-/// TODO: Handle partial failures.
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct GetOrCreateOpenShardsResponse {
     #[prost(message, repeated, tag = "1")]
-    pub subresponses: ::prost::alloc::vec::Vec<GetOpenShardsSubresponse>,
+    pub successes: ::prost::alloc::vec::Vec<GetOrCreateOpenShardsSuccess>,
+    #[prost(message, repeated, tag = "2")]
+    pub failures: ::prost::alloc::vec::Vec<GetOrCreateOpenShardsFailure>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct GetOpenShardsSubresponse {
-    #[prost(string, tag = "1")]
-    pub index_uid: ::prost::alloc::string::String,
+pub struct GetOrCreateOpenShardsSuccess {
+    #[prost(uint32, tag = "1")]
+    pub subrequest_id: u32,
     #[prost(string, tag = "2")]
+    pub index_uid: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
-    #[prost(message, repeated, tag = "3")]
+    #[prost(message, repeated, tag = "4")]
     pub open_shards: ::prost::alloc::vec::Vec<super::ingest::Shard>,
 }
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct GetOrCreateOpenShardsFailure {
+    #[prost(uint32, tag = "1")]
+    pub subrequest_id: u32,
+    #[prost(string, tag = "2")]
+    pub index_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
+    pub source_id: ::prost::alloc::string::String,
+    #[prost(enumeration = "GetOrCreateOpenShardsFailureReason", tag = "4")]
+    pub reason: i32,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum GetOrCreateOpenShardsFailureReason {
+    Unspecified = 0,
+    IndexNotFound = 1,
+    SourceNotFound = 2,
+}
+impl GetOrCreateOpenShardsFailureReason {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            GetOrCreateOpenShardsFailureReason::Unspecified => {
+                "GET_OR_CREATE_OPEN_SHARDS_FAILURE_REASON_UNSPECIFIED"
+            }
+            GetOrCreateOpenShardsFailureReason::IndexNotFound => {
+                "GET_OR_CREATE_OPEN_SHARDS_FAILURE_REASON_INDEX_NOT_FOUND"
+            }
+            GetOrCreateOpenShardsFailureReason::SourceNotFound => {
+                "GET_OR_CREATE_OPEN_SHARDS_FAILURE_REASON_SOURCE_NOT_FOUND"
+            }
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "GET_OR_CREATE_OPEN_SHARDS_FAILURE_REASON_UNSPECIFIED" => {
+                Some(Self::Unspecified)
+            }
+            "GET_OR_CREATE_OPEN_SHARDS_FAILURE_REASON_INDEX_NOT_FOUND" => {
+                Some(Self::IndexNotFound)
+            }
+            "GET_OR_CREATE_OPEN_SHARDS_FAILURE_REASON_SOURCE_NOT_FOUND" => {
+                Some(Self::SourceNotFound)
+            }
+            _ => None,
+        }
+    }
+}
 /// BEGIN quickwit-codegen
+#[allow(unused_imports)]
+use std::str::FromStr;
 use tower::{Layer, Service, ServiceExt};
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait::async_trait]
@@ -73,16 +147,6 @@ pub trait ControlPlaneService: std::fmt::Debug + dyn_clone::DynClone + Send + Sy
         &mut self,
         request: GetOrCreateOpenShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<GetOrCreateOpenShardsResponse>;
-    /// Closes a list of shards. This RPC is a metastore callback.
-    async fn close_shards(
-        &mut self,
-        request: super::metastore::CloseShardsRequest,
-    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse>;
-    /// Deletes a list of shards. This RPC is a metastore callback.
-    async fn delete_shards(
-        &mut self,
-        request: super::metastore::DeleteShardsRequest,
-    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse>;
 }
 dyn_clone::clone_trait_object!(ControlPlaneService);
 #[cfg(any(test, feature = "testsuite"))]
@@ -100,6 +164,12 @@ impl ControlPlaneServiceClient {
     where
         T: ControlPlaneService,
     {
+        #[cfg(any(test, feature = "testsuite"))]
+        assert!(
+            std::any::TypeId::of:: < T > () != std::any::TypeId::of:: <
+            MockControlPlaneService > (),
+            "`MockControlPlaneService` must be wrapped in a `MockControlPlaneServiceWrapper`. Use `MockControlPlaneService::from(mock)` to instantiate the client."
+        );
         Self { inner: Box::new(instance) }
     }
     pub fn as_grpc_service(
@@ -109,6 +179,8 @@ impl ControlPlaneServiceClient {
     > {
         let adapter = ControlPlaneServiceGrpcServerAdapter::new(self.clone());
         control_plane_service_grpc_server::ControlPlaneServiceGrpcServer::new(adapter)
+            .max_decoding_message_size(10 * 1024 * 1024)
+            .max_encoding_message_size(10 * 1024 * 1024)
     }
     pub fn from_channel(
         addr: std::net::SocketAddr,
@@ -129,10 +201,13 @@ impl ControlPlaneServiceClient {
         balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
     ) -> ControlPlaneServiceClient {
         let connection_keys_watcher = balance_channel.connection_keys_watcher();
-        let adapter = ControlPlaneServiceGrpcClientAdapter::new(
-            control_plane_service_grpc_client::ControlPlaneServiceGrpcClient::new(
+        let client = control_plane_service_grpc_client::ControlPlaneServiceGrpcClient::new(
                 balance_channel,
-            ),
+            )
+            .max_decoding_message_size(10 * 1024 * 1024)
+            .max_encoding_message_size(10 * 1024 * 1024);
+        let adapter = ControlPlaneServiceGrpcClientAdapter::new(
+            client,
             connection_keys_watcher,
         );
         Self::new(adapter)
@@ -192,18 +267,6 @@ impl ControlPlaneService for ControlPlaneServiceClient {
     ) -> crate::control_plane::ControlPlaneResult<GetOrCreateOpenShardsResponse> {
         self.inner.get_or_create_open_shards(request).await
     }
-    async fn close_shards(
-        &mut self,
-        request: super::metastore::CloseShardsRequest,
-    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
-        self.inner.close_shards(request).await
-    }
-    async fn delete_shards(
-        &mut self,
-        request: super::metastore::DeleteShardsRequest,
-    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
-        self.inner.delete_shards(request).await
-    }
 }
 #[cfg(any(test, feature = "testsuite"))]
 pub mod control_plane_service_mock {
@@ -261,22 +324,6 @@ pub mod control_plane_service_mock {
             super::GetOrCreateOpenShardsResponse,
         > {
             self.inner.lock().await.get_or_create_open_shards(request).await
-        }
-        async fn close_shards(
-            &mut self,
-            request: super::super::metastore::CloseShardsRequest,
-        ) -> crate::control_plane::ControlPlaneResult<
-            super::super::metastore::EmptyResponse,
-        > {
-            self.inner.lock().await.close_shards(request).await
-        }
-        async fn delete_shards(
-            &mut self,
-            request: super::super::metastore::DeleteShardsRequest,
-        ) -> crate::control_plane::ControlPlaneResult<
-            super::super::metastore::EmptyResponse,
-        > {
-            self.inner.lock().await.delete_shards(request).await
         }
     }
     impl From<MockControlPlaneService> for ControlPlaneServiceClient {
@@ -392,40 +439,6 @@ impl tower::Service<GetOrCreateOpenShardsRequest> for Box<dyn ControlPlaneServic
         Box::pin(fut)
     }
 }
-impl tower::Service<super::metastore::CloseShardsRequest>
-for Box<dyn ControlPlaneService> {
-    type Response = super::metastore::EmptyResponse;
-    type Error = crate::control_plane::ControlPlaneError;
-    type Future = BoxFuture<Self::Response, Self::Error>;
-    fn poll_ready(
-        &mut self,
-        _cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<(), Self::Error>> {
-        std::task::Poll::Ready(Ok(()))
-    }
-    fn call(&mut self, request: super::metastore::CloseShardsRequest) -> Self::Future {
-        let mut svc = self.clone();
-        let fut = async move { svc.close_shards(request).await };
-        Box::pin(fut)
-    }
-}
-impl tower::Service<super::metastore::DeleteShardsRequest>
-for Box<dyn ControlPlaneService> {
-    type Response = super::metastore::EmptyResponse;
-    type Error = crate::control_plane::ControlPlaneError;
-    type Future = BoxFuture<Self::Response, Self::Error>;
-    fn poll_ready(
-        &mut self,
-        _cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<Result<(), Self::Error>> {
-        std::task::Poll::Ready(Ok(()))
-    }
-    fn call(&mut self, request: super::metastore::DeleteShardsRequest) -> Self::Future {
-        let mut svc = self.clone();
-        let fut = async move { svc.delete_shards(request).await };
-        Box::pin(fut)
-    }
-}
 /// A tower block is a set of towers. Each tower is stack of layers (middlewares) that are applied to a service.
 #[derive(Debug)]
 struct ControlPlaneServiceTowerBlock {
@@ -460,16 +473,6 @@ struct ControlPlaneServiceTowerBlock {
         GetOrCreateOpenShardsResponse,
         crate::control_plane::ControlPlaneError,
     >,
-    close_shards_svc: quickwit_common::tower::BoxService<
-        super::metastore::CloseShardsRequest,
-        super::metastore::EmptyResponse,
-        crate::control_plane::ControlPlaneError,
-    >,
-    delete_shards_svc: quickwit_common::tower::BoxService<
-        super::metastore::DeleteShardsRequest,
-        super::metastore::EmptyResponse,
-        crate::control_plane::ControlPlaneError,
-    >,
 }
 impl Clone for ControlPlaneServiceTowerBlock {
     fn clone(&self) -> Self {
@@ -481,8 +484,6 @@ impl Clone for ControlPlaneServiceTowerBlock {
             toggle_source_svc: self.toggle_source_svc.clone(),
             delete_source_svc: self.delete_source_svc.clone(),
             get_or_create_open_shards_svc: self.get_or_create_open_shards_svc.clone(),
-            close_shards_svc: self.close_shards_svc.clone(),
-            delete_shards_svc: self.delete_shards_svc.clone(),
         }
     }
 }
@@ -525,18 +526,6 @@ impl ControlPlaneService for ControlPlaneServiceTowerBlock {
         request: GetOrCreateOpenShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<GetOrCreateOpenShardsResponse> {
         self.get_or_create_open_shards_svc.ready().await?.call(request).await
-    }
-    async fn close_shards(
-        &mut self,
-        request: super::metastore::CloseShardsRequest,
-    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
-        self.close_shards_svc.ready().await?.call(request).await
-    }
-    async fn delete_shards(
-        &mut self,
-        request: super::metastore::DeleteShardsRequest,
-    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
-        self.delete_shards_svc.ready().await?.call(request).await
     }
 }
 #[derive(Debug, Default)]
@@ -595,24 +584,6 @@ pub struct ControlPlaneServiceTowerBlockBuilder {
             crate::control_plane::ControlPlaneError,
         >,
     >,
-    #[allow(clippy::type_complexity)]
-    close_shards_layer: Option<
-        quickwit_common::tower::BoxLayer<
-            Box<dyn ControlPlaneService>,
-            super::metastore::CloseShardsRequest,
-            super::metastore::EmptyResponse,
-            crate::control_plane::ControlPlaneError,
-        >,
-    >,
-    #[allow(clippy::type_complexity)]
-    delete_shards_layer: Option<
-        quickwit_common::tower::BoxLayer<
-            Box<dyn ControlPlaneService>,
-            super::metastore::DeleteShardsRequest,
-            super::metastore::EmptyResponse,
-            crate::control_plane::ControlPlaneError,
-        >,
-    >,
 }
 impl ControlPlaneServiceTowerBlockBuilder {
     pub fn shared_layer<L>(mut self, layer: L) -> Self
@@ -666,22 +637,6 @@ impl ControlPlaneServiceTowerBlockBuilder {
         <L::Service as tower::Service<
             GetOrCreateOpenShardsRequest,
         >>::Future: Send + 'static,
-        L::Service: tower::Service<
-                super::metastore::CloseShardsRequest,
-                Response = super::metastore::EmptyResponse,
-                Error = crate::control_plane::ControlPlaneError,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<
-            super::metastore::CloseShardsRequest,
-        >>::Future: Send + 'static,
-        L::Service: tower::Service<
-                super::metastore::DeleteShardsRequest,
-                Response = super::metastore::EmptyResponse,
-                Error = crate::control_plane::ControlPlaneError,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<
-            super::metastore::DeleteShardsRequest,
-        >>::Future: Send + 'static,
     {
         self
             .create_index_layer = Some(
@@ -705,13 +660,8 @@ impl ControlPlaneServiceTowerBlockBuilder {
         );
         self
             .get_or_create_open_shards_layer = Some(
-            quickwit_common::tower::BoxLayer::new(layer.clone()),
+            quickwit_common::tower::BoxLayer::new(layer),
         );
-        self
-            .close_shards_layer = Some(
-            quickwit_common::tower::BoxLayer::new(layer.clone()),
-        );
-        self.delete_shards_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
     pub fn create_index_layer<L>(mut self, layer: L) -> Self
@@ -807,36 +757,6 @@ impl ControlPlaneServiceTowerBlockBuilder {
         );
         self
     }
-    pub fn close_shards_layer<L>(mut self, layer: L) -> Self
-    where
-        L: tower::Layer<Box<dyn ControlPlaneService>> + Send + Sync + 'static,
-        L::Service: tower::Service<
-                super::metastore::CloseShardsRequest,
-                Response = super::metastore::EmptyResponse,
-                Error = crate::control_plane::ControlPlaneError,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<
-            super::metastore::CloseShardsRequest,
-        >>::Future: Send + 'static,
-    {
-        self.close_shards_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
-        self
-    }
-    pub fn delete_shards_layer<L>(mut self, layer: L) -> Self
-    where
-        L: tower::Layer<Box<dyn ControlPlaneService>> + Send + Sync + 'static,
-        L::Service: tower::Service<
-                super::metastore::DeleteShardsRequest,
-                Response = super::metastore::EmptyResponse,
-                Error = crate::control_plane::ControlPlaneError,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<
-            super::metastore::DeleteShardsRequest,
-        >>::Future: Send + 'static,
-    {
-        self.delete_shards_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
-        self
-    }
     pub fn build<T>(self, instance: T) -> ControlPlaneServiceClient
     where
         T: ControlPlaneService,
@@ -906,16 +826,6 @@ impl ControlPlaneServiceTowerBlockBuilder {
         } else {
             quickwit_common::tower::BoxService::new(boxed_instance.clone())
         };
-        let close_shards_svc = if let Some(layer) = self.close_shards_layer {
-            layer.layer(boxed_instance.clone())
-        } else {
-            quickwit_common::tower::BoxService::new(boxed_instance.clone())
-        };
-        let delete_shards_svc = if let Some(layer) = self.delete_shards_layer {
-            layer.layer(boxed_instance.clone())
-        } else {
-            quickwit_common::tower::BoxService::new(boxed_instance.clone())
-        };
         let tower_block = ControlPlaneServiceTowerBlock {
             inner: boxed_instance.clone(),
             create_index_svc,
@@ -924,8 +834,6 @@ impl ControlPlaneServiceTowerBlockBuilder {
             toggle_source_svc,
             delete_source_svc,
             get_or_create_open_shards_svc,
-            close_shards_svc,
-            delete_shards_svc,
         };
         ControlPlaneServiceClient::new(tower_block)
     }
@@ -1055,24 +963,6 @@ where
                 GetOrCreateOpenShardsResponse,
                 crate::control_plane::ControlPlaneError,
             >,
-        >
-        + tower::Service<
-            super::metastore::CloseShardsRequest,
-            Response = super::metastore::EmptyResponse,
-            Error = crate::control_plane::ControlPlaneError,
-            Future = BoxFuture<
-                super::metastore::EmptyResponse,
-                crate::control_plane::ControlPlaneError,
-            >,
-        >
-        + tower::Service<
-            super::metastore::DeleteShardsRequest,
-            Response = super::metastore::EmptyResponse,
-            Error = crate::control_plane::ControlPlaneError,
-            Future = BoxFuture<
-                super::metastore::EmptyResponse,
-                crate::control_plane::ControlPlaneError,
-            >,
         >,
 {
     async fn create_index(
@@ -1111,18 +1001,6 @@ where
         &mut self,
         request: GetOrCreateOpenShardsRequest,
     ) -> crate::control_plane::ControlPlaneResult<GetOrCreateOpenShardsResponse> {
-        self.call(request).await
-    }
-    async fn close_shards(
-        &mut self,
-        request: super::metastore::CloseShardsRequest,
-    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
-        self.call(request).await
-    }
-    async fn delete_shards(
-        &mut self,
-        request: super::metastore::DeleteShardsRequest,
-    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
         self.call(request).await
     }
 }
@@ -1222,26 +1100,6 @@ where
             .map(|response| response.into_inner())
             .map_err(|error| error.into())
     }
-    async fn close_shards(
-        &mut self,
-        request: super::metastore::CloseShardsRequest,
-    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
-        self.inner
-            .close_shards(request)
-            .await
-            .map(|response| response.into_inner())
-            .map_err(|error| error.into())
-    }
-    async fn delete_shards(
-        &mut self,
-        request: super::metastore::DeleteShardsRequest,
-    ) -> crate::control_plane::ControlPlaneResult<super::metastore::EmptyResponse> {
-        self.inner
-            .delete_shards(request)
-            .await
-            .map(|response| response.into_inner())
-            .map_err(|error| error.into())
-    }
 }
 #[derive(Debug)]
 pub struct ControlPlaneServiceGrpcServerAdapter {
@@ -1320,28 +1178,6 @@ for ControlPlaneServiceGrpcServerAdapter {
         self.inner
             .clone()
             .get_or_create_open_shards(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(|error| error.into())
-    }
-    async fn close_shards(
-        &self,
-        request: tonic::Request<super::metastore::CloseShardsRequest>,
-    ) -> Result<tonic::Response<super::metastore::EmptyResponse>, tonic::Status> {
-        self.inner
-            .clone()
-            .close_shards(request.into_inner())
-            .await
-            .map(tonic::Response::new)
-            .map_err(|error| error.into())
-    }
-    async fn delete_shards(
-        &self,
-        request: tonic::Request<super::metastore::DeleteShardsRequest>,
-    ) -> Result<tonic::Response<super::metastore::EmptyResponse>, tonic::Status> {
-        self.inner
-            .clone()
-            .delete_shards(request.into_inner())
             .await
             .map(tonic::Response::new)
             .map_err(|error| error.into())
@@ -1625,70 +1461,6 @@ pub mod control_plane_service_grpc_client {
                 );
             self.inner.unary(req, path, codec).await
         }
-        /// Closes a list of shards. This RPC is a metastore callback.
-        pub async fn close_shards(
-            &mut self,
-            request: impl tonic::IntoRequest<super::super::metastore::CloseShardsRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::super::metastore::EmptyResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/quickwit.control_plane.ControlPlaneService/CloseShards",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new(
-                        "quickwit.control_plane.ControlPlaneService",
-                        "CloseShards",
-                    ),
-                );
-            self.inner.unary(req, path, codec).await
-        }
-        /// Deletes a list of shards. This RPC is a metastore callback.
-        pub async fn delete_shards(
-            &mut self,
-            request: impl tonic::IntoRequest<
-                super::super::metastore::DeleteShardsRequest,
-            >,
-        ) -> std::result::Result<
-            tonic::Response<super::super::metastore::EmptyResponse>,
-            tonic::Status,
-        > {
-            self.inner
-                .ready()
-                .await
-                .map_err(|e| {
-                    tonic::Status::new(
-                        tonic::Code::Unknown,
-                        format!("Service was not ready: {}", e.into()),
-                    )
-                })?;
-            let codec = tonic::codec::ProstCodec::default();
-            let path = http::uri::PathAndQuery::from_static(
-                "/quickwit.control_plane.ControlPlaneService/DeleteShards",
-            );
-            let mut req = request.into_request();
-            req.extensions_mut()
-                .insert(
-                    GrpcMethod::new(
-                        "quickwit.control_plane.ControlPlaneService",
-                        "DeleteShards",
-                    ),
-                );
-            self.inner.unary(req, path, codec).await
-        }
     }
 }
 /// Generated server implementations.
@@ -1745,22 +1517,6 @@ pub mod control_plane_service_grpc_server {
             request: tonic::Request<super::GetOrCreateOpenShardsRequest>,
         ) -> std::result::Result<
             tonic::Response<super::GetOrCreateOpenShardsResponse>,
-            tonic::Status,
-        >;
-        /// Closes a list of shards. This RPC is a metastore callback.
-        async fn close_shards(
-            &self,
-            request: tonic::Request<super::super::metastore::CloseShardsRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::super::metastore::EmptyResponse>,
-            tonic::Status,
-        >;
-        /// Deletes a list of shards. This RPC is a metastore callback.
-        async fn delete_shards(
-            &self,
-            request: tonic::Request<super::super::metastore::DeleteShardsRequest>,
-        ) -> std::result::Result<
-            tonic::Response<super::super::metastore::EmptyResponse>,
             tonic::Status,
         >;
     }
@@ -2120,104 +1876,6 @@ pub mod control_plane_service_grpc_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = GetOrCreateOpenShardsSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/quickwit.control_plane.ControlPlaneService/CloseShards" => {
-                    #[allow(non_camel_case_types)]
-                    struct CloseShardsSvc<T: ControlPlaneServiceGrpc>(pub Arc<T>);
-                    impl<
-                        T: ControlPlaneServiceGrpc,
-                    > tonic::server::UnaryService<
-                        super::super::metastore::CloseShardsRequest,
-                    > for CloseShardsSvc<T> {
-                        type Response = super::super::metastore::EmptyResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<
-                                super::super::metastore::CloseShardsRequest,
-                            >,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                (*inner).close_shards(request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let inner = inner.0;
-                        let method = CloseShardsSvc(inner);
-                        let codec = tonic::codec::ProstCodec::default();
-                        let mut grpc = tonic::server::Grpc::new(codec)
-                            .apply_compression_config(
-                                accept_compression_encodings,
-                                send_compression_encodings,
-                            )
-                            .apply_max_message_size_config(
-                                max_decoding_message_size,
-                                max_encoding_message_size,
-                            );
-                        let res = grpc.unary(method, req).await;
-                        Ok(res)
-                    };
-                    Box::pin(fut)
-                }
-                "/quickwit.control_plane.ControlPlaneService/DeleteShards" => {
-                    #[allow(non_camel_case_types)]
-                    struct DeleteShardsSvc<T: ControlPlaneServiceGrpc>(pub Arc<T>);
-                    impl<
-                        T: ControlPlaneServiceGrpc,
-                    > tonic::server::UnaryService<
-                        super::super::metastore::DeleteShardsRequest,
-                    > for DeleteShardsSvc<T> {
-                        type Response = super::super::metastore::EmptyResponse;
-                        type Future = BoxFuture<
-                            tonic::Response<Self::Response>,
-                            tonic::Status,
-                        >;
-                        fn call(
-                            &mut self,
-                            request: tonic::Request<
-                                super::super::metastore::DeleteShardsRequest,
-                            >,
-                        ) -> Self::Future {
-                            let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                (*inner).delete_shards(request).await
-                            };
-                            Box::pin(fut)
-                        }
-                    }
-                    let accept_compression_encodings = self.accept_compression_encodings;
-                    let send_compression_encodings = self.send_compression_encodings;
-                    let max_decoding_message_size = self.max_decoding_message_size;
-                    let max_encoding_message_size = self.max_encoding_message_size;
-                    let inner = self.inner.clone();
-                    let fut = async move {
-                        let inner = inner.0;
-                        let method = DeleteShardsSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

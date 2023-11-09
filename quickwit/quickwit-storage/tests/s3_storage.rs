@@ -21,6 +21,7 @@
 // makes it possible to connect to Amazon S3's quickwit-integration-test bucket.
 
 use std::path::PathBuf;
+use std::str::FromStr;
 
 use anyhow::Context;
 use once_cell::sync::OnceCell;
@@ -52,7 +53,7 @@ fn test_runtime_singleton() -> &'static Runtime {
 async fn run_s3_storage_test_suite(s3_storage_config: S3StorageConfig, bucket_uri: &str) {
     setup_logging_for_tests();
 
-    let storage_uri = Uri::from_well_formed(bucket_uri);
+    let storage_uri = Uri::from_str(bucket_uri).unwrap();
     let mut object_storage = S3CompatibleObjectStorage::from_uri(&s3_storage_config, &storage_uri)
         .await
         .unwrap();
@@ -124,7 +125,7 @@ fn test_suite_on_s3_storage_bulk_delete_single_object_delete_api() {
     let bucket_uri = append_random_suffix(
         "s3://quickwit-integration-tests/test-bulk-delete-single-object-delete-api",
     );
-    let storage_uri = Uri::from_well_formed(bucket_uri);
+    let storage_uri = Uri::from_str(&bucket_uri).unwrap();
     let test_runtime = test_runtime_singleton();
     test_runtime.block_on(async move {
         let mut object_storage =

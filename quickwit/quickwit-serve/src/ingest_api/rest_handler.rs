@@ -28,7 +28,7 @@ use quickwit_proto::ingest::router::{
     IngestSubrequest,
 };
 use quickwit_proto::ingest::{DocBatchV2, IngestV2Error};
-use quickwit_proto::IndexId;
+use quickwit_proto::types::IndexId;
 use serde::Deserialize;
 use thiserror::Error;
 use warp::{Filter, Rejection};
@@ -140,6 +140,7 @@ async fn ingest_v2(
         doc_lengths,
     };
     let subrequest = IngestSubrequest {
+        subrequest_id: 0,
         index_id,
         source_id: INGEST_SOURCE_ID.to_string(),
         doc_batch: Some(doc_batch),
@@ -229,7 +230,7 @@ pub(crate) fn lines(body: &Bytes) -> impl Iterator<Item = &[u8]> {
 pub(crate) mod tests {
     use std::time::Duration;
 
-    use byte_unit::Byte;
+    use bytesize::ByteSize;
     use quickwit_actors::{Mailbox, Universe};
     use quickwit_config::IngestApiConfig;
     use quickwit_ingest::{
@@ -332,7 +333,7 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn test_ingest_api_return_429_if_above_limits() {
         let config = IngestApiConfig {
-            max_queue_memory_usage: Byte::from_bytes(1),
+            max_queue_memory_usage: ByteSize(1),
             ..Default::default()
         };
         let (universe, _temp_dir, ingest_service, _) =

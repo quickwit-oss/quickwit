@@ -61,8 +61,8 @@ POST api/v1/<index id>/search
 | Variable            | Type       | Description                                                                                                                                            | Default value                                      |
 |---------------------|------------|--------------------------------------------------------------------------------------------------------------------------------------------------------|----------------------------------------------------|
 | `query`           | `String`   | Query text. See the [query language doc](query-language.md) (mandatory)                                                                                |                                                    |
-| `start_timestamp` | `i64`      | If set, restrict search to documents with a `timestamp >= start_timestamp`. The value must be in seconds.                                              |                                                    |
-| `end_timestamp`   | `i64`      | If set, restrict search to documents with a `timestamp < end_timestamp`. The value must be in seconds.                                                 |                                                    |
+| `start_timestamp` | `i64`      | If set, restrict search to documents with a `timestamp >= start_timestamp`, taking advantage of potential time pruning oportunities. The value must be in seconds.                                              |                                                    |
+| `end_timestamp`   | `i64`      | If set, restrict search to documents with a `timestamp < end_timestamp`, taking advantage of potential time pruning oportunities. The value must be in seconds.                                                 |                                                    |
 | `start_offset`    | `Integer`  | Number of documents to skip                                                                                                                            | `0`                                                |
 | `max_hits`        | `Integer`  | Maximum number of hits to return (by default 20)                                                                                                       | `20`                                               |
 | `search_field`    | `[String]` | Fields to search on if no field name is specified in the query. Comma-separated list, e.g. "field1,field2"                                             | index_config.search_settings.default_search_fields |
@@ -86,7 +86,7 @@ The response is a JSON object, and the content type is `application/json; charse
 | `elapsed_time_micros` | Processing time of the query   | `number`   |
 
 ### Search multiple indices
-Search APIs that accept <index id> requests path parameter also support multi-target syntax.
+Search APIs that accept `index id` requests path parameter also support multi-target syntax.
 
 #### Multi-target syntax
 
@@ -351,6 +351,85 @@ The response is the stats about the requested index, and the content type is `ap
 | `timestamp_field_name`              | Name of timestamp field.                                       |       `String`        |
 | `min_timestamp`                     | Starting time of timestamp.                              |       `number`        |
 | `max_timestamp`                     | Ending time of timestamp.                                |       `number`        |
+
+
+### Get splits
+
+```
+GET api/v1/indexes/<index id>/splits
+```
+Get splits belongs to an index of ID `index id`.
+
+#### Path variable
+
+| Variable      | Description   |
+| ------------- | ------------- |
+| `index id`  | The index id  |
+
+#### Get parameters
+
+| Variable            | Type       | Description                                                                                                      |
+|---------------------|------------|------------------------------------------------------------------------------------------------------------------|
+| `offset`           | `number`   | If set, restrict the number of splits to skip|
+| `limit `           | `number`   | If set, restrict maximum number of splits to retrieve|
+| `split_states`           | `usize`   | If set, specific split state(s) to filter by|
+| `start_timestamp`           | `number`   | If set, restrict splits to documents with a `timestamp >= start_timestamp|
+| `end_timestamp`           | `number`   | If set, restrict splits to documents with a `timestamp < end_timestamp|
+| `end_create_timestamp`           | `number`   | If set, restrict splits whose creation dates are before this date|
+
+
+#### Response
+
+The response is the stats about the requested index, and the content type is `application/json; charset=UTF-8.`
+
+| Field                               | Description                                              |         Type          |
+|-------------------------------------|----------------------------------------------------------|:---------------------:|
+| `offset`                          | Index ID of index.                                       |       `String`        |
+| `size`                         | Uri of index                                             |       `String`        |
+| `splits`              | Number of published splits.                              |       `List`        |
+
+#### Examples
+```
+GET /api/v1/indexes/stackoverflow/splits?offset=0&limit=10
+```
+```json
+{
+  "offset": 0,
+  "size": 1,
+  "splits": [
+    {
+      "split_state": "Published",
+      "update_timestamp": 1695642901,
+      "publish_timestamp": 1695642901,
+      "version": "0.6",
+      "split_id": "01HB632HD8W6WHNM7CZFH3KG1X",
+      "index_uid": "stackoverflow:01HB6321TDT3SP58D4EZP14KSX",
+      "partition_id": 0,
+      "source_id": "_ingest-api-source",
+      "node_id": "jerry",
+      "num_docs": 10000,
+      "uncompressed_docs_size_in_bytes": 6674940,
+      "time_range": {
+        "start": 1217540572,
+        "end": 1219335682
+      },
+      "create_timestamp": 1695642900,
+      "maturity": {
+        "type": "immature",
+        "maturation_period_millis": 172800000
+      },
+      "tags": [],
+      "footer_offsets": {
+        "start": 4714989,
+        "end": 4719999
+      },
+      "delete_opstamp": 0,
+      "num_merge_ops": 0
+    }
+  ]
+}
+```
+
 
 ### Clears an index
 

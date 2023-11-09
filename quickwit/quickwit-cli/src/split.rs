@@ -44,18 +44,24 @@ pub fn build_split_command() -> Command {
                     arg!(--index <INDEX> "Target index ID")
                         .display_order(1)
                         .required(true),
-                    arg!(--states <SPLIT_STATES> "Selects the splits whose states are included in this comma-separated list of states. Possible values are `staged`, `published`, and `marked`.")
+                    arg!(--"offset" <OFFSET> "Number of splits to skip.")
                         .display_order(2)
+                        .required(false),
+                    arg!(--"limit" <LIMIT> "Maximum number of splits to retrieve.")
+                        .display_order(3)
+                        .required(false),
+                    arg!(--states <SPLIT_STATES> "Selects the splits whose states are included in this comma-separated list of states. Possible values are `staged`, `published`, and `marked`.")
+                        .display_order(4)
                         .required(false)
                         .value_delimiter(','),
                     arg!(--"create-date" <CREATE_DATE> "Selects the splits whose creation dates are before this date.")
-                        .display_order(3)
+                        .display_order(5)
                         .required(false),
                     arg!(--"start-date" <START_DATE> "Selects the splits that contain documents after this date (time-series indexes only).")
-                        .display_order(4)
+                        .display_order(6)
                         .required(false),
                     arg!(--"end-date" <END_DATE> "Selects the splits that contain documents before this date (time-series indexes only).")
-                        .display_order(5)
+                        .display_order(7)
                         .required(false),
                     // See #2762:
                     // arg!(--tags <TAGS> "Selects the splits whose tags are all included in this comma-separated list of tags.")
@@ -64,7 +70,7 @@ pub fn build_split_command() -> Command {
                     //     .use_value_delimiter(true),
                     arg!(--"output-format" <OUTPUT_FORMAT> "Output format. Possible values are `table`, `json`, and `pretty-json`.")
                         .alias("format")
-                        .display_order(7)
+                        .display_order(8)
                         .required(false)
                 ])
             )
@@ -128,6 +134,8 @@ impl FromStr for OutputFormat {
 pub struct ListSplitArgs {
     pub client_args: ClientArgs,
     pub index_id: String,
+    pub offset: Option<usize>,
+    pub limit: Option<usize>,
     pub split_states: Option<Vec<SplitState>>,
     pub create_date: Option<OffsetDateTime>,
     pub start_date: Option<OffsetDateTime>,
@@ -177,6 +185,12 @@ impl SplitCliCommand {
         let index_id = matches
             .remove_one::<String>("index")
             .expect("`index` should be a required arg.");
+        let offset = matches
+            .remove_one::<String>("offset")
+            .and_then(|s| s.parse::<usize>().ok());
+        let limit = matches
+            .remove_one::<String>("limit")
+            .and_then(|s| s.parse::<usize>().ok());
         let split_states = matches
             .remove_many::<String>("states")
             .map(|values| {
@@ -215,10 +229,11 @@ impl SplitCliCommand {
             .map(|s| OutputFormat::from_str(s.as_str()))
             .transpose()?
             .unwrap_or(OutputFormat::Table);
-
         Ok(Self::List(ListSplitArgs {
             client_args,
             index_id,
+            offset,
+            limit,
             split_states,
             start_date,
             end_date,
@@ -277,6 +292,8 @@ async fn list_split_cli(args: ListSplitArgs) -> anyhow::Result<()> {
     debug!(args=?args, "list-split");
     let qw_client = args.client_args.client();
     let list_splits_query_params = ListSplitsQueryParams {
+        offset: args.offset,
+        limit: args.limit,
         split_states: args.split_states,
         start_timestamp: args.start_date.map(OffsetDateTime::unix_timestamp),
         end_timestamp: args.end_date.map(OffsetDateTime::unix_timestamp),

@@ -151,7 +151,8 @@ gunzip -c hdfs-logs-multitenants.json.gz | ./quickwit index ingest --index hdfs-
 
 :::note
 
-4GB of RAM is enough to index this dataset; an instance like `t4g.medium` with 4GB and 2 vCPU indexed this dataset in 20 minutes.
+8GB of RAM is enough to index this dataset; an instance like `t4g.large` with 8GB and 2 vCPU indexed this dataset in less than 10 minutes 
+(provided that you have some CPU credits).
 
 This step can also be done on your local machine. 
 The `ingest` subcommand generates locally [splits](../../overview/architecture) of 10 million documents and will upload 
@@ -165,7 +166,34 @@ You can check it's working by using `search` subcommand and look for `ERROR` in 
 ./quickwit index search --index hdfs-logs --query "severity_text:ERROR"
 ```
 
-Now that we have indexed the logs and can search from one instance, It's time to configure and start two other instances to form a cluster.
+which returns the json
+
+```json
+{
+  "num_hits": 345,
+  "hits": [
+    {
+      "attributes": {
+        "class": "org.apache.hadoop.hdfs.server.datanode.DataNode"
+      },
+      "body": "RECEIVED SIGNAL 15: SIGTERM",
+      "resource": {
+        "service": "datanode/16"
+      },
+      "severity_text": "ERROR",
+      "tenant_id": 51,
+      "timestamp": 1469687755
+    },
+    ...
+  ],
+  "elapsed_time_micros": 522542
+}
+```
+
+You can see that this query has 345 hits. In this case for the first run, the server responded in 523 milliseconds.
+Subsequent runs use the cached metastore and can be resolved in under 100 milliseconds.
+
+Now that we have indexed the logs and can search from one instance, it's time to configure and start two other instances to form a cluster.
 
 ## Start two more instances
 
@@ -243,49 +271,6 @@ Check out the logs of all instances and you will see that all nodes are working.
 Now that you have a search cluster, ideally, you will want to load balance external requests. 
 This can quickly be done by adding an AWS load balancer to listen to incoming HTTP or HTTPS traffic and forward it to a target group.
 You can now play with your cluster, kill processes randomly, add/remove new instances, and keep calm.
-
-
-## Use time pruning
-
-Let's execute a simple query that returns only `ERROR` entries on field `severity_text`:
-
-```bash
-curl -v 'http://your-load-balancer/api/v1/hdfs-logs/search?query=severity_text:ERROR
-```
-
-which returns the json
-
-```json
-{
-  "num_hits": 10000,
-  "hits": [
-    {
-      "body": "Receiving BP-108841162-10.10.34.11-1440074360971:blk_1073836032_95208 src: /10.10.34.20:60300 dest: /10.10.34.13:50010",
-      "resource": {
-        "service": "datanode/03"
-      },
-      "severity_text": "INFO",
-      "tenant_id": 58,
-      "timestamp": 1440670490
-    }
-    ...
-  ],
-  "elapsed_time_micros": 2502
-}
-```
-
-You can see that this query has 10 000 hits and that the server responds in 2.5 milliseconds.
-
-The index config shows that we can use the timestamp field parameters `start_timestamp` and `end_timestamp` and benefit from time pruning. 
-Behind the scenes, Quickwit will only query [splits](../../overview/architecture) that have logs in this time range. This can have a significant impact on speed.
-
-
-```bash
-curl -v 'http://your-load-balancer/api/v1/hdfs-logs/search?query=severity_text:ERROR&start_timestamp=1442834249&end_timestamp=1442900000'
-```
-
-Returns 6 hits in 0.36 seconds.
-
 
 ## Clean
 

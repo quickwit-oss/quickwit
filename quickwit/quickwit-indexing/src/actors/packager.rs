@@ -338,7 +338,7 @@ mod tests {
     use quickwit_actors::{ObservationType, Universe};
     use quickwit_metastore::checkpoint::IndexCheckpointDelta;
     use quickwit_proto::indexing::IndexingPipelineId;
-    use quickwit_proto::IndexUid;
+    use quickwit_proto::types::IndexUid;
     use tantivy::directory::MmapDirectory;
     use tantivy::schema::{NumericOptions, Schema, FAST, STRING, TEXT};
     use tantivy::{doc, DateTime, IndexBuilder, IndexSettings};
@@ -368,9 +368,15 @@ mod tests {
         let index_builder = IndexBuilder::new()
             .settings(IndexSettings::default())
             .schema(schema)
-            .tokenizers(quickwit_query::create_default_quickwit_tokenizer_manager())
+            .tokenizers(
+                quickwit_query::create_default_quickwit_tokenizer_manager()
+                    .tantivy_manager()
+                    .clone(),
+            )
             .fast_field_tokenizers(
-                quickwit_query::get_quickwit_fastfield_normalizer_manager().clone(),
+                quickwit_query::get_quickwit_fastfield_normalizer_manager()
+                    .tantivy_manager()
+                    .clone(),
             );
         let index_directory = MmapDirectory::open(split_scratch_directory.path())?;
         let mut index_writer =
@@ -404,7 +410,7 @@ mod tests {
         }
         let index = index_writer.finalize()?;
         let pipeline_id = IndexingPipelineId {
-            index_uid: IndexUid::new("test-index"),
+            index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
             pipeline_ord: 0,

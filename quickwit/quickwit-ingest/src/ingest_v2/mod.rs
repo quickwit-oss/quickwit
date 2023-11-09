@@ -18,8 +18,6 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 mod fetch;
-mod gc;
-mod ingest_metastore;
 mod ingester;
 mod models;
 mod mrecord;
@@ -28,13 +26,13 @@ mod router;
 mod shard_table;
 #[cfg(test)]
 mod test_utils;
+mod workbench;
 
 use quickwit_common::tower::Pool;
 use quickwit_proto::ingest::ingester::IngesterServiceClient;
 use quickwit_proto::types::NodeId;
 
-pub use self::fetch::MultiFetchStream;
-pub use self::ingest_metastore::IngestMetastore;
+pub use self::fetch::{FetchStreamError, MultiFetchStream};
 pub use self::ingester::Ingester;
 pub use self::mrecord::{decoded_mrecords, MRecord};
 pub use self::router::IngestRouter;

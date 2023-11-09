@@ -11,11 +11,16 @@ pub struct IngestRequestV2 {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IngestSubrequest {
-    #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
+    /// The subrequest ID is used to identify the various subrequests and responses
+    /// (ingest, persist, replicate) at play during the ingest and replication
+    /// process.
+    #[prost(uint32, tag = "1")]
+    pub subrequest_id: u32,
     #[prost(string, tag = "2")]
+    pub index_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
-    #[prost(message, optional, tag = "3")]
+    #[prost(message, optional, tag = "4")]
     pub doc_batch: ::core::option::Option<super::DocBatchV2>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
@@ -31,28 +36,83 @@ pub struct IngestResponseV2 {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IngestSuccess {
-    #[prost(string, tag = "1")]
-    pub index_uid: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "1")]
+    pub subrequest_id: u32,
     #[prost(string, tag = "2")]
+    pub index_uid: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
-    #[prost(uint64, tag = "3")]
-    pub shard_id: u64,
     #[prost(uint64, tag = "4")]
-    pub replication_position: u64,
+    pub shard_id: u64,
+    /// Replication position inclusive.
+    #[prost(message, optional, tag = "5")]
+    pub replication_position_inclusive: ::core::option::Option<crate::types::Position>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct IngestFailure {
-    #[prost(string, tag = "1")]
-    pub index_uid: ::prost::alloc::string::String,
+    #[prost(uint32, tag = "1")]
+    pub subrequest_id: u32,
     #[prost(string, tag = "2")]
+    pub index_id: ::prost::alloc::string::String,
+    #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
-    /// quickwit.ingest.DocBatchV2 doc_batch = 4;
-    #[prost(uint64, tag = "3")]
-    pub shard_id: u64,
+    #[prost(enumeration = "IngestFailureReason", tag = "5")]
+    pub reason: i32,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum IngestFailureReason {
+    Unspecified = 0,
+    IndexNotFound = 1,
+    SourceNotFound = 2,
+    Internal = 3,
+    NoShardsAvailable = 4,
+    RateLimited = 5,
+    ResourceExhausted = 6,
+}
+impl IngestFailureReason {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            IngestFailureReason::Unspecified => "INGEST_FAILURE_REASON_UNSPECIFIED",
+            IngestFailureReason::IndexNotFound => "INGEST_FAILURE_REASON_INDEX_NOT_FOUND",
+            IngestFailureReason::SourceNotFound => {
+                "INGEST_FAILURE_REASON_SOURCE_NOT_FOUND"
+            }
+            IngestFailureReason::Internal => "INGEST_FAILURE_REASON_INTERNAL",
+            IngestFailureReason::NoShardsAvailable => {
+                "INGEST_FAILURE_REASON_NO_SHARDS_AVAILABLE"
+            }
+            IngestFailureReason::RateLimited => "INGEST_FAILURE_REASON_RATE_LIMITED",
+            IngestFailureReason::ResourceExhausted => {
+                "INGEST_FAILURE_REASON_RESOURCE_EXHAUSTED"
+            }
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "INGEST_FAILURE_REASON_UNSPECIFIED" => Some(Self::Unspecified),
+            "INGEST_FAILURE_REASON_INDEX_NOT_FOUND" => Some(Self::IndexNotFound),
+            "INGEST_FAILURE_REASON_SOURCE_NOT_FOUND" => Some(Self::SourceNotFound),
+            "INGEST_FAILURE_REASON_INTERNAL" => Some(Self::Internal),
+            "INGEST_FAILURE_REASON_NO_SHARDS_AVAILABLE" => Some(Self::NoShardsAvailable),
+            "INGEST_FAILURE_REASON_RATE_LIMITED" => Some(Self::RateLimited),
+            "INGEST_FAILURE_REASON_RESOURCE_EXHAUSTED" => Some(Self::ResourceExhausted),
+            _ => None,
+        }
+    }
 }
 /// BEGIN quickwit-codegen
+#[allow(unused_imports)]
+use std::str::FromStr;
 use tower::{Layer, Service, ServiceExt};
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait::async_trait]
@@ -80,6 +140,12 @@ impl IngestRouterServiceClient {
     where
         T: IngestRouterService,
     {
+        #[cfg(any(test, feature = "testsuite"))]
+        assert!(
+            std::any::TypeId::of:: < T > () != std::any::TypeId::of:: <
+            MockIngestRouterService > (),
+            "`MockIngestRouterService` must be wrapped in a `MockIngestRouterServiceWrapper`. Use `MockIngestRouterService::from(mock)` to instantiate the client."
+        );
         Self { inner: Box::new(instance) }
     }
     pub fn as_grpc_service(
@@ -89,6 +155,8 @@ impl IngestRouterServiceClient {
     > {
         let adapter = IngestRouterServiceGrpcServerAdapter::new(self.clone());
         ingest_router_service_grpc_server::IngestRouterServiceGrpcServer::new(adapter)
+            .max_decoding_message_size(10 * 1024 * 1024)
+            .max_encoding_message_size(10 * 1024 * 1024)
     }
     pub fn from_channel(
         addr: std::net::SocketAddr,
@@ -109,10 +177,13 @@ impl IngestRouterServiceClient {
         balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
     ) -> IngestRouterServiceClient {
         let connection_keys_watcher = balance_channel.connection_keys_watcher();
-        let adapter = IngestRouterServiceGrpcClientAdapter::new(
-            ingest_router_service_grpc_client::IngestRouterServiceGrpcClient::new(
+        let client = ingest_router_service_grpc_client::IngestRouterServiceGrpcClient::new(
                 balance_channel,
-            ),
+            )
+            .max_decoding_message_size(10 * 1024 * 1024)
+            .max_encoding_message_size(10 * 1024 * 1024);
+        let adapter = IngestRouterServiceGrpcClientAdapter::new(
+            client,
             connection_keys_watcher,
         );
         Self::new(adapter)

@@ -24,6 +24,8 @@ pub struct IndexingTask {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ApplyIndexingPlanResponse {}
 /// BEGIN quickwit-codegen
+#[allow(unused_imports)]
+use std::str::FromStr;
 use tower::{Layer, Service, ServiceExt};
 #[cfg_attr(any(test, feature = "testsuite"), mockall::automock)]
 #[async_trait::async_trait]
@@ -50,6 +52,12 @@ impl IndexingServiceClient {
     where
         T: IndexingService,
     {
+        #[cfg(any(test, feature = "testsuite"))]
+        assert!(
+            std::any::TypeId::of:: < T > () != std::any::TypeId::of:: <
+            MockIndexingService > (),
+            "`MockIndexingService` must be wrapped in a `MockIndexingServiceWrapper`. Use `MockIndexingService::from(mock)` to instantiate the client."
+        );
         Self { inner: Box::new(instance) }
     }
     pub fn as_grpc_service(
@@ -59,6 +67,8 @@ impl IndexingServiceClient {
     > {
         let adapter = IndexingServiceGrpcServerAdapter::new(self.clone());
         indexing_service_grpc_server::IndexingServiceGrpcServer::new(adapter)
+            .max_decoding_message_size(10 * 1024 * 1024)
+            .max_encoding_message_size(10 * 1024 * 1024)
     }
     pub fn from_channel(
         addr: std::net::SocketAddr,
@@ -77,10 +87,13 @@ impl IndexingServiceClient {
         balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
     ) -> IndexingServiceClient {
         let connection_keys_watcher = balance_channel.connection_keys_watcher();
-        let adapter = IndexingServiceGrpcClientAdapter::new(
-            indexing_service_grpc_client::IndexingServiceGrpcClient::new(
+        let client = indexing_service_grpc_client::IndexingServiceGrpcClient::new(
                 balance_channel,
-            ),
+            )
+            .max_decoding_message_size(10 * 1024 * 1024)
+            .max_encoding_message_size(10 * 1024 * 1024);
+        let adapter = IndexingServiceGrpcClientAdapter::new(
+            client,
             connection_keys_watcher,
         );
         Self::new(adapter)

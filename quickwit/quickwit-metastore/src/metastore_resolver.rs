@@ -25,18 +25,19 @@ use anyhow::ensure;
 use once_cell::sync::Lazy;
 use quickwit_common::uri::{Protocol, Uri};
 use quickwit_config::{MetastoreBackend, MetastoreConfig, MetastoreConfigs};
+use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_storage::StorageResolver;
 
 use crate::metastore::file_backed_metastore::FileBackedMetastoreFactory;
 #[cfg(feature = "postgres")]
 use crate::metastore::postgresql_metastore::PostgresqlMetastoreFactory;
-use crate::{Metastore, MetastoreFactory, MetastoreResolverError};
+use crate::{MetastoreFactory, MetastoreResolverError};
 
 type FactoryAndConfig = (Box<dyn MetastoreFactory>, MetastoreConfig);
 
-/// Returns the [`Metastore`] instance associated with the protocol of a URI. The actual creation of
-/// metastore objects is delegated to pre-registered [`MetastoreFactory`]. The resolver is only
-/// responsible for dispatching to the appropriate factory.
+/// Returns the [`MetastoreServiceClient`] instance associated with the protocol of a URI. The
+/// actual creation of metastore objects is delegated to pre-registered [`MetastoreFactory`]. The
+/// resolver is only responsible for dispatching to the appropriate factory.
 #[derive(Clone)]
 pub struct MetastoreResolver {
     per_backend_factories: Arc<HashMap<MetastoreBackend, FactoryAndConfig>>,
@@ -55,7 +56,10 @@ impl MetastoreResolver {
     }
 
     /// Resolves the given `uri`.
-    pub async fn resolve(&self, uri: &Uri) -> Result<Arc<dyn Metastore>, MetastoreResolverError> {
+    pub async fn resolve(
+        &self,
+        uri: &Uri,
+    ) -> Result<MetastoreServiceClient, MetastoreResolverError> {
         let backend = match uri.protocol() {
             Protocol::Azure => MetastoreBackend::File,
             Protocol::File => MetastoreBackend::File,
@@ -172,6 +176,8 @@ impl MetastoreResolverBuilder {
 
 #[cfg(test)]
 mod tests {
+    use std::str::FromStr;
+
     use super::*;
 
     #[tokio::test]
@@ -179,7 +185,7 @@ mod tests {
         let metastore_resolver = MetastoreResolver::unconfigured();
         let tmp_dir = tempfile::tempdir().unwrap();
         let metastore_filepath = format!("file://{}/metastore", tmp_dir.path().display());
-        let metastore_uri = Uri::from_well_formed(metastore_filepath);
+        let metastore_uri = Uri::from_str(&metastore_filepath).unwrap();
         metastore_resolver.resolve(&metastore_uri).await.unwrap();
     }
 
@@ -195,7 +201,7 @@ mod tests {
         });
         let (_uri_protocol, uri_path) = test_database_url.split_once("://").unwrap();
         for protocol in &["postgres", "postgresql"] {
-            let postgres_uri = Uri::from_well_formed(format!("{protocol}://{uri_path}"));
+            let postgres_uri = Uri::from_str(&format!("{protocol}://{uri_path}")).unwrap();
             metastore_resolver.resolve(&postgres_uri).await.unwrap();
         }
     }

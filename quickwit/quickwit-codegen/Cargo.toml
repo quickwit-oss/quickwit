@@ -21,4 +21,5 @@ syn = { workspace = true }
 tonic-build = { workspace = true }
 
 [dev-dependencies]
+futures = { workspace = true }
 serde = { workspace = true }

@@ -21,7 +21,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
-use byte_unit::Byte;
+use bytesize::ByteSize;
 use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Health, Inbox, Mailbox,
     SpawnContext, Supervisable, HEARTBEAT,
@@ -31,9 +31,13 @@ use quickwit_common::pubsub::EventBroker;
 use quickwit_common::temp_dir::TempDirectory;
 use quickwit_common::KillSwitch;
 use quickwit_doc_mapper::DocMapper;
-use quickwit_metastore::{ListSplitsQuery, Metastore, SplitState};
+use quickwit_metastore::{
+    ListSplitsQuery, ListSplitsRequestExt, ListSplitsResponseExt, SplitMetadata, SplitState,
+};
 use quickwit_proto::indexing::IndexingPipelineId;
-use quickwit_proto::metastore::MetastoreError;
+use quickwit_proto::metastore::{
+    ListSplitsRequest, MetastoreError, MetastoreService, MetastoreServiceClient,
+};
 use time::OffsetDateTime;
 use tracing::{debug, error, info, instrument};
 
@@ -213,17 +217,21 @@ impl MergePipeline {
             pipeline_ord=%self.params.pipeline_id.pipeline_ord,
             root_dir=%self.params.indexing_directory.path().display(),
             merge_policy=?self.params.merge_policy,
-            "Spawning merge pipeline.",
+            "spawn merge pipeline",
         );
         let query = ListSplitsQuery::for_index(self.params.pipeline_id.index_uid.clone())
             .with_split_state(SplitState::Published)
             .retain_immature(OffsetDateTime::now_utc());
-        let published_splits = ctx
-            .protect_future(self.params.metastore.list_splits(query))
+        let list_splits_request = ListSplitsRequest::try_from_list_splits_query(query)?;
+        let published_splits_metadata: Vec<SplitMetadata> = ctx
+            .protect_future(self.params.metastore.list_splits(list_splits_request))
             .await?
-            .into_iter()
-            .map(|split| split.split_metadata)
-            .collect::<Vec<_>>();
+            .deserialize_splits_metadata()?;
+
+        info!(
+            num_splits = published_splits_metadata.len(),
+            "loaded list of published splits"
+        );
 
         // Merge publisher
         let merge_publisher = Publisher::new(
@@ -264,7 +272,7 @@ impl MergePipeline {
             .params
             .merge_max_io_num_bytes_per_sec
             .as_ref()
-            .map(|bytes_per_sec| bytes_per_sec.get_bytes() as f64)
+            .map(|bytes_per_sec| bytes_per_sec.as_u64() as f64)
             .unwrap_or(f64::INFINITY);
 
         let split_downloader_io_controls = IoControls::default()
@@ -314,7 +322,7 @@ impl MergePipeline {
         // Merge planner
         let merge_planner = MergePlanner::new(
             self.params.pipeline_id.clone(),
-            published_splits,
+            published_splits_metadata,
             self.params.merge_policy.clone(),
             merge_split_downloader_mailbox,
         );
@@ -462,11 +470,11 @@ pub struct MergePipelineParams {
     pub pipeline_id: IndexingPipelineId,
     pub doc_mapper: Arc<dyn DocMapper>,
     pub indexing_directory: TempDirectory,
-    pub metastore: Arc<dyn Metastore>,
+    pub metastore: MetastoreServiceClient,
     pub split_store: IndexingSplitStore,
     pub merge_policy: Arc<dyn MergePolicy>,
     pub max_concurrent_split_uploads: usize, //< TODO share with the indexing pipeline.
-    pub merge_max_io_num_bytes_per_sec: Option<Byte>,
+    pub merge_max_io_num_bytes_per_sec: Option<ByteSize>,
     pub event_broker: EventBroker,
 }
 
@@ -478,9 +486,10 @@ mod tests {
     use quickwit_actors::{ActorExitStatus, Universe};
     use quickwit_common::temp_dir::TempDirectory;
     use quickwit_doc_mapper::default_doc_mapper_for_test;
-    use quickwit_metastore::MockMetastore;
+    use quickwit_metastore::{ListSplitsRequestExt, ListSplitsResponseExt};
     use quickwit_proto::indexing::IndexingPipelineId;
-    use quickwit_proto::IndexUid;
+    use quickwit_proto::metastore::{ListSplitsResponse, MetastoreServiceClient};
+    use quickwit_proto::types::IndexUid;
     use quickwit_storage::RamStorage;
 
     use crate::actors::merge_pipeline::{MergePipeline, MergePipelineParams};
@@ -489,8 +498,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_merge_pipeline_simple() -> anyhow::Result<()> {
-        let mut metastore = MockMetastore::default();
-        let index_uid = IndexUid::new("test-index");
+        let mut metastore = MetastoreServiceClient::mock();
+        let index_uid = IndexUid::new_with_random_ulid("test-index");
         let pipeline_id = IndexingPipelineId {
             index_uid: index_uid.clone(),
             source_id: "test-source".to_string(),
@@ -500,7 +509,8 @@ mod tests {
         metastore
             .expect_list_splits()
             .times(1)
-            .returning(move |list_split_query| {
+            .withf(move |list_splits_request| {
+                let list_split_query = list_splits_request.deserialize_list_splits_query().unwrap();
                 assert_eq!(list_split_query.index_uids, &[index_uid.clone()]);
                 assert_eq!(
                     list_split_query.split_states,
@@ -509,8 +519,9 @@ mod tests {
                 let Bound::Excluded(_) = list_split_query.mature else {
                     panic!("Expected excluded bound.");
                 };
-                Ok(Vec::new())
-            });
+                true
+            })
+            .returning(|_| Ok(ListSplitsResponse::try_from_splits(Vec::new()).unwrap()));
         let universe = Universe::with_accelerated_time();
         let storage = Arc::new(RamStorage::default());
         let split_store = IndexingSplitStore::create_without_local_store_for_test(storage.clone());
@@ -518,7 +529,7 @@ mod tests {
             pipeline_id,
             doc_mapper: Arc::new(default_doc_mapper_for_test()),
             indexing_directory: TempDirectory::for_test(),
-            metastore: Arc::new(metastore),
+            metastore: MetastoreServiceClient::from(metastore),
             split_store,
             merge_policy: default_merge_policy(),
             max_concurrent_split_uploads: 2,

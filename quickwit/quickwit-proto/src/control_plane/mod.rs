@@ -31,7 +31,7 @@ pub type ControlPlaneResult<T> = std::result::Result<T, ControlPlaneError>;
 pub enum ControlPlaneError {
     #[error("an internal error occurred: {0}")]
     Internal(String),
-    #[error("an internal error occurred: {0}")]
+    #[error("a metastore error occurred: {0}")]
     Metastore(#[from] MetastoreError),
     #[error("control plane is unavailable: {0}")]
     Unavailable(String),
@@ -41,7 +41,7 @@ impl From<ControlPlaneError> for MetastoreError {
     fn from(error: ControlPlaneError) -> Self {
         match error {
             ControlPlaneError::Internal(message) => MetastoreError::Internal {
-                message: "todo".to_string(),
+                message: "an internal metastore error occurred".to_string(),
                 cause: message,
             },
             ControlPlaneError::Metastore(error) => error,
@@ -51,12 +51,11 @@ impl From<ControlPlaneError> for MetastoreError {
 }
 
 impl From<ControlPlaneError> for tonic::Status {
-    fn from(error: ControlPlaneError) -> Self {
-        let grpc_status_code = error.error_code().to_grpc_status_code();
-        let error_json =
-            serde_json::to_string(&error).expect("control plane error should be JSON serializable");
-
-        tonic::Status::new(grpc_status_code, error_json)
+    fn from(control_plane_error: ControlPlaneError) -> Self {
+        let grpc_status_code = control_plane_error.error_code().to_grpc_status_code();
+        let message_json = serde_json::to_string(&control_plane_error)
+            .unwrap_or_else(|_| format!("original control plane error: {control_plane_error}"));
+        tonic::Status::new(grpc_status_code, message_json)
     }
 }
 

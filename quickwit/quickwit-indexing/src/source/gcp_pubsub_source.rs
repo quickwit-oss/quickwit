@@ -31,7 +31,8 @@ use google_cloud_pubsub::subscription::Subscription;
 use quickwit_actors::{ActorContext, ActorExitStatus, Mailbox};
 use quickwit_common::rand::append_random_suffix;
 use quickwit_config::GcpPubSubSourceParams;
-use quickwit_metastore::checkpoint::{PartitionId, Position, SourceCheckpoint};
+use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpoint};
+use quickwit_proto::types::Position;
 use serde_json::{json, Value as JsonValue};
 use tokio::time;
 use tracing::{debug, info, warn};
@@ -296,7 +297,7 @@ mod gcp_pubsub_emulator_tests {
     use quickwit_actors::Universe;
     use quickwit_config::{SourceConfig, SourceInputFormat, SourceParams};
     use quickwit_metastore::metastore_for_test;
-    use quickwit_proto::IndexUid;
+    use quickwit_proto::types::IndexUid;
     use serde_json::json;
 
     use super::*;
@@ -353,7 +354,7 @@ mod gcp_pubsub_emulator_tests {
         let source_config = get_source_config(&subscription);
 
         let index_id = append_random_suffix("test-gcp-pubsub-source--invalid-subscription--index");
-        let index_uid = IndexUid::new(&index_id);
+        let index_uid = IndexUid::new_with_random_ulid(&index_id);
         let metastore = metastore_for_test();
         let SourceParams::GcpPubSub(params) = source_config.clone().source_params else {
             panic!(
@@ -384,7 +385,7 @@ mod gcp_pubsub_emulator_tests {
         let source_loader = quickwit_supported_sources();
         let metastore = metastore_for_test();
         let index_id: String = append_random_suffix("test-gcp-pubsub-source--index");
-        let index_uid = IndexUid::new(&index_id);
+        let index_uid = IndexUid::new_with_random_ulid(&index_id);
 
         let mut pubsub_messages = Vec::with_capacity(6);
         for i in 0..6 {

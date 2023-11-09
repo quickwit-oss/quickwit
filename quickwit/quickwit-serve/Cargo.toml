@@ -13,7 +13,7 @@ documentation = "https://quickwit.io/docs/"
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 bytes = { workspace = true }
-byte-unit = { workspace = true }
+bytesize = { workspace = true }
 elasticsearch-dsl = "0.4.15"
 futures = { workspace = true }
 futures-util = { workspace = true }
@@ -83,5 +83,6 @@ quickwit-indexing = { workspace = true, features = ["testsuite"] }
 quickwit-ingest = { workspace = true, features = ["testsuite"] }
 quickwit-janitor = { workspace = true, features = ["testsuite"] }
 quickwit-metastore = { workspace = true, features = ["testsuite"] }
+quickwit-proto = { workspace = true, features = ["testsuite"] }
 quickwit-search = { workspace = true, features = ["testsuite"] }
 quickwit-storage = { workspace = true, features = ["testsuite"] }
