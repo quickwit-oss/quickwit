@@ -1227,8 +1227,9 @@ mod tests {
     }
 
     fn make_index() -> tantivy::Index {
+        use tantivy::indexer::UserOperation;
         use tantivy::schema::{NumericOptions, Schema};
-        use tantivy::{Index, UserOperation};
+        use tantivy::Index;
 
         let dataset = sort_dataset();
 
