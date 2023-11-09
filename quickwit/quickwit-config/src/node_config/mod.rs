@@ -30,6 +30,7 @@ use anyhow::{bail, ensure};
 use bytesize::ByteSize;
 use quickwit_common::net::HostAddr;
 use quickwit_common::uri::Uri;
+use quickwit_proto::indexing::CpuCapacity;
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
@@ -55,6 +56,8 @@ pub struct IndexerConfig {
     pub enable_otlp_endpoint: bool,
     #[serde(default = "IndexerConfig::default_enable_cooperative_indexing")]
     pub enable_cooperative_indexing: bool,
+    #[serde(default = "IndexerConfig::default_cpu_capacity")]
+    pub cpu_capacity: CpuCapacity,
 }
 
 impl IndexerConfig {
@@ -85,14 +88,20 @@ impl IndexerConfig {
         1_000
     }
 
+    fn default_cpu_capacity() -> CpuCapacity {
+        CpuCapacity::one_cpu_thread() * (num_cpus::get() as u32)
+    }
+
     #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test() -> anyhow::Result<Self> {
+        use quickwit_proto::indexing::PIPELINE_FULL_CAPACITY;
         let indexer_config = IndexerConfig {
             enable_cooperative_indexing: false,
             enable_otlp_endpoint: true,
             split_store_max_num_bytes: ByteSize::mb(1),
             split_store_max_num_splits: 3,
             max_concurrent_split_uploads: 4,
+            cpu_capacity: PIPELINE_FULL_CAPACITY * 4u32,
         };
         Ok(indexer_config)
     }
@@ -106,6 +115,7 @@ impl Default for IndexerConfig {
             split_store_max_num_bytes: Self::default_split_store_max_num_bytes(),
             split_store_max_num_splits: Self::default_split_store_max_num_splits(),
             max_concurrent_split_uploads: Self::default_max_concurrent_split_uploads(),
+            cpu_capacity: Self::default_cpu_capacity(),
         }
     }
 }
@@ -366,5 +376,56 @@ impl NodeConfig {
     #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test() -> Self {
         serialize::node_config_for_test()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use quickwit_proto::indexing::CpuCapacity;
+
+    use crate::IndexerConfig;
+
+    #[test]
+    fn test_index_config_serialization() {
+        {
+            let indexer_config: IndexerConfig = serde_json::from_str(r#"{}"#).unwrap();
+            assert_eq!(&indexer_config, &IndexerConfig::default());
+            assert!(indexer_config.cpu_capacity.cpu_millis() > 0);
+            assert_eq!(indexer_config.cpu_capacity.cpu_millis() % 1_000, 0);
+        }
+        {
+            let indexer_config: IndexerConfig =
+                serde_yaml::from_str(r#"cpu_capacity: 1.5"#).unwrap();
+            assert_eq!(
+                indexer_config.cpu_capacity,
+                CpuCapacity::from_cpu_millis(1500)
+            );
+            let indexer_config_json = serde_json::to_value(&indexer_config).unwrap();
+            assert_eq!(
+                indexer_config_json
+                    .get("cpu_capacity")
+                    .unwrap()
+                    .as_str()
+                    .unwrap(),
+                "1500m"
+            );
+        }
+        {
+            let indexer_config: IndexerConfig =
+                serde_yaml::from_str(r#"cpu_capacity: 1500m"#).unwrap();
+            assert_eq!(
+                indexer_config.cpu_capacity,
+                CpuCapacity::from_cpu_millis(1500)
+            );
+            let indexer_config_json = serde_json::to_value(&indexer_config).unwrap();
+            assert_eq!(
+                indexer_config_json
+                    .get("cpu_capacity")
+                    .unwrap()
+                    .as_str()
+                    .unwrap(),
+                "1500m"
+            );
+        }
     }
 }

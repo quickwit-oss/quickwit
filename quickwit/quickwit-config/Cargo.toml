@@ -20,6 +20,7 @@ humantime = { workspace = true }
 itertools = { workspace = true }
 json_comments = { workspace = true }
 new_string_template = { workspace = true }
+num_cpus = { workspace = true }
 once_cell = { workspace = true }
 regex = { workspace = true }
 serde = { workspace = true }

@@ -484,6 +484,7 @@ mod tests {
                 split_store_max_num_bytes: ByteSize::tb(1),
                 split_store_max_num_splits: 10_000,
                 max_concurrent_split_uploads: 8,
+                cpu_capacity: IndexerConfig::default_cpu_capacity(),
                 enable_cooperative_indexing: false,
             }
         );

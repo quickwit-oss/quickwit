@@ -1215,9 +1215,9 @@ dependencies = [
 
 [[package]]
 name = "chitchat"
-version = "0.6.0"
+version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6e5c649e5309f040f18aa0d660e63fe913d3d642e4771dd3cb66515ad75d239d"
+checksum = "cb13c7104e3c77027520e984339ab3e805fd19c05c8555cc6338b2a4f455cbfb"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5316,6 +5316,7 @@ dependencies = [
  "itertools 0.11.0",
  "json_comments",
  "new_string_template",
+ "num_cpus",
  "once_cell",
  "quickwit-common",
  "quickwit-doc-mapper",

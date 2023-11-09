@@ -24,9 +24,8 @@ use std::collections::hash_map::Entry;
 use std::num::NonZeroU32;
 
 use fnv::FnvHashMap;
-use quickwit_proto::indexing::IndexingTask;
+use quickwit_proto::indexing::{CpuCapacity, IndexingTask};
 use quickwit_proto::types::{IndexUid, ShardId};
-pub use scheduling_logic_model::Load;
 use scheduling_logic_model::{IndexerOrd, SourceOrd};
 use tracing::error;
 use tracing::log::warn;
@@ -35,7 +34,6 @@ use crate::indexing_plan::PhysicalIndexingPlan;
 use crate::indexing_scheduler::scheduling::scheduling_logic_model::{
     SchedulingProblem, SchedulingSolution,
 };
-use crate::indexing_scheduler::PIPELINE_FULL_LOAD;
 use crate::SourceUid;
 
 /// If we have several pipelines below this threshold we
@@ -49,10 +47,10 @@ use crate::SourceUid;
 ///
 /// Coming back to a single pipeline requires having a load per pipeline
 /// of 30%. Which translates into an overall load of 60%.
-const LOAD_PER_PIPELINE_LOW_THRESHOLD: u32 = PIPELINE_FULL_LOAD * 3 / 10;
+const CPU_PER_PIPELINE_LOAD_THRESHOLD: CpuCapacity = CpuCapacity::from_cpu_millis(1_200);
 
 /// That's 80% of a period
-const MAX_LOAD_PER_PIPELINE: u32 = PIPELINE_FULL_LOAD * 8 / 10;
+const MAX_LOAD_PER_PIPELINE: CpuCapacity = CpuCapacity::from_cpu_millis(3_200);
 
 fn indexing_task(source_uid: SourceUid, shard_ids: Vec<ShardId>) -> IndexingTask {
     IndexingTask {
@@ -260,35 +258,37 @@ fn group_shards_into_pipelines(
     source_uid: &SourceUid,
     shard_ids: &[ShardId],
     previous_indexing_tasks: &[IndexingTask],
-    load_per_shard: Load,
+    cpu_load_per_shard: CpuCapacity,
 ) -> Vec<IndexingTask> {
     let num_shards = shard_ids.len() as u32;
     if num_shards == 0 {
         return Vec::new();
     }
     let max_num_shards_per_pipeline: NonZeroU32 =
-        NonZeroU32::new(MAX_LOAD_PER_PIPELINE / load_per_shard).unwrap_or_else(|| {
-            // We throttle shard at ingestion to ensure that a shard does not
-            // exceed 5MB/s.
-            //
-            // This value has been chosen to make sure that one full pipeline
-            // should always be able to handle the load of one shard.
-            //
-            // However it is possible for the system to take more than this
-            // when it is playing catch up.
-            //
-            // This is a transitory state, and not a problem per se.
-            warn!("load per shard is higher than `MAX_LOAD_PER_PIPELINE`");
-            NonZeroU32::new(1).unwrap()
-        });
+        NonZeroU32::new(MAX_LOAD_PER_PIPELINE.cpu_millis() / cpu_load_per_shard.cpu_millis())
+            .unwrap_or_else(|| {
+                // We throttle shard at ingestion to ensure that a shard does not
+                // exceed 5MB/s.
+                //
+                // This value has been chosen to make sure that one full pipeline
+                // should always be able to handle the load of one shard.
+                //
+                // However it is possible for the system to take more than this
+                // when it is playing catch up.
+                //
+                // This is a transitory state, and not a problem per se.
+                warn!("load per shard is higher than `MAX_LOAD_PER_PIPELINE`");
+                NonZeroU32::MIN // also colloquially known as `1`
+            });
 
     // We compute the number of pipelines we will create, cooking in some hysteresis effect here.
     // We have two different threshold to increase and to decrease the number of pipelines.
     let min_num_pipelines: u32 =
         (num_shards + max_num_shards_per_pipeline.get() - 1) / max_num_shards_per_pipeline;
     assert!(min_num_pipelines > 0);
-    let max_num_pipelines: u32 =
-        min_num_pipelines.max(num_shards * load_per_shard / LOAD_PER_PIPELINE_LOW_THRESHOLD);
+    let max_num_pipelines: u32 = min_num_pipelines.max(
+        num_shards * cpu_load_per_shard.cpu_millis() / CPU_PER_PIPELINE_LOAD_THRESHOLD.cpu_millis(),
+    );
     let previous_num_pipelines = previous_indexing_tasks.len() as u32;
     let num_pipelines: u32 = if previous_num_pipelines > min_num_pipelines {
         previous_num_pipelines.min(max_num_pipelines)
@@ -409,7 +409,7 @@ fn convert_scheduling_solution_to_physical_plan(
                         &source.source_uid,
                         &shard_ids_for_node,
                         indexing_tasks,
-                        load_per_shard.get(),
+                        CpuCapacity::from_cpu_millis(load_per_shard.get()),
                     );
                     for indexing_task in indexing_tasks {
                         physical_indexing_plan.add_indexing_task(node_id, indexing_task);
@@ -471,7 +471,7 @@ fn convert_scheduling_solution_to_physical_plan(
 /// TODO cut into pipelines.
 pub fn build_physical_indexing_plan(
     sources: &[SourceToSchedule],
-    indexer_id_to_max_load: &FnvHashMap<String, Load>,
+    indexer_id_to_cpu_capacities: &FnvHashMap<String, CpuCapacity>,
     previous_plan_opt: Option<&PhysicalIndexingPlan>,
 ) -> PhysicalIndexingPlan {
     // TODO make the load per node something that can be configured on each node.
@@ -480,14 +480,15 @@ pub fn build_physical_indexing_plan(
     let mut id_to_ord_map = IdToOrdMap::default();
 
     // We use a Vec as a `IndexOrd` -> Max load map.
-    let mut indexer_max_loads: Vec<Load> = Vec::with_capacity(indexer_id_to_max_load.len());
-    for (indexer_id, &max_load) in indexer_id_to_max_load {
+    let mut indexer_cpu_capacities: Vec<CpuCapacity> =
+        Vec::with_capacity(indexer_id_to_cpu_capacities.len());
+    for (indexer_id, &cpu_capacity) in indexer_id_to_cpu_capacities {
         let indexer_ord = id_to_ord_map.add_indexer_id(indexer_id.clone());
-        assert_eq!(indexer_ord, indexer_max_loads.len() as IndexerOrd);
-        indexer_max_loads.push(max_load);
+        assert_eq!(indexer_ord, indexer_cpu_capacities.len() as IndexerOrd);
+        indexer_cpu_capacities.push(cpu_capacity);
     }
 
-    let mut problem = SchedulingProblem::with_indexer_maximum_load(indexer_max_loads);
+    let mut problem = SchedulingProblem::with_indexer_cpu_capacities(indexer_cpu_capacities);
     for source in sources {
         if let Some(source_ord) = populate_problem(source, &mut problem) {
             let registered_source_ord = id_to_ord_map.add_source_uid(source.source_uid.clone());
@@ -528,7 +529,7 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     use fnv::FnvHashMap;
-    use quickwit_proto::indexing::IndexingTask;
+    use quickwit_proto::indexing::{mcpu, IndexingTask};
     use quickwit_proto::types::{IndexUid, ShardId};
 
     use super::{
@@ -573,25 +574,28 @@ mod tests {
             source_uid: source_uid0.clone(),
             source_type: SourceToScheduleType::Sharded {
                 shards: vec![0, 1, 2, 3, 4, 5, 6, 7],
-                load_per_shard: NonZeroU32::new(250).unwrap(),
+                load_per_shard: NonZeroU32::new(1_000).unwrap(),
             },
         };
         let source_1 = SourceToSchedule {
             source_uid: source_uid1.clone(),
             source_type: SourceToScheduleType::NonSharded {
                 num_pipelines: 2,
-                load_per_pipeline: NonZeroU32::new(800).unwrap(),
+                load_per_pipeline: NonZeroU32::new(3_200).unwrap(),
             },
         };
         let source_2 = SourceToSchedule {
             source_uid: source_uid2.clone(),
             source_type: SourceToScheduleType::IngestV1,
         };
-        let mut indexer_max_load = FnvHashMap::default();
-        indexer_max_load.insert(indexer1.clone(), 4_000);
-        indexer_max_load.insert(indexer2.clone(), 4_000);
-        let indexing_plan =
-            build_physical_indexing_plan(&[source_0, source_1, source_2], &indexer_max_load, None);
+        let mut indexer_id_to_cpu_capacities = FnvHashMap::default();
+        indexer_id_to_cpu_capacities.insert(indexer1.clone(), mcpu(16_000));
+        indexer_id_to_cpu_capacities.insert(indexer2.clone(), mcpu(16_000));
+        let indexing_plan = build_physical_indexing_plan(
+            &[source_0, source_1, source_2],
+            &indexer_id_to_cpu_capacities,
+            None,
+        );
         assert_eq!(indexing_plan.indexing_tasks_per_indexer().len(), 2);
 
         let node1_plan = indexing_plan.indexer(&indexer1).unwrap();
@@ -633,7 +637,7 @@ mod tests {
         let indexer1 = "indexer1".to_string();
         let mut indexer_max_loads = FnvHashMap::default();
         {
-            indexer_max_loads.insert(indexer1.clone(), 1_999);
+            indexer_max_loads.insert(indexer1.clone(), mcpu(1_999));
             // This test what happens when there isn't enough capacity on the cluster.
             let physical_plan = build_physical_indexing_plan(&sources, &indexer_max_loads, None);
             assert_eq!(physical_plan.indexing_tasks_per_indexer().len(), 1);
@@ -644,7 +648,7 @@ mod tests {
             );
         }
         {
-            indexer_max_loads.insert(indexer1.clone(), 2_000);
+            indexer_max_loads.insert(indexer1.clone(), mcpu(2_000));
             // This test what happens when there isn't enough capacity on the cluster.
             let physical_plan = build_physical_indexing_plan(&sources, &indexer_max_loads, None);
             assert_eq!(physical_plan.indexing_tasks_per_indexer().len(), 1);
@@ -662,7 +666,7 @@ mod tests {
     #[test]
     fn test_group_shards_empty() {
         let source_uid = source_id();
-        let indexing_tasks = group_shards_into_pipelines(&source_uid, &[], &[], 250);
+        let indexing_tasks = group_shards_into_pipelines(&source_uid, &[], &[], mcpu(250));
         assert!(indexing_tasks.is_empty());
     }
 
@@ -690,7 +694,7 @@ mod tests {
             &source_uid,
             &[0, 1, 3, 4, 5],
             &previous_indexing_tasks,
-            250,
+            mcpu(1_000),
         );
         assert_eq!(indexing_tasks.len(), 2);
         assert_eq!(&indexing_tasks[0].shard_ids, &[0, 1]);
@@ -700,7 +704,7 @@ mod tests {
     #[test]
     fn test_group_shards_load_per_shard_too_high() {
         let source_uid = source_id();
-        let indexing_tasks = group_shards_into_pipelines(&source_uid, &[1, 2], &[], 1_000);
+        let indexing_tasks = group_shards_into_pipelines(&source_uid, &[1, 2], &[], mcpu(4_000));
         assert_eq!(indexing_tasks.len(), 2);
     }
 
@@ -712,7 +716,7 @@ mod tests {
             &source_uid,
             &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
             &previous_indexing_tasks,
-            100,
+            mcpu(400),
         );
         assert_eq!(indexing_tasks_1.len(), 2);
         assert_eq!(&indexing_tasks_1[0].shard_ids, &[0, 2, 4, 6, 8, 10]);
@@ -722,7 +726,7 @@ mod tests {
             &source_uid,
             &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
             &indexing_tasks_1,
-            150,
+            mcpu(600),
         );
         assert_eq!(indexing_tasks_2.len(), 3);
         assert_eq!(&indexing_tasks_2[0].shard_ids, &[0, 2, 4, 6, 8]);
@@ -734,7 +738,7 @@ mod tests {
             &source_uid,
             &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
             &indexing_tasks_2,
-            100,
+            mcpu(400),
         );
         assert_eq!(indexing_tasks_3.len(), 3);
         assert_eq!(&indexing_tasks_3[0].shard_ids, &[0, 2, 4, 6, 8]);
@@ -745,7 +749,7 @@ mod tests {
             &source_uid,
             &[0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10],
             &indexing_tasks_3,
-            80,
+            mcpu(320),
         );
         assert_eq!(indexing_tasks_4.len(), 2);
         assert_eq!(&indexing_tasks_4[0].shard_ids, &[0, 2, 4, 6, 8, 10]);

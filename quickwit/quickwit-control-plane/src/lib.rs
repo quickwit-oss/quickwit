@@ -25,7 +25,7 @@ pub mod ingest;
 pub(crate) mod metrics;
 
 use quickwit_common::tower::Pool;
-use quickwit_proto::indexing::{IndexingServiceClient, IndexingTask};
+use quickwit_proto::indexing::{CpuCapacity, IndexingServiceClient, IndexingTask};
 use quickwit_proto::types::{IndexUid, SourceId};
 
 /// It can however appear only once in a given index.
@@ -41,6 +41,7 @@ pub struct SourceUid {
 pub struct IndexerNodeInfo {
     pub client: IndexingServiceClient,
     pub indexing_tasks: Vec<IndexingTask>,
+    pub indexing_capacity: CpuCapacity,
 }
 
 pub type IndexerPool = Pool<String, IndexerNodeInfo>;

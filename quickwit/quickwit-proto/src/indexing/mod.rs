@@ -17,8 +17,9 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::fmt::Formatter;
+use std::fmt::{Display, Formatter};
 use std::hash::Hash;
+use std::ops::{Add, Mul, Sub};
 use std::{fmt, io};
 
 use anyhow::anyhow;
@@ -150,13 +151,13 @@ pub struct IndexingPipelineId {
     pub pipeline_ord: usize,
 }
 
-impl fmt::Display for IndexingPipelineId {
+impl Display for IndexingPipelineId {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(f, "{}:{}", self.index_uid, &self.source_id)
     }
 }
 
-impl fmt::Display for IndexingTask {
+impl Display for IndexingTask {
     fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(f, "{}:{}", self.index_uid, &self.source_id)
     }
@@ -209,19 +210,183 @@ impl TryFrom<&str> for IndexingTask {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, utoipa::ToSchema)]
 pub struct PipelineMetrics {
-    pub cpu_millis: u16,
+    pub cpu_millis: CpuCapacity,
     pub throughput_mb_per_sec: u16,
 }
 
-impl fmt::Display for PipelineMetrics {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}m,{}MB/s", self.cpu_millis, self.throughput_mb_per_sec)
+impl Display for PipelineMetrics {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        write!(f, "{},{}MB/s", self.cpu_millis, self.throughput_mb_per_sec)
+    }
+}
+
+/// One full pipeline (including merging) is assumed to consume 4 CPU threads.
+/// The actual number somewhere between 3 and 4.
+pub const PIPELINE_FULL_CAPACITY: CpuCapacity = CpuCapacity::from_cpu_millis(4_000u32);
+
+/// The CpuCapacity represents an amount of CPU resource available.
+///
+/// It is usually expressed in CPU millis (For instance, one full CPU thread is
+/// displayed as `1000m`).
+#[derive(
+    Copy, Clone, Debug, Eq, PartialEq, Deserialize, Serialize, Ord, PartialOrd, utoipa::ToSchema,
+)]
+#[serde(
+    into = "CpuCapacityForSerialization",
+    try_from = "CpuCapacityForSerialization"
+)]
+pub struct CpuCapacity(u32);
+
+/// Short helper function to build `CpuCapacity`.
+#[inline(always)]
+pub const fn mcpu(milli_cpus: u32) -> CpuCapacity {
+    CpuCapacity::from_cpu_millis(milli_cpus)
+}
+
+impl CpuCapacity {
+    #[inline(always)]
+    pub const fn from_cpu_millis(cpu_millis: u32) -> CpuCapacity {
+        CpuCapacity(cpu_millis)
+    }
+
+    #[inline(always)]
+    pub fn cpu_millis(self) -> u32 {
+        self.0
+    }
+
+    #[inline(always)]
+    pub fn zero() -> CpuCapacity {
+        CpuCapacity::from_cpu_millis(0u32)
+    }
+
+    #[inline(always)]
+    pub fn one_cpu_thread() -> CpuCapacity {
+        CpuCapacity::from_cpu_millis(1_000u32)
+    }
+}
+
+impl Sub<CpuCapacity> for CpuCapacity {
+    type Output = CpuCapacity;
+
+    #[inline(always)]
+    fn sub(self, rhs: CpuCapacity) -> Self::Output {
+        CpuCapacity::from_cpu_millis(self.0 - rhs.0)
+    }
+}
+
+impl Add<CpuCapacity> for CpuCapacity {
+    type Output = CpuCapacity;
+
+    #[inline(always)]
+    fn add(self, rhs: CpuCapacity) -> Self::Output {
+        CpuCapacity::from_cpu_millis(self.0 + rhs.0)
+    }
+}
+
+impl Mul<u32> for CpuCapacity {
+    type Output = CpuCapacity;
+
+    #[inline(always)]
+    fn mul(self, rhs: u32) -> CpuCapacity {
+        CpuCapacity::from_cpu_millis(self.0 * rhs)
+    }
+}
+
+impl Mul<f32> for CpuCapacity {
+    type Output = CpuCapacity;
+
+    #[inline(always)]
+    fn mul(self, scale: f32) -> CpuCapacity {
+        CpuCapacity::from_cpu_millis((self.0 as f32 * scale) as u32)
+    }
+}
+
+impl Display for CpuCapacity {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
+        write!(f, "{}m", self.0)
+    }
+}
+
+#[derive(Serialize, Deserialize)]
+#[serde(untagged)]
+enum CpuCapacityForSerialization {
+    Float(f32),
+    MilliCpuWithUnit(String),
+}
+
+impl TryFrom<CpuCapacityForSerialization> for CpuCapacity {
+    type Error = String;
+
+    fn try_from(
+        cpu_capacity_for_serialization: CpuCapacityForSerialization,
+    ) -> Result<CpuCapacity, Self::Error> {
+        match cpu_capacity_for_serialization {
+            CpuCapacityForSerialization::Float(cpu_capacity) => {
+                Ok(CpuCapacity((cpu_capacity * 1000.0f32) as u32))
+            }
+            CpuCapacityForSerialization::MilliCpuWithUnit(cpu_capacity_str) => {
+                Self::from_str(&cpu_capacity_str)
+            }
+        }
+    }
+}
+
+impl FromStr for CpuCapacity {
+    type Err = String;
+
+    fn from_str(cpu_capacity_str: &str) -> Result<Self, Self::Err> {
+        let Some(milli_cpus_without_unit_str) = cpu_capacity_str.strip_suffix('m') else {
+            return Err(format!(
+                "invalid cpu capacity: `{cpu_capacity_str}`. String format expects a trailing 'm'."
+            ));
+        };
+        let milli_cpus: u32 = milli_cpus_without_unit_str
+            .parse::<u32>()
+            .map_err(|_err| format!("invalid cpu capacity: `{cpu_capacity_str}`."))?;
+        Ok(CpuCapacity(milli_cpus))
+    }
+}
+
+impl From<CpuCapacity> for CpuCapacityForSerialization {
+    fn from(cpu_capacity: CpuCapacity) -> CpuCapacityForSerialization {
+        CpuCapacityForSerialization::MilliCpuWithUnit(format!("{}m", cpu_capacity.0))
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_cpu_capacity_serialization() {
+        assert_eq!(CpuCapacity::from_str("2000m").unwrap(), mcpu(2000));
+        assert_eq!(CpuCapacity::from_cpu_millis(2500), mcpu(2500));
+        assert_eq!(
+            CpuCapacity::from_str("2.5").unwrap_err(),
+            "invalid cpu capacity: `2.5`. String format expects a trailing 'm'."
+        );
+        assert_eq!(
+            serde_json::from_value::<CpuCapacity>(serde_json::Value::String("1200m".to_string()))
+                .unwrap(),
+            mcpu(1200)
+        );
+        assert_eq!(
+            serde_json::from_value::<CpuCapacity>(serde_json::Value::Number(
+                serde_json::Number::from_f64(1.2f64).unwrap()
+            ))
+            .unwrap(),
+            mcpu(1200)
+        );
+        assert_eq!(
+            serde_json::from_value::<CpuCapacity>(serde_json::Value::Number(
+                serde_json::Number::from(1u32)
+            ))
+            .unwrap(),
+            mcpu(1000)
+        );
+        assert_eq!(CpuCapacity::from_cpu_millis(2500).to_string(), "2500m");
+        assert_eq!(serde_json::to_string(&mcpu(2500)).unwrap(), "\"2500m\"");
+    }
 
     #[test]
     fn test_indexing_task_serialization() {
