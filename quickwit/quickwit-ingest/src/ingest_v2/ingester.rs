@@ -1378,7 +1378,7 @@ mod tests {
         // Check that fetch task is notified.
         // Note: fetch stream should not block if the close shard call notified the fetch task.
         let fetch_response =
-            tokio::time::timeout(std::time::Duration::from_secs(2), fetch_stream.next())
+            tokio::time::timeout(std::time::Duration::from_millis(50), fetch_stream.next())
                 .await
                 .unwrap()
                 .unwrap()
