@@ -358,6 +358,37 @@ mod tests {
     use super::*;
 
     #[test]
+    fn test_cpu_capacity_serialization() {
+        assert_eq!(CpuCapacity::from_str("2000m").unwrap(), mcpu(2000));
+        assert_eq!(CpuCapacity::from_cpu_millis(2500), mcpu(2500));
+        assert_eq!(
+            CpuCapacity::from_str("2.5").unwrap_err(),
+            "invalid cpu capacity: `2.5`. String format expects a trailing 'm'."
+        );
+        assert_eq!(
+            serde_json::from_value::<CpuCapacity>(serde_json::Value::String("1200m".to_string()))
+                .unwrap(),
+            mcpu(1200)
+        );
+        assert_eq!(
+            serde_json::from_value::<CpuCapacity>(serde_json::Value::Number(
+                serde_json::Number::from_f64(1.2f64).unwrap()
+            ))
+            .unwrap(),
+            mcpu(1200)
+        );
+        assert_eq!(
+            serde_json::from_value::<CpuCapacity>(serde_json::Value::Number(
+                serde_json::Number::from(1u32)
+            ))
+            .unwrap(),
+            mcpu(1000)
+        );
+        assert_eq!(CpuCapacity::from_cpu_millis(2500).to_string(), "2500m");
+        assert_eq!(serde_json::to_string(&mcpu(2500)).unwrap(), "\"2500m\"");
+    }
+
+    #[test]
     fn test_indexing_task_serialization() {
         let original = IndexingTask {
             index_uid: "test-index:123456".to_string(),

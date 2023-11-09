@@ -193,7 +193,7 @@ impl IndexingScheduler {
 
         let sources = get_sources_to_schedule(model);
 
-        let indexer_cpu_capacity: FnvHashMap<String, CpuCapacity> = indexers
+        let indexer_id_to_cpu_capacities: FnvHashMap<String, CpuCapacity> = indexers
             .iter()
             .map(|(indexer_id, indexer_node_info)| {
                 (indexer_id.to_string(), indexer_node_info.indexing_capacity)
@@ -202,7 +202,7 @@ impl IndexingScheduler {
 
         let new_physical_plan = build_physical_indexing_plan(
             &sources,
-            &indexer_cpu_capacity,
+            &indexer_id_to_cpu_capacities,
             self.state.last_applied_physical_plan.as_ref(),
         );
         if let Some(last_applied_plan) = &self.state.last_applied_physical_plan {

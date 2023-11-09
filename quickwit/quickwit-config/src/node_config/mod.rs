@@ -84,15 +84,12 @@ impl IndexerConfig {
         ByteSize::gb(100)
     }
 
-    /// Default capacity expressed in milli-"number of pipelines".
-    /// 4_000 means 4 pipeline at full capacity.
-    // TODO add some validation.
-    fn default_cpu_capacity() -> CpuCapacity {
-        CpuCapacity::one_cpu_thread() * (num_cpus::get() as u32)
-    }
-
     pub fn default_split_store_max_num_splits() -> usize {
         1_000
+    }
+
+    fn default_cpu_capacity() -> CpuCapacity {
+        CpuCapacity::one_cpu_thread() * (num_cpus::get() as u32)
     }
 
     #[cfg(any(test, feature = "testsuite"))]
@@ -393,10 +390,8 @@ mod tests {
         {
             let indexer_config: IndexerConfig = serde_json::from_str(r#"{}"#).unwrap();
             assert_eq!(&indexer_config, &IndexerConfig::default());
-            assert_eq!(
-                indexer_config.cpu_capacity,
-                CpuCapacity::from_cpu_millis(8000)
-            );
+            assert!(indexer_config.cpu_capacity.cpu_millis() > 0);
+            assert_eq!(indexer_config.cpu_capacity.cpu_millis() % 1_000, 0);
         }
         {
             let indexer_config: IndexerConfig =

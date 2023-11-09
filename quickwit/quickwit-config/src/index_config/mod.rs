@@ -637,7 +637,7 @@ mod tests {
     }
 
     #[test]
-    fn test_index_config_default_values() {
+    fn test_indexer_config_default_values() {
         let default_index_root_uri = Uri::for_test("s3://defaultbucket/");
         {
             let index_config_filepath = get_index_config_filepath("minimal-hdfs-logs.yaml");

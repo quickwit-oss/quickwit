@@ -258,14 +258,14 @@ fn group_shards_into_pipelines(
     source_uid: &SourceUid,
     shard_ids: &[ShardId],
     previous_indexing_tasks: &[IndexingTask],
-    cpu_per_shard: CpuCapacity,
+    cpu_load_per_shard: CpuCapacity,
 ) -> Vec<IndexingTask> {
     let num_shards = shard_ids.len() as u32;
     if num_shards == 0 {
         return Vec::new();
     }
     let max_num_shards_per_pipeline: NonZeroU32 =
-        NonZeroU32::new(MAX_LOAD_PER_PIPELINE.cpu_millis() / cpu_per_shard.cpu_millis())
+        NonZeroU32::new(MAX_LOAD_PER_PIPELINE.cpu_millis() / cpu_load_per_shard.cpu_millis())
             .unwrap_or_else(|| {
                 // We throttle shard at ingestion to ensure that a shard does not
                 // exceed 5MB/s.
@@ -278,7 +278,7 @@ fn group_shards_into_pipelines(
                 //
                 // This is a transitory state, and not a problem per se.
                 warn!("load per shard is higher than `MAX_LOAD_PER_PIPELINE`");
-                NonZeroU32::new(1).unwrap()
+                NonZeroU32::MIN // also colloquially known as `1`
             });
 
     // We compute the number of pipelines we will create, cooking in some hysteresis effect here.
@@ -287,7 +287,7 @@ fn group_shards_into_pipelines(
         (num_shards + max_num_shards_per_pipeline.get() - 1) / max_num_shards_per_pipeline;
     assert!(min_num_pipelines > 0);
     let max_num_pipelines: u32 = min_num_pipelines.max(
-        num_shards * cpu_per_shard.cpu_millis() / CPU_PER_PIPELINE_LOAD_THRESHOLD.cpu_millis(),
+        num_shards * cpu_load_per_shard.cpu_millis() / CPU_PER_PIPELINE_LOAD_THRESHOLD.cpu_millis(),
     );
     let previous_num_pipelines = previous_indexing_tasks.len() as u32;
     let num_pipelines: u32 = if previous_num_pipelines > min_num_pipelines {
