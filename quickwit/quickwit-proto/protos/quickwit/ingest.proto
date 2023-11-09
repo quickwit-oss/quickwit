@@ -78,3 +78,9 @@ message Shard {
   // For instance, if an indexer goes rogue, eventually the control plane will detect it and assign the shard to another indexer, which will override the publish token.
   optional string publish_token = 10;
 }
+
+message ClosedShards {
+  string index_uid = 1;
+  string source_id = 2;
+  repeated uint64 shard_ids = 3;
+}

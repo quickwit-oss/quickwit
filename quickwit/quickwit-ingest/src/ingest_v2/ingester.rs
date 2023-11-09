@@ -33,11 +33,12 @@ use mrecordlog::MultiRecordLog;
 use quickwit_common::tower::Pool;
 use quickwit_common::ServiceStream;
 use quickwit_proto::ingest::ingester::{
-    AckReplicationMessage, FetchResponseV2, IngesterService, IngesterServiceClient,
-    IngesterServiceStream, OpenFetchStreamRequest, OpenReplicationStreamRequest,
-    OpenReplicationStreamResponse, PersistFailure, PersistFailureReason, PersistRequest,
-    PersistResponse, PersistSuccess, PingRequest, PingResponse, ReplicateRequest,
-    ReplicateSubrequest, SynReplicationMessage, TruncateRequest, TruncateResponse,
+    AckReplicationMessage, CloseShardsRequest, CloseShardsResponse, FetchResponseV2,
+    IngesterService, IngesterServiceClient, IngesterServiceStream, OpenFetchStreamRequest,
+    OpenReplicationStreamRequest, OpenReplicationStreamResponse, PersistFailure,
+    PersistFailureReason, PersistRequest, PersistResponse, PersistSuccess, PingRequest,
+    PingResponse, ReplicateRequest, ReplicateSubrequest, SynReplicationMessage, TruncateRequest,
+    TruncateResponse,
 };
 use quickwit_proto::ingest::{CommitTypeV2, IngestV2Error, IngestV2Result, ShardState};
 use quickwit_proto::types::{NodeId, Position, QueueId};
@@ -396,11 +397,6 @@ impl IngesterService for Ingester {
                 persist_successes.push(persist_success);
             }
         }
-        let _state_guard = self.state.write().await;
-
-        for persist_success in &persist_successes {
-            let _queue_id = persist_success.queue_id();
-        }
         let leader_id = self.self_node_id.to_string();
         let persist_response = PersistResponse {
             leader_id,
@@ -537,6 +533,29 @@ impl IngesterService for Ingester {
         let truncate_response = TruncateResponse {};
         Ok(truncate_response)
     }
+
+    async fn close_shards(
+        &mut self,
+        close_shards_request: CloseShardsRequest,
+    ) -> IngestV2Result<CloseShardsResponse> {
+        let mut state_guard = self.state.write().await;
+        for close_shard in close_shards_request.closed_shards {
+            for queue_id in close_shard.queue_ids() {
+                if !state_guard.mrecordlog.queue_exists(&queue_id) {
+                    continue;
+                }
+                append_eof_record_if_necessary(&mut state_guard.mrecordlog, &queue_id).await;
+                let shard = state_guard
+                    .shards
+                    .get_mut(&queue_id)
+                    .expect("shard must exist");
+                // Notify fetch task.
+                shard.notify_new_records();
+                shard.close();
+            }
+        }
+        Ok(CloseShardsResponse {})
+    }
 }
 
 /// Appends an EOF record to the queue if the it is empty or the last record is not an EOF
@@ -574,11 +593,12 @@ mod tests {
         IngesterServiceGrpcServer, IngesterServiceGrpcServerAdapter, PersistSubrequest,
         TruncateSubrequest,
     };
-    use quickwit_proto::ingest::DocBatchV2;
+    use quickwit_proto::ingest::{ClosedShards, DocBatchV2};
     use quickwit_proto::types::queue_id;
     use tonic::transport::{Endpoint, Server};
 
     use super::*;
+    use crate::ingest_v2::fetch::FetchRange;
     use crate::ingest_v2::test_utils::{IngesterShardTestExt, MultiRecordLogTestExt};
 
     #[tokio::test]
@@ -1247,5 +1267,121 @@ mod tests {
         state_guard
             .mrecordlog
             .assert_records_eq(&queue_id_02, .., &[]);
+    }
+
+    #[tokio::test]
+    async fn test_ingester_close_shards() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let self_node_id: NodeId = "test-ingester-0".into();
+        let ingester_pool = IngesterPool::default();
+        let wal_dir_path = tempdir.path();
+        let replication_factor = 1;
+        let mut ingester = Ingester::try_new(
+            self_node_id.clone(),
+            ingester_pool,
+            wal_dir_path,
+            replication_factor,
+        )
+        .await
+        .unwrap();
+
+        let queue_id_01 = queue_id("test-index:0", "test-source:0", 1);
+        let queue_id_02 = queue_id("test-index:0", "test-source:0", 2);
+        let queue_id_03 = queue_id("test-index:1", "test-source:1", 3);
+
+        let mut state_guard = ingester.state.write().await;
+        for queue_id in &[&queue_id_01, &queue_id_02, &queue_id_03] {
+            ingester
+                .create_shard(&mut state_guard, queue_id, &self_node_id, None)
+                .await
+                .unwrap();
+            let records = [
+                MRecord::new_doc("test-doc-010").encode(),
+                MRecord::new_doc("test-doc-011").encode(),
+            ]
+            .into_iter();
+            state_guard
+                .mrecordlog
+                .append_records(&queue_id_01, None, records)
+                .await
+                .unwrap();
+        }
+
+        drop(state_guard);
+
+        let client_id = "test-client".to_string();
+        let open_fetch_stream_request = OpenFetchStreamRequest {
+            client_id: client_id.clone(),
+            index_uid: "test-index:0".to_string(),
+            source_id: "test-source:0".to_string(),
+            shard_id: 1,
+            from_position_exclusive: None,
+            to_position_inclusive: None,
+        };
+
+        let mut fetch_stream = ingester
+            .open_fetch_stream(open_fetch_stream_request)
+            .await
+            .unwrap();
+        let fetch_response = fetch_stream.next().await.unwrap().unwrap();
+        assert_eq!(
+            fetch_response.from_position_exclusive(),
+            Position::Beginning
+        );
+
+        let close_shard_1 = ClosedShards {
+            index_uid: "test-index:0".to_string(),
+            source_id: "test-source:0".to_string(),
+            shard_ids: vec![1, 2],
+        };
+        let close_shard_2 = ClosedShards {
+            index_uid: "test-index:1".to_string(),
+            source_id: "test-source:1".to_string(),
+            shard_ids: vec![3],
+        };
+        let close_shard_with_no_queue = ClosedShards {
+            index_uid: "test-index:2".to_string(),
+            source_id: "test-source:2".to_string(),
+            shard_ids: vec![4],
+        };
+        let closed_shards = vec![
+            close_shard_1.clone(),
+            close_shard_2.clone(),
+            close_shard_with_no_queue,
+        ];
+        let close_shards_request = CloseShardsRequest {
+            closed_shards: closed_shards.clone(),
+        };
+        ingester.close_shards(close_shards_request).await.unwrap();
+
+        // Check that shards are closed and EOF records are appended.
+        let state_guard = ingester.state.read().await;
+        for shard in state_guard.shards.values() {
+            shard.assert_is_closed();
+        }
+        for closed_shards in [&close_shard_1, &close_shard_2] {
+            for queue_id in closed_shards.queue_ids() {
+                let last_position = state_guard
+                    .mrecordlog
+                    .range(
+                        &queue_id,
+                        FetchRange::new(Position::Beginning, Position::Beginning),
+                    )
+                    .unwrap()
+                    .last()
+                    .unwrap();
+                assert!(is_eof_mrecord(&last_position.1));
+            }
+        }
+
+        // Check that fetch task is notified.
+        // Note: fetch stream should not block if the close shard call notified the fetch task.
+        let fetch_response =
+            tokio::time::timeout(std::time::Duration::from_millis(50), fetch_stream.next())
+                .await
+                .unwrap()
+                .unwrap()
+                .unwrap();
+        assert_eq!(fetch_response.to_position_inclusive(), Position::Eof);
     }
 }

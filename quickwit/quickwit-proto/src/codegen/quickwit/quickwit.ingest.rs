@@ -52,6 +52,17 @@ pub struct Shard {
     pub publish_token: ::core::option::Option<::prost::alloc::string::String>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ClosedShards {
+    #[prost(string, tag = "1")]
+    pub index_uid: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub source_id: ::prost::alloc::string::String,
+    #[prost(uint64, repeated, tag = "3")]
+    pub shard_ids: ::prost::alloc::vec::Vec<u64>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
 #[repr(i32)]

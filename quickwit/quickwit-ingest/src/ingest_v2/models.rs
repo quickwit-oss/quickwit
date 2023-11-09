@@ -137,6 +137,15 @@ impl IngesterShard {
         .is_closed()
     }
 
+    pub fn close(&mut self) {
+        let shard_state = match self {
+            IngesterShard::Primary(primary_shard) => &mut primary_shard.shard_state,
+            IngesterShard::Replica(replica_shard) => &mut replica_shard.shard_state,
+            IngesterShard::Solo(solo_shard) => &mut solo_shard.shard_state,
+        };
+        *shard_state = ShardState::Closed;
+    }
+
     pub fn replication_position_inclusive(&self) -> Position {
         match self {
             IngesterShard::Primary(primary_shard) => &primary_shard.replication_position_inclusive,

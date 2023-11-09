@@ -513,13 +513,13 @@ async fn fault_tolerant_fetch_task(
 }
 
 #[derive(Debug, Clone, Copy)]
-struct FetchRange {
+pub(super) struct FetchRange {
     from_position_exclusive_opt: Option<u64>,
     to_position_inclusive_opt: Option<u64>,
 }
 
 impl FetchRange {
-    fn new(from_position_exclusive: Position, to_position_inclusive: Position) -> Self {
+    pub(super) fn new(from_position_exclusive: Position, to_position_inclusive: Position) -> Self {
         Self {
             from_position_exclusive_opt: from_position_exclusive.as_u64(),
             to_position_inclusive_opt: to_position_inclusive.as_u64(),

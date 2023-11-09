@@ -35,6 +35,8 @@ service IngesterService {
 
   // rpc OpenWatchStream(OpenWatchStreamRequest) returns (stream WatchMessage);
 
+  rpc CloseShards(CloseShardsRequest) returns (CloseShardsResponse);
+
   // Pings an ingester to check if it is ready to host shards and serve requests.
   rpc Ping(PingRequest) returns (PingResponse);
 
@@ -184,6 +186,13 @@ message FetchResponseV2 {
   quickwit.ingest.MRecordBatch mrecord_batch = 4;
   quickwit.ingest.Position from_position_exclusive = 5;
   quickwit.ingest.Position to_position_inclusive = 6;
+}
+
+message CloseShardsRequest {
+  repeated quickwit.ingest.ClosedShards closed_shards = 1;
+}
+
+message CloseShardsResponse {
 }
 
 message PingRequest {
