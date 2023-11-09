@@ -43,7 +43,7 @@ use quickwit_proto::ingest::ingester::{
 use quickwit_proto::ingest::{CommitTypeV2, IngestV2Error, IngestV2Result, ShardState};
 use quickwit_proto::types::{NodeId, Position, QueueId};
 use tokio::sync::RwLock;
-use tracing::{error, info, warn};
+use tracing::{error, info};
 
 use super::fetch::FetchTask;
 use super::models::{IngesterShard, PrimaryShard};
@@ -542,7 +542,6 @@ impl IngesterService for Ingester {
         for close_shard in close_shards_request.closed_shards {
             for queue_id in close_shard.queue_ids() {
                 if !state_guard.mrecordlog.queue_exists(&queue_id) {
-                    warn!("shard `{}` not found", queue_id);
                     continue;
                 }
                 append_eof_record_if_necessary(&mut state_guard.mrecordlog, &queue_id).await;
@@ -550,7 +549,7 @@ impl IngesterService for Ingester {
                     .shards
                     .get_mut(&queue_id)
                     .expect("shard must exist");
-                // Notify fetch task so eof record is sent to the replica.
+                // Notify fetch task.
                 shard.notify_new_records();
                 shard.close();
             }
