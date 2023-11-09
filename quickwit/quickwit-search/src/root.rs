@@ -498,8 +498,13 @@ pub(crate) async fn search_partial_hits_phase(
     .await
     .context("failed to merge leaf search responses")?
     .map_err(|error: TantivyError| crate::SearchError::Internal(error.to_string()))?;
-    debug!(leaf_search_response = ?leaf_search_response, "Merged leaf search response.");
-
+    debug!(
+        num_hits = leaf_search_response.num_hits,
+        failed_splits = ?leaf_search_response.failed_splits,
+        num_attempted_splits = leaf_search_response.num_attempted_splits,
+        has_intermediate_aggregation_result = leaf_search_response.intermediate_aggregation_result.is_some(),
+        "Merged leaf search response."
+    );
     if !leaf_search_response.failed_splits.is_empty() {
         error!(failed_splits = ?leaf_search_response.failed_splits, "Leaf search response contains at least one failed split.");
         let errors: String = leaf_search_response.failed_splits.iter().join(", ");
@@ -1061,7 +1066,10 @@ pub async fn root_list_terms(
         merged_iter.collect()
     };
 
-    debug!(leaf_list_terms_response = ?leaf_list_terms_response, "Merged leaf search response.");
+    debug!(
+        leaf_list_terms_response_count = leaf_list_terms_response.len(),
+        "Merged leaf search response."
+    );
 
     let elapsed = start_instant.elapsed();
 
