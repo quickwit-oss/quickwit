@@ -339,7 +339,16 @@ async fn create_pulsar_consumer(
 fn msg_id_to_position(msg: &MessageIdData) -> Position {
     // The order of these fields are important as they affect the sorting
     // of the checkpoint positions.
-    // TODO: Confirm this layout is correct?
+    //
+    // The key parts of the ID used for ordering are:
+    // - The ledger ID which is a sequentially increasing ID.
+    // - The entry ID the unique ID of the message within the ledger.
+    // - The batch position for the current chunk of messages.
+    //
+    // The remaining keys are not required for sorting but are required
+    // in order to re-construct the message ID in order to send back to pulsar.
+    // The ledger_id, entry_id and the batch_index form a unique composite key which will
+    // prevent the remaining parts of the ID from interfering with the sorting.
     let id_str = format!(
         "{:0>20},{:0>20},{},{},{}",
         msg.ledger_id,
