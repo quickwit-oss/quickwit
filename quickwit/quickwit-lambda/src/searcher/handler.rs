@@ -30,7 +30,6 @@ use crate::logger;
 use crate::utils::ALREADY_EXECUTED;
 
 async fn searcher_handler(event: LambdaEvent<SearchRequestQueryString>) -> Result<Value, Error> {
-    debug!(payload = ?event.payload, "Handler start");
     let ingest_res = search(SearchArgs {
         query: event.payload,
     })
@@ -52,6 +51,7 @@ async fn searcher_handler(event: LambdaEvent<SearchRequestQueryString>) -> Resul
 pub async fn handler(event: LambdaEvent<SearchRequestQueryString>) -> Result<Value, Error> {
     let cold = !ALREADY_EXECUTED.swap(true, SeqCst);
     let memory = event.context.env_config.memory;
+    let payload = format!("{:?}", event.payload);
 
     let result = searcher_handler(event)
         .instrument(span!(
@@ -59,6 +59,7 @@ pub async fn handler(event: LambdaEvent<SearchRequestQueryString>) -> Result<Val
             Level::TRACE,
             logger::RUNTIME_CONTEXT_SPAN,
             memory,
+            payload,
             env.INDEX_ID = *INDEX_ID,
             env.ENABLE_SEARCH_CACHE = *ENABLE_SEARCH_CACHE
         ))
