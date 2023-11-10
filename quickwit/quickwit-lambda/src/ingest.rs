@@ -17,36 +17,50 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-///////////////////////////////////////////////////////
-// NOTE: Archived in case we want to to fork the CLI //
-///////////////////////////////////////////////////////
-
 use std::collections::HashSet;
-use std::io::IsTerminal;
 use std::num::NonZeroUsize;
-use std::{env, io};
+use std::path::PathBuf;
 
-use anyhow::{bail, Context};
+use anyhow::bail;
+use chitchat::transport::ChannelTransport;
 use chitchat::FailureDetectorConfig;
 use quickwit_actors::Universe;
-use quickwit_cli::{
-    run_index_checklist, start_actor_runtimes, tool::start_statistics_reporting_loop,
-    tool::LocalIngestDocsArgs,
-};
-use quickwit_cluster::{ChannelTransport, Cluster, ClusterMember};
+use quickwit_cli::tool::start_statistics_reporting_loop;
+use quickwit_cli::{run_index_checklist, start_actor_runtimes};
+use quickwit_cluster::{Cluster, ClusterMember};
+use quickwit_common::pubsub::EventBroker;
 use quickwit_common::runtimes::RuntimesConfig;
-use quickwit_common::uri::Uri;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{
-    ConfigFormat, IndexerConfig, MetastoreConfigs, NodeConfig, SourceConfig, SourceParams,
-    StorageConfigs, TransformConfig, CLI_INGEST_SOURCE_ID,
+    IndexerConfig, NodeConfig, SourceConfig, SourceInputFormat, SourceParams, TransformConfig,
+    CLI_INGEST_SOURCE_ID,
 };
 use quickwit_index_management::{clear_cache_directory, IndexService};
 use quickwit_indexing::actors::{IndexingService, MergePipelineId};
-use quickwit_indexing::models::{DetachIndexingPipeline, DetachMergePipeline, SpawnPipeline};
-use quickwit_metastore::MetastoreResolver;
-use quickwit_storage::{load_file, StorageResolver};
+use quickwit_indexing::models::{
+    DetachIndexingPipeline, DetachMergePipeline, IndexingStatistics, SpawnPipeline,
+};
+use quickwit_ingest::IngesterPool;
 use tracing::{debug, info};
+
+use crate::utils::load_node_config;
+
+const CONFIGURATION_TEMPLATE: &str = "version: 0.6
+node_id: lambda-indexer
+metastore_uri: s3://${METASTORE_BUCKET}
+default_index_root_uri: s3://${INDEX_BUCKET}
+data_dir: /tmp
+";
+
+#[derive(Debug, Eq, PartialEq)]
+pub struct IngestArgs {
+    pub index_id: String,
+    pub input_path: PathBuf,
+    pub input_format: SourceInputFormat,
+    pub overwrite: bool,
+    pub vrl_script: Option<String>,
+    pub clear_cache: bool,
+}
 
 async fn create_empty_cluster(config: &NodeConfig) -> anyhow::Result<Cluster> {
     let self_node = ClusterMember::new(
@@ -70,49 +84,11 @@ async fn create_empty_cluster(config: &NodeConfig) -> anyhow::Result<Cluster> {
     Ok(cluster)
 }
 
-fn get_resolvers(
-    storage_configs: &StorageConfigs,
-    metastore_configs: &MetastoreConfigs,
-) -> (StorageResolver, MetastoreResolver) {
-    // The CLI tests rely on the unconfigured singleton resolvers, so it's better to return them if
-    // the storage and metastore configs are not set.
-    if storage_configs.is_empty() && metastore_configs.is_empty() {
-        return (
-            StorageResolver::unconfigured(),
-            MetastoreResolver::unconfigured(),
-        );
-    }
-    let storage_resolver = StorageResolver::configured(storage_configs);
-    let metastore_resolver =
-        MetastoreResolver::configured(storage_resolver.clone(), metastore_configs);
-    (storage_resolver, metastore_resolver)
-}
+pub async fn ingest(args: IngestArgs) -> anyhow::Result<IndexingStatistics> {
+    debug!(args=?args, "lambda-ingest");
+    let (config, storage_resolver, metastore) = load_node_config(CONFIGURATION_TEMPLATE).await?;
 
-async fn load_node_config(config_uri: &Uri) -> anyhow::Result<NodeConfig> {
-    let config_content = load_file(&StorageResolver::unconfigured(), config_uri)
-        .await
-        .context("Failed to load node config.")?;
-    let config_format = ConfigFormat::sniff_from_uri(config_uri)?;
-    let config = NodeConfig::load(config_format, config_content.as_slice())
-        .await
-        .with_context(|| format!("Failed to parse node config `{config_uri}`."))?;
-    info!(config_uri=%config_uri, config=?config, "Loaded node config.");
-    Ok(config)
-}
-
-pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<()> {
-    debug!(args=?args, "local-ingest-docs");
-
-    let config = load_node_config(&args.config_uri).await?;
-    let (storage_resolver, metastore_resolver) =
-        get_resolvers(&config.storage_configs, &config.metastore_configs);
-    let metastore = metastore_resolver.resolve(&config.metastore_uri).await?;
-
-    let source_params = if let Some(filepath) = args.input_path_opt.as_ref() {
-        SourceParams::file(filepath)
-    } else {
-        SourceParams::stdin()
-    };
+    let source_params = SourceParams::file(args.input_path);
     let transform_config = args
         .vrl_script
         .map(|vrl_script| TransformConfig::new(vrl_script, None));
@@ -157,7 +133,9 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
         cluster,
         metastore,
         None,
+        IngesterPool::default(),
         storage_resolver,
+        EventBroker::default(),
     )
     .await?;
     let universe = Universe::new();
@@ -179,19 +157,7 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
         .ask_for_res(DetachIndexingPipeline { pipeline_id })
         .await?;
 
-    if args.input_path_opt.is_none() && io::stdin().is_terminal() {
-        let eof_shortcut = match env::consts::OS {
-            "windows" => "CTRL+Z",
-            _ => "CTRL+D",
-        };
-        println!(
-            "Please, enter JSON documents one line at a time.\nEnd your input using \
-             {eof_shortcut}."
-        );
-    }
-    let statistics =
-        start_statistics_reporting_loop(indexing_pipeline_handle, args.input_path_opt.is_none())
-            .await?;
+    let statistics = start_statistics_reporting_loop(indexing_pipeline_handle, false).await?;
     merge_pipeline_handle.quit().await;
     // Shutdown the indexing server.
     universe
@@ -199,25 +165,15 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
         .await?;
     indexing_server_handle.join().await;
     universe.quit().await;
-    if statistics.num_published_splits > 0 {
-        println!(
-            "Now, you can query the index with the following command:\nquickwit index search \
-             --index {} --config ./config/quickwit.yaml --query \"my query\"",
-            args.index_id
-        );
-    }
 
     if args.clear_cache {
-        println!("Clearing local cache directory...");
+        info!("Clearing local cache directory...");
         clear_cache_directory(&config.data_dir_path).await?;
-        println!("{} Local cache directory cleared.", "✔");
+        info!("Local cache directory cleared.");
     }
 
-    match statistics.num_invalid_docs {
-        0 => {
-            println!("{} Documents successfully indexed.", "✔");
-            Ok(())
-        }
-        _ => bail!("Failed to ingest all the documents."),
+    if statistics.num_invalid_docs > 0 {
+        bail!("Failed to ingest {} documents", statistics.num_invalid_docs)
     }
+    Ok(statistics)
 }
