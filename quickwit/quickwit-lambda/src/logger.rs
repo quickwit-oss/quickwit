@@ -26,6 +26,7 @@ use opentelemetry::{global, KeyValue};
 use opentelemetry_otlp::WithExportConfig;
 use quickwit_serve::BuildInfo;
 use tracing::{debug, Level};
+use tracing_subscriber::fmt::format::{FmtSpan, JsonFields};
 use tracing_subscriber::fmt::time::UtcTime;
 use tracing_subscriber::prelude::*;
 use tracing_subscriber::registry::LookupSpan;
@@ -56,9 +57,12 @@ where
                 )
                 .expect("Time format invalid."),
             ),
-        );
+        )
+        .json();
     tracing_subscriber::fmt::layer::<S>()
+        .with_span_events(FmtSpan::NEW | FmtSpan::CLOSE)
         .event_format(event_format)
+        .fmt_fields(JsonFields::default())
         .with_ansi(ansi)
         .with_filter(env_filter)
 }

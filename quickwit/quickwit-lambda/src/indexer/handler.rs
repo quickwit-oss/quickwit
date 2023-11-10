@@ -17,34 +17,37 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::sync::atomic::Ordering::SeqCst;
-
 use lambda_runtime::{Error, LambdaEvent};
 use serde_json::Value;
-use tracing::{debug, error, info, span, Instrument, Level};
+use tracing::{debug_span, error, info, info_span, Instrument};
 
 use super::environment::{DISABLE_MERGE, INDEX_CONFIG_URI, INDEX_ID};
 use super::ingest::{ingest, IngestArgs};
 use super::model::IndexerEvent;
 use crate::logger;
-use crate::utils::ALREADY_EXECUTED;
+use crate::utils::LambdaContainerContext;
 
 async fn indexer_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
-    debug!(payload = event.payload.to_string(), "Handler start");
-    let payload_res = serde_json::from_value::<IndexerEvent>(event.payload);
-
-    if let Err(e) = payload_res {
-        error!(err=?e, "Failed to parse payload");
-        return Err(e.into());
-    }
+    let container_ctx = LambdaContainerContext::load();
+    let memory = event.context.env_config.memory;
+    let payload = serde_json::from_value::<IndexerEvent>(event.payload)?;
 
     let ingest_res = ingest(IngestArgs {
-        input_path: payload_res.unwrap().uri(),
+        input_path: payload.uri(),
         input_format: quickwit_config::SourceInputFormat::Json,
         overwrite: false,
         vrl_script: None,
         clear_cache: true,
     })
+    .instrument(debug_span!(
+        "ingest",
+        memory,
+        env.INDEX_CONFIG_URI = *INDEX_CONFIG_URI,
+        env.INDEX_ID = *INDEX_ID,
+        env.DISABLE_MERGE = *DISABLE_MERGE,
+        cold = container_ctx.cold,
+        container_id = container_ctx.container_id,
+    ))
     .await;
 
     let result = match ingest_res {
@@ -61,19 +64,16 @@ async fn indexer_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
 }
 
 pub async fn handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
-    let cold = !ALREADY_EXECUTED.swap(true, SeqCst);
-    let memory = event.context.env_config.memory;
-    let result = indexer_handler(event)
-        .instrument(span!(
-            parent: &span!(Level::INFO, "indexer_handler", cold),
-            Level::TRACE,
-            logger::RUNTIME_CONTEXT_SPAN,
-            memory,
-            env.INDEX_CONFIG_URI = *INDEX_CONFIG_URI,
-            env.INDEX_ID = *INDEX_ID,
-            env.DISABLE_MERGE = *DISABLE_MERGE
-        ))
+    let request_id = event.context.request_id.clone();
+    let mut response = indexer_handler(event)
+        .instrument(info_span!("indexer_handler", request_id))
         .await;
+    if let Err(e) = &response {
+        error!(err=?e, "Handler failed");
+    }
+    if let Ok(Value::Object(ref mut map)) = response {
+        map.insert("request_id".to_string(), Value::String(request_id));
+    }
     logger::flush_tracer();
-    result
+    response
 }
