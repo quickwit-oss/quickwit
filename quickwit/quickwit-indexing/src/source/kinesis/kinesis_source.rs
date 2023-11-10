@@ -44,10 +44,9 @@ use crate::actors::DocProcessor;
 use crate::models::RawDocBatch;
 use crate::source::kinesis::helpers::get_kinesis_client;
 use crate::source::{
-    Source, SourceContext, SourceRuntimeArgs, TypedSourceFactory, EMIT_BATCHES_TIMEOUT,
+    Source, SourceContext, SourceRuntimeArgs, TypedSourceFactory, BATCH_NUM_BYTES_LIMIT,
+    EMIT_BATCHES_TIMEOUT,
 };
-
-const TARGET_BATCH_NUM_BYTES: u64 = 5_000_000;
 
 type ShardId = String;
 
@@ -280,7 +279,7 @@ impl Source for KinesisSource {
                                     ).context("failed to record partition delta")?;
                                 }
                             }
-                            if batch_num_bytes >= TARGET_BATCH_NUM_BYTES {
+                            if batch_num_bytes >= BATCH_NUM_BYTES_LIMIT {
                                 break;
                             }
                         }
