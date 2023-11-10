@@ -47,25 +47,16 @@ use quickwit_proto::metastore::MetastoreError;
 use quickwit_storage::StorageResolver;
 use tracing::{debug, info, instrument};
 
+use super::environment::{CONFIGURATION_TEMPLATE, DISABLE_MERGE, INDEX_CONFIG_URI, INDEX_ID};
 use crate::utils::load_node_config;
-
-const CONFIGURATION_TEMPLATE: &str = "version: 0.6
-node_id: lambda-indexer
-metastore_uri: s3://${QW_LAMBDA_METASTORE_BUCKET}/index
-default_index_root_uri: s3://${QW_LAMBDA_INDEX_BUCKET}/index
-data_dir: /tmp
-";
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct IngestArgs {
-    pub index_config_uri: String,
-    pub index_id: String,
     pub input_path: PathBuf,
     pub input_format: SourceInputFormat,
     pub overwrite: bool,
     pub vrl_script: Option<String>,
     pub clear_cache: bool,
-    pub disable_merge: bool,
 }
 
 async fn create_empty_cluster(config: &NodeConfig) -> anyhow::Result<Cluster> {
@@ -107,11 +98,9 @@ pub fn dir_and_filename(filepath: &Path) -> anyhow::Result<(Uri, &Path)> {
 #[instrument(level = "debug", skip(resolver))]
 async fn load_index_config(
     resolver: &StorageResolver,
-    config_uri: &str,
     default_index_root_uri: &Uri,
-    disable_merge: bool,
 ) -> anyhow::Result<IndexConfig> {
-    let (dir, file) = dir_and_filename(&Path::new(config_uri))?;
+    let (dir, file) = dir_and_filename(&Path::new(&*INDEX_CONFIG_URI))?;
     let index_config_storage = resolver.resolve(&dir).await?;
     let bytes = index_config_storage.get_all(file).await?;
     let mut index_config = load_index_config_from_user_config(
@@ -119,7 +108,7 @@ async fn load_index_config(
         bytes.as_slice(),
         default_index_root_uri,
     )?;
-    if disable_merge {
+    if *DISABLE_MERGE {
         debug!("force disable merges");
         index_config.indexing_settings.merge_policy = MergePolicyConfig::Nop;
     }
@@ -147,7 +136,7 @@ pub async fn ingest(args: IngestArgs) -> anyhow::Result<IndexingStatistics> {
     let checklist_result = run_index_checklist(
         &*metastore,
         &storage_resolver,
-        &args.index_id,
+        &*INDEX_ID,
         Some(&source_config),
     )
     .await;
@@ -160,21 +149,16 @@ pub async fn ingest(args: IngestArgs) -> anyhow::Result<IndexingStatistics> {
             bail!(e);
         }
         info!(
-            index_id = args.index_id,
-            index_config_uri = args.index_config_uri,
+            index_id = *INDEX_ID,
+            index_config_uri = *INDEX_CONFIG_URI,
             "Index not found, creating it"
         );
-        let index_config = load_index_config(
-            &storage_resolver,
-            &args.index_config_uri,
-            &config.default_index_root_uri,
-            args.disable_merge,
-        )
-        .await?;
-        if index_config.index_id != args.index_id {
+        let index_config =
+            load_index_config(&storage_resolver, &config.default_index_root_uri).await?;
+        if index_config.index_id != *INDEX_ID {
             bail!(
                 "Expected index ID was {} but config file had {}",
-                args.index_id,
+                *INDEX_ID,
                 index_config.index_id,
             );
         }
@@ -182,11 +166,11 @@ pub async fn ingest(args: IngestArgs) -> anyhow::Result<IndexingStatistics> {
         debug!("Index created");
     } else if args.overwrite {
         info!(
-            index_id = args.index_id,
+            index_id = *INDEX_ID,
             "Overwrite enabled, clearing existing index",
         );
         let index_service = IndexService::new(metastore.clone(), storage_resolver.clone());
-        index_service.clear_index(&args.index_id).await?;
+        index_service.clear_index(&*INDEX_ID).await?;
     }
     // The indexing service needs to update its cluster chitchat state so that the control plane is
     // aware of the running tasks. We thus create a fake cluster to instantiate the indexing service
@@ -218,7 +202,7 @@ pub async fn ingest(args: IngestArgs) -> anyhow::Result<IndexingStatistics> {
         universe.spawn_builder().spawn(indexing_server);
     let pipeline_id = indexing_server_mailbox
         .ask_for_res(SpawnPipeline {
-            index_id: args.index_id.clone(),
+            index_id: INDEX_ID.clone(),
             source_config,
             pipeline_ord: 0,
         })
