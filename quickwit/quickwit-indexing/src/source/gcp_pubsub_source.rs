@@ -37,11 +37,10 @@ use serde_json::{json, Value as JsonValue};
 use tokio::time;
 use tracing::{debug, info, warn};
 
-use super::SourceActor;
+use super::{SourceActor, BATCH_NUM_BYTES_LIMIT, EMIT_BATCHES_TIMEOUT};
 use crate::actors::DocProcessor;
 use crate::source::{BatchBuilder, Source, SourceContext, SourceRuntimeArgs, TypedSourceFactory};
 
-const BATCH_NUM_BYTES_LIMIT: u64 = 5_000_000;
 const DEFAULT_MAX_MESSAGES_PER_PULL: i32 = 1_000;
 
 pub struct GcpPubSubSourceFactory;
@@ -168,7 +167,7 @@ impl Source for GcpPubSubSource {
     ) -> Result<Duration, ActorExitStatus> {
         let now = Instant::now();
         let mut batch: BatchBuilder = BatchBuilder::default();
-        let deadline = time::sleep(*quickwit_actors::HEARTBEAT / 2);
+        let deadline = time::sleep(EMIT_BATCHES_TIMEOUT);
         tokio::pin!(deadline);
         // TODO: ensure we ACK the message after being commit: at least once
         // TODO: ensure we increase_ack_deadline for the items

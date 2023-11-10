@@ -45,11 +45,10 @@ use ulid::Ulid;
 
 use super::{
     Assignment, BatchBuilder, Source, SourceContext, SourceRuntimeArgs, TypedSourceFactory,
+    BATCH_NUM_BYTES_LIMIT, EMIT_BATCHES_TIMEOUT,
 };
 use crate::actors::DocProcessor;
 use crate::models::{NewPublishLock, NewPublishToken, PublishLock};
-
-const EMIT_BATCHES_TIMEOUT: Duration = Duration::from_millis(if cfg!(test) { 100 } else { 1_000 });
 
 pub struct IngestSourceFactory;
 
@@ -309,7 +308,7 @@ impl Source for IngestSource {
                 Ok(Ok(fetch_payload)) => {
                     self.process_fetch_response(&mut batch_builder, fetch_payload)?;
 
-                    if batch_builder.num_bytes >= 5 * 1024 * 1024 {
+                    if batch_builder.num_bytes >= BATCH_NUM_BYTES_LIMIT {
                         break;
                     }
                 }

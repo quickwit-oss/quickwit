@@ -42,20 +42,8 @@ use tracing::{debug, info, warn};
 use crate::actors::DocProcessor;
 use crate::source::{
     BatchBuilder, Source, SourceActor, SourceContext, SourceRuntimeArgs, TypedSourceFactory,
+    BATCH_NUM_BYTES_LIMIT, EMIT_BATCHES_TIMEOUT,
 };
-
-/// Number of bytes after which we cut a new batch.
-///
-/// We try to emit chewable batches for the indexer.
-/// One batch = one message to the indexer actor.
-///
-/// If batches are too large:
-/// - we might not be able to observe the state of the indexer for 5 seconds.
-/// - we will be needlessly occupying resident memory in the mailbox.
-/// - we will not have a precise control of the timeout before commit.
-///
-/// 5MB seems like a good one size fits all value.
-const BATCH_NUM_BYTES_LIMIT: u64 = 5_000_000;
 
 type PulsarConsumer = Consumer<PulsarMessage, TokioExecutor>;
 
@@ -225,7 +213,7 @@ impl Source for PulsarSource {
     ) -> Result<Duration, ActorExitStatus> {
         let now = Instant::now();
         let mut batch = BatchBuilder::default();
-        let deadline = time::sleep(*quickwit_actors::HEARTBEAT / 2);
+        let deadline = time::sleep(EMIT_BATCHES_TIMEOUT);
         tokio::pin!(deadline);
 
         loop {
