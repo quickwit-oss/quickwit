@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::borrow::Cow;
 use std::fmt::{self, Display};
 use std::hash::{Hash, Hasher};
 use std::str::FromStr;
@@ -69,11 +70,11 @@ fn hash_json_val<H: Hasher>(json_val: &JsonValue, hasher: &mut H) {
     }
 }
 
-fn extract_value(data: &JsonValue, keys: &[String]) -> Option<JsonValue> {
+fn extract_value(data: &JsonValue, keys: &[Cow<str>]) -> Option<JsonValue> {
     match keys {
         [key, rest @ ..] => {
             if let JsonValue::Object(obj) = data {
-                if let Some(value) = obj.get(key) {
+                if let Some(value) = obj.get(key.as_ref()) {
                     extract_value(value, rest)
                 } else {
                     None
@@ -101,6 +102,7 @@ impl RoutingExprContext for serde_json::Map<String, JsonValue> {
     }
 }
 
+/// which defines a routing expression
 #[derive(Clone, Default)]
 pub struct RoutingExpr {
     inner_opt: Option<Arc<InnerRoutingExpr>>,
@@ -108,6 +110,7 @@ pub struct RoutingExpr {
 }
 
 impl RoutingExpr {
+    /// Construct a routing expression from a expression dsl string
     pub fn new(expr_dsl_str: &str) -> anyhow::Result<Self> {
         let expr_dsl_str = expr_dsl_str.trim();
         if expr_dsl_str.is_empty() {
@@ -145,6 +148,7 @@ impl RoutingExpr {
         }
     }
 
+    /// return all fields in a vector
     pub fn field_names(&self) -> Vec<String> {
         if let Some(inner) = self.inner_opt.as_ref() {
             inner.field_names()
@@ -328,6 +332,8 @@ enum ExprType {
 }
 
 mod expression_dsl {
+    use std::borrow::Cow;
+
     use nom::bytes::complete::{escaped, tag};
     use nom::character::complete::multispace0;
     use nom::combinator::{eof, map, opt};
@@ -428,13 +434,17 @@ mod expression_dsl {
         )
     }
 
-    fn escaped_key(input: &str) -> IResult<&str, String> {
+    fn escaped_key(input: &str) -> IResult<&str, Cow<str>> {
         map(escaped(key_identifier, '\\', tag(".")), |s: &str| {
-            s.replace("\\.", ".")
+            if s.contains("\\.") {
+                Cow::Owned(s.replace("\\.", "."))
+            } else {
+                Cow::Borrowed(s)
+            }
         })(input)
     }
 
-    pub(crate) fn parse_keys(input: &str) -> anyhow::Result<Vec<String>> {
+    pub(crate) fn parse_keys(input: &str) -> anyhow::Result<Vec<Cow<str>>> {
         let (i, res) = separated_list0(tag("."), escaped_key)(input)
             .finish()
             .map_err(|e| anyhow::anyhow!("error parsing key expression: {e}"))?;
@@ -577,7 +587,7 @@ mod tests {
         )
         .unwrap();
         let keys = expression_dsl::parse_keys("app.id").unwrap();
-        assert_eq!(keys, vec![String::from("app"), String::from("id")]);
+        assert_eq!(keys, vec!["app", "id"]);
         let value = extract_value(&ctx, &keys).unwrap();
         assert_eq!(value, JsonValue::String(String::from("123")));
     }
