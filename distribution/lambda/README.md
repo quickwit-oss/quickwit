@@ -1,6 +1,13 @@
 
 # CDK template for running Quickwit on AWS Lambda
 
+## Prerequisites
+
+- Install AWS CDK Toolkit (cdk command)
+  - `npm install -g aws-cdk `
+- Install the AWS CLI
+  - https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html
+
 ## Python venv
 
 This project is set up like a standard Python project. The initialization
@@ -41,11 +48,15 @@ pip install -r requirements-dev.txt
 
 The Makefile is a usefull entrypoint to show how the Lambda deployement can used.
 ```bash
+# replace with you AWS account ID and prefered region
 export CDK_ACCOUNT=123456789
 export CDK_REGION=us-east-1
 make init
-make deploy 
-...
+make deploy
+make upload-src-file
+# create the index using steps described in `make index-creation-instruction`
+make invoke-indexer
+make invoke-searcher
 ```
 
 
