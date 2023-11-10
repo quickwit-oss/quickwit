@@ -19,9 +19,9 @@ init: check-env
 build: ../../quickwit/target/lambda/indexer/hdfs-logs-multitenants-10000.json
 	cargo lambda build --manifest-path=../../quickwit/Cargo.toml -p quickwit-lambda --release
 	cp resources/indexer-config.yaml ../../quickwit/target/lambda/indexer/config.yaml
-	cp resources/querier-config.yaml ../../quickwit/target/lambda/querier/config.yaml
+	cp resources/searcher-config.yaml ../../quickwit/target/lambda/searcher/config.yaml
 
-deploy: build
+deploy: build check-env
 	cdk deploy
 
 invoke-indexer: check-env
@@ -30,10 +30,10 @@ invoke-indexer: check-env
 	echo "indexer function name: $$function_name"
 	aws lambda invoke --function-name $$function_name --log-type Tail /dev/null | jq -r '.LogResult' | base64 -d
 
-invoke-querier: check-env
+invoke-searcher: check-env
 	export AWS_REGION=$$CDK_REGION
-	function_name=$$(aws cloudformation describe-stacks --stack-name LambdaStack --query "Stacks[0].Outputs[?ExportName=='querier-function-name'].OutputValue" --output text)
-	echo "querier function name: $$function_name"
+	function_name=$$(aws cloudformation describe-stacks --stack-name LambdaStack --query "Stacks[0].Outputs[?ExportName=='searcher-function-name'].OutputValue" --output text)
+	echo "searcher function name: $$function_name"
 	aws lambda invoke --function-name $$function_name --log-type Tail /dev/null | jq -r '.LogResult' | base64 -d
 
 
@@ -55,7 +55,3 @@ index-creation-instruction: deploy
 	echo "quickwit run &"
 	echo "\n=> once the server has started, create the index"
 	echo "quickwit index create --index-config hdfs_logs_index_config.yaml"
-
-## If we wanted to create the index from the Lambda
-# cp ../../config/tutorials/hdfs-logs/index-config.yaml \
-#   ../../quickwit/target/lambda/quickwit-lambda/hdfs-index-config.yaml

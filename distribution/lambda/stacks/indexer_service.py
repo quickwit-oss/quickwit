@@ -2,7 +2,7 @@ from constructs import Construct
 from aws_cdk import aws_lambda, aws_s3, Duration, CfnOutput
 
 
-class QueryService(Construct):
+class IndexerService(Construct):
     def __init__(
         self, scope: Construct, construct_id: str, store_bucket: aws_s3.Bucket, **kwargs
     ) -> None:
@@ -10,8 +10,8 @@ class QueryService(Construct):
 
         handler = aws_lambda.Function(
             self,
-            id="quickwit-querier",
-            code=aws_lambda.Code.from_asset("../../quickwit/target/lambda/querier"),
+            id="quickwit-indexer",
+            code=aws_lambda.Code.from_asset("../../quickwit/target/lambda/indexer"),
             runtime=aws_lambda.Runtime.PROVIDED_AL2,
             handler="N/A",
             environment={
@@ -25,7 +25,7 @@ class QueryService(Construct):
 
         CfnOutput(
             self,
-            "querier-function-name",
+            "indexer-function-name",
             value=handler.function_name,
-            export_name="querier-function-name",
+            export_name="indexer-function-name",
         )
