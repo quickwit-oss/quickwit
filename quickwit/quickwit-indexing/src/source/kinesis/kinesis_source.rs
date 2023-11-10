@@ -43,7 +43,9 @@ use super::shard_consumer::{ShardConsumer, ShardConsumerHandle, ShardConsumerMes
 use crate::actors::DocProcessor;
 use crate::models::RawDocBatch;
 use crate::source::kinesis::helpers::get_kinesis_client;
-use crate::source::{Source, SourceContext, SourceRuntimeArgs, TypedSourceFactory};
+use crate::source::{
+    Source, SourceContext, SourceRuntimeArgs, TypedSourceFactory, EMIT_BATCHES_TIMEOUT,
+};
 
 const TARGET_BATCH_NUM_BYTES: u64 = 5_000_000;
 
@@ -215,7 +217,7 @@ impl Source for KinesisSource {
         let mut docs = Vec::new();
         let mut checkpoint_delta = SourceCheckpointDelta::default();
 
-        let deadline = time::sleep(*quickwit_actors::HEARTBEAT / 2);
+        let deadline = time::sleep(EMIT_BATCHES_TIMEOUT);
         tokio::pin!(deadline);
 
         loop {

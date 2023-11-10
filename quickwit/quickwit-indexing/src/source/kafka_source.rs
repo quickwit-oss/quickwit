@@ -49,7 +49,10 @@ use tracing::{debug, info, warn};
 
 use crate::actors::DocProcessor;
 use crate::models::{NewPublishLock, PublishLock};
-use crate::source::{BatchBuilder, Source, SourceContext, SourceRuntimeArgs, TypedSourceFactory};
+use crate::source::{
+    BatchBuilder, Source, SourceContext, SourceRuntimeArgs, TypedSourceFactory,
+    EMIT_BATCHES_TIMEOUT,
+};
 
 /// Number of bytes after which we cut a new batch.
 ///
@@ -486,7 +489,8 @@ impl Source for KafkaSource {
     ) -> Result<Duration, ActorExitStatus> {
         let now = Instant::now();
         let mut batch = BatchBuilder::default();
-        let deadline = time::sleep(*quickwit_actors::HEARTBEAT / 2);
+        // let deadline = time::sleep(*quickwit_actors::HEAR_TBEAT / 2);
+        let deadline = time::sleep(EMIT_BATCHES_TIMEOUT);
         tokio::pin!(deadline);
 
         loop {

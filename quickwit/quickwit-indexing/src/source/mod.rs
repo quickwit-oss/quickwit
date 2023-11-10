@@ -109,6 +109,8 @@ use crate::models::RawDocBatch;
 use crate::source::ingest::IngestSourceFactory;
 use crate::source::ingest_api_source::IngestApiSourceFactory;
 
+const EMIT_BATCHES_TIMEOUT: Duration = Duration::from_millis(if cfg!(test) { 100 } else { 1_000 });
+
 /// Runtime configuration used during execution of a source actor.
 pub struct SourceRuntimeArgs {
     pub pipeline_id: IndexingPipelineId,

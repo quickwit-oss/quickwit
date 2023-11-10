@@ -24,6 +24,7 @@ use std::time::Duration;
 
 use anyhow::{bail, Context};
 use async_trait::async_trait;
+use bytesize::ByteSize;
 use itertools::Itertools;
 use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_ingest::{
@@ -45,11 +46,10 @@ use ulid::Ulid;
 
 use super::{
     Assignment, BatchBuilder, Source, SourceContext, SourceRuntimeArgs, TypedSourceFactory,
+    EMIT_BATCHES_TIMEOUT,
 };
 use crate::actors::DocProcessor;
 use crate::models::{NewPublishLock, NewPublishToken, PublishLock};
-
-const EMIT_BATCHES_TIMEOUT: Duration = Duration::from_millis(if cfg!(test) { 100 } else { 1_000 });
 
 pub struct IngestSourceFactory;
 
@@ -309,7 +309,7 @@ impl Source for IngestSource {
                 Ok(Ok(fetch_payload)) => {
                     self.process_fetch_response(&mut batch_builder, fetch_payload)?;
 
-                    if batch_builder.num_bytes >= 5 * 1024 * 1024 {
+                    if batch_builder.num_bytes >= ByteSize::mib(5).as_u64() {
                         break;
                     }
                 }
