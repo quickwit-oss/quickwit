@@ -22,6 +22,7 @@ mod ingester;
 mod models;
 mod mrecord;
 mod mrecordlog_utils;
+mod rate_limiter;
 mod replication;
 mod router;
 mod shard_table;
@@ -39,6 +40,7 @@ pub use self::fetch::{FetchStreamError, MultiFetchStream};
 pub use self::ingester::Ingester;
 use self::mrecord::MRECORD_HEADER_LEN;
 pub use self::mrecord::{decoded_mrecords, MRecord};
+pub use self::rate_limiter::RateLimiterSettings;
 pub use self::router::IngestRouter;
 
 pub type IngesterPool = Pool<NodeId, IngesterServiceClient>;

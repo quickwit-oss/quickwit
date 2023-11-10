@@ -49,6 +49,7 @@ use tracing::{error, info, warn};
 use super::fetch::FetchTask;
 use super::models::{IngesterShard, PrimaryShard};
 use super::mrecordlog_utils::{append_eof_record_if_necessary, check_enough_capacity};
+use super::rate_limiter::{RateLimiter, RateLimiterSettings};
 use super::replication::{
     ReplicationStreamTask, ReplicationStreamTaskHandle, ReplicationTask, ReplicationTaskHandle,
     SYN_REPLICATION_STREAM_CAPACITY,
@@ -73,6 +74,7 @@ pub struct Ingester {
     state: Arc<RwLock<IngesterState>>,
     disk_capacity: ByteSize,
     memory_capacity: ByteSize,
+    rate_limiter_settings: RateLimiterSettings,
     replication_factor: usize,
 }
 
@@ -87,6 +89,7 @@ impl fmt::Debug for Ingester {
 pub(super) struct IngesterState {
     pub mrecordlog: MultiRecordLog,
     pub shards: HashMap<QueueId, IngesterShard>,
+    pub rate_limiters: HashMap<QueueId, RateLimiter>,
     // Replication stream opened with followers.
     pub replication_streams: HashMap<FollowerId, ReplicationStreamTaskHandle>,
     // Replication tasks running for each replication stream opened with leaders.
@@ -100,6 +103,7 @@ impl Ingester {
         wal_dir_path: &Path,
         disk_capacity: ByteSize,
         memory_capacity: ByteSize,
+        rate_limiter_settings: RateLimiterSettings,
         replication_factor: usize,
     ) -> IngestV2Result<Self> {
         let mrecordlog = MultiRecordLog::open_with_prefs(
@@ -112,6 +116,7 @@ impl Ingester {
         let inner = IngesterState {
             mrecordlog,
             shards: HashMap::new(),
+            rate_limiters: HashMap::new(),
             replication_streams: HashMap::new(),
             replication_tasks: HashMap::new(),
         };
@@ -121,6 +126,7 @@ impl Ingester {
             state: Arc::new(RwLock::new(inner)),
             disk_capacity,
             memory_capacity,
+            rate_limiter_settings,
             replication_factor,
         };
         info!(
@@ -152,7 +158,7 @@ impl Ingester {
 
             let solo_shard = SoloShard::new(ShardState::Closed, Position::Eof);
             let shard = IngesterShard::Solo(solo_shard);
-            state_guard.shards.insert(queue_id, shard);
+            state_guard.shards.insert(queue_id.clone(), shard);
         }
         Ok(())
     }
@@ -178,6 +184,9 @@ impl Ingester {
                 });
             }
         };
+        let rate_limiter = RateLimiter::from_settings(self.rate_limiter_settings);
+        state.rate_limiters.insert(queue_id.clone(), rate_limiter);
+
         let shard = if let Some(follower_id) = follower_id_opt {
             self.init_replication_stream(state, leader_id, follower_id)
                 .await?;
@@ -316,14 +325,34 @@ impl IngesterService for Ingester {
                 self.memory_capacity,
                 requested_capacity,
             ) {
-                warn!("failed to persist records: {error}");
-
+                warn!(
+                    "failed to persist records to ingester `{}`: {error}",
+                    self.self_node_id
+                );
                 let persist_failure = PersistFailure {
                     subrequest_id: subrequest.subrequest_id,
                     index_uid: subrequest.index_uid,
                     source_id: subrequest.source_id,
                     shard_id: subrequest.shard_id,
                     reason: PersistFailureReason::ResourceExhausted as i32,
+                };
+                persist_failures.push(persist_failure);
+                continue;
+            }
+            let rate_limiter = state_guard
+                .rate_limiters
+                .get_mut(&queue_id)
+                .expect("rate limiter should be initialized");
+
+            if !rate_limiter.acquire(requested_capacity) {
+                warn!("failed to persist records to shard `{queue_id}`: rate limited");
+
+                let persist_failure = PersistFailure {
+                    subrequest_id: subrequest.subrequest_id,
+                    index_uid: subrequest.index_uid,
+                    source_id: subrequest.source_id,
+                    shard_id: subrequest.shard_id,
+                    reason: PersistFailureReason::RateLimited as i32,
                 };
                 persist_failures.push(persist_failure);
                 continue;
@@ -625,6 +654,7 @@ mod tests {
     use std::net::SocketAddr;
 
     use bytes::Bytes;
+    use quickwit_common::tower::ConstantRate;
     use quickwit_proto::ingest::ingester::{
         IngesterServiceGrpcServer, IngesterServiceGrpcServerAdapter, PersistSubrequest,
         TruncateSubrequest,
@@ -646,6 +676,7 @@ mod tests {
         let wal_dir_path = tempdir.path();
         let disk_capacity = ByteSize::mb(256);
         let memory_capacity = ByteSize::mb(1);
+        let rate_limiter_settings = RateLimiterSettings::default();
         let replication_factor = 2;
         let mut ingester = Ingester::try_new(
             self_node_id.clone(),
@@ -653,6 +684,7 @@ mod tests {
             wal_dir_path,
             disk_capacity,
             memory_capacity,
+            rate_limiter_settings,
             replication_factor,
         )
         .await
@@ -751,6 +783,7 @@ mod tests {
         let wal_dir_path = tempdir.path();
         let disk_capacity = ByteSize::mb(256);
         let memory_capacity = ByteSize::mb(1);
+        let rate_limiter_settings = RateLimiterSettings::default();
         let replication_factor = 1;
         let mut ingester = Ingester::try_new(
             self_node_id.clone(),
@@ -758,6 +791,7 @@ mod tests {
             wal_dir_path,
             disk_capacity,
             memory_capacity,
+            rate_limiter_settings,
             replication_factor,
         )
         .await
@@ -850,6 +884,7 @@ mod tests {
         let wal_dir_path = tempdir.path();
         let disk_capacity = ByteSize::mb(256);
         let memory_capacity = ByteSize::mb(1);
+        let rate_limiter_settings = RateLimiterSettings::default();
         let replication_factor = 1;
         let mut ingester = Ingester::try_new(
             self_node_id.clone(),
@@ -857,6 +892,7 @@ mod tests {
             wal_dir_path,
             disk_capacity,
             memory_capacity,
+            rate_limiter_settings,
             replication_factor,
         )
         .await
@@ -896,6 +932,7 @@ mod tests {
 
         let disk_capacity = ByteSize::mb(256);
         let memory_capacity = ByteSize::mb(1);
+        let rate_limiter_settings = RateLimiterSettings::default();
         let replication_factor = 2;
 
         let mut leader = Ingester::try_new(
@@ -904,6 +941,7 @@ mod tests {
             wal_dir_path,
             disk_capacity,
             memory_capacity,
+            rate_limiter_settings,
             replication_factor,
         )
         .await
@@ -919,6 +957,7 @@ mod tests {
             wal_dir_path,
             disk_capacity,
             memory_capacity,
+            rate_limiter_settings,
             replication_factor,
         )
         .await
@@ -1045,6 +1084,7 @@ mod tests {
         let wal_dir_path = tempdir.path();
         let disk_capacity = ByteSize::mb(256);
         let memory_capacity = ByteSize::mb(1);
+        let rate_limiter_settings = RateLimiterSettings::default();
         let replication_factor = 2;
         let mut leader = Ingester::try_new(
             leader_id.clone(),
@@ -1052,6 +1092,7 @@ mod tests {
             wal_dir_path,
             disk_capacity,
             memory_capacity,
+            rate_limiter_settings,
             replication_factor,
         )
         .await
@@ -1076,6 +1117,7 @@ mod tests {
         let wal_dir_path = tempdir.path();
         let disk_capacity = ByteSize::mb(256);
         let memory_capacity = ByteSize::mb(1);
+        let rate_limiter_settings = RateLimiterSettings::default();
         let replication_factor = 2;
         let follower = Ingester::try_new(
             follower_id.clone(),
@@ -1083,6 +1125,7 @@ mod tests {
             wal_dir_path,
             disk_capacity,
             memory_capacity,
+            rate_limiter_settings,
             replication_factor,
         )
         .await
@@ -1217,6 +1260,7 @@ mod tests {
         let wal_dir_path = tempdir.path();
         let disk_capacity = ByteSize::mib(256);
         let memory_capacity = ByteSize::mib(1);
+        let rate_limiter_settings = RateLimiterSettings::default();
         let replication_factor = 1;
         let mut ingester = Ingester::try_new(
             self_node_id.clone(),
@@ -1224,6 +1268,7 @@ mod tests {
             wal_dir_path,
             disk_capacity,
             memory_capacity,
+            rate_limiter_settings,
             replication_factor,
         )
         .await
@@ -1243,7 +1288,7 @@ mod tests {
 
         let persist_request = PersistRequest {
             leader_id: self_node_id.to_string(),
-            commit_type: CommitTypeV2::Force as i32,
+            commit_type: CommitTypeV2::Auto as i32,
             subrequests: vec![PersistSubrequest {
                 subrequest_id: 0,
                 index_uid: "test-index:0".to_string(),
@@ -1275,13 +1320,18 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_ingester_persist_resource_exhausted() {
+    async fn test_ingester_persist_rate_limited() {
         let tempdir = tempfile::tempdir().unwrap();
         let self_node_id: NodeId = "test-ingester-0".into();
         let ingester_pool = IngesterPool::default();
         let wal_dir_path = tempdir.path();
-        let disk_capacity = ByteSize(0);
-        let memory_capacity = ByteSize(0);
+        let disk_capacity = ByteSize::mib(256);
+        let memory_capacity = ByteSize::mib(1);
+        let rate_limiter_settings = RateLimiterSettings {
+            burst_limit: ByteSize(0),
+            rate_limit: ConstantRate::bytes_per_sec(ByteSize(0)),
+            refill_period: Duration::from_millis(100),
+        };
         let replication_factor = 1;
         let mut ingester = Ingester::try_new(
             self_node_id.clone(),
@@ -1289,6 +1339,7 @@ mod tests {
             wal_dir_path,
             disk_capacity,
             memory_capacity,
+            rate_limiter_settings,
             replication_factor,
         )
         .await
@@ -1296,7 +1347,68 @@ mod tests {
 
         let persist_request = PersistRequest {
             leader_id: self_node_id.to_string(),
-            commit_type: CommitTypeV2::Force as i32,
+            commit_type: CommitTypeV2::Auto as i32,
+            subrequests: vec![PersistSubrequest {
+                subrequest_id: 0,
+                index_uid: "test-index:0".to_string(),
+                source_id: "test-source".to_string(),
+                shard_id: 1,
+                follower_id: None,
+                doc_batch: Some(DocBatchV2::for_test(["test-doc-010"])),
+            }],
+        };
+        let persist_response = ingester.persist(persist_request).await.unwrap();
+        assert_eq!(persist_response.leader_id, "test-ingester-0");
+        assert_eq!(persist_response.successes.len(), 0);
+        assert_eq!(persist_response.failures.len(), 1);
+
+        let persist_failure = &persist_response.failures[0];
+        assert_eq!(persist_failure.subrequest_id, 0);
+        assert_eq!(persist_failure.index_uid, "test-index:0");
+        assert_eq!(persist_failure.source_id, "test-source");
+        assert_eq!(persist_failure.shard_id, 1);
+        assert_eq!(persist_failure.reason(), PersistFailureReason::RateLimited);
+
+        let state_guard = ingester.state.read().await;
+        assert_eq!(state_guard.shards.len(), 1);
+
+        let queue_id_01 = queue_id("test-index:0", "test-source", 1);
+
+        let solo_shard_01 = state_guard.shards.get(&queue_id_01).unwrap();
+        solo_shard_01.assert_is_solo();
+        solo_shard_01.assert_is_open();
+        solo_shard_01.assert_replication_position(Position::Beginning);
+
+        state_guard
+            .mrecordlog
+            .assert_records_eq(&queue_id_01, .., &[]);
+    }
+
+    #[tokio::test]
+    async fn test_ingester_persist_resource_exhausted() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let self_node_id: NodeId = "test-ingester-0".into();
+        let ingester_pool = IngesterPool::default();
+        let wal_dir_path = tempdir.path();
+        let disk_capacity = ByteSize(0);
+        let memory_capacity = ByteSize(0);
+        let rate_limiter_settings = RateLimiterSettings::default();
+        let replication_factor = 1;
+        let mut ingester = Ingester::try_new(
+            self_node_id.clone(),
+            ingester_pool,
+            wal_dir_path,
+            disk_capacity,
+            memory_capacity,
+            rate_limiter_settings,
+            replication_factor,
+        )
+        .await
+        .unwrap();
+
+        let persist_request = PersistRequest {
+            leader_id: self_node_id.to_string(),
+            commit_type: CommitTypeV2::Auto as i32,
             subrequests: vec![PersistSubrequest {
                 subrequest_id: 0,
                 index_uid: "test-index:0".to_string(),
@@ -1343,6 +1455,7 @@ mod tests {
         let wal_dir_path = tempdir.path();
         let disk_capacity = ByteSize::mb(256);
         let memory_capacity = ByteSize::mb(1);
+        let rate_limiter_settings = RateLimiterSettings::default();
         let replication_factor = 1;
         let mut ingester = Ingester::try_new(
             self_node_id.clone(),
@@ -1350,6 +1463,7 @@ mod tests {
             wal_dir_path,
             disk_capacity,
             memory_capacity,
+            rate_limiter_settings,
             replication_factor,
         )
         .await
@@ -1445,6 +1559,7 @@ mod tests {
         let wal_dir_path = tempdir.path();
         let disk_capacity = ByteSize::mb(256);
         let memory_capacity = ByteSize::mb(1);
+        let rate_limiter_settings = RateLimiterSettings::default();
         let replication_factor = 1;
         let mut ingester = Ingester::try_new(
             self_node_id.clone(),
@@ -1452,6 +1567,7 @@ mod tests {
             wal_dir_path,
             disk_capacity,
             memory_capacity,
+            rate_limiter_settings,
             replication_factor,
         )
         .await
@@ -1539,6 +1655,7 @@ mod tests {
         let wal_dir_path = tempdir.path();
         let disk_capacity = ByteSize::mb(256);
         let memory_capacity = ByteSize::mb(1);
+        let rate_limiter_settings = RateLimiterSettings::default();
         let replication_factor = 1;
         let mut ingester = Ingester::try_new(
             self_node_id.clone(),
@@ -1546,6 +1663,7 @@ mod tests {
             wal_dir_path,
             disk_capacity,
             memory_capacity,
+            rate_limiter_settings,
             replication_factor,
         )
         .await
