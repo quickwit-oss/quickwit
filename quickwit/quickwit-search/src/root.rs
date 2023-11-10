@@ -392,7 +392,7 @@ fn get_scroll_ttl_duration(search_request: &SearchRequest) -> crate::Result<Opti
     Ok(Some(scroll_ttl))
 }
 
-#[instrument(skip_all)]
+#[instrument(level = "debug", skip_all)]
 async fn search_partial_hits_phase_with_scroll(
     searcher_context: &SearcherContext,
     indexes_metas_for_leaf_search: &IndexesMetasForLeafSearch,
@@ -457,7 +457,7 @@ async fn search_partial_hits_phase_with_scroll(
     }
 }
 
-#[instrument(skip_all)]
+#[instrument(level = "debug", skip_all)]
 pub(crate) async fn search_partial_hits_phase(
     searcher_context: &SearcherContext,
     indexes_metas_for_leaf_search: &IndexesMetasForLeafSearch,
