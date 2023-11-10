@@ -188,7 +188,7 @@ pub struct IngestApiConfig {
     pub max_queue_memory_usage: ByteSize,
     pub max_queue_disk_usage: ByteSize,
     pub replication_factor: usize,
-    pub content_length_limit: u64,
+    pub content_length_limit: ByteSize,
 }
 
 impl Default for IngestApiConfig {
@@ -197,7 +197,7 @@ impl Default for IngestApiConfig {
             max_queue_memory_usage: ByteSize::gib(2), // TODO maybe we want more?
             max_queue_disk_usage: ByteSize::gib(4),   // TODO maybe we want more?
             replication_factor: 1,
-            content_length_limit: ByteSize::mib(10).as_u64(),
+            content_length_limit: ByteSize::mib(10),
         }
     }
 }

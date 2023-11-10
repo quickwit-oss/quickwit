@@ -69,7 +69,7 @@ use quickwit_indexing::actors::IndexingService;
 use quickwit_indexing::start_indexing_service;
 use quickwit_ingest::{
     start_ingest_api_service, GetMemoryCapacity, IngestApiService, IngestRequest, IngestRouter,
-    IngestServiceClient, Ingester, IngesterPool,
+    IngestServiceClient, Ingester, IngesterPool, RateLimiterSettings,
 };
 use quickwit_janitor::{start_janitor_service, JanitorService};
 use quickwit_metastore::{
@@ -572,6 +572,9 @@ async fn setup_ingest_v2(
             self_node_id.clone(),
             ingester_pool.clone(),
             &wal_dir_path,
+            config.ingest_api_config.max_queue_disk_usage,
+            config.ingest_api_config.max_queue_memory_usage,
+            RateLimiterSettings::default(),
             replication_factor,
         )
         .await?;
