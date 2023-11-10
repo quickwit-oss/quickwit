@@ -319,15 +319,25 @@ impl FileBackedMetastore {
         Ok(index_mutex)
     }
 
+    /// Returns the list of splits for the given request.
+    /// No error is returned if one of the requested `index_uid` does not exist.
     async fn inner_list_splits(&self, request: ListSplitsRequest) -> MetastoreResult<Vec<Split>> {
         let list_splits_query = request.deserialize_list_splits_query()?;
         let mut all_splits = Vec::new();
         for index_uid in &list_splits_query.index_uids {
-            let splits = self
+            let splits = match self
                 .read(index_uid.clone(), |index| {
                     index.list_splits(&list_splits_query)
                 })
-                .await?;
+                .await
+            {
+                Ok(splits) => splits,
+                Err(MetastoreError::NotFound(_)) => {
+                    // If the index does not exist, we just skip it.
+                    continue;
+                }
+                Err(error) => return Err(error),
+            };
             all_splits.extend(splits);
         }
         Ok(all_splits)
@@ -625,16 +635,18 @@ impl MetastoreService for FileBackedMetastore {
     /// -------------------------------------------------------------------------------
     /// Read-only accessors
 
+    /// Streams of splits for the given request.
+    /// No error is returned if one of the requested `index_uid` does not exist.
     async fn stream_splits(
         &mut self,
         request: ListSplitsRequest,
     ) -> MetastoreResult<MetastoreServiceStream<ListSplitsResponse>> {
         let splits = self.inner_list_splits(request).await?;
-        let chunks = splits
+        let splits_responses: Vec<MetastoreResult<ListSplitsResponse>> = splits
             .chunks(STREAM_SPLITS_CHUNK_SIZE)
             .map(|chunk| ListSplitsResponse::try_from_splits(chunk.to_vec()))
-            .collect_vec();
-        Ok(ServiceStream::from(chunks))
+            .collect();
+        Ok(ServiceStream::from(splits_responses))
     }
 
     async fn list_stale_splits(

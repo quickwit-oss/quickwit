@@ -827,7 +827,7 @@ impl MetastoreService for PostgresqlMetastore {
             split_stream
                 .chunks(STREAM_SPLITS_CHUNK_SIZE)
                 .map(|pg_splits_res| {
-                    let mut splits = Vec::new();
+                    let mut splits = Vec::with_capacity(pg_splits_res.len());
                     for pg_split_res in pg_splits_res {
                         let pg_split = match pg_split_res {
                             Ok(pg_split) => pg_split,
@@ -1274,16 +1274,6 @@ impl MetastoreService for PostgresqlMetastore {
         .fetch_all(&self.connection_pool)
         .await?;
 
-        // If no splits were returned, maybe the index does not exist in the first place?
-        if pg_stale_splits.is_empty()
-            && index_opt_for_uid(&self.connection_pool, index_uid.clone())
-                .await?
-                .is_none()
-        {
-            return Err(MetastoreError::NotFound(EntityKind::Index {
-                index_id: index_uid.index_id().to_string(),
-            }));
-        }
         let splits = pg_stale_splits
             .into_iter()
             .map(|pg_split| pg_split.try_into())

@@ -2314,7 +2314,7 @@ pub async fn test_metastore_list_all_splits<
         ..Default::default()
     };
 
-    let error = metastore
+    let no_splits = metastore
         .list_splits(
             ListSplitsRequest::try_from_index_uid(IndexUid::new_with_random_ulid(
                 "index-not-found",
@@ -2322,12 +2322,8 @@ pub async fn test_metastore_list_all_splits<
             .unwrap(),
         )
         .await
-        .unwrap_err();
-    assert!(matches!(
-        error,
-        // TODO: This discrepancy is tracked in #3760.
-        MetastoreError::NotFound(EntityKind::Index { .. } | EntityKind::Indexes { .. })
-    ));
+        .unwrap();
+    assert!(no_splits.is_empty());
 
     let create_index_request = CreateIndexRequest::try_from_index_config(index_config).unwrap();
     let index_uid: IndexUid = metastore
@@ -2466,15 +2462,11 @@ pub async fn test_metastore_list_splits<MetastoreToTest: MetastoreServiceExt + D
     {
         let query =
             ListSplitsQuery::for_index(index_uid.clone()).with_split_state(SplitState::Staged);
-        let error = metastore
+        let splits = metastore
             .list_splits(ListSplitsRequest::try_from_list_splits_query(query).unwrap())
             .await
-            .unwrap_err();
-        assert!(matches!(
-            error,
-            // TODO: This discrepancy is tracked in #3760.
-            MetastoreError::NotFound(EntityKind::Index { .. } | EntityKind::Indexes { .. })
-        ));
+            .unwrap();
+        assert!(splits.is_empty());
     }
     {
         let create_index_request =
@@ -3372,14 +3364,13 @@ pub async fn test_metastore_list_stale_splits<
         delete_opstamp: 0,
         num_splits: 100,
     };
-    let error = metastore
+    let no_splits = metastore
         .list_stale_splits(list_stale_splits_request)
         .await
-        .unwrap_err();
-    assert!(matches!(
-        error,
-        MetastoreError::NotFound(EntityKind::Index { .. })
-    ));
+        .unwrap()
+        .deserialize_splits()
+        .unwrap();
+    assert!(no_splits.is_empty());
 
     {
         info!("list stale splits on an index");
