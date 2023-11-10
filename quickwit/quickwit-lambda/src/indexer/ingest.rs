@@ -50,8 +50,8 @@ use crate::utils::load_node_config;
 
 const CONFIGURATION_TEMPLATE: &str = "version: 0.6
 node_id: lambda-indexer
-metastore_uri: s3://${METASTORE_BUCKET}/index
-default_index_root_uri: s3://${INDEX_BUCKET}/index
+metastore_uri: s3://${QW_LAMBDA_METASTORE_BUCKET}/index
+default_index_root_uri: s3://${QW_LAMBDA_INDEX_BUCKET}/index
 data_dir: /tmp
 ";
 
@@ -64,6 +64,7 @@ pub struct IngestArgs {
     pub overwrite: bool,
     pub vrl_script: Option<String>,
     pub clear_cache: bool,
+    pub disable_merge: bool,
 }
 
 async fn create_empty_cluster(config: &NodeConfig) -> anyhow::Result<Cluster> {
@@ -219,6 +220,10 @@ pub async fn ingest(args: IngestArgs) -> anyhow::Result<IndexingStatistics> {
             pipeline_id: MergePipelineId::from(&pipeline_id),
         })
         .await?;
+    if args.disable_merge {
+        debug!("disable merges");
+        merge_pipeline_handle.pause();
+    }
     let indexing_pipeline_handle = indexing_server_mailbox
         .ask_for_res(DetachIndexingPipeline { pipeline_id })
         .await?;
