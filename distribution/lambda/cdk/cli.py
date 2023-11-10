@@ -186,29 +186,28 @@ def benchmark_hdfs_indexing():
     bucket_name = _get_cloudformation_output_value(
         app.HDFS_STACK_NAME, hdfs_stack.INDEX_STORE_BUCKET_NAME_EXPORT_NAME
     )
-    for _ in range(2):
-        _clean_s3_bucket(bucket_name, "index/")
-        bench_result = {
-            "run": "benchmark_hdfs_indexing",
-            "ts": time.time(),
-            "commit": _git_commit(),
-            "memory_size": memory_size,
-            "env": {
-                k: os.environ[k]
-                for k in os.environ.keys()
-                if k != "QW_LAMBDA_OPENTELEMETRY_AUTHORIZATION"
-            },
-        }
-        try:
-            indexer_result = invoke_hdfs_indexer()
-            bench_result["lambda_report"] = indexer_result.extract_report()
-        except Exception as e:
-            bench_result["invokation_error"] = repr(e)
-            print(f"Failed to invoke indexer")
+    _clean_s3_bucket(bucket_name, "index/")
+    bench_result = {
+        "run": "benchmark_hdfs_indexing",
+        "ts": time.time(),
+        "commit": _git_commit(),
+        "memory_size": memory_size,
+        "env": {
+            k: os.environ[k]
+            for k in os.environ.keys()
+            if k != "QW_LAMBDA_OPENTELEMETRY_AUTHORIZATION"
+        },
+    }
+    try:
+        indexer_result = invoke_hdfs_indexer()
+        bench_result["lambda_report"] = indexer_result.extract_report()
+    except Exception as e:
+        bench_result["invokation_error"] = repr(e)
+        print(f"Failed to invoke indexer")
 
-        with open(f"lambda-bench.log", "a+") as f:
-            f.write(json.dumps(bench_result))
-            f.write("\n")
+    with open(f"lambda-bench.log", "a+") as f:
+        f.write(json.dumps(bench_result))
+        f.write("\n")
 
 
 def benchmark_hdfs_search(payload: str):
