@@ -209,11 +209,11 @@ impl Queues {
     }
 
     pub(crate) fn disk_usage(&self) -> usize {
-        self.record_log.on_disk_size()
+        self.record_log.disk_usage()
     }
 
     pub(crate) fn memory_usage(&self) -> usize {
-        self.record_log.in_memory_size()
+        self.record_log.memory_usage()
     }
 }
 

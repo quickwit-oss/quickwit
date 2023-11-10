@@ -79,7 +79,7 @@ fn ingest_filter(
     warp::path!(String / "ingest")
         .and(warp::post())
         .and(warp::body::content_length_limit(
-            config.content_length_limit,
+            config.content_length_limit.as_u64(),
         ))
         .and(warp::body::bytes())
         .and(serde_qs::warp::query::<IngestOptions>(
@@ -103,7 +103,7 @@ fn ingest_v2_filter(
     warp::path!(String / "ingest-v2")
         .and(warp::post())
         .and(warp::body::content_length_limit(
-            config.content_length_limit,
+            config.content_length_limit.as_u64(),
         ))
         .and(warp::body::bytes())
         .and(serde_qs::warp::query::<IngestOptions>(
@@ -355,7 +355,7 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn test_ingest_api_return_413_if_above_content_limit() {
         let config = IngestApiConfig {
-            content_length_limit: 1,
+            content_length_limit: ByteSize(1),
             ..Default::default()
         };
         let (universe, _temp_dir, ingest_service, _) =

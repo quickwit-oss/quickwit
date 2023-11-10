@@ -9,6 +9,7 @@ description = "Quickwit is a cost-efficient search engine."
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 bytes = { workspace = true }
+bytesize = { workspace = true }
 dyn-clone = { workspace = true }
 flume = { workspace = true }
 futures = { workspace = true }
@@ -35,7 +36,6 @@ quickwit-config = { workspace = true }
 quickwit-proto = { workspace = true }
 
 [dev-dependencies]
-bytesize = { workspace = true }
 itertools = { workspace = true }
 mockall = { workspace = true }
 rand = { workspace = true }

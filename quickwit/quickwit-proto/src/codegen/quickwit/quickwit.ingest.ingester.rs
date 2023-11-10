@@ -194,10 +194,10 @@ pub struct ReplicateFailure {
     pub index_uid: ::prost::alloc::string::String,
     #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
-    /// ingest.DocBatchV2 doc_batch = 4;
-    /// ingest.IngestError error = 5;
     #[prost(uint64, tag = "4")]
     pub shard_id: u64,
+    #[prost(enumeration = "ReplicateFailureReason", tag = "5")]
+    pub reason: i32,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -316,6 +316,43 @@ impl PersistFailureReason {
             "PERSIST_FAILURE_REASON_SHARD_CLOSED" => Some(Self::ShardClosed),
             "PERSIST_FAILURE_REASON_RATE_LIMITED" => Some(Self::RateLimited),
             "PERSIST_FAILURE_REASON_RESOURCE_EXHAUSTED" => Some(Self::ResourceExhausted),
+            _ => None,
+        }
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum ReplicateFailureReason {
+    Unspecified = 0,
+    ShardClosed = 1,
+    ResourceExhausted = 3,
+}
+impl ReplicateFailureReason {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            ReplicateFailureReason::Unspecified => "REPLICATE_FAILURE_REASON_UNSPECIFIED",
+            ReplicateFailureReason::ShardClosed => {
+                "REPLICATE_FAILURE_REASON_SHARD_CLOSED"
+            }
+            ReplicateFailureReason::ResourceExhausted => {
+                "REPLICATE_FAILURE_REASON_RESOURCE_EXHAUSTED"
+            }
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "REPLICATE_FAILURE_REASON_UNSPECIFIED" => Some(Self::Unspecified),
+            "REPLICATE_FAILURE_REASON_SHARD_CLOSED" => Some(Self::ShardClosed),
+            "REPLICATE_FAILURE_REASON_RESOURCE_EXHAUSTED" => {
+                Some(Self::ResourceExhausted)
+            }
             _ => None,
         }
     }

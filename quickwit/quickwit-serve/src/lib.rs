@@ -572,6 +572,8 @@ async fn setup_ingest_v2(
             self_node_id.clone(),
             ingester_pool.clone(),
             &wal_dir_path,
+            config.ingest_api_config.max_queue_disk_usage,
+            config.ingest_api_config.max_queue_memory_usage,
             replication_factor,
         )
         .await?;

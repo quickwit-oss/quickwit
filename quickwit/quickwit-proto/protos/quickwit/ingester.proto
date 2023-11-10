@@ -145,13 +145,19 @@ message ReplicateSuccess {
   quickwit.ingest.Position replication_position_inclusive = 5;
 }
 
+enum ReplicateFailureReason {
+  REPLICATE_FAILURE_REASON_UNSPECIFIED = 0;
+  REPLICATE_FAILURE_REASON_SHARD_CLOSED = 1;
+  reserved 2; // REPLICATE_FAILURE_REASON_RATE_LIMITED = 2;
+  REPLICATE_FAILURE_REASON_RESOURCE_EXHAUSTED = 3;
+}
+
 message ReplicateFailure {
   uint32 subrequest_id = 1;
   string index_uid = 2;
   string source_id = 3;
   uint64 shard_id = 4;
-  // ingest.DocBatchV2 doc_batch = 4;
-  // ingest.IngestError error = 5;
+  ReplicateFailureReason reason = 5;
 }
 
 message TruncateRequest {
