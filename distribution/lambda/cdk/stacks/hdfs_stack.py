@@ -2,6 +2,7 @@ import aws_cdk
 from aws_cdk import Stack, aws_s3_assets
 from constructs import Construct
 import yaml
+import os
 
 from .services import quickwit_service
 
@@ -32,6 +33,8 @@ class HdfsStack(Stack):
             index_id=index_id,
             index_config_bucket=index_config.s3_bucket_name,
             index_config_key=index_config.s3_object_key,
+            indexer_memory_size=int(os.environ.get("INDEXER_MEMORY_SIZE", "10240")),
+            searcher_memory_size=int(os.environ.get("SEARCHER_MEMORY_SIZE", "1024")),
         )
 
         aws_cdk.CfnOutput(

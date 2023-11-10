@@ -10,6 +10,7 @@ class SearcherService(Construct):
         construct_id: str,
         store_bucket: aws_s3.Bucket,
         index_id: str,
+        memory_size: int,
         **kwargs
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
@@ -26,7 +27,7 @@ class SearcherService(Construct):
                 "INDEX_ID": index_id,
             },
             timeout=aws_cdk.Duration.seconds(30),
-            memory_size=1024,
+            memory_size=memory_size,
             ephemeral_storage_size=aws_cdk.Size.gibibytes(10),
         )
 
