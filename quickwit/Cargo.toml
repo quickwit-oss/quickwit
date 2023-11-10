@@ -19,6 +19,7 @@ members = [
   "quickwit-integration-tests",
   "quickwit-jaeger",
   "quickwit-janitor",
+  "quickwit-lambda",
   "quickwit-macros",
   "quickwit-macros/impl",
   "quickwit-metastore",
