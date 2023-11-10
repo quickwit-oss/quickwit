@@ -20,63 +20,6 @@
 use std::ops::RangeBounds;
 
 use mrecordlog::MultiRecordLog;
-use quickwit_proto::types::Position;
-
-use super::models::IngesterShard;
-
-pub(super) trait IngesterShardTestExt {
-    fn assert_is_solo(&self);
-
-    fn assert_is_primary(&self);
-
-    fn assert_is_replica(&self);
-
-    fn assert_is_open(&self);
-
-    fn assert_is_closed(&self);
-
-    fn assert_replication_position(&self, expected_replication_position: impl Into<Position>);
-}
-
-impl IngesterShardTestExt for IngesterShard {
-    #[track_caller]
-    fn assert_is_solo(&self) {
-        assert!(matches!(self, IngesterShard::Solo(_)))
-    }
-
-    #[track_caller]
-    fn assert_is_primary(&self) {
-        assert!(matches!(self, IngesterShard::Primary(_)))
-    }
-
-    #[track_caller]
-    fn assert_is_replica(&self) {
-        assert!(matches!(self, IngesterShard::Replica(_)))
-    }
-
-    #[track_caller]
-    fn assert_is_open(&self) {
-        assert!(!self.is_closed())
-    }
-
-    #[track_caller]
-    fn assert_is_closed(&self) {
-        assert!(self.is_closed())
-    }
-
-    #[track_caller]
-    fn assert_replication_position(&self, expected_replication_position: impl Into<Position>) {
-        let expected_replication_position = expected_replication_position.into();
-
-        assert_eq!(
-            self.replication_position_inclusive(),
-            expected_replication_position,
-            "expected replication position at `{:?}`, got `{:?}`",
-            expected_replication_position,
-            self.replication_position_inclusive()
-        );
-    }
-}
 
 pub(super) trait MultiRecordLogTestExt {
     fn assert_records_eq<R>(&self, queue_id: &str, range: R, expected_records: &[(u64, &str)])

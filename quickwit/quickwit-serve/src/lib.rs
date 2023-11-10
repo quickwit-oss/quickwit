@@ -68,8 +68,8 @@ use quickwit_index_management::{IndexService as IndexManager, IndexServiceError}
 use quickwit_indexing::actors::IndexingService;
 use quickwit_indexing::start_indexing_service;
 use quickwit_ingest::{
-    start_ingest_api_service, GetMemoryCapacity, IngestApiService, IngestRequest, IngestRouter,
-    IngestServiceClient, Ingester, IngesterPool, RateLimiterSettings,
+    start_ingest_api_service, wait_for_ingester_decommission, GetMemoryCapacity, IngestApiService,
+    IngestRequest, IngestRouter, IngestServiceClient, Ingester, IngesterPool, RateLimiterSettings,
 };
 use quickwit_janitor::{start_janitor_service, JanitorService};
 use quickwit_metastore::{
@@ -464,7 +464,7 @@ pub async fn serve_quickwit(
         indexing_service_opt,
         ingest_router_service,
         ingest_service,
-        ingester_service_opt,
+        ingester_service_opt: ingester_service_opt.clone(),
         janitor_service_opt,
         search_service,
     });
@@ -518,13 +518,18 @@ pub async fn serve_quickwit(
     let shutdown_handle = tokio::spawn(async move {
         shutdown_signal.await;
 
+        // We must decommission the ingester first before terminating the indexing pipelines that
+        // may consume from it. We also need to keep the gRPC server running while doing so.
+        wait_for_ingester_decommission(ingester_service_opt).await;
+        let actor_exit_statuses = universe.quit().await;
+
         if grpc_shutdown_trigger_tx.send(()).is_err() {
             debug!("gRPC server shutdown signal receiver was dropped.");
         }
         if rest_shutdown_trigger_tx.send(()).is_err() {
             debug!("REST server shutdown signal receiver was dropped.");
         }
-        universe.quit().await
+        actor_exit_statuses
     });
     let grpc_join_handle = tokio::spawn(grpc_server);
     let rest_join_handle = tokio::spawn(rest_server);
@@ -768,13 +773,13 @@ async fn node_readiness_reporting_task(
         // the gRPC server failed.
         return;
     };
-    info!("gRPC server is ready.");
+    info!("gRPC server is ready");
 
     if rest_readiness_signal_rx.await.is_err() {
         // the REST server failed.
         return;
     };
-    info!("REST server is ready.");
+    info!("REST server is ready");
 
     let mut interval = tokio::time::interval(READINESS_REPORTING_INTERVAL);
 
@@ -783,11 +788,11 @@ async fn node_readiness_reporting_task(
 
         let node_ready = match metastore.check_connectivity().await {
             Ok(()) => {
-                debug!(metastore_endpoints=?metastore.endpoints(), "Metastore service is available.");
+                debug!(metastore_endpoints=?metastore.endpoints(), "metastore service is available.");
                 true
             }
             Err(error) => {
-                warn!(metastore_endpoints=?metastore.endpoints(), error=?error, "Metastore service is unavailable.");
+                warn!(metastore_endpoints=?metastore.endpoints(), error=?error, "metastore service is unavailable.");
                 false
             }
         };

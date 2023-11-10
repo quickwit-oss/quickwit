@@ -65,7 +65,7 @@ service ControlPlaneService {
 
 message GetOrCreateOpenShardsRequest {
   repeated GetOrCreateOpenShardsSubrequest subrequests = 1;
-  repeated quickwit.ingest.ClosedShards closed_shards = 2;
+  repeated quickwit.ingest.ShardIds closed_shards = 2;
   repeated string unavailable_leaders = 3;
 }
 
