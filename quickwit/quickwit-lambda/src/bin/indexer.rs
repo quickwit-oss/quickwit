@@ -17,34 +17,9 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use lambda_runtime::{service_fn, Error, LambdaEvent};
-use quickwit_lambda::{ingest, setup_lambda_tracer, IndexerEvent, IngestArgs};
-use serde_json::Value;
-use tracing::{error, info};
-
-pub async fn handler(event: LambdaEvent<IndexerEvent>) -> Result<Value, Error> {
-    let ingest_res = ingest(IngestArgs {
-        index_config_uri: std::env::var("INDEX_CONFIG_URI")?,
-        index_id: std::env::var("INDEX_ID")?,
-        input_path: event.payload.uri(),
-        input_format: quickwit_config::SourceInputFormat::Json,
-        overwrite: false,
-        vrl_script: None,
-        clear_cache: true,
-    })
-    .await;
-
-    match ingest_res {
-        Ok(stats) => {
-            info!(stats=?stats, "Indexing succeeded");
-            Ok(serde_json::to_value(stats)?)
-        }
-        Err(e) => {
-            error!(err=?e, "Indexing failed");
-            Err(anyhow::anyhow!("Indexing failed").into())
-        }
-    }
-}
+use lambda_runtime::service_fn;
+use quickwit_lambda::indexer::handler;
+use quickwit_lambda::setup_lambda_tracer;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {

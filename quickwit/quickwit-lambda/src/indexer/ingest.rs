@@ -170,6 +170,7 @@ pub async fn ingest(args: IngestArgs) -> anyhow::Result<IndexingStatistics> {
             );
         }
         metastore.create_index(index_config).await?;
+        debug!("Index created");
     } else if args.overwrite {
         info!(
             index_id = args.index_id,
@@ -221,7 +222,7 @@ pub async fn ingest(args: IngestArgs) -> anyhow::Result<IndexingStatistics> {
     let indexing_pipeline_handle = indexing_server_mailbox
         .ask_for_res(DetachIndexingPipeline { pipeline_id })
         .await?;
-
+    debug!("Wait for statistics");
     let statistics = start_statistics_reporting_loop(indexing_pipeline_handle, false).await?;
     merge_pipeline_handle.quit().await;
     // Shutdown the indexing server.

@@ -1,0 +1,33 @@
+#
+# Index config file for mock-sales data generator.
+#
+
+version: 0.6
+
+index_id: mock-sales
+
+doc_mapping:
+  field_mappings:
+    - name: ts
+      type: datetime
+      input_formats:
+        - unix_timestamp
+      output_format: unix_timestamp_millis
+      precision: milliseconds
+      fast: true
+    - name: id
+      type: u64
+    - name: name
+      type: text
+      tokenizer: raw
+    - name: price
+      type: f64
+    - name: quantity
+      type: u64
+    - name: description
+      type: text
+      tokenizer: default
+  timestamp_field: ts
+
+search_settings:
+  default_search_fields: [name, description]
