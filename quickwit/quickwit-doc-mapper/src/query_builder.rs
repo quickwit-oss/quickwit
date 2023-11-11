@@ -256,16 +256,19 @@ fn extract_prefix_term_ranges(
 
 #[cfg(test)]
 mod test {
+    use quickwit_datetime::{parse_date_time_str, DateTimeInputFormat};
     use quickwit_query::create_default_quickwit_tokenizer_manager;
     use quickwit_query::query_ast::query_ast_from_user_text;
+    use tantivy::columnar::MonotonicallyMappableToU64;
     use tantivy::schema::{Schema, FAST, INDEXED, STORED, TEXT};
+    use tantivy::{DateOptions, DateTime, DateTimePrecision};
 
     use super::build_query;
     use crate::{DYNAMIC_FIELD_NAME, SOURCE_FIELD_NAME};
 
-    enum TestExpectation {
-        Err(&'static str),
-        Ok(&'static str),
+    enum TestExpectation<'a> {
+        Err(&'a str),
+        Ok(&'a str),
     }
 
     fn make_schema(dynamic_mode: bool) -> Schema {
@@ -279,7 +282,10 @@ mod test {
         schema_builder.add_ip_addr_field("ip", FAST | STORED);
         schema_builder.add_ip_addr_field("ips", FAST);
         schema_builder.add_ip_addr_field("ip_notff", STORED);
-        schema_builder.add_date_field("dt", FAST);
+        let date_options = DateOptions::default()
+            .set_fast()
+            .set_precision(tantivy::DateTimePrecision::Milliseconds);
+        schema_builder.add_date_field("dt", date_options);
         schema_builder.add_u64_field("u64_fast", FAST | STORED);
         schema_builder.add_i64_field("i64_fast", FAST | STORED);
         schema_builder.add_f64_field("f64_fast", FAST | STORED);
@@ -477,16 +483,56 @@ mod test {
 
     #[test]
     fn test_datetime_range_query() {
-        check_build_query_static_mode(
-            "dt:[2023-01-10T15:13:35Z TO 2023-01-10T15:13:40Z]",
-            Vec::new(),
-            TestExpectation::Ok("RangeQuery { field: \"dt\", value_type: Date"),
-        );
-        check_build_query_static_mode(
-            "dt:<2023-01-10T15:13:35Z",
-            Vec::new(),
-            TestExpectation::Ok("RangeQuery { field: \"dt\", value_type: Date"),
-        );
+        let input_formats = [DateTimeInputFormat::Rfc3339];
+        {
+            // Check range on datetime in millisecond, precision has no impact as it is in
+            // milliseconds.
+            let start_date_time_str = "2023-01-10T08:38:51.150Z";
+            let start_date_time = parse_date_time_str(start_date_time_str, &input_formats).unwrap();
+            let start_date_time_u64 = start_date_time.to_u64();
+            let end_date_time_str = "2023-01-10T08:38:51.160Z";
+            let end_date_time: DateTime =
+                parse_date_time_str(end_date_time_str, &input_formats).unwrap();
+            let end_date_time_u64 = end_date_time.to_u64();
+            let expectation_with_lower_and_upper_bounds = format!(
+                r#"FastFieldRangeWeight {{ field: "dt", lower_bound: Included({start_date_time_u64}), upper_bound: Included({end_date_time_u64}), column_type_opt: Some(DateTime) }}"#,
+            );
+            check_build_query_static_mode(
+                &format!("dt:[{start_date_time_str} TO {end_date_time_str}]"),
+                Vec::new(),
+                TestExpectation::Ok(&expectation_with_lower_and_upper_bounds),
+            );
+            let expectation_with_upper_bound = format!(
+                r#"FastFieldRangeWeight {{ field: "dt", lower_bound: Unbounded, upper_bound: Excluded({end_date_time_u64}), column_type_opt: Some(DateTime) }}"#,
+            );
+            check_build_query_static_mode(
+                &format!("dt:<{end_date_time_str}"),
+                Vec::new(),
+                TestExpectation::Ok(&expectation_with_upper_bound),
+            );
+        }
+
+        // Check range on datetime in microseconds and truncation to milliseconds.
+        {
+            let start_date_time_str = "2023-01-10T08:38:51.000150Z";
+            let start_date_time = parse_date_time_str(start_date_time_str, &input_formats)
+                .unwrap()
+                .truncate(DateTimePrecision::Milliseconds);
+            let start_date_time_u64 = start_date_time.to_u64();
+            let end_date_time_str = "2023-01-10T08:38:51.000151Z";
+            let end_date_time: DateTime = parse_date_time_str(end_date_time_str, &input_formats)
+                .unwrap()
+                .truncate(DateTimePrecision::Milliseconds);
+            let end_date_time_u64 = end_date_time.to_u64();
+            let expectation_with_lower_and_upper_bounds = format!(
+                r#"FastFieldRangeWeight {{ field: "dt", lower_bound: Included({start_date_time_u64}), upper_bound: Included({end_date_time_u64}), column_type_opt: Some(DateTime) }}"#,
+            );
+            check_build_query_static_mode(
+                &format!("dt:[{start_date_time_str} TO {end_date_time_str}]"),
+                Vec::new(),
+                TestExpectation::Ok(&expectation_with_lower_and_upper_bounds),
+            );
+        }
     }
 
     #[test]

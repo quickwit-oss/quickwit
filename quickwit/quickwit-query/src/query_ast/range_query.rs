@@ -432,14 +432,6 @@ mod tests {
              Included(13879794984393113600), upper_bound: Included(13879834566811713536), \
              column_type_opt: Some(F64) }",
         );
-        test_range_query_typed_field_util(
-            "my_date_field",
-            JsonLiteral::Number(1699311620200150_u64.into()),
-            JsonLiteral::Number(1699311630200300_u64.into()),
-            "FastFieldRangeWeight { field: \"my_date_field\", lower_bound: \
-             Included(10922683657054775808), upper_bound: Included(10922683667054775808), \
-             column_type_opt: Some(DateTime) }",
-        );
     }
 
     #[test]
