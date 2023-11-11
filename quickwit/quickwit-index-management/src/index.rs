@@ -513,13 +513,12 @@ mod tests {
         let split_infos = index_service.delete_index(index_id, false).await.unwrap();
         assert_eq!(split_infos.len(), 1);
 
-        let error = metastore
+        assert!(!metastore.index_exists(index_id).await.unwrap());
+        let splits = metastore
             .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
             .await
-            .unwrap_err();
-        assert!(
-            matches!(error, MetastoreError::NotFound(EntityKind::Index { index_id }) if index_id == index_uid.index_id())
-        );
+            .unwrap();
+        assert!(splits.is_empty());
         assert!(!storage.exists(split_path).await.unwrap());
     }
 }
