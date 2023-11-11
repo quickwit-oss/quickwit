@@ -24,6 +24,7 @@ use tantivy::query::{
     FastFieldRangeWeight as TantivyFastFieldRangeQuery, RangeQuery as TantivyRangeQuery,
 };
 use tantivy::schema::Schema as TantivySchema;
+use tantivy::DateTime;
 
 use super::QueryAst;
 use crate::json_literal::InterpretUserInput;
@@ -266,11 +267,19 @@ impl BuildTantivyAst for RangeQuery {
                     field_name: field_entry.name().to_string(),
                 });
             }
-            tantivy::schema::FieldType::Date(_) => {
+            tantivy::schema::FieldType::Date(date_options) => {
                 let (lower_bound, upper_bound) =
                     convert_bounds(&self.lower_bound, &self.upper_bound, field_entry.name())?;
-                TantivyRangeQuery::new_date_bounds(self.field.clone(), lower_bound, upper_bound)
-                    .into()
+                let truncate_datetime =
+                    |date: &DateTime| date.truncate(date_options.get_precision());
+                let truncated_lower_bound = map_bound(&lower_bound, truncate_datetime);
+                let truncated_upper_bound = map_bound(&upper_bound, truncate_datetime);
+                TantivyFastFieldRangeQuery::new::<DateTime>(
+                    self.field.clone(),
+                    truncated_lower_bound,
+                    truncated_upper_bound,
+                )
+                .into()
             }
             tantivy::schema::FieldType::Facet(_) => {
                 return Err(InvalidQuery::RangeQueryNotSupportedForField {
@@ -333,11 +342,20 @@ impl BuildTantivyAst for RangeQuery {
     }
 }
 
+fn map_bound<TFrom, TTo>(bound: &Bound<TFrom>, transform: impl Fn(&TFrom) -> TTo) -> Bound<TTo> {
+    match bound {
+        Bound::Excluded(ref from_val) => Bound::Excluded(transform(from_val)),
+        Bound::Included(ref from_val) => Bound::Included(transform(from_val)),
+        Bound::Unbounded => Bound::Unbounded,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use std::ops::Bound;
 
     use tantivy::schema::{Schema, FAST, STORED, TEXT};
+    use tantivy::DateOptions;
 
     use super::RangeQuery;
     use crate::query_ast::tantivy_query_ast::TantivyBoolQuery;
@@ -352,6 +370,10 @@ mod tests {
         schema_builder.add_u64_field("my_u64_field", FAST);
         schema_builder.add_f64_field("my_f64_field", FAST);
         schema_builder.add_text_field("my_str_field", FAST);
+        let date_options = DateOptions::default()
+            .set_fast()
+            .set_precision(tantivy::DateTimePrecision::Milliseconds);
+        schema_builder.add_date_field("my_date_field", date_options);
         schema_builder.add_u64_field("my_u64_not_fastfield", STORED);
         if dynamic_mode {
             schema_builder.add_json_field("_dynamic", TEXT | STORED | FAST);
@@ -359,12 +381,17 @@ mod tests {
         schema_builder.build()
     }
 
-    fn test_range_query_typed_field_util(field: &str, expected: &str) {
+    fn test_range_query_typed_field_util(
+        field: &str,
+        lower_value: JsonLiteral,
+        upper_value: JsonLiteral,
+        expected: &str,
+    ) {
         let schema = make_schema(false);
         let range_query = RangeQuery {
             field: field.to_string(),
-            lower_bound: Bound::Included(JsonLiteral::String("1980".to_string())),
-            upper_bound: Bound::Included(JsonLiteral::String("1989".to_string())),
+            lower_bound: Bound::Included(lower_value),
+            upper_bound: Bound::Included(upper_value),
         };
         let tantivy_ast = range_query
             .build_tantivy_ast_call(
@@ -384,17 +411,23 @@ mod tests {
     fn test_range_query_typed_field() {
         test_range_query_typed_field_util(
             "my_i64_field",
+            JsonLiteral::String("1980".to_string()),
+            JsonLiteral::String("1989".to_string()),
             "FastFieldRangeWeight { field: \"my_i64_field\", lower_bound: \
              Included(9223372036854777788), upper_bound: Included(9223372036854777797), \
              column_type_opt: Some(I64) }",
         );
         test_range_query_typed_field_util(
             "my_u64_field",
+            JsonLiteral::String("1980".to_string()),
+            JsonLiteral::String("1989".to_string()),
             "FastFieldRangeWeight { field: \"my_u64_field\", lower_bound: Included(1980), \
              upper_bound: Included(1989), column_type_opt: Some(U64) }",
         );
         test_range_query_typed_field_util(
             "my_f64_field",
+            JsonLiteral::String("1980".to_string()),
+            JsonLiteral::String("1989".to_string()),
             "FastFieldRangeWeight { field: \"my_f64_field\", lower_bound: \
              Included(13879794984393113600), upper_bound: Included(13879834566811713536), \
              column_type_opt: Some(F64) }",

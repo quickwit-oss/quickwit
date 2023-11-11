@@ -27,6 +27,7 @@ json:
         - name: created_at
           type: datetime
           fast: true
+          fast_precision: milliseconds
     dynamic_mapping:
       expand_dots: true
       tokenizer: default
