@@ -10,7 +10,7 @@ We provide three Grafana dashboards to help you monitor:
 - [searchers performance](https://github.com/quickwit-oss/quickwit/blob/main/monitoring/grafana/dashboards/searchers.json)
 - [metastore queries](https://github.com/quickwit-oss/quickwit/blob/main/monitoring/grafana/dashboards/metastore.json)
 
-Both dashboards relies on a prometheus datasource fed with [Quickwit metrics](../reference/metrics.md).
+Dashboards rely on a prometheus datasource fed with [Quickwit metrics](../reference/metrics.md).
 
 ## Screenshots
 
