@@ -27,6 +27,7 @@ use quickwit_common::uri::{Protocol, Uri};
 use quickwit_config::{MetastoreBackend, MetastoreConfig, MetastoreConfigs};
 use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_storage::StorageResolver;
+use tracing::instrument;
 
 use crate::metastore::file_backed_metastore::FileBackedMetastoreFactory;
 #[cfg(feature = "postgres")]
@@ -56,6 +57,7 @@ impl MetastoreResolver {
     }
 
     /// Resolves the given `uri`.
+    #[instrument(level = "debug", skip_all)]
     pub async fn resolve(
         &self,
         uri: &Uri,
@@ -97,6 +99,7 @@ impl MetastoreResolver {
     }
 
     /// Creates and returns a [`MetastoreResolver`].
+    #[instrument(level = "debug", skip_all)]
     pub fn configured(
         storage_resolver: StorageResolver,
         metastore_configs: &MetastoreConfigs,

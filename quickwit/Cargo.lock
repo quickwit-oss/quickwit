@@ -5804,6 +5804,7 @@ version = "0.6.3"
 dependencies = [
  "anyhow",
  "aws_lambda_events",
+ "bytesize",
  "chitchat",
  "flate2",
  "lambda_http",

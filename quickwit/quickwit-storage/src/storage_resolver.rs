@@ -24,6 +24,7 @@ use std::sync::Arc;
 use once_cell::sync::Lazy;
 use quickwit_common::uri::{Protocol, Uri};
 use quickwit_config::{StorageBackend, StorageConfigs};
+use tracing::instrument;
 
 use crate::local_file_storage::LocalFileStorageFactory;
 use crate::ram_storage::RamStorageFactory;
@@ -87,6 +88,7 @@ impl StorageResolver {
     }
 
     /// Creates and returns a [`StorageResolver`].
+    #[instrument(level = "debug", skip_all)]
     pub fn configured(storage_configs: &StorageConfigs) -> Self {
         let mut builder = StorageResolver::builder()
             .register(LocalFileStorageFactory)

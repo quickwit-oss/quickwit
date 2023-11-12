@@ -25,15 +25,15 @@ use quickwit_config::{ConfigFormat, NodeConfig};
 use quickwit_metastore::MetastoreResolver;
 use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_storage::StorageResolver;
-use tracing::info;
+use tracing::instrument;
 
-pub(crate) async fn load_node_config(
+#[instrument(level = "debug", skip_all)]
+pub(crate) async fn load_config_and_resolve(
     config_template: &str,
 ) -> anyhow::Result<(NodeConfig, StorageResolver, MetastoreServiceClient)> {
     let config = NodeConfig::load(ConfigFormat::Yaml, config_template.as_bytes())
         .await
         .with_context(|| format!("Failed to parse node config `{config_template}`."))?;
-    info!(config=?config, "Loaded node config.");
     let storage_resolver = StorageResolver::configured(&config.storage_configs);
     let metastore_resolver =
         MetastoreResolver::configured(storage_resolver.clone(), &config.metastore_configs);

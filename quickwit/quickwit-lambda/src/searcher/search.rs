@@ -20,6 +20,7 @@
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
+use bytesize::ByteSize;
 use quickwit_config::SearcherConfig;
 use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_proto::search::{SearchRequest, SearchResponse};
@@ -33,7 +34,7 @@ use tokio::sync::OnceCell;
 use tracing::debug;
 
 use super::environment::{CONFIGURATION_TEMPLATE, ENABLE_SEARCH_CACHE, INDEX_ID};
-use crate::utils::load_node_config;
+use crate::utils::load_config_and_resolve;
 
 static LAMBDA_SEARCH_CACHE: OnceCell<LambdaSearchCtx> = OnceCell::const_new();
 
@@ -52,7 +53,8 @@ impl LambdaSearchCtx {
         let searcher_pool = SearcherPool::default();
         let search_job_placer = SearchJobPlacer::new(searcher_pool.clone());
         let cluster_client = ClusterClient::new(search_job_placer);
-        let searcher_config = SearcherConfig::default();
+        let mut searcher_config = SearcherConfig::default();
+        searcher_config.partial_request_cache_capacity = ByteSize::mb(0);
         let searcher_context = Arc::new(SearcherContext::new(searcher_config, None));
         let search_service = Arc::new(SearchServiceImpl::new(
             metastore,
@@ -99,7 +101,8 @@ pub struct SearchArgs {
 
 pub async fn search(args: SearchArgs) -> anyhow::Result<SearchResponseRest> {
     debug!(args=?args, "lambda-search");
-    let (_, storage_resolver, metastore) = load_node_config(CONFIGURATION_TEMPLATE).await?;
+    let (_, storage_resolver, metastore) = load_config_and_resolve(CONFIGURATION_TEMPLATE).await?;
+    debug!("configuration loaded and metastore resolved");
     let search_request = search_request_from_api_request(vec![INDEX_ID.clone()], args.query)?;
     debug!(search_request=?search_request, "search-request");
     let search_response: SearchResponse =

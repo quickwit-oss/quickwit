@@ -51,7 +51,7 @@ use quickwit_storage::StorageResolver;
 use tracing::{debug, info, instrument};
 
 use super::environment::{CONFIGURATION_TEMPLATE, DISABLE_MERGE, INDEX_CONFIG_URI, INDEX_ID};
-use crate::utils::load_node_config;
+use crate::utils::load_config_and_resolve;
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct IngestArgs {
@@ -122,7 +122,7 @@ async fn load_index_config(
 pub async fn ingest(args: IngestArgs) -> anyhow::Result<IndexingStatistics> {
     debug!(args=?args, "lambda-ingest");
     let (config, storage_resolver, mut metastore) =
-        load_node_config(CONFIGURATION_TEMPLATE).await?;
+        load_config_and_resolve(CONFIGURATION_TEMPLATE).await?;
 
     let source_params = SourceParams::file(args.input_path);
     let transform_config = args

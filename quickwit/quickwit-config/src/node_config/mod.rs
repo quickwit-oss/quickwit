@@ -32,7 +32,7 @@ use quickwit_common::net::HostAddr;
 use quickwit_common::uri::Uri;
 use quickwit_proto::indexing::CpuCapacity;
 use serde::{Deserialize, Serialize};
-use tracing::warn;
+use tracing::{instrument, warn};
 
 use crate::node_config::serialize::load_node_config_with_env;
 use crate::service::QuickwitService;
@@ -328,6 +328,7 @@ impl NodeConfig {
     }
 
     /// Parses and validates a [`NodeConfig`] from a given URI and config content.
+    #[instrument(level = "debug", skip_all)]
     pub async fn load(config_format: ConfigFormat, config_content: &[u8]) -> anyhow::Result<Self> {
         let env_vars = env::vars().collect::<HashMap<_, _>>();
         let config = load_node_config_with_env(config_format, config_content, &env_vars).await?;
