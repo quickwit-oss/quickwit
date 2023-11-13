@@ -158,6 +158,9 @@ impl ClientArgs {
         if let Some(commit_timeout) = self.commit_timeout {
             builder = builder.commit_timeout(commit_timeout);
         }
+        if self.ingest_v2 {
+            builder = builder.enable_ingest_v2();
+        }
         builder.build()
     }
 
