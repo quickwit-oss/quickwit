@@ -31,7 +31,7 @@ use quickwit_config::service::QuickwitService;
 use quickwit_config::{KafkaSourceParams, SourceConfig, SourceInputFormat, SourceParams};
 use quickwit_indexing::IndexingService;
 use quickwit_metastore::{IndexMetadata, ListIndexesMetadataResponseExt};
-use quickwit_proto::indexing::{ApplyIndexingPlanRequest, IndexingServiceClient};
+use quickwit_proto::indexing::{ApplyIndexingPlanRequest, CpuCapacity, IndexingServiceClient};
 use quickwit_proto::metastore::{
     ListIndexesMetadataResponse, ListShardsResponse, MetastoreServiceClient,
 };
@@ -91,6 +91,7 @@ pub fn test_indexer_change_stream(
                         IndexerNodeInfo {
                             client,
                             indexing_tasks,
+                            indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
                         },
                     ))
                 }
@@ -156,6 +157,7 @@ async fn start_control_plane(
 
 #[tokio::test]
 async fn test_scheduler_scheduling_and_control_loop_apply_plan_again() {
+    quickwit_common::setup_logging_for_tests();
     let transport = ChannelTransport::default();
     let cluster =
         create_cluster_for_test(Vec::new(), &["indexer", "control_plane"], &transport, true)

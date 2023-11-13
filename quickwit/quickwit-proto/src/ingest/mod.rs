@@ -23,7 +23,7 @@ use self::ingester::FetchResponseV2;
 use super::types::NodeId;
 use super::{ServiceError, ServiceErrorCode};
 use crate::control_plane::ControlPlaneError;
-use crate::types::{queue_id, Position};
+use crate::types::{queue_id, Position, QueueId};
 
 pub mod ingester;
 pub mod router;
@@ -190,5 +190,13 @@ impl ShardState {
 
     pub fn is_closed(&self) -> bool {
         *self == ShardState::Closed
+    }
+}
+
+impl ClosedShards {
+    pub fn queue_ids(&self) -> impl Iterator<Item = QueueId> + '_ {
+        self.shard_ids
+            .iter()
+            .map(|shard_id| queue_id(&self.index_uid, &self.source_id, *shard_id))
     }
 }

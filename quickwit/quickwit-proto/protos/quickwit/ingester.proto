@@ -35,6 +35,8 @@ service IngesterService {
 
   // rpc OpenWatchStream(OpenWatchStreamRequest) returns (stream WatchMessage);
 
+  rpc CloseShards(CloseShardsRequest) returns (CloseShardsResponse);
+
   // Pings an ingester to check if it is ready to host shards and serve requests.
   rpc Ping(PingRequest) returns (PingResponse);
 
@@ -143,13 +145,19 @@ message ReplicateSuccess {
   quickwit.ingest.Position replication_position_inclusive = 5;
 }
 
+enum ReplicateFailureReason {
+  REPLICATE_FAILURE_REASON_UNSPECIFIED = 0;
+  REPLICATE_FAILURE_REASON_SHARD_CLOSED = 1;
+  reserved 2; // REPLICATE_FAILURE_REASON_RATE_LIMITED = 2;
+  REPLICATE_FAILURE_REASON_RESOURCE_EXHAUSTED = 3;
+}
+
 message ReplicateFailure {
   uint32 subrequest_id = 1;
   string index_uid = 2;
   string source_id = 3;
   uint64 shard_id = 4;
-  // ingest.DocBatchV2 doc_batch = 4;
-  // ingest.IngestError error = 5;
+  ReplicateFailureReason reason = 5;
 }
 
 message TruncateRequest {
@@ -184,6 +192,13 @@ message FetchResponseV2 {
   quickwit.ingest.MRecordBatch mrecord_batch = 4;
   quickwit.ingest.Position from_position_exclusive = 5;
   quickwit.ingest.Position to_position_inclusive = 6;
+}
+
+message CloseShardsRequest {
+  repeated quickwit.ingest.ClosedShards closed_shards = 1;
+}
+
+message CloseShardsResponse {
 }
 
 message PingRequest {

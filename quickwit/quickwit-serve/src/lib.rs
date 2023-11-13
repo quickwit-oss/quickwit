@@ -48,7 +48,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::Context;
-use byte_unit::n_mib_bytes;
+use bytesize::ByteSize;
 pub use format::BodyFormat;
 use futures::{Stream, StreamExt};
 use itertools::Itertools;
@@ -69,7 +69,7 @@ use quickwit_indexing::actors::IndexingService;
 use quickwit_indexing::start_indexing_service;
 use quickwit_ingest::{
     start_ingest_api_service, GetMemoryCapacity, IngestApiService, IngestRequest, IngestRouter,
-    IngestServiceClient, Ingester, IngesterPool,
+    IngestServiceClient, Ingester, IngesterPool, RateLimiterSettings,
 };
 use quickwit_janitor::{start_janitor_service, JanitorService};
 use quickwit_metastore::{
@@ -176,7 +176,7 @@ async fn start_ingest_client_if_needed(
         )
         .await?;
         let num_buckets = NonZeroUsize::new(60).expect("60 should be non-zero");
-        let initial_rate = ConstantRate::new(n_mib_bytes!(50), Duration::from_secs(1));
+        let initial_rate = ConstantRate::new(ByteSize::mib(50).as_u64(), Duration::from_secs(1));
         let rate_estimator = SmaRateEstimator::new(
             num_buckets,
             Duration::from_secs(10),
@@ -184,7 +184,7 @@ async fn start_ingest_client_if_needed(
         )
         .with_initial_rate(initial_rate);
         let memory_capacity = ingest_api_service.ask(GetMemoryCapacity).await?;
-        let min_rate = ConstantRate::new(n_mib_bytes!(1), Duration::from_millis(100));
+        let min_rate = ConstantRate::new(ByteSize::mib(1).as_u64(), Duration::from_millis(100));
         let rate_modulator = RateModulator::new(rate_estimator.clone(), memory_capacity, min_rate);
         let ingest_service = IngestServiceClient::tower()
             .ingest_layer(
@@ -572,6 +572,9 @@ async fn setup_ingest_v2(
             self_node_id.clone(),
             ingester_pool.clone(),
             &wal_dir_path,
+            config.ingest_api_config.max_queue_disk_usage,
+            config.ingest_api_config.max_queue_memory_usage,
+            RateLimiterSettings::default(),
             replication_factor,
         )
         .await?;
@@ -694,7 +697,7 @@ fn setup_indexer_pool(
                 {
                     let node_id = node.node_id().to_string();
                     let indexing_tasks = node.indexing_tasks().to_vec();
-
+                    let indexing_capacity = node.indexing_capacity();
                     if node.is_self_node() {
                         if let Some(indexing_service_clone) = indexing_service_clone_opt {
                             let client =
@@ -704,6 +707,7 @@ fn setup_indexer_pool(
                                 IndexerNodeInfo {
                                     client,
                                     indexing_tasks,
+                                    indexing_capacity,
                                 },
                             ))
                         } else {
@@ -721,6 +725,7 @@ fn setup_indexer_pool(
                             IndexerNodeInfo {
                                 client,
                                 indexing_tasks,
+                                indexing_capacity,
                             },
                         ))
                     }

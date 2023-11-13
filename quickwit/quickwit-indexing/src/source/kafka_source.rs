@@ -49,20 +49,10 @@ use tracing::{debug, info, warn};
 
 use crate::actors::DocProcessor;
 use crate::models::{NewPublishLock, PublishLock};
-use crate::source::{BatchBuilder, Source, SourceContext, SourceRuntimeArgs, TypedSourceFactory};
-
-/// Number of bytes after which we cut a new batch.
-///
-/// We try to emit chewable batches for the indexer.
-/// One batch = one message to the indexer actor.
-///
-/// If batches are too large:
-/// - we might not be able to observe the state of the indexer for 5 seconds.
-/// - we will be needlessly occupying resident memory in the mailbox.
-/// - we will not have a precise control of the timeout before commit.
-///
-/// 5MB seems like a good one size fits all value.
-const BATCH_NUM_BYTES_LIMIT: u64 = 5_000_000;
+use crate::source::{
+    BatchBuilder, Source, SourceContext, SourceRuntimeArgs, TypedSourceFactory,
+    BATCH_NUM_BYTES_LIMIT, EMIT_BATCHES_TIMEOUT,
+};
 
 type GroupId = String;
 
@@ -128,7 +118,7 @@ macro_rules! return_if_err {
         match $expression {
             Ok(v) => v,
             Err(_) => {
-                debug!(concat!($lit, "The source was dropped."));
+                debug!(concat!($lit, "the source was dropped"));
                 return;
             }
         }
@@ -148,19 +138,19 @@ impl ConsumerContext for RdKafkaContext {
     fn pre_rebalance(&self, rebalance: &Rebalance) {
         if let Rebalance::Revoke(tpl) = rebalance {
             let partitions = collect_partitions(tpl, &self.topic);
-            debug!(partitions=?partitions, "Revoke partitions.");
+            debug!(partitions=?partitions, "revoke partitions");
 
             let (ack_tx, ack_rx) = oneshot::channel();
             return_if_err!(
                 self.events_tx
                     .blocking_send(KafkaEvent::RevokePartitions { ack_tx }),
-                "Failed to send revoke message to source."
+                "failed to send revoke message to source"
             );
-            return_if_err!(ack_rx.recv(), "Failed to receive revoke ack from source");
+            return_if_err!(ack_rx.recv(), "failed to receive revoke ack from source");
         }
         if let Rebalance::Assign(tpl) = rebalance {
             let partitions = collect_partitions(tpl, &self.topic);
-            debug!(partitions=?partitions, "Assign partitions.");
+            debug!(partitions=?partitions, "assign partitions");
 
             let (assignment_tx, assignment_rx) = oneshot::channel();
             return_if_err!(
@@ -168,19 +158,23 @@ impl ConsumerContext for RdKafkaContext {
                     partitions,
                     assignment_tx,
                 }),
-                "Failed to send assign message to source."
+                "failed to send assign message to source"
             );
             let assignment = return_if_err!(
                 assignment_rx.recv(),
-                "Failed to receive assignment from source."
+                "failed to receive assignment from source"
             );
-            for (partition, offset) in assignment {
-                let mut partition = tpl
-                    .find_partition(&self.topic, partition)
-                    .expect("Failed to find partition in assignment. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.");
-                partition
-                    .set_offset(offset)
-                    .expect("Failed to convert `Offset` to `i64`. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues.");
+            for (partition_id, offset) in assignment {
+                let Some(mut partition) = tpl.find_partition(&self.topic, partition_id) else {
+                    warn!("partition `{partition_id}` not found in assignment");
+                    continue;
+                };
+                if let Err(error) = partition.set_offset(offset) {
+                    warn!(
+                        "failed to set offset to `{offset:?}` for partition `{partition_id}`: \
+                         {error}"
+                    );
+                }
             }
         }
     }
@@ -373,10 +367,15 @@ impl KafkaSource {
 
         for &partition in partitions {
             let partition_id = PartitionId::from(partition as i64);
-            let current_position = checkpoint
-                .position_for_partition(&partition_id)
-                .cloned()
-                .unwrap_or(Position::Beginning);
+
+            self.state
+                .assigned_partitions
+                .insert(partition, partition_id.clone());
+
+            let Some(current_position) = checkpoint.position_for_partition(&partition_id).cloned()
+            else {
+                continue;
+            };
             let next_offset = match &current_position {
                 Position::Beginning => Offset::Beginning,
                 Position::Offset(offset) => {
@@ -389,9 +388,6 @@ impl KafkaSource {
                     panic!("position of a Kafka partition should never be EOF")
                 }
             };
-            self.state
-                .assigned_partitions
-                .insert(partition, partition_id);
             self.state
                 .current_positions
                 .insert(partition, current_position);
@@ -441,7 +437,7 @@ impl KafkaSource {
             topic=%self.topic,
             partition=%partition,
             num_inactive_partitions=?self.state.num_inactive_partitions,
-            "Reached end of partition."
+            "reached end of partition"
         );
     }
 
@@ -480,7 +476,7 @@ impl Source for KafkaSource {
     ) -> Result<Duration, ActorExitStatus> {
         let now = Instant::now();
         let mut batch = BatchBuilder::default();
-        let deadline = time::sleep(*quickwit_actors::HEARTBEAT / 2);
+        let deadline = time::sleep(EMIT_BATCHES_TIMEOUT);
         tokio::pin!(deadline);
 
         loop {
@@ -901,7 +897,7 @@ mod kafka_broker_tests {
         format!("Key {id}")
     }
 
-    fn get_source_config(topic: &str) -> (String, SourceConfig) {
+    fn get_source_config(topic: &str, auto_offset_reset: &str) -> (String, SourceConfig) {
         let source_id = append_random_suffix("test-kafka-source--source");
         let source_config = SourceConfig {
             source_id: source_id.clone(),
@@ -912,6 +908,7 @@ mod kafka_broker_tests {
                 topic: topic.to_string(),
                 client_log_level: None,
                 client_params: json!({
+                    "auto.offset.reset": auto_offset_reset,
                     "bootstrap.servers": "localhost:9092",
                 }),
                 enable_backfill_mode: true,
@@ -1003,7 +1000,7 @@ mod kafka_broker_tests {
         let metastore = metastore_for_test();
         let index_id = append_random_suffix("test-kafka-source--process-message--index");
         let index_uid = IndexUid::new_with_random_ulid(&index_id);
-        let (_source_id, source_config) = get_source_config(&topic);
+        let (_source_id, source_config) = get_source_config(&topic, "earliest");
         let SourceParams::Kafka(params) = source_config.clone().source_params else {
             panic!(
                 "Expected Kafka source params, got {:?}.",
@@ -1127,7 +1124,7 @@ mod kafka_broker_tests {
 
         let metastore = metastore_for_test();
         let index_id = append_random_suffix("test-kafka-source--process-assign-partitions--index");
-        let (source_id, source_config) = get_source_config(&topic);
+        let (source_id, source_config) = get_source_config(&topic, "earliest");
 
         let index_uid = setup_index(metastore.clone(), &index_id, &source_id, &[(2, -1, 42)]).await;
 
@@ -1169,18 +1166,14 @@ mod kafka_broker_tests {
             kafka_source.state.assigned_partitions,
             expected_assigned_partitions
         );
-        let expected_current_positions =
-            HashMap::from_iter([(1, Position::Beginning), (2, Position::from(42u64))]);
+        let expected_current_positions = HashMap::from_iter([(2, Position::from(42u64))]);
         assert_eq!(
             kafka_source.state.current_positions,
             expected_current_positions
         );
 
         let assignment = assignment_rx.await.unwrap();
-        assert_eq!(
-            assignment,
-            &[(1, Offset::Beginning), (2, Offset::Offset(43))]
-        )
+        assert_eq!(assignment, &[(2, Offset::Offset(43))])
     }
 
     #[tokio::test]
@@ -1192,7 +1185,7 @@ mod kafka_broker_tests {
         let metastore = metastore_for_test();
         let index_id = append_random_suffix("test-kafka-source--process-revoke--partitions--index");
         let index_uid = IndexUid::new_with_random_ulid(&index_id);
-        let (_source_id, source_config) = get_source_config(&topic);
+        let (_source_id, source_config) = get_source_config(&topic, "earliest");
         let SourceParams::Kafka(params) = source_config.clone().source_params else {
             panic!(
                 "Expected Kafka source params, got {:?}.",
@@ -1250,7 +1243,7 @@ mod kafka_broker_tests {
         let metastore = metastore_for_test();
         let index_id = append_random_suffix("test-kafka-source--process-partition-eof--index");
         let index_uid = IndexUid::new_with_random_ulid(&index_id);
-        let (_source_id, source_config) = get_source_config(&topic);
+        let (_source_id, source_config) = get_source_config(&topic, "earliest");
         let SourceParams::Kafka(params) = source_config.clone().source_params else {
             panic!(
                 "Expected Kafka source params, got {:?}.",
@@ -1288,7 +1281,7 @@ mod kafka_broker_tests {
 
         let metastore = metastore_for_test();
         let index_id = append_random_suffix("test-kafka-source--suggest-truncate--index");
-        let (source_id, source_config) = get_source_config(&topic);
+        let (source_id, source_config) = get_source_config(&topic, "earliest");
 
         let index_uid = setup_index(metastore.clone(), &index_id, &source_id, &[(2, -1, 42)]).await;
 
@@ -1369,9 +1362,10 @@ mod kafka_broker_tests {
 
         let source_loader = quickwit_supported_sources();
         {
+            // Test Kafka source with empty topic.
             let metastore = metastore_for_test();
             let index_id = append_random_suffix("test-kafka-source--index");
-            let (source_id, source_config) = get_source_config(&topic);
+            let (source_id, source_config) = get_source_config(&topic, "earliest");
             let index_uid = setup_index(metastore.clone(), &index_id, &source_id, &[]).await;
             let source = source_loader
                 .load_source(
@@ -1401,7 +1395,7 @@ mod kafka_broker_tests {
                 "source_id": source_id,
                 "topic":  topic,
                 "assigned_partitions": vec![0, 1, 2],
-                "current_positions": vec![(0, ""), (1, ""), (2, "")],
+                "current_positions": json!([]),
                 "num_inactive_partitions": 3,
                 "num_bytes_processed": 0,
                 "num_messages_processed": 0,
@@ -1430,7 +1424,7 @@ mod kafka_broker_tests {
         {
             let metastore = metastore_for_test();
             let index_id = append_random_suffix("test-kafka-source--index");
-            let (source_id, source_config) = get_source_config(&topic);
+            let (source_id, source_config) = get_source_config(&topic, "earliest");
             let index_uid = setup_index(metastore.clone(), &index_id, &source_id, &[]).await;
             let source = source_loader
                 .load_source(
@@ -1491,9 +1485,10 @@ mod kafka_broker_tests {
             assert_eq!(exit_state, expected_state);
         }
         {
+            // Test Kafka source with `earliest` offset reset.
             let metastore = metastore_for_test();
             let index_id = append_random_suffix("test-kafka-source--index");
-            let (source_id, source_config) = get_source_config(&topic);
+            let (source_id, source_config) = get_source_config(&topic, "earliest");
             let index_uid = setup_index(
                 metastore.clone(),
                 &index_id,
@@ -1555,6 +1550,49 @@ mod kafka_broker_tests {
                 "num_rebalances": 0,
             });
             assert_eq!(exit_state, expected_exit_state);
+        }
+        {
+            // Test Kafka source with `latest` offset reset.
+            let metastore = metastore_for_test();
+            let index_id = append_random_suffix("test-kafka-source--index");
+            let (source_id, source_config) = get_source_config(&topic, "latest");
+            let index_uid = setup_index(metastore.clone(), &index_id, &source_id, &[]).await;
+            let source = source_loader
+                .load_source(
+                    SourceRuntimeArgs::for_test(
+                        index_uid,
+                        source_config,
+                        metastore,
+                        PathBuf::from("./queues"),
+                    ),
+                    SourceCheckpoint::default(),
+                )
+                .await?;
+            let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
+            let source_actor = SourceActor {
+                source,
+                doc_processor_mailbox: doc_processor_mailbox.clone(),
+            };
+            let (_source_mailbox, source_handle) = universe.spawn_builder().spawn(source_actor);
+            let (exit_status, exit_state) = source_handle.join().await;
+            assert!(exit_status.is_success());
+
+            let messages: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
+            assert!(messages.is_empty());
+
+            let expected_state = json!({
+                "index_id": index_id,
+                "source_id": source_id,
+                "topic":  topic,
+                "assigned_partitions": vec![0, 1, 2],
+                "current_positions": json!([]),
+                "num_inactive_partitions": 3,
+                "num_bytes_processed": 0,
+                "num_messages_processed": 0,
+                "num_invalid_messages": 0,
+                "num_rebalances": 0,
+            });
+            assert_eq!(exit_state, expected_state);
         }
         Ok(())
     }

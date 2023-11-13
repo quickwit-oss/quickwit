@@ -30,6 +30,7 @@ use chitchat::transport::UdpTransport;
 use chitchat::FailureDetectorConfig;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::NodeConfig;
+use quickwit_proto::indexing::CpuCapacity;
 use quickwit_proto::types::NodeId;
 use time::OffsetDateTime;
 
@@ -37,7 +38,7 @@ pub use crate::change::ClusterChange;
 #[cfg(any(test, feature = "testsuite"))]
 pub use crate::cluster::{create_cluster_for_test, grpc_addr_from_listen_addr_for_test};
 pub use crate::cluster::{Cluster, ClusterSnapshot, NodeIdSchema};
-pub use crate::member::ClusterMember;
+pub use crate::member::{ClusterMember, INDEXING_CPU_CAPACITY_KEY};
 pub use crate::node::ClusterNode;
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
@@ -68,15 +69,21 @@ pub async fn start_cluster_service(node_config: &NodeConfig) -> anyhow::Result<C
     let node_id: NodeId = node_config.node_id.clone().into();
     let generation_id = GenerationId::now();
     let is_ready = false;
-    let self_node = ClusterMember::new(
+    let indexing_cpu_capacity = if node_config.is_service_enabled(QuickwitService::Indexer) {
+        node_config.indexer_config.cpu_capacity
+    } else {
+        CpuCapacity::zero()
+    };
+    let self_node = ClusterMember {
         node_id,
         generation_id,
         is_ready,
-        node_config.enabled_services.clone(),
-        node_config.gossip_advertise_addr,
-        node_config.grpc_advertise_addr,
+        enabled_services: node_config.enabled_services.clone(),
+        gossip_advertise_addr: node_config.gossip_advertise_addr,
+        grpc_advertise_addr: node_config.grpc_advertise_addr,
         indexing_tasks,
-    );
+        indexing_cpu_capacity,
+    };
     let cluster = Cluster::join(
         cluster_id,
         self_node,
@@ -86,5 +93,13 @@ pub async fn start_cluster_service(node_config: &NodeConfig) -> anyhow::Result<C
         &UdpTransport,
     )
     .await?;
+    if node_config
+        .enabled_services
+        .contains(&QuickwitService::Indexer)
+    {
+        cluster
+            .set_self_key_value(INDEXING_CPU_CAPACITY_KEY, indexing_cpu_capacity)
+            .await;
+    }
     Ok(cluster)
 }

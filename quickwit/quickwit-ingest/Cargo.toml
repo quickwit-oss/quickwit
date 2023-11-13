@@ -8,8 +8,8 @@ description = "Quickwit is a cost-efficient search engine."
 [dependencies]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
-byte-unit = { workspace = true }
 bytes = { workspace = true }
+bytesize = { workspace = true }
 dyn-clone = { workspace = true }
 flume = { workspace = true }
 futures = { workspace = true }

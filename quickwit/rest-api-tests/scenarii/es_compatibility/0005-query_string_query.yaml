@@ -151,3 +151,51 @@ json:
       lenient: true
       query: "to AND the"
 status_code: 400
+---
+# trailing wildcard
+json:
+  query:
+    query_string:
+      default_field: payload.description
+      lenient: true
+      query: "Jour* AND unix"
+expected:
+  hits:
+    total:
+      value: 2
+---
+# trailing wildcard
+json:
+  query:
+    query_string:
+      default_field: payload.description
+      lenient: true
+      query: "jour* AND unix"
+expected:
+  hits:
+    total:
+      value: 2
+---
+# trailing wildcard
+json:
+  query:
+    query_string:
+      default_field: payload.description
+      lenient: true
+      query: "jour*"
+expected:
+  hits:
+    total:
+      value: 3
+---
+# trailing wildcard
+json:
+  query:
+    query_string:
+      default_field: payload.description
+      lenient: true
+      query: "jour\\*"
+expected:
+  hits:
+    total:
+      value: 1

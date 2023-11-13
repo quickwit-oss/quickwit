@@ -25,12 +25,12 @@ use itertools::Itertools;
 use quickwit_common::{PrettySample, Progress};
 use quickwit_ingest::IngesterPool;
 use quickwit_proto::control_plane::{
-    ClosedShards, ControlPlaneError, ControlPlaneResult, GetOrCreateOpenShardsFailure,
+    ControlPlaneError, ControlPlaneResult, GetOrCreateOpenShardsFailure,
     GetOrCreateOpenShardsFailureReason, GetOrCreateOpenShardsRequest,
     GetOrCreateOpenShardsResponse, GetOrCreateOpenShardsSuccess,
 };
 use quickwit_proto::ingest::ingester::{IngesterService, PingRequest};
-use quickwit_proto::ingest::{IngestV2Error, ShardState};
+use quickwit_proto::ingest::{ClosedShards, IngestV2Error, ShardState};
 use quickwit_proto::metastore;
 use quickwit_proto::metastore::{MetastoreService, MetastoreServiceClient};
 use quickwit_proto::types::{IndexUid, NodeId};
@@ -188,7 +188,7 @@ impl IngestController {
                     index_id=%index_uid.index_id(),
                     source_id=%source_id,
                     shard_ids=?PrettySample::new(&closed_shard_ids, 5),
-                    "closed {} shards reported by router",
+                    "closed {} shard(s) reported by router",
                     closed_shard_ids.len()
                 );
             }

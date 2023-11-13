@@ -23,11 +23,12 @@ use tantivy::schema::{
     Field, FieldEntry, FieldType, IndexRecordOption, JsonObjectOptions, Schema as TantivySchema,
     Type,
 };
-use tantivy::{tokenizer, Term};
+use tantivy::Term;
 
 use crate::json_literal::InterpretUserInput;
 use crate::query_ast::full_text_query::FullTextParams;
 use crate::query_ast::tantivy_query_ast::{TantivyBoolQuery, TantivyQueryAst};
+use crate::tokenizers::TokenizerManager;
 use crate::InvalidQuery;
 
 const DYNAMIC_FIELD_NAME: &str = "_dynamic";
@@ -75,7 +76,7 @@ pub(crate) fn full_text_query(
     text_query: &str,
     full_text_params: &FullTextParams,
     schema: &TantivySchema,
-    tokenizer_manager: &tokenizer::TokenizerManager,
+    tokenizer_manager: &TokenizerManager,
 ) -> Result<TantivyQueryAst, InvalidQuery> {
     let (field, field_entry, path) = find_field_or_hit_dynamic(full_path, schema)?;
     compute_query_with_field(
@@ -108,7 +109,7 @@ fn compute_query_with_field(
     json_path: &str,
     value: &str,
     full_text_params: &FullTextParams,
-    tokenizer_manager: &tokenizer::TokenizerManager,
+    tokenizer_manager: &TokenizerManager,
 ) -> Result<TantivyQueryAst, InvalidQuery> {
     let field_type = field_entry.field_type();
     match field_type {
@@ -182,7 +183,7 @@ fn compute_tantivy_ast_query_for_json(
     text: &str,
     full_text_params: &FullTextParams,
     json_options: &JsonObjectOptions,
-    tokenizer_manager: &tokenizer::TokenizerManager,
+    tokenizer_manager: &TokenizerManager,
 ) -> Result<TantivyQueryAst, InvalidQuery> {
     let mut bool_query = TantivyBoolQuery::default();
     let mut term = Term::with_capacity(100);

@@ -19,13 +19,14 @@
 
 use std::collections::HashSet;
 use std::net::SocketAddr;
+use std::str::FromStr;
 
 use anyhow::{anyhow, Context};
 use chitchat::{ChitchatId, NodeState};
 use itertools::Itertools;
-use quickwit_proto::indexing::IndexingTask;
+use quickwit_proto::indexing::{CpuCapacity, IndexingTask};
 use quickwit_proto::types::NodeId;
-use tracing::warn;
+use tracing::{error, warn};
 
 use crate::{GenerationId, QuickwitService};
 
@@ -42,6 +43,8 @@ pub(crate) const INDEXING_TASK_PREFIX: &str = "indexing_task:";
 pub(crate) const READINESS_KEY: &str = "readiness";
 pub(crate) const READINESS_VALUE_READY: &str = "READY";
 pub(crate) const READINESS_VALUE_NOT_READY: &str = "NOT_READY";
+
+pub const INDEXING_CPU_CAPACITY_KEY: &str = "indexing_cpu_capacity";
 
 pub(crate) trait NodeStateExt {
     fn grpc_advertise_addr(&self) -> anyhow::Result<SocketAddr>;
@@ -91,30 +94,12 @@ pub struct ClusterMember {
     /// None if the node is not an indexer or the indexer has not yet started some indexing
     /// pipelines.
     pub indexing_tasks: Vec<IndexingTask>,
+    /// Indexing cpu capacity of the node expressed in milli cpu.
+    pub indexing_cpu_capacity: CpuCapacity,
     pub is_ready: bool,
 }
 
 impl ClusterMember {
-    pub fn new(
-        node_id: NodeId,
-        generation_id: GenerationId,
-        is_ready: bool,
-        enabled_services: HashSet<QuickwitService>,
-        gossip_advertise_addr: SocketAddr,
-        grpc_advertise_addr: SocketAddr,
-        indexing_tasks: Vec<IndexingTask>,
-    ) -> Self {
-        Self {
-            node_id,
-            generation_id,
-            is_ready,
-            enabled_services,
-            gossip_advertise_addr,
-            grpc_advertise_addr,
-            indexing_tasks,
-        }
-    }
-
     pub fn chitchat_id(&self) -> ChitchatId {
         ChitchatId::new(
             self.node_id.clone().into(),
@@ -127,6 +112,18 @@ impl ClusterMember {
 impl From<ClusterMember> for ChitchatId {
     fn from(member: ClusterMember) -> Self {
         member.chitchat_id()
+    }
+}
+
+fn parse_indexing_cpu_capacity(node_state: &NodeState) -> CpuCapacity {
+    let Some(indexing_capacity_str) = node_state.get(INDEXING_CPU_CAPACITY_KEY) else {
+        return CpuCapacity::zero();
+    };
+    if let Ok(indexing_capacity) = CpuCapacity::from_str(indexing_capacity_str) {
+        indexing_capacity
+    } else {
+        error!(indexing_capacity=?indexing_capacity_str, "Received an unparseable indexing capacity from node.");
+        CpuCapacity::zero()
     }
 }
 
@@ -150,15 +147,17 @@ pub(crate) fn build_cluster_member(
         })?;
     let grpc_advertise_addr = node_state.grpc_advertise_addr()?;
     let indexing_tasks = parse_indexing_tasks(node_state, &chitchat_id.node_id);
-    let member = ClusterMember::new(
-        chitchat_id.node_id.into(),
-        chitchat_id.generation_id.into(),
+    let indexing_cpu_capacity = parse_indexing_cpu_capacity(node_state);
+    let member = ClusterMember {
+        node_id: chitchat_id.node_id.into(),
+        generation_id: chitchat_id.generation_id.into(),
         is_ready,
         enabled_services,
-        chitchat_id.gossip_advertise_addr,
+        gossip_advertise_addr: chitchat_id.gossip_advertise_addr,
         grpc_advertise_addr,
         indexing_tasks,
-    );
+        indexing_cpu_capacity,
+    };
     Ok(member)
 }
 

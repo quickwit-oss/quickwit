@@ -42,20 +42,8 @@ use tracing::{debug, info, warn};
 use crate::actors::DocProcessor;
 use crate::source::{
     BatchBuilder, Source, SourceActor, SourceContext, SourceRuntimeArgs, TypedSourceFactory,
+    BATCH_NUM_BYTES_LIMIT, EMIT_BATCHES_TIMEOUT,
 };
-
-/// Number of bytes after which we cut a new batch.
-///
-/// We try to emit chewable batches for the indexer.
-/// One batch = one message to the indexer actor.
-///
-/// If batches are too large:
-/// - we might not be able to observe the state of the indexer for 5 seconds.
-/// - we will be needlessly occupying resident memory in the mailbox.
-/// - we will not have a precise control of the timeout before commit.
-///
-/// 5MB seems like a good one size fits all value.
-const BATCH_NUM_BYTES_LIMIT: u64 = 5_000_000;
 
 type PulsarConsumer = Consumer<PulsarMessage, TokioExecutor>;
 
@@ -225,7 +213,7 @@ impl Source for PulsarSource {
     ) -> Result<Duration, ActorExitStatus> {
         let now = Instant::now();
         let mut batch = BatchBuilder::default();
-        let deadline = time::sleep(*quickwit_actors::HEARTBEAT / 2);
+        let deadline = time::sleep(EMIT_BATCHES_TIMEOUT);
         tokio::pin!(deadline);
 
         loop {
@@ -339,7 +327,16 @@ async fn create_pulsar_consumer(
 fn msg_id_to_position(msg: &MessageIdData) -> Position {
     // The order of these fields are important as they affect the sorting
     // of the checkpoint positions.
-    // TODO: Confirm this layout is correct?
+    //
+    // The key parts of the ID used for ordering are:
+    // - The ledger ID which is a sequentially increasing ID.
+    // - The entry ID the unique ID of the message within the ledger.
+    // - The batch position for the current chunk of messages.
+    //
+    // The remaining keys are not required for sorting but are required
+    // in order to re-construct the message ID in order to send back to pulsar.
+    // The ledger_id, entry_id and the batch_index form a unique composite key which will
+    // prevent the remaining parts of the ID from interfering with the sorting.
     let id_str = format!(
         "{:0>20},{:0>20},{},{},{}",
         msg.ledger_id,

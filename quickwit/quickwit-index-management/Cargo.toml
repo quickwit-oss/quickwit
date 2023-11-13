@@ -12,7 +12,6 @@ documentation = "https://quickwit.io/docs/"
 [dependencies]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
-byte-unit = { workspace = true }
 futures = { workspace = true }
 futures-util = { workspace = true }
 itertools = { workspace = true }

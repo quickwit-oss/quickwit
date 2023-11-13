@@ -108,7 +108,7 @@ macro_rules! ingest_json {
     };
 }
 
-pub async fn ingest_with_retry(
+pub(crate) async fn ingest_with_retry(
     client: &QuickwitClient,
     index_id: &str,
     ingest_source: IngestSource,
@@ -201,6 +201,10 @@ impl ClusterSandbox {
         })
     }
 
+    pub fn enable_ingest_v2(&mut self) {
+        self.searcher_rest_client.enable_ingest_v2();
+    }
+
     // Starts one node that runs all the services.
     pub async fn start_standalone_node() -> anyhow::Result<Self> {
         let temp_dir = tempfile::tempdir()?;
@@ -286,13 +290,13 @@ impl ClusterSandbox {
     pub async fn wait_for_splits(
         &self,
         index_id: &str,
-        split_states: Option<Vec<SplitState>>,
+        split_states_filter: Option<Vec<SplitState>>,
         required_splits_num: usize,
     ) -> anyhow::Result<()> {
         wait_until_predicate(
             || {
                 let splits_query_params = ListSplitsQueryParams {
-                    split_states: split_states.clone(),
+                    split_states: split_states_filter.clone(),
                     ..Default::default()
                 };
                 async move {
@@ -322,7 +326,7 @@ impl ClusterSandbox {
                 }
             },
             Duration::from_secs(10),
-            Duration::from_millis(100),
+            Duration::from_millis(500),
         )
         .await?;
         Ok(())

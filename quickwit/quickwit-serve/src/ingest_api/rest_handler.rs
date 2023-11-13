@@ -24,8 +24,8 @@ use quickwit_ingest::{
     IngestServiceClient, IngestServiceError, TailRequest,
 };
 use quickwit_proto::ingest::router::{
-    IngestRequestV2, IngestResponseV2, IngestRouterService, IngestRouterServiceClient,
-    IngestSubrequest,
+    IngestFailureReason, IngestRequestV2, IngestResponseV2, IngestRouterService,
+    IngestRouterServiceClient, IngestSubrequest,
 };
 use quickwit_proto::ingest::{DocBatchV2, IngestV2Error};
 use quickwit_proto::types::IndexId;
@@ -79,7 +79,7 @@ fn ingest_filter(
     warp::path!(String / "ingest")
         .and(warp::post())
         .and(warp::body::content_length_limit(
-            config.content_length_limit,
+            config.content_length_limit.as_u64(),
         ))
         .and(warp::body::bytes())
         .and(serde_qs::warp::query::<IngestOptions>(
@@ -103,7 +103,7 @@ fn ingest_v2_filter(
     warp::path!(String / "ingest-v2")
         .and(warp::post())
         .and(warp::body::content_length_limit(
-            config.content_length_limit,
+            config.content_length_limit.as_u64(),
         ))
         .and(warp::body::bytes())
         .and(serde_qs::warp::query::<IngestOptions>(
@@ -127,7 +127,7 @@ async fn ingest_v2(
     body: Bytes,
     ingest_options: IngestOptions,
     mut ingest_router: IngestRouterServiceClient,
-) -> Result<IngestResponseV2, IngestV2Error> {
+) -> Result<IngestResponse, IngestServiceError> {
     let mut doc_buffer = BytesMut::new();
     let mut doc_lengths = Vec::new();
 
@@ -135,6 +135,7 @@ async fn ingest_v2(
         doc_lengths.push(line.len() as u32);
         doc_buffer.put(line);
     }
+    let num_docs = doc_lengths.len();
     let doc_batch = DocBatchV2 {
         doc_buffer: doc_buffer.freeze(),
         doc_lengths,
@@ -149,8 +150,46 @@ async fn ingest_v2(
         commit_type: ingest_options.commit_type as i32,
         subrequests: vec![subrequest],
     };
-    let response = ingest_router.ingest(request).await?;
-    Ok(response)
+    let response = ingest_router
+        .ingest(request)
+        .await
+        .map_err(|err: IngestV2Error| IngestServiceError::Internal(err.to_string()))?;
+    convert_ingest_response_v2(response, num_docs)
+}
+
+fn convert_ingest_response_v2(
+    mut response: IngestResponseV2,
+    num_docs: usize,
+) -> Result<IngestResponse, IngestServiceError> {
+    let num_responses = response.successes.len() + response.failures.len();
+    if num_responses != 1 {
+        return Err(IngestServiceError::Internal(format!(
+            "Expected a single failure/success, got {}.",
+            num_responses
+        )));
+    }
+    if response.successes.pop().is_some() {
+        return Ok(IngestResponse {
+            num_docs_for_processing: num_docs as u64,
+        });
+    }
+    let ingest_failure = response.failures.pop().unwrap();
+    Err(match ingest_failure.reason() {
+        IngestFailureReason::Unspecified => {
+            IngestServiceError::Internal("Unknown reason".to_string())
+        }
+        IngestFailureReason::IndexNotFound => IngestServiceError::IndexNotFound {
+            index_id: ingest_failure.index_id,
+        },
+        IngestFailureReason::SourceNotFound => IngestServiceError::Internal(format!(
+            "Ingest v2 source not found for index {}",
+            ingest_failure.index_id
+        )),
+        IngestFailureReason::Internal => IngestServiceError::Internal("Internal error".to_string()),
+        IngestFailureReason::NoShardsAvailable => IngestServiceError::Unavailable,
+        IngestFailureReason::RateLimited => IngestServiceError::RateLimited,
+        IngestFailureReason::ResourceExhausted => IngestServiceError::Unavailable,
+    })
 }
 
 #[utoipa::path(
@@ -230,7 +269,7 @@ pub(crate) fn lines(body: &Bytes) -> impl Iterator<Item = &[u8]> {
 pub(crate) mod tests {
     use std::time::Duration;
 
-    use byte_unit::Byte;
+    use bytesize::ByteSize;
     use quickwit_actors::{Mailbox, Universe};
     use quickwit_config::IngestApiConfig;
     use quickwit_ingest::{
@@ -333,7 +372,7 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn test_ingest_api_return_429_if_above_limits() {
         let config = IngestApiConfig {
-            max_queue_memory_usage: Byte::from_bytes(1),
+            max_queue_memory_usage: ByteSize(1),
             ..Default::default()
         };
         let (universe, _temp_dir, ingest_service, _) =
@@ -355,7 +394,7 @@ pub(crate) mod tests {
     #[tokio::test]
     async fn test_ingest_api_return_413_if_above_content_limit() {
         let config = IngestApiConfig {
-            content_length_limit: 1,
+            content_length_limit: ByteSize(1),
             ..Default::default()
         };
         let (universe, _temp_dir, ingest_service, _) =

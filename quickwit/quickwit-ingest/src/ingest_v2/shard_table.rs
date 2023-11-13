@@ -20,8 +20,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use quickwit_proto::control_plane::ClosedShards;
-use quickwit_proto::ingest::{Shard, ShardState};
+use quickwit_proto::ingest::{ClosedShards, Shard, ShardState};
 use quickwit_proto::types::{IndexId, IndexUid, NodeId, ShardId, SourceId};
 use tracing::warn;
 

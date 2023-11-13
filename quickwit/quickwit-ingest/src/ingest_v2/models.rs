@@ -105,28 +105,19 @@ impl fmt::Debug for SoloShard {
     }
 }
 
-impl Default for SoloShard {
-    fn default() -> Self {
+impl SoloShard {
+    pub fn new(shard_state: ShardState, replication_position_inclusive: Position) -> Self {
         let (new_records_tx, new_records_rx) = watch::channel(());
         Self {
-            shard_state: ShardState::Open,
-            replication_position_inclusive: Position::Beginning,
+            shard_state,
+            replication_position_inclusive,
             new_records_tx,
             new_records_rx,
         }
     }
 }
 
-impl SoloShard {
-    pub fn new(shard_state: ShardState, replication_position_inclusive: Position) -> Self {
-        Self {
-            shard_state,
-            replication_position_inclusive,
-            ..Default::default()
-        }
-    }
-}
-
+#[derive(Debug)]
 pub(super) enum IngesterShard {
     /// A primary shard hosted on a leader and replicated on a follower.
     Primary(PrimaryShard),
@@ -144,6 +135,15 @@ impl IngesterShard {
             IngesterShard::Solo(solo_shard) => &solo_shard.shard_state,
         }
         .is_closed()
+    }
+
+    pub fn close(&mut self) {
+        let shard_state = match self {
+            IngesterShard::Primary(primary_shard) => &mut primary_shard.shard_state,
+            IngesterShard::Replica(replica_shard) => &mut replica_shard.shard_state,
+            IngesterShard::Solo(solo_shard) => &mut solo_shard.shard_state,
+        };
+        *shard_state = ShardState::Closed;
     }
 
     pub fn replication_position_inclusive(&self) -> Position {
@@ -190,5 +190,20 @@ impl IngesterShard {
         }
         .send(())
         .expect("channel should be open");
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_new_solo_shard() {
+        let solo_shard = SoloShard::new(ShardState::Closed, Position::from(42u64));
+        assert_eq!(solo_shard.shard_state, ShardState::Closed);
+        assert_eq!(
+            solo_shard.replication_position_inclusive,
+            Position::from(42u64)
+        );
     }
 }

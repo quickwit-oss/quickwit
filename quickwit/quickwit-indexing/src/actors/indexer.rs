@@ -25,7 +25,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::Context;
 use async_trait::async_trait;
-use byte_unit::Byte;
+use bytesize::ByteSize;
 use fail::fail_point;
 use fnv::FnvHashMap;
 use itertools::Itertools;
@@ -38,7 +38,9 @@ use quickwit_common::temp_dir::TempDirectory;
 use quickwit_config::IndexingSettings;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
-use quickwit_proto::indexing::{IndexingPipelineId, PipelineMetrics};
+use quickwit_proto::indexing::{
+    CpuCapacity, IndexingPipelineId, PipelineMetrics, PIPELINE_FULL_CAPACITY,
+};
 use quickwit_proto::metastore::{
     LastDeleteOpstampRequest, MetastoreService, MetastoreServiceClient,
 };
@@ -110,7 +112,11 @@ impl IndexerState {
             .settings(self.index_settings.clone())
             .schema(self.schema.clone())
             .tokenizers(self.tokenizer_manager.clone())
-            .fast_field_tokenizers(get_quickwit_fastfield_normalizer_manager().clone());
+            .fast_field_tokenizers(
+                get_quickwit_fastfield_normalizer_manager()
+                    .tantivy_manager()
+                    .clone(),
+            );
 
         let io_controls = IoControls::default()
             .set_progress(ctx.progress().clone())
@@ -226,7 +232,7 @@ impl IndexerState {
             publish_lock,
             publish_token_opt,
             last_delete_opstamp,
-            memory_usage: Byte::from_bytes(0),
+            memory_usage: ByteSize(0),
         };
         Ok(workbench)
     }
@@ -317,7 +323,7 @@ impl IndexerState {
             memory_usage_delta += mem_usage_after - mem_usage_before;
             ctx.record_progress();
         }
-        *memory_usage = Byte::from_bytes(memory_usage.get_bytes() + memory_usage_delta);
+        *memory_usage = ByteSize(memory_usage.as_u64() + memory_usage_delta);
         Ok(())
     }
 }
@@ -343,7 +349,7 @@ struct IndexingWorkbench {
     // We use this value to set the `delete_opstamp` of the workbench splits.
     last_delete_opstamp: u64,
     // Number of bytes declared as used by tantivy.
-    memory_usage: Byte,
+    memory_usage: ByteSize,
 }
 
 pub struct Indexer {
@@ -534,7 +540,7 @@ impl Indexer {
                 publish_lock: PublishLock::default(),
                 publish_token_opt: None,
                 schema,
-                tokenizer_manager,
+                tokenizer_manager: tokenizer_manager.tantivy_manager().clone(),
                 index_settings,
                 max_num_partitions: doc_mapper.max_num_partitions(),
                 cooperative_indexing_permits,
@@ -547,11 +553,9 @@ impl Indexer {
 
     fn update_pipeline_metrics(&mut self, elapsed: Duration, uncompressed_num_bytes: u64) {
         let commit_timeout = self.indexer_state.indexing_settings.commit_timeout();
-        let cpu_millis: u16 = if elapsed >= commit_timeout {
-            1_000
-        } else {
-            (elapsed.as_micros() * 1_000 / commit_timeout.as_micros()) as u16
-        };
+        let pipeline_throughput_fraction =
+            (elapsed.as_micros() as f32 / commit_timeout.as_micros() as f32).min(1.0f32);
+        let cpu_millis: CpuCapacity = PIPELINE_FULL_CAPACITY * pipeline_throughput_fraction;
         self.counters.pipeline_metrics_opt = Some(PipelineMetrics {
             cpu_millis,
             throughput_mb_per_sec: (uncompressed_num_bytes / (1u64 + elapsed.as_micros() as u64))
@@ -559,11 +563,11 @@ impl Indexer {
         });
     }
 
-    fn memory_usage(&self) -> Byte {
+    fn memory_usage(&self) -> ByteSize {
         if let Some(workbench) = &self.indexing_workbench_opt {
             workbench.memory_usage
         } else {
-            Byte::from_bytes(0)
+            ByteSize(0)
         }
     }
 
@@ -865,7 +869,7 @@ mod tests {
         let body_field = schema.get_field("body").unwrap();
         let indexing_directory = TempDirectory::for_test();
         let mut indexing_settings = IndexingSettings::for_test();
-        indexing_settings.resources.heap_size = Byte::from_bytes(5_000_000);
+        indexing_settings.resources.heap_size = ByteSize::mb(5);
         let (index_serializer_mailbox, index_serializer_inbox) = universe.create_test_mailbox();
         let mut metastore = MetastoreServiceClient::mock();
         metastore.expect_publish_splits().never();

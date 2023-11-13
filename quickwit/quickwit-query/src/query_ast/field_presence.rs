@@ -21,11 +21,11 @@ use quickwit_common::shared_consts::FIELD_PRESENCE_FIELD_NAME;
 use quickwit_common::PathHasher;
 use serde::{Deserialize, Serialize};
 use tantivy::schema::{Field, IndexRecordOption, Schema as TantivySchema};
-use tantivy::tokenizer::TokenizerManager;
 use tantivy::Term;
 
 use crate::query_ast::tantivy_query_ast::TantivyQueryAst;
 use crate::query_ast::{BuildTantivyAst, QueryAst};
+use crate::tokenizers::TokenizerManager;
 use crate::{find_field_or_hit_dynamic, InvalidQuery};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq, Eq)]

@@ -19,7 +19,7 @@
 
 use std::num::NonZeroU32;
 
-use byte_unit::Byte;
+use bytesize::ByteSize;
 use quickwit_common::uri::Uri;
 use quickwit_config::SplitCacheLimits;
 use ulid::Ulid;
@@ -31,7 +31,7 @@ const TEST_STORAGE_URI: &'static str = "s3://test";
 #[test]
 fn test_split_table() {
     let mut split_table = SplitTable::with_limits(SplitCacheLimits {
-        max_num_bytes: Byte::from_bytes(1000),
+        max_num_bytes: ByteSize::kb(1),
         max_num_splits: NonZeroU32::new(1).unwrap(),
         num_concurrent_downloads: NonZeroU32::new(1).unwrap(),
     });
@@ -46,7 +46,7 @@ fn test_split_table() {
 #[test]
 fn test_split_table_prefer_last_touched() {
     let mut split_table = SplitTable::with_limits(SplitCacheLimits {
-        max_num_bytes: Byte::from_bytes(1000),
+        max_num_bytes: ByteSize::kb(1),
         max_num_splits: NonZeroU32::new(1).unwrap(),
         num_concurrent_downloads: NonZeroU32::new(1).unwrap(),
     });
@@ -63,7 +63,7 @@ fn test_split_table_prefer_last_touched() {
 #[test]
 fn test_split_table_prefer_start_download_prevent_new_report() {
     let mut split_table = SplitTable::with_limits(SplitCacheLimits {
-        max_num_bytes: Byte::from_bytes(1000),
+        max_num_bytes: ByteSize::kb(1),
         max_num_splits: NonZeroU32::new(1).unwrap(),
         num_concurrent_downloads: NonZeroU32::new(1).unwrap(),
     });
@@ -89,7 +89,7 @@ fn test_split_table_prefer_start_download_prevent_new_report() {
 #[test]
 fn test_eviction_due_to_size() {
     let mut split_table = SplitTable::with_limits(SplitCacheLimits {
-        max_num_bytes: Byte::from_bytes(1_000_000),
+        max_num_bytes: ByteSize::mb(1),
         max_num_splits: NonZeroU32::new(30).unwrap(),
         num_concurrent_downloads: NonZeroU32::new(1).unwrap(),
     });
@@ -123,7 +123,7 @@ fn test_eviction_due_to_size() {
 #[test]
 fn test_eviction_due_to_num_splits() {
     let mut split_table = SplitTable::with_limits(SplitCacheLimits {
-        max_num_bytes: Byte::from_bytes(10_000_000),
+        max_num_bytes: ByteSize::mb(10),
         max_num_splits: NonZeroU32::new(5).unwrap(),
         num_concurrent_downloads: NonZeroU32::new(1).unwrap(),
     });
@@ -154,7 +154,7 @@ fn test_eviction_due_to_num_splits() {
 #[test]
 fn test_failed_download_can_be_re_reported() {
     let mut split_table = SplitTable::with_limits(SplitCacheLimits {
-        max_num_bytes: Byte::from_bytes(10_000_000),
+        max_num_bytes: ByteSize::mb(10),
         max_num_splits: NonZeroU32::new(5).unwrap(),
         num_concurrent_downloads: NonZeroU32::new(1).unwrap(),
     });

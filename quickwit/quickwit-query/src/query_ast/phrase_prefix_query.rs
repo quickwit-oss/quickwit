@@ -20,11 +20,11 @@
 use serde::{Deserialize, Serialize};
 use tantivy::query::PhrasePrefixQuery as TantivyPhrasePrefixQuery;
 use tantivy::schema::{Field, FieldType, Schema as TantivySchema};
-use tantivy::tokenizer::TokenizerManager;
 use tantivy::Term;
 
 use crate::query_ast::tantivy_query_ast::TantivyQueryAst;
 use crate::query_ast::{BuildTantivyAst, FullTextParams, QueryAst};
+use crate::tokenizers::TokenizerManager;
 use crate::{find_field_or_hit_dynamic, InvalidQuery};
 
 /// The PhraseQuery node is meant to be tokenized and searched.
@@ -57,20 +57,19 @@ impl PhrasePrefixQuery {
                         field_entry.name()
                     ))
                 })?;
-                if !text_field_indexing.index_option().has_positions() {
-                    return Err(InvalidQuery::SchemaError(
-                        "trying to run a phrase prefix query on a field which does not have \
-                         positions indexed"
-                            .to_string(),
-                    ));
-                }
-
                 let terms = self.params.tokenize_text_into_terms(
                     field,
                     &self.phrase,
                     text_field_indexing,
                     tokenizer_manager,
                 )?;
+                if !text_field_indexing.index_option().has_positions() && terms.len() > 1 {
+                    return Err(InvalidQuery::SchemaError(
+                        "trying to run a phrase prefix query on a field which does not have \
+                         positions indexed"
+                            .to_string(),
+                    ));
+                }
                 Ok((field, terms))
             }
             FieldType::JsonObject(json_options) => {
@@ -81,13 +80,6 @@ impl PhrasePrefixQuery {
                             field_entry.name()
                         ))
                     })?;
-                if !text_field_indexing.index_option().has_positions() {
-                    return Err(InvalidQuery::SchemaError(
-                        "trying to run a PhrasePrefix query on a field which does not have \
-                         positions indexed"
-                            .to_string(),
-                    ));
-                }
                 let terms = self.params.tokenize_text_into_terms_json(
                     field,
                     json_path,
@@ -95,6 +87,13 @@ impl PhrasePrefixQuery {
                     json_options,
                     tokenizer_manager,
                 )?;
+                if !text_field_indexing.index_option().has_positions() && terms.len() > 1 {
+                    return Err(InvalidQuery::SchemaError(
+                        "trying to run a PhrasePrefix query on a field which does not have \
+                         positions indexed"
+                            .to_string(),
+                    ));
+                }
                 Ok((field, terms))
             }
             _ => Err(InvalidQuery::SchemaError(

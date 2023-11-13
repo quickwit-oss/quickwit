@@ -27,9 +27,10 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use anyhow::{bail, ensure};
-use byte_unit::Byte;
+use bytesize::ByteSize;
 use quickwit_common::net::HostAddr;
 use quickwit_common::uri::Uri;
+use quickwit_proto::indexing::CpuCapacity;
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
@@ -44,7 +45,7 @@ pub const DEFAULT_QW_CONFIG_PATH: &str = "config/quickwit.yaml";
 #[serde(deny_unknown_fields)]
 pub struct IndexerConfig {
     #[serde(default = "IndexerConfig::default_split_store_max_num_bytes")]
-    pub split_store_max_num_bytes: Byte,
+    pub split_store_max_num_bytes: ByteSize,
     #[serde(default = "IndexerConfig::default_split_store_max_num_splits")]
     pub split_store_max_num_splits: usize,
     #[serde(default = "IndexerConfig::default_max_concurrent_split_uploads")]
@@ -55,6 +56,8 @@ pub struct IndexerConfig {
     pub enable_otlp_endpoint: bool,
     #[serde(default = "IndexerConfig::default_enable_cooperative_indexing")]
     pub enable_cooperative_indexing: bool,
+    #[serde(default = "IndexerConfig::default_cpu_capacity")]
+    pub cpu_capacity: CpuCapacity,
 }
 
 impl IndexerConfig {
@@ -77,22 +80,28 @@ impl IndexerConfig {
         12
     }
 
-    pub fn default_split_store_max_num_bytes() -> Byte {
-        Byte::from_bytes(100_000_000_000) // 100G
+    pub fn default_split_store_max_num_bytes() -> ByteSize {
+        ByteSize::gb(100)
     }
 
     pub fn default_split_store_max_num_splits() -> usize {
         1_000
     }
 
+    fn default_cpu_capacity() -> CpuCapacity {
+        CpuCapacity::one_cpu_thread() * (num_cpus::get() as u32)
+    }
+
     #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test() -> anyhow::Result<Self> {
+        use quickwit_proto::indexing::PIPELINE_FULL_CAPACITY;
         let indexer_config = IndexerConfig {
             enable_cooperative_indexing: false,
             enable_otlp_endpoint: true,
-            split_store_max_num_bytes: Byte::from_bytes(1_000_000),
+            split_store_max_num_bytes: ByteSize::mb(1),
             split_store_max_num_splits: 3,
             max_concurrent_split_uploads: 4,
+            cpu_capacity: PIPELINE_FULL_CAPACITY * 4u32,
         };
         Ok(indexer_config)
     }
@@ -106,6 +115,7 @@ impl Default for IndexerConfig {
             split_store_max_num_bytes: Self::default_split_store_max_num_bytes(),
             split_store_max_num_splits: Self::default_split_store_max_num_splits(),
             max_concurrent_split_uploads: Self::default_max_concurrent_split_uploads(),
+            cpu_capacity: Self::default_cpu_capacity(),
         }
     }
 }
@@ -113,7 +123,7 @@ impl Default for IndexerConfig {
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SplitCacheLimits {
-    pub max_num_bytes: Byte,
+    pub max_num_bytes: ByteSize,
     #[serde(default = "SplitCacheLimits::default_max_num_splits")]
     pub max_num_splits: NonZeroU32,
     #[serde(default = "SplitCacheLimits::default_num_concurrent_downloads")]
@@ -133,7 +143,7 @@ impl SplitCacheLimits {
 impl Default for SplitCacheLimits {
     fn default() -> SplitCacheLimits {
         SplitCacheLimits {
-            max_num_bytes: Byte::from_bytes(1_000_000_000), // 1 GB.
+            max_num_bytes: ByteSize::gb(1),
             max_num_splits: NonZeroU32::new(100).unwrap(),
             num_concurrent_downloads: NonZeroU32::new(1).unwrap(),
         }
@@ -143,11 +153,11 @@ impl Default for SplitCacheLimits {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct SearcherConfig {
-    pub aggregation_memory_limit: Byte,
+    pub aggregation_memory_limit: ByteSize,
     pub aggregation_bucket_limit: u32,
-    pub fast_field_cache_capacity: Byte,
-    pub split_footer_cache_capacity: Byte,
-    pub partial_request_cache_capacity: Byte,
+    pub fast_field_cache_capacity: ByteSize,
+    pub split_footer_cache_capacity: ByteSize,
+    pub partial_request_cache_capacity: ByteSize,
     pub max_num_concurrent_split_searches: usize,
     pub max_num_concurrent_split_streams: usize,
     // Strangely, if None, this will also have the effect of not forwarding
@@ -160,12 +170,12 @@ pub struct SearcherConfig {
 impl Default for SearcherConfig {
     fn default() -> Self {
         Self {
-            fast_field_cache_capacity: Byte::from_bytes(1_000_000_000), // 1G
-            split_footer_cache_capacity: Byte::from_bytes(500_000_000), // 500M
-            partial_request_cache_capacity: Byte::from_bytes(64_000_000), // 64M
+            fast_field_cache_capacity: ByteSize::gb(1),
+            split_footer_cache_capacity: ByteSize::mb(500),
+            partial_request_cache_capacity: ByteSize::mb(64),
             max_num_concurrent_split_streams: 100,
             max_num_concurrent_split_searches: 100,
-            aggregation_memory_limit: Byte::from_bytes(500_000_000), // 500M
+            aggregation_memory_limit: ByteSize::mb(500),
             aggregation_bucket_limit: 65000,
             split_cache: None,
         }
@@ -175,19 +185,19 @@ impl Default for SearcherConfig {
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields, default)]
 pub struct IngestApiConfig {
-    pub max_queue_memory_usage: Byte,
-    pub max_queue_disk_usage: Byte,
+    pub max_queue_memory_usage: ByteSize,
+    pub max_queue_disk_usage: ByteSize,
     pub replication_factor: usize,
-    pub content_length_limit: u64,
+    pub content_length_limit: ByteSize,
 }
 
 impl Default for IngestApiConfig {
     fn default() -> Self {
         Self {
-            max_queue_memory_usage: Byte::from_bytes(2 * 1024 * 1024 * 1024), /* 2 GiB // TODO maybe we want more? */
-            max_queue_disk_usage: Byte::from_bytes(4 * 1024 * 1024 * 1024), /* 4 GiB // TODO maybe we want more? */
+            max_queue_memory_usage: ByteSize::gib(2), // TODO maybe we want more?
+            max_queue_disk_usage: ByteSize::gib(4),   // TODO maybe we want more?
             replication_factor: 1,
-            content_length_limit: 10 * 1024 * 1024, // 10 MiB
+            content_length_limit: ByteSize::mib(10),
         }
     }
 }
@@ -366,5 +376,56 @@ impl NodeConfig {
     #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test() -> Self {
         serialize::node_config_for_test()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use quickwit_proto::indexing::CpuCapacity;
+
+    use crate::IndexerConfig;
+
+    #[test]
+    fn test_index_config_serialization() {
+        {
+            let indexer_config: IndexerConfig = serde_json::from_str(r#"{}"#).unwrap();
+            assert_eq!(&indexer_config, &IndexerConfig::default());
+            assert!(indexer_config.cpu_capacity.cpu_millis() > 0);
+            assert_eq!(indexer_config.cpu_capacity.cpu_millis() % 1_000, 0);
+        }
+        {
+            let indexer_config: IndexerConfig =
+                serde_yaml::from_str(r#"cpu_capacity: 1.5"#).unwrap();
+            assert_eq!(
+                indexer_config.cpu_capacity,
+                CpuCapacity::from_cpu_millis(1500)
+            );
+            let indexer_config_json = serde_json::to_value(&indexer_config).unwrap();
+            assert_eq!(
+                indexer_config_json
+                    .get("cpu_capacity")
+                    .unwrap()
+                    .as_str()
+                    .unwrap(),
+                "1500m"
+            );
+        }
+        {
+            let indexer_config: IndexerConfig =
+                serde_yaml::from_str(r#"cpu_capacity: 1500m"#).unwrap();
+            assert_eq!(
+                indexer_config.cpu_capacity,
+                CpuCapacity::from_cpu_millis(1500)
+            );
+            let indexer_config_json = serde_json::to_value(&indexer_config).unwrap();
+            assert_eq!(
+                indexer_config_json
+                    .get("cpu_capacity")
+                    .unwrap()
+                    .as_str()
+                    .unwrap(),
+                "1500m"
+            );
+        }
     }
 }

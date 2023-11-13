@@ -75,10 +75,9 @@ mod void_source;
 use std::path::PathBuf;
 use std::time::Duration;
 
-#[cfg(not(any(feature = "kafka", feature = "kinesis", feature = "pulsar")))]
-use anyhow::bail;
 use async_trait::async_trait;
 use bytes::Bytes;
+use bytesize::ByteSize;
 pub use file_source::{FileSource, FileSourceFactory};
 #[cfg(feature = "gcp-pubsub")]
 pub use gcp_pubsub_source::{GcpPubSubSource, GcpPubSubSourceFactory};
@@ -110,6 +109,21 @@ use crate::actors::DocProcessor;
 use crate::models::RawDocBatch;
 use crate::source::ingest::IngestSourceFactory;
 use crate::source::ingest_api_source::IngestApiSourceFactory;
+
+/// Number of bytes after which we cut a new batch.
+///
+/// We try to emit chewable batches for the indexer.
+/// One batch = one message to the indexer actor.
+///
+/// If batches are too large:
+/// - we might not be able to observe the state of the indexer for 5 seconds.
+/// - we will be needlessly occupying resident memory in the mailbox.
+/// - we will not have a precise control of the timeout before commit.
+///
+/// 5MB seems like a good one size fits all value.
+const BATCH_NUM_BYTES_LIMIT: u64 = ByteSize::mib(5).as_u64();
+
+const EMIT_BATCHES_TIMEOUT: Duration = Duration::from_millis(if cfg!(test) { 100 } else { 1_000 });
 
 /// Runtime configuration used during execution of a source actor.
 pub struct SourceRuntimeArgs {
@@ -398,7 +412,7 @@ pub async fn check_source_connectivity(
         #[allow(unused_variables)]
         SourceParams::Kafka(params) => {
             #[cfg(not(feature = "kafka"))]
-            bail!("Quickwit binary was not compiled with the `kafka` feature");
+            anyhow::bail!("Quickwit binary was not compiled with the `kafka` feature");
 
             #[cfg(feature = "kafka")]
             {
@@ -409,7 +423,7 @@ pub async fn check_source_connectivity(
         #[allow(unused_variables)]
         SourceParams::Kinesis(params) => {
             #[cfg(not(feature = "kinesis"))]
-            bail!("Quickwit binary was not compiled with the `kinesis` feature");
+            anyhow::bail!("Quickwit binary was not compiled with the `kinesis` feature");
 
             #[cfg(feature = "kinesis")]
             {
@@ -420,7 +434,7 @@ pub async fn check_source_connectivity(
         #[allow(unused_variables)]
         SourceParams::Pulsar(params) => {
             #[cfg(not(feature = "pulsar"))]
-            bail!("Quickwit binary was not compiled with the `pulsar` feature");
+            anyhow::bail!("Quickwit binary was not compiled with the `pulsar` feature");
 
             #[cfg(feature = "pulsar")]
             {

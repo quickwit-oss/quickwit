@@ -18,7 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::fmt::Debug;
+use std::fmt::{Debug, Display};
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
@@ -229,7 +229,7 @@ impl Cluster {
     }
 
     /// Sets a key-value pair on the cluster node's state.
-    pub async fn set_self_key_value<K: Into<String>, V: Into<String>>(&self, key: K, value: V) {
+    pub async fn set_self_key_value(&self, key: impl Display, value: impl Display) {
         self.chitchat()
             .await
             .lock()
@@ -517,17 +517,19 @@ pub async fn create_cluster_for_test_with_id(
     transport: &dyn Transport,
     self_node_readiness: bool,
 ) -> anyhow::Result<Cluster> {
+    use quickwit_proto::indexing::PIPELINE_FULL_CAPACITY;
     let gossip_advertise_addr: SocketAddr = ([127, 0, 0, 1], node_id).into();
     let node_id: NodeId = format!("node_{node_id}").into();
-    let self_node = ClusterMember::new(
+    let self_node = ClusterMember {
         node_id,
-        crate::GenerationId(1),
-        self_node_readiness,
-        enabled_services.clone(),
+        generation_id: crate::GenerationId(1),
+        is_ready: self_node_readiness,
+        enabled_services: enabled_services.clone(),
         gossip_advertise_addr,
-        grpc_addr_from_listen_addr_for_test(gossip_advertise_addr),
-        Vec::new(),
-    );
+        grpc_advertise_addr: grpc_addr_from_listen_addr_for_test(gossip_advertise_addr),
+        indexing_tasks: Vec::new(),
+        indexing_cpu_capacity: PIPELINE_FULL_CAPACITY,
+    };
     let failure_detector_config = create_failure_detector_config_for_test();
     let cluster = Cluster::join(
         cluster_id,

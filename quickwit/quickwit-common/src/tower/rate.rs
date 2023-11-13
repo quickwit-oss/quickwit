@@ -19,7 +19,7 @@
 
 use std::time::Duration;
 
-use byte_unit::Byte;
+use bytesize::ByteSize;
 
 pub trait Rate: Clone {
     /// Returns the amount of work per time period.
@@ -41,17 +41,20 @@ impl ConstantRate {
     ///
     /// # Panics
     ///
-    /// This function panics if `work` is equal to zero or `period` is < 1ms.
+    /// This function panics if `period` is < 1ms.
     pub fn new(work: u64, period: Duration) -> Self {
-        assert!(work > 0);
         assert!(period.as_millis() > 0);
 
         Self { work, period }
     }
 
-    pub fn from_bytes(bytes: Byte, period: Duration) -> Self {
-        let work = bytes.get_bytes();
+    pub fn bytes_per_period(bytes: ByteSize, period: Duration) -> Self {
+        let work = bytes.as_u64();
         Self::new(work, period)
+    }
+
+    pub fn bytes_per_sec(bytes: ByteSize) -> Self {
+        Self::bytes_per_period(bytes, Duration::from_secs(1))
     }
 }
 

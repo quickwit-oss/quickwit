@@ -194,10 +194,10 @@ pub struct ReplicateFailure {
     pub index_uid: ::prost::alloc::string::String,
     #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
-    /// ingest.DocBatchV2 doc_batch = 4;
-    /// ingest.IngestError error = 5;
     #[prost(uint64, tag = "4")]
     pub shard_id: u64,
+    #[prost(enumeration = "ReplicateFailureReason", tag = "5")]
+    pub reason: i32,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -263,6 +263,17 @@ pub struct FetchResponseV2 {
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CloseShardsRequest {
+    #[prost(message, repeated, tag = "1")]
+    pub closed_shards: ::prost::alloc::vec::Vec<super::ClosedShards>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct CloseShardsResponse {}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PingRequest {
     #[prost(string, tag = "1")]
     pub leader_id: ::prost::alloc::string::String,
@@ -309,6 +320,43 @@ impl PersistFailureReason {
         }
     }
 }
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum ReplicateFailureReason {
+    Unspecified = 0,
+    ShardClosed = 1,
+    ResourceExhausted = 3,
+}
+impl ReplicateFailureReason {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            ReplicateFailureReason::Unspecified => "REPLICATE_FAILURE_REASON_UNSPECIFIED",
+            ReplicateFailureReason::ShardClosed => {
+                "REPLICATE_FAILURE_REASON_SHARD_CLOSED"
+            }
+            ReplicateFailureReason::ResourceExhausted => {
+                "REPLICATE_FAILURE_REASON_RESOURCE_EXHAUSTED"
+            }
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "REPLICATE_FAILURE_REASON_UNSPECIFIED" => Some(Self::Unspecified),
+            "REPLICATE_FAILURE_REASON_SHARD_CLOSED" => Some(Self::ShardClosed),
+            "REPLICATE_FAILURE_REASON_RESOURCE_EXHAUSTED" => {
+                Some(Self::ResourceExhausted)
+            }
+            _ => None,
+        }
+    }
+}
 /// BEGIN quickwit-codegen
 #[allow(unused_imports)]
 use std::str::FromStr;
@@ -334,6 +382,10 @@ pub trait IngesterService: std::fmt::Debug + dyn_clone::DynClone + Send + Sync +
         &mut self,
         request: OpenFetchStreamRequest,
     ) -> crate::ingest::IngestV2Result<IngesterServiceStream<FetchResponseV2>>;
+    async fn close_shards(
+        &mut self,
+        request: CloseShardsRequest,
+    ) -> crate::ingest::IngestV2Result<CloseShardsResponse>;
     /// Pings an ingester to check if it is ready to host shards and serve requests.
     async fn ping(
         &mut self,
@@ -442,6 +494,12 @@ impl IngesterService for IngesterServiceClient {
     ) -> crate::ingest::IngestV2Result<IngesterServiceStream<FetchResponseV2>> {
         self.inner.open_fetch_stream(request).await
     }
+    async fn close_shards(
+        &mut self,
+        request: CloseShardsRequest,
+    ) -> crate::ingest::IngestV2Result<CloseShardsResponse> {
+        self.inner.close_shards(request).await
+    }
     async fn ping(
         &mut self,
         request: PingRequest,
@@ -485,6 +543,12 @@ pub mod ingester_service_mock {
             IngesterServiceStream<super::FetchResponseV2>,
         > {
             self.inner.lock().await.open_fetch_stream(request).await
+        }
+        async fn close_shards(
+            &mut self,
+            request: super::CloseShardsRequest,
+        ) -> crate::ingest::IngestV2Result<super::CloseShardsResponse> {
+            self.inner.lock().await.close_shards(request).await
         }
         async fn ping(
             &mut self,
@@ -563,6 +627,22 @@ impl tower::Service<OpenFetchStreamRequest> for Box<dyn IngesterService> {
         Box::pin(fut)
     }
 }
+impl tower::Service<CloseShardsRequest> for Box<dyn IngesterService> {
+    type Response = CloseShardsResponse;
+    type Error = crate::ingest::IngestV2Error;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: CloseShardsRequest) -> Self::Future {
+        let mut svc = self.clone();
+        let fut = async move { svc.close_shards(request).await };
+        Box::pin(fut)
+    }
+}
 impl tower::Service<PingRequest> for Box<dyn IngesterService> {
     type Response = PingResponse;
     type Error = crate::ingest::IngestV2Error;
@@ -614,6 +694,11 @@ struct IngesterServiceTowerBlock {
         IngesterServiceStream<FetchResponseV2>,
         crate::ingest::IngestV2Error,
     >,
+    close_shards_svc: quickwit_common::tower::BoxService<
+        CloseShardsRequest,
+        CloseShardsResponse,
+        crate::ingest::IngestV2Error,
+    >,
     ping_svc: quickwit_common::tower::BoxService<
         PingRequest,
         PingResponse,
@@ -632,6 +717,7 @@ impl Clone for IngesterServiceTowerBlock {
             persist_svc: self.persist_svc.clone(),
             open_replication_stream_svc: self.open_replication_stream_svc.clone(),
             open_fetch_stream_svc: self.open_fetch_stream_svc.clone(),
+            close_shards_svc: self.close_shards_svc.clone(),
             ping_svc: self.ping_svc.clone(),
             truncate_svc: self.truncate_svc.clone(),
         }
@@ -656,6 +742,12 @@ impl IngesterService for IngesterServiceTowerBlock {
         request: OpenFetchStreamRequest,
     ) -> crate::ingest::IngestV2Result<IngesterServiceStream<FetchResponseV2>> {
         self.open_fetch_stream_svc.ready().await?.call(request).await
+    }
+    async fn close_shards(
+        &mut self,
+        request: CloseShardsRequest,
+    ) -> crate::ingest::IngestV2Result<CloseShardsResponse> {
+        self.close_shards_svc.ready().await?.call(request).await
     }
     async fn ping(
         &mut self,
@@ -696,6 +788,15 @@ pub struct IngesterServiceTowerBlockBuilder {
             Box<dyn IngesterService>,
             OpenFetchStreamRequest,
             IngesterServiceStream<FetchResponseV2>,
+            crate::ingest::IngestV2Error,
+        >,
+    >,
+    #[allow(clippy::type_complexity)]
+    close_shards_layer: Option<
+        quickwit_common::tower::BoxLayer<
+            Box<dyn IngesterService>,
+            CloseShardsRequest,
+            CloseShardsResponse,
             crate::ingest::IngestV2Error,
         >,
     >,
@@ -743,6 +844,12 @@ impl IngesterServiceTowerBlockBuilder {
             > + Clone + Send + Sync + 'static,
         <L::Service as tower::Service<OpenFetchStreamRequest>>::Future: Send + 'static,
         L::Service: tower::Service<
+                CloseShardsRequest,
+                Response = CloseShardsResponse,
+                Error = crate::ingest::IngestV2Error,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<CloseShardsRequest>>::Future: Send + 'static,
+        L::Service: tower::Service<
                 PingRequest,
                 Response = PingResponse,
                 Error = crate::ingest::IngestV2Error,
@@ -762,6 +869,10 @@ impl IngesterServiceTowerBlockBuilder {
         );
         self
             .open_fetch_stream_layer = Some(
+            quickwit_common::tower::BoxLayer::new(layer.clone()),
+        );
+        self
+            .close_shards_layer = Some(
             quickwit_common::tower::BoxLayer::new(layer.clone()),
         );
         self.ping_layer = Some(quickwit_common::tower::BoxLayer::new(layer.clone()));
@@ -813,6 +924,19 @@ impl IngesterServiceTowerBlockBuilder {
             .open_fetch_stream_layer = Some(
             quickwit_common::tower::BoxLayer::new(layer),
         );
+        self
+    }
+    pub fn close_shards_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<Box<dyn IngesterService>> + Send + Sync + 'static,
+        L::Service: tower::Service<
+                CloseShardsRequest,
+                Response = CloseShardsResponse,
+                Error = crate::ingest::IngestV2Error,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<CloseShardsRequest>>::Future: Send + 'static,
+    {
+        self.close_shards_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
     pub fn ping_layer<L>(mut self, layer: L) -> Self
@@ -895,6 +1019,11 @@ impl IngesterServiceTowerBlockBuilder {
         } else {
             quickwit_common::tower::BoxService::new(boxed_instance.clone())
         };
+        let close_shards_svc = if let Some(layer) = self.close_shards_layer {
+            layer.layer(boxed_instance.clone())
+        } else {
+            quickwit_common::tower::BoxService::new(boxed_instance.clone())
+        };
         let ping_svc = if let Some(layer) = self.ping_layer {
             layer.layer(boxed_instance.clone())
         } else {
@@ -910,6 +1039,7 @@ impl IngesterServiceTowerBlockBuilder {
             persist_svc,
             open_replication_stream_svc,
             open_fetch_stream_svc,
+            close_shards_svc,
             ping_svc,
             truncate_svc,
         };
@@ -1013,6 +1143,12 @@ where
             >,
         >
         + tower::Service<
+            CloseShardsRequest,
+            Response = CloseShardsResponse,
+            Error = crate::ingest::IngestV2Error,
+            Future = BoxFuture<CloseShardsResponse, crate::ingest::IngestV2Error>,
+        >
+        + tower::Service<
             PingRequest,
             Response = PingResponse,
             Error = crate::ingest::IngestV2Error,
@@ -1041,6 +1177,12 @@ where
         &mut self,
         request: OpenFetchStreamRequest,
     ) -> crate::ingest::IngestV2Result<IngesterServiceStream<FetchResponseV2>> {
+        self.call(request).await
+    }
+    async fn close_shards(
+        &mut self,
+        request: CloseShardsRequest,
+    ) -> crate::ingest::IngestV2Result<CloseShardsResponse> {
         self.call(request).await
     }
     async fn ping(
@@ -1128,6 +1270,16 @@ where
             })
             .map_err(|error| error.into())
     }
+    async fn close_shards(
+        &mut self,
+        request: CloseShardsRequest,
+    ) -> crate::ingest::IngestV2Result<CloseShardsResponse> {
+        self.inner
+            .close_shards(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|error| error.into())
+    }
     async fn ping(
         &mut self,
         request: PingRequest,
@@ -1204,6 +1356,17 @@ for IngesterServiceGrpcServerAdapter {
             .open_fetch_stream(request.into_inner())
             .await
             .map(|stream| tonic::Response::new(stream.map_err(|error| error.into())))
+            .map_err(|error| error.into())
+    }
+    async fn close_shards(
+        &self,
+        request: tonic::Request<CloseShardsRequest>,
+    ) -> Result<tonic::Response<CloseShardsResponse>, tonic::Status> {
+        self.inner
+            .clone()
+            .close_shards(request.into_inner())
+            .await
+            .map(tonic::Response::new)
             .map_err(|error| error.into())
     }
     async fn ping(
@@ -1409,6 +1572,36 @@ pub mod ingester_service_grpc_client {
                 );
             self.inner.server_streaming(req, path, codec).await
         }
+        pub async fn close_shards(
+            &mut self,
+            request: impl tonic::IntoRequest<super::CloseShardsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CloseShardsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.ingest.ingester.IngesterService/CloseShards",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit.ingest.ingester.IngesterService",
+                        "CloseShards",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
         /// Pings an ingester to check if it is ready to host shards and serve requests.
         pub async fn ping(
             &mut self,
@@ -1505,6 +1698,13 @@ pub mod ingester_service_grpc_server {
             request: tonic::Request<super::OpenFetchStreamRequest>,
         ) -> std::result::Result<
             tonic::Response<Self::OpenFetchStreamStream>,
+            tonic::Status,
+        >;
+        async fn close_shards(
+            &self,
+            request: tonic::Request<super::CloseShardsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::CloseShardsResponse>,
             tonic::Status,
         >;
         /// Pings an ingester to check if it is ready to host shards and serve requests.
@@ -1737,6 +1937,52 @@ pub mod ingester_service_grpc_server {
                                 max_encoding_message_size,
                             );
                         let res = grpc.server_streaming(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.ingest.ingester.IngesterService/CloseShards" => {
+                    #[allow(non_camel_case_types)]
+                    struct CloseShardsSvc<T: IngesterServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: IngesterServiceGrpc,
+                    > tonic::server::UnaryService<super::CloseShardsRequest>
+                    for CloseShardsSvc<T> {
+                        type Response = super::CloseShardsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::CloseShardsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).close_shards(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = CloseShardsSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
                         Ok(res)
                     };
                     Box::pin(fut)
