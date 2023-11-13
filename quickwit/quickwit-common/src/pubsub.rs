@@ -19,7 +19,6 @@
 
 use std::collections::HashMap;
 use std::fmt;
-use std::marker::PhantomData;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
@@ -60,7 +59,7 @@ struct InnerEventBroker {
 
 impl EventBroker {
     /// Subscribes to an event type.
-    pub fn subscribe<E>(&self, subscriber: impl EventSubscriber<E>) -> EventSubscriptionHandle<E>
+    pub fn subscribe<E>(&self, subscriber: impl EventSubscriber<E>) -> EventSubscriptionHandle
     where E: Event {
         let mut subscriptions = self
             .inner
@@ -84,11 +83,19 @@ impl EventBroker {
             .get_mut::<EventSubscriptions<E>>()
             .expect("The subscription map should exist.");
         typed_subscriptions.insert(subscription_id, subscription);
-
         EventSubscriptionHandle {
             subscription_id,
             broker: Arc::downgrade(&self.inner),
-            _phantom: PhantomData,
+            drop_me: |subscription_id, broker| {
+                let mut subscriptions = broker
+                    .subscriptions
+                    .lock()
+                    .expect("the lock should not be poisoned");
+                if let Some(typed_subscriptions) = subscriptions.get_mut::<EventSubscriptions<E>>()
+                {
+                    typed_subscriptions.remove(&subscription_id);
+                }
+            },
         }
     }
 
@@ -120,31 +127,20 @@ struct EventSubscription<E> {
     subscriber: Box<dyn EventSubscriber<E>>,
 }
 
-#[derive(Debug)]
-pub struct EventSubscriptionHandle<E: Event> {
+pub struct EventSubscriptionHandle {
     subscription_id: usize,
     broker: Weak<InnerEventBroker>,
-    _phantom: PhantomData<E>,
+    drop_me: fn(usize, &InnerEventBroker),
 }
 
-impl<E> EventSubscriptionHandle<E>
-where E: Event
-{
+impl EventSubscriptionHandle {
     pub fn cancel(self) {}
 }
 
-impl<E> Drop for EventSubscriptionHandle<E>
-where E: Event
-{
+impl Drop for EventSubscriptionHandle {
     fn drop(&mut self) {
         if let Some(broker) = self.broker.upgrade() {
-            let mut subscriptions = broker
-                .subscriptions
-                .lock()
-                .expect("the lock should not be poisoned");
-            if let Some(typed_subscriptions) = subscriptions.get_mut::<EventSubscriptions<E>>() {
-                typed_subscriptions.remove(&self.subscription_id);
-            }
+            (self.drop_me)(self.subscription_id, &broker);
         }
     }
 }
