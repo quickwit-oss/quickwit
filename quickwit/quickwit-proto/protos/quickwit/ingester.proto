@@ -182,7 +182,6 @@ message OpenFetchStreamRequest {
   string source_id = 3;
   uint64 shard_id = 4;
   quickwit.ingest.Position from_position_exclusive = 5;
-  quickwit.ingest.Position to_position_inclusive = 6;
 }
 
 message FetchResponseV2 {

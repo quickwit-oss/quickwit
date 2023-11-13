@@ -409,7 +409,6 @@ impl Source for IngestSource {
                 .publish_position_inclusive
                 .unwrap_or_default();
             let from_position_exclusive = current_position_inclusive.clone();
-            let to_position_inclusive = Position::Eof;
 
             let status = if from_position_exclusive == Position::Eof {
                 IndexingStatus::Complete
@@ -421,7 +420,6 @@ impl Source for IngestSource {
                     source_id,
                     shard_id,
                     from_position_exclusive,
-                    to_position_inclusive,
                 ))
                 .await
             {
