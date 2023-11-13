@@ -58,7 +58,7 @@ pub struct IngestApiService {
 }
 
 impl fmt::Debug for IngestApiService {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         f.debug_struct("IngestApiService")
             .field("partition_id", &self.partition_id)
             .field("memory_limit", &self.memory_limit)
