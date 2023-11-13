@@ -23,6 +23,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::future::try_join_all;
+use futures::TryStreamExt;
 use itertools::Itertools;
 use quickwit_common::rand::append_random_suffix;
 use quickwit_config::{IndexConfig, SourceConfig, SourceInputFormat, SourceParams};
@@ -35,7 +36,7 @@ use quickwit_proto::metastore::{
     ResetSourceCheckpointRequest, SourceType, StageSplitsRequest, ToggleSourceRequest,
     UpdateSplitsDeleteOpstampRequest,
 };
-use quickwit_proto::types::{IndexUid, Position};
+use quickwit_proto::types::{IndexUid, Position, SplitId};
 use quickwit_query::query_ast::qast_json_helper;
 use time::OffsetDateTime;
 use tokio::time::sleep;
@@ -2386,6 +2387,80 @@ pub async fn test_metastore_list_all_splits<
     cleanup_index(&mut metastore, index_uid.clone()).await;
 }
 
+pub async fn test_metastore_stream_splits<MetastoreToTest: MetastoreServiceExt + DefaultForTest>() {
+    let mut metastore = MetastoreToTest::default_for_test().await;
+
+    let index_id = append_random_suffix("test-stream-splits");
+    let index_uri = format!("ram:///indexes/{index_id}");
+    let index_config = IndexConfig::for_test(&index_id, &index_uri);
+
+    let create_index_request = CreateIndexRequest::try_from_index_config(index_config).unwrap();
+    let index_uid: IndexUid = metastore
+        .create_index(create_index_request)
+        .await
+        .unwrap()
+        .index_uid
+        .into();
+
+    let mut split_metadatas_to_create = Vec::new();
+    for idx in 1..10001 {
+        let split_id = format!("{index_id}--split-{idx:0>5}");
+        let split_metadata = SplitMetadata {
+            split_id: split_id.clone(),
+            index_uid: index_uid.clone(),
+            ..Default::default()
+        };
+        split_metadatas_to_create.push(split_metadata);
+
+        if idx > 0 && idx % 1000 == 0 {
+            let staged_split_ids: Vec<SplitId> = split_metadatas_to_create
+                .iter()
+                .map(|split_metadata| split_metadata.split_id.clone())
+                .collect();
+            let stage_splits_request = StageSplitsRequest::try_from_splits_metadata(
+                index_uid.clone(),
+                split_metadatas_to_create.clone(),
+            )
+            .unwrap();
+            metastore.stage_splits(stage_splits_request).await.unwrap();
+            let publish_splits_request = PublishSplitsRequest {
+                index_uid: index_uid.clone().to_string(),
+                staged_split_ids,
+                ..Default::default()
+            };
+            metastore
+                .publish_splits(publish_splits_request)
+                .await
+                .unwrap();
+            split_metadatas_to_create.clear();
+        }
+    }
+
+    let stream_splits_request = ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap();
+    let mut stream_response = metastore
+        .stream_splits(stream_splits_request)
+        .await
+        .unwrap();
+    let mut all_splits = Vec::new();
+    for _ in 0..10 {
+        let mut splits = stream_response
+            .try_next()
+            .await
+            .unwrap()
+            .unwrap()
+            .deserialize_splits()
+            .unwrap();
+        assert_eq!(splits.len(), 1000);
+        all_splits.append(&mut splits);
+    }
+    all_splits.sort_by_key(|split| split.split_id().to_string());
+    assert_eq!(all_splits[0].split_id(), format!("{index_id}--split-00001"));
+    assert_eq!(
+        all_splits[all_splits.len() - 1].split_id(),
+        format!("{index_id}--split-10000")
+    );
+}
+
 pub async fn test_metastore_list_splits<MetastoreToTest: MetastoreServiceExt + DefaultForTest>() {
     let mut metastore = MetastoreToTest::default_for_test().await;
 
@@ -3861,6 +3936,12 @@ macro_rules! metastore_test_suite {
             async fn test_metastore_delete_splits() {
                 let _ = tracing_subscriber::fmt::try_init();
                 $crate::tests::test_metastore_delete_splits::<$metastore_type>().await;
+            }
+
+            #[tokio::test]
+            async fn test_metastore_stream_splits() {
+                let _ = tracing_subscriber::fmt::try_init();
+                $crate::tests::test_metastore_stream_splits::<$metastore_type>().await;
             }
 
             #[tokio::test]
