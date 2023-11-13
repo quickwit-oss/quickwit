@@ -129,30 +129,7 @@ impl ClientArgs {
         }
         if let Some(timeout) = self.timeout {
             builder = builder.timeout(timeout);
-        }
-        if self.ingest_v2 {
-            builder = builder.enable_ingest_v2();
-        }
-        builder.build()
-    }
-
-    pub fn search_client(self) -> QuickwitClient {
-        let mut builder = QuickwitClientBuilder::new(self.cluster_endpoint);
-        if let Some(connect_timeout) = self.connect_timeout {
-            builder = builder.connect_timeout(connect_timeout);
-        }
-        if let Some(timeout) = self.timeout {
             builder = builder.search_timeout(timeout);
-        }
-        builder.build()
-    }
-
-    pub fn ingest_client(self) -> QuickwitClient {
-        let mut builder = QuickwitClientBuilder::new(self.cluster_endpoint);
-        if let Some(connect_timeout) = self.connect_timeout {
-            builder = builder.connect_timeout(connect_timeout);
-        }
-        if let Some(timeout) = self.timeout {
             builder = builder.ingest_timeout(timeout);
         }
         if let Some(commit_timeout) = self.commit_timeout {

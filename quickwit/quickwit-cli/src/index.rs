@@ -800,7 +800,7 @@ pub async fn ingest_docs_cli(args: IngestDocsArgs) -> anyhow::Result<()> {
         progress_bar.set_message(format!("{throughput:.1} MiB/s"));
     };
 
-    let qw_client = args.client_args.ingest_client();
+    let qw_client = args.client_args.client();
     let ingest_source = match args.input_path_opt {
         Some(filepath) => IngestSource::File(filepath),
         None => IngestSource::Stdin,
@@ -862,7 +862,7 @@ pub async fn search_index(args: SearchIndexArgs) -> anyhow::Result<SearchRespons
         count_all: CountHits::CountAll,
         ..Default::default()
     };
-    let qw_client = args.client_args.search_client();
+    let qw_client = args.client_args.client();
     let search_response = qw_client.search(&args.index_id, search_request).await?;
     Ok(search_response)
 }
