@@ -42,6 +42,7 @@ pub struct IngestResponse {
     #[prost(uint64, tag = "1")]
     pub num_docs_for_processing: u64,
 }
+/// Fetch messages that have position strictly after `start_after`.
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]

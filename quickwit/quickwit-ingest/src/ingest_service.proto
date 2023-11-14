@@ -88,6 +88,7 @@ message IngestResponse {
     uint64 num_docs_for_processing = 1;
 }
 
+// Fetch messages with position strictly after `start_after`.
 message FetchRequest {
     string index_id = 1;
     optional uint64 start_after = 2;
