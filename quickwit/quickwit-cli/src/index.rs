@@ -1162,7 +1162,6 @@ mod test {
     }
 
     #[test]
-    #[test]
     fn test_descriptive_stats() -> anyhow::Result<()> {
         let split_id = "stat-test-split".to_string();
         let template_split = Split {
