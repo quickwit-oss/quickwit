@@ -26,12 +26,13 @@ use anyhow::{bail, Context};
 use async_trait::async_trait;
 use itertools::Itertools;
 use quickwit_actors::{ActorExitStatus, Mailbox};
+use quickwit_common::retry::RetryParams;
 use quickwit_ingest::{
     decoded_mrecords, FetchStreamError, IngesterPool, MRecord, MultiFetchStream,
 };
 use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpoint};
 use quickwit_proto::ingest::ingester::{
-    FetchResponseV2, IngesterService, TruncateRequest, TruncateSubrequest,
+    FetchResponseV2, IngesterService, TruncateShardsRequest, TruncateShardsSubrequest,
 };
 use quickwit_proto::metastore::{
     AcquireShardsRequest, AcquireShardsSubrequest, AcquireShardsSubresponse, MetastoreService,
@@ -237,7 +238,7 @@ impl IngestSource {
     }
 
     async fn truncate(&self, truncation_point: &[(ShardId, Position)]) {
-        let mut per_ingester_truncate_subrequests: HashMap<&NodeId, Vec<TruncateSubrequest>> =
+        let mut per_ingester_subrequests: HashMap<&NodeId, Vec<TruncateShardsSubrequest>> =
             HashMap::new();
 
         for (shard_id, to_position_exclusive) in truncation_point {
@@ -251,24 +252,24 @@ impl IngestSource {
                 );
                 continue;
             };
-            let truncate_subrequest = TruncateSubrequest {
+            let truncate_shards_subrequest = TruncateShardsSubrequest {
                 index_uid: self.client_id.index_uid.clone().into(),
                 source_id: self.client_id.source_id.clone(),
                 shard_id: *shard_id,
                 to_position_inclusive: Some(to_position_exclusive.clone()),
             };
             if let Some(follower_id) = &shard.follower_id_opt {
-                per_ingester_truncate_subrequests
+                per_ingester_subrequests
                     .entry(follower_id)
                     .or_default()
-                    .push(truncate_subrequest.clone());
+                    .push(truncate_shards_subrequest.clone());
             }
-            per_ingester_truncate_subrequests
+            per_ingester_subrequests
                 .entry(&shard.leader_id)
                 .or_default()
-                .push(truncate_subrequest);
+                .push(truncate_shards_subrequest);
         }
-        for (ingester_id, truncate_subrequests) in per_ingester_truncate_subrequests {
+        for (ingester_id, truncate_subrequests) in per_ingester_subrequests {
             let Some(mut ingester) = self.ingester_pool.get(ingester_id) else {
                 warn!(
                     "failed to truncate shard: ingester `{}` is unavailable",
@@ -276,13 +277,35 @@ impl IngestSource {
                 );
                 continue;
             };
-            let truncate_request = TruncateRequest {
+            let truncate_shards_request = TruncateShardsRequest {
                 ingester_id: ingester_id.clone().into(),
                 subrequests: truncate_subrequests,
             };
             let truncate_future = async move {
-                if let Err(error) = ingester.truncate(truncate_request).await {
-                    warn!("failed to truncate shard(s): {error}");
+                let retry_params = RetryParams {
+                    base_delay: Duration::from_secs(1),
+                    max_delay: Duration::from_secs(30),
+                    max_attempts: 5,
+                };
+                let mut num_attempts = 0;
+
+                while num_attempts < retry_params.max_attempts {
+                    let Err(error) = ingester
+                        .truncate_shards(truncate_shards_request.clone())
+                        .await
+                    else {
+                        return;
+                    };
+                    num_attempts += 1;
+                    let delay = retry_params.compute_delay(num_attempts);
+                    time::sleep(delay).await;
+
+                    if num_attempts == retry_params.max_attempts {
+                        error!(
+                            ingester_id=%truncate_shards_request.ingester_id,
+                            "failed to truncate shard(s): {error}"
+                        );
+                    }
                 }
             };
             // Truncation is best-effort, so fire and forget.
@@ -480,7 +503,7 @@ mod tests {
     use quickwit_common::ServiceStream;
     use quickwit_config::{SourceConfig, SourceParams};
     use quickwit_proto::indexing::IndexingPipelineId;
-    use quickwit_proto::ingest::ingester::{IngesterServiceClient, TruncateResponse};
+    use quickwit_proto::ingest::ingester::{IngesterServiceClient, TruncateShardsResponse};
     use quickwit_proto::ingest::{IngestV2Error, MRecordBatch, Shard, ShardState};
     use quickwit_proto::metastore::{AcquireShardsResponse, AcquireShardsSubresponse};
     use quickwit_storage::StorageResolver;
@@ -552,7 +575,7 @@ mod tests {
                 Ok(service_stream)
             });
         ingester_mock_0
-            .expect_truncate()
+            .expect_truncate_shards()
             .once()
             .returning(|request| {
                 assert_eq!(request.ingester_id, "test-ingester-0");
@@ -564,7 +587,7 @@ mod tests {
                 assert_eq!(subrequest.shard_id, 1);
                 assert_eq!(subrequest.to_position_inclusive, Some(11u64.into()));
 
-                let response = TruncateResponse {};
+                let response = TruncateShardsResponse {};
                 Ok(response)
             });
 
@@ -792,7 +815,7 @@ mod tests {
 
         let mut ingester_mock_0 = IngesterServiceClient::mock();
         ingester_mock_0
-            .expect_truncate()
+            .expect_truncate_shards()
             .once()
             .returning(|request| {
                 assert_eq!(request.ingester_id, "test-ingester-0");
@@ -810,14 +833,14 @@ mod tests {
                 assert_eq!(subrequest_2.shard_id, 3);
                 assert_eq!(subrequest_2.to_position_inclusive, Some(33u64.into()));
 
-                Ok(TruncateResponse {})
+                Ok(TruncateShardsResponse {})
             });
         let ingester_0: IngesterServiceClient = ingester_mock_0.into();
         ingester_pool.insert("test-ingester-0".into(), ingester_0.clone());
 
         let mut ingester_mock_1 = IngesterServiceClient::mock();
         ingester_mock_1
-            .expect_truncate()
+            .expect_truncate_shards()
             .once()
             .returning(|request| {
                 assert_eq!(request.ingester_id, "test-ingester-1");
@@ -831,14 +854,14 @@ mod tests {
                 assert_eq!(subrequest_1.shard_id, 3);
                 assert_eq!(subrequest_1.to_position_inclusive, Some(33u64.into()));
 
-                Ok(TruncateResponse {})
+                Ok(TruncateShardsResponse {})
             });
         let ingester_1: IngesterServiceClient = ingester_mock_1.into();
         ingester_pool.insert("test-ingester-1".into(), ingester_1.clone());
 
         let mut ingester_mock_3 = IngesterServiceClient::mock();
         ingester_mock_3
-            .expect_truncate()
+            .expect_truncate_shards()
             .once()
             .returning(|request| {
                 assert_eq!(request.ingester_id, "test-ingester-3");
@@ -848,7 +871,7 @@ mod tests {
                 assert_eq!(subrequest_0.shard_id, 4);
                 assert_eq!(subrequest_0.to_position_inclusive, Some(44u64.into()));
 
-                Ok(TruncateResponse {})
+                Ok(TruncateShardsResponse {})
             });
         let ingester_3: IngesterServiceClient = ingester_mock_3.into();
         ingester_pool.insert("test-ingester-3".into(), ingester_3.clone());

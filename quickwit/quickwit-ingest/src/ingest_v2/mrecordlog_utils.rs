@@ -20,7 +20,7 @@
 use bytesize::ByteSize;
 use mrecordlog::error::{AppendError, MissingQueue};
 use mrecordlog::MultiRecordLog;
-use quickwit_proto::types::QueueId;
+use quickwit_proto::types::{Position, QueueId};
 use tracing::warn;
 
 use super::mrecord::is_eof_mrecord;
@@ -104,8 +104,33 @@ pub(super) fn check_enough_capacity(
     Ok(())
 }
 
+/// Returns the position up to which the queue has been truncated (inclusive) taking into account
+/// `Eof` records. Returns `None` if the queue does not exist.
+pub(super) fn get_truncation_position(
+    mrecordlog: &MultiRecordLog,
+    queue_id: &QueueId,
+) -> Option<Position> {
+    let Ok(mut mrecords) = mrecordlog.range(queue_id, ..) else {
+        return None;
+    };
+    let position_opt = if let Some((position, mrecord)) = mrecords.next() {
+        if is_eof_mrecord(&mrecord) {
+            return Some(Position::Eof);
+        }
+        position.checked_sub(1)
+    } else {
+        // The queue exists and is empty. The last position should give us the truncation position.
+        mrecordlog
+            .last_position(queue_id)
+            .expect("queue should exist")
+    };
+    Some(position_opt.map(Position::from).unwrap_or_default())
+}
+
 #[cfg(test)]
 mod tests {
+    use bytes::Bytes;
+
     use super::*;
 
     #[tokio::test]
@@ -155,5 +180,45 @@ mod tests {
         ));
 
         check_enough_capacity(&mrecordlog, ByteSize::mb(256), ByteSize(12), ByteSize(12)).unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_get_truncation_position() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let mut mrecordlog = MultiRecordLog::open(tempdir.path()).await.unwrap();
+        let queue_id = "test-queue".to_string();
+
+        let truncation_position = get_truncation_position(&mrecordlog, &queue_id);
+        assert!(truncation_position.is_none());
+
+        mrecordlog.create_queue(&queue_id).await.unwrap();
+        let truncation_position = get_truncation_position(&mrecordlog, &queue_id).unwrap();
+        assert_eq!(truncation_position, Position::Beginning);
+
+        mrecordlog
+            .append_record(&queue_id, None, Bytes::from_static(b"test-record-foo"))
+            .await
+            .unwrap();
+        mrecordlog
+            .append_record(&queue_id, None, Bytes::from_static(b"test-record-bar"))
+            .await
+            .unwrap();
+        let truncation_position = get_truncation_position(&mrecordlog, &queue_id).unwrap();
+        assert_eq!(truncation_position, Position::Beginning);
+
+        mrecordlog.truncate(&queue_id, 0).await.unwrap();
+        let truncation_position = get_truncation_position(&mrecordlog, &queue_id).unwrap();
+        assert_eq!(truncation_position, Position::from(0u64));
+
+        mrecordlog.truncate(&queue_id, 1).await.unwrap();
+        let truncation_position = get_truncation_position(&mrecordlog, &queue_id).unwrap();
+        assert_eq!(truncation_position, Position::from(1u64));
+
+        mrecordlog
+            .append_record(&queue_id, None, MRecord::Eof.encode())
+            .await
+            .unwrap();
+        let truncation_position = get_truncation_position(&mrecordlog, &queue_id).unwrap();
+        assert_eq!(truncation_position, Position::Eof);
     }
 }

@@ -35,7 +35,7 @@ use quickwit_proto::ingest::ingester::{
 use quickwit_proto::ingest::router::{
     IngestRequestV2, IngestResponseV2, IngestRouterService, IngestSubrequest,
 };
-use quickwit_proto::ingest::{ClosedShards, CommitTypeV2, IngestV2Error, IngestV2Result};
+use quickwit_proto::ingest::{CommitTypeV2, IngestV2Error, IngestV2Result, ShardIds};
 use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceId, SubrequestId};
 use tokio::sync::RwLock;
 use tracing::{error, info, warn};
@@ -114,7 +114,7 @@ impl IngestRouter {
 
         // `closed_shards` and `unavailable_leaders` are populated by calls to `has_open_shards`
         // as we're looking for open shards to route the subrequests to.
-        let mut closed_shards: Vec<ClosedShards> = Vec::new();
+        let mut closed_shards: Vec<ShardIds> = Vec::new();
         let mut unavailable_leaders: HashSet<NodeId> = HashSet::new();
 
         for subrequest in subrequests {
@@ -135,13 +135,13 @@ impl IngestRouter {
         }
         if !closed_shards.is_empty() {
             info!(
-                "reporting {} closed shard(s) to control-plane",
+                "reporting {} closed shard(s) to control plane",
                 closed_shards.len()
             )
         }
         if !unavailable_leaders.is_empty() {
             info!(
-                "reporting {} unavailable leader(s) to control-plane",
+                "reporting {} unavailable leader(s) to control plane",
                 unavailable_leaders.len()
             );
         }
@@ -487,7 +487,7 @@ mod tests {
         assert_eq!(get_or_create_open_shard_request.closed_shards.len(), 1);
         assert_eq!(
             get_or_create_open_shard_request.closed_shards[0],
-            ClosedShards {
+            ShardIds {
                 index_uid: "test-index-0:0".into(),
                 source_id: "test-source".to_string(),
                 shard_ids: vec![1],

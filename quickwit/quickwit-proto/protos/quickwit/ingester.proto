@@ -24,24 +24,32 @@ package quickwit.ingest.ingester;
 import "quickwit/ingest.proto";
 
 service IngesterService {
-  // Persists batches of documents to primary shards owned by a leader.
+  // Persists batches of documents to primary shards hosted on a leader.
   rpc Persist(PersistRequest) returns (PersistResponse);
 
   // Opens a replication stream from a leader to a follower.
   rpc OpenReplicationStream(stream SynReplicationMessage) returns (stream AckReplicationMessage);
 
-  // Streams records from a leader or a follower. The client can optionally specify a range of positions to fetch.
+  // Streams records from a leader or a follower. The client can optionally specify a range of positions to fetch,
+  // otherwise the stream will go undefinitely or until the shard is closed.
   rpc OpenFetchStream(OpenFetchStreamRequest) returns (stream FetchResponseV2);
 
-  // rpc OpenWatchStream(OpenWatchStreamRequest) returns (stream WatchMessage);
+  // Streams status updates, called "observations", from an ingester.
+  rpc OpenObservationStream(OpenObservationStreamRequest) returns (stream ObservationMessage);
 
+  // Truncates a set of shards at the given positions. This RPC is called by indexers on leaders AND followers.
+  rpc TruncateShards(TruncateShardsRequest) returns (TruncateShardsResponse);
+
+  // Closes a set of shards. This RPC is called by the control plane.
   rpc CloseShards(CloseShardsRequest) returns (CloseShardsResponse);
 
   // Pings an ingester to check if it is ready to host shards and serve requests.
   rpc Ping(PingRequest) returns (PingResponse);
 
-  // Truncates the shards at the given positions. Indexers should call this RPC on leaders, which will replicate the request to followers.
-  rpc Truncate(TruncateRequest) returns (TruncateResponse);
+
+  // Decommissions the ingester.
+  rpc Decommission(DecommissionRequest) returns (DecommissionResponse);
+
 }
 
 message PersistRequest {
@@ -160,19 +168,19 @@ message ReplicateFailure {
   ReplicateFailureReason reason = 5;
 }
 
-message TruncateRequest {
+message TruncateShardsRequest {
   string ingester_id = 1;
-  repeated TruncateSubrequest subrequests = 2;
+  repeated TruncateShardsSubrequest subrequests = 2;
 }
 
-message TruncateSubrequest {
+message TruncateShardsSubrequest {
   string index_uid = 1;
   string source_id = 2;
   uint64 shard_id = 3;
   quickwit.ingest.Position to_position_inclusive = 4;
 }
 
-message TruncateResponse {
+message TruncateShardsResponse {
   // TODO
 }
 
@@ -194,7 +202,7 @@ message FetchResponseV2 {
 }
 
 message CloseShardsRequest {
-  repeated quickwit.ingest.ClosedShards closed_shards = 1;
+  repeated quickwit.ingest.ShardIds shards = 1;
 }
 
 message CloseShardsResponse {
@@ -206,4 +214,31 @@ message PingRequest {
 }
 
 message PingResponse {
+}
+
+message DecommissionRequest {
+}
+
+message DecommissionResponse {
+}
+
+message OpenObservationStreamRequest {
+}
+
+enum IngesterStatus {
+  INGESTER_STATUS_UNSPECIFIED = 0;
+  // The ingester is ready and accepts read and write requests.
+  INGESTER_STATUS_READY = 1;
+  // The ingester is being decommissioned. It accepts read requests but rejects write requests
+  // (open shards, persist, and replicate requests). It will transition to `Decommissioned` once
+  // all shards are fully indexed.
+  INGESTER_STATUS_DECOMMISSIONING = 2;
+  // The ingester no longer accepts read and write requests. It does not hold any data and can
+  // be safely removed from the cluster.
+  INGESTER_STATUS_DECOMMISSIONED = 3;
+}
+
+message ObservationMessage {
+  string node_id = 1;
+  IngesterStatus Status = 2;
 }

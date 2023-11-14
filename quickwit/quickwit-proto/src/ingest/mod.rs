@@ -193,7 +193,7 @@ impl ShardState {
     }
 }
 
-impl ClosedShards {
+impl ShardIds {
     pub fn queue_ids(&self) -> impl Iterator<Item = QueueId> + '_ {
         self.shard_ids
             .iter()

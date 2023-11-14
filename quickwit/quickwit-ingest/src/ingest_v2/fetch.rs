@@ -513,7 +513,9 @@ mod tests {
 
     use bytes::Bytes;
     use mrecordlog::MultiRecordLog;
-    use quickwit_proto::ingest::ingester::IngesterServiceClient;
+    use quickwit_proto::ingest::ingester::{
+        IngesterServiceClient, IngesterStatus, ObservationMessage,
+    };
     use quickwit_proto::types::queue_id;
     use tokio::time::timeout;
 
@@ -534,14 +536,17 @@ mod tests {
             shard_id: 1,
             from_position_exclusive: None,
         };
-        let (new_records_tx, new_records_rx) = watch::channel(());
+        let (observation_tx, _observation_rx) = watch::channel(Ok(ObservationMessage::default()));
         let state = Arc::new(RwLock::new(IngesterState {
             mrecordlog,
             shards: HashMap::new(),
             rate_limiters: HashMap::new(),
             replication_streams: HashMap::new(),
             replication_tasks: HashMap::new(),
+            status: IngesterStatus::Ready,
+            observation_tx,
         }));
+        let (new_records_tx, new_records_rx) = watch::channel(());
         let (mut fetch_stream, fetch_task_handle) = FetchStreamTask::spawn(
             open_fetch_stream_request,
             state.clone(),
@@ -700,14 +705,17 @@ mod tests {
             shard_id: 1,
             from_position_exclusive: Some(Position::from(0u64)),
         };
-        let (new_records_tx, new_records_rx) = watch::channel(());
+        let (observation_tx, _observation_rx) = watch::channel(Ok(ObservationMessage::default()));
         let state = Arc::new(RwLock::new(IngesterState {
             mrecordlog,
             shards: HashMap::new(),
             rate_limiters: HashMap::new(),
             replication_streams: HashMap::new(),
             replication_tasks: HashMap::new(),
+            status: IngesterStatus::Ready,
+            observation_tx,
         }));
+        let (new_records_tx, new_records_rx) = watch::channel(());
         let (mut fetch_stream, _fetch_task_handle) = FetchStreamTask::spawn(
             open_fetch_stream_request,
             state.clone(),
@@ -800,14 +808,17 @@ mod tests {
             shard_id: 1,
             from_position_exclusive: None,
         };
-        let (_new_records_tx, new_records_rx) = watch::channel(());
+        let (observation_tx, _observation_rx) = watch::channel(Ok(ObservationMessage::default()));
         let state = Arc::new(RwLock::new(IngesterState {
             mrecordlog,
             shards: HashMap::new(),
             rate_limiters: HashMap::new(),
             replication_streams: HashMap::new(),
             replication_tasks: HashMap::new(),
+            status: IngesterStatus::Ready,
+            observation_tx,
         }));
+        let (_new_records_tx, new_records_rx) = watch::channel(());
         let (mut fetch_stream, fetch_task_handle) = FetchStreamTask::spawn(
             open_fetch_stream_request,
             state.clone(),
@@ -838,12 +849,15 @@ mod tests {
             shard_id: 1,
             from_position_exclusive: None,
         };
+        let (observation_tx, _observation_rx) = watch::channel(Ok(ObservationMessage::default()));
         let state = Arc::new(RwLock::new(IngesterState {
             mrecordlog,
             shards: HashMap::new(),
             rate_limiters: HashMap::new(),
             replication_streams: HashMap::new(),
             replication_tasks: HashMap::new(),
+            status: IngesterStatus::Ready,
+            observation_tx,
         }));
         let (new_records_tx, new_records_rx) = watch::channel(());
         let (mut fetch_stream, _fetch_task_handle) =

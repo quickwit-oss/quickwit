@@ -30,7 +30,7 @@ use quickwit_proto::control_plane::{
     GetOrCreateOpenShardsResponse, GetOrCreateOpenShardsSuccess,
 };
 use quickwit_proto::ingest::ingester::{IngesterService, PingRequest};
-use quickwit_proto::ingest::{ClosedShards, IngestV2Error, ShardState};
+use quickwit_proto::ingest::{IngestV2Error, ShardIds, ShardState};
 use quickwit_proto::metastore;
 use quickwit_proto::metastore::{MetastoreService, MetastoreServiceClient};
 use quickwit_proto::types::{IndexUid, NodeId};
@@ -172,11 +172,7 @@ impl IngestController {
         None
     }
 
-    fn handle_closed_shards(
-        &self,
-        closed_shards: Vec<ClosedShards>,
-        model: &mut ControlPlaneModel,
-    ) {
+    fn handle_closed_shards(&self, closed_shards: Vec<ShardIds>, model: &mut ControlPlaneModel) {
         for closed_shard in closed_shards {
             let index_uid: IndexUid = closed_shard.index_uid.into();
             let source_id = closed_shard.source_id;
@@ -764,7 +760,7 @@ mod tests {
 
         let request = GetOrCreateOpenShardsRequest {
             subrequests: Vec::new(),
-            closed_shards: vec![ClosedShards {
+            closed_shards: vec![ShardIds {
                 index_uid: index_uid.clone().into(),
                 source_id: source_id.clone(),
                 shard_ids: vec![1, 2],

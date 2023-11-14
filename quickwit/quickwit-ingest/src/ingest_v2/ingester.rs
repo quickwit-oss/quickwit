@@ -34,20 +34,22 @@ use mrecordlog::MultiRecordLog;
 use quickwit_common::tower::Pool;
 use quickwit_common::ServiceStream;
 use quickwit_proto::ingest::ingester::{
-    AckReplicationMessage, CloseShardsRequest, CloseShardsResponse, FetchResponseV2,
-    IngesterService, IngesterServiceClient, IngesterServiceStream, OpenFetchStreamRequest,
-    OpenReplicationStreamRequest, OpenReplicationStreamResponse, PersistFailure,
-    PersistFailureReason, PersistRequest, PersistResponse, PersistSuccess, PingRequest,
-    PingResponse, ReplicateFailureReason, ReplicateRequest, ReplicateSubrequest,
-    SynReplicationMessage, TruncateRequest, TruncateResponse,
+    AckReplicationMessage, CloseShardsRequest, CloseShardsResponse, DecommissionRequest,
+    DecommissionResponse, FetchResponseV2, IngesterService, IngesterServiceClient,
+    IngesterServiceStream, IngesterStatus, ObservationMessage, OpenFetchStreamRequest,
+    OpenObservationStreamRequest, OpenReplicationStreamRequest, OpenReplicationStreamResponse,
+    PersistFailure, PersistFailureReason, PersistRequest, PersistResponse, PersistSuccess,
+    PingRequest, PingResponse, ReplicateFailureReason, ReplicateRequest, ReplicateSubrequest,
+    SynReplicationMessage, TruncateShardsRequest, TruncateShardsResponse,
 };
 use quickwit_proto::ingest::{CommitTypeV2, IngestV2Error, IngestV2Result, ShardState};
 use quickwit_proto::types::{NodeId, Position, QueueId};
-use tokio::sync::RwLock;
+use tokio::sync::{watch, RwLock};
 use tracing::{error, info, warn};
 
 use super::fetch::FetchStreamTask;
-use super::models::{IngesterShard, PrimaryShard};
+use super::models::IngesterShard;
+use super::mrecord::MRecord;
 use super::mrecordlog_utils::{append_eof_record_if_necessary, check_enough_capacity};
 use super::rate_limiter::{RateLimiter, RateLimiterSettings};
 use super::replication::{
@@ -55,9 +57,9 @@ use super::replication::{
     SYN_REPLICATION_STREAM_CAPACITY,
 };
 use super::IngesterPool;
-use crate::ingest_v2::models::SoloShard;
+use crate::ingest_v2::mrecordlog_utils::get_truncation_position;
 use crate::metrics::INGEST_METRICS;
-use crate::{estimate_size, FollowerId, LeaderId, MRecord};
+use crate::{estimate_size, FollowerId, LeaderId};
 
 /// Duration after which persist requests time out with
 /// [`quickwit_proto::ingest::IngestV2Error::Timeout`].
@@ -76,6 +78,7 @@ pub struct Ingester {
     memory_capacity: ByteSize,
     rate_limiter_settings: RateLimiterSettings,
     replication_factor: usize,
+    observation_rx: watch::Receiver<IngestV2Result<ObservationMessage>>,
 }
 
 impl fmt::Debug for Ingester {
@@ -94,6 +97,8 @@ pub(super) struct IngesterState {
     pub replication_streams: HashMap<FollowerId, ReplicationStreamTaskHandle>,
     // Replication tasks running for each replication stream opened with leaders.
     pub replication_tasks: HashMap<LeaderId, ReplicationTaskHandle>,
+    pub status: IngesterStatus,
+    pub observation_tx: watch::Sender<IngestV2Result<ObservationMessage>>,
 }
 
 impl Ingester {
@@ -111,7 +116,18 @@ impl Ingester {
             mrecordlog::SyncPolicy::OnDelay(Duration::from_secs(5)),
         )
         .await
-        .map_err(|error| IngestV2Error::Internal(error.to_string()))?;
+        .map_err(|error| {
+            let message = format!(
+                "failed to create or open write-ahead log located at `{}`: {error}",
+                wal_dir_path.display()
+            );
+            IngestV2Error::Internal(message)
+        })?;
+        let observe_message = ObservationMessage {
+            node_id: self_node_id.clone().into(),
+            status: IngesterStatus::Ready as i32,
+        };
+        let (observation_tx, observation_rx) = watch::channel(Ok(observe_message));
 
         let inner = IngesterState {
             mrecordlog,
@@ -119,8 +135,10 @@ impl Ingester {
             rate_limiters: HashMap::new(),
             replication_streams: HashMap::new(),
             replication_tasks: HashMap::new(),
+            status: IngesterStatus::Ready,
+            observation_tx,
         };
-        let mut ingester = Self {
+        let ingester = Self {
             self_node_id,
             ingester_pool,
             state: Arc::new(RwLock::new(inner)),
@@ -128,6 +146,7 @@ impl Ingester {
             memory_capacity,
             rate_limiter_settings,
             replication_factor,
+            observation_rx,
         };
         info!(
             replication_factor=%replication_factor,
@@ -139,7 +158,28 @@ impl Ingester {
         Ok(ingester)
     }
 
-    async fn init(&mut self) -> IngestV2Result<()> {
+    /// Checks whether the ingester is fully decommissioned and updates its status accordingly.
+    fn check_decommissioning_status(&self, state: &mut IngesterState) {
+        if state.status != IngesterStatus::Decommissioning {
+            return;
+        }
+        if state.shards.values().all(|shard| {
+            shard.shard_state.is_closed() && shard.truncation_position_inclusive == Position::Eof
+        }) {
+            info!("ingester fully decommissioned");
+            state.status = IngesterStatus::Decommissioned;
+
+            state.observation_tx.send_if_modified(|observation_result| {
+                if let Ok(observation) = observation_result {
+                    observation.status = IngesterStatus::Decommissioned as i32;
+                    return true;
+                }
+                false
+            });
+        }
+    }
+
+    async fn init(&self) -> IngestV2Result<()> {
         let mut state_guard = self.state.write().await;
 
         let queue_ids: Vec<QueueId> = state_guard
@@ -156,9 +196,11 @@ impl Ingester {
         for queue_id in queue_ids {
             append_eof_record_if_necessary(&mut state_guard.mrecordlog, &queue_id).await;
 
-            let solo_shard = SoloShard::new(ShardState::Closed, Position::Eof);
-            let shard = IngesterShard::Solo(solo_shard);
-            state_guard.shards.insert(queue_id.clone(), shard);
+            let truncation_position = get_truncation_position(&state_guard.mrecordlog, &queue_id)
+                .unwrap_or(Position::Eof);
+            let solo_shard =
+                IngesterShard::new_solo(ShardState::Closed, Position::Eof, truncation_position);
+            state_guard.shards.insert(queue_id, solo_shard);
         }
         Ok(())
     }
@@ -190,14 +232,30 @@ impl Ingester {
         let shard = if let Some(follower_id) = follower_id_opt {
             self.init_replication_stream(state, leader_id, follower_id)
                 .await?;
-            let primary_shard = PrimaryShard::new(follower_id.clone());
-            IngesterShard::Primary(primary_shard)
+
+            IngesterShard::new_primary(
+                follower_id.clone(),
+                ShardState::Open,
+                Position::Beginning,
+                Position::Beginning,
+            )
         } else {
-            let solo_shard = SoloShard::new(ShardState::Open, Position::Beginning);
-            IngesterShard::Solo(solo_shard)
+            IngesterShard::new_solo(ShardState::Open, Position::Beginning, Position::Beginning)
         };
         let entry = state.shards.entry(queue_id.clone());
         Ok(entry.or_insert(shard))
+    }
+
+    async fn close_shards_inner(&self, state: &mut IngesterState, queue_ids: &[QueueId]) {
+        for queue_id in queue_ids {
+            append_eof_record_if_necessary(&mut state.mrecordlog, queue_id).await;
+
+            if let Some(shard) = state.shards.get_mut(queue_id) {
+                shard.shard_state = ShardState::Closed;
+                shard.notify_new_records();
+            }
+        }
+        // TODO: Handle replicated shards.
     }
 
     async fn init_replication_stream(
@@ -271,6 +329,26 @@ impl IngesterService for Ingester {
 
         let mut state_guard = self.state.write().await;
 
+        if state_guard.status != IngesterStatus::Ready {
+            persist_failures.reserve_exact(persist_request.subrequests.len());
+
+            for subrequest in persist_request.subrequests {
+                let persist_failure = PersistFailure {
+                    subrequest_id: subrequest.subrequest_id,
+                    index_uid: subrequest.index_uid,
+                    source_id: subrequest.source_id,
+                    shard_id: subrequest.shard_id,
+                    reason: PersistFailureReason::ShardClosed as i32,
+                };
+                persist_failures.push(persist_failure);
+            }
+            let persist_response = PersistResponse {
+                leader_id: leader_id.into(),
+                successes: Vec::new(),
+                failures: persist_failures,
+            };
+            return Ok(persist_response);
+        }
         for subrequest in persist_request.subrequests {
             let queue_id = subrequest.queue_id();
             let follower_id_opt: Option<NodeId> = subrequest.follower_id.map(Into::into);
@@ -286,9 +364,9 @@ impl IngesterService for Ingester {
                 .await
                 .expect("TODO")
             };
-            let from_position_exclusive = shard.replication_position_inclusive();
+            let from_position_exclusive = shard.replication_position_inclusive.clone();
 
-            if shard.is_closed() {
+            if shard.shard_state.is_closed() {
                 let persist_failure = PersistFailure {
                     subrequest_id: subrequest.subrequest_id,
                     index_uid: subrequest.index_uid,
@@ -310,7 +388,7 @@ impl IngesterService for Ingester {
                         source_id: subrequest.source_id,
                         shard_id: subrequest.shard_id,
                         replication_position_inclusive: Some(
-                            shard.replication_position_inclusive(),
+                            shard.replication_position_inclusive.clone(),
                         ),
                     };
                     persist_successes.push(persist_success);
@@ -515,6 +593,9 @@ impl IngesterService for Ingester {
 
         let mut state_guard = self.state.write().await;
 
+        if state_guard.status != IngesterStatus::Ready {
+            return Err(IngestV2Error::Internal("node decommissioned".to_string()));
+        }
         let Entry::Vacant(entry) = state_guard.replication_tasks.entry(leader_id.clone()) else {
             return Err(IngestV2Error::Internal(format!(
                 "a replication stream betwen {leader_id} and {follower_id} is already opened"
@@ -554,7 +635,8 @@ impl IngesterService for Ingester {
             .shards
             .get(&queue_id)
             .ok_or_else(|| IngestV2Error::Internal("shard not found".to_string()))?
-            .new_records_rx();
+            .new_records_rx
+            .clone();
         let (service_stream, _fetch_task_handle) = FetchStreamTask::spawn(
             open_fetch_stream_request,
             self.state.clone(),
@@ -565,6 +647,11 @@ impl IngesterService for Ingester {
     }
 
     async fn ping(&mut self, ping_request: PingRequest) -> IngestV2Result<PingResponse> {
+        let state_guard = self.state.read().await;
+
+        if state_guard.status != IngesterStatus::Ready {
+            return Err(IngestV2Error::Internal("node decommissioned".to_string()));
+        }
         if ping_request.leader_id != self.self_node_id {
             let ping_response = PingResponse {};
             return Ok(ping_response);
@@ -584,19 +671,36 @@ impl IngesterService for Ingester {
         Ok(ping_response)
     }
 
-    async fn truncate(
+    async fn close_shards(
         &mut self,
-        truncate_request: TruncateRequest,
-    ) -> IngestV2Result<TruncateResponse> {
-        if truncate_request.ingester_id != self.self_node_id {
+        close_shards_request: CloseShardsRequest,
+    ) -> IngestV2Result<CloseShardsResponse> {
+        let mut state_guard = self.state.write().await;
+
+        let queue_ids: Vec<QueueId> = close_shards_request
+            .shards
+            .iter()
+            .flat_map(|shards| shards.queue_ids())
+            .collect();
+
+        self.close_shards_inner(&mut state_guard, &queue_ids).await;
+
+        Ok(CloseShardsResponse {})
+    }
+
+    async fn truncate_shards(
+        &mut self,
+        truncate_shards_request: TruncateShardsRequest,
+    ) -> IngestV2Result<TruncateShardsResponse> {
+        if truncate_shards_request.ingester_id != self.self_node_id {
             return Err(IngestV2Error::Internal(format!(
                 "routing error: expected ingester `{}`, got `{}`",
-                self.self_node_id, truncate_request.ingester_id,
+                self.self_node_id, truncate_shards_request.ingester_id,
             )));
         }
         let mut state_guard = self.state.write().await;
 
-        for subrequest in truncate_request.subrequests {
+        for subrequest in truncate_shards_request.subrequests {
             let queue_id = subrequest.queue_id();
 
             let truncate_position_opt = match subrequest.to_position_inclusive() {
@@ -617,35 +721,77 @@ impl IngesterService for Ingester {
                     Ok(_) | Err(TruncateError::MissingQueue(_)) => {}
                     Err(error) => {
                         error!("failed to truncate queue `{queue_id}`: {error}");
+                        continue;
+                    }
+                }
+                // If we successfully truncated the queue at EOF, it means that the shard is closed
+                // and fully indexed.
+                if subrequest.to_position_inclusive() == Position::Eof {
+                    if let Some(shard) = state_guard.shards.get_mut(&queue_id) {
+                        shard.truncation_position_inclusive = Position::Eof
                     }
                 }
             }
         }
-        let truncate_response = TruncateResponse {};
+        self.check_decommissioning_status(&mut state_guard);
+        let truncate_response = TruncateShardsResponse {};
         Ok(truncate_response)
     }
 
-    async fn close_shards(
+    async fn decommission(
         &mut self,
-        close_shards_request: CloseShardsRequest,
-    ) -> IngestV2Result<CloseShardsResponse> {
+        _decommission_request: DecommissionRequest,
+    ) -> IngestV2Result<DecommissionResponse> {
+        info!("decommissioning ingester");
         let mut state_guard = self.state.write().await;
-        for close_shard in close_shards_request.closed_shards {
-            for queue_id in close_shard.queue_ids() {
-                if !state_guard.mrecordlog.queue_exists(&queue_id) {
-                    continue;
-                }
-                append_eof_record_if_necessary(&mut state_guard.mrecordlog, &queue_id).await;
-                let shard = state_guard
-                    .shards
-                    .get_mut(&queue_id)
-                    .expect("shard must exist");
-                // Notify fetch task.
-                shard.notify_new_records();
-                shard.close();
-            }
+
+        let queue_ids: Vec<QueueId> = state_guard.shards.keys().cloned().collect();
+        self.close_shards_inner(&mut state_guard, &queue_ids).await;
+
+        state_guard.status = IngesterStatus::Decommissioning;
+        self.check_decommissioning_status(&mut state_guard);
+
+        Ok(DecommissionResponse {})
+    }
+
+    async fn open_observation_stream(
+        &mut self,
+        _open_observation_stream_request: OpenObservationStreamRequest,
+    ) -> IngestV2Result<IngesterServiceStream<ObservationMessage>> {
+        let observation_stream = self.observation_rx.clone().into();
+        Ok(observation_stream)
+    }
+}
+
+pub async fn wait_for_ingester_decommission(ingester_opt: Option<IngesterServiceClient>) {
+    let Some(mut ingester) = ingester_opt else {
+        return;
+    };
+    if let Err(error) = ingester.decommission(DecommissionRequest {}).await {
+        error!("failed to initiate ingester decommission: {error}");
+        return;
+    }
+    let mut observation_stream = match ingester
+        .open_observation_stream(OpenObservationStreamRequest {})
+        .await
+    {
+        Ok(observation_stream) => observation_stream,
+        Err(error) => {
+            error!("failed to open observation stream: {error}");
+            return;
         }
-        Ok(CloseShardsResponse {})
+    };
+    while let Some(observation_message_result) = observation_stream.next().await {
+        let observation_message = match observation_message_result {
+            Ok(observation_message) => observation_message,
+            Err(error) => {
+                error!("observation stream ended unexpectedly: {error}");
+                return;
+            }
+        };
+        if observation_message.status() == IngesterStatus::Decommissioned {
+            return;
+        }
     }
 }
 
@@ -657,38 +803,99 @@ mod tests {
     use quickwit_common::tower::ConstantRate;
     use quickwit_proto::ingest::ingester::{
         IngesterServiceGrpcServer, IngesterServiceGrpcServerAdapter, PersistSubrequest,
-        TruncateSubrequest,
+        TruncateShardsSubrequest,
     };
-    use quickwit_proto::ingest::{ClosedShards, DocBatchV2};
+    use quickwit_proto::ingest::{DocBatchV2, ShardIds};
     use quickwit_proto::types::queue_id;
     use tonic::transport::{Endpoint, Server};
 
     use super::*;
     use crate::ingest_v2::mrecord::is_eof_mrecord;
-    use crate::ingest_v2::test_utils::{IngesterShardTestExt, MultiRecordLogTestExt};
+    use crate::ingest_v2::test_utils::MultiRecordLogTestExt;
+
+    pub(super) struct IngesterForTest {
+        node_id: NodeId,
+        ingester_pool: IngesterPool,
+        disk_capacity: ByteSize,
+        memory_capacity: ByteSize,
+        rate_limiter_settings: RateLimiterSettings,
+        replication_factor: usize,
+    }
+
+    impl Default for IngesterForTest {
+        fn default() -> Self {
+            Self {
+                node_id: "test-ingester".into(),
+                ingester_pool: IngesterPool::default(),
+                disk_capacity: ByteSize::mb(256),
+                memory_capacity: ByteSize::mb(1),
+                rate_limiter_settings: RateLimiterSettings::default(),
+                replication_factor: 1,
+            }
+        }
+    }
+
+    impl IngesterForTest {
+        pub fn with_node_id(mut self, node_id: &str) -> Self {
+            self.node_id = node_id.into();
+            self
+        }
+
+        pub fn with_ingester_pool(mut self, ingester_pool: &IngesterPool) -> Self {
+            self.ingester_pool = ingester_pool.clone();
+            self
+        }
+
+        pub fn with_disk_capacity(mut self, disk_capacity: ByteSize) -> Self {
+            self.disk_capacity = disk_capacity;
+            self
+        }
+
+        pub fn with_rate_limiter_settings(
+            mut self,
+            rate_limiter_settings: RateLimiterSettings,
+        ) -> Self {
+            self.rate_limiter_settings = rate_limiter_settings;
+            self
+        }
+
+        pub fn with_replication(mut self) -> Self {
+            self.replication_factor = 2;
+            self
+        }
+
+        pub async fn build(self) -> (IngesterContext, Ingester) {
+            let tempdir = tempfile::tempdir().unwrap();
+            let wal_dir_path = tempdir.path();
+            let ingester = Ingester::try_new(
+                self.node_id.clone(),
+                self.ingester_pool.clone(),
+                wal_dir_path,
+                self.disk_capacity,
+                self.memory_capacity,
+                self.rate_limiter_settings,
+                self.replication_factor,
+            )
+            .await
+            .unwrap();
+            let ingester_env = IngesterContext {
+                _tempdir: tempdir,
+                node_id: self.node_id,
+                ingester_pool: self.ingester_pool,
+            };
+            (ingester_env, ingester)
+        }
+    }
+
+    pub struct IngesterContext {
+        _tempdir: tempfile::TempDir,
+        node_id: NodeId,
+        ingester_pool: IngesterPool,
+    }
 
     #[tokio::test]
     async fn test_ingester_init() {
-        let tempdir = tempfile::tempdir().unwrap();
-        let self_node_id: NodeId = "test-ingester-0".into();
-        let ingester_pool = IngesterPool::default();
-        let wal_dir_path = tempdir.path();
-        let disk_capacity = ByteSize::mb(256);
-        let memory_capacity = ByteSize::mb(1);
-        let rate_limiter_settings = RateLimiterSettings::default();
-        let replication_factor = 2;
-        let mut ingester = Ingester::try_new(
-            self_node_id.clone(),
-            ingester_pool,
-            wal_dir_path,
-            disk_capacity,
-            memory_capacity,
-            rate_limiter_settings,
-            replication_factor,
-        )
-        .await
-        .unwrap();
-
+        let (_ingester_ctx, ingester) = IngesterForTest::default().build().await;
         let mut state_guard = ingester.state.write().await;
 
         let queue_id_01 = queue_id("test-index:0", "test-source", 1);
@@ -719,11 +926,21 @@ mod tests {
             .await
             .unwrap();
 
-        let records = [MRecord::new_doc("test-doc-foo").encode()].into_iter();
+        let records = [
+            MRecord::new_doc("test-doc-foo").encode(),
+            MRecord::new_doc("test-doc-bar").encode(),
+        ]
+        .into_iter();
 
         state_guard
             .mrecordlog
             .append_records(&queue_id_02, None, records)
+            .await
+            .unwrap();
+
+        state_guard
+            .mrecordlog
+            .truncate(&queue_id_02, 0)
             .await
             .unwrap();
 
@@ -748,6 +965,7 @@ mod tests {
         solo_shard_01.assert_is_solo();
         solo_shard_01.assert_is_closed();
         solo_shard_01.assert_replication_position(Position::Eof);
+        solo_shard_01.assert_truncation_position(Position::Eof);
 
         state_guard
             .mrecordlog
@@ -757,17 +975,19 @@ mod tests {
         solo_shard_02.assert_is_solo();
         solo_shard_02.assert_is_closed();
         solo_shard_02.assert_replication_position(Position::Eof);
+        solo_shard_02.assert_truncation_position(0u64);
 
         state_guard.mrecordlog.assert_records_eq(
             &queue_id_02,
             ..,
-            &[(0, "\0\0test-doc-foo"), (1, "\0\x02")],
+            &[(1, "\0\0test-doc-bar"), (2, "\0\x02")],
         );
 
         let solo_shard_03 = state_guard.shards.get(&queue_id_03).unwrap();
         solo_shard_03.assert_is_solo();
         solo_shard_03.assert_is_closed();
         solo_shard_03.assert_replication_position(Position::Eof);
+        solo_shard_03.assert_truncation_position(Position::Eof);
 
         state_guard
             .mrecordlog
@@ -776,28 +996,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingester_persist() {
-        let tempdir = tempfile::tempdir().unwrap();
-        let self_node_id: NodeId = "test-ingester-0".into();
-        let ingester_pool = IngesterPool::default();
-        let wal_dir_path = tempdir.path();
-        let disk_capacity = ByteSize::mb(256);
-        let memory_capacity = ByteSize::mb(1);
-        let rate_limiter_settings = RateLimiterSettings::default();
-        let replication_factor = 1;
-        let mut ingester = Ingester::try_new(
-            self_node_id.clone(),
-            ingester_pool,
-            wal_dir_path,
-            disk_capacity,
-            memory_capacity,
-            rate_limiter_settings,
-            replication_factor,
-        )
-        .await
-        .unwrap();
+        let (ingester_ctx, mut ingester) = IngesterForTest::default().build().await;
 
         let persist_request = PersistRequest {
-            leader_id: self_node_id.to_string(),
+            leader_id: ingester_ctx.node_id.to_string(),
             commit_type: CommitTypeV2::Force as i32,
             subrequests: vec![
                 PersistSubrequest {
@@ -819,7 +1021,7 @@ mod tests {
             ],
         };
         let persist_response = ingester.persist(persist_request).await.unwrap();
-        assert_eq!(persist_response.leader_id, "test-ingester-0");
+        assert_eq!(persist_response.leader_id, "test-ingester");
         assert_eq!(persist_response.successes.len(), 2);
         assert_eq!(persist_response.failures.len(), 0);
 
@@ -877,25 +1079,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingester_open_replication_stream() {
-        let tempdir = tempfile::tempdir().unwrap();
-        let self_node_id: NodeId = "test-follower".into();
-        let ingester_pool = IngesterPool::default();
-        let wal_dir_path = tempdir.path();
-        let disk_capacity = ByteSize::mb(256);
-        let memory_capacity = ByteSize::mb(1);
-        let rate_limiter_settings = RateLimiterSettings::default();
-        let replication_factor = 1;
-        let mut ingester = Ingester::try_new(
-            self_node_id.clone(),
-            ingester_pool,
-            wal_dir_path,
-            disk_capacity,
-            memory_capacity,
-            rate_limiter_settings,
-            replication_factor,
-        )
-        .await
-        .unwrap();
+        let (_ingester_ctx, mut ingester) = IngesterForTest::default()
+            .with_node_id("test-follower")
+            .build()
+            .await;
+
         let (syn_replication_stream_tx, syn_replication_stream) = ServiceStream::new_bounded(5);
         let open_stream_request = OpenReplicationStreamRequest {
             leader_id: "test-leader".to_string(),
@@ -924,46 +1112,21 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingester_persist_replicate() {
-        let tempdir = tempfile::tempdir().unwrap();
-        let leader_id: NodeId = "test-leader".into();
-        let ingester_pool = IngesterPool::default();
-        let wal_dir_path = tempdir.path();
+        let (leader_ctx, mut leader) = IngesterForTest::default()
+            .with_node_id("test-leader")
+            .with_replication()
+            .build()
+            .await;
 
-        let disk_capacity = ByteSize::mb(256);
-        let memory_capacity = ByteSize::mb(1);
-        let rate_limiter_settings = RateLimiterSettings::default();
-        let replication_factor = 2;
+        let (follower_ctx, follower) = IngesterForTest::default()
+            .with_node_id("test-follower")
+            .with_ingester_pool(&leader_ctx.ingester_pool)
+            .with_replication()
+            .build()
+            .await;
 
-        let mut leader = Ingester::try_new(
-            leader_id.clone(),
-            ingester_pool.clone(),
-            wal_dir_path,
-            disk_capacity,
-            memory_capacity,
-            rate_limiter_settings,
-            replication_factor,
-        )
-        .await
-        .unwrap();
-
-        let tempdir = tempfile::tempdir().unwrap();
-        let follower_id: NodeId = "test-follower".into();
-        let wal_dir_path = tempdir.path();
-
-        let follower = Ingester::try_new(
-            follower_id.clone(),
-            ingester_pool.clone(),
-            wal_dir_path,
-            disk_capacity,
-            memory_capacity,
-            rate_limiter_settings,
-            replication_factor,
-        )
-        .await
-        .unwrap();
-
-        ingester_pool.insert(
-            follower_id.clone(),
+        leader_ctx.ingester_pool.insert(
+            follower_ctx.node_id.clone(),
             IngesterServiceClient::new(follower.clone()),
         );
 
@@ -976,7 +1139,7 @@ mod tests {
                     index_uid: "test-index:0".to_string(),
                     source_id: "test-source".to_string(),
                     shard_id: 1,
-                    follower_id: Some(follower_id.to_string()),
+                    follower_id: Some(follower_ctx.node_id.to_string()),
                     doc_batch: Some(DocBatchV2::for_test(["test-doc-010"])),
                 },
                 PersistSubrequest {
@@ -984,7 +1147,7 @@ mod tests {
                     index_uid: "test-index:1".to_string(),
                     source_id: "test-source".to_string(),
                     shard_id: 1,
-                    follower_id: Some(follower_id.to_string()),
+                    follower_id: Some(follower_ctx.node_id.to_string()),
                     doc_batch: Some(DocBatchV2::for_test(["test-doc-110", "test-doc-111"])),
                 },
             ],
@@ -1077,25 +1240,11 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingester_persist_replicate_grpc() {
-        let tempdir = tempfile::tempdir().unwrap();
-        let leader_id: NodeId = "test-leader".into();
-        let ingester_pool = IngesterPool::default();
-        let wal_dir_path = tempdir.path();
-        let disk_capacity = ByteSize::mb(256);
-        let memory_capacity = ByteSize::mb(1);
-        let rate_limiter_settings = RateLimiterSettings::default();
-        let replication_factor = 2;
-        let mut leader = Ingester::try_new(
-            leader_id.clone(),
-            ingester_pool.clone(),
-            wal_dir_path,
-            disk_capacity,
-            memory_capacity,
-            rate_limiter_settings,
-            replication_factor,
-        )
-        .await
-        .unwrap();
+        let (leader_ctx, mut leader) = IngesterForTest::default()
+            .with_node_id("test-leader")
+            .with_replication()
+            .build()
+            .await;
 
         let leader_grpc_server_adapter = IngesterServiceGrpcServerAdapter::new(leader.clone());
         let leader_grpc_server = IngesterServiceGrpcServer::new(leader_grpc_server_adapter);
@@ -1111,24 +1260,12 @@ mod tests {
             }
         });
 
-        let tempdir = tempfile::tempdir().unwrap();
-        let follower_id: NodeId = "test-follower".into();
-        let wal_dir_path = tempdir.path();
-        let disk_capacity = ByteSize::mb(256);
-        let memory_capacity = ByteSize::mb(1);
-        let rate_limiter_settings = RateLimiterSettings::default();
-        let replication_factor = 2;
-        let follower = Ingester::try_new(
-            follower_id.clone(),
-            ingester_pool.clone(),
-            wal_dir_path,
-            disk_capacity,
-            memory_capacity,
-            rate_limiter_settings,
-            replication_factor,
-        )
-        .await
-        .unwrap();
+        let (follower_ctx, follower) = IngesterForTest::default()
+            .with_node_id("test-follower")
+            .with_ingester_pool(&leader_ctx.ingester_pool)
+            .with_replication()
+            .build()
+            .await;
 
         let follower_grpc_server_adapter = IngesterServiceGrpcServerAdapter::new(follower.clone());
         let follower_grpc_server = IngesterServiceGrpcServer::new(follower_grpc_server_adapter);
@@ -1149,7 +1286,9 @@ mod tests {
             follower_channel,
         );
 
-        ingester_pool.insert(follower_id.clone(), follower_grpc_client);
+        leader_ctx
+            .ingester_pool
+            .insert(follower_ctx.node_id.clone(), follower_grpc_client);
 
         let persist_request = PersistRequest {
             leader_id: "test-leader".to_string(),
@@ -1160,7 +1299,7 @@ mod tests {
                     index_uid: "test-index:0".to_string(),
                     source_id: "test-source".to_string(),
                     shard_id: 1,
-                    follower_id: Some(follower_id.to_string()),
+                    follower_id: Some(follower_ctx.node_id.to_string()),
                     doc_batch: Some(DocBatchV2::for_test(["test-doc-010"])),
                 },
                 PersistSubrequest {
@@ -1168,7 +1307,7 @@ mod tests {
                     index_uid: "test-index:1".to_string(),
                     source_id: "test-source".to_string(),
                     shard_id: 1,
-                    follower_id: Some(follower_id.to_string()),
+                    follower_id: Some(follower_ctx.node_id.to_string()),
                     doc_batch: Some(DocBatchV2::for_test(["test-doc-110", "test-doc-111"])),
                 },
             ],
@@ -1253,40 +1392,19 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingester_persist_shard_closed() {
-        let tempdir = tempfile::tempdir().unwrap();
-        let self_node_id: NodeId = "test-ingester-0".into();
-        let ingester_pool = IngesterPool::default();
-        let wal_dir_path = tempdir.path();
-        let disk_capacity = ByteSize::mib(256);
-        let memory_capacity = ByteSize::mib(1);
-        let rate_limiter_settings = RateLimiterSettings::default();
-        let replication_factor = 1;
-        let mut ingester = Ingester::try_new(
-            self_node_id.clone(),
-            ingester_pool,
-            wal_dir_path,
-            disk_capacity,
-            memory_capacity,
-            rate_limiter_settings,
-            replication_factor,
-        )
-        .await
-        .unwrap();
-
+        let (ingester_ctx, mut ingester) = IngesterForTest::default().build().await;
         let queue_id_01 = queue_id("test-index:0", "test-source", 1);
-
-        let solo_shard = SoloShard::new(ShardState::Closed, Position::Beginning);
-        let shard = IngesterShard::Solo(solo_shard);
-
+        let solo_shard =
+            IngesterShard::new_solo(ShardState::Closed, Position::Beginning, Position::Beginning);
         ingester
             .state
             .write()
             .await
             .shards
-            .insert(queue_id_01.clone(), shard);
+            .insert(queue_id_01.clone(), solo_shard);
 
         let persist_request = PersistRequest {
-            leader_id: self_node_id.to_string(),
+            leader_id: ingester_ctx.node_id.to_string(),
             commit_type: CommitTypeV2::Auto as i32,
             subrequests: vec![PersistSubrequest {
                 subrequest_id: 0,
@@ -1298,7 +1416,7 @@ mod tests {
             }],
         };
         let persist_response = ingester.persist(persist_request).await.unwrap();
-        assert_eq!(persist_response.leader_id, "test-ingester-0");
+        assert_eq!(persist_response.leader_id, "test-ingester");
         assert_eq!(persist_response.successes.len(), 0);
         assert_eq!(persist_response.failures.len(), 1);
 
@@ -1320,32 +1438,17 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingester_persist_rate_limited() {
-        let tempdir = tempfile::tempdir().unwrap();
-        let self_node_id: NodeId = "test-ingester-0".into();
-        let ingester_pool = IngesterPool::default();
-        let wal_dir_path = tempdir.path();
-        let disk_capacity = ByteSize::mib(256);
-        let memory_capacity = ByteSize::mib(1);
-        let rate_limiter_settings = RateLimiterSettings {
-            burst_limit: ByteSize(0),
-            rate_limit: ConstantRate::bytes_per_sec(ByteSize(0)),
-            refill_period: Duration::from_millis(100),
-        };
-        let replication_factor = 1;
-        let mut ingester = Ingester::try_new(
-            self_node_id.clone(),
-            ingester_pool,
-            wal_dir_path,
-            disk_capacity,
-            memory_capacity,
-            rate_limiter_settings,
-            replication_factor,
-        )
-        .await
-        .unwrap();
+        let (ingester_ctx, mut ingester) = IngesterForTest::default()
+            .with_rate_limiter_settings(RateLimiterSettings {
+                burst_limit: ByteSize(0),
+                rate_limit: ConstantRate::bytes_per_sec(ByteSize(0)),
+                refill_period: Duration::from_millis(100),
+            })
+            .build()
+            .await;
 
         let persist_request = PersistRequest {
-            leader_id: self_node_id.to_string(),
+            leader_id: ingester_ctx.node_id.to_string(),
             commit_type: CommitTypeV2::Auto as i32,
             subrequests: vec![PersistSubrequest {
                 subrequest_id: 0,
@@ -1357,7 +1460,7 @@ mod tests {
             }],
         };
         let persist_response = ingester.persist(persist_request).await.unwrap();
-        assert_eq!(persist_response.leader_id, "test-ingester-0");
+        assert_eq!(persist_response.leader_id, "test-ingester");
         assert_eq!(persist_response.successes.len(), 0);
         assert_eq!(persist_response.failures.len(), 1);
 
@@ -1385,28 +1488,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingester_persist_resource_exhausted() {
-        let tempdir = tempfile::tempdir().unwrap();
-        let self_node_id: NodeId = "test-ingester-0".into();
-        let ingester_pool = IngesterPool::default();
-        let wal_dir_path = tempdir.path();
-        let disk_capacity = ByteSize(0);
-        let memory_capacity = ByteSize(0);
-        let rate_limiter_settings = RateLimiterSettings::default();
-        let replication_factor = 1;
-        let mut ingester = Ingester::try_new(
-            self_node_id.clone(),
-            ingester_pool,
-            wal_dir_path,
-            disk_capacity,
-            memory_capacity,
-            rate_limiter_settings,
-            replication_factor,
-        )
-        .await
-        .unwrap();
-
+        let (ingester_ctx, mut ingester) = IngesterForTest::default()
+            .with_disk_capacity(ByteSize(0))
+            .build()
+            .await;
         let persist_request = PersistRequest {
-            leader_id: self_node_id.to_string(),
+            leader_id: ingester_ctx.node_id.to_string(),
             commit_type: CommitTypeV2::Auto as i32,
             subrequests: vec![PersistSubrequest {
                 subrequest_id: 0,
@@ -1418,7 +1505,7 @@ mod tests {
             }],
         };
         let persist_response = ingester.persist(persist_request).await.unwrap();
-        assert_eq!(persist_response.leader_id, "test-ingester-0");
+        assert_eq!(persist_response.leader_id, "test-ingester");
         assert_eq!(persist_response.successes.len(), 0);
         assert_eq!(persist_response.failures.len(), 1);
 
@@ -1448,28 +1535,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingester_open_fetch_stream() {
-        let tempdir = tempfile::tempdir().unwrap();
-        let self_node_id: NodeId = "test-ingester-0".into();
-        let ingester_pool = IngesterPool::default();
-        let wal_dir_path = tempdir.path();
-        let disk_capacity = ByteSize::mb(256);
-        let memory_capacity = ByteSize::mb(1);
-        let rate_limiter_settings = RateLimiterSettings::default();
-        let replication_factor = 1;
-        let mut ingester = Ingester::try_new(
-            self_node_id.clone(),
-            ingester_pool,
-            wal_dir_path,
-            disk_capacity,
-            memory_capacity,
-            rate_limiter_settings,
-            replication_factor,
-        )
-        .await
-        .unwrap();
+        let (ingester_ctx, mut ingester) = IngesterForTest::default().build().await;
 
         let persist_request = PersistRequest {
-            leader_id: self_node_id.to_string(),
+            leader_id: ingester_ctx.node_id.to_string(),
             commit_type: CommitTypeV2::Auto as i32,
             subrequests: vec![
                 PersistSubrequest {
@@ -1521,7 +1590,7 @@ mod tests {
         assert_eq!(mrecord_batch.mrecord_lengths, [14]);
 
         let persist_request = PersistRequest {
-            leader_id: self_node_id.to_string(),
+            leader_id: ingester_ctx.node_id.to_string(),
             commit_type: CommitTypeV2::Auto as i32,
             subrequests: vec![PersistSubrequest {
                 subrequest_id: 0,
@@ -1551,36 +1620,18 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingester_truncate() {
-        let tempdir = tempfile::tempdir().unwrap();
-        let self_node_id: NodeId = "test-ingester-0".into();
-        let ingester_pool = IngesterPool::default();
-        let wal_dir_path = tempdir.path();
-        let disk_capacity = ByteSize::mb(256);
-        let memory_capacity = ByteSize::mb(1);
-        let rate_limiter_settings = RateLimiterSettings::default();
-        let replication_factor = 1;
-        let mut ingester = Ingester::try_new(
-            self_node_id.clone(),
-            ingester_pool,
-            wal_dir_path,
-            disk_capacity,
-            memory_capacity,
-            rate_limiter_settings,
-            replication_factor,
-        )
-        .await
-        .unwrap();
+        let (ingester_ctx, mut ingester) = IngesterForTest::default().build().await;
 
         let queue_id_01 = queue_id("test-index:0", "test-source", 1);
         let queue_id_02 = queue_id("test-index:0", "test-source", 2);
 
         let mut state_guard = ingester.state.write().await;
         ingester
-            .create_shard(&mut state_guard, &queue_id_01, &self_node_id, None)
+            .create_shard(&mut state_guard, &queue_id_01, &ingester_ctx.node_id, None)
             .await
             .unwrap();
         ingester
-            .create_shard(&mut state_guard, &queue_id_02, &self_node_id, None)
+            .create_shard(&mut state_guard, &queue_id_02, &ingester_ctx.node_id, None)
             .await
             .unwrap();
 
@@ -1606,22 +1657,22 @@ mod tests {
 
         drop(state_guard);
 
-        let truncate_request = TruncateRequest {
-            ingester_id: self_node_id.to_string(),
+        let truncate_shards_request = TruncateShardsRequest {
+            ingester_id: ingester_ctx.node_id.to_string(),
             subrequests: vec![
-                TruncateSubrequest {
+                TruncateShardsSubrequest {
                     index_uid: "test-index:0".to_string(),
                     source_id: "test-source".to_string(),
                     shard_id: 1,
                     to_position_inclusive: Some(Position::from(0u64)),
                 },
-                TruncateSubrequest {
+                TruncateShardsSubrequest {
                     index_uid: "test-index:0".to_string(),
                     source_id: "test-source".to_string(),
                     shard_id: 2,
                     to_position_inclusive: Some(Position::Eof),
                 },
-                TruncateSubrequest {
+                TruncateShardsSubrequest {
                     index_uid: "test-index:1337".to_string(),
                     source_id: "test-source".to_string(),
                     shard_id: 1,
@@ -1629,7 +1680,10 @@ mod tests {
                 },
             ],
         };
-        ingester.truncate(truncate_request).await.unwrap();
+        ingester
+            .truncate_shards(truncate_shards_request)
+            .await
+            .unwrap();
 
         let state_guard = ingester.state.read().await;
         assert_eq!(state_guard.shards.len(), 2);
@@ -1647,25 +1701,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_ingester_close_shards() {
-        let tempdir = tempfile::tempdir().unwrap();
-        let self_node_id: NodeId = "test-ingester-0".into();
-        let ingester_pool = IngesterPool::default();
-        let wal_dir_path = tempdir.path();
-        let disk_capacity = ByteSize::mb(256);
-        let memory_capacity = ByteSize::mb(1);
-        let rate_limiter_settings = RateLimiterSettings::default();
-        let replication_factor = 1;
-        let mut ingester = Ingester::try_new(
-            self_node_id.clone(),
-            ingester_pool,
-            wal_dir_path,
-            disk_capacity,
-            memory_capacity,
-            rate_limiter_settings,
-            replication_factor,
-        )
-        .await
-        .unwrap();
+        let (ingester_ctx, mut ingester) = IngesterForTest::default().build().await;
 
         let queue_id_01 = queue_id("test-index:0", "test-source:0", 1);
         let queue_id_02 = queue_id("test-index:0", "test-source:0", 2);
@@ -1674,7 +1710,7 @@ mod tests {
         let mut state_guard = ingester.state.write().await;
         for queue_id in &[&queue_id_01, &queue_id_02, &queue_id_03] {
             ingester
-                .create_shard(&mut state_guard, queue_id, &self_node_id, None)
+                .create_shard(&mut state_guard, queue_id, &ingester_ctx.node_id, None)
                 .await
                 .unwrap();
             let records = [
@@ -1709,17 +1745,17 @@ mod tests {
             Position::Beginning
         );
 
-        let close_shard_1 = ClosedShards {
+        let close_shard_1 = ShardIds {
             index_uid: "test-index:0".to_string(),
             source_id: "test-source:0".to_string(),
             shard_ids: vec![1, 2],
         };
-        let close_shard_2 = ClosedShards {
+        let close_shard_2 = ShardIds {
             index_uid: "test-index:1".to_string(),
             source_id: "test-source:1".to_string(),
             shard_ids: vec![3],
         };
-        let close_shard_with_no_queue = ClosedShards {
+        let close_shard_with_no_queue = ShardIds {
             index_uid: "test-index:2".to_string(),
             source_id: "test-source:2".to_string(),
             shard_ids: vec![4],
@@ -1730,7 +1766,7 @@ mod tests {
             close_shard_with_no_queue,
         ];
         let close_shards_request = CloseShardsRequest {
-            closed_shards: closed_shards.clone(),
+            shards: closed_shards.clone(),
         };
         ingester.close_shards(close_shards_request).await.unwrap();
 
@@ -1760,5 +1796,76 @@ mod tests {
                 .unwrap()
                 .unwrap();
         assert_eq!(fetch_response.to_position_inclusive(), Position::Eof);
+    }
+
+    #[tokio::test]
+    async fn test_ingester_open_observation_stream() {
+        let (ingester_ctx, mut ingester) = IngesterForTest::default().build().await;
+
+        let mut observation_stream = ingester
+            .open_observation_stream(OpenObservationStreamRequest {})
+            .await
+            .unwrap();
+        let observation = observation_stream.next().await.unwrap().unwrap();
+        assert_eq!(observation.node_id, ingester_ctx.node_id);
+        assert_eq!(observation.status(), IngesterStatus::Ready);
+
+        let state_guard = ingester.state.read().await;
+        let observe_message = ObservationMessage {
+            node_id: ingester_ctx.node_id.to_string(),
+            status: IngesterStatus::Decommissioning as i32,
+        };
+        state_guard
+            .observation_tx
+            .send(Ok(observe_message))
+            .unwrap();
+        drop(state_guard);
+
+        let observation = observation_stream.next().await.unwrap().unwrap();
+        assert_eq!(observation.node_id, ingester_ctx.node_id);
+        assert_eq!(observation.status(), IngesterStatus::Decommissioning);
+
+        drop(ingester);
+
+        let observation_opt = observation_stream.next().await;
+        assert!(observation_opt.is_none());
+    }
+
+    #[tokio::test]
+    async fn test_check_decommissioning_status() {
+        let (_ingester_ctx, ingester) = IngesterForTest::default().build().await;
+        let mut state_guard = ingester.state.write().await;
+
+        ingester.check_decommissioning_status(&mut state_guard);
+        assert_eq!(state_guard.status, IngesterStatus::Ready);
+        assert_eq!(
+            ingester.observation_rx.borrow().as_ref().unwrap().status(),
+            IngesterStatus::Ready
+        );
+
+        state_guard.status = IngesterStatus::Decommissioning;
+        ingester.check_decommissioning_status(&mut state_guard);
+        assert_eq!(state_guard.status, IngesterStatus::Decommissioned);
+
+        state_guard.status = IngesterStatus::Decommissioning;
+
+        let queue_id_01 = queue_id("test-index:0", "test-source", 1);
+
+        state_guard.shards.insert(
+            queue_id_01.clone(),
+            IngesterShard::new_solo(ShardState::Closed, Position::Eof, Position::Beginning),
+        );
+        ingester.check_decommissioning_status(&mut state_guard);
+        assert_eq!(state_guard.status, IngesterStatus::Decommissioning);
+
+        let shard = state_guard.shards.get_mut(&queue_id_01).unwrap();
+        shard.truncation_position_inclusive = Position::Eof;
+
+        ingester.check_decommissioning_status(&mut state_guard);
+        assert_eq!(state_guard.status, IngesterStatus::Decommissioned);
+        assert_eq!(
+            ingester.observation_rx.borrow().as_ref().unwrap().status(),
+            IngesterStatus::Decommissioned
+        );
     }
 }

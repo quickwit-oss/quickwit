@@ -22,8 +22,8 @@ use std::fmt;
 use std::pin::Pin;
 
 use futures::{stream, Stream, TryStreamExt};
-use tokio::sync::mpsc;
-use tokio_stream::wrappers::{ReceiverStream, UnboundedReceiverStream};
+use tokio::sync::{mpsc, watch};
+use tokio_stream::wrappers::{ReceiverStream, UnboundedReceiverStream, WatchStream};
 use tracing::warn;
 
 pub type BoxStream<T> = Pin<Box<dyn Stream<Item = T> + Send + Unpin + 'static>>;
@@ -53,6 +53,15 @@ where T: Send + 'static
 
     pub fn new_unbounded() -> (mpsc::UnboundedSender<T>, Self) {
         let (sender, receiver) = mpsc::unbounded_channel();
+        (sender, receiver.into())
+    }
+}
+
+impl<T> ServiceStream<T>
+where T: Clone + Send + Sync + 'static
+{
+    pub fn new_watch(init: T) -> (watch::Sender<T>, Self) {
+        let (sender, receiver) = watch::channel(init);
         (sender, receiver.into())
     }
 }
@@ -100,6 +109,16 @@ where T: Send + 'static
     fn from(receiver: mpsc::UnboundedReceiver<T>) -> Self {
         Self {
             inner: Box::pin(UnboundedReceiverStream::new(receiver)),
+        }
+    }
+}
+
+impl<T> From<watch::Receiver<T>> for ServiceStream<T>
+where T: Clone + Send + Sync + 'static
+{
+    fn from(receiver: watch::Receiver<T>) -> Self {
+        Self {
+            inner: Box::pin(WatchStream::new(receiver)),
         }
     }
 }
