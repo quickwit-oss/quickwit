@@ -46,7 +46,7 @@ use quickwit_proto::types::{NodeId, Position, QueueId};
 use tokio::sync::RwLock;
 use tracing::{error, info, warn};
 
-use super::fetch::FetchTask;
+use super::fetch::FetchStreamTask;
 use super::models::{IngesterShard, PrimaryShard};
 use super::mrecordlog_utils::{append_eof_record_if_necessary, check_enough_capacity};
 use super::rate_limiter::{RateLimiter, RateLimiterSettings};
@@ -555,11 +555,11 @@ impl IngesterService for Ingester {
             .get(&queue_id)
             .ok_or_else(|| IngestV2Error::Internal("shard not found".to_string()))?
             .new_records_rx();
-        let (service_stream, _fetch_task_handle) = FetchTask::spawn(
+        let (service_stream, _fetch_task_handle) = FetchStreamTask::spawn(
             open_fetch_stream_request,
             self.state.clone(),
             new_records_rx,
-            FetchTask::DEFAULT_BATCH_NUM_BYTES,
+            FetchStreamTask::DEFAULT_BATCH_NUM_BYTES,
         );
         Ok(service_stream)
     }
@@ -664,7 +664,6 @@ mod tests {
     use tonic::transport::{Endpoint, Server};
 
     use super::*;
-    use crate::ingest_v2::fetch::FetchRange;
     use crate::ingest_v2::mrecord::is_eof_mrecord;
     use crate::ingest_v2::test_utils::{IngesterShardTestExt, MultiRecordLogTestExt};
 
@@ -1501,7 +1500,6 @@ mod tests {
             source_id: "test-source".to_string(),
             shard_id: 1,
             from_position_exclusive: None,
-            to_position_inclusive: None,
         };
         let mut fetch_stream = ingester
             .open_fetch_stream(open_fetch_stream_request)
@@ -1700,9 +1698,7 @@ mod tests {
             source_id: "test-source:0".to_string(),
             shard_id: 1,
             from_position_exclusive: None,
-            to_position_inclusive: None,
         };
-
         let mut fetch_stream = ingester
             .open_fetch_stream(open_fetch_stream_request)
             .await
@@ -1747,10 +1743,7 @@ mod tests {
             for queue_id in closed_shards.queue_ids() {
                 let last_position = state_guard
                     .mrecordlog
-                    .range(
-                        &queue_id,
-                        FetchRange::new(Position::Beginning, Position::Beginning),
-                    )
+                    .range(&queue_id, ..)
                     .unwrap()
                     .last()
                     .unwrap();

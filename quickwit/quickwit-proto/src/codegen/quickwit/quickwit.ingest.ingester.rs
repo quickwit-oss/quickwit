@@ -240,8 +240,6 @@ pub struct OpenFetchStreamRequest {
     pub shard_id: u64,
     #[prost(message, optional, tag = "5")]
     pub from_position_exclusive: ::core::option::Option<crate::types::Position>,
-    #[prost(message, optional, tag = "6")]
-    pub to_position_inclusive: ::core::option::Option<crate::types::Position>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
