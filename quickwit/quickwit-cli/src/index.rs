@@ -765,10 +765,10 @@ impl DescriptiveStats {
             min_val: *values.iter().min().expect("Values should not be empty."),
             max_val: *values.iter().max().expect("Values should not be empty."),
             q1: percentile(values, 1),
-            q25: percentile(values, 50),
+            q25: percentile(values, 25),
             q50: percentile(values, 50),
             q75: percentile(values, 75),
-            q99: percentile(values, 75),
+            q99: percentile(values, 99),
         })
     }
 }
