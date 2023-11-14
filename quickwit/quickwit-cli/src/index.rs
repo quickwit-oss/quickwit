@@ -1162,6 +1162,7 @@ mod test {
     }
 
     #[test]
+    #[test]
     fn test_descriptive_stats() -> anyhow::Result<()> {
         let split_id = "stat-test-split".to_string();
         let template_split = Split {
@@ -1201,11 +1202,28 @@ mod test {
 
         let num_docs_descriptive = DescriptiveStats::maybe_new(&splits_num_docs);
         let num_bytes_descriptive = DescriptiveStats::maybe_new(&splits_bytes);
-        let descriptive_stats_none = DescriptiveStats::maybe_new(&[]);
 
         assert!(num_docs_descriptive.is_some());
         assert!(num_bytes_descriptive.is_some());
 
+
+        let num_docs_descriptive = num_docs_descriptive.unwrap();
+        let num_bytes_descriptive = num_bytes_descriptive.unwrap();
+        
+        assert_eq!(num_docs_descriptive.q1, 70000.0);
+        assert_eq!(num_docs_descriptive.q25, 82500.0);
+        assert_eq!(num_docs_descriptive.q50, 105000.0);
+        assert_eq!(num_docs_descriptive.q75, 117500.0);
+        assert_eq!(num_docs_descriptive.q99, 120800.0);
+
+        assert_eq!(num_bytes_descriptive.q1, 55000000.0);
+        assert_eq!(num_bytes_descriptive.q25, 78750000.0);
+        assert_eq!(num_bytes_descriptive.q50, 100000000.0);
+        assert_eq!(num_bytes_descriptive.q75, 128750000.0);
+        assert_eq!(num_bytes_descriptive.q99, 143200000.0);
+
+
+        let descriptive_stats_none = DescriptiveStats::maybe_new(&[]);
         assert!(descriptive_stats_none.is_none());
 
         Ok(())
