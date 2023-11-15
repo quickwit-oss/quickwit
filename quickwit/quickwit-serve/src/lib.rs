@@ -133,7 +133,7 @@ struct QuickwitServices {
     /// The control plane listens to metastore events.
     /// We must maintain a reference to the subscription handles to continue receiving
     /// notifications. Otherwise, the subscriptions are dropped.
-    _report_splits_subscription_handle_opt: Option<EventSubscriptionHandle<ReportSplitsRequest>>,
+    _report_splits_subscription_handle_opt: Option<EventSubscriptionHandle>,
 }
 
 fn has_node_with_metastore_service(members: &[ClusterMember]) -> bool {
