@@ -1208,9 +1208,8 @@ dependencies = [
 
 [[package]]
 name = "chitchat"
-version = "0.7.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "cb13c7104e3c77027520e984339ab3e805fd19c05c8555cc6338b2a4f455cbfb"
+version = "0.8.0"
+source = "git+https://github.com/quickwit-oss/chitchat.git?rev=72a994f#72a994fa0acdc7472d60ec8d1179fff92190855e"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5550,6 +5549,7 @@ dependencies = [
  "once_cell",
  "prost",
  "quickwit-actors",
+ "quickwit-cluster",
  "quickwit-codegen",
  "quickwit-common",
  "quickwit-config",
