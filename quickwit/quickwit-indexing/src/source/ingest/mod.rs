@@ -686,7 +686,6 @@ mod tests {
         // originally, we still observe the following
         // - emission of a suggest truncate
         // - no stream request is emitted
-        // - the shard EOF position is advertised in the actor observable state.
         let pipeline_id = IndexingPipelineId {
             node_id: "test-node".to_string(),
             index_uid: "test-index:0".into(),
@@ -798,11 +797,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_ingest_source_shard_originally_eof() {
-        // In this test, we check that shards that are marked as EOF in the metastore originally
-        // - result in the emission of a suggest truncate
-        // - do not get needlessly streamed
-        // - have their position advertised in their observable state.
+    async fn test_ingest_source_some_shards_originally_eof() {
+        // In this test, we check that if some shards that are marked as EOF in the metastore
+        // originally we do
+        // - perform suggest truncate
+        // - the stream request is emitted does not include the EOF shards
         let pipeline_id = IndexingPipelineId {
             node_id: "test-node".to_string(),
             index_uid: "test-index:0".into(),
