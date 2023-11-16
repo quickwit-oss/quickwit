@@ -42,10 +42,6 @@ multilang = [
     "whichlang",
 ]
 
-testsuite = [
-    "multilang",
-]
-
 [[bench]]
 name = "tokenizers_bench"
 harness = false
