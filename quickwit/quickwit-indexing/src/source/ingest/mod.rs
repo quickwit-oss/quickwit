@@ -63,10 +63,17 @@ impl TypedSourceFactory for IngestSourceFactory {
 
     async fn typed_create_source(
         runtime_args: Arc<SourceRuntimeArgs>,
-        _: Self::Params,
-        checkpoint: SourceCheckpoint,
+        _params: Self::Params,
+        _checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self::Source> {
-        IngestSource::try_new(runtime_args, checkpoint).await
+        // Retry parameters for the fetch stream: retry indefinitely until the shard is complete or
+        // unassigned.
+        let retry_params = RetryParams {
+            max_attempts: usize::MAX,
+            base_delay: Duration::from_secs(1),
+            max_delay: Duration::from_secs(10 * 60), // 10 minutes
+        };
+        IngestSource::try_new(runtime_args, retry_params).await
     }
 }
 
@@ -99,14 +106,9 @@ impl ClientId {
         }
     }
 
-    #[cfg(not(test))]
     fn new_publish_token(&self) -> String {
-        format!("{}/{}", self, Ulid::new())
-    }
-
-    #[cfg(test)]
-    fn new_publish_token(&self) -> String {
-        format!("{}/{}", self, Ulid::nil())
+        let ulid = if cfg!(test) { Ulid::nil() } else { Ulid::new() };
+        format!("{}/{}", self, ulid)
     }
 }
 
@@ -152,7 +154,7 @@ impl fmt::Debug for IngestSource {
 impl IngestSource {
     pub async fn try_new(
         runtime_args: Arc<SourceRuntimeArgs>,
-        _checkpoint: SourceCheckpoint,
+        retry_params: RetryParams,
     ) -> anyhow::Result<IngestSource> {
         let self_node_id: NodeId = runtime_args.node_id().into();
         let client_id = ClientId::new(
@@ -166,8 +168,12 @@ impl IngestSource {
         let metastore = runtime_args.metastore.clone();
         let ingester_pool = runtime_args.ingester_pool.clone();
         let assigned_shards = FnvHashMap::default();
-        let fetch_stream =
-            MultiFetchStream::new(self_node_id, client_id.to_string(), ingester_pool.clone());
+        let fetch_stream = MultiFetchStream::new(
+            self_node_id,
+            client_id.to_string(),
+            ingester_pool.clone(),
+            retry_params,
+        );
         let publish_lock = PublishLock::default();
         let publish_token = client_id.new_publish_token();
 
@@ -195,6 +201,8 @@ impl IngestSource {
             .assigned_shards
             .get_mut(&fetch_response.shard_id)
             .expect("shard should be assigned");
+
+        assigned_shard.status = IndexingStatus::Active;
 
         let partition_id = assigned_shard.partition_id.clone();
         let from_position_exclusive = fetch_response.from_position_exclusive();
@@ -237,19 +245,10 @@ impl IngestSource {
         }
     }
 
-    fn contains_publish_token(&self, subresponse: &AcquireShardsSubresponse) -> bool {
-        if let Some(acquired_shard) = subresponse.acquired_shards.get(0) {
-            if let Some(publish_token) = &acquired_shard.publish_token {
-                return *publish_token == self.publish_token;
-            }
-        }
-        false
-    }
-
-    async fn truncate(&mut self, truncation_point: Vec<(ShardId, Position)>) {
+    async fn truncate(&mut self, truncate_positions: Vec<(ShardId, Position)>) {
         self.event_broker.publish(PublishedShardPositionsUpdate {
             source_uid: self.client_id.source_uid.clone(),
-            published_positions_per_shard: truncation_point.clone(),
+            published_positions_per_shard: truncate_positions.clone(),
         });
 
         let mut per_ingester_truncate_subrequests: FnvHashMap<
@@ -257,15 +256,12 @@ impl IngestSource {
             Vec<TruncateShardsSubrequest>,
         > = FnvHashMap::default();
 
-        for (shard_id, to_position_exclusive) in truncation_point {
+        for (shard_id, to_position_exclusive) in truncate_positions {
             if matches!(to_position_exclusive, Position::Beginning) {
                 continue;
             }
             let Some(shard) = self.assigned_shards.get(&shard_id) else {
-                warn!(
-                    "failed to truncate shard: shard `{}` is no longer assigned",
-                    shard_id
-                );
+                warn!("failed to truncate shard `{shard_id}`: shard is no longer assigned");
                 continue;
             };
             let truncate_shards_subrequest = TruncateShardsSubrequest {
@@ -287,10 +283,7 @@ impl IngestSource {
         }
         for (ingester_id, truncate_subrequests) in per_ingester_truncate_subrequests {
             let Some(mut ingester) = self.ingester_pool.get(ingester_id) else {
-                warn!(
-                    "failed to truncate shard: ingester `{}` is unavailable",
-                    ingester_id
-                );
+                warn!("failed to truncate shard(s): ingester `{ingester_id}` is unavailable");
                 continue;
             };
             let truncate_shards_request = TruncateShardsRequest {
@@ -300,24 +293,21 @@ impl IngestSource {
             let truncate_future = async move {
                 let retry_params = RetryParams {
                     base_delay: Duration::from_secs(1),
-                    max_delay: Duration::from_secs(30),
+                    max_delay: Duration::from_secs(10),
                     max_attempts: 5,
                 };
-                let mut num_attempts = 0;
-
-                while num_attempts < retry_params.max_attempts {
+                for num_attempts in 1..=retry_params.max_attempts {
                     let Err(error) = ingester
                         .truncate_shards(truncate_shards_request.clone())
                         .await
                     else {
                         return;
                     };
-                    num_attempts += 1;
                     let delay = retry_params.compute_delay(num_attempts);
                     time::sleep(delay).await;
 
                     if num_attempts == retry_params.max_attempts {
-                        error!(
+                        warn!(
                             ingester_id=%truncate_shards_request.ingester_id,
                             "failed to truncate shard(s): {error}"
                         );
@@ -327,6 +317,15 @@ impl IngestSource {
             // Truncation is best-effort, so fire and forget.
             tokio::spawn(truncate_future);
         }
+    }
+
+    fn contains_publish_token(&self, subresponse: &AcquireShardsSubresponse) -> bool {
+        if let Some(acquired_shard) = subresponse.acquired_shards.get(0) {
+            if let Some(publish_token) = &acquired_shard.publish_token {
+                return *publish_token == self.publish_token;
+            }
+        }
+        false
     }
 }
 
@@ -434,7 +433,7 @@ impl Source for IngestSource {
             .find(|subresponse| self.contains_publish_token(subresponse))
             .context("acquire shards response is empty")?;
 
-        let mut truncation_point =
+        let mut truncate_positions =
             Vec::with_capacity(acquire_shards_subresponse.acquired_shards.len());
 
         for acquired_shard in acquire_shards_subresponse.acquired_shards {
@@ -466,7 +465,7 @@ impl Source for IngestSource {
             } else {
                 IndexingStatus::Active
             };
-            truncation_point.push((shard_id, current_position_inclusive.clone()));
+            truncate_positions.push((shard_id, current_position_inclusive.clone()));
 
             let assigned_shard = AssignedShard {
                 leader_id,
@@ -477,7 +476,7 @@ impl Source for IngestSource {
             };
             self.assigned_shards.insert(shard_id, assigned_shard);
         }
-        self.truncate(truncation_point).await;
+        self.truncate(truncate_positions).await;
         Ok(())
     }
 
@@ -486,14 +485,14 @@ impl Source for IngestSource {
         checkpoint: SourceCheckpoint,
         _ctx: &SourceContext,
     ) -> anyhow::Result<()> {
-        let mut truncation_point: Vec<(ShardId, Position)> =
+        let mut truncate_positions: Vec<(ShardId, Position)> =
             Vec::with_capacity(checkpoint.num_partitions());
         for (partition_id, position) in checkpoint.iter() {
             let shard_id = partition_id.as_u64().expect("shard ID should be a u64");
-            truncation_point.push((shard_id, position));
+            truncate_positions.push((shard_id, position));
         }
 
-        self.truncate(truncation_point).await;
+        self.truncate(truncate_positions).await;
         Ok(())
     }
 
@@ -622,8 +621,11 @@ mod tests {
             storage_resolver: StorageResolver::for_test(),
             event_broker,
         });
-        let checkpoint = SourceCheckpoint::default();
-        let mut source = IngestSource::try_new(runtime_args, checkpoint)
+        let retry_params = RetryParams {
+            max_attempts: 1,
+            ..Default::default()
+        };
+        let mut source = IngestSource::try_new(runtime_args, retry_params)
             .await
             .unwrap();
 
@@ -681,9 +683,9 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_ingest_source_shard_all_eof() {
-        // In this test, we check that if all assigned shards are marked as EOF in the metastore
-        // originally, we still observe the following
+    async fn test_ingest_source_assign_shards_all_eof() {
+        // In this test, we check that if all assigned shards are originally marked as EOF in the
+        // metastore, we observe the following:
         // - emission of a suggest truncate
         // - no stream request is emitted
         let pipeline_id = IndexingPipelineId {
@@ -767,8 +769,8 @@ mod tests {
             storage_resolver: StorageResolver::for_test(),
             event_broker,
         });
-        let checkpoint = SourceCheckpoint::default();
-        let mut source = IngestSource::try_new(runtime_args, checkpoint)
+        let retry_params = RetryParams::for_test();
+        let mut source = IngestSource::try_new(runtime_args, retry_params)
             .await
             .unwrap();
 
@@ -797,11 +799,11 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_ingest_source_some_shards_originally_eof() {
-        // In this test, we check that if some shards that are marked as EOF in the metastore
-        // originally we do
-        // - perform suggest truncate
-        // - the stream request is emitted does not include the EOF shards
+    async fn test_ingest_source_assign_shards_some_eof() {
+        // In this test, we check that if some shards that are originally marked as EOF in the
+        // metastore, we observe the following:
+        // - emission of a suggest truncate
+        // - the stream request emitted does not include the EOF shards
         let pipeline_id = IndexingPipelineId {
             node_id: "test-node".to_string(),
             index_uid: "test-index:0".into(),
@@ -920,8 +922,8 @@ mod tests {
             storage_resolver: StorageResolver::for_test(),
             event_broker,
         });
-        let checkpoint = SourceCheckpoint::default();
-        let mut source = IngestSource::try_new(runtime_args, checkpoint)
+        let retry_params = RetryParams::for_test();
+        let mut source = IngestSource::try_new(runtime_args, retry_params)
             .await
             .unwrap();
 
@@ -981,8 +983,8 @@ mod tests {
             storage_resolver: StorageResolver::for_test(),
             event_broker,
         });
-        let checkpoint = SourceCheckpoint::default();
-        let mut source = IngestSource::try_new(runtime_args, checkpoint)
+        let retry_params = RetryParams::for_test();
+        let mut source = IngestSource::try_new(runtime_args, retry_params)
             .await
             .unwrap();
 
@@ -1099,6 +1101,28 @@ mod tests {
             .unwrap();
         let shard = source.assigned_shards.get(&1).unwrap();
         assert_eq!(shard.status, IndexingStatus::Error);
+
+        fetch_response_tx
+            .send(Ok(FetchResponseV2 {
+                index_uid: "test-index:0".into(),
+                source_id: "test-source".into(),
+                shard_id: 1,
+                mrecord_batch: Some(MRecordBatch {
+                    mrecord_buffer: Bytes::from_static(b"\0\0test-doc-114"),
+                    mrecord_lengths: vec![14],
+                }),
+                from_position_exclusive: Some(14u64.into()),
+                to_position_inclusive: Some(15u64.into()),
+            }))
+            .await
+            .unwrap();
+
+        source
+            .emit_batches(&doc_processor_mailbox, &ctx)
+            .await
+            .unwrap();
+        let shard = source.assigned_shards.get(&1).unwrap();
+        assert_eq!(shard.status, IndexingStatus::Active);
     }
 
     #[tokio::test]
@@ -1195,8 +1219,8 @@ mod tests {
             storage_resolver: StorageResolver::for_test(),
             event_broker,
         });
-        let checkpoint = SourceCheckpoint::default();
-        let mut source = IngestSource::try_new(runtime_args, checkpoint)
+        let retry_params = RetryParams::for_test();
+        let mut source = IngestSource::try_new(runtime_args, retry_params)
             .await
             .unwrap();
 
