@@ -129,7 +129,7 @@ impl AzureBlobStorage {
     }
 
     /// Creates an emulated storage for testing.
-    #[cfg(feature = "testsuite")]
+    #[cfg(feature = "integration-testsuite")]
     pub fn new_emulated(container: &str) -> Self {
         use std::str::FromStr;
 
