@@ -89,6 +89,7 @@ use once_cell::sync::OnceCell;
 #[cfg(feature = "pulsar")]
 pub use pulsar_source::{PulsarSource, PulsarSourceFactory};
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Mailbox};
+use quickwit_common::pubsub::EventBroker;
 use quickwit_common::runtimes::RuntimeType;
 use quickwit_config::{SourceConfig, SourceParams};
 use quickwit_ingest::IngesterPool;
@@ -134,6 +135,7 @@ pub struct SourceRuntimeArgs {
     // Ingest API queues directory path.
     pub queues_dir_path: PathBuf,
     pub storage_resolver: StorageResolver,
+    pub event_broker: EventBroker,
 }
 
 impl SourceRuntimeArgs {
@@ -171,13 +173,14 @@ impl SourceRuntimeArgs {
             source_id: source_config.source_id.clone(),
             pipeline_ord: 0,
         };
-        Arc::new(Self {
+        Arc::new(SourceRuntimeArgs {
             pipeline_id,
             metastore,
             ingester_pool: IngesterPool::default(),
             queues_dir_path,
             source_config,
             storage_resolver: StorageResolver::for_test(),
+            event_broker: EventBroker::default(),
         })
     }
 }

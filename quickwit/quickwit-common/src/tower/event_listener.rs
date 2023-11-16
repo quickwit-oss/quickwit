@@ -129,7 +129,6 @@ mod tests {
 
     impl Event for MyEvent {}
 
-    #[derive(Debug, Clone)]
     struct MySubscriber {
         counter: Arc<AtomicUsize>,
     }

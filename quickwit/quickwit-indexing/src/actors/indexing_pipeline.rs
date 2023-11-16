@@ -439,6 +439,7 @@ impl IndexingPipeline {
                     ingester_pool: self.params.ingester_pool.clone(),
                     queues_dir_path: self.params.queues_dir_path.clone(),
                     storage_resolver: self.params.source_storage_resolver.clone(),
+                    event_broker: self.params.event_broker.clone(),
                 }),
                 source_checkpoint,
             ))

@@ -238,6 +238,16 @@ impl Cluster {
             .set(key, value);
     }
 
+    pub async fn get_self_key_value(&self, key: &str) -> Option<String> {
+        self.chitchat()
+            .await
+            .lock()
+            .await
+            .self_node_state()
+            .get_versioned(key)
+            .map(|versioned_value| versioned_value.value.clone())
+    }
+
     /// Waits until the predicate holds true for the set of ready members.
     pub async fn wait_for_ready_members<F>(
         &self,

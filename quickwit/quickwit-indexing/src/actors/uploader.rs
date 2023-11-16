@@ -912,7 +912,6 @@ mod tests {
         Ok(())
     }
 
-    #[derive(Clone)]
     struct ReportSplitListener {
         report_splits_tx: flume::Sender<ReportSplitsRequest>,
     }
