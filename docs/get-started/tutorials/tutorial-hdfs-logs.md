@@ -9,7 +9,7 @@ sidebar_position: 1
 import Tabs from '@theme/Tabs';
 import TabItem from '@theme/TabItem';
 
-In this guide, we will index about 40 million log entries (13 GB decompressed) on a local machine. If you want to start a server with indexes on AWS S3 with several search nodes, check out the [tutorial for distributed search](tutorial-hdfs-logs-distributed-search-aws-s3.md).
+In this guide, we will index about 20 million log entries (7 GB decompressed) on a local machine. If you want to start a server with indexes on AWS S3 with several search nodes, check out the [tutorial for distributed search](tutorial-hdfs-logs-distributed-search-aws-s3.md).
 
 Here is an example of a log entry:
 ```json
