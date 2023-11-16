@@ -21,10 +21,10 @@
 // to Azurite (the emulated azure blob storage environment)
 // with default `loose` config is possible.
 
-#[cfg(feature = "testsuite")]
+#[cfg(feature = "integration-testsuite")]
 #[tokio::test]
 #[cfg_attr(not(feature = "ci-test"), ignore)]
-async fn test_suite_on_azure_storage() -> anyhow::Result<()> {
+async fn azure_storage_test_suite() -> anyhow::Result<()> {
     use std::path::PathBuf;
 
     use anyhow::Context;
