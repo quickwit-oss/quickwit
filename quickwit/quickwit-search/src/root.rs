@@ -40,7 +40,8 @@ use quickwit_proto::metastore::{
 use quickwit_proto::search::{
     FetchDocsRequest, FetchDocsResponse, Hit, LeafHit, LeafListTermsRequest, LeafListTermsResponse,
     LeafSearchRequest, LeafSearchResponse, ListTermsRequest, ListTermsResponse, PartialHit,
-    SearchRequest, SearchResponse, SnippetRequest, SortField, SplitIdAndFooterOffsets,
+    SearchRequest, SearchResponse, SnippetRequest, SortDatetimeFormat, SortField, SortValue,
+    SplitIdAndFooterOffsets,
 };
 use quickwit_proto::types::{IndexUid, SplitId};
 use quickwit_query::query_ast::{
@@ -153,6 +154,7 @@ type TimestampFieldOpt = Option<String>;
 /// Validates request against each index's doc mapper and ensures that:
 /// - timestamp fields (if any) are equal across indexes.
 /// - resolved query ASTs are the same across indexes.
+/// - if a sort field has a datetime format specified, it must be a datetime field on all indexes.
 /// Returns the timestamp field, the resolved query AST and the indexes metadatas
 /// needed for leaf search requests.
 /// Note: the requirements on timestamp fields and resolved query ASTs can be lifted
@@ -211,6 +213,7 @@ fn validate_request_and_build_metadatas(
         }
 
         validate_request(&*doc_mapper, search_request)?;
+
         // Validates the query by effectively building it against the current schema.
         doc_mapper.query(doc_mapper.schema(), &query_ast_resolved_for_index, true)?;
 
@@ -264,23 +267,6 @@ fn validate_requested_snippet_fields(
     Ok(())
 }
 
-fn validate_sort_by_fields(sort_fields: &[SortField], schema: &Schema) -> crate::Result<()> {
-    if sort_fields.is_empty() {
-        return Ok(());
-    }
-    if sort_fields.len() > 2 {
-        return Err(SearchError::InvalidArgument(format!(
-            "sort by field must be up to 2 fields {:?}",
-            sort_fields
-        )));
-    }
-    for sort in sort_fields {
-        validate_sort_by_field(&sort.field_name, schema)?;
-    }
-
-    Ok(())
-}
-
 fn simplify_search_request_for_scroll_api(req: &SearchRequest) -> crate::Result<SearchRequest> {
     if req.search_after.is_some() {
         return Err(SearchError::InvalidArgument(
@@ -309,7 +295,64 @@ fn simplify_search_request_for_scroll_api(req: &SearchRequest) -> crate::Result<
     })
 }
 
-fn validate_sort_by_field(field_name: &str, schema: &Schema) -> crate::Result<()> {
+/// Validates sort fields and search after values.
+/// - validate sort fields, see [`validate_sort_by_field`].
+/// - search after values must be set for all sort fields.
+fn validate_sort_by_fields_and_search_after(
+    sort_fields: &[SortField],
+    search_after: &Option<PartialHit>,
+    schema: &Schema,
+) -> crate::Result<()> {
+    if sort_fields.is_empty() {
+        return Ok(());
+    }
+    if sort_fields.len() > 2 {
+        return Err(SearchError::InvalidArgument(format!(
+            "sort by field must be up to 2 fields, got {}",
+            sort_fields.len()
+        )));
+    }
+    for sort in sort_fields {
+        validate_sort_by_field(
+            &sort.field_name,
+            sort.sort_datetime_format.is_some(),
+            schema,
+        )?;
+    }
+    let Some(search_after_partial_hit) = search_after.as_ref() else {
+        return Ok(());
+    };
+    let mut search_after_sort_value_count = 0;
+    // TODO: we could validate if the search after sort value types of consistent with the sort
+    // field types.
+    if let Some(sort_by_value) = search_after_partial_hit.sort_value.as_ref() {
+        sort_by_value.sort_value.context("sort value must be set")?;
+        search_after_sort_value_count += 1;
+    }
+    if let Some(sort_by_value_2) = search_after_partial_hit.sort_value2.as_ref() {
+        sort_by_value_2
+            .sort_value
+            .context("sort value must be set")?;
+        search_after_sort_value_count += 1;
+    }
+    if search_after_sort_value_count != sort_fields.len() {
+        return Err(SearchError::InvalidArgument(format!(
+            "`search_after` must have the same number of sort values as sort by fields {:?}",
+            sort_fields
+                .iter()
+                .map(|sort_field| &sort_field.field_name)
+                .collect_vec()
+        )));
+    }
+    Ok(())
+}
+
+/// Validates sort field.
+fn validate_sort_by_field(
+    field_name: &str,
+    has_timestamp_format: bool,
+    schema: &Schema,
+) -> crate::Result<()> {
     if field_name == "_score" {
         return Ok(());
     }
@@ -329,6 +372,12 @@ fn validate_sort_by_field(field_name: &str, schema: &Schema) -> crate::Result<()
         return Err(SearchError::InvalidArgument(format!(
             "sort by field must be a fast field, please add the fast property to your field \
              `{field_name}`",
+        )));
+    }
+    if has_timestamp_format && !sort_by_field_entry.field_type().is_date() {
+        return Err(SearchError::InvalidArgument(format!(
+            "sort by field with a timestamp format must be a datetime field and the field \
+             `{field_name}` is not",
         )));
     }
     Ok(())
@@ -351,7 +400,11 @@ fn validate_request(
 
     validate_requested_snippet_fields(&schema, &search_request.snippet_fields)?;
 
-    validate_sort_by_fields(&search_request.sort_fields, &schema)?;
+    validate_sort_by_fields_and_search_after(
+        &search_request.sort_fields,
+        &search_request.search_after,
+        &schema,
+    )?;
 
     if let Some(agg) = search_request.aggregation_request.as_ref() {
         let _aggs: QuickwitAggregations = serde_json::from_str(agg).map_err(|_err| {
@@ -528,9 +581,10 @@ pub(crate) async fn fetch_docs_phase(
     indexes_metas_for_leaf_search: &IndexesMetasForLeafSearch,
     partial_hits: &[PartialHit],
     split_metadatas: &[SplitMetadata],
-    snippet_request_opt: Option<SnippetRequest>,
+    search_request: &SearchRequest,
     cluster_client: &ClusterClient,
 ) -> crate::Result<Vec<Hit>> {
+    let snippet_request: Option<SnippetRequest> = get_snippet_request(search_request);
     let hit_order: HashMap<(String, u32, u32), usize> = partial_hits
         .iter()
         .enumerate()
@@ -554,7 +608,7 @@ pub(crate) async fn fetch_docs_phase(
     let mut fetch_docs_tasks = Vec::new();
     for (client, client_jobs) in assigned_fetch_docs_jobs {
         let fetch_jobs_requests = jobs_to_fetch_docs_requests(
-            snippet_request_opt.clone(),
+            snippet_request.clone(),
             indexes_metas_for_leaf_search,
             client_jobs,
         )?;
@@ -580,30 +634,22 @@ pub(crate) async fn fetch_docs_phase(
             )
         })
         .collect();
+    let mut sort_field_iter = search_request.sort_fields.iter();
+    let sort_field_1_datetime_format_opt: Option<SortDatetimeFormat> =
+        get_sort_field_datetime_format(sort_field_iter.next())?;
+    let sort_field_2_datetime_format_opt: Option<SortDatetimeFormat> =
+        get_sort_field_datetime_format(sort_field_iter.next())?;
     let mut hits_with_position: Vec<(usize, Hit)> = leaf_hits
-        .flat_map(|leaf_hit: LeafHit| {
-            let partial_hit_ref = leaf_hit.partial_hit.as_ref()?;
-            let key = (
-                partial_hit_ref.split_id.clone(),
-                partial_hit_ref.segment_ord,
-                partial_hit_ref.doc_id,
-            );
-            let position = *hit_order.get(&key)?;
-            let index_id = split_id_to_index_id_map
-                .get(&partial_hit_ref.split_id)
-                .map(|split_id| split_id.to_string())
-                .unwrap_or_default();
-            Some((
-                position,
-                Hit {
-                    json: leaf_hit.leaf_json,
-                    partial_hit: leaf_hit.partial_hit,
-                    snippet: leaf_hit.leaf_snippet_json,
-                    index_id,
-                },
-            ))
+        .map(|leaf_hit| {
+            build_hit_with_position(
+                leaf_hit,
+                &split_id_to_index_id_map,
+                &hit_order,
+                &sort_field_1_datetime_format_opt,
+                &sort_field_2_datetime_format_opt,
+            )
         })
-        .collect();
+        .try_collect()?;
 
     hits_with_position.sort_by_key(|(position, _)| *position);
     let hits: Vec<Hit> = hits_with_position
@@ -612,6 +658,71 @@ pub(crate) async fn fetch_docs_phase(
         .collect();
 
     Ok(hits)
+}
+
+fn build_hit_with_position(
+    mut leaf_hit: LeafHit,
+    split_id_to_index_id_map: &HashMap<&SplitId, &str>,
+    hit_order: &HashMap<(String, u32, u32), usize>,
+    sort_field_1_datetime_format_opt: &Option<SortDatetimeFormat>,
+    sort_field_2_datetime_format_opt: &Option<SortDatetimeFormat>,
+) -> crate::Result<(usize, Hit)> {
+    let partial_hit_ref = leaf_hit
+        .partial_hit
+        .as_mut()
+        .expect("partial hit must be present");
+    let key = (
+        partial_hit_ref.split_id.clone(),
+        partial_hit_ref.segment_ord,
+        partial_hit_ref.doc_id,
+    );
+    let sort_value_opt = partial_hit_ref
+        .sort_value
+        .as_mut()
+        .and_then(|sort_field| sort_field.sort_value.as_mut());
+    if let Some(sort_by_value) = sort_value_opt {
+        if let Some(output_datetime_format) = &sort_field_1_datetime_format_opt {
+            convert_sort_datetime_value(sort_by_value, *output_datetime_format)?;
+        }
+    }
+    let sort_value_2_opt = partial_hit_ref
+        .sort_value2
+        .as_mut()
+        .and_then(|sort_field| sort_field.sort_value.as_mut());
+    if let Some(sort_by_value) = sort_value_2_opt {
+        if let Some(output_datetime_format) = &sort_field_2_datetime_format_opt {
+            convert_sort_datetime_value(sort_by_value, *output_datetime_format)?;
+        }
+    }
+    let position = *hit_order.get(&key).expect("hit order must be present");
+    let index_id = split_id_to_index_id_map
+        .get(&partial_hit_ref.split_id)
+        .map(|split_id| split_id.to_string())
+        .unwrap_or_default();
+
+    Result::<(usize, Hit), SearchError>::Ok((
+        position,
+        Hit {
+            json: leaf_hit.leaf_json,
+            partial_hit: leaf_hit.partial_hit,
+            snippet: leaf_hit.leaf_snippet_json,
+            index_id,
+        },
+    ))
+}
+
+fn get_sort_field_datetime_format(
+    sort_field: Option<&SortField>,
+) -> crate::Result<Option<SortDatetimeFormat>> {
+    if let Some(sort_field) = sort_field {
+        if let Some(sort_field_datetime_format_int) = &sort_field.sort_datetime_format {
+            let sort_field_datetime_format =
+                SortDatetimeFormat::from_i32(*sort_field_datetime_format_int)
+                    .context("invalid sort datetime format")?;
+            return Ok(Some(sort_field_datetime_format));
+        }
+    }
+    Ok(None)
 }
 
 /// Performs a distributed search.
@@ -640,12 +751,11 @@ async fn root_search_aux(
     )
     .await?;
 
-    let snippet_request: Option<SnippetRequest> = get_snippet_request(&search_request);
     let hits = fetch_docs_phase(
         indexes_metas_for_leaf_search,
         &first_phase_result.partial_hits,
         &split_metadatas[..],
-        snippet_request,
+        &search_request,
         cluster_client,
     )
     .await?;
@@ -798,6 +908,10 @@ pub async fn root_search(
         validate_request_and_build_metadatas(&indexes_metadata, &search_request)?;
     search_request.query_ast = serde_json::to_string(&query_ast_resolved)?;
 
+    // convert search_after datetime values from input datetime format to nanos.
+    convert_search_after_datetime_values(&mut search_request)?;
+
+    // update_search_after_datetime_in_nanos(&mut search_request)?;
     if let Some(timestamp_field) = &timestamp_field_opt {
         refine_start_end_timestamp_from_ast(
             &query_ast_resolved,
@@ -830,6 +944,100 @@ pub async fn root_search(
 
     search_response.elapsed_time_micros = start_instant.elapsed().as_micros() as u64;
     Ok(search_response)
+}
+
+/// Converts search after with datetime format to nanoseconds (representation in tantivy).
+fn convert_search_after_datetime_values(search_request: &mut SearchRequest) -> crate::Result<()> {
+    if let Some(partial_hit) = search_request.search_after.as_mut() {
+        let search_after_values = [
+            partial_hit.sort_value.as_mut(),
+            partial_hit.sort_value2.as_mut(),
+        ];
+        for (sort_field, search_after_value_opt) in
+            search_request.sort_fields.iter().zip(search_after_values)
+        {
+            let Some(search_after_sort_by_value) = search_after_value_opt else {
+                continue;
+            };
+            let Some(search_after_sort_value) = search_after_sort_by_value.sort_value.as_mut()
+            else {
+                continue;
+            };
+            let Some(datetime_format_int) = sort_field.sort_datetime_format else {
+                continue;
+            };
+            let input_datetime_format = SortDatetimeFormat::from_i32(datetime_format_int)
+                .context("invalid sort datetime format")?;
+            convert_sort_datetime_value_into_nanos(search_after_sort_value, input_datetime_format)?;
+        }
+    }
+    Ok(())
+}
+
+/// Convert sort values from input datetime format into nanoseconds.
+/// The conversion is done only for U64 and I64 sort values, an error is returned for other types.
+fn convert_sort_datetime_value_into_nanos(
+    sort_value: &mut SortValue,
+    input_format: SortDatetimeFormat,
+) -> crate::Result<()> {
+    match sort_value {
+        SortValue::U64(value) => match input_format {
+            SortDatetimeFormat::UnixTimestampMillis => {
+                *value = value.checked_mul(1_000_000).ok_or_else(|| {
+                    SearchError::Internal(format!(
+                        "sort value defined in milliseconds is too large and cannot be converted \
+                         into nanoseconds: {}",
+                        value
+                    ))
+                })?;
+            }
+        },
+        SortValue::I64(value) => match input_format {
+            SortDatetimeFormat::UnixTimestampMillis => {
+                *value = value.checked_mul(1_000_000).ok_or_else(|| {
+                    SearchError::Internal(format!(
+                        "sort value defined in milliseconds is too large and cannot be converted \
+                         into nanoseconds: {}",
+                        value
+                    ))
+                })?;
+            }
+        },
+        _ => {
+            return Err(SearchError::Internal(format!(
+                "datetime conversion are only support for u64 and i64 sort values, not `{:?}`",
+                sort_value
+            )));
+        }
+    }
+    Ok(())
+}
+
+/// Convert sort values from nanoseconds to the requested output format.
+/// The conversion is done only for U64 and I64 sort values, an error is returned for other types.
+fn convert_sort_datetime_value(
+    sort_value: &mut SortValue,
+    output_format: SortDatetimeFormat,
+) -> crate::Result<()> {
+    match sort_value {
+        SortValue::U64(value) => match output_format {
+            SortDatetimeFormat::UnixTimestampMillis => {
+                *value /= 1_000_000;
+            }
+        },
+        SortValue::I64(value) => match output_format {
+            SortDatetimeFormat::UnixTimestampMillis => {
+                *value /= 1_000_000;
+            }
+        },
+        _ => {
+            return Err(SearchError::Internal(format!(
+                "datetime conversion are only support for u64 and i64 sort values, not `{:?}`",
+                sort_value
+            )));
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn refine_start_end_timestamp_from_ast(
@@ -1218,7 +1426,9 @@ mod tests {
     use quickwit_indexing::MockSplitBuilder;
     use quickwit_metastore::{IndexMetadata, ListSplitsResponseExt};
     use quickwit_proto::metastore::{ListIndexesMetadataResponse, ListSplitsResponse};
-    use quickwit_proto::search::{ScrollRequest, SortOrder, SortValue, SplitSearchError};
+    use quickwit_proto::search::{
+        ScrollRequest, SortByValue, SortOrder, SortValue, SplitSearchError,
+    };
     use quickwit_query::query_ast::{qast_helper, qast_json_helper, query_ast_from_user_text};
     use tantivy::schema::{FAST, STORED, TEXT};
 
@@ -1395,6 +1605,223 @@ mod tests {
             timestamp_field_different.to_string(),
             "resolved query ASTs must be the same across indexes. resolving queries with \
              different default fields are different between indexes is not supported"
+        );
+    }
+
+    #[test]
+    fn test_convert_sort_datetime_value() {
+        let mut sort_value = SortValue::U64(1617000000000000000);
+        convert_sort_datetime_value(&mut sort_value, SortDatetimeFormat::UnixTimestampMillis)
+            .unwrap();
+        assert_eq!(sort_value, SortValue::U64(1617000000000));
+        let mut sort_value = SortValue::I64(1617000000000000000);
+        convert_sort_datetime_value(&mut sort_value, SortDatetimeFormat::UnixTimestampMillis)
+            .unwrap();
+        assert_eq!(sort_value, SortValue::I64(1617000000000));
+
+        // conversion with float values should fail.
+        let mut sort_value = SortValue::F64(1617000000000000000.0);
+        let error =
+            convert_sort_datetime_value(&mut sort_value, SortDatetimeFormat::UnixTimestampMillis)
+                .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "internal error: `datetime conversion are only support for u64 and i64 sort values, \
+             not `F64(1.617e18)``"
+        );
+    }
+
+    #[test]
+    fn test_convert_sort_datetime_value_into_nanos() {
+        let mut sort_value = SortValue::U64(1617000000000);
+        convert_sort_datetime_value_into_nanos(
+            &mut sort_value,
+            SortDatetimeFormat::UnixTimestampMillis,
+        )
+        .unwrap();
+        assert_eq!(sort_value, SortValue::U64(1617000000000000000));
+        let mut sort_value = SortValue::I64(1617000000000);
+        convert_sort_datetime_value_into_nanos(
+            &mut sort_value,
+            SortDatetimeFormat::UnixTimestampMillis,
+        )
+        .unwrap();
+        assert_eq!(sort_value, SortValue::I64(1617000000000000000));
+
+        // conversion with a too large millisecond value should fail.
+        let mut sort_value = SortValue::I64(1617000000000000);
+        let error = convert_sort_datetime_value_into_nanos(
+            &mut sort_value,
+            SortDatetimeFormat::UnixTimestampMillis,
+        )
+        .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "internal error: `sort value defined in milliseconds is too large and cannot be \
+             converted into nanoseconds: 1617000000000000`"
+        );
+        // conversion with float values should fail.
+        let mut sort_value = SortValue::F64(1617000000000000.0);
+        let error = convert_sort_datetime_value_into_nanos(
+            &mut sort_value,
+            SortDatetimeFormat::UnixTimestampMillis,
+        )
+        .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "internal error: `datetime conversion are only support for u64 and i64 sort values, \
+             not `F64(1617000000000000.0)``"
+        );
+    }
+
+    #[test]
+    fn test_validate_sort_by_fields_with_datetime_format_ok() {
+        let sort_fields = vec![
+            SortField {
+                field_name: "timestamp".to_string(),
+                sort_order: 0,
+                sort_datetime_format: Some(SortDatetimeFormat::UnixTimestampMillis as i32),
+            },
+            SortField {
+                field_name: "id".to_string(),
+                sort_order: 0,
+                sort_datetime_format: None,
+            },
+        ];
+        let mut schema_builder = Schema::builder();
+        schema_builder.add_date_field("timestamp", FAST);
+        schema_builder.add_u64_field("id", FAST);
+        let schema = schema_builder.build();
+        validate_sort_by_fields_and_search_after(&sort_fields, &None, &schema).unwrap();
+    }
+
+    #[test]
+    fn test_validate_sort_by_fields_and_search_after_ok() {
+        let sort_fields = vec![
+            SortField {
+                field_name: "timestamp".to_string(),
+                sort_order: 0,
+                sort_datetime_format: Some(SortDatetimeFormat::UnixTimestampMillis as i32),
+            },
+            SortField {
+                field_name: "id".to_string(),
+                sort_order: 0,
+                sort_datetime_format: None,
+            },
+        ];
+        let mut schema_builder = Schema::builder();
+        schema_builder.add_date_field("timestamp", FAST);
+        schema_builder.add_u64_field("id", FAST);
+        let schema = schema_builder.build();
+        let partial_hit = PartialHit {
+            sort_value: Some(SortByValue {
+                sort_value: Some(SortValue::U64(1)),
+            }),
+            sort_value2: Some(SortByValue {
+                sort_value: Some(SortValue::U64(2)),
+            }),
+            split_id: "split1".to_string(),
+            segment_ord: 1,
+            doc_id: 1,
+        };
+        validate_sort_by_fields_and_search_after(&sort_fields, &Some(partial_hit), &schema)
+            .unwrap();
+    }
+
+    #[test]
+    fn test_validate_sort_by_fields_and_search_after_invalid_1() {
+        // 2 sort fields + search after with only one sort value is invalid.
+        let sort_fields = vec![
+            SortField {
+                field_name: "timestamp".to_string(),
+                sort_order: 0,
+                sort_datetime_format: Some(SortDatetimeFormat::UnixTimestampMillis as i32),
+            },
+            SortField {
+                field_name: "id".to_string(),
+                sort_order: 0,
+                sort_datetime_format: None,
+            },
+        ];
+        let mut schema_builder = Schema::builder();
+        schema_builder.add_date_field("timestamp", FAST);
+        schema_builder.add_u64_field("id", FAST);
+        let schema = schema_builder.build();
+        let partial_hit = PartialHit {
+            sort_value: Some(SortByValue {
+                sort_value: Some(SortValue::U64(1)),
+            }),
+            sort_value2: None,
+            split_id: "split1".to_string(),
+            segment_ord: 1,
+            doc_id: 1,
+        };
+        let error =
+            validate_sort_by_fields_and_search_after(&sort_fields, &Some(partial_hit), &schema)
+                .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "Invalid argument: `search_after` must have the same number of sort values as sort by \
+             fields [\"timestamp\", \"id\"]"
+        );
+    }
+
+    #[test]
+    fn test_validate_sort_by_fields_and_search_after_invalid_2() {
+        // sort non-datetime field with a datetime format is invalid.
+        let sort_fields = vec![SortField {
+            field_name: "timestamp".to_string(),
+            sort_order: 0,
+            sort_datetime_format: Some(SortDatetimeFormat::UnixTimestampMillis as i32),
+        }];
+        let mut schema_builder = Schema::builder();
+        schema_builder.add_u64_field("timestamp", FAST);
+        let schema = schema_builder.build();
+        let partial_hit = PartialHit {
+            sort_value: Some(SortByValue {
+                sort_value: Some(SortValue::U64(1)),
+            }),
+            sort_value2: None,
+            split_id: "split1".to_string(),
+            segment_ord: 1,
+            doc_id: 1,
+        };
+        let error =
+            validate_sort_by_fields_and_search_after(&sort_fields, &Some(partial_hit), &schema)
+                .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "Invalid argument: sort by field with a timestamp format must be a datetime field and \
+             the field `timestamp` is not"
+        );
+    }
+
+    #[test]
+    fn test_validate_sort_by_fields_and_search_after_invalid_3() {
+        // 3 sort fields is not possible.
+        let sort_fields = vec![
+            SortField {
+                field_name: "timestamp".to_string(),
+                sort_order: 0,
+                sort_datetime_format: Some(SortDatetimeFormat::UnixTimestampMillis as i32),
+            },
+            SortField {
+                field_name: "timestamp".to_string(),
+                sort_order: 0,
+                sort_datetime_format: Some(SortDatetimeFormat::UnixTimestampMillis as i32),
+            },
+            SortField {
+                field_name: "timestamp".to_string(),
+                sort_order: 0,
+                sort_datetime_format: Some(SortDatetimeFormat::UnixTimestampMillis as i32),
+            },
+        ];
+        let schema = Schema::builder().build();
+        let error =
+            validate_sort_by_fields_and_search_after(&sort_fields, &None, &schema).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "Invalid argument: sort by field must be up to 2 fields, got 3"
         );
     }
 
@@ -1714,6 +2141,7 @@ mod tests {
             sort_fields: vec![SortField {
                 field_name: "response_date".to_string(),
                 sort_order: SortOrder::Asc.into(),
+                sort_datetime_format: None,
             }],
             ..Default::default()
         };
@@ -1894,6 +2322,7 @@ mod tests {
             sort_fields: vec![SortField {
                 field_name: "response_date".to_string(),
                 sort_order: SortOrder::Desc.into(),
+                sort_datetime_format: None,
             }],
             ..Default::default()
         };

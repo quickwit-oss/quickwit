@@ -25,6 +25,7 @@ use quickwit_query::{ElasticQueryDsl, OneFieldMap};
 use serde::de::{MapAccess, Visitor};
 use serde::{Deserialize, Deserializer, Serialize};
 
+use super::ElasticDateFormat;
 use crate::elastic_search_api::model::{default_elasticsearch_sort_order, SortField};
 use crate::elastic_search_api::TrackTotalHits;
 
@@ -32,24 +33,37 @@ use crate::elastic_search_api::TrackTotalHits;
 #[serde(untagged)]
 enum FieldSortParamsForDeser {
     // we can't just use FieldSortParams or we get infinite recursion on deser
-    Object { order: Option<SortOrder> },
+    Object {
+        order: Option<SortOrder>,
+        format: Option<ElasticDateFormat>,
+    },
     String(SortOrder),
 }
 
 impl From<FieldSortParamsForDeser> for FieldSortParams {
     fn from(for_deser: FieldSortParamsForDeser) -> FieldSortParams {
         match for_deser {
-            FieldSortParamsForDeser::Object { order } => FieldSortParams { order },
-            FieldSortParamsForDeser::String(order) => FieldSortParams { order: Some(order) },
+            FieldSortParamsForDeser::Object {
+                order,
+                format: date_format,
+            } => FieldSortParams { order, date_format },
+            FieldSortParamsForDeser::String(order) => FieldSortParams {
+                order: Some(order),
+                date_format: None,
+            },
         }
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(from = "FieldSortParamsForDeser")]
+#[serde(deny_unknown_fields)]
 struct FieldSortParams {
     #[serde(default)]
     pub order: Option<SortOrder>,
+    #[serde(default)]
+    #[serde(rename = "format")]
+    pub date_format: Option<ElasticDateFormat>,
 }
 
 #[derive(Debug, Default, Clone, Deserialize, PartialEq)]
@@ -91,6 +105,7 @@ impl From<StringOrMapFieldSort> for SortField {
                 SortField {
                     field: field_name,
                     order,
+                    date_format: None,
                 }
             }
             StringOrMapFieldSort::Sort(sort) => {
@@ -101,6 +116,7 @@ impl From<StringOrMapFieldSort> for SortField {
                 SortField {
                     field: sort.field,
                     order,
+                    date_format: sort.value.date_format,
                 }
             }
         }
@@ -135,6 +151,7 @@ impl<'de> Visitor<'de> for FieldSortVecVisitor {
             sort_fields.push(SortField {
                 field: field_sort_key,
                 order: sort_order,
+                date_format: field_sort_params.date_format,
             });
         }
         Ok(sort_fields)
@@ -157,7 +174,7 @@ mod tests {
         let json = r#"
         {
             "sort": [
-                { "timestamp": { "order": "desc" } },
+                { "timestamp": { "order": "desc", "format": "epoch_millis_as_int" } },
                 { "uid": { "order": "asc" } },
                 { "my_field": "asc" },
                 { "hello": {}},
@@ -170,14 +187,22 @@ mod tests {
         assert_eq!(sort_fields.len(), 5);
         assert_eq!(sort_fields[0].field, "timestamp");
         assert_eq!(sort_fields[0].order, SortOrder::Desc);
+        assert_eq!(
+            sort_fields[0].date_format,
+            Some(ElasticDateFormat::EpochMillisAsInt)
+        );
         assert_eq!(sort_fields[1].field, "uid");
         assert_eq!(sort_fields[1].order, SortOrder::Asc);
+        assert_eq!(sort_fields[1].date_format, None);
         assert_eq!(sort_fields[2].field, "my_field");
         assert_eq!(sort_fields[2].order, SortOrder::Asc);
+        assert_eq!(sort_fields[2].date_format, None);
         assert_eq!(sort_fields[3].field, "hello");
         assert_eq!(sort_fields[3].order, SortOrder::Asc);
+        assert_eq!(sort_fields[3].date_format, None);
         assert_eq!(sort_fields[4].field, "_score");
         assert_eq!(sort_fields[4].order, SortOrder::Desc);
+        assert_eq!(sort_fields[4].date_format, None);
     }
 
     #[test]

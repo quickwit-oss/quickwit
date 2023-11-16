@@ -108,6 +108,7 @@ impl From<String> for SortBy {
             let sort_field = SortField {
                 field_name,
                 sort_order: sort_order as i32,
+                sort_datetime_format: None,
             };
             sort_fields.push(sort_field);
         }
@@ -791,6 +792,7 @@ mod tests {
                 vec![SortField {
                     field_name: "field1".to_string(),
                     sort_order: SortOrder::Desc as i32,
+                    sort_datetime_format: None,
                 }],
             ),
             (
@@ -798,6 +800,7 @@ mod tests {
                 vec![SortField {
                     field_name: "field1".to_string(),
                     sort_order: SortOrder::Desc as i32,
+                    sort_datetime_format: None,
                 }],
             ),
             (
@@ -805,6 +808,7 @@ mod tests {
                 vec![SortField {
                     field_name: "field1".to_string(),
                     sort_order: SortOrder::Asc as i32,
+                    sort_datetime_format: None,
                 }],
             ),
             (
@@ -812,6 +816,7 @@ mod tests {
                 vec![SortField {
                     field_name: "_score".to_string(),
                     sort_order: SortOrder::Desc as i32,
+                    sort_datetime_format: None,
                 }],
             ),
             (
@@ -819,6 +824,7 @@ mod tests {
                 vec![SortField {
                     field_name: "_score".to_string(),
                     sort_order: SortOrder::Asc as i32,
+                    sort_datetime_format: None,
                 }],
             ),
             (
@@ -826,6 +832,7 @@ mod tests {
                 vec![SortField {
                     field_name: "_score".to_string(),
                     sort_order: SortOrder::Desc as i32,
+                    sort_datetime_format: None,
                 }],
             ),
             (
@@ -834,10 +841,12 @@ mod tests {
                     SortField {
                         field_name: "field1".to_string(),
                         sort_order: SortOrder::Desc as i32,
+                        sort_datetime_format: None,
                     },
                     SortField {
                         field_name: "field2".to_string(),
                         sort_order: SortOrder::Desc as i32,
+                        sort_datetime_format: None,
                     },
                 ],
             ),
@@ -847,10 +856,12 @@ mod tests {
                     SortField {
                         field_name: "field1".to_string(),
                         sort_order: SortOrder::Desc as i32,
+                        sort_datetime_format: None,
                     },
                     SortField {
                         field_name: "field2".to_string(),
                         sort_order: SortOrder::Asc as i32,
+                        sort_datetime_format: None,
                     },
                 ],
             ),
@@ -860,10 +871,12 @@ mod tests {
                     SortField {
                         field_name: "field1".to_string(),
                         sort_order: SortOrder::Asc as i32,
+                        sort_datetime_format: None,
                     },
                     SortField {
                         field_name: "field2".to_string(),
                         sort_order: SortOrder::Desc as i32,
+                        sort_datetime_format: None,
                     },
                 ],
             ),
@@ -898,6 +911,7 @@ mod tests {
             &[SortField {
                 field_name: "fiel1".to_string(),
                 sort_order: SortOrder::Desc as i32,
+                sort_datetime_format: None,
             }],
         );
     }

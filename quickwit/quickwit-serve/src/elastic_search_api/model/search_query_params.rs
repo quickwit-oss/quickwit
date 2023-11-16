@@ -164,12 +164,14 @@ fn parse_sort_field_str(sort_field_str: &str) -> Result<SortField, SearchError> 
         Ok(SortField {
             field: field.to_string(),
             order,
+            date_format: None,
         })
     } else {
         let order = default_elasticsearch_sort_order(sort_field_str);
         Ok(SortField {
             field: sort_field_str.to_string(),
             order,
+            date_format: None,
         })
     }
 }

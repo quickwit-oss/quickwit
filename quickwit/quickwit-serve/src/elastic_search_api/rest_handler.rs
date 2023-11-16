@@ -24,13 +24,15 @@ use std::time::{Duration, Instant};
 
 use bytes::Bytes;
 use elasticsearch_dsl::search::{Hit as ElasticHit, SearchResponse as ElasticSearchResponse};
-use elasticsearch_dsl::{ErrorCause, HitsMetadata, Source, TotalHits, TotalHitsRelation};
+use elasticsearch_dsl::{HitsMetadata, Source, TotalHits, TotalHitsRelation};
 use futures_util::StreamExt;
 use hyper::StatusCode;
 use itertools::Itertools;
 use quickwit_common::truncate_str;
 use quickwit_config::{validate_index_id_pattern, NodeConfig};
-use quickwit_proto::search::{CountHits, PartialHit, ScrollRequest, SearchResponse, SortByValue};
+use quickwit_proto::search::{
+    CountHits, PartialHit, ScrollRequest, SearchResponse, SortByValue, SortDatetimeFormat,
+};
 use quickwit_proto::ServiceErrorCode;
 use quickwit_query::query_ast::{QueryAst, UserInputQuery};
 use quickwit_query::BooleanOperand;
@@ -173,6 +175,10 @@ fn build_request_for_es_api(
         .map(|sort_field| quickwit_proto::search::SortField {
             field_name: sort_field.field.to_string(),
             sort_order: sort_field.order as i32,
+            sort_datetime_format: sort_field
+                .date_format
+                .clone()
+                .map(|date_format| SortDatetimeFormat::from(date_format) as i32),
         })
         .take_while_inclusive(|sort_field| !is_doc_field(sort_field))
         .collect();
@@ -219,56 +225,40 @@ fn partial_hit_from_search_after_param(
         return Ok(None);
     }
     if search_after.len() != sort_order.len() {
-        return Err(ElasticSearchError {
-            status: StatusCode::BAD_REQUEST,
-            error: ErrorCause {
-                reason: Some("sort and search_after are of different length".to_string()),
-                caused_by: None,
-                root_cause: vec![],
-                stack_trace: None,
-                suppressed: vec![],
-                ty: None,
-                additional_details: Default::default(),
-            },
-        });
+        return Err(ElasticSearchError::new(
+            StatusCode::BAD_REQUEST,
+            "sort and search_after are of different length".to_string(),
+        ));
     }
-
     let mut parsed_search_after = PartialHit::default();
     for (value, field) in search_after.into_iter().zip(sort_order) {
         if is_doc_field(field) {
             if let Some(value_str) = value.as_str() {
                 let address: quickwit_search::GlobalDocAddress =
-                    value_str.parse().map_err(|_| ElasticSearchError {
-                        status: StatusCode::BAD_REQUEST,
-                        error: ErrorCause {
-                            reason: Some("invalid search_after doc id".to_string()),
-                            caused_by: None,
-                            root_cause: vec![],
-                            stack_trace: None,
-                            suppressed: vec![],
-                            ty: None,
-                            additional_details: Default::default(),
-                        },
+                    value_str.parse().map_err(|_| {
+                        ElasticSearchError::new(
+                            StatusCode::BAD_REQUEST,
+                            "invalid search_after doc id, must be of form \
+                             `{split_id}:{segment_id: u32}:{doc_id: u32}`"
+                                .to_string(),
+                        )
                     })?;
                 parsed_search_after.split_id = address.split;
                 parsed_search_after.segment_ord = address.doc_addr.segment_ord;
                 parsed_search_after.doc_id = address.doc_addr.doc_id;
                 return Ok(Some(parsed_search_after));
             } else {
-                todo!();
+                return Err(ElasticSearchError::new(
+                    StatusCode::BAD_REQUEST,
+                    "search_after doc id must be of string type".to_string(),
+                ));
             }
         } else {
-            let value = SortByValue::try_from_json(value).ok_or_else(|| ElasticSearchError {
-                status: StatusCode::BAD_REQUEST,
-                error: ErrorCause {
-                    reason: Some("invalid search_after field value".to_string()),
-                    caused_by: None,
-                    root_cause: vec![],
-                    stack_trace: None,
-                    suppressed: vec![],
-                    ty: None,
-                    additional_details: Default::default(),
-                },
+            let value = SortByValue::try_from_json(value).ok_or_else(|| {
+                ElasticSearchError::new(
+                    StatusCode::BAD_REQUEST,
+                    "invalid search_after field value, expect bool, number or string".to_string(),
+                )
             })?;
             // TODO make cleaner once we support Vec
             if parsed_search_after.sort_value.is_none() {
@@ -478,4 +468,56 @@ pub(crate) fn str_lines(body: &str) -> impl Iterator<Item = &str> {
     body.lines()
         .map(|line| line.trim())
         .filter(|line| !line.is_empty())
+}
+
+#[cfg(test)]
+mod tests {
+    use hyper::StatusCode;
+
+    use super::partial_hit_from_search_after_param;
+
+    #[test]
+    fn test_partial_hit_from_search_after_param_invalid_length() {
+        let search_after = vec![serde_json::json!([1])];
+        let sort_order = &[];
+        let error = partial_hit_from_search_after_param(search_after, sort_order).unwrap_err();
+        assert_eq!(error.status, StatusCode::BAD_REQUEST);
+        assert_eq!(
+            error.error.reason.unwrap(),
+            "sort and search_after are of different length"
+        );
+    }
+
+    #[test]
+    fn test_partial_hit_from_search_after_param_invalid_search_after_value() {
+        let search_after = vec![serde_json::json!([1])];
+        let sort_order = &[quickwit_proto::search::SortField {
+            field_name: "field1".to_string(),
+            sort_order: 1,
+            sort_datetime_format: None,
+        }];
+        let error = partial_hit_from_search_after_param(search_after, sort_order).unwrap_err();
+        assert_eq!(error.status, StatusCode::BAD_REQUEST);
+        assert_eq!(
+            error.error.reason.unwrap(),
+            "invalid search_after field value, expect bool, number or string"
+        );
+    }
+
+    #[test]
+    fn test_partial_hit_from_search_after_param_invalid_search_after_doc_id() {
+        let search_after = vec![serde_json::json!("split_id:1112")];
+        let sort_order = &[quickwit_proto::search::SortField {
+            field_name: "_doc".to_string(),
+            sort_order: 1,
+            sort_datetime_format: None,
+        }];
+        let error = partial_hit_from_search_after_param(search_after, sort_order).unwrap_err();
+        assert_eq!(error.status, StatusCode::BAD_REQUEST);
+        assert_eq!(
+            error.error.reason.unwrap(),
+            "invalid search_after doc id, must be of form `{split_id}:{segment_id: u32}:{doc_id: \
+             u32}`"
+        );
+    }
 }

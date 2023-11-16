@@ -43,7 +43,7 @@ use tokio::sync::Semaphore;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
 use crate::leaf_cache::LeafSearchCache;
-use crate::root::{fetch_docs_phase, get_snippet_request};
+use crate::root::fetch_docs_phase;
 use crate::scroll_context::{MiniKV, ScrollContext, ScrollKeyAndStartOffset};
 use crate::search_stream::{leaf_search_stream, root_search_stream};
 use crate::{
@@ -365,15 +365,12 @@ pub(crate) async fn scroll(
         }
     }
 
-    let snippet_request: Option<SnippetRequest> =
-        get_snippet_request(&scroll_context.search_request);
-
     // Fetch the actual documents.
     let hits: Vec<Hit> = fetch_docs_phase(
         &scroll_context.indexes_metas_for_leaf_search,
         &partial_hits[..],
         &scroll_context.split_metadatas[..],
-        snippet_request,
+        &scroll_context.search_request,
         cluster_client,
     )
     .await?;
