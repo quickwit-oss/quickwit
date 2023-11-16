@@ -81,7 +81,7 @@ impl RunCliCommand {
         crate::busy_detector::set_enabled(true);
 
         if let Some(services) = &self.services {
-            tracing::info!(services = %services.iter().join(", "), "Setting services from override.");
+            tracing::info!(services = %services.iter().join(", "), "setting services from override");
             node_config.enabled_services = services.clone();
         }
         let telemetry_handle_opt =

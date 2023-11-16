@@ -3458,7 +3458,7 @@ pub async fn test_metastore_list_stale_splits<
     ));
 
     {
-        info!("List stale splits on an index");
+        info!("list stale splits on an index");
         let create_index_request =
             CreateIndexRequest::try_from_index_config(index_config.clone()).unwrap();
         let index_uid: IndexUid = metastore
@@ -3615,7 +3615,7 @@ pub async fn test_metastore_update_splits_delete_opstamp<
     };
 
     {
-        info!("Update splits delete opstamp on a non-existent index.");
+        info!("update splits delete opstamp on a non-existent index");
         let update_splits_delete_opstamp_request = UpdateSplitsDeleteOpstampRequest {
             index_uid: IndexUid::new_with_random_ulid("index-not-found").to_string(),
             split_ids: vec![split_id_1.clone()],
@@ -3633,7 +3633,7 @@ pub async fn test_metastore_update_splits_delete_opstamp<
     }
 
     {
-        info!("Update splits delete opstamp on an index.");
+        info!("update splits delete opstamp on an index");
         let create_index_request =
             CreateIndexRequest::try_from_index_config(index_config.clone()).unwrap();
         let index_uid: IndexUid = metastore

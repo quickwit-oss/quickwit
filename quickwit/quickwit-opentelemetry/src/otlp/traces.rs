@@ -408,7 +408,7 @@ impl FromStr for SpanKind {
             "5" | "consumer" | "SPAN_KIND_CONSUMER" => 5,
             _ => {
                 if !span_kind.is_empty() {
-                    warn!("Unexpected span kind: {}", span_kind);
+                    warn!(span_kind=%span_kind, "unexpected span kind");
                 }
                 return Err(format!("Unexpected span kind: {span_kind}"));
             }
@@ -702,7 +702,7 @@ impl OtlpGrpcTracesService {
         })
         .await
         .map_err(|join_error| {
-            error!("Failed to parse spans: {join_error:?}");
+            error!(join_error=?join_error, "failed to parse spans");
             Status::internal("Failed to parse spans.")
         })??;
         if num_spans == 0 {
@@ -747,7 +747,7 @@ impl OtlpGrpcTracesService {
             DocBatchBuilder::new(OTEL_TRACES_INDEX_ID.to_string()).json_writer();
         for span in spans {
             if let Err(error) = doc_batch_builder.ingest_doc(&span.0) {
-                error!(error=?error, "failed to JSON serialize span.");
+                error!(error=?error, "failed to JSON serialize span");
                 error_message = format!("failed to JSON serialize span: {error:?}");
                 num_parse_errors += 1;
             }

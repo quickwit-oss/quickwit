@@ -87,7 +87,7 @@ async fn fetch_docs_to_map(
             .iter()
             .map(|split| split.split_id.clone())
             .collect_vec();
-        error!(split_ids = ?split_ids, error = ?error, "Error when fetching docs in splits.");
+        error!(split_ids = ?split_ids, error = ?error, "error when fetching docs in splits");
         anyhow::anyhow!(
             "error when fetching docs for splits {:?}: {:?}",
             split_ids,

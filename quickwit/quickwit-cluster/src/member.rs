@@ -122,7 +122,7 @@ fn parse_indexing_cpu_capacity(node_state: &NodeState) -> CpuCapacity {
     if let Ok(indexing_capacity) = CpuCapacity::from_str(indexing_capacity_str) {
         indexing_capacity
     } else {
-        error!(indexing_capacity=?indexing_capacity_str, "Received an unparseable indexing capacity from node.");
+        error!(indexing_capacity=?indexing_capacity_str, "received an unparseable indexing capacity from node");
         CpuCapacity::zero()
     }
 }

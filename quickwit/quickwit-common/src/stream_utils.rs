@@ -148,7 +148,7 @@ where T: Send + 'static
                     Ok(Some(message)) => Some((message, streaming)),
                     Ok(None) => None,
                     Err(error) => {
-                        warn!(error=?error, "gRPC transport error.");
+                        warn!(error=?error, "gRPC transport error");
                         None
                     }
                 }

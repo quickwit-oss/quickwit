@@ -506,7 +506,7 @@ pub(crate) async fn search_partial_hits_phase(
         "Merged leaf search response."
     );
     if !leaf_search_response.failed_splits.is_empty() {
-        error!(failed_splits = ?leaf_search_response.failed_splits, "Leaf search response contains at least one failed split.");
+        error!(failed_splits = ?leaf_search_response.failed_splits, "leaf search response contains at least one failed split");
         let errors: String = leaf_search_response.failed_splits.iter().join(", ");
         return Err(SearchError::Internal(errors));
     }

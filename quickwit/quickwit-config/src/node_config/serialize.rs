@@ -52,7 +52,7 @@ fn default_node_id() -> ConfigValue<String, QW_NODE_ID> {
         Ok(short_hostname) => short_hostname,
         Err(error) => {
             let node_id = new_coolid("node");
-            warn!(error=?error, "Failed to determine hostname or hostname was invalid, falling back to random node ID `{}`.", node_id);
+            warn!(error=?error, "failed to determine hostname or hostname was invalid, falling back to random node ID `{}`", node_id);
             node_id
         }
     };
@@ -100,12 +100,12 @@ fn default_data_dir_uri() -> ConfigValue<Uri, QW_DATA_DIR> {
 fn default_advertise_host(listen_ip: &IpAddr) -> anyhow::Result<Host> {
     if listen_ip.is_unspecified() {
         if let Some((interface_name, private_ip)) = find_private_ip() {
-            info!(advertise_address=%private_ip, interface_name=%interface_name, "Using sniffed advertise address.");
+            info!(advertise_address=%private_ip, interface_name=%interface_name, "using sniffed advertise address");
             return Ok(Host::from(private_ip));
         }
         bail!("listen address `{listen_ip}` is unspecified and advertise address is not set");
     }
-    info!(advertise_address=%listen_ip, "Using listen address as advertise address.");
+    info!(advertise_address=%listen_ip, "using listen address as advertise address");
     Ok(Host::from(*listen_ip))
 }
 
@@ -301,12 +301,12 @@ fn validate(node_config: &NodeConfig) -> anyhow::Result<()> {
 
     if node_config.cluster_id == DEFAULT_CLUSTER_ID {
         warn!(
-            "Cluster ID is not set, falling back to default value: `{}`.",
+            "cluster ID is not set, falling back to default value: `{}`",
             DEFAULT_CLUSTER_ID
         );
     }
     if node_config.peer_seeds.is_empty() {
-        warn!("Peer seed list is empty.");
+        warn!("peer seed list is empty");
     }
     Ok(())
 }

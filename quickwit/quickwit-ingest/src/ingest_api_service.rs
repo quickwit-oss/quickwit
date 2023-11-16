@@ -160,7 +160,7 @@ impl IngestApiService {
         let disk_usage = self.queues.disk_usage();
 
         if disk_usage > self.disk_limit {
-            info!("Ingestion rejected due to disk limit");
+            info!("ingestion rejected due to disk limit");
             return Err(IngestServiceError::RateLimited);
         }
 
@@ -169,7 +169,7 @@ impl IngestApiService {
             .reserve_capacity(request.cost() as usize)
             .is_err()
         {
-            info!("Ingest request rejected due to memory limit.");
+            info!("ingest request rejected due to memory limit");
             return Err(IngestServiceError::RateLimited);
         }
         let mut num_docs = 0usize;

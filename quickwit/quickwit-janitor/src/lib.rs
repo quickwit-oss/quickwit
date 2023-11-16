@@ -51,7 +51,7 @@ pub async fn start_janitor_service(
     storage_resolver: StorageResolver,
     event_broker: EventBroker,
 ) -> anyhow::Result<Mailbox<JanitorService>> {
-    info!("Starting janitor service.");
+    info!("starting janitor service");
     let garbage_collector = GarbageCollector::new(metastore.clone(), storage_resolver.clone());
     let (_, garbage_collector_handle) = universe.spawn_builder().spawn(garbage_collector);
 

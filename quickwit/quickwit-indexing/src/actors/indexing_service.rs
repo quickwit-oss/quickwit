@@ -579,11 +579,11 @@ impl IndexingService {
                         )
                         .await
                     {
-                        error!(pipeline_id=?new_pipeline_id, err=?error, "Failed to spawn pipeline.");
+                        error!(pipeline_id=?new_pipeline_id, err=?error, "failed to spawn pipeline");
                         failed_spawning_pipeline_ids.push(new_pipeline_id.clone());
                     }
                 } else {
-                    error!(pipeline_id=?new_pipeline_id, "Failed to spawn pipeline: source does not exist.");
+                    error!(pipeline_id=?new_pipeline_id, "failed to spawn pipeline: source does not exist");
                     failed_spawning_pipeline_ids.push(new_pipeline_id.clone());
                 }
             } else {
@@ -674,7 +674,7 @@ impl IndexingService {
             .queues
             .into_iter()
             .collect();
-        debug!(queues=?queues, "List ingest API queues.");
+        debug!(queues=?queues, "list ingest API queues");
 
         let indexes_metadatas = self
             .metastore
@@ -686,7 +686,7 @@ impl IndexingService {
             .into_iter()
             .map(|index_metadata| index_metadata.index_id().to_string())
             .collect();
-        debug!(index_ids=?index_ids, "List indexes.");
+        debug!(index_ids=?index_ids, "list indexes");
 
         let queue_ids_to_delete = queues.difference(&index_ids);
 

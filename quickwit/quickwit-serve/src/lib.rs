@@ -292,7 +292,7 @@ pub async fn serve_quickwit(
                 .await
                 .is_err()
             {
-                error!("No metastore service found among cluster members, stopping server.");
+                error!("no metastore service found among cluster members, stopping server");
                 anyhow::bail!(
                     "failed to start server: no metastore service was found among cluster \
                      members. try running Quickwit with additional metastore service `quickwit \
@@ -472,13 +472,13 @@ pub async fn serve_quickwit(
     let (grpc_readiness_trigger_tx, grpc_readiness_signal_rx) = oneshot::channel::<()>();
     let grpc_readiness_trigger = Box::pin(async move {
         if grpc_readiness_trigger_tx.send(()).is_err() {
-            debug!("gRPC server readiness signal receiver was dropped.");
+            debug!("gRPC server readiness signal receiver was dropped");
         }
     });
     let (grpc_shutdown_trigger_tx, grpc_shutdown_signal_rx) = oneshot::channel::<()>();
     let grpc_shutdown_signal = Box::pin(async move {
         if grpc_shutdown_signal_rx.await.is_err() {
-            debug!("gRPC server shutdown trigger sender was dropped.");
+            debug!("gRPC server shutdown trigger sender was dropped");
         }
     });
     let grpc_server = grpc::start_grpc_server(
@@ -491,13 +491,13 @@ pub async fn serve_quickwit(
     let (rest_readiness_trigger_tx, rest_readiness_signal_rx) = oneshot::channel::<()>();
     let rest_readiness_trigger = Box::pin(async move {
         if rest_readiness_trigger_tx.send(()).is_err() {
-            debug!("REST server readiness signal receiver was dropped.");
+            debug!("REST server readiness signal receiver was dropped");
         }
     });
     let (rest_shutdown_trigger_tx, rest_shutdown_signal_rx) = oneshot::channel::<()>();
     let rest_shutdown_signal = Box::pin(async move {
         if rest_shutdown_signal_rx.await.is_err() {
-            debug!("REST server shutdown trigger sender was dropped.");
+            debug!("REST server shutdown trigger sender was dropped");
         }
     });
     let rest_server = rest::start_rest_server(
@@ -524,10 +524,10 @@ pub async fn serve_quickwit(
         let actor_exit_statuses = universe.quit().await;
 
         if grpc_shutdown_trigger_tx.send(()).is_err() {
-            debug!("gRPC server shutdown signal receiver was dropped.");
+            debug!("gRPC server shutdown signal receiver was dropped");
         }
         if rest_shutdown_trigger_tx.send(()).is_err() {
-            debug!("REST server shutdown signal receiver was dropped.");
+            debug!("REST server shutdown signal receiver was dropped");
         }
         actor_exit_statuses
     });
@@ -788,11 +788,11 @@ async fn node_readiness_reporting_task(
 
         let node_ready = match metastore.check_connectivity().await {
             Ok(()) => {
-                debug!(metastore_endpoints=?metastore.endpoints(), "metastore service is available.");
+                debug!(metastore_endpoints=?metastore.endpoints(), "metastore service is available");
                 true
             }
             Err(error) => {
-                warn!(metastore_endpoints=?metastore.endpoints(), error=?error, "metastore service is unavailable.");
+                warn!(metastore_endpoints=?metastore.endpoints(), error=?error, "metastore service is unavailable");
                 false
             }
         };

@@ -120,7 +120,7 @@ impl RuntimeType {
             .get_or_init(|| {
                 #[cfg(any(test, feature = "testsuite"))]
                 {
-                    tracing::warn!("Starting Tokio actor runtimes for tests.");
+                    tracing::warn!("starting Tokio actor runtimes for tests");
                     start_runtimes(RuntimesConfig::light_for_tests())
                 }
                 #[cfg(not(any(test, feature = "testsuite")))]

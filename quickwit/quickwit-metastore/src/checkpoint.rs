@@ -292,7 +292,7 @@ impl SourceCheckpoint {
             match position.cmp(&delta_position.from) {
                 Ordering::Equal => {}
                 Ordering::Less => {
-                    warn!(cur_pos=?position, delta_pos_from=?delta_position.from,partition=?delta_partition, "Some positions were skipped.");
+                    warn!(cur_pos=?position, delta_pos_from=?delta_position.from,partition=?delta_partition, "some positions were skipped");
                 }
                 Ordering::Greater => {
                     return Err(IncompatibleCheckpointDelta {

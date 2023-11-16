@@ -42,7 +42,7 @@ pub fn start_telemetry_loop(quickwit_info: QuickwitTelemetryInfo) -> Option<Tele
     // This should not happen... unless telemetry is enabled and you are running tests in parallel
     // in the same process.
     if telemetry_sender.loop_started() {
-        info!("Telemetry loop already started. Please disable telemetry during tests.");
+        info!("telemetry loop already started. please disable telemetry during tests");
         return None;
     }
     Some(telemetry_sender.start_loop())

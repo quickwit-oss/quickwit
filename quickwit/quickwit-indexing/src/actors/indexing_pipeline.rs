@@ -519,11 +519,11 @@ impl Handler<Spawn> for IndexingPipeline {
             if let Some(MetastoreError::NotFound { .. }) =
                 spawn_error.downcast_ref::<MetastoreError>()
             {
-                info!(error = ?spawn_error, "Could not spawn pipeline, index might have been deleted.");
+                info!(error = ?spawn_error, "could not spawn pipeline, index might have been deleted");
                 return Err(ActorExitStatus::Success);
             }
             let retry_delay = wait_duration_before_retry(spawn.retry_count + 1);
-            error!(error = ?spawn_error, retry_count = spawn.retry_count, retry_delay = ?retry_delay, "Error while spawning indexing pipeline, retrying after some time.");
+            error!(error = ?spawn_error, retry_count = spawn.retry_count, retry_delay = ?retry_delay, "error while spawning indexing pipeline, retrying after some time");
             ctx.schedule_self_msg(
                 retry_delay,
                 Spawn {

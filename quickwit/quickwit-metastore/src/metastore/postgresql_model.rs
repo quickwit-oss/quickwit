@@ -48,7 +48,7 @@ impl PgIndex {
     pub fn index_metadata(&self) -> MetastoreResult<IndexMetadata> {
         let mut index_metadata = serde_json::from_str::<IndexMetadata>(&self.index_metadata_json)
             .map_err(|error| {
-            error!(index_id=%self.index_id, error=?error, "Failed to deserialize index metadata.");
+            error!(index_id=%self.index_id, error=?error, "failed to deserialize index metadata");
 
             MetastoreError::JsonDeserializeError {
                 struct_name: "IndexMetadata".to_string(),
@@ -125,7 +125,7 @@ impl PgSplit {
     /// Deserializes and returns the split's metadata.
     fn split_metadata(&self) -> MetastoreResult<SplitMetadata> {
         serde_json::from_str::<SplitMetadata>(&self.split_metadata_json).map_err(|error| {
-            error!(index_id=%self.index_uid.index_id(), split_id=%self.split_id, error=?error, "Failed to deserialize split metadata.");
+            error!(index_id=%self.index_uid.index_id(), split_id=%self.split_id, error=?error, "failed to deserialize split metadata");
 
             MetastoreError::JsonDeserializeError {
                 struct_name: "SplitMetadata".to_string(),
@@ -137,8 +137,7 @@ impl PgSplit {
     /// Deserializes and returns the split's state.
     fn split_state(&self) -> MetastoreResult<SplitState> {
         SplitState::from_str(&self.split_state).map_err(|error| {
-            error!(index_id=%self.index_uid.index_id(), split_id=%self.split_id, split_state=?self.split_state, error=?error, "Failed to deserialize split state.");
-
+            error!(index_id=%self.index_uid.index_id(), split_id=%self.split_id, split_state=?self.split_state, error=?error, "failed to deserialize split state");
             MetastoreError::JsonDeserializeError {
                 struct_name: "SplitState".to_string(),
                 message: error,
@@ -189,7 +188,7 @@ impl PgDeleteTask {
     /// Deserializes and returns the split's metadata.
     fn delete_query(&self) -> MetastoreResult<DeleteQuery> {
         serde_json::from_str::<DeleteQuery>(&self.delete_query_json).map_err(|error| {
-            error!(index_id=%self.index_uid.index_id(), opstamp=%self.opstamp, error=?error, "Failed to deserialize delete query.");
+            error!(index_id=%self.index_uid.index_id(), opstamp=%self.opstamp, error=?error, "failed to deserialize delete query");
 
             MetastoreError::JsonDeserializeError {
                 struct_name: "DeleteQuery".to_string(),
