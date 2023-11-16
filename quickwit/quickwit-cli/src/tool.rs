@@ -630,12 +630,12 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
         let observation = pipeline_handle.last_observation();
 
         if observation.num_ongoing_merges == 0 {
-            info!("Merge pipeline has no more ongoing merges, Exiting.");
+            info!("merge pipeline has no more ongoing merges, exiting");
             break;
         }
 
         if pipeline_handle.state().is_exit() {
-            info!("Merge pipeline has exited, Exiting.");
+            info!("merge pipeline has exited, exiting");
             break;
         }
     }

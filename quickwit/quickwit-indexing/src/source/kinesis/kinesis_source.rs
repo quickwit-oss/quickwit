@@ -319,7 +319,7 @@ impl Source for KinesisSource {
             ctx.send_message(indexer_mailbox, batch).await?;
         }
         if self.state.shard_consumers.is_empty() {
-            info!(stream_name = %self.stream_name, "Reached end of stream.");
+            info!(stream_name = %self.stream_name, "reached end of stream");
             ctx.send_exit_with_success(indexer_mailbox).await?;
             return Err(ActorExitStatus::Success);
         }

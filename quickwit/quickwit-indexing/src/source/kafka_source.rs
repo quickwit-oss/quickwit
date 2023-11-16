@@ -510,7 +510,7 @@ impl Source for KafkaSource {
             ctx.send_message(doc_processor_mailbox, message).await?;
         }
         if self.should_exit() {
-            info!(topic = %self.topic, "Reached end of topic.");
+            info!(topic = %self.topic, "reached end of topic");
             ctx.send_exit_with_success(doc_processor_mailbox).await?;
             return Err(ActorExitStatus::Success);
         }
@@ -624,11 +624,11 @@ fn spawn_consumer_poll_loop(
                         .expect("The offset should be valid.");
                 }
                 if let Err(error) = consumer.commit(&tpl, CommitMode::Async) {
-                    warn!(error=?error, "Failed to commit offsets.");
+                    warn!(error=?error, "failed to commit offsets");
                 }
             }
         }
-        debug!("Exiting consumer poll loop.");
+        debug!("exiting consumer poll loop");
         consumer.unsubscribe();
     })
 }

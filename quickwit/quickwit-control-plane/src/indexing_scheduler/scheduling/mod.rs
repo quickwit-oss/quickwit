@@ -508,7 +508,7 @@ pub fn build_physical_indexing_plan(
         // TODO this is probably a bad idea to just not overschedule, as having a single index trail
         // behind will prevent the log GC.
         // A better strategy would probably be to close shard, and start prevent ingestion.
-        error!("unable to assign all sources in the cluster.");
+        error!("unable to assign all sources in the cluster");
     }
 
     // Convert the new scheduling solution back to a physical plan.

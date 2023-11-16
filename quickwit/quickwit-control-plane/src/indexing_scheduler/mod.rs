@@ -187,7 +187,7 @@ impl IndexingScheduler {
         crate::metrics::CONTROL_PLANE_METRICS.schedule_total.inc();
         let mut indexers: Vec<(String, IndexerNodeInfo)> = self.get_indexers_from_indexer_pool();
         if indexers.is_empty() {
-            warn!("No indexer available, cannot schedule an indexing plan.");
+            warn!("no indexer available, cannot schedule an indexing plan");
             return;
         };
 
@@ -254,11 +254,11 @@ impl IndexingScheduler {
             last_applied_plan.indexing_tasks_per_indexer(),
         );
         if !indexing_plans_diff.has_same_nodes() {
-            info!(plans_diff=?indexing_plans_diff, "Running plan and last applied plan node IDs differ: schedule an indexing plan.");
+            info!(plans_diff=?indexing_plans_diff, "running plan and last applied plan node IDs differ: schedule an indexing plan");
             self.schedule_indexing_plan_if_needed(model);
         } else if !indexing_plans_diff.has_same_tasks() {
             // Some nodes may have not received their tasks, apply it again.
-            info!(plans_diff=?indexing_plans_diff, "Running tasks and last applied tasks differ: reapply last plan.");
+            info!(plans_diff=?indexing_plans_diff, "running tasks and last applied tasks differ: reapply last plan");
             self.apply_physical_indexing_plan(&mut indexers, last_applied_plan.clone());
         }
     }
@@ -272,7 +272,7 @@ impl IndexingScheduler {
         indexers: &mut [(String, IndexerNodeInfo)],
         new_physical_plan: PhysicalIndexingPlan,
     ) {
-        debug!("Apply physical indexing plan: {:?}", new_physical_plan);
+        debug!(new_physical_plan=?new_physical_plan, "apply physical indexing plan");
         for (node_id, indexing_tasks) in new_physical_plan.indexing_tasks_per_indexer() {
             // We don't want to block on a slow indexer so we apply this change asynchronously
             // TODO not blocking is cool, but we need to make sure there is not accumulation
@@ -292,7 +292,7 @@ impl IndexingScheduler {
                         .apply_indexing_plan(ApplyIndexingPlanRequest { indexing_tasks })
                         .await
                     {
-                        error!(indexer_node_id=%indexer.0, err=?error, "Error occurred when applying indexing plan to indexer.");
+                        error!(indexer_node_id=%indexer.0, err=?error, "error occurred when applying indexing plan to indexer");
                     }
                 }
             });

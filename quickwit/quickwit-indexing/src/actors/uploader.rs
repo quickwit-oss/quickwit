@@ -290,7 +290,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
         let kill_switch = ctx.kill_switch().clone();
         let split_ids = batch.split_ids();
         if kill_switch.is_dead() {
-            warn!(split_ids=?split_ids,"Kill switch was activated. Cancelling upload.");
+            warn!(split_ids=?split_ids,"kill switch was activated, cancelling upload");
             return Err(ActorExitStatus::Killed);
         }
         let metastore = self.metastore.clone();
@@ -311,7 +311,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
                 for packaged_split in batch.splits.iter() {
                     if batch.publish_lock.is_dead() {
                         // TODO: Remove the junk right away?
-                        info!("Splits' publish lock is dead.");
+                        info!("splits' publish lock is dead");
                         split_update_sender.discard()?;
                         return Ok(());
                     }

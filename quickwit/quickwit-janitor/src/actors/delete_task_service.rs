@@ -203,7 +203,7 @@ impl Handler<UpdatePipelines> for DeleteTaskService {
     ) -> Result<(), ActorExitStatus> {
         let result = self.update_pipeline_handles(ctx).await;
         if let Err(error) = result {
-            error!("Delete task pipelines update failed: {}", error);
+            error!(error=%error, "delete task pipelines update failed");
         }
         ctx.schedule_self_msg(UPDATE_PIPELINES_INTERVAL, UpdatePipelines)
             .await;

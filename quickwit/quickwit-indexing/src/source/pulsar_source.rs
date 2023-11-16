@@ -155,7 +155,7 @@ impl PulsarSource {
         batch: &mut BatchBuilder,
     ) -> anyhow::Result<()> {
         if doc.is_empty() {
-            warn!("Message received from queue was empty.");
+            warn!("message received from queue was empty");
             self.state.num_invalid_messages += 1;
             return Ok(());
         }
@@ -192,7 +192,7 @@ impl PulsarSource {
     }
 
     async fn try_ack_messages(&mut self, checkpoint: SourceCheckpoint) -> anyhow::Result<()> {
-        debug!(ckpt = ?checkpoint, "Truncating message queue.");
+        debug!(ckpt = ?checkpoint, "truncating message queue");
         for (partition, position) in checkpoint.iter() {
             if let Some(msg_id) = msg_id_from_position(&position) {
                 self.pulsar_consumer
@@ -311,7 +311,7 @@ async fn create_pulsar_consumer(
         .into_iter()
         .map(|id| id.to_string())
         .collect::<Vec<_>>();
-    info!(positions = ?current_positions, "Seeking to last checkpoint positions.");
+    info!(positions = ?current_positions, "seeking to last checkpoint positions");
     for (_, position) in current_positions {
         let seek_to = msg_id_from_position(&position);
 

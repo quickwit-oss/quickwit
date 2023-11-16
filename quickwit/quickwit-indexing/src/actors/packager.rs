@@ -301,7 +301,7 @@ fn create_packaged_split(
                 append_to_tag_set(&named_field.name, &terms, &mut tags);
             }
             Err(tag_extraction_error) => {
-                warn!(err=?tag_extraction_error,  "No field values will be registered in the split metadata.");
+                warn!(err=?tag_extraction_error,  "no field values will be registered in the split metadata");
             }
         }
     }

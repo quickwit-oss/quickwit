@@ -175,7 +175,7 @@ impl Source for GcpPubSubSource {
             tokio::select! {
                 resp = self.pull_message_batch(&mut batch) => {
                     if let Err(err) = resp {
-                        warn!("Failed to pull messages from subscription `{}`: {:?}", self.subscription_name, err);
+                        warn!("failed to pull messages from subscription `{}`: {:?}", self.subscription_name, err);
                     }
                     if batch.num_bytes >= BATCH_NUM_BYTES_LIMIT {
                         break;
@@ -196,7 +196,7 @@ impl Source for GcpPubSubSource {
 
         // TODO: need to wait for all the id to be ack for at_least_once
         if self.should_exit() {
-            info!(subscription=%self.subscription_name, "Reached end of subscription.");
+            info!(subscription=%self.subscription_name, "reached end of subscription");
             ctx.send_exit_with_success(doc_processor_mailbox).await?;
             return Err(ActorExitStatus::Success);
         }
