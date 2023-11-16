@@ -43,11 +43,11 @@ serde_yaml = { workspace = true }
 time = { workspace = true }
 
 quickwit-proto = { workspace = true }
-quickwit-query = { workspace = true, features = ["testsuite"] }
+quickwit-query = { workspace = true, features = ["multilang"] }
 
 [features]
 multilang = ["quickwit-query/multilang"]
-testsuite = ["multilang"]
+testsuite = []
 
 [[bench]]
 name = "doc_to_json_bench"

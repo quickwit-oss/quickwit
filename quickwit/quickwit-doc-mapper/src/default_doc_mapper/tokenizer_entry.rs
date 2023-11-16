@@ -18,8 +18,6 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use anyhow::Context;
-#[cfg(feature = "multilang")]
-use quickwit_query::MultiLangTokenizer;
 use quickwit_query::{CodeTokenizer, DEFAULT_REMOVE_TOKEN_LENGTH};
 use serde::{Deserialize, Serialize};
 use tantivy::tokenizer::{
@@ -51,9 +49,9 @@ impl TokenizerConfig {
     pub fn text_analyzer(&self) -> anyhow::Result<TextAnalyzer> {
         let mut text_analyzer_builder = match &self.tokenizer_type {
             TokenizerType::Simple => TextAnalyzer::builder(SimpleTokenizer::default()).dynamic(),
-            #[cfg(feature = "multilang")]
+            #[cfg(any(test, feature = "multilang"))]
             TokenizerType::Multilang => {
-                TextAnalyzer::builder(MultiLangTokenizer::default()).dynamic()
+                TextAnalyzer::builder(quickwit_query::MultiLangTokenizer::default()).dynamic()
             }
             TokenizerType::SourceCode => TextAnalyzer::builder(CodeTokenizer::default()).dynamic(),
             TokenizerType::Ngram(options) => {
@@ -127,7 +125,7 @@ impl TokenFilterType {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum TokenizerType {
-    #[cfg(feature = "multilang")]
+    #[cfg(any(test, feature = "multilang"))]
     Multilang,
     Ngram(NgramTokenizerOption),
     Regex(RegexTokenizerOption),
