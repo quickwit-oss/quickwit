@@ -87,7 +87,7 @@ impl PublishedShardPositions {
     /// returns true if at least one of the publish position was updated.
     fn apply_update(&mut self, update: PublishedShardPositionsUpdate) -> bool {
         if update.published_positions_per_shard.is_empty() {
-            warn!("Received an empty publish shard positions update.");
+            warn!("received an empty publish shard positions update");
             return false;
         }
         let mut was_modified = false;

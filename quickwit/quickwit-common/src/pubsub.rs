@@ -131,7 +131,7 @@ impl EventBroker {
         }
     }
 
-    /// Subscribe to an event with a function callback.
+    /// Subscribes to an event with a callback function.
     #[must_use]
     pub fn subscribe_fn<E>(
         &self,
