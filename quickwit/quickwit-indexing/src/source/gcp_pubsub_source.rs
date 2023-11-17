@@ -154,7 +154,7 @@ impl GcpPubSubSource {
     }
 
     fn should_exit(&self) -> bool {
-        self.backfill_mode_enabled && self.state.num_consecutive_empty_batches > 3
+        self.backfill_mode_enabled && self.state.num_consecutive_empty_batches > 5
     }
 }
 
@@ -438,7 +438,7 @@ mod gcp_pubsub_emulator_tests {
             "num_bytes_processed": 54,
             "num_messages_processed": 6,
             "num_invalid_messages": 0,
-            "num_consecutive_empty_batches": 4,
+            "num_consecutive_empty_batches": 6,
         });
         assert_eq!(exit_state, expected_exit_state);
     }
