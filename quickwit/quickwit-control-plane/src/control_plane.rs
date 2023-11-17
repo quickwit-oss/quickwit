@@ -31,6 +31,7 @@ use quickwit_proto::control_plane::{
     ControlPlaneError, ControlPlaneResult, GetOrCreateOpenShardsRequest,
     GetOrCreateOpenShardsResponse,
 };
+use quickwit_proto::indexing::ShardPositionsUpdate;
 use quickwit_proto::metastore::{
     serde_utils as metastore_serde_utils, AddSourceRequest, CreateIndexRequest,
     CreateIndexResponse, DeleteIndexRequest, DeleteSourceRequest, EmptyResponse, MetastoreError,
@@ -131,6 +132,19 @@ impl Actor for ControlPlane {
 
         ctx.schedule_self_msg(CONTROL_PLAN_LOOP_INTERVAL, ControlPlanLoop)
             .await;
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl Handler<ShardPositionsUpdate> for ControlPlane {
+    type Reply = ();
+
+    async fn handle(
+        &mut self,
+        shard_positions: ShardPositionsUpdate,
+        ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus> {
         Ok(())
     }
 }

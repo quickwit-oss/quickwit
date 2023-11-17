@@ -27,7 +27,7 @@ use anyhow::Context;
 use chitchat::transport::Transport;
 use chitchat::{
     spawn_chitchat, Chitchat, ChitchatConfig, ChitchatHandle, ChitchatId, ClusterStateSnapshot,
-    FailureDetectorConfig, NodeState,
+    FailureDetectorConfig, ListenerHandle, NodeState,
 };
 use futures::Stream;
 use itertools::Itertools;
@@ -65,7 +65,7 @@ pub struct Cluster {
     cluster_id: String,
     self_chitchat_id: ChitchatId,
     /// Socket address (UDP) the node listens on for receiving gossip messages.
-    gossip_listen_addr: SocketAddr,
+    pub gossip_listen_addr: SocketAddr,
     inner: Arc<RwLock<InnerCluster>>,
 }
 
@@ -103,6 +103,16 @@ impl Cluster {
 
     pub fn gossip_advertise_addr(&self) -> SocketAddr {
         self.self_chitchat_id.gossip_advertise_addr
+    }
+
+    pub async fn subscribe(
+        &self,
+        key_prefix: &str,
+        callback: impl Fn(&str, &str) + 'static + Send + Sync,
+    ) -> ListenerHandle {
+        let chitchat = self.chitchat().await;
+        let chitchat_lock = chitchat.lock().await;
+        chitchat_lock.subscribe_event(key_prefix, callback)
     }
 
     pub async fn join(
@@ -366,7 +376,7 @@ impl Cluster {
         Ok(())
     }
 
-    async fn chitchat(&self) -> Arc<Mutex<Chitchat>> {
+    pub async fn chitchat(&self) -> Arc<Mutex<Chitchat>> {
         self.inner.read().await.chitchat_handle.chitchat()
     }
 }

@@ -34,7 +34,7 @@ pub use crate::actors::{
     Sequencer, SplitsUpdateMailbox,
 };
 pub use crate::controlled_directory::ControlledDirectory;
-use crate::models::IndexingStatistics;
+use crate::models::{IndexingStatistics, ShardPositionsService};
 pub use crate::split_store::{get_tantivy_directory_from_split_bundle, IndexingSplitStore};
 
 pub mod actors;
@@ -76,6 +76,8 @@ pub async fn start_indexing_service(
     event_broker: EventBroker,
 ) -> anyhow::Result<Mailbox<IndexingService>> {
     info!("starting indexer service");
+
+    ShardPositionsService::spawn(universe.spawn_ctx(), event_broker.clone(), cluster.clone());
 
     // Spawn indexing service.
     let indexing_service = IndexingService::new(
