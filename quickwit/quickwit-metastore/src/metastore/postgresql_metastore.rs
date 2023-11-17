@@ -1766,7 +1766,7 @@ mod tests {
         assert_eq!(
             sql.to_string(PostgresQueryBuilder),
             format!(
-                r#"SELECT * FROM "splits" WHERE "index_uid" = '{index_uid}' AND NOT ($$tag-2$$ = ANY(tags))"#
+                r#"SELECT * FROM "splits" WHERE "index_uid" = '{index_uid}' AND (NOT ($$tag-2$$ = ANY(tags)))"#
             )
         );
 

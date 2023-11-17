@@ -36,8 +36,5 @@ pub const DELETION_GRACE_PERIOD: Duration = Duration::from_secs(60 * 32); // 32 
 /// being requested.
 pub const SCROLL_BATCH_LEN: usize = 1_000;
 
-/// Prefix used in chitchat to broadcast the positions of the shards assigned to an indexer.
-pub const INDEXER_ASSIGNED_SHARDS_POSITIONS_PREFIX: &str = "indexer.assigned_shards_positions:";
-
 /// Prefix used in chitchat to broadcast the list of primary shards hosted by a leader.
 pub const INGESTER_PRIMARY_SHARDS_PREFIX: &str = "ingester.primary_shards:";

@@ -121,7 +121,8 @@ impl IndexUid {
         }
     }
 
-    pub fn parse(index_uid_str: String) -> Result<IndexUid, InvalidIndexUid> {
+    pub fn parse(index_uid_str: impl ToString) -> Result<IndexUid, InvalidIndexUid> {
+        let index_uid_str = index_uid_str.to_string();
         let count_colon = index_uid_str
             .as_bytes()
             .iter()
