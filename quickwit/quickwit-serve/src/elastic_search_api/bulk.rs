@@ -20,6 +20,7 @@
 use std::collections::HashMap;
 
 use bytes::Bytes;
+use hyper::StatusCode;
 use quickwit_ingest::{
     CommitType, DocBatchBuilder, IngestRequest, IngestResponse, IngestService, IngestServiceClient,
     IngestServiceError,
@@ -29,11 +30,11 @@ use thiserror::Error;
 use warp::{Filter, Rejection};
 
 use crate::elastic_search_api::filter::{elastic_bulk_filter, elastic_index_bulk_filter};
-use crate::elastic_search_api::model::{BulkAction, ElasticIngestOptions};
+use crate::elastic_search_api::model::{BulkAction, ElasticIngestOptions, ElasticSearchError};
 use crate::format::extract_format_from_qs;
 use crate::ingest_api::lines;
-use crate::json_api_response::make_json_api_response;
-use crate::with_arg;
+use crate::json_api_response::JsonApiResponse;
+use crate::{with_arg, BodyFormat};
 
 #[derive(Error, Debug)]
 pub enum IngestRestApiError {
@@ -65,7 +66,7 @@ pub fn es_compat_bulk_handler(
             elastic_ingest_bulk(None, body, ingest_option, ingest_service)
         })
         .and(extract_format_from_qs())
-        .map(make_json_api_response)
+        .map(make_elastic_api_response)
 }
 
 /// POST `_elastic/<index>/_bulk`
@@ -78,7 +79,18 @@ pub fn es_compat_index_bulk_handler(
             elastic_ingest_bulk(Some(index), body, ingest_option, ingest_service)
         })
         .and(extract_format_from_qs())
-        .map(make_json_api_response)
+        .map(make_elastic_api_response)
+}
+
+fn make_elastic_api_response(
+    elasticsearch_result: Result<IngestResponse, ElasticSearchError>,
+    format: BodyFormat,
+) -> JsonApiResponse {
+    let status_code = match &elasticsearch_result {
+        Ok(_) => StatusCode::OK,
+        Err(err) => err.status,
+    };
+    JsonApiResponse::new(&elasticsearch_result, status_code, &format)
 }
 
 async fn elastic_ingest_bulk(
@@ -86,15 +98,18 @@ async fn elastic_ingest_bulk(
     body: Bytes,
     ingest_options: ElasticIngestOptions,
     mut ingest_service: IngestServiceClient,
-) -> Result<IngestResponse, IngestRestApiError> {
+) -> Result<IngestResponse, ElasticSearchError> {
     let mut doc_batch_builders = HashMap::new();
-    let mut lines = lines(&body);
+    let mut lines = lines(&body).enumerate();
 
-    while let Some(line) = lines.next() {
-        let action = serde_json::from_slice::<BulkAction>(line)
-            .map_err(|error| IngestRestApiError::BulkInvalidAction(error.to_string()))?;
-        let source = lines.next().ok_or_else(|| {
-            IngestRestApiError::BulkInvalidSource("expected source for the action".to_string())
+    while let Some((line_number, line)) = lines.next() {
+        let action = serde_json::from_slice::<BulkAction>(line).map_err(|error| {
+            ElasticSearchError::bad_request(format!(
+                "Malformed action/metadata line [#{line_number}]. Details: `{error}`"
+            ))
+        })?;
+        let (_, source) = lines.next().ok_or_else(|| {
+            ElasticSearchError::bad_request("expected source for the action".to_string())
         })?;
         // when ingesting on /my-index/_bulk, if _index: is set to something else than my-index,
         // ES honors it and create the doc in the requested index. That is, `my-index` is a default
@@ -103,9 +118,9 @@ async fn elastic_ingest_bulk(
             .into_index()
             .or_else(|| index.clone())
             .ok_or_else(|| {
-                IngestRestApiError::BulkInvalidAction(
-                    "missing required field: `_index`".to_string(),
-                )
+                ElasticSearchError::bad_request(format!(
+                    "missing required field: `_index` in the line [#{line_number}]."
+                ))
             })?;
         let doc_batch_builder = doc_batch_builders
             .entry(index_id.clone())
