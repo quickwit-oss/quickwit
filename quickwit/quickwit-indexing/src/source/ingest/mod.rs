@@ -17,27 +17,31 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::HashMap;
 use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 
 use anyhow::{bail, Context};
 use async_trait::async_trait;
+use fnv::FnvHashMap;
 use itertools::Itertools;
 use quickwit_actors::{ActorExitStatus, Mailbox};
+use quickwit_common::pubsub::EventBroker;
+use quickwit_common::retry::RetryParams;
 use quickwit_ingest::{
     decoded_mrecords, FetchStreamError, IngesterPool, MRecord, MultiFetchStream,
 };
 use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpoint};
 use quickwit_proto::ingest::ingester::{
-    FetchResponseV2, IngesterService, TruncateRequest, TruncateSubrequest,
+    FetchResponseV2, IngesterService, TruncateShardsRequest, TruncateShardsSubrequest,
 };
 use quickwit_proto::metastore::{
     AcquireShardsRequest, AcquireShardsSubrequest, AcquireShardsSubresponse, MetastoreService,
     MetastoreServiceClient,
 };
-use quickwit_proto::types::{IndexUid, NodeId, Position, PublishToken, ShardId, SourceId};
+use quickwit_proto::types::{
+    IndexUid, NodeId, Position, PublishToken, ShardId, SourceId, SourceUid,
+};
 use serde_json::json;
 use tokio::time;
 use tracing::{debug, error, info, warn};
@@ -48,7 +52,7 @@ use super::{
     BATCH_NUM_BYTES_LIMIT, EMIT_BATCHES_TIMEOUT,
 };
 use crate::actors::DocProcessor;
-use crate::models::{NewPublishLock, NewPublishToken, PublishLock};
+use crate::models::{NewPublishLock, NewPublishToken, PublishLock, PublishedShardPositionsUpdate};
 
 pub struct IngestSourceFactory;
 
@@ -59,10 +63,17 @@ impl TypedSourceFactory for IngestSourceFactory {
 
     async fn typed_create_source(
         runtime_args: Arc<SourceRuntimeArgs>,
-        _: Self::Params,
-        checkpoint: SourceCheckpoint,
+        _params: Self::Params,
+        _checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<Self::Source> {
-        IngestSource::try_new(runtime_args, checkpoint).await
+        // Retry parameters for the fetch stream: retry indefinitely until the shard is complete or
+        // unassigned.
+        let retry_params = RetryParams {
+            max_attempts: usize::MAX,
+            base_delay: Duration::from_secs(1),
+            max_delay: Duration::from_secs(10 * 60), // 10 minutes
+        };
+        IngestSource::try_new(runtime_args, retry_params).await
     }
 }
 
@@ -72,8 +83,7 @@ impl TypedSourceFactory for IngestSourceFactory {
 #[derive(Debug, Clone)]
 struct ClientId {
     node_id: NodeId,
-    index_uid: IndexUid,
-    source_id: SourceId,
+    source_uid: SourceUid,
     pipeline_ord: usize,
 }
 
@@ -82,29 +92,23 @@ impl fmt::Display for ClientId {
         write!(
             formatter,
             "indexer/{}/{}/{}/{}",
-            self.node_id, self.index_uid, self.source_id, self.pipeline_ord
+            self.node_id, self.source_uid.index_uid, self.source_uid.source_id, self.pipeline_ord
         )
     }
 }
 
 impl ClientId {
-    fn new(node_id: NodeId, index_uid: IndexUid, source_id: SourceId, pipeline_ord: usize) -> Self {
+    fn new(node_id: NodeId, source_uid: SourceUid, pipeline_ord: usize) -> Self {
         Self {
             node_id,
-            index_uid,
-            source_id,
+            source_uid,
             pipeline_ord,
         }
     }
 
-    #[cfg(not(test))]
     fn new_publish_token(&self) -> String {
-        format!("{}/{}", self, Ulid::new())
-    }
-
-    #[cfg(test)]
-    fn new_publish_token(&self) -> String {
-        format!("{}/{}", self, Ulid::nil())
+        let ulid = if cfg!(test) { Ulid::nil() } else { Ulid::new() };
+        format!("{}/{}", self, ulid)
     }
 }
 
@@ -112,6 +116,10 @@ impl ClientId {
 enum IndexingStatus {
     #[default]
     Active,
+    // We have emitted all documents of the pipeline until EOF.
+    // Disclaimer: a complete status does not mean that all documents have been indexed.
+    // Some document might be still travelling in the pipeline, and may not have been published
+    // yet.
     Complete,
     Error,
 }
@@ -130,10 +138,11 @@ pub struct IngestSource {
     client_id: ClientId,
     metastore: MetastoreServiceClient,
     ingester_pool: IngesterPool,
-    assigned_shards: HashMap<ShardId, AssignedShard>,
+    assigned_shards: FnvHashMap<ShardId, AssignedShard>,
     fetch_stream: MultiFetchStream,
     publish_lock: PublishLock,
     publish_token: PublishToken,
+    event_broker: EventBroker,
 }
 
 impl fmt::Debug for IngestSource {
@@ -145,24 +154,30 @@ impl fmt::Debug for IngestSource {
 impl IngestSource {
     pub async fn try_new(
         runtime_args: Arc<SourceRuntimeArgs>,
-        _checkpoint: SourceCheckpoint,
-    ) -> anyhow::Result<Self> {
+        retry_params: RetryParams,
+    ) -> anyhow::Result<IngestSource> {
         let self_node_id: NodeId = runtime_args.node_id().into();
         let client_id = ClientId::new(
             self_node_id.clone(),
-            runtime_args.index_uid().clone(),
-            runtime_args.source_id().to_string(),
+            SourceUid {
+                index_uid: runtime_args.index_uid().clone(),
+                source_id: runtime_args.source_id().to_string(),
+            },
             runtime_args.pipeline_ord(),
         );
         let metastore = runtime_args.metastore.clone();
         let ingester_pool = runtime_args.ingester_pool.clone();
-        let assigned_shards = HashMap::new();
-        let fetch_stream =
-            MultiFetchStream::new(self_node_id, client_id.to_string(), ingester_pool.clone());
+        let assigned_shards = FnvHashMap::default();
+        let fetch_stream = MultiFetchStream::new(
+            self_node_id,
+            client_id.to_string(),
+            ingester_pool.clone(),
+            retry_params,
+        );
         let publish_lock = PublishLock::default();
         let publish_token = client_id.new_publish_token();
 
-        Ok(Self {
+        Ok(IngestSource {
             client_id,
             metastore,
             ingester_pool,
@@ -170,6 +185,7 @@ impl IngestSource {
             fetch_stream,
             publish_lock,
             publish_token,
+            event_broker: runtime_args.event_broker.clone(),
         })
     }
 
@@ -185,6 +201,8 @@ impl IngestSource {
             .assigned_shards
             .get_mut(&fetch_response.shard_id)
             .expect("shard should be assigned");
+
+        assigned_shard.status = IndexingStatus::Active;
 
         let partition_id = assigned_shard.partition_id.clone();
         let from_position_exclusive = fetch_response.from_position_exclusive();
@@ -227,6 +245,80 @@ impl IngestSource {
         }
     }
 
+    async fn truncate(&mut self, truncate_positions: Vec<(ShardId, Position)>) {
+        self.event_broker.publish(PublishedShardPositionsUpdate {
+            source_uid: self.client_id.source_uid.clone(),
+            published_positions_per_shard: truncate_positions.clone(),
+        });
+
+        let mut per_ingester_truncate_subrequests: FnvHashMap<
+            &NodeId,
+            Vec<TruncateShardsSubrequest>,
+        > = FnvHashMap::default();
+
+        for (shard_id, to_position_exclusive) in truncate_positions {
+            if matches!(to_position_exclusive, Position::Beginning) {
+                continue;
+            }
+            let Some(shard) = self.assigned_shards.get(&shard_id) else {
+                warn!("failed to truncate shard `{shard_id}`: shard is no longer assigned");
+                continue;
+            };
+            let truncate_shards_subrequest = TruncateShardsSubrequest {
+                index_uid: self.client_id.source_uid.index_uid.clone().into(),
+                source_id: self.client_id.source_uid.source_id.clone(),
+                shard_id,
+                to_position_inclusive: Some(to_position_exclusive.clone()),
+            };
+            if let Some(follower_id) = &shard.follower_id_opt {
+                per_ingester_truncate_subrequests
+                    .entry(follower_id)
+                    .or_default()
+                    .push(truncate_shards_subrequest.clone());
+            }
+            per_ingester_truncate_subrequests
+                .entry(&shard.leader_id)
+                .or_default()
+                .push(truncate_shards_subrequest);
+        }
+        for (ingester_id, truncate_subrequests) in per_ingester_truncate_subrequests {
+            let Some(mut ingester) = self.ingester_pool.get(ingester_id) else {
+                warn!("failed to truncate shard(s): ingester `{ingester_id}` is unavailable");
+                continue;
+            };
+            let truncate_shards_request = TruncateShardsRequest {
+                ingester_id: ingester_id.clone().into(),
+                subrequests: truncate_subrequests,
+            };
+            let truncate_future = async move {
+                let retry_params = RetryParams {
+                    base_delay: Duration::from_secs(1),
+                    max_delay: Duration::from_secs(10),
+                    max_attempts: 5,
+                };
+                for num_attempts in 1..=retry_params.max_attempts {
+                    let Err(error) = ingester
+                        .truncate_shards(truncate_shards_request.clone())
+                        .await
+                    else {
+                        return;
+                    };
+                    let delay = retry_params.compute_delay(num_attempts);
+                    time::sleep(delay).await;
+
+                    if num_attempts == retry_params.max_attempts {
+                        warn!(
+                            ingester_id=%truncate_shards_request.ingester_id,
+                            "failed to truncate shard(s): {error}"
+                        );
+                    }
+                }
+            };
+            // Truncation is best-effort, so fire and forget.
+            tokio::spawn(truncate_future);
+        }
+    }
+
     fn contains_publish_token(&self, subresponse: &AcquireShardsSubresponse) -> bool {
         if let Some(acquired_shard) = subresponse.acquired_shards.get(0) {
             if let Some(publish_token) = &acquired_shard.publish_token {
@@ -234,60 +326,6 @@ impl IngestSource {
             }
         }
         false
-    }
-
-    async fn truncate(&self, truncation_point: &[(ShardId, Position)]) {
-        let mut per_ingester_truncate_subrequests: HashMap<&NodeId, Vec<TruncateSubrequest>> =
-            HashMap::new();
-
-        for (shard_id, to_position_exclusive) in truncation_point {
-            if matches!(to_position_exclusive, Position::Beginning) {
-                continue;
-            }
-            let Some(shard) = self.assigned_shards.get(shard_id) else {
-                warn!(
-                    "failed to truncate shard: shard `{}` is no longer assigned",
-                    shard_id
-                );
-                continue;
-            };
-            let truncate_subrequest = TruncateSubrequest {
-                index_uid: self.client_id.index_uid.clone().into(),
-                source_id: self.client_id.source_id.clone(),
-                shard_id: *shard_id,
-                to_position_inclusive: Some(to_position_exclusive.clone()),
-            };
-            if let Some(follower_id) = &shard.follower_id_opt {
-                per_ingester_truncate_subrequests
-                    .entry(follower_id)
-                    .or_default()
-                    .push(truncate_subrequest.clone());
-            }
-            per_ingester_truncate_subrequests
-                .entry(&shard.leader_id)
-                .or_default()
-                .push(truncate_subrequest);
-        }
-        for (ingester_id, truncate_subrequests) in per_ingester_truncate_subrequests {
-            let Some(mut ingester) = self.ingester_pool.get(ingester_id) else {
-                warn!(
-                    "failed to truncate shard: ingester `{}` is unavailable",
-                    ingester_id
-                );
-                continue;
-            };
-            let truncate_request = TruncateRequest {
-                ingester_id: ingester_id.clone().into(),
-                subrequests: truncate_subrequests,
-            };
-            let truncate_future = async move {
-                if let Err(error) = ingester.truncate(truncate_request).await {
-                    warn!("failed to truncate shard(s): {error}");
-                }
-            };
-            // Truncation is best-effort, so fire and forget.
-            tokio::spawn(truncate_future);
-        }
     }
 }
 
@@ -376,8 +414,8 @@ impl Source for IngestSource {
         .await?;
 
         let acquire_shards_subrequest = AcquireShardsSubrequest {
-            index_uid: self.client_id.index_uid.to_string(),
-            source_id: self.client_id.source_id.clone(),
+            index_uid: self.client_id.source_uid.index_uid.to_string(),
+            source_id: self.client_id.source_uid.source_id.clone(),
             shard_ids: new_assigned_shard_ids,
             publish_token: self.publish_token.clone(),
         };
@@ -395,7 +433,7 @@ impl Source for IngestSource {
             .find(|subresponse| self.contains_publish_token(subresponse))
             .context("acquire shards response is empty")?;
 
-        let mut truncation_point =
+        let mut truncate_positions =
             Vec::with_capacity(acquire_shards_subresponse.acquired_shards.len());
 
         for acquired_shard in acquire_shards_subresponse.acquired_shards {
@@ -409,7 +447,6 @@ impl Source for IngestSource {
                 .publish_position_inclusive
                 .unwrap_or_default();
             let from_position_exclusive = current_position_inclusive.clone();
-
             let status = if from_position_exclusive == Position::Eof {
                 IndexingStatus::Complete
             } else if let Err(error) = ctx
@@ -428,18 +465,18 @@ impl Source for IngestSource {
             } else {
                 IndexingStatus::Active
             };
-            truncation_point.push((shard_id, current_position_inclusive.clone()));
+            truncate_positions.push((shard_id, current_position_inclusive.clone()));
 
             let assigned_shard = AssignedShard {
                 leader_id,
                 follower_id_opt,
                 partition_id,
-                current_position_inclusive,
+                current_position_inclusive: current_position_inclusive.clone(),
                 status,
             };
             self.assigned_shards.insert(shard_id, assigned_shard);
         }
-        self.truncate(&truncation_point).await;
+        self.truncate(truncate_positions).await;
         Ok(())
     }
 
@@ -448,13 +485,14 @@ impl Source for IngestSource {
         checkpoint: SourceCheckpoint,
         _ctx: &SourceContext,
     ) -> anyhow::Result<()> {
-        let mut truncation_point = Vec::with_capacity(checkpoint.num_partitions());
-
+        let mut truncate_positions: Vec<(ShardId, Position)> =
+            Vec::with_capacity(checkpoint.num_partitions());
         for (partition_id, position) in checkpoint.iter() {
             let shard_id = partition_id.as_u64().expect("shard ID should be a u64");
-            truncation_point.push((shard_id, position));
+            truncate_positions.push((shard_id, position));
         }
-        self.truncate(&truncation_point).await;
+
+        self.truncate(truncate_positions).await;
         Ok(())
     }
 
@@ -480,10 +518,11 @@ mod tests {
     use quickwit_common::ServiceStream;
     use quickwit_config::{SourceConfig, SourceParams};
     use quickwit_proto::indexing::IndexingPipelineId;
-    use quickwit_proto::ingest::ingester::{IngesterServiceClient, TruncateResponse};
+    use quickwit_proto::ingest::ingester::{IngesterServiceClient, TruncateShardsResponse};
     use quickwit_proto::ingest::{IngestV2Error, MRecordBatch, Shard, ShardState};
     use quickwit_proto::metastore::{AcquireShardsResponse, AcquireShardsSubresponse};
     use quickwit_storage::StorageResolver;
+    use tokio::sync::mpsc::error::TryRecvError;
     use tokio::sync::watch;
 
     use super::*;
@@ -552,7 +591,7 @@ mod tests {
                 Ok(service_stream)
             });
         ingester_mock_0
-            .expect_truncate()
+            .expect_truncate_shards()
             .once()
             .returning(|request| {
                 assert_eq!(request.ingester_id, "test-ingester-0");
@@ -564,23 +603,29 @@ mod tests {
                 assert_eq!(subrequest.shard_id, 1);
                 assert_eq!(subrequest.to_position_inclusive, Some(11u64.into()));
 
-                let response = TruncateResponse {};
+                let response = TruncateShardsResponse {};
                 Ok(response)
             });
 
         let ingester_0: IngesterServiceClient = ingester_mock_0.into();
         ingester_pool.insert("test-ingester-0".into(), ingester_0.clone());
 
-        let runtime_args = Arc::new(SourceRuntimeArgs {
+        let event_broker = EventBroker::default();
+
+        let runtime_args: Arc<SourceRuntimeArgs> = Arc::new(SourceRuntimeArgs {
             pipeline_id,
             source_config,
             metastore: MetastoreServiceClient::from(mock_metastore),
             ingester_pool: ingester_pool.clone(),
             queues_dir_path: PathBuf::from("./queues"),
             storage_resolver: StorageResolver::for_test(),
+            event_broker,
         });
-        let checkpoint = SourceCheckpoint::default();
-        let mut source = IngestSource::try_new(runtime_args, checkpoint)
+        let retry_params = RetryParams {
+            max_attempts: 1,
+            ..Default::default()
+        };
+        let mut source = IngestSource::try_new(runtime_args, retry_params)
             .await
             .unwrap();
 
@@ -638,6 +683,285 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_ingest_source_assign_shards_all_eof() {
+        // In this test, we check that if all assigned shards are originally marked as EOF in the
+        // metastore, we observe the following:
+        // - emission of a suggest truncate
+        // - no stream request is emitted
+        let pipeline_id = IndexingPipelineId {
+            node_id: "test-node".to_string(),
+            index_uid: "test-index:0".into(),
+            source_id: "test-source".to_string(),
+            pipeline_ord: 0,
+        };
+        let source_config = SourceConfig::for_test("test-source", SourceParams::Ingest);
+        let publish_token =
+            "indexer/test-node/test-index:0/test-source/0/00000000000000000000000000";
+
+        let mut mock_metastore = MetastoreServiceClient::mock();
+        mock_metastore
+            .expect_acquire_shards()
+            .once()
+            .returning(|request| {
+                assert_eq!(request.subrequests.len(), 1);
+
+                let subrequest = &request.subrequests[0];
+                assert_eq!(subrequest.index_uid, "test-index:0");
+                assert_eq!(subrequest.source_id, "test-source");
+                assert_eq!(subrequest.shard_ids, vec![1]);
+
+                let response = AcquireShardsResponse {
+                    subresponses: vec![AcquireShardsSubresponse {
+                        index_uid: "test-index:0".to_string(),
+                        source_id: "test-source".to_string(),
+                        acquired_shards: vec![Shard {
+                            leader_id: "test-ingester-0".to_string(),
+                            follower_id: None,
+                            index_uid: "test-index:0".to_string(),
+                            source_id: "test-source".to_string(),
+                            shard_id: 1,
+                            shard_state: ShardState::Open as i32,
+                            publish_position_inclusive: Some(Position::Eof),
+                            publish_token: Some(publish_token.to_string()),
+                        }],
+                    }],
+                };
+                Ok(response)
+            });
+        let ingester_pool = IngesterPool::default();
+
+        let mut ingester_mock_0 = IngesterServiceClient::mock();
+        ingester_mock_0
+            .expect_truncate_shards()
+            .once()
+            .returning(|request| {
+                assert_eq!(request.ingester_id, "test-ingester-0");
+                assert_eq!(request.subrequests.len(), 1);
+
+                let subrequest = &request.subrequests[0];
+                assert_eq!(subrequest.index_uid, "test-index:0");
+                assert_eq!(subrequest.source_id, "test-source");
+                assert_eq!(subrequest.shard_id, 1);
+                assert_eq!(subrequest.to_position_inclusive, Some(Position::Eof));
+
+                let response = TruncateShardsResponse {};
+                Ok(response)
+            });
+
+        let ingester_0: IngesterServiceClient = ingester_mock_0.into();
+        ingester_pool.insert("test-ingester-0".into(), ingester_0.clone());
+
+        let event_broker = EventBroker::default();
+        let (shard_positions_update_tx, mut shard_positions_update_rx) =
+            tokio::sync::mpsc::unbounded_channel::<PublishedShardPositionsUpdate>();
+        event_broker
+            .subscribe_fn::<PublishedShardPositionsUpdate>(move |update| {
+                shard_positions_update_tx.send(update).unwrap();
+            })
+            .forever();
+
+        let runtime_args = Arc::new(SourceRuntimeArgs {
+            pipeline_id,
+            source_config,
+            metastore: MetastoreServiceClient::from(mock_metastore),
+            ingester_pool: ingester_pool.clone(),
+            queues_dir_path: PathBuf::from("./queues"),
+            storage_resolver: StorageResolver::for_test(),
+            event_broker,
+        });
+        let retry_params = RetryParams::for_test();
+        let mut source = IngestSource::try_new(runtime_args, retry_params)
+            .await
+            .unwrap();
+
+        let universe = Universe::with_accelerated_time();
+        let (source_mailbox, _source_inbox) = universe.create_test_mailbox::<SourceActor>();
+        let (doc_processor_mailbox, _doc_processor_inbox) =
+            universe.create_test_mailbox::<DocProcessor>();
+        let (observable_state_tx, _observable_state_rx) = watch::channel(serde_json::Value::Null);
+        let ctx: SourceContext =
+            ActorContext::for_test(&universe, source_mailbox, observable_state_tx);
+
+        // In this scenario, the indexer will only be able to acquire shard 1.
+        let assignment = Assignment { shard_ids: vec![1] };
+
+        source
+            .assign_shards(assignment, &doc_processor_mailbox, &ctx)
+            .await
+            .unwrap();
+
+        let PublishedShardPositionsUpdate {
+            source_uid,
+            published_positions_per_shard,
+        } = shard_positions_update_rx.recv().await.unwrap();
+        assert_eq!(source_uid.to_string(), "test-index:0:test-source");
+        assert_eq!(&published_positions_per_shard, &[(1, Position::Eof)]);
+    }
+
+    #[tokio::test]
+    async fn test_ingest_source_assign_shards_some_eof() {
+        // In this test, we check that if some shards that are originally marked as EOF in the
+        // metastore, we observe the following:
+        // - emission of a suggest truncate
+        // - the stream request emitted does not include the EOF shards
+        let pipeline_id = IndexingPipelineId {
+            node_id: "test-node".to_string(),
+            index_uid: "test-index:0".into(),
+            source_id: "test-source".to_string(),
+            pipeline_ord: 0,
+        };
+        let source_config = SourceConfig::for_test("test-source", SourceParams::Ingest);
+        let publish_token =
+            "indexer/test-node/test-index:0/test-source/0/00000000000000000000000000";
+
+        let mut mock_metastore = MetastoreServiceClient::mock();
+        mock_metastore
+            .expect_acquire_shards()
+            .once()
+            .returning(|request| {
+                assert_eq!(request.subrequests.len(), 1);
+
+                let subrequest = &request.subrequests[0];
+                assert_eq!(subrequest.index_uid, "test-index:0");
+                assert_eq!(subrequest.source_id, "test-source");
+                assert_eq!(subrequest.shard_ids, vec![1, 2]);
+
+                let response = AcquireShardsResponse {
+                    subresponses: vec![AcquireShardsSubresponse {
+                        index_uid: "test-index:0".to_string(),
+                        source_id: "test-source".to_string(),
+                        acquired_shards: vec![
+                            Shard {
+                                leader_id: "test-ingester-0".to_string(),
+                                follower_id: None,
+                                index_uid: "test-index:0".to_string(),
+                                source_id: "test-source".to_string(),
+                                shard_id: 1,
+                                shard_state: ShardState::Open as i32,
+                                publish_position_inclusive: Some(11u64.into()),
+                                publish_token: Some(publish_token.to_string()),
+                            },
+                            Shard {
+                                leader_id: "test-ingester-0".to_string(),
+                                follower_id: None,
+                                index_uid: "test-index:0".to_string(),
+                                source_id: "test-source".to_string(),
+                                shard_id: 2,
+                                shard_state: ShardState::Closed as i32,
+                                publish_position_inclusive: Some(Position::Eof),
+                                publish_token: Some(publish_token.to_string()),
+                            },
+                        ],
+                    }],
+                };
+                Ok(response)
+            });
+        let ingester_pool = IngesterPool::default();
+
+        let mut ingester_mock_0 = IngesterServiceClient::mock();
+        ingester_mock_0
+            .expect_open_fetch_stream()
+            .once()
+            .returning(|request| {
+                assert_eq!(
+                    request.client_id,
+                    "indexer/test-node/test-index:0/test-source/0"
+                );
+                assert_eq!(request.index_uid, "test-index:0");
+                assert_eq!(request.source_id, "test-source");
+                assert_eq!(request.shard_id, 1);
+                assert_eq!(request.from_position_exclusive, Some(11u64.into()));
+
+                let (_service_stream_tx, service_stream) = ServiceStream::new_bounded(1);
+                Ok(service_stream)
+            });
+        ingester_mock_0
+            .expect_truncate_shards()
+            .once()
+            .returning(|mut request| {
+                assert_eq!(request.ingester_id, "test-ingester-0");
+                assert_eq!(request.subrequests.len(), 2);
+                request
+                    .subrequests
+                    .sort_by_key(|subrequest| subrequest.shard_id);
+
+                let subrequest = &request.subrequests[0];
+                assert_eq!(subrequest.index_uid, "test-index:0");
+                assert_eq!(subrequest.source_id, "test-source");
+                assert_eq!(subrequest.shard_id, 1);
+                assert_eq!(subrequest.to_position_inclusive, Some(11u64.into()));
+
+                let subrequest = &request.subrequests[1];
+                assert_eq!(subrequest.index_uid, "test-index:0");
+                assert_eq!(subrequest.source_id, "test-source");
+                assert_eq!(subrequest.shard_id, 2);
+                assert_eq!(subrequest.to_position_inclusive, Some(Position::Eof));
+
+                let response = TruncateShardsResponse {};
+                Ok(response)
+            });
+
+        let ingester_0: IngesterServiceClient = ingester_mock_0.into();
+        ingester_pool.insert("test-ingester-0".into(), ingester_0.clone());
+
+        let event_broker = EventBroker::default();
+        let (shard_positions_update_tx, mut shard_positions_update_rx) =
+            tokio::sync::mpsc::unbounded_channel::<PublishedShardPositionsUpdate>();
+        event_broker
+            .subscribe_fn::<PublishedShardPositionsUpdate>(move |update| {
+                shard_positions_update_tx.send(update).unwrap();
+            })
+            .forever();
+
+        let runtime_args = Arc::new(SourceRuntimeArgs {
+            pipeline_id,
+            source_config,
+            metastore: MetastoreServiceClient::from(mock_metastore),
+            ingester_pool: ingester_pool.clone(),
+            queues_dir_path: PathBuf::from("./queues"),
+            storage_resolver: StorageResolver::for_test(),
+            event_broker,
+        });
+        let retry_params = RetryParams::for_test();
+        let mut source = IngestSource::try_new(runtime_args, retry_params)
+            .await
+            .unwrap();
+
+        let universe = Universe::with_accelerated_time();
+        let (source_mailbox, _source_inbox) = universe.create_test_mailbox::<SourceActor>();
+        let (doc_processor_mailbox, _doc_processor_inbox) =
+            universe.create_test_mailbox::<DocProcessor>();
+        let (observable_state_tx, _observable_state_rx) = watch::channel(serde_json::Value::Null);
+        let ctx: SourceContext =
+            ActorContext::for_test(&universe, source_mailbox, observable_state_tx);
+
+        // In this scenario, the indexer will only be able to acquire shard 1.
+        let assignment = Assignment {
+            shard_ids: vec![1, 2],
+        };
+
+        assert_eq!(
+            shard_positions_update_rx.try_recv().unwrap_err(),
+            TryRecvError::Empty
+        );
+
+        source
+            .assign_shards(assignment, &doc_processor_mailbox, &ctx)
+            .await
+            .unwrap();
+
+        let PublishedShardPositionsUpdate {
+            source_uid: _,
+            published_positions_per_shard,
+        } = shard_positions_update_rx.recv().await.unwrap();
+
+        assert_eq!(
+            &published_positions_per_shard,
+            &[(1, 11u64.into()), (2, Position::Eof)]
+        );
+    }
+
+    #[tokio::test]
     async fn test_ingest_source_emit_batches() {
         let pipeline_id = IndexingPipelineId {
             node_id: "test-node".to_string(),
@@ -648,6 +972,7 @@ mod tests {
         let source_config = SourceConfig::for_test("test-source", SourceParams::Ingest);
         let mock_metastore = MetastoreServiceClient::mock();
         let ingester_pool = IngesterPool::default();
+        let event_broker = EventBroker::default();
 
         let runtime_args = Arc::new(SourceRuntimeArgs {
             pipeline_id,
@@ -656,9 +981,10 @@ mod tests {
             ingester_pool: ingester_pool.clone(),
             queues_dir_path: PathBuf::from("./queues"),
             storage_resolver: StorageResolver::for_test(),
+            event_broker,
         });
-        let checkpoint = SourceCheckpoint::default();
-        let mut source = IngestSource::try_new(runtime_args, checkpoint)
+        let retry_params = RetryParams::for_test();
+        let mut source = IngestSource::try_new(runtime_args, retry_params)
             .await
             .unwrap();
 
@@ -775,6 +1101,28 @@ mod tests {
             .unwrap();
         let shard = source.assigned_shards.get(&1).unwrap();
         assert_eq!(shard.status, IndexingStatus::Error);
+
+        fetch_response_tx
+            .send(Ok(FetchResponseV2 {
+                index_uid: "test-index:0".into(),
+                source_id: "test-source".into(),
+                shard_id: 1,
+                mrecord_batch: Some(MRecordBatch {
+                    mrecord_buffer: Bytes::from_static(b"\0\0test-doc-114"),
+                    mrecord_lengths: vec![14],
+                }),
+                from_position_exclusive: Some(14u64.into()),
+                to_position_inclusive: Some(15u64.into()),
+            }))
+            .await
+            .unwrap();
+
+        source
+            .emit_batches(&doc_processor_mailbox, &ctx)
+            .await
+            .unwrap();
+        let shard = source.assigned_shards.get(&1).unwrap();
+        assert_eq!(shard.status, IndexingStatus::Active);
     }
 
     #[tokio::test]
@@ -792,7 +1140,7 @@ mod tests {
 
         let mut ingester_mock_0 = IngesterServiceClient::mock();
         ingester_mock_0
-            .expect_truncate()
+            .expect_truncate_shards()
             .once()
             .returning(|request| {
                 assert_eq!(request.ingester_id, "test-ingester-0");
@@ -808,16 +1156,16 @@ mod tests {
 
                 let subrequest_2 = &request.subrequests[2];
                 assert_eq!(subrequest_2.shard_id, 3);
-                assert_eq!(subrequest_2.to_position_inclusive, Some(33u64.into()));
+                assert_eq!(subrequest_2.to_position_inclusive, Some(Position::Eof));
 
-                Ok(TruncateResponse {})
+                Ok(TruncateShardsResponse {})
             });
         let ingester_0: IngesterServiceClient = ingester_mock_0.into();
         ingester_pool.insert("test-ingester-0".into(), ingester_0.clone());
 
         let mut ingester_mock_1 = IngesterServiceClient::mock();
         ingester_mock_1
-            .expect_truncate()
+            .expect_truncate_shards()
             .once()
             .returning(|request| {
                 assert_eq!(request.ingester_id, "test-ingester-1");
@@ -829,16 +1177,16 @@ mod tests {
 
                 let subrequest_1 = &request.subrequests[1];
                 assert_eq!(subrequest_1.shard_id, 3);
-                assert_eq!(subrequest_1.to_position_inclusive, Some(33u64.into()));
+                assert_eq!(subrequest_1.to_position_inclusive, Some(Position::Eof));
 
-                Ok(TruncateResponse {})
+                Ok(TruncateShardsResponse {})
             });
         let ingester_1: IngesterServiceClient = ingester_mock_1.into();
         ingester_pool.insert("test-ingester-1".into(), ingester_1.clone());
 
         let mut ingester_mock_3 = IngesterServiceClient::mock();
         ingester_mock_3
-            .expect_truncate()
+            .expect_truncate_shards()
             .once()
             .returning(|request| {
                 assert_eq!(request.ingester_id, "test-ingester-3");
@@ -848,10 +1196,19 @@ mod tests {
                 assert_eq!(subrequest_0.shard_id, 4);
                 assert_eq!(subrequest_0.to_position_inclusive, Some(44u64.into()));
 
-                Ok(TruncateResponse {})
+                Ok(TruncateShardsResponse {})
             });
         let ingester_3: IngesterServiceClient = ingester_mock_3.into();
         ingester_pool.insert("test-ingester-3".into(), ingester_3.clone());
+
+        let event_broker = EventBroker::default();
+        let (shard_positions_update_tx, mut shard_positions_update_rx) =
+            tokio::sync::mpsc::unbounded_channel::<PublishedShardPositionsUpdate>();
+        event_broker
+            .subscribe_fn::<PublishedShardPositionsUpdate>(move |update| {
+                shard_positions_update_tx.send(update).unwrap();
+            })
+            .forever();
 
         let runtime_args = Arc::new(SourceRuntimeArgs {
             pipeline_id,
@@ -860,9 +1217,10 @@ mod tests {
             ingester_pool: ingester_pool.clone(),
             queues_dir_path: PathBuf::from("./queues"),
             storage_resolver: StorageResolver::for_test(),
+            event_broker,
         });
-        let checkpoint = SourceCheckpoint::default();
-        let mut source = IngestSource::try_new(runtime_args, checkpoint)
+        let retry_params = RetryParams::for_test();
+        let mut source = IngestSource::try_new(runtime_args, retry_params)
             .await
             .unwrap();
 
@@ -923,17 +1281,32 @@ mod tests {
                 status: IndexingStatus::Active,
             },
         );
+
         let checkpoint = SourceCheckpoint::from_iter(vec![
             (1u64.into(), 11u64.into()),
             (2u64.into(), 22u64.into()),
-            (3u64.into(), 33u64.into()),
+            (3u64.into(), Position::Eof),
             (4u64.into(), 44u64.into()),
             (5u64.into(), Position::Beginning),
             (6u64.into(), 66u64.into()),
         ]);
         source.suggest_truncate(checkpoint, &ctx).await.unwrap();
 
-        // Wait for the truncate future to complete.
-        time::sleep(Duration::from_millis(1)).await;
+        let PublishedShardPositionsUpdate {
+            published_positions_per_shard,
+            ..
+        } = shard_positions_update_rx.recv().await.unwrap();
+
+        assert_eq!(
+            &published_positions_per_shard,
+            &[
+                (1u64, 11u64.into()),
+                (2u64, 22u64.into()),
+                (3u64, Position::Eof),
+                (4u64, 44u64.into()),
+                (5u64, Position::Beginning),
+                (6u64, 66u64.into())
+            ]
+        );
     }
 }

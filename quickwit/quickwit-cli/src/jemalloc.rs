@@ -59,7 +59,7 @@ pub async fn jemalloc_metrics_loop() -> tikv_jemalloc_ctl::Result<()> {
 pub fn start_jemalloc_metrics_loop() {
     tokio::task::spawn(async {
         if let Err(jemalloc_metrics_err) = jemalloc_metrics_loop().await {
-            error!(err=?jemalloc_metrics_err, "Failed to gather metrics from jemalloc.");
+            error!(err=?jemalloc_metrics_err, "failed to gather metrics from jemalloc");
         }
     });
 }

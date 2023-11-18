@@ -358,7 +358,7 @@ impl MergePlanner {
         // We run smaller merges in priority.
         merge_ops.sort_by_cached_key(|merge_op| Reverse(max_merge_ops(merge_op)));
         while let Some(merge_operation) = merge_ops.pop() {
-            info!(merge_operation=?merge_operation, "Planned merge operation.");
+            info!(merge_operation=?merge_operation, "planned merge operation");
             let tracked_merge_operation = self
                 .ongoing_merge_operations_inventory
                 .track(merge_operation);

@@ -124,7 +124,7 @@ pub(crate) async fn ingest_with_retry(
                     .ingest(index_id, ingest_source_clone, None, None, commit_type_clone)
                     .await
                 {
-                    debug!("Failed to index into {} due to error: {}", index_id, err);
+                    debug!(index=%index_id, err=%err, "failed to ingest");
                     false
                 } else {
                     true

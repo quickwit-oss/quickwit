@@ -320,11 +320,11 @@ fn start_monitor_if_server_running_task(telemetry_sender: Arc<Inner>) {
 
 fn create_http_client() -> Option<HttpClient> {
     if is_telemetry_disabled() {
-        info!("telemetry to quickwit is disabled.");
+        info!("telemetry to quickwit is disabled");
         return None;
     }
     let client = HttpClient::try_new()?;
-    info!("telemetry to {} is enabled.", client.endpoint());
+    info!("telemetry to {} is enabled", client.endpoint());
     Some(client)
 }
 

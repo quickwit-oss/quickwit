@@ -51,10 +51,11 @@ pub struct Shard {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub publish_token: ::core::option::Option<::prost::alloc::string::String>,
 }
+/// A group of shards belonging to the same index and source.
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ClosedShards {
+pub struct ShardIds {
     #[prost(string, tag = "1")]
     pub index_uid: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]

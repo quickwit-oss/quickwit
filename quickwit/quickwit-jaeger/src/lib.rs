@@ -267,11 +267,11 @@ impl JaegerService {
         let search_response = self.search_service.root_search(search_request).await?;
 
         let Some(agg_result_json) = search_response.aggregation else {
-            debug!("The query matched no traces.");
+            debug!("the query matched no traces");
             return Ok((Vec::new(), 0..=0));
         };
         let trace_ids = collect_trace_ids(&agg_result_json)?;
-        debug!("The query matched {} traces.", trace_ids.0.len());
+        debug!("the query matched {} traces.", trace_ids.0.len());
         Ok(trace_ids)
     }
 
@@ -315,7 +315,7 @@ impl JaegerService {
         let search_response = match self.search_service.root_search(search_request).await {
             Ok(search_response) => search_response,
             Err(search_error) => {
-                error!("Failed to fetch spans: {search_error:?}");
+                error!(search_error=?search_error, "failed to fetch spans");
                 record_error(operation_name, request_start);
                 return Err(Status::internal("Failed to fetch spans."));
             }
@@ -365,7 +365,7 @@ impl JaegerService {
                     let chunk = mem::replace(&mut chunk, Vec::with_capacity(chunk_len));
                     if let Err(send_error) = tx.send(Ok(SpansResponseChunk { spans: chunk })).await
                     {
-                        debug!("Client disconnected: {send_error:?}");
+                        debug!(send_error=?send_error, "client disconnected");
                         return;
                     }
                     record_send(operation_name, num_spans, chunk_num_bytes);
@@ -380,7 +380,7 @@ impl JaegerService {
                 num_bytes_total += chunk_num_bytes;
 
                 if let Err(send_error) = tx.send(Ok(SpansResponseChunk { spans: chunk })).await {
-                    debug!("Client disconnected: {send_error:?}");
+                    debug!(error=?send_error, "client disconnected");
                     return;
                 }
                 record_send(operation_name, num_spans, chunk_num_bytes);
@@ -809,7 +809,7 @@ fn inject_span_kind_tag(tags: &mut Vec<JaegerKeyValue>, span_kind_id: u32) {
         4 => "producer",
         5 => "consumer",
         _ => {
-            warn!("Unknown span kind ID: `{span_kind_id}`.");
+            warn!(span_kind_id=%span_kind_id, "unknown span kind ID");
             return;
         }
     };
@@ -1017,7 +1017,7 @@ where T: Deserialize<'a> {
     match serde_json::from_str(json) {
         Ok(deserialized) => Ok(deserialized),
         Err(error) => {
-            error!("Failed to deserialize {label}: {error:?}");
+            error!("failed to deserialize {label}: {error:?}");
             Err(Status::internal(format!(
                 "Failed to deserialize {label}: {error:?}."
             )))

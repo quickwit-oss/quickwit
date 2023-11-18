@@ -78,7 +78,7 @@ impl SplitCache {
                     // their cleanup. It is important to remove it.
                     if let Err(io_err) = std::fs::remove_file(&path) {
                         if io_err.kind() != io::ErrorKind::NotFound {
-                            error!(path=?path, "Failed to remove temporary file.");
+                            error!(path=?path, "failed to remove temporary file");
                         }
                     }
                 }
@@ -86,11 +86,11 @@ impl SplitCache {
                     if let Some(split_ulid) = split_id_from_path(&path) {
                         existing_splits.insert(split_ulid, meta.len());
                     } else {
-                        warn!(path=%path.display(), ".split file with invalid ulid in split cache directory. Ignoring.");
+                        warn!(path=%path.display(), ".split file with invalid ulid in split cache directory, ignoring");
                     }
                 }
                 _ => {
-                    warn!(path=%path.display(), "Unknown file in split cache directory. Ignoring.");
+                    warn!(path=%path.display(), "unknown file in split cache directory, ignoring");
                 }
             }
         }
@@ -135,11 +135,11 @@ impl SplitCache {
         let mut split_table = self.split_table.lock().unwrap();
         for report_split in report_splits {
             let Ok(split_ulid) = Ulid::from_str(&report_split.split_id) else {
-                error!(split_id=%report_split.split_id, "Received invalid split ulid. Ignoring.");
+                error!(split_id=%report_split.split_id, "received invalid split ulid: ignoring");
                 continue;
             };
             let Ok(storage_uri) = Uri::from_str(&report_split.storage_uri) else {
-                error!(storage_uri=%report_split.storage_uri, "Received invalid storage uri. Ignoring.");
+                error!(storage_uri=%report_split.storage_uri, "received invalid storage uri: ignoring");
                 continue;
             };
             split_table.report(split_ulid, storage_uri);

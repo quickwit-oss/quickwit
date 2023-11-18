@@ -353,7 +353,7 @@ impl NodeConfig {
         for peer_seed in &self.peer_seeds {
             let peer_seed_addr = HostAddr::parse_with_default_port(peer_seed, default_gossip_port)?;
             if let Err(error) = peer_seed_addr.resolve().await {
-                warn!(peer_seed = %peer_seed_addr, error = ?error, "Failed to resolve peer seed address.");
+                warn!(peer_seed = %peer_seed_addr, error = ?error, "failed to resolve peer seed address");
                 continue;
             }
             peer_seed_addrs.push(peer_seed_addr.to_string())

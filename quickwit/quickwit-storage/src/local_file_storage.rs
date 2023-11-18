@@ -246,7 +246,7 @@ impl Storage for LocalFileStorage {
         self.delete_single_file(path).await?;
         if let Some(parent) = path.parent() {
             if let Err(error) = delete_all_dirs_if_empty(&self.root, parent).await {
-                warn!(error=?error, path=%path.display(), "Failed to delete directory.");
+                warn!(error=?error, path=%path.display(), "failed to delete directory");
             }
         }
         Ok(())
@@ -293,7 +293,7 @@ impl Storage for LocalFileStorage {
         // first.
         for parent_path in parent_paths.into_iter().rev() {
             if let Err(error) = delete_all_dirs_if_empty(&self.root, parent_path).await {
-                warn!(error=?error, path=%parent_path.display(), "Failed to delete directory.");
+                warn!(error=?error, path=%parent_path.display(), "failed to delete directory");
             }
         }
         if failures.is_empty() {

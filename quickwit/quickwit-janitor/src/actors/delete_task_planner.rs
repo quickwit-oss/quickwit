@@ -196,7 +196,7 @@ impl DeleteTaskPlanner {
                 let delete_operation = MergeOperation::new_delete_and_merge_operation(
                     split_with_deletes.split_metadata,
                 );
-                info!(delete_operation=?delete_operation, "Planned delete operation.");
+                info!(delete_operation=?delete_operation, "planned delete operation");
                 let tracked_delete_operation = self
                     .ongoing_delete_operations_inventory
                     .track(delete_operation);

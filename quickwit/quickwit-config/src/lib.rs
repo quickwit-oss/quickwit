@@ -199,7 +199,7 @@ impl ConfigFormat {
                     serde_json::from_reader(StripComments::new(payload))?;
                 let version_value = json_value.get_mut("version").context("missing version")?;
                 if let Some(version_number) = version_value.as_u64() {
-                    warn!("`version` is supposed to be a string.");
+                    warn!(version_value=?version_value, "`version` is supposed to be a string");
                     *version_value = JsonValue::String(version_number.to_string());
                 }
                 serde_json::from_value(json_value).context("failed to read JSON file")
@@ -211,7 +211,7 @@ impl ConfigFormat {
                     toml::from_str(payload_str).context("failed to read TOML file")?;
                 let version_value = toml_value.get_mut("version").context("missing version")?;
                 if let Some(version_number) = version_value.as_integer() {
-                    warn!("`version` is supposed to be a string.");
+                    warn!(version_value=?version_value, "`version` is supposed to be a string");
                     *version_value = toml::Value::String(version_number.to_string());
                     let reserialized = toml::to_string(version_value)
                         .context("failed to reserialize toml config")?;

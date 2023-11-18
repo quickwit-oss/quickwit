@@ -91,11 +91,11 @@ impl RetentionPolicyExecutor {
         {
             Ok(metadatas) => metadatas,
             Err(error) => {
-                error!(error=?error, "Failed to list indexes from the metastore.");
+                error!(error=?error, "failed to list indexes from the metastore");
                 return;
             }
         };
-        debug!(index_ids=%index_metadatas.iter().map(|im| im.index_id()).join(", "), "Retention policy refresh.");
+        debug!(index_ids=%index_metadatas.iter().map(|im| im.index_id()).join(", "), "retention policy refresh");
 
         let deleted_indexes = compute_deleted_indexes(
             self.index_configs.keys().map(String::as_str),
@@ -104,7 +104,7 @@ impl RetentionPolicyExecutor {
                 .map(|index_metadata| index_metadata.index_id()),
         );
         if !deleted_indexes.is_empty() {
-            debug!(index_ids=%deleted_indexes.iter().join(", "), "Deleting indexes from cache.");
+            debug!(index_ids=%deleted_indexes.iter().join(", "), "deleting indexes from cache");
             for index_id in deleted_indexes {
                 self.index_configs.remove(&index_id);
             }
@@ -197,7 +197,7 @@ impl Handler<Execute> for RetentionPolicyExecutor {
         let index_config = match self.index_configs.get(message.index_uid.index_id()) {
             Some(config) => config,
             None => {
-                debug!(index_id=%message.index_uid.index_id(), "The index might have been deleted.");
+                debug!(index_id=%message.index_uid.index_id(), "the index might have been deleted");
                 return Ok(());
             }
         };
@@ -229,7 +229,7 @@ impl Handler<Execute> for RetentionPolicyExecutor {
             // we remove it from the cache for it to be retried next time it gets
             // added back by the RetentionPolicyExecutor cache refresh loop.
             self.index_configs.remove(message.index_uid.index_id());
-            error!(index_id=%message.index_uid.index_id(), "Couldn't extract the index next schedule interval.");
+            error!(index_id=%message.index_uid.index_id(), "couldn't extract the index next schedule interval");
         }
         Ok(())
     }

@@ -25,7 +25,7 @@ use std::num::NonZeroU32;
 
 use fnv::FnvHashMap;
 use quickwit_proto::indexing::{CpuCapacity, IndexingTask};
-use quickwit_proto::types::{IndexUid, ShardId};
+use quickwit_proto::types::{IndexUid, ShardId, SourceUid};
 use scheduling_logic_model::{IndexerOrd, SourceOrd};
 use tracing::error;
 use tracing::log::warn;
@@ -34,7 +34,6 @@ use crate::indexing_plan::PhysicalIndexingPlan;
 use crate::indexing_scheduler::scheduling::scheduling_logic_model::{
     SchedulingProblem, SchedulingSolution,
 };
-use crate::SourceUid;
 
 /// If we have several pipelines below this threshold we
 /// reduce the number of pipelines.
@@ -509,7 +508,7 @@ pub fn build_physical_indexing_plan(
         // TODO this is probably a bad idea to just not overschedule, as having a single index trail
         // behind will prevent the log GC.
         // A better strategy would probably be to close shard, and start prevent ingestion.
-        error!("unable to assign all sources in the cluster.");
+        error!("unable to assign all sources in the cluster");
     }
 
     // Convert the new scheduling solution back to a physical plan.
@@ -530,13 +529,12 @@ mod tests {
 
     use fnv::FnvHashMap;
     use quickwit_proto::indexing::{mcpu, IndexingTask};
-    use quickwit_proto::types::{IndexUid, ShardId};
+    use quickwit_proto::types::{IndexUid, ShardId, SourceUid};
 
     use super::{
         build_physical_indexing_plan, group_shards_into_pipelines, indexing_task,
         spread_shards_optimally, SourceToSchedule, SourceToScheduleType,
     };
-    use crate::SourceUid;
 
     #[test]
     fn test_spread_shard_optimally() {

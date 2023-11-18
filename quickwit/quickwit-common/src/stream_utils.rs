@@ -22,8 +22,8 @@ use std::fmt;
 use std::pin::Pin;
 
 use futures::{stream, Stream, TryStreamExt};
-use tokio::sync::mpsc;
-use tokio_stream::wrappers::{ReceiverStream, UnboundedReceiverStream};
+use tokio::sync::{mpsc, watch};
+use tokio_stream::wrappers::{ReceiverStream, UnboundedReceiverStream, WatchStream};
 use tracing::warn;
 
 pub type BoxStream<T> = Pin<Box<dyn Stream<Item = T> + Send + Unpin + 'static>>;
@@ -53,6 +53,15 @@ where T: Send + 'static
 
     pub fn new_unbounded() -> (mpsc::UnboundedSender<T>, Self) {
         let (sender, receiver) = mpsc::unbounded_channel();
+        (sender, receiver.into())
+    }
+}
+
+impl<T> ServiceStream<T>
+where T: Clone + Send + Sync + 'static
+{
+    pub fn new_watch(init: T) -> (watch::Sender<T>, Self) {
+        let (sender, receiver) = watch::channel(init);
         (sender, receiver.into())
     }
 }
@@ -104,6 +113,16 @@ where T: Send + 'static
     }
 }
 
+impl<T> From<watch::Receiver<T>> for ServiceStream<T>
+where T: Clone + Send + Sync + 'static
+{
+    fn from(receiver: watch::Receiver<T>) -> Self {
+        Self {
+            inner: Box::pin(WatchStream::new(receiver)),
+        }
+    }
+}
+
 /// Adapts a server-side tonic::Streaming into a ServiceStream of `Result<T, tonic::Status>`. Once
 /// an error is encountered, the stream will be closed and subsequent calls to `poll_next` will
 /// return `None`.
@@ -129,7 +148,7 @@ where T: Send + 'static
                     Ok(Some(message)) => Some((message, streaming)),
                     Ok(None) => None,
                     Err(error) => {
-                        warn!(error=?error, "gRPC transport error.");
+                        warn!(error=?error, "gRPC transport error");
                         None
                     }
                 }

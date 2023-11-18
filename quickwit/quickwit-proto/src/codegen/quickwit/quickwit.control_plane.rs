@@ -5,7 +5,7 @@ pub struct GetOrCreateOpenShardsRequest {
     #[prost(message, repeated, tag = "1")]
     pub subrequests: ::prost::alloc::vec::Vec<GetOrCreateOpenShardsSubrequest>,
     #[prost(message, repeated, tag = "2")]
-    pub closed_shards: ::prost::alloc::vec::Vec<super::ingest::ClosedShards>,
+    pub closed_shards: ::prost::alloc::vec::Vec<super::ingest::ShardIds>,
     #[prost(string, repeated, tag = "3")]
     pub unavailable_leaders: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }

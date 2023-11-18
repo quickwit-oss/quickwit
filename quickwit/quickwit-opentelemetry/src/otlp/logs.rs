@@ -244,7 +244,7 @@ impl OtlpGrpcLogsService {
         })
         .await
         .map_err(|join_error| {
-            error!("Failed to parse log records: {join_error:?}");
+            error!(error=?join_error, "failed to parse log records");
             Status::internal("failed to parse log records")
         })??;
         if num_log_records == num_parse_errors {
@@ -385,8 +385,8 @@ impl OtlpGrpcLogsService {
         let mut doc_batch = DocBatchBuilder::new(OTEL_LOGS_INDEX_ID.to_string()).json_writer();
         for log_record in log_records {
             if let Err(error) = doc_batch.ingest_doc(&log_record.0) {
-                error!(error=?error, "Failed to JSON serialize span.");
-                error_message = format!("Failed to JSON serialize span: {error:?}");
+                error!(error=?error, "failed to JSON serialize span");
+                error_message = format!("failed to JSON serialize span: {error:?}");
                 num_parse_errors += 1;
             }
         }

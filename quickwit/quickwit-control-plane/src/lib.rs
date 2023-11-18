@@ -26,15 +26,6 @@ pub(crate) mod metrics;
 
 use quickwit_common::tower::Pool;
 use quickwit_proto::indexing::{CpuCapacity, IndexingServiceClient, IndexingTask};
-use quickwit_proto::types::{IndexUid, SourceId};
-
-/// It can however appear only once in a given index.
-/// In itself, `SourceId` is not unique, but the pair `(IndexUid, SourceId)` is.
-#[derive(PartialEq, Eq, Debug, PartialOrd, Ord, Hash, Clone)]
-pub struct SourceUid {
-    pub index_uid: IndexUid,
-    pub source_id: SourceId,
-}
 
 /// Indexer-node specific information stored in the pool of available indexer nodes
 #[derive(Debug, Clone)]

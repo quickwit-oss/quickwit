@@ -20,7 +20,7 @@
 use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use quickwit_proto::ingest::{ClosedShards, Shard, ShardState};
+use quickwit_proto::ingest::{Shard, ShardIds, ShardState};
 use quickwit_proto::types::{IndexId, IndexUid, NodeId, ShardId, SourceId};
 use tracing::warn;
 
@@ -106,17 +106,13 @@ impl ShardTableEntry {
             if shards.is_empty() {
                 continue;
             }
-            let mut num_attempts = 0;
-            let max_num_attempts = shards.len();
-
-            while num_attempts < max_num_attempts {
+            for _attempt in 0..shards.len() {
                 let shard_idx = round_robin_idx.fetch_add(1, Ordering::Relaxed);
                 let shard = &shards[shard_idx % shards.len()];
 
                 if shard.is_open() && ingester_pool.contains_key(&shard.leader_id) {
                     return Some(shard);
                 }
-                num_attempts += 1;
             }
         }
         None
@@ -184,7 +180,7 @@ impl ShardTable {
         &self,
         index_id: impl Into<IndexId>,
         source_id: impl Into<SourceId>,
-        closed_shards: &mut Vec<ClosedShards>,
+        closed_shards: &mut Vec<ShardIds>,
         ingester_pool: &IngesterPool,
         unavailable_leaders: &mut HashSet<NodeId>,
     ) -> bool {
@@ -195,7 +191,7 @@ impl ShardTable {
                 entry.has_open_shards(&mut closed_shard_ids, ingester_pool, unavailable_leaders);
 
             if !closed_shard_ids.is_empty() {
-                closed_shards.push(ClosedShards {
+                closed_shards.push(ShardIds {
                     index_uid: entry.index_uid.clone().into(),
                     source_id: entry.source_id.clone(),
                     shard_ids: closed_shard_ids,

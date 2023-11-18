@@ -391,7 +391,7 @@ fn convert_sqlx_err(index_id: &str, sqlx_err: sqlx::Error) -> MetastoreError {
             }
         }
         _ => {
-            error!(err=?sqlx_err, "An error has occurred in the database operation.");
+            error!(err=?sqlx_err, "an error has occurred in the database operation");
             MetastoreError::Db {
                 message: sqlx_err.to_string(),
             }
@@ -644,7 +644,7 @@ impl MetastoreService for PostgresqlMetastore {
                 return Err(MetastoreError::FailedPrecondition { entity, message });
             }
 
-            debug!(index_id=%index_uid.index_id(), num_splits=split_ids.len(), "Splits successfully staged.");
+            debug!(index_id=%index_uid.index_id(), num_splits=split_ids.len(), "splits successfully staged");
 
             Ok(EmptyResponse {})
         })
