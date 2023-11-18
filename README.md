@@ -132,29 +132,22 @@ HA is available for search, for indexing it's available only with a Kafka source
 Our business model relies on our commercial license. There is no plan to become SaaS soon.
 
 
-# 🤝 Contribute and spread the word
+# 🤝 Contribute
 
-We are always super happy to have contributions: code, documentation, issues, feedback, or even saying hello on [Discord](https://discord.quickwit.io)! Here is how you can help us build the future of log management:
+We are always thrilled to receive contributions: code, documentation, issues, or feedback. Here's how you can help us build the future of log management:
 
-- Have a look through GitHub issues labeled "Good first issue".
-- Read our [Contributor Covenant Code of Conduct](https://github.com/quickwit-oss/quickwit/blob/0add0562f08e4edd46f5c5537e8ef457d42a508e/CODE_OF_CONDUCT.md).
-- Create a fork of Quickwit and submit your pull request!
+- Check out the [GitHub issues labeled "Good first issue"](https://github.com/quickwit-oss/quickwit/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) for a great place to start.
+- Familiarize yourself with our [Contributor Covenant Code of Conduct](https://github.com/quickwit-oss/quickwit/blob/0add0562f08e4edd46f5c5537e8ef457d42a508e/CODE_OF_CONDUCT.md).
+- Delve into our [contributing guide](CONTRIBUTING.md).
+- [Create a fork of Quickwit](https://github.com/quickwit-oss/quickwit/fork) and submit your pull request!
 
 ✨ And to thank you for your contributions, claim your swag by emailing us at hello at quickwit.io.
 
-# 💬 Community
+# 💬 Join Our Community
 
-We always welcome contributions: code, documentation, issues, feedback, or even say hello on [Discord](https://discord.quickwit.io)! Here is how you can help us build the next-gen search engine:
+We welcome everyone to our community! Whether you're contributing code or just saying hello, we'd love to hear from you. Here's how you can connect with us:
 
-- Have a look at the GitHub issues labeled "Good first issue".
-- Delve into [contributing guide](CONTRIBUTING.md).
-- Read our [Contributor Covenant Code of Conduct](CODE_OF_CONDUCT.md).
-- Create a fork of Quickwit and submit your pull request!
-
-✨ Contributors can claim our swag by emailing us at hello at quickwit.io.
-
-[website]: https://quickwit.io/
-[youtube]: https://www.youtube.com/channel/UCvZVuRm2FiDq1_ul0mY85wA
-[twitter]: https://twitter.com/Quickwit_Inc
-[discord]: https://discord.quickwit.io
-[blogs]: https://quickwit.io/blog
+- Join the conversation on [Discord](https://discord.quickwit.io).
+- Follow us on [Twitter](https://twitter.com/Quickwit_Inc).
+- Check out our [website](https://quickwit.io/) and [blog](https://quickwit.io/blog) for the latest updates.
+- Watch our [YouTube](https://www.youtube.com/channel/UCvZVuRm2FiDq1_ul0mY85wA) channel for video content.
