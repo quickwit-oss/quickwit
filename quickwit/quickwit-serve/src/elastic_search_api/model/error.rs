@@ -32,9 +32,9 @@ pub struct ElasticSearchError {
 }
 
 impl ElasticSearchError {
-    pub fn bad_request(reason_string: String) -> Self {
+    pub fn new(status: StatusCode, reason_string: String) -> Self {
         ElasticSearchError {
-            status: StatusCode::BAD_REQUEST,
+            status,
             error: ErrorCause {
                 reason: Some(reason_string),
                 caused_by: None,

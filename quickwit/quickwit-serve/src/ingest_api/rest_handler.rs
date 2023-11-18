@@ -262,7 +262,7 @@ async fn tail_endpoint(
 
 pub(crate) fn lines(body: &Bytes) -> impl Iterator<Item = &[u8]> {
     body.split(|byte| byte == &b'\n')
-        .filter(|line| !line.iter().all(|&b| b == b' '))
+        .filter(|line| !line.iter().all(|&b| b.is_ascii_whitespace()))
         .filter(|line| !line.is_empty())
 }
 
