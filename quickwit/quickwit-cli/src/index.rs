@@ -1208,17 +1208,17 @@ mod test {
         let num_docs_descriptive = num_docs_descriptive.unwrap();
         let num_bytes_descriptive = num_bytes_descriptive.unwrap();
 
-        assert_eq!(num_docs_descriptive.q1, 70000.0);
-        assert_eq!(num_docs_descriptive.q25, 82500.0);
-        assert_eq!(num_docs_descriptive.q50, 105000.0);
-        assert_eq!(num_docs_descriptive.q75, 117500.0);
-        assert_eq!(num_docs_descriptive.q99, 120800.0);
+        assert_eq!(num_docs_descriptive.q1, 40900.0);
+        assert_eq!(num_docs_descriptive.q25, 62500.0);
+        assert_eq!(num_docs_descriptive.q50, 80000.0);
+        assert_eq!(num_docs_descriptive.q75, 97500.0);
+        assert_eq!(num_docs_descriptive.q99, 119100.0);
 
-        assert_eq!(num_bytes_descriptive.q1, 55000000.0);
-        assert_eq!(num_bytes_descriptive.q25, 78750000.0);
-        assert_eq!(num_bytes_descriptive.q50, 100000000.0);
-        assert_eq!(num_bytes_descriptive.q75, 128750000.0);
-        assert_eq!(num_bytes_descriptive.q99, 143200000.0);
+        assert_eq!(num_bytes_descriptive.q1, 55150000.0);
+        assert_eq!(num_bytes_descriptive.q25, 58750000.0);
+        assert_eq!(num_bytes_descriptive.q50, 87500000.0);
+        assert_eq!(num_bytes_descriptive.q75, 122500000.0);
+        assert_eq!(num_bytes_descriptive.q99, 144100000.0);
 
         let descriptive_stats_none = DescriptiveStats::maybe_new(&[]);
         assert!(descriptive_stats_none.is_none());
