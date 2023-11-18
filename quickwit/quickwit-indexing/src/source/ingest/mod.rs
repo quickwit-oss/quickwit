@@ -794,7 +794,7 @@ mod tests {
         let expected_local_update = LocalShardPositionsUpdate::new(
             SourceUid {
                 index_uid: IndexUid::parse("test-index:0").unwrap(),
-                source_id: "test_source".to_string(),
+                source_id: "test-source".to_string(),
             },
             vec![(1, Position::Eof)],
         );

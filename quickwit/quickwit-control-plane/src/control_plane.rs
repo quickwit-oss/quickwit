@@ -21,6 +21,7 @@ use std::time::Duration;
 
 use anyhow::Context;
 use async_trait::async_trait;
+use fnv::FnvHashSet;
 use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Mailbox, Supervisor, Universe,
 };
@@ -34,10 +35,11 @@ use quickwit_proto::control_plane::{
 use quickwit_proto::indexing::ShardPositionsUpdate;
 use quickwit_proto::metastore::{
     serde_utils as metastore_serde_utils, AddSourceRequest, CreateIndexRequest,
-    CreateIndexResponse, DeleteIndexRequest, DeleteSourceRequest, EmptyResponse, MetastoreError,
-    MetastoreService, MetastoreServiceClient, ToggleSourceRequest,
+    CreateIndexResponse, DeleteIndexRequest, DeleteShardsRequest, DeleteShardsSubrequest,
+    DeleteSourceRequest, EmptyResponse, MetastoreError, MetastoreService, MetastoreServiceClient,
+    ToggleSourceRequest,
 };
-use quickwit_proto::types::{IndexUid, NodeId};
+use quickwit_proto::types::{IndexUid, NodeId, Position, ShardId, SourceUid};
 use serde::Serialize;
 use tracing::error;
 
@@ -136,15 +138,67 @@ impl Actor for ControlPlane {
     }
 }
 
+impl ControlPlane {
+    async fn delete_shards(
+        &mut self,
+        source_uid: &SourceUid,
+        shards: &[ShardId],
+    ) -> anyhow::Result<()> {
+        let delete_shard_sub_request = DeleteShardsSubrequest {
+            index_uid: source_uid.index_uid.to_string(),
+            source_id: source_uid.source_id.to_string(),
+            shard_ids: shards.to_vec(),
+        };
+        let delete_shard_request = DeleteShardsRequest {
+            subrequests: vec![delete_shard_sub_request],
+            force: false,
+        };
+        // We use a tiny bit different strategy here than for other handlers
+        // All metastore errors end up fail/respawn the control plane.
+        //
+        // This is because deleting shards is done in reaction to an event
+        // and we do not really have the freedom to return an error to a caller like for other
+        // calls: there is no caller.
+        self.metastore
+            .delete_shards(delete_shard_request)
+            .await
+            .context("failed to delete shards in metastore")?;
+        self.model
+            .delete_shards(&source_uid.index_uid, &source_uid.source_id, shards);
+        self.indexing_scheduler
+            .schedule_indexing_plan_if_needed(&self.model);
+        Ok(())
+    }
+}
+
 #[async_trait]
 impl Handler<ShardPositionsUpdate> for ControlPlane {
     type Reply = ();
 
     async fn handle(
         &mut self,
-        shard_positions: ShardPositionsUpdate,
-        ctx: &ActorContext<Self>,
+        shard_positions_update: ShardPositionsUpdate,
+        _ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
+        let known_shard_ids: FnvHashSet<ShardId> = self
+            .model
+            .list_shards(&shard_positions_update.source_uid)
+            .into_iter()
+            .collect();
+        // let's identify the shard that have reached EOF but have not yet been removed.
+        let shard_ids_to_close: Vec<ShardId> = shard_positions_update
+            .shard_positions
+            .into_iter()
+            .filter(|(shard_id, position)| {
+                (position == &Position::Eof) && known_shard_ids.contains(shard_id)
+            })
+            .map(|(shard_id, _position)| shard_id)
+            .collect();
+        if shard_ids_to_close.is_empty() {
+            return Ok(());
+        }
+        self.delete_shards(&shard_positions_update.source_uid, &shard_ids_to_close[..])
+            .await?;
         Ok(())
     }
 }
@@ -245,6 +299,9 @@ impl Handler<CreateIndexRequest> for ControlPlane {
             IndexMetadata::new_with_index_uid(index_uid.clone(), index_config);
 
         self.model.add_index(index_metadata);
+
+        self.indexing_scheduler
+            .schedule_indexing_plan_if_needed(&self.model);
 
         let response = CreateIndexResponse {
             index_uid: index_uid.into(),

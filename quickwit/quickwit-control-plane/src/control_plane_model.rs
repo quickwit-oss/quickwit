@@ -276,7 +276,6 @@ impl ControlPlaneModel {
     }
 
     /// Removes the shards identified by their index UID, source ID, and shard IDs.
-    #[allow(dead_code)] // Will remove this in a future PR.
     pub fn delete_shards(
         &mut self,
         index_uid: &IndexUid,

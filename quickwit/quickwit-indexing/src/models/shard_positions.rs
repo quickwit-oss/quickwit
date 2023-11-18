@@ -127,7 +127,7 @@ impl Actor for ShardPositionsService {
                             return;
                         }
                     };
-                    if let Err(_) = mailbox.try_send_message(shard_positions) {
+                    if mailbox.try_send_message(shard_positions).is_err() {
                         error!("failed to send shard positions to the shard positions service");
                     }
                 })
@@ -144,7 +144,10 @@ impl ShardPositionsService {
             spawn_ctx.spawn_builder().spawn(shard_positions_service);
         event_broker
             .subscribe_fn::<LocalShardPositionsUpdate>(move |update| {
-                if let Err(_) = shard_positions_service_mailbox.try_send_message(update) {
+                if shard_positions_service_mailbox
+                    .try_send_message(update)
+                    .is_err()
+                {
                     error!("failed to send update to shard positions service");
                 }
             })
