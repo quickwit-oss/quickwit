@@ -60,8 +60,7 @@ pub use observation::{Observation, ObservationType};
 use quickwit_common::KillSwitch;
 pub use spawn_builder::SpawnContext;
 use thiserror::Error;
-use tracing::info;
-use tracing::log::warn;
+use tracing::{info, warn};
 pub use universe::Universe;
 
 pub use self::actor_context::ActorContext;
@@ -93,19 +92,19 @@ fn heartbeat_from_env_or_default() -> Duration {
     match std::env::var("QW_ACTOR_HEARTBEAT_SECS") {
         Ok(actor_hearbeat_secs_str) => {
             if let Ok(actor_hearbeat_secs) = actor_hearbeat_secs_str.parse::<NonZeroU64>() {
-                info!("Set the actor heartbeat to {actor_hearbeat_secs} seconds.");
+                info!("set the actor heartbeat to {actor_hearbeat_secs} seconds");
                 return Duration::from_secs(actor_hearbeat_secs.get());
             } else {
                 warn!(
-                    "Failed to parse `QW_ACTOR_HEARTBEAT_SECS={actor_hearbeat_secs_str}` in \
-                     seconds > 0, using default heartbeat (30 seconds)."
+                    "failed to parse `QW_ACTOR_HEARTBEAT_SECS={actor_hearbeat_secs_str}` in \
+                     seconds > 0, using default heartbeat (30 seconds)"
                 );
             };
         }
         Err(std::env::VarError::NotUnicode(os_str)) => {
             warn!(
-                "Failed to parse `QW_ACTOR_HEARTBEAT_SECS={os_str:?}` in a valid unicode string, \
-                 using default heartbeat (30 seconds)."
+                "failed to parse `QW_ACTOR_HEARTBEAT_SECS={os_str:?}` in a valid unicode string, \
+                 using default heartbeat (30 seconds)"
             );
         }
         Err(std::env::VarError::NotPresent) => {}

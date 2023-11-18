@@ -187,7 +187,7 @@ impl ClusterClient {
             // We only log a warning as it might be that we are just running in a
             // single node cluster.
             // (That's odd though, the node running this code should be in the pool too)
-            warn!("No other node available to replicate scroll context.");
+            warn!("no other node available to replicate scroll context");
             return;
         }
 

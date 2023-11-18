@@ -37,7 +37,7 @@ use quickwit_proto::ingest::DocBatchV2;
 use quickwit_proto::types::NodeId;
 
 pub use self::fetch::{FetchStreamError, MultiFetchStream};
-pub use self::ingester::Ingester;
+pub use self::ingester::{wait_for_ingester_decommission, Ingester};
 use self::mrecord::MRECORD_HEADER_LEN;
 pub use self::mrecord::{decoded_mrecords, MRecord};
 pub use self::rate_limiter::RateLimiterSettings;

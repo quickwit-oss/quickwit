@@ -79,7 +79,7 @@ pub use self::storage::MockStorage;
 pub use self::storage_factory::MockStorageFactory;
 pub use self::storage_factory::{StorageFactory, UnsupportedStorage};
 pub use self::storage_resolver::StorageResolver;
-#[cfg(feature = "testsuite")]
+#[cfg(feature = "integration-testsuite")]
 pub use self::test_suite::{
     storage_test_multi_part_upload, storage_test_single_part_upload, storage_test_suite,
     test_write_and_bulk_delete,
@@ -105,7 +105,7 @@ pub async fn load_file(
     Ok(bytes)
 }
 
-#[cfg(any(test, feature = "testsuite"))]
+#[cfg(any(test, feature = "testsuite", feature = "integration-testsuite"))]
 mod for_test {
     use std::sync::Arc;
 
@@ -117,7 +117,7 @@ mod for_test {
     }
 }
 
-#[cfg(any(test, feature = "testsuite"))]
+#[cfg(any(test, feature = "testsuite", feature = "integration-testsuite"))]
 pub use for_test::storage_for_test;
 
 #[cfg(test)]
@@ -143,7 +143,7 @@ mod tests {
     }
 }
 
-#[cfg(any(test, feature = "testsuite"))]
+#[cfg(any(test, feature = "integration-testsuite"))]
 pub(crate) mod test_suite {
 
     use std::path::Path;
@@ -335,7 +335,7 @@ pub(crate) mod test_suite {
     }
 
     /// Generic single-part upload test.
-    #[cfg(feature = "testsuite")]
+    #[cfg(feature = "integration-testsuite")]
     pub async fn storage_test_single_part_upload(storage: &mut dyn Storage) -> anyhow::Result<()> {
         use std::ops::Range;
 
@@ -364,7 +364,7 @@ pub(crate) mod test_suite {
     }
 
     /// Generic multi-part upload test.
-    #[cfg(feature = "testsuite")]
+    #[cfg(feature = "integration-testsuite")]
     pub async fn storage_test_multi_part_upload(storage: &mut dyn Storage) -> anyhow::Result<()> {
         let test_path = Path::new("hello_large.txt");
         let test_buffer = vec![0u8; 15_000_000];

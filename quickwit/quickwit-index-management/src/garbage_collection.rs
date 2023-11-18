@@ -202,7 +202,7 @@ async fn delete_splits_marked_for_deletion(
                 .map(|split| split.split_metadata)
                 .collect(),
             Err(error) => {
-                error!(error = ?error, "Failed to fetch deletable splits.");
+                error!(error = ?error, "failed to fetch deletable splits");
                 break;
             }
         };

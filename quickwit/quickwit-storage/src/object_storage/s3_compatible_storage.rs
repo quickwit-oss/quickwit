@@ -113,7 +113,7 @@ fn get_credentials_provider(
         &s3_storage_config.secret_access_key,
     ) {
         (Some(access_key_id), Some(secret_access_key)) => {
-            info!("Using S3 credentials defined in storage config.");
+            info!("using S3 credentials defined in storage config");
             let credentials = Credentials::from_keys(access_key_id, secret_access_key, None);
             let credentials_provider = SharedCredentialsProvider::new(credentials);
             Some(credentials_provider)
@@ -124,7 +124,7 @@ fn get_credentials_provider(
 
 fn get_region(s3_storage_config: &S3StorageConfig) -> Option<Region> {
     s3_storage_config.region.clone().map(|region| {
-        info!(region=%region, "Using S3 region defined in storage config.");
+        info!(region=%region, "using S3 region defined in storage config");
         Region::new(region)
     })
 }
@@ -145,7 +145,7 @@ async fn create_s3_client(s3_storage_config: &S3StorageConfig) -> S3Client {
     s3_config.set_timeout_config(aws_config.timeout_config().cloned());
 
     if let Some(endpoint) = s3_storage_config.endpoint() {
-        info!(endpoint=%endpoint, "Using S3 endpoint defined in storage config or environment variable.");
+        info!(endpoint=%endpoint, "using S3 endpoint defined in storage config or environment variable");
         s3_config.set_endpoint_url(Some(endpoint));
     }
     S3Client::from_conf(s3_config.build())

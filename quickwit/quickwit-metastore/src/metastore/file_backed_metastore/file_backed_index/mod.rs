@@ -456,13 +456,13 @@ impl FileBackedIndex {
             let message = "splits are not deletable".to_string();
             return Err(MetastoreError::FailedPrecondition { entity, message });
         }
-        info!(index_id=%self.index_id(), "Deleted {num_deleted_splits} splits from index.");
+        info!(index_id=%self.index_id(), "deleted {num_deleted_splits} splits from index");
 
         if !split_not_found_ids.is_empty() {
             warn!(
                 index_id=self.index_id().to_string(),
                 split_ids=?PrettySample::new(&split_not_found_ids, 5),
-                "{} splits were not found and could not be deleted.",
+                "{} splits were not found and could not be deleted",
                 split_not_found_ids.len()
             );
         }

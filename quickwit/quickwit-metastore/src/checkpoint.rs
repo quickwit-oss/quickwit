@@ -170,7 +170,6 @@ impl IndexCheckpoint {
 pub struct SourceCheckpoint {
     per_partition: BTreeMap<PartitionId, Position>,
 }
-
 impl SourceCheckpoint {
     /// Adds a partition to the checkpoint.
     pub fn add_partition(&mut self, partition_id: PartitionId, position: Position) {
@@ -293,7 +292,7 @@ impl SourceCheckpoint {
             match position.cmp(&delta_position.from) {
                 Ordering::Equal => {}
                 Ordering::Less => {
-                    warn!(cur_pos=?position, delta_pos_from=?delta_position.from,partition=?delta_partition, "Some positions were skipped.");
+                    warn!(cur_pos=?position, delta_pos_from=?delta_position.from,partition=?delta_partition, "some positions were skipped");
                 }
                 Ordering::Greater => {
                     return Err(IncompatibleCheckpointDelta {

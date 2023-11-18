@@ -71,9 +71,11 @@ azure = [
   "azure_storage_blobs/enable_reqwest_rustls",
 ]
 ci-test = []
-testsuite = [
+integration-testsuite = [
   "azure",
   "azure_core/azurite_workaround",
   "azure_storage_blobs/azurite_workaround",
+]
+testsuite = [
   "mockall",
 ]

@@ -96,11 +96,11 @@ impl GarbageCollector {
             }) {
             Ok(metadatas) => metadatas,
             Err(error) => {
-                error!(error=?error, "Failed to list indexes from the metastore.");
+                error!(error=?error, "failed to list indexes from the metastore");
                 return;
             }
         };
-        info!(index_ids=%indexes.iter().map(|im| im.index_id()).join(", "), "Garbage collecting indexes.");
+        info!(index_ids=%indexes.iter().map(|im| im.index_id()).join(", "), "garbage collecting indexes");
 
         let mut gc_futures = stream::iter(indexes).map(|index| {
             let metastore = self.metastore.clone();
@@ -110,7 +110,7 @@ impl GarbageCollector {
             let storage = match storage_resolver.resolve(index_uri).await {
                 Ok(storage) => storage,
                 Err(error) => {
-                    error!(index=%index.index_id(), error=?error, "Failed to resolve the index storage Uri.");
+                    error!(index=%index.index_id(), error=?error, "failed to resolve the index storage Uri");
                     return None;
                 }
             };
@@ -140,7 +140,7 @@ impl GarbageCollector {
                 }
                 Err(error) => {
                     self.counters.num_failed_gc_run_on_index += 1;
-                    error!(index_id=%index_uid.index_id(), error=?error, "Failed to run garbage collection on index.");
+                    error!(index_id=%index_uid.index_id(), error=?error, "failed to run garbage collection on index");
                     continue;
                 }
             };

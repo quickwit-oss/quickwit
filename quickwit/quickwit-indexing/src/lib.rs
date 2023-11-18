@@ -75,7 +75,7 @@ pub async fn start_indexing_service(
     storage_resolver: StorageResolver,
     event_broker: EventBroker,
 ) -> anyhow::Result<Mailbox<IndexingService>> {
-    info!("Starting indexer service.");
+    info!("starting indexer service");
 
     // Spawn indexing service.
     let indexing_service = IndexingService::new(

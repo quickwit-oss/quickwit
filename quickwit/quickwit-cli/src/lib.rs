@@ -222,7 +222,7 @@ async fn load_node_config(config_uri: &Uri) -> anyhow::Result<NodeConfig> {
     let config = NodeConfig::load(config_format, config_content.as_slice())
         .await
         .with_context(|| format!("failed to parse node config `{config_uri}`"))?;
-    info!(config_uri=%config_uri, config=?config, "Loaded node config.");
+    info!(config_uri=%config_uri, config=?config, "loaded node config");
     Ok(config)
 }
 
@@ -402,10 +402,10 @@ pub mod busy_detector {
 
         let suppressed = SUPPRESSED_DEBUG_COUNT.swap(0, Ordering::Relaxed);
         if suppressed == 0 {
-            debug!("Thread wasn't parked for {delta}µs, is the runtime too busy?");
+            debug!("thread wasn't parked for {delta}µs, is the runtime too busy?");
         } else {
             debug!(
-                "Thread wasn't parked for {delta}µs, is the runtime too busy? ({suppressed} \
+                "thread wasn't parked for {delta}µs, is the runtime too busy? ({suppressed} \
                  similar messages suppressed)"
             );
         }

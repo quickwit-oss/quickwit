@@ -158,7 +158,7 @@ impl TestEnv {
         };
         tokio::spawn(async move {
             if let Err(error) = run_command.execute().await {
-                error!(err=?error, "Failed to start a quickwit server.");
+                error!(err=?error, "failed to start a quickwit server");
             }
         });
         wait_for_server_ready(([127, 0, 0, 1], self.rest_listen_port).into()).await?;

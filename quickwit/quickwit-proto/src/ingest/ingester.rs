@@ -45,10 +45,6 @@ impl OpenFetchStreamRequest {
     pub fn from_position_exclusive(&self) -> Position {
         self.from_position_exclusive.clone().unwrap_or_default()
     }
-
-    pub fn to_position_inclusive(&self) -> Position {
-        self.to_position_inclusive.clone().unwrap_or_default()
-    }
 }
 
 impl PersistSubrequest {
@@ -144,7 +140,7 @@ impl ReplicateSuccess {
     }
 }
 
-impl TruncateSubrequest {
+impl TruncateShardsSubrequest {
     pub fn queue_id(&self) -> QueueId {
         queue_id(&self.index_uid, &self.source_id, self.shard_id)
     }

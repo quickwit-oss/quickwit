@@ -26,11 +26,11 @@ use bytesize::ByteSize;
 use futures::{Future, StreamExt};
 use quickwit_common::ServiceStream;
 use quickwit_proto::ingest::ingester::{
-    ack_replication_message, syn_replication_message, AckReplicationMessage, ReplicateFailure,
-    ReplicateFailureReason, ReplicateRequest, ReplicateResponse, ReplicateSuccess,
-    SynReplicationMessage,
+    ack_replication_message, syn_replication_message, AckReplicationMessage, IngesterStatus,
+    ReplicateFailure, ReplicateFailureReason, ReplicateRequest, ReplicateResponse,
+    ReplicateSuccess, SynReplicationMessage,
 };
-use quickwit_proto::ingest::{CommitTypeV2, IngestV2Error, IngestV2Result};
+use quickwit_proto::ingest::{CommitTypeV2, IngestV2Error, IngestV2Result, ShardState};
 use quickwit_proto::types::{NodeId, Position};
 use tokio::sync::mpsc::error::TryRecvError;
 use tokio::sync::{mpsc, oneshot, RwLock};
@@ -38,10 +38,11 @@ use tokio::task::JoinHandle;
 use tracing::{error, warn};
 
 use super::ingester::IngesterState;
-use super::models::{IngesterShard, ReplicaShard};
+use super::models::IngesterShard;
 use super::mrecord::MRecord;
 use super::mrecordlog_utils::check_enough_capacity;
 use crate::estimate_size;
+use crate::ingest_v2::models::IngesterShardType;
 use crate::metrics::INGEST_METRICS;
 
 pub(super) const SYN_REPLICATION_STREAM_CAPACITY: usize = 5;
@@ -330,6 +331,27 @@ impl ReplicationTask {
 
         let mut state_guard = self.state.write().await;
 
+        if state_guard.status != IngesterStatus::Ready {
+            replicate_failures.reserve_exact(replicate_request.subrequests.len());
+
+            for subrequest in replicate_request.subrequests {
+                let replicate_failure = ReplicateFailure {
+                    subrequest_id: subrequest.subrequest_id,
+                    index_uid: subrequest.index_uid,
+                    source_id: subrequest.source_id,
+                    shard_id: subrequest.shard_id,
+                    reason: ReplicateFailureReason::ShardClosed as i32,
+                };
+                replicate_failures.push(replicate_failure);
+            }
+            let replicate_response = ReplicateResponse {
+                follower_id: replicate_request.follower_id,
+                successes: Vec::new(),
+                failures: replicate_failures,
+                replication_seqno: replicate_request.replication_seqno,
+            };
+            return Ok(replicate_response);
+        }
         for subrequest in replicate_request.subrequests {
             let queue_id = subrequest.queue_id();
             let from_position_exclusive = subrequest.from_position_exclusive();
@@ -343,8 +365,12 @@ impl ReplicationTask {
                     .await
                     .expect("TODO");
                 let leader_id: NodeId = replicate_request.leader_id.clone().into();
-                let replica_shard = ReplicaShard::new(leader_id);
-                let shard = IngesterShard::Replica(replica_shard);
+                let shard = IngesterShard::new_replica(
+                    leader_id,
+                    ShardState::Open,
+                    Position::Beginning,
+                    Position::Beginning,
+                );
                 state_guard.shards.entry(queue_id.clone()).or_insert(shard)
             } else {
                 state_guard
@@ -352,7 +378,11 @@ impl ReplicationTask {
                     .get(&queue_id)
                     .expect("replica shard should be initialized")
             };
-            if replica_shard.is_closed() {
+            assert!(matches!(
+                replica_shard.shard_type,
+                IngesterShardType::Replica { .. }
+            ));
+            if replica_shard.shard_state.is_closed() {
                 let replicate_failure = ReplicateFailure {
                     subrequest_id: subrequest.subrequest_id,
                     index_uid: subrequest.index_uid,
@@ -363,7 +393,7 @@ impl ReplicationTask {
                 replicate_failures.push(replicate_failure);
                 continue;
             }
-            if replica_shard.replication_position_inclusive() != from_position_exclusive {
+            if replica_shard.replication_position_inclusive != from_position_exclusive {
                 // TODO
             }
             let doc_batch = match subrequest.doc_batch {
@@ -377,7 +407,7 @@ impl ReplicationTask {
                         source_id: subrequest.source_id,
                         shard_id: subrequest.shard_id,
                         replication_position_inclusive: Some(
-                            replica_shard.replication_position_inclusive(),
+                            replica_shard.replication_position_inclusive.clone(),
                         ),
                     };
                     replicate_successes.push(replicate_success);
@@ -455,6 +485,7 @@ impl ReplicationTask {
             replicate_successes.push(replicate_success);
         }
         let follower_id = self.follower_id.clone().into();
+
         let replicate_response = ReplicateResponse {
             follower_id,
             successes: replicate_successes,
@@ -516,9 +547,12 @@ mod tests {
     use std::collections::HashMap;
 
     use mrecordlog::MultiRecordLog;
-    use quickwit_proto::ingest::ingester::{ReplicateSubrequest, ReplicateSuccess};
-    use quickwit_proto::ingest::{DocBatchV2, ShardState};
+    use quickwit_proto::ingest::ingester::{
+        ObservationMessage, ReplicateSubrequest, ReplicateSuccess,
+    };
+    use quickwit_proto::ingest::DocBatchV2;
     use quickwit_proto::types::queue_id;
+    use tokio::sync::watch;
 
     use super::*;
     use crate::ingest_v2::test_utils::MultiRecordLogTestExt;
@@ -671,12 +705,15 @@ mod tests {
         let follower_id: NodeId = "test-follower".into();
         let tempdir = tempfile::tempdir().unwrap();
         let mrecordlog = MultiRecordLog::open(tempdir.path()).await.unwrap();
+        let (observation_tx, _observation_rx) = watch::channel(Ok(ObservationMessage::default()));
         let state = Arc::new(RwLock::new(IngesterState {
             mrecordlog,
             shards: HashMap::new(),
             rate_limiters: HashMap::new(),
             replication_streams: HashMap::new(),
             replication_tasks: HashMap::new(),
+            status: IngesterStatus::Ready,
+            observation_tx,
         }));
         let (syn_replication_stream_tx, syn_replication_stream) =
             ServiceStream::new_bounded(SYN_REPLICATION_STREAM_CAPACITY);
@@ -835,12 +872,15 @@ mod tests {
         let follower_id: NodeId = "test-follower".into();
         let tempdir = tempfile::tempdir().unwrap();
         let mrecordlog = MultiRecordLog::open(tempdir.path()).await.unwrap();
+        let (observation_tx, _observation_rx) = watch::channel(Ok(ObservationMessage::default()));
         let state = Arc::new(RwLock::new(IngesterState {
             mrecordlog,
             shards: HashMap::new(),
             rate_limiters: HashMap::new(),
             replication_streams: HashMap::new(),
             replication_tasks: HashMap::new(),
+            status: IngesterStatus::Ready,
+            observation_tx,
         }));
         let (syn_replication_stream_tx, syn_replication_stream) =
             ServiceStream::new_bounded(SYN_REPLICATION_STREAM_CAPACITY);
@@ -861,16 +901,17 @@ mod tests {
         );
 
         let queue_id_01 = queue_id("test-index:0", "test-source", 1);
-
-        let mut replica_shard = ReplicaShard::new(leader_id);
-        replica_shard.shard_state = ShardState::Closed;
-        let shard = IngesterShard::Replica(replica_shard);
-
+        let replica_shard = IngesterShard::new_replica(
+            leader_id,
+            ShardState::Closed,
+            Position::Beginning,
+            Position::Beginning,
+        );
         state
             .write()
             .await
             .shards
-            .insert(queue_id_01.clone(), shard);
+            .insert(queue_id_01.clone(), replica_shard);
 
         let replicate_request = ReplicateRequest {
             leader_id: "test-leader".to_string(),
@@ -916,12 +957,15 @@ mod tests {
         let follower_id: NodeId = "test-follower".into();
         let tempdir = tempfile::tempdir().unwrap();
         let mrecordlog = MultiRecordLog::open(tempdir.path()).await.unwrap();
+        let (observation_tx, _observation_rx) = watch::channel(Ok(ObservationMessage::default()));
         let state = Arc::new(RwLock::new(IngesterState {
             mrecordlog,
             shards: HashMap::new(),
             rate_limiters: HashMap::new(),
             replication_streams: HashMap::new(),
             replication_tasks: HashMap::new(),
+            status: IngesterStatus::Ready,
+            observation_tx,
         }));
         let (syn_replication_stream_tx, syn_replication_stream) =
             ServiceStream::new_bounded(SYN_REPLICATION_STREAM_CAPACITY);

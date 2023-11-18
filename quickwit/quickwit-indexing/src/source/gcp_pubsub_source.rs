@@ -154,7 +154,7 @@ impl GcpPubSubSource {
     }
 
     fn should_exit(&self) -> bool {
-        self.backfill_mode_enabled && self.state.num_consecutive_empty_batches > 3
+        self.backfill_mode_enabled && self.state.num_consecutive_empty_batches > 5
     }
 }
 
@@ -175,7 +175,7 @@ impl Source for GcpPubSubSource {
             tokio::select! {
                 resp = self.pull_message_batch(&mut batch) => {
                     if let Err(err) = resp {
-                        warn!("Failed to pull messages from subscription `{}`: {:?}", self.subscription_name, err);
+                        warn!("failed to pull messages from subscription `{}`: {:?}", self.subscription_name, err);
                     }
                     if batch.num_bytes >= BATCH_NUM_BYTES_LIMIT {
                         break;
@@ -196,7 +196,7 @@ impl Source for GcpPubSubSource {
 
         // TODO: need to wait for all the id to be ack for at_least_once
         if self.should_exit() {
-            info!(subscription=%self.subscription_name, "Reached end of subscription.");
+            info!(subscription=%self.subscription_name, "reached end of subscription");
             ctx.send_exit_with_success(doc_processor_mailbox).await?;
             return Err(ActorExitStatus::Success);
         }
@@ -438,7 +438,7 @@ mod gcp_pubsub_emulator_tests {
             "num_bytes_processed": 54,
             "num_messages_processed": 6,
             "num_invalid_messages": 0,
-            "num_consecutive_empty_batches": 4,
+            "num_consecutive_empty_batches": 6,
         });
         assert_eq!(exit_state, expected_exit_state);
     }

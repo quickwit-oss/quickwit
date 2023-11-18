@@ -29,7 +29,7 @@ fn search_thread_pool() -> &'static rayon::ThreadPool {
         rayon::ThreadPoolBuilder::new()
             .thread_name(|thread_id| format!("quickwit-search-{thread_id}"))
             .panic_handler(|_my_panic| {
-                error!("Task running in the quickwit search pool panicked.");
+                error!("task running in the quickwit search pool panicked");
             })
             .build()
             .expect("Failed to spawn the spawning pool")
