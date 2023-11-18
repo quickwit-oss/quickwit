@@ -132,7 +132,7 @@ HA is available for search, for indexing it's available only with a Kafka source
 Our business model relies on our commercial license. There is no plan to become SaaS soon.
 
 
-# 🤝 Contribute
+# 🤝 Contribute and spread the word
 
 We are always thrilled to receive contributions: code, documentation, issues, or feedback. Here's how you can help us build the future of log management:
 
