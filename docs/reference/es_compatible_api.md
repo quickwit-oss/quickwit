@@ -248,11 +248,13 @@ The following query types are supported.
 
 ```json
 {
-  "query_string": {
-    "query": "bitpacking AND author.login:fulmicoton",
-    "fields": [
-      "payload.description"
-    ]
+  "query": {
+    "query_string": {
+      "query": "bitpacking AND author.login:fulmicoton",
+      "fields": [
+        "payload.description"
+      ]
+    }
   }
 }
 ```
@@ -314,12 +316,14 @@ The following query types are supported.
 
 ```json
 {
+  "query": {
     "range": {
       "my_date_field": {
         "lt": "2015-02-01T00:00:13Z",
         "gte": "2015-02-01T00:00:10Z"
       }
     }
+  }
 }
 
 ```
@@ -570,8 +574,10 @@ Query matching only documents containing a non-null value for a given field.
 
 ```json
 {
-  "exists": {
-    "field": "author.login"
+  "query": {
+    "exists": {
+      "field": "author.login"
+    }
   }
 }
 ```
@@ -601,19 +607,29 @@ The multi-target expression has the following constraints:
 ```
 GET api/v1/_elastic/stackoverflow-000001,stackoverflow-000002/_search
 {
+  "query": {
     "query_string": {
-        "query": "search AND engine",
-        "fields": ["title", "body"]
+      "query": "search AND engine",
+      "fields": [
+        "title",
+        "body"
+      ]
     }
+  }
 }
 ```
 
 ```
 GET api/v1/_elastic/stackoverflow*/_search
 {
+  "query": {
     "query_string": {
-        "query": "search AND engine",
-        "fields": ["title", "body"]
+      "query": "search AND engine",
+      "fields": [
+        "title",
+        "body"
+      ]
     }
+  }
 }
 ```
