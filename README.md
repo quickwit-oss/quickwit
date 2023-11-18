@@ -141,7 +141,7 @@ We are always thrilled to receive contributions: code, documentation, issues, or
 - Delve into our [contributing guide](CONTRIBUTING.md).
 - [Create a fork of Quickwit](https://github.com/quickwit-oss/quickwit/fork) and submit your pull request!
 
-✨ And to thank you for your contributions, claim your swag by emailing us at hello at quickwit.io.
+✨ And to thank you for your contributions, claim your swag by emailing us at hello@quickwit.io.
 
 # 💬 Join Our Community
 
