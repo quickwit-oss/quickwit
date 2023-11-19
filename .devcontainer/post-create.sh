@@ -87,7 +87,7 @@ install_awslocal() {
     # Installation files are stored in /usr/local/aws-cli, so we need to remove them
     rm -rf aws
     
-    if [[ "$(awslocal --version)" =~ "aws-cli" ]]; then
+    if [[ "$(aws --version)" =~ "aws-cli" ]]; then
         echo "awslocal installed successfully."
         awslocalInstalled=true
     else
