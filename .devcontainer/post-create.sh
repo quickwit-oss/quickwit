@@ -52,6 +52,7 @@ install_node_yarn() {
     curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.38.0/install.sh | bash
     source ~/.bashrc
     nvm install 18
+    nvm use 18
     npm install -g yarn
     if [[ "$(node --version)" =~ "v18." && "$(yarn --version)" =~ "." ]]; then
         echo "Node v18 and Yarn installed successfully."
@@ -62,9 +63,28 @@ install_node_yarn() {
     fi
 }
 
+configure_python_environment() {
+    if command -v python3 &> /dev/null; then
+        echo "Python 3 is installed"
+        # Create a symbolic link from python to python3
+        sudo ln -s /usr/bin/python3 /usr/bin/python
+    else
+        echo "Python 3 is not installed. Please install it manually."
+    fi
+}
+
 install_awslocal() {
+    echo "Setting up python environment"
+    configure_python_environment
+
     echo "Installing awslocal..."
-    pip install awscli-local
+    curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+    unzip awscliv2.zip
+    sudo ./aws/install
+
+    # Clean up
+    rm -f awscliv2.zip
+    
     if [[ "$(awslocal --version)" =~ "aws-cli" ]]; then
         echo "awslocal installed successfully."
         awslocalInstalled=true
