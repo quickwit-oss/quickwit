@@ -1,0 +1,17 @@
+{
+    "name": "Quickwit",
+    "image": "mcr.microsoft.com/devcontainers/rust:latest",
+    "customizations": {
+        "codespaces": {
+            "openFiles": [
+                "CONTRIBUTING.md"
+            ]
+        },
+        "vscode": {
+            "extensions": [
+                "rust-lang.rust-analyzer"
+            ]
+        }
+    },
+    "postCreateCommand": ".devcontainer/post-create.sh"
+}
