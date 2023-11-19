@@ -54,16 +54,16 @@ The payload size is limited to 10MB as this endpoint is intended to receive docu
 
 #### Query parameter
 
-| Variable      | Type       | Description                                                      | Default value |
-|---------------|------------|------------------------------------------------------------------|---------------|
-| `refresh`     | `String`   | The commit behavior: blank string, `true`, `wait_for` or `false` | `false`       |
+| Variable  | Type     | Description                                                      | Default value |
+| --------- | -------- | ---------------------------------------------------------------- | ------------- |
+| `refresh` | `String` | The commit behavior: blank string, `true`, `wait_for` or `false` | `false`       |
 
 #### Response
 
 The response is a JSON object, and the content type is `application/json; charset=UTF-8.`
 
-| Field                       | Description                                                                                                                                                              |   Type   |
-|-----------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------|:--------:|
+| Field                     | Description                                                                                                                                                              |   Type   |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | :------: |
 | `num_docs_for_processing` | Total number of documents ingested for processing. The documents may not have been processed. The API will not return indexing errors, check the server logs for errors. | `number` |
 
 
@@ -85,23 +85,35 @@ GET api/v1/_elastic/<index_id>/_search
   "size": 10,
   "query": {
     "bool": {
-        "must": [
-            {"query_string": {"query": "bitpacking"}},
-            {"term":
-                {"actor.login":
-                    {"value": "fulmicoton"}
-                }
+      "must": [
+        {
+          "query_string": {
+            "query": "bitpacking"
+          }
+        },
+        {
+          "term": {
+            "actor.login": {
+              "value": "fulmicoton"
             }
-        ]
+          }
+        }
+      ]
     }
   },
-  "sort": [{"actor.id": {"order": null}}],
+  "sort": [
+    {
+      "actor.id": {
+        "order": null
+      }
+    }
+  ],
   "aggs": {
     "event_types": {
-        "terms": {
-            "field": "type",
-            "size": 5
-        }
+      "terms": {
+        "field": "type",
+        "size": 5
+      }
     }
   }
 }
@@ -115,25 +127,25 @@ If a parameter appears both as a query string parameter and in the JSON payload,
 #### Supported Query string parameters
 
 
-| Variable      | Type       | Description                                                      | Default value |
-|---------------|------------|------------------------------------------------------------------|---------------|
-| `default_operator`     | `AND` or `OR`  | The default operator used to combine search terms. It should be `AND` or `OR`. | `OR`       |
-| `from`     | `Integer`   |  The rank of the first hit to return. This is useful for pagination.  |  0  |
-| `q` | `String` | The search query. | (Optional) |
-| `size` | `Integer` | Number of hits to return. |  10 |
-| `sort` | `String` | Describes how documents should be ranked. See [Sort order](#sort-order) | `[]` | (Optional) |
-| `scroll` | `Duration` | Creates a scroll context for "time to live". See [Scroll](#_scroll--scroll-api). | (Optional)
+| Variable           | Type          | Description                                                                      | Default value |
+| ------------------ | ------------- | -------------------------------------------------------------------------------- | ------------- |
+| `default_operator` | `AND` or `OR` | The default operator used to combine search terms. It should be `AND` or `OR`.   | `OR`          |
+| `from`             | `Integer`     | The rank of the first hit to return. This is useful for pagination.              | 0             |
+| `q`                | `String`      | The search query.                                                                | (Optional)    |
+| `size`             | `Integer`     | Number of hits to return.                                                        | 10            |
+| `sort`             | `String`      | Describes how documents should be ranked. See [Sort order](#sort-order)          | `[]`          | (Optional) |
+| `scroll`           | `Duration`    | Creates a scroll context for "time to live". See [Scroll](#_scroll--scroll-api). | (Optional)    |
 
 #### Supported Request Body parameters
 
-| Variable      | Type       | Description                                                      | Default value |
-|---------------|------------|------------------------------------------------------------------|---------------|
-| `default_operator`     | `"AND"` or `"OR"` | The default operator used to combine search terms. It should be `AND` or `OR`. | `OR`       |
-| `from`     | `Integer`   |  The rank of the first hit to return. This is useful for pagination.  |  0  |
-| `query` | `Json object` | Describe the search query. See [Query DSL](#query-dsl) | (Optional) |
-| `size` | `Integer` | Number of hits to return. |  10 |
-| `sort` | `JsonObject[]` | Describes how documents should be ranked. See [Sort order](#sort-order) | `[]` |
-| `aggs` | `Json object` | Aggregation definition. See [Aggregations](aggregation.md). | `{}` | `
+| Variable           | Type              | Description                                                                    | Default value |
+| ------------------ | ----------------- | ------------------------------------------------------------------------------ | ------------- |
+| `default_operator` | `"AND"` or `"OR"` | The default operator used to combine search terms. It should be `AND` or `OR`. | `OR`          |
+| `from`             | `Integer`         | The rank of the first hit to return. This is useful for pagination.            | 0             |
+| `query`            | `Json object`     | Describe the search query. See [Query DSL](#query-dsl)                         | (Optional)    |
+| `size`             | `Integer`         | Number of hits to return.                                                      | 10            |
+| `sort`             | `JsonObject[]`    | Describes how documents should be ranked. See [Sort order](#sort-order)        | `[]`          |
+| `aggs`             | `Json object`     | Aggregation definition. See [Aggregations](aggregation.md).                    | `{}`          | ` |
 
 
 #### Sort order
@@ -205,9 +217,9 @@ GET api/v1/_elastic/_search/scroll
 
 #### Supported Request Body parameters
 
-| Variable      | Type       | Description                                                      | Default value |
-|---------------|------------|------------------------------------------------------------------|---------------|
-| `scroll_id`     | Scroll id (obtained from a search response)  | Required
+| Variable    | Type                                        | Description | Default value |
+| ----------- | ------------------------------------------- | ----------- | ------------- |
+| `scroll_id` | Scroll id (obtained from a search response) | Required    |
 
 
 The `_search/scroll` endpoint, in combination with the `_search` API makes it possible to request successive pages of search results.
@@ -236,21 +248,25 @@ The following query types are supported.
 
 ```json
 {
+  "query": {
     "query_string": {
-        "query": "bitpacking AND author.login:fulmicoton",
-        "fields": ["payload.description"]
+      "query": "bitpacking AND author.login:fulmicoton",
+      "fields": [
+        "payload.description"
+      ]
     }
+  }
 }
 ```
 
 #### Supported parameters
 
-| Variable      | Type       | Description                                                      | Default value |
-|---------------|------------|------------------------------------------------------------------|---------------|
-| `query`     | `String`   |  Query meant to be parsed. | -       |
-| `fields`     | `String[]` (Optional)   | Default search target fields.  | -       |
-| `default_operator`     | `"AND"` or `"OR"`   | In the absence of boolean operator defines whether terms should be combined as a conjunction (`AND`) or disjunction (`OR`). | `OR`|
-| `boost`     | `Number`   | Multiplier boost for score computation. | 1.0       |
+| Variable           | Type                  | Description                                                                                                                 | Default value |
+| ------------------ | --------------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------- |
+| `query`            | `String`              | Query meant to be parsed.                                                                                                   | -             |
+| `fields`           | `String[]` (Optional) | Default search target fields.                                                                                               | -             |
+| `default_operator` | `"AND"` or `"OR"`     | In the absence of boolean operator defines whether terms should be combined as a conjunction (`AND`) or disjunction (`OR`). | `OR`          |
+| `boost`            | `Number`              | Multiplier boost for score computation.                                                                                     | 1.0           |
 
 
 ### `bool`
@@ -261,28 +277,36 @@ The following query types are supported.
 
 ```json
 {
+  "query": {
     "bool": {
-        "must": [
-            {"query_string": {"query": "bitpacking"}},
-        ],
-        "must_not": {"term":
-            {"type":
-                {"value": "CommitEvent"}
-            }
+      "must": [
+        {
+          "query_string": {
+            "query": "bitpacking"
+          }
         }
+      ],
+      "must_not": {
+        "term": {
+          "type": {
+            "value": "CommitEvent"
+          }
+        }
+      }
     }
+  }
 }
 ```
 
 #### Supported parameters
 
-| Variable      | Type       | Description                                                      | Default value |
-|---------------|------------|------------------------------------------------------------------|---------------|
-| `must`     | `JsonObject[]` (Optional)  |  Sub-queries required to match the document. | [] |
-| `must_not`     | `JsonObject[]` (Optional)   | Sub-queries required to not match the document.  | []       |
-| `should`     | `JsonObject[]` (Optional)   | Sub-queries that should match the documents. | [] |
-| `filter`     | `JsonObject[]` | Like must queries, but the match does not influence the `_score`.  | [] |
-| `boost`     | `Number`   | Multiplier boost for score computation. | 1.0       |
+| Variable   | Type                      | Description                                                       | Default value |
+| ---------- | ------------------------- | ----------------------------------------------------------------- | ------------- |
+| `must`     | `JsonObject[]` (Optional) | Sub-queries required to match the document.                       | []            |
+| `must_not` | `JsonObject[]` (Optional) | Sub-queries required to not match the document.                   | []            |
+| `should`   | `JsonObject[]` (Optional) | Sub-queries that should match the documents.                      | []            |
+| `filter`   | `JsonObject[]`            | Like must queries, but the match does not influence the `_score`. | []            |
+| `boost`    | `Number`                  | Multiplier boost for score computation.                           | 1.0           |
 
 ### `range`
 
@@ -292,25 +316,27 @@ The following query types are supported.
 
 ```json
 {
+  "query": {
     "range": {
       "my_date_field": {
         "lt": "2015-02-01T00:00:13Z",
         "gte": "2015-02-01T00:00:10Z"
       }
     }
+  }
 }
 
 ```
 
 #### Supported parameters
 
-| Variable      | Type       | Description                                                      | Default value |
-|---------------|------------|------------------------------------------------------------------|---------------|
-| `gt`     | bool, string, Number (Optional)  |  Greater than | None |
-| `gte`     | bool, string, Number (Optional)  | Greater than or equal  | None  |
-| `lt`     | bool, string, Number (Optional) | Less than | None |
-| `lte`     | bool, string, Number (Optional) | Less than or equal  | None |
-| `boost`     |  `Number`   | Multiplier boost for score computation | 1.0       |
+| Variable | Type                            | Description                            | Default value |
+| -------- | ------------------------------- | -------------------------------------- | ------------- |
+| `gt`     | bool, string, Number (Optional) | Greater than                           | None          |
+| `gte`    | bool, string, Number (Optional) | Greater than or equal                  | None          |
+| `lt`     | bool, string, Number (Optional) | Less than                              | None          |
+| `lte`    | bool, string, Number (Optional) | Less than or equal                     | None          |
+| `boost`  | `Number`                        | Multiplier boost for score computation | 1.0           |
 
 
 ### `match`
@@ -321,23 +347,25 @@ The following query types are supported.
 
 ```json
 {
+  "query": {
     "match": {
         "type": {
             "query": "CommitEvent",
             "zero_terms_query": "all"
         }
     }
+  }
 }
 ```
 
 #### Supported Parameters
 
-| Variable      | Type       | Description                                                      | Default |
-|---------------|------------|------------------------------------------------------------------|---------------|
-| `query`     | String  |  Full-text search query. | - |
-| `operator`  | `"AND"` or `"OR"` | Defines whether all terms should be present (`AND`) or if at least one term is sufficient to match (`OR`).  | OR  |
-| `zero_terms_query`  |  `all` or `none` | Defines if all (`all`) or no documents (`none`) should be returned if the query does not contain any terms after tokenization. | `none` |
-| `boost`     |  `Number`   | Multiplier boost for score computation | 1.0       |
+| Variable           | Type              | Description                                                                                                                    | Default |
+| ------------------ | ----------------- | ------------------------------------------------------------------------------------------------------------------------------ | ------- |
+| `query`            | String            | Full-text search query.                                                                                                        | -       |
+| `operator`         | `"AND"` or `"OR"` | Defines whether all terms should be present (`AND`) or if at least one term is sufficient to match (`OR`).                     | OR      |
+| `zero_terms_query` | `all` or `none`   | Defines if all (`all`) or no documents (`none`) should be returned if the query does not contain any terms after tokenization. | `none`  |
+| `boost`            | `Number`          | Multiplier boost for score computation                                                                                         | 1.0     |
 
 
 
@@ -369,23 +397,25 @@ The following query types are supported.
 
 ```json
 {
+  "query": {
     "match_phrase_prefix": {
       "payload.commits.message": {
-        "query" : "automated comm" // This will match "automated commit" for instance.
+        "query": "automated comm" // This will match "automated commit" for instance.
       }
     }
+  }
 }
 ```
 
 #### Supported Parameters
 
-| Variable          | Type       | Description                                                      | Default |
-|-------------------|------------|------------------------------------------------------------------|---------|
-| `query`           | String     |  Full-text search query. The last token will be prefix-matched   | -       |
-| `zero_terms_query`|  `all` or `none` | Defines if all (`all`) or no documents (`none`) should be returned if the query does not contain any terms after tokenization. | `none` |
-| `max_expansions`  |  `Integer` | Number of terms to be match by the prefix matching.               |  50     |
-| `slop`            | `Integer`  | Allows extra tokens between the query tokens.                    |  0      |
-| `analyzer`        | String     | Analyzer meant to cut the query into terms. It is recommended to NOT use this parameter. |  The actual field tokenizer.  |
+| Variable           | Type            | Description                                                                                                                    | Default                     |
+| ------------------ | --------------- | ------------------------------------------------------------------------------------------------------------------------------ | --------------------------- |
+| `query`            | String          | Full-text search query. The last token will be prefix-matched                                                                  | -                           |
+| `zero_terms_query` | `all` or `none` | Defines if all (`all`) or no documents (`none`) should be returned if the query does not contain any terms after tokenization. | `none`                      |
+| `max_expansions`   | `Integer`       | Number of terms to be match by the prefix matching.                                                                            | 50                          |
+| `slop`             | `Integer`       | Allows extra tokens between the query tokens.                                                                                  | 0                           |
+| `analyzer`         | String          | Analyzer meant to cut the query into terms. It is recommended to NOT use this parameter.                                       | The actual field tokenizer. |
 
 
 
@@ -398,11 +428,13 @@ The following query types are supported.
 
 ```json
 {
+  "query": {
     "match_bool_prefix": {
       "payload.commits.message": {
-        "query" : "automated comm" // This will match "automated commit" for instance.
+        "query": "automated comm" // This will match "automated commit" for instance.
       }
     }
+  }
 }
 ```
 
@@ -410,11 +442,11 @@ Contrary to ES/Opensearch, in Quickwit, at most 50 terms will be considered when
 
 #### Supported Parameters
 
-| Variable          | Type       | Description                                                      | Default |
-|-------------------|------------|------------------------------------------------------------------|---------|
-| `query`           | String     |  Full-text search query. The last token will be prefix-matched   | -       |
-| `operator`  | `"AND"` or `"OR"` | Defines whether all terms should be present (`AND`) or if at least one term is sufficient to match (`OR`).  | OR  |
-| `zero_terms_query`|  `all` or `none` | Defines if all (`all`) or no documents (`none`) should be returned if the query does not contain any terms after tokenization. | `none` |
+| Variable           | Type              | Description                                                                                                                    | Default |
+| ------------------ | ----------------- | ------------------------------------------------------------------------------------------------------------------------------ | ------- |
+| `query`            | String            | Full-text search query. The last token will be prefix-matched                                                                  | -       |
+| `operator`         | `"AND"` or `"OR"` | Defines whether all terms should be present (`AND`) or if at least one term is sufficient to match (`OR`).                     | OR      |
+| `zero_terms_query` | `all` or `none`   | Defines if all (`all`) or no documents (`none`) should be returned if the query does not contain any terms after tokenization. | `none`  |
 
 
 
@@ -426,9 +458,12 @@ Contrary to ES/Opensearch, in Quickwit, at most 50 terms will be considered when
 ```json
 {
   "query": {
-    "multi_match" : {
-      "query":    "search keywords", 
-      "fields": [ "title", "body" ] 
+    "multi_match": {
+      "query": "search keywords",
+      "fields": [
+        "title",
+        "body"
+      ]
     }
   }
 }
@@ -437,10 +472,13 @@ Contrary to ES/Opensearch, in Quickwit, at most 50 terms will be considered when
 ```json
 {
   "query": {
-    "multi_match" : {
-      "query":      "search keywords",
-      "type":       "most_fields",
-      "fields":     [ "title", "body" ]
+    "multi_match": {
+      "query": "search keywords",
+      "type": "most_fields",
+      "fields": [
+        "title",
+        "body"
+      ]
     }
   }
 }
@@ -449,10 +487,13 @@ Contrary to ES/Opensearch, in Quickwit, at most 50 terms will be considered when
 ```json
 {
   "query": {
-    "multi_match" : {
-      "query":      "search keywords",
-      "type":       "phrase",
-      "fields":     [ "title", "body" ]
+    "multi_match": {
+      "query": "search keywords",
+      "type": "phrase",
+      "fields": [
+        "title",
+        "body"
+      ]
     }
   }
 }
@@ -471,11 +512,11 @@ Contrary to ES/Opensearch, in Quickwit, at most 50 terms will be considered when
 ```
 
 #### Supported Multi-match Queries
-| Type    | Description                                                                              |
-|---------|------------------------------------------------------------------------------------------|
-| `most_fields` | (default) Finds documents which match any field and combines the `_score` from each field. |
-| `phrase` | Runs a `match_phrase` query on each field and uses the `_score` from the best field .         |
-| `phrase_prefix` | Runs a `match_phrase_prefix` query on each field and uses the `_score` from the best field.   |
+| Type            | Description                                                                                 |
+| --------------- | ------------------------------------------------------------------------------------------- |
+| `most_fields`   | (default) Finds documents which match any field and combines the `_score` from each field.  |
+| `phrase`        | Runs a `match_phrase` query on each field and uses the `_score` from the best field .       |
+| `phrase_prefix` | Runs a `match_phrase_prefix` query on each field and uses the `_score` from the best field. |
 
 
 
@@ -488,21 +529,23 @@ Contrary to ES/Opensearch, in Quickwit, at most 50 terms will be considered when
 
 ```json
 {
+  "query": {
     "term": {
       "payload.commits.message": {
         "value": "automated",
         "boost": 2.0
       }
     }
+  }
 }
 ```
 
 #### Supported Parameters
 
-| Variable          | Type       | Description                                                      | Default |
-|-------------------|------------|------------------------------------------------------------------|---------|
-| `value`           | String     |  Term value. This is the string representation of a token after tokenization.    | -    |
-| `boost`     |  `Number`   | Multiplier boost for score computation | 1.0       |
+| Variable | Type     | Description                                                                  | Default |
+| -------- | -------- | ---------------------------------------------------------------------------- | ------- |
+| `value`  | String   | Term value. This is the string representation of a token after tokenization. | -       |
+| `boost`  | `Number` | Multiplier boost for score computation                                       | 1.0     |
 
 
 
@@ -531,17 +574,19 @@ Query matching only documents containing a non-null value for a given field.
 
 ```json
 {
+  "query": {
     "exists": {
-        "field": "author.login"
+      "field": "author.login"
     }
+  }
 }
 ```
 
 #### Supported Parameters
 
-| Variable          | Type       | Description                                                      | Default |
-|-------------------|------------|------------------------------------------------------------------|---------|
-| `field`           | String     |  Only documents with a value for field will be returned.  | -    |
+| Variable | Type   | Description                                             | Default |
+| -------- | ------ | ------------------------------------------------------- | ------- |
+| `field`  | String | Only documents with a value for field will be returned. | -       |
 
 
 ## Search multiple indices
@@ -562,19 +607,29 @@ The multi-target expression has the following constraints:
 ```
 GET api/v1/_elastic/stackoverflow-000001,stackoverflow-000002/_search
 {
+  "query": {
     "query_string": {
-        "query": "search AND engine",
-        "fields": ["title", "body"]
+      "query": "search AND engine",
+      "fields": [
+        "title",
+        "body"
+      ]
     }
+  }
 }
 ```
 
 ```
 GET api/v1/_elastic/stackoverflow*/_search
 {
+  "query": {
     "query_string": {
-        "query": "search AND engine",
-        "fields": ["title", "body"]
+      "query": "search AND engine",
+      "fields": [
+        "title",
+        "body"
+      ]
     }
+  }
 }
 ```
