@@ -84,6 +84,7 @@ install_awslocal() {
 
     # Clean up
     rm -f awscliv2.zip
+    # Installation files are stored in /usr/local/aws-cli, so we need to remove them
     rm -rf aws
     
     if [[ "$(awslocal --version)" =~ "aws-cli" ]]; then
