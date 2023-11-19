@@ -84,6 +84,7 @@ install_awslocal() {
 
     # Clean up
     rm -f awscliv2.zip
+    rm -rf aws
     
     if [[ "$(awslocal --version)" =~ "aws-cli" ]]; then
         echo "awslocal installed successfully."
