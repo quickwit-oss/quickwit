@@ -93,13 +93,13 @@ install_protoc() {
 install_rustup_toolchain_nightly() {
     echo "Installing Rustup nightly toolchain..."
     rustup toolchain install nightly
-    if [[ "$(rustup toolchain list)" =~ "nightly" ]]; then
-        echo "Rustup nightly toolchain installed successfully."
+    rustup component add rustfmt --toolchain nightly
+    if [[ "$(rustup toolchain list)" =~ "nightly" && "$(rustup component list --toolchain nightly | grep rustfmt)" =~ "installed" ]]; then
+        echo "Rustup nightly toolchain and rustfmt installed successfully."
     else
-        echo "Rustup nightly toolchain installation failed. Please install it manually."
+        echo "Rustup nightly toolchain and/or rustfmt installation failed. Please install them manually."
     fi
 }
-
 # Call the functions
 install_cmake
 install_docker
