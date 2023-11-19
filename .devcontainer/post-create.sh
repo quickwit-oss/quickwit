@@ -31,11 +31,11 @@ install_docker() {
         dockerInstalled=true
     else
         echo "Docker installation failed. Please install it manually."
+    fi
     
     # Clean up
     rm -f get-docker.sh
-    fi
-    
+
     echo "Installing Docker Compose..."
     sudo curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
     sudo chmod +x /usr/local/bin/docker-compose
@@ -84,10 +84,10 @@ install_protoc() {
         protocInstalled=true
     else
         echo "protoc installation failed. Please install it manually."
-
+    fi
+    
     # Clean up
     rm -f protoc-3.15.8-linux-x86_64.zip
-    fi
 }
 
 install_rustup_toolchain_nightly() {
