@@ -33,7 +33,7 @@ install_docker() {
         echo "Docker installation failed. Please install it manually."
     
     # Clean up
-    rm get-docker.sh
+    rm -f get-docker.sh
     fi
     
     echo "Installing Docker Compose..."
@@ -86,7 +86,7 @@ install_protoc() {
         echo "protoc installation failed. Please install it manually."
 
     # Clean up
-    rm protoc-3.15.8-linux-x86_64.zip
+    rm -f protoc-3.15.8-linux-x86_64.zip
     fi
 }
 
