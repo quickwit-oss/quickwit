@@ -22,31 +22,6 @@ install_cmake() {
     fi
 }
 
-install_docker() {
-    echo "Installing Docker..."
-    curl -fsSL https://get.docker.com -o get-docker.sh
-    sudo sh get-docker.sh
-    if [[ "$(docker --version)" =~ "Docker version" ]]; then
-        echo "Docker installed successfully."
-        dockerInstalled=true
-    else
-        echo "Docker installation failed. Please install it manually."
-    fi
-    
-    # Clean up
-    rm -f get-docker.sh
-
-    echo "Installing Docker Compose..."
-    sudo curl -L "https://github.com/docker/compose/releases/download/1.29.2/docker-compose-$(uname -s)-$(uname -m)" -o /usr/local/bin/docker-compose
-    sudo chmod +x /usr/local/bin/docker-compose
-    if [[ "$(docker-compose --version)" =~ "docker-compose version" ]]; then
-        echo "Docker Compose installed successfully."
-        dockerComposeInstalled=true
-    else
-        echo "Docker Compose installation failed. Please install it manually."
-    fi
-}
-
 install_node_yarn() {
     echo "Installing Node v18 and Yarn..."
     curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.38.0/install.sh | bash
@@ -124,25 +99,8 @@ install_rustup_toolchain_nightly() {
 }
 # Call the functions
 install_cmake
-install_docker
 install_node_yarn
 install_awslocal
 install_protoc
 install_rustup_toolchain_nightly
 
-# Check the success tracking variables
-if $cmakeInstalled && $dockerInstalled && $dockerComposeInstalled && $nodeInstalled && $yarnInstalled && $awslocalInstalled && $protocInstalled; then
-    echo "All tools installed successfully."
-    echo "Useful commands:"
-    echo "make test-all - starts necessary Docker services and runs all tests."
-    echo "make -k test-all docker-compose-down - the same as above, but tears down the Docker services after running all the tests."
-    echo "make fmt - runs formatter, this command requires the nightly toolchain to be installed by running rustup toolchain install nightly."
-    echo "make fix - runs formatter and clippy checks."
-    echo "make typos - runs the spellcheck tool over the codebase. (Install by running cargo install typos)"
-    echo "make build-docs - builds docs."
-    echo "make docker-compose-up - starts Docker services."
-    echo "make docker-compose-down - stops Docker services."
-    echo "make docker-compose-logs - shows Docker logs."
-else
-    echo "One or more tools failed to install. Please check the output for errors and install the failed tools manually."
-fi
