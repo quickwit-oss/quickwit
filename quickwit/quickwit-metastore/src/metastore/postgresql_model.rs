@@ -20,8 +20,9 @@
 use std::convert::TryInto;
 use std::str::FromStr;
 
+use quickwit_proto::ingest::{Shard, ShardState};
 use quickwit_proto::metastore::{DeleteQuery, DeleteTask, MetastoreError, MetastoreResult};
-use quickwit_proto::types::IndexUid;
+use quickwit_proto::types::{IndexUid, ShardId, SourceId};
 use sea_query::{Iden, Write};
 use tracing::error;
 
@@ -208,5 +209,86 @@ impl TryInto<DeleteTask> for PgDeleteTask {
             opstamp: self.opstamp as u64,
             delete_query: Some(delete_query),
         })
+    }
+}
+
+#[derive(sqlx::Type, PartialEq, Debug)]
+#[sqlx(type_name = "SHARD_STATE")]
+#[sqlx(rename_all = "lowercase")]
+pub enum PgShardState {
+    Unspecified,
+    Open,
+    Unavailable,
+    Closed,
+}
+
+impl From<PgShardState> for String {
+    fn from(val: PgShardState) -> Self {
+        match val {
+            PgShardState::Unspecified => String::from("unspecified"),
+            PgShardState::Open => String::from("open"),
+            PgShardState::Unavailable => String::from("unavailable"),
+            PgShardState::Closed => String::from("closed"),
+        }
+    }
+}
+
+impl From<PgShardState> for ShardState {
+    fn from(val: PgShardState) -> Self {
+        match val {
+            PgShardState::Unspecified => ShardState::Unspecified,
+            PgShardState::Open => ShardState::Open,
+            PgShardState::Unavailable => ShardState::Unavailable,
+            PgShardState::Closed => ShardState::Closed,
+        }
+    }
+}
+
+// This is an extremely dumb approach but I couldn't find a better way to do the convertion from i32
+// -> ShardState -> PgShardState. Please provide suggestions.
+impl TryFrom<i32> for PgShardState {
+    type Error = MetastoreError;
+
+    fn try_from(val: i32) -> Result<PgShardState, Self::Error> {
+        match val {
+            0 => Ok(PgShardState::Unspecified),
+            1 => Ok(PgShardState::Open),
+            2 => Ok(PgShardState::Unavailable),
+            3 => Ok(PgShardState::Closed),
+            _ => Err(MetastoreError::InvalidArgument {
+                message: "The shard state is incorrect".to_string(),
+            }),
+        }
+    }
+}
+
+#[derive(sqlx::FromRow)]
+pub struct PgShard {
+    #[sqlx(try_from = "String")]
+    pub index_uid: IndexUid,
+    #[sqlx(try_from = "String")]
+    pub source_id: SourceId,
+    #[sqlx(try_from = "i64")]
+    pub shard_id: ShardId,
+    pub leader_id: String,
+    pub follower_id: Option<String>,
+    pub shard_state: PgShardState,
+    pub publish_position_inclusive: String,
+    pub publish_token: Option<String>,
+}
+
+impl From<PgShard> for Shard {
+    fn from(val: PgShard) -> Self {
+        let shard_state: ShardState = val.shard_state.into();
+        Shard {
+            index_uid: val.index_uid.clone().into(),
+            source_id: val.source_id.clone(),
+            shard_id: val.shard_id,
+            leader_id: val.leader_id.clone(),
+            follower_id: val.follower_id.clone(),
+            shard_state: shard_state.into(),
+            publish_position_inclusive: Some(val.publish_position_inclusive.clone().into()),
+            publish_token: val.publish_token.clone(),
+        }
     }
 }
