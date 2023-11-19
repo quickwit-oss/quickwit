@@ -90,12 +90,23 @@ install_protoc() {
     fi
 }
 
+install_rustup_toolchain_nightly() {
+    echo "Installing Rustup nightly toolchain..."
+    rustup toolchain install nightly
+    if [[ "$(rustup toolchain list)" =~ "nightly" ]]; then
+        echo "Rustup nightly toolchain installed successfully."
+    else
+        echo "Rustup nightly toolchain installation failed. Please install it manually."
+    fi
+}
+
 # Call the functions
 install_cmake
 install_docker
 install_node_yarn
 install_awslocal
 install_protoc
+install_rustup_toolchain_nightly
 
 # Check the success tracking variables
 if $cmakeInstalled && $dockerInstalled && $dockerComposeInstalled && $nodeInstalled && $yarnInstalled && $awslocalInstalled && $protocInstalled; then
