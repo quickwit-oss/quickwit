@@ -237,11 +237,11 @@ mod tests {
         "#;
 
         let search_body = serde_json::from_str::<SearchBody>(json);
-        assert!(search_body.is_err());
-        assert_eq!(
-            search_body.err().unwrap().to_string(),
-            "unknown field `term`, expected one of `from`, `size`, `query`, `sort`, `aggs`, \
-             `track_total_hits`, `stored_fields`, `search_after` at line 3 column 22"
-        );
+        let error_msg = search_body.unwrap_err().to_string();
+        assert!(error_msg.contains("unknown field `term`"));
+        assert!(error_msg.contains(
+            "expected one of `from`, `size`, `query`, `sort`, `aggs`, `track_total_hits`, \
+             `stored_fields`, `search_after`"
+        ));
     }
 }
