@@ -19,7 +19,7 @@
 
 #![deny(clippy::disallowed_methods)]
 
-use quickwit_actors::{Mailbox, Universe};
+use quickwit_actors::{Mailbox, SpawnContext};
 use quickwit_common::pubsub::EventBroker;
 use quickwit_config::NodeConfig;
 use quickwit_metastore::SplitInfo;
@@ -44,20 +44,20 @@ use crate::actors::{DeleteTaskService, GarbageCollector, RetentionPolicyExecutor
 pub struct JanitorApiSchemas;
 
 pub async fn start_janitor_service(
-    universe: &Universe,
     config: &NodeConfig,
     metastore: MetastoreServiceClient,
     search_job_placer: SearchJobPlacer,
     storage_resolver: StorageResolver,
     event_broker: EventBroker,
+    spawn_ctx: &SpawnContext,
 ) -> anyhow::Result<Mailbox<JanitorService>> {
     info!("starting janitor service");
     let garbage_collector = GarbageCollector::new(metastore.clone(), storage_resolver.clone());
-    let (_, garbage_collector_handle) = universe.spawn_builder().spawn(garbage_collector);
+    let (_, garbage_collector_handle) = spawn_ctx.spawn_builder().spawn(garbage_collector);
 
     let retention_policy_executor = RetentionPolicyExecutor::new(metastore.clone());
     let (_, retention_policy_executor_handle) =
-        universe.spawn_builder().spawn(retention_policy_executor);
+        spawn_ctx.spawn_builder().spawn(retention_policy_executor);
     let delete_task_service = DeleteTaskService::new(
         metastore,
         search_job_placer,
@@ -67,7 +67,7 @@ pub async fn start_janitor_service(
         event_broker,
     )
     .await?;
-    let (_, delete_task_service_handle) = universe.spawn_builder().spawn(delete_task_service);
+    let (_, delete_task_service_handle) = spawn_ctx.spawn_builder().spawn(delete_task_service);
 
     let janitor_service = JanitorService::new(
         delete_task_service_handle,
@@ -75,6 +75,6 @@ pub async fn start_janitor_service(
         retention_policy_executor_handle,
     );
     let (janitor_service_mailbox, _janitor_service_handle) =
-        universe.spawn_builder().spawn(janitor_service);
+        spawn_ctx.spawn_builder().spawn(janitor_service);
     Ok(janitor_service_mailbox)
 }

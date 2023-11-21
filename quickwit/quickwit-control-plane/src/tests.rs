@@ -143,13 +143,13 @@ async fn start_control_plane(
 
     let self_node_id: NodeId = cluster.self_node_id().to_string().into();
     let (control_plane_mailbox, _control_plane_handle) = ControlPlane::spawn(
-        universe,
         cluster.cluster_id().to_string(),
         self_node_id,
         indexer_pool,
         ingester_pool,
         MetastoreServiceClient::from(metastore),
         1,
+        universe.spawn_ctx()
     );
 
     (indexer_inboxes, control_plane_mailbox)

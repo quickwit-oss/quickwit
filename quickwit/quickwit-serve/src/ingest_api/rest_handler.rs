@@ -293,7 +293,7 @@ pub(crate) mod tests {
         let universe = Universe::with_accelerated_time();
         let temp_dir = tempfile::tempdir().unwrap();
         let queues_dir_path = temp_dir.path().join(QUEUES_DIR_NAME);
-        let ingest_service_mailbox = init_ingest_api(&universe, &queues_dir_path, config)
+        let ingest_service_mailbox = init_ingest_api(&queues_dir_path, config, universe.spawn_ctx())
             .await
             .unwrap();
         for queue in queues {

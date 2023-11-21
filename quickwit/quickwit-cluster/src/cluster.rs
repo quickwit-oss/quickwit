@@ -105,7 +105,7 @@ impl Cluster {
         self.self_chitchat_id.gossip_advertise_addr
     }
 
-    pub async fn join(
+    pub async fn spawn(
         cluster_id: String,
         self_node: ClusterMember,
         gossip_listen_addr: SocketAddr,
@@ -309,6 +309,9 @@ impl Cluster {
         );
         self.set_self_node_readiness(false).await;
         tokio::time::sleep(GOSSIP_INTERVAL * 2).await;
+        let inner_lock = self.inner.read().await;
+        let handle = &inner_lock.chitchat_handle;
+        handle.abort();
     }
 
     /// This exposes in chitchat some metrics about the CPU usage of cooperative pipelines.
@@ -541,7 +544,7 @@ pub async fn create_cluster_for_test_with_id(
         indexing_cpu_capacity: PIPELINE_FULL_CAPACITY,
     };
     let failure_detector_config = create_failure_detector_config_for_test();
-    let cluster = Cluster::join(
+    let cluster = Cluster::spawn(
         cluster_id,
         self_node,
         gossip_advertise_addr,

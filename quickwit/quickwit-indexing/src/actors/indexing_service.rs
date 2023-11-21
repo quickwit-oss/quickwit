@@ -865,7 +865,7 @@ mod tests {
         let storage_resolver = StorageResolver::unconfigured();
         let queues_dir_path = data_dir_path.join(QUEUES_DIR_NAME);
         let ingest_api_service =
-            init_ingest_api(universe, &queues_dir_path, &IngestApiConfig::default())
+            init_ingest_api(&queues_dir_path, &IngestApiConfig::default(), universe.spawn_ctx())
                 .await
                 .unwrap();
         let indexing_server = IndexingService::new(
@@ -1308,7 +1308,7 @@ mod tests {
         let universe = Universe::with_accelerated_time();
         let queues_dir_path = data_dir_path.join(QUEUES_DIR_NAME);
         let ingest_api_service =
-            init_ingest_api(&universe, &queues_dir_path, &IngestApiConfig::default())
+            init_ingest_api(&queues_dir_path, &IngestApiConfig::default(),universe.spawn_ctx())
                 .await
                 .unwrap();
         let indexing_server = IndexingService::new(
@@ -1498,7 +1498,7 @@ mod tests {
         let temp_dir = tempfile::tempdir().unwrap();
         let queues_dir_path = temp_dir.path().join(QUEUES_DIR_NAME);
         let ingest_api_service =
-            init_ingest_api(&universe, &queues_dir_path, &IngestApiConfig::default())
+            init_ingest_api(&queues_dir_path, &IngestApiConfig::default(), universe.spawn_ctx())
                 .await
                 .unwrap();
         let create_queue_req = CreateQueueIfNotExistsRequest {

@@ -23,9 +23,10 @@ use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::Duration;
 
+use anyhow::Context;
 use futures_util::future;
 use itertools::Itertools;
-use quickwit_actors::ActorExitStatus;
+use quickwit_actors::{ActorExitStatus, Universe};
 use quickwit_common::new_coolid;
 use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::test_utils::{wait_for_server_ready, wait_until_predicate};
@@ -54,12 +55,12 @@ pub struct TestNodeConfig {
     pub services: HashSet<QuickwitService>,
 }
 
-struct ClusterShutdownTrigger {
+struct NodeShutdownTrigger {
     sender: Sender<()>,
     receiver: Receiver<()>,
 }
 
-impl ClusterShutdownTrigger {
+impl NodeShutdownTrigger {
     fn new() -> Self {
         let (sender, receiver) = watch::channel(());
         Self { sender, receiver }
@@ -72,7 +73,7 @@ impl ClusterShutdownTrigger {
         })
     }
 
-    fn shutdown(self) {
+    fn shutdown(&self) {
         self.sender.send(()).unwrap();
     }
 }
@@ -88,10 +89,66 @@ impl ClusterShutdownTrigger {
 pub struct ClusterSandbox {
     pub node_configs: Vec<TestNodeConfig>,
     pub searcher_rest_client: QuickwitClient,
+    pub searcher_rest_client_url: Url,
     pub indexer_rest_client: QuickwitClient,
+    pub indexer_rest_client_url: Url,
+    pub cluster_nodes: Vec<ClusterTestNode>,
     _temp_dir: TempDir,
-    join_handles: Vec<JoinHandle<Result<HashMap<String, ActorExitStatus>, anyhow::Error>>>,
-    shutdown_trigger: ClusterShutdownTrigger,
+}
+
+pub struct ClusterTestNode {
+    universe: Universe,
+    test_node_config: TestNodeConfig,
+    join_handle_opt: Option<JoinHandle<anyhow::Result<HashMap<String, ActorExitStatus>>>>,
+    shutdown_trigger: NodeShutdownTrigger,
+}
+
+impl ClusterTestNode {
+    pub fn new(test_node_config: TestNodeConfig) -> ClusterTestNode {
+        ClusterTestNode {
+            universe: Universe::new(),
+            test_node_config,
+            join_handle_opt: None,
+            shutdown_trigger: NodeShutdownTrigger::new(),
+        }
+    }
+
+    pub async fn shutdown(&mut self) -> anyhow::Result<HashMap<String, ActorExitStatus>> {
+        self.shutdown_trigger.shutdown();
+        let join_handle = self
+            .join_handle_opt
+            .take()
+            .context("Node was not in a started state")?;
+        std::mem::take(&mut self.universe).assert_quit().await;
+        let statuses = join_handle.await.context("failed to join node")??;
+        Ok(statuses)
+    }
+
+    async fn start(&mut self) {
+        assert!(self.join_handle_opt.is_none());
+        let runtimes_config = RuntimesConfig::light_for_tests();
+        let storage_resolver = StorageResolver::unconfigured();
+        let metastore_resolver = MetastoreResolver::unconfigured();
+        self.shutdown_trigger = NodeShutdownTrigger::new();
+        let shutdown_signal = self.shutdown_trigger.shutdown_signal();
+        let node_config = self.test_node_config.node_config.clone();
+        let spawn_ctx = self.universe.spawn_ctx().clone();
+        let join_handle = tokio::spawn(serve_quickwit(
+            node_config,
+            runtimes_config,
+            metastore_resolver,
+            storage_resolver,
+            shutdown_signal,
+            spawn_ctx,
+        ));
+        self.join_handle_opt = Some(join_handle);
+    }
+
+    pub async fn restart(&mut self) -> anyhow::Result<()> {
+        self.shutdown().await;
+        self.start().await;
+        Ok(())
+    }
 }
 
 fn transport_url(addr: SocketAddr) -> Url {
@@ -141,63 +198,48 @@ pub(crate) async fn ingest_with_retry(
 impl ClusterSandbox {
     pub async fn start_cluster_with_configs(
         temp_dir: TempDir,
-        node_configs: Vec<TestNodeConfig>,
+        test_node_configs: Vec<TestNodeConfig>,
     ) -> anyhow::Result<Self> {
-        let runtimes_config = RuntimesConfig::light_for_tests();
-        let storage_resolver = StorageResolver::unconfigured();
-        let metastore_resolver = MetastoreResolver::unconfigured();
-        let mut join_handles = Vec::new();
-        let shutdown_trigger = ClusterShutdownTrigger::new();
-        for node_config in node_configs.iter() {
-            join_handles.push(tokio::spawn({
-                let node_config = node_config.node_config.clone();
-                let metastore_resolver = metastore_resolver.clone();
-                let storage_resolver = storage_resolver.clone();
-                let shutdown_signal = shutdown_trigger.shutdown_signal();
-                async move {
-                    let result = serve_quickwit(
-                        node_config,
-                        runtimes_config,
-                        metastore_resolver,
-                        storage_resolver,
-                        shutdown_signal,
-                    )
-                    .await?;
-                    Result::<_, anyhow::Error>::Ok(result)
-                }
-            }));
+        let mut cluster_nodes = Vec::new();
+        for test_node_config in &test_node_configs {
+            let mut test_node = ClusterTestNode::new(test_node_config.clone());
+            test_node.start().await;
+            cluster_nodes.push(test_node);
         }
-        let searcher_config = node_configs
+        let searcher_config = test_node_configs
             .iter()
             .find(|node_config| node_config.services.contains(&QuickwitService::Searcher))
             .cloned()
             .unwrap();
-        let indexer_config = node_configs
+        let indexer_config = test_node_configs
             .iter()
             .find(|node_config| node_config.services.contains(&QuickwitService::Indexer))
             .cloned()
             .unwrap();
-        if node_configs.len() == 1 {
+        if test_node_configs.len() == 1 {
             // We have only one node, so we can just wait for it to get started
-            wait_for_server_ready(node_configs[0].node_config.grpc_listen_addr).await?;
+            wait_for_server_ready(test_node_configs[0].node_config.grpc_listen_addr).await?;
         } else {
             // Wait for a duration greater than chitchat GOSSIP_INTERVAL (50ms) so that the cluster
             // is formed.
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
-        Ok(Self {
-            node_configs,
-            searcher_rest_client: QuickwitClientBuilder::new(transport_url(
-                searcher_config.node_config.rest_listen_addr,
-            ))
-            .build(),
-            indexer_rest_client: QuickwitClientBuilder::new(transport_url(
-                indexer_config.node_config.rest_listen_addr,
-            ))
-            .build(),
+
+        let searcher_rest_client_url = transport_url(searcher_config.node_config.rest_listen_addr);
+        let indexer_rest_client_url = transport_url(indexer_config.node_config.rest_listen_addr);
+        let searcher_rest_client =
+            QuickwitClientBuilder::new(searcher_rest_client_url.clone()).build();
+        let indexer_rest_client =
+            QuickwitClientBuilder::new(indexer_rest_client_url.clone()).build();
+
+        Ok(ClusterSandbox {
+            node_configs: test_node_configs,
+            searcher_rest_client,
+            searcher_rest_client_url,
+            indexer_rest_client,
+            indexer_rest_client_url,
             _temp_dir: temp_dir,
-            join_handles,
-            shutdown_trigger,
+            cluster_nodes,
         })
     }
 
@@ -332,16 +374,32 @@ impl ClusterSandbox {
         Ok(())
     }
 
-    pub async fn shutdown(self) -> Result<Vec<HashMap<String, ActorExitStatus>>, anyhow::Error> {
+    fn rebuild_clients(&mut self) {
+        self.searcher_rest_client =
+            QuickwitClientBuilder::new(self.searcher_rest_client_url.clone()).build();
+        self.indexer_rest_client =
+            QuickwitClientBuilder::new(self.indexer_rest_client_url.clone()).build();
+    }
+
+    pub async fn restart_node(&mut self, node_id: usize) -> anyhow::Result<()> {
+        // We rebuild the clients. Existing connection can prevent the node to shutdown.
+        self.rebuild_clients();
+        self.cluster_nodes[node_id].restart().await
+    }
+
+    pub async fn shutdown(mut self) -> anyhow::Result<Vec<HashMap<String, ActorExitStatus>>> {
         // We need to drop rest clients first because reqwest can hold connections open
         // preventing rest server's graceful shutdown.
-        drop(self.searcher_rest_client);
-        drop(self.indexer_rest_client);
-        self.shutdown_trigger.shutdown();
-        let result = future::join_all(self.join_handles).await;
+        self.rebuild_clients();
+        let result = future::join_all(
+            self.cluster_nodes
+                .into_iter()
+                .map(|mut test_cluster_node| async move { test_cluster_node.shutdown().await }),
+        )
+        .await;
         let mut statuses = Vec::new();
         for node in result {
-            statuses.push(node??);
+            statuses.push(node?);
         }
         Ok(statuses)
     }

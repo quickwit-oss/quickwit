@@ -299,7 +299,7 @@ mod tests {
         let queues_dir_path = temp_dir.path();
 
         let ingest_api_service =
-            init_ingest_api(&universe, queues_dir_path, &IngestApiConfig::default()).await?;
+            init_ingest_api(queues_dir_path, &IngestApiConfig::default(), universe.spawn_ctx()).await?;
         let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
         let source_config = make_source_config();
         let ctx = SourceRuntimeArgs::for_test(
@@ -351,13 +351,13 @@ mod tests {
             let temp_dir = tempfile::tempdir()?;
             let queues_dir_path = temp_dir.path();
             let ingest_api_service =
-                init_ingest_api(&universe, queues_dir_path, &IngestApiConfig::default()).await?;
+                init_ingest_api( queues_dir_path, &IngestApiConfig::default(), universe.spawn_ctx()).await?;
             let partition_id: PartitionId = ingest_api_service.ask(GetPartitionId).await?.into();
             let partition_id2: PartitionId = ingest_api_service.ask(GetPartitionId).await?.into();
             assert_eq!(partition_id, partition_id2);
             drop(ingest_api_service);
             let ingest_api_service =
-                init_ingest_api(&universe, queues_dir_path, &IngestApiConfig::default()).await?;
+                init_ingest_api(queues_dir_path, &IngestApiConfig::default(), universe.spawn_ctx()).await?;
             let partition_id3: PartitionId = ingest_api_service.ask(GetPartitionId).await?.into();
             assert_eq!(partition_id, partition_id3);
             partition_id
@@ -366,7 +366,7 @@ mod tests {
             let temp_dir = tempfile::tempdir()?;
             let queues_dir_path = temp_dir.path();
             let ingest_api_service =
-                init_ingest_api(&universe, queues_dir_path, &IngestApiConfig::default()).await?;
+                init_ingest_api(queues_dir_path, &IngestApiConfig::default(), universe.spawn_ctx()).await?;
             let partition_id: PartitionId = ingest_api_service.ask(GetPartitionId).await?.into();
             partition_id
         };
@@ -388,7 +388,7 @@ mod tests {
         let queues_dir_path = temp_dir.path();
 
         let ingest_api_service =
-            init_ingest_api(&universe, queues_dir_path, &IngestApiConfig::default()).await?;
+            init_ingest_api(queues_dir_path, &IngestApiConfig::default(), universe.spawn_ctx()).await?;
         let create_queue_req = CreateQueueIfNotExistsRequest {
             queue_id: index_id.clone(),
         };
@@ -466,7 +466,7 @@ mod tests {
         let temp_dir = tempfile::tempdir()?;
         let queues_dir_path = temp_dir.path();
         let ingest_api_service =
-            init_ingest_api(&universe, queues_dir_path, &IngestApiConfig::default()).await?;
+            init_ingest_api(queues_dir_path, &IngestApiConfig::default(), universe.spawn_ctx()).await?;
 
         let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
         let source_config = make_source_config();
@@ -521,7 +521,7 @@ mod tests {
         let queues_dir_path = temp_dir.path();
 
         let ingest_api_service =
-            init_ingest_api(&universe, queues_dir_path, &IngestApiConfig::default()).await?;
+            init_ingest_api(queues_dir_path, &IngestApiConfig::default(), universe.spawn_ctx()).await?;
         let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
         let source_config = make_source_config();
         let ctx = SourceRuntimeArgs::for_test(
@@ -588,7 +588,7 @@ mod tests {
         let queues_dir_path = temp_dir.path();
 
         let ingest_api_service =
-            init_ingest_api(&universe, queues_dir_path, &IngestApiConfig::default()).await?;
+            init_ingest_api(queues_dir_path, &IngestApiConfig::default(), universe.spawn_ctx()).await?;
         let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
         let source_config = make_source_config();
         let ctx = SourceRuntimeArgs::for_test(
@@ -651,7 +651,7 @@ mod tests {
         let queues_dir_path = temp_dir.path();
 
         let ingest_api_service =
-            init_ingest_api(&universe, queues_dir_path, &IngestApiConfig::default()).await?;
+            init_ingest_api(queues_dir_path, &IngestApiConfig::default(), universe.spawn_ctx()).await?;
         let (doc_processor_mailbox, _doc_processor_inbox) = universe.create_test_mailbox();
         let source_config = make_source_config();
         let ctx = SourceRuntimeArgs::for_test(

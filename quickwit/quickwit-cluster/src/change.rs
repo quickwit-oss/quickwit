@@ -346,7 +346,7 @@ mod tests {
         }
 
         pub(crate) fn build(self) -> NodeState {
-            let mut node_state = NodeState::default();
+            let mut node_state = NodeState::for_test();
 
             node_state.set(
                 ENABLED_SERVICES_KEY,

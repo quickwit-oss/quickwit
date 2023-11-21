@@ -17,6 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::HashMap;
+
 use anyhow::Context;
 use quickwit_common::metrics::IntCounter;
 use sync_wrapper::SyncWrapper;
@@ -48,6 +50,14 @@ impl SpawnContext {
         }
     }
 
+    pub fn get<A: Actor>(&self) -> Vec<Mailbox<A>> {
+        self.registry.get::<A>()
+    }
+
+    pub fn get_one<A: Actor>(&self) -> Option<Mailbox<A>> {
+        self.registry.get_one::<A>()
+    }
+
     pub fn spawn_builder<A: Actor>(&self) -> SpawnBuilder<A> {
         SpawnBuilder::new(self.child_context())
     }
@@ -70,6 +80,11 @@ impl SpawnContext {
             kill_switch: self.kill_switch.child(),
             registry: self.registry.clone(),
         }
+    }
+
+    /// Gracefully quits all registered actors.
+    pub async fn quit(&self) -> HashMap<String, ActorExitStatus> {
+        self.registry.quit().await
     }
 }
 

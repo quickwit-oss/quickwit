@@ -22,6 +22,7 @@ use std::str::FromStr;
 
 use clap::{arg, ArgAction, ArgMatches, Command};
 use itertools::Itertools;
+use quickwit_actors::Universe;
 use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::uri::{Protocol, Uri};
 use quickwit_config::service::QuickwitService;
@@ -95,12 +96,14 @@ impl RunCliCommand {
                 .await
                 .expect("Registering a signal handler for SIGINT should not fail.");
         });
+        let universe = Universe::default();
         let serve_result = serve_quickwit(
             node_config,
             runtimes_config,
             metastore_resolver,
             storage_resolver,
             shutdown_signal,
+            universe.spawn_ctx().clone(),
         )
         .await;
         let return_code = match serve_result {

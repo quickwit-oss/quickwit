@@ -942,7 +942,7 @@ async fn create_empty_cluster(config: &NodeConfig) -> anyhow::Result<Cluster> {
         indexing_cpu_capacity: CpuCapacity::zero(),
         indexing_tasks: Vec::new(),
     };
-    let cluster = Cluster::join(
+    let cluster = Cluster::spawn(
         config.cluster_id.clone(),
         self_node,
         config.gossip_advertise_addr,

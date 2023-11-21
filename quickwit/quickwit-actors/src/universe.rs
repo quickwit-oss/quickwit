@@ -82,11 +82,11 @@ impl Universe {
     }
 
     pub fn get<A: Actor>(&self) -> Vec<Mailbox<A>> {
-        self.spawn_ctx.registry.get::<A>()
+        self.spawn_ctx.get()
     }
 
     pub fn get_one<A: Actor>(&self) -> Option<Mailbox<A>> {
-        self.spawn_ctx.registry.get_one::<A>()
+        self.spawn_ctx.get_one::<A>()
     }
 
     pub async fn observe(&self, timeout: Duration) -> Vec<ActorObservation> {

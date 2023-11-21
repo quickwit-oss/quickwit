@@ -52,7 +52,7 @@ use bytesize::ByteSize;
 pub use format::BodyFormat;
 use futures::{Stream, StreamExt};
 use itertools::Itertools;
-use quickwit_actors::{ActorExitStatus, Mailbox, Universe};
+use quickwit_actors::{ActorExitStatus, Mailbox, SpawnContext};
 use quickwit_cluster::{start_cluster_service, Cluster, ClusterChange, ClusterMember};
 use quickwit_common::pubsub::{EventBroker, EventSubscriptionHandle};
 use quickwit_common::runtimes::RuntimesConfig;
@@ -165,14 +165,14 @@ async fn balance_channel_for_service(
 
 async fn start_ingest_client_if_needed(
     node_config: &NodeConfig,
-    universe: &Universe,
     cluster: &Cluster,
+    spawn_ctx: &SpawnContext,
 ) -> anyhow::Result<IngestServiceClient> {
     if node_config.is_service_enabled(QuickwitService::Indexer) {
         let ingest_api_service = start_ingest_api_service(
-            universe,
             &node_config.data_dir_path,
             &node_config.ingest_api_config,
+            spawn_ctx,
         )
         .await?;
         let num_buckets = NonZeroUsize::new(60).expect("60 should be non-zero");
@@ -207,9 +207,9 @@ async fn start_control_plane_if_needed(
     node_config: &NodeConfig,
     cluster: &Cluster,
     metastore_client: &MetastoreServiceClient,
-    universe: &Universe,
     indexer_pool: &IndexerPool,
     ingester_pool: &IngesterPool,
+    spawn_ctx: &SpawnContext,
 ) -> anyhow::Result<ControlPlaneServiceClient> {
     if node_config.is_service_enabled(QuickwitService::ControlPlane) {
         check_cluster_configuration(
@@ -228,13 +228,13 @@ async fn start_control_plane_if_needed(
             .expect("replication factor should have been validated")
             .get();
         let control_plane_mailbox = setup_control_plane(
-            universe,
             cluster_id,
             self_node_id,
             indexer_pool.clone(),
             ingester_pool.clone(),
             metastore_client.clone(),
             replication_factor,
+            spawn_ctx,
         )
         .await?;
         Ok(ControlPlaneServiceClient::from_mailbox(
@@ -255,13 +255,13 @@ pub async fn serve_quickwit(
     metastore_resolver: MetastoreResolver,
     storage_resolver: StorageResolver,
     shutdown_signal: BoxFutureInfaillible<()>,
+    spawn_ctx: SpawnContext,
 ) -> anyhow::Result<HashMap<String, ActorExitStatus>> {
     let cluster = start_cluster_service(&node_config).await?;
 
     let event_broker = EventBroker::default();
     let indexer_pool = IndexerPool::default();
     let ingester_pool = IngesterPool::default();
-    let universe = Universe::new();
 
     // Instantiate a metastore "server" if the `metastore` role is enabled on the node.
     let metastore_server_opt: Option<MetastoreServiceClient> =
@@ -315,9 +315,9 @@ pub async fn serve_quickwit(
         &node_config,
         &cluster,
         &metastore_client,
-        &universe,
         &indexer_pool,
         &ingester_pool,
+        &spawn_ctx,
     )
     .await?;
 
@@ -328,14 +328,13 @@ pub async fn serve_quickwit(
     ));
 
     // Setup ingest service v1.
-    let ingest_service = start_ingest_client_if_needed(&node_config, &universe, &cluster).await?;
+    let ingest_service = start_ingest_client_if_needed(&node_config, &cluster, &spawn_ctx).await?;
 
     let indexing_service_opt = if node_config.is_service_enabled(QuickwitService::Indexer) {
-        let ingest_api_service: Mailbox<IngestApiService> = universe
+        let ingest_api_service: Mailbox<IngestApiService> = spawn_ctx
             .get_one()
             .context("Ingest API Service should have been started.")?;
         let indexing_service = start_indexing_service(
-            &universe,
             &node_config,
             runtimes_config.num_threads_blocking,
             cluster.clone(),
@@ -344,6 +343,7 @@ pub async fn serve_quickwit(
             ingester_pool.clone(),
             storage_resolver.clone(),
             event_broker.clone(),
+            &spawn_ctx,
         )
         .await?;
         Some(indexing_service)
@@ -438,12 +438,12 @@ pub async fn serve_quickwit(
 
     let janitor_service_opt = if node_config.is_service_enabled(QuickwitService::Janitor) {
         let janitor_service = start_janitor_service(
-            &universe,
             &node_config,
             metastore_through_control_plane.clone(),
             search_job_placer,
             storage_resolver.clone(),
             event_broker.clone(),
+            &spawn_ctx,
         )
         .await?;
         Some(janitor_service)
@@ -506,6 +506,7 @@ pub async fn serve_quickwit(
         rest_readiness_trigger,
         rest_shutdown_signal,
     );
+    let cluster_clone = cluster.clone();
 
     // Node readiness indicates that the server is ready to receive requests.
     // Thus readiness task is started once gRPC and REST servers are started.
@@ -515,14 +516,14 @@ pub async fn serve_quickwit(
         grpc_readiness_signal_rx,
         rest_readiness_signal_rx,
     ));
+    let spawn_ctx_clone = spawn_ctx.clone();
     let shutdown_handle = tokio::spawn(async move {
         shutdown_signal.await;
-
         // We must decommission the ingester first before terminating the indexing pipelines that
         // may consume from it. We also need to keep the gRPC server running while doing so.
         wait_for_ingester_decommission(ingester_service_opt).await;
-        let actor_exit_statuses = universe.quit().await;
-
+        let actor_exit_statuses = spawn_ctx_clone.quit().await;
+        cluster_clone.shutdown().await;
         if grpc_shutdown_trigger_tx.send(()).is_err() {
             debug!("gRPC server shutdown signal receiver was dropped");
         }
@@ -667,23 +668,23 @@ async fn setup_searcher(
 }
 
 async fn setup_control_plane(
-    universe: &Universe,
     cluster_id: String,
     self_node_id: String,
     indexer_pool: IndexerPool,
     ingester_pool: IngesterPool,
     metastore: MetastoreServiceClient,
     replication_factor: usize,
+    spawn_ctx: &SpawnContext,
 ) -> anyhow::Result<Mailbox<ControlPlane>> {
     let self_node_id: NodeId = self_node_id.into();
     let (control_plane_mailbox, _control_plane_handle) = ControlPlane::spawn(
-        universe,
         cluster_id,
         self_node_id,
         indexer_pool,
         ingester_pool,
         metastore,
         replication_factor,
+        spawn_ctx,
     );
     Ok(control_plane_mailbox)
 }
@@ -857,6 +858,7 @@ mod tests {
     use quickwit_search::Job;
     use tokio::sync::{mpsc, watch};
     use tokio_stream::wrappers::{ReceiverStream, UnboundedReceiverStream};
+    use quickwit_actors::Universe;
 
     use super::*;
 

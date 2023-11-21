@@ -22,7 +22,7 @@ use std::time::Duration;
 use anyhow::Context;
 use async_trait::async_trait;
 use quickwit_actors::{
-    Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Mailbox, Supervisor, Universe,
+    Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Mailbox, SpawnContext, Supervisor,
 };
 use quickwit_config::SourceConfig;
 use quickwit_ingest::IngesterPool;
@@ -72,15 +72,15 @@ pub struct ControlPlane {
 
 impl ControlPlane {
     pub fn spawn(
-        universe: &Universe,
         cluster_id: String,
         self_node_id: NodeId,
         indexer_pool: IndexerPool,
         ingester_pool: IngesterPool,
         metastore: MetastoreServiceClient,
         replication_factor: usize,
+        spawn_ctx: &SpawnContext,
     ) -> (Mailbox<Self>, ActorHandle<Supervisor<Self>>) {
-        universe.spawn_builder().supervise_fn(move || {
+        spawn_ctx.spawn_builder().supervise_fn(move || {
             let indexing_scheduler = IndexingScheduler::new(
                 cluster_id.clone(),
                 self_node_id.clone(),
@@ -393,7 +393,7 @@ impl Handler<GetOrCreateOpenShardsRequest> for ControlPlane {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_actors::{AskError, Observe, SupervisorMetrics};
+    use quickwit_actors::{AskError, Observe, SupervisorMetrics, Universe};
     use quickwit_config::{IndexConfig, SourceParams, INGEST_SOURCE_ID};
     use quickwit_metastore::{
         CreateIndexRequestExt, IndexMetadata, ListIndexesMetadataResponseExt,
@@ -439,13 +439,13 @@ mod tests {
         let replication_factor = 1;
 
         let (control_plane_mailbox, _control_plane_handle) = ControlPlane::spawn(
-            &universe,
             cluster_id,
             self_node_id,
             indexer_pool,
             ingester_pool,
             MetastoreServiceClient::from(mock_metastore),
             replication_factor,
+            universe.spawn_ctx(),
         );
         let index_config = IndexConfig::for_test("test-index", "ram:///test-index");
         let create_index_request = CreateIndexRequest {
@@ -484,13 +484,13 @@ mod tests {
         let replication_factor = 1;
 
         let (control_plane_mailbox, _control_plane_handle) = ControlPlane::spawn(
-            &universe,
             cluster_id,
             self_node_id,
             indexer_pool,
             ingester_pool,
             MetastoreServiceClient::from(mock_metastore),
             replication_factor,
+            universe.spawn_ctx(),
         );
         let delete_index_request = DeleteIndexRequest {
             index_uid: "test-index:0".to_string(),
@@ -538,13 +538,13 @@ mod tests {
         let replication_factor = 1;
 
         let (control_plane_mailbox, _control_plane_handle) = ControlPlane::spawn(
-            &universe,
             cluster_id,
             self_node_id,
             indexer_pool,
             ingester_pool,
             MetastoreServiceClient::from(mock_metastore),
             replication_factor,
+            universe.spawn_ctx(),
         );
         let source_config = SourceConfig::for_test("test-source", SourceParams::void());
         let add_source_request = AddSourceRequest {
@@ -604,13 +604,13 @@ mod tests {
         let replication_factor = 1;
 
         let (control_plane_mailbox, _control_plane_handle) = ControlPlane::spawn(
-            &universe,
             cluster_id,
             self_node_id,
             indexer_pool,
             ingester_pool,
             MetastoreServiceClient::from(mock_metastore),
             replication_factor,
+            universe.spawn_ctx(),
         );
 
         let enabling_source_req = ToggleSourceRequest {
@@ -662,13 +662,13 @@ mod tests {
         let replication_factor = 1;
 
         let (control_plane_mailbox, _control_plane_handle) = ControlPlane::spawn(
-            &universe,
             cluster_id,
             self_node_id,
             indexer_pool,
             ingester_pool,
             MetastoreServiceClient::from(mock_metastore),
             replication_factor,
+            universe.spawn_ctx(),
         );
         let delete_source_request = DeleteSourceRequest {
             index_uid: "test-index:0".to_string(),
@@ -731,13 +731,13 @@ mod tests {
         let replication_factor = 1;
 
         let (control_plane_mailbox, _control_plane_handle) = ControlPlane::spawn(
-            &universe,
             cluster_id,
             self_node_id,
             indexer_pool,
             ingester_pool,
             MetastoreServiceClient::from(mock_metastore),
             replication_factor,
+            universe.spawn_ctx(),
         );
         let get_open_shards_request = GetOrCreateOpenShardsRequest {
             subrequests: vec![GetOrCreateOpenShardsSubrequest {
@@ -819,13 +819,13 @@ mod tests {
         );
 
         let (control_plane_mailbox, control_plane_handle) = ControlPlane::spawn(
-            &universe,
             "cluster".to_string(),
             node_id,
             indexer_pool,
             ingester_pool,
             MetastoreServiceClient::from(mock_metastore),
             1,
+            universe.spawn_ctx(),
         );
 
         let index_config = IndexConfig::for_test("test-index", "ram:///test-index");

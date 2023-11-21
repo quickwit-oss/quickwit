@@ -84,7 +84,7 @@ pub async fn start_cluster_service(node_config: &NodeConfig) -> anyhow::Result<C
         indexing_tasks,
         indexing_cpu_capacity,
     };
-    let cluster = Cluster::join(
+    let cluster = Cluster::spawn(
         cluster_id,
         self_node,
         gossip_listen_addr,

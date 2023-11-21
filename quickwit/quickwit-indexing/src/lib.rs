@@ -19,7 +19,7 @@
 
 #![deny(clippy::disallowed_methods)]
 
-use quickwit_actors::{Mailbox, Universe};
+use quickwit_actors::{Mailbox, SpawnContext};
 use quickwit_cluster::Cluster;
 use quickwit_common::pubsub::EventBroker;
 use quickwit_config::NodeConfig;
@@ -65,7 +65,6 @@ pub fn new_split_id() -> String {
 
 #[allow(clippy::too_many_arguments)]
 pub async fn start_indexing_service(
-    universe: &Universe,
     config: &NodeConfig,
     num_blocking_threads: usize,
     cluster: Cluster,
@@ -74,6 +73,7 @@ pub async fn start_indexing_service(
     ingester_pool: IngesterPool,
     storage_resolver: StorageResolver,
     event_broker: EventBroker,
+    spawn_ctx: &SpawnContext,
 ) -> anyhow::Result<Mailbox<IndexingService>> {
     info!("starting indexer service");
 
@@ -91,7 +91,7 @@ pub async fn start_indexing_service(
         event_broker,
     )
     .await?;
-    let (indexing_service, _) = universe.spawn_builder().spawn(indexing_service);
+    let (indexing_service, _) = spawn_ctx.spawn_builder().spawn(indexing_service);
 
     Ok(indexing_service)
 }

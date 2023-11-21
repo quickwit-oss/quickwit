@@ -323,7 +323,7 @@ async fn ingester_for_test(
     data_dir_path: &Path,
 ) -> (Mailbox<IngestApiService>, IngestServiceClient) {
     let queues_dir_path = data_dir_path.join(QUEUES_DIR_NAME);
-    let ingester_service = init_ingest_api(universe, &queues_dir_path, &IngestApiConfig::default())
+    let ingester_service = init_ingest_api(&queues_dir_path, &IngestApiConfig::default(), universe.spawn_ctx())
         .await
         .unwrap();
     let ingester_client = IngestServiceClient::from_mailbox(ingester_service.clone());

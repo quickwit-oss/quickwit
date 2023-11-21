@@ -44,7 +44,7 @@ pub use memory_capacity::MemoryCapacity;
 use once_cell::sync::OnceCell;
 pub use position::Position;
 pub use queue::Queues;
-use quickwit_actors::{Mailbox, Universe};
+use quickwit_actors::{Mailbox, SpawnContext};
 use quickwit_config::IngestApiConfig;
 use tokio::sync::Mutex;
 
@@ -59,9 +59,9 @@ pub static INGEST_API_SERVICE_MAILBOXES: OnceCell<Mutex<IngestApiServiceMailboxe
 
 /// Initializes an [`IngestApiService`] consuming the queue located at `queue_path`.
 pub async fn init_ingest_api(
-    universe: &Universe,
     queues_dir_path: &Path,
     config: &IngestApiConfig,
+    spawn_ctx: &SpawnContext,
 ) -> anyhow::Result<Mailbox<IngestApiService>> {
     let mut guard = INGEST_API_SERVICE_MAILBOXES
         .get_or_init(|| Mutex::new(HashMap::new()))
@@ -82,7 +82,8 @@ pub async fn init_ingest_api(
             queues_dir_path.display()
         )
     })?;
-    let (ingest_api_service, _ingest_api_handle) = universe.spawn_builder().spawn(ingest_api_actor);
+    let (ingest_api_service, _ingest_api_handle) =
+        spawn_ctx.spawn_builder().spawn(ingest_api_actor);
     guard.insert(queues_dir_path.to_path_buf(), ingest_api_service.clone());
     Ok(ingest_api_service)
 }
@@ -106,12 +107,12 @@ pub async fn get_ingest_api_service(
 
 /// Starts an [`IngestApiService`] instance at `<data_dir_path>/queues`.
 pub async fn start_ingest_api_service(
-    universe: &Universe,
     data_dir_path: &Path,
     config: &IngestApiConfig,
+    spawn_ctx: &SpawnContext,
 ) -> anyhow::Result<Mailbox<IngestApiService>> {
     let queues_dir_path = data_dir_path.join(QUEUES_DIR_NAME);
-    init_ingest_api(universe, &queues_dir_path, config).await
+    init_ingest_api(&queues_dir_path, config, spawn_ctx).await
 }
 
 impl CommitType {
@@ -128,7 +129,7 @@ impl CommitType {
 mod tests {
 
     use bytesize::ByteSize;
-    use quickwit_actors::AskError;
+    use quickwit_actors::{AskError, Universe};
 
     use super::*;
     use crate::{CreateQueueRequest, IngestRequest, SuggestTruncateRequest};
@@ -142,7 +143,7 @@ mod tests {
         get_ingest_api_service(&queues_0_dir_path)
             .await
             .unwrap_err();
-        init_ingest_api(&universe, &queues_0_dir_path, &IngestApiConfig::default())
+        init_ingest_api(&queues_0_dir_path, &IngestApiConfig::default(), universe.spawn_ctx())
             .await
             .unwrap();
         let ingest_api_service_0 = get_ingest_api_service(&queues_0_dir_path).await.unwrap();
@@ -154,7 +155,7 @@ mod tests {
             .unwrap();
 
         let queues_1_dir_path = temp_dir.path().join("queues-1");
-        init_ingest_api(&universe, &queues_1_dir_path, &IngestApiConfig::default())
+        init_ingest_api(&queues_1_dir_path, &IngestApiConfig::default(), universe.spawn_ctx())
             .await
             .unwrap();
         let ingest_api_service_1 = get_ingest_api_service(&queues_1_dir_path).await.unwrap();
@@ -174,7 +175,7 @@ mod tests {
 
         let queues_0_dir_path = temp_dir.path().join("queues-0");
         let ingest_api_service =
-            init_ingest_api(&universe, &queues_0_dir_path, &IngestApiConfig::default())
+            init_ingest_api(&queues_0_dir_path, &IngestApiConfig::default(), universe.spawn_ctx())
                 .await
                 .unwrap();
         ingest_api_service
@@ -222,7 +223,7 @@ mod tests {
             max_queue_disk_usage: ByteSize::mib(256),
             ..Default::default()
         };
-        init_ingest_api(&universe, &queues_dir_path, &ingest_api_config)
+        init_ingest_api(&queues_dir_path, &ingest_api_config, universe.spawn_ctx())
             .await
             .unwrap();
         let ingest_api_service = get_ingest_api_service(&queues_dir_path).await.unwrap();

@@ -31,6 +31,7 @@ use quickwit_rest_client::error::{ApiError, Error};
 use quickwit_rest_client::rest_client::CommitType;
 use quickwit_serve::SearchRequestQueryString;
 use serde_json::json;
+use tracing::log::info;
 
 use crate::ingest_json;
 use crate::test_utils::{ingest_with_retry, ClusterSandbox};
@@ -318,6 +319,65 @@ async fn test_ingest_v2_happy_path() {
         .unwrap();
     assert_eq!(search_result.num_hits, 1);
     sandbox.shutdown().await.unwrap();
+}
+
+#[tokio::test]
+async fn test_ingest_v2_restart_node() {
+    // This tests checks our happy path for ingesting one doc.
+    quickwit_common::setup_logging_for_tests();
+    let nodes_services = &[HashSet::from_iter([
+        QuickwitService::Indexer,
+        QuickwitService::Janitor,
+        QuickwitService::ControlPlane,
+        QuickwitService::Metastore,
+        QuickwitService::Searcher,
+    ])];
+    let mut sandbox = ClusterSandbox::start_cluster_nodes(&nodes_services[..])
+        .await
+        .unwrap();
+    sandbox.enable_ingest_v2();
+    sandbox.wait_for_cluster_num_ready_nodes(1).await.unwrap();
+    sandbox
+        .indexer_rest_client
+        .indexes()
+        .create(TEST_INDEX_CONFIG.into(), ConfigFormat::Yaml, false)
+        .await
+        .unwrap();
+    sandbox
+        .indexer_rest_client
+        .sources("test_index")
+        .toggle("_ingest-source", true)
+        .await
+        .unwrap();
+    sandbox
+        .indexer_rest_client
+        .ingest(
+            "test_index",
+            ingest_json!({"body": "doc1"}),
+            None,
+            None,
+            CommitType::WaitFor,
+        )
+        .await
+        .unwrap();
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    info!("--------------");
+    let _ = sandbox.restart_node(0).await;
+    sandbox.wait_for_cluster_num_ready_nodes(1).await.unwrap();
+    let search_req = SearchRequestQueryString {
+        query: "*".to_string(),
+        ..Default::default()
+    };
+    let search_result = sandbox
+        .indexer_rest_client
+        .search("test_index", search_req)
+        .await
+        .unwrap();
+    assert_eq!(search_result.num_hits, 1);
+    tokio::time::sleep(Duration::from_secs(2)).await;
+    sandbox.shutdown().await;
+    // apparently we need to give it a bit of time for the actor to terminate.
+    tokio::time::sleep(Duration::from_secs(2)).await;
 }
 
 #[tokio::test]

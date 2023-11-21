@@ -441,7 +441,7 @@ mod tests {
         let queues_dir_path = temp_dir.path();
 
         let ingest_api_service =
-            init_ingest_api(&universe, queues_dir_path, &IngestApiConfig::default()).await?;
+            init_ingest_api(queues_dir_path, &IngestApiConfig::default(), universe.spawn_ctx()).await?;
 
         // Ensure a queue for this index exists.
         let create_queue_req = CreateQueueIfNotExistsRequest {
@@ -500,7 +500,7 @@ mod tests {
         let queues_dir_path = temp_dir.path();
 
         let ingest_api_service =
-            init_ingest_api(&universe, queues_dir_path, &IngestApiConfig::default()).await?;
+            init_ingest_api(queues_dir_path, &IngestApiConfig::default(), universe.spawn_ctx()).await?;
 
         // Ensure a queue for this index exists.
         let create_queue_req = CreateQueueIfNotExistsRequest {
