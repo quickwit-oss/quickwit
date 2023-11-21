@@ -223,7 +223,7 @@ mod tests {
         assert_eq!(field_sorts[3].field, "_doc");
         assert_eq!(field_sorts[3].order, SortOrder::Asc);
     }
-    
+
     #[test]
     fn test_unknown_field_behaviour() {
         let json = r#"
