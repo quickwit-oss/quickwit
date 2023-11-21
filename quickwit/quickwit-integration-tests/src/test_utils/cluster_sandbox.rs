@@ -336,7 +336,7 @@ impl ClusterSandbox {
         // We need to drop rest clients first because reqwest can hold connections open
         // preventing rest server's graceful shutdown.
         drop(self.searcher_rest_client);
-        drop(self.indexer_rest_client);
+        // drop(self.indexer_rest_client);
         self.shutdown_trigger.shutdown();
         let result = future::join_all(self.join_handles).await;
         let mut statuses = Vec::new();
