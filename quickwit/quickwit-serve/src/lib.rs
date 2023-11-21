@@ -568,18 +568,28 @@ async fn setup_ingest_v2(
     );
     let ingest_router_service = IngestRouterServiceClient::new(ingest_router);
 
+    // We compute the burst limit as something a bit larger than the content length limit, because
+    // we actually rewrite the `\n-delimited format into a tiny bit larger buffer, where the
+    // line length is prefixed.
+    let burst_limit = ByteSize::b(
+        (config.ingest_api_config.content_length_limit.as_u64() * 3 / 2)
+            .clamp(10_000_000, 200_000_000),
+    );
+    let rate_limiter_settings = RateLimiterSettings {
+        burst_limit,
+        ..Default::default()
+    };
     // Instantiate ingester.
     let ingester_service_opt = if config.is_service_enabled(QuickwitService::Indexer) {
         let wal_dir_path = config.data_dir_path.join("wal");
         fs::create_dir_all(&wal_dir_path)?;
-
         let ingester = Ingester::try_new(
             self_node_id.clone(),
             ingester_pool.clone(),
             &wal_dir_path,
             config.ingest_api_config.max_queue_disk_usage,
             config.ingest_api_config.max_queue_memory_usage,
-            RateLimiterSettings::default(),
+            rate_limiter_settings,
             replication_factor,
         )
         .await?;
