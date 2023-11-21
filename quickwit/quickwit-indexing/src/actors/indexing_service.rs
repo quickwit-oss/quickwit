@@ -41,10 +41,7 @@ use quickwit_ingest::{
     DropQueueRequest, IngestApiService, IngesterPool, ListQueuesRequest, QUEUES_DIR_NAME,
 };
 use quickwit_metastore::{IndexMetadata, IndexMetadataResponseExt, ListIndexesMetadataResponseExt};
-use quickwit_proto::indexing::{
-    ApplyIndexingPlanRequest, ApplyIndexingPlanResponse, IndexingError, IndexingPipelineId,
-    IndexingTask, PipelineMetrics,
-};
+use quickwit_proto::indexing::{ApplyIndexingPlanRequest, ApplyIndexingPlanResponse, DeleteShardsRequest, DeleteShardsResponse, IndexingError, IndexingPipelineId, IndexingTask, PipelineMetrics};
 use quickwit_proto::metastore::{
     IndexMetadataRequest, ListIndexesMetadataRequest, MetastoreService, MetastoreServiceClient,
 };
@@ -536,6 +533,14 @@ impl IndexingService {
         Ok(ApplyIndexingPlanResponse {})
     }
 
+    async fn delete_shards(&mut self, delete_shards_req: DeleteShardsRequest) -> Result<(), IndexingError> {
+        let Some(ingest_api_service) = self.ingest_api_service_opt.as_mut() else {
+            return Err(IndexingError::Unavailable);
+        };
+        ingest_api_service.ask_for_res(delete_shards_req).await?;
+        Ok(())
+    }
+
     /// Spawns the pipelines with supplied ids and returns a list of failed pipelines.
     async fn spawn_pipelines(
         &mut self,
@@ -803,6 +808,16 @@ impl Handler<ApplyIndexingPlanRequest> for IndexingService {
         ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
         Ok(self.apply_indexing_plan(ctx, plan_request).await)
+    }
+}
+
+#[async_trait]
+impl Handler<DeleteShardsRequest> for IndexingService {
+    type Reply = DeleteShardsResponse;
+
+    async fn handle(&mut self, delete_shards_request: DeleteShardsRequest, ctx: &ActorContext<Self>) -> Result<DeleteShardsResponse, ActorExitStatus> {
+        self.delete_shards(delete_shards_request).await?;
+        Ok(DeleteShardsResponse {})
     }
 }
 

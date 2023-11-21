@@ -24,6 +24,7 @@ package quickwit.indexing;
 service IndexingService {
   // Apply an indexing plan on the node.
   rpc ApplyIndexingPlan(ApplyIndexingPlanRequest) returns (ApplyIndexingPlanResponse);
+  rpc DeleteShards(DeleteShardsRequest) returns (DeleteShardsResponse);
 }
 
 message ApplyIndexingPlanRequest {
@@ -40,3 +41,14 @@ message IndexingTask {
 }
 
 message ApplyIndexingPlanResponse {}
+
+message DeleteShardsRequest {
+  // The index UID.
+  string index_uid = 1;
+  // The source id
+  string source_id = 2;
+  // The shards to delete.
+  repeated uint64 shard_ids = 3;
+}
+
+message DeleteShardsResponse {}

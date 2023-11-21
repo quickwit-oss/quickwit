@@ -29,6 +29,7 @@ use quickwit_common::runtimes::RuntimeType;
 use quickwit_common::tower::Cost;
 use tracing::info;
 use ulid::Ulid;
+use quickwit_proto::indexing::DeleteShardsRequest;
 
 use crate::metrics::INGEST_METRICS;
 use crate::notifications::Notifications;
@@ -338,6 +339,16 @@ impl Handler<DropQueueRequest> for IngestApiService {
         ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
         Ok(self.queues.drop_queue(&drop_queue_req.queue_id, ctx).await)
+    }
+}
+
+
+#[async_trait]
+impl Handler<DeleteShardsRequest> for IngestApiService {
+    type Reply = crate::Result<()>;
+
+    async fn handle(&mut self, delete_shards_req: DeleteShardsRequest, ctx: &ActorContext<Self>) -> Result<crate::Result<()>, ActorExitStatus> {
+        todo!()
     }
 }
 

@@ -163,6 +163,8 @@ impl ControlPlane {
             .delete_shards(delete_shard_request)
             .await
             .context("failed to delete shards in metastore")?;
+
+        self.indexing_scheduler.delete_shards_from_ingesters_best_effort(&self.model, source_uid, shards).await;
         self.model
             .delete_shards(&source_uid.index_uid, &source_uid.source_id, shards);
         self.indexing_scheduler

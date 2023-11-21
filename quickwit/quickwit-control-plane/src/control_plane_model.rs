@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::hash_map::Entry;
+use std::collections::HashSet;
 use std::time::Instant;
 
 use anyhow::bail;
@@ -62,6 +63,10 @@ impl ShardTableEntry {
 
     fn is_default(&self) -> bool {
         self.is_empty() && self.next_shard_id == Self::DEFAULT_NEXT_SHARD_ID
+    }
+
+    fn shard(&self, shard_id: &ShardId) -> Option<&Shard> {
+        self.shards.get(shard_id)
     }
 
     #[cfg(test)]
@@ -286,6 +291,10 @@ impl ControlPlaneModel {
             .delete_shards(index_uid, source_id, shard_ids);
     }
 
+    pub fn list_shard_hosts(&self, source_uid: &SourceUid, shard_ids: &[ShardId]) -> FnvHashSet<NodeId> {
+        self.shard_table.list_shard_hosts(source_uid, shard_ids)
+    }
+
     #[cfg(test)]
     pub fn shards(&mut self) -> impl Iterator<Item = &Shard> + '_ {
         self.shard_table
@@ -368,6 +377,23 @@ impl ShardTable {
                 );
             }
         }
+    }
+
+    /// Lists all of the shards hosts (leader and follower) containing at least of the given shards.
+    fn list_shard_hosts(&self, source_uid: &SourceUid, shard_ids: &[ShardId]) -> FnvHashSet<NodeId> {
+        let Some(shard_table_entry) =  self.table_entries.get(source_uid) else {
+            return Default::default();
+        };
+        let mut nodes_hosting_shards: FnvHashSet<NodeId> = FnvHashSet::default();
+        for shard in shard_ids {
+            if let Some(shard) = shard_table_entry.shard(shard) {
+                nodes_hosting_shards.insert(shard.leader_id.clone().into());
+                if let Some(follower_id) = shard.follower_id.as_ref() {
+                    nodes_hosting_shards.insert(follower_id.clone().into());
+                }
+            }
+        }
+        nodes_hosting_shards
     }
 
     fn delete_source(&mut self, index_uid: &IndexUid, source_id: &SourceId) {

@@ -23,14 +23,13 @@ use std::cmp::Ordering;
 use std::fmt;
 use std::num::NonZeroU32;
 use std::time::{Duration, Instant};
+use anyhow::bail;
 
 use fnv::{FnvHashMap, FnvHashSet};
 use itertools::Itertools;
-use quickwit_proto::indexing::{
-    ApplyIndexingPlanRequest, CpuCapacity, IndexingService, IndexingTask, PIPELINE_FULL_CAPACITY,
-};
+use quickwit_proto::indexing::{ApplyIndexingPlanRequest, CpuCapacity, DeleteShardsRequest, IndexingService, IndexingTask, PIPELINE_FULL_CAPACITY};
 use quickwit_proto::metastore::SourceType;
-use quickwit_proto::types::NodeId;
+use quickwit_proto::types::{NodeId, ShardId, SourceUid};
 use scheduling::{SourceToSchedule, SourceToScheduleType};
 use serde::Serialize;
 use tracing::{debug, error, info, warn};
@@ -300,6 +299,39 @@ impl IndexingScheduler {
         self.state.num_applied_physical_indexing_plan += 1;
         self.state.last_applied_plan_timestamp = Some(Instant::now());
         self.state.last_applied_physical_plan = Some(new_physical_plan);
+    }
+
+    /// Attempt to delete shards from ingesters.
+    /// This is just a best effort function:
+    ///
+    /// If the deletion fails for a given node,
+    /// - an error is logged,
+    /// - deleting from the other nodes is still attempted.
+    /// - no error is returned.
+    pub(crate) async fn delete_shards_from_ingesters_best_effort(&self, model: &ControlPlaneModel, source_uid: &SourceUid, shard_ids: &[ShardId])  {
+        let nodes: FnvHashSet<NodeId> = model.list_shard_hosts(source_uid, shard_ids);
+        let mut failed_nodes: Vec<NodeId> = Vec::new();
+        if nodes.is_empty() {
+            return;
+        }
+        let delete_shard_req = DeleteShardsRequest {
+            index_uid: source_uid.index_uid.to_string(),
+            source_id: source_uid.source_id.to_string(),
+            shard_ids: shard_ids.to_vec(),
+        };
+        for node in nodes {
+            let Some(mut indexer) = self.indexer_pool.get(node.as_str()) else {
+                failed_nodes.push(node);
+                continue;
+            };
+            if indexer.client.delete_shards(delete_shard_req.clone()).await.is_err() {
+                failed_nodes.push(node);
+                continue;
+            }
+        }
+        if !failed_nodes.is_empty() {
+            error!(failed_nodes=?failed_nodes, source_uid=%source_uid, shard_ids=?shard_ids, "failed to remove shards");
+        }
     }
 }
 

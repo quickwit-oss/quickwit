@@ -23,6 +23,24 @@ pub struct IndexingTask {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ApplyIndexingPlanResponse {}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DeleteShardsRequest {
+    /// The index UID.
+    #[prost(string, tag = "1")]
+    pub index_uid: ::prost::alloc::string::String,
+    /// The source id
+    #[prost(string, tag = "2")]
+    pub source_id: ::prost::alloc::string::String,
+    /// The shards to delete.
+    #[prost(uint64, repeated, tag = "3")]
+    pub shard_ids: ::prost::alloc::vec::Vec<u64>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct DeleteShardsResponse {}
 /// BEGIN quickwit-codegen
 #[allow(unused_imports)]
 use std::str::FromStr;
@@ -35,6 +53,10 @@ pub trait IndexingService: std::fmt::Debug + dyn_clone::DynClone + Send + Sync +
         &mut self,
         request: ApplyIndexingPlanRequest,
     ) -> crate::indexing::IndexingResult<ApplyIndexingPlanResponse>;
+    async fn delete_shards(
+        &mut self,
+        request: DeleteShardsRequest,
+    ) -> crate::indexing::IndexingResult<DeleteShardsResponse>;
 }
 dyn_clone::clone_trait_object!(IndexingService);
 #[cfg(any(test, feature = "testsuite"))]
@@ -121,6 +143,12 @@ impl IndexingService for IndexingServiceClient {
     ) -> crate::indexing::IndexingResult<ApplyIndexingPlanResponse> {
         self.inner.apply_indexing_plan(request).await
     }
+    async fn delete_shards(
+        &mut self,
+        request: DeleteShardsRequest,
+    ) -> crate::indexing::IndexingResult<DeleteShardsResponse> {
+        self.inner.delete_shards(request).await
+    }
 }
 #[cfg(any(test, feature = "testsuite"))]
 pub mod indexing_service_mock {
@@ -136,6 +164,12 @@ pub mod indexing_service_mock {
             request: super::ApplyIndexingPlanRequest,
         ) -> crate::indexing::IndexingResult<super::ApplyIndexingPlanResponse> {
             self.inner.lock().await.apply_indexing_plan(request).await
+        }
+        async fn delete_shards(
+            &mut self,
+            request: super::DeleteShardsRequest,
+        ) -> crate::indexing::IndexingResult<super::DeleteShardsResponse> {
+            self.inner.lock().await.delete_shards(request).await
         }
     }
     impl From<MockIndexingService> for IndexingServiceClient {
@@ -166,6 +200,22 @@ impl tower::Service<ApplyIndexingPlanRequest> for Box<dyn IndexingService> {
         Box::pin(fut)
     }
 }
+impl tower::Service<DeleteShardsRequest> for Box<dyn IndexingService> {
+    type Response = DeleteShardsResponse;
+    type Error = crate::indexing::IndexingError;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: DeleteShardsRequest) -> Self::Future {
+        let mut svc = self.clone();
+        let fut = async move { svc.delete_shards(request).await };
+        Box::pin(fut)
+    }
+}
 /// A tower block is a set of towers. Each tower is stack of layers (middlewares) that are applied to a service.
 #[derive(Debug)]
 struct IndexingServiceTowerBlock {
@@ -175,12 +225,18 @@ struct IndexingServiceTowerBlock {
         ApplyIndexingPlanResponse,
         crate::indexing::IndexingError,
     >,
+    delete_shards_svc: quickwit_common::tower::BoxService<
+        DeleteShardsRequest,
+        DeleteShardsResponse,
+        crate::indexing::IndexingError,
+    >,
 }
 impl Clone for IndexingServiceTowerBlock {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
             apply_indexing_plan_svc: self.apply_indexing_plan_svc.clone(),
+            delete_shards_svc: self.delete_shards_svc.clone(),
         }
     }
 }
@@ -192,6 +248,12 @@ impl IndexingService for IndexingServiceTowerBlock {
     ) -> crate::indexing::IndexingResult<ApplyIndexingPlanResponse> {
         self.apply_indexing_plan_svc.ready().await?.call(request).await
     }
+    async fn delete_shards(
+        &mut self,
+        request: DeleteShardsRequest,
+    ) -> crate::indexing::IndexingResult<DeleteShardsResponse> {
+        self.delete_shards_svc.ready().await?.call(request).await
+    }
 }
 #[derive(Debug, Default)]
 pub struct IndexingServiceTowerBlockBuilder {
@@ -201,6 +263,15 @@ pub struct IndexingServiceTowerBlockBuilder {
             Box<dyn IndexingService>,
             ApplyIndexingPlanRequest,
             ApplyIndexingPlanResponse,
+            crate::indexing::IndexingError,
+        >,
+    >,
+    #[allow(clippy::type_complexity)]
+    delete_shards_layer: Option<
+        quickwit_common::tower::BoxLayer<
+            Box<dyn IndexingService>,
+            DeleteShardsRequest,
+            DeleteShardsResponse,
             crate::indexing::IndexingError,
         >,
     >,
@@ -215,11 +286,18 @@ impl IndexingServiceTowerBlockBuilder {
                 Error = crate::indexing::IndexingError,
             > + Clone + Send + Sync + 'static,
         <L::Service as tower::Service<ApplyIndexingPlanRequest>>::Future: Send + 'static,
+        L::Service: tower::Service<
+                DeleteShardsRequest,
+                Response = DeleteShardsResponse,
+                Error = crate::indexing::IndexingError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<DeleteShardsRequest>>::Future: Send + 'static,
     {
         self
             .apply_indexing_plan_layer = Some(
-            quickwit_common::tower::BoxLayer::new(layer),
+            quickwit_common::tower::BoxLayer::new(layer.clone()),
         );
+        self.delete_shards_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
     pub fn apply_indexing_plan_layer<L>(mut self, layer: L) -> Self
@@ -236,6 +314,19 @@ impl IndexingServiceTowerBlockBuilder {
             .apply_indexing_plan_layer = Some(
             quickwit_common::tower::BoxLayer::new(layer),
         );
+        self
+    }
+    pub fn delete_shards_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<Box<dyn IndexingService>> + Send + Sync + 'static,
+        L::Service: tower::Service<
+                DeleteShardsRequest,
+                Response = DeleteShardsResponse,
+                Error = crate::indexing::IndexingError,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<DeleteShardsRequest>>::Future: Send + 'static,
+    {
+        self.delete_shards_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
     pub fn build<T>(self, instance: T) -> IndexingServiceClient
@@ -281,9 +372,15 @@ impl IndexingServiceTowerBlockBuilder {
         } else {
             quickwit_common::tower::BoxService::new(boxed_instance.clone())
         };
+        let delete_shards_svc = if let Some(layer) = self.delete_shards_layer {
+            layer.layer(boxed_instance.clone())
+        } else {
+            quickwit_common::tower::BoxService::new(boxed_instance.clone())
+        };
         let tower_block = IndexingServiceTowerBlock {
             inner: boxed_instance.clone(),
             apply_indexing_plan_svc,
+            delete_shards_svc,
         };
         IndexingServiceClient::new(tower_block)
     }
@@ -361,16 +458,28 @@ where
     IndexingServiceMailbox<
         A,
     >: tower::Service<
-        ApplyIndexingPlanRequest,
-        Response = ApplyIndexingPlanResponse,
-        Error = crate::indexing::IndexingError,
-        Future = BoxFuture<ApplyIndexingPlanResponse, crate::indexing::IndexingError>,
-    >,
+            ApplyIndexingPlanRequest,
+            Response = ApplyIndexingPlanResponse,
+            Error = crate::indexing::IndexingError,
+            Future = BoxFuture<ApplyIndexingPlanResponse, crate::indexing::IndexingError>,
+        >
+        + tower::Service<
+            DeleteShardsRequest,
+            Response = DeleteShardsResponse,
+            Error = crate::indexing::IndexingError,
+            Future = BoxFuture<DeleteShardsResponse, crate::indexing::IndexingError>,
+        >,
 {
     async fn apply_indexing_plan(
         &mut self,
         request: ApplyIndexingPlanRequest,
     ) -> crate::indexing::IndexingResult<ApplyIndexingPlanResponse> {
+        self.call(request).await
+    }
+    async fn delete_shards(
+        &mut self,
+        request: DeleteShardsRequest,
+    ) -> crate::indexing::IndexingResult<DeleteShardsResponse> {
         self.call(request).await
     }
 }
@@ -418,6 +527,16 @@ where
             .map(|response| response.into_inner())
             .map_err(|error| error.into())
     }
+    async fn delete_shards(
+        &mut self,
+        request: DeleteShardsRequest,
+    ) -> crate::indexing::IndexingResult<DeleteShardsResponse> {
+        self.inner
+            .delete_shards(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|error| error.into())
+    }
 }
 #[derive(Debug)]
 pub struct IndexingServiceGrpcServerAdapter {
@@ -441,6 +560,17 @@ for IndexingServiceGrpcServerAdapter {
         self.inner
             .clone()
             .apply_indexing_plan(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(|error| error.into())
+    }
+    async fn delete_shards(
+        &self,
+        request: tonic::Request<DeleteShardsRequest>,
+    ) -> Result<tonic::Response<DeleteShardsResponse>, tonic::Status> {
+        self.inner
+            .clone()
+            .delete_shards(request.into_inner())
             .await
             .map(tonic::Response::new)
             .map_err(|error| error.into())
@@ -562,6 +692,33 @@ pub mod indexing_service_grpc_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        pub async fn delete_shards(
+            &mut self,
+            request: impl tonic::IntoRequest<super::DeleteShardsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::DeleteShardsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.indexing.IndexingService/DeleteShards",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("quickwit.indexing.IndexingService", "DeleteShards"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -577,6 +734,13 @@ pub mod indexing_service_grpc_server {
             request: tonic::Request<super::ApplyIndexingPlanRequest>,
         ) -> std::result::Result<
             tonic::Response<super::ApplyIndexingPlanResponse>,
+            tonic::Status,
+        >;
+        async fn delete_shards(
+            &self,
+            request: tonic::Request<super::DeleteShardsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::DeleteShardsResponse>,
             tonic::Status,
         >;
     }
@@ -690,6 +854,52 @@ pub mod indexing_service_grpc_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = ApplyIndexingPlanSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.indexing.IndexingService/DeleteShards" => {
+                    #[allow(non_camel_case_types)]
+                    struct DeleteShardsSvc<T: IndexingServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: IndexingServiceGrpc,
+                    > tonic::server::UnaryService<super::DeleteShardsRequest>
+                    for DeleteShardsSvc<T> {
+                        type Response = super::DeleteShardsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::DeleteShardsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).delete_shards(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = DeleteShardsSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
