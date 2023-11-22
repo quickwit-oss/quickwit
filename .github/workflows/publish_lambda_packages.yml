@@ -25,7 +25,7 @@ jobs:
         run: pip3 install cargo-lambda
 
       - name: Extract asset version of release
-        run: echo "ASSET_VERSION=${GITHUB_REF/refs\/tags\//}" >> $GITHUB_ENV
+        run: echo "ASSET_VERSION=${GITHUB_REF/refs\/tags\//}-beta" >> $GITHUB_ENV
         if: ${{ github.event_name == 'push' }}
       - name: Setting version as prerelease
         run: echo "ASSET_VERSION=${{ env.PRERELEASE_VERSION_NAME }}" >> $GITHUB_ENV
@@ -58,4 +58,4 @@ jobs:
           file: quickwit/${{ env.SEARCHER_ASSET_FULL_NAME }};quickwit/${{ env.INDEXER_ASSET_FULL_NAME }}
           overwrite: true
           draft: ${{ env.ASSET_VERSION != env.PRERELEASE_VERSION_NAME }}
-          tag_name: ${{ env.ASSET_VERSION }}
+          tag_name: aws-lambda-${{ env.ASSET_VERSION }}
