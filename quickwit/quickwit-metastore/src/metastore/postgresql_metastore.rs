@@ -1022,11 +1022,11 @@ impl MetastoreService for PostgresqlMetastore {
         &mut self,
         request: IndexMetadataRequest,
     ) -> MetastoreResult<IndexMetadataResponse> {
-        let response = if let Some(index_id) = &request.index_id {
-            index_opt(&self.connection_pool, index_id).await?
-        } else if let Some(index_uid) = &request.index_uid {
+        let response = if let Some(index_uid) = &request.index_uid {
             let index_uid: IndexUid = index_uid.to_string().into();
             index_opt_for_uid(&self.connection_pool, index_uid).await?
+        } else if let Some(index_id) = &request.index_id {
+            index_opt(&self.connection_pool, index_id).await?
         } else {
             return Err(MetastoreError::Internal {
                 message: "either `index_id` or `index_uid` must be set".to_string(),

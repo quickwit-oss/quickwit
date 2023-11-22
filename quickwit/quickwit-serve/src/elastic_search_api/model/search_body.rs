@@ -53,6 +53,7 @@ struct FieldSortParams {
 }
 
 #[derive(Debug, Default, Clone, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct SearchBody {
     #[serde(default)]
     pub from: Option<u64>,
@@ -164,7 +165,7 @@ mod tests {
             ]
         }
         "#;
-        let search_body: super::SearchBody = serde_json::from_str(json).unwrap();
+        let search_body: SearchBody = serde_json::from_str(json).unwrap();
         let sort_fields = search_body.sort.unwrap();
         assert_eq!(sort_fields.len(), 5);
         assert_eq!(sort_fields[0].field, "timestamp");
@@ -189,7 +190,7 @@ mod tests {
             }
         }
         "#;
-        let search_body: super::SearchBody = serde_json::from_str(json).unwrap();
+        let search_body: SearchBody = serde_json::from_str(json).unwrap();
         let field_sorts = search_body.sort.unwrap();
         assert_eq!(field_sorts.len(), 2);
         assert_eq!(field_sorts[0].field, "timestamp");
@@ -210,7 +211,7 @@ mod tests {
             ]
         }
         "#;
-        let search_body: super::SearchBody = serde_json::from_str(json).unwrap();
+        let search_body: SearchBody = serde_json::from_str(json).unwrap();
         let field_sorts = search_body.sort.unwrap();
         assert_eq!(field_sorts.len(), 4);
         assert_eq!(field_sorts[0].field, "timestamp");
@@ -221,5 +222,26 @@ mod tests {
         assert_eq!(field_sorts[2].order, SortOrder::Desc);
         assert_eq!(field_sorts[3].field, "_doc");
         assert_eq!(field_sorts[3].order, SortOrder::Asc);
+    }
+
+    #[test]
+    fn test_unknown_field_behaviour() {
+        let json = r#"
+            {
+                "term": {
+                    "actor.id": {
+                        "value": "95077794"
+                     }
+                }
+            }
+        "#;
+
+        let search_body = serde_json::from_str::<SearchBody>(json);
+        let error_msg = search_body.unwrap_err().to_string();
+        assert!(error_msg.contains("unknown field `term`"));
+        assert!(error_msg.contains(
+            "expected one of `from`, `size`, `query`, `sort`, `aggs`, `track_total_hits`, \
+             `stored_fields`, `search_after`"
+        ));
     }
 }
