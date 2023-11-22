@@ -10,7 +10,6 @@ RUN touch .gitignore_for_build_directory \
 
 FROM rust:bullseye AS bin-builder
 
-ARG CARGO_FEATURES=release-feature-set
 ARG CARGO_PROFILE=release
 ARG QW_COMMIT_DATE
 ARG QW_COMMIT_HASH
@@ -38,6 +37,13 @@ COPY --from=ui-builder /quickwit/quickwit-ui/build /quickwit/quickwit-ui/build
 
 WORKDIR /quickwit
 
+
+FROM  bin-builder-base AS bin-builder-cli
+
+ARG CARGO_FEATURES=release-feature-set
+
+COPY --from=ui-builder /quickwit/quickwit-ui/build /quickwit/quickwit-ui/build
+
 RUN echo "Building workspace with feature(s) '$CARGO_FEATURES' and profile '$CARGO_PROFILE'" \
     && cargo build \
         --features $CARGO_FEATURES \
@@ -47,7 +53,7 @@ RUN echo "Building workspace with feature(s) '$CARGO_FEATURES' and profile '$CAR
     && find target/$CARGO_PROFILE -maxdepth 1 -perm /a+x -type f -exec mv {} /quickwit/bin \;
 
 
-FROM debian:bullseye-slim AS quickwit
+FROM debian:bullseye-slim AS quickwit-base
 
 LABEL org.opencontainers.image.title="Quickwit"
 LABEL maintainer="Quickwit, Inc. <hello@quickwit.io>"
@@ -58,6 +64,9 @@ RUN apt-get -y update \
     && apt-get -y install ca-certificates \
                           libssl1.1 \
     && rm -rf /var/lib/apt/lists/*
+
+
+FROM quickwit-base AS quickwit-lambda
 
 WORKDIR /quickwit
 RUN mkdir config qwdata
