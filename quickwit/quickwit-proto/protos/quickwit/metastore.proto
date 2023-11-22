@@ -38,11 +38,60 @@ enum SourceType {
   SOURCE_TYPE_VOID = 11;
 }
 
+// Metastore meant to manage Quickwit's indexes, their splits and delete tasks.
+//
+// I. Index and splits management.
+//
+// Quickwit needs a way to ensure that we can cleanup unused files,
+// and this process needs to be resilient to any fail-stop failures.
+// We rely on atomically transitioning the status of splits.
+//
+// The split state goes through the following life cycle:
+// 1. `Staged`
+//   - Start uploading the split files.
+// 2. `Published`
+//   - Uploading the split files is complete and the split is searchable.
+// 3. `MarkedForDeletion`
+//   - Mark the split for deletion.
+//
+// If a split has a file in the storage, it MUST be registered in the metastore,
+// and its state can be as follows:
+// - `Staged`: The split is almost ready. Some of its files may have been uploaded in the storage.
+// - `Published`: The split is ready and published.
+// - `MarkedForDeletion`: The split is marked for deletion.
+//
+// Before creating any file, we need to stage the split. If there is a failure, upon recovery, we
+// schedule for deletion all the staged splits. A client may not necessarily remove files from
+// storage right after marking it for deletion. A CLI client may delete files right away, but a
+// more serious deployment should probably only delete those files after a grace period so that the
+// running search queries can complete.
+//
+// II. Delete tasks management.
+//
+// A delete task is defined on a given index and by a search query. It can be
+// applied to all the splits of the index.
+//
+// Quickwit needs a way to track that a delete task has been applied to a split. This is ensured
+// by two mechanisms:
+// - On creation of a delete task, we give to the task a monotically increasing opstamp (uniqueness
+//   and monotonically increasing must be true at the index level).
+// - When a delete task is executed on a split, that is when the documents matched by the search
+//   query are removed from the splits, we update the split's `delete_opstamp` to the value of the
+//   task's opstamp. This marks the split as "up-to-date" regarding this delete task. If new delete
+//   tasks are added, we will know that we need to run these delete tasks on the splits as its
+//   `delete_optstamp` will be inferior to the `opstamp` of the new tasks.
+//
+// For splits created after a given delete task, Quickwit's indexing ensures that these splits
+// are created with a `delete_opstamp` equal the latest opstamp of the tasks of the
+// corresponding index.
 service MetastoreService {
   // Creates an index.
+  //
+  // This API creates a new index in the metastore.
+  // An error will occur if an index that already exists in the storage is specified.
   rpc CreateIndex(CreateIndexRequest) returns (CreateIndexResponse);
 
-  // Gets an index metadata.
+  // Returns the `IndexMetadata` of an index identified by its IndexID or its IndexUID.
   rpc IndexMetadata(IndexMetadataRequest) returns (IndexMetadataResponse);
 
   // Gets an indexes metadatas.
@@ -90,17 +139,15 @@ service MetastoreService {
   // Lists delete tasks with `delete_task.opstamp` > `opstamp_start` for a given `index_id`.
   rpc ListDeleteTasks(ListDeleteTasksRequest) returns (ListDeleteTasksResponse);
 
-  /// Lists splits with `split.delete_opstamp` < `delete_opstamp` for a given `index_id`.
+  // Lists splits with `split.delete_opstamp` < `delete_opstamp` for a given `index_id`.
   rpc ListStaleSplits(ListStaleSplitsRequest) returns (ListSplitsResponse);
 
-  ///
-  /// Shard API
-  ///
-  /// Note that for the file-backed metastore implementation, the requests are not processed atomically.
-  /// Indeed, each request comprises one or more subrequests that target different indexes and sources processed
-  /// independently. Responses list the requests that succeeded or failed in the fields `successes` and
-  /// `failures`.
-
+  // Shard API
+  //
+  // Note that for the file-backed metastore implementation, the requests are not processed atomically.
+  // Indeed, each request comprises one or more subrequests that target different indexes and sources processed
+  // independently. Responses list the requests that succeeded or failed in the fields `successes` and
+  // `failures`.
   rpc OpenShards(OpenShardsRequest) returns (OpenShardsResponse);
 
   // Acquires a set of shards for indexing. This RPC locks the shards for publishing thanks to a publish token and only
@@ -137,6 +184,10 @@ message DeleteIndexRequest {
   string index_uid = 1;
 }
 
+// Request the metadata of an index.
+// Either `index_uid` or `index_id` must be specified.
+//
+// If both are supplied, `index_uid` is used.
 message IndexMetadataRequest {
   optional string index_id = 1;
   optional string index_uid = 2;
@@ -147,10 +198,14 @@ message IndexMetadataResponse {
 }
 
 message ListSplitsRequest {
+  // Predicate used to filter splits.
+  // The predicate is expressed as a JSON serialized
+  // `ListSplitsQuery`.
   string query_json = 1;
 }
 
 message ListSplitsResponse {
+  // TODO use repeated and encode splits json individually.
   string splits_serialized_json = 1;
 }
 
@@ -198,9 +253,9 @@ message ResetSourceCheckpointRequest {
   string source_id = 2;
 }
 
-///
-/// Delete tasks API.
-///
+//
+// Delete tasks API.
+//
 
 message DeleteTask {
   int64 create_timestamp = 1;
@@ -254,9 +309,9 @@ message ListDeleteTasksResponse {
   repeated DeleteTask delete_tasks = 1;
 }
 
-///
-/// Shard API
-///
+//
+// Shard API
+//
 
 message OpenShardsRequest {
   repeated OpenShardsSubrequest subrequests = 1;
@@ -306,6 +361,7 @@ message AcquireShardsSubresponse {
 
 message DeleteShardsRequest {
   repeated DeleteShardsSubrequest subrequests = 1;
+  // If false, only shards at EOF positions will be deleted.
   bool force = 2;
 }
 
