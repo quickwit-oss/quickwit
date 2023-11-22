@@ -301,7 +301,13 @@ impl TelemetrySender {
     }
 }
 
+/// telemetry is disabled in tests.
+#[cfg(test)]
+pub fn is_telemetry_disabled() -> bool {
+    true
+}
 /// Check to see if telemetry is enabled.
+#[cfg(not(test))]
 pub fn is_telemetry_disabled() -> bool {
     std::env::var_os(crate::DISABLE_TELEMETRY_ENV_KEY).is_some()
 }
