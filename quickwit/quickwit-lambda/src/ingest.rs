@@ -170,9 +170,11 @@ pub async fn ingest(args: IngestArgs) -> anyhow::Result<IndexingStatistics> {
             );
         }
         metastore.create_index(index_config).await?;
-    }
-
-    if args.overwrite {
+    } else if args.overwrite {
+        info!(
+            index_id = args.index_id,
+            "Overwrite enabled, clearing existing index",
+        );
         let index_service = IndexService::new(metastore.clone(), storage_resolver.clone());
         index_service.clear_index(&args.index_id).await?;
     }
