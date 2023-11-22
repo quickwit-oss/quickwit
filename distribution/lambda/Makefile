@@ -27,11 +27,11 @@ invoke-hdfs-indexer: check-env
 	python -c 'from cdk import cli; cli.upload_hdfs_src_file()'
 	python -c 'from cdk import cli; cli.invoke_hdfs_indexer()'
 
-invoke-hdfs-searcher-severity: check-env
-	python -c 'from cdk import cli; cli.invoke_hdfs_searcher("""{"query": "severity_text:ERROR"}""")'
+invoke-hdfs-searcher-term: check-env
+	python -c 'from cdk import cli; cli.invoke_hdfs_searcher("""{"query": "severity_text:ERROR", "max_hits": 10}""")'
 
 invoke-hdfs-searcher-histogram: check-env
-	python -c 'from cdk import cli; cli.invoke_hdfs_searcher("""{ "query": "*", "max_hits": 0, "aggs": { "events": { "date_histogram": { "field": "timestamp", "fixed_interval": "1h" }, "aggs": { "log_level": { "terms": { "size": 10, "field": "severity_text", "order": { "_count": "desc" } } } } } } }""")'
+	python -c 'from cdk import cli; cli.invoke_hdfs_searcher("""{ "query": "*", "max_hits": 0, "aggs": { "events": { "date_histogram": { "field": "timestamp", "fixed_interval": "1d" }, "aggs": { "log_level": { "terms": { "size": 10, "field": "severity_text", "order": { "_count": "desc" } } } } } } }""")'
 
 deploy-mock-data: build check-env
 	cdk deploy -a cdk/app.py MockDataStack
@@ -55,13 +55,13 @@ bench-search:
 	do
 		export SEARCHER_MEMORY_SIZE=$${mem_size}
 		$(MAKE) deploy-hdfs
-		python -c 'from cdk import cli; cli.benchmark_hdfs_search("""{"query": "severity_text:ERROR"}""")'
+		python -c 'from cdk import cli; cli.benchmark_hdfs_search("""{"query": "severity_text:ERROR", "max_hits": 10}""")'
 	done
 	for mem_size in "$${mem_sizes[@]}"
 	do
 		export SEARCHER_MEMORY_SIZE=$${mem_size}
 		$(MAKE) deploy-hdfs
-		python -c 'from cdk import cli; cli.benchmark_hdfs_search("""{ "query": "*", "max_hits": 0, "aggs": { "events": { "date_histogram": { "field": "timestamp", "fixed_interval": "1h" }, "aggs": { "log_level": { "terms": { "size": 10, "field": "severity_text", "order": { "_count": "desc" } } } } } } }""")'
+		python -c 'from cdk import cli; cli.benchmark_hdfs_search("""{ "query": "*", "max_hits": 0, "aggs": { "events": { "date_histogram": { "field": "timestamp", "fixed_interval": "1d" }, "aggs": { "log_level": { "terms": { "size": 10, "field": "severity_text", "order": { "_count": "desc" } } } } } } }""")'
 	done
 
 destroy:
