@@ -37,7 +37,8 @@ invoke-mock-data-searcher: check-env
 	python -c 'from cdk import cli; cli.invoke_mock_data_searcher()'
 
 bench-index:
-	mem_sizes=( 10240 8192 6144 4096 2048 )
+	mem_sizes=( 4096 3072 2048 )
+	export QW_LAMBDA_DISABLE_MERGE=true
 	for mem_size in "$${mem_sizes[@]}"
 	do
 		export INDEXER_MEMORY_SIZE=$${mem_size}
@@ -47,11 +48,17 @@ bench-index:
 
 bench-search:
 	mem_sizes=( 1024 2048 4096 8192 )
+	# for mem_size in "$${mem_sizes[@]}"
+	# do
+	# 	export SEARCHER_MEMORY_SIZE=$${mem_size}
+	# 	$(MAKE) deploy-hdfs
+	# 	python -c 'from cdk import cli; cli.benchmark_hdfs_search("""{"query": "severity_text:ERROR"}""")'
+	# done
 	for mem_size in "$${mem_sizes[@]}"
 	do
 		export SEARCHER_MEMORY_SIZE=$${mem_size}
 		$(MAKE) deploy-hdfs
-		python -c 'from cdk import cli; cli.benchmark_hdfs_search("""{"query": "severity_text:ERROR"}""")'
+		python -c 'from cdk import cli; cli.benchmark_hdfs_search("""{ "query": "*", "max_hits": 0, "aggs": { "events": { "date_histogram": { "field": "timestamp", "fixed_interval": "1h" }, "aggs": { "log_level": { "terms": { "size": 10, "field": "severity_text", "order": { "_count": "desc" } } } } } } }""")'
 	done
 
 destroy:

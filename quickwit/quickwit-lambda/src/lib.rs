@@ -17,14 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use quickwit_cli::logger::setup_logging_and_tracing;
-use quickwit_serve::BuildInfo;
-use tracing::Level;
-
 pub mod indexer;
+pub mod logger;
 pub mod searcher;
 mod utils;
-
-pub fn setup_lambda_tracer() -> anyhow::Result<()> {
-    setup_logging_and_tracing(Level::DEBUG, false, BuildInfo::get())
-}

@@ -13,6 +13,7 @@ class IndexerService(Construct):
         index_config_bucket: str,
         index_config_key: str,
         memory_size: int,
+        environment: dict[str, str],
         **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
@@ -24,10 +25,11 @@ class IndexerService(Construct):
             runtime=aws_lambda.Runtime.PROVIDED_AL2,
             handler="N/A",
             environment={
-                "INDEX_BUCKET": store_bucket.bucket_name,
-                "METASTORE_BUCKET": store_bucket.bucket_name,
-                "INDEX_ID": index_id,
-                "INDEX_CONFIG_URI": f"s3://{index_config_bucket}/{index_config_key}",
+                "QW_LAMBDA_INDEX_BUCKET": store_bucket.bucket_name,
+                "QW_LAMBDA_METASTORE_BUCKET": store_bucket.bucket_name,
+                "QW_LAMBDA_INDEX_ID": index_id,
+                "QW_LAMBDA_INDEX_CONFIG_URI": f"s3://{index_config_bucket}/{index_config_key}",
+                **environment,
             },
             timeout=aws_cdk.Duration.minutes(15),
             reserved_concurrent_executions=1,

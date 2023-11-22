@@ -23,6 +23,7 @@ use tracing::{debug, error, info};
 
 use super::ingest::{ingest, IngestArgs};
 use super::model::IndexerEvent;
+use crate::logger;
 
 pub async fn handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
     debug!(payload = event.payload.to_string(), "Received event");
@@ -34,17 +35,18 @@ pub async fn handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
     }
 
     let ingest_res = ingest(IngestArgs {
-        index_config_uri: std::env::var("INDEX_CONFIG_URI")?,
-        index_id: std::env::var("INDEX_ID")?,
+        index_config_uri: std::env::var("QW_LAMBDA_INDEX_CONFIG_URI")?,
+        index_id: std::env::var("QW_LAMBDA_INDEX_ID")?,
         input_path: payload_res.unwrap().uri(),
         input_format: quickwit_config::SourceInputFormat::Json,
         overwrite: false,
         vrl_script: None,
         clear_cache: true,
+        disable_merge: std::env::var("QW_LAMBDA_DISABLE_MERGE").is_ok_and(|v| v.as_str() == "true"),
     })
     .await;
 
-    match ingest_res {
+    let result = match ingest_res {
         Ok(stats) => {
             info!(stats=?stats, "Indexing succeeded");
             Ok(serde_json::to_value(stats)?)
@@ -53,5 +55,7 @@ pub async fn handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
             error!(err=?e, "Indexing failed");
             Err(anyhow::anyhow!("Indexing failed").into())
         }
-    }
+    };
+    logger::flush_tracer();
+    result
 }
