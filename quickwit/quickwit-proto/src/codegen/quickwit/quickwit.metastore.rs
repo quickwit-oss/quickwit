@@ -37,6 +37,10 @@ pub struct DeleteIndexRequest {
     #[prost(string, tag = "1")]
     pub index_uid: ::prost::alloc::string::String,
 }
+/// Request the metadata of an index.
+/// Either `index_uid` or `index_id` must be specified.
+///
+/// If both are supplied, `index_uid` is used.
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -57,6 +61,9 @@ pub struct IndexMetadataResponse {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListSplitsRequest {
+    /// Predicate used to filter splits.
+    /// The predicate is expressed as a JSON serialized
+    /// `ListSplitsQuery`.
     #[prost(string, tag = "1")]
     pub query_json: ::prost::alloc::string::String,
 }
@@ -64,6 +71,7 @@ pub struct ListSplitsRequest {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListSplitsResponse {
+    /// TODO use repeated and encode splits json individually.
     #[prost(string, tag = "1")]
     pub splits_serialized_json: ::prost::alloc::string::String,
 }
@@ -328,6 +336,7 @@ pub struct AcquireShardsSubresponse {
 pub struct DeleteShardsRequest {
     #[prost(message, repeated, tag = "1")]
     pub subrequests: ::prost::alloc::vec::Vec<DeleteShardsSubrequest>,
+    /// If false, only shards at EOF positions will be deleted.
     #[prost(bool, tag = "2")]
     pub force: bool,
 }
@@ -567,11 +576,14 @@ impl PrometheusLabels<1> for ListShardsRequest {
 #[async_trait::async_trait]
 pub trait MetastoreService: std::fmt::Debug + dyn_clone::DynClone + Send + Sync + 'static {
     /// Creates an index.
+    ///
+    /// This API creates a new index in the metastore.
+    /// An error will occur if an index that already exists in the storage is specified.
     async fn create_index(
         &mut self,
         request: CreateIndexRequest,
     ) -> crate::metastore::MetastoreResult<CreateIndexResponse>;
-    /// Gets an index metadata.
+    /// Returns the `IndexMetadata` of an index identified by its IndexID or its IndexUID.
     async fn index_metadata(
         &mut self,
         request: IndexMetadataRequest,
@@ -651,11 +663,17 @@ pub trait MetastoreService: std::fmt::Debug + dyn_clone::DynClone + Send + Sync 
         &mut self,
         request: ListDeleteTasksRequest,
     ) -> crate::metastore::MetastoreResult<ListDeleteTasksResponse>;
-    #[doc = "/ Lists splits with `split.delete_opstamp` < `delete_opstamp` for a given `index_id`."]
+    /// Lists splits with `split.delete_opstamp` < `delete_opstamp` for a given `index_id`.
     async fn list_stale_splits(
         &mut self,
         request: ListStaleSplitsRequest,
     ) -> crate::metastore::MetastoreResult<ListSplitsResponse>;
+    /// Shard API
+    ///
+    /// Note that for the file-backed metastore implementation, the requests are not processed atomically.
+    /// Indeed, each request comprises one or more subrequests that target different indexes and sources processed
+    /// independently. Responses list the requests that succeeded or failed in the fields `successes` and
+    /// `failures`.
     async fn open_shards(
         &mut self,
         request: OpenShardsRequest,
@@ -3524,6 +3542,52 @@ pub mod metastore_service_grpc_client {
     #![allow(unused_variables, dead_code, missing_docs, clippy::let_unit_value)]
     use tonic::codegen::*;
     use tonic::codegen::http::Uri;
+    /// Metastore meant to manage Quickwit's indexes, their splits and delete tasks.
+    ///
+    /// I. Index and splits management.
+    ///
+    /// Quickwit needs a way to ensure that we can cleanup unused files,
+    /// and this process needs to be resilient to any fail-stop failures.
+    /// We rely on atomically transitioning the status of splits.
+    ///
+    /// The split state goes through the following life cycle:
+    /// 1. `Staged`
+    ///   - Start uploading the split files.
+    /// 2. `Published`
+    ///   - Uploading the split files is complete and the split is searchable.
+    /// 3. `MarkedForDeletion`
+    ///   - Mark the split for deletion.
+    ///
+    /// If a split has a file in the storage, it MUST be registered in the metastore,
+    /// and its state can be as follows:
+    /// - `Staged`: The split is almost ready. Some of its files may have been uploaded in the storage.
+    /// - `Published`: The split is ready and published.
+    /// - `MarkedForDeletion`: The split is marked for deletion.
+    ///
+    /// Before creating any file, we need to stage the split. If there is a failure, upon recovery, we
+    /// schedule for deletion all the staged splits. A client may not necessarily remove files from
+    /// storage right after marking it for deletion. A CLI client may delete files right away, but a
+    /// more serious deployment should probably only delete those files after a grace period so that the
+    /// running search queries can complete.
+    ///
+    /// II. Delete tasks management.
+    ///
+    /// A delete task is defined on a given index and by a search query. It can be
+    /// applied to all the splits of the index.
+    ///
+    /// Quickwit needs a way to track that a delete task has been applied to a split. This is ensured
+    /// by two mechanisms:
+    /// - On creation of a delete task, we give to the task a monotically increasing opstamp (uniqueness
+    ///   and monotonically increasing must be true at the index level).
+    /// - When a delete task is executed on a split, that is when the documents matched by the search
+    ///   query are removed from the splits, we update the split's `delete_opstamp` to the value of the
+    ///   task's opstamp. This marks the split as "up-to-date" regarding this delete task. If new delete
+    ///   tasks are added, we will know that we need to run these delete tasks on the splits as its
+    ///   `delete_optstamp` will be inferior to the `opstamp` of the new tasks.
+    ///
+    /// For splits created after a given delete task, Quickwit's indexing ensures that these splits
+    /// are created with a `delete_opstamp` equal the latest opstamp of the tasks of the
+    /// corresponding index.
     #[derive(Debug, Clone)]
     pub struct MetastoreServiceGrpcClient<T> {
         inner: tonic::client::Grpc<T>,
@@ -3605,6 +3669,9 @@ pub mod metastore_service_grpc_client {
             self
         }
         /// Creates an index.
+        ///
+        /// This API creates a new index in the metastore.
+        /// An error will occur if an index that already exists in the storage is specified.
         pub async fn create_index(
             &mut self,
             request: impl tonic::IntoRequest<super::CreateIndexRequest>,
@@ -3632,7 +3699,7 @@ pub mod metastore_service_grpc_client {
                 );
             self.inner.unary(req, path, codec).await
         }
-        /// Gets an index metadata.
+        /// Returns the `IndexMetadata` of an index identified by its IndexID or its IndexUID.
         pub async fn index_metadata(
             &mut self,
             request: impl tonic::IntoRequest<super::IndexMetadataRequest>,
@@ -4086,7 +4153,7 @@ pub mod metastore_service_grpc_client {
                 );
             self.inner.unary(req, path, codec).await
         }
-        /// / Lists splits with `split.delete_opstamp` < `delete_opstamp` for a given `index_id`.
+        /// Lists splits with `split.delete_opstamp` < `delete_opstamp` for a given `index_id`.
         pub async fn list_stale_splits(
             &mut self,
             request: impl tonic::IntoRequest<super::ListStaleSplitsRequest>,
@@ -4117,6 +4184,12 @@ pub mod metastore_service_grpc_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        /// Shard API
+        ///
+        /// Note that for the file-backed metastore implementation, the requests are not processed atomically.
+        /// Indeed, each request comprises one or more subrequests that target different indexes and sources processed
+        /// independently. Responses list the requests that succeeded or failed in the fields `successes` and
+        /// `failures`.
         pub async fn open_shards(
             &mut self,
             request: impl tonic::IntoRequest<super::OpenShardsRequest>,
@@ -4244,6 +4317,9 @@ pub mod metastore_service_grpc_server {
     #[async_trait]
     pub trait MetastoreServiceGrpc: Send + Sync + 'static {
         /// Creates an index.
+        ///
+        /// This API creates a new index in the metastore.
+        /// An error will occur if an index that already exists in the storage is specified.
         async fn create_index(
             &self,
             request: tonic::Request<super::CreateIndexRequest>,
@@ -4251,7 +4327,7 @@ pub mod metastore_service_grpc_server {
             tonic::Response<super::CreateIndexResponse>,
             tonic::Status,
         >;
-        /// Gets an index metadata.
+        /// Returns the `IndexMetadata` of an index identified by its IndexID or its IndexUID.
         async fn index_metadata(
             &self,
             request: tonic::Request<super::IndexMetadataRequest>,
@@ -4349,7 +4425,7 @@ pub mod metastore_service_grpc_server {
             tonic::Response<super::ListDeleteTasksResponse>,
             tonic::Status,
         >;
-        /// / Lists splits with `split.delete_opstamp` < `delete_opstamp` for a given `index_id`.
+        /// Lists splits with `split.delete_opstamp` < `delete_opstamp` for a given `index_id`.
         async fn list_stale_splits(
             &self,
             request: tonic::Request<super::ListStaleSplitsRequest>,
@@ -4357,6 +4433,12 @@ pub mod metastore_service_grpc_server {
             tonic::Response<super::ListSplitsResponse>,
             tonic::Status,
         >;
+        /// Shard API
+        ///
+        /// Note that for the file-backed metastore implementation, the requests are not processed atomically.
+        /// Indeed, each request comprises one or more subrequests that target different indexes and sources processed
+        /// independently. Responses list the requests that succeeded or failed in the fields `successes` and
+        /// `failures`.
         async fn open_shards(
             &self,
             request: tonic::Request<super::OpenShardsRequest>,
@@ -4389,6 +4471,52 @@ pub mod metastore_service_grpc_server {
             tonic::Status,
         >;
     }
+    /// Metastore meant to manage Quickwit's indexes, their splits and delete tasks.
+    ///
+    /// I. Index and splits management.
+    ///
+    /// Quickwit needs a way to ensure that we can cleanup unused files,
+    /// and this process needs to be resilient to any fail-stop failures.
+    /// We rely on atomically transitioning the status of splits.
+    ///
+    /// The split state goes through the following life cycle:
+    /// 1. `Staged`
+    ///   - Start uploading the split files.
+    /// 2. `Published`
+    ///   - Uploading the split files is complete and the split is searchable.
+    /// 3. `MarkedForDeletion`
+    ///   - Mark the split for deletion.
+    ///
+    /// If a split has a file in the storage, it MUST be registered in the metastore,
+    /// and its state can be as follows:
+    /// - `Staged`: The split is almost ready. Some of its files may have been uploaded in the storage.
+    /// - `Published`: The split is ready and published.
+    /// - `MarkedForDeletion`: The split is marked for deletion.
+    ///
+    /// Before creating any file, we need to stage the split. If there is a failure, upon recovery, we
+    /// schedule for deletion all the staged splits. A client may not necessarily remove files from
+    /// storage right after marking it for deletion. A CLI client may delete files right away, but a
+    /// more serious deployment should probably only delete those files after a grace period so that the
+    /// running search queries can complete.
+    ///
+    /// II. Delete tasks management.
+    ///
+    /// A delete task is defined on a given index and by a search query. It can be
+    /// applied to all the splits of the index.
+    ///
+    /// Quickwit needs a way to track that a delete task has been applied to a split. This is ensured
+    /// by two mechanisms:
+    /// - On creation of a delete task, we give to the task a monotically increasing opstamp (uniqueness
+    ///   and monotonically increasing must be true at the index level).
+    /// - When a delete task is executed on a split, that is when the documents matched by the search
+    ///   query are removed from the splits, we update the split's `delete_opstamp` to the value of the
+    ///   task's opstamp. This marks the split as "up-to-date" regarding this delete task. If new delete
+    ///   tasks are added, we will know that we need to run these delete tasks on the splits as its
+    ///   `delete_optstamp` will be inferior to the `opstamp` of the new tasks.
+    ///
+    /// For splits created after a given delete task, Quickwit's indexing ensures that these splits
+    /// are created with a `delete_opstamp` equal the latest opstamp of the tasks of the
+    /// corresponding index.
     #[derive(Debug)]
     pub struct MetastoreServiceGrpcServer<T: MetastoreServiceGrpc> {
         inner: _Inner<T>,

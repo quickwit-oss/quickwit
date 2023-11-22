@@ -65,6 +65,7 @@ pub struct MultiSearchQueryParams {
 #[serde_as]
 #[serde_with::skip_serializing_none]
 #[derive(Default, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct MultiSearchHeader {
     #[serde(default)]
     pub allow_no_indices: Option<bool>,
