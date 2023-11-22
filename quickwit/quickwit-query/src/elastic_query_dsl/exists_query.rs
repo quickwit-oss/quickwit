@@ -28,9 +28,28 @@ pub struct ExistsQuery {
 }
 
 impl ConvertableToQueryAst for ExistsQuery {
-    fn convert_to_query_ast(self) -> anyhow::Result<crate::query_ast::QueryAst> {
+    fn convert_to_query_ast(self) -> anyhow::Result<QueryAst> {
         Ok(QueryAst::FieldPresence(query_ast::FieldPresenceQuery {
             field: self.field,
         }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::elastic_query_dsl::exists_query::ExistsQuery;
+
+    #[test]
+    fn test_dsl_exists_query_deserialize_simple() {
+        let exists_query_json = r#"{
+           "field": "privileged"
+        }"#;
+        let bool_query: ExistsQuery = serde_json::from_str(exists_query_json).unwrap();
+        assert_eq!(
+            &bool_query,
+            &ExistsQuery {
+                field: "privileged".to_string(),
+            }
+        );
     }
 }
