@@ -251,6 +251,7 @@ azure_storage_blobs = { version = "0.13.0", default-features = false, features =
 
 quickwit-actors = { version = "0.6.5-dev", path = "./quickwit-actors" }
 quickwit-aws = { version = "0.6.5-dev", path = "./quickwit-aws" }
+quickwit-cli = { version = "0.6.5-dev", path = "./quickwit-cli" }
 quickwit-cluster = { version = "0.6.5-dev", path = "./quickwit-cluster" }
 quickwit-codegen = { version = "0.6.5-dev", path = "./quickwit-codegen" }
 quickwit-codegen-example = { version = "0.6.5-dev", path = "./quickwit-codegen/example" }
