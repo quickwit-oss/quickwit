@@ -72,6 +72,7 @@ env_logger = "0.10"
 fail = "0.5"
 flume = "0.11"
 fnv = "1"
+flate2 = "1.0"
 futures = "0.3"
 futures-util = { version = "0.3.25", default-features = false }
 google-cloud-auth = "0.12.0"

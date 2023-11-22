@@ -21,7 +21,9 @@ path = "src/bin/searcher.rs"
 anyhow = { workspace = true }
 aws_lambda_events = "0.11.1"
 chitchat = { workspace = true }
-lambda_runtime = "0.8.0"
+flate2 = { workspace = true }
+lambda_http = "0.8.1"
+lambda_runtime = "0.8.1"
 once_cell = { workspace = true }
 opentelemetry =  { workspace = true }
 opentelemetry-otlp = { workspace = true, features = [
