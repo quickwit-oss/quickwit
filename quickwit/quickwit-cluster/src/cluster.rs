@@ -398,7 +398,7 @@ fn spawn_ready_members_task(
     tokio::spawn(fut);
 }
 
-/// Parsed indexing tasks from the chitchat node state.
+/// Parses indexing tasks from the chitchat node state.
 pub fn parse_indexing_tasks(node_state: &NodeState) -> Vec<IndexingTask> {
     node_state
         .iter_prefix(INDEXING_TASK_PREFIX)
