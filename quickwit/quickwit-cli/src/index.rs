@@ -765,10 +765,10 @@ impl DescriptiveStats {
             min_val: *values.iter().min().expect("Values should not be empty."),
             max_val: *values.iter().max().expect("Values should not be empty."),
             q1: percentile(values, 1),
-            q25: percentile(values, 50),
+            q25: percentile(values, 25),
             q50: percentile(values, 50),
             q75: percentile(values, 75),
-            q99: percentile(values, 75),
+            q99: percentile(values, 99),
         })
     }
 }
@@ -1201,11 +1201,26 @@ mod test {
 
         let num_docs_descriptive = DescriptiveStats::maybe_new(&splits_num_docs);
         let num_bytes_descriptive = DescriptiveStats::maybe_new(&splits_bytes);
-        let descriptive_stats_none = DescriptiveStats::maybe_new(&[]);
 
         assert!(num_docs_descriptive.is_some());
         assert!(num_bytes_descriptive.is_some());
 
+        let num_docs_descriptive = num_docs_descriptive.unwrap();
+        let num_bytes_descriptive = num_bytes_descriptive.unwrap();
+
+        assert_eq!(num_docs_descriptive.q1, 40900.0);
+        assert_eq!(num_docs_descriptive.q25, 62500.0);
+        assert_eq!(num_docs_descriptive.q50, 80000.0);
+        assert_eq!(num_docs_descriptive.q75, 97500.0);
+        assert_eq!(num_docs_descriptive.q99, 119100.0);
+
+        assert_eq!(num_bytes_descriptive.q1, 55150000.0);
+        assert_eq!(num_bytes_descriptive.q25, 58750000.0);
+        assert_eq!(num_bytes_descriptive.q50, 87500000.0);
+        assert_eq!(num_bytes_descriptive.q75, 122500000.0);
+        assert_eq!(num_bytes_descriptive.q99, 144100000.0);
+
+        let descriptive_stats_none = DescriptiveStats::maybe_new(&[]);
         assert!(descriptive_stats_none.is_none());
 
         Ok(())

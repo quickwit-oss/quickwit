@@ -55,6 +55,7 @@ fn default_max_expansions() -> u32 {
 }
 
 #[derive(Serialize, Deserialize, Debug, Eq, PartialEq, Clone, Copy, Default)]
+#[serde(deny_unknown_fields)]
 pub(crate) struct MatchAllQuery {
     pub boost: Option<NotNaNf32>,
 }

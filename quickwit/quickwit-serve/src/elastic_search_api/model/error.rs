@@ -19,6 +19,7 @@
 
 use elasticsearch_dsl::search::ErrorCause;
 use hyper::StatusCode;
+use quickwit_ingest::IngestServiceError;
 use quickwit_proto::ServiceError;
 use quickwit_search::SearchError;
 use serde::{Deserialize, Serialize};
@@ -30,12 +31,49 @@ pub struct ElasticSearchError {
     pub error: ErrorCause,
 }
 
+impl ElasticSearchError {
+    pub fn new(status: StatusCode, reason_string: String) -> Self {
+        ElasticSearchError {
+            status,
+            error: ErrorCause {
+                reason: Some(reason_string),
+                caused_by: None,
+                root_cause: vec![],
+                stack_trace: None,
+                suppressed: vec![],
+                ty: None,
+                additional_details: Default::default(),
+            },
+        }
+    }
+}
+
 impl From<SearchError> for ElasticSearchError {
     fn from(search_error: SearchError) -> Self {
         let status = search_error.error_code().to_http_status_code();
         // Fill only reason field to keep it simple.
         let reason = ErrorCause {
             reason: Some(search_error.to_string()),
+            caused_by: None,
+            root_cause: vec![],
+            stack_trace: None,
+            suppressed: vec![],
+            ty: None,
+            additional_details: Default::default(),
+        };
+        ElasticSearchError {
+            status,
+            error: reason,
+        }
+    }
+}
+
+impl From<IngestServiceError> for ElasticSearchError {
+    fn from(ingest_service_error: IngestServiceError) -> Self {
+        let status = ingest_service_error.error_code().to_http_status_code();
+
+        let reason = ErrorCause {
+            reason: Some(ingest_service_error.to_string()),
             caused_by: None,
             root_cause: vec![],
             stack_trace: None,

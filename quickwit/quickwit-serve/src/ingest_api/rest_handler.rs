@@ -262,13 +262,16 @@ async fn tail_endpoint(
 
 pub(crate) fn lines(body: &Bytes) -> impl Iterator<Item = &[u8]> {
     body.split(|byte| byte == &b'\n')
+        .filter(|line| !line.iter().all(|&b| b.is_ascii_whitespace()))
         .filter(|line| !line.is_empty())
 }
 
 #[cfg(test)]
 pub(crate) mod tests {
+    use std::str;
     use std::time::Duration;
 
+    use bytes::Bytes;
     use bytesize::ByteSize;
     use quickwit_actors::{Mailbox, Universe};
     use quickwit_config::IngestApiConfig;
@@ -280,6 +283,25 @@ pub(crate) mod tests {
     use quickwit_proto::ingest::router::IngestRouterServiceClient;
 
     use super::ingest_api_handlers;
+    use crate::ingest_api::lines;
+
+    #[test]
+    fn test_process_lines() {
+        let test_cases = [
+            // an empty line is inserted before the metadata action and the doc
+            (&b"\n{ \"create\" : { \"_index\" : \"my-index-1\", \"_id\" : \"1\"} }\n{\"id\": 1, \"message\": \"push\"}"[..], 2),
+            // a blank line is inserted before the metadata action and the doc
+            (&b"       \n{ \"create\" : { \"_index\" : \"my-index-1\", \"_id\" : \"1\"} }\n{\"id\": 1, \"message\": \"push\"}"[..], 2),
+            // an empty line is inserted after the metadata action and before the doc
+            (&b"{ \"create\" : { \"_index\" : \"my-index-1\", \"_id\" : \"1\"} }\n\n{\"id\": 1, \"message\": \"push\"}"[..], 2),
+            // a blank line is inserted after the metadata action and before the doc
+            (&b"{ \"create\" : { \"_index\" : \"my-index-1\", \"_id\" : \"1\"} }\n     \n{\"id\": 1, \"message\": \"push\"}"[..], 2),
+        ];
+
+        for &(input, expected_count) in &test_cases {
+            assert_eq!(lines(&Bytes::from(input)).count(), expected_count);
+        }
+    }
 
     pub(crate) async fn setup_ingest_service(
         queues: &[&str],
