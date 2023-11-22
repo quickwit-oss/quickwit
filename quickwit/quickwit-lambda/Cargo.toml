@@ -9,13 +9,38 @@ repository = "https://github.com/quickwit-oss/quickwit"
 homepage = "https://quickwit.io/"
 documentation = "https://quickwit.io/docs/"
 
+[[bin]]
+name = "indexer"
+path = "src/indexer.rs"
+
+[[bin]]
+name = "querier"
+path = "src/querier.rs"
+
 [dependencies]
 anyhow = { workspace = true }
 lambda_runtime = "0.8.0"
 serde_json = { workspace = true }
 tokio = { workspace = true }
+tracing = { workspace = true }
+chitchat = { workspace = true }
 
+quickwit-actors = { workspace = true }
+quickwit-cli = { workspace = true }
+quickwit-cluster = { workspace = true }
+quickwit-common = { workspace = true }
+quickwit-config = { workspace = true }
+quickwit-index-management = { workspace = true }
+quickwit-directories = { workspace = true }
+quickwit-doc-mapper = { workspace = true }
+quickwit-indexing = { workspace = true }
+quickwit-metastore = { workspace = true }
+quickwit-proto = { workspace = true }
+quickwit-rest-client = { workspace = true }
+quickwit-search = { workspace = true }
 quickwit-serve = { workspace = true }
+quickwit-storage = { workspace = true }
+quickwit-telemetry = { workspace = true }
 
 [features]
 lambda = []
