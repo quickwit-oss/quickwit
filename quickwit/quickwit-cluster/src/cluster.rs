@@ -451,7 +451,7 @@ fn parse_indexing_task_key_value(
 
 /// Writes the given indexing tasks in the given node state.
 ///
-/// If previous indexing tasks were present in the node state, they are marked for deletion.
+/// If previous indexing tasks were present in the node state but were not in the given tasks, they are marked for deletion.
 pub fn set_indexing_tasks_in_node_state(
     indexing_tasks: &[IndexingTask],
     node_state: &mut NodeState,
