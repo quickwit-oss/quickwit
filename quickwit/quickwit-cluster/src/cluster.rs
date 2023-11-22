@@ -43,8 +43,8 @@ use tracing::{info, warn};
 use crate::change::{compute_cluster_change_events, ClusterChange};
 use crate::member::{
     build_cluster_member, ClusterMember, NodeStateExt, ENABLED_SERVICES_KEY,
-    GRPC_ADVERTISE_ADDR_KEY, INDEXING_TASK_PREFIX, PIPELINE_METRICS_PREFIX, READINESS_KEY,
-    READINESS_VALUE_NOT_READY, READINESS_VALUE_READY,
+    GRPC_ADVERTISE_ADDR_KEY, PIPELINE_METRICS_PREFIX, READINESS_KEY, READINESS_VALUE_NOT_READY,
+    READINESS_VALUE_READY,
 };
 use crate::ClusterNode;
 
@@ -59,6 +59,10 @@ const MARKED_FOR_DELETION_GRACE_PERIOD: usize = if cfg!(any(test, feature = "tes
 } else {
     5_000 // ~ HEARTBEAT * 5_000 ~ 4 hours.
 };
+
+// An indexing task key is formatted as
+// `{INDEXING_TASK_PREFIX}{INDEXING_TASK_SEPARATOR}{index_id}{INDEXING_TASK_SEPARATOR}{source_id}`.
+const INDEXING_TASK_PREFIX: &str = "indexing_task:";
 
 #[derive(Clone)]
 pub struct Cluster {
@@ -349,20 +353,7 @@ impl Cluster {
         let chitchat = self.chitchat().await;
         let mut chitchat_guard = chitchat.lock().await;
         let node_state = chitchat_guard.self_node_state();
-        let mut current_indexing_tasks_keys: HashSet<String> = node_state
-            .iter_prefix(INDEXING_TASK_PREFIX)
-            .map(|(key, _)| key.to_string())
-            .collect();
-        for (indexing_task, indexing_tasks_group) in
-            indexing_tasks.iter().group_by(|&task| task).into_iter()
-        {
-            let key = format!("{INDEXING_TASK_PREFIX}{indexing_task}");
-            current_indexing_tasks_keys.remove(&key);
-            node_state.set(key, indexing_tasks_group.count().to_string());
-        }
-        for obsolete_task_key in current_indexing_tasks_keys {
-            node_state.mark_for_deletion(&obsolete_task_key);
-        }
+        set_indexing_tasks_in_node_state(indexing_tasks, node_state);
         Ok(())
     }
 
@@ -405,6 +396,138 @@ fn spawn_ready_members_task(
         }
     };
     tokio::spawn(fut);
+}
+
+/// Parses indexing tasks from the chitchat node state.
+pub fn parse_indexing_tasks(node_state: &NodeState) -> Vec<IndexingTask> {
+    node_state
+        .iter_prefix(INDEXING_TASK_PREFIX)
+        .flat_map(|(key, versioned_value)| {
+            // We want to skip the tombstoned keys.
+            if versioned_value.tombstone.is_none() {
+                Some((key, versioned_value.value.as_str()))
+            } else {
+                None
+            }
+        })
+        .flat_map(|(indexing_task_key, pipeline_shard_str)| {
+            parse_indexing_task_key_value(indexing_task_key, pipeline_shard_str)
+        })
+        .collect()
+}
+
+/// Parses indexing task key into the IndexingTask.
+/// Malformed keys and values are ignored, just warnings are emitted.
+fn parse_indexing_task_key_value(
+    indexing_task_key: &str,
+    pipeline_shards_str: &str,
+) -> Vec<IndexingTask> {
+    let Some(index_uid_source_id) = indexing_task_key.strip_prefix(INDEXING_TASK_PREFIX) else {
+        warn!(
+            indexing_task_key = indexing_task_key,
+            "indexing task must start by the prefix `{INDEXING_TASK_PREFIX}`"
+        );
+        return Vec::new();
+    };
+    let Some((index_uid_str, source_id_str)) = index_uid_source_id.rsplit_once(':') else {
+        warn!(index_uid_source_id=%index_uid_source_id, "invalid index task format, cannot find index_uid and source_id");
+        return Vec::new();
+    };
+    match deserialize_pipeline_shards(pipeline_shards_str) {
+        Ok(pipeline_shards) => pipeline_shards
+            .into_iter()
+            .map(|shard_ids| IndexingTask {
+                index_uid: index_uid_str.to_string(),
+                source_id: source_id_str.to_string(),
+                shard_ids,
+            })
+            .collect(),
+        Err(error) => {
+            warn!(error=%error, "failed to parse pipeline shard list");
+            Vec::new()
+        }
+    }
+}
+
+/// Writes the given indexing tasks in the given node state.
+///
+/// If previous indexing tasks were present in the node state but were not in the given tasks, they
+/// are marked for deletion.
+pub fn set_indexing_tasks_in_node_state(
+    indexing_tasks: &[IndexingTask],
+    node_state: &mut NodeState,
+) {
+    let mut current_indexing_tasks_keys: HashSet<String> = node_state
+        .iter_prefix(INDEXING_TASK_PREFIX)
+        .map(|(key, _)| key.to_string())
+        .collect();
+    let mut indexing_tasks_grouped_by_source: HashMap<(&str, &str), Vec<&IndexingTask>> =
+        HashMap::new();
+    for indexing_task in indexing_tasks {
+        indexing_tasks_grouped_by_source
+            .entry((
+                indexing_task.index_uid.as_str(),
+                indexing_task.source_id.as_str(),
+            ))
+            .or_default()
+            .push(indexing_task);
+    }
+    for ((index_uid, source_id), indexing_tasks) in indexing_tasks_grouped_by_source {
+        let shards_per_pipeline = indexing_tasks
+            .iter()
+            .map(|indexing_task| &indexing_task.shard_ids[..]);
+        let pipeline_shards_str: String = serialize_pipeline_shards(shards_per_pipeline);
+        let key = format!("{INDEXING_TASK_PREFIX}{index_uid}:{source_id}");
+        current_indexing_tasks_keys.remove(&key);
+        node_state.set(key, pipeline_shards_str);
+    }
+    for obsolete_task_key in current_indexing_tasks_keys {
+        node_state.mark_for_deletion(&obsolete_task_key);
+    }
+}
+
+/// Given a list of list of shards (one list per pipeline), serializes it as a string to be stored
+/// as a value in the chitchat state.
+///
+/// The format is as follows `[1,2,3][4,5]`.
+fn serialize_pipeline_shards<'a>(pipeline_shards: impl Iterator<Item = &'a [u64]>) -> String {
+    let mut pipeline_shards_str = String::new();
+    for shards in pipeline_shards {
+        pipeline_shards_str.push('[');
+        pipeline_shards_str.push_str(&shards.iter().join(","));
+        pipeline_shards_str.push(']');
+    }
+    pipeline_shards_str
+}
+
+/// Deserializes the list of shards from a string stored in the chitchat state, as
+/// serialized by `serialize_pipeline_shards`.
+///
+/// This function will make sure the pipeline shard lists are sorted.
+pub fn deserialize_pipeline_shards(pipeline_shards_str: &str) -> anyhow::Result<Vec<Vec<u64>>> {
+    if pipeline_shards_str.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut pipeline_shards: Vec<Vec<u64>> = Vec::new();
+    for single_pipeline_shard_str in pipeline_shards_str.split(']') {
+        if single_pipeline_shard_str.is_empty() {
+            continue;
+        }
+        let Some(comma_sep_shards_str) = single_pipeline_shard_str.strip_prefix('[') else {
+            anyhow::bail!("invalid pipeline shards string: `{pipeline_shards_str}`");
+        };
+        let mut shards: Vec<u64> = Vec::new();
+        if !comma_sep_shards_str.is_empty() {
+            for shard_str in comma_sep_shards_str.split(',') {
+                let shard_id: u64 = shard_str.parse::<u64>()?;
+                shards.push(shard_id);
+            }
+        }
+        shards.sort();
+        pipeline_shards.push(shards);
+    }
+    pipeline_shards.sort_by_key(|shards| shards.first().copied());
+    Ok(pipeline_shards)
 }
 
 async fn spawn_ready_nodes_change_stream_task(cluster: Cluster) {
@@ -983,7 +1106,7 @@ mod tests {
             let mut chitchat_guard = chitchat_handle.lock().await;
             chitchat_guard.self_node_state().set(
                 format!("{INDEXING_TASK_PREFIX}my_good_index:my_source:11111111111111111111111111"),
-                "2".to_string(),
+                "[][]".to_string(),
             );
             chitchat_guard.self_node_state().set(
                 format!("{INDEXING_TASK_PREFIX}my_bad_index:my_source:11111111111111111111111111"),
@@ -1079,5 +1202,118 @@ mod tests {
         assert_eq!(members_b, expected_members_b);
 
         Ok(())
+    }
+
+    fn test_serialize_pipeline_shards_aux(pipeline_shards: &[&[u64]], expected_str: &str) {
+        let pipeline_shards_str = serialize_pipeline_shards(pipeline_shards.iter().copied());
+        assert_eq!(pipeline_shards_str, expected_str);
+        let ser_deser_pipeline_shards = deserialize_pipeline_shards(&pipeline_shards_str).unwrap();
+        assert_eq!(pipeline_shards, ser_deser_pipeline_shards);
+    }
+
+    #[test]
+    fn test_serialize_pipeline_shards() {
+        test_serialize_pipeline_shards_aux(&[], "");
+        test_serialize_pipeline_shards_aux(&[&[]], "[]");
+        test_serialize_pipeline_shards_aux(&[&[1]], "[1]");
+        test_serialize_pipeline_shards_aux(&[&[1, 2]], "[1,2]");
+        test_serialize_pipeline_shards_aux(&[&[], &[1, 2]], "[][1,2]");
+        test_serialize_pipeline_shards_aux(&[&[], &[]], "[][]");
+        test_serialize_pipeline_shards_aux(&[&[1], &[3, 4, 5, 6]], "[1][3,4,5,6]");
+    }
+
+    #[test]
+    fn test_deserialize_pipeline_shards_sorts() {
+        assert_eq!(
+            deserialize_pipeline_shards("[2,1]").unwrap(),
+            vec![vec![1, 2]]
+        );
+        assert_eq!(
+            deserialize_pipeline_shards("[1][]").unwrap(),
+            vec![vec![], vec![1]]
+        );
+        assert_eq!(
+            deserialize_pipeline_shards("[3][2]").unwrap(),
+            vec![vec![2], vec![3]]
+        );
+    }
+
+    fn test_serialize_indexing_tasks_aux(
+        indexing_tasks: &[IndexingTask],
+        node_state: &mut NodeState,
+    ) {
+        set_indexing_tasks_in_node_state(indexing_tasks, node_state);
+        let ser_deser_indexing_tasks = parse_indexing_tasks(node_state);
+        assert_eq!(indexing_tasks, ser_deser_indexing_tasks);
+    }
+
+    #[test]
+    fn test_serialize_indexing_tasks() {
+        let mut node_state = NodeState::default();
+        test_serialize_indexing_tasks_aux(&[], &mut node_state);
+        test_serialize_indexing_tasks_aux(
+            &[IndexingTask {
+                index_uid: "test:test1".to_string(),
+                source_id: "my-source1".to_string(),
+                shard_ids: vec![1, 2],
+            }],
+            &mut node_state,
+        );
+        // change in the set of shards
+        test_serialize_indexing_tasks_aux(
+            &[IndexingTask {
+                index_uid: "test:test1".to_string(),
+                source_id: "my-source1".to_string(),
+                shard_ids: vec![1, 2, 3],
+            }],
+            &mut node_state,
+        );
+        test_serialize_indexing_tasks_aux(
+            &[
+                IndexingTask {
+                    index_uid: "test:test1".to_string(),
+                    source_id: "my-source1".to_string(),
+                    shard_ids: vec![1, 2],
+                },
+                IndexingTask {
+                    index_uid: "test:test1".to_string(),
+                    source_id: "my-source1".to_string(),
+                    shard_ids: vec![3, 4],
+                },
+            ],
+            &mut node_state,
+        );
+        // different index.
+        test_serialize_indexing_tasks_aux(
+            &[
+                IndexingTask {
+                    index_uid: "test:test1".to_string(),
+                    source_id: "my-source1".to_string(),
+                    shard_ids: vec![1, 2],
+                },
+                IndexingTask {
+                    index_uid: "test:test2".to_string(),
+                    source_id: "my-source1".to_string(),
+                    shard_ids: vec![3, 4],
+                },
+            ],
+            &mut node_state,
+        );
+        // same index, different source.
+        test_serialize_indexing_tasks_aux(
+            &[
+                IndexingTask {
+                    index_uid: "test:test1".to_string(),
+                    source_id: "my-source1".to_string(),
+                    shard_ids: vec![1, 2],
+                },
+                IndexingTask {
+                    index_uid: "test:test1".to_string(),
+                    source_id: "my-source2".to_string(),
+                    shard_ids: vec![3, 4],
+                },
+            ],
+            &mut node_state,
+        );
     }
 }
