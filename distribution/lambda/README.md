@@ -40,34 +40,53 @@ step to activate your virtualenv.
 source .venv/bin/activate
 ```
 
-If you are a Windows platform, you would activate the virtualenv like this:
-
-```bash
-.venv\Scripts\activate.bat
-```
-
 Once the virtualenv is activated, you can install the required dependencies.
 
 ```bash
-pip install -r requirements.txt
-pip install -r requirements-dev.txt
+pip install .
 ```
 
+If you prefer using Poetry, achieve the same by running:
+```bash
+poetry shell
+poetry install
+```
+
+## Example stacks
+
+Provided demonstration setups:
+- HDFS example data: index the the [HDFS
+  dataset](https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants-10000.json)
+  by triggering the Quickwit lambda manually.
+- Mock Data generator: start a mock data generator lambda that pushes mock JSON
+  data every X minutes to S3. Those file trigger the Quickwit indexer lambda
+  automatically.
 
 ## Deploy and run
 
-The Makefile is a usefull entrypoint to show how the Lambda deployement can used.
+The Makefile is a usefull entrypoint to show how the Lambda deployment can used.
+
+Configure your shell and AWS account:
 ```bash
 # replace with you AWS account ID and prefered region
 export CDK_ACCOUNT=123456789
 export CDK_REGION=us-east-1
-make init
-make deploy
-make upload-src-file
-make invoke-indexer
-make invoke-searcher
+make bootstrap
 ```
 
+Deploy, index and query the HDFS dataset:
+```bash
+make deploy-hdfs
+make invoke-hdfs-indexer
+make invoke-hdfs-searcher
+```
+
+Deploy the mock data generator and query the indexed data:
+```bash
+make deploy-mock-data
+# wait a few minutes...
+make invoke-mock-data-searcher
+```
 
 ## Useful CDK commands
 
