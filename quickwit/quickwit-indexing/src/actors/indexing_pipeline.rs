@@ -550,7 +550,7 @@ impl Handler<AssignShards> for IndexingPipeline {
                 shard_ids=?message.0.shard_ids,
                 "assigning shards to indexing pipeline."
             );
-            handles.source_mailbox.send_message(message).await?;
+            handles.source_mailbox.ask(message).await?;
         }
         Ok(())
     }

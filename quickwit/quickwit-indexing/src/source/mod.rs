@@ -238,7 +238,7 @@ pub trait Source: Send + 'static {
     /// plane.
     async fn assign_shards(
         &mut self,
-        _assignement: Assignment,
+        _assignment: Assignment,
         _doc_processor_mailbox: &Mailbox<DocProcessor>,
         _ctx: &SourceContext,
     ) -> anyhow::Result<()> {

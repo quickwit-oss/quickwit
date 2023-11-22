@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::BTreeMap;
 use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
@@ -24,7 +25,6 @@ use std::time::Duration;
 use anyhow::{bail, Context};
 use async_trait::async_trait;
 use fnv::FnvHashMap;
-use itertools::Itertools;
 use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::retry::RetryParams;
@@ -138,7 +138,7 @@ pub struct IngestSource {
     client_id: ClientId,
     metastore: MetastoreServiceClient,
     ingester_pool: IngesterPool,
-    assigned_shards: FnvHashMap<ShardId, AssignedShard>,
+    assigned_shards: BTreeMap<ShardId, AssignedShard>,
     fetch_stream: MultiFetchStream,
     publish_lock: PublishLock,
     publish_token: PublishToken,
@@ -167,7 +167,7 @@ impl IngestSource {
         );
         let metastore = runtime_args.metastore.clone();
         let ingester_pool = runtime_args.ingester_pool.clone();
-        let assigned_shards = FnvHashMap::default();
+        let assigned_shards = BTreeMap::default();
         let fetch_stream = MultiFetchStream::new(
             self_node_id,
             client_id.to_string(),
@@ -380,20 +380,21 @@ impl Source for IngestSource {
         ctx: &SourceContext,
     ) -> anyhow::Result<()> {
         // TODO: Remove this check once the control plane stops sending identical assignments.
-        let current_assigned_shard_ids = self
+        let current_assigned_shard_ids: Vec<ShardId> = self
             .assigned_shards
             .keys()
             .copied()
-            .sorted()
-            .collect::<Vec<ShardId>>();
+            .collect();
 
         let mut new_assigned_shard_ids: Vec<ShardId> = assignment.shard_ids;
         new_assigned_shard_ids.sort();
 
+        // The list of shard is unchanged. No need to do anything!
         if current_assigned_shard_ids == new_assigned_shard_ids {
             return Ok(());
         }
-        info!("new shard assignment: `{:?}`", new_assigned_shard_ids);
+
+        info!(shards=?new_assigned_shard_ids, "new shard assignment");
 
         self.assigned_shards.clear();
         self.fetch_stream.reset();

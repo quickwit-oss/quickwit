@@ -490,14 +490,10 @@ impl IndexingService {
             self.indexing_pipelines.keys().cloned().collect();
 
         // Spawn new pipeline in the new plan that are not currently running
-        let failed_spawning_pipeline_ids = self
-            .spawn_pipelines(
-                ctx,
-                updated_pipeline_ids
-                    .difference(&running_pipeline_ids)
-                    .collect(),
-            )
-            .await?;
+        let added_pipeline_ids = updated_pipeline_ids
+             .difference(&running_pipeline_ids)
+             .collect();
+        let failed_spawning_pipeline_ids = self.spawn_pipelines(added_pipeline_ids, ctx).await?;
 
         // TODO: Temporary hack to assign shards to pipelines.
         for indexing_task in &physical_indexing_plan_request.indexing_tasks {
@@ -516,11 +512,11 @@ impl IndexingService {
                 continue;
             };
             let assignment = Assignment {
-                shard_ids: indexing_task.shard_ids.clone(),
+                shard_ids: indexing_task.shard_ids.iter().copied().collect(),
             };
             let message = AssignShards(assignment);
 
-            if let Err(error) = pipeline_mailbox.send_message(message).await {
+            if let Err(error) = pipeline_mailbox.ask(message).await {
                 error!("failed to assign shards to indexing pipeline: {}", error);
             }
         }
@@ -546,8 +542,8 @@ impl IndexingService {
     /// Spawns the pipelines with supplied ids and returns a list of failed pipelines.
     async fn spawn_pipelines(
         &mut self,
-        ctx: &ActorContext<Self>,
         added_pipeline_ids: Vec<&IndexingPipelineId>,
+        ctx: &ActorContext<Self>,
     ) -> Result<Vec<IndexingPipelineId>, IndexingError> {
         // We fetch the new indexes metadata.
         let indexes_metadata_futures = added_pipeline_ids

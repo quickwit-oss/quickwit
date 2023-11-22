@@ -249,6 +249,8 @@ impl IndexingScheduler {
             .map(|indexer| (indexer.0.clone(), indexer.1.indexing_tasks.clone()))
             .collect();
 
+        dbg!(&running_indexing_tasks_by_node_id);
+        dbg!(&last_applied_plan.indexing_tasks_per_indexer());
         let indexing_plans_diff = get_indexing_plans_diff(
             &running_indexing_tasks_by_node_id,
             last_applied_plan.indexing_tasks_per_indexer(),
