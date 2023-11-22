@@ -43,7 +43,10 @@ use quickwit_indexing::models::{
     DetachIndexingPipeline, DetachMergePipeline, IndexingStatistics, SpawnPipeline,
 };
 use quickwit_ingest::IngesterPool;
-use quickwit_proto::metastore::MetastoreError;
+use quickwit_metastore::CreateIndexRequestExt;
+use quickwit_proto::indexing::CpuCapacity;
+use quickwit_proto::metastore::{CreateIndexRequest, MetastoreError, MetastoreService};
+use quickwit_proto::types::NodeId;
 use quickwit_storage::StorageResolver;
 use tracing::{debug, info, instrument};
 
@@ -60,15 +63,16 @@ pub struct IngestArgs {
 }
 
 async fn create_empty_cluster(config: &NodeConfig) -> anyhow::Result<Cluster> {
-    let self_node = ClusterMember::new(
-        config.node_id.clone(),
-        quickwit_cluster::GenerationId::now(),
-        false,
-        HashSet::new(),
-        config.gossip_advertise_addr,
-        config.grpc_advertise_addr,
-        Vec::new(),
-    );
+    let self_node = ClusterMember {
+        node_id: NodeId::new(config.node_id.clone()),
+        generation_id: quickwit_cluster::GenerationId::now(),
+        is_ready: false,
+        enabled_services: HashSet::new(),
+        gossip_advertise_addr: config.gossip_advertise_addr,
+        grpc_advertise_addr: config.grpc_advertise_addr,
+        indexing_tasks: Vec::new(),
+        indexing_cpu_capacity: CpuCapacity::zero(),
+    };
     let cluster = Cluster::join(
         config.cluster_id.clone(),
         self_node,
@@ -117,7 +121,8 @@ async fn load_index_config(
 
 pub async fn ingest(args: IngestArgs) -> anyhow::Result<IndexingStatistics> {
     debug!(args=?args, "lambda-ingest");
-    let (config, storage_resolver, metastore) = load_node_config(CONFIGURATION_TEMPLATE).await?;
+    let (config, storage_resolver, mut metastore) =
+        load_node_config(CONFIGURATION_TEMPLATE).await?;
 
     let source_params = SourceParams::file(args.input_path);
     let transform_config = args
@@ -134,7 +139,7 @@ pub async fn ingest(args: IngestArgs) -> anyhow::Result<IndexingStatistics> {
     };
 
     let checklist_result = run_index_checklist(
-        &*metastore,
+        &mut metastore,
         &storage_resolver,
         &*INDEX_ID,
         Some(&source_config),
@@ -162,14 +167,16 @@ pub async fn ingest(args: IngestArgs) -> anyhow::Result<IndexingStatistics> {
                 index_config.index_id,
             );
         }
-        metastore.create_index(index_config).await?;
+        metastore
+            .create_index(CreateIndexRequest::try_from_index_config(index_config)?)
+            .await?;
         debug!("Index created");
     } else if args.overwrite {
         info!(
             index_id = *INDEX_ID,
             "Overwrite enabled, clearing existing index",
         );
-        let index_service = IndexService::new(metastore.clone(), storage_resolver.clone());
+        let mut index_service = IndexService::new(metastore.clone(), storage_resolver.clone());
         index_service.clear_index(&*INDEX_ID).await?;
     }
     // The indexing service needs to update its cluster chitchat state so that the control plane is
