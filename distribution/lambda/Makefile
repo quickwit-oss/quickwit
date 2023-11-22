@@ -9,26 +9,39 @@ ifndef CDK_REGION
 	$(error CDK_REGION is undefined)
 endif
 
-init: check-env
-	cdk bootstrap aws://$$CDK_ACCOUNT/$$CDK_REGION
-
-../../quickwit/target/lambda/indexer/hdfs-logs-multitenants-10000.json:
-	mkdir -p `dirname ../../quickwit/target/lambda/indexer/hdfs-logs-multitenants-10000.json $@`
-	curl -o $@ https://quickwit-datasets-public.s3.amazonaws.com/hdfs-logs-multitenants-10000.json
-
-build: ../../quickwit/target/lambda/indexer/hdfs-logs-multitenants-10000.json
+build:
 	cargo lambda build --manifest-path=../../quickwit/Cargo.toml -p quickwit-lambda --release
 	cp resources/indexer-config.yaml ../../quickwit/target/lambda/indexer/config.yaml
 	cp resources/searcher-config.yaml ../../quickwit/target/lambda/searcher/config.yaml
 
+init: build check-env
+	cdk bootstrap aws://$$CDK_ACCOUNT/$$CDK_REGION
+
 deploy: build check-env
 	cdk deploy
+
+export EXAMPLE_FILE=hdfs-logs-multitenants-10000.json
+
+upload-src-file: check-env
+	export AWS_REGION=$$CDK_REGION
+	bucket_name=$$(aws cloudformation describe-stacks --stack-name LambdaStack --query "Stacks[0].Outputs[?ExportName=='index-store-bucket-name'].OutputValue" --output text)
+	source_uri="s3://$$bucket_name/$$EXAMPLE_FILE"
+	echo "upload src file to $$source_uri"
+	curl https://quickwit-datasets-public.s3.amazonaws.com/$$EXAMPLE_FILE | aws s3 cp - $$source_uri
 
 invoke-indexer: check-env
 	export AWS_REGION=$$CDK_REGION
 	function_name=$$(aws cloudformation describe-stacks --stack-name LambdaStack --query "Stacks[0].Outputs[?ExportName=='indexer-function-name'].OutputValue" --output text)
-	echo "indexer function name: $$function_name"
-	aws lambda invoke --function-name $$function_name --log-type Tail /dev/null | jq -r '.LogResult' | base64 -d
+	bucket_name=$$(aws cloudformation describe-stacks --stack-name LambdaStack --query "Stacks[0].Outputs[?ExportName=='index-store-bucket-name'].OutputValue" --output text)	
+	source_uri="s3://$$bucket_name/$$EXAMPLE_FILE"
+	echo "indexer function name: $$function_name, src_file: $$source_uri"
+	aws lambda invoke \
+		--cli-binary-format raw-in-base64-out \
+		--payload "{ \"source_uri\": \"$$source_uri\" }" \
+		--function-name $$function_name \
+		--log-type Tail /dev/null \
+		| jq -r '.LogResult' \
+		| base64 -d
 
 invoke-searcher: check-env
 	export AWS_REGION=$$CDK_REGION
