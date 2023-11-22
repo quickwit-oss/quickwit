@@ -5785,7 +5785,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-lambda"
-version = "0.6.3"
+version = "0.6.5-dev"
 dependencies = [
  "anyhow",
  "aws_lambda_events",
