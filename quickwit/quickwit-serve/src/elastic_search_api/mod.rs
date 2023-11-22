@@ -26,6 +26,7 @@ use std::sync::Arc;
 
 use bulk::{es_compat_bulk_handler, es_compat_index_bulk_handler};
 pub use filter::ElasticCompatibleApi;
+use hyper::StatusCode;
 use quickwit_config::NodeConfig;
 use quickwit_ingest::IngestServiceClient;
 use quickwit_search::SearchService;
@@ -36,7 +37,9 @@ use rest_handler::{
 use serde::{Deserialize, Serialize};
 use warp::{Filter, Rejection};
 
-use crate::BuildInfo;
+use crate::elastic_search_api::model::ElasticSearchError;
+use crate::json_api_response::JsonApiResponse;
+use crate::{BodyFormat, BuildInfo};
 
 /// Setup Elasticsearch API handlers
 ///
@@ -84,6 +87,18 @@ impl From<i64> for TrackTotalHits {
     fn from(i: i64) -> Self {
         TrackTotalHits::Count(i)
     }
+}
+
+fn make_elastic_api_response<T: serde::Serialize>(
+    elasticsearch_result: Result<T, ElasticSearchError>,
+    format: BodyFormat,
+) -> JsonApiResponse {
+    let status_code = match &elasticsearch_result {
+        Ok(_) => StatusCode::OK,
+        Err(err) => err.status,
+    };
+
+    JsonApiResponse::new(&elasticsearch_result, status_code, &format)
 }
 
 #[cfg(test)]

@@ -46,7 +46,7 @@ use super::model::{
     ElasticSearchError, MultiSearchHeader, MultiSearchQueryParams, MultiSearchResponse,
     MultiSearchSingleResponse, ScrollQueryParams, SearchBody, SearchQueryParams,
 };
-use super::TrackTotalHits;
+use super::{make_elastic_api_response, TrackTotalHits};
 use crate::format::BodyFormat;
 use crate::json_api_response::{make_json_api_response, ApiError, JsonApiResponse};
 use crate::{with_arg, BuildInfo};
@@ -98,7 +98,7 @@ pub fn es_compat_index_search_handler(
     elastic_index_search_filter()
         .and(with_arg(search_service))
         .then(es_compat_index_search)
-        .map(make_elastic_api_response)
+        .map(|result| make_elastic_api_response(result, BodyFormat::default()))
 }
 
 /// GET or POST _elastic/_search/scroll
@@ -108,7 +108,7 @@ pub fn es_compat_scroll_handler(
     elastic_scroll_filter()
         .and(with_arg(search_service))
         .then(es_scroll)
-        .map(make_elastic_api_response)
+        .map(|result| make_elastic_api_response(result, BodyFormat::default()))
 }
 
 /// POST _elastic/_search
@@ -383,7 +383,7 @@ async fn es_compat_index_multi_search(
             build_request_for_es_api(index_ids_patterns, search_query_params, search_body)?;
         search_requests.push(es_request);
     }
-    // TODO: forced to do weird referencing to work arround https://github.com/rust-lang/rust/issues/100905
+    // TODO: forced to do weird referencing to work around https://github.com/rust-lang/rust/issues/100905
     // otherwise append_shard_doc is captured by ref, and we get lifetime issues
     let futures = search_requests
         .into_iter()
@@ -472,16 +472,6 @@ fn convert_to_es_search_response(
         scroll_id: resp.scroll_id,
         ..Default::default()
     }
-}
-
-fn make_elastic_api_response(
-    elasticsearch_result: Result<ElasticSearchResponse, ElasticSearchError>,
-) -> JsonApiResponse {
-    let status_code = match &elasticsearch_result {
-        Ok(_) => StatusCode::OK,
-        Err(err) => err.status,
-    };
-    JsonApiResponse::new(&elasticsearch_result, status_code, &BodyFormat::default())
 }
 
 pub(crate) fn str_lines(body: &str) -> impl Iterator<Item = &str> {
