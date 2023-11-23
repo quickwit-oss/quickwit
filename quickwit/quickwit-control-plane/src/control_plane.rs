@@ -253,8 +253,8 @@ impl Handler<DeleteIndexRequest> for ControlPlane {
     ) -> Result<Self::Reply, ActorExitStatus> {
         let index_uid: IndexUid = request.index_uid.clone().into();
 
-        if let Err(error) = self.metastore.delete_index(request).await {
-            return Ok(Err(ControlPlaneError::from(error)));
+        if let Err(metastore_error) = self.metastore.delete_index(request).await {
+            return convert_metastore_error(metastore_error);
         };
 
         self.model.delete_index(&index_uid);

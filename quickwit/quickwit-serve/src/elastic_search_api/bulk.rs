@@ -20,40 +20,18 @@
 use std::collections::HashMap;
 
 use bytes::Bytes;
+use hyper::StatusCode;
 use quickwit_ingest::{
     CommitType, DocBatchBuilder, IngestRequest, IngestResponse, IngestService, IngestServiceClient,
-    IngestServiceError,
 };
-use quickwit_proto::{ServiceError, ServiceErrorCode};
-use thiserror::Error;
 use warp::{Filter, Rejection};
 
 use crate::elastic_search_api::filter::{elastic_bulk_filter, elastic_index_bulk_filter};
-use crate::elastic_search_api::model::{BulkAction, ElasticIngestOptions};
+use crate::elastic_search_api::make_elastic_api_response;
+use crate::elastic_search_api::model::{BulkAction, ElasticIngestOptions, ElasticSearchError};
 use crate::format::extract_format_from_qs;
 use crate::ingest_api::lines;
-use crate::json_api_response::make_json_api_response;
 use crate::with_arg;
-
-#[derive(Error, Debug)]
-pub enum IngestRestApiError {
-    #[error("failed to parse action `{0}`")]
-    BulkInvalidAction(String),
-    #[error("failed to parse source `{0}`")]
-    BulkInvalidSource(String),
-    #[error(transparent)]
-    IngestApi(#[from] IngestServiceError),
-}
-
-impl ServiceError for IngestRestApiError {
-    fn error_code(&self) -> ServiceErrorCode {
-        match self {
-            Self::BulkInvalidAction(_) => ServiceErrorCode::BadRequest,
-            Self::BulkInvalidSource(_) => ServiceErrorCode::BadRequest,
-            Self::IngestApi(ingest_api_error) => ingest_api_error.error_code(),
-        }
-    }
-}
 
 /// POST `_elastic/_bulk`
 pub fn es_compat_bulk_handler(
@@ -65,7 +43,7 @@ pub fn es_compat_bulk_handler(
             elastic_ingest_bulk(None, body, ingest_option, ingest_service)
         })
         .and(extract_format_from_qs())
-        .map(make_json_api_response)
+        .map(make_elastic_api_response)
 }
 
 /// POST `_elastic/<index>/_bulk`
@@ -78,7 +56,7 @@ pub fn es_compat_index_bulk_handler(
             elastic_ingest_bulk(Some(index), body, ingest_option, ingest_service)
         })
         .and(extract_format_from_qs())
-        .map(make_json_api_response)
+        .map(make_elastic_api_response)
 }
 
 async fn elastic_ingest_bulk(
@@ -86,15 +64,22 @@ async fn elastic_ingest_bulk(
     body: Bytes,
     ingest_options: ElasticIngestOptions,
     mut ingest_service: IngestServiceClient,
-) -> Result<IngestResponse, IngestRestApiError> {
+) -> Result<IngestResponse, ElasticSearchError> {
     let mut doc_batch_builders = HashMap::new();
-    let mut lines = lines(&body);
+    let mut lines = lines(&body).enumerate();
 
-    while let Some(line) = lines.next() {
-        let action = serde_json::from_slice::<BulkAction>(line)
-            .map_err(|error| IngestRestApiError::BulkInvalidAction(error.to_string()))?;
-        let source = lines.next().ok_or_else(|| {
-            IngestRestApiError::BulkInvalidSource("expected source for the action".to_string())
+    while let Some((line_number, line)) = lines.next() {
+        let action = serde_json::from_slice::<BulkAction>(line).map_err(|error| {
+            ElasticSearchError::new(
+                StatusCode::BAD_REQUEST,
+                format!("Malformed action/metadata line [#{line_number}]. Details: `{error}`"),
+            )
+        })?;
+        let (_, source) = lines.next().ok_or_else(|| {
+            ElasticSearchError::new(
+                StatusCode::BAD_REQUEST,
+                "expected source for the action".to_string(),
+            )
         })?;
         // when ingesting on /my-index/_bulk, if _index: is set to something else than my-index,
         // ES honors it and create the doc in the requested index. That is, `my-index` is a default
@@ -103,8 +88,9 @@ async fn elastic_ingest_bulk(
             .into_index()
             .or_else(|| index.clone())
             .ok_or_else(|| {
-                IngestRestApiError::BulkInvalidAction(
-                    "missing required field: `_index`".to_string(),
+                ElasticSearchError::new(
+                    StatusCode::BAD_REQUEST,
+                    format!("missing required field: `_index` in the line [#{line_number}]."),
                 )
             })?;
         let doc_batch_builder = doc_batch_builders
@@ -131,6 +117,7 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
+    use hyper::StatusCode;
     use quickwit_config::{IngestApiConfig, NodeConfig};
     use quickwit_ingest::{
         FetchRequest, IngestResponse, IngestServiceClient, SuggestTruncateRequest,
@@ -138,6 +125,7 @@ mod tests {
     use quickwit_search::MockSearchService;
 
     use crate::elastic_search_api::elastic_api_handlers;
+    use crate::elastic_search_api::model::ElasticSearchError;
     use crate::ingest_api::setup_ingest_service;
 
     #[tokio::test]
@@ -185,6 +173,29 @@ mod tests {
         assert_eq!(resp.status(), 200);
         let ingest_response: IngestResponse = serde_json::from_slice(resp.body()).unwrap();
         assert_eq!(ingest_response.num_docs_for_processing, 3);
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_bulk_api_returns_200_if_payload_has_blank_lines() {
+        let config = Arc::new(NodeConfig::for_test());
+        let search_service = Arc::new(MockSearchService::new());
+        let (universe, _temp_dir, ingest_service, _) =
+            setup_ingest_service(&["my-index-1"], &IngestApiConfig::default()).await;
+        let elastic_api_handlers = elastic_api_handlers(config, search_service, ingest_service);
+        let payload = "
+            {\"create\": {\"_index\": \"my-index-1\", \"_id\": \"1674834324802805760\"}}
+            \u{20}\u{20}\u{20}\u{20}\n
+            {\"_line\": {\"message\": \"hello-world\"}}";
+        let resp = warp::test::request()
+            .path("/_elastic/_bulk")
+            .method("POST")
+            .body(payload)
+            .reply(&elastic_api_handlers)
+            .await;
+        assert_eq!(resp.status(), 200);
+        let ingest_response: IngestResponse = serde_json::from_slice(resp.body()).unwrap();
+        assert_eq!(ingest_response.num_docs_for_processing, 1);
         universe.assert_quit().await;
     }
 
@@ -383,5 +394,11 @@ mod tests {
             .reply(&elastic_api_handlers)
             .await;
         assert_eq!(resp.status(), 400);
+        let es_error: ElasticSearchError = serde_json::from_slice(resp.body()).unwrap();
+        assert_eq!(es_error.status, StatusCode::BAD_REQUEST);
+        assert_eq!(
+            es_error.error.reason.unwrap(),
+            "Malformed action/metadata line [#0]. Details: `expected value at line 1 column 57`"
+        );
     }
 }

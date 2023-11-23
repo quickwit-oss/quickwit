@@ -158,9 +158,19 @@ pub(crate) async fn start_rest_server(
         rest_listen_addr=?rest_listen_addr,
         "Starting REST server listening on {rest_listen_addr}."
     );
-    let serve_fut = hyper::Server::bind(&rest_listen_addr)
-        .serve(Shared::new(service))
-        .with_graceful_shutdown(shutdown_signal);
+
+    // `graceful_shutdown()` seems to be blocking in presence of existing connections.
+    // The following approach of dropping the serve supposedly is not bullet proof, but it seems to
+    // work in our unit test.
+    //
+    // See more of the discussion here:
+    // https://github.com/hyperium/hyper/issues/2386
+    let serve_fut = async move {
+        tokio::select! {
+             res = hyper::Server::bind(&rest_listen_addr).serve(Shared::new(service)) => { res }
+             _ = shutdown_signal => { Ok(()) }
+        }
+    };
 
     let (serve_res, _trigger_res) = tokio::join!(serve_fut, readiness_trigger);
     serve_res?;
