@@ -50,6 +50,7 @@ tracing = { workspace = true }
 ulid = { workspace = true }
 utoipa = { workspace = true }
 vrl = { workspace = true, optional = true }
+zstd = { workspace = true }
 
 quickwit-actors = { workspace = true }
 quickwit-aws = { workspace = true }

@@ -27,6 +27,7 @@ use async_trait::async_trait;
 use aws_smithy_http::byte_stream::ByteStream;
 use futures::{stream, StreamExt};
 use hyper::body::Body;
+use quickwit_common::shared_consts::SPLIT_FIELDS_FILE_NAME;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio_util::io::ReaderStream;
 
@@ -116,13 +117,14 @@ impl SplitPayloadBuilder {
     /// Creates a new SplitPayloadBuilder for given files and hotcache.
     pub fn get_split_payload(
         split_files: &[PathBuf],
+        serialized_split_fields: &[u8],
         hotcache: &[u8],
     ) -> anyhow::Result<SplitPayload> {
         let mut split_payload_builder = SplitPayloadBuilder::default();
         for file in split_files {
             split_payload_builder.add_file(file)?;
         }
-        let offsets = split_payload_builder.finalize(hotcache)?;
+        let offsets = split_payload_builder.finalize(serialized_split_fields, hotcache)?;
         Ok(offsets)
     }
 
@@ -140,11 +142,17 @@ impl SplitPayloadBuilder {
 
     /// Writes the bundle file offsets metadata at the end of the bundle file,
     /// and returns the byte-range of this metadata information.
-    pub fn finalize(self, hotcache: &[u8]) -> anyhow::Result<SplitPayload> {
+    pub fn finalize(
+        mut self,
+        serialized_split_fields: &[u8],
+        hotcache: &[u8],
+    ) -> anyhow::Result<SplitPayload> {
+        // let split_fields = serialize_split_fields(fields_metadata);
+        // Add the fields metadata to the bundle metadata.
         // Build the footer.
         let mut footer_bytes = Vec::new();
         // Fix paths to be relative
-        let metadata_with_fixed_paths = self
+        let mut metadata_with_fixed_paths = self
             .metadata
             .files
             .iter()
@@ -156,6 +164,12 @@ impl SplitPayloadBuilder {
                 Ok((file_name, range.start..range.end))
             })
             .collect::<Result<HashMap<_, _>, anyhow::Error>>()?;
+
+        // Add Split fields to the bundle metadata.
+        let list_fields_data_range = self.current_offset as u64
+            ..self.current_offset as u64 + serialized_split_fields.len() as u64;
+        self.current_offset += serialized_split_fields.len();
+        metadata_with_fixed_paths.insert(SPLIT_FIELDS_FILE_NAME.into(), list_fields_data_range);
 
         let bundle_storage_file_offsets = BundleStorageFileOffsets {
             files: metadata_with_fixed_paths,
@@ -181,6 +195,7 @@ impl SplitPayloadBuilder {
             payloads.push(Box::new(file_payload));
         }
 
+        payloads.push(Box::new(serialized_split_fields.to_vec()));
         payloads.push(Box::new(footer_bytes.to_vec()));
 
         Ok(SplitPayload {
@@ -250,9 +265,9 @@ mod tests {
         file2.write_all(b"world")?;
 
         let split_payload =
-            SplitPayloadBuilder::get_split_payload(&[test_filepath1, test_filepath2], b"abc")?;
+            SplitPayloadBuilder::get_split_payload(&[test_filepath1, test_filepath2], &[], b"abc")?;
 
-        assert_eq!(split_payload.len(), 91);
+        assert_eq!(split_payload.len(), 128);
 
         Ok(())
     }
@@ -383,6 +398,7 @@ mod tests {
 
         let split_streamer = SplitPayloadBuilder::get_split_payload(
             &[test_filepath1.clone(), test_filepath2.clone()],
+            &[],
             &[1, 2, 3],
         )?;
 

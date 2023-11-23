@@ -5581,6 +5581,7 @@ dependencies = [
  "ulid",
  "utoipa",
  "vrl",
+ "zstd 0.13.0",
 ]
 
 [[package]]
