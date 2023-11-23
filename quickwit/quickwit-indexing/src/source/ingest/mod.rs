@@ -84,7 +84,7 @@ impl TypedSourceFactory for IngestSourceFactory {
 struct ClientId {
     node_id: NodeId,
     source_uid: SourceUid,
-    pipeline_ord: usize,
+    pipeline_uid: String,
 }
 
 impl fmt::Display for ClientId {
@@ -92,17 +92,17 @@ impl fmt::Display for ClientId {
         write!(
             formatter,
             "indexer/{}/{}/{}/{}",
-            self.node_id, self.source_uid.index_uid, self.source_uid.source_id, self.pipeline_ord
+            self.node_id, self.source_uid.index_uid, self.source_uid.source_id, self.pipeline_uid
         )
     }
 }
 
 impl ClientId {
-    fn new(node_id: NodeId, source_uid: SourceUid, pipeline_ord: usize) -> Self {
-        Self {
+    fn new(node_id: NodeId, source_uid: SourceUid, pipeline_uid: String) -> Self {
+        ClientId {
             node_id,
             source_uid,
-            pipeline_ord,
+            pipeline_uid,
         }
     }
 
@@ -163,7 +163,7 @@ impl IngestSource {
                 index_uid: runtime_args.index_uid().clone(),
                 source_id: runtime_args.source_id().to_string(),
             },
-            runtime_args.pipeline_ord(),
+            runtime_args.pipeline_uid().to_string(),
         );
         let metastore = runtime_args.metastore.clone();
         let ingester_pool = runtime_args.ingester_pool.clone();
@@ -536,7 +536,7 @@ mod tests {
             node_id: "test-node".to_string(),
             index_uid: "test-index:0".into(),
             source_id: "test-source".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: "0".to_string(),
         };
         let source_config = SourceConfig::for_test("test-source", SourceParams::Ingest);
         let publish_token =
@@ -693,7 +693,7 @@ mod tests {
             node_id: "test-node".to_string(),
             index_uid: "test-index:0".into(),
             source_id: "test-source".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: "0".to_string(),
         };
         let source_config = SourceConfig::for_test("test-source", SourceParams::Ingest);
         let publish_token =
@@ -812,7 +812,7 @@ mod tests {
             node_id: "test-node".to_string(),
             index_uid: "test-index:0".into(),
             source_id: "test-source".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: "0".to_string(),
         };
         let source_config = SourceConfig::for_test("test-source", SourceParams::Ingest);
         let publish_token =
@@ -974,7 +974,7 @@ mod tests {
             node_id: "test-node".to_string(),
             index_uid: "test-index:0".into(),
             source_id: "test-source".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: "0".to_string(),
         };
         let source_config = SourceConfig::for_test("test-source", SourceParams::Ingest);
         let mock_metastore = MetastoreServiceClient::mock();
@@ -1138,7 +1138,7 @@ mod tests {
             node_id: "test-node".to_string(),
             index_uid: "test-index:0".into(),
             source_id: "test-source".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: "0".to_string(),
         };
         let source_config = SourceConfig::for_test("test-source", SourceParams::Ingest);
         let mock_metastore = MetastoreServiceClient::mock();

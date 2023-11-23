@@ -485,22 +485,30 @@ mod tests {
             let mut running_plan = FnvHashMap::default();
             let mut desired_plan = FnvHashMap::default();
             let task_1 = IndexingTask {
+                pipeline_uid: "pipeline1".to_string(),
+                index_uid: "index-1:11111111111111111111111111".to_string(),
+                source_id: "source-1".to_string(),
+                shard_ids: Vec::new(),
+            };
+            let task_1b = IndexingTask {
+                pipeline_uid: "pipeline1b".to_string(),
                 index_uid: "index-1:11111111111111111111111111".to_string(),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
             };
             let task_2 = IndexingTask {
+                pipeline_uid: "pipeline2".to_string(),
                 index_uid: "index-1:11111111111111111111111111".to_string(),
                 source_id: "source-2".to_string(),
                 shard_ids: Vec::new(),
             };
             running_plan.insert(
                 "indexer-1".to_string(),
-                vec![task_1.clone(), task_1.clone(), task_2.clone()],
+                vec![task_1.clone(), task_1b.clone(), task_2.clone()],
             );
             desired_plan.insert(
                 "indexer-1".to_string(),
-                vec![task_2, task_1.clone(), task_1],
+                vec![task_2, task_1.clone(), task_1b.clone()],
             );
             let indexing_plans_diff = get_indexing_plans_diff(&running_plan, &desired_plan);
             assert!(indexing_plans_diff.is_empty());
@@ -509,11 +517,13 @@ mod tests {
             let mut running_plan = FnvHashMap::default();
             let mut desired_plan = FnvHashMap::default();
             let task_1 = IndexingTask {
+                pipeline_uid: "pipeline1".to_string(),
                 index_uid: "index-1:11111111111111111111111111".to_string(),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
             };
             let task_2 = IndexingTask {
+                pipeline_uid: "pipeline2".to_string(),
                 index_uid: "index-1:11111111111111111111111111".to_string(),
                 source_id: "source-2".to_string(),
                 shard_ids: Vec::new(),
@@ -539,11 +549,13 @@ mod tests {
             let mut running_plan = FnvHashMap::default();
             let mut desired_plan = FnvHashMap::default();
             let task_1 = IndexingTask {
+                pipeline_uid: "pipeline1".to_string(),
                 index_uid: "index-1:11111111111111111111111111".to_string(),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
             };
             let task_2 = IndexingTask {
+                pipeline_uid: "pipeline2".to_string(),
                 index_uid: "index-2:11111111111111111111111111".to_string(),
                 source_id: "source-2".to_string(),
                 shard_ids: Vec::new(),
@@ -576,15 +588,28 @@ mod tests {
             // Diff with 3 same tasks running but only one on the desired plan.
             let mut running_plan = FnvHashMap::default();
             let mut desired_plan = FnvHashMap::default();
-            let task_1 = IndexingTask {
+            let task_1a = IndexingTask {
+                pipeline_uid: "pipeline1a".to_string(),
                 index_uid: "index-1:11111111111111111111111111".to_string(),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
             };
-            running_plan.insert("indexer-1".to_string(), vec![task_1.clone()]);
+            let task_1b = IndexingTask {
+                pipeline_uid: "pipeline1b".to_string(),
+                index_uid: "index-1:11111111111111111111111111".to_string(),
+                source_id: "source-1".to_string(),
+                shard_ids: Vec::new(),
+            };
+            let task_1c = IndexingTask {
+                pipeline_uid: "pipeline1c".to_string(),
+                index_uid: "index-1:11111111111111111111111111".to_string(),
+                source_id: "source-1".to_string(),
+                shard_ids: Vec::new(),
+            };
+            running_plan.insert("indexer-1".to_string(), vec![task_1a.clone()]);
             desired_plan.insert(
                 "indexer-1".to_string(),
-                vec![task_1.clone(), task_1.clone(), task_1.clone()],
+                vec![task_1a.clone(), task_1b.clone(), task_1c.clone()],
             );
 
             let indexing_plans_diff = get_indexing_plans_diff(&running_plan, &desired_plan);
@@ -593,31 +618,7 @@ mod tests {
             assert!(!indexing_plans_diff.has_same_tasks());
             assert_eq!(
                 indexing_plans_diff.missing_tasks_by_node_id,
-                FnvHashMap::from_iter([("indexer-1", vec![&task_1, &task_1])])
-            );
-        }
-        {
-            // Diff with 3 same tasks on desired plan but only one running.
-            let mut running_plan = FnvHashMap::default();
-            let mut desired_plan = FnvHashMap::default();
-            let task_1 = IndexingTask {
-                index_uid: "index-1:11111111111111111111111111".to_string(),
-                source_id: "source-1".to_string(),
-                shard_ids: Vec::new(),
-            };
-            running_plan.insert(
-                "indexer-1".to_string(),
-                vec![task_1.clone(), task_1.clone(), task_1.clone()],
-            );
-            desired_plan.insert("indexer-1".to_string(), vec![task_1.clone()]);
-
-            let indexing_plans_diff = get_indexing_plans_diff(&running_plan, &desired_plan);
-            assert!(!indexing_plans_diff.is_empty());
-            assert!(indexing_plans_diff.has_same_nodes());
-            assert!(!indexing_plans_diff.has_same_tasks());
-            assert_eq!(
-                indexing_plans_diff.unplanned_tasks_by_node_id,
-                FnvHashMap::from_iter([("indexer-1", vec![&task_1, &task_1])])
+                FnvHashMap::from_iter([("indexer-1", vec![&task_1b, &task_1c])])
             );
         }
     }

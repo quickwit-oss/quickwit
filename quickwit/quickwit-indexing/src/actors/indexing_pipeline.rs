@@ -311,7 +311,7 @@ impl IndexingPipeline {
         info!(
             index_id=%index_id,
             source_id=%source_id,
-            pipeline_ord=%self.params.pipeline_id.pipeline_ord,
+            pipeline_uid=%self.params.pipeline_id.pipeline_uid,
             "spawning indexing pipeline",
         );
         let (source_mailbox, source_inbox) = ctx
@@ -670,7 +670,7 @@ mod tests {
             index_uid: "test-index:11111111111111111111111111".to_string().into(),
             source_id: "test-source".to_string(),
             node_id: node_id.to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: "0".to_string(),
         };
         let source_config = SourceConfig {
             source_id: "test-source".to_string(),
@@ -770,7 +770,7 @@ mod tests {
             index_uid: "test-index:11111111111111111111111111".to_string().into(),
             source_id: "test-source".to_string(),
             node_id: node_id.to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: "0".to_string(),
         };
         let source_config = SourceConfig {
             source_id: "test-source".to_string(),
@@ -837,7 +837,7 @@ mod tests {
             index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
             node_id: node_id.to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: "0".to_string(),
         };
         let source_config = SourceConfig {
             source_id: "test-source".to_string(),
@@ -955,7 +955,7 @@ mod tests {
             index_uid: "test-index:11111111111111111111111111".to_string().into(),
             source_id: "test-source".to_string(),
             node_id: node_id.to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: "0".to_string(),
         };
         let source_config = SourceConfig {
             source_id: "test-source".to_string(),

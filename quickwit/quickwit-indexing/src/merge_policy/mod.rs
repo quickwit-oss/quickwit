@@ -335,7 +335,7 @@ pub mod tests {
             index_uid: IndexUid::new_with_random_ulid("test_index"),
             source_id: "test_source".to_string(),
             node_id: "test_node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: "0".to_string(),
         };
         let split_attrs = merge_split_attrs(merged_split_id, &pipeline_id, splits);
         create_split_metadata(merge_policy, &split_attrs, tags, 0..0)
@@ -366,7 +366,7 @@ pub mod tests {
             index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: "0".to_string(),
         };
         let merge_planner = MergePlanner::new(
             pipeline_id,

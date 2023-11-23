@@ -155,8 +155,8 @@ impl SourceRuntimeArgs {
         &self.pipeline_id.source_id
     }
 
-    pub fn pipeline_ord(&self) -> usize {
-        self.pipeline_id.pipeline_ord
+    pub fn pipeline_uid(&self) -> &str {
+        self.pipeline_id.pipeline_uid.as_str()
     }
 
     #[cfg(test)]
@@ -171,7 +171,7 @@ impl SourceRuntimeArgs {
             node_id: "test-node".to_string(),
             index_uid,
             source_id: source_config.source_id.clone(),
-            pipeline_ord: 0,
+            pipeline_uid: "0".to_string(),
         };
         Arc::new(SourceRuntimeArgs {
             pipeline_id,

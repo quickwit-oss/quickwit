@@ -1015,6 +1015,7 @@ mod tests {
         assert!(new_indexer_node_info.indexing_tasks.is_empty());
 
         let new_indexing_task = IndexingTask {
+            pipeline_uid: "test-pipeline:0".to_string(),
             index_uid: "test-index:0".to_string(),
             source_id: "test-source".to_string(),
             shard_ids: Vec::new(),

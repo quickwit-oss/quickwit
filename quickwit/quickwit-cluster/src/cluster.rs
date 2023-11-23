@@ -432,43 +432,14 @@ pub fn parse_indexing_tasks(node_state: &NodeState) -> Vec<IndexingTask> {
                 None
             }
         })
-        .flat_map(|(indexing_task_key, pipeline_shard_str)| {
-            parse_indexing_task_key_value(indexing_task_key, pipeline_shard_str)
+        .flat_map(|(key, value)| {
+            let indexing_task_opt = chitchat_kv_to_indexing_task(key, value);
+            if indexing_task_opt.is_none() {
+                warn!(key=%key, value=%value, "failed to parse indexing task from chitchat kv");
+            }
+            indexing_task_opt
         })
         .collect()
-}
-
-/// Parses indexing task key into the IndexingTask.
-/// Malformed keys and values are ignored, just warnings are emitted.
-fn parse_indexing_task_key_value(
-    indexing_task_key: &str,
-    pipeline_shards_str: &str,
-) -> Vec<IndexingTask> {
-    let Some(index_uid_source_id) = indexing_task_key.strip_prefix(INDEXING_TASK_PREFIX) else {
-        warn!(
-            indexing_task_key = indexing_task_key,
-            "indexing task must start by the prefix `{INDEXING_TASK_PREFIX}`"
-        );
-        return Vec::new();
-    };
-    let Some((index_uid_str, source_id_str)) = index_uid_source_id.rsplit_once(':') else {
-        warn!(index_uid_source_id=%index_uid_source_id, "invalid index task format, cannot find index_uid and source_id");
-        return Vec::new();
-    };
-    match deserialize_pipeline_shards(pipeline_shards_str) {
-        Ok(pipeline_shards) => pipeline_shards
-            .into_iter()
-            .map(|shard_ids| IndexingTask {
-                index_uid: index_uid_str.to_string(),
-                source_id: source_id_str.to_string(),
-                shard_ids,
-            })
-            .collect(),
-        Err(error) => {
-            warn!(error=%error, "failed to parse pipeline shard list");
-            Vec::new()
-        }
-    }
 }
 
 /// Writes the given indexing tasks in the given node state.
@@ -483,73 +454,48 @@ pub fn set_indexing_tasks_in_node_state(
         .iter_prefix(INDEXING_TASK_PREFIX)
         .map(|(key, _)| key.to_string())
         .collect();
-    let mut indexing_tasks_grouped_by_source: HashMap<(&str, &str), Vec<&IndexingTask>> =
-        HashMap::new();
     for indexing_task in indexing_tasks {
-        indexing_tasks_grouped_by_source
-            .entry((
-                indexing_task.index_uid.as_str(),
-                indexing_task.source_id.as_str(),
-            ))
-            .or_default()
-            .push(indexing_task);
-    }
-    for ((index_uid, source_id), indexing_tasks) in indexing_tasks_grouped_by_source {
-        let shards_per_pipeline = indexing_tasks
-            .iter()
-            .map(|indexing_task| &indexing_task.shard_ids[..]);
-        let pipeline_shards_str: String = serialize_pipeline_shards(shards_per_pipeline);
-        let key = format!("{INDEXING_TASK_PREFIX}{index_uid}:{source_id}");
+        let (key, value) = indexing_task_to_chitchat_kv(indexing_task);
         current_indexing_tasks_keys.remove(&key);
-        node_state.set(key, pipeline_shards_str);
+        node_state.set(key, value);
     }
     for obsolete_task_key in current_indexing_tasks_keys {
         node_state.mark_for_deletion(&obsolete_task_key);
     }
 }
 
-/// Given a list of list of shards (one list per pipeline), serializes it as a string to be stored
-/// as a value in the chitchat state.
-///
-/// The format is as follows `[1,2,3][4,5]`.
-fn serialize_pipeline_shards<'a>(pipeline_shards: impl Iterator<Item = &'a [u64]>) -> String {
-    let mut pipeline_shards_str = String::new();
-    for shards in pipeline_shards {
-        pipeline_shards_str.push('[');
-        pipeline_shards_str.push_str(&shards.iter().join(","));
-        pipeline_shards_str.push(']');
-    }
-    pipeline_shards_str
+fn indexing_task_to_chitchat_kv(indexing_task: &IndexingTask) -> (String, String) {
+    let IndexingTask {
+        pipeline_uid,
+        index_uid,
+        source_id,
+        shard_ids,
+    } = indexing_task;
+    let key = format!("{INDEXING_TASK_PREFIX}{pipeline_uid}");
+    let shards_str = shard_ids.iter().sorted().join(",");
+    let value = format!("{index_uid}:{source_id}:{shards_str}");
+    (key, value)
 }
 
-/// Deserializes the list of shards from a string stored in the chitchat state, as
-/// serialized by `serialize_pipeline_shards`.
-///
-/// This function will make sure the pipeline shard lists are sorted.
-pub fn deserialize_pipeline_shards(pipeline_shards_str: &str) -> anyhow::Result<Vec<Vec<u64>>> {
-    if pipeline_shards_str.is_empty() {
-        return Ok(Vec::new());
-    }
-    let mut pipeline_shards: Vec<Vec<u64>> = Vec::new();
-    for single_pipeline_shard_str in pipeline_shards_str.split(']') {
-        if single_pipeline_shard_str.is_empty() {
-            continue;
-        }
-        let Some(comma_sep_shards_str) = single_pipeline_shard_str.strip_prefix('[') else {
-            anyhow::bail!("invalid pipeline shards string: `{pipeline_shards_str}`");
-        };
-        let mut shards: Vec<u64> = Vec::new();
-        if !comma_sep_shards_str.is_empty() {
-            for shard_str in comma_sep_shards_str.split(',') {
-                let shard_id: u64 = shard_str.parse::<u64>()?;
-                shards.push(shard_id);
+fn chitchat_kv_to_indexing_task(key: &str, value: &str) -> Option<IndexingTask> {
+    let pipeline_uid = key.strip_prefix(INDEXING_TASK_PREFIX)?;
+    let (source_uid, shards_str) = value.rsplit_once(':')?;
+    let (index_uid, source_id) = source_uid.rsplit_once(':')?;
+    let shard_ids = shards_str
+        .split(',')
+        .filter_map(|shard_str| {
+            if shard_str.is_empty() {
+                return None;
             }
-        }
-        shards.sort();
-        pipeline_shards.push(shards);
-    }
-    pipeline_shards.sort_by_key(|shards| shards.first().copied());
-    Ok(pipeline_shards)
+            shard_str.parse::<u64>().ok()
+        })
+        .collect();
+    Some(IndexingTask {
+        index_uid: index_uid.to_string(),
+        source_id: source_id.to_string(),
+        pipeline_uid: pipeline_uid.to_string(),
+        shard_ids,
+    })
 }
 
 async fn spawn_ready_nodes_change_stream_task(cluster: Cluster) {
@@ -944,7 +890,14 @@ mod tests {
         )
         .await
         .unwrap();
-        let indexing_task = IndexingTask {
+        let indexing_task1 = IndexingTask {
+            pipeline_uid: "pipeline-1".to_string(),
+            index_uid: "index-1:11111111111111111111111111".to_string(),
+            source_id: "source-1".to_string(),
+            shard_ids: Vec::new(),
+        };
+        let indexing_task2 = IndexingTask {
+            pipeline_uid: "pipeline-2".to_string(),
             index_uid: "index-1:11111111111111111111111111".to_string(),
             source_id: "source-1".to_string(),
             shard_ids: Vec::new(),
@@ -953,7 +906,7 @@ mod tests {
             .set_self_key_value(GRPC_ADVERTISE_ADDR_KEY, "127.0.0.1:1001")
             .await;
         cluster2
-            .update_self_node_indexing_tasks(&[indexing_task.clone(), indexing_task.clone()])
+            .update_self_node_indexing_tasks(&[indexing_task1.clone(), indexing_task2.clone()])
             .await
             .unwrap();
         cluster1
@@ -982,9 +935,10 @@ mod tests {
             member_node_2.enabled_services,
             HashSet::from_iter([QuickwitService::Indexer, QuickwitService::Metastore].into_iter())
         );
+
         assert_eq!(
-            member_node_2.indexing_tasks,
-            vec![indexing_task.clone(), indexing_task.clone()]
+            &member_node_2.indexing_tasks,
+            &[indexing_task1, indexing_task2]
         );
     }
 
@@ -1017,10 +971,11 @@ mod tests {
         let mut random_generator = rand::thread_rng();
         // TODO: increase it back to 1000 when https://github.com/quickwit-oss/chitchat/issues/81 is fixed
         let indexing_tasks = (0..500)
-            .map(|_| {
+            .map(|pipeline_id| {
                 let index_id = random_generator.gen_range(0..=10_000);
                 let source_id = random_generator.gen_range(0..=100);
                 IndexingTask {
+                    pipeline_uid: format!("pipeline-{pipeline_id}"),
                     index_uid: format!("index-{index_id}:11111111111111111111111111"),
                     source_id: format!("source-{source_id}"),
                     shard_ids: Vec::new(),
@@ -1130,19 +1085,19 @@ mod tests {
             let chitchat_handle = node.inner.read().await.chitchat_handle.chitchat();
             let mut chitchat_guard = chitchat_handle.lock().await;
             chitchat_guard.self_node_state().set(
-                format!("{INDEXING_TASK_PREFIX}my_good_index:my_source:11111111111111111111111111"),
-                "[][]".to_string(),
+                format!("{INDEXING_TASK_PREFIX}pipeline1"),
+                "my_index:uid:my_source:1,3".to_string(),
             );
             chitchat_guard.self_node_state().set(
-                format!("{INDEXING_TASK_PREFIX}my_bad_index:my_source:11111111111111111111111111"),
-                "malformatted value".to_string(),
+                format!("{INDEXING_TASK_PREFIX}pipeline2:my_index:uid:my_source:3a,5"),
+                "3a,5".to_string(),
             );
         }
         node.wait_for_ready_members(|members| members.len() == 1, Duration::from_secs(5))
             .await
             .unwrap();
         let ready_members = node.ready_members().await;
-        assert_eq!(ready_members[0].indexing_tasks.len(), 2);
+        assert_eq!(ready_members[0].indexing_tasks.len(), 1);
     }
 
     #[tokio::test]
@@ -1233,40 +1188,6 @@ mod tests {
         Ok(())
     }
 
-    fn test_serialize_pipeline_shards_aux(pipeline_shards: &[&[u64]], expected_str: &str) {
-        let pipeline_shards_str = serialize_pipeline_shards(pipeline_shards.iter().copied());
-        assert_eq!(pipeline_shards_str, expected_str);
-        let ser_deser_pipeline_shards = deserialize_pipeline_shards(&pipeline_shards_str).unwrap();
-        assert_eq!(pipeline_shards, ser_deser_pipeline_shards);
-    }
-
-    #[test]
-    fn test_serialize_pipeline_shards() {
-        test_serialize_pipeline_shards_aux(&[], "");
-        test_serialize_pipeline_shards_aux(&[&[]], "[]");
-        test_serialize_pipeline_shards_aux(&[&[1]], "[1]");
-        test_serialize_pipeline_shards_aux(&[&[1, 2]], "[1,2]");
-        test_serialize_pipeline_shards_aux(&[&[], &[1, 2]], "[][1,2]");
-        test_serialize_pipeline_shards_aux(&[&[], &[]], "[][]");
-        test_serialize_pipeline_shards_aux(&[&[1], &[3, 4, 5, 6]], "[1][3,4,5,6]");
-    }
-
-    #[test]
-    fn test_deserialize_pipeline_shards_sorts() {
-        assert_eq!(
-            deserialize_pipeline_shards("[2,1]").unwrap(),
-            vec![vec![1, 2]]
-        );
-        assert_eq!(
-            deserialize_pipeline_shards("[1][]").unwrap(),
-            vec![vec![], vec![1]]
-        );
-        assert_eq!(
-            deserialize_pipeline_shards("[3][2]").unwrap(),
-            vec![vec![2], vec![3]]
-        );
-    }
-
     fn test_serialize_indexing_tasks_aux(
         indexing_tasks: &[IndexingTask],
         node_state: &mut NodeState,
@@ -1282,6 +1203,7 @@ mod tests {
         test_serialize_indexing_tasks_aux(&[], &mut node_state);
         test_serialize_indexing_tasks_aux(
             &[IndexingTask {
+                pipeline_uid: "pipeline-uid1".to_string(),
                 index_uid: "test:test1".to_string(),
                 source_id: "my-source1".to_string(),
                 shard_ids: vec![1, 2],
@@ -1291,6 +1213,7 @@ mod tests {
         // change in the set of shards
         test_serialize_indexing_tasks_aux(
             &[IndexingTask {
+                pipeline_uid: "pipeline-uid2".to_string(),
                 index_uid: "test:test1".to_string(),
                 source_id: "my-source1".to_string(),
                 shard_ids: vec![1, 2, 3],
@@ -1300,11 +1223,13 @@ mod tests {
         test_serialize_indexing_tasks_aux(
             &[
                 IndexingTask {
+                    pipeline_uid: "pipeline-uid1".to_string(),
                     index_uid: "test:test1".to_string(),
                     source_id: "my-source1".to_string(),
                     shard_ids: vec![1, 2],
                 },
                 IndexingTask {
+                    pipeline_uid: "pipeline-uid2".to_string(),
                     index_uid: "test:test1".to_string(),
                     source_id: "my-source1".to_string(),
                     shard_ids: vec![3, 4],
@@ -1316,11 +1241,13 @@ mod tests {
         test_serialize_indexing_tasks_aux(
             &[
                 IndexingTask {
+                    pipeline_uid: "pipeline-uid1".to_string(),
                     index_uid: "test:test1".to_string(),
                     source_id: "my-source1".to_string(),
                     shard_ids: vec![1, 2],
                 },
                 IndexingTask {
+                    pipeline_uid: "pipeline-uid2".to_string(),
                     index_uid: "test:test2".to_string(),
                     source_id: "my-source1".to_string(),
                     shard_ids: vec![3, 4],
@@ -1332,11 +1259,13 @@ mod tests {
         test_serialize_indexing_tasks_aux(
             &[
                 IndexingTask {
+                    pipeline_uid: "pipeline-uid1".to_string(),
                     index_uid: "test:test1".to_string(),
                     source_id: "my-source1".to_string(),
                     shard_ids: vec![1, 2],
                 },
                 IndexingTask {
+                    pipeline_uid: "pipeline-uid2".to_string(),
                     index_uid: "test:test1".to_string(),
                     source_id: "my-source2".to_string(),
                     shard_ids: vec![3, 4],

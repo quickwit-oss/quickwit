@@ -173,7 +173,7 @@ impl TestSandbox {
             .ask_for_res(SpawnPipeline {
                 index_id: self.index_uid.index_id().to_string(),
                 source_config,
-                pipeline_ord: 0,
+                pipeline_uid: "0".to_string(),
             })
             .await?;
         let pipeline_handle = self

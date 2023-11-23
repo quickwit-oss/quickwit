@@ -191,7 +191,7 @@ impl DeleteTaskPipeline {
         let index_pipeline_id = IndexingPipelineId {
             index_uid: self.index_uid.clone(),
             node_id: "unknown".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: "0".to_string(),
             source_id: "unknown".to_string(),
         };
         let throughput_limit: f64 = index_config

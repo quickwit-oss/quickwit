@@ -431,7 +431,7 @@ impl MergeExecutor {
         let index_pipeline_id = IndexingPipelineId {
             index_uid: split.index_uid,
             node_id: split.node_id.clone(),
-            pipeline_ord: 0,
+            pipeline_uid: "delete-pipeline".to_string(),
             source_id: split.source_id.clone(),
         };
         let indexed_split = IndexedSplit {
@@ -591,7 +591,7 @@ mod tests {
             index_uid: index_uid.clone(),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: "0".to_string(),
         };
         for split_id in 0..4 {
             let single_doc = std::iter::once(
@@ -715,7 +715,7 @@ mod tests {
         let pipeline_id = IndexingPipelineId {
             index_uid: index_uid.clone(),
             node_id: "unknown".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: "0".to_string(),
             source_id: "unknown".to_string(),
         };
         test_sandbox.add_documents(docs).await?;

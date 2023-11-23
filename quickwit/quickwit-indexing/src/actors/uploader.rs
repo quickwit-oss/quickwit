@@ -507,7 +507,7 @@ mod tests {
             index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: "0".to_string(),
         };
         let (sequencer_mailbox, sequencer_inbox) =
             universe.create_test_mailbox::<Sequencer<Publisher>>();
@@ -618,7 +618,7 @@ mod tests {
             index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: "0".to_string(),
         };
         let universe = Universe::new();
         let (sequencer_mailbox, sequencer_inbox) =
@@ -765,7 +765,7 @@ mod tests {
             index_uid: IndexUid::from("test-index-no-sequencer:11111111111111111111111111"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: "0".to_string(),
         };
         let universe = Universe::new();
         let (publisher_mailbox, publisher_inbox) = universe.create_test_mailbox::<Publisher>();
@@ -945,7 +945,7 @@ mod tests {
             index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: "0".to_string(),
         };
         let mut mock_metastore = MetastoreServiceClient::mock();
         mock_metastore

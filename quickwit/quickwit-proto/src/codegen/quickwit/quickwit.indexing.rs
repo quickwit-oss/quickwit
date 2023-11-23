@@ -15,6 +15,9 @@ pub struct IndexingTask {
     /// The task's source ID.
     #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,
+    /// pipeline id
+    #[prost(string, tag = "4")]
+    pub pipeline_uid: ::prost::alloc::string::String,
     /// The shards assigned to the indexer.
     #[prost(uint64, repeated, tag = "3")]
     pub shard_ids: ::prost::alloc::vec::Vec<u64>,

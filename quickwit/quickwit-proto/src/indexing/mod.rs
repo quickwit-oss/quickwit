@@ -37,15 +37,15 @@ pub type IndexingResult<T> = std::result::Result<T, IndexingError>;
 
 #[derive(Debug, thiserror::Error)]
 pub enum IndexingError {
-    #[error("indexing pipeline `{index_id}` for source `{source_id}` does not exist")]
-    MissingPipeline { index_id: String, source_id: String },
+    #[error("indexing pipeline `{pipeline_uid}` does not exist")]
+    MissingPipeline { pipeline_uid: String },
     #[error(
-        "pipeline #{pipeline_ord} for index `{index_id}` and source `{source_id}` already exists"
+        "pipeline #{pipeline_uid} for index `{index_id}` and source `{source_id}` already exists"
     )]
     PipelineAlreadyExists {
         index_id: String,
         source_id: SourceId,
-        pipeline_ord: usize,
+        pipeline_uid: String,
     },
     #[error("I/O error `{0}`")]
     Io(io::Error),
@@ -68,16 +68,15 @@ pub enum IndexingError {
 impl From<IndexingError> for tonic::Status {
     fn from(error: IndexingError) -> Self {
         match error {
-            IndexingError::MissingPipeline {
-                index_id,
-                source_id,
-            } => tonic::Status::not_found(format!("missing pipeline {index_id}/{source_id}")),
+            IndexingError::MissingPipeline { pipeline_uid } => {
+                tonic::Status::not_found(format!("missing pipeline {pipeline_uid}"))
+            }
             IndexingError::PipelineAlreadyExists {
                 index_id,
                 source_id,
-                pipeline_ord,
+                pipeline_uid,
             } => tonic::Status::already_exists(format!(
-                "pipeline {index_id}/{source_id} {pipeline_ord} already exists "
+                "pipeline {index_id}/{source_id} {pipeline_uid} already exists "
             )),
             IndexingError::Io(error) => tonic::Status::internal(error.to_string()),
             IndexingError::InvalidParams(error) => {
@@ -103,13 +102,12 @@ impl From<tonic::Status> for IndexingError {
                 IndexingError::InvalidParams(anyhow!(status.message().to_string()))
             }
             tonic::Code::NotFound => IndexingError::MissingPipeline {
-                index_id: "".to_string(),
-                source_id: "".to_string(),
+                pipeline_uid: "".to_string(),
             },
             tonic::Code::AlreadyExists => IndexingError::PipelineAlreadyExists {
                 index_id: "".to_string(),
                 source_id: "".to_string(),
-                pipeline_ord: 0,
+                pipeline_uid: "".to_string(),
             },
             tonic::Code::Unavailable => IndexingError::Unavailable,
             _ => IndexingError::InvalidParams(anyhow!(status.message().to_string())),
@@ -150,7 +148,7 @@ pub struct IndexingPipelineId {
     pub node_id: String,
     pub index_uid: IndexUid,
     pub source_id: SourceId,
-    pub pipeline_ord: usize,
+    pub pipeline_uid: String,
 }
 
 impl Display for IndexingPipelineId {

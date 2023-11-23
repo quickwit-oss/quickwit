@@ -413,7 +413,7 @@ mod tests {
             index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: "0".to_string(),
         };
 
         // TODO: In the future we would like that kind of segment flush to emit a new split,

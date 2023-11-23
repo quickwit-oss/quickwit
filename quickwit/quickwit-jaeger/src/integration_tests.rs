@@ -427,7 +427,7 @@ async fn setup_traces_index(
     let spawn_pipeline_request = SpawnPipeline {
         index_id: index_id.clone(),
         source_config,
-        pipeline_ord: 0,
+        pipeline_uid: "0".to_string(),
     };
     indexer_service
         .ask_for_res(spawn_pipeline_request)
