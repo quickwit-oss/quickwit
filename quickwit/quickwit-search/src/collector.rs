@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::HashSet;
 
@@ -456,6 +457,57 @@ impl QuickwitAggregations {
             QuickwitAggregations::TantivyAggregations(aggregations) => {
                 get_fast_field_names(aggregations)
             }
+        }
+    }
+
+    fn maybe_incremental_aggregator(&self) -> QuickwitIncrementalAggregations {
+        match self {
+            QuickwitAggregations::FindTraceIdsAggregation(aggreg) => {
+                QuickwitIncrementalAggregations::FindTraceIdsAggregation(aggreg.clone())
+            }
+            QuickwitAggregations::TantivyAggregations(aggreg) => {
+                QuickwitIncrementalAggregations::TantivyAggregations(aggreg.clone(), Vec::new())
+            }
+        }
+    }
+}
+
+#[derive(Clone)]
+enum QuickwitIncrementalAggregations {
+    FindTraceIdsAggregation(FindTraceIdsCollector),
+    TantivyAggregations(Aggregations, Vec<Vec<u8>>),
+    NoAggregation,
+}
+
+impl QuickwitIncrementalAggregations {
+    fn add(&mut self, intermediate_result: Vec<u8>) {
+        match self {
+            QuickwitIncrementalAggregations::FindTraceIdsAggregation(_) => todo!(),
+            QuickwitIncrementalAggregations::TantivyAggregations(_, state) => {
+                state.push(intermediate_result);
+            }
+            QuickwitIncrementalAggregations::NoAggregation => (),
+        }
+    }
+
+    fn virtual_worst_hit(&self) -> Option<PartialHit> {
+        match self {
+            QuickwitIncrementalAggregations::FindTraceIdsAggregation(_) => todo!(),
+            QuickwitIncrementalAggregations::TantivyAggregations(_, _) => None,
+            QuickwitIncrementalAggregations::NoAggregation => None,
+        }
+    }
+
+    fn finalize(self) -> tantivy::Result<Option<Vec<u8>>> {
+        match self {
+            QuickwitIncrementalAggregations::FindTraceIdsAggregation(_) => todo!(),
+            QuickwitIncrementalAggregations::TantivyAggregations(aggregation, state) => {
+                merge_intermediate_aggregation_result(
+                    &Some(QuickwitAggregations::TantivyAggregations(aggregation)),
+                    state.iter().map(|vec| vec.as_slice()),
+                )
+            }
+            QuickwitIncrementalAggregations::NoAggregation => Ok(None),
         }
     }
 }
@@ -932,7 +984,7 @@ impl SortKeyMapper<SegmentPartialHit> for HitSortingMapper {
 pub(crate) struct IncrementalCollector {
     inner: QuickwitCollector,
     top_k_hits: TopK<PartialHit, PartialHitSortingKey, HitSortingMapper>,
-    intermediate_aggregation_results: Vec<Vec<u8>>,
+    incremental_aggregation: QuickwitIncrementalAggregations,
     num_hits: u64,
     failed_splits: Vec<SplitSearchError>,
     num_attempted_splits: u64,
@@ -941,12 +993,17 @@ pub(crate) struct IncrementalCollector {
 impl IncrementalCollector {
     /// Create a new incremental collector
     pub(crate) fn new(inner: QuickwitCollector) -> Self {
+        let incremental_aggregation = inner
+            .aggregation
+            .as_ref()
+            .map(QuickwitAggregations::maybe_incremental_aggregator)
+            .unwrap_or(QuickwitIncrementalAggregations::NoAggregation);
         let (order1, order2) = inner.sort_by.sort_orders();
         let sort_key_mapper = HitSortingMapper { order1, order2 };
         IncrementalCollector {
             top_k_hits: TopK::new(inner.max_hits + inner.start_offset, sort_key_mapper),
             inner,
-            intermediate_aggregation_results: Vec::new(),
+            incremental_aggregation,
             num_hits: 0,
             failed_splits: Vec::new(),
             num_attempted_splits: 0,
@@ -968,8 +1025,8 @@ impl IncrementalCollector {
         self.failed_splits.extend(failed_splits);
         self.num_attempted_splits += num_attempted_splits;
         if let Some(intermediate_aggregation_result) = intermediate_aggregation_result {
-            self.intermediate_aggregation_results
-                .push(intermediate_aggregation_result);
+            self.incremental_aggregation
+                .add(intermediate_aggregation_result);
         }
     }
 
@@ -981,9 +1038,16 @@ impl IncrementalCollector {
     /// Get the worst top-hit. Can be used to skip splits if they can't possibly do better.
     ///
     /// Only returns a result if enough hits were recorded already.
-    pub(crate) fn peek_worst_hit(&self) -> Option<&PartialHit> {
+    pub(crate) fn peek_worst_hit(&self) -> Option<Cow<PartialHit>> {
+        if self.top_k_hits.max_len() == 0 {
+            return self
+                .incremental_aggregation
+                .virtual_worst_hit()
+                .map(Cow::Owned);
+        }
+
         if self.top_k_hits.at_capacity() {
-            self.top_k_hits.peek_worst()
+            self.top_k_hits.peek_worst().map(Cow::Borrowed)
         } else {
             None
         }
@@ -991,12 +1055,7 @@ impl IncrementalCollector {
 
     /// Finalize the merge, creating a LeafSearchResponse.
     pub(crate) fn finalize(self) -> tantivy::Result<LeafSearchResponse> {
-        let intermediate_aggregation_result = merge_intermediate_aggregation_result(
-            &self.inner.aggregation,
-            self.intermediate_aggregation_results
-                .iter()
-                .map(|vec| vec.as_slice()),
-        )?;
+        let intermediate_aggregation_result = self.incremental_aggregation.finalize()?;
         let mut partial_hits = self.top_k_hits.finalize();
         if self.inner.start_offset != 0 {
             partial_hits.drain(0..self.inner.start_offset.min(partial_hits.len()));
