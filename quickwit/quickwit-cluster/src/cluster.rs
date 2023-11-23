@@ -27,7 +27,7 @@ use anyhow::Context;
 use chitchat::transport::Transport;
 use chitchat::{
     spawn_chitchat, Chitchat, ChitchatConfig, ChitchatHandle, ChitchatId, ClusterStateSnapshot,
-    FailureDetectorConfig, NodeState,
+    FailureDetectorConfig, ListenerHandle, NodeState,
 };
 use futures::Stream;
 use itertools::Itertools;
@@ -249,7 +249,29 @@ impl Cluster {
             .await
             .self_node_state()
             .get_versioned(key)
+            .filter(|versioned_value| versioned_value.tombstone.is_none())
             .map(|versioned_value| versioned_value.value.clone())
+    }
+
+    pub async fn remove_self_key(&self, key: &str) {
+        self.chitchat()
+            .await
+            .lock()
+            .await
+            .self_node_state()
+            .mark_for_deletion(key)
+    }
+
+    pub async fn subscribe(
+        &self,
+        key_prefix: &str,
+        callback: impl Fn(&str, &str) + Send + Sync + 'static,
+    ) -> ListenerHandle {
+        self.chitchat()
+            .await
+            .lock()
+            .await
+            .subscribe_event(key_prefix, callback)
     }
 
     /// Waits until the predicate holds true for the set of ready members.
@@ -643,7 +665,8 @@ pub fn grpc_addr_from_listen_addr_for_test(listen_addr: SocketAddr) -> SocketAdd
 
 #[cfg(any(test, feature = "testsuite"))]
 pub async fn create_cluster_for_test_with_id(
-    node_id: u16,
+    node_id: NodeId,
+    gossip_advertise_port: u16,
     cluster_id: String,
     peer_seed_addrs: Vec<String>,
     enabled_services: &HashSet<quickwit_config::service::QuickwitService>,
@@ -651,8 +674,7 @@ pub async fn create_cluster_for_test_with_id(
     self_node_readiness: bool,
 ) -> anyhow::Result<Cluster> {
     use quickwit_proto::indexing::PIPELINE_FULL_CAPACITY;
-    let gossip_advertise_addr: SocketAddr = ([127, 0, 0, 1], node_id).into();
-    let node_id: NodeId = format!("node_{node_id}").into();
+    let gossip_advertise_addr: SocketAddr = ([127, 0, 0, 1], gossip_advertise_port).into();
     let self_node = ClusterMember {
         node_id,
         generation_id: crate::GenerationId(1),
@@ -700,14 +722,17 @@ pub async fn create_cluster_for_test(
 
     use quickwit_config::service::QuickwitService;
 
-    static NODE_AUTO_INCREMENT: AtomicU16 = AtomicU16::new(1u16);
-    let node_id = NODE_AUTO_INCREMENT.fetch_add(1, Ordering::Relaxed);
+    static GOSSIP_ADVERTISE_PORT_SEQUENCE: AtomicU16 = AtomicU16::new(1u16);
+    let gossip_advertise_port = GOSSIP_ADVERTISE_PORT_SEQUENCE.fetch_add(1, Ordering::Relaxed);
+    let node_id: NodeId = format!("node-{}", gossip_advertise_port).into();
+
     let enabled_services = enabled_services
         .iter()
         .map(|service_str| QuickwitService::from_str(service_str))
         .collect::<Result<HashSet<_>, _>>()?;
     let cluster = create_cluster_for_test_with_id(
         node_id,
+        gossip_advertise_port,
         "test-cluster".to_string(),
         seeds,
         &enabled_services,
@@ -1017,8 +1042,8 @@ mod tests {
                         indexing_tasks_clone.clone(),
                     )
                 },
-                Duration::from_secs(4),
-                Duration::from_millis(500),
+                Duration::from_secs(5),
+                Duration::from_millis(100),
             )
             .await
             .unwrap();
@@ -1126,7 +1151,8 @@ mod tests {
         let transport = ChannelTransport::default();
 
         let cluster1a = create_cluster_for_test_with_id(
-            11u16,
+            "node-11".into(),
+            11,
             "cluster1".to_string(),
             Vec::new(),
             &HashSet::default(),
@@ -1135,7 +1161,8 @@ mod tests {
         )
         .await?;
         let cluster2a = create_cluster_for_test_with_id(
-            21u16,
+            "node-21".into(),
+            21,
             "cluster2".to_string(),
             vec![cluster1a.gossip_listen_addr.to_string()],
             &HashSet::default(),
@@ -1144,6 +1171,7 @@ mod tests {
         )
         .await?;
         let cluster1b = create_cluster_for_test_with_id(
+            "node-12".into(),
             12,
             "cluster1".to_string(),
             vec![
@@ -1156,6 +1184,7 @@ mod tests {
         )
         .await?;
         let cluster2b = create_cluster_for_test_with_id(
+            "node-22".into(),
             22,
             "cluster2".to_string(),
             vec![
@@ -1249,7 +1278,7 @@ mod tests {
 
     #[test]
     fn test_serialize_indexing_tasks() {
-        let mut node_state = NodeState::default();
+        let mut node_state = NodeState::for_test();
         test_serialize_indexing_tasks_aux(&[], &mut node_state);
         test_serialize_indexing_tasks_aux(
             &[IndexingTask {

@@ -31,6 +31,7 @@ ulid = {workspace = true }
 utoipa = { workspace = true }
 
 quickwit-actors = { workspace = true }
+quickwit-cluster = { workspace = true }
 quickwit-common = { workspace = true }
 quickwit-config = { workspace = true }
 quickwit-proto = { workspace = true }
@@ -43,6 +44,7 @@ rand_distr = { workspace = true }
 tempfile = { workspace = true }
 
 quickwit-actors = { workspace = true, features = ["testsuite"] }
+quickwit-cluster = { workspace = true, features = ["testsuite"] }
 quickwit-common = { workspace = true, features = ["testsuite"] }
 quickwit-proto = { workspace = true, features = ["testsuite"] }
 

@@ -53,7 +53,9 @@ pub use format::BodyFormat;
 use futures::{Stream, StreamExt};
 use itertools::Itertools;
 use quickwit_actors::{ActorExitStatus, Mailbox, Universe};
-use quickwit_cluster::{start_cluster_service, Cluster, ClusterChange, ClusterMember};
+use quickwit_cluster::{
+    start_cluster_service, Cluster, ClusterChange, ClusterMember, ListenerHandle,
+};
 use quickwit_common::pubsub::{EventBroker, EventSubscriptionHandle};
 use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::tower::{
@@ -68,8 +70,9 @@ use quickwit_index_management::{IndexService as IndexManager, IndexServiceError}
 use quickwit_indexing::actors::IndexingService;
 use quickwit_indexing::start_indexing_service;
 use quickwit_ingest::{
-    start_ingest_api_service, wait_for_ingester_decommission, GetMemoryCapacity, IngestApiService,
-    IngestRequest, IngestRouter, IngestServiceClient, Ingester, IngesterPool, RateLimiterSettings,
+    setup_local_shards_update_listener, start_ingest_api_service, wait_for_ingester_decommission,
+    GetMemoryCapacity, IngestApiService, IngestRequest, IngestRouter, IngestServiceClient,
+    Ingester, IngesterPool, RateLimiterSettings,
 };
 use quickwit_janitor::{start_janitor_service, JanitorService};
 use quickwit_metastore::{
@@ -130,9 +133,10 @@ struct QuickwitServices {
     /// the root requests.
     pub search_service: Arc<dyn SearchService>,
 
-    /// The control plane listens to metastore events.
+    /// The control plane listens to various events.
     /// We must maintain a reference to the subscription handles to continue receiving
     /// notifications. Otherwise, the subscriptions are dropped.
+    _local_shards_update_listener_handle_opt: Option<ListenerHandle>,
     _report_splits_subscription_handle_opt: Option<EventSubscriptionHandle>,
 }
 
@@ -363,6 +367,7 @@ pub async fn serve_quickwit(
     let (ingest_router_service, ingester_service_opt) = setup_ingest_v2(
         &node_config,
         &cluster,
+        event_broker.clone(),
         control_plane_service.clone(),
         ingester_pool,
     )
@@ -426,6 +431,17 @@ pub async fn serve_quickwit(
     )
     .await?;
 
+    // The control plane listens for local shards updates to learn about each shard's ingestion
+    // throughput. Ingesters (routers) do so to update their shard table.
+    let local_shards_update_listener_handle_opt = if node_config
+        .is_service_enabled(QuickwitService::ControlPlane)
+        || node_config.is_service_enabled(QuickwitService::Indexer)
+    {
+        Some(setup_local_shards_update_listener(cluster.clone(), event_broker.clone()).await)
+    } else {
+        None
+    };
+
     let report_splits_subscription_handle_opt =
         // DISCLAIMER: This is quirky here: We base our decision to forward the split report depending
         // on the current searcher configuration.
@@ -459,6 +475,7 @@ pub async fn serve_quickwit(
         metastore_server_opt,
         metastore_client: metastore_through_control_plane.clone(),
         control_plane_service,
+        _local_shards_update_listener_handle_opt: local_shards_update_listener_handle_opt,
         _report_splits_subscription_handle_opt: report_splits_subscription_handle_opt,
         index_manager,
         indexing_service_opt,
@@ -550,6 +567,7 @@ pub async fn serve_quickwit(
 async fn setup_ingest_v2(
     config: &NodeConfig,
     cluster: &Cluster,
+    event_broker: EventBroker,
     control_plane: ControlPlaneServiceClient,
     ingester_pool: IngesterPool,
 ) -> anyhow::Result<(IngestRouterServiceClient, Option<IngesterServiceClient>)> {
@@ -562,6 +580,7 @@ async fn setup_ingest_v2(
         .get();
     let ingest_router = IngestRouter::new(
         self_node_id.clone(),
+        event_broker,
         control_plane,
         ingester_pool.clone(),
         replication_factor,
@@ -584,7 +603,7 @@ async fn setup_ingest_v2(
         let wal_dir_path = config.data_dir_path.join("wal");
         fs::create_dir_all(&wal_dir_path)?;
         let ingester = Ingester::try_new(
-            self_node_id.clone(),
+            cluster.clone(),
             ingester_pool.clone(),
             &wal_dir_path,
             config.ingest_api_config.max_queue_disk_usage,

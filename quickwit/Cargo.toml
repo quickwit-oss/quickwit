@@ -49,7 +49,7 @@ base64 = "0.21"
 bytes = { version = "1", features = ["serde"] }
 bytesize = { version = "1.3.0", features = ["serde"] }
 bytestring = "1.3.0"
-chitchat = "0.7"
+chitchat = { git = "https://github.com/quickwit-oss/chitchat.git", rev = "72a994f" }
 chrono = { version = "0.4.23", default-features = false, features = [
   "clock",
   "std",

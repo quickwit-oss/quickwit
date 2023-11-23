@@ -28,6 +28,7 @@ mod node;
 pub use chitchat::transport::ChannelTransport;
 use chitchat::transport::UdpTransport;
 use chitchat::FailureDetectorConfig;
+pub use chitchat::ListenerHandle;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::NodeConfig;
 use quickwit_proto::indexing::CpuCapacity;
@@ -36,7 +37,9 @@ use time::OffsetDateTime;
 
 pub use crate::change::ClusterChange;
 #[cfg(any(test, feature = "testsuite"))]
-pub use crate::cluster::{create_cluster_for_test, grpc_addr_from_listen_addr_for_test};
+pub use crate::cluster::{
+    create_cluster_for_test, create_cluster_for_test_with_id, grpc_addr_from_listen_addr_for_test,
+};
 pub use crate::cluster::{Cluster, ClusterSnapshot, NodeIdSchema};
 pub use crate::member::{ClusterMember, INDEXING_CPU_CAPACITY_KEY};
 pub use crate::node::ClusterNode;
