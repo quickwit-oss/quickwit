@@ -184,6 +184,7 @@ async fn leaf_search_stream_single_split(
     let fast_field_names =
         request_fields.fast_fields_for_request(timestamp_filter_builder_opt.as_ref());
     warmup_info.fast_field_names.extend(fast_field_names);
+    warmup_info.simplify();
 
     warmup(&searcher, &warmup_info).await?;
 
