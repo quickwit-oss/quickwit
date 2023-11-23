@@ -174,40 +174,6 @@ impl Hash for IndexingTask {
         self.source_id.hash(state);
     }
 }
-
-impl TryFrom<&str> for IndexingTask {
-    type Error = anyhow::Error;
-
-    fn try_from(index_task_str: &str) -> anyhow::Result<IndexingTask> {
-        let mut iter = index_task_str.rsplit(':');
-        let source_id = iter.next().ok_or_else(|| {
-            anyhow!(
-                "invalid index task format, cannot find source_id in `{}`",
-                index_task_str
-            )
-        })?;
-        let part1 = iter.next().ok_or_else(|| {
-            anyhow!(
-                "invalid index task format, cannot find index_id in `{}`",
-                index_task_str
-            )
-        })?;
-        if let Some(part2) = iter.next() {
-            Ok(IndexingTask {
-                index_uid: format!("{part2}:{part1}"),
-                source_id: source_id.to_string(),
-                shard_ids: Vec::new(),
-            })
-        } else {
-            Ok(IndexingTask {
-                index_uid: part1.to_string(),
-                source_id: source_id.to_string(),
-                shard_ids: Vec::new(),
-            })
-        }
-    }
-}
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, utoipa::ToSchema)]
 pub struct PipelineMetrics {
     pub cpu_millis: CpuCapacity,
@@ -386,42 +352,5 @@ mod tests {
         );
         assert_eq!(CpuCapacity::from_cpu_millis(2500).to_string(), "2500m");
         assert_eq!(serde_json::to_string(&mcpu(2500)).unwrap(), "\"2500m\"");
-    }
-
-    #[test]
-    fn test_indexing_task_serialization() {
-        let original = IndexingTask {
-            index_uid: "test-index:123456".to_string(),
-            source_id: "test-source".to_string(),
-            shard_ids: Vec::new(),
-        };
-
-        let serialized = original.to_string();
-        let deserialized: IndexingTask = serialized.as_str().try_into().unwrap();
-        assert_eq!(original, deserialized);
-    }
-
-    #[test]
-    fn test_indexing_task_serialization_bwc() {
-        assert_eq!(
-            IndexingTask::try_from("foo:bar").unwrap(),
-            IndexingTask {
-                index_uid: "foo".to_string(),
-                source_id: "bar".to_string(),
-                shard_ids: Vec::new(),
-            }
-        );
-    }
-
-    #[test]
-    fn test_indexing_task_serialization_errors() {
-        assert_eq!(
-            "invalid index task format, cannot find index_id in ``",
-            IndexingTask::try_from("").unwrap_err().to_string()
-        );
-        assert_eq!(
-            "invalid index task format, cannot find index_id in `foo`",
-            IndexingTask::try_from("foo").unwrap_err().to_string()
-        );
     }
 }

@@ -400,7 +400,7 @@ impl DocProcessor {
             .doc_mapper
             .doc_from_json_obj(json_doc.json_obj)
             .map_err(|error| {
-                warn!(error=?error);
+                warn!(index_id=self.counters.index_id, source_id=self.counters.source_id, error=?error);
                 match error {
                     DocParsingError::RequiredField(_) => DocProcessorError::Schema,
                     _ => DocProcessorError::Parse,
