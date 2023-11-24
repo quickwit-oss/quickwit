@@ -71,7 +71,7 @@ pub struct PersistFailure {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct SynReplicationMessage {
-    #[prost(oneof = "syn_replication_message::Message", tags = "1, 2")]
+    #[prost(oneof = "syn_replication_message::Message", tags = "1, 2, 3")]
     pub message: ::core::option::Option<syn_replication_message::Message>,
 }
 /// Nested message and enum types in `SynReplicationMessage`.
@@ -84,6 +84,8 @@ pub mod syn_replication_message {
         #[prost(message, tag = "1")]
         OpenRequest(super::OpenReplicationStreamRequest),
         #[prost(message, tag = "2")]
+        InitRequest(super::InitReplicaRequest),
+        #[prost(message, tag = "3")]
         ReplicateRequest(super::ReplicateRequest),
     }
 }
@@ -91,7 +93,7 @@ pub mod syn_replication_message {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct AckReplicationMessage {
-    #[prost(oneof = "ack_replication_message::Message", tags = "1, 2")]
+    #[prost(oneof = "ack_replication_message::Message", tags = "1, 2, 3")]
     pub message: ::core::option::Option<ack_replication_message::Message>,
 }
 /// Nested message and enum types in `AckReplicationMessage`.
@@ -104,6 +106,8 @@ pub mod ack_replication_message {
         #[prost(message, tag = "1")]
         OpenResponse(super::OpenReplicationStreamResponse),
         #[prost(message, tag = "2")]
+        InitResponse(super::InitReplicaResponse),
+        #[prost(message, tag = "3")]
         ReplicateResponse(super::ReplicateResponse),
     }
 }
@@ -115,11 +119,34 @@ pub struct OpenReplicationStreamRequest {
     pub leader_id: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
     pub follower_id: ::prost::alloc::string::String,
+    /// Position of the request in the replication stream.
+    #[prost(uint64, tag = "3")]
+    pub replication_seqno: u64,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct OpenReplicationStreamResponse {}
+pub struct OpenReplicationStreamResponse {
+    /// Position of the response in the replication stream. It should match the position of the request.
+    #[prost(uint64, tag = "1")]
+    pub replication_seqno: u64,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct InitReplicaRequest {
+    #[prost(message, optional, tag = "1")]
+    pub replica_shard: ::core::option::Option<super::Shard>,
+    #[prost(uint64, tag = "2")]
+    pub replication_seqno: u64,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct InitReplicaResponse {
+    #[prost(uint64, tag = "1")]
+    pub replication_seqno: u64,
+}
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -261,6 +288,17 @@ pub struct FetchResponseV2 {
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct InitShardsRequest {
+    #[prost(message, repeated, tag = "1")]
+    pub shards: ::prost::alloc::vec::Vec<super::Shard>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct InitShardsResponse {}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct CloseShardsRequest {
     #[prost(message, repeated, tag = "1")]
     pub shards: ::prost::alloc::vec::Vec<super::ShardIds>,
@@ -309,9 +347,10 @@ pub struct ObservationMessage {
 #[repr(i32)]
 pub enum PersistFailureReason {
     Unspecified = 0,
-    ShardClosed = 1,
-    RateLimited = 2,
-    ResourceExhausted = 3,
+    ShardNotFound = 1,
+    ShardClosed = 2,
+    RateLimited = 3,
+    ResourceExhausted = 4,
 }
 impl PersistFailureReason {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -321,6 +360,9 @@ impl PersistFailureReason {
     pub fn as_str_name(&self) -> &'static str {
         match self {
             PersistFailureReason::Unspecified => "PERSIST_FAILURE_REASON_UNSPECIFIED",
+            PersistFailureReason::ShardNotFound => {
+                "PERSIST_FAILURE_REASON_SHARD_NOT_FOUND"
+            }
             PersistFailureReason::ShardClosed => "PERSIST_FAILURE_REASON_SHARD_CLOSED",
             PersistFailureReason::RateLimited => "PERSIST_FAILURE_REASON_RATE_LIMITED",
             PersistFailureReason::ResourceExhausted => {
@@ -332,6 +374,7 @@ impl PersistFailureReason {
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
             "PERSIST_FAILURE_REASON_UNSPECIFIED" => Some(Self::Unspecified),
+            "PERSIST_FAILURE_REASON_SHARD_NOT_FOUND" => Some(Self::ShardNotFound),
             "PERSIST_FAILURE_REASON_SHARD_CLOSED" => Some(Self::ShardClosed),
             "PERSIST_FAILURE_REASON_RATE_LIMITED" => Some(Self::RateLimited),
             "PERSIST_FAILURE_REASON_RESOURCE_EXHAUSTED" => Some(Self::ResourceExhausted),
@@ -345,8 +388,9 @@ impl PersistFailureReason {
 #[repr(i32)]
 pub enum ReplicateFailureReason {
     Unspecified = 0,
-    ShardClosed = 1,
-    ResourceExhausted = 3,
+    ShardNotFound = 1,
+    ShardClosed = 2,
+    ResourceExhausted = 4,
 }
 impl ReplicateFailureReason {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -356,6 +400,9 @@ impl ReplicateFailureReason {
     pub fn as_str_name(&self) -> &'static str {
         match self {
             ReplicateFailureReason::Unspecified => "REPLICATE_FAILURE_REASON_UNSPECIFIED",
+            ReplicateFailureReason::ShardNotFound => {
+                "REPLICATE_FAILURE_REASON_SHARD_NOT_FOUND"
+            }
             ReplicateFailureReason::ShardClosed => {
                 "REPLICATE_FAILURE_REASON_SHARD_CLOSED"
             }
@@ -368,6 +415,7 @@ impl ReplicateFailureReason {
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
             "REPLICATE_FAILURE_REASON_UNSPECIFIED" => Some(Self::Unspecified),
+            "REPLICATE_FAILURE_REASON_SHARD_NOT_FOUND" => Some(Self::ShardNotFound),
             "REPLICATE_FAILURE_REASON_SHARD_CLOSED" => Some(Self::ShardClosed),
             "REPLICATE_FAILURE_REASON_RESOURCE_EXHAUSTED" => {
                 Some(Self::ResourceExhausted)
@@ -447,6 +495,11 @@ pub trait IngesterService: std::fmt::Debug + dyn_clone::DynClone + Send + Sync +
         &mut self,
         request: OpenObservationStreamRequest,
     ) -> crate::ingest::IngestV2Result<IngesterServiceStream<ObservationMessage>>;
+    /// Creates and initializes a set of newly opened shards. This RPC is called by the control plane on leaders.
+    async fn init_shards(
+        &mut self,
+        request: InitShardsRequest,
+    ) -> crate::ingest::IngestV2Result<InitShardsResponse>;
     /// Truncates a set of shards at the given positions. This RPC is called by indexers on leaders AND followers.
     async fn truncate_shards(
         &mut self,
@@ -571,6 +624,12 @@ impl IngesterService for IngesterServiceClient {
     ) -> crate::ingest::IngestV2Result<IngesterServiceStream<ObservationMessage>> {
         self.inner.open_observation_stream(request).await
     }
+    async fn init_shards(
+        &mut self,
+        request: InitShardsRequest,
+    ) -> crate::ingest::IngestV2Result<InitShardsResponse> {
+        self.inner.init_shards(request).await
+    }
     async fn truncate_shards(
         &mut self,
         request: TruncateShardsRequest,
@@ -634,6 +693,12 @@ pub mod ingester_service_mock {
             IngesterServiceStream<super::ObservationMessage>,
         > {
             self.inner.lock().await.open_observation_stream(request).await
+        }
+        async fn init_shards(
+            &mut self,
+            request: super::InitShardsRequest,
+        ) -> crate::ingest::IngestV2Result<super::InitShardsResponse> {
+            self.inner.lock().await.init_shards(request).await
         }
         async fn truncate_shards(
             &mut self,
@@ -740,6 +805,22 @@ impl tower::Service<OpenObservationStreamRequest> for Box<dyn IngesterService> {
         Box::pin(fut)
     }
 }
+impl tower::Service<InitShardsRequest> for Box<dyn IngesterService> {
+    type Response = InitShardsResponse;
+    type Error = crate::ingest::IngestV2Error;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: InitShardsRequest) -> Self::Future {
+        let mut svc = self.clone();
+        let fut = async move { svc.init_shards(request).await };
+        Box::pin(fut)
+    }
+}
 impl tower::Service<TruncateShardsRequest> for Box<dyn IngesterService> {
     type Response = TruncateShardsResponse;
     type Error = crate::ingest::IngestV2Error;
@@ -828,6 +909,11 @@ struct IngesterServiceTowerBlock {
         IngesterServiceStream<ObservationMessage>,
         crate::ingest::IngestV2Error,
     >,
+    init_shards_svc: quickwit_common::tower::BoxService<
+        InitShardsRequest,
+        InitShardsResponse,
+        crate::ingest::IngestV2Error,
+    >,
     truncate_shards_svc: quickwit_common::tower::BoxService<
         TruncateShardsRequest,
         TruncateShardsResponse,
@@ -857,6 +943,7 @@ impl Clone for IngesterServiceTowerBlock {
             open_replication_stream_svc: self.open_replication_stream_svc.clone(),
             open_fetch_stream_svc: self.open_fetch_stream_svc.clone(),
             open_observation_stream_svc: self.open_observation_stream_svc.clone(),
+            init_shards_svc: self.init_shards_svc.clone(),
             truncate_shards_svc: self.truncate_shards_svc.clone(),
             close_shards_svc: self.close_shards_svc.clone(),
             ping_svc: self.ping_svc.clone(),
@@ -889,6 +976,12 @@ impl IngesterService for IngesterServiceTowerBlock {
         request: OpenObservationStreamRequest,
     ) -> crate::ingest::IngestV2Result<IngesterServiceStream<ObservationMessage>> {
         self.open_observation_stream_svc.ready().await?.call(request).await
+    }
+    async fn init_shards(
+        &mut self,
+        request: InitShardsRequest,
+    ) -> crate::ingest::IngestV2Result<InitShardsResponse> {
+        self.init_shards_svc.ready().await?.call(request).await
     }
     async fn truncate_shards(
         &mut self,
@@ -950,6 +1043,15 @@ pub struct IngesterServiceTowerBlockBuilder {
             Box<dyn IngesterService>,
             OpenObservationStreamRequest,
             IngesterServiceStream<ObservationMessage>,
+            crate::ingest::IngestV2Error,
+        >,
+    >,
+    #[allow(clippy::type_complexity)]
+    init_shards_layer: Option<
+        quickwit_common::tower::BoxLayer<
+            Box<dyn IngesterService>,
+            InitShardsRequest,
+            InitShardsResponse,
             crate::ingest::IngestV2Error,
         >,
     >,
@@ -1023,6 +1125,12 @@ impl IngesterServiceTowerBlockBuilder {
             OpenObservationStreamRequest,
         >>::Future: Send + 'static,
         L::Service: tower::Service<
+                InitShardsRequest,
+                Response = InitShardsResponse,
+                Error = crate::ingest::IngestV2Error,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<InitShardsRequest>>::Future: Send + 'static,
+        L::Service: tower::Service<
                 TruncateShardsRequest,
                 Response = TruncateShardsResponse,
                 Error = crate::ingest::IngestV2Error,
@@ -1058,6 +1166,10 @@ impl IngesterServiceTowerBlockBuilder {
         );
         self
             .open_observation_stream_layer = Some(
+            quickwit_common::tower::BoxLayer::new(layer.clone()),
+        );
+        self
+            .init_shards_layer = Some(
             quickwit_common::tower::BoxLayer::new(layer.clone()),
         );
         self
@@ -1135,6 +1247,19 @@ impl IngesterServiceTowerBlockBuilder {
             .open_observation_stream_layer = Some(
             quickwit_common::tower::BoxLayer::new(layer),
         );
+        self
+    }
+    pub fn init_shards_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<Box<dyn IngesterService>> + Send + Sync + 'static,
+        L::Service: tower::Service<
+                InitShardsRequest,
+                Response = InitShardsResponse,
+                Error = crate::ingest::IngestV2Error,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<InitShardsRequest>>::Future: Send + 'static,
+    {
+        self.init_shards_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
     pub fn truncate_shards_layer<L>(mut self, layer: L) -> Self
@@ -1250,6 +1375,11 @@ impl IngesterServiceTowerBlockBuilder {
         } else {
             quickwit_common::tower::BoxService::new(boxed_instance.clone())
         };
+        let init_shards_svc = if let Some(layer) = self.init_shards_layer {
+            layer.layer(boxed_instance.clone())
+        } else {
+            quickwit_common::tower::BoxService::new(boxed_instance.clone())
+        };
         let truncate_shards_svc = if let Some(layer) = self.truncate_shards_layer {
             layer.layer(boxed_instance.clone())
         } else {
@@ -1276,6 +1406,7 @@ impl IngesterServiceTowerBlockBuilder {
             open_replication_stream_svc,
             open_fetch_stream_svc,
             open_observation_stream_svc,
+            init_shards_svc,
             truncate_shards_svc,
             close_shards_svc,
             ping_svc,
@@ -1390,6 +1521,12 @@ where
             >,
         >
         + tower::Service<
+            InitShardsRequest,
+            Response = InitShardsResponse,
+            Error = crate::ingest::IngestV2Error,
+            Future = BoxFuture<InitShardsResponse, crate::ingest::IngestV2Error>,
+        >
+        + tower::Service<
             TruncateShardsRequest,
             Response = TruncateShardsResponse,
             Error = crate::ingest::IngestV2Error,
@@ -1436,6 +1573,12 @@ where
         &mut self,
         request: OpenObservationStreamRequest,
     ) -> crate::ingest::IngestV2Result<IngesterServiceStream<ObservationMessage>> {
+        self.call(request).await
+    }
+    async fn init_shards(
+        &mut self,
+        request: InitShardsRequest,
+    ) -> crate::ingest::IngestV2Result<InitShardsResponse> {
         self.call(request).await
     }
     async fn truncate_shards(
@@ -1549,6 +1692,16 @@ where
             })
             .map_err(|error| error.into())
     }
+    async fn init_shards(
+        &mut self,
+        request: InitShardsRequest,
+    ) -> crate::ingest::IngestV2Result<InitShardsResponse> {
+        self.inner
+            .init_shards(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|error| error.into())
+    }
     async fn truncate_shards(
         &mut self,
         request: TruncateShardsRequest,
@@ -1659,6 +1812,17 @@ for IngesterServiceGrpcServerAdapter {
             .open_observation_stream(request.into_inner())
             .await
             .map(|stream| tonic::Response::new(stream.map_err(|error| error.into())))
+            .map_err(|error| error.into())
+    }
+    async fn init_shards(
+        &self,
+        request: tonic::Request<InitShardsRequest>,
+    ) -> Result<tonic::Response<InitShardsResponse>, tonic::Status> {
+        self.inner
+            .clone()
+            .init_shards(request.into_inner())
+            .await
+            .map(tonic::Response::new)
             .map_err(|error| error.into())
     }
     async fn truncate_shards(
@@ -1918,6 +2082,37 @@ pub mod ingester_service_grpc_client {
                 );
             self.inner.server_streaming(req, path, codec).await
         }
+        /// Creates and initializes a set of newly opened shards. This RPC is called by the control plane on leaders.
+        pub async fn init_shards(
+            &mut self,
+            request: impl tonic::IntoRequest<super::InitShardsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::InitShardsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.ingest.ingester.IngesterService/InitShards",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit.ingest.ingester.IngesterService",
+                        "InitShards",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
         /// Truncates a set of shards at the given positions. This RPC is called by indexers on leaders AND followers.
         pub async fn truncate_shards(
             &mut self,
@@ -2091,6 +2286,14 @@ pub mod ingester_service_grpc_server {
             request: tonic::Request<super::OpenObservationStreamRequest>,
         ) -> std::result::Result<
             tonic::Response<Self::OpenObservationStreamStream>,
+            tonic::Status,
+        >;
+        /// Creates and initializes a set of newly opened shards. This RPC is called by the control plane on leaders.
+        async fn init_shards(
+            &self,
+            request: tonic::Request<super::InitShardsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::InitShardsResponse>,
             tonic::Status,
         >;
         /// Truncates a set of shards at the given positions. This RPC is called by indexers on leaders AND followers.
@@ -2387,6 +2590,50 @@ pub mod ingester_service_grpc_server {
                                 max_encoding_message_size,
                             );
                         let res = grpc.server_streaming(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.ingest.ingester.IngesterService/InitShards" => {
+                    #[allow(non_camel_case_types)]
+                    struct InitShardsSvc<T: IngesterServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: IngesterServiceGrpc,
+                    > tonic::server::UnaryService<super::InitShardsRequest>
+                    for InitShardsSvc<T> {
+                        type Response = super::InitShardsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::InitShardsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move { (*inner).init_shards(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = InitShardsSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
                         Ok(res)
                     };
                     Box::pin(fut)

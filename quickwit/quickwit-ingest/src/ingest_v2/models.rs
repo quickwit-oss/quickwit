@@ -98,6 +98,14 @@ impl IngesterShard {
         matches!(self.shard_type, IngesterShardType::Replica { .. })
     }
 
+    pub fn follower_id_opt(&self) -> Option<&NodeId> {
+        match &self.shard_type {
+            IngesterShardType::Primary { follower_id } => Some(follower_id),
+            IngesterShardType::Replica { .. } => None,
+            IngesterShardType::Solo => None,
+        }
+    }
+
     pub fn notify_new_records(&mut self) {
         // `new_records_tx` is guaranteed to be open because `self` also holds a receiver.
         self.new_records_tx
