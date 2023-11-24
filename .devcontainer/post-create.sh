@@ -69,6 +69,8 @@ install_cmake
 configure_python_environment
 install_protoc
 install_rustup_toolchain_nightly
+
+# Copy our custom welcome message to replace the default github welcome message
 sudo cp .devcontainer/welcome.txt /usr/local/etc/vscode-dev-containers/first-run-notice.txt
 
 
