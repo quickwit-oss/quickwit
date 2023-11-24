@@ -7,7 +7,6 @@ RESET_COLOR="\e[0m"
 
 # Define success tracking variables
 cmakeInstalled=false
-protocInstalled=false
 rustupToolchainNightlyInstalled=false
 
 
@@ -25,33 +24,6 @@ install_cmake() {
 }
 
 
-configure_python_environment() {
-    if command -v python3 &> /dev/null; then
-        echo -e "${SUCCESS_COLOR}Python 3 is installed${RESET_COLOR}"
-        # Create a symbolic link from python to python3
-        sudo ln -s /usr/bin/python3 /usr/bin/python
-    else
-        echo -e "${ERROR_COLOR}Python 3 is not installed. Please install it manually.${RESET_COLOR}"
-    fi
-}
-
-install_protoc() {
-    echo -e "Installing protoc..."
-    PB_REL="https://github.com/protocolbuffers/protobuf/releases"
-    curl -LO $PB_REL/download/v3.15.8/protoc-3.15.8-linux-x86_64.zip > /dev/null 2>&1
-    unzip protoc-3.15.8-linux-x86_64.zip -d $HOME/.local > /dev/null 2>&1
-    export PATH="$PATH:$HOME/.local/bin"
-    if [[ "$(protoc --version)" =~ "libprotoc 3.15.8" ]]; then
-        echo -e "${SUCCESS_COLOR}protoc installed successfully.${RESET_COLOR}"
-        protocInstalled=true
-    else
-        echo -e "${ERROR_COLOR}protoc installation failed. Please install it manually.${RESET_COLOR}"
-    fi
-
-    # Clean up
-    rm -f protoc-3.15.8-linux-x86_64.zip
-}
-
 install_rustup_toolchain_nightly() {
     echo -e "Installing Rustup nightly toolchain..."
     rustup toolchain install nightly > /dev/null 2>&1
@@ -66,8 +38,6 @@ install_rustup_toolchain_nightly() {
 
 # Install tools
 install_cmake
-configure_python_environment
-install_protoc
 install_rustup_toolchain_nightly
 
 # Copy our custom welcome message to replace the default github welcome message
@@ -75,7 +45,7 @@ sudo cp .devcontainer/welcome.txt /usr/local/etc/vscode-dev-containers/first-run
 
 
 # Check the success tracking variables
-if $cmakeInstalled && $protocInstalled && $rustupToolchainNightlyInstalled; then
+if $cmakeInstalled && $rustupToolchainNightlyInstalled; then
     echo -e "${SUCCESS_COLOR}All tools installed successfully.${RESET_COLOR}"
 else
     echo -e "${ERROR_COLOR}One or more tools failed to install. Please check the output for errors and install the failed tools manually.${RESET_COLOR}"
