@@ -36,8 +36,7 @@
             "version": "18"
         },
         "ghcr.io/devcontainers/features/aws-cli:1": {},
-        "ghcr.io/devcontainers-contrib/features/protoc:1": {},
-        "ghcr.io/devcontainers-community/features/cmake": {}
+        "ghcr.io/devcontainers-contrib/features/protoc:1": {}
     },
     "postCreateCommand": ".devcontainer/post-create.sh"
 }
