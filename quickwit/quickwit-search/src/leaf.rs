@@ -514,10 +514,10 @@ impl CanSplitDoBetter {
             CanSplitDoBetter::SplitIdHigher(Some(split_id)) => split.split_id >= *split_id,
             CanSplitDoBetter::SplitTimestampHigher(Some(timestamp))
             | CanSplitDoBetter::FindTraceIdsAggregation(Some(timestamp)) => {
-                split.timestamp_end() > *timestamp
+                split.timestamp_end() >= *timestamp
             }
             CanSplitDoBetter::SplitTimestampLower(Some(timestamp)) => {
-                split.timestamp_start() < *timestamp
+                split.timestamp_start() <= *timestamp
             }
             _ => true,
         }
@@ -683,7 +683,15 @@ async fn leaf_search_single_split_wrapper(
 
     let mut locked_incremental_merge_collector = incremental_merge_collector.lock().unwrap();
     match leaf_search_single_split_res {
-        Ok(split_search_res) => locked_incremental_merge_collector.add_split(split_search_res),
+        Ok(split_search_res) => {
+            if let Err(err) = locked_incremental_merge_collector.add_split(split_search_res) {
+                locked_incremental_merge_collector.add_failed_split(SplitSearchError {
+                    split_id: split.split_id.clone(),
+                    error: format!("Error parsing aggregation result: {err}"),
+                    retryable_error: true,
+                });
+            }
+        }
         Err(err) => locked_incremental_merge_collector.add_failed_split(SplitSearchError {
             split_id: split.split_id.clone(),
             error: format!("{err}"),

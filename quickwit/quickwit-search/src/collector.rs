@@ -463,7 +463,7 @@ impl QuickwitAggregations {
     fn maybe_incremental_aggregator(&self) -> QuickwitIncrementalAggregations {
         match self {
             QuickwitAggregations::FindTraceIdsAggregation(aggreg) => {
-                QuickwitIncrementalAggregations::FindTraceIdsAggregation(aggreg.clone())
+                QuickwitIncrementalAggregations::FindTraceIdsAggregation(aggreg.clone(), Vec::new())
             }
             QuickwitAggregations::TantivyAggregations(aggreg) => {
                 QuickwitIncrementalAggregations::TantivyAggregations(aggreg.clone(), Vec::new())
@@ -474,25 +474,52 @@ impl QuickwitAggregations {
 
 #[derive(Clone)]
 enum QuickwitIncrementalAggregations {
-    FindTraceIdsAggregation(FindTraceIdsCollector),
+    FindTraceIdsAggregation(FindTraceIdsCollector, Vec<Vec<Span>>),
     TantivyAggregations(Aggregations, Vec<Vec<u8>>),
     NoAggregation,
 }
 
 impl QuickwitIncrementalAggregations {
-    fn add(&mut self, intermediate_result: Vec<u8>) {
+    fn add(&mut self, intermediate_result: Vec<u8>) -> tantivy::Result<()> {
         match self {
-            QuickwitIncrementalAggregations::FindTraceIdsAggregation(_) => todo!(),
+            QuickwitIncrementalAggregations::FindTraceIdsAggregation(collector, ref mut state) => {
+                let fruits: Vec<Span> =
+                    postcard::from_bytes(&intermediate_result).map_err(map_error)?;
+                state.push(fruits);
+                if state.iter().map(Vec::len).sum::<usize>() >= collector.num_traces {
+                    let new_state = collector.merge_fruits(std::mem::take(state))?;
+                    state.push(new_state);
+                }
+            }
             QuickwitIncrementalAggregations::TantivyAggregations(_, state) => {
                 state.push(intermediate_result);
             }
             QuickwitIncrementalAggregations::NoAggregation => (),
         }
+        Ok(())
     }
 
     fn virtual_worst_hit(&self) -> Option<PartialHit> {
         match self {
-            QuickwitIncrementalAggregations::FindTraceIdsAggregation(_) => todo!(),
+            QuickwitIncrementalAggregations::FindTraceIdsAggregation(collector, state) => {
+                if let Some(first) = state.first() {
+                    if first.len() >= collector.num_traces {
+                        if let Some(last_elem) = first.last() {
+                            let timestamp = last_elem.span_timestamp.into_timestamp_nanos();
+                            return Some(PartialHit {
+                                sort_value: Some(SortByValue {
+                                    sort_value: Some(SortValue::I64(timestamp)),
+                                }),
+                                sort_value2: None,
+                                split_id: String::new(),
+                                segment_ord: 0,
+                                doc_id: 0,
+                            });
+                        }
+                    }
+                }
+                None
+            }
             QuickwitIncrementalAggregations::TantivyAggregations(_, _) => None,
             QuickwitIncrementalAggregations::NoAggregation => None,
         }
@@ -500,7 +527,15 @@ impl QuickwitIncrementalAggregations {
 
     fn finalize(self) -> tantivy::Result<Option<Vec<u8>>> {
         match self {
-            QuickwitIncrementalAggregations::FindTraceIdsAggregation(_) => todo!(),
+            QuickwitIncrementalAggregations::FindTraceIdsAggregation(collector, mut state) => {
+                let merged_fruit = if state.len() > 1 {
+                    collector.merge_fruits(state)?
+                } else {
+                    state.pop().unwrap_or_default()
+                };
+                let serialized = postcard::to_allocvec(&merged_fruit).map_err(map_error)?;
+                Ok(Some(serialized))
+            }
             QuickwitIncrementalAggregations::TantivyAggregations(aggregation, state) => {
                 merge_intermediate_aggregation_result(
                     &Some(QuickwitAggregations::TantivyAggregations(aggregation)),
@@ -1011,7 +1046,7 @@ impl IncrementalCollector {
     }
 
     /// Merge one search result with the current state
-    pub(crate) fn add_split(&mut self, leaf_response: LeafSearchResponse) {
+    pub(crate) fn add_split(&mut self, leaf_response: LeafSearchResponse) -> tantivy::Result<()> {
         let LeafSearchResponse {
             num_hits,
             partial_hits,
@@ -1026,8 +1061,9 @@ impl IncrementalCollector {
         self.num_attempted_splits += num_attempted_splits;
         if let Some(intermediate_aggregation_result) = intermediate_aggregation_result {
             self.incremental_aggregation
-                .add(intermediate_aggregation_result);
+                .add(intermediate_aggregation_result)?;
         }
+        Ok(())
     }
 
     /// Add a failed split to the state
@@ -1607,7 +1643,7 @@ mod tests {
             .unwrap();
 
         for split_result in results {
-            incremental_collector.add_split(split_result);
+            incremental_collector.add_split(split_result).unwrap();
         }
 
         let incremental_result = incremental_collector.finalize().unwrap();
