@@ -54,7 +54,7 @@ pub use raw_doc_batch::RawDocBatch;
 pub(crate) use shard_positions::LocalShardPositionsUpdate;
 pub use shard_positions::ShardPositionsService;
 pub use split_attrs::{create_split_metadata, SplitAttrs};
-pub use split_fields::{iter_split_fields, serialize_split_fields, FieldConfig};
+pub use split_fields::{read_split_fields, serialize_split_fields, FieldConfig};
 
 #[derive(Debug)]
 pub struct NewPublishToken(pub PublishToken);

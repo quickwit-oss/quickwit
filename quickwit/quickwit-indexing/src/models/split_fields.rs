@@ -62,6 +62,7 @@ impl FieldConfig {
 ///
 /// `fields_metadata` has to be sorted.
 pub fn serialize_split_fields(fields_metadata: &[FieldMetadata]) -> Vec<u8> {
+    // ensure that fields_metadata is strictly sorted.
     debug_assert!(fields_metadata.windows(2).all(|w| w[0] < w[1]));
     let mut payload = Vec::new();
     // Write Num Fields
@@ -103,17 +104,47 @@ fn read_exact_array<R: Read, const N: usize>(reader: &mut R) -> io::Result<[u8; 
 }
 
 /// Reads the Split fields from a zstd compressed stream of bytes
-pub fn iter_split_fields<R: Read>(
+pub fn read_split_fields<R: Read>(
     mut reader: R,
 ) -> io::Result<impl Iterator<Item = io::Result<FieldMetadata>>> {
     let format_version = read_exact_array::<_, 1>(&mut reader)?[0];
     assert_eq!(format_version, 1);
     let reader = zstd::Decoder::new(reader)?;
-    _iter_split_fields(reader)
+    read_split_fields_from_zstd(reader)
+}
+
+fn read_field<R: Read>(reader: &mut R) -> io::Result<FieldMetadata> {
+    // Read FieldConfig (2 bytes)
+    let config_bytes = read_exact_array::<_, 2>(reader)?;
+    let field_config = FieldConfig::deserialize_from(config_bytes)?; // Assuming this returns a Result
+
+    // Read field name length and the field name
+    let name_len = u16::from_le_bytes(read_exact_array::<_, 2>(reader)?) as usize;
+
+    let mut data = Vec::new();
+    data.resize(name_len, 0);
+    reader.read_exact(&mut data)?;
+
+    let field_name = String::from_utf8(data).map_err(|err| {
+        io::Error::new(
+            ErrorKind::InvalidData,
+            format!(
+                "Encountered invalid utf8 when deserializing field name: {}",
+                err
+            ),
+        )
+    })?;
+    Ok(FieldMetadata {
+        field_name,
+        typ: field_config.typ,
+        indexed: field_config.indexed,
+        stored: field_config.stored,
+        fast: field_config.fast,
+    })
 }
 
 /// Reads the Split fields from a stream of bytes
-fn _iter_split_fields<R: Read>(
+fn read_split_fields_from_zstd<R: Read>(
     mut reader: R,
 ) -> io::Result<impl Iterator<Item = io::Result<FieldMetadata>>> {
     let mut num_fields = u32::from_le_bytes(read_exact_array::<_, 4>(&mut reader)?);
@@ -123,37 +154,6 @@ fn _iter_split_fields<R: Read>(
             return None;
         }
         num_fields -= 1;
-
-        // Helper closure to use `?` for error handling
-        let read_field = |reader: &mut R| -> io::Result<FieldMetadata> {
-            // Read FieldConfig (2 bytes)
-            let config_bytes = read_exact_array::<_, 2>(reader)?;
-            let field_config = FieldConfig::deserialize_from(config_bytes)?; // Assuming this returns a Result
-
-            // Read field name length and the field name
-            let name_len = u16::from_le_bytes(read_exact_array::<_, 2>(reader)?) as usize;
-
-            let mut data = Vec::new();
-            data.resize(name_len, 0);
-            reader.read_exact(&mut data)?;
-
-            let field_name = String::from_utf8(data).map_err(|err| {
-                io::Error::new(
-                    ErrorKind::InvalidData,
-                    format!(
-                        "Encountered invalid utf8 when deserializing field name: {}",
-                        err
-                    ),
-                )
-            })?;
-            Ok(FieldMetadata {
-                field_name,
-                typ: field_config.typ,
-                indexed: field_config.indexed,
-                stored: field_config.stored,
-                fast: field_config.fast,
-            })
-        };
 
         Some(read_field(&mut reader))
     }))
@@ -203,7 +203,7 @@ mod tests {
 
         let out = serialize_split_fields(&fields_metadata);
 
-        let deserialized: Vec<FieldMetadata> = iter_split_fields(&mut &out[..])
+        let deserialized: Vec<FieldMetadata> = read_split_fields(&mut &out[..])
             .unwrap()
             .map(|el| el.unwrap())
             .collect();
