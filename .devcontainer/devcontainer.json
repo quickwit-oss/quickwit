@@ -14,8 +14,28 @@
         }
     },
     "hostRequirements": {
-      "cpus": 4,
-      "memory": "16gb"
+        "cpus": 4,
+        "memory": "16gb"
+    },
+    "runArgs": [
+        "--init"
+    ],
+    "mounts": [
+        {
+            "source": "/var/run/docker.sock",
+            "target": "/var/run/docker.sock",
+            "type": "bind"
+        }
+    ],
+    "features": {
+        "docker-from-docker": {
+            "version": "latest",
+            "moby": true
+        },
+        "ghcr.io/devcontainers/features/node:1": {
+            "version": "18"
+        },
+        "ghcr.io/devcontainers/features/aws-cli:1": {}
     },
     "postCreateCommand": ".devcontainer/post-create.sh"
 }
