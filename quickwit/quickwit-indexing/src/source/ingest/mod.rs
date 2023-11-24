@@ -755,7 +755,7 @@ mod tests {
         let (shard_positions_update_tx, mut shard_positions_update_rx) =
             tokio::sync::mpsc::unbounded_channel::<PublishedShardPositionsUpdate>();
         event_broker
-            .subscribe_fn::<PublishedShardPositionsUpdate>(move |update| {
+            .subscribe::<PublishedShardPositionsUpdate>(move |update| {
                 shard_positions_update_tx.send(update).unwrap();
             })
             .forever();
@@ -908,7 +908,7 @@ mod tests {
         let (shard_positions_update_tx, mut shard_positions_update_rx) =
             tokio::sync::mpsc::unbounded_channel::<PublishedShardPositionsUpdate>();
         event_broker
-            .subscribe_fn::<PublishedShardPositionsUpdate>(move |update| {
+            .subscribe::<PublishedShardPositionsUpdate>(move |update| {
                 shard_positions_update_tx.send(update).unwrap();
             })
             .forever();
@@ -1205,7 +1205,7 @@ mod tests {
         let (shard_positions_update_tx, mut shard_positions_update_rx) =
             tokio::sync::mpsc::unbounded_channel::<PublishedShardPositionsUpdate>();
         event_broker
-            .subscribe_fn::<PublishedShardPositionsUpdate>(move |update| {
+            .subscribe::<PublishedShardPositionsUpdate>(move |update| {
                 shard_positions_update_tx.send(update).unwrap();
             })
             .forever();

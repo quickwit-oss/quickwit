@@ -215,7 +215,8 @@ impl ShardTable {
         }
     }
 
-    pub fn insert_shards(
+    /// Sets the shards for the given index and source.
+    pub fn set_shards(
         &mut self,
         index_uid: impl Into<IndexUid>,
         source_id: impl Into<SourceId>,

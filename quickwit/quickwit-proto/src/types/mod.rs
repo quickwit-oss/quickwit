@@ -164,7 +164,7 @@ impl From<String> for IndexUid {
             Ok(index_uid) => index_uid,
             Err(invalid_index_uid) => {
                 panic!(
-                    "invalid index uid {}",
+                    "invalid index UID {}",
                     invalid_index_uid.invalid_index_uid_str
                 );
             }

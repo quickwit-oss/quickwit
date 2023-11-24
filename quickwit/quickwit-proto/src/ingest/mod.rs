@@ -191,6 +191,25 @@ impl ShardState {
     pub fn is_closed(&self) -> bool {
         *self == ShardState::Closed
     }
+
+    pub fn as_json_str_name(&self) -> &'static str {
+        match self {
+            ShardState::Unspecified => "unspecified",
+            ShardState::Open => "open",
+            ShardState::Unavailable => "unavailable",
+            ShardState::Closed => "closed",
+        }
+    }
+
+    pub fn from_json_str_name(shard_state_json_name: &str) -> Option<Self> {
+        match shard_state_json_name {
+            "unspecified" => Some(Self::Unspecified),
+            "open" => Some(Self::Open),
+            "unavailable" => Some(Self::Unavailable),
+            "closed" => Some(Self::Closed),
+            _ => None,
+        }
+    }
 }
 
 impl ShardIds {
@@ -198,5 +217,31 @@ impl ShardIds {
         self.shard_ids
             .iter()
             .map(|shard_id| queue_id(&self.index_uid, &self.source_id, *shard_id))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_shard_state_json_str_name() {
+        let shard_state_json_name = ShardState::Unspecified.as_json_str_name();
+        let shard_state = ShardState::from_json_str_name(shard_state_json_name).unwrap();
+        assert_eq!(shard_state, ShardState::Unspecified);
+
+        let shard_state_json_name = ShardState::Open.as_json_str_name();
+        let shard_state = ShardState::from_json_str_name(shard_state_json_name).unwrap();
+        assert_eq!(shard_state, ShardState::Open);
+
+        let shard_state_json_name = ShardState::Unavailable.as_json_str_name();
+        let shard_state = ShardState::from_json_str_name(shard_state_json_name).unwrap();
+        assert_eq!(shard_state, ShardState::Unavailable);
+
+        let shard_state_json_name = ShardState::Closed.as_json_str_name();
+        let shard_state = ShardState::from_json_str_name(shard_state_json_name).unwrap();
+        assert_eq!(shard_state, ShardState::Closed);
+
+        assert!(ShardState::from_json_str_name("unknown").is_none());
     }
 }

@@ -25,7 +25,7 @@ use async_trait::async_trait;
 use fnv::FnvHashMap;
 use quickwit_cluster::Cluster;
 use quickwit_common::pubsub::{Event, EventSubscriber};
-use quickwit_common::shared_consts::SHARD_POSITIONS_PREFIX;
+use quickwit_common::shared_consts::INDEXER_ASSIGNED_SHARDS_POSITIONS_PREFIX;
 use quickwit_proto::types::{Position, ShardId, SourceUid};
 use tracing::warn;
 
@@ -76,7 +76,7 @@ impl PublishedShardPositions {
             index_uid,
             source_id,
         } = &source_uid;
-        let key = format!("{SHARD_POSITIONS_PREFIX}{index_uid}:{source_id}");
+        let key = format!("{INDEXER_ASSIGNED_SHARDS_POSITIONS_PREFIX}{index_uid}:{source_id}");
         let shard_positions_json = serde_json::to_string(&shard_positions).unwrap();
         self.cluster_client
             .set_self_key_value(key, shard_positions_json)
@@ -125,7 +125,7 @@ mod tests {
     use chitchat::transport::ChannelTransport;
     use quickwit_cluster::create_cluster_for_test;
     use quickwit_common::pubsub::EventBroker;
-    use quickwit_common::shared_consts::SHARD_POSITIONS_PREFIX;
+    use quickwit_common::shared_consts::INDEXER_ASSIGNED_SHARDS_POSITIONS_PREFIX;
     use quickwit_proto::types::IndexUid;
 
     use super::*;
@@ -141,7 +141,7 @@ mod tests {
         event_broker.subscribe(shard_positions).forever();
         let index_uid = IndexUid::new_with_random_ulid("index-test");
         let source_id = "test-source".to_string();
-        let key = format!("{SHARD_POSITIONS_PREFIX}{index_uid}:{source_id}");
+        let key = format!("{INDEXER_ASSIGNED_SHARDS_POSITIONS_PREFIX}{index_uid}:{source_id}");
         let source_uid = SourceUid {
             index_uid,
             source_id,

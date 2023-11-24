@@ -19,8 +19,6 @@
 
 use std::collections::HashMap;
 use std::fmt;
-use std::fmt::Formatter;
-use std::marker::PhantomData;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, Weak};
 use std::time::Duration;
@@ -37,34 +35,14 @@ pub trait EventSubscriber<E>: Send + Sync + 'static {
     async fn handle_event(&mut self, event: E);
 }
 
-struct ClosureSubscriber<E, F> {
-    callback: Arc<F>,
-    _phantom: PhantomData<E>,
-}
-
-impl<E, F> Clone for ClosureSubscriber<E, F> {
-    fn clone(&self) -> Self {
-        ClosureSubscriber {
-            callback: self.callback.clone(),
-            _phantom: self._phantom,
-        }
-    }
-}
-
-impl<E, F> fmt::Debug for ClosureSubscriber<E, F> {
-    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
-        f.debug_struct("ClosureSubscriber")
-            .field("callback", &std::any::type_name::<F>())
-            .finish()
-    }
-}
-
 #[async_trait]
-impl<E: Sync + Send + 'static, F: Fn(E) + Sync + Send + 'static> EventSubscriber<E>
-    for ClosureSubscriber<E, F>
+impl<E, F> EventSubscriber<E> for F
+where
+    E: Event,
+    F: Fn(E) + Send + Sync + 'static,
 {
     async fn handle_event(&mut self, event: E) {
-        (self.callback)(event);
+        (self)(event);
     }
 }
 
@@ -98,7 +76,7 @@ impl EventBroker {
             .inner
             .subscriptions
             .lock()
-            .expect("the lock should not be poisoned");
+            .expect("lock should not be poisoned");
 
         if !subscriptions.contains::<EventSubscriptions<E>>() {
             subscriptions.insert::<EventSubscriptions<E>>(HashMap::new());
@@ -113,8 +91,9 @@ impl EventBroker {
         };
         let typed_subscriptions = subscriptions
             .get_mut::<EventSubscriptions<E>>()
-            .expect("The subscription map should exist.");
+            .expect("subscription map should exist");
         typed_subscriptions.insert(subscription_id, subscription);
+
         EventSubscriptionHandle {
             subscription_id,
             broker: Arc::downgrade(&self.inner),
@@ -122,28 +101,13 @@ impl EventBroker {
                 let mut subscriptions = broker
                     .subscriptions
                     .lock()
-                    .expect("the lock should not be poisoned");
+                    .expect("lock should not be poisoned");
                 if let Some(typed_subscriptions) = subscriptions.get_mut::<EventSubscriptions<E>>()
                 {
                     typed_subscriptions.remove(&subscription_id);
                 }
             },
         }
-    }
-
-    /// Subscribes to an event with a callback function.
-    #[must_use]
-    pub fn subscribe_fn<E>(
-        &self,
-        callback_fn: impl Fn(E) + Sync + Send + 'static,
-    ) -> EventSubscriptionHandle
-    where
-        E: Event,
-    {
-        self.subscribe(ClosureSubscriber {
-            callback: Arc::new(callback_fn),
-            _phantom: Default::default(),
-        })
     }
 
     /// Publishes an event.
@@ -153,7 +117,7 @@ impl EventBroker {
             .inner
             .subscriptions
             .lock()
-            .expect("the lock should not be poisoned");
+            .expect("lock should not be poisoned");
 
         if let Some(typed_subscriptions) = subscriptions.get::<EventSubscriptions<E>>() {
             for subscription in typed_subscriptions.values() {
@@ -172,6 +136,7 @@ struct EventSubscription<E> {
     subscriber: Arc<TokioMutex<Box<dyn EventSubscriber<E>>>>,
 }
 
+#[derive(Clone)]
 pub struct EventSubscriptionHandle {
     subscription_id: usize,
     broker: Weak<InnerEventBroker>,
@@ -181,8 +146,8 @@ pub struct EventSubscriptionHandle {
 impl EventSubscriptionHandle {
     pub fn cancel(self) {}
 
-    /// By default, dropping an event cancels the subscription.
-    /// `forever` consumes the handle and avoid drop
+    /// By default, dropping a subscription handle cancels the subscription.
+    /// `forever` consumes the handle and avoids cancelling the subscription on drop.
     pub fn forever(mut self) {
         self.broker = Weak::new();
     }
@@ -251,7 +216,7 @@ mod tests {
     async fn test_event_broker_handle_drop() {
         let event_broker = EventBroker::default();
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-        drop(event_broker.subscribe_fn::<MyEvent>(move |event| {
+        drop(event_broker.subscribe(move |event: MyEvent| {
             tx.send(event.value).unwrap();
         }));
         event_broker.publish(MyEvent { value: 42 });
@@ -263,7 +228,7 @@ mod tests {
         let event_broker = EventBroker::default();
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         event_broker
-            .subscribe_fn::<MyEvent>(move |event| {
+            .subscribe(move |event: MyEvent| {
                 tx.send(event.value).unwrap();
             })
             .cancel();
@@ -276,7 +241,7 @@ mod tests {
         let event_broker = EventBroker::default();
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         event_broker
-            .subscribe_fn::<MyEvent>(move |event| {
+            .subscribe(move |event: MyEvent| {
                 tx.send(event.value).unwrap();
             })
             .forever();

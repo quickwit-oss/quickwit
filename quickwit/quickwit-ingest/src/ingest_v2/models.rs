@@ -94,6 +94,10 @@ impl IngesterShard {
         }
     }
 
+    pub fn is_replica(&self) -> bool {
+        matches!(self.shard_type, IngesterShardType::Replica { .. })
+    }
+
     pub fn notify_new_records(&mut self) {
         // `new_records_tx` is guaranteed to be open because `self` also holds a receiver.
         self.new_records_tx

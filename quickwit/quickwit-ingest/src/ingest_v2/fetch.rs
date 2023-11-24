@@ -582,7 +582,7 @@ mod tests {
         let state = Arc::new(RwLock::new(IngesterState {
             mrecordlog,
             shards: HashMap::new(),
-            rate_limiters: HashMap::new(),
+            rate_trackers: HashMap::new(),
             replication_streams: HashMap::new(),
             replication_tasks: HashMap::new(),
             status: IngesterStatus::Ready,
@@ -751,7 +751,7 @@ mod tests {
         let state = Arc::new(RwLock::new(IngesterState {
             mrecordlog,
             shards: HashMap::new(),
-            rate_limiters: HashMap::new(),
+            rate_trackers: HashMap::new(),
             replication_streams: HashMap::new(),
             replication_tasks: HashMap::new(),
             status: IngesterStatus::Ready,
@@ -854,7 +854,7 @@ mod tests {
         let state = Arc::new(RwLock::new(IngesterState {
             mrecordlog,
             shards: HashMap::new(),
-            rate_limiters: HashMap::new(),
+            rate_trackers: HashMap::new(),
             replication_streams: HashMap::new(),
             replication_tasks: HashMap::new(),
             status: IngesterStatus::Ready,
@@ -895,7 +895,7 @@ mod tests {
         let state = Arc::new(RwLock::new(IngesterState {
             mrecordlog,
             shards: HashMap::new(),
-            rate_limiters: HashMap::new(),
+            rate_trackers: HashMap::new(),
             replication_streams: HashMap::new(),
             replication_tasks: HashMap::new(),
             status: IngesterStatus::Ready,

@@ -66,24 +66,25 @@ pub(super) struct RateLimiter {
 }
 
 impl RateLimiter {
+    /// Creates a new rate limiter from the given settings.
     pub fn from_settings(settings: RateLimiterSettings) -> Self {
         let capacity = settings.burst_limit.as_u64();
 
-        let work = settings.rate_limit.work() as u128;
         let refill_period = settings.refill_period;
-        let rate_limit_period = settings.rate_limit.period();
-        let refill_amount = work * refill_period.as_nanos() / rate_limit_period.as_nanos();
+        let rate_limit = settings.rate_limit.rescale(refill_period);
+        let now = Instant::now();
 
         Self {
             capacity,
             available: capacity,
-            refill_amount: refill_amount as u64,
+            refill_amount: rate_limit.work(),
             refill_period,
             refill_period_micros: refill_period.as_micros() as u64,
-            refill_at: Instant::now() + refill_period,
+            refill_at: now + refill_period,
         }
     }
 
+    /// Acquires some capacity from the rate limiter. Returns whether the capacity was available.
     pub fn acquire(&mut self, capacity: ByteSize) -> bool {
         if self.acquire_inner(capacity.as_u64()) {
             true
