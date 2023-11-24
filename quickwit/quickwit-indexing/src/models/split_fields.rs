@@ -63,10 +63,10 @@ impl FieldConfig {
 /// `fields_metadata` has to be sorted.
 pub fn serialize_split_fields(fields_metadata: &[FieldMetadata]) -> Vec<u8> {
     debug_assert!(fields_metadata.windows(2).all(|w| w[0] < w[1]));
-    let mut out = Vec::new();
+    let mut payload = Vec::new();
     // Write Num Fields
     let length = fields_metadata.len() as u32;
-    out.extend_from_slice(&length.to_le_bytes());
+    payload.extend_from_slice(&length.to_le_bytes());
 
     for field_metadata in fields_metadata {
         let field_config = FieldConfig {
@@ -77,13 +77,22 @@ pub fn serialize_split_fields(fields_metadata: &[FieldMetadata]) -> Vec<u8> {
         };
 
         // Write Config 2 bytes
-        out.extend_from_slice(&field_config.serialize());
+        payload.extend_from_slice(&field_config.serialize());
         let str_length = field_metadata.field_name.len() as u16;
         // Write String length 2 bytes
-        out.extend_from_slice(&str_length.to_le_bytes());
-        out.extend_from_slice(field_metadata.field_name.as_bytes());
+        payload.extend_from_slice(&str_length.to_le_bytes());
+        payload.extend_from_slice(field_metadata.field_name.as_bytes());
     }
-    zstd::stream::encode_all(&mut &out[..], 3).expect("zstd encoding failed")
+    let compression_level = 3;
+    let payload_compressed = zstd::stream::encode_all(&mut &payload[..], compression_level)
+        .expect("zstd encoding failed");
+    let mut out = Vec::new();
+    // Write Header -- Format Version
+    let format_version = 1u8;
+    out.push(format_version);
+    // Write Payload
+    out.extend_from_slice(&payload_compressed);
+    out
 }
 
 /// Reads a fixed number of bytes into an array and returns the array.
@@ -95,8 +104,10 @@ fn read_exact_array<R: Read, const N: usize>(reader: &mut R) -> io::Result<[u8; 
 
 /// Reads the Split fields from a zstd compressed stream of bytes
 pub fn iter_split_fields<R: Read>(
-    reader: R,
+    mut reader: R,
 ) -> io::Result<impl Iterator<Item = io::Result<FieldMetadata>>> {
+    let format_version = read_exact_array::<_, 1>(&mut reader)?[0];
+    assert_eq!(format_version, 1);
     let reader = zstd::Decoder::new(reader)?;
     _iter_split_fields(reader)
 }
