@@ -75,16 +75,6 @@ sudo cp .devcontainer/welcome.txt /usr/local/etc/vscode-dev-containers/first-run
 # Check the success tracking variables
 if $cmakeInstalled && $protocInstalled && $rustupToolchainNightlyInstalled; then
     echo -e "${SUCCESS_COLOR}All tools installed successfully.${RESET_COLOR}"
-    echo "Useful commands:"
-    echo "  - make test-all: Starts necessary Docker services and runs all tests."
-    echo "  - make -k test-all docker-compose-down: The same as above, but tears down the Docker services after running all the tests."
-    echo "  - make fmt: Runs formatter (requires the nightly toolchain to be installed by running rustup toolchain install nightly)."
-    echo "  - make fix: Runs formatter and clippy checks."
-    echo "  - make typos: Runs the spellcheck tool over the codebase (install by running cargo install typos)."
-    echo "  - make build-docs: Builds docs."
-    echo "  - make docker-compose-up: Starts Docker services."
-    echo "  - make docker-compose-down: Stops Docker services."
-    echo "  - make docker-compose-logs: Shows Docker logs."
 else
     echo -e "${ERROR_COLOR}One or more tools failed to install. Please check the output for errors and install the failed tools manually.${RESET_COLOR}"
 fi
