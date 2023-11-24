@@ -1,6 +1,6 @@
 👋 Welcome to the project!
 All the necessary tools have already been installed for you 🎉. 
-You can go ahead and start hacking! Happy coding experience! 🧑🏻‍💻
+You can go ahead and start hacking! Happy coding💻.
 
  Here are some useful commands you can run:
 
