@@ -207,7 +207,13 @@ impl Ingester {
                 .unwrap_or(Position::Eof);
             let solo_shard =
                 IngesterShard::new_solo(ShardState::Closed, Position::Eof, truncation_position);
-            state_guard.shards.insert(queue_id, solo_shard);
+            state_guard.shards.insert(queue_id.clone(), solo_shard);
+
+            let rate_limiter = RateLimiter::from_settings(self.rate_limiter_settings);
+            let rate_meter = RateMeter::default();
+            state_guard
+                .rate_trackers
+                .insert(queue_id, (rate_limiter, rate_meter));
         }
         Ok(())
     }
@@ -1009,6 +1015,8 @@ mod tests {
         solo_shard_01.assert_replication_position(Position::Eof);
         solo_shard_01.assert_truncation_position(Position::Eof);
 
+        assert!(state_guard.rate_trackers.contains_key(&queue_id_01));
+
         state_guard
             .mrecordlog
             .assert_records_eq(&queue_id_01, .., &[(1, "\0\x02")]);
@@ -1018,6 +1026,8 @@ mod tests {
         solo_shard_02.assert_is_closed();
         solo_shard_02.assert_replication_position(Position::Eof);
         solo_shard_02.assert_truncation_position(0u64);
+
+        assert!(state_guard.rate_trackers.contains_key(&queue_id_02));
 
         state_guard.mrecordlog.assert_records_eq(
             &queue_id_02,
@@ -1030,6 +1040,8 @@ mod tests {
         solo_shard_03.assert_is_closed();
         solo_shard_03.assert_replication_position(Position::Eof);
         solo_shard_03.assert_truncation_position(Position::Eof);
+
+        assert!(state_guard.rate_trackers.contains_key(&queue_id_02));
 
         state_guard
             .mrecordlog
