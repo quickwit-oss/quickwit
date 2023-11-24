@@ -6,24 +6,10 @@ ERROR_COLOR="\e[31m"
 RESET_COLOR="\e[0m"
 
 # Define success tracking variables
-cmakeInstalled=false
 rustupToolchainNightlyInstalled=false
 
 
 # Define installation functions
-install_cmake() {
-    echo -e "Installing CMake..."
-    sudo apt-get update
-    sudo apt-get install -y cmake > /dev/null 2>&1
-    if [[ "$(cmake --version)" =~ "cmake version" ]]; then
-        echo -e "${SUCCESS_COLOR}CMake installed successfully.${RESET_COLOR}"
-        cmakeInstalled=true
-    else
-        echo -e "${ERROR_COLOR}CMake installation failed. Please install it manually.${RESET_COLOR}"
-    fi
-}
-
-
 install_rustup_toolchain_nightly() {
     echo -e "Installing Rustup nightly toolchain..."
     rustup toolchain install nightly > /dev/null 2>&1
@@ -45,7 +31,7 @@ sudo cp .devcontainer/welcome.txt /usr/local/etc/vscode-dev-containers/first-run
 
 
 # Check the success tracking variables
-if $cmakeInstalled && $rustupToolchainNightlyInstalled; then
+if $rustupToolchainNightlyInstalled; then
     echo -e "${SUCCESS_COLOR}All tools installed successfully.${RESET_COLOR}"
 else
     echo -e "${ERROR_COLOR}One or more tools failed to install. Please check the output for errors and install the failed tools manually.${RESET_COLOR}"
