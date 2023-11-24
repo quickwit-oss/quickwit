@@ -70,19 +70,7 @@ pub fn serialize_split_fields(fields_metadata: &[FieldMetadata]) -> Vec<u8> {
     payload.extend_from_slice(&length.to_le_bytes());
 
     for field_metadata in fields_metadata {
-        let field_config = FieldConfig {
-            typ: field_metadata.typ,
-            indexed: field_metadata.indexed,
-            stored: field_metadata.stored,
-            fast: field_metadata.fast,
-        };
-
-        // Write Config 2 bytes
-        payload.extend_from_slice(&field_config.serialize());
-        let str_length = field_metadata.field_name.len() as u16;
-        // Write String length 2 bytes
-        payload.extend_from_slice(&str_length.to_le_bytes());
-        payload.extend_from_slice(field_metadata.field_name.as_bytes());
+        write_field(field_metadata, &mut payload);
     }
     let compression_level = 3;
     let payload_compressed = zstd::stream::encode_all(&mut &payload[..], compression_level)
@@ -94,6 +82,22 @@ pub fn serialize_split_fields(fields_metadata: &[FieldMetadata]) -> Vec<u8> {
     // Write Payload
     out.extend_from_slice(&payload_compressed);
     out
+}
+
+fn write_field(field_metadata: &FieldMetadata, out: &mut Vec<u8>) {
+    let field_config = FieldConfig {
+        typ: field_metadata.typ,
+        indexed: field_metadata.indexed,
+        stored: field_metadata.stored,
+        fast: field_metadata.fast,
+    };
+
+    // Write Config 2 bytes
+    out.extend_from_slice(&field_config.serialize());
+    let str_length = field_metadata.field_name.len() as u16;
+    // Write String length 2 bytes
+    out.extend_from_slice(&str_length.to_le_bytes());
+    out.extend_from_slice(field_metadata.field_name.as_bytes());
 }
 
 /// Reads a fixed number of bytes into an array and returns the array.
@@ -174,6 +178,57 @@ mod tests {
         let serialized = field_config.serialize();
         let deserialized = FieldConfig::deserialize_from(serialized).unwrap();
         assert_eq!(field_config, deserialized);
+    }
+    #[test]
+    fn write_read_field_test() {
+        for typ in Type::iter_values() {
+            let field_metadata = FieldMetadata {
+                field_name: "test".to_string(),
+                typ,
+                indexed: true,
+                stored: true,
+                fast: true,
+            };
+            let mut out = Vec::new();
+            write_field(&field_metadata, &mut out);
+            let deserialized = read_field(&mut &out[..]).unwrap();
+            assert_eq!(field_metadata, deserialized);
+        }
+        let field_metadata = FieldMetadata {
+            field_name: "test".to_string(),
+            typ: Type::Str,
+            indexed: false,
+            stored: true,
+            fast: true,
+        };
+        let mut out = Vec::new();
+        write_field(&field_metadata, &mut out);
+        let deserialized = read_field(&mut &out[..]).unwrap();
+        assert_eq!(field_metadata, deserialized);
+
+        let field_metadata = FieldMetadata {
+            field_name: "test".to_string(),
+            typ: Type::Str,
+            indexed: false,
+            stored: false,
+            fast: true,
+        };
+        let mut out = Vec::new();
+        write_field(&field_metadata, &mut out);
+        let deserialized = read_field(&mut &out[..]).unwrap();
+        assert_eq!(field_metadata, deserialized);
+
+        let field_metadata = FieldMetadata {
+            field_name: "test".to_string(),
+            typ: Type::Str,
+            indexed: true,
+            stored: false,
+            fast: false,
+        };
+        let mut out = Vec::new();
+        write_field(&field_metadata, &mut out);
+        let deserialized = read_field(&mut &out[..]).unwrap();
+        assert_eq!(field_metadata, deserialized);
     }
     #[test]
     fn write_split_fields_test() {
