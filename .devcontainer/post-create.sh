@@ -69,6 +69,7 @@ install_cmake
 configure_python_environment
 install_protoc
 install_rustup_toolchain_nightly
+sudo cp .devcontainer/welcome.txt /usr/local/etc/vscode-dev-containers/first-run-notice.txt
 
 
 # Check the success tracking variables
