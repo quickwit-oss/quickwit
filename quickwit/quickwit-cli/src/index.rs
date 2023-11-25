@@ -608,7 +608,7 @@ fn separate_thousands(num: impl numfmt::Numeric) -> String {
 
 fn display_option_in_table(opt: &Option<impl Display>) -> String {
     match opt {
-        Some(opt_val) => format!("{opt_val}"),
+        Some(opt_val) => format!("\"{opt_val}\""),
         None => "Field does not exist for the index.".to_string(),
     }
 }
