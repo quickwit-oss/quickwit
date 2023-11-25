@@ -704,7 +704,7 @@ impl IndexStats {
     }
 
     pub fn display_as_table(&self) -> String {
-        let index_stats_table = create_table(self, "General Information");
+        let index_stats_table = create_table(self, "General Information", true);
 
         let index_stats_table = if let Some(docs_stats) = &self.num_docs_descriptive {
             let doc_stats_table = create_table(docs_stats, "Document count stats (published)");
@@ -736,22 +736,33 @@ impl IndexStats {
     }
 }
 
-fn create_table(table: impl Tabled, header: &str) -> Table {
-    Table::new(vec![table])
-        .with(Rotate::Left)
-        .with(Rotate::Bottom)
-        .with(
-            Modify::new(Columns::first())
-                .with(Format::new(|column| column.color(GREEN_COLOR).to_string())),
-        )
+fn create_table(table: impl Tabled, header: &str, is_vertical: bool) -> Table {
+    let mut table = Table::new(vec![table]);
+
+    // Make the field names GREEN :D
+    table.with(Modify::new(Rows::first()).with(Format::content(|column| {
+        column.color(GREEN_COLOR).to_string()
+    })));
+
+    if is_vertical {
+        table.with(Rotate::Left).with(Rotate::Bottom);
+    }
+
+    table
+        .with(Panel::header(header))
+        // Makes the table header bright green and bold.
+        .with(Modify::new(Rows::first()).with(Format::content(|header| {
+            header.bright_green().bold().to_string()
+        })))
         .with(
             Modify::new(Segment::all())
                 .with(Alignment::left())
                 .with(Alignment::top()),
         )
-        .with(Panel(header, 0))
-        .with(Style::psql())
-        .with(Panel("\n", 0))
+        .with(Footer::new("\n"))
+        .with(Style::psql());
+
+    table
 }
 
 #[derive(Debug)]
