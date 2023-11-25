@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::borrow::Cow;
 use std::collections::VecDeque;
 use std::fmt::Display;
 use std::io::{stdout, Stdout, Write};
@@ -46,8 +47,10 @@ use quickwit_rest_client::rest_client::{CommitType, IngestEvent};
 use quickwit_search::SearchResponseRest;
 use quickwit_serve::{ListSplitsQueryParams, SearchRequestQueryString, SortBy};
 use quickwit_storage::{load_file, StorageResolver};
-use tabled::object::{Columns, Segment};
-use tabled::{Alignment, Concat, Format, Modify, Panel, Rotate, Style, Table, Tabled};
+use tabled::settings::object::{FirstRow, Rows, Segment};
+use tabled::settings::panel::Footer;
+use tabled::settings::{Alignment, Disable, Format, Modify, Panel, Rotate, Style};
+use tabled::{Table, Tabled};
 use thousands::Separable;
 use tracing::{debug, Level};
 
@@ -545,32 +548,46 @@ pub struct IndexStats {
 }
 
 impl Tabled for IndexStats {
-    const LENGTH: usize = 7;
+    const LENGTH: usize = 9;
 
-    fn fields(&self) -> Vec<String> {
-        vec![
-            self.index_id.clone(),
+    fn fields(&self) -> Vec<Cow<'_, str>> {
+        let num_published_docs = format!(
+            "{} ({})",
+            format_to_si_scale(self.num_published_docs),
+            separate_thousands(self.num_published_docs)
+        );
+
+        [
+            self.index_id.to_string(),
             self.index_uri.to_string(),
-            self.num_published_docs.to_string(),
+            num_published_docs,
             self.size_published_docs_uncompressed.to_string(),
-            self.num_published_splits.to_string(),
+            separate_thousands(self.num_published_splits),
             self.size_published_splits.to_string(),
             display_option_in_table(&self.timestamp_field_name),
-            display_timestamp_range(&self.timestamp_range),
+            display_timestamp(&self.timestamp_range.map(|(start, _end)| start)),
+            display_timestamp(&self.timestamp_range.map(|(_start, end)| end)),
         ]
+        .into_iter()
+        .map(|field| field.into())
+        .collect()
     }
 
-    fn headers() -> Vec<String> {
-        vec![
-            "Index ID: ".to_string(),
-            "Index URI: ".to_string(),
-            "Number of published documents: ".to_string(),
-            "Size of published documents (uncompressed): ".to_string(),
-            "Number of published splits: ".to_string(),
-            "Size of published splits: ".to_string(),
-            "Timestamp field: ".to_string(),
-            "Timestamp range: ".to_string(),
+    fn headers() -> Vec<Cow<'static, str>> {
+        [
+            "Index ID: ",
+            "Index URI: ",
+            "Number of published documents: ",
+            "Size of published documents (uncompressed): ",
+            "Number of published splits: ",
+            "Size of published splits: ",
+            "Timestamp field: ",
+            "Timestamp range start: ",
+            "Timestamp range end: ",
         ]
+        .into_iter()
+        .map(|header| header.into())
+        .collect()
     }
 }
 
