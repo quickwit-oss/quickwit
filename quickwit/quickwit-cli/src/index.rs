@@ -596,12 +596,16 @@ fn display_option_in_table(opt: &Option<impl Display>) -> String {
     }
 }
 
-fn display_timestamp_range(range: &Option<(i64, i64)>) -> String {
-    match range {
-        Some((timestamp_min, timestamp_max)) => {
-            format!("{timestamp_min} -> {timestamp_max}")
+fn display_timestamp(timestamp: &Option<i64>) -> String {
+    match timestamp {
+        Some(timestamp) => {
+            let datetime = chrono::NaiveDateTime::from_timestamp_millis(*timestamp * 1000)
+                .map_or("Invalid timestamp!".to_string(), |datetime| {
+                    datetime.format("%Y-%m-%d %H:%M:%S").to_string()
+                });
+            format!("{} (Timestamp: {})", datetime, timestamp)
         }
-        _ => "Range does not exist for the index.".to_string(),
+        _ => "Timestamp does not exist for the index.".to_string(),
     }
 }
 
