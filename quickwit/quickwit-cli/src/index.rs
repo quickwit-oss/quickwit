@@ -765,12 +765,48 @@ fn create_table(table: impl Tabled, header: &str, is_vertical: bool) -> Table {
     table
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct DescriptiveStats {
+    summary_stats: SummaryStats,
+    quantiles: Quantiles,
+impl DescriptiveStats {
+    pub fn into_table(self, header: &str) -> Table {
+        let summary_stats_table = create_table(self.summary_stats, header, true);
+        let quantiles_table = create_table(self.quantiles, "Quantiles", false);
+        let mut table =
+            Table::builder([summary_stats_table.to_string(), quantiles_table.to_string()]).build();
+
+        table
+            .with(Style::empty())
+            .with(Disable::row(FirstRow))
+            // We separate tables with a newline already, this is to separate quantile part of the
+            // table further away from the next table.
+            .with(Footer::new("\n"));
+        table
+    }
+}
+
+impl Div<f32> for &DescriptiveStats {
+    type Output = DescriptiveStats;
+
+    fn div(self, rhs: f32) -> Self::Output {
+        DescriptiveStats {
+            summary_stats: self.summary_stats / rhs,
+            quantiles: self.quantiles / rhs,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct SummaryStats {
     mean_val: f32,
     std_val: f32,
     min_val: u64,
     max_val: u64,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Quantiles {
     q1: f32,
     q25: f32,
     q50: f32,
@@ -778,27 +814,7 @@ pub struct DescriptiveStats {
     q99: f32,
 }
 
-impl Tabled for DescriptiveStats {
-    const LENGTH: usize = 2;
 
-    fn fields(&self) -> Vec<String> {
-        vec![
-            format!(
-                "{} ± {} in [{} … {}]",
-                self.mean_val, self.std_val, self.min_val, self.max_val
-            ),
-            format!(
-                "[{}, {}, {}, {}, {}]",
-                self.q1, self.q25, self.q50, self.q75, self.q99,
-            ),
-        ]
-    }
-
-    fn headers() -> Vec<String> {
-        vec![
-            "Mean ± σ in [min … max]:".to_string(),
-            "Quantiles [1%, 25%, 50%, 75%, 99%]:".to_string(),
-        ]
     }
 }
 
@@ -807,17 +823,80 @@ impl DescriptiveStats {
         if values.is_empty() {
             return None;
         }
+
         Some(DescriptiveStats {
-            mean_val: mean(values),
-            std_val: std_deviation(values),
-            min_val: *values.iter().min().expect("Values should not be empty."),
-            max_val: *values.iter().max().expect("Values should not be empty."),
-            q1: percentile(values, 1),
-            q25: percentile(values, 25),
-            q50: percentile(values, 50),
-            q75: percentile(values, 75),
-            q99: percentile(values, 99),
+            summary_stats: SummaryStats {
+                mean_val: mean(values),
+                std_val: std_deviation(values),
+                min_val: *values.iter().min().expect("Values should not be empty."),
+                max_val: *values.iter().max().expect("Values should not be empty."),
+            },
+            quantiles: Quantiles {
+                q1: percentile(values, 1),
+                q25: percentile(values, 25),
+                q50: percentile(values, 50),
+                q75: percentile(values, 75),
+                q99: percentile(values, 99),
+            },
         })
+    }
+}
+
+impl Tabled for SummaryStats {
+    const LENGTH: usize = 4;
+
+    fn fields(&self) -> Vec<Cow<'_, str>> {
+        [
+            separate_thousands(self.mean_val),
+            separate_thousands(self.min_val),
+            separate_thousands(self.max_val),
+            separate_thousands(self.std_val),
+        ]
+        .into_iter()
+        .map(|field| field.into())
+        .collect()
+    }
+
+    fn headers() -> Vec<Cow<'static, str>> {
+        [
+            "Mean".to_string(),
+            "Min".to_string(),
+            "Max".to_string(),
+            "Standard deviation".to_string(),
+        ]
+        .into_iter()
+        .map(|header| header.into())
+        .collect()
+    }
+}
+
+impl Tabled for Quantiles {
+    const LENGTH: usize = 5;
+
+    fn fields(&self) -> Vec<Cow<'_, str>> {
+        [
+            separate_thousands(self.q1),
+            separate_thousands(self.q25),
+            separate_thousands(self.q50),
+            separate_thousands(self.q75),
+            separate_thousands(self.q99),
+        ]
+        .into_iter()
+        .map(|field| field.into())
+        .collect()
+    }
+
+    fn headers() -> Vec<Cow<'static, str>> {
+        [
+            "1%".to_string(),
+            "25%".to_string(),
+            "50%".to_string(),
+            "75%".to_string(),
+            "99%".to_string(),
+        ]
+        .into_iter()
+        .map(|header| header.into())
+        .collect()
     }
 }
 
@@ -1256,17 +1335,17 @@ mod test {
         let num_docs_descriptive = num_docs_descriptive.unwrap();
         let num_bytes_descriptive = num_bytes_descriptive.unwrap();
 
-        assert_eq!(num_docs_descriptive.q1, 40900.0);
-        assert_eq!(num_docs_descriptive.q25, 62500.0);
-        assert_eq!(num_docs_descriptive.q50, 80000.0);
-        assert_eq!(num_docs_descriptive.q75, 97500.0);
-        assert_eq!(num_docs_descriptive.q99, 119100.0);
+        assert_eq!(num_docs_descriptive.quantiles.q1, 40900.0);
+        assert_eq!(num_docs_descriptive.quantiles.q25, 62500.0);
+        assert_eq!(num_docs_descriptive.quantiles.q50, 80000.0);
+        assert_eq!(num_docs_descriptive.quantiles.q75, 97500.0);
+        assert_eq!(num_docs_descriptive.quantiles.q99, 119100.0);
 
-        assert_eq!(num_bytes_descriptive.q1, 55150000.0);
-        assert_eq!(num_bytes_descriptive.q25, 58750000.0);
-        assert_eq!(num_bytes_descriptive.q50, 87500000.0);
-        assert_eq!(num_bytes_descriptive.q75, 122500000.0);
-        assert_eq!(num_bytes_descriptive.q99, 144100000.0);
+        assert_eq!(num_bytes_descriptive.quantiles.q1, 55150000.0);
+        assert_eq!(num_bytes_descriptive.quantiles.q25, 58750000.0);
+        assert_eq!(num_bytes_descriptive.quantiles.q50, 87500000.0);
+        assert_eq!(num_bytes_descriptive.quantiles.q75, 122500000.0);
+        assert_eq!(num_bytes_descriptive.quantiles.q99, 144100000.0);
 
         let descriptive_stats_none = DescriptiveStats::maybe_new(&[]);
         assert!(descriptive_stats_none.is_none());
