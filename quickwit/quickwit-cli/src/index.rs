@@ -33,6 +33,7 @@ use colored::{ColoredString, Colorize};
 use humantime::format_duration;
 use indicatif::{ProgressBar, ProgressStyle};
 use itertools::Itertools;
+use numfmt::{Formatter, Scales};
 use quickwit_actors::ActorHandle;
 use quickwit_common::uri::Uri;
 use quickwit_config::{ConfigFormat, IndexConfig};
@@ -571,6 +572,16 @@ impl Tabled for IndexStats {
             "Timestamp range: ".to_string(),
         ]
     }
+}
+
+fn separate_thousands(num: impl numfmt::Numeric) -> String {
+    let mut thousands_separator_formatter = Formatter::new()
+        .separator(',')
+        // NOTE: .separator(sep) only panics if sep.len_utf8() != 1
+        .expect("Valid separator")
+        .precision(numfmt::Precision::Significance(3));
+
+    thousands_separator_formatter.fmt2(num).to_string()
 }
 
 fn display_option_in_table(opt: &Option<impl Display>) -> String {
