@@ -21,6 +21,7 @@ use std::borrow::Cow;
 use std::collections::VecDeque;
 use std::fmt::Display;
 use std::io::{stdout, Stdout, Write};
+use std::ops::Div;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::{Duration, Instant};
@@ -782,6 +783,7 @@ impl DescriptiveStats {
             // We separate tables with a newline already, this is to separate quantile part of the
             // table further away from the next table.
             .with(Footer::new("\n"));
+
         table
     }
 }
@@ -805,6 +807,19 @@ pub struct SummaryStats {
     max_val: u64,
 }
 
+impl Div<f32> for SummaryStats {
+    type Output = Self;
+
+    fn div(self, rhs: f32) -> Self::Output {
+        Self {
+            mean_val: self.mean_val / rhs,
+            std_val: self.std_val / rhs,
+            min_val: self.min_val / rhs as u64,
+            max_val: self.max_val / rhs as u64,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 pub struct Quantiles {
     q1: f32,
@@ -814,7 +829,17 @@ pub struct Quantiles {
     q99: f32,
 }
 
+impl Div<f32> for Quantiles {
+    type Output = Self;
 
+    fn div(self, rhs: f32) -> Self::Output {
+        Self {
+            q1: self.q1 / rhs,
+            q25: self.q25 / rhs,
+            q50: self.q50 / rhs,
+            q75: self.q75 / rhs,
+            q99: self.q99 / rhs,
+        }
     }
 }
 
