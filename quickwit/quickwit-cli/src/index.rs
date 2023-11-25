@@ -574,6 +574,11 @@ impl Tabled for IndexStats {
     }
 }
 
+fn format_to_si_scale(num: impl numfmt::Numeric) -> String {
+    let mut si_scale_formatter = Formatter::new().scales(Scales::metric());
+    si_scale_formatter.fmt2(num).to_string()
+}
+
 fn separate_thousands(num: impl numfmt::Numeric) -> String {
     let mut thousands_separator_formatter = Formatter::new()
         .separator(',')
