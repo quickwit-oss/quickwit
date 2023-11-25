@@ -705,35 +705,29 @@ impl IndexStats {
     }
 
     pub fn display_as_table(&self) -> String {
+        let mut tables = vec![];
         let index_stats_table = create_table(self, "General Information", true);
+        tables.push(index_stats_table);
 
-        let index_stats_table = if let Some(docs_stats) = &self.num_docs_descriptive {
-            let doc_stats_table = create_table(docs_stats, "Document count stats (published)");
-            index_stats_table.with(Concat::vertical(doc_stats_table))
-        } else {
-            index_stats_table
-        };
+        if let Some(docs_stats) = &self.num_docs_descriptive {
+            let doc_stats_table = docs_stats.into_table("Document count stats (published)");
+            tables.push(doc_stats_table);
+        }
 
-        let index_stats_table = if let Some(size_stats) = &self.num_bytes_descriptive {
-            // size_stats is in byte, we have to divide all stats by 1_000_000 to be in MB.
-            let size_stats_in_mb = DescriptiveStats {
-                max_val: size_stats.max_val / 1_000_000,
-                min_val: size_stats.min_val / 1_000_000,
-                mean_val: size_stats.mean_val / 1_000_000.0,
-                q1: size_stats.q1 / 1_000_000.0,
-                q25: size_stats.q25 / 1_000_000.0,
-                q50: size_stats.q50 / 1_000_000.0,
-                q75: size_stats.q75 / 1_000_000.0,
-                q99: size_stats.q99 / 1_000_000.0,
-                std_val: size_stats.std_val / 1_000_000.0,
-            };
-            let size_stats_table = create_table(size_stats_in_mb, "Size in MB stats (published)");
-            index_stats_table.with(Concat::vertical(size_stats_table))
-        } else {
-            index_stats_table
-        };
+        if let Some(size_stats) = &self.num_bytes_descriptive {
+            let size_stats_in_mb = size_stats / 1_000_000.0;
+            let size_stats_table = size_stats_in_mb.into_table("Size in MB stats (published)");
+            tables.push(size_stats_table);
+        }
 
-        index_stats_table.to_string()
+        let table = Table::builder(tables.into_iter().map(|table| table.to_string()))
+            .build()
+            .with(Modify::new(Segment::all()).with(Alignment::center_vertical()))
+            .with(Disable::row(FirstRow))
+            .with(Style::empty())
+            .to_string();
+
+        table
     }
 }
 
