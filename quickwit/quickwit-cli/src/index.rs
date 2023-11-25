@@ -764,6 +764,8 @@ fn create_table(table: impl Tabled, header: &str, is_vertical: bool) -> Table {
 pub struct DescriptiveStats {
     summary_stats: SummaryStats,
     quantiles: Quantiles,
+}
+
 impl DescriptiveStats {
     pub fn into_table(self, header: &str) -> Table {
         let summary_stats_table = create_table(self.summary_stats, header, true);
