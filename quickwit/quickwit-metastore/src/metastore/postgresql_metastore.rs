@@ -34,8 +34,8 @@ use quickwit_config::{
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_proto::ingest::Shard;
 use quickwit_proto::metastore::{
-    AcquireShardsRequest, AcquireShardsResponse, AddSourceRequest, CreateIndexRequest,
-    CreateIndexResponse, DeleteIndexRequest, DeleteQuery, DeleteShardsRequest,
+    AcquireShardsRequest, AcquireShardsResponse, AcquireShardsSubresponse, AddSourceRequest,
+    CreateIndexRequest, CreateIndexResponse, DeleteIndexRequest, DeleteQuery, DeleteShardsRequest,
     DeleteShardsResponse, DeleteSourceRequest, DeleteSplitsRequest, DeleteTask, EmptyResponse,
     EntityKind, IndexMetadataRequest, IndexMetadataResponse, LastDeleteOpstampRequest,
     LastDeleteOpstampResponse, ListDeleteTasksRequest, ListDeleteTasksResponse,
@@ -1317,9 +1317,47 @@ impl MetastoreService for PostgresqlMetastore {
 
     async fn acquire_shards(
         &mut self,
-        _request: AcquireShardsRequest,
+        request: AcquireShardsRequest,
     ) -> MetastoreResult<AcquireShardsResponse> {
-        unimplemented!("`close_shards` is not implemented for PostgreSQL metastore")
+        let mut subresponses = Vec::with_capacity(request.subrequests.len());
+
+        for subrequest in request.subrequests.iter() {
+            let mut acquired_shards: Vec<Shard> = Vec::with_capacity(subrequest.shard_ids.len());
+
+            for shard_id in subrequest.shard_ids.iter() {
+                let pg_shard: Option<PgShard> = sqlx::query_as::<_, PgShard>(r#"
+                    WITH updated_shards AS (
+                        UPDATE shards SET publish_token = $1 WHERE index_uid=$2 AND source_id = $3 AND shard_id = $4
+                        RETURNING * 
+                    )
+                    SELECT * FROM updated_shards WHERE index_uid=$2 AND source_id = $3 AND shard_id = #4
+                "#)
+                .bind(subrequest.publish_token.as_str())
+                .bind(subrequest.index_uid.as_str())
+                .bind(subrequest.source_id.as_str())
+                .bind(*shard_id as i64)
+                .fetch_optional(&self.connection_pool)
+                .await
+                .map_err(|err| {
+                    convert_sqlx_err(
+                        IndexUid::from(subrequest.index_uid.to_string()).index_id(),
+                        err,
+                    )
+                })?;
+
+                if let Some(shard) = pg_shard {
+                    acquired_shards.push(shard.into());
+                }
+            }
+
+            subresponses.push(AcquireShardsSubresponse {
+                index_uid: subrequest.index_uid.to_string(),
+                source_id: subrequest.source_id.to_string(),
+                acquired_shards,
+            });
+        }
+
+        Ok(AcquireShardsResponse { subresponses })
     }
 
     async fn list_shards(
@@ -1331,9 +1369,9 @@ impl MetastoreService for PostgresqlMetastore {
 
         for subrequest in request.subrequests.iter() {
             let query_str = if subrequest.shard_state.is_some() {
-                r#"SELECT * FROM indexes WHERE index_uid = $1 AND source_id = $2"#
+                r#"SELECT * FROM shards WHERE index_uid = $1 AND source_id = $2"#
             } else {
-                r#"SELECT * FROM indexes WHERE index_uid = $1 AND source_id = $2 AND shard_state = CAST($3 AS SHARD_STATE)"#
+                r#"SELECT * FROM shards WHERE index_uid = $1 AND source_id = $2 AND shard_state = CAST($3 AS SHARD_STATE)"#
             };
 
             let mut query = sqlx::query_as::<_, PgShard>(query_str)
