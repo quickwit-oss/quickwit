@@ -39,6 +39,7 @@ use crate::health_check_api::health_check_handlers;
 use crate::index_api::index_management_handlers;
 use crate::indexing_api::indexing_get_handler;
 use crate::ingest_api::ingest_api_handlers;
+use crate::jaeger_api::jaeger_api_handlers;
 use crate::json_api_response::{ApiError, JsonApiResponse};
 use crate::metrics_api::metrics_handler;
 use crate::node_info_handler::node_info_handler;
@@ -117,6 +118,9 @@ pub(crate) async fn start_rest_server(
         ))
         .or(delete_task_api_handlers(
             quickwit_services.metastore_client.clone(),
+        ))
+        .or(jaeger_api_handlers(
+            quickwit_services.jaeger_service_opt.clone(),
         ))
         .or(elastic_api_handlers(
             quickwit_services.node_config.clone(),

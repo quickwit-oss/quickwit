@@ -72,6 +72,7 @@ type JaegerResult<T> = Result<T, Status>;
 
 type SpanStream = ReceiverStream<Result<SpansResponseChunk, Status>>;
 
+#[derive(Clone)]
 pub struct JaegerService {
     search_service: Arc<dyn SearchService>,
     lookback_period_secs: i64,
