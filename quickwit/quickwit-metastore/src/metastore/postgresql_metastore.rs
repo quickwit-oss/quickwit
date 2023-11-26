@@ -1347,6 +1347,13 @@ impl MetastoreService for PostgresqlMetastore {
 
                 if let Some(shard) = pg_shard {
                     acquired_shards.push(shard.into());
+                } else {
+                    warn!(
+                        index_id=%subrequest.index_uid,
+                        source_id=%subrequest.source_id,
+                        shard_id=%shard_id,
+                        "shard not found"
+                    );
                 }
             }
 
@@ -1418,9 +1425,43 @@ impl MetastoreService for PostgresqlMetastore {
 
     async fn delete_shards(
         &mut self,
-        _request: DeleteShardsRequest,
+        request: DeleteShardsRequest,
     ) -> MetastoreResult<DeleteShardsResponse> {
-        unimplemented!("`delete_shards` is not implemented for PostgreSQL metastore")
+        let force = request.force;
+
+        for subrequest in request.subrequests.iter() {
+            for shard_id in subrequest.shard_ids.iter() {
+                let query_str = if force {
+                    r#"DELETE FROM shards WHERE index_uid=$1 AND source_id=$2 AND shard_id = $3"#
+                } else {
+                    r#"DELETE FROM shards WHERE index_uid=$1 AND source_id=$2 AND shard_id = $3 AND publish_position_inclusive = $4"#
+                };
+
+                let mut query = sqlx::query(query_str)
+                    .bind(subrequest.index_uid.as_str())
+                    .bind(subrequest.source_id.as_str())
+                    .bind(*shard_id as i64);
+
+                if !force {
+                    query = query.bind(Position::Eof.as_str());
+                }
+
+                let query_result = query.execute(&self.connection_pool).await.map_err(|err| {
+                    convert_sqlx_err(
+                        IndexUid::from(subrequest.index_uid.to_string()).index_id(),
+                        err,
+                    )
+                })?;
+
+                if query_result.rows_affected() == 0 {
+                    return Err(MetastoreError::InvalidArgument {
+                        message: format!("Shard `{shard_id}` cannot be deleted"),
+                    });
+                }
+            }
+        }
+
+        Ok(DeleteShardsResponse {})
     }
 }
 
