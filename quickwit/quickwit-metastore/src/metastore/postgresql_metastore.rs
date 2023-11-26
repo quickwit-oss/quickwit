@@ -1333,7 +1333,7 @@ impl MetastoreService for PostgresqlMetastore {
             let query_str = if subrequest.shard_state.is_some() {
                 r#"SELECT * FROM indexes WHERE index_uid = $1 AND source_id = $2"#
             } else {
-                r#"SELECT * FROM indexes WHERE index_uid = $1 AND source_id = $2 AND shard_state = $3"#
+                r#"SELECT * FROM indexes WHERE index_uid = $1 AND source_id = $2 AND shard_state = CAST($3 AS SHARD_STATE)"#
             };
 
             let mut query = sqlx::query_as::<_, PgShard>(query_str)
@@ -1468,12 +1468,17 @@ async fn open_pgshard(
     let index_uid = subrequest.index_uid;
     let shard_state: String = (PgShardState::Open).into();
 
-    let pg_shard: PgShard = sqlx::query_as::<_, PgShard>(
-            r#"INSERT INTO shards (index_uid, source_id, leader_id, follower_id, shard_state, publish_position_inclusive, publish_token) 
+    let pg_shard = sqlx::query_as::<_, PgShard>(
+            r#"
+            WITH new_shards as (
+                INSERT INTO shards (index_uid, source_id, leader_id, follower_id, shard_state, publish_position_inclusive, publish_token) 
                 VALUES($1, $2, $3, $4, CAST($5 as SHARD_STATE), $6, $7)
                 ON CONFLICT (index_uid, source_id, shard_id)
                 DO NOTHING
-                RETURNING *"#,
+                RETURNING *
+            )
+            SELECT * FROM new_shards WHERE new_shards.index_uid = $1 AND new_shards.source_id = $2 ORDER BY shard_id DESC
+            "#,
         )
         .bind(index_uid.as_str())
         .bind(subrequest.source_id.as_str())
