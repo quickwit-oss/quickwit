@@ -85,7 +85,6 @@ use quickwit_proto::control_plane::ControlPlaneServiceClient;
 use quickwit_proto::indexing::IndexingServiceClient;
 use quickwit_proto::ingest::ingester::IngesterServiceClient;
 use quickwit_proto::ingest::router::IngestRouterServiceClient;
-use quickwit_proto::jaeger::storage::v1::span_reader_plugin_server::SpanReaderPluginServer;
 use quickwit_proto::metastore::{
     EntityKind, ListIndexesMetadataRequest, MetastoreError, MetastoreService,
     MetastoreServiceClient,

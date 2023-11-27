@@ -23,7 +23,6 @@ use std::sync::Arc;
 
 use quickwit_common::tower::BoxFutureInfaillible;
 use quickwit_config::service::QuickwitService;
-use quickwit_jaeger::JaegerService;
 use quickwit_opentelemetry::otlp::{OtlpGrpcLogsService, OtlpGrpcTracesService};
 use quickwit_proto::indexing::IndexingServiceClient;
 use quickwit_proto::jaeger::storage::v1::span_reader_plugin_server::SpanReaderPluginServer;

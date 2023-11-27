@@ -27,6 +27,12 @@ pub struct JaegerSearchBody {
     pub data: Option<Vec<String>>,
 }
 
+#[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct JaegerResponseBody<T> {
+    pub data: T,
+}
+
 #[serde_with::skip_serializing_none]
 #[derive(Default, Debug, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -42,4 +48,14 @@ pub struct TracesSearchQueryParams {
 pub struct JaegerError {
     #[serde(with = "http_serde::status_code")]
     pub status: StatusCode,
+    pub message: String,
+}
+
+impl JaegerError {
+    pub fn internal_jaeger_error() -> Self {
+        JaegerError {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            message: "Jaeger is not available".to_string(),
+        }
+    }
 }

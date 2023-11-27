@@ -27,11 +27,12 @@ use quickwit_proto::jaeger::storage::v1::{
 };
 use quickwit_proto::tonic;
 use quickwit_proto::tonic::Request;
-use serde::{Deserialize, Serialize};
 use tokio_stream::StreamExt;
 use warp::{Filter, Rejection};
 
-use crate::jaeger_api::model::{JaegerError, JaegerSearchBody, TracesSearchQueryParams};
+use crate::jaeger_api::model::{
+    JaegerError, JaegerResponseBody, JaegerSearchBody, TracesSearchQueryParams,
+};
 use crate::json_api_response::JsonApiResponse;
 use crate::{with_arg, BodyFormat};
 
@@ -155,7 +156,7 @@ pub(crate) fn jaeger_traces_filter(
 
 async fn jaeger_services(
     jaeger_service_opt: Option<JaegerService>,
-) -> Result<JaegerSearchBody, JaegerError> {
+) -> Result<JaegerResponseBody<Vec<String>>, JaegerError> {
     match jaeger_service_opt {
         Some(jaeger_service) => {
             let get_services_response = jaeger_service
@@ -163,13 +164,11 @@ async fn jaeger_services(
                 .await
                 .unwrap()
                 .into_inner();
-            Ok(JaegerSearchBody {
-                data: Some(get_services_response.services),
+            Ok(JaegerResponseBody::<Vec<String>> {
+                data: get_services_response.services,
             })
         }
-        None => Err(JaegerError {
-            status: Default::default(),
-        }),
+        None => Err(JaegerError::internal_jaeger_error()),
     }
 }
 
@@ -193,9 +192,7 @@ async fn jaeger_service_operations(
                 data: Some(get_operations_response.operation_names),
             })
         }
-        None => Err(JaegerError {
-            status: Default::default(),
-        }),
+        None => Err(JaegerError::internal_jaeger_error()),
     }
 }
 
@@ -231,9 +228,7 @@ async fn jaeger_traces_search(
 
             Ok(JaegerSearchBody { data: Some(result) })
         }
-        None => Err(JaegerError {
-            status: Default::default(),
-        }),
+        None => Err(JaegerError::internal_jaeger_error()),
     }
 }
 
@@ -259,9 +254,7 @@ async fn jaeger_get_trace(
                 .collect::<Vec<String>>();
             Ok(JaegerSearchBody { data: Some(result) })
         }
-        None => Err(JaegerError {
-            status: Default::default(),
-        }),
+        None => Err(JaegerError::internal_jaeger_error()),
     }
 }
 
@@ -278,4 +271,68 @@ fn make_jaeger_api_response<T: serde::Serialize>(
 
 fn with_tonic<T>(message: T) -> Request<T> {
     tonic::Request::new(message)
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use assert_json_diff::assert_json_include;
+    use quickwit_config::JaegerConfig;
+    use quickwit_opentelemetry::otlp::OTEL_TRACES_INDEX_ID;
+    use quickwit_search::{encode_term_for_test, MockSearchService};
+    use serde_json::Value as JsonValue;
+
+    use super::*;
+    use crate::recover_fn;
+
+    #[tokio::test]
+    async fn test_when_jaeger_unavailable() {
+        let jaeger_api_handler = jaeger_api_handlers(None).recover(recover_fn);
+        let resp = warp::test::request()
+            .path("/jaeger/services")
+            .reply(&jaeger_api_handler)
+            .await;
+        assert_eq!(resp.status(), 500);
+    }
+
+    #[tokio::test]
+    async fn test_jaeger_services() -> anyhow::Result<()> {
+        let mut mock_search_service = MockSearchService::new();
+        mock_search_service
+            .expect_root_list_terms()
+            .withf(|req| {
+                req.index_id == OTEL_TRACES_INDEX_ID
+                    && req.field == "service_name"
+                    && req.start_timestamp.is_some()
+            })
+            .return_once(|_| {
+                Ok(quickwit_proto::search::ListTermsResponse {
+                    num_hits: 3,
+                    terms: vec![
+                        encode_term_for_test!("service1"),
+                        encode_term_for_test!("service2"),
+                        encode_term_for_test!("service3"),
+                    ],
+                    elapsed_time_micros: 0,
+                    errors: Vec::new(),
+                })
+            });
+        let mock_search_service = Arc::new(mock_search_service);
+        let jaeger = JaegerService::new(JaegerConfig::default(), mock_search_service);
+
+        let jaeger_api_handler = jaeger_api_handlers(Some(jaeger)).recover(recover_fn);
+        let resp = warp::test::request()
+            .path("/jaeger/services")
+            .reply(&jaeger_api_handler)
+            .await;
+        assert_eq!(resp.status(), 200);
+        let actual_response_json: JsonValue = serde_json::from_slice(resp.body())?;
+        let expected_response_json = serde_json::json!(["service1", "service2", "service3"]);
+        assert_json_include!(
+            actual: actual_response_json.get("data").unwrap(),
+            expected: expected_response_json
+        );
+        Ok(())
+    }
 }
