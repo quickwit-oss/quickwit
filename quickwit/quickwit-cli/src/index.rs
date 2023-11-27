@@ -576,15 +576,15 @@ impl Tabled for IndexStats {
 
     fn headers() -> Vec<Cow<'static, str>> {
         [
-            "Index ID: ",
-            "Index URI: ",
-            "Number of published documents: ",
-            "Size of published documents (uncompressed): ",
-            "Number of published splits: ",
-            "Size of published splits: ",
-            "Timestamp field: ",
-            "Timestamp range start: ",
-            "Timestamp range end: ",
+            "Index ID",
+            "Index URI",
+            "Number of published documents",
+            "Size of published documents (uncompressed)",
+            "Number of published splits",
+            "Size of published splits",
+            "Timestamp field",
+            "Timestamp range start",
+            "Timestamp range end",
         ]
         .into_iter()
         .map(|header| header.into())
