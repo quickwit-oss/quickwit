@@ -22,19 +22,19 @@ use std::sync::Arc;
 
 use bytes::Bytes;
 use hyper::StatusCode;
+use quickwit_config::NodeConfig;
 use quickwit_ingest::{
     CommitType, DocBatchBuilder, IngestRequest, IngestResponse, IngestService, IngestServiceClient,
 };
-use quickwit_config::{NodeConfig};
 use warp::{Filter, Rejection};
 
+use super::append_elastic_header;
 use crate::elastic_search_api::filter::{elastic_bulk_filter, elastic_index_bulk_filter};
 use crate::elastic_search_api::make_elastic_api_response;
 use crate::elastic_search_api::model::{BulkAction, ElasticIngestOptions, ElasticSearchError};
 use crate::format::extract_format_from_qs;
 use crate::ingest_api::lines;
 use crate::with_arg;
-use super::append_elastic_header;
 
 /// POST `_elastic/_bulk`
 pub fn es_compat_bulk_handler(
@@ -48,9 +48,7 @@ pub fn es_compat_bulk_handler(
         })
         .and(extract_format_from_qs())
         .map(make_elastic_api_response)
-        .map(move |response| {
-            append_elastic_header(node_config.enable_elastic_header, response)
-        })
+        .map(move |response| append_elastic_header(node_config.enable_elastic_header, response))
 }
 
 /// POST `_elastic/<index>/_bulk`
@@ -65,9 +63,7 @@ pub fn es_compat_index_bulk_handler(
         })
         .and(extract_format_from_qs())
         .map(make_elastic_api_response)
-        .map(move |response| {
-            append_elastic_header(node_config.enable_elastic_header, response)
-        })
+        .map(move |response| append_elastic_header(node_config.enable_elastic_header, response))
 }
 
 async fn elastic_ingest_bulk(
