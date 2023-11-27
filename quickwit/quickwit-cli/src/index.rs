@@ -709,13 +709,13 @@ impl IndexStats {
         tables.push(index_stats_table);
 
         if let Some(docs_stats) = &self.num_docs_descriptive {
-            let doc_stats_table = docs_stats.into_table("Document count stats (published)");
+            let doc_stats_table = docs_stats.into_table("Published documents count stats");
             tables.push(doc_stats_table);
         }
 
         if let Some(size_stats) = &self.num_bytes_descriptive {
             let size_stats_in_mb = size_stats / 1_000_000.0;
-            let size_stats_table = size_stats_in_mb.into_table("Size in MB stats (published)");
+            let size_stats_table = size_stats_in_mb.into_table("Published splits size stats (MB)");
             tables.push(size_stats_table);
         }
 
