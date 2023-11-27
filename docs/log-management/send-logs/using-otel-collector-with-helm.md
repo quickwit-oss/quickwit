@@ -81,8 +81,8 @@ config:
   # Everything will be lost after a metastore restart.
   s3:
     region: ${AWS_REGION}
-    access_key: ${AWS_ACCESS_KEY_ID}
-    secret_key: ${AWS_SECRET_ACCESS_KEY}
+    access_key_id: ${AWS_ACCESS_KEY_ID}
+    secret_access_key: ${AWS_SECRET_ACCESS_KEY}
   default_index_root_uri: ${DEFAULT_INDEX_ROOT_URI}
 
   # Indexer settings
