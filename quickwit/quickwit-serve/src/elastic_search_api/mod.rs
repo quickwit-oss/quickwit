@@ -50,13 +50,13 @@ pub fn elastic_api_handlers(
     search_service: Arc<dyn SearchService>,
     ingest_service: IngestServiceClient,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    es_compat_cluster_info_handler(node_config, BuildInfo::get())
-        .or(es_compat_search_handler(search_service.clone()))
-        .or(es_compat_index_search_handler(search_service.clone()))
-        .or(es_compat_scroll_handler(search_service.clone()))
-        .or(es_compat_index_multi_search_handler(search_service))
-        .or(es_compat_bulk_handler(ingest_service.clone()))
-        .or(es_compat_index_bulk_handler(ingest_service))
+    es_compat_cluster_info_handler(node_config.clone(), BuildInfo::get())
+        .or(es_compat_search_handler(node_config.clone(), search_service.clone()))
+        .or(es_compat_index_search_handler(node_config.clone(), search_service.clone()))
+        .or(es_compat_scroll_handler(node_config.clone(), search_service.clone()))
+        .or(es_compat_index_multi_search_handler(node_config.clone(), search_service))
+        .or(es_compat_bulk_handler(node_config.clone(), ingest_service.clone()))
+        .or(es_compat_index_bulk_handler(node_config, ingest_service))
     // Register newly created handlers here.
 }
 
@@ -99,6 +99,15 @@ fn make_elastic_api_response<T: serde::Serialize>(
     };
 
     JsonApiResponse::new(&elasticsearch_result, status_code, &format)
+}
+
+/// Elasticsearch clients will check the response header
+/// whether the heads contain `X-Elastic-Product` and the value is `Elasticsearch`
+fn append_elastic_header<T: warp::Reply + 'static>(enable_elastic_header: bool, response: T) -> warp::reply::WithHeader<T> {
+    match enable_elastic_header {
+        true => { warp::reply::with_header(response, "X-Elastic-Product", "Elasticsearch") }
+        false => { warp::reply::with_header(response, "", "") }
+    }
 }
 
 #[cfg(test)]
@@ -400,6 +409,21 @@ mod tests {
             .method("HEAD")
             .reply(&handler)
             .await;
+        assert_eq!(resp.status(), 200);
+    }
+
+    #[tokio::test]
+    async fn test_elastic_header() {
+        let build_info = BuildInfo::get();
+        let config = Arc::new(NodeConfig::for_test_elastic_header());
+        let handler =
+            es_compat_cluster_info_handler(config.clone(), build_info).recover(recover_fn);
+        let resp = warp::test::request()
+            .path("/_elastic")
+            .method("HEAD")
+            .reply(&handler)
+            .await;
+        assert_eq!(resp.headers().get("x-elastic-product").unwrap(), "Elasticsearch");
         assert_eq!(resp.status(), 200);
     }
 }

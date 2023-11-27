@@ -59,6 +59,10 @@ fn default_node_id() -> ConfigValue<String, QW_NODE_ID> {
     ConfigValue::with_default(node_id)
 }
 
+fn default_enable_elastic_header() -> ConfigValue<bool, QW_ENABLE_ELSTIC_HEADER> {
+    ConfigValue::with_default(false)
+}
+
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 struct List(Vec<String>);
 
@@ -163,6 +167,8 @@ struct NodeConfigBuilder {
     cluster_id: ConfigValue<String, QW_CLUSTER_ID>,
     #[serde(default = "default_node_id")]
     node_id: ConfigValue<String, QW_NODE_ID>,
+    #[serde(default = "default_enable_elastic_header")]
+    enable_elastic_header: ConfigValue<bool, QW_ENABLE_ELSTIC_HEADER>,
     #[serde(default = "default_enabled_services")]
     enabled_services: ConfigValue<List, QW_ENABLED_SERVICES>,
     #[serde(default = "default_listen_address")]
@@ -271,6 +277,7 @@ impl NodeConfigBuilder {
         let node_config = NodeConfig {
             cluster_id: self.cluster_id.resolve(env_vars)?,
             node_id: self.node_id.resolve(env_vars)?,
+            enable_elastic_header: self.enable_elastic_header.resolve(env_vars)?,
             enabled_services,
             rest_listen_addr,
             gossip_listen_addr,
@@ -318,6 +325,7 @@ impl Default for NodeConfigBuilder {
             cluster_id: default_cluster_id(),
             node_id: default_node_id(),
             enabled_services: default_enabled_services(),
+            enable_elastic_header: default_enable_elastic_header(),
             listen_address: default_listen_address(),
             rest_listen_port: default_rest_listen_port(),
             gossip_listen_port: ConfigValue::none(),
@@ -339,7 +347,7 @@ impl Default for NodeConfigBuilder {
 }
 
 #[cfg(any(test, feature = "testsuite"))]
-pub fn node_config_for_test() -> NodeConfig {
+pub fn node_config_for_test(enable_es_header: bool) -> NodeConfig {
     let enabled_services = QuickwitService::supported_services();
 
     let listen_address = Host::default();
@@ -371,6 +379,7 @@ pub fn node_config_for_test() -> NodeConfig {
     NodeConfig {
         cluster_id: default_cluster_id().unwrap(),
         node_id: default_node_id().unwrap(),
+        enable_elastic_header: enable_es_header,
         enabled_services,
         gossip_advertise_addr: gossip_listen_addr,
         grpc_advertise_addr: grpc_listen_addr,
