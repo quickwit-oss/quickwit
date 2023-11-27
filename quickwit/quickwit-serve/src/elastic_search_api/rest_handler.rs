@@ -46,7 +46,7 @@ use super::model::{
     ElasticSearchError, MultiSearchHeader, MultiSearchQueryParams, MultiSearchResponse,
     MultiSearchSingleResponse, ScrollQueryParams, SearchBody, SearchQueryParams,
 };
-use super::{make_elastic_api_response, TrackTotalHits};
+use super::{make_elastic_api_response, append_elastic_header, TrackTotalHits};
 use crate::format::BodyFormat;
 use crate::json_api_response::{make_json_api_response, ApiError, JsonApiResponse};
 use crate::{with_arg, BuildInfo};
@@ -57,7 +57,7 @@ pub fn es_compat_cluster_info_handler(
     build_info: &'static BuildInfo,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     elastic_cluster_info_filter()
-        .and(with_arg(node_config))
+        .and(with_arg(node_config.clone()))
         .and(with_arg(build_info))
         .then(
             |config: Arc<NodeConfig>, build_info: &'static BuildInfo| async move {
@@ -73,10 +73,14 @@ pub fn es_compat_cluster_info_handler(
                 }))
             },
         )
+        .map(move |response| {
+            append_elastic_header(node_config.enable_elastic_header, response)
+        })
 }
 
 /// GET or POST _elastic/_search
 pub fn es_compat_search_handler(
+    node_config: Arc<NodeConfig>,
     _search_service: Arc<dyn SearchService>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     elastic_search_filter().then(|_params: SearchQueryParams| async move {
@@ -88,31 +92,42 @@ pub fn es_compat_search_handler(
                 .to_string(),
         };
         make_json_api_response::<(), _>(Err(api_error), BodyFormat::default())
+    }).map(move |response| {
+        append_elastic_header(node_config.enable_elastic_header, response)
     })
 }
 
 /// GET or POST _elastic/{index}/_search
 pub fn es_compat_index_search_handler(
+    node_config: Arc<NodeConfig>,
     search_service: Arc<dyn SearchService>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     elastic_index_search_filter()
         .and(with_arg(search_service))
         .then(es_compat_index_search)
         .map(|result| make_elastic_api_response(result, BodyFormat::default()))
+        .map(move |response| {
+            append_elastic_header(node_config.enable_elastic_header, response)
+        })
 }
 
 /// GET or POST _elastic/_search/scroll
 pub fn es_compat_scroll_handler(
+    node_config: Arc<NodeConfig>,
     search_service: Arc<dyn SearchService>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     elastic_scroll_filter()
         .and(with_arg(search_service))
         .then(es_scroll)
         .map(|result| make_elastic_api_response(result, BodyFormat::default()))
+        .map(move |response| {
+            append_elastic_header(node_config.enable_elastic_header, response)
+        })
 }
 
 /// POST _elastic/_search
 pub fn es_compat_index_multi_search_handler(
+    node_config: Arc<NodeConfig>,
     search_service: Arc<dyn SearchService>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     elastic_multi_search_filter()
@@ -124,6 +139,9 @@ pub fn es_compat_index_multi_search_handler(
                 Err(err) => err.status,
             };
             JsonApiResponse::new(&result, status_code, &BodyFormat::default())
+        })
+        .map(move |response| {
+            append_elastic_header(node_config.enable_elastic_header, response)
         })
 }
 

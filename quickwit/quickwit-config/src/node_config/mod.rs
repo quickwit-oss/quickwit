@@ -303,6 +303,7 @@ impl Default for JaegerConfig {
 pub struct NodeConfig {
     pub cluster_id: String,
     pub node_id: String,
+    pub enable_elastic_header: bool,
     pub enabled_services: HashSet<QuickwitService>,
     pub rest_listen_addr: SocketAddr,
     pub gossip_listen_addr: SocketAddr,
@@ -375,7 +376,12 @@ impl NodeConfig {
 
     #[cfg(any(test, feature = "testsuite"))]
     pub fn for_test() -> Self {
-        serialize::node_config_for_test()
+        serialize::node_config_for_test(false)
+    }
+
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn for_test_elastic_header() -> Self {
+        serialize::node_config_for_test(true)
     }
 }
 
