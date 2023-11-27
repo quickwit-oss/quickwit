@@ -601,7 +601,7 @@ fn separate_thousands(num: impl numfmt::Numeric) -> String {
     let mut thousands_separator_formatter = Formatter::new()
         .separator(',')
         // NOTE: .separator(sep) only panics if sep.len_utf8() != 1
-        .expect("Valid separator")
+        .expect("`,` separator should be valid")
         .precision(numfmt::Precision::Significance(3));
 
     thousands_separator_formatter.fmt2(num).to_string()
