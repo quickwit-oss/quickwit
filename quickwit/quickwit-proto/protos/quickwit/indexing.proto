@@ -30,6 +30,10 @@ message ApplyIndexingPlanRequest {
   repeated IndexingTask indexing_tasks = 1;
 }
 
+message PipelineUid {
+  bytes pipeline_uid = 1;
+}
+
 message IndexingTask {
   // The tasks's index UID.
   string index_uid = 1;

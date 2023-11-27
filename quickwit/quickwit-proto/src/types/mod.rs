@@ -28,8 +28,10 @@ use serde::{Deserialize, Deserializer, Serialize};
 use thiserror::Error;
 pub use ulid::Ulid;
 
+mod pipeline_uid;
 mod position;
 
+pub use pipeline_uid::PipelineUid;
 pub use position::Position;
 
 pub type IndexId = String;
