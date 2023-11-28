@@ -24,6 +24,7 @@ async-trait = { workspace = true }
 bytesize = { workspace = true }
 bytes = { workspace = true }
 chitchat = { workspace = true }
+chrono = { workspace = true }
 clap = { workspace = true }
 colored = { workspace = true }
 console-subscriber = { workspace = true, optional = true }
@@ -32,6 +33,7 @@ futures = { workspace = true }
 humantime = { workspace = true }
 indicatif = { workspace = true }
 itertools = { workspace = true }
+numfmt = { workspace = true }
 once_cell = { workspace = true }
 openssl-probe = { workspace = true, optional = true }
 opentelemetry = { workspace = true }
