@@ -59,8 +59,7 @@ qw_env_vars!(
     QW_PEER_SEEDS,
     QW_DATA_DIR,
     QW_METASTORE_URI,
-    QW_DEFAULT_INDEX_ROOT_URI,
-    QW_ENABLE_ELSTIC_HEADER
+    QW_DEFAULT_INDEX_ROOT_URI
 );
 
 #[cfg(test)]
