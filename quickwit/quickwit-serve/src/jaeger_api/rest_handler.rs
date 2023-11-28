@@ -34,7 +34,7 @@ use crate::jaeger_api::model::{
     JaegerError, JaegerResponseBody, JaegerSearchBody, TracesSearchQueryParams,
 };
 use crate::json_api_response::JsonApiResponse;
-use crate::{with_arg, BodyFormat};
+use crate::{require, with_arg, BodyFormat};
 
 /// Setup Jaeger API handlers
 ///
@@ -56,7 +56,8 @@ pub(crate) fn jaeger_api_handlers(
 pub fn jaeger_services_handler(
     jaeger_service_opt: Option<JaegerService>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    jaeger_services_filter(jaeger_service_opt)
+    jaeger_services_filter()
+        .and(require(jaeger_service_opt))
         .then(jaeger_services)
         .map(|result| make_jaeger_api_response(result, BodyFormat::default()))
 }
@@ -96,12 +97,8 @@ pub fn jaeger_traces_handler(
         (status = 200, description = "Successfully fetched services information.", body = TODO )
     )
 )]
-pub(crate) fn jaeger_services_filter(
-    jaeger_service_opt: Option<JaegerService>,
-) -> impl Filter<Extract = (Option<JaegerService>,), Error = Rejection> + Clone {
-    warp::path!("jaeger" / "services")
-        .and(warp::get())
-        .and(with_arg(jaeger_service_opt))
+pub(crate) fn jaeger_services_filter() -> impl Filter<Extract = (), Error = Rejection> + Clone {
+    warp::path!("jaeger" / "services").and(warp::get())
 }
 
 #[utoipa::path(
@@ -155,21 +152,16 @@ pub(crate) fn jaeger_traces_filter(
 }
 
 async fn jaeger_services(
-    jaeger_service_opt: Option<JaegerService>,
+    jaeger_service: JaegerService,
 ) -> Result<JaegerResponseBody<Vec<String>>, JaegerError> {
-    match jaeger_service_opt {
-        Some(jaeger_service) => {
-            let get_services_response = jaeger_service
-                .get_services(with_tonic(GetServicesRequest {}))
-                .await
-                .unwrap()
-                .into_inner();
-            Ok(JaegerResponseBody::<Vec<String>> {
-                data: get_services_response.services,
-            })
-        }
-        None => Err(JaegerError::internal_jaeger_error()),
-    }
+    let get_services_response = jaeger_service
+        .get_services(with_tonic(GetServicesRequest {}))
+        .await
+        .unwrap()
+        .into_inner();
+    Ok(JaegerResponseBody::<Vec<String>> {
+        data: get_services_response.services,
+    })
 }
 
 async fn jaeger_service_operations(
@@ -275,6 +267,7 @@ fn with_tonic<T>(message: T) -> Request<T> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use std::sync::Arc;
 
     use assert_json_diff::assert_json_include;
@@ -287,13 +280,16 @@ mod tests {
     use crate::recover_fn;
 
     #[tokio::test]
-    async fn test_when_jaeger_unavailable() {
+    async fn test_when_jaeger_not_found() {
         let jaeger_api_handler = jaeger_api_handlers(None).recover(recover_fn);
         let resp = warp::test::request()
             .path("/jaeger/services")
             .reply(&jaeger_api_handler)
             .await;
-        assert_eq!(resp.status(), 500);
+        let error_body = serde_json::from_slice::<HashMap<String, String>>(resp.body()).unwrap();
+        assert_eq!(resp.status(), 404);
+        assert!(error_body.contains_key("message"));
+        assert_eq!(error_body.get("message").unwrap(), "Route not found");
     }
 
     #[tokio::test]
