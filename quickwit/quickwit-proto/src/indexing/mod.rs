@@ -24,6 +24,7 @@ use std::{fmt, io};
 
 use anyhow::anyhow;
 use quickwit_actors::AskError;
+use serde::{Deserialize, Serialize};
 use thiserror;
 
 use crate::types::{IndexUid, SourceId};
