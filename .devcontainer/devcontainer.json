@@ -1,0 +1,42 @@
+{
+    "name": "Quickwit",
+    "image": "mcr.microsoft.com/devcontainers/rust:latest",
+    "customizations": {
+        "codespaces": {
+            "openFiles": [
+                "CONTRIBUTING.md"
+            ]
+        },
+        "vscode": {
+            "extensions": [
+                "rust-lang.rust-analyzer"
+            ]
+        }
+    },
+    "hostRequirements": {
+        "cpus": 4,
+        "memory": "16gb"
+    },
+    "runArgs": [
+        "--init"
+    ],
+    "mounts": [
+        {
+            "source": "/var/run/docker.sock",
+            "target": "/var/run/docker.sock",
+            "type": "bind"
+        }
+    ],
+    "features": {
+        "docker-from-docker": {
+            "version": "latest",
+            "moby": true
+        },
+        "ghcr.io/devcontainers/features/node:1": {
+            "version": "18"
+        },
+        "ghcr.io/devcontainers/features/aws-cli:1": {},
+        "ghcr.io/devcontainers-contrib/features/protoc:1": {}
+    },
+    "postCreateCommand": ".devcontainer/post-create.sh"
+}
