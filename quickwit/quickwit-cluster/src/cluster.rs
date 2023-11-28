@@ -20,6 +20,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fmt::{Debug, Display};
 use std::net::SocketAddr;
+use std::str::FromStr;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -32,7 +33,7 @@ use chitchat::{
 use futures::Stream;
 use itertools::Itertools;
 use quickwit_proto::indexing::{IndexingPipelineId, IndexingTask, PipelineMetrics};
-use quickwit_proto::types::NodeId;
+use quickwit_proto::types::{NodeId, PipelineUid};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, watch, Mutex, RwLock};
 use tokio::time::timeout;
@@ -466,19 +467,20 @@ pub fn set_indexing_tasks_in_node_state(
 
 fn indexing_task_to_chitchat_kv(indexing_task: &IndexingTask) -> (String, String) {
     let IndexingTask {
-        pipeline_uid,
+        pipeline_uid: _,
         index_uid,
         source_id,
         shard_ids,
     } = indexing_task;
-    let key = format!("{INDEXING_TASK_PREFIX}{pipeline_uid}");
+    let key = format!("{INDEXING_TASK_PREFIX}{}", indexing_task.pipeline_uid());
     let shards_str = shard_ids.iter().sorted().join(",");
     let value = format!("{index_uid}:{source_id}:{shards_str}");
     (key, value)
 }
 
 fn chitchat_kv_to_indexing_task(key: &str, value: &str) -> Option<IndexingTask> {
-    let pipeline_uid = key.strip_prefix(INDEXING_TASK_PREFIX)?;
+    let pipeline_uid_str = key.strip_prefix(INDEXING_TASK_PREFIX)?;
+    let pipeline_uid = PipelineUid::from_str(pipeline_uid_str).ok()?;
     let (source_uid, shards_str) = value.rsplit_once(':')?;
     let (index_uid, source_id) = source_uid.rsplit_once(':')?;
     let shard_ids = shards_str
@@ -493,7 +495,7 @@ fn chitchat_kv_to_indexing_task(key: &str, value: &str) -> Option<IndexingTask> 
     Some(IndexingTask {
         index_uid: index_uid.to_string(),
         source_id: source_id.to_string(),
-        pipeline_uid: pipeline_uid.to_string(),
+        pipeline_uid: Some(pipeline_uid),
         shard_ids,
     })
 }
@@ -663,7 +665,6 @@ pub async fn create_cluster_for_test(
     transport: &dyn Transport,
     self_node_readiness: bool,
 ) -> anyhow::Result<Cluster> {
-    use std::str::FromStr;
     use std::sync::atomic::{AtomicU16, Ordering};
 
     use quickwit_config::service::QuickwitService;
@@ -891,13 +892,13 @@ mod tests {
         .await
         .unwrap();
         let indexing_task1 = IndexingTask {
-            pipeline_uid: "pipeline-1".to_string(),
+            pipeline_uid: Some(PipelineUid::from_u128(1u128)),
             index_uid: "index-1:11111111111111111111111111".to_string(),
             source_id: "source-1".to_string(),
             shard_ids: Vec::new(),
         };
         let indexing_task2 = IndexingTask {
-            pipeline_uid: "pipeline-2".to_string(),
+            pipeline_uid: Some(PipelineUid::from_u128(2u128)),
             index_uid: "index-1:11111111111111111111111111".to_string(),
             source_id: "source-1".to_string(),
             shard_ids: Vec::new(),
@@ -975,7 +976,7 @@ mod tests {
                 let index_id = random_generator.gen_range(0..=10_000);
                 let source_id = random_generator.gen_range(0..=100);
                 IndexingTask {
-                    pipeline_uid: format!("pipeline-{pipeline_id}"),
+                    pipeline_uid: Some(PipelineUid::from_u128(pipeline_id as u128)),
                     index_uid: format!("index-{index_id}:11111111111111111111111111"),
                     source_id: format!("source-{source_id}"),
                     shard_ids: Vec::new(),
@@ -1203,7 +1204,7 @@ mod tests {
         test_serialize_indexing_tasks_aux(&[], &mut node_state);
         test_serialize_indexing_tasks_aux(
             &[IndexingTask {
-                pipeline_uid: "pipeline-uid1".to_string(),
+                pipeline_uid: Some(PipelineUid::from_u128(1u128)),
                 index_uid: "test:test1".to_string(),
                 source_id: "my-source1".to_string(),
                 shard_ids: vec![1, 2],
@@ -1213,7 +1214,7 @@ mod tests {
         // change in the set of shards
         test_serialize_indexing_tasks_aux(
             &[IndexingTask {
-                pipeline_uid: "pipeline-uid2".to_string(),
+                pipeline_uid: Some(PipelineUid::from_u128(2u128)),
                 index_uid: "test:test1".to_string(),
                 source_id: "my-source1".to_string(),
                 shard_ids: vec![1, 2, 3],
@@ -1223,13 +1224,13 @@ mod tests {
         test_serialize_indexing_tasks_aux(
             &[
                 IndexingTask {
-                    pipeline_uid: "pipeline-uid1".to_string(),
+                    pipeline_uid: Some(PipelineUid::from_u128(1u128)),
                     index_uid: "test:test1".to_string(),
                     source_id: "my-source1".to_string(),
                     shard_ids: vec![1, 2],
                 },
                 IndexingTask {
-                    pipeline_uid: "pipeline-uid2".to_string(),
+                    pipeline_uid: Some(PipelineUid::from_u128(2u128)),
                     index_uid: "test:test1".to_string(),
                     source_id: "my-source1".to_string(),
                     shard_ids: vec![3, 4],
@@ -1241,13 +1242,13 @@ mod tests {
         test_serialize_indexing_tasks_aux(
             &[
                 IndexingTask {
-                    pipeline_uid: "pipeline-uid1".to_string(),
+                    pipeline_uid: Some(PipelineUid::from_u128(1u128)),
                     index_uid: "test:test1".to_string(),
                     source_id: "my-source1".to_string(),
                     shard_ids: vec![1, 2],
                 },
                 IndexingTask {
-                    pipeline_uid: "pipeline-uid2".to_string(),
+                    pipeline_uid: Some(PipelineUid::from_u128(2u128)),
                     index_uid: "test:test2".to_string(),
                     source_id: "my-source1".to_string(),
                     shard_ids: vec![3, 4],
@@ -1259,13 +1260,13 @@ mod tests {
         test_serialize_indexing_tasks_aux(
             &[
                 IndexingTask {
-                    pipeline_uid: "pipeline-uid1".to_string(),
+                    pipeline_uid: Some(PipelineUid::from_u128(1u128)),
                     index_uid: "test:test1".to_string(),
                     source_id: "my-source1".to_string(),
                     shard_ids: vec![1, 2],
                 },
                 IndexingTask {
-                    pipeline_uid: "pipeline-uid2".to_string(),
+                    pipeline_uid: Some(PipelineUid::from_u128(2u128)),
                     index_uid: "test:test1".to_string(),
                     source_id: "my-source2".to_string(),
                     shard_ids: vec![3, 4],

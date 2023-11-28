@@ -76,7 +76,7 @@ impl PhysicalIndexingPlan {
                             .copied()
                             .cmp(&right.shard_ids.first().copied())
                     })
-                    .then_with(|| left.pipeline_uid.cmp(&right.pipeline_uid))
+                    .then_with(|| left.pipeline_uid().cmp(&right.pipeline_uid()))
             });
             for task in tasks {
                 task.shard_ids.sort();

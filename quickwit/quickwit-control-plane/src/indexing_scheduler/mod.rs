@@ -470,7 +470,7 @@ mod tests {
     use proptest::{prop_compose, proptest};
     use quickwit_config::{IndexConfig, KafkaSourceParams, SourceConfig, SourceParams};
     use quickwit_metastore::IndexMetadata;
-    use quickwit_proto::types::{IndexUid, SourceUid};
+    use quickwit_proto::types::{IndexUid, PipelineUid, SourceUid};
 
     use super::*;
     #[test]
@@ -485,19 +485,19 @@ mod tests {
             let mut running_plan = FnvHashMap::default();
             let mut desired_plan = FnvHashMap::default();
             let task_1 = IndexingTask {
-                pipeline_uid: "pipeline1".to_string(),
+                pipeline_uid: Some(PipelineUid::from_u128(10u128)),
                 index_uid: "index-1:11111111111111111111111111".to_string(),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
             };
             let task_1b = IndexingTask {
-                pipeline_uid: "pipeline1b".to_string(),
+                pipeline_uid: Some(PipelineUid::from_u128(11u128)),
                 index_uid: "index-1:11111111111111111111111111".to_string(),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
             };
             let task_2 = IndexingTask {
-                pipeline_uid: "pipeline2".to_string(),
+                pipeline_uid: Some(PipelineUid::from_u128(20u128)),
                 index_uid: "index-1:11111111111111111111111111".to_string(),
                 source_id: "source-2".to_string(),
                 shard_ids: Vec::new(),
@@ -517,13 +517,13 @@ mod tests {
             let mut running_plan = FnvHashMap::default();
             let mut desired_plan = FnvHashMap::default();
             let task_1 = IndexingTask {
-                pipeline_uid: "pipeline1".to_string(),
+                pipeline_uid: Some(PipelineUid::from_u128(1u128)),
                 index_uid: "index-1:11111111111111111111111111".to_string(),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
             };
             let task_2 = IndexingTask {
-                pipeline_uid: "pipeline2".to_string(),
+                pipeline_uid: Some(PipelineUid::from_u128(2u128)),
                 index_uid: "index-1:11111111111111111111111111".to_string(),
                 source_id: "source-2".to_string(),
                 shard_ids: Vec::new(),
@@ -549,13 +549,13 @@ mod tests {
             let mut running_plan = FnvHashMap::default();
             let mut desired_plan = FnvHashMap::default();
             let task_1 = IndexingTask {
-                pipeline_uid: "pipeline1".to_string(),
+                pipeline_uid: Some(PipelineUid::from_u128(1u128)),
                 index_uid: "index-1:11111111111111111111111111".to_string(),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
             };
             let task_2 = IndexingTask {
-                pipeline_uid: "pipeline2".to_string(),
+                pipeline_uid: Some(PipelineUid::from_u128(2u128)),
                 index_uid: "index-2:11111111111111111111111111".to_string(),
                 source_id: "source-2".to_string(),
                 shard_ids: Vec::new(),
@@ -589,19 +589,19 @@ mod tests {
             let mut running_plan = FnvHashMap::default();
             let mut desired_plan = FnvHashMap::default();
             let task_1a = IndexingTask {
-                pipeline_uid: "pipeline1a".to_string(),
+                pipeline_uid: Some(PipelineUid::from_u128(10u128)),
                 index_uid: "index-1:11111111111111111111111111".to_string(),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
             };
             let task_1b = IndexingTask {
-                pipeline_uid: "pipeline1b".to_string(),
+                pipeline_uid: Some(PipelineUid::from_u128(11u128)),
                 index_uid: "index-1:11111111111111111111111111".to_string(),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
             };
             let task_1c = IndexingTask {
-                pipeline_uid: "pipeline1c".to_string(),
+                pipeline_uid: Some(PipelineUid::from_u128(12u128)),
                 index_uid: "index-1:11111111111111111111111111".to_string(),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),

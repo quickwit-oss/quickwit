@@ -24,7 +24,7 @@ use std::num::NonZeroU32;
 
 use fnv::{FnvHashMap, FnvHashSet};
 use quickwit_proto::indexing::{CpuCapacity, IndexingTask};
-use quickwit_proto::types::{IndexUid, ShardId, SourceUid};
+use quickwit_proto::types::{IndexUid, PipelineUid, ShardId, SourceUid};
 use scheduling_logic_model::{IndexerOrd, SourceOrd};
 use tracing::{error, warn};
 
@@ -151,10 +151,6 @@ pub enum SourceToScheduleType {
     IngestV1,
 }
 
-fn new_pipeline_uid() -> String {
-    ulid::Ulid::new().to_string()
-}
-
 fn compute_max_num_shards_per_pipeline(source_type: &SourceToScheduleType) -> NonZeroU32 {
     match &source_type {
         SourceToScheduleType::Sharded {
@@ -222,7 +218,7 @@ fn convert_scheduling_solution_to_physical_plan_single_node_single_source(
                 let new_task = IndexingTask {
                     index_uid: previous_task.index_uid.clone(),
                     source_id: previous_task.source_id.clone(),
-                    pipeline_uid: previous_task.pipeline_uid.clone(),
+                    pipeline_uid: previous_task.pipeline_uid,
                     shard_ids,
                 };
                 new_tasks.push(new_task);
@@ -240,7 +236,7 @@ fn convert_scheduling_solution_to_physical_plan_single_node_single_source(
                 IndexingTask {
                     index_uid: source.source_uid.index_uid.to_string(),
                     source_id: source.source_uid.source_id.clone(),
-                    pipeline_uid: new_pipeline_uid(),
+                    pipeline_uid: Some(PipelineUid::new()),
                     shard_ids: Vec::new(),
                 }
             });
@@ -256,7 +252,7 @@ fn convert_scheduling_solution_to_physical_plan_single_node_single_source(
                 vec![IndexingTask {
                     index_uid: source.source_uid.index_uid.to_string(),
                     source_id: source.source_uid.source_id.clone(),
-                    pipeline_uid: new_pipeline_uid(),
+                    pipeline_uid: Some(PipelineUid::new()),
                     shard_ids: Vec::new(),
                 }]
             }
@@ -434,7 +430,7 @@ fn add_shard_to_indexer(
         indexer_tasks.push(IndexingTask {
             index_uid: source_uid.index_uid.to_string(),
             source_id: source_uid.source_id.clone(),
-            pipeline_uid: new_pipeline_uid(),
+            pipeline_uid: Some(PipelineUid::new()),
             shard_ids: vec![missing_shard],
         });
     }
@@ -515,7 +511,7 @@ mod tests {
 
     use fnv::FnvHashMap;
     use quickwit_proto::indexing::{mcpu, CpuCapacity, IndexingTask};
-    use quickwit_proto::types::{IndexUid, ShardId, SourceUid};
+    use quickwit_proto::types::{IndexUid, PipelineUid, ShardId, SourceUid};
 
     use super::{build_physical_indexing_plan, SourceToSchedule, SourceToScheduleType};
     use crate::indexing_plan::PhysicalIndexingPlan;
@@ -626,14 +622,14 @@ mod tests {
 
     fn make_indexing_tasks(
         source_uid: &SourceUid,
-        shards: &[(String, &[ShardId])],
+        shards: &[(PipelineUid, &[ShardId])],
     ) -> Vec<IndexingTask> {
         let mut plan = Vec::new();
         for (pipeline_uid, shard_ids) in shards {
             plan.push(IndexingTask {
                 index_uid: source_uid.index_uid.to_string(),
                 source_id: source_uid.source_id.clone(),
-                pipeline_uid: pipeline_uid.to_string(),
+                pipeline_uid: Some(*pipeline_uid),
                 shard_ids: shard_ids.to_vec(),
             });
         }
@@ -646,8 +642,8 @@ mod tests {
         let indexing_tasks = make_indexing_tasks(
             &source_uid,
             &[
-                ("pipeline1".to_string(), &[1, 2]),
-                ("pipeline2".to_string(), &[3, 4, 5]),
+                (PipelineUid::from_u128(1u128), &[1, 2]),
+                (PipelineUid::from_u128(2u128), &[3, 4, 5]),
             ],
         );
         let sources = vec![SourceToSchedule {
@@ -677,7 +673,7 @@ mod tests {
     fn group_shards_into_pipelines_aux(
         source_uid: &SourceUid,
         shard_ids: &[ShardId],
-        previous_pipeline_shards: &[(String, &[ShardId])],
+        previous_pipeline_shards: &[(PipelineUid, &[ShardId])],
         load_per_shard: CpuCapacity,
     ) -> Vec<IndexingTask> {
         let indexing_tasks = make_indexing_tasks(source_uid, previous_pipeline_shards);
@@ -725,9 +721,9 @@ mod tests {
         assert_eq!(&indexing_tasks_1[0].shard_ids, &[0, 1, 2, 3, 4, 5, 6, 7]);
         assert_eq!(&indexing_tasks_1[1].shard_ids, &[8, 9, 10]);
 
-        let pipeline_tasks1: Vec<(String, &[ShardId])> = indexing_tasks_1
+        let pipeline_tasks1: Vec<(PipelineUid, &[ShardId])> = indexing_tasks_1
             .iter()
-            .map(|task| (task.pipeline_uid.clone(), &task.shard_ids[..]))
+            .map(|task| (task.pipeline_uid(), &task.shard_ids[..]))
             .collect();
 
         // With the same set of shards, an increase of load triggers the creation of a new task.
@@ -743,9 +739,9 @@ mod tests {
         assert_eq!(&indexing_tasks_2[2].shard_ids, &[5, 6, 8, 9, 10]);
         // Now the load comes back to normal
         // The hysteresis takes effect. We do not switch back to 2 pipelines.
-        let pipeline_tasks2: Vec<(String, &[ShardId])> = indexing_tasks_1
+        let pipeline_tasks2: Vec<(PipelineUid, &[ShardId])> = indexing_tasks_1
             .iter()
-            .map(|task| (task.pipeline_uid.clone(), &task.shard_ids[..]))
+            .map(|task| (task.pipeline_uid(), &task.shard_ids[..]))
             .collect();
         let indexing_tasks_3 = group_shards_into_pipelines_aux(
             &source_uid,
@@ -756,9 +752,9 @@ mod tests {
         assert_eq!(indexing_tasks_3.len(), 2);
         assert_eq!(&indexing_tasks_3[0].shard_ids, &[0, 1, 2, 3, 4, 5, 6, 7,]);
         assert_eq!(&indexing_tasks_3[1].shard_ids, &[8, 9, 10]);
-        let pipeline_tasks3: Vec<(String, &[ShardId])> = indexing_tasks_2
+        let pipeline_tasks3: Vec<(PipelineUid, &[ShardId])> = indexing_tasks_2
             .iter()
-            .map(|task| (task.pipeline_uid.clone(), &task.shard_ids[..]))
+            .map(|task| (task.pipeline_uid(), &task.shard_ids[..]))
             .collect();
         // Now a further lower load.
         let indexing_tasks_4 = group_shards_into_pipelines_aux(

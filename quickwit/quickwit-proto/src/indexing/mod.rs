@@ -29,6 +29,7 @@ use serde::{Deserialize, Serialize};
 use thiserror;
 
 use crate::types::{IndexUid, Position, ShardId, SourceId, SourceUid};
+use crate::types::PipelineUid;
 use crate::{ServiceError, ServiceErrorCode};
 
 include!("../codegen/quickwit/quickwit.indexing.rs");
@@ -38,14 +39,16 @@ pub type IndexingResult<T> = std::result::Result<T, IndexingError>;
 #[derive(Debug, thiserror::Error)]
 pub enum IndexingError {
     #[error("indexing pipeline `{pipeline_uid}` does not exist")]
-    MissingPipeline { pipeline_uid: String },
+    MissingPipeline { pipeline_uid: PipelineUid },
+    #[error("indexing merge pipeline `{merge_pipeline_id}` does not exist")]
+    MissingMergePipeline { merge_pipeline_id: String },
     #[error(
         "pipeline #{pipeline_uid} for index `{index_id}` and source `{source_id}` already exists"
     )]
     PipelineAlreadyExists {
         index_id: String,
         source_id: SourceId,
-        pipeline_uid: String,
+        pipeline_uid: PipelineUid,
     },
     #[error("I/O error `{0}`")]
     Io(io::Error),
@@ -69,7 +72,10 @@ impl From<IndexingError> for tonic::Status {
     fn from(error: IndexingError) -> Self {
         match error {
             IndexingError::MissingPipeline { pipeline_uid } => {
-                tonic::Status::not_found(format!("missing pipeline {pipeline_uid}"))
+                tonic::Status::not_found(format!("missing pipeline `{pipeline_uid}`"))
+            }
+            IndexingError::MissingMergePipeline { merge_pipeline_id } => {
+                tonic::Status::not_found(format!("missing merge pipeline `{merge_pipeline_id}`"))
             }
             IndexingError::PipelineAlreadyExists {
                 index_id,
@@ -102,12 +108,12 @@ impl From<tonic::Status> for IndexingError {
                 IndexingError::InvalidParams(anyhow!(status.message().to_string()))
             }
             tonic::Code::NotFound => IndexingError::MissingPipeline {
-                pipeline_uid: "".to_string(),
+                pipeline_uid: PipelineUid::default(),
             },
             tonic::Code::AlreadyExists => IndexingError::PipelineAlreadyExists {
                 index_id: "".to_string(),
                 source_id: "".to_string(),
-                pipeline_uid: "".to_string(),
+                pipeline_uid: PipelineUid::default(),
             },
             tonic::Code::Unavailable => IndexingError::Unavailable,
             _ => IndexingError::InvalidParams(anyhow!(status.message().to_string())),
@@ -119,6 +125,7 @@ impl ServiceError for IndexingError {
     fn error_code(&self) -> ServiceErrorCode {
         match self {
             Self::MissingPipeline { .. } => ServiceErrorCode::NotFound,
+            Self::MissingMergePipeline { .. } => ServiceErrorCode::NotFound,
             Self::PipelineAlreadyExists { .. } => ServiceErrorCode::BadRequest,
             Self::InvalidParams(_) => ServiceErrorCode::BadRequest,
             Self::SpawnPipelinesError { .. } => ServiceErrorCode::Internal,
@@ -148,7 +155,7 @@ pub struct IndexingPipelineId {
     pub node_id: String,
     pub index_uid: IndexUid,
     pub source_id: SourceId,
-    pub pipeline_uid: String,
+    pub pipeline_uid: PipelineUid,
 }
 
 impl Display for IndexingPipelineId {
@@ -330,6 +337,13 @@ pub struct ShardPositionsUpdate {
 }
 
 impl Event for ShardPositionsUpdate {}
+
+impl IndexingTask {
+    pub fn pipeline_uid(&self) -> PipelineUid {
+        self.pipeline_uid
+            .expect("Pipeline UID should always be present.")
+    }
+}
 
 #[cfg(test)]
 mod tests {

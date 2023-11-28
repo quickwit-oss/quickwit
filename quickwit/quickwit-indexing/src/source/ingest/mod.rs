@@ -522,6 +522,7 @@ mod tests {
     use quickwit_proto::ingest::ingester::{IngesterServiceClient, TruncateShardsResponse};
     use quickwit_proto::ingest::{IngestV2Error, MRecordBatch, Shard, ShardState};
     use quickwit_proto::metastore::{AcquireShardsResponse, AcquireShardsSubresponse};
+    use quickwit_proto::types::PipelineUid;
     use quickwit_storage::StorageResolver;
     use tokio::sync::mpsc::error::TryRecvError;
     use tokio::sync::watch;
@@ -536,7 +537,7 @@ mod tests {
             node_id: "test-node".to_string(),
             index_uid: "test-index:0".into(),
             source_id: "test-source".to_string(),
-            pipeline_uid: "0".to_string(),
+            pipeline_uid: PipelineUid::default(),
         };
         let source_config = SourceConfig::for_test("test-source", SourceParams::Ingest);
         let publish_token =
@@ -693,7 +694,7 @@ mod tests {
             node_id: "test-node".to_string(),
             index_uid: "test-index:0".into(),
             source_id: "test-source".to_string(),
-            pipeline_uid: "0".to_string(),
+            pipeline_uid: PipelineUid::default(),
         };
         let source_config = SourceConfig::for_test("test-source", SourceParams::Ingest);
         let publish_token =
@@ -812,7 +813,7 @@ mod tests {
             node_id: "test-node".to_string(),
             index_uid: "test-index:0".into(),
             source_id: "test-source".to_string(),
-            pipeline_uid: "0".to_string(),
+            pipeline_uid: PipelineUid::default(),
         };
         let source_config = SourceConfig::for_test("test-source", SourceParams::Ingest);
         let publish_token =
@@ -974,7 +975,7 @@ mod tests {
             node_id: "test-node".to_string(),
             index_uid: "test-index:0".into(),
             source_id: "test-source".to_string(),
-            pipeline_uid: "0".to_string(),
+            pipeline_uid: PipelineUid::default(),
         };
         let source_config = SourceConfig::for_test("test-source", SourceParams::Ingest);
         let mock_metastore = MetastoreServiceClient::mock();
@@ -1138,7 +1139,7 @@ mod tests {
             node_id: "test-node".to_string(),
             index_uid: "test-index:0".into(),
             source_id: "test-source".to_string(),
-            pipeline_uid: "0".to_string(),
+            pipeline_uid: PipelineUid::default(),
         };
         let source_config = SourceConfig::for_test("test-source", SourceParams::Ingest);
         let mock_metastore = MetastoreServiceClient::mock();
