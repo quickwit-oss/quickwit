@@ -59,10 +59,6 @@ fn default_node_id() -> ConfigValue<String, QW_NODE_ID> {
     ConfigValue::with_default(node_id)
 }
 
-fn default_enable_elastic_header() -> ConfigValue<bool, QW_ENABLE_ELSTIC_HEADER> {
-    ConfigValue::with_default(false)
-}
-
 #[derive(Clone, Debug, Default, Serialize, Deserialize, PartialEq)]
 struct List(Vec<String>);
 
@@ -167,8 +163,6 @@ struct NodeConfigBuilder {
     cluster_id: ConfigValue<String, QW_CLUSTER_ID>,
     #[serde(default = "default_node_id")]
     node_id: ConfigValue<String, QW_NODE_ID>,
-    #[serde(default = "default_enable_elastic_header")]
-    enable_elastic_header: ConfigValue<bool, QW_ENABLE_ELSTIC_HEADER>,
     #[serde(default = "default_enabled_services")]
     enabled_services: ConfigValue<List, QW_ENABLED_SERVICES>,
     #[serde(default = "default_listen_address")]
@@ -185,6 +179,8 @@ struct NodeConfigBuilder {
     data_dir_uri: ConfigValue<Uri, QW_DATA_DIR>,
     metastore_uri: ConfigValue<Uri, QW_METASTORE_URI>,
     default_index_root_uri: ConfigValue<Uri, QW_DEFAULT_INDEX_ROOT_URI>,
+    #[serde(default)]
+    add_elastic_header: bool,
     #[serde(default)]
     #[serde_as(deserialize_as = "serde_with::OneOrMany<_>")]
     rest_cors_allow_origins: Vec<String>,
@@ -277,7 +273,7 @@ impl NodeConfigBuilder {
         let node_config = NodeConfig {
             cluster_id: self.cluster_id.resolve(env_vars)?,
             node_id: self.node_id.resolve(env_vars)?,
-            enable_elastic_header: self.enable_elastic_header.resolve(env_vars)?,
+            add_elastic_header: self.add_elastic_header,
             enabled_services,
             rest_listen_addr,
             gossip_listen_addr,
@@ -325,7 +321,7 @@ impl Default for NodeConfigBuilder {
             cluster_id: default_cluster_id(),
             node_id: default_node_id(),
             enabled_services: default_enabled_services(),
-            enable_elastic_header: default_enable_elastic_header(),
+            add_elastic_header: false,
             listen_address: default_listen_address(),
             rest_listen_port: default_rest_listen_port(),
             gossip_listen_port: ConfigValue::none(),
@@ -347,9 +343,8 @@ impl Default for NodeConfigBuilder {
 }
 
 #[cfg(any(test, feature = "testsuite"))]
-pub fn node_config_for_test(enable_es_header: bool) -> NodeConfig {
+pub fn node_config_for_test() -> NodeConfig {
     let enabled_services = QuickwitService::supported_services();
-
     let listen_address = Host::default();
     let rest_listen_port = quickwit_common::net::find_available_tcp_port()
         .expect("The OS should almost always find an available port.");
@@ -379,7 +374,7 @@ pub fn node_config_for_test(enable_es_header: bool) -> NodeConfig {
     NodeConfig {
         cluster_id: default_cluster_id().unwrap(),
         node_id: default_node_id().unwrap(),
-        enable_elastic_header: enable_es_header,
+        add_elastic_header: false,
         enabled_services,
         gossip_advertise_addr: gossip_listen_addr,
         grpc_advertise_addr: grpc_listen_addr,
