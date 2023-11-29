@@ -5559,6 +5559,7 @@ dependencies = [
  "quickwit-config",
  "quickwit-directories",
  "quickwit-doc-mapper",
+ "quickwit-indexing",
  "quickwit-ingest",
  "quickwit-metastore",
  "quickwit-opentelemetry",
