@@ -315,6 +315,7 @@ mod tests {
 
     use mrecordlog::MultiRecordLog;
     use quickwit_cluster::{create_cluster_for_test, ChannelTransport};
+    use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
     use quickwit_proto::ingest::ingester::{IngesterStatus, ObservationMessage};
     use quickwit_proto::ingest::ShardState;
     use quickwit_proto::types::{queue_id, Position};
@@ -322,9 +323,7 @@ mod tests {
 
     use super::*;
     use crate::ingest_v2::models::IngesterShard;
-    use crate::ingest_v2::rate_limiter::RateLimiter;
     use crate::ingest_v2::rate_meter::RateMeter;
-    use crate::RateLimiterSettings;
 
     #[test]
     fn test_shard_info_serde() {

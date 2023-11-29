@@ -30,14 +30,14 @@ use quickwit_proto::indexing::{
     ApplyIndexingPlanRequest, CpuCapacity, IndexingService, IndexingTask, PIPELINE_FULL_CAPACITY,
 };
 use quickwit_proto::metastore::SourceType;
-use quickwit_proto::types::NodeId;
+use quickwit_proto::types::{NodeId, ShardId};
 use scheduling::{SourceToSchedule, SourceToScheduleType};
 use serde::Serialize;
 use tracing::{debug, error, info, warn};
 
-use crate::control_plane_model::ControlPlaneModel;
 use crate::indexing_plan::PhysicalIndexingPlan;
 use crate::indexing_scheduler::scheduling::build_physical_indexing_plan;
+use crate::model::ControlPlaneModel;
 use crate::{IndexerNodeInfo, IndexerPool};
 
 pub(crate) const MIN_DURATION_BETWEEN_SCHEDULING: Duration =
@@ -117,6 +117,7 @@ impl fmt::Debug for IndexingScheduler {
 
 fn get_sources_to_schedule(model: &ControlPlaneModel) -> Vec<SourceToSchedule> {
     let mut sources = Vec::new();
+
     for (source_uid, source_config) in model.get_source_configs() {
         if !source_config.enabled {
             continue;
@@ -137,11 +138,17 @@ fn get_sources_to_schedule(model: &ControlPlaneModel) -> Vec<SourceToSchedule> {
                 });
             }
             SourceType::IngestV2 => {
-                let shards = model.list_shards(&source_uid);
+                // Expect: the source should exist since we just read it from `get_source_configs`.
+                let shard_ids: Vec<ShardId> = model
+                    .list_shards(&source_uid)
+                    .expect("source should exist")
+                    .map(|shard| shard.shard_id)
+                    .collect();
+
                 sources.push(SourceToSchedule {
                     source_uid,
                     source_type: SourceToScheduleType::Sharded {
-                        shards,
+                        shard_ids,
                         // FIXME
                         load_per_shard: NonZeroU32::new(250u32).unwrap(),
                     },
@@ -787,8 +794,8 @@ mod tests {
                     match &source_to_schedule.source_type {
                         SourceToScheduleType::IngestV1 => {}
                         SourceToScheduleType::Sharded {
-                            shards: _,
                             load_per_shard,
+                            ..
                         } => {
                             load_in_node += load_per_shard.get() * task.shard_ids.len() as u32;
                         }

@@ -11,8 +11,8 @@ documentation = "https://quickwit.io/docs/"
 
 [dependencies]
 aws-config = { workspace = true, optional = true }
-aws-smithy-client = { workspace = true, optional = true }
 aws-sdk-kinesis = { workspace = true, optional = true }
+aws-smithy-client = { workspace = true, optional = true }
 
 anyhow = { workspace = true }
 arc-swap = { workspace = true }
@@ -97,11 +97,11 @@ quickwit-cluster = { workspace = true, features = ["testsuite"] }
 quickwit-common = { workspace = true, features = ["testsuite"] }
 quickwit-config = { workspace = true, features = ["testsuite"] }
 quickwit-doc-mapper = { workspace = true, features = ["testsuite"] }
+quickwit-indexing = { workspace = true, features = ["testsuite"]}
 quickwit-ingest = { workspace = true, features = ["testsuite"] }
 quickwit-metastore = { workspace = true, features = ["testsuite"] }
 quickwit-proto = { workspace = true, features = ["testsuite"] }
 quickwit-storage = { workspace = true, features = ["testsuite"] }
-quickwit-indexing = { workspace = true, features = ["testsuite"]}
 
 [[test]]
 name = "failpoints"

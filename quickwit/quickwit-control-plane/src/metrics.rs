@@ -18,13 +18,14 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use once_cell::sync::Lazy;
-use quickwit_common::metrics::{new_counter, IntCounter};
+use quickwit_common::metrics::{new_counter, new_gauge_vec, IntCounter, IntGaugeVec};
 
 pub struct ControlPlaneMetrics {
     pub restart_total: IntCounter,
     pub schedule_total: IntCounter,
     pub metastore_error_aborted: IntCounter,
     pub metastore_error_maybe_executed: IntCounter,
+    pub open_shards_total: IntGaugeVec<2>,
 }
 
 impl Default for ControlPlaneMetrics {
@@ -51,6 +52,12 @@ impl Default for ControlPlaneMetrics {
                 "Number of metastore transaction with an uncertain outcome (= do trigger a \
                  control plane restart)",
                 "quickwit_control_plane",
+            ),
+            open_shards_total: new_gauge_vec(
+                "open_shards_total",
+                "Number of open shards per source.",
+                "quickwit_control_plane",
+                ["index_id", "source_id"],
             ),
         }
     }

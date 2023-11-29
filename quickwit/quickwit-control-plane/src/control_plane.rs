@@ -24,9 +24,11 @@ use async_trait::async_trait;
 use fnv::FnvHashSet;
 use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Mailbox, Supervisor, Universe,
+    WeakMailbox,
 };
+use quickwit_common::pubsub::EventSubscriber;
 use quickwit_config::SourceConfig;
-use quickwit_ingest::IngesterPool;
+use quickwit_ingest::{IngesterPool, LocalShardsUpdate};
 use quickwit_metastore::IndexMetadata;
 use quickwit_proto::control_plane::{
     ControlPlaneError, ControlPlaneResult, GetOrCreateOpenShardsRequest,
@@ -43,9 +45,9 @@ use quickwit_proto::types::{IndexUid, NodeId, Position, ShardId, SourceUid};
 use serde::Serialize;
 use tracing::error;
 
-use crate::control_plane_model::{ControlPlaneModel, ControlPlaneModelMetrics};
 use crate::indexing_scheduler::{IndexingScheduler, IndexingSchedulerState};
 use crate::ingest::IngestController;
+use crate::model::{ControlPlaneModel, ControlPlaneModelMetrics};
 use crate::IndexerPool;
 
 /// Interval between two controls (or checks) of the desired plan VS running plan.
@@ -166,8 +168,7 @@ impl ControlPlane {
             .delete_shards(delete_shards_request)
             .await
             .context("failed to delete shards in metastore")?;
-        self.model
-            .delete_shards(&source_uid.index_uid, &source_uid.source_id, shards);
+        self.model.delete_shards(source_uid, shards);
         self.indexing_scheduler
             .schedule_indexing_plan_if_needed(&self.model);
         Ok(())
@@ -183,10 +184,12 @@ impl Handler<ShardPositionsUpdate> for ControlPlane {
         shard_positions_update: ShardPositionsUpdate,
         _ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        let known_shard_ids: FnvHashSet<ShardId> = self
-            .model
-            .list_shards(&shard_positions_update.source_uid)
-            .into_iter()
+        let Some(shard_entries) = self.model.list_shards(&shard_positions_update.source_uid) else {
+            // The source no longer exists.
+            return Ok(());
+        };
+        let known_shard_ids: FnvHashSet<ShardId> = shard_entries
+            .map(|shard_entry| shard_entry.shard_id)
             .collect();
         // let's identify the shard that have reached EOF but have not yet been removed.
         let shard_ids_to_close: Vec<ShardId> = shard_positions_update
@@ -200,7 +203,7 @@ impl Handler<ShardPositionsUpdate> for ControlPlane {
         if shard_ids_to_close.is_empty() {
             return Ok(());
         }
-        self.delete_shards(&shard_positions_update.source_uid, &shard_ids_to_close[..])
+        self.delete_shards(&shard_positions_update.source_uid, &shard_ids_to_close)
             .await?;
         Ok(())
     }
@@ -462,6 +465,61 @@ impl Handler<GetOrCreateOpenShardsRequest> for ControlPlane {
         self.indexing_scheduler
             .schedule_indexing_plan_if_needed(&self.model);
         Ok(Ok(response))
+    }
+}
+
+#[async_trait]
+impl Handler<LocalShardsUpdate> for ControlPlane {
+    type Reply = ControlPlaneResult<()>;
+
+    async fn handle(
+        &mut self,
+        local_shards_update: LocalShardsUpdate,
+        ctx: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        self.ingest_controller
+            .handle_local_shards_update(local_shards_update, &mut self.model, ctx.progress())
+            .await;
+        self.indexing_scheduler
+            .schedule_indexing_plan_if_needed(&self.model);
+        Ok(Ok(()))
+    }
+}
+
+#[derive(Clone)]
+pub struct ControlPlaneEventSubscriber(WeakMailbox<ControlPlane>);
+
+impl ControlPlaneEventSubscriber {
+    pub fn new(weak_control_plane_mailbox: WeakMailbox<ControlPlane>) -> Self {
+        Self(weak_control_plane_mailbox)
+    }
+}
+
+#[async_trait]
+impl EventSubscriber<LocalShardsUpdate> for ControlPlaneEventSubscriber {
+    async fn handle_event(&mut self, local_shards_update: LocalShardsUpdate) {
+        if let Some(control_plane_mailbox) = self.0.upgrade() {
+            if let Err(error) = control_plane_mailbox
+                .send_message(local_shards_update)
+                .await
+            {
+                error!(error=%error, "failed to forward local shards update to control plane");
+            }
+        }
+    }
+}
+
+#[async_trait]
+impl EventSubscriber<ShardPositionsUpdate> for ControlPlaneEventSubscriber {
+    async fn handle_event(&mut self, shard_positions_update: ShardPositionsUpdate) {
+        if let Some(control_plane_mailbox) = self.0.upgrade() {
+            if let Err(error) = control_plane_mailbox
+                .send_message(shard_positions_update)
+                .await
+            {
+                error!(error=%error, "failed to forward shard positions update to control plane");
+            }
+        }
     }
 }
 

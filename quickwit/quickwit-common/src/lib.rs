@@ -31,12 +31,12 @@ mod path_hasher;
 mod progress;
 pub mod pubsub;
 pub mod rand;
+pub mod rate_limiter;
 pub mod rendezvous_hasher;
 pub mod retry;
 pub mod runtimes;
 pub mod shared_consts;
 pub mod sorted_iter;
-
 pub mod stream_utils;
 pub mod temp_dir;
 #[cfg(any(test, feature = "testsuite"))]

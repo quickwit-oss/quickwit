@@ -66,7 +66,7 @@ pub use universe::Universe;
 pub use self::actor_context::ActorContext;
 pub use self::actor_state::ActorState;
 pub use self::channel_with_priority::{QueueCapacity, RecvError, SendError, TrySendError};
-pub use self::mailbox::{Inbox, Mailbox};
+pub use self::mailbox::{Inbox, Mailbox, WeakMailbox};
 pub use self::registry::ActorObservation;
 pub use self::supervisor::{Supervisor, SupervisorMetrics, SupervisorState};
 

@@ -25,6 +25,7 @@ use quickwit_proto::indexing::CpuCapacity;
 
 pub type SourceOrd = u32;
 pub type IndexerOrd = usize;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct Source {
     pub source_ord: SourceOrd,
