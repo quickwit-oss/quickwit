@@ -18,7 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::fmt;
-use std::fmt::Display;
+use std::fmt::{Debug, Display};
 
 use bytes::Bytes;
 use bytestring::ByteString;
@@ -69,12 +69,23 @@ impl fmt::Display for Offset {
 ///
 /// The empty string can be used to represent the beginning of the source,
 /// if no position makes sense. It can be built via `Position::default()`.
-#[derive(Clone, Debug, Default, Eq, PartialEq, Hash, Ord, PartialOrd)]
+#[derive(Clone, Default, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub enum Position {
     #[default]
     Beginning,
     Offset(Offset),
     Eof,
+}
+
+impl Debug for Position {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            Self::Beginning => write!(f, "Position::Beginning"),
+            // The derive implementation would show `Offset(Offset(0000001))` here.
+            Self::Offset(offset) => write!(f, "Position::Offset({})", offset.0),
+            Self::Eof => write!(f, "Position::Eof"),
+        }
+    }
 }
 
 impl Position {

@@ -69,7 +69,7 @@ pub struct Cluster {
     cluster_id: String,
     self_chitchat_id: ChitchatId,
     /// Socket address (UDP) the node listens on for receiving gossip messages.
-    gossip_listen_addr: SocketAddr,
+    pub gossip_listen_addr: SocketAddr,
     inner: Arc<RwLock<InnerCluster>>,
 }
 
@@ -379,7 +379,7 @@ impl Cluster {
         Ok(())
     }
 
-    async fn chitchat(&self) -> Arc<Mutex<Chitchat>> {
+    pub async fn chitchat(&self) -> Arc<Mutex<Chitchat>> {
         self.inner.read().await.chitchat_handle.chitchat()
     }
 }

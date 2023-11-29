@@ -276,7 +276,6 @@ impl ControlPlaneModel {
     }
 
     /// Removes the shards identified by their index UID, source ID, and shard IDs.
-    #[allow(dead_code)] // Will remove this in a future PR.
     pub fn delete_shards(
         &mut self,
         index_uid: &IndexUid,
@@ -511,7 +510,9 @@ impl ShardTable {
         };
         if let Some(table_entry) = self.table_entries.get_mut(&source_uid) {
             for shard_id in shard_ids {
-                table_entry.shards.remove(shard_id);
+                if table_entry.shards.remove(shard_id).is_none() {
+                    warn!(shard = *shard_id, "deleting a non-existing shard");
+                }
             }
         }
     }

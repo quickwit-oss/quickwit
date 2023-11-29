@@ -24,10 +24,11 @@ use std::{fmt, io};
 
 use anyhow::anyhow;
 use quickwit_actors::AskError;
+use quickwit_common::pubsub::Event;
 use serde::{Deserialize, Serialize};
 use thiserror;
 
-use crate::types::{IndexUid, SourceId};
+use crate::types::{IndexUid, Position, ShardId, SourceId, SourceUid};
 use crate::{ServiceError, ServiceErrorCode};
 
 include!("../codegen/quickwit/quickwit.indexing.rs");
@@ -319,6 +320,18 @@ impl From<CpuCapacity> for CpuCapacityForSerialization {
         CpuCapacityForSerialization::MilliCpuWithUnit(format!("{}m", cpu_capacity.0))
     }
 }
+
+/// Whenever a shard position update is detected (whether it is emit by an indexing pipeline local
+/// to the cluster or received via chitchat), the shard positions service publishes a
+/// `ShardPositionsUpdate` event through the cluster's `EventBroker`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShardPositionsUpdate {
+    pub source_uid: SourceUid,
+    // All of the shards known are listed here, regardless of whether they were updated or not.
+    pub shard_positions: Vec<(ShardId, Position)>,
+}
+
+impl Event for ShardPositionsUpdate {}
 
 #[cfg(test)]
 mod tests {

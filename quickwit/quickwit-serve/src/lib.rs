@@ -68,6 +68,7 @@ use quickwit_control_plane::control_plane::ControlPlane;
 use quickwit_control_plane::{IndexerNodeInfo, IndexerPool};
 use quickwit_index_management::{IndexService as IndexManager, IndexServiceError};
 use quickwit_indexing::actors::IndexingService;
+use quickwit_indexing::models::ShardPositionsService;
 use quickwit_indexing::start_indexing_service;
 use quickwit_ingest::{
     setup_local_shards_update_listener, start_ingest_api_service, wait_for_ingester_decommission,
@@ -80,7 +81,7 @@ use quickwit_metastore::{
 };
 use quickwit_opentelemetry::otlp::{OtlpGrpcLogsService, OtlpGrpcTracesService};
 use quickwit_proto::control_plane::ControlPlaneServiceClient;
-use quickwit_proto::indexing::IndexingServiceClient;
+use quickwit_proto::indexing::{IndexingServiceClient, ShardPositionsUpdate};
 use quickwit_proto::ingest::ingester::IngesterServiceClient;
 use quickwit_proto::ingest::router::IngestRouterServiceClient;
 use quickwit_proto::metastore::{
@@ -214,6 +215,7 @@ async fn start_control_plane_if_needed(
     universe: &Universe,
     indexer_pool: &IndexerPool,
     ingester_pool: &IngesterPool,
+    event_broker: &EventBroker,
 ) -> anyhow::Result<ControlPlaneServiceClient> {
     if node_config.is_service_enabled(QuickwitService::ControlPlane) {
         check_cluster_configuration(
@@ -224,7 +226,7 @@ async fn start_control_plane_if_needed(
         .await?;
 
         let cluster_id = cluster.cluster_id().to_string();
-        let self_node_id = cluster.self_node_id().to_string();
+        let self_node_id: NodeId = cluster.self_node_id().into();
 
         let replication_factor = node_config
             .ingest_api_config
@@ -239,6 +241,7 @@ async fn start_control_plane_if_needed(
             ingester_pool.clone(),
             metastore_client.clone(),
             replication_factor,
+            event_broker,
         )
         .await?;
         Ok(ControlPlaneServiceClient::from_mailbox(
@@ -322,8 +325,20 @@ pub async fn serve_quickwit(
         &universe,
         &indexer_pool,
         &ingester_pool,
+        &event_broker,
     )
     .await?;
+
+    // If one of the two following service is enabled, we need to enable the shard position service:
+    // - the control plane: as it is in charge of cleaning up shard reach eof.
+    // - the indexer: as it hosts ingesters, and ingesters use the shard positions to truncate
+    // their the queue associated to shards in mrecordlog, and publish indexers' progress to
+    // chitchat.
+    if node_config.is_service_enabled(QuickwitService::Indexer)
+        || node_config.is_service_enabled(QuickwitService::ControlPlane)
+    {
+        ShardPositionsService::spawn(universe.spawn_ctx(), event_broker.clone(), cluster.clone());
+    }
 
     // Set up the "control plane proxy" for the metastore.
     let metastore_through_control_plane = MetastoreServiceClient::new(ControlPlaneMetastore::new(
@@ -695,16 +710,17 @@ async fn setup_searcher(
     Ok((search_job_placer, search_service))
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn setup_control_plane(
     universe: &Universe,
     cluster_id: String,
-    self_node_id: String,
+    self_node_id: NodeId,
     indexer_pool: IndexerPool,
     ingester_pool: IngesterPool,
     metastore: MetastoreServiceClient,
     replication_factor: usize,
+    event_broker: &EventBroker,
 ) -> anyhow::Result<Mailbox<ControlPlane>> {
-    let self_node_id: NodeId = self_node_id.into();
     let (control_plane_mailbox, _control_plane_handle) = ControlPlane::spawn(
         universe,
         cluster_id,
@@ -714,6 +730,20 @@ async fn setup_control_plane(
         metastore,
         replication_factor,
     );
+    let weak_control_plane_mailbox = control_plane_mailbox.downgrade();
+    event_broker
+        .subscribe::<ShardPositionsUpdate>(move |shard_positions_update| {
+            let Some(control_plane_mailbox) = weak_control_plane_mailbox.upgrade() else {
+                return;
+            };
+            if control_plane_mailbox
+                .try_send_message(shard_positions_update)
+                .is_err()
+            {
+                error!("failed to send shard positions update to control plane");
+            }
+        })
+        .forever();
     Ok(control_plane_mailbox)
 }
 
