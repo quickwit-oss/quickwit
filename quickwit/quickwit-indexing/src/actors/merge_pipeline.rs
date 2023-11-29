@@ -214,7 +214,7 @@ impl MergePipeline {
         info!(
             index_id=%self.params.pipeline_id.index_uid.index_id(),
             source_id=%self.params.pipeline_id.source_id,
-            pipeline_ord=%self.params.pipeline_id.pipeline_ord,
+            pipeline_uid=%self.params.pipeline_id.pipeline_uid,
             root_dir=%self.params.indexing_directory.path().display(),
             merge_policy=?self.params.merge_policy,
             "spawn merge pipeline",
@@ -489,7 +489,7 @@ mod tests {
     use quickwit_metastore::{ListSplitsRequestExt, ListSplitsResponseExt};
     use quickwit_proto::indexing::IndexingPipelineId;
     use quickwit_proto::metastore::{ListSplitsResponse, MetastoreServiceClient};
-    use quickwit_proto::types::IndexUid;
+    use quickwit_proto::types::{IndexUid, PipelineUid};
     use quickwit_storage::RamStorage;
 
     use crate::actors::merge_pipeline::{MergePipeline, MergePipelineParams};
@@ -504,7 +504,7 @@ mod tests {
             index_uid: index_uid.clone(),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::default(),
         };
         metastore
             .expect_list_splits()

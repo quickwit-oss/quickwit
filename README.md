@@ -136,12 +136,14 @@ Our business model relies on our commercial license. There is no plan to become 
 
 We are always thrilled to receive contributions: code, documentation, issues, or feedback. Here's how you can help us build the future of log management:
 
-- Check out the [GitHub issues labeled "Good first issue"](https://github.com/quickwit-oss/quickwit/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) for a great place to start.
-- Familiarize yourself with our [Contributor Covenant Code of Conduct](https://github.com/quickwit-oss/quickwit/blob/0add0562f08e4edd46f5c5537e8ef457d42a508e/CODE_OF_CONDUCT.md).
-- Delve into our [contributing guide](CONTRIBUTING.md).
-- [Create a fork of Quickwit](https://github.com/quickwit-oss/quickwit/fork) and submit your pull request!
+- Start by checking out the [GitHub issues labeled "Good first issue"](https://github.com/quickwit-oss/quickwit/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22). These are a great place for newcomers to contribute.
+- Read our [Contributor Covenant Code of Conduct](./CODE_OF_CONDUCT.md) to understand our community standards.
+- [Create a fork of Quickwit](https://github.com/quickwit-oss/quickwit/fork) to have your own copy of the repository where you can make changes.
+- To understand how to contribute, read our [contributing guide](./CONTRIBUTING.md).
+- Set up your development environment following our [development setup guide](./CONTRIBUTING.md#development).
+- Once you've made your changes and tested them, you can contribute by [submitting a pull request](./CONTRIBUTING.md#submitting-a-pr).
 
-✨ And to thank you for your contributions, claim your swag by emailing us at hello@quickwit.io.
+✨ After your contributions are accepted, don't forget to claim your swag by emailing us at hello@quickwit.io. Thank you for contributing!
 
 # 💬 Join Our Community
 

@@ -160,24 +160,7 @@ impl SchedulingSolution {
             indexer_assignments: (0..num_indexers).map(IndexerAssignment::new).collect(),
         }
     }
-
     pub fn num_indexers(&self) -> usize {
         self.indexer_assignments.len()
-    }
-
-    pub fn indexer_shards(
-        &self,
-        source_ord: SourceOrd,
-    ) -> impl Iterator<Item = (IndexerOrd, NonZeroU32)> + '_ {
-        self.indexer_assignments
-            .iter()
-            .filter_map(move |indexer_assignment| {
-                let num_shards: NonZeroU32 = indexer_assignment
-                    .num_shards_per_source
-                    .get(&source_ord)
-                    .copied()
-                    .and_then(NonZeroU32::new)?;
-                Some((indexer_assignment.indexer_ord, num_shards))
-            })
     }
 }

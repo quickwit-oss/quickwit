@@ -28,8 +28,10 @@ use serde::{Deserialize, Deserializer, Serialize};
 use thiserror::Error;
 pub use ulid::Ulid;
 
+mod pipeline_uid;
 mod position;
 
+pub use pipeline_uid::PipelineUid;
 pub use position::Position;
 
 pub type IndexId = String;
@@ -119,7 +121,8 @@ impl IndexUid {
         }
     }
 
-    pub fn parse(index_uid_str: String) -> Result<IndexUid, InvalidIndexUid> {
+    pub fn parse(index_uid_str: impl ToString) -> Result<IndexUid, InvalidIndexUid> {
+        let index_uid_str = index_uid_str.to_string();
         let count_colon = index_uid_str
             .as_bytes()
             .iter()

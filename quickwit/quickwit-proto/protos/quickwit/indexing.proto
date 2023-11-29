@@ -30,11 +30,17 @@ message ApplyIndexingPlanRequest {
   repeated IndexingTask indexing_tasks = 1;
 }
 
+message PipelineUid {
+  bytes pipeline_uid = 1;
+}
+
 message IndexingTask {
   // The tasks's index UID.
   string index_uid = 1;
   // The task's source ID.
   string source_id = 2;
+  // pipeline id
+  PipelineUid pipeline_uid = 4;
   // The shards assigned to the indexer.
   repeated uint64 shard_ids = 3;
 }

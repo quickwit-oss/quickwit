@@ -39,7 +39,7 @@ use quickwit_metastore::{
     CreateIndexRequestExt, MetastoreResolver, Split, SplitMetadata, SplitState,
 };
 use quickwit_proto::metastore::{CreateIndexRequest, MetastoreService, MetastoreServiceClient};
-use quickwit_proto::types::IndexUid;
+use quickwit_proto::types::{IndexUid, PipelineUid};
 use quickwit_storage::{Storage, StorageResolver};
 use serde_json::Value as JsonValue;
 
@@ -173,7 +173,7 @@ impl TestSandbox {
             .ask_for_res(SpawnPipeline {
                 index_id: self.index_uid.index_id().to_string(),
                 source_config,
-                pipeline_ord: 0,
+                pipeline_uid: PipelineUid::from_u128(0u128),
             })
             .await?;
         let pipeline_handle = self

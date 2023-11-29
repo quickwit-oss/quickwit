@@ -685,6 +685,8 @@ pub trait MetastoreService: std::fmt::Debug + dyn_clone::DynClone + Send + Sync 
         &mut self,
         request: AcquireShardsRequest,
     ) -> crate::metastore::MetastoreResult<AcquireShardsResponse>;
+    /// Deletes a set of shards. This RPC deletes the shards from the metastore and the storage.
+    /// If the shard did not exist to begin with, the operation is successful and does not return any error.
     async fn delete_shards(
         &mut self,
         request: DeleteShardsRequest,
@@ -4250,6 +4252,8 @@ pub mod metastore_service_grpc_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        /// Deletes a set of shards. This RPC deletes the shards from the metastore and the storage.
+        /// If the shard did not exist to begin with, the operation is successful and does not return any error.
         pub async fn delete_shards(
             &mut self,
             request: impl tonic::IntoRequest<super::DeleteShardsRequest>,
@@ -4456,6 +4460,8 @@ pub mod metastore_service_grpc_server {
             tonic::Response<super::AcquireShardsResponse>,
             tonic::Status,
         >;
+        /// Deletes a set of shards. This RPC deletes the shards from the metastore and the storage.
+        /// If the shard did not exist to begin with, the operation is successful and does not return any error.
         async fn delete_shards(
             &self,
             request: tonic::Request<super::DeleteShardsRequest>,

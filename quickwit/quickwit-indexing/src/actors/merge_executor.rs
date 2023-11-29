@@ -39,6 +39,7 @@ use quickwit_proto::metastore::{
     DeleteTask, ListDeleteTasksRequest, MarkSplitsForDeletionRequest, MetastoreService,
     MetastoreServiceClient,
 };
+use quickwit_proto::types::PipelineUid;
 use quickwit_query::get_quickwit_fastfield_normalizer_manager;
 use quickwit_query::query_ast::QueryAst;
 use tantivy::directory::{Advice, DirectoryClone, MmapDirectory, RamDirectory};
@@ -431,7 +432,7 @@ impl MergeExecutor {
         let index_pipeline_id = IndexingPipelineId {
             index_uid: split.index_uid,
             node_id: split.node_id.clone(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::new(),
             source_id: split.source_id.clone(),
         };
         let indexed_split = IndexedSplit {
@@ -591,7 +592,7 @@ mod tests {
             index_uid: index_uid.clone(),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::from_u128(0u128),
         };
         for split_id in 0..4 {
             let single_doc = std::iter::once(
@@ -715,7 +716,7 @@ mod tests {
         let pipeline_id = IndexingPipelineId {
             index_uid: index_uid.clone(),
             node_id: "unknown".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::from_u128(0u128),
             source_id: "unknown".to_string(),
         };
         test_sandbox.add_documents(docs).await?;

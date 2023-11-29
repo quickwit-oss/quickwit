@@ -32,12 +32,24 @@ You will be notified by email from the CI system if any issues are discovered, b
 3. To build docs run `make build-docs`.
 
 # Development
+
 ## Setup & run tests
+
+### Local Development
+
 1. Install Rust, CMake, Docker (https://docs.docker.com/engine/install/) and Docker Compose (https://docs.docker.com/compose/install/)
 2. Install node@18 and `npm install -g yarn`
 3. Install awslocal https://github.com/localstack/awscli-local
 4. Install protoc https://grpc.io/docs/protoc-installation/ (you may need to install the latest binaries rather than your distro's flavor)
-5. Run all tests using `make test-all`
+
+### GitHub Codespaces
+
+[![Open in GitHub Codespaces](https://github.com/codespaces/badge.svg)](https://codespaces.new/quickwit-oss/quickwit?devcontainer_path=.devcontainer/devcontainer.json)
+
+GitHub Codespaces provides a fully configured development environment in the cloud, making it easy to get started with Quickwit development. By clicking the badge above, you can create a codespace with all the necessary tools installed and configured.
+
+### Running tests
+Run `make test-all` to run all tests.
 
 ## Useful commands
 * `make test-all` - starts necessary Docker services and runs all tests.

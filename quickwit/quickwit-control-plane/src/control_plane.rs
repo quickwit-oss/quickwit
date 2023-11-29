@@ -21,6 +21,7 @@ use std::time::Duration;
 
 use anyhow::Context;
 use async_trait::async_trait;
+use fnv::FnvHashSet;
 use quickwit_actors::{
     Actor, ActorContext, ActorExitStatus, ActorHandle, Handler, Mailbox, Supervisor, Universe,
 };
@@ -31,12 +32,14 @@ use quickwit_proto::control_plane::{
     ControlPlaneError, ControlPlaneResult, GetOrCreateOpenShardsRequest,
     GetOrCreateOpenShardsResponse,
 };
+use quickwit_proto::indexing::ShardPositionsUpdate;
 use quickwit_proto::metastore::{
     serde_utils as metastore_serde_utils, AddSourceRequest, CreateIndexRequest,
-    CreateIndexResponse, DeleteIndexRequest, DeleteSourceRequest, EmptyResponse, MetastoreError,
-    MetastoreService, MetastoreServiceClient, ToggleSourceRequest,
+    CreateIndexResponse, DeleteIndexRequest, DeleteShardsRequest, DeleteShardsSubrequest,
+    DeleteSourceRequest, EmptyResponse, MetastoreError, MetastoreService, MetastoreServiceClient,
+    ToggleSourceRequest,
 };
-use quickwit_proto::types::{IndexUid, NodeId};
+use quickwit_proto::types::{IndexUid, NodeId, Position, ShardId, SourceUid};
 use serde::Serialize;
 use tracing::error;
 
@@ -131,6 +134,74 @@ impl Actor for ControlPlane {
 
         ctx.schedule_self_msg(CONTROL_PLAN_LOOP_INTERVAL, ControlPlanLoop)
             .await;
+        Ok(())
+    }
+}
+
+impl ControlPlane {
+    /// Deletes a set of shards from the metastore and the control plane model.
+    ///
+    /// If the shards were already absent this operation is considered successful.
+    async fn delete_shards(
+        &mut self,
+        source_uid: &SourceUid,
+        shards: &[ShardId],
+    ) -> anyhow::Result<()> {
+        let delete_shards_subrequest = DeleteShardsSubrequest {
+            index_uid: source_uid.index_uid.to_string(),
+            source_id: source_uid.source_id.to_string(),
+            shard_ids: shards.to_vec(),
+        };
+        let delete_shards_request = DeleteShardsRequest {
+            subrequests: vec![delete_shards_subrequest],
+            force: false,
+        };
+        // We use a tiny bit different strategy here than for other handlers
+        // All metastore errors end up fail/respawn the control plane.
+        //
+        // This is because deleting shards is done in reaction to an event
+        // and we do not really have the freedom to return an error to a caller like for other
+        // calls: there is no caller.
+        self.metastore
+            .delete_shards(delete_shards_request)
+            .await
+            .context("failed to delete shards in metastore")?;
+        self.model
+            .delete_shards(&source_uid.index_uid, &source_uid.source_id, shards);
+        self.indexing_scheduler
+            .schedule_indexing_plan_if_needed(&self.model);
+        Ok(())
+    }
+}
+
+#[async_trait]
+impl Handler<ShardPositionsUpdate> for ControlPlane {
+    type Reply = ();
+
+    async fn handle(
+        &mut self,
+        shard_positions_update: ShardPositionsUpdate,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus> {
+        let known_shard_ids: FnvHashSet<ShardId> = self
+            .model
+            .list_shards(&shard_positions_update.source_uid)
+            .into_iter()
+            .collect();
+        // let's identify the shard that have reached EOF but have not yet been removed.
+        let shard_ids_to_close: Vec<ShardId> = shard_positions_update
+            .shard_positions
+            .into_iter()
+            .filter(|(shard_id, position)| {
+                (position == &Position::Eof) && known_shard_ids.contains(shard_id)
+            })
+            .map(|(shard_id, _position)| shard_id)
+            .collect();
+        if shard_ids_to_close.is_empty() {
+            return Ok(());
+        }
+        self.delete_shards(&shard_positions_update.source_uid, &shard_ids_to_close[..])
+            .await?;
         Ok(())
     }
 }
@@ -231,6 +302,9 @@ impl Handler<CreateIndexRequest> for ControlPlane {
             IndexMetadata::new_with_index_uid(index_uid.clone(), index_config);
 
         self.model.add_index(index_metadata);
+
+        self.indexing_scheduler
+            .schedule_indexing_plan_if_needed(&self.model);
 
         let response = CreateIndexResponse {
             index_uid: index_uid.into(),
@@ -395,17 +469,20 @@ impl Handler<GetOrCreateOpenShardsRequest> for ControlPlane {
 mod tests {
     use quickwit_actors::{AskError, Observe, SupervisorMetrics};
     use quickwit_config::{IndexConfig, SourceParams, INGEST_SOURCE_ID};
+    use quickwit_indexing::IndexingService;
     use quickwit_metastore::{
         CreateIndexRequestExt, IndexMetadata, ListIndexesMetadataResponseExt,
     };
     use quickwit_proto::control_plane::GetOrCreateOpenShardsSubrequest;
+    use quickwit_proto::indexing::{ApplyIndexingPlanRequest, CpuCapacity, IndexingServiceClient};
     use quickwit_proto::ingest::{Shard, ShardState};
     use quickwit_proto::metastore::{
-        EntityKind, ListIndexesMetadataRequest, ListIndexesMetadataResponse, ListShardsRequest,
-        ListShardsResponse, ListShardsSubresponse, MetastoreError, SourceType,
+        DeleteShardsResponse, EntityKind, ListIndexesMetadataRequest, ListIndexesMetadataResponse,
+        ListShardsRequest, ListShardsResponse, ListShardsSubresponse, MetastoreError, SourceType,
     };
 
     use super::*;
+    use crate::IndexerNodeInfo;
 
     #[tokio::test]
     async fn test_control_plane_create_index() {
@@ -527,6 +604,7 @@ mod tests {
                 true
             })
             .returning(|_| Ok(EmptyResponse {}));
+        let index_metadata = IndexMetadata::for_test("test-index", "ram://test");
         mock_metastore
             .expect_list_indexes_metadata()
             .returning(move |_| {
@@ -536,7 +614,6 @@ mod tests {
                 .unwrap())
             });
         let replication_factor = 1;
-
         let (control_plane_mailbox, _control_plane_handle) = ControlPlane::spawn(
             &universe,
             cluster_id,
@@ -546,6 +623,7 @@ mod tests {
             MetastoreServiceClient::from(mock_metastore),
             replication_factor,
         );
+
         let source_config = SourceConfig::for_test("test-source", SourceParams::void());
         let add_source_request = AddSourceRequest {
             index_uid: index_uid.to_string(),
@@ -691,6 +769,7 @@ mod tests {
         let cluster_id = "test-cluster".to_string();
         let self_node_id: NodeId = "test-node".into();
         let indexer_pool = IndexerPool::default();
+
         let ingester_pool = IngesterPool::default();
 
         let mut mock_metastore = MetastoreServiceClient::mock();
@@ -886,6 +965,227 @@ mod tests {
                 num_kills: 0
             }
         );
+
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_delete_shard_on_eof() {
+        quickwit_common::setup_logging_for_tests();
+        let universe = Universe::default();
+        let node_id = NodeId::new("control-plane-node".to_string());
+        let indexer_pool = IndexerPool::default();
+        let (client_mailbox, client_inbox) = universe.create_test_mailbox();
+        let client = IndexingServiceClient::from_mailbox::<IndexingService>(client_mailbox);
+        let indexer_node_info = IndexerNodeInfo {
+            client,
+            indexing_tasks: Vec::new(),
+            indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
+        };
+        indexer_pool.insert("indexer-node-1".to_string(), indexer_node_info);
+        let ingester_pool = IngesterPool::default();
+        let mut mock_metastore = MetastoreServiceClient::mock();
+
+        let mut index_0 = IndexMetadata::for_test("test-index-0", "ram:///test-index-0");
+        let mut source = SourceConfig::ingest_v2_default();
+        source.enabled = true;
+        index_0.add_source(source.clone()).unwrap();
+
+        let index_0_clone = index_0.clone();
+        mock_metastore.expect_list_indexes_metadata().return_once(
+            move |list_indexes_request: ListIndexesMetadataRequest| {
+                assert_eq!(list_indexes_request, ListIndexesMetadataRequest::all());
+                Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(vec![
+                    index_0_clone.clone()
+                ])
+                .unwrap())
+            },
+        );
+        let index_uid_clone = index_0.index_uid.to_string();
+        mock_metastore.expect_delete_shards().return_once(
+            move |delete_shards_request: DeleteShardsRequest| {
+                assert!(!delete_shards_request.force);
+                assert_eq!(delete_shards_request.subrequests.len(), 1);
+                let subrequest = &delete_shards_request.subrequests[0];
+                assert_eq!(subrequest.index_uid, index_uid_clone);
+                assert_eq!(subrequest.source_id, INGEST_SOURCE_ID);
+                assert_eq!(&subrequest.shard_ids[..], &[17]);
+                Ok(DeleteShardsResponse {})
+            },
+        );
+
+        let mut shard = Shard {
+            index_uid: index_0.index_uid.to_string(),
+            source_id: INGEST_SOURCE_ID.to_string(),
+            shard_id: 17,
+            leader_id: "test_node".to_string(),
+            ..Default::default()
+        };
+        shard.set_shard_state(ShardState::Open);
+
+        let index_uid_clone = index_0.index_uid.clone();
+        mock_metastore.expect_list_shards().return_once(
+            move |_list_shards_request: ListShardsRequest| {
+                let list_shards_resp = ListShardsResponse {
+                    subresponses: vec![ListShardsSubresponse {
+                        index_uid: index_uid_clone.to_string(),
+                        source_id: INGEST_SOURCE_ID.to_string(),
+                        shards: vec![shard],
+                        next_shard_id: 18,
+                    }],
+                };
+                Ok(list_shards_resp)
+            },
+        );
+
+        let (control_plane_mailbox, _control_plane_handle) = ControlPlane::spawn(
+            &universe,
+            "cluster".to_string(),
+            node_id,
+            indexer_pool,
+            ingester_pool,
+            MetastoreServiceClient::from(mock_metastore),
+            1,
+        );
+        let source_uid = SourceUid {
+            index_uid: index_0.index_uid.clone(),
+            source_id: INGEST_SOURCE_ID.to_string(),
+        };
+
+        // This update should not triggeer anything in the control plane.
+        control_plane_mailbox
+            .ask(ShardPositionsUpdate {
+                source_uid: source_uid.clone(),
+                shard_positions: vec![(17, 1000u64.into())],
+            })
+            .await
+            .unwrap();
+
+        let control_plane_obs: ControlPlaneObservableState =
+            control_plane_mailbox.ask(Observe).await.unwrap();
+        let last_applied_physical_plan = control_plane_obs
+            .indexing_scheduler
+            .last_applied_physical_plan
+            .unwrap();
+        let indexing_tasks = last_applied_physical_plan
+            .indexing_tasks_per_indexer()
+            .get("indexer-node-1")
+            .unwrap();
+        assert_eq!(indexing_tasks.len(), 1);
+        assert_eq!(&indexing_tasks[0].shard_ids, &[17]);
+        let _ = client_inbox.drain_for_test();
+
+        // This update should trigger the deletion of the shard and a new indexing plan.
+        control_plane_mailbox
+            .ask(ShardPositionsUpdate {
+                source_uid,
+                shard_positions: vec![(17, Position::Eof)],
+            })
+            .await
+            .unwrap();
+
+        let control_plane_obs: ControlPlaneObservableState =
+            control_plane_mailbox.ask(Observe).await.unwrap();
+        let last_applied_physical_plan = control_plane_obs
+            .indexing_scheduler
+            .last_applied_physical_plan
+            .unwrap();
+        let indexing_tasks = last_applied_physical_plan
+            .indexing_tasks_per_indexer()
+            .get("indexer-node-1")
+            .unwrap();
+        assert!(indexing_tasks.is_empty());
+
+        let results: Vec<ApplyIndexingPlanRequest> =
+            client_inbox.drain_for_test_typed::<ApplyIndexingPlanRequest>();
+        assert_eq!(results.len(), 1);
+        assert!(results[0].indexing_tasks.is_empty());
+
+        universe.assert_quit().await;
+    }
+
+    #[tokio::test]
+    async fn test_delete_non_existing_shard() {
+        quickwit_common::setup_logging_for_tests();
+        let universe = Universe::default();
+        let node_id = NodeId::new("control-plane-node".to_string());
+        let indexer_pool = IndexerPool::default();
+        let (client_mailbox, _client_inbox) = universe.create_test_mailbox();
+        let client = IndexingServiceClient::from_mailbox::<IndexingService>(client_mailbox);
+        let indexer_node_info = IndexerNodeInfo {
+            client,
+            indexing_tasks: Vec::new(),
+            indexing_capacity: CpuCapacity::from_cpu_millis(4_000),
+        };
+        indexer_pool.insert("indexer-node-1".to_string(), indexer_node_info);
+        let ingester_pool = IngesterPool::default();
+        let mut mock_metastore = MetastoreServiceClient::mock();
+
+        let mut index_0 = IndexMetadata::for_test("test-index-0", "ram:///test-index-0");
+        let mut source = SourceConfig::ingest_v2_default();
+        source.enabled = true;
+        index_0.add_source(source.clone()).unwrap();
+
+        let index_0_clone = index_0.clone();
+        mock_metastore.expect_list_indexes_metadata().return_once(
+            move |list_indexes_request: ListIndexesMetadataRequest| {
+                assert_eq!(list_indexes_request, ListIndexesMetadataRequest::all());
+                Ok(ListIndexesMetadataResponse::try_from_indexes_metadata(vec![
+                    index_0_clone.clone()
+                ])
+                .unwrap())
+            },
+        );
+        let index_uid_clone = index_0.index_uid.to_string();
+        mock_metastore.expect_delete_shards().return_once(
+            move |delete_shards_request: DeleteShardsRequest| {
+                assert!(!delete_shards_request.force);
+                assert_eq!(delete_shards_request.subrequests.len(), 1);
+                let subrequest = &delete_shards_request.subrequests[0];
+                assert_eq!(subrequest.index_uid, index_uid_clone);
+                assert_eq!(subrequest.source_id, INGEST_SOURCE_ID);
+                assert_eq!(&subrequest.shard_ids[..], &[17]);
+                Ok(DeleteShardsResponse {})
+            },
+        );
+
+        let index_uid_clone = index_0.index_uid.clone();
+        mock_metastore.expect_list_shards().return_once(
+            move |_list_shards_request: ListShardsRequest| {
+                let list_shards_resp = ListShardsResponse {
+                    subresponses: vec![ListShardsSubresponse {
+                        index_uid: index_uid_clone.to_string(),
+                        source_id: INGEST_SOURCE_ID.to_string(),
+                        shards: vec![],
+                        next_shard_id: 18,
+                    }],
+                };
+                Ok(list_shards_resp)
+            },
+        );
+
+        let (control_plane_mailbox, _control_plane_handle) = ControlPlane::spawn(
+            &universe,
+            "cluster".to_string(),
+            node_id,
+            indexer_pool,
+            ingester_pool,
+            MetastoreServiceClient::from(mock_metastore),
+            1,
+        );
+        let source_uid = SourceUid {
+            index_uid: index_0.index_uid.clone(),
+            source_id: INGEST_SOURCE_ID.to_string(),
+        };
+
+        // This update should not triggeer anything in the control plane.
+        control_plane_mailbox
+            .ask(ShardPositionsUpdate {
+                source_uid: source_uid.clone(),
+                shard_positions: vec![(17, Position::Eof)],
+            })
+            .await
+            .unwrap();
 
         universe.assert_quit().await;
     }

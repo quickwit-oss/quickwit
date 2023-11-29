@@ -17,9 +17,11 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::borrow::Cow;
 use std::collections::VecDeque;
 use std::fmt::Display;
 use std::io::{stdout, Stdout, Write};
+use std::ops::Div;
 use std::path::PathBuf;
 use std::str::FromStr;
 use std::time::{Duration, Instant};
@@ -33,6 +35,7 @@ use colored::{ColoredString, Colorize};
 use humantime::format_duration;
 use indicatif::{ProgressBar, ProgressStyle};
 use itertools::Itertools;
+use numfmt::{Formatter, Scales};
 use quickwit_actors::ActorHandle;
 use quickwit_common::uri::Uri;
 use quickwit_config::{ConfigFormat, IndexConfig};
@@ -45,8 +48,10 @@ use quickwit_rest_client::rest_client::{CommitType, IngestEvent};
 use quickwit_search::SearchResponseRest;
 use quickwit_serve::{ListSplitsQueryParams, SearchRequestQueryString, SortBy};
 use quickwit_storage::{load_file, StorageResolver};
-use tabled::object::{Columns, Segment};
-use tabled::{Alignment, Concat, Format, Modify, Panel, Rotate, Style, Table, Tabled};
+use tabled::settings::object::{FirstRow, Rows, Segment};
+use tabled::settings::panel::Footer;
+use tabled::settings::{Alignment, Disable, Format, Modify, Panel, Rotate, Style};
+use tabled::{Table, Tabled};
 use thousands::Separable;
 use tracing::{debug, Level};
 
@@ -544,48 +549,80 @@ pub struct IndexStats {
 }
 
 impl Tabled for IndexStats {
-    const LENGTH: usize = 7;
+    const LENGTH: usize = 9;
 
-    fn fields(&self) -> Vec<String> {
-        vec![
-            self.index_id.clone(),
+    fn fields(&self) -> Vec<Cow<'_, str>> {
+        let num_published_docs = format!(
+            "{} ({})",
+            format_to_si_scale(self.num_published_docs),
+            separate_thousands(self.num_published_docs)
+        );
+
+        [
+            self.index_id.to_string(),
             self.index_uri.to_string(),
-            self.num_published_docs.to_string(),
+            num_published_docs,
             self.size_published_docs_uncompressed.to_string(),
-            self.num_published_splits.to_string(),
+            separate_thousands(self.num_published_splits),
             self.size_published_splits.to_string(),
             display_option_in_table(&self.timestamp_field_name),
-            display_timestamp_range(&self.timestamp_range),
+            display_timestamp(&self.timestamp_range.map(|(start, _end)| start)),
+            display_timestamp(&self.timestamp_range.map(|(_start, end)| end)),
         ]
+        .into_iter()
+        .map(|field| field.into())
+        .collect()
     }
 
-    fn headers() -> Vec<String> {
-        vec![
-            "Index ID: ".to_string(),
-            "Index URI: ".to_string(),
-            "Number of published documents: ".to_string(),
-            "Size of published documents (uncompressed): ".to_string(),
-            "Number of published splits: ".to_string(),
-            "Size of published splits: ".to_string(),
-            "Timestamp field: ".to_string(),
-            "Timestamp range: ".to_string(),
+    fn headers() -> Vec<Cow<'static, str>> {
+        [
+            "Index ID",
+            "Index URI",
+            "Number of published documents",
+            "Size of published documents (uncompressed)",
+            "Number of published splits",
+            "Size of published splits",
+            "Timestamp field",
+            "Timestamp range start",
+            "Timestamp range end",
         ]
+        .into_iter()
+        .map(|header| header.into())
+        .collect()
     }
+}
+
+fn format_to_si_scale(num: impl numfmt::Numeric) -> String {
+    let mut si_scale_formatter = Formatter::new().scales(Scales::metric());
+    si_scale_formatter.fmt2(num).to_string()
+}
+
+fn separate_thousands(num: impl numfmt::Numeric) -> String {
+    let mut thousands_separator_formatter = Formatter::new()
+        .separator(',')
+        // NOTE: .separator(sep) only panics if sep.len_utf8() != 1
+        .expect("`,` separator should be valid")
+        .precision(numfmt::Precision::Significance(3));
+
+    thousands_separator_formatter.fmt2(num).to_string()
 }
 
 fn display_option_in_table(opt: &Option<impl Display>) -> String {
     match opt {
-        Some(opt_val) => format!("{opt_val}"),
+        Some(opt_val) => format!("\"{opt_val}\""),
         None => "Field does not exist for the index.".to_string(),
     }
 }
 
-fn display_timestamp_range(range: &Option<(i64, i64)>) -> String {
-    match range {
-        Some((timestamp_min, timestamp_max)) => {
-            format!("{timestamp_min} -> {timestamp_max}")
+fn display_timestamp(timestamp: &Option<i64>) -> String {
+    match timestamp {
+        Some(timestamp) => {
+            let datetime = chrono::NaiveDateTime::from_timestamp_millis(*timestamp * 1000)
+                .map(|datetime| datetime.format("%Y-%m-%d %H:%M:%S").to_string())
+                .unwrap_or_else(|| "Invalid timestamp!".to_string());
+            format!("{} (Timestamp: {})", datetime, timestamp)
         }
-        _ => "Range does not exist for the index.".to_string(),
+        _ => "Timestamp does not exist for the index.".to_string(),
     }
 }
 
@@ -667,62 +704,119 @@ impl IndexStats {
     }
 
     pub fn display_as_table(&self) -> String {
-        let index_stats_table = create_table(self, "General Information");
+        let mut tables = vec![];
+        let index_stats_table = create_table(self, "General Information", true);
+        tables.push(index_stats_table);
 
-        let index_stats_table = if let Some(docs_stats) = &self.num_docs_descriptive {
-            let doc_stats_table = create_table(docs_stats, "Document count stats (published)");
-            index_stats_table.with(Concat::vertical(doc_stats_table))
-        } else {
-            index_stats_table
-        };
+        if let Some(docs_stats) = &self.num_docs_descriptive {
+            let doc_stats_table = docs_stats.into_table("Published documents count stats");
+            tables.push(doc_stats_table);
+        }
 
-        let index_stats_table = if let Some(size_stats) = &self.num_bytes_descriptive {
-            // size_stats is in byte, we have to divide all stats by 1_000_000 to be in MB.
-            let size_stats_in_mb = DescriptiveStats {
-                max_val: size_stats.max_val / 1_000_000,
-                min_val: size_stats.min_val / 1_000_000,
-                mean_val: size_stats.mean_val / 1_000_000.0,
-                q1: size_stats.q1 / 1_000_000.0,
-                q25: size_stats.q25 / 1_000_000.0,
-                q50: size_stats.q50 / 1_000_000.0,
-                q75: size_stats.q75 / 1_000_000.0,
-                q99: size_stats.q99 / 1_000_000.0,
-                std_val: size_stats.std_val / 1_000_000.0,
-            };
-            let size_stats_table = create_table(size_stats_in_mb, "Size in MB stats (published)");
-            index_stats_table.with(Concat::vertical(size_stats_table))
-        } else {
-            index_stats_table
-        };
+        if let Some(size_stats) = &self.num_bytes_descriptive {
+            let size_stats_in_mb = size_stats / 1_000_000.0;
+            let size_stats_table = size_stats_in_mb.into_table("Published splits size stats (MB)");
+            tables.push(size_stats_table);
+        }
 
-        index_stats_table.to_string()
+        let table = Table::builder(tables.into_iter().map(|table| table.to_string()))
+            .build()
+            .with(Modify::new(Segment::all()).with(Alignment::center_vertical()))
+            .with(Disable::row(FirstRow))
+            .with(Style::empty())
+            .to_string();
+
+        table
     }
 }
 
-fn create_table(table: impl Tabled, header: &str) -> Table {
-    Table::new(vec![table])
-        .with(Rotate::Left)
-        .with(Rotate::Bottom)
-        .with(
-            Modify::new(Columns::first())
-                .with(Format::new(|column| column.color(GREEN_COLOR).to_string())),
-        )
+fn create_table(table: impl Tabled, header: &str, is_vertical: bool) -> Table {
+    let mut table = Table::new(vec![table]);
+
+    // Make the field names GREEN :D
+    table.with(Modify::new(Rows::first()).with(Format::content(|column| {
+        column.color(GREEN_COLOR).to_string()
+    })));
+
+    if is_vertical {
+        table.with(Rotate::Left).with(Rotate::Bottom);
+    }
+
+    table
+        .with(Panel::header(header))
+        // Makes the table header bright green and bold.
+        .with(Modify::new(Rows::first()).with(Format::content(|header| {
+            header.bright_green().bold().to_string()
+        })))
         .with(
             Modify::new(Segment::all())
                 .with(Alignment::left())
                 .with(Alignment::top()),
         )
-        .with(Panel(header, 0))
-        .with(Style::psql())
-        .with(Panel("\n", 0))
+        .with(Footer::new("\n"))
+        .with(Style::psql());
+
+    table
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct DescriptiveStats {
+    summary_stats: SummaryStats,
+    quantiles: Quantiles,
+}
+
+impl DescriptiveStats {
+    pub fn into_table(self, header: &str) -> Table {
+        let summary_stats_table = create_table(self.summary_stats, header, true);
+        let quantiles_table = create_table(self.quantiles, "Quantiles", false);
+        let mut table =
+            Table::builder([summary_stats_table.to_string(), quantiles_table.to_string()]).build();
+
+        table
+            .with(Style::empty())
+            .with(Disable::row(FirstRow))
+            // We separate tables with a newline already, this is to separate quantile part of the
+            // table further away from the next table.
+            .with(Footer::new("\n"));
+
+        table
+    }
+}
+
+impl Div<f32> for &DescriptiveStats {
+    type Output = DescriptiveStats;
+
+    fn div(self, rhs: f32) -> Self::Output {
+        DescriptiveStats {
+            summary_stats: self.summary_stats / rhs,
+            quantiles: self.quantiles / rhs,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct SummaryStats {
     mean_val: f32,
     std_val: f32,
     min_val: u64,
     max_val: u64,
+}
+
+impl Div<f32> for SummaryStats {
+    type Output = Self;
+
+    fn div(self, rhs: f32) -> Self::Output {
+        Self {
+            mean_val: self.mean_val / rhs,
+            std_val: self.std_val / rhs,
+            min_val: self.min_val / rhs as u64,
+            max_val: self.max_val / rhs as u64,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct Quantiles {
     q1: f32,
     q25: f32,
     q50: f32,
@@ -730,27 +824,17 @@ pub struct DescriptiveStats {
     q99: f32,
 }
 
-impl Tabled for DescriptiveStats {
-    const LENGTH: usize = 2;
+impl Div<f32> for Quantiles {
+    type Output = Self;
 
-    fn fields(&self) -> Vec<String> {
-        vec![
-            format!(
-                "{} ± {} in [{} … {}]",
-                self.mean_val, self.std_val, self.min_val, self.max_val
-            ),
-            format!(
-                "[{}, {}, {}, {}, {}]",
-                self.q1, self.q25, self.q50, self.q75, self.q99,
-            ),
-        ]
-    }
-
-    fn headers() -> Vec<String> {
-        vec![
-            "Mean ± σ in [min … max]:".to_string(),
-            "Quantiles [1%, 25%, 50%, 75%, 99%]:".to_string(),
-        ]
+    fn div(self, rhs: f32) -> Self::Output {
+        Self {
+            q1: self.q1 / rhs,
+            q25: self.q25 / rhs,
+            q50: self.q50 / rhs,
+            q75: self.q75 / rhs,
+            q99: self.q99 / rhs,
+        }
     }
 }
 
@@ -759,17 +843,80 @@ impl DescriptiveStats {
         if values.is_empty() {
             return None;
         }
+
         Some(DescriptiveStats {
-            mean_val: mean(values),
-            std_val: std_deviation(values),
-            min_val: *values.iter().min().expect("Values should not be empty."),
-            max_val: *values.iter().max().expect("Values should not be empty."),
-            q1: percentile(values, 1),
-            q25: percentile(values, 25),
-            q50: percentile(values, 50),
-            q75: percentile(values, 75),
-            q99: percentile(values, 99),
+            summary_stats: SummaryStats {
+                mean_val: mean(values),
+                std_val: std_deviation(values),
+                min_val: *values.iter().min().expect("Values should not be empty."),
+                max_val: *values.iter().max().expect("Values should not be empty."),
+            },
+            quantiles: Quantiles {
+                q1: percentile(values, 1),
+                q25: percentile(values, 25),
+                q50: percentile(values, 50),
+                q75: percentile(values, 75),
+                q99: percentile(values, 99),
+            },
         })
+    }
+}
+
+impl Tabled for SummaryStats {
+    const LENGTH: usize = 4;
+
+    fn fields(&self) -> Vec<Cow<'_, str>> {
+        [
+            separate_thousands(self.mean_val),
+            separate_thousands(self.min_val),
+            separate_thousands(self.max_val),
+            separate_thousands(self.std_val),
+        ]
+        .into_iter()
+        .map(|field| field.into())
+        .collect()
+    }
+
+    fn headers() -> Vec<Cow<'static, str>> {
+        [
+            "Mean".to_string(),
+            "Min".to_string(),
+            "Max".to_string(),
+            "Standard deviation".to_string(),
+        ]
+        .into_iter()
+        .map(|header| header.into())
+        .collect()
+    }
+}
+
+impl Tabled for Quantiles {
+    const LENGTH: usize = 5;
+
+    fn fields(&self) -> Vec<Cow<'_, str>> {
+        [
+            separate_thousands(self.q1),
+            separate_thousands(self.q25),
+            separate_thousands(self.q50),
+            separate_thousands(self.q75),
+            separate_thousands(self.q99),
+        ]
+        .into_iter()
+        .map(|field| field.into())
+        .collect()
+    }
+
+    fn headers() -> Vec<Cow<'static, str>> {
+        [
+            "1%".to_string(),
+            "25%".to_string(),
+            "50%".to_string(),
+            "75%".to_string(),
+            "99%".to_string(),
+        ]
+        .into_iter()
+        .map(|header| header.into())
+        .collect()
     }
 }
 
@@ -1208,17 +1355,17 @@ mod test {
         let num_docs_descriptive = num_docs_descriptive.unwrap();
         let num_bytes_descriptive = num_bytes_descriptive.unwrap();
 
-        assert_eq!(num_docs_descriptive.q1, 40900.0);
-        assert_eq!(num_docs_descriptive.q25, 62500.0);
-        assert_eq!(num_docs_descriptive.q50, 80000.0);
-        assert_eq!(num_docs_descriptive.q75, 97500.0);
-        assert_eq!(num_docs_descriptive.q99, 119100.0);
+        assert_eq!(num_docs_descriptive.quantiles.q1, 40900.0);
+        assert_eq!(num_docs_descriptive.quantiles.q25, 62500.0);
+        assert_eq!(num_docs_descriptive.quantiles.q50, 80000.0);
+        assert_eq!(num_docs_descriptive.quantiles.q75, 97500.0);
+        assert_eq!(num_docs_descriptive.quantiles.q99, 119100.0);
 
-        assert_eq!(num_bytes_descriptive.q1, 55150000.0);
-        assert_eq!(num_bytes_descriptive.q25, 58750000.0);
-        assert_eq!(num_bytes_descriptive.q50, 87500000.0);
-        assert_eq!(num_bytes_descriptive.q75, 122500000.0);
-        assert_eq!(num_bytes_descriptive.q99, 144100000.0);
+        assert_eq!(num_bytes_descriptive.quantiles.q1, 55150000.0);
+        assert_eq!(num_bytes_descriptive.quantiles.q25, 58750000.0);
+        assert_eq!(num_bytes_descriptive.quantiles.q50, 87500000.0);
+        assert_eq!(num_bytes_descriptive.quantiles.q75, 122500000.0);
+        assert_eq!(num_bytes_descriptive.quantiles.q99, 144100000.0);
 
         let descriptive_stats_none = DescriptiveStats::maybe_new(&[]);
         assert!(descriptive_stats_none.is_none());

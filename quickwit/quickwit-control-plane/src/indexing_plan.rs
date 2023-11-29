@@ -53,6 +53,11 @@ impl PhysicalIndexingPlan {
     }
 
     /// Returns the hashmap of (indexer ID, indexing tasks).
+    pub fn indexing_tasks_per_indexer_mut(&mut self) -> &mut FnvHashMap<String, Vec<IndexingTask>> {
+        &mut self.indexing_tasks_per_indexer_id
+    }
+
+    /// Returns the hashmap of (indexer ID, indexing tasks).
     pub fn indexer(&self, indexer_id: &str) -> Option<&[IndexingTask]> {
         self.indexing_tasks_per_indexer_id
             .get(indexer_id)
@@ -65,7 +70,17 @@ impl PhysicalIndexingPlan {
                 left.index_uid
                     .cmp(&right.index_uid)
                     .then_with(|| left.source_id.cmp(&right.source_id))
+                    .then_with(|| {
+                        left.shard_ids
+                            .first()
+                            .copied()
+                            .cmp(&right.shard_ids.first().copied())
+                    })
+                    .then_with(|| left.pipeline_uid().cmp(&right.pipeline_uid()))
             });
+            for task in tasks {
+                task.shard_ids.sort();
+            }
         }
     }
 }
