@@ -54,7 +54,7 @@ use quickwit_metastore::{
 };
 use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::metastore::{ListSplitsRequest, MetastoreService};
-use quickwit_proto::types::IndexUid;
+use quickwit_proto::types::{IndexUid, PipelineUid};
 use serde_json::Value as JsonValue;
 use tantivy::{Directory, Inventory};
 
