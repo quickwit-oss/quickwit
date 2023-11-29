@@ -442,11 +442,27 @@ enum CanSplitDoBetter {
     SplitIdHigher(Option<String>),
     SplitTimestampHigher(Option<i64>),
     SplitTimestampLower(Option<i64>),
+    FindTraceIdsAggregation(Option<i64>),
 }
 
 impl CanSplitDoBetter {
     /// Create a CanSplitDoBetter from a SearchRequest
     fn from_request(request: &SearchRequest, timestamp_field_name: Option<&str>) -> Self {
+        if request.max_hits == 0 {
+            if let Some(aggregation) = &request.aggregation_request {
+                if let Ok(crate::QuickwitAggregations::FindTraceIdsAggregation(
+                    find_trace_aggregation,
+                )) = serde_json::from_str(aggregation)
+                {
+                    if Some(find_trace_aggregation.span_timestamp_field_name.as_str())
+                        == timestamp_field_name
+                    {
+                        return CanSplitDoBetter::FindTraceIdsAggregation(None);
+                    }
+                }
+            }
+        }
+
         if request.sort_fields.is_empty() {
             CanSplitDoBetter::SplitIdHigher(None)
         } else if let Some((sort_by, timestamp_field)) =
@@ -480,7 +496,8 @@ impl CanSplitDoBetter {
             CanSplitDoBetter::SplitIdHigher(_) => {
                 splits.sort_unstable_by(|a, b| b.split_id.cmp(&a.split_id))
             }
-            CanSplitDoBetter::SplitTimestampHigher(_) => {
+            CanSplitDoBetter::SplitTimestampHigher(_)
+            | CanSplitDoBetter::FindTraceIdsAggregation(_) => {
                 splits.sort_unstable_by_key(|split| std::cmp::Reverse(split.timestamp_end()))
             }
             CanSplitDoBetter::SplitTimestampLower(_) => {
@@ -495,11 +512,12 @@ impl CanSplitDoBetter {
     fn can_be_better(&self, split: &SplitIdAndFooterOffsets) -> bool {
         match self {
             CanSplitDoBetter::SplitIdHigher(Some(split_id)) => split.split_id >= *split_id,
-            CanSplitDoBetter::SplitTimestampHigher(Some(timestamp)) => {
-                split.timestamp_end() > *timestamp
+            CanSplitDoBetter::SplitTimestampHigher(Some(timestamp))
+            | CanSplitDoBetter::FindTraceIdsAggregation(Some(timestamp)) => {
+                split.timestamp_end() >= *timestamp
             }
             CanSplitDoBetter::SplitTimestampLower(Some(timestamp)) => {
-                split.timestamp_start() < *timestamp
+                split.timestamp_start() <= *timestamp
             }
             _ => true,
         }
@@ -512,7 +530,8 @@ impl CanSplitDoBetter {
         match self {
             CanSplitDoBetter::Uninformative => (),
             CanSplitDoBetter::SplitIdHigher(split_id) => *split_id = Some(hit.split_id.clone()),
-            CanSplitDoBetter::SplitTimestampHigher(timestamp) => {
+            CanSplitDoBetter::SplitTimestampHigher(timestamp)
+            | CanSplitDoBetter::FindTraceIdsAggregation(timestamp) => {
                 if let Some(SortValue::I64(timestamp_ns)) = hit.sort_value() {
                     // if we get a timestamp of, says 1.5s, we need to check up to 2s to make
                     // sure we don't throw away something like 1.2s, so we should round up while
@@ -549,13 +568,14 @@ pub async fn leaf_search(
 ) -> Result<LeafSearchResponse, SearchError> {
     info!(splits_num = splits.len(), split_offsets = ?PrettySample::new(&splits, 5));
 
-    // In the future this should become `request.aggregation_request.is_some() ||
-    // request.exact_count == true`
-    let run_all_splits =
-        request.aggregation_request.is_some() || request.count_hits() == CountHits::CountAll;
-
     let split_filter = CanSplitDoBetter::from_request(&request, doc_mapper.timestamp_field_name());
     split_filter.optimize_split_order(&mut splits);
+
+    // if client wants full count, or we are doing an aggregation, we want to run every splits.
+    // However if the aggregation is the tracing aggregation, we don't actually need all splits.
+    let run_all_splits = request.count_hits() == CountHits::CountAll
+        || (request.aggregation_request.is_some()
+            && !matches!(split_filter, CanSplitDoBetter::FindTraceIdsAggregation(_)));
 
     // Creates a collector which merges responses into one
     let merge_collector =
@@ -663,7 +683,15 @@ async fn leaf_search_single_split_wrapper(
 
     let mut locked_incremental_merge_collector = incremental_merge_collector.lock().unwrap();
     match leaf_search_single_split_res {
-        Ok(split_search_res) => locked_incremental_merge_collector.add_split(split_search_res),
+        Ok(split_search_res) => {
+            if let Err(err) = locked_incremental_merge_collector.add_split(split_search_res) {
+                locked_incremental_merge_collector.add_failed_split(SplitSearchError {
+                    split_id: split.split_id.clone(),
+                    error: format!("Error parsing aggregation result: {err}"),
+                    retryable_error: true,
+                });
+            }
+        }
         Err(err) => locked_incremental_merge_collector.add_failed_split(SplitSearchError {
             split_id: split.split_id.clone(),
             error: format!("{err}"),
@@ -671,7 +699,10 @@ async fn leaf_search_single_split_wrapper(
         }),
     }
     if let Some(last_hit) = locked_incremental_merge_collector.peek_worst_hit() {
-        split_filter.lock().unwrap().record_new_worst_hit(last_hit);
+        split_filter
+            .lock()
+            .unwrap()
+            .record_new_worst_hit(last_hit.as_ref());
     }
 }
 
