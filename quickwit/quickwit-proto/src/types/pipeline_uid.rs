@@ -17,18 +17,43 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::fmt::{Display, Formatter};
+use std::str::FromStr;
+
 use serde::{Deserialize, Serialize};
 use ulid::Ulid;
 
 /// The size of a ULID in bytes.
 const ULID_SIZE: usize = 16;
 
+/// A pipeline uid identify an indexing pipeline and an indexing task.
 #[derive(Debug, Clone, Copy, Default, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub struct PipelineUid(Ulid);
 
 impl PipelineUid {
+    pub fn from_u128(ulid_u128: u128) -> PipelineUid {
+        PipelineUid(Ulid::from_bytes(ulid_u128.to_le_bytes()))
+    }
+
+    /// Creates a new random pipeline uid.
     pub fn new() -> Self {
         Self(Ulid::new())
+    }
+}
+
+impl FromStr for PipelineUid {
+    type Err = &'static str;
+
+    fn from_str(pipeline_uid_str: &str) -> Result<PipelineUid, Self::Err> {
+        let pipeline_ulid =
+            Ulid::from_string(pipeline_uid_str).map_err(|_| "invalid pipeline uid")?;
+        Ok(PipelineUid(pipeline_ulid))
+    }
+}
+
+impl Display for PipelineUid {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
+        self.0.fmt(f)
     }
 }
 

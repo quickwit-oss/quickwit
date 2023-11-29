@@ -913,6 +913,7 @@ mod tests {
     use quickwit_metastore::{metastore_for_test, IndexMetadata};
     use quickwit_proto::indexing::IndexingTask;
     use quickwit_proto::metastore::ListIndexesMetadataResponse;
+    use quickwit_proto::types::PipelineUid;
     use quickwit_search::Job;
     use tokio::sync::{mpsc, watch};
     use tokio_stream::wrappers::{ReceiverStream, UnboundedReceiverStream};
@@ -1015,6 +1016,7 @@ mod tests {
         assert!(new_indexer_node_info.indexing_tasks.is_empty());
 
         let new_indexing_task = IndexingTask {
+            pipeline_uid: Some(PipelineUid::from_u128(0u128)),
             index_uid: "test-index:0".to_string(),
             source_id: "test-source".to_string(),
             shard_ids: Vec::new(),

@@ -18,12 +18,13 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::{HashMap, HashSet};
-use std::fmt::Debug;
+use std::fmt::{Debug, Display, Formatter};
 use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::Context;
 use async_trait::async_trait;
+use fnv::FnvHashSet;
 use futures::future::try_join_all;
 use itertools::Itertools;
 use quickwit_actors::{
@@ -48,7 +49,7 @@ use quickwit_proto::indexing::{
 use quickwit_proto::metastore::{
     IndexMetadataRequest, ListIndexesMetadataRequest, MetastoreService, MetastoreServiceClient,
 };
-use quickwit_proto::types::{IndexId, IndexUid};
+use quickwit_proto::types::{IndexId, IndexUid, PipelineUid};
 use quickwit_storage::StorageResolver;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Semaphore;
@@ -80,6 +81,12 @@ pub struct MergePipelineId {
     source_id: String,
 }
 
+impl Display for MergePipelineId {
+    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
+        write!(f, "merge:{}:{}", self.index_uid, self.source_id)
+    }
+}
+
 impl<'a> From<&'a IndexingPipelineId> for MergePipelineId {
     fn from(pipeline_id: &'a IndexingPipelineId) -> Self {
         MergePipelineId {
@@ -92,6 +99,12 @@ impl<'a> From<&'a IndexingPipelineId> for MergePipelineId {
 struct MergePipelineHandle {
     mailbox: Mailbox<MergePlanner>,
     handle: ActorHandle<MergePipeline>,
+}
+
+struct PipelineHandle {
+    mailbox: Mailbox<IndexingPipeline>,
+    handle: ActorHandle<IndexingPipeline>,
+    indexing_pipeline_id: IndexingPipelineId,
 }
 
 /// The indexing service is (single) actor service running on indexer and in charge
@@ -109,8 +122,7 @@ pub struct IndexingService {
     ingest_api_service_opt: Option<Mailbox<IngestApiService>>,
     ingester_pool: IngesterPool,
     storage_resolver: StorageResolver,
-    indexing_pipelines:
-        HashMap<IndexingPipelineId, (Mailbox<IndexingPipeline>, ActorHandle<IndexingPipeline>)>,
+    indexing_pipelines: HashMap<PipelineUid, PipelineHandle>,
     counters: IndexingServiceCounters,
     local_split_store: Arc<LocalSplitStore>,
     max_concurrent_split_uploads: usize,
@@ -180,17 +192,14 @@ impl IndexingService {
 
     async fn detach_pipeline(
         &mut self,
-        pipeline_id: &IndexingPipelineId,
+        pipeline_uid: PipelineUid,
     ) -> Result<ActorHandle<IndexingPipeline>, IndexingError> {
-        let (_pipeline_mailbox, pipeline_handle) = self
+        let pipeline_handle = self
             .indexing_pipelines
-            .remove(pipeline_id)
-            .ok_or_else(|| IndexingError::MissingPipeline {
-                index_id: pipeline_id.index_uid.index_id().to_string(),
-                source_id: pipeline_id.source_id.clone(),
-            })?;
+            .remove(&pipeline_uid)
+            .ok_or(IndexingError::MissingPipeline { pipeline_uid })?;
         self.counters.num_running_pipelines -= 1;
-        Ok(pipeline_handle)
+        Ok(pipeline_handle.handle)
     }
 
     async fn detach_merge_pipeline(
@@ -200,9 +209,8 @@ impl IndexingService {
         let pipeline_handle = self
             .merge_pipeline_handles
             .remove(pipeline_id)
-            .ok_or_else(|| IndexingError::MissingPipeline {
-                index_id: pipeline_id.index_uid.index_id().to_string(),
-                source_id: pipeline_id.source_id.clone(),
+            .ok_or_else(|| IndexingError::MissingMergePipeline {
+                merge_pipeline_id: pipeline_id.to_string(),
             })?;
         self.counters.num_running_merge_pipelines -= 1;
         Ok(pipeline_handle.handle)
@@ -210,15 +218,13 @@ impl IndexingService {
 
     async fn observe_pipeline(
         &mut self,
-        pipeline_id: &IndexingPipelineId,
+        pipeline_uid: PipelineUid,
     ) -> Result<Observation<IndexingStatistics>, IndexingError> {
-        let (_pipeline_mailbox, pipeline_handle) = self
+        let pipeline_handle = &self
             .indexing_pipelines
-            .get(pipeline_id)
-            .ok_or_else(|| IndexingError::MissingPipeline {
-                index_id: pipeline_id.index_uid.index_id().to_string(),
-                source_id: pipeline_id.source_id.clone(),
-            })?;
+            .get(&pipeline_uid)
+            .ok_or(IndexingError::MissingPipeline { pipeline_uid })?
+            .handle;
         let observation = pipeline_handle.observe().await;
         Ok(observation)
     }
@@ -228,14 +234,14 @@ impl IndexingService {
         ctx: &ActorContext<Self>,
         index_id: IndexId,
         source_config: SourceConfig,
-        pipeline_ord: usize,
+        pipeline_uid: PipelineUid,
     ) -> Result<IndexingPipelineId, IndexingError> {
         let index_metadata = self.index_metadata(ctx, &index_id).await?;
         let pipeline_id = IndexingPipelineId {
             index_uid: index_metadata.index_uid.clone(),
             source_id: source_config.source_id.clone(),
             node_id: self.node_id.clone(),
-            pipeline_ord,
+            pipeline_uid,
         };
         let index_config = index_metadata.into_index_config();
         self.spawn_pipeline_inner(ctx, pipeline_id.clone(), index_config, source_config)
@@ -250,18 +256,22 @@ impl IndexingService {
         index_config: IndexConfig,
         source_config: SourceConfig,
     ) -> Result<(), IndexingError> {
-        if self.indexing_pipelines.contains_key(&pipeline_id) {
+        if self
+            .indexing_pipelines
+            .contains_key(&pipeline_id.pipeline_uid)
+        {
             return Err(IndexingError::PipelineAlreadyExists {
                 index_id: pipeline_id.index_uid.index_id().to_string(),
                 source_id: pipeline_id.source_id,
-                pipeline_ord: pipeline_id.pipeline_ord,
+                pipeline_uid: pipeline_id.pipeline_uid,
             });
         }
+        let pipeline_uid_str = pipeline_id.pipeline_uid.to_string();
         let indexing_directory = temp_dir::Builder::default()
             .join(pipeline_id.index_uid.index_id())
             .join(pipeline_id.index_uid.incarnation_id())
             .join(&pipeline_id.source_id)
-            .join(&pipeline_id.pipeline_ord.to_string())
+            .join(&pipeline_uid_str)
             .tempdir_in(&self.indexing_root_directory)
             .map_err(IndexingError::Io)?;
         let storage = self
@@ -327,8 +337,13 @@ impl IndexingService {
         };
         let pipeline = IndexingPipeline::new(pipeline_params);
         let (pipeline_mailbox, pipeline_handle) = ctx.spawn_actor().spawn(pipeline);
+        let pipeline_handle = PipelineHandle {
+            mailbox: pipeline_mailbox,
+            handle: pipeline_handle,
+            indexing_pipeline_id: pipeline_id.clone(),
+        };
         self.indexing_pipelines
-            .insert(pipeline_id, (pipeline_mailbox, pipeline_handle));
+            .insert(pipeline_id.pipeline_uid, pipeline_handle);
         self.counters.num_running_pipelines += 1;
         Ok(())
     }
@@ -353,14 +368,12 @@ impl IndexingService {
 
     async fn handle_supervise(&mut self) -> Result<(), ActorExitStatus> {
         self.indexing_pipelines
-            .retain(|pipeline_id, (_pipeline_mailbox, pipeline_handle)| {
-                match pipeline_handle.state() {
+            .retain(|pipeline_uid, pipeline_handle| {
+                match pipeline_handle.handle.state() {
                     ActorState::Idle | ActorState::Paused | ActorState::Processing => true,
                     ActorState::Success => {
                         info!(
-                            index_id=%pipeline_id.index_uid.index_id(),
-                            source_id=%pipeline_id.source_id,
-                            pipeline_ord=%pipeline_id.pipeline_ord,
+                            pipeline_uid=%pipeline_uid,
                             "Indexing pipeline exited successfully."
                         );
                         self.counters.num_successful_pipelines += 1;
@@ -371,9 +384,7 @@ impl IndexingService {
                         // This should never happen: Indexing Pipelines are not supposed to fail,
                         // and are themselves in charge of supervising the pipeline actors.
                         error!(
-                            index_id=%pipeline_id.index_uid.index_id(),
-                            source_id=%pipeline_id.source_id,
-                            pipeline_ord=%pipeline_id.pipeline_ord,
+                            pipeline_uid=%pipeline_uid,
                             "Indexing pipeline exited with failure. This should never happen."
                         );
                         self.counters.num_failed_pipelines += 1;
@@ -385,8 +396,8 @@ impl IndexingService {
         // Evict and kill merge pipelines that are not needed.
         let needed_merge_pipeline_ids: HashSet<MergePipelineId> = self
             .indexing_pipelines
-            .keys()
-            .map(MergePipelineId::from)
+            .values()
+            .map(|pipeline_handle| MergePipelineId::from(&pipeline_handle.indexing_pipeline_id))
             .collect();
         let current_merge_pipeline_ids: HashSet<MergePipelineId> =
             self.merge_pipeline_handles.keys().cloned().collect();
@@ -417,11 +428,11 @@ impl IndexingService {
 
         let pipeline_metrics: HashMap<&IndexingPipelineId, PipelineMetrics> = self
             .indexing_pipelines
-            .iter()
-            .filter_map(|(pipeline_id, (_, pipeline_handle))| {
-                let indexing_statistics = pipeline_handle.last_observation();
+            .values()
+            .filter_map(|pipeline_handle| {
+                let indexing_statistics = pipeline_handle.handle.last_observation();
                 let pipeline_metrics = indexing_statistics.pipeline_metrics_opt?;
-                Some((pipeline_id, pipeline_metrics))
+                Some((&pipeline_handle.indexing_pipeline_id, pipeline_metrics))
             })
             .collect();
         self.cluster
@@ -465,31 +476,42 @@ impl IndexingService {
         ctx: &ActorContext<Self>,
         physical_indexing_plan_request: ApplyIndexingPlanRequest,
     ) -> Result<ApplyIndexingPlanResponse, IndexingError> {
-        let mut updated_pipeline_ids: HashSet<IndexingPipelineId> = HashSet::new();
-        let mut pipeline_ordinals: HashMap<&IndexingTask, usize> = HashMap::new();
-        for indexing_task in &physical_indexing_plan_request.indexing_tasks {
-            let pipeline_ord = pipeline_ordinals.entry(indexing_task).or_insert(0);
-            let pipeline_id = IndexingPipelineId {
-                node_id: self.node_id.clone(),
-                index_uid: IndexUid::from(indexing_task.index_uid.to_string()),
-                source_id: indexing_task.source_id.clone(),
-                pipeline_ord: *pipeline_ord,
-            };
-            *pipeline_ord += 1;
-            updated_pipeline_ids.insert(pipeline_id);
-        }
-
-        let running_pipeline_ids: HashSet<IndexingPipelineId> =
-            self.indexing_pipelines.keys().cloned().collect();
+        let pipelines_uid_in_plan: FnvHashSet<PipelineUid> = physical_indexing_plan_request
+            .indexing_tasks
+            .iter()
+            .map(|indexing_task| indexing_task.pipeline_uid())
+            .collect();
+        let pipeline_to_add: FnvHashSet<&IndexingTask> = physical_indexing_plan_request
+            .indexing_tasks
+            .iter()
+            .filter(|indexing_task| {
+                let pipeline_uid = indexing_task.pipeline_uid();
+                !self.indexing_pipelines.contains_key(&pipeline_uid)
+            })
+            .collect::<FnvHashSet<_>>();
+        let pipeline_uid_to_remove: Vec<PipelineUid> = self
+            .indexing_pipelines
+            .keys()
+            .cloned()
+            .filter(|pipeline_uid| !pipelines_uid_in_plan.contains(pipeline_uid))
+            .collect::<Vec<_>>();
+        let indexing_pipeline_ids_to_add: Vec<IndexingPipelineId> = pipeline_to_add
+            .iter()
+            .flat_map(|indexing_task| {
+                let pipeline_uid = indexing_task.pipeline_uid();
+                let index_uid = IndexUid::parse(indexing_task.index_uid.clone()).ok()?;
+                Some(IndexingPipelineId {
+                    node_id: self.node_id.clone(),
+                    index_uid,
+                    source_id: indexing_task.source_id.clone(),
+                    pipeline_uid,
+                })
+            })
+            .collect();
 
         // Spawn new pipeline in the new plan that are not currently running
         let failed_spawning_pipeline_ids = self
-            .spawn_pipelines(
-                ctx,
-                updated_pipeline_ids
-                    .difference(&running_pipeline_ids)
-                    .collect(),
-            )
+            .spawn_pipelines(ctx, &indexing_pipeline_ids_to_add[..])
             .await?;
 
         // TODO: Temporary hack to assign shards to pipelines.
@@ -497,15 +519,8 @@ impl IndexingService {
             if indexing_task.shard_ids.is_empty() {
                 continue;
             }
-            let pipeline_id = IndexingPipelineId {
-                node_id: self.node_id.clone(),
-                index_uid: indexing_task.index_uid.clone().into(),
-                source_id: indexing_task.source_id.clone(),
-                pipeline_ord: 0,
-            };
-            let Some((pipeline_mailbox, _pipeline_handle)) =
-                self.indexing_pipelines.get(&pipeline_id)
-            else {
+            let pipeline_uid = indexing_task.pipeline_uid();
+            let Some(pipeline_handle) = self.indexing_pipelines.get(&pipeline_uid) else {
                 continue;
             };
             let assignment = Assignment {
@@ -513,17 +528,13 @@ impl IndexingService {
             };
             let message = AssignShards(assignment);
 
-            if let Err(error) = pipeline_mailbox.send_message(message).await {
-                error!("failed to assign shards to indexing pipeline: {}", error);
+            if let Err(error) = pipeline_handle.mailbox.send_message(message).await {
+                error!(error=%error, "failed to assign shards to indexing pipeline");
             }
         }
+
         // Shut down currently running pipelines that are missing in the new plan.
-        self.shutdown_pipelines(
-            running_pipeline_ids
-                .difference(&updated_pipeline_ids)
-                .collect(),
-        )
-        .await;
+        self.shutdown_pipelines(&pipeline_uid_to_remove).await;
 
         self.update_cluster_running_indexing_tasks().await;
 
@@ -540,7 +551,7 @@ impl IndexingService {
     async fn spawn_pipelines(
         &mut self,
         ctx: &ActorContext<Self>,
-        added_pipeline_ids: Vec<&IndexingPipelineId>,
+        added_pipeline_ids: &[IndexingPipelineId],
     ) -> Result<Vec<IndexingPipelineId>, IndexingError> {
         // We fetch the new indexes metadata.
         let indexes_metadata_futures = added_pipeline_ids
@@ -592,9 +603,16 @@ impl IndexingService {
     }
 
     /// Shuts down the pipelines with supplied ids and performs necessary cleanup.
-    async fn shutdown_pipelines(&mut self, pipeline_ids: Vec<&IndexingPipelineId>) {
-        for pipeline_id_to_remove in pipeline_ids.clone() {
-            match self.detach_pipeline(pipeline_id_to_remove).await {
+    async fn shutdown_pipelines(&mut self, pipeline_uids: &[PipelineUid]) {
+        let should_gc_ingest_api_queues = pipeline_uids
+            .iter()
+            .flat_map(|pipeline_uid| self.indexing_pipelines.get(pipeline_uid))
+            .any(|pipeline_handle| {
+                pipeline_handle.indexing_pipeline_id.source_id == INGEST_API_SOURCE_ID
+            });
+
+        for &pipeline_uid_to_remove in pipeline_uids {
+            match self.detach_pipeline(pipeline_uid_to_remove).await {
                 Ok(pipeline_handle) => {
                     // Killing the pipeline ensure that all pipeline actors will stop.
                     pipeline_handle.kill().await;
@@ -603,7 +621,7 @@ impl IndexingService {
                     // Just log the detach error, it can only come from a missing pipeline in the
                     // `indexing_pipeline_handles`.
                     error!(
-                        pipeline_id=?pipeline_id_to_remove,
+                        pipeline_id=?pipeline_uid_to_remove,
                         err=?error,
                         "Detach error.",
                     );
@@ -614,9 +632,6 @@ impl IndexingService {
         // If at least one ingest source has been removed, the related index has possibly been
         // deleted. Thus we run a garbage collect to remove queues of potentially deleted
         // indexes.
-        let should_gc_ingest_api_queues = pipeline_ids
-            .iter()
-            .any(|pipeline_id_to_remove| pipeline_id_to_remove.source_id == INGEST_API_SOURCE_ID);
         if should_gc_ingest_api_queues {
             if let Err(error) = self.run_ingest_api_queues_gc().await {
                 warn!(
@@ -631,10 +646,12 @@ impl IndexingService {
     async fn update_cluster_running_indexing_tasks(&self) {
         let indexing_tasks = self
             .indexing_pipelines
-            .keys()
+            .values()
+            .map(|pipeline_handle| &pipeline_handle.indexing_pipeline_id)
             .map(|pipeline_id| IndexingTask {
                 index_uid: pipeline_id.index_uid.to_string(),
                 source_id: pipeline_id.source_id.clone(),
+                pipeline_uid: Some(pipeline_id.pipeline_uid),
                 shard_ids: Vec::new(),
             })
             // Sort indexing tasks so it's more readable for debugging purpose.
@@ -710,7 +727,7 @@ impl Handler<ObservePipeline> for IndexingService {
         msg: ObservePipeline,
         _ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
-        let observation = self.observe_pipeline(&msg.pipeline_id).await;
+        let observation = self.observe_pipeline(msg.pipeline_id.pipeline_uid).await;
         Ok(observation)
     }
 }
@@ -724,7 +741,7 @@ impl Handler<DetachIndexingPipeline> for IndexingService {
         msg: DetachIndexingPipeline,
         _ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
-        Ok(self.detach_pipeline(&msg.pipeline_id).await)
+        Ok(self.detach_pipeline(msg.pipeline_id.pipeline_uid).await)
     }
 }
 
@@ -787,7 +804,7 @@ impl Handler<SpawnPipeline> for IndexingService {
                 ctx,
                 message.index_id,
                 message.source_config,
-                message.pipeline_ord,
+                message.pipeline_uid,
             )
             .await)
     }
@@ -925,10 +942,10 @@ mod tests {
         };
         let spawn_pipeline_msg = SpawnPipeline {
             index_id: index_id.clone(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::from_u128(1111u128),
             source_config: source_config_0.clone(),
         };
-        let pipeline_id = indexing_service
+        let pipeline_id: IndexingPipelineId = indexing_service
             .ask_for_res(spawn_pipeline_msg.clone())
             .await
             .unwrap();
@@ -939,7 +956,7 @@ mod tests {
         assert_eq!(pipeline_id.index_uid.index_id(), index_id);
         assert_eq!(pipeline_id.source_id, source_config_0.source_id);
         assert_eq!(pipeline_id.node_id, "test-node");
-        assert_eq!(pipeline_id.pipeline_ord, 0);
+        assert_eq!(pipeline_id.pipeline_uid, PipelineUid::from_u128(1111u128));
         assert_eq!(
             indexing_service_handle
                 .observe()
@@ -1018,7 +1035,7 @@ mod tests {
             .ask_for_res(SpawnPipeline {
                 index_id: index_id.clone(),
                 source_config,
-                pipeline_ord: 0,
+                pipeline_uid: PipelineUid::default(),
             })
             .await
             .unwrap();
@@ -1095,11 +1112,13 @@ mod tests {
                 index_uid: metadata.index_uid.to_string(),
                 source_id: "test-indexing-service--source-1".to_string(),
                 shard_ids: Vec::new(),
+                pipeline_uid: Some(PipelineUid::from_u128(0u128)),
             },
             IndexingTask {
                 index_uid: metadata.index_uid.to_string(),
                 source_id: "test-indexing-service--source-1".to_string(),
                 shard_ids: Vec::new(),
+                pipeline_uid: Some(PipelineUid::from_u128(1u128)),
             },
         ];
         indexing_service
@@ -1139,21 +1158,25 @@ mod tests {
                 index_uid: metadata.index_uid.to_string(),
                 source_id: INGEST_API_SOURCE_ID.to_string(),
                 shard_ids: Vec::new(),
+                pipeline_uid: Some(PipelineUid::from_u128(3u128)),
             },
             IndexingTask {
                 index_uid: metadata.index_uid.to_string(),
                 source_id: "test-indexing-service--source-1".to_string(),
                 shard_ids: Vec::new(),
+                pipeline_uid: Some(PipelineUid::from_u128(1u128)),
             },
             IndexingTask {
                 index_uid: metadata.index_uid.to_string(),
                 source_id: "test-indexing-service--source-1".to_string(),
                 shard_ids: Vec::new(),
+                pipeline_uid: Some(PipelineUid::from_u128(2u128)),
             },
             IndexingTask {
                 index_uid: metadata.index_uid.to_string(),
                 source_id: source_config_2.source_id.clone(),
                 shard_ids: Vec::new(),
+                pipeline_uid: Some(PipelineUid::from_u128(4u128)),
             },
         ];
         indexing_service
@@ -1193,16 +1216,19 @@ mod tests {
                 index_uid: metadata.index_uid.to_string(),
                 source_id: INGEST_API_SOURCE_ID.to_string(),
                 shard_ids: Vec::new(),
+                pipeline_uid: Some(PipelineUid::from_u128(3u128)),
             },
             IndexingTask {
                 index_uid: metadata.index_uid.to_string(),
                 source_id: "test-indexing-service--source-1".to_string(),
                 shard_ids: Vec::new(),
+                pipeline_uid: Some(PipelineUid::from_u128(1u128)),
             },
             IndexingTask {
                 index_uid: metadata.index_uid.to_string(),
                 source_id: source_config_2.source_id.clone(),
                 shard_ids: Vec::new(),
+                pipeline_uid: Some(PipelineUid::from_u128(4u128)),
             },
         ];
         indexing_service
@@ -1324,7 +1350,7 @@ mod tests {
             .ask_for_res(SpawnPipeline {
                 index_id: index_id.clone(),
                 source_config,
-                pipeline_ord: 0,
+                pipeline_uid: PipelineUid::default(),
             })
             .await
             .unwrap();
@@ -1382,9 +1408,9 @@ mod tests {
         ) -> Result<Self::Reply, ActorExitStatus> {
             Ok(self
                 .indexing_pipelines
-                .get(&message.0)
+                .get(&message.0.pipeline_uid)
                 .unwrap()
-                .1
+                .handle
                 .check_health(true))
         }
     }
@@ -1442,7 +1468,7 @@ mod tests {
             .ask_for_res(SpawnPipeline {
                 index_id: index_id.clone(),
                 source_config,
-                pipeline_ord: 0,
+                pipeline_uid: PipelineUid::default(),
             })
             .await
             .unwrap();
