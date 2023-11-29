@@ -33,7 +33,7 @@ use chitchat::{
 use futures::Stream;
 use itertools::Itertools;
 use quickwit_proto::indexing::{IndexingPipelineId, IndexingTask, PipelineMetrics};
-use quickwit_proto::types::{NodeId, PipelineUid};
+use quickwit_proto::types::{NodeId, PipelineUid, ShardId};
 use serde::{Deserialize, Serialize};
 use tokio::sync::{mpsc, watch, Mutex, RwLock};
 use tokio::time::timeout;
@@ -62,8 +62,8 @@ const MARKED_FOR_DELETION_GRACE_PERIOD: usize = if cfg!(any(test, feature = "tes
 };
 
 // An indexing task key is formatted as
-// `{INDEXING_TASK_PREFIX}{INDEXING_TASK_SEPARATOR}{index_id}{INDEXING_TASK_SEPARATOR}{source_id}`.
-const INDEXING_TASK_PREFIX: &str = "indexing_task:";
+// `{INDEXING_TASK_PREFIX}{PIPELINE_ULID}`.
+const INDEXING_TASK_PREFIX: &str = "indexer.task:";
 
 #[derive(Clone)]
 pub struct Cluster {
@@ -478,20 +478,24 @@ fn indexing_task_to_chitchat_kv(indexing_task: &IndexingTask) -> (String, String
     (key, value)
 }
 
+fn parse_shards_str(shards_str: &str) -> Option<Vec<ShardId>> {
+    if shards_str.is_empty() {
+        return Some(Vec::new());
+    }
+    let mut shard_ids = Vec::new();
+    for shard_str in shards_str.split(',') {
+        let shard_id = shard_str.parse::<u64>().ok()?;
+        shard_ids.push(shard_id);
+    }
+    Some(shard_ids)
+}
+
 fn chitchat_kv_to_indexing_task(key: &str, value: &str) -> Option<IndexingTask> {
     let pipeline_uid_str = key.strip_prefix(INDEXING_TASK_PREFIX)?;
     let pipeline_uid = PipelineUid::from_str(pipeline_uid_str).ok()?;
     let (source_uid, shards_str) = value.rsplit_once(':')?;
     let (index_uid, source_id) = source_uid.rsplit_once(':')?;
-    let shard_ids = shards_str
-        .split(',')
-        .filter_map(|shard_str| {
-            if shard_str.is_empty() {
-                return None;
-            }
-            shard_str.parse::<u64>().ok()
-        })
-        .collect();
+    let shard_ids = parse_shards_str(shards_str)?;
     Some(IndexingTask {
         index_uid: index_uid.to_string(),
         source_id: source_id.to_string(),
@@ -1086,12 +1090,12 @@ mod tests {
             let chitchat_handle = node.inner.read().await.chitchat_handle.chitchat();
             let mut chitchat_guard = chitchat_handle.lock().await;
             chitchat_guard.self_node_state().set(
-                format!("{INDEXING_TASK_PREFIX}pipeline1"),
+                format!("{INDEXING_TASK_PREFIX}01BX5ZZKBKACTAV9WEVGEMMVS0"),
                 "my_index:uid:my_source:1,3".to_string(),
             );
             chitchat_guard.self_node_state().set(
-                format!("{INDEXING_TASK_PREFIX}pipeline2:my_index:uid:my_source:3a,5"),
-                "3a,5".to_string(),
+                format!("{INDEXING_TASK_PREFIX}01BX5ZZKBKACTAV9WEVGEMMVS1"),
+                "my_index:uid:my_source:3a,5".to_string(),
             );
         }
         node.wait_for_ready_members(|members| members.len() == 1, Duration::from_secs(5))
@@ -1274,5 +1278,33 @@ mod tests {
             ],
             &mut node_state,
         );
+    }
+
+    #[test]
+    fn test_parse_shards_str() {
+        assert!(parse_shards_str("").unwrap().is_empty());
+        assert_eq!(parse_shards_str("12").unwrap(), vec![12]);
+        assert_eq!(parse_shards_str("12,23").unwrap(), vec![12, 23]);
+        assert!(parse_shards_str("12,23,").is_none());
+        assert!(parse_shards_str("12,23a,32").is_none());
+    }
+
+    #[test]
+    fn test_parse_chitchat_kv() {
+        assert!(
+            chitchat_kv_to_indexing_task("invalidulid", "my_index:uid:my_source:1,3").is_none()
+        );
+        let task = super::chitchat_kv_to_indexing_task(
+            "indexer.task:01BX5ZZKBKACTAV9WEVGEMMVS0",
+            "my_index:uid:my_source:1,3",
+        )
+        .unwrap();
+        assert_eq!(
+            task.pipeline_uid(),
+            PipelineUid::from_str("01BX5ZZKBKACTAV9WEVGEMMVS0").unwrap()
+        );
+        assert_eq!(&task.index_uid, "my_index:uid");
+        assert_eq!(&task.source_id, "my_source");
+        assert_eq!(&task.shard_ids, &[1, 3]);
     }
 }

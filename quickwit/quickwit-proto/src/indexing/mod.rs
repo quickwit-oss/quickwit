@@ -28,8 +28,7 @@ use quickwit_common::pubsub::Event;
 use serde::{Deserialize, Serialize};
 use thiserror;
 
-use crate::types::{IndexUid, Position, ShardId, SourceId, SourceUid};
-use crate::types::PipelineUid;
+use crate::types::{IndexUid, PipelineUid, Position, ShardId, SourceId, SourceUid};
 use crate::{ServiceError, ServiceErrorCode};
 
 include!("../codegen/quickwit/quickwit.indexing.rs");
