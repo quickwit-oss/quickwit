@@ -32,6 +32,7 @@ use futures::StreamExt;
 use mrecordlog::error::{CreateQueueError, TruncateError};
 use mrecordlog::MultiRecordLog;
 use quickwit_cluster::Cluster;
+use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
 use quickwit_common::tower::Pool;
 use quickwit_common::ServiceStream;
 use quickwit_proto::ingest::ingester::{
@@ -53,7 +54,6 @@ use super::fetch::FetchStreamTask;
 use super::models::IngesterShard;
 use super::mrecord::MRecord;
 use super::mrecordlog_utils::{append_eof_record_if_necessary, check_enough_capacity};
-use super::rate_limiter::{RateLimiter, RateLimiterSettings};
 use super::rate_meter::RateMeter;
 use super::replication::{
     ReplicationClient, ReplicationStreamTask, ReplicationStreamTaskHandle, ReplicationTask,
@@ -467,7 +467,7 @@ impl IngesterService for Ingester {
                 .get_mut(&queue_id)
                 .expect("rate limiter should be initialized");
 
-            if !rate_limiter.acquire(requested_capacity) {
+            if !rate_limiter.acquire_bytes(requested_capacity) {
                 warn!("failed to persist records to shard `{queue_id}`: rate limited");
 
                 let persist_failure = PersistFailure {
@@ -1671,7 +1671,7 @@ mod tests {
     async fn test_ingester_persist_rate_limited() {
         let (ingester_ctx, mut ingester) = IngesterForTest::default()
             .with_rate_limiter_settings(RateLimiterSettings {
-                burst_limit: ByteSize(0),
+                burst_limit: 0,
                 rate_limit: ConstantRate::bytes_per_sec(ByteSize(0)),
                 refill_period: Duration::from_millis(100),
             })

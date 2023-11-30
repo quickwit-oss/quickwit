@@ -12,8 +12,8 @@ documentation = "https://quickwit.io/docs/"
 [dependencies]
 anyhow = { workspace = true }
 async-trait = { workspace = true }
-fnv = { workspace = true }
 dyn-clone = { workspace = true }
+fnv = { workspace = true }
 http = { workspace = true }
 hyper = { workspace = true }
 itertools = { workspace = true }

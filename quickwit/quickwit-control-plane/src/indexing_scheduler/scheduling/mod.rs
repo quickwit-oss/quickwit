@@ -59,10 +59,10 @@ fn populate_problem(
             None
         }
         SourceToScheduleType::Sharded {
-            shards,
+            shard_ids,
             load_per_shard,
         } => {
-            let num_shards = shards.len() as u32;
+            let num_shards = shard_ids.len() as u32;
             let source_ord = problem.add_source(num_shards, *load_per_shard);
             Some(source_ord)
         }
@@ -140,7 +140,7 @@ pub struct SourceToSchedule {
 #[derive(Debug)]
 pub enum SourceToScheduleType {
     Sharded {
-        shards: Vec<ShardId>,
+        shard_ids: Vec<ShardId>,
         load_per_shard: NonZeroU32,
     },
     NonSharded {
@@ -153,10 +153,7 @@ pub enum SourceToScheduleType {
 
 fn compute_max_num_shards_per_pipeline(source_type: &SourceToScheduleType) -> NonZeroU32 {
     match &source_type {
-        SourceToScheduleType::Sharded {
-            shards: _,
-            load_per_shard,
-        } => {
+        SourceToScheduleType::Sharded { load_per_shard, .. } => {
             NonZeroU32::new(MAX_LOAD_PER_PIPELINE.cpu_millis() / load_per_shard.get())
                 .unwrap_or_else(|| {
                     // We throttle shard at ingestion to ensure that a shard does not
@@ -187,11 +184,11 @@ fn convert_scheduling_solution_to_physical_plan_single_node_single_source(
 ) -> Vec<IndexingTask> {
     match &source.source_type {
         SourceToScheduleType::Sharded {
-            shards,
+            shard_ids,
             load_per_shard,
         } => {
             // For the moment we do something voluntarily suboptimal.
-            let max_num_pipelines = (shards.len() as u32) * load_per_shard.get()
+            let max_num_pipelines = (shard_ids.len() as u32) * load_per_shard.get()
                 / CPU_PER_PIPELINE_LOAD_THRESHOLD.cpu_millis();
             if previous_tasks.len() > max_num_pipelines as usize {
                 previous_tasks = &previous_tasks[..max_num_pipelines as usize];
@@ -208,7 +205,7 @@ fn convert_scheduling_solution_to_physical_plan_single_node_single_source(
                     .shard_ids
                     .iter()
                     .copied()
-                    .filter(|shard_id| shards.contains(shard_id))
+                    .filter(|shard_id| shard_ids.contains(shard_id))
                     .take(max_shard_in_pipeline)
                     .collect();
                 remaining_num_shards_to_schedule_on_node -= shard_ids.len() as u32;
@@ -333,11 +330,7 @@ fn convert_scheduling_solution_to_physical_plan(
     }
 
     for source in sources {
-        let SourceToScheduleType::Sharded {
-            shards,
-            load_per_shard: _,
-        } = &source.source_type
-        else {
+        let SourceToScheduleType::Sharded { shard_ids, .. } = &source.source_type else {
             continue;
         };
         let source_ord = id_to_ord_map.source_ord(&source.source_uid).unwrap();
@@ -369,9 +362,9 @@ fn convert_scheduling_solution_to_physical_plan(
         }
 
         // Missing shards is the list of shards that is not scheduled into a pipeline yet.
-        let missing_shards: Vec<ShardId> = shards
+        let missing_shards: Vec<ShardId> = shard_ids
             .iter()
-            .filter(|&shard| !scheduled_shards.contains(shard))
+            .filter(|shard_id| !scheduled_shards.contains(shard_id))
             .copied()
             .collect();
 
@@ -536,7 +529,7 @@ mod tests {
         let source_0 = SourceToSchedule {
             source_uid: source_uid0.clone(),
             source_type: SourceToScheduleType::Sharded {
-                shards: vec![0, 1, 2, 3, 4, 5, 6, 7],
+                shard_ids: vec![0, 1, 2, 3, 4, 5, 6, 7],
                 load_per_shard: NonZeroU32::new(1_000).unwrap(),
             },
         };
@@ -649,7 +642,7 @@ mod tests {
         let sources = vec![SourceToSchedule {
             source_uid: source_uid.clone(),
             source_type: SourceToScheduleType::Sharded {
-                shards: vec![0, 1, 3, 4, 5],
+                shard_ids: vec![0, 1, 3, 4, 5],
                 load_per_shard: NonZeroU32::new(1_000).unwrap(),
             },
         }];
@@ -680,7 +673,7 @@ mod tests {
         let sources = vec![SourceToSchedule {
             source_uid: source_uid.clone(),
             source_type: SourceToScheduleType::Sharded {
-                shards: shard_ids.to_vec(),
+                shard_ids: shard_ids.to_vec(),
                 load_per_shard: NonZeroU32::new(load_per_shard.cpu_millis()).unwrap(),
             },
         }];
