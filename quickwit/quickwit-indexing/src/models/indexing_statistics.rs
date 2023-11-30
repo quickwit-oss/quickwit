@@ -17,9 +17,11 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::BTreeSet;
 use std::sync::atomic::Ordering;
 
 use quickwit_proto::indexing::PipelineMetrics;
+use quickwit_proto::types::ShardId;
 use serde::Serialize;
 
 use crate::actors::{DocProcessorCounters, IndexerCounters, PublisherCounters, UploaderCounters};
@@ -51,6 +53,9 @@ pub struct IndexingStatistics {
     pub num_spawn_attempts: usize,
     // Pipeline metrics.
     pub pipeline_metrics_opt: Option<PipelineMetrics>,
+    // List of shard ids.
+    #[schema(value_type = Vec<u64>)]
+    pub shard_ids: BTreeSet<ShardId>,
 }
 
 impl IndexingStatistics {

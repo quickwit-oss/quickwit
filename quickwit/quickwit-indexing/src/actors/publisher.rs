@@ -23,7 +23,7 @@ use fail::fail_point;
 use quickwit_actors::{Actor, ActorContext, Handler, Mailbox, QueueCapacity};
 use quickwit_proto::metastore::{MetastoreService, MetastoreServiceClient, PublishSplitsRequest};
 use serde::Serialize;
-use tracing::{info, instrument};
+use tracing::{info, instrument, warn};
 
 use crate::actors::MergePlanner;
 use crate::models::{NewSplits, SplitsUpdate};
@@ -156,12 +156,15 @@ impl Handler<SplitsUpdate> for Publisher {
                 // considered an error. For instance, if the source is a
                 // FileSource, it will terminate upon EOF and drop its
                 // mailbox.
-                let _ = ctx
+                let suggest_truncate_res = ctx
                     .send_message(
                         source_mailbox,
                         SuggestTruncate(checkpoint.source_delta.get_source_checkpoint()),
                     )
                     .await;
+                if let Err(send_truncate_err) = suggest_truncate_res {
+                    warn!(error=?send_truncate_err, "failed to send truncate message from publisher to source");
+                }
             }
         }
 
