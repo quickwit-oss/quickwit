@@ -22,12 +22,14 @@ use std::net::{IpAddr, SocketAddr};
 use std::str::FromStr;
 
 use anyhow::{bail, Context};
+use http::HeaderMap;
 use quickwit_common::net::{find_private_ip, get_short_hostname, Host};
 use quickwit_common::new_coolid;
 use quickwit_common::uri::Uri;
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
+use super::RestConfig;
 use crate::config_value::ConfigValue;
 use crate::qw_env_vars::*;
 use crate::service::QuickwitService;
@@ -179,11 +181,9 @@ struct NodeConfigBuilder {
     data_dir_uri: ConfigValue<Uri, QW_DATA_DIR>,
     metastore_uri: ConfigValue<Uri, QW_METASTORE_URI>,
     default_index_root_uri: ConfigValue<Uri, QW_DEFAULT_INDEX_ROOT_URI>,
+    #[serde(rename = "rest")]
     #[serde(default)]
-    add_elastic_header: bool,
-    #[serde(default)]
-    #[serde_as(deserialize_as = "serde_with::OneOrMany<_>")]
-    rest_cors_allow_origins: Vec<String>,
+    rest_config: RestConfig,
     #[serde(rename = "storage")]
     #[serde(default)]
     storage_configs: StorageConfigs,
@@ -273,7 +273,6 @@ impl NodeConfigBuilder {
         let node_config = NodeConfig {
             cluster_id: self.cluster_id.resolve(env_vars)?,
             node_id: self.node_id.resolve(env_vars)?,
-            add_elastic_header: self.add_elastic_header,
             enabled_services,
             rest_listen_addr,
             gossip_listen_addr,
@@ -284,7 +283,7 @@ impl NodeConfigBuilder {
             data_dir_path,
             metastore_uri,
             default_index_root_uri,
-            rest_cors_allow_origins: self.rest_cors_allow_origins,
+            rest_config: self.rest_config,
             metastore_configs: self.metastore_configs,
             storage_configs: self.storage_configs,
             indexer_config: self.indexer_config,
@@ -321,7 +320,6 @@ impl Default for NodeConfigBuilder {
             cluster_id: default_cluster_id(),
             node_id: default_node_id(),
             enabled_services: default_enabled_services(),
-            add_elastic_header: false,
             listen_address: default_listen_address(),
             rest_listen_port: default_rest_listen_port(),
             gossip_listen_port: ConfigValue::none(),
@@ -331,7 +329,7 @@ impl Default for NodeConfigBuilder {
             data_dir_uri: default_data_dir_uri(),
             metastore_uri: ConfigValue::none(),
             default_index_root_uri: ConfigValue::none(),
-            rest_cors_allow_origins: Vec::new(),
+            rest_config: RestConfig::default(),
             storage_configs: StorageConfigs::default(),
             metastore_configs: MetastoreConfigs::default(),
             indexer_config: IndexerConfig::default(),
@@ -370,11 +368,13 @@ pub fn node_config_for_test() -> NodeConfig {
         .to_path_buf();
     let metastore_uri = default_metastore_uri(&data_dir_uri);
     let default_index_root_uri = default_index_root_uri(&data_dir_uri);
-
+    let rest_config = RestConfig {
+        cors_allow_origins: Vec::new(),
+        additional_headers: HeaderMap::new(),
+    };
     NodeConfig {
         cluster_id: default_cluster_id().unwrap(),
         node_id: default_node_id().unwrap(),
-        add_elastic_header: false,
         enabled_services,
         gossip_advertise_addr: gossip_listen_addr,
         grpc_advertise_addr: grpc_listen_addr,
@@ -385,7 +385,7 @@ pub fn node_config_for_test() -> NodeConfig {
         data_dir_path,
         metastore_uri,
         default_index_root_uri,
-        rest_cors_allow_origins: Vec::new(),
+        rest_config,
         storage_configs: StorageConfigs::default(),
         metastore_configs: MetastoreConfigs::default(),
         indexer_config: IndexerConfig::default(),
@@ -758,7 +758,6 @@ mod tests {
     async fn test_peer_socket_addrs() {
         {
             let node_config = NodeConfigBuilder {
-                rest_listen_port: ConfigValue::for_test(1789),
                 ..Default::default()
             }
             .build_and_validate(&HashMap::new())
@@ -768,7 +767,6 @@ mod tests {
         }
         {
             let node_config = NodeConfigBuilder {
-                rest_listen_port: ConfigValue::for_test(1789),
                 peer_seeds: ConfigValue::for_test(List(vec!["unresolvable-host".to_string()])),
                 ..Default::default()
             }
@@ -779,7 +777,6 @@ mod tests {
         }
         {
             let node_config = NodeConfigBuilder {
-                rest_listen_port: ConfigValue::for_test(1789),
                 peer_seeds: ConfigValue::for_test(List(vec![
                     "unresolvable-host".to_string(),
                     "localhost".to_string(),
@@ -821,7 +818,6 @@ mod tests {
         {
             let node_config = NodeConfigBuilder {
                 listen_address: default_listen_address(),
-                rest_listen_port: ConfigValue::for_test(1789),
                 ..Default::default()
             }
             .build_and_validate(&HashMap::new())
@@ -834,7 +830,6 @@ mod tests {
         {
             let node_config = NodeConfigBuilder {
                 listen_address: default_listen_address(),
-                rest_listen_port: ConfigValue::for_test(1789),
                 gossip_listen_port: ConfigValue::for_test(1889),
                 grpc_listen_port: ConfigValue::for_test(1989),
                 ..Default::default()
@@ -953,7 +948,8 @@ mod tests {
     async fn test_rest_config_accepts_wildcard() {
         let rest_config_yaml = r#"
             version: 0.6
-            rest_cors_allow_origins: '*'
+            rest:
+              cors_allow_origins: '*'
         "#;
         let config = load_node_config_with_env(
             ConfigFormat::Yaml,
@@ -962,14 +958,15 @@ mod tests {
         )
         .await
         .expect("Deserialize rest config");
-        assert_eq!(config.rest_cors_allow_origins, ["*"]);
+        assert_eq!(config.rest_config.cors_allow_origins, ["*"]);
     }
 
     #[tokio::test]
     async fn test_rest_config_accepts_single_origin() {
         let rest_config_yaml = r#"
             version: 0.6
-            rest_cors_allow_origins: https://www.my-domain.com
+            rest:
+              cors_allow_origins: https://www.my-domain.com
         "#;
         let config = load_node_config_with_env(
             ConfigFormat::Yaml,
@@ -979,13 +976,14 @@ mod tests {
         .await
         .expect("Deserialize rest config");
         assert_eq!(
-            config.rest_cors_allow_origins,
+            config.rest_config.cors_allow_origins,
             ["https://www.my-domain.com"]
         );
 
         let rest_config_yaml = r#"
             version: 0.6
-            rest_cors_allow_origins: http://192.168.0.108:7280
+            rest:
+              cors_allow_origins: http://192.168.0.108:7280
         "#;
         let config = load_node_config_with_env(
             ConfigFormat::Yaml,
@@ -995,7 +993,7 @@ mod tests {
         .await
         .expect("Deserialize rest config");
         assert_eq!(
-            config.rest_cors_allow_origins,
+            config.rest_config.cors_allow_origins,
             ["http://192.168.0.108:7280"]
         );
     }
@@ -1004,7 +1002,8 @@ mod tests {
     async fn test_rest_config_accepts_multi_origin() {
         let rest_config_yaml = r#"
             version: 0.6
-            rest_cors_allow_origins:
+            rest: 
+              cors_allow_origins:
                 - https://www.my-domain.com
         "#;
         let config = load_node_config_with_env(
@@ -1015,13 +1014,14 @@ mod tests {
         .await
         .expect("Deserialize rest config");
         assert_eq!(
-            config.rest_cors_allow_origins,
+            config.rest_config.cors_allow_origins,
             ["https://www.my-domain.com"]
         );
 
         let rest_config_yaml = r#"
             version: 0.6
-            rest_cors_allow_origins:
+            rest:
+              cors_allow_origins:
                 - https://www.my-domain.com
                 - https://www.my-other-domain.com
         "#;
@@ -1033,7 +1033,7 @@ mod tests {
         .await
         .expect("Deserialize rest config");
         assert_eq!(
-            config.rest_cors_allow_origins,
+            config.rest_config.cors_allow_origins,
             [
                 "https://www.my-domain.com",
                 "https://www.my-other-domain.com"
@@ -1042,7 +1042,8 @@ mod tests {
 
         let rest_config_yaml = r#"
             version: 0.6
-            rest_cors_allow_origins:
+            rest:
+              rest_cors_allow_origins:
         "#;
         load_node_config_with_env(
             ConfigFormat::Yaml,
@@ -1054,7 +1055,8 @@ mod tests {
 
         let rest_config_yaml = r#"
             version: 0.6
-            rest_cors_allow_origins:
+            rest:
+              cors_allow_origins:
                 -
         "#;
         load_node_config_with_env(
