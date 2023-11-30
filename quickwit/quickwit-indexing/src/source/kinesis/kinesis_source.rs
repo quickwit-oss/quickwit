@@ -153,7 +153,7 @@ impl KinesisSource {
         let from_sequence_number_exclusive = match &position {
             Position::Beginning => None,
             Position::Offset(offset) => Some(offset.to_string()),
-            Position::Eof => panic!("position of a Kinesis shard should never be EOF"),
+            Position::Eof(_) => panic!("position of a Kinesis shard should never be EOF"),
         };
         let shard_consumer = ShardConsumer::new(
             self.stream_name.clone(),
@@ -331,13 +331,11 @@ impl Source for KinesisSource {
     }
 
     fn observable_state(&self) -> JsonValue {
-        let shard_consumer_positions: Vec<(&ShardId, &str)> = self
+        let shard_consumer_positions: Vec<(&ShardId, &Position)> = self
             .state
             .shard_consumers
             .iter()
-            .map(|(shard_id, shard_consumer_state)| {
-                (shard_id, shard_consumer_state.position.as_str())
-            })
+            .map(|(shard_id, shard_consumer_state)| (shard_id, &shard_consumer_state.position))
             .sorted()
             .collect();
         json!({

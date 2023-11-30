@@ -405,7 +405,7 @@ mod tests {
         // for the pipeline state to be updated.
         test_sandbox
             .universe()
-            .sleep(OBSERVE_PIPELINE_INTERVAL * 3)
+            .sleep(OBSERVE_PIPELINE_INTERVAL * 5)
             .await;
         let pipeline_state = pipeline_handler.process_pending_and_observe().await.state;
         assert_eq!(pipeline_state.delete_task_planner.metrics.num_errors, 1);

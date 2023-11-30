@@ -356,23 +356,23 @@ mod tests {
         ));
         event_broker1.publish(LocalShardPositionsUpdate::new(
             source_uid.clone(),
-            vec![(2, 10u64.into())],
+            vec![(2, Position::offset(10u64))],
         ));
         event_broker1.publish(LocalShardPositionsUpdate::new(
             source_uid.clone(),
-            vec![(1, 10u64.into())],
+            vec![(1, Position::offset(10u64))],
         ));
         event_broker2.publish(LocalShardPositionsUpdate::new(
             source_uid.clone(),
-            vec![(2, 10u64.into())],
+            vec![(2, Position::offset(10u64))],
         ));
         event_broker2.publish(LocalShardPositionsUpdate::new(
             source_uid.clone(),
-            vec![(2, 12u64.into())],
+            vec![(2, Position::offset(12u64))],
         ));
         event_broker2.publish(LocalShardPositionsUpdate::new(
             source_uid.clone(),
-            vec![(1, Position::Beginning), (2, 12u64.into())],
+            vec![(1, Position::Beginning), (2, Position::offset(12u64))],
         ));
 
         let mut updates1: Vec<Vec<(ShardId, Position)>> = Vec::new();
@@ -387,9 +387,9 @@ mod tests {
             updates1,
             vec![
                 vec![(1, Position::Beginning)],
-                vec![(1, Position::Beginning), (2, 10u64.into())],
-                vec![(1, 10u64.into()), (2, 10u64.into()),],
-                vec![(1, 10u64.into()), (2, 12u64.into()),],
+                vec![(1, Position::Beginning), (2, Position::offset(10u64))],
+                vec![(1, Position::offset(10u64)), (2, Position::offset(10u64)),],
+                vec![(1, Position::offset(10u64)), (2, Position::offset(12u64)),],
             ]
         );
 
@@ -403,10 +403,10 @@ mod tests {
         assert_eq!(
             updates2,
             vec![
-                vec![(2, 10u64.into())],
-                vec![(2, 12u64.into())],
-                vec![(1, Position::Beginning), (2, 12u64.into())],
-                vec![(1, 10u64.into()), (2, 12u64.into())],
+                vec![(2, Position::offset(10u64))],
+                vec![(2, Position::offset(12u64))],
+                vec![(1, Position::Beginning), (2, Position::offset(12u64))],
+                vec![(1, Position::offset(10u64)), (2, Position::offset(12u64))],
             ]
         );
 
@@ -446,16 +446,19 @@ mod tests {
                 source_uid.clone(),
                 vec![(1, Position::Beginning)],
             ));
-            tokio::time::sleep(Duration::from_millis(1000)).await;
+            tokio::time::sleep(Duration::from_secs(1)).await;
             let value = cluster.get_self_key_value(&key).await.unwrap();
             assert_eq!(&value, r#"{"1":""}"#);
         }
         {
             event_broker.publish(LocalShardPositionsUpdate::new(
                 source_uid.clone(),
-                vec![(1, 1_000u64.into()), (2, 2000u64.into())],
+                vec![
+                    (1, Position::offset(1_000u64)),
+                    (2, Position::offset(2_000u64)),
+                ],
             ));
-            tokio::time::sleep(Duration::from_millis(1000)).await;
+            tokio::time::sleep(Duration::from_secs(1)).await;
             let value = cluster.get_self_key_value(&key).await.unwrap();
             assert_eq!(
                 &value,
@@ -465,9 +468,12 @@ mod tests {
         {
             event_broker.publish(LocalShardPositionsUpdate::new(
                 source_uid.clone(),
-                vec![(1, 999u64.into()), (3, 3000u64.into())],
+                vec![
+                    (1, Position::offset(999u64)),
+                    (3, Position::offset(3_000u64)),
+                ],
             ));
-            tokio::time::sleep(Duration::from_millis(1000)).await;
+            tokio::time::sleep(Duration::from_secs(1)).await;
             let value = cluster.get_self_key_value(&key).await.unwrap();
             // We do not update the position that got lower, nor the position that disappeared
             assert_eq!(

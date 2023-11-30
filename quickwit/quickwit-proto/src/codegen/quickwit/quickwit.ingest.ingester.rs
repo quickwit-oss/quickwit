@@ -271,7 +271,27 @@ pub struct OpenFetchStreamRequest {
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct FetchResponseV2 {
+pub struct FetchMessage {
+    #[prost(oneof = "fetch_message::Message", tags = "1, 2")]
+    pub message: ::core::option::Option<fetch_message::Message>,
+}
+/// Nested message and enum types in `FetchMessage`.
+pub mod fetch_message {
+    #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+    #[serde(rename_all = "snake_case")]
+    #[allow(clippy::derive_partial_eq_without_eq)]
+    #[derive(Clone, PartialEq, ::prost::Oneof)]
+    pub enum Message {
+        #[prost(message, tag = "1")]
+        Payload(super::FetchPayload),
+        #[prost(message, tag = "2")]
+        Eof(super::FetchEof),
+    }
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct FetchPayload {
     #[prost(string, tag = "1")]
     pub index_uid: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
@@ -284,6 +304,19 @@ pub struct FetchResponseV2 {
     pub from_position_exclusive: ::core::option::Option<crate::types::Position>,
     #[prost(message, optional, tag = "6")]
     pub to_position_inclusive: ::core::option::Option<crate::types::Position>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct FetchEof {
+    #[prost(string, tag = "1")]
+    pub index_uid: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub source_id: ::prost::alloc::string::String,
+    #[prost(uint64, tag = "3")]
+    pub shard_id: u64,
+    #[prost(message, optional, tag = "4")]
+    pub eof_position: ::core::option::Option<crate::types::Position>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -489,7 +522,7 @@ pub trait IngesterService: std::fmt::Debug + dyn_clone::DynClone + Send + Sync +
     async fn open_fetch_stream(
         &mut self,
         request: OpenFetchStreamRequest,
-    ) -> crate::ingest::IngestV2Result<IngesterServiceStream<FetchResponseV2>>;
+    ) -> crate::ingest::IngestV2Result<IngesterServiceStream<FetchMessage>>;
     /// Streams status updates, called "observations", from an ingester.
     async fn open_observation_stream(
         &mut self,
@@ -615,7 +648,7 @@ impl IngesterService for IngesterServiceClient {
     async fn open_fetch_stream(
         &mut self,
         request: OpenFetchStreamRequest,
-    ) -> crate::ingest::IngestV2Result<IngesterServiceStream<FetchResponseV2>> {
+    ) -> crate::ingest::IngestV2Result<IngesterServiceStream<FetchMessage>> {
         self.inner.open_fetch_stream(request).await
     }
     async fn open_observation_stream(
@@ -681,9 +714,7 @@ pub mod ingester_service_mock {
         async fn open_fetch_stream(
             &mut self,
             request: super::OpenFetchStreamRequest,
-        ) -> crate::ingest::IngestV2Result<
-            IngesterServiceStream<super::FetchResponseV2>,
-        > {
+        ) -> crate::ingest::IngestV2Result<IngesterServiceStream<super::FetchMessage>> {
             self.inner.lock().await.open_fetch_stream(request).await
         }
         async fn open_observation_stream(
@@ -774,7 +805,7 @@ for Box<dyn IngesterService> {
     }
 }
 impl tower::Service<OpenFetchStreamRequest> for Box<dyn IngesterService> {
-    type Response = IngesterServiceStream<FetchResponseV2>;
+    type Response = IngesterServiceStream<FetchMessage>;
     type Error = crate::ingest::IngestV2Error;
     type Future = BoxFuture<Self::Response, Self::Error>;
     fn poll_ready(
@@ -901,7 +932,7 @@ struct IngesterServiceTowerBlock {
     >,
     open_fetch_stream_svc: quickwit_common::tower::BoxService<
         OpenFetchStreamRequest,
-        IngesterServiceStream<FetchResponseV2>,
+        IngesterServiceStream<FetchMessage>,
         crate::ingest::IngestV2Error,
     >,
     open_observation_stream_svc: quickwit_common::tower::BoxService<
@@ -968,7 +999,7 @@ impl IngesterService for IngesterServiceTowerBlock {
     async fn open_fetch_stream(
         &mut self,
         request: OpenFetchStreamRequest,
-    ) -> crate::ingest::IngestV2Result<IngesterServiceStream<FetchResponseV2>> {
+    ) -> crate::ingest::IngestV2Result<IngesterServiceStream<FetchMessage>> {
         self.open_fetch_stream_svc.ready().await?.call(request).await
     }
     async fn open_observation_stream(
@@ -1033,7 +1064,7 @@ pub struct IngesterServiceTowerBlockBuilder {
         quickwit_common::tower::BoxLayer<
             Box<dyn IngesterService>,
             OpenFetchStreamRequest,
-            IngesterServiceStream<FetchResponseV2>,
+            IngesterServiceStream<FetchMessage>,
             crate::ingest::IngestV2Error,
         >,
     >,
@@ -1112,7 +1143,7 @@ impl IngesterServiceTowerBlockBuilder {
         >>::Future: Send + 'static,
         L::Service: tower::Service<
                 OpenFetchStreamRequest,
-                Response = IngesterServiceStream<FetchResponseV2>,
+                Response = IngesterServiceStream<FetchMessage>,
                 Error = crate::ingest::IngestV2Error,
             > + Clone + Send + Sync + 'static,
         <L::Service as tower::Service<OpenFetchStreamRequest>>::Future: Send + 'static,
@@ -1220,7 +1251,7 @@ impl IngesterServiceTowerBlockBuilder {
         L: tower::Layer<Box<dyn IngesterService>> + Send + Sync + 'static,
         L::Service: tower::Service<
                 OpenFetchStreamRequest,
-                Response = IngesterServiceStream<FetchResponseV2>,
+                Response = IngesterServiceStream<FetchMessage>,
                 Error = crate::ingest::IngestV2Error,
             > + Clone + Send + Sync + 'static,
         <L::Service as tower::Service<OpenFetchStreamRequest>>::Future: Send + 'static,
@@ -1504,10 +1535,10 @@ where
         >
         + tower::Service<
             OpenFetchStreamRequest,
-            Response = IngesterServiceStream<FetchResponseV2>,
+            Response = IngesterServiceStream<FetchMessage>,
             Error = crate::ingest::IngestV2Error,
             Future = BoxFuture<
-                IngesterServiceStream<FetchResponseV2>,
+                IngesterServiceStream<FetchMessage>,
                 crate::ingest::IngestV2Error,
             >,
         >
@@ -1566,7 +1597,7 @@ where
     async fn open_fetch_stream(
         &mut self,
         request: OpenFetchStreamRequest,
-    ) -> crate::ingest::IngestV2Result<IngesterServiceStream<FetchResponseV2>> {
+    ) -> crate::ingest::IngestV2Result<IngesterServiceStream<FetchMessage>> {
         self.call(request).await
     }
     async fn open_observation_stream(
@@ -1667,7 +1698,7 @@ where
     async fn open_fetch_stream(
         &mut self,
         request: OpenFetchStreamRequest,
-    ) -> crate::ingest::IngestV2Result<IngesterServiceStream<FetchResponseV2>> {
+    ) -> crate::ingest::IngestV2Result<IngesterServiceStream<FetchMessage>> {
         self.inner
             .open_fetch_stream(request)
             .await
@@ -1787,7 +1818,7 @@ for IngesterServiceGrpcServerAdapter {
             .map_err(|error| error.into())
     }
     type OpenFetchStreamStream = quickwit_common::ServiceStream<
-        tonic::Result<FetchResponseV2>,
+        tonic::Result<FetchMessage>,
     >;
     async fn open_fetch_stream(
         &self,
@@ -2025,7 +2056,7 @@ pub mod ingester_service_grpc_client {
             &mut self,
             request: impl tonic::IntoRequest<super::OpenFetchStreamRequest>,
         ) -> std::result::Result<
-            tonic::Response<tonic::codec::Streaming<super::FetchResponseV2>>,
+            tonic::Response<tonic::codec::Streaming<super::FetchMessage>>,
             tonic::Status,
         > {
             self.inner
@@ -2261,7 +2292,7 @@ pub mod ingester_service_grpc_server {
         >;
         /// Server streaming response type for the OpenFetchStream method.
         type OpenFetchStreamStream: futures_core::Stream<
-                Item = std::result::Result<super::FetchResponseV2, tonic::Status>,
+                Item = std::result::Result<super::FetchMessage, tonic::Status>,
             >
             + Send
             + 'static;
@@ -2506,7 +2537,7 @@ pub mod ingester_service_grpc_server {
                     > tonic::server::ServerStreamingService<
                         super::OpenFetchStreamRequest,
                     > for OpenFetchStreamSvc<T> {
-                        type Response = super::FetchResponseV2;
+                        type Response = super::FetchMessage;
                         type ResponseStream = T::OpenFetchStreamStream;
                         type Future = BoxFuture<
                             tonic::Response<Self::ResponseStream>,

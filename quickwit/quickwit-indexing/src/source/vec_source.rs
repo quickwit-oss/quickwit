@@ -82,7 +82,7 @@ fn position_from_offset(offset: usize) -> Position {
     if offset == 0 {
         return Position::Beginning;
     }
-    Position::from(offset - 1)
+    Position::offset(offset - 1)
 }
 
 #[async_trait]
