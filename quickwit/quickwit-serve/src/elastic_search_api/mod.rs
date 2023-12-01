@@ -26,7 +26,6 @@ use std::sync::Arc;
 
 use bulk::{es_compat_bulk_handler, es_compat_index_bulk_handler};
 pub use filter::ElasticCompatibleApi;
-use hyper::header::HeaderValue;
 use hyper::StatusCode;
 use quickwit_config::NodeConfig;
 use quickwit_ingest::IngestServiceClient;
@@ -51,7 +50,6 @@ pub fn elastic_api_handlers(
     search_service: Arc<dyn SearchService>,
     ingest_service: IngestServiceClient,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    let add_elastic_header = node_config.add_elastic_header;
     es_compat_cluster_info_handler(node_config, BuildInfo::get())
         .or(es_compat_search_handler(search_service.clone()))
         .or(es_compat_index_search_handler(search_service.clone()))
@@ -59,7 +57,6 @@ pub fn elastic_api_handlers(
         .or(es_compat_index_multi_search_handler(search_service))
         .or(es_compat_bulk_handler(ingest_service.clone()))
         .or(es_compat_index_bulk_handler(ingest_service))
-        .map(move |response| add_elastic_header_to_response(add_elastic_header, response))
     // Register newly created handlers here.
 }
 
@@ -104,39 +101,18 @@ fn make_elastic_api_response<T: serde::Serialize>(
     JsonApiResponse::new(&elasticsearch_result, status_code, &format)
 }
 
-/// Elasticsearch clients will check whether the response header
-/// contains `X-Elastic-Product` key and `Elasticsearch` value.
-fn add_elastic_header_to_response<T: warp::Reply + 'static>(
-    add_elastic_header: bool,
-    response: T,
-) -> warp::reply::Response {
-    let mut response = response.into_response();
-    if add_elastic_header {
-        response.headers_mut().insert(
-            "X-Elastic-Product",
-            HeaderValue::from_static("Elasticsearch"),
-        );
-    }
-    response
-}
-
 #[cfg(test)]
 mod tests {
     use std::sync::Arc;
 
-    use assert_json_diff::assert_json_include;
     use mockall::predicate;
     use quickwit_config::NodeConfig;
     use quickwit_ingest::{IngestApiService, IngestServiceClient};
     use quickwit_search::MockSearchService;
-    use serde_json::Value as JsonValue;
-    use warp::Filter;
 
     use super::elastic_api_handlers;
     use super::model::ElasticSearchError;
     use crate::elastic_search_api::model::MultiSearchResponse;
-    use crate::rest::recover_fn;
-    use crate::BuildInfo;
 
     fn ingest_service_client() -> IngestServiceClient {
         let universe = quickwit_actors::Universe::new();
@@ -382,63 +358,5 @@ mod tests {
             .reply(&es_search_api_handler)
             .await;
         assert_eq!(resp.status(), 200);
-    }
-
-    #[tokio::test]
-    async fn test_es_compat_cluster_info_handler() {
-        let build_info = BuildInfo::get();
-        let mut node_config = NodeConfig::for_test();
-        node_config.add_elastic_header = true;
-        let mock_search_service = Arc::new(MockSearchService::new());
-        let handler = elastic_api_handlers(
-            Arc::new(node_config.clone()),
-            mock_search_service,
-            ingest_service_client(),
-        )
-        .recover(recover_fn);
-        let resp = warp::test::request()
-            .path("/_elastic")
-            .reply(&handler)
-            .await;
-        assert_eq!(resp.status(), 200);
-        assert_eq!(
-            resp.headers().get("x-elastic-product").unwrap(),
-            "Elasticsearch"
-        );
-        let resp_json: JsonValue = serde_json::from_slice(resp.body()).unwrap();
-        let expected_response_json = serde_json::json!({
-            "name" : node_config.node_id,
-            "cluster_name" : node_config.cluster_id,
-            "version" : {
-                "distribution" : "quickwit",
-                "number" : build_info.version,
-                "build_hash" : build_info.commit_hash,
-                "build_date" : build_info.build_date,
-            }
-        });
-        assert_json_include!(actual: resp_json, expected: expected_response_json);
-    }
-
-    #[tokio::test]
-    async fn test_head_request_on_root_endpoint() {
-        let mut node_config = NodeConfig::for_test();
-        node_config.add_elastic_header = true;
-        let mock_search_service = Arc::new(MockSearchService::new());
-        let handler = elastic_api_handlers(
-            Arc::new(node_config.clone()),
-            mock_search_service,
-            ingest_service_client(),
-        )
-        .recover(recover_fn);
-        let resp = warp::test::request()
-            .path("/_elastic")
-            .method("HEAD")
-            .reply(&handler)
-            .await;
-        assert_eq!(resp.status(), 200);
-        assert_eq!(
-            resp.headers().get("x-elastic-product").unwrap(),
-            "Elasticsearch"
-        );
     }
 }

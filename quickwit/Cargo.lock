@@ -5355,6 +5355,8 @@ dependencies = [
  "chrono",
  "cron",
  "enum-iterator",
+ "http",
+ "http-serde",
  "humantime",
  "itertools 0.12.0",
  "json_comments",

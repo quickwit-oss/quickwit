@@ -484,7 +484,7 @@ pub async fn serve_quickwit(
     };
 
     let grpc_listen_addr = node_config.grpc_listen_addr;
-    let rest_listen_addr = node_config.rest_listen_addr;
+    let rest_listen_addr = node_config.rest_config.listen_addr;
     let quickwit_services: Arc<QuickwitServices> = Arc::new(QuickwitServices {
         node_config: Arc::new(node_config),
         cluster: cluster.clone(),

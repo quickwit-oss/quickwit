@@ -16,6 +16,8 @@ bytesize = { workspace = true }
 chrono = { workspace = true }
 cron = { workspace = true }
 enum-iterator = { workspace = true }
+http = { workspace = true }
+http-serde = { workspace = true }
 humantime = { workspace = true }
 itertools = { workspace = true }
 json_comments = { workspace = true }
