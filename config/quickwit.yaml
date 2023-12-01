@@ -32,7 +32,9 @@ version: 0.6
 #   2. pass `0.0.0.0` and let Quickwit do its best to discover the node's IP (see `advertise_address`)
 #
 # listen_address: 127.0.0.1
-# rest_listen_port: 7280
+#
+# rest:
+#   listen_port: 7280
 #
 # IP address advertised by the node, i.e. the IP address that peer nodes should use to connect to the node for RPCs.
 # The environment variable `QW_ADVERTISE_ADDRESS` can also be used to override this value.

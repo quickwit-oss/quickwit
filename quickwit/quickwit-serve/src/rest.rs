@@ -184,7 +184,7 @@ fn api_v1_routes(
             quickwit_services
                 .node_config
                 .rest_config
-                .additional_headers
+                .extra_headers
                 .clone(),
         ))
 }
@@ -557,11 +557,11 @@ mod tests {
     #[tokio::test]
     async fn test_additional_headers() {
         let mut node_config = NodeConfig::for_test();
-        node_config.rest_config.additional_headers.insert(
+        node_config.rest_config.extra_headers.insert(
             HeaderName::from_static("x-custom-header"),
             HeaderValue::from_static("custom-value"),
         );
-        node_config.rest_config.additional_headers.insert(
+        node_config.rest_config.extra_headers.insert(
             HeaderName::from_static("x-custom-header-2"),
             HeaderValue::from_static("custom-value-2"),
         );

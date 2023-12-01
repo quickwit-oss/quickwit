@@ -84,7 +84,8 @@ const DEFAULT_QUICKWIT_CONFIG: &str = r#"
     version: 0.6
     metastore_uri: #metastore_uri
     data_dir: #data_dir
-    rest_listen_port: #rest_listen_port
+    rest:
+        listen_port: #rest_listen_port
     grpc_listen_port: #grpc_listen_port
 "#;
 
@@ -214,6 +215,14 @@ pub async fn create_test_env(
     let node_config_path = resources_dir_path.join("config.yaml");
     let rest_listen_port = find_available_tcp_port()?;
     let grpc_listen_port = find_available_tcp_port()?;
+    println!(
+        "{}",
+        DEFAULT_QUICKWIT_CONFIG
+            .replace("#metastore_uri", metastore_uri.as_str())
+            .replace("#data_dir", data_dir_path.to_str().unwrap())
+            .replace("#rest_listen_port", &rest_listen_port.to_string())
+            .replace("#grpc_listen_port", &grpc_listen_port.to_string())
+    );
     fs::write(
         &node_config_path,
         // A poor's man templating engine reloaded...

@@ -42,12 +42,13 @@ use crate::{ConfigFormat, MetastoreConfigs};
 
 pub const DEFAULT_QW_CONFIG_PATH: &str = "config/quickwit.yaml";
 
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize, Default)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RestConfig {
+    pub listen_addr: SocketAddr,
     pub cors_allow_origins: Vec<String>,
     #[serde(with = "http_serde::header_map")]
-    pub additional_headers: HeaderMap,
+    pub extra_headers: HeaderMap,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -313,7 +314,6 @@ pub struct NodeConfig {
     pub cluster_id: String,
     pub node_id: String,
     pub enabled_services: HashSet<QuickwitService>,
-    pub rest_listen_addr: SocketAddr,
     pub gossip_listen_addr: SocketAddr,
     pub grpc_listen_addr: SocketAddr,
     pub gossip_advertise_addr: SocketAddr,
