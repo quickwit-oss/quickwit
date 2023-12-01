@@ -480,6 +480,14 @@ mod tests {
             SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 1111)
         );
         assert_eq!(
+            config.rest_config.extra_headers.get("x-header-1").unwrap(),
+            "header-value-1"
+        );
+        assert_eq!(
+            config.rest_config.extra_headers.get("x-header-2").unwrap(),
+            "header-value-2"
+        );
+        assert_eq!(
             config.gossip_listen_addr,
             SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 2222)
         );
