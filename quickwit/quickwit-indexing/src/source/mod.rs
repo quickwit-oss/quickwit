@@ -96,7 +96,7 @@ use quickwit_ingest::IngesterPool;
 use quickwit_metastore::checkpoint::{SourceCheckpoint, SourceCheckpointDelta};
 use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::metastore::MetastoreServiceClient;
-use quickwit_proto::types::{IndexUid, ShardId};
+use quickwit_proto::types::{IndexUid, PipelineUid, ShardId};
 use quickwit_storage::StorageResolver;
 use serde_json::Value as JsonValue;
 pub use source_factory::{SourceFactory, SourceLoader, TypedSourceFactory};
@@ -155,8 +155,8 @@ impl SourceRuntimeArgs {
         &self.pipeline_id.source_id
     }
 
-    pub fn pipeline_ord(&self) -> usize {
-        self.pipeline_id.pipeline_ord
+    pub fn pipeline_uid(&self) -> PipelineUid {
+        self.pipeline_id.pipeline_uid
     }
 
     #[cfg(test)]
@@ -171,7 +171,7 @@ impl SourceRuntimeArgs {
             node_id: "test-node".to_string(),
             index_uid,
             source_id: source_config.source_id.clone(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::from_u128(0u128),
         };
         Arc::new(SourceRuntimeArgs {
             pipeline_id,

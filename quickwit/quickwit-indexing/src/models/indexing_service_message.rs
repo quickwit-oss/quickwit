@@ -19,6 +19,7 @@
 
 use quickwit_config::SourceConfig;
 use quickwit_proto::indexing::IndexingPipelineId;
+use quickwit_proto::types::PipelineUid;
 
 use crate::actors::MergePipelineId;
 
@@ -26,7 +27,7 @@ use crate::actors::MergePipelineId;
 pub struct SpawnPipeline {
     pub index_id: String,
     pub source_config: SourceConfig,
-    pub pipeline_ord: usize,
+    pub pipeline_uid: PipelineUid,
 }
 
 #[derive(Clone, Debug)]

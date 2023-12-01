@@ -19,7 +19,8 @@
 
 use bytes::Bytes;
 
-use self::ingester::FetchResponseV2;
+use self::ingester::{FetchResponseV2, PersistFailureReason, ReplicateFailureReason};
+use self::router::IngestFailureReason;
 use super::types::NodeId;
 use super::{ServiceError, ServiceErrorCode};
 use crate::control_plane::ControlPlaneError;
@@ -217,6 +218,29 @@ impl ShardIds {
         self.shard_ids
             .iter()
             .map(|shard_id| queue_id(&self.index_uid, &self.source_id, *shard_id))
+    }
+}
+
+impl From<PersistFailureReason> for IngestFailureReason {
+    fn from(reason: PersistFailureReason) -> Self {
+        match reason {
+            PersistFailureReason::Unspecified => IngestFailureReason::Unspecified,
+            PersistFailureReason::ShardNotFound => IngestFailureReason::NoShardsAvailable,
+            PersistFailureReason::ShardClosed => IngestFailureReason::NoShardsAvailable,
+            PersistFailureReason::ResourceExhausted => IngestFailureReason::ResourceExhausted,
+            PersistFailureReason::RateLimited => IngestFailureReason::RateLimited,
+        }
+    }
+}
+
+impl From<ReplicateFailureReason> for PersistFailureReason {
+    fn from(reason: ReplicateFailureReason) -> Self {
+        match reason {
+            ReplicateFailureReason::Unspecified => PersistFailureReason::Unspecified,
+            ReplicateFailureReason::ShardNotFound => PersistFailureReason::ShardNotFound,
+            ReplicateFailureReason::ShardClosed => PersistFailureReason::ShardClosed,
+            ReplicateFailureReason::ResourceExhausted => PersistFailureReason::ResourceExhausted,
+        }
     }
 }
 

@@ -52,7 +52,7 @@ use quickwit_metastore::IndexMetadataResponseExt;
 use quickwit_proto::indexing::CpuCapacity;
 use quickwit_proto::metastore::{IndexMetadataRequest, MetastoreService, MetastoreServiceClient};
 use quickwit_proto::search::{CountHits, SearchResponse};
-use quickwit_proto::types::NodeId;
+use quickwit_proto::types::{NodeId, PipelineUid};
 use quickwit_search::{single_node_search, SearchResponseRest};
 use quickwit_serve::{
     search_request_from_api_request, BodyFormat, SearchRequestQueryString, SortBy,
@@ -473,7 +473,7 @@ pub async fn local_ingest_docs_cli(args: LocalIngestDocsArgs) -> anyhow::Result<
         .ask_for_res(SpawnPipeline {
             index_id: args.index_id.clone(),
             source_config,
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::from_u128(0u128),
         })
         .await?;
     let merge_pipeline_handle = indexing_server_mailbox
@@ -613,7 +613,7 @@ pub async fn merge_cli(args: MergeArgs) -> anyhow::Result<()> {
                 transform_config: None,
                 input_format: SourceInputFormat::Json,
             },
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::from_u128(0u128),
         })
         .await?;
     let pipeline_handle: ActorHandle<MergePipeline> = indexing_service_mailbox

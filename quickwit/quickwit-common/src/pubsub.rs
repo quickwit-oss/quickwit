@@ -25,6 +25,7 @@ use std::time::Duration;
 
 use async_trait::async_trait;
 use tokio::sync::Mutex as TokioMutex;
+use tracing::warn;
 
 use crate::type_map::TypeMap;
 
@@ -123,10 +124,17 @@ impl EventBroker {
             for subscription in typed_subscriptions.values() {
                 let event = event.clone();
                 let subscriber_clone = subscription.subscriber.clone();
-                tokio::spawn(tokio::time::timeout(Duration::from_secs(600), async move {
-                    let mut subscriber_lock = subscriber_clone.lock().await;
-                    subscriber_lock.handle_event(event).await;
-                }));
+                let handle_event_fut = async move {
+                    if tokio::time::timeout(Duration::from_secs(1), async {
+                        subscriber_clone.lock().await.handle_event(event).await
+                    })
+                    .await
+                    .is_err()
+                    {
+                        warn!("`{}` event handler timed out", std::any::type_name::<E>());
+                    }
+                };
+                tokio::spawn(handle_event_fut);
             }
         }
     }

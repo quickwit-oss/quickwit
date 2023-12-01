@@ -67,18 +67,17 @@ impl SynReplicationMessage {
         }
     }
 
-    pub fn into_replicate_request(self) -> Option<ReplicateRequest> {
-        match self.message {
-            Some(syn_replication_message::Message::ReplicateRequest(replicate_request)) => {
-                Some(replicate_request)
-            }
-            _ => None,
-        }
-    }
-
     pub fn new_open_request(open_request: OpenReplicationStreamRequest) -> Self {
         Self {
             message: Some(syn_replication_message::Message::OpenRequest(open_request)),
+        }
+    }
+
+    pub fn new_init_replica_request(init_replica_request: InitReplicaRequest) -> Self {
+        Self {
+            message: Some(syn_replication_message::Message::InitRequest(
+                init_replica_request,
+            )),
         }
     }
 
@@ -105,6 +104,14 @@ impl AckReplicationMessage {
         Self {
             message: Some(ack_replication_message::Message::OpenResponse(
                 open_response,
+            )),
+        }
+    }
+
+    pub fn new_init_replica_response(init_replica_response: InitReplicaResponse) -> Self {
+        Self {
+            message: Some(ack_replication_message::Message::InitResponse(
+                init_replica_response,
             )),
         }
     }

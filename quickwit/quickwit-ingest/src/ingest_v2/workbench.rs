@@ -22,7 +22,7 @@ use std::collections::HashMap;
 use quickwit_proto::control_plane::{
     GetOrCreateOpenShardsFailure, GetOrCreateOpenShardsFailureReason,
 };
-use quickwit_proto::ingest::ingester::{PersistFailure, PersistFailureReason, PersistSuccess};
+use quickwit_proto::ingest::ingester::{PersistFailure, PersistSuccess};
 use quickwit_proto::ingest::router::{
     IngestFailure, IngestFailureReason, IngestResponseV2, IngestSubrequest, IngestSuccess,
 };
@@ -233,12 +233,7 @@ impl SubworkbenchFailure {
             Self::SourceNotFound => IngestFailureReason::SourceNotFound,
             Self::Internal(_) => IngestFailureReason::Internal,
             Self::NoShardsAvailable => IngestFailureReason::NoShardsAvailable,
-            Self::Persist(persist_failure) => match persist_failure.reason() {
-                PersistFailureReason::RateLimited => IngestFailureReason::RateLimited,
-                PersistFailureReason::ResourceExhausted => IngestFailureReason::ResourceExhausted,
-                PersistFailureReason::ShardClosed => IngestFailureReason::NoShardsAvailable,
-                PersistFailureReason::Unspecified => IngestFailureReason::Unspecified,
-            },
+            Self::Persist(persist_failure) => persist_failure.reason().into(),
         }
     }
 }
@@ -278,6 +273,8 @@ impl IngestSubworkbench {
 
 #[cfg(test)]
 mod tests {
+    use quickwit_proto::ingest::ingester::PersistFailureReason;
+
     use super::*;
 
     #[test]

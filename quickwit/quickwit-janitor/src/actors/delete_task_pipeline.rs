@@ -39,7 +39,7 @@ use quickwit_indexing::{IndexingSplitStore, PublisherType, SplitsUpdateMailbox};
 use quickwit_metastore::IndexMetadataResponseExt;
 use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::metastore::{IndexMetadataRequest, MetastoreService, MetastoreServiceClient};
-use quickwit_proto::types::IndexUid;
+use quickwit_proto::types::{IndexUid, PipelineUid};
 use quickwit_search::SearchJobPlacer;
 use quickwit_storage::Storage;
 use serde::Serialize;
@@ -191,7 +191,7 @@ impl DeleteTaskPipeline {
         let index_pipeline_id = IndexingPipelineId {
             index_uid: self.index_uid.clone(),
             node_id: "unknown".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::from_u128(0u128),
             source_id: "unknown".to_string(),
         };
         let throughput_limit: f64 = index_config

@@ -50,7 +50,8 @@ pub use publish_lock::{NewPublishLock, PublishLock};
 pub use publisher_message::SplitsUpdate;
 use quickwit_proto::types::PublishToken;
 pub use raw_doc_batch::RawDocBatch;
-pub use shard_positions::{PublishedShardPositions, PublishedShardPositionsUpdate};
+pub(crate) use shard_positions::LocalShardPositionsUpdate;
+pub use shard_positions::ShardPositionsService;
 pub use split_attrs::{create_split_metadata, SplitAttrs};
 
 #[derive(Debug)]

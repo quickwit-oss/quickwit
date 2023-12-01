@@ -152,6 +152,10 @@ where
         self.heap.len() >= self.k
     }
 
+    pub fn max_len(&self) -> usize {
+        self.k
+    }
+
     /// Try to add new entries, if they are better than the current worst.
     pub fn add_entries(&mut self, mut items: impl Iterator<Item = T>) {
         if self.k == 0 {

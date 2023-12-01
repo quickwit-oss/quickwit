@@ -52,7 +52,7 @@ use super::{
     BATCH_NUM_BYTES_LIMIT, EMIT_BATCHES_TIMEOUT,
 };
 use crate::actors::DocProcessor;
-use crate::models::{NewPublishLock, NewPublishToken, PublishLock, PublishedShardPositionsUpdate};
+use crate::models::{LocalShardPositionsUpdate, NewPublishLock, NewPublishToken, PublishLock};
 
 pub struct IngestSourceFactory;
 
@@ -84,7 +84,7 @@ impl TypedSourceFactory for IngestSourceFactory {
 struct ClientId {
     node_id: NodeId,
     source_uid: SourceUid,
-    pipeline_ord: usize,
+    pipeline_uid: String,
 }
 
 impl fmt::Display for ClientId {
@@ -92,17 +92,17 @@ impl fmt::Display for ClientId {
         write!(
             formatter,
             "indexer/{}/{}/{}/{}",
-            self.node_id, self.source_uid.index_uid, self.source_uid.source_id, self.pipeline_ord
+            self.node_id, self.source_uid.index_uid, self.source_uid.source_id, self.pipeline_uid
         )
     }
 }
 
 impl ClientId {
-    fn new(node_id: NodeId, source_uid: SourceUid, pipeline_ord: usize) -> Self {
-        Self {
+    fn new(node_id: NodeId, source_uid: SourceUid, pipeline_uid: String) -> Self {
+        ClientId {
             node_id,
             source_uid,
-            pipeline_ord,
+            pipeline_uid,
         }
     }
 
@@ -163,7 +163,7 @@ impl IngestSource {
                 index_uid: runtime_args.index_uid().clone(),
                 source_id: runtime_args.source_id().to_string(),
             },
-            runtime_args.pipeline_ord(),
+            runtime_args.pipeline_uid().to_string(),
         );
         let metastore = runtime_args.metastore.clone();
         let ingester_pool = runtime_args.ingester_pool.clone();
@@ -246,10 +246,11 @@ impl IngestSource {
     }
 
     async fn truncate(&mut self, truncate_positions: Vec<(ShardId, Position)>) {
-        self.event_broker.publish(PublishedShardPositionsUpdate {
-            source_uid: self.client_id.source_uid.clone(),
-            published_positions_per_shard: truncate_positions.clone(),
-        });
+        let shard_positions_update = LocalShardPositionsUpdate::new(
+            self.client_id.source_uid.clone(),
+            truncate_positions.clone(),
+        );
+        self.event_broker.publish(shard_positions_update);
 
         let mut per_ingester_truncate_subrequests: FnvHashMap<
             &NodeId,
@@ -521,6 +522,7 @@ mod tests {
     use quickwit_proto::ingest::ingester::{IngesterServiceClient, TruncateShardsResponse};
     use quickwit_proto::ingest::{IngestV2Error, MRecordBatch, Shard, ShardState};
     use quickwit_proto::metastore::{AcquireShardsResponse, AcquireShardsSubresponse};
+    use quickwit_proto::types::PipelineUid;
     use quickwit_storage::StorageResolver;
     use tokio::sync::mpsc::error::TryRecvError;
     use tokio::sync::watch;
@@ -535,11 +537,11 @@ mod tests {
             node_id: "test-node".to_string(),
             index_uid: "test-index:0".into(),
             source_id: "test-source".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::default(),
         };
         let source_config = SourceConfig::for_test("test-source", SourceParams::Ingest);
-        let publish_token =
-            "indexer/test-node/test-index:0/test-source/0/00000000000000000000000000";
+        let publish_token = "indexer/test-node/test-index:0/test-source/\
+                             00000000000000000000000000/00000000000000000000000000";
 
         let mut mock_metastore = MetastoreServiceClient::mock();
         mock_metastore
@@ -580,7 +582,7 @@ mod tests {
             .returning(|request| {
                 assert_eq!(
                     request.client_id,
-                    "indexer/test-node/test-index:0/test-source/0"
+                    "indexer/test-node/test-index:0/test-source/00000000000000000000000000"
                 );
                 assert_eq!(request.index_uid, "test-index:0");
                 assert_eq!(request.source_id, "test-source");
@@ -692,11 +694,11 @@ mod tests {
             node_id: "test-node".to_string(),
             index_uid: "test-index:0".into(),
             source_id: "test-source".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::default(),
         };
         let source_config = SourceConfig::for_test("test-source", SourceParams::Ingest);
-        let publish_token =
-            "indexer/test-node/test-index:0/test-source/0/00000000000000000000000000";
+        let publish_token = "indexer/test-node/test-index:0/test-source/\
+                             00000000000000000000000000/00000000000000000000000000";
 
         let mut mock_metastore = MetastoreServiceClient::mock();
         mock_metastore
@@ -753,9 +755,9 @@ mod tests {
 
         let event_broker = EventBroker::default();
         let (shard_positions_update_tx, mut shard_positions_update_rx) =
-            tokio::sync::mpsc::unbounded_channel::<PublishedShardPositionsUpdate>();
+            tokio::sync::mpsc::unbounded_channel::<LocalShardPositionsUpdate>();
         event_broker
-            .subscribe::<PublishedShardPositionsUpdate>(move |update| {
+            .subscribe::<LocalShardPositionsUpdate>(move |update| {
                 shard_positions_update_tx.send(update).unwrap();
             })
             .forever();
@@ -790,12 +792,15 @@ mod tests {
             .await
             .unwrap();
 
-        let PublishedShardPositionsUpdate {
-            source_uid,
-            published_positions_per_shard,
-        } = shard_positions_update_rx.recv().await.unwrap();
-        assert_eq!(source_uid.to_string(), "test-index:0:test-source");
-        assert_eq!(&published_positions_per_shard, &[(1, Position::Eof)]);
+        let expected_local_update = LocalShardPositionsUpdate::new(
+            SourceUid {
+                index_uid: IndexUid::parse("test-index:0").unwrap(),
+                source_id: "test-source".to_string(),
+            },
+            vec![(1, Position::Eof)],
+        );
+        let local_update = shard_positions_update_rx.recv().await.unwrap();
+        assert_eq!(local_update, expected_local_update);
     }
 
     #[tokio::test]
@@ -808,11 +813,11 @@ mod tests {
             node_id: "test-node".to_string(),
             index_uid: "test-index:0".into(),
             source_id: "test-source".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::default(),
         };
         let source_config = SourceConfig::for_test("test-source", SourceParams::Ingest);
-        let publish_token =
-            "indexer/test-node/test-index:0/test-source/0/00000000000000000000000000";
+        let publish_token = "indexer/test-node/test-index:0/test-source/\
+                             00000000000000000000000000/00000000000000000000000000";
 
         let mut mock_metastore = MetastoreServiceClient::mock();
         mock_metastore
@@ -906,9 +911,9 @@ mod tests {
 
         let event_broker = EventBroker::default();
         let (shard_positions_update_tx, mut shard_positions_update_rx) =
-            tokio::sync::mpsc::unbounded_channel::<PublishedShardPositionsUpdate>();
+            tokio::sync::mpsc::unbounded_channel::<LocalShardPositionsUpdate>();
         event_broker
-            .subscribe::<PublishedShardPositionsUpdate>(move |update| {
+            .subscribe::<LocalShardPositionsUpdate>(move |update| {
                 shard_positions_update_tx.send(update).unwrap();
             })
             .forever();
@@ -950,14 +955,17 @@ mod tests {
             .await
             .unwrap();
 
-        let PublishedShardPositionsUpdate {
-            source_uid: _,
-            published_positions_per_shard,
-        } = shard_positions_update_rx.recv().await.unwrap();
-
+        let local_shard_positions_update = shard_positions_update_rx.recv().await.unwrap();
+        let expected_local_shard_positions_update = LocalShardPositionsUpdate::new(
+            SourceUid {
+                index_uid: IndexUid::parse("test-index:0").unwrap(),
+                source_id: "test-source".to_string(),
+            },
+            vec![(1, 11u64.into()), (2, Position::Eof)],
+        );
         assert_eq!(
-            &published_positions_per_shard,
-            &[(1, 11u64.into()), (2, Position::Eof)]
+            local_shard_positions_update,
+            expected_local_shard_positions_update,
         );
     }
 
@@ -967,7 +975,7 @@ mod tests {
             node_id: "test-node".to_string(),
             index_uid: "test-index:0".into(),
             source_id: "test-source".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::default(),
         };
         let source_config = SourceConfig::for_test("test-source", SourceParams::Ingest);
         let mock_metastore = MetastoreServiceClient::mock();
@@ -1131,7 +1139,7 @@ mod tests {
             node_id: "test-node".to_string(),
             index_uid: "test-index:0".into(),
             source_id: "test-source".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::default(),
         };
         let source_config = SourceConfig::for_test("test-source", SourceParams::Ingest);
         let mock_metastore = MetastoreServiceClient::mock();
@@ -1203,9 +1211,9 @@ mod tests {
 
         let event_broker = EventBroker::default();
         let (shard_positions_update_tx, mut shard_positions_update_rx) =
-            tokio::sync::mpsc::unbounded_channel::<PublishedShardPositionsUpdate>();
+            tokio::sync::mpsc::unbounded_channel::<LocalShardPositionsUpdate>();
         event_broker
-            .subscribe::<PublishedShardPositionsUpdate>(move |update| {
+            .subscribe::<LocalShardPositionsUpdate>(move |update| {
                 shard_positions_update_tx.send(update).unwrap();
             })
             .forever();
@@ -1292,21 +1300,21 @@ mod tests {
         ]);
         source.suggest_truncate(checkpoint, &ctx).await.unwrap();
 
-        let PublishedShardPositionsUpdate {
-            published_positions_per_shard,
-            ..
-        } = shard_positions_update_rx.recv().await.unwrap();
-
-        assert_eq!(
-            &published_positions_per_shard,
-            &[
+        let local_shards_update = shard_positions_update_rx.recv().await.unwrap();
+        let expected_local_shards_update = LocalShardPositionsUpdate::new(
+            SourceUid {
+                index_uid: IndexUid::parse("test-index:0").unwrap(),
+                source_id: "test-source".to_string(),
+            },
+            vec![
                 (1u64, 11u64.into()),
                 (2u64, 22u64.into()),
                 (3u64, Position::Eof),
                 (4u64, 44u64.into()),
                 (5u64, Position::Beginning),
-                (6u64, 66u64.into())
-            ]
+                (6u64, 66u64.into()),
+            ],
         );
+        assert_eq!(local_shards_update, expected_local_shards_update);
     }
 }

@@ -470,7 +470,7 @@ mod tests {
     use quickwit_config::IndexingSettings;
     use quickwit_metastore::{SplitMaturity, SplitMetadata};
     use quickwit_proto::indexing::IndexingPipelineId;
-    use quickwit_proto::types::IndexUid;
+    use quickwit_proto::types::{IndexUid, PipelineUid};
     use tantivy::TrackedObject;
     use time::OffsetDateTime;
 
@@ -513,7 +513,7 @@ mod tests {
             index_uid: index_uid.clone(),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::default(),
         };
         let merge_policy = Arc::new(StableLogMergePolicy::new(
             StableLogMergePolicyConfig {
@@ -599,7 +599,7 @@ mod tests {
             index_uid: index_uid.clone(),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::default(),
         };
         let merge_policy_config = ConstWriteAmplificationMergePolicyConfig {
             merge_factor: 2,
@@ -651,7 +651,7 @@ mod tests {
             index_uid: index_uid.clone(),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::default(),
         };
         let merge_policy_config = ConstWriteAmplificationMergePolicyConfig {
             merge_factor: 2,
@@ -750,7 +750,7 @@ mod tests {
             index_uid: index_uid.clone(),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::default(),
         };
         let merge_policy_config = ConstWriteAmplificationMergePolicyConfig {
             merge_factor: 2,
@@ -828,7 +828,7 @@ mod tests {
             index_uid,
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::default(),
         };
         let merge_policy_config = ConstWriteAmplificationMergePolicyConfig {
             merge_factor: 2,
@@ -892,7 +892,7 @@ mod tests {
             index_uid: index_uid.clone(),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::default(),
         };
         let merge_policy_config = ConstWriteAmplificationMergePolicyConfig {
             merge_factor: 2,
@@ -972,7 +972,7 @@ mod tests {
             index_uid: index_uid.clone(),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::default(),
         };
         let merge_policy_config = ConstWriteAmplificationMergePolicyConfig {
             merge_factor: 2,
