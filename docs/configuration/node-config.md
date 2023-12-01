@@ -38,7 +38,7 @@ This section contains the REST API configuration options.
 
 | Property | Description | Env variable | Default value |
 | --- | --- | --- | --- |
-| `listen_port` | The port which to listen for HTTP REST API. | `QW_REST_LISTEN_PORT` | `7280` |
+| `listen_port` | The port on which the REST API listens for HTTP traffic. | `QW_REST_LISTEN_PORT` | `7280` |
 | `cors_allow_origins` | Configure the CORS origins which are allowed to access the API. [Read more](#configuring-cors-cross-origin-resource-sharing) | |
 | `extra_headers` | List of header names and values | | |
 
