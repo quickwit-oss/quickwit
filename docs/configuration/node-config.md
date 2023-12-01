@@ -50,7 +50,7 @@ By default, sharing resources cross-origin is not allowed.
 A wildcard, single origin, or multiple origins can be specified as part of the `cors_allow_origins` parameter:
 
 
-Example of a rest configuration:
+Example of a REST configuration:
 
 ```yaml
 
