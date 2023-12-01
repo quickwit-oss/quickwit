@@ -129,7 +129,7 @@ impl Actor for ControlPlane {
         self.model
             .load_from_metastore(&mut self.metastore, ctx.progress())
             .await
-            .context("failed to intialize the model")?;
+            .context("failed to initialize the model")?;
 
         self.indexing_scheduler
             .schedule_indexing_plan_if_needed(&self.model);
