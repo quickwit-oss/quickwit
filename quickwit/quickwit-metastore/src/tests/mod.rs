@@ -3853,7 +3853,6 @@ macro_rules! metastore_test_suite {
     ($metastore_type:ty) => {
         #[cfg(test)]
         mod common_tests {
-
             // Index API tests
             //
             //  - create_index
@@ -4058,4 +4057,24 @@ macro_rules! metastore_test_suite {
             }
         }
     };
+}
+
+#[macro_export]
+macro_rules! postgres_test_suite {
+    () => {
+        #[cfg(test)]
+        #[cfg(feature = "postgres")]
+        mod postgres_tests {
+            use sqlx::{Pool, Postgres};
+            use quickwit_proto::metastore::MetastoreResult;
+            use crate::metastore::postgresql_metastore::MIGRATOR;
+
+            #[sqlx::test(migrator = "MIGRATOR")]
+            async fn test_postgres_open_shards(pool: Pool<Postgres>) -> MetastoreResult<()> {
+                $crate::tests::shard::test_postgres_metastore_open_shards(pool).await
+            }
+
+
+        } 
+    }
 }

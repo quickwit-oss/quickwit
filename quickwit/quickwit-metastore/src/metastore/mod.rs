@@ -22,7 +22,7 @@ pub(crate) mod index_metadata;
 #[cfg(feature = "postgres")]
 pub mod postgresql_metastore;
 #[cfg(feature = "postgres")]
-mod postgresql_model;
+pub mod postgresql_model;
 
 pub mod control_plane_metastore;
 

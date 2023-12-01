@@ -18,16 +18,20 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use quickwit_common::rand::append_random_suffix;
+use quickwit_common::uri::Uri;
 use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_proto::metastore::{
     AddSourceRequest, CreateIndexRequest, EntityKind, MetastoreError, MetastoreService,
-    OpenShardsRequest, OpenShardsSubrequest,
+    OpenShardsRequest, OpenShardsSubrequest, MetastoreResult, AcquireShardsRequest, AcquireShardsSubrequest
 };
 use quickwit_proto::types::{IndexUid, SourceId};
+use crate::metastore::postgresql_metastore::PostgresqlMetastore;
+use crate::metastore::postgresql_model::PgShard;
+use sqlx::{Pool, Postgres};
 
 use super::DefaultForTest;
 use crate::tests::cleanup_index;
-use crate::{AddSourceRequestExt, CreateIndexRequestExt, FileBackedMetastore, MetastoreServiceExt};
+use crate::{AddSourceRequestExt, CreateIndexRequestExt, FileBackedMetastore, MetastoreServiceExt, metastore};
 
 // TODO: Remove when `PostgresqlMetastore` implements Shard API.
 pub trait RunTests {
@@ -255,7 +259,21 @@ pub async fn test_metastore_acquire_shards<
     )
     .await;
 
-    // TODO
+    //Test empty subrequests
+    let acquire_shards_request = AcquireShardsRequest {
+        subrequests: Vec::new()
+    };
+
+    let acquire_shards_response = metastore.acquire_shards(acquire_shards_request).await.unwrap();
+
+    assert_eq!(acquire_shards_response.subresponses.len(), 0);
+
+    let acquire_shards_request = AcquireShardsRequest {
+        subrequests: vec![AcquireShardsSubrequest {
+            index_uid: 
+        }]
+    };
+
 
     cleanup_index(&mut metastore, test_index.index_uid).await;
 }
@@ -298,4 +316,142 @@ pub async fn test_metastore_delete_shards<
     // TODO
 
     cleanup_index(&mut metastore, test_index.index_uid).await;
+}
+
+pub async fn test_postgres_metastore_open_shards(connection_pool: Pool<Postgres>) -> MetastoreResult<()> {
+    dotenv::dotenv().ok();
+    let uri: Uri = std::env::var("QW_TEST_DATABASE_URL")
+        .expect("Environment variable `QW_TEST_DATABASE_URL` should be set.")
+        .parse()
+        .expect("Environment variable `QW_TEST_DATABASE_URL` should be a valid URI.");
+
+    let mut metastore = PostgresqlMetastore {
+        uri,
+        connection_pool: connection_pool.clone()
+    };
+
+    let test_index = TestIndex::create_index_with_source(
+        &mut metastore,
+        "test-open-shards",
+        SourceConfig::ingest_v2_default(),
+    )
+    .await;
+
+    // Test empty request.
+    let open_shards_request = OpenShardsRequest {
+        subrequests: Vec::new(),
+    };
+    let open_shards_response = metastore.open_shards(open_shards_request).await.unwrap();
+    assert!(open_shards_response.subresponses.is_empty());
+
+    // Test index not found.
+    // let open_shards_request = OpenShardsRequest {
+    //     subrequests: vec![OpenShardsSubrequest {
+    //         index_uid: "index-does-not-exist:0".to_string(),
+    //         source_id: test_index.source_config.source_id.clone(),
+    //         leader_id: "test-ingester-foo".to_string(),
+    //         next_shard_id: 1,
+    //         ..Default::default()
+    //     }],
+    // };
+    // let error = metastore
+    //     .open_shards(open_shards_request)
+    //     .await
+    //     .unwrap_err();
+    // assert!(
+    //     matches!(error, MetastoreError::NotFound(EntityKind::Index { index_id }) if index_id == "index-does-not-exist")
+    // );
+
+    // Test open shard #1.
+    let open_shards_request = OpenShardsRequest {
+        subrequests: vec![OpenShardsSubrequest {
+            index_uid: test_index.index_uid.clone().into(),
+            source_id: test_index.source_config.source_id.clone(),
+            leader_id: "test-ingester-foo".to_string(),
+            next_shard_id: 1,
+            ..Default::default()
+        }],
+    };
+    let open_shards_response = metastore.open_shards(open_shards_request).await.unwrap();
+    assert_eq!(open_shards_response.subresponses.len(), 1);
+
+    let subresponse = &open_shards_response.subresponses[0];
+    assert_eq!(subresponse.index_uid, test_index.index_uid.as_str());
+    assert_eq!(subresponse.source_id, test_index.source_config.source_id);
+    assert_eq!(subresponse.next_shard_id, 2);
+    assert_eq!(subresponse.opened_shards.len(), 1);
+
+    let shard = &subresponse.opened_shards[0];
+    assert_eq!(shard.index_uid, test_index.index_uid.as_str());
+    assert_eq!(shard.source_id, test_index.source_config.source_id);
+    assert_eq!(shard.shard_id, 1);
+    assert_eq!(shard.leader_id, "test-ingester-foo");
+
+    // Test open shard #1 is idempotent.
+    let open_shards_request = OpenShardsRequest {
+        subrequests: vec![OpenShardsSubrequest {
+            index_uid: test_index.index_uid.clone().into(),
+            source_id: test_index.source_config.source_id.clone(),
+            leader_id: "test-ingester-bar".to_string(),
+            next_shard_id: 1,
+            ..Default::default()
+        }],
+    };
+    let open_shards_response = metastore.open_shards(open_shards_request).await.unwrap();
+    assert_eq!(open_shards_response.subresponses.len(), 1);
+
+    let subresponse = &open_shards_response.subresponses[0];
+    assert_eq!(subresponse.next_shard_id, 2);
+    assert_eq!(subresponse.opened_shards.len(), 1);
+
+    let shard = &subresponse.opened_shards[0];
+    assert_eq!(shard.shard_id, 1);
+    assert_eq!(shard.leader_id, "test-ingester-foo");
+
+    // Test open shard #2.
+    let open_shards_request = OpenShardsRequest {
+        subrequests: vec![OpenShardsSubrequest {
+            index_uid: test_index.index_uid.clone().into(),
+            source_id: test_index.source_config.source_id.clone(),
+            leader_id: "test-ingester-qux".to_string(),
+            next_shard_id: 2,
+            ..Default::default()
+        }],
+    };
+    let open_shards_response = metastore.open_shards(open_shards_request).await.unwrap();
+    assert_eq!(open_shards_response.subresponses.len(), 1);
+
+    let subresponse = &open_shards_response.subresponses[0];
+    assert_eq!(subresponse.index_uid, test_index.index_uid.as_str());
+    assert_eq!(subresponse.source_id, test_index.source_config.source_id);
+    assert_eq!(subresponse.next_shard_id, 3);
+    assert_eq!(subresponse.opened_shards.len(), 1);
+
+    let shard = &subresponse.opened_shards[0];
+    assert_eq!(shard.index_uid, test_index.index_uid.as_str());
+    assert_eq!(shard.source_id, test_index.source_config.source_id);
+    assert_eq!(shard.shard_id, 2);
+    assert_eq!(shard.leader_id, "test-ingester-qux");
+
+    // Test open shard should not be called with a lagging `next_shard_id`.
+    let open_shards_request = OpenShardsRequest {
+        subrequests: vec![OpenShardsSubrequest {
+            index_uid: test_index.index_uid.clone().into(),
+            source_id: test_index.source_config.source_id.clone(),
+            leader_id: "test-ingester-foo".to_string(),
+            next_shard_id: 1,
+            ..Default::default()
+        }],
+    };
+    let error = metastore
+        .open_shards(open_shards_request)
+        .await
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        MetastoreError::InconsistentControlPlaneState
+    ));
+
+
+    return Ok(())
 }
