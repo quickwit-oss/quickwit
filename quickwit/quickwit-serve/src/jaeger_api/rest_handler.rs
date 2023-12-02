@@ -18,13 +18,10 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use hyper::StatusCode;
+use itertools::Itertools;
 use quickwit_jaeger::JaegerService;
-use quickwit_opentelemetry::otlp::TraceId;
 use quickwit_proto::jaeger::storage::v1::span_reader_plugin_server::SpanReaderPlugin;
-use quickwit_proto::jaeger::storage::v1::{
-    FindTraceIDsRequest, GetOperationsRequest, GetServicesRequest, GetTraceRequest,
-    SpansResponseChunk, TraceQueryParameters,
-};
+use quickwit_proto::jaeger::storage::v1::{FindTraceIDsRequest, GetOperationsRequest, GetServicesRequest, GetTraceRequest, SpansResponseChunk, TraceQueryParameters};
 use quickwit_proto::tonic;
 use quickwit_proto::tonic::Request;
 use tokio_stream::StreamExt;
@@ -34,7 +31,7 @@ use crate::jaeger_api::model::{
     JaegerError, JaegerResponseBody, JaegerSearchBody, TracesSearchQueryParams,
 };
 use crate::json_api_response::JsonApiResponse;
-use crate::{require, with_arg, BodyFormat};
+use crate::{require, BodyFormat};
 
 /// Setup Jaeger API handlers
 ///
@@ -44,112 +41,94 @@ use crate::{require, with_arg, BodyFormat};
 pub(crate) fn jaeger_api_handlers(
     jaeger_service_opt: Option<JaegerService>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    jaeger_services_handler(jaeger_service_opt.clone())
-        .or(jaeger_service_operations_handler(
-            jaeger_service_opt.clone(),
-        ))
-        .or(jaeger_traces_search_handler(jaeger_service_opt.clone()))
-        .or(jaeger_traces_handler(jaeger_service_opt.clone()))
-    // Register newly created handlers here.
-}
-
-/// GET otel-traces-v0_6/services
-pub fn jaeger_services_handler(
-    jaeger_service_opt: Option<JaegerService>,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    jaeger_services_filter()
-        .and(require(jaeger_service_opt))
-        .then(jaeger_services)
-        .map(|result| make_jaeger_api_response(result, BodyFormat::default()))
-}
-
-/// GET otel-traces-v0_6/services/{service}/operations
-pub fn jaeger_service_operations_handler(
-    jaeger_service_opt: Option<JaegerService>,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    jaeger_service_operations_filter(jaeger_service_opt)
-        .then(jaeger_service_operations)
-        .map(|result| make_jaeger_api_response(result, BodyFormat::default()))
-}
-
-/// GET otel-traces-v0_6/traces?service={service}&start={start_in_ns}&end={end_in_ns}&lookback=custom
-pub fn jaeger_traces_search_handler(
-    jaeger_service_opt: Option<JaegerService>,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    jaeger_traces_search_filter(jaeger_service_opt)
-        .then(jaeger_traces_search)
-        .map(|result| make_jaeger_api_response(result, BodyFormat::default()))
-}
-
-/// GET otel-traces-v0_6/traces/{trace-id-base-64}
-pub fn jaeger_traces_handler(
-    jaeger_service_opt: Option<JaegerService>,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    jaeger_traces_filter(jaeger_service_opt)
-        .then(jaeger_get_trace)
-        .map(|result| make_jaeger_api_response(result, BodyFormat::default()))
+    let jaeger_api_root_url = warp::path!("otel-traces-v0_6" / "jaeger" / "api" / ..);
+    jaeger_api_root_url.and(
+        jaeger_services_handler(jaeger_service_opt.clone())
+            .or(jaeger_service_operations_handler(
+                jaeger_service_opt.clone(),
+            ))
+            .or(jaeger_traces_search_handler(jaeger_service_opt.clone()))
+            .or(jaeger_traces_handler(jaeger_service_opt.clone())),
+    )
 }
 
 #[utoipa::path(
     get,
     tag = "Jaeger Services",
-    path = "/services",
+    path = "/otel-traces-v0_6/jaeger/api/services",
     responses(
-        (status = 200, description = "Successfully fetched services information.", body = TODO )
+        (status = 200, description = "Successfully fetched services information.", body = JaegerResponseBody )
     )
 )]
-pub(crate) fn jaeger_services_filter() -> impl Filter<Extract = (), Error = Rejection> + Clone {
-    warp::path!("otel-traces-v0_6" / "services").and(warp::get())
+pub fn jaeger_services_handler(
+    jaeger_service_opt: Option<JaegerService>,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    warp::path!("services")
+        .and(warp::get())
+        .and(require(jaeger_service_opt))
+        .then(jaeger_services)
+        .map(|result| make_jaeger_api_response(result, BodyFormat::default()))
 }
 
 #[utoipa::path(
     get,
-    tag = "Operations",
-    path = "api/services/{service}/operations",
+    tag = "Jaeger Operations",
+    path = "/otel-traces-v0_6/jaeger/api/services/{service}/operations",
     responses(
-        (status = 200, description = "Successfully fetched operations information for the specified services.", body = TODO )
+        (status = 200, description = "Successfully fetched operations data for the specified service.", body = JaegerResponseBody )
     )
 )]
-pub(crate) fn jaeger_service_operations_filter(
+pub fn jaeger_service_operations_handler(
     jaeger_service_opt: Option<JaegerService>,
-) -> impl Filter<Extract = (String, Option<JaegerService>), Error = Rejection> + Clone {
-    warp::path!("otel-traces-v0_6" / "services" / String / "operations")
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    warp::path!("services" / String / "operations")
         .and(warp::get())
-        .and(with_arg(jaeger_service_opt))
+        .and(require(jaeger_service_opt))
+        .then(jaeger_service_operations)
+        .map(|result| make_jaeger_api_response(result, BodyFormat::default()))
 }
 
 #[utoipa::path(
     get,
-    tag = "Traces",
-    path = "api/traces?service={service}&start={start_in_ns}&end={end_in_ns}&lookback=custom",
+    tag = "Jaeger Traces",
+    path = "/otel-traces-v0_6/jaeger/api/traces?service={service}&start={start_in_ns}&end={end_in_ns}&lookback=custom",
     responses(
-        (status = 200, description = "Successfully fetched traces information.", body = TODO )
+        (status = 200, description = "Successfully fetched traces information.", body = JaegerResponseBody )
+    ),
+    params(
+        TracesSearchQueryParams,
+        ("service" = Option<String>, Query, description = "The service name."),
+        ("start" = Option<i64>, Query, description = "The start time."),
+        ("end" = Option<i64>, Query, description = "The end time."),
     )
 )]
-pub(crate) fn jaeger_traces_search_filter(
+pub fn jaeger_traces_search_handler(
     jaeger_service_opt: Option<JaegerService>,
-) -> impl Filter<Extract = (Option<JaegerService>, TracesSearchQueryParams), Error = Rejection> + Clone
-{
-    warp::path!("otel-traces-v0_6" / "traces")
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    warp::path!("traces")
         .and(warp::get())
-        .and(with_arg(jaeger_service_opt))
         .and(serde_qs::warp::query(serde_qs::Config::default()))
+        .and(require(jaeger_service_opt))
+        .then(jaeger_traces_search)
+        .map(|result| make_jaeger_api_response(result, BodyFormat::default()))
 }
 
 #[utoipa::path(
     get,
-    tag = "Traces",
-    path = "api/traces/{trace-id-base-64}",
+    tag = "Jaeger Traces",
+    path = "/otel-traces-v0_6/jaeger/api/traces/{id}/",
     responses(
-        (status = 200, description = "Successfully fetched traces information for the specified id.", body = TODO )
+        (status = 200, description = "Successfully fetched traces information for the provided id.", body = JaegerResponseBody )
     )
 )]
-pub(crate) fn jaeger_traces_filter(
+pub fn jaeger_traces_handler(
     jaeger_service_opt: Option<JaegerService>,
-) -> impl Filter<Extract = (String, Option<JaegerService>), Error = Rejection> + Clone {
-    warp::path!("otel-traces-v0_6" / "traces" / String)
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    warp::path!("traces" / String)
         .and(warp::get())
-        .and(with_arg(jaeger_service_opt))
+        .and(require(jaeger_service_opt))
+        .then(jaeger_get_trace_by_id)
+        .map(|result| make_jaeger_api_response(result, BodyFormat::default()))
 }
 
 async fn jaeger_services(
@@ -167,88 +146,89 @@ async fn jaeger_services(
 
 async fn jaeger_service_operations(
     service_name: String,
-    jaeger_service_opt: Option<JaegerService>,
+    jaeger_service: JaegerService,
 ) -> Result<JaegerSearchBody, JaegerError> {
-    match jaeger_service_opt {
-        Some(jaeger_service) => {
-            let get_operations_request = GetOperationsRequest {
-                service: service_name,
-                span_kind: "".to_string(),
-            };
-            let get_operations_response = jaeger_service
-                .get_operations(with_tonic(get_operations_request))
-                .await
-                .unwrap()
-                .into_inner();
+    let get_operations_request = GetOperationsRequest {
+        service: service_name,
+        span_kind: "".to_string(),
+    };
+    let get_operations_response = jaeger_service
+        .get_operations(with_tonic(get_operations_request))
+        .await
+        .unwrap()
+        .into_inner();
 
-            Ok(JaegerSearchBody {
-                data: Some(get_operations_response.operation_names),
-            })
-        }
-        None => Err(JaegerError::internal_jaeger_error()),
-    }
+    Ok(JaegerSearchBody {
+        data: Some(
+            get_operations_response
+                .operations
+                .into_iter()
+                .map(|op| op.name)
+                .collect_vec(),
+        ),
+    })
 }
 
 async fn jaeger_traces_search(
-    jaeger_service_opt: Option<JaegerService>,
     search_params: TracesSearchQueryParams,
+    jaeger_service: JaegerService,
 ) -> Result<JaegerSearchBody, JaegerError> {
-    match jaeger_service_opt {
-        Some(jaeger_service) => {
-            let query = TraceQueryParameters {
-                service_name: search_params.service.unwrap_or_default(),
-                operation_name: "stage_splits".to_string(),
-                tags: Default::default(),
-                start_time_min: None,
-                start_time_max: None,
-                duration_min: None,
-                duration_max: None,
-                num_traces: 10,
-            };
-            let find_trace_ids_request = FindTraceIDsRequest { query: Some(query) };
+    let query = TraceQueryParameters {
+        service_name: search_params.service.unwrap_or_default(),
+        operation_name: "stage_splits".to_string(),
+        tags: Default::default(),
+        start_time_min: None,
+        start_time_max: None,
+        duration_min: None,
+        duration_max: None,
+        num_traces: 10,
+    };
+    let find_trace_ids_request = FindTraceIDsRequest { query: Some(query) };
 
-            let find_trace_ids_response = jaeger_service
-                .find_trace_i_ds(with_tonic(find_trace_ids_request))
-                .await
-                .unwrap()
-                .into_inner();
+    let find_trace_ids_response = jaeger_service
+        .find_trace_i_ds(with_tonic(find_trace_ids_request))
+        .await
+        .unwrap()
+        .into_inner();
 
-            let result = find_trace_ids_response
-                .trace_ids
-                .iter()
-                .map(|v| String::from_utf8(v.to_vec()).unwrap())
-                .collect::<Vec<String>>();
-
-            Ok(JaegerSearchBody { data: Some(result) })
-        }
-        None => Err(JaegerError::internal_jaeger_error()),
-    }
+    let result = find_trace_ids_response
+        .trace_ids
+        .iter()
+        .map(|v| String::from_utf8(v.to_vec()).unwrap())
+        .collect::<Vec<String>>();
+    Ok(JaegerSearchBody { data: Some(result) })
 }
 
-async fn jaeger_get_trace(
-    trace_id_json: String,
-    jaeger_service_opt: Option<JaegerService>,
-) -> Result<JaegerSearchBody, JaegerError> {
-    match jaeger_service_opt {
-        Some(jaeger_service) => {
-            let trace_id = serde_json::from_str::<TraceId>(&trace_id_json).unwrap();
-            let get_trace_request = GetTraceRequest {
-                trace_id: trace_id.to_vec(),
-            };
-            let mut span_stream = jaeger_service
-                .get_trace(with_tonic(get_trace_request))
-                .await
-                .unwrap()
-                .into_inner();
-            let SpansResponseChunk { spans } = span_stream.next().await.unwrap().unwrap();
-            let result = spans
-                .iter()
-                .map(|span| span.operation_name.clone())
-                .collect::<Vec<String>>();
-            Ok(JaegerSearchBody { data: Some(result) })
-        }
-        None => Err(JaegerError::internal_jaeger_error()),
+// TODO move to `TraceId` and simplify if possible
+fn hex_string_to_bytes(hex_string: &str) -> Vec<u8> {
+    if hex_string.len() % 2 != 0 {
+        panic!("Hex string must have an even number of characters");
     }
+    (0..hex_string.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&hex_string[i..i + 2], 16).expect("Failed to parse hex"))
+        .collect()
+}
+
+async fn jaeger_get_trace_by_id(
+    trace_id_json: String,
+    jaeger_service: JaegerService,
+) -> Result<JaegerResponseBody<Vec<String>>, JaegerError> {
+    let trace_id = hex_string_to_bytes(trace_id_json.as_str());
+    let get_trace_request = GetTraceRequest {
+        trace_id
+    };
+    let mut span_stream = jaeger_service
+        .get_trace(with_tonic(get_trace_request))
+        .await
+        .unwrap()
+        .into_inner();
+    let SpansResponseChunk { spans } = span_stream.next().await.unwrap().unwrap();
+    let result = spans
+        .iter()
+        .map(|span| span.operation_name.clone())
+        .collect::<Vec<String>>();
+    Ok(JaegerResponseBody { data: result })
 }
 
 fn make_jaeger_api_response<T: serde::Serialize>(
@@ -284,7 +264,7 @@ mod tests {
     async fn test_when_jaeger_not_found() {
         let jaeger_api_handler = jaeger_api_handlers(None).recover(recover_fn);
         let resp = warp::test::request()
-            .path("/otel-traces-v0_6/services")
+            .path("/otel-traces-v0_6/jaeger/api/services")
             .reply(&jaeger_api_handler)
             .await;
         let error_body = serde_json::from_slice::<HashMap<String, String>>(resp.body()).unwrap();
@@ -320,7 +300,7 @@ mod tests {
 
         let jaeger_api_handler = jaeger_api_handlers(Some(jaeger)).recover(recover_fn);
         let resp = warp::test::request()
-            .path("/otel-traces-v0_6/services")
+            .path("/otel-traces-v0_6/jaeger/api/services")
             .reply(&jaeger_api_handler)
             .await;
         assert_eq!(resp.status(), 200);

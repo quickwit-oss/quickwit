@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
-pub struct JaegerSearchBody {
+pub struct JaegerSearchBody { // TODO remove
     #[serde(default)]
     pub data: Option<Vec<String>>,
 }
@@ -34,7 +34,7 @@ pub struct JaegerResponseBody<T> {
 }
 
 #[serde_with::skip_serializing_none]
-#[derive(Default, Debug, Serialize, Deserialize)]
+#[derive(Default, Debug, Serialize, Deserialize, utoipa::IntoParams)]
 #[serde(deny_unknown_fields)]
 pub struct TracesSearchQueryParams {
     #[serde(default)]
@@ -51,11 +51,11 @@ pub struct JaegerError {
     pub message: String,
 }
 
-impl JaegerError {
-    pub fn internal_jaeger_error() -> Self {
-        JaegerError {
-            status: StatusCode::INTERNAL_SERVER_ERROR,
-            message: "Jaeger is not available".to_string(),
-        }
-    }
-}
+// impl JaegerError { // TODO remove?
+//     pub fn internal_jaeger_error() -> Self {
+//         JaegerError {
+//             status: StatusCode::INTERNAL_SERVER_ERROR,
+//             message: "Jaeger is not available".to_string(),
+//         }
+//     }
+// }
