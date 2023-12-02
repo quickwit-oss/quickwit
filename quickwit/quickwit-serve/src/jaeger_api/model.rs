@@ -17,8 +17,11 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::HashMap;
+
 use hyper::StatusCode;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -59,3 +62,55 @@ pub struct JaegerError {
 //         }
 //     }
 // }
+
+
+// Jaeger Model for UI
+// Source: https://github.com/jaegertracing/jaeger/blob/main/model/json/model.go#L82
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct JaegerTrace {
+    trace_id: String,
+    spans: Vec<JaegerSpan>,
+    processes: HashMap<String, JaegerProcess>,
+    warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct JaegerSpan {
+    trace_id: String,
+    span_id: String,
+    operation_name: String,
+    references: Vec<JaegerSpanRef>,
+    flags: u32,
+    start_time: i64, // microseconds since Unix epoch
+    duration: i64, // microseconds
+    tags: Vec<JaegerKeyValue>,
+    logs: Vec<JaegerLog>,
+    process: JaegerProcess,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct JaegerSpanRef {
+    trace_id: String,
+    span_id: String,
+    ref_type: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct JaegerKeyValue {
+    key: String,
+    type_: String,
+    value: Value,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct JaegerLog {
+    timestamp: i64, // microseconds since Unix epoch
+    fields: Vec<JaegerKeyValue>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct JaegerProcess {
+    service_name: String,
+    tags: Vec<JaegerKeyValue>,
+}
