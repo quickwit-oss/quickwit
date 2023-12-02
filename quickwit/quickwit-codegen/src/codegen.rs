@@ -588,8 +588,8 @@ fn generate_client(context: &CodegenContext) -> TokenStream {
             {
                 let connection_keys_watcher = balance_channel.connection_keys_watcher();
                 let client = #grpc_client_package_name::#grpc_client_name::new(balance_channel)
-                    .max_decoding_message_size(10 * 1024 * 1024)
-                    .max_encoding_message_size(10 * 1024 * 1024);
+                    .max_decoding_message_size(20 * 1024 * 1024)
+                    .max_encoding_message_size(20 * 1024 * 1024);
                 let adapter = #grpc_client_adapter_name::new(client, connection_keys_watcher);
                 Self::new(adapter)
             }

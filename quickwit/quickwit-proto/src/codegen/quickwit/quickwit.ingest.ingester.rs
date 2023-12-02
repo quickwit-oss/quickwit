@@ -575,8 +575,8 @@ impl IngesterServiceClient {
         let client = ingester_service_grpc_client::IngesterServiceGrpcClient::new(
                 balance_channel,
             )
-            .max_decoding_message_size(10 * 1024 * 1024)
-            .max_encoding_message_size(10 * 1024 * 1024);
+            .max_decoding_message_size(20 * 1024 * 1024)
+            .max_encoding_message_size(20 * 1024 * 1024);
         let adapter = IngesterServiceGrpcClientAdapter::new(
             client,
             connection_keys_watcher,
