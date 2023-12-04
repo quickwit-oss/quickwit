@@ -223,6 +223,7 @@ vrl = { version = "0.8.1", default-features = false, features = [
 warp = "0.3"
 whichlang = { git = "https://github.com/quickwit-oss/whichlang", rev = "fe406416" }
 wiremock = "0.5"
+zstd = "0.13.0"
 
 aws-config = "0.55.0"
 aws-credential-types = { version = "0.55.0", features = [
