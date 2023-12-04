@@ -575,21 +575,23 @@ mod tests {
             .await
             .unwrap();
         let quickwit_services = QuickwitServices {
-            cluster,
             _report_splits_subscription_handle_opt: None,
+            _local_shards_update_listener_handle_opt: None,
+            cluster,
             control_plane_service,
-            ingester_service_opt: None,
-            metastore_server_opt: None,
-            index_manager: index_service,
             indexing_service_opt: None,
-            janitor_service_opt: None,
-            search_service: Arc::new(MockSearchService::new()),
+            index_manager: index_service,
+            ingest_service: ingest_service_client(),
+
+            ingester_service_opt: None,
             ingest_router_service: IngestRouterServiceClient::from(
                 IngestRouterServiceClient::mock(),
             ),
-            ingest_service: ingest_service_client(),
+            janitor_service_opt: None,
             metastore_client,
+            metastore_server_opt: None,
             node_config: Arc::new(node_config.clone()),
+            search_service: Arc::new(MockSearchService::new()),
         };
         let handler = api_v1_routes(Arc::new(quickwit_services));
         let resp = warp::test::request()
