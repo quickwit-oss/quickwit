@@ -105,14 +105,20 @@ fn make_elastic_api_response<T: serde::Serialize>(
 mod tests {
     use std::sync::Arc;
 
+    use assert_json_diff::assert_json_include;
     use mockall::predicate;
     use quickwit_config::NodeConfig;
     use quickwit_ingest::{IngestApiService, IngestServiceClient};
     use quickwit_search::MockSearchService;
+    use serde_json::Value as JsonValue;
+    use warp::Filter;
 
     use super::elastic_api_handlers;
     use super::model::ElasticSearchError;
     use crate::elastic_search_api::model::MultiSearchResponse;
+    use crate::elastic_search_api::rest_handler::es_compat_cluster_info_handler;
+    use crate::rest::recover_fn;
+    use crate::BuildInfo;
 
     fn ingest_service_client() -> IngestServiceClient {
         let universe = quickwit_actors::Universe::new();
@@ -356,6 +362,45 @@ mod tests {
             .method("POST")
             .body(msearch_payload)
             .reply(&es_search_api_handler)
+            .await;
+        assert_eq!(resp.status(), 200);
+    }
+
+    #[tokio::test]
+    async fn test_es_compat_cluster_info_handler() {
+        let build_info = BuildInfo::get();
+        let config = Arc::new(NodeConfig::for_test());
+        let handler =
+            es_compat_cluster_info_handler(config.clone(), build_info).recover(recover_fn);
+        let resp = warp::test::request()
+            .path("/_elastic")
+            .reply(&handler)
+            .await;
+        assert_eq!(resp.status(), 200);
+        let resp_json: JsonValue = serde_json::from_slice(resp.body()).unwrap();
+        let expected_response_json = serde_json::json!({
+            "name" : config.node_id,
+            "cluster_name" : config.cluster_id,
+            "version" : {
+                "distribution" : "quickwit",
+                "number" : build_info.version,
+                "build_hash" : build_info.commit_hash,
+                "build_date" : build_info.build_date,
+            }
+        });
+        assert_json_include!(actual: resp_json, expected: expected_response_json);
+    }
+
+    #[tokio::test]
+    async fn test_head_request_on_root_endpoint() {
+        let build_info = BuildInfo::get();
+        let config = Arc::new(NodeConfig::for_test());
+        let handler =
+            es_compat_cluster_info_handler(config.clone(), build_info).recover(recover_fn);
+        let resp = warp::test::request()
+            .path("/_elastic")
+            .method("HEAD")
+            .reply(&handler)
             .await;
         assert_eq!(resp.status(), 200);
     }

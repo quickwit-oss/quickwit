@@ -917,27 +917,29 @@ mod tests {
             assert_eq!(node_config.gossip_listen_addr.to_string(), "127.0.0.1:1889");
             assert_eq!(node_config.grpc_listen_addr.to_string(), "127.0.0.1:1989");
         }
-        {
-            // Check that `rest_listen_port` can still be used for backward compatibility.
-            let node_config = NodeConfigBuilder {
-                rest_listen_port: Some(1789),
-                listen_address: default_listen_address(),
-                rest_config_builder: RestConfigBuilder {
-                    listen_port: None,
-                    ..Default::default()
-                },
+    }
+
+    #[tokio::test]
+    async fn test_rest_deprecated_listen_port_config() {
+        // This test should be removed once deprecated `rest_listen_port` field is removed.
+        let node_config = NodeConfigBuilder {
+            rest_listen_port: Some(1789),
+            listen_address: default_listen_address(),
+            rest_config_builder: RestConfigBuilder {
+                listen_port: None,
                 ..Default::default()
-            }
-            .build_and_validate(&HashMap::new())
-            .await
-            .unwrap();
-            assert_eq!(
-                node_config.rest_config.listen_addr.to_string(),
-                "127.0.0.1:1789"
-            );
-            assert_eq!(node_config.gossip_listen_addr.to_string(), "127.0.0.1:1789");
-            assert_eq!(node_config.grpc_listen_addr.to_string(), "127.0.0.1:1790");
+            },
+            ..Default::default()
         }
+        .build_and_validate(&HashMap::new())
+        .await
+        .unwrap();
+        assert_eq!(
+            node_config.rest_config.listen_addr.to_string(),
+            "127.0.0.1:1789"
+        );
+        assert_eq!(node_config.gossip_listen_addr.to_string(), "127.0.0.1:1789");
+        assert_eq!(node_config.grpc_listen_addr.to_string(), "127.0.0.1:1790");
     }
 
     #[tokio::test]

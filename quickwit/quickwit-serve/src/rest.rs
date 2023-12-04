@@ -143,6 +143,17 @@ pub(crate) async fn start_rest_server(
 fn api_v1_routes(
     quickwit_services: Arc<QuickwitServices>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    if !quickwit_services
+        .node_config
+        .rest_config
+        .extra_headers
+        .is_empty()
+    {
+        info!(
+            "Extra headers will be added to all responses: {:?}",
+            quickwit_services.node_config.rest_config.extra_headers
+        );
+    }
     let api_v1_root_url = warp::path!("api" / "v1" / ..);
     api_v1_root_url
         .and(
