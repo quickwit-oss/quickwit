@@ -555,7 +555,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_additional_headers() {
+    async fn test_extra_headers() {
         let mut node_config = NodeConfig::for_test();
         node_config.rest_config.extra_headers.insert(
             HeaderName::from_static("x-custom-header"),
