@@ -143,15 +143,19 @@ impl<T: 'static + ToOwned + ?Sized + Ord> NeedMutByteRangeCache<T> {
             .unwrap_or(true);
 
         let (final_range, final_bytes) = if can_drop_first && can_drop_last {
+            // if we are here, either ther was no overlapping block, or there was, but this buffer
+            // covers entirely every block it overlapped with. There is no merging to do.
             (byte_range, bytes)
         } else {
+            // if we are here, we have to do some merging
+
+            // first find the final buffer start and end position.
             let start = if can_drop_first {
                 byte_range.start
             } else {
                 // if no first, can_drop_first is true
                 overlapping.first().unwrap().start
             };
-
             let end = if can_drop_last {
                 byte_range.end
             } else {
@@ -161,6 +165,8 @@ impl<T: 'static + ToOwned + ?Sized + Ord> NeedMutByteRangeCache<T> {
 
             let mut buffer = Vec::with_capacity(end - start);
 
+            // if this buffer overlap, but does not contain the 1st buffer, copy the
+            // non-overlapping part at the start of the final buffer.
             if !can_drop_first {
                 let first_range = overlapping.first().unwrap();
                 let key = CacheKey::from_borrowed(tag.borrow(), first_range.start);
@@ -170,8 +176,11 @@ impl<T: 'static + ToOwned + ?Sized + Ord> NeedMutByteRangeCache<T> {
                 buffer.extend_from_slice(&block.bytes[..len]);
             }
 
+            // copy the entire current buffer
             buffer.extend_from_slice(&bytes);
 
+            // if this buffer overlap, but does not contain the last buffer, copy the
+            // non-overlapping part ad the end of the final buffer.
             if !can_drop_last {
                 let last_range = overlapping.last().unwrap();
                 let key = CacheKey::from_borrowed(tag.borrow(), last_range.start);
@@ -181,6 +190,7 @@ impl<T: 'static + ToOwned + ?Sized + Ord> NeedMutByteRangeCache<T> {
                 buffer.extend_from_slice(&block.bytes[start..]);
             }
 
+            // sanity check, we copied as much as expected
             debug_assert_eq!(end - start, buffer.len());
 
             (start..end, OwnedBytes::new(buffer))
@@ -190,11 +200,14 @@ impl<T: 'static + ToOwned + ?Sized + Ord> NeedMutByteRangeCache<T> {
         // in the loop. It works with .get() instead of .remove() (?).
         let mut key = CacheKey::from_owned(tag, 0);
         for range in overlapping.into_iter() {
+            // remove every block with which we overlapped, including the 1st and last, as they
+            // were included as prefix/suffix to the final block.
             key.range_start = range.start;
             self.cache.remove(&key);
             self.update_counter_drop_item(range.end - range.start);
         }
 
+        // and finaly insert the newly added buffer
         key.range_start = final_range.start;
         let value = CacheValue {
             range_end: final_range.end,
@@ -228,15 +241,17 @@ impl<T: 'static + ToOwned + ?Sized + Ord> NeedMutByteRangeCache<T> {
 
         let first_block = self.get_block(start, start.range_start)?;
 
+        // query cache for all blocks which overlap with our query
         let overlapping_blocks = self
             .cache
             .range(first_block.0..)
             .take_while(|(k, _)| k.tag == start.tag && k.range_start <= range_end);
 
+        // verify there are no hole, and each range touches the next one. There can't be overlap
+        // due to how we fill our data-structure.
         let mut last_block = first_block;
         for (k, v) in overlapping_blocks.clone().skip(1) {
             if k.range_start != last_block.1.range_end {
-                // we can't have overlap by how we build, so we have a gap
                 return None;
             }
 
@@ -247,7 +262,7 @@ impl<T: 'static + ToOwned + ?Sized + Ord> NeedMutByteRangeCache<T> {
             return None;
         }
 
-        // we have everything we need
+        // we have everything we need. Merge every sub-buffer into a single large buffer.
         let mut buffer = Vec::with_capacity(last_block.1.range_end - first_block.0.range_start);
         let mut part_count = 0i64;
         for (_, v) in overlapping_blocks {
@@ -268,6 +283,7 @@ impl<T: 'static + ToOwned + ?Sized + Ord> NeedMutByteRangeCache<T> {
         // cleanup is sub-optimal, we'd need a BTreeMap::drain_range or something like that
         let last_key = own_key(last_block.0);
 
+        // remove previous buffers from the cache
         let blocks_to_remove: Vec<_> = self
             .cache
             .range(&new_key..=&last_key)
@@ -277,6 +293,7 @@ impl<T: 'static + ToOwned + ?Sized + Ord> NeedMutByteRangeCache<T> {
             self.cache.remove(&block);
         }
 
+        // and insert the new merged buffer
         self.cache.insert(new_key, new_value);
 
         self.num_items -= (part_count - 1) as u64;
