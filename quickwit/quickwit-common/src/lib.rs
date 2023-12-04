@@ -177,6 +177,17 @@ where T: Debug
 }
 
 #[inline]
+pub const fn div_ceil_u32(lhs: u32, rhs: u32) -> u32 {
+    let d = lhs / rhs;
+    let r = lhs % rhs;
+    if r > 0 {
+        d + 1
+    } else {
+        d
+    }
+}
+
+#[inline]
 pub const fn div_ceil(lhs: i64, rhs: i64) -> i64 {
     let d = lhs / rhs;
     let r = lhs % rhs;
@@ -267,5 +278,16 @@ mod tests {
         assert_eq!(div_ceil(-5, -1), 5);
         assert_eq!(div_ceil(-5, -2), 3);
         assert_eq!(div_ceil(-6, -2), 3);
+    }
+
+    #[test]
+    fn test_div_ceil_u32() {
+        assert_eq!(div_ceil_u32(5, 1), 5);
+        assert_eq!(div_ceil_u32(5, 2), 3);
+        assert_eq!(div_ceil_u32(6, 2), 3);
+        assert_eq!(div_ceil_u32(3, 3), 1);
+        assert_eq!(div_ceil_u32(2, 3), 1);
+        assert_eq!(div_ceil_u32(1, 3), 1);
+        assert_eq!(div_ceil_u32(0, 3), 0);
     }
 }

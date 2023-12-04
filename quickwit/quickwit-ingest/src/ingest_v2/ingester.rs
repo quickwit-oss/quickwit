@@ -48,7 +48,7 @@ use quickwit_proto::ingest::ingester::{
 use quickwit_proto::ingest::{CommitTypeV2, IngestV2Error, IngestV2Result, Shard, ShardState};
 use quickwit_proto::types::{NodeId, Position, QueueId};
 use tokio::sync::{watch, RwLock};
-use tracing::{error, info, warn};
+use tracing::{debug, error, info, warn};
 
 use super::fetch::FetchStreamTask;
 use super::models::IngesterShard;
@@ -468,7 +468,7 @@ impl IngesterService for Ingester {
                 .expect("rate limiter should be initialized");
 
             if !rate_limiter.acquire_bytes(requested_capacity) {
-                warn!("failed to persist records to shard `{queue_id}`: rate limited");
+                debug!("failed to persist records to shard `{queue_id}`: rate limited");
 
                 let persist_failure = PersistFailure {
                     subrequest_id: subrequest.subrequest_id,
