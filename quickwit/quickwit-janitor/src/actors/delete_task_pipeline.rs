@@ -270,12 +270,12 @@ impl Handler<Observe> for DeleteTaskPipeline {
             handles.uploader.refresh_observe();
             handles.publisher.refresh_observe();
             self.state = DeleteTaskPipelineState {
-                delete_task_planner: handles.delete_task_planner.last_observation(),
-                downloader: handles.downloader.last_observation(),
-                delete_task_executor: handles.delete_task_executor.last_observation(),
-                packager: handles.packager.last_observation(),
-                uploader: handles.uploader.last_observation(),
-                publisher: handles.publisher.last_observation(),
+                delete_task_planner: handles.delete_task_planner.last_observation().clone(),
+                downloader: handles.downloader.last_observation().clone(),
+                delete_task_executor: handles.delete_task_executor.last_observation().clone(),
+                packager: handles.packager.last_observation().clone(),
+                uploader: handles.uploader.last_observation().clone(),
+                publisher: handles.publisher.last_observation().clone(),
             }
         }
         ctx.schedule_self_msg(OBSERVE_PIPELINE_INTERVAL, Observe)

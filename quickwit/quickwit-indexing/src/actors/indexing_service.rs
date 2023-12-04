@@ -132,7 +132,7 @@ pub struct IndexingService {
 }
 
 impl Debug for IndexingService {
-    fn fmt(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+    fn fmt(&self, formatter: &mut Formatter) -> std::fmt::Result {
         formatter
             .debug_struct("IndexingService")
             .field("cluster_id", &self.cluster.cluster_id())
@@ -424,7 +424,8 @@ impl IndexingService {
                 merge_pipeline_mailbox_handle.handle.state().is_running()
             });
         self.counters.num_running_merge_pipelines = self.merge_pipeline_handles.len();
-        self.update_cluster_running_indexing_tasks().await;
+        self.update_cluster_running_indexing_tasks_in_chitchat()
+            .await;
 
         let pipeline_metrics: HashMap<&IndexingPipelineId, PipelineMetrics> = self
             .indexing_pipelines
@@ -536,7 +537,8 @@ impl IndexingService {
         // Shut down currently running pipelines that are missing in the new plan.
         self.shutdown_pipelines(&pipeline_uid_to_remove).await;
 
-        self.update_cluster_running_indexing_tasks().await;
+        self.update_cluster_running_indexing_tasks_in_chitchat()
+            .await;
 
         if !failed_spawning_pipeline_ids.is_empty() {
             return Err(IndexingError::SpawnPipelinesError {
@@ -642,8 +644,7 @@ impl IndexingService {
         }
     }
 
-    /// Updates running indexing tasks in chitchat cluster state.
-    async fn update_cluster_running_indexing_tasks(&self) {
+    async fn update_cluster_running_indexing_tasks_in_chitchat(&self) {
         let indexing_tasks = self
             .indexing_pipelines
             .values()
