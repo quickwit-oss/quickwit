@@ -438,6 +438,15 @@ pub struct WeakMailbox<A: Actor> {
     ref_count: Weak<AtomicUsize>,
 }
 
+impl<A: Actor> Clone for WeakMailbox<A> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            ref_count: self.ref_count.clone(),
+        }
+    }
+}
+
 impl<A: Actor> WeakMailbox<A> {
     pub fn upgrade(&self) -> Option<Mailbox<A>> {
         let inner = self.inner.upgrade()?;

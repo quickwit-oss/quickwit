@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::borrow::Cow;
 use std::cmp::Ordering;
 use std::collections::HashSet;
 
@@ -456,6 +457,92 @@ impl QuickwitAggregations {
             QuickwitAggregations::TantivyAggregations(aggregations) => {
                 get_fast_field_names(aggregations)
             }
+        }
+    }
+
+    fn maybe_incremental_aggregator(&self) -> QuickwitIncrementalAggregations {
+        match self {
+            QuickwitAggregations::FindTraceIdsAggregation(aggreg) => {
+                QuickwitIncrementalAggregations::FindTraceIdsAggregation(aggreg.clone(), Vec::new())
+            }
+            QuickwitAggregations::TantivyAggregations(aggreg) => {
+                QuickwitIncrementalAggregations::TantivyAggregations(aggreg.clone(), Vec::new())
+            }
+        }
+    }
+}
+
+#[derive(Clone)]
+enum QuickwitIncrementalAggregations {
+    FindTraceIdsAggregation(FindTraceIdsCollector, Vec<Vec<Span>>),
+    TantivyAggregations(Aggregations, Vec<Vec<u8>>),
+    NoAggregation,
+}
+
+impl QuickwitIncrementalAggregations {
+    fn add(&mut self, intermediate_result: Vec<u8>) -> tantivy::Result<()> {
+        match self {
+            QuickwitIncrementalAggregations::FindTraceIdsAggregation(collector, ref mut state) => {
+                let fruits: Vec<Span> =
+                    postcard::from_bytes(&intermediate_result).map_err(map_error)?;
+                state.push(fruits);
+                if state.iter().map(Vec::len).sum::<usize>() >= collector.num_traces {
+                    let new_state = collector.merge_fruits(std::mem::take(state))?;
+                    state.push(new_state);
+                }
+            }
+            QuickwitIncrementalAggregations::TantivyAggregations(_, state) => {
+                state.push(intermediate_result);
+            }
+            QuickwitIncrementalAggregations::NoAggregation => (),
+        }
+        Ok(())
+    }
+
+    fn virtual_worst_hit(&self) -> Option<PartialHit> {
+        match self {
+            QuickwitIncrementalAggregations::FindTraceIdsAggregation(collector, state) => {
+                if let Some(first) = state.first() {
+                    if first.len() >= collector.num_traces {
+                        if let Some(last_elem) = first.last() {
+                            let timestamp = last_elem.span_timestamp.into_timestamp_nanos();
+                            return Some(PartialHit {
+                                sort_value: Some(SortByValue {
+                                    sort_value: Some(SortValue::I64(timestamp)),
+                                }),
+                                sort_value2: None,
+                                split_id: String::new(),
+                                segment_ord: 0,
+                                doc_id: 0,
+                            });
+                        }
+                    }
+                }
+                None
+            }
+            QuickwitIncrementalAggregations::TantivyAggregations(_, _) => None,
+            QuickwitIncrementalAggregations::NoAggregation => None,
+        }
+    }
+
+    fn finalize(self) -> tantivy::Result<Option<Vec<u8>>> {
+        match self {
+            QuickwitIncrementalAggregations::FindTraceIdsAggregation(collector, mut state) => {
+                let merged_fruit = if state.len() > 1 {
+                    collector.merge_fruits(state)?
+                } else {
+                    state.pop().unwrap_or_default()
+                };
+                let serialized = postcard::to_allocvec(&merged_fruit).map_err(map_error)?;
+                Ok(Some(serialized))
+            }
+            QuickwitIncrementalAggregations::TantivyAggregations(aggregation, state) => {
+                merge_intermediate_aggregation_result(
+                    &Some(QuickwitAggregations::TantivyAggregations(aggregation)),
+                    state.iter().map(|vec| vec.as_slice()),
+                )
+            }
+            QuickwitIncrementalAggregations::NoAggregation => Ok(None),
         }
     }
 }
@@ -932,7 +1019,7 @@ impl SortKeyMapper<SegmentPartialHit> for HitSortingMapper {
 pub(crate) struct IncrementalCollector {
     inner: QuickwitCollector,
     top_k_hits: TopK<PartialHit, PartialHitSortingKey, HitSortingMapper>,
-    intermediate_aggregation_results: Vec<Vec<u8>>,
+    incremental_aggregation: QuickwitIncrementalAggregations,
     num_hits: u64,
     failed_splits: Vec<SplitSearchError>,
     num_attempted_splits: u64,
@@ -941,12 +1028,17 @@ pub(crate) struct IncrementalCollector {
 impl IncrementalCollector {
     /// Create a new incremental collector
     pub(crate) fn new(inner: QuickwitCollector) -> Self {
+        let incremental_aggregation = inner
+            .aggregation
+            .as_ref()
+            .map(QuickwitAggregations::maybe_incremental_aggregator)
+            .unwrap_or(QuickwitIncrementalAggregations::NoAggregation);
         let (order1, order2) = inner.sort_by.sort_orders();
         let sort_key_mapper = HitSortingMapper { order1, order2 };
         IncrementalCollector {
             top_k_hits: TopK::new(inner.max_hits + inner.start_offset, sort_key_mapper),
             inner,
-            intermediate_aggregation_results: Vec::new(),
+            incremental_aggregation,
             num_hits: 0,
             failed_splits: Vec::new(),
             num_attempted_splits: 0,
@@ -954,7 +1046,7 @@ impl IncrementalCollector {
     }
 
     /// Merge one search result with the current state
-    pub(crate) fn add_split(&mut self, leaf_response: LeafSearchResponse) {
+    pub(crate) fn add_split(&mut self, leaf_response: LeafSearchResponse) -> tantivy::Result<()> {
         let LeafSearchResponse {
             num_hits,
             partial_hits,
@@ -968,9 +1060,10 @@ impl IncrementalCollector {
         self.failed_splits.extend(failed_splits);
         self.num_attempted_splits += num_attempted_splits;
         if let Some(intermediate_aggregation_result) = intermediate_aggregation_result {
-            self.intermediate_aggregation_results
-                .push(intermediate_aggregation_result);
+            self.incremental_aggregation
+                .add(intermediate_aggregation_result)?;
         }
+        Ok(())
     }
 
     /// Add a failed split to the state
@@ -981,9 +1074,16 @@ impl IncrementalCollector {
     /// Get the worst top-hit. Can be used to skip splits if they can't possibly do better.
     ///
     /// Only returns a result if enough hits were recorded already.
-    pub(crate) fn peek_worst_hit(&self) -> Option<&PartialHit> {
+    pub(crate) fn peek_worst_hit(&self) -> Option<Cow<PartialHit>> {
+        if self.top_k_hits.max_len() == 0 {
+            return self
+                .incremental_aggregation
+                .virtual_worst_hit()
+                .map(Cow::Owned);
+        }
+
         if self.top_k_hits.at_capacity() {
-            self.top_k_hits.peek_worst()
+            self.top_k_hits.peek_worst().map(Cow::Borrowed)
         } else {
             None
         }
@@ -991,12 +1091,7 @@ impl IncrementalCollector {
 
     /// Finalize the merge, creating a LeafSearchResponse.
     pub(crate) fn finalize(self) -> tantivy::Result<LeafSearchResponse> {
-        let intermediate_aggregation_result = merge_intermediate_aggregation_result(
-            &self.inner.aggregation,
-            self.intermediate_aggregation_results
-                .iter()
-                .map(|vec| vec.as_slice()),
-        )?;
+        let intermediate_aggregation_result = self.incremental_aggregation.finalize()?;
         let mut partial_hits = self.top_k_hits.finalize();
         if self.inner.start_offset != 0 {
             partial_hits.drain(0..self.inner.start_offset.min(partial_hits.len()));
@@ -1548,7 +1643,7 @@ mod tests {
             .unwrap();
 
         for split_result in results {
-            incremental_collector.add_split(split_result);
+            incremental_collector.add_split(split_result).unwrap();
         }
 
         let incremental_result = incremental_collector.finalize().unwrap();

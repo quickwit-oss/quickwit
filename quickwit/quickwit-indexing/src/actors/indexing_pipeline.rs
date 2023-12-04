@@ -146,7 +146,7 @@ impl Actor for IndexingPipeline {
     ) -> anyhow::Result<()> {
         // We update the observation to ensure our last "black box" observation
         // is up to date.
-        self.perform_observe(ctx).await;
+        self.perform_observe(ctx);
         Ok(())
     }
 }
@@ -237,7 +237,7 @@ impl IndexingPipeline {
         self.statistics.generation
     }
 
-    async fn perform_observe(&mut self, ctx: &ActorContext<Self>) {
+    fn perform_observe(&mut self, ctx: &ActorContext<Self>) {
         let Some(handles) = &self.handles_opt else {
             return;
         };
@@ -494,7 +494,7 @@ impl Handler<SuperviseLoop> for IndexingPipeline {
         supervise_loop_token: SuperviseLoop,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        self.perform_observe(ctx).await;
+        self.perform_observe(ctx);
         self.perform_health_check(ctx).await?;
         ctx.schedule_self_msg(SUPERVISE_INTERVAL, supervise_loop_token)
             .await;
@@ -542,15 +542,18 @@ impl Handler<AssignShards> for IndexingPipeline {
 
     async fn handle(
         &mut self,
-        message: AssignShards,
+        assign_shards_message: AssignShards,
         _ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         if let Some(handles) = &mut self.handles_opt {
             info!(
-                shard_ids=?message.0.shard_ids,
+                shard_ids=?assign_shards_message.0.shard_ids,
                 "assigning shards to indexing pipeline."
             );
-            handles.source_mailbox.send_message(message).await?;
+            handles
+                .source_mailbox
+                .send_message(assign_shards_message)
+                .await?;
         }
         Ok(())
     }

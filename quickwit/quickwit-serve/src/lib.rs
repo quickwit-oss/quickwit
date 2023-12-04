@@ -57,6 +57,7 @@ use quickwit_cluster::{
     start_cluster_service, Cluster, ClusterChange, ClusterMember, ListenerHandle,
 };
 use quickwit_common::pubsub::{EventBroker, EventSubscriptionHandle};
+use quickwit_common::rate_limiter::RateLimiterSettings;
 use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::tower::{
     BalanceChannel, BoxFutureInfaillible, BufferLayer, Change, ConstantRate, EstimateRateLayer,
@@ -64,7 +65,7 @@ use quickwit_common::tower::{
 };
 use quickwit_config::service::QuickwitService;
 use quickwit_config::NodeConfig;
-use quickwit_control_plane::control_plane::ControlPlane;
+use quickwit_control_plane::control_plane::{ControlPlane, ControlPlaneEventSubscriber};
 use quickwit_control_plane::{IndexerNodeInfo, IndexerPool};
 use quickwit_index_management::{IndexService as IndexManager, IndexServiceError};
 use quickwit_indexing::actors::IndexingService;
@@ -73,7 +74,7 @@ use quickwit_indexing::start_indexing_service;
 use quickwit_ingest::{
     setup_local_shards_update_listener, start_ingest_api_service, wait_for_ingester_decommission,
     GetMemoryCapacity, IngestApiService, IngestRequest, IngestRouter, IngestServiceClient,
-    Ingester, IngesterPool, RateLimiterSettings,
+    Ingester, IngesterPool, LocalShardsUpdate,
 };
 use quickwit_janitor::{start_janitor_service, JanitorService};
 use quickwit_metastore::{
@@ -211,11 +212,11 @@ async fn start_ingest_client_if_needed(
 async fn start_control_plane_if_needed(
     node_config: &NodeConfig,
     cluster: &Cluster,
+    event_broker: &EventBroker,
     metastore_client: &MetastoreServiceClient,
     universe: &Universe,
     indexer_pool: &IndexerPool,
     ingester_pool: &IngesterPool,
-    event_broker: &EventBroker,
 ) -> anyhow::Result<ControlPlaneServiceClient> {
     if node_config.is_service_enabled(QuickwitService::ControlPlane) {
         check_cluster_configuration(
@@ -235,13 +236,13 @@ async fn start_control_plane_if_needed(
             .get();
         let control_plane_mailbox = setup_control_plane(
             universe,
+            event_broker,
             cluster_id,
             self_node_id,
             indexer_pool.clone(),
             ingester_pool.clone(),
             metastore_client.clone(),
             replication_factor,
-            event_broker,
         )
         .await?;
         Ok(ControlPlaneServiceClient::from_mailbox(
@@ -321,11 +322,11 @@ pub async fn serve_quickwit(
     let control_plane_service: ControlPlaneServiceClient = start_control_plane_if_needed(
         &node_config,
         &cluster,
+        &event_broker,
         &metastore_client,
         &universe,
         &indexer_pool,
         &ingester_pool,
-        &event_broker,
     )
     .await?;
 
@@ -605,10 +606,8 @@ async fn setup_ingest_v2(
     // We compute the burst limit as something a bit larger than the content length limit, because
     // we actually rewrite the `\n-delimited format into a tiny bit larger buffer, where the
     // line length is prefixed.
-    let burst_limit = ByteSize::b(
-        (config.ingest_api_config.content_length_limit.as_u64() * 3 / 2)
-            .clamp(10_000_000, 200_000_000),
-    );
+    let burst_limit = (config.ingest_api_config.content_length_limit.as_u64() * 3 / 2)
+        .clamp(10_000_000, 200_000_000);
     let rate_limiter_settings = RateLimiterSettings {
         burst_limit,
         ..Default::default()
@@ -713,13 +712,13 @@ async fn setup_searcher(
 #[allow(clippy::too_many_arguments)]
 async fn setup_control_plane(
     universe: &Universe,
+    event_broker: &EventBroker,
     cluster_id: String,
     self_node_id: NodeId,
     indexer_pool: IndexerPool,
     ingester_pool: IngesterPool,
     metastore: MetastoreServiceClient,
     replication_factor: usize,
-    event_broker: &EventBroker,
 ) -> anyhow::Result<Mailbox<ControlPlane>> {
     let (control_plane_mailbox, _control_plane_handle) = ControlPlane::spawn(
         universe,
@@ -730,20 +729,15 @@ async fn setup_control_plane(
         metastore,
         replication_factor,
     );
-    let weak_control_plane_mailbox = control_plane_mailbox.downgrade();
+    let subscriber = ControlPlaneEventSubscriber::new(control_plane_mailbox.downgrade());
+
     event_broker
-        .subscribe::<ShardPositionsUpdate>(move |shard_positions_update| {
-            let Some(control_plane_mailbox) = weak_control_plane_mailbox.upgrade() else {
-                return;
-            };
-            if control_plane_mailbox
-                .try_send_message(shard_positions_update)
-                .is_err()
-            {
-                error!("failed to send shard positions update to control plane");
-            }
-        })
+        .subscribe::<LocalShardsUpdate>(subscriber.clone())
         .forever();
+    event_broker
+        .subscribe::<ShardPositionsUpdate>(subscriber)
+        .forever();
+
     Ok(control_plane_mailbox)
 }
 

@@ -47,18 +47,18 @@ impl ConstantRate {
     /// # Panics
     ///
     /// This function panics if `period` is 0.
-    pub fn new(work: u64, period: Duration) -> Self {
+    pub const fn new(work: u64, period: Duration) -> Self {
         assert!(!period.is_zero());
 
         Self { work, period }
     }
 
-    pub fn bytes_per_period(bytes: ByteSize, period: Duration) -> Self {
+    pub const fn bytes_per_period(bytes: ByteSize, period: Duration) -> Self {
         let work = bytes.as_u64();
         Self::new(work, period)
     }
 
-    pub fn bytes_per_sec(bytes: ByteSize) -> Self {
+    pub const fn bytes_per_sec(bytes: ByteSize) -> Self {
         Self::bytes_per_period(bytes, Duration::from_secs(1))
     }
 

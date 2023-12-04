@@ -48,19 +48,23 @@ impl ApiResponse {
         Ok(())
     }
 
+    async fn extract_error_message(self) -> Option<String> {
+        let error_body_bytes = self.inner.bytes().await.ok()?;
+        let error_body_text = std::str::from_utf8(&error_body_bytes).ok()?;
+        if let Ok(error_payload) = serde_json::from_str::<ErrorResponsePayload>(error_body_text) {
+            Some(error_payload.message)
+        } else {
+            Some(error_body_text.to_string())
+        }
+    }
+
     async fn api_error(self) -> Error {
         let code = self.inner.status();
-        if let Ok(error_payload) = self.inner.json::<ErrorResponsePayload>().await {
-            Error::from(ApiError {
-                message: Some(error_payload.message),
-                code,
-            })
-        } else {
-            Error::from(ApiError {
-                message: None,
-                code,
-            })
-        }
+        let error_message = self.extract_error_message().await;
+        Error::from(ApiError {
+            message: error_message,
+            code,
+        })
     }
 
     pub async fn deserialize<T: DeserializeOwned>(self) -> Result<T, Error> {

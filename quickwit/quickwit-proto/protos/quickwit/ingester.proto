@@ -37,6 +37,9 @@ service IngesterService {
   // Streams status updates, called "observations", from an ingester.
   rpc OpenObservationStream(OpenObservationStreamRequest) returns (stream ObservationMessage);
 
+  // Creates and initializes a set of newly opened shards. This RPC is called by the control plane on leaders.
+  rpc InitShards(InitShardsRequest) returns (InitShardsResponse);
+
   // Truncates a set of shards at the given positions. This RPC is called by indexers on leaders AND followers.
   rpc TruncateShards(TruncateShardsRequest) returns (TruncateShardsResponse);
 
@@ -45,7 +48,6 @@ service IngesterService {
 
   // Pings an ingester to check if it is ready to host shards and serve requests.
   rpc Ping(PingRequest) returns (PingResponse);
-
 
   // Decommissions the ingester.
   rpc Decommission(DecommissionRequest) returns (DecommissionResponse);
@@ -83,9 +85,10 @@ message PersistSuccess {
 
 enum PersistFailureReason {
   PERSIST_FAILURE_REASON_UNSPECIFIED = 0;
-  PERSIST_FAILURE_REASON_SHARD_CLOSED = 1;
-  PERSIST_FAILURE_REASON_RATE_LIMITED = 2;
-  PERSIST_FAILURE_REASON_RESOURCE_EXHAUSTED = 3;
+  PERSIST_FAILURE_REASON_SHARD_NOT_FOUND = 1;
+  PERSIST_FAILURE_REASON_SHARD_CLOSED = 2;
+  PERSIST_FAILURE_REASON_RATE_LIMITED = 3;
+  PERSIST_FAILURE_REASON_RESOURCE_EXHAUSTED = 4;
 }
 
 message PersistFailure {
@@ -99,23 +102,38 @@ message PersistFailure {
 message SynReplicationMessage {
   oneof message {
     OpenReplicationStreamRequest open_request = 1;
-    ReplicateRequest replicate_request = 2;
+    InitReplicaRequest init_request = 2;
+    ReplicateRequest replicate_request = 3;
   }
 }
 
 message AckReplicationMessage {
   oneof message {
     OpenReplicationStreamResponse open_response = 1;
-    ReplicateResponse replicate_response = 2;
+    InitReplicaResponse init_response = 2;
+    ReplicateResponse replicate_response = 3;
   }
 }
 
 message OpenReplicationStreamRequest {
   string leader_id = 1;
   string follower_id = 2;
+  // Position of the request in the replication stream.
+  uint64 replication_seqno = 3;
 }
 
 message OpenReplicationStreamResponse {
+  // Position of the response in the replication stream. It should match the position of the request.
+  uint64 replication_seqno = 1;
+}
+
+message InitReplicaRequest {
+  Shard replica_shard = 1;
+  uint64 replication_seqno = 2;
+}
+
+message InitReplicaResponse {
+  uint64 replication_seqno = 1;
 }
 
 message ReplicateRequest {
@@ -155,9 +173,10 @@ message ReplicateSuccess {
 
 enum ReplicateFailureReason {
   REPLICATE_FAILURE_REASON_UNSPECIFIED = 0;
-  REPLICATE_FAILURE_REASON_SHARD_CLOSED = 1;
-  reserved 2; // REPLICATE_FAILURE_REASON_RATE_LIMITED = 2;
-  REPLICATE_FAILURE_REASON_RESOURCE_EXHAUSTED = 3;
+  REPLICATE_FAILURE_REASON_SHARD_NOT_FOUND = 1;
+  REPLICATE_FAILURE_REASON_SHARD_CLOSED = 2;
+  reserved 3; // REPLICATE_FAILURE_REASON_RATE_LIMITED = 3;
+  REPLICATE_FAILURE_REASON_RESOURCE_EXHAUSTED = 4;
 }
 
 message ReplicateFailure {
@@ -199,6 +218,13 @@ message FetchResponseV2 {
   quickwit.ingest.MRecordBatch mrecord_batch = 4;
   quickwit.ingest.Position from_position_exclusive = 5;
   quickwit.ingest.Position to_position_inclusive = 6;
+}
+
+message InitShardsRequest {
+  repeated quickwit.ingest.Shard shards = 1;
+}
+
+message InitShardsResponse {
 }
 
 message CloseShardsRequest {

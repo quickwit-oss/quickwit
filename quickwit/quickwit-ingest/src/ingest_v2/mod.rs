@@ -23,7 +23,6 @@ mod ingester;
 mod models;
 mod mrecord;
 mod mrecordlog_utils;
-mod rate_limiter;
 mod rate_meter;
 mod replication;
 mod router;
@@ -33,9 +32,9 @@ mod test_utils;
 mod workbench;
 
 use std::fmt;
-use std::ops::Add;
+use std::ops::{Add, AddAssign};
 
-pub use broadcast::setup_local_shards_update_listener;
+pub use broadcast::{setup_local_shards_update_listener, LocalShardsUpdate, ShardInfo, ShardInfos};
 use bytesize::ByteSize;
 use quickwit_common::tower::Pool;
 use quickwit_proto::ingest::ingester::IngesterServiceClient;
@@ -46,7 +45,6 @@ pub use self::fetch::{FetchStreamError, MultiFetchStream};
 pub use self::ingester::{wait_for_ingester_decommission, Ingester};
 use self::mrecord::MRECORD_HEADER_LEN;
 pub use self::mrecord::{decoded_mrecords, MRecord};
-pub use self::rate_limiter::RateLimiterSettings;
 pub use self::router::IngestRouter;
 
 pub type IngesterPool = Pool<NodeId, IngesterServiceClient>;
@@ -63,7 +61,7 @@ pub(super) fn estimate_size(doc_batch: &DocBatchV2) -> ByteSize {
     ByteSize(estimate as u64)
 }
 
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Ord, PartialOrd)]
 pub struct RateMibPerSec(pub u16);
 
 impl fmt::Display for RateMibPerSec {
@@ -84,6 +82,13 @@ impl Add<RateMibPerSec> for RateMibPerSec {
     #[inline(always)]
     fn add(self, rhs: RateMibPerSec) -> Self::Output {
         RateMibPerSec(self.0 + rhs.0)
+    }
+}
+
+impl AddAssign<RateMibPerSec> for RateMibPerSec {
+    #[inline(always)]
+    fn add_assign(&mut self, rhs: RateMibPerSec) {
+        self.0 += rhs.0;
     }
 }
 
