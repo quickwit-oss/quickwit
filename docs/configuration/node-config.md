@@ -25,14 +25,48 @@ A commented example is available here: [quickwit.yaml](https://github.com/quickw
 | `enabled_services` | Enabled services (control_plane, indexer, janitor, metastore, searcher) | `QW_ENABLED_SERVICES` | all services |
 | `listen_address` | The IP address or hostname that Quickwit service binds to for starting REST and GRPC server and connecting this node to other nodes. By default, Quickwit binds itself to 127.0.0.1 (localhost). This default is not valid when trying to form a cluster. | `QW_LISTEN_ADDRESS` | `127.0.0.1` |
 | `advertise_address` | IP address advertised by the node, i.e. the IP address that peer nodes should use to connect to the node for RPCs. | `QW_ADVERTISE_ADDRESS` | `listen_address` |
-| `rest_listen_port` | The port which to listen for HTTP REST API. | `QW_REST_LISTEN_PORT` | `7280` |
-| `gossip_listen_port` | The port which to listen for the Gossip cluster membership service (UDP). | `QW_GOSSIP_LISTEN_PORT` | `rest_listen_port` |
-| `grpc_listen_port` | The port which to listen for the gRPC service.| `QW_GRPC_LISTEN_PORT` | `rest_listen_port + 1` |
+| `gossip_listen_port` | The port which to listen for the Gossip cluster membership service (UDP). | `QW_GOSSIP_LISTEN_PORT` | `rest.listen_port` |
+| `grpc_listen_port` | The port on which gRPC services listen for traffic. | `QW_GRPC_LISTEN_PORT` | `rest.listen_port + 1` |
 | `peer_seeds` | List of IP addresses or hostnames used to bootstrap the cluster and discover the complete set of nodes. This list may contain the current node address and does not need to be exhaustive. | `QW_PEER_SEEDS` | |
 | `data_dir` | Path to directory where data (tmp data, splits kept for caching purpose) is persisted. This is mostly used in indexing. | `QW_DATA_DIR` | `./qwdata` |
 | `metastore_uri` | Metastore URI. Can be a local directory or `s3://my-bucket/indexes` or `postgres://username:password@localhost:5432/metastore`. [Learn more about the metastore configuration](metastore-config.md). | `QW_METASTORE_URI` | `{data_dir}/indexes` |
 | `default_index_root_uri` | Default index root URI that defines the location where index data (splits) is stored. The index URI is built following the scheme: `{default_index_root_uri}/{index-id}` | `QW_DEFAULT_INDEX_ROOT_URI` | `{data_dir}/indexes` |
-| `rest_cors_allow_origins` | Configure the CORS origins which are allowed to access the API. [Read more](#configuring-cors-cross-origin-resource-sharing) | |
+
+## REST configuration
+
+This section contains the REST API configuration options.
+
+| Property | Description | Env variable | Default value |
+| --- | --- | --- | --- |
+| `listen_port` | The port on which the REST API listens for HTTP traffic. | `QW_REST_LISTEN_PORT` | `7280` |
+| `cors_allow_origins` | Configure the CORS origins which are allowed to access the API. [Read more](#configuring-cors-cross-origin-resource-sharing) | |
+| `extra_headers` | List of header names and values | | |
+
+### Configuring CORS (Cross-origin resource sharing)
+
+CORS (Cross-origin resource sharing) describes which address or origins can access the REST API from the browser.
+By default, sharing resources cross-origin is not allowed.
+
+A wildcard, single origin, or multiple origins can be specified as part of the `cors_allow_origins` parameter:
+
+
+Example of a REST configuration:
+
+```yaml
+
+rest:
+  listen_port: 1789
+  extra_headers:
+    x-header-1: header-value-1
+    x-header-2: header-value-2
+  cors_allow_origins: '*'
+
+#   cors_allow_origins: https://my-hdfs-logs.domain.com   # Optionally we can specify one domain
+#   cors_allow_origins:                                   # Or allow multiple origins
+#     - https://my-hdfs-logs.domain.com
+#     - https://my-hdfs.other-domain.com
+
+```
 
 ## Storage configuration
 
@@ -203,7 +237,8 @@ version: 0.6
 cluster_id: quickwit-cluster
 node_id: my-unique-node-id
 listen_address: ${QW_LISTEN_ADDRESS}
-rest_listen_port: ${QW_LISTEN_PORT:-1111}
+rest:
+  listen_port: ${QW_LISTEN_PORT:-1111}
 ```
 
 Will be interpreted by Quickwit as:
@@ -213,23 +248,6 @@ version: 0.6
 cluster_id: quickwit-cluster
 node_id: my-unique-node-id
 listen_address: 0.0.0.0
-rest_listen_port: 1111
-```
-
-## Configuring CORS (Cross-origin resource sharing)
-
-CORS (Cross-origin resource sharing) describes which address or origins can access the REST API from the browser.
-By default, sharing resources cross-origin is not allowed.
-
-A wildcard, single origin, or multiple origins can be specified as part of the `rest_cors_allow_origins` parameter:
-
-```yaml
-version: 0.6
-index_id: hdfs
-
-rest_cors_allow_origins: '*'                                 # Allow all origins
-# rest_cors_allow_origins: https://my-hdfs-logs.domain.com   # Optionally we can specify one domain
-# rest_cors_allow_origins:                                   # Or allow multiple origins
-#   - https://my-hdfs-logs.domain.com
-#   - https://my-hdfs.other-domain.com
+rest:
+  listen_port: 1111
 ```
