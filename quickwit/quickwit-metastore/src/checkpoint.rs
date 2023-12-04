@@ -28,8 +28,9 @@ use std::sync::Arc;
 use quickwit_proto::types::{Position, SourceId};
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
+/// Updates running indexing tasks in chitchat cluster state.
 use thiserror::Error;
-use tracing::{info, warn};
+use tracing::{debug, warn};
 
 /// A `PartitionId` uniquely identifies a partition for a given source.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
@@ -327,7 +328,7 @@ impl SourceCheckpoint {
         delta: SourceCheckpointDelta,
     ) -> Result<(), IncompatibleCheckpointDelta> {
         self.check_compatibility(&delta)?;
-        info!(delta=?delta, checkpoint=?self, "applying delta to checkpoint");
+        debug!(delta=?delta, checkpoint=?self, "applying delta to checkpoint");
 
         for (partition_id, partition_position) in delta.per_partition {
             self.per_partition

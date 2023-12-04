@@ -250,10 +250,12 @@ impl IndexingScheduler {
             }
         }
 
-        let mut indexers = self.get_indexers_from_indexer_pool();
+        let mut indexers: Vec<(String, IndexerNodeInfo)> = self.get_indexers_from_indexer_pool();
         let running_indexing_tasks_by_node_id: FnvHashMap<String, Vec<IndexingTask>> = indexers
             .iter()
-            .map(|indexer| (indexer.0.clone(), indexer.1.indexing_tasks.clone()))
+            .map(|(indexer_id, indexer_node_info)| {
+                (indexer_id.clone(), indexer_node_info.indexing_tasks.clone())
+            })
             .collect();
 
         let indexing_plans_diff = get_indexing_plans_diff(

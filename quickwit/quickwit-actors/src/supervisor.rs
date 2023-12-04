@@ -67,7 +67,7 @@ impl<A: Actor> Actor for Supervisor<A> {
         let state_opt: Option<A::ObservableState> = self
             .handle_opt
             .as_ref()
-            .map(|handle| handle.last_observation());
+            .map(|handle| handle.last_observation().clone());
         SupervisorState {
             metrics: self.metrics,
             state_opt,

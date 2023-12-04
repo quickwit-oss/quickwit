@@ -48,7 +48,7 @@ use tracing::{debug, error, info, warn};
 use ulid::Ulid;
 
 use super::{
-    Assignment, BatchBuilder, Source, SourceContext, SourceRuntimeArgs, TypedSourceFactory,
+    BatchBuilder, Source, SourceContext, SourceRuntimeArgs, TypedSourceFactory,
     BATCH_NUM_BYTES_LIMIT, EMIT_BATCHES_TIMEOUT,
 };
 use crate::actors::DocProcessor;
@@ -376,7 +376,7 @@ impl Source for IngestSource {
 
     async fn assign_shards(
         &mut self,
-        assignment: Assignment,
+        mut new_assigned_shard_ids: Vec<ShardId>,
         doc_processor_mailbox: &Mailbox<DocProcessor>,
         ctx: &SourceContext,
     ) -> anyhow::Result<()> {
@@ -388,7 +388,6 @@ impl Source for IngestSource {
             .sorted()
             .collect::<Vec<ShardId>>();
 
-        let mut new_assigned_shard_ids: Vec<ShardId> = assignment.shard_ids;
         new_assigned_shard_ids.sort();
 
         if current_assigned_shard_ids == new_assigned_shard_ids {
@@ -640,14 +639,10 @@ mod tests {
             ActorContext::for_test(&universe, source_mailbox, observable_state_tx);
 
         // In this scenario, the indexer will only be able to acquire shard 1.
-        let assignment = Assignment {
-            shard_ids: vec![1, 2],
-        };
         let publish_lock = source.publish_lock.clone();
-        // let publish_token = source.publish_token.clone();
 
         source
-            .assign_shards(assignment, &doc_processor_mailbox, &ctx)
+            .assign_shards(vec![1, 2], &doc_processor_mailbox, &ctx)
             .await
             .unwrap();
 
@@ -784,11 +779,8 @@ mod tests {
         let ctx: SourceContext =
             ActorContext::for_test(&universe, source_mailbox, observable_state_tx);
 
-        // In this scenario, the indexer will only be able to acquire shard 1.
-        let assignment = Assignment { shard_ids: vec![1] };
-
         source
-            .assign_shards(assignment, &doc_processor_mailbox, &ctx)
+            .assign_shards(vec![1], &doc_processor_mailbox, &ctx)
             .await
             .unwrap();
 
@@ -940,18 +932,14 @@ mod tests {
         let ctx: SourceContext =
             ActorContext::for_test(&universe, source_mailbox, observable_state_tx);
 
-        // In this scenario, the indexer will only be able to acquire shard 1.
-        let assignment = Assignment {
-            shard_ids: vec![1, 2],
-        };
-
         assert_eq!(
             shard_positions_update_rx.try_recv().unwrap_err(),
             TryRecvError::Empty
         );
 
+        // In this scenario, the indexer will only be able to acquire shard 1.
         source
-            .assign_shards(assignment, &doc_processor_mailbox, &ctx)
+            .assign_shards(vec![1, 2], &doc_processor_mailbox, &ctx)
             .await
             .unwrap();
 
