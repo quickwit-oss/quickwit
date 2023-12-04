@@ -93,8 +93,8 @@ impl IndexingServiceClient {
         let client = indexing_service_grpc_client::IndexingServiceGrpcClient::new(
                 balance_channel,
             )
-            .max_decoding_message_size(10 * 1024 * 1024)
-            .max_encoding_message_size(10 * 1024 * 1024);
+            .max_decoding_message_size(20 * 1024 * 1024)
+            .max_encoding_message_size(20 * 1024 * 1024);
         let adapter = IndexingServiceGrpcClientAdapter::new(
             client,
             connection_keys_watcher,

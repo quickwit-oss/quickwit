@@ -126,8 +126,8 @@ impl HelloClient {
     ) -> HelloClient {
         let connection_keys_watcher = balance_channel.connection_keys_watcher();
         let client = hello_grpc_client::HelloGrpcClient::new(balance_channel)
-            .max_decoding_message_size(10 * 1024 * 1024)
-            .max_encoding_message_size(10 * 1024 * 1024);
+            .max_decoding_message_size(20 * 1024 * 1024)
+            .max_encoding_message_size(20 * 1024 * 1024);
         let adapter = HelloGrpcClientAdapter::new(client, connection_keys_watcher);
         Self::new(adapter)
     }
