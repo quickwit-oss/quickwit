@@ -271,7 +271,7 @@ mod tests {
             suggest_truncate_checkpoints[0]
                 .position_for_partition(&PartitionId::default())
                 .unwrap(),
-            &Position::from(2u64)
+            &Position::offset(2u64)
         );
 
         let merger_msgs: Vec<NewSplits> = merge_planner_inbox.drain_for_test_typed::<NewSplits>();
@@ -344,7 +344,7 @@ mod tests {
             suggest_truncate_checkpoints[0]
                 .position_for_partition(&PartitionId::default())
                 .unwrap(),
-            &Position::from(2u64)
+            &Position::offset(2u64)
         );
 
         let merger_msgs: Vec<NewSplits> = merge_planner_inbox.drain_for_test_typed::<NewSplits>();

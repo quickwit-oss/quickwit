@@ -41,7 +41,7 @@ use quickwit_proto::metastore::{
     DeleteSourceRequest, EmptyResponse, MetastoreError, MetastoreService, MetastoreServiceClient,
     ToggleSourceRequest,
 };
-use quickwit_proto::types::{IndexUid, NodeId, Position, ShardId, SourceUid};
+use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceUid};
 use serde::Serialize;
 use tracing::error;
 
@@ -195,9 +195,7 @@ impl Handler<ShardPositionsUpdate> for ControlPlane {
         let shard_ids_to_close: Vec<ShardId> = shard_positions_update
             .shard_positions
             .into_iter()
-            .filter(|(shard_id, position)| {
-                (position == &Position::Eof) && known_shard_ids.contains(shard_id)
-            })
+            .filter(|(shard_id, position)| position.is_eof() && known_shard_ids.contains(shard_id))
             .map(|(shard_id, _position)| shard_id)
             .collect();
         if shard_ids_to_close.is_empty() {
@@ -538,6 +536,7 @@ mod tests {
         DeleteShardsResponse, EntityKind, ListIndexesMetadataRequest, ListIndexesMetadataResponse,
         ListShardsRequest, ListShardsResponse, ListShardsSubresponse, MetastoreError, SourceType,
     };
+    use quickwit_proto::types::Position;
 
     use super::*;
     use crate::IndexerNodeInfo;
@@ -1114,7 +1113,7 @@ mod tests {
         control_plane_mailbox
             .ask(ShardPositionsUpdate {
                 source_uid: source_uid.clone(),
-                shard_positions: vec![(17, 1000u64.into())],
+                shard_positions: vec![(17, Position::offset(1_000u64))],
             })
             .await
             .unwrap();
@@ -1137,7 +1136,7 @@ mod tests {
         control_plane_mailbox
             .ask(ShardPositionsUpdate {
                 source_uid,
-                shard_positions: vec![(17, Position::Eof)],
+                shard_positions: vec![(17, Position::eof(1_000u64))],
             })
             .await
             .unwrap();
@@ -1240,7 +1239,7 @@ mod tests {
         control_plane_mailbox
             .ask(ShardPositionsUpdate {
                 source_uid: source_uid.clone(),
-                shard_positions: vec![(17, Position::Eof)],
+                shard_positions: vec![(17, Position::eof(1_000u64))],
             })
             .await
             .unwrap();

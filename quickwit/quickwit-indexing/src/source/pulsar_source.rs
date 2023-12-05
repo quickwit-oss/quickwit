@@ -337,7 +337,7 @@ fn msg_id_to_position(msg: &MessageIdData) -> Position {
     // in order to re-construct the message ID in order to send back to pulsar.
     // The ledger_id, entry_id and the batch_index form a unique composite key which will
     // prevent the remaining parts of the ID from interfering with the sorting.
-    let id_str = format!(
+    let position_str = format!(
         "{:0>20},{:0>20},{},{},{}",
         msg.ledger_id,
         msg.entry_id,
@@ -356,12 +356,14 @@ fn msg_id_to_position(msg: &MessageIdData) -> Position {
             .unwrap_or_default(),
     );
 
-    Position::from(id_str)
+    Position::from(position_str)
 }
 
-fn msg_id_from_position(pos: &Position) -> Option<MessageIdData> {
-    let id_str = pos.as_str();
-    let mut parts = id_str.split(',');
+fn msg_id_from_position(position: &Position) -> Option<MessageIdData> {
+    let Position::Offset(offset) = position else {
+        return None;
+    };
+    let mut parts = offset.as_str().split(',');
 
     let ledger_id = parts.next()?.parse::<u64>().ok()?;
     let entry_id = parts.next()?.parse::<u64>().ok()?;
@@ -460,7 +462,7 @@ mod pulsar_broker_tests {
         ($($partition:expr => $position:expr $(,)?)*) => {{
             let mut positions = BTreeMap::new();
             $(
-                positions.insert(PartitionId::from($partition), Position::from($position));
+                positions.insert(PartitionId::from($partition), Position::offset($position));
             )*
             positions
         }};
@@ -473,7 +475,7 @@ mod pulsar_broker_tests {
                 checkpoint.record_partition_delta(
                     PartitionId::from($partition),
                     Position::Beginning,
-                    Position::from($position),
+                    $position,
                 ).unwrap();
             )*
             checkpoint
@@ -756,7 +758,7 @@ mod pulsar_broker_tests {
 
         let position = msg_id_to_position(&populated_id);
         assert_eq!(
-            position.as_str(),
+            position.to_string(),
             format!("{:0>20},{:0>20},{:010},,{:010}", 1, 134, 3, 6)
         );
         let retrieved_id = msg_id_from_position(&position)
@@ -777,7 +779,7 @@ mod pulsar_broker_tests {
 
         let position = msg_id_to_position(&partitioned_id);
         assert_eq!(
-            position.as_str(),
+            position.to_string(),
             format!("{:0>20},{:0>20},{:010},{:010},{:010}", 1, 134, 3, 5, 6)
         );
         let retrieved_id = msg_id_from_position(&position)
@@ -798,7 +800,7 @@ mod pulsar_broker_tests {
 
         let position = msg_id_to_position(&sparse_id);
         assert_eq!(
-            position.as_str(),
+            position.to_string(),
             format!("{:0>20},{:0>20},,,{:010}", 1, 4, 0)
         );
         let retrieved_id = msg_id_from_position(&position)
@@ -844,7 +846,7 @@ mod pulsar_broker_tests {
         assert_eq!(batch.num_bytes, 0);
         assert!(batch.docs.is_empty());
 
-        let position = Position::from(1u64); // Used for testing simplicity.
+        let position = Position::offset(1u64); // Used for testing simplicity.
         let mut batch = BatchBuilder::default();
         let doc = Bytes::from_static(b"some-demo-data");
         pulsar_source
@@ -861,7 +863,7 @@ mod pulsar_broker_tests {
         assert_eq!(batch.num_bytes, 14);
         assert_eq!(batch.docs.len(), 1);
 
-        let position = Position::from(4u64); // Used for testing simplicity.
+        let position = Position::offset(4u64); // Used for testing simplicity.
         let mut batch = BatchBuilder::default();
         let doc = Bytes::from_static(b"some-demo-data-2");
         pulsar_source
@@ -881,8 +883,8 @@ mod pulsar_broker_tests {
         expected_checkpoint_delta
             .record_partition_delta(
                 PartitionId::from(topic.as_str()),
-                Position::from(1u64),
-                Position::from(4u64),
+                Position::offset(1u64),
+                Position::offset(4u64),
             )
             .unwrap();
         assert_eq!(batch.checkpoint_delta, expected_checkpoint_delta);

@@ -22,9 +22,10 @@ use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
 
-use anyhow::{bail, Context};
+use anyhow::Context;
 use async_trait::async_trait;
 use fnv::FnvHashMap;
+use itertools::Itertools;
 use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::retry::RetryParams;
@@ -33,7 +34,8 @@ use quickwit_ingest::{
 };
 use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpoint};
 use quickwit_proto::ingest::ingester::{
-    FetchResponseV2, IngesterService, TruncateShardsRequest, TruncateShardsSubrequest,
+    fetch_message, FetchEof, FetchPayload, IngesterService, TruncateShardsRequest,
+    TruncateShardsSubrequest,
 };
 use quickwit_proto::metastore::{
     AcquireShardsRequest, AcquireShardsSubrequest, AcquireShardsSubresponse, MetastoreService,
@@ -42,6 +44,7 @@ use quickwit_proto::metastore::{
 use quickwit_proto::types::{
     IndexUid, NodeId, Position, PublishToken, ShardId, SourceId, SourceUid,
 };
+use serde::Serialize;
 use serde_json::json;
 use tokio::time;
 use tracing::{debug, error, info, warn};
@@ -112,13 +115,14 @@ impl ClientId {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default, Eq, PartialEq)]
+#[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 enum IndexingStatus {
     #[default]
     Active,
-    // We have received all documents from the stream. Note they
+    // We have received all documents from the stream. Note that they
     // are not necessarily published yet.
-    EofReached,
+    ReachedEof,
     // All documents have been indexed AND published.
     Complete,
     Error,
@@ -192,24 +196,28 @@ impl IngestSource {
         })
     }
 
-    fn process_fetch_response(
+    fn process_fetch_payload(
         &mut self,
         batch_builder: &mut BatchBuilder,
-        fetch_response: FetchResponseV2,
+        fetch_payload: FetchPayload,
     ) -> anyhow::Result<()> {
-        let Some(mrecord_batch) = &fetch_response.mrecord_batch else {
-            return Ok(());
+        let mrecord_batch = match &fetch_payload.mrecord_batch {
+            Some(mrecord_batch) if !mrecord_batch.is_empty() => mrecord_batch,
+            _ => {
+                warn!("received empty mrecord batch");
+                return Ok(());
+            }
         };
         let assigned_shard = self
             .assigned_shards
-            .get_mut(&fetch_response.shard_id)
+            .get_mut(&fetch_payload.shard_id)
             .expect("shard should be assigned");
 
         assigned_shard.status = IndexingStatus::Active;
 
         let partition_id = assigned_shard.partition_id.clone();
-        let from_position_exclusive = fetch_response.from_position_exclusive();
-        let to_position_inclusive = fetch_response.to_position_inclusive();
+        let from_position_exclusive = fetch_payload.from_position_exclusive();
+        let to_position_inclusive = fetch_payload.to_position_inclusive();
 
         for mrecord in decoded_mrecords(mrecord_batch) {
             match mrecord {
@@ -218,13 +226,6 @@ impl IngestSource {
                 }
                 MRecord::Commit => {
                     batch_builder.force_commit();
-                }
-                MRecord::Eof => {
-                    assigned_shard.status = IndexingStatus::EofReached;
-                    break;
-                }
-                MRecord::Unknown => {
-                    bail!("source cannot decode mrecord");
                 }
             }
         }
@@ -240,12 +241,41 @@ impl IngestSource {
         Ok(())
     }
 
+    fn process_fetch_eof(
+        &mut self,
+        batch_builder: &mut BatchBuilder,
+        fetch_eof: FetchEof,
+    ) -> anyhow::Result<()> {
+        let assigned_shard = self
+            .assigned_shards
+            .get_mut(&fetch_eof.shard_id)
+            .expect("shard should be assigned");
+
+        assigned_shard.status = IndexingStatus::ReachedEof;
+
+        let partition_id = assigned_shard.partition_id.clone();
+        let from_position_exclusive = assigned_shard.current_position_inclusive.clone();
+        let to_position_inclusive = fetch_eof.eof_position();
+
+        batch_builder
+            .checkpoint_delta
+            .record_partition_delta(
+                partition_id,
+                from_position_exclusive,
+                to_position_inclusive.clone(),
+            )
+            .context("failed to record partition delta")?;
+        assigned_shard.current_position_inclusive = to_position_inclusive;
+        Ok(())
+    }
+
     fn process_fetch_stream_error(&mut self, fetch_stream_error: FetchStreamError) {
-        if let Some(shard) = self.assigned_shards.get_mut(&fetch_stream_error.shard_id) {
-            if shard.status != IndexingStatus::Complete
-                || shard.status != IndexingStatus::EofReached
-            {
-                shard.status = IndexingStatus::Error;
+        if let Some(assigned_shard) = self.assigned_shards.get_mut(&fetch_stream_error.shard_id) {
+            if !matches!(
+                assigned_shard.status,
+                IndexingStatus::ReachedEof | IndexingStatus::Complete
+            ) {
+                assigned_shard.status = IndexingStatus::Error;
             }
         }
     }
@@ -258,7 +288,7 @@ impl IngestSource {
 
         // Let's record all shards that have reached Eof as complete.
         for (shard, truncate_position) in &truncate_positions {
-            if truncate_position == &Position::Eof {
+            if truncate_position.is_eof() {
                 if let Some(assigned_shard) = self.assigned_shards.get_mut(shard) {
                     assigned_shard.status = IndexingStatus::Complete;
                 }
@@ -338,15 +368,6 @@ impl IngestSource {
         }
     }
 
-    fn contains_publish_token(&self, subresponse: &AcquireShardsSubresponse) -> bool {
-        if let Some(acquired_shard) = subresponse.acquired_shards.get(0) {
-            if let Some(publish_token) = &acquired_shard.publish_token {
-                return *publish_token == self.publish_token;
-            }
-        }
-        false
-    }
-
     /// If the new assignment removes a shard that we were in the middle of indexing (ie they have
     /// not reached `IndexingStatus::Complete` status yet), we need to reset the pipeline:
     ///
@@ -416,6 +437,15 @@ impl IngestSource {
         .await?;
         Ok(())
     }
+
+    fn contains_publish_token(&self, subresponse: &AcquireShardsSubresponse) -> bool {
+        if let Some(acquired_shard) = subresponse.acquired_shards.get(0) {
+            if let Some(publish_token) = &acquired_shard.publish_token {
+                return *publish_token == self.publish_token;
+            }
+        }
+        false
+    }
 }
 
 #[async_trait]
@@ -432,13 +462,22 @@ impl Source for IngestSource {
 
         loop {
             match time::timeout_at(deadline, self.fetch_stream.next()).await {
-                Ok(Ok(fetch_payload)) => {
-                    self.process_fetch_response(&mut batch_builder, fetch_payload)?;
+                Ok(Ok(fetch_message)) => match fetch_message.message {
+                    Some(fetch_message::Message::Payload(fetch_payload)) => {
+                        self.process_fetch_payload(&mut batch_builder, fetch_payload)?;
 
-                    if batch_builder.num_bytes >= BATCH_NUM_BYTES_LIMIT {
-                        break;
+                        if batch_builder.num_bytes >= BATCH_NUM_BYTES_LIMIT {
+                            break;
+                        }
                     }
-                }
+                    Some(fetch_message::Message::Eof(fetch_eof)) => {
+                        self.process_fetch_eof(&mut batch_builder, fetch_eof)?;
+                    }
+                    None => {
+                        warn!("received empty fetch message");
+                        continue;
+                    }
+                },
                 Ok(Err(fetch_stream_error)) => {
                     self.process_fetch_stream_error(fetch_stream_error);
                 }
@@ -524,7 +563,7 @@ impl Source for IngestSource {
                 .publish_position_inclusive
                 .unwrap_or_default();
             let from_position_exclusive = current_position_inclusive.clone();
-            let status = if from_position_exclusive == Position::Eof {
+            let status = if from_position_exclusive.is_eof() {
                 IndexingStatus::Complete
             } else if let Err(error) = ctx
                 .protect_future(self.fetch_stream.subscribe(
@@ -547,7 +586,7 @@ impl Source for IngestSource {
                 leader_id,
                 follower_id_opt,
                 partition_id,
-                current_position_inclusive: current_position_inclusive.clone(),
+                current_position_inclusive,
                 status,
             };
             self.assigned_shards.insert(shard_id, assigned_shard);
@@ -577,9 +616,21 @@ impl Source for IngestSource {
     }
 
     fn observable_state(&self) -> serde_json::Value {
+        let assigned_shards: Vec<serde_json::Value> = self
+            .assigned_shards
+            .iter()
+            .sorted_by(|(left_shard_id, _), (right_shard_id, _)| left_shard_id.cmp(right_shard_id))
+            .map(|(shard_id, assigned_shard)| {
+                json!({
+                    "shard_id": *shard_id,
+                    "current_position": assigned_shard.current_position_inclusive,
+                    "status": assigned_shard.status,
+                })
+            })
+            .collect();
         json!({
             "client_id": self.client_id.to_string(),
-            "assigned_shards": self.assigned_shards.keys().copied().collect::<Vec<ShardId>>(),
+            "assigned_shards": assigned_shards,
             "publish_token": self.publish_token,
         })
     }
@@ -590,13 +641,14 @@ mod tests {
     use std::iter::once;
     use std::path::PathBuf;
 
-    use bytes::Bytes;
     use itertools::Itertools;
     use quickwit_actors::{ActorContext, Universe};
     use quickwit_common::ServiceStream;
     use quickwit_config::{SourceConfig, SourceParams};
     use quickwit_proto::indexing::IndexingPipelineId;
-    use quickwit_proto::ingest::ingester::{IngesterServiceClient, TruncateShardsResponse};
+    use quickwit_proto::ingest::ingester::{
+        FetchMessage, IngesterServiceClient, TruncateShardsResponse,
+    };
     use quickwit_proto::ingest::{IngestV2Error, MRecordBatch, Shard, ShardState};
     use quickwit_proto::metastore::{AcquireShardsResponse, AcquireShardsSubresponse};
     use quickwit_proto::types::PipelineUid;
@@ -648,7 +700,7 @@ mod tests {
                             source_id: "test-source".to_string(),
                             shard_id: 0,
                             shard_state: ShardState::Open as i32,
-                            publish_position_inclusive: Some(10u64.into()),
+                            publish_position_inclusive: Some(Position::offset(10u64)),
                             publish_token: Some(publish_token.to_string()),
                         }],
                     }],
@@ -680,7 +732,7 @@ mod tests {
                             source_id: "test-source".to_string(),
                             shard_id: 1,
                             shard_state: ShardState::Open as i32,
-                            publish_position_inclusive: Some(11u64.into()),
+                            publish_position_inclusive: Some(Position::offset(11u64)),
                             publish_token: Some(publish_token.to_string()),
                         }],
                     }],
@@ -713,7 +765,7 @@ mod tests {
                                 source_id: "test-source".to_string(),
                                 shard_id: 1,
                                 shard_state: ShardState::Open as i32,
-                                publish_position_inclusive: Some(11u64.into()),
+                                publish_position_inclusive: Some(Position::offset(11u64)),
                                 publish_token: Some(publish_token.to_string()),
                             },
                             Shard {
@@ -723,7 +775,7 @@ mod tests {
                                 source_id: "test-source".to_string(),
                                 shard_id: 2,
                                 shard_state: ShardState::Open as i32,
-                                publish_position_inclusive: Some(12u64.into()),
+                                publish_position_inclusive: Some(Position::offset(12u64)),
                                 publish_token: Some(publish_token.to_string()),
                             },
                         ],
@@ -741,7 +793,10 @@ mod tests {
         let sequence_tx_clone1 = sequence_tx.clone();
         ingester_mock_0
             .expect_open_fetch_stream()
-            .withf(|req| req.from_position_exclusive == Some(10u64.into()) && req.shard_id == 0)
+            .withf(|request| {
+                request.from_position_exclusive() == Position::offset(10u64)
+                    && request.shard_id == 0
+            })
             .once()
             .returning(move |request| {
                 sequence_tx_clone1.send(1).unwrap();
@@ -751,13 +806,17 @@ mod tests {
                 );
                 assert_eq!(request.index_uid, "test-index:0");
                 assert_eq!(request.source_id, "test-source");
+
                 let (_service_stream_tx, service_stream) = ServiceStream::new_bounded(1);
                 Ok(service_stream)
             });
         let sequence_tx_clone2 = sequence_tx.clone();
         ingester_mock_0
             .expect_open_fetch_stream()
-            .withf(|req| req.from_position_exclusive == Some(11u64.into()) && req.shard_id == 1)
+            .withf(|request| {
+                request.from_position_exclusive() == Position::offset(11u64)
+                    && request.shard_id == 1
+            })
             .times(2)
             .returning(move |request| {
                 sequence_tx_clone2.send(2).unwrap();
@@ -767,13 +826,17 @@ mod tests {
                 );
                 assert_eq!(request.index_uid, "test-index:0");
                 assert_eq!(request.source_id, "test-source");
+
                 let (_service_stream_tx, service_stream) = ServiceStream::new_bounded(1);
                 Ok(service_stream)
             });
         let sequence_tx_clone3 = sequence_tx.clone();
         ingester_mock_0
             .expect_open_fetch_stream()
-            .withf(|req| req.from_position_exclusive == Some(12u64.into()) && req.shard_id == 2)
+            .withf(|request| {
+                request.from_position_exclusive() == Position::offset(12u64)
+                    && request.shard_id == 2
+            })
             .once()
             .returning(move |request| {
                 sequence_tx_clone3.send(3).unwrap();
@@ -783,6 +846,7 @@ mod tests {
                 );
                 assert_eq!(request.index_uid, "test-index:0");
                 assert_eq!(request.source_id, "test-source");
+
                 let (_service_stream_tx, service_stream) = ServiceStream::new_bounded(1);
                 Ok(service_stream)
             });
@@ -797,7 +861,7 @@ mod tests {
                 let subrequest = &request.subrequests[0];
                 assert_eq!(subrequest.index_uid, "test-index:0");
                 assert_eq!(subrequest.source_id, "test-source");
-                assert_eq!(subrequest.to_position_inclusive, Some(10u64.into()));
+                assert_eq!(subrequest.to_position_inclusive(), Position::offset(10u64));
 
                 let response = TruncateShardsResponse {};
                 Ok(response)
@@ -810,10 +874,12 @@ mod tests {
             .returning(|request| {
                 assert_eq!(request.ingester_id, "test-ingester-0");
                 assert_eq!(request.subrequests.len(), 1);
+
                 let subrequest = &request.subrequests[0];
                 assert_eq!(subrequest.index_uid, "test-index:0");
                 assert_eq!(subrequest.source_id, "test-source");
-                assert_eq!(subrequest.to_position_inclusive, Some(11u64.into()));
+                assert_eq!(subrequest.to_position_inclusive(), Position::offset(11u64));
+
                 Ok(TruncateShardsResponse {})
             });
         ingester_mock_0
@@ -830,12 +896,12 @@ mod tests {
                 let subrequest = &request.subrequests[0];
                 assert_eq!(subrequest.index_uid, "test-index:0");
                 assert_eq!(subrequest.source_id, "test-source");
-                assert_eq!(subrequest.to_position_inclusive, Some(11u64.into()));
+                assert_eq!(subrequest.to_position_inclusive(), Position::offset(11u64));
 
                 let subrequest = &request.subrequests[1];
                 assert_eq!(subrequest.index_uid, "test-index:0");
                 assert_eq!(subrequest.source_id, "test-source");
-                assert_eq!(subrequest.to_position_inclusive, Some(12u64.into()));
+                assert_eq!(subrequest.to_position_inclusive(), Position::offset(12u64));
 
                 let response = TruncateShardsResponse {};
                 Ok(response)
@@ -934,7 +1000,7 @@ mod tests {
             leader_id: "test-ingester-0".into(),
             follower_id_opt: None,
             partition_id: 1u64.into(),
-            current_position_inclusive: 11u64.into(),
+            current_position_inclusive: Position::offset(11u64),
             status: IndexingStatus::Active,
         };
         assert_eq!(assigned_shard, &expected_assigned_shard);
@@ -944,7 +1010,7 @@ mod tests {
             leader_id: "test-ingester-0".into(),
             follower_id_opt: None,
             partition_id: 2u64.into(),
-            current_position_inclusive: 12u64.into(),
+            current_position_inclusive: Position::offset(12u64),
             status: IndexingStatus::Active,
         };
         assert_eq!(assigned_shard, &expected_assigned_shard);
@@ -979,22 +1045,34 @@ mod tests {
                 let subrequest = &request.subrequests[0];
                 assert_eq!(subrequest.index_uid, "test-index:0");
                 assert_eq!(subrequest.source_id, "test-source");
-                assert_eq!(subrequest.shard_ids, vec![1]);
+                assert_eq!(subrequest.shard_ids, vec![1, 2]);
 
                 let response = AcquireShardsResponse {
                     subresponses: vec![AcquireShardsSubresponse {
                         index_uid: "test-index:0".to_string(),
                         source_id: "test-source".to_string(),
-                        acquired_shards: vec![Shard {
-                            leader_id: "test-ingester-0".to_string(),
-                            follower_id: None,
-                            index_uid: "test-index:0".to_string(),
-                            source_id: "test-source".to_string(),
-                            shard_id: 1,
-                            shard_state: ShardState::Open as i32,
-                            publish_position_inclusive: Some(Position::Eof),
-                            publish_token: Some(publish_token.to_string()),
-                        }],
+                        acquired_shards: vec![
+                            Shard {
+                                leader_id: "test-ingester-0".to_string(),
+                                follower_id: None,
+                                index_uid: "test-index:0".to_string(),
+                                source_id: "test-source".to_string(),
+                                shard_id: 1,
+                                shard_state: ShardState::Open as i32,
+                                publish_position_inclusive: Some(Position::eof(11u64)),
+                                publish_token: Some(publish_token.to_string()),
+                            },
+                            Shard {
+                                leader_id: "test-ingester-0".to_string(),
+                                follower_id: None,
+                                index_uid: "test-index:0".to_string(),
+                                source_id: "test-source".to_string(),
+                                shard_id: 2,
+                                shard_state: ShardState::Open as i32,
+                                publish_position_inclusive: Some(Position::Beginning.as_eof()),
+                                publish_token: Some(publish_token.to_string()),
+                            },
+                        ],
                     }],
                 };
                 Ok(response)
@@ -1007,13 +1085,22 @@ mod tests {
             .once()
             .returning(|request| {
                 assert_eq!(request.ingester_id, "test-ingester-0");
-                assert_eq!(request.subrequests.len(), 1);
+                assert_eq!(request.subrequests.len(), 2);
 
-                let subrequest = &request.subrequests[0];
-                assert_eq!(subrequest.index_uid, "test-index:0");
-                assert_eq!(subrequest.source_id, "test-source");
-                assert_eq!(subrequest.shard_id, 1);
-                assert_eq!(subrequest.to_position_inclusive, Some(Position::Eof));
+                let subrequest_0 = &request.subrequests[0];
+                assert_eq!(subrequest_0.index_uid, "test-index:0");
+                assert_eq!(subrequest_0.source_id, "test-source");
+                assert_eq!(subrequest_0.shard_id, 1);
+                assert_eq!(subrequest_0.to_position_inclusive(), Position::eof(11u64));
+
+                let subrequest_1 = &request.subrequests[1];
+                assert_eq!(subrequest_1.index_uid, "test-index:0");
+                assert_eq!(subrequest_1.source_id, "test-source");
+                assert_eq!(subrequest_1.shard_id, 2);
+                assert_eq!(
+                    subrequest_1.to_position_inclusive(),
+                    Position::Beginning.as_eof()
+                );
 
                 let response = TruncateShardsResponse {};
                 Ok(response)
@@ -1053,8 +1140,8 @@ mod tests {
         let ctx: SourceContext =
             ActorContext::for_test(&universe, source_mailbox, observable_state_tx);
 
-        // In this scenario, the indexer will only be able to acquire shard 1.
-        let shard_ids: BTreeSet<ShardId> = once(1).collect();
+        // In this scenario, the indexer will be able to acquire shard 1 and 2.
+        let shard_ids: BTreeSet<ShardId> = BTreeSet::from_iter([1, 2]);
 
         source
             .assign_shards(shard_ids, &doc_processor_mailbox, &ctx)
@@ -1066,7 +1153,7 @@ mod tests {
                 index_uid: IndexUid::parse("test-index:0").unwrap(),
                 source_id: "test-source".to_string(),
             },
-            vec![(1, Position::Eof)],
+            vec![(1, Position::eof(11u64)), (2, Position::Beginning.as_eof())],
         );
         let local_update = shard_positions_update_rx.recv().await.unwrap();
         assert_eq!(local_update, expected_local_update);
@@ -1112,7 +1199,7 @@ mod tests {
                                 source_id: "test-source".to_string(),
                                 shard_id: 1,
                                 shard_state: ShardState::Open as i32,
-                                publish_position_inclusive: Some(11u64.into()),
+                                publish_position_inclusive: Some(Position::offset(11u64)),
                                 publish_token: Some(publish_token.to_string()),
                             },
                             Shard {
@@ -1122,7 +1209,7 @@ mod tests {
                                 source_id: "test-source".to_string(),
                                 shard_id: 2,
                                 shard_state: ShardState::Closed as i32,
-                                publish_position_inclusive: Some(Position::Eof),
+                                publish_position_inclusive: Some(Position::eof(22u64)),
                                 publish_token: Some(publish_token.to_string()),
                             },
                         ],
@@ -1144,7 +1231,7 @@ mod tests {
                 assert_eq!(request.index_uid, "test-index:0");
                 assert_eq!(request.source_id, "test-source");
                 assert_eq!(request.shard_id, 1);
-                assert_eq!(request.from_position_exclusive, Some(11u64.into()));
+                assert_eq!(request.from_position_exclusive(), Position::offset(11u64));
 
                 let (_service_stream_tx, service_stream) = ServiceStream::new_bounded(1);
                 Ok(service_stream)
@@ -1163,13 +1250,13 @@ mod tests {
                 assert_eq!(subrequest.index_uid, "test-index:0");
                 assert_eq!(subrequest.source_id, "test-source");
                 assert_eq!(subrequest.shard_id, 1);
-                assert_eq!(subrequest.to_position_inclusive, Some(11u64.into()));
+                assert_eq!(subrequest.to_position_inclusive(), Position::offset(11u64));
 
                 let subrequest = &request.subrequests[1];
                 assert_eq!(subrequest.index_uid, "test-index:0");
                 assert_eq!(subrequest.source_id, "test-source");
                 assert_eq!(subrequest.shard_id, 2);
-                assert_eq!(subrequest.to_position_inclusive, Some(Position::Eof));
+                assert_eq!(subrequest.to_position_inclusive(), Position::eof(22u64));
 
                 let response = TruncateShardsResponse {};
                 Ok(response)
@@ -1228,7 +1315,7 @@ mod tests {
                 index_uid: IndexUid::parse("test-index:0").unwrap(),
                 source_id: "test-source".to_string(),
             },
-            vec![(1, 11u64.into()), (2, Position::Eof)],
+            vec![(1, Position::offset(11u64)), (2, Position::eof(22u64))],
         );
         assert_eq!(
             local_shard_positions_update,
@@ -1278,7 +1365,7 @@ mod tests {
                 leader_id: "test-ingester-0".into(),
                 follower_id_opt: None,
                 partition_id: 1u64.into(),
-                current_position_inclusive: 11u64.into(),
+                current_position_inclusive: Position::offset(11u64),
                 status: IndexingStatus::Active,
             },
         );
@@ -1288,41 +1375,46 @@ mod tests {
                 leader_id: "test-ingester-1".into(),
                 follower_id_opt: None,
                 partition_id: 2u64.into(),
-                current_position_inclusive: 22u64.into(),
+                current_position_inclusive: Position::offset(22u64),
                 status: IndexingStatus::Active,
             },
         );
-        let fetch_response_tx = source.fetch_stream.fetch_response_tx();
+        let fetch_message_tx = source.fetch_stream.fetch_message_tx();
 
-        fetch_response_tx
-            .send(Ok(FetchResponseV2 {
-                index_uid: "test-index:0".into(),
-                source_id: "test-source".into(),
-                shard_id: 1,
-                mrecord_batch: Some(MRecordBatch {
-                    mrecord_buffer: Bytes::from_static(b"\0\0test-doc-112\0\0test-doc-113\0\x01"),
-                    mrecord_lengths: vec![14, 14, 2],
-                }),
-                from_position_exclusive: Some(11u64.into()),
-                to_position_inclusive: Some(14u64.into()),
-            }))
-            .await
-            .unwrap();
+        let fetch_payload = FetchPayload {
+            index_uid: "test-index:0".into(),
+            source_id: "test-source".into(),
+            shard_id: 1,
+            mrecord_batch: MRecordBatch::for_test([
+                "\0\0test-doc-foo",
+                "\0\0test-doc-bar",
+                "\0\x01",
+            ]),
+            from_position_exclusive: Some(Position::offset(11u64)),
+            to_position_inclusive: Some(Position::offset(14u64)),
+        };
+        let fetch_message = FetchMessage::new_payload(fetch_payload);
+        fetch_message_tx.send(Ok(fetch_message)).await.unwrap();
 
-        fetch_response_tx
-            .send(Ok(FetchResponseV2 {
-                index_uid: "test-index:0".into(),
-                source_id: "test-source".into(),
-                shard_id: 2,
-                mrecord_batch: Some(MRecordBatch {
-                    mrecord_buffer: Bytes::from_static(b"\0\0test-doc-223\0\x02"),
-                    mrecord_lengths: vec![14, 2],
-                }),
-                from_position_exclusive: Some(22u64.into()),
-                to_position_inclusive: Some(Position::Eof),
-            }))
-            .await
-            .unwrap();
+        let fetch_payload = FetchPayload {
+            index_uid: "test-index:0".into(),
+            source_id: "test-source".into(),
+            shard_id: 2,
+            mrecord_batch: MRecordBatch::for_test(["\0\0test-doc-qux"]),
+            from_position_exclusive: Some(Position::offset(22u64)),
+            to_position_inclusive: Some(Position::offset(23u64)),
+        };
+        let fetch_message = FetchMessage::new_payload(fetch_payload);
+        fetch_message_tx.send(Ok(fetch_message)).await.unwrap();
+
+        let fetch_eof = FetchEof {
+            index_uid: "test-index:0".into(),
+            source_id: "test-source".into(),
+            shard_id: 2,
+            eof_position: Some(Position::eof(23u64)),
+        };
+        let fetch_message = FetchMessage::new_eof(fetch_eof);
+        fetch_message_tx.send(Ok(fetch_message)).await.unwrap();
 
         source
             .emit_batches(&doc_processor_mailbox, &ctx)
@@ -1333,9 +1425,9 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(doc_batch.docs.len(), 3);
-        assert_eq!(doc_batch.docs[0], "test-doc-112");
-        assert_eq!(doc_batch.docs[1], "test-doc-113");
-        assert_eq!(doc_batch.docs[2], "test-doc-223");
+        assert_eq!(doc_batch.docs[0], "test-doc-foo");
+        assert_eq!(doc_batch.docs[1], "test-doc-bar");
+        assert_eq!(doc_batch.docs[2], "test-doc-qux");
         assert!(doc_batch.force_commit);
 
         let partition_deltas = doc_batch
@@ -1346,21 +1438,21 @@ mod tests {
 
         assert_eq!(partition_deltas.len(), 2);
         assert_eq!(partition_deltas[0].0, 1u64.into());
-        assert_eq!(partition_deltas[0].1.from, Position::from(11u64));
-        assert_eq!(partition_deltas[0].1.to, Position::from(14u64));
+        assert_eq!(partition_deltas[0].1.from, Position::offset(11u64));
+        assert_eq!(partition_deltas[0].1.to, Position::offset(14u64));
 
         assert_eq!(partition_deltas[1].0, 2u64.into());
-        assert_eq!(partition_deltas[1].1.from, Position::from(22u64));
-        assert_eq!(partition_deltas[1].1.to, Position::Eof);
+        assert_eq!(partition_deltas[1].1.from, Position::offset(22u64));
+        assert_eq!(partition_deltas[1].1.to, Position::eof(23u64));
 
         source
             .emit_batches(&doc_processor_mailbox, &ctx)
             .await
             .unwrap();
         let shard = source.assigned_shards.get(&2).unwrap();
-        assert_eq!(shard.status, IndexingStatus::EofReached);
+        assert_eq!(shard.status, IndexingStatus::ReachedEof);
 
-        fetch_response_tx
+        fetch_message_tx
             .send(Err(FetchStreamError {
                 index_uid: "test-index:0".into(),
                 source_id: "test-source".into(),
@@ -1377,20 +1469,16 @@ mod tests {
         let shard = source.assigned_shards.get(&1).unwrap();
         assert_eq!(shard.status, IndexingStatus::Error);
 
-        fetch_response_tx
-            .send(Ok(FetchResponseV2 {
-                index_uid: "test-index:0".into(),
-                source_id: "test-source".into(),
-                shard_id: 1,
-                mrecord_batch: Some(MRecordBatch {
-                    mrecord_buffer: Bytes::from_static(b"\0\0test-doc-114"),
-                    mrecord_lengths: vec![14],
-                }),
-                from_position_exclusive: Some(14u64.into()),
-                to_position_inclusive: Some(15u64.into()),
-            }))
-            .await
-            .unwrap();
+        let fetch_payload = FetchPayload {
+            index_uid: "test-index:0".into(),
+            source_id: "test-source".into(),
+            shard_id: 1,
+            mrecord_batch: MRecordBatch::for_test(["\0\0test-doc-baz"]),
+            from_position_exclusive: Some(Position::offset(14u64)),
+            to_position_inclusive: Some(Position::offset(15u64)),
+        };
+        let fetch_message = FetchMessage::new_payload(fetch_payload);
+        fetch_message_tx.send(Ok(fetch_message)).await.unwrap();
 
         source
             .emit_batches(&doc_processor_mailbox, &ctx)
@@ -1423,15 +1511,21 @@ mod tests {
 
                 let subrequest_0 = &request.subrequests[0];
                 assert_eq!(subrequest_0.shard_id, 1);
-                assert_eq!(subrequest_0.to_position_inclusive, Some(11u64.into()));
+                assert_eq!(
+                    subrequest_0.to_position_inclusive(),
+                    Position::offset(11u64)
+                );
 
                 let subrequest_1 = &request.subrequests[1];
                 assert_eq!(subrequest_1.shard_id, 2);
-                assert_eq!(subrequest_1.to_position_inclusive, Some(22u64.into()));
+                assert_eq!(
+                    subrequest_1.to_position_inclusive(),
+                    Position::offset(22u64)
+                );
 
                 let subrequest_2 = &request.subrequests[2];
                 assert_eq!(subrequest_2.shard_id, 3);
-                assert_eq!(subrequest_2.to_position_inclusive, Some(Position::Eof));
+                assert_eq!(subrequest_2.to_position_inclusive(), Position::eof(33u64));
 
                 Ok(TruncateShardsResponse {})
             });
@@ -1448,11 +1542,14 @@ mod tests {
 
                 let subrequest_0 = &request.subrequests[0];
                 assert_eq!(subrequest_0.shard_id, 2);
-                assert_eq!(subrequest_0.to_position_inclusive, Some(22u64.into()));
+                assert_eq!(
+                    subrequest_0.to_position_inclusive(),
+                    Position::offset(22u64)
+                );
 
                 let subrequest_1 = &request.subrequests[1];
                 assert_eq!(subrequest_1.shard_id, 3);
-                assert_eq!(subrequest_1.to_position_inclusive, Some(Position::Eof));
+                assert_eq!(subrequest_1.to_position_inclusive(), Position::eof(33u64));
 
                 Ok(TruncateShardsResponse {})
             });
@@ -1469,7 +1566,10 @@ mod tests {
 
                 let subrequest_0 = &request.subrequests[0];
                 assert_eq!(subrequest_0.shard_id, 4);
-                assert_eq!(subrequest_0.to_position_inclusive, Some(44u64.into()));
+                assert_eq!(
+                    subrequest_0.to_position_inclusive(),
+                    Position::offset(44u64)
+                );
 
                 Ok(TruncateShardsResponse {})
             });
@@ -1512,7 +1612,7 @@ mod tests {
                 leader_id: "test-ingester-0".into(),
                 follower_id_opt: None,
                 partition_id: 1u64.into(),
-                current_position_inclusive: 11u64.into(),
+                current_position_inclusive: Position::offset(11u64),
                 status: IndexingStatus::Active,
             },
         );
@@ -1522,7 +1622,7 @@ mod tests {
                 leader_id: "test-ingester-0".into(),
                 follower_id_opt: Some("test-ingester-1".into()),
                 partition_id: 2u64.into(),
-                current_position_inclusive: 22u64.into(),
+                current_position_inclusive: Position::offset(22u64),
                 status: IndexingStatus::Active,
             },
         );
@@ -1532,7 +1632,7 @@ mod tests {
                 leader_id: "test-ingester-1".into(),
                 follower_id_opt: Some("test-ingester-0".into()),
                 partition_id: 3u64.into(),
-                current_position_inclusive: 33u64.into(),
+                current_position_inclusive: Position::offset(33u64),
                 status: IndexingStatus::Active,
             },
         );
@@ -1542,7 +1642,7 @@ mod tests {
                 leader_id: "test-ingester-2".into(),
                 follower_id_opt: Some("test-ingester-3".into()),
                 partition_id: 4u64.into(),
-                current_position_inclusive: 44u64.into(),
+                current_position_inclusive: Position::offset(44u64),
                 status: IndexingStatus::Active,
             },
         );
@@ -1551,19 +1651,19 @@ mod tests {
             AssignedShard {
                 leader_id: "test-ingester-2".into(),
                 follower_id_opt: Some("test-ingester-3".into()),
-                partition_id: 4u64.into(),
+                partition_id: 5u64.into(),
                 current_position_inclusive: Position::Beginning,
                 status: IndexingStatus::Active,
             },
         );
 
         let checkpoint = SourceCheckpoint::from_iter(vec![
-            (1u64.into(), 11u64.into()),
-            (2u64.into(), 22u64.into()),
-            (3u64.into(), Position::Eof),
-            (4u64.into(), 44u64.into()),
+            (1u64.into(), Position::offset(11u64)),
+            (2u64.into(), Position::offset(22u64)),
+            (3u64.into(), Position::eof(33u64)),
+            (4u64.into(), Position::offset(44u64)),
             (5u64.into(), Position::Beginning),
-            (6u64.into(), 66u64.into()),
+            (6u64.into(), Position::offset(66u64)),
         ]);
         source.suggest_truncate(checkpoint, &ctx).await.unwrap();
 
@@ -1574,12 +1674,12 @@ mod tests {
                 source_id: "test-source".to_string(),
             },
             vec![
-                (1u64, 11u64.into()),
-                (2u64, 22u64.into()),
-                (3u64, Position::Eof),
-                (4u64, 44u64.into()),
+                (1u64, Position::offset(11u64)),
+                (2u64, Position::offset(22u64)),
+                (3u64, Position::eof(33u64)),
+                (4u64, Position::offset(44u64)),
                 (5u64, Position::Beginning),
-                (6u64, 66u64.into()),
+                (6u64, Position::offset(66u64)),
             ],
         );
         assert_eq!(local_shards_update, expected_local_shards_update);

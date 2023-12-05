@@ -27,7 +27,9 @@ use bytes::{BufMut, BytesMut};
 use futures::StreamExt;
 use quickwit_common::retry::RetryParams;
 use quickwit_common::ServiceStream;
-use quickwit_proto::ingest::ingester::{FetchResponseV2, IngesterService, OpenFetchStreamRequest};
+use quickwit_proto::ingest::ingester::{
+    fetch_message, FetchEof, FetchMessage, FetchPayload, IngesterService, OpenFetchStreamRequest,
+};
 use quickwit_proto::ingest::{IngestV2Error, IngestV2Result, MRecordBatch};
 use quickwit_proto::types::{queue_id, IndexUid, NodeId, Position, QueueId, ShardId, SourceId};
 use tokio::sync::{mpsc, watch, RwLock};
@@ -35,11 +37,11 @@ use tokio::task::JoinHandle;
 use tracing::{debug, error, warn};
 
 use super::ingester::IngesterState;
-use crate::ingest_v2::mrecord::is_eof_mrecord;
+use super::models::ShardStatus;
 use crate::{ClientId, IngesterPool};
 
 /// A fetch stream task is responsible for waiting and pushing new records written to a shard's
-/// record log into a channel named `fetch_response_tx`.
+/// record log into a channel named `fetch_message_tx`.
 pub(super) struct FetchStreamTask {
     /// Uniquely identifies the consumer of the fetch task for logging and debugging purposes.
     client_id: ClientId,
@@ -50,10 +52,10 @@ pub(super) struct FetchStreamTask {
     /// The position of the next record fetched.
     from_position_inclusive: u64,
     state: Arc<RwLock<IngesterState>>,
-    fetch_response_tx: mpsc::Sender<IngestV2Result<FetchResponseV2>>,
+    fetch_message_tx: mpsc::Sender<IngestV2Result<FetchMessage>>,
     /// This channel notifies the fetch task when new records are available. This way the fetch
     /// task does not need to grab the lock and poll the mrecordlog queue unnecessarily.
-    new_records_rx: watch::Receiver<()>,
+    shard_status_rx: watch::Receiver<ShardStatus>,
     batch_num_bytes: usize,
 }
 
@@ -74,18 +76,15 @@ impl FetchStreamTask {
     pub fn spawn(
         open_fetch_stream_request: OpenFetchStreamRequest,
         state: Arc<RwLock<IngesterState>>,
-        new_records_rx: watch::Receiver<()>,
+        shard_status_rx: watch::Receiver<ShardStatus>,
         batch_num_bytes: usize,
-    ) -> (
-        ServiceStream<IngestV2Result<FetchResponseV2>>,
-        JoinHandle<()>,
-    ) {
+    ) -> (ServiceStream<IngestV2Result<FetchMessage>>, JoinHandle<()>) {
         let from_position_inclusive = open_fetch_stream_request
             .from_position_exclusive()
             .as_u64()
             .map(|offset| offset + 1)
             .unwrap_or_default();
-        let (fetch_response_tx, fetch_stream) = ServiceStream::new_bounded(3);
+        let (fetch_message_tx, fetch_stream) = ServiceStream::new_bounded(3);
         let mut fetch_task = Self {
             queue_id: open_fetch_stream_request.queue_id(),
             client_id: open_fetch_stream_request.client_id,
@@ -94,8 +93,8 @@ impl FetchStreamTask {
             shard_id: open_fetch_stream_request.shard_id,
             from_position_inclusive,
             state,
-            fetch_response_tx,
-            new_records_rx,
+            fetch_message_tx,
+            shard_status_rx,
             batch_num_bytes,
         };
         let future = async move { fetch_task.run().await };
@@ -115,14 +114,15 @@ impl FetchStreamTask {
             "spawning fetch task"
         );
         let mut has_drained_queue = false;
-        let mut has_reached_eof = false;
+        let mut to_position_inclusive = Position::Beginning;
 
-        while !has_reached_eof {
-            if has_drained_queue && self.new_records_rx.changed().await.is_err() {
+        loop {
+            if has_drained_queue && self.shard_status_rx.changed().await.is_err() {
                 // The shard was dropped.
                 break;
             }
             has_drained_queue = true;
+
             let mut mrecord_buffer = BytesMut::with_capacity(self.batch_num_bytes);
             let mut mrecord_lengths = Vec::new();
 
@@ -146,59 +146,67 @@ impl FetchStreamTask {
             // Drop the lock while we send the message.
             drop(state_guard);
 
-            if mrecord_buffer.is_empty() {
-                continue;
+            if !mrecord_lengths.is_empty() {
+                let from_position_exclusive = if self.from_position_inclusive == 0 {
+                    Position::Beginning
+                } else {
+                    Position::offset(self.from_position_inclusive - 1)
+                };
+                self.from_position_inclusive += mrecord_lengths.len() as u64;
+
+                to_position_inclusive = Position::offset(self.from_position_inclusive - 1);
+
+                let mrecord_batch = MRecordBatch {
+                    mrecord_buffer: mrecord_buffer.freeze(),
+                    mrecord_lengths,
+                };
+                let fetch_payload = FetchPayload {
+                    index_uid: self.index_uid.clone().into(),
+                    source_id: self.source_id.clone(),
+                    shard_id: self.shard_id,
+                    mrecord_batch: Some(mrecord_batch),
+                    from_position_exclusive: Some(from_position_exclusive),
+                    to_position_inclusive: Some(to_position_inclusive.clone()),
+                };
+                let fetch_message = FetchMessage::new_payload(fetch_payload);
+
+                if self.fetch_message_tx.send(Ok(fetch_message)).await.is_err() {
+                    // The consumer was dropped.
+                    return;
+                }
             }
-            let from_position_exclusive = if self.from_position_inclusive == 0 {
-                Position::Beginning
-            } else {
-                Position::from(self.from_position_inclusive - 1)
-            };
-            self.from_position_inclusive += mrecord_lengths.len() as u64;
+            if has_drained_queue {
+                let has_reached_eof = {
+                    let shard_status = self.shard_status_rx.borrow();
+                    let shard_state = &shard_status.0;
+                    let replication_position = &shard_status.1;
+                    shard_state.is_closed() && to_position_inclusive >= *replication_position
+                };
+                if has_reached_eof {
+                    debug!(
+                        client_id=%self.client_id,
+                        index_uid=%self.index_uid,
+                        source_id=%self.source_id,
+                        shard_id=%self.shard_id,
+                        to_position_inclusive=%self.from_position_inclusive - 1,
+                        "fetch stream reached end of shard"
+                    );
+                    let eof_position = to_position_inclusive.as_eof();
 
-            let last_mrecord_len = *mrecord_lengths
-                .last()
-                .expect("`mrecord_lengths` should not be empty")
-                as usize;
-            let last_mrecord = &mrecord_buffer[mrecord_buffer.len() - last_mrecord_len..];
+                    let fetch_eof = FetchEof {
+                        index_uid: self.index_uid.clone().into(),
+                        source_id: self.source_id.clone(),
+                        shard_id: self.shard_id,
+                        eof_position: Some(eof_position),
+                    };
+                    let fetch_message = FetchMessage::new_eof(fetch_eof);
 
-            let to_position_inclusive = if is_eof_mrecord(last_mrecord) {
-                debug!(
-                    client_id=%self.client_id,
-                    index_uid=%self.index_uid,
-                    source_id=%self.source_id,
-                    shard_id=%self.shard_id,
-                    to_position_inclusive=%self.from_position_inclusive - 1,
-                    "fetch stream reached end of shard"
-                );
-                has_reached_eof = true;
-                Position::Eof
-            } else {
-                Position::from(self.from_position_inclusive - 1)
-            };
-            let mrecord_batch = MRecordBatch {
-                mrecord_buffer: mrecord_buffer.freeze(),
-                mrecord_lengths,
-            };
-            let fetch_response = FetchResponseV2 {
-                index_uid: self.index_uid.clone().into(),
-                source_id: self.source_id.clone(),
-                shard_id: self.shard_id,
-                mrecord_batch: Some(mrecord_batch),
-                from_position_exclusive: Some(from_position_exclusive),
-                to_position_inclusive: Some(to_position_inclusive),
-            };
-            if self
-                .fetch_response_tx
-                .send(Ok(fetch_response))
-                .await
-                .is_err()
-            {
-                // The consumer was dropped.
-                break;
+                    let _ = self.fetch_message_tx.send(Ok(fetch_message)).await;
+                    return;
+                }
             }
         }
-        if !has_reached_eof {
+        if !to_position_inclusive.is_eof() {
             error!(
                 client_id=%self.client_id,
                 index_uid=%self.index_uid,
@@ -207,7 +215,7 @@ impl FetchStreamTask {
                 "fetch stream ended before reaching end of shard"
             );
             let _ = self
-                .fetch_response_tx
+                .fetch_message_tx
                 .send(Err(IngestV2Error::Internal(
                     "fetch stream ended before reaching end of shard".to_string(),
                 )))
@@ -232,8 +240,8 @@ pub struct MultiFetchStream {
     ingester_pool: IngesterPool,
     retry_params: RetryParams,
     fetch_task_handles: HashMap<QueueId, JoinHandle<()>>,
-    fetch_response_rx: mpsc::Receiver<Result<FetchResponseV2, FetchStreamError>>,
-    fetch_response_tx: mpsc::Sender<Result<FetchResponseV2, FetchStreamError>>,
+    fetch_message_rx: mpsc::Receiver<Result<FetchMessage, FetchStreamError>>,
+    fetch_message_tx: mpsc::Sender<Result<FetchMessage, FetchStreamError>>,
 }
 
 impl MultiFetchStream {
@@ -243,21 +251,21 @@ impl MultiFetchStream {
         ingester_pool: IngesterPool,
         retry_params: RetryParams,
     ) -> Self {
-        let (fetch_response_tx, fetch_response_rx) = mpsc::channel(3);
+        let (fetch_message_tx, fetch_message_rx) = mpsc::channel(3);
         Self {
             self_node_id,
             client_id,
             ingester_pool,
             retry_params,
             fetch_task_handles: HashMap::new(),
-            fetch_response_rx,
-            fetch_response_tx,
+            fetch_message_rx,
+            fetch_message_tx,
         }
     }
 
     #[cfg(any(test, feature = "testsuite"))]
-    pub fn fetch_response_tx(&self) -> mpsc::Sender<Result<FetchResponseV2, FetchStreamError>> {
-        self.fetch_response_tx.clone()
+    pub fn fetch_message_tx(&self) -> mpsc::Sender<Result<FetchMessage, FetchStreamError>> {
+        self.fetch_message_tx.clone()
     }
 
     /// Subscribes to a shard and fails over to the replica if an error occurs.
@@ -297,7 +305,7 @@ impl MultiFetchStream {
             ingester_ids,
             self.ingester_pool.clone(),
             self.retry_params,
-            self.fetch_response_tx.clone(),
+            self.fetch_message_tx.clone(),
         );
         let fetch_task_handle = tokio::spawn(fetch_stream_future);
         self.fetch_task_handles.insert(queue_id, fetch_task_handle);
@@ -323,10 +331,10 @@ impl MultiFetchStream {
     /// # Cancel safety
     ///
     /// This method is cancel safe.
-    pub async fn next(&mut self) -> Result<FetchResponseV2, FetchStreamError> {
+    pub async fn next(&mut self) -> Result<FetchMessage, FetchStreamError> {
         // Because we always hold a sender and never call `close()` on the receiver, the channel is
         // always open.
-        self.fetch_response_rx
+        self.fetch_message_rx
             .recv()
             .await
             .expect("the channel should be open")
@@ -340,9 +348,9 @@ impl MultiFetchStream {
         for (_queue_id, fetch_stream_handle) in self.fetch_task_handles.drain() {
             fetch_stream_handle.abort();
         }
-        let (fetch_response_tx, fetch_response_rx) = mpsc::channel(3);
-        self.fetch_response_tx = fetch_response_tx;
-        self.fetch_response_rx = fetch_response_rx;
+        let (fetch_message_tx, fetch_message_rx) = mpsc::channel(3);
+        self.fetch_message_tx = fetch_message_tx;
+        self.fetch_message_rx = fetch_message_rx;
     }
 }
 
@@ -385,7 +393,7 @@ async fn retrying_fetch_stream(
     ingester_ids: Vec<NodeId>,
     ingester_pool: IngesterPool,
     retry_params: RetryParams,
-    fetch_response_tx: mpsc::Sender<Result<FetchResponseV2, FetchStreamError>>,
+    fetch_message_tx: mpsc::Sender<Result<FetchMessage, FetchStreamError>>,
 ) {
     for num_attempts in 1..=retry_params.max_attempts {
         fault_tolerant_fetch_stream(
@@ -396,11 +404,11 @@ async fn retrying_fetch_stream(
             &mut from_position_exclusive,
             &ingester_ids,
             ingester_pool.clone(),
-            fetch_response_tx.clone(),
+            fetch_message_tx.clone(),
         )
         .await;
 
-        if from_position_exclusive == Position::Eof {
+        if from_position_exclusive.is_eof() {
             break;
         }
         let delay = retry_params.compute_delay(num_attempts);
@@ -419,7 +427,7 @@ async fn fault_tolerant_fetch_stream(
     from_position_exclusive: &mut Position,
     ingester_ids: &[NodeId],
     ingester_pool: IngesterPool,
-    fetch_response_tx: mpsc::Sender<Result<FetchResponseV2, FetchStreamError>>,
+    fetch_message_tx: mpsc::Sender<Result<FetchMessage, FetchStreamError>>,
 ) {
     // TODO: We can probably simplify this code by breaking it into smaller functions.
     'outer: for (ingester_idx, ingester_id) in ingester_ids.iter().enumerate() {
@@ -453,7 +461,7 @@ async fn fault_tolerant_fetch_stream(
                     shard_id,
                     ingest_error,
                 };
-                let _ = fetch_response_tx.send(Err(fetch_stream_error)).await;
+                let _ = fetch_message_tx.send(Err(fetch_stream_error)).await;
                 return;
             }
             continue;
@@ -492,28 +500,39 @@ async fn fault_tolerant_fetch_stream(
                         shard_id,
                         ingest_error,
                     };
-                    let _ = fetch_response_tx.send(Err(fetch_stream_error)).await;
+                    let _ = fetch_message_tx.send(Err(fetch_stream_error)).await;
                     return;
                 }
                 continue;
             }
         };
-        while let Some(fetch_response_result) = fetch_stream.next().await {
-            match fetch_response_result {
-                Ok(fetch_response) => {
-                    let to_position_inclusive = fetch_response.to_position_inclusive();
+        while let Some(fetch_message_result) = fetch_stream.next().await {
+            match fetch_message_result {
+                Ok(fetch_message) => match &fetch_message.message {
+                    Some(fetch_message::Message::Payload(fetch_payload)) => {
+                        let to_position_inclusive = fetch_payload.to_position_inclusive();
 
-                    if fetch_response_tx.send(Ok(fetch_response)).await.is_err() {
-                        // The stream was dropped.
+                        if fetch_message_tx.send(Ok(fetch_message)).await.is_err() {
+                            // The consumer was dropped.
+                            return;
+                        }
+                        *from_position_exclusive = to_position_inclusive;
+                    }
+                    Some(fetch_message::Message::Eof(fetch_eof)) => {
+                        let eof_position = fetch_eof.eof_position();
+
+                        // We ignore the send error if the consumer was dropped because we're going
+                        // to return anyway.
+                        let _ = fetch_message_tx.send(Ok(fetch_message)).await;
+
+                        *from_position_exclusive = eof_position;
                         return;
                     }
-                    *from_position_exclusive = to_position_inclusive;
-
-                    if *from_position_exclusive == Position::Eof {
-                        // The stream has reached the end of the shard.
-                        return;
+                    None => {
+                        warn!("received empty fetch message");
+                        continue;
                     }
-                }
+                },
                 Err(ingest_error) => {
                     if let Some(failover_ingester_id) = failover_ingester_id_opt {
                         warn!(
@@ -539,7 +558,7 @@ async fn fault_tolerant_fetch_stream(
                             shard_id,
                             ingest_error,
                         };
-                        let _ = fetch_response_tx.send(Err(fetch_stream_error)).await;
+                        let _ = fetch_message_tx.send(Err(fetch_stream_error)).await;
                         return;
                     }
                     continue 'outer;
@@ -550,7 +569,7 @@ async fn fault_tolerant_fetch_stream(
 }
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use std::time::Duration;
 
     use bytes::Bytes;
@@ -558,11 +577,26 @@ mod tests {
     use quickwit_proto::ingest::ingester::{
         IngesterServiceClient, IngesterStatus, ObservationMessage,
     };
+    use quickwit_proto::ingest::ShardState;
     use quickwit_proto::types::queue_id;
     use tokio::time::timeout;
 
     use super::*;
     use crate::MRecord;
+
+    pub fn into_fetch_payload(fetch_message: FetchMessage) -> FetchPayload {
+        match fetch_message.message.unwrap() {
+            fetch_message::Message::Payload(fetch_payload) => fetch_payload,
+            other => panic!("expected fetch payload, got `{other:?}`"),
+        }
+    }
+
+    pub fn into_fetch_eof(fetch_message: FetchMessage) -> FetchEof {
+        match fetch_message.message.unwrap() {
+            fetch_message::Message::Eof(fetch_eof) => fetch_eof,
+            other => panic!("expected fetch EOF, got `{other:?}`"),
+        }
+    }
 
     #[tokio::test]
     async fn test_fetch_task_happy_path() {
@@ -588,11 +622,11 @@ mod tests {
             status: IngesterStatus::Ready,
             observation_tx,
         }));
-        let (new_records_tx, new_records_rx) = watch::channel(());
+        let (shard_status_tx, shard_status_rx) = watch::channel(ShardStatus::default());
         let (mut fetch_stream, fetch_task_handle) = FetchStreamTask::spawn(
             open_fetch_stream_request,
             state.clone(),
-            new_records_rx,
+            shard_status_rx,
             1024,
         );
         let queue_id = queue_id(&index_uid, &source_id, 1);
@@ -611,21 +645,23 @@ mod tests {
             .unwrap();
         drop(state_guard);
 
-        let fetch_response = timeout(Duration::from_millis(50), fetch_stream.next())
+        let fetch_message = timeout(Duration::from_millis(50), fetch_stream.next())
             .await
             .unwrap()
             .unwrap()
             .unwrap();
-        assert_eq!(fetch_response.index_uid, "test-index:0");
-        assert_eq!(fetch_response.source_id, "test-source");
-        assert_eq!(fetch_response.shard_id, 1);
+        let fetch_payload = into_fetch_payload(fetch_message);
+
+        assert_eq!(fetch_payload.index_uid, "test-index:0");
+        assert_eq!(fetch_payload.source_id, "test-source");
+        assert_eq!(fetch_payload.shard_id, 1);
+        assert_eq!(fetch_payload.from_position_exclusive(), Position::Beginning);
         assert_eq!(
-            fetch_response.from_position_exclusive(),
-            Position::Beginning
+            fetch_payload.to_position_inclusive(),
+            Position::offset(0u64)
         );
-        assert_eq!(fetch_response.to_position_inclusive(), 0u64);
         assert_eq!(
-            fetch_response
+            fetch_payload
                 .mrecord_batch
                 .as_ref()
                 .unwrap()
@@ -633,13 +669,21 @@ mod tests {
             [14]
         );
         assert_eq!(
-            fetch_response
-                .mrecord_batch
-                .as_ref()
-                .unwrap()
-                .mrecord_buffer,
+            fetch_payload.mrecord_batch.as_ref().unwrap().mrecord_buffer,
             "\0\0test-doc-foo"
         );
+
+        timeout(Duration::from_millis(50), fetch_stream.next())
+            .await
+            .unwrap_err();
+
+        // Trigger a spurious notification.
+        let shard_status = (ShardState::Open, Position::offset(0u64));
+        shard_status_tx.send(shard_status).unwrap();
+
+        timeout(Duration::from_millis(50), fetch_stream.next())
+            .await
+            .unwrap_err();
 
         let mut state_guard = state.write().await;
 
@@ -650,27 +694,26 @@ mod tests {
             .unwrap();
         drop(state_guard);
 
-        timeout(Duration::from_millis(50), fetch_stream.next())
-            .await
-            .unwrap_err();
+        let shard_status = (ShardState::Open, Position::offset(1u64));
+        shard_status_tx.send(shard_status.clone()).unwrap();
 
-        new_records_tx.send(()).unwrap();
-
-        // Trigger a spurious notification.
-        new_records_tx.send(()).unwrap();
-
-        let fetch_response = timeout(Duration::from_millis(50), fetch_stream.next())
+        let fetch_message = timeout(Duration::from_millis(50), fetch_stream.next())
             .await
             .unwrap()
             .unwrap()
             .unwrap();
+        let fetch_payload = into_fetch_payload(fetch_message);
+
         assert_eq!(
-            fetch_response.from_position_exclusive(),
-            Position::from(0u64)
+            fetch_payload.from_position_exclusive(),
+            Position::offset(0u64)
         );
-        assert_eq!(fetch_response.to_position_inclusive(), 1u64);
         assert_eq!(
-            fetch_response
+            fetch_payload.to_position_inclusive(),
+            Position::offset(1u64)
+        );
+        assert_eq!(
+            fetch_payload
                 .mrecord_batch
                 .as_ref()
                 .unwrap()
@@ -678,11 +721,7 @@ mod tests {
             [14]
         );
         assert_eq!(
-            fetch_response
-                .mrecord_batch
-                .as_ref()
-                .unwrap()
-                .mrecord_buffer,
+            fetch_payload.mrecord_batch.as_ref().unwrap().mrecord_buffer,
             "\0\0test-doc-bar"
         );
 
@@ -691,7 +730,6 @@ mod tests {
         let mrecords = [
             MRecord::new_doc("test-doc-baz").encode(),
             MRecord::new_doc("test-doc-qux").encode(),
-            MRecord::Eof.encode(),
         ]
         .into_iter();
 
@@ -702,34 +740,116 @@ mod tests {
             .unwrap();
         drop(state_guard);
 
-        new_records_tx.send(()).unwrap();
+        let shard_status = (ShardState::Open, Position::offset(3u64));
+        shard_status_tx.send(shard_status).unwrap();
 
-        let fetch_response = timeout(Duration::from_millis(50), fetch_stream.next())
+        let fetch_message = timeout(Duration::from_millis(50), fetch_stream.next())
             .await
             .unwrap()
             .unwrap()
             .unwrap();
+        let fetch_payload = into_fetch_payload(fetch_message);
+
         assert_eq!(
-            fetch_response.from_position_exclusive(),
-            Position::from(1u64)
+            fetch_payload.from_position_exclusive(),
+            Position::offset(1u64)
         );
-        assert_eq!(fetch_response.to_position_inclusive(), Position::Eof);
         assert_eq!(
-            fetch_response
+            fetch_payload.to_position_inclusive(),
+            Position::offset(3u64)
+        );
+        assert_eq!(
+            fetch_payload
                 .mrecord_batch
                 .as_ref()
                 .unwrap()
                 .mrecord_lengths,
-            [14, 14, 2]
+            [14, 14]
         );
         assert_eq!(
-            fetch_response
-                .mrecord_batch
-                .as_ref()
-                .unwrap()
-                .mrecord_buffer,
-            "\0\0test-doc-baz\0\0test-doc-qux\0\x02"
+            fetch_payload.mrecord_batch.as_ref().unwrap().mrecord_buffer,
+            "\0\0test-doc-baz\0\0test-doc-qux"
         );
+
+        let shard_status = (ShardState::Closed, Position::offset(3u64));
+        shard_status_tx.send(shard_status).unwrap();
+
+        let fetch_message = timeout(Duration::from_millis(50), fetch_stream.next())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        let fetch_eof = into_fetch_eof(fetch_message);
+
+        assert_eq!(fetch_eof.index_uid, "test-index:0");
+        assert_eq!(fetch_eof.source_id, "test-source");
+        assert_eq!(fetch_eof.shard_id, 1);
+        assert_eq!(fetch_eof.eof_position, Some(Position::eof(3u64)));
+
+        fetch_task_handle.await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn test_fetch_task_eof_at_beginning() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let mrecordlog = MultiRecordLog::open(tempdir.path()).await.unwrap();
+        let client_id = "test-client".to_string();
+        let index_uid = "test-index:0".to_string();
+        let source_id = "test-source".to_string();
+        let open_fetch_stream_request = OpenFetchStreamRequest {
+            client_id: client_id.clone(),
+            index_uid: index_uid.clone(),
+            source_id: source_id.clone(),
+            shard_id: 1,
+            from_position_exclusive: None,
+        };
+        let (observation_tx, _observation_rx) = watch::channel(Ok(ObservationMessage::default()));
+        let state = Arc::new(RwLock::new(IngesterState {
+            mrecordlog,
+            shards: HashMap::new(),
+            rate_trackers: HashMap::new(),
+            replication_streams: HashMap::new(),
+            replication_tasks: HashMap::new(),
+            status: IngesterStatus::Ready,
+            observation_tx,
+        }));
+        let (shard_status_tx, shard_status_rx) = watch::channel(ShardStatus::default());
+        let (mut fetch_stream, fetch_task_handle) = FetchStreamTask::spawn(
+            open_fetch_stream_request,
+            state.clone(),
+            shard_status_rx,
+            1024,
+        );
+        let queue_id = queue_id(&index_uid, &source_id, 1);
+
+        let mut state_guard = state.write().await;
+
+        state_guard
+            .mrecordlog
+            .create_queue(&queue_id)
+            .await
+            .unwrap();
+        drop(state_guard);
+
+        timeout(Duration::from_millis(50), fetch_stream.next())
+            .await
+            .unwrap_err();
+
+        let shard_status = (ShardState::Closed, Position::Beginning);
+        shard_status_tx.send(shard_status).unwrap();
+
+        let fetch_message = timeout(Duration::from_millis(50), fetch_stream.next())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
+        let fetch_eof = into_fetch_eof(fetch_message);
+
+        assert_eq!(fetch_eof.index_uid, "test-index:0");
+        assert_eq!(fetch_eof.source_id, "test-source");
+        assert_eq!(fetch_eof.shard_id, 1);
+        assert_eq!(fetch_eof.eof_position, Some(Position::Beginning.as_eof()));
+
         fetch_task_handle.await.unwrap();
     }
 
@@ -745,7 +865,7 @@ mod tests {
             index_uid: index_uid.clone(),
             source_id: source_id.clone(),
             shard_id: 1,
-            from_position_exclusive: Some(Position::from(0u64)),
+            from_position_exclusive: Some(Position::offset(0u64)),
         };
         let (observation_tx, _observation_rx) = watch::channel(Ok(ObservationMessage::default()));
         let state = Arc::new(RwLock::new(IngesterState {
@@ -757,11 +877,11 @@ mod tests {
             status: IngesterStatus::Ready,
             observation_tx,
         }));
-        let (new_records_tx, new_records_rx) = watch::channel(());
+        let (shard_status_tx, shard_status_rx) = watch::channel(ShardStatus::default());
         let (mut fetch_stream, _fetch_task_handle) = FetchStreamTask::spawn(
             open_fetch_stream_request,
             state.clone(),
-            new_records_rx,
+            shard_status_rx,
             1024,
         );
         let queue_id = queue_id(&index_uid, &source_id, 1);
@@ -774,8 +894,6 @@ mod tests {
             .await
             .unwrap();
         drop(state_guard);
-
-        new_records_tx.send(()).unwrap();
 
         timeout(Duration::from_millis(50), fetch_stream.next())
             .await
@@ -790,7 +908,8 @@ mod tests {
             .unwrap();
         drop(state_guard);
 
-        new_records_tx.send(()).unwrap();
+        let shard_status = (ShardState::Open, Position::offset(0u64));
+        shard_status_tx.send(shard_status).unwrap();
 
         timeout(Duration::from_millis(50), fetch_stream.next())
             .await
@@ -805,21 +924,29 @@ mod tests {
             .unwrap();
         drop(state_guard);
 
-        new_records_tx.send(()).unwrap();
+        let shard_status = (ShardState::Open, Position::offset(1u64));
+        shard_status_tx.send(shard_status).unwrap();
 
-        let fetch_response = timeout(Duration::from_millis(50), fetch_stream.next())
+        let fetch_message = timeout(Duration::from_millis(50), fetch_stream.next())
             .await
             .unwrap()
             .unwrap()
             .unwrap();
+        let fetch_payload = into_fetch_payload(fetch_message);
 
-        assert_eq!(fetch_response.index_uid, "test-index:0");
-        assert_eq!(fetch_response.source_id, "test-source");
-        assert_eq!(fetch_response.shard_id, 1);
-        assert_eq!(fetch_response.from_position_exclusive(), 0u64,);
-        assert_eq!(fetch_response.to_position_inclusive(), 1u64);
+        assert_eq!(fetch_payload.index_uid, "test-index:0");
+        assert_eq!(fetch_payload.source_id, "test-source");
+        assert_eq!(fetch_payload.shard_id, 1);
         assert_eq!(
-            fetch_response
+            fetch_payload.from_position_exclusive(),
+            Position::offset(0u64)
+        );
+        assert_eq!(
+            fetch_payload.to_position_inclusive(),
+            Position::offset(1u64)
+        );
+        assert_eq!(
+            fetch_payload
                 .mrecord_batch
                 .as_ref()
                 .unwrap()
@@ -827,11 +954,7 @@ mod tests {
             [14]
         );
         assert_eq!(
-            fetch_response
-                .mrecord_batch
-                .as_ref()
-                .unwrap()
-                .mrecord_buffer,
+            fetch_payload.mrecord_batch.as_ref().unwrap().mrecord_buffer,
             "\0\0test-doc-bar"
         );
     }
@@ -860,11 +983,11 @@ mod tests {
             status: IngesterStatus::Ready,
             observation_tx,
         }));
-        let (_new_records_tx, new_records_rx) = watch::channel(());
+        let (_shard_status_tx, shard_status_rx) = watch::channel(ShardStatus::default());
         let (mut fetch_stream, fetch_task_handle) = FetchStreamTask::spawn(
             open_fetch_stream_request,
             state.clone(),
-            new_records_rx,
+            shard_status_rx,
             1024,
         );
         let ingest_error = timeout(Duration::from_millis(50), fetch_stream.next())
@@ -901,9 +1024,13 @@ mod tests {
             status: IngesterStatus::Ready,
             observation_tx,
         }));
-        let (new_records_tx, new_records_rx) = watch::channel(());
-        let (mut fetch_stream, _fetch_task_handle) =
-            FetchStreamTask::spawn(open_fetch_stream_request, state.clone(), new_records_rx, 30);
+        let (shard_status_tx, shard_status_rx) = watch::channel(ShardStatus::default());
+        let (mut fetch_stream, _fetch_task_handle) = FetchStreamTask::spawn(
+            open_fetch_stream_request,
+            state.clone(),
+            shard_status_rx,
+            30,
+        );
         let queue_id = queue_id(&index_uid, &source_id, 1);
 
         let mut state_guard = state.write().await;
@@ -928,15 +1055,18 @@ mod tests {
             .unwrap();
         drop(state_guard);
 
-        new_records_tx.send(()).unwrap();
+        let shard_status = (ShardState::Open, Position::offset(2u64));
+        shard_status_tx.send(shard_status).unwrap();
 
-        let fetch_response = timeout(Duration::from_millis(50), fetch_stream.next())
+        let fetch_message = timeout(Duration::from_millis(50), fetch_stream.next())
             .await
             .unwrap()
             .unwrap()
             .unwrap();
+        let fetch_payload = into_fetch_payload(fetch_message);
+
         assert_eq!(
-            fetch_response
+            fetch_payload
                 .mrecord_batch
                 .as_ref()
                 .unwrap()
@@ -944,21 +1074,19 @@ mod tests {
             [12, 12]
         );
         assert_eq!(
-            fetch_response
-                .mrecord_batch
-                .as_ref()
-                .unwrap()
-                .mrecord_buffer,
+            fetch_payload.mrecord_batch.as_ref().unwrap().mrecord_buffer,
             "test-doc-footest-doc-bar"
         );
 
-        let fetch_response = timeout(Duration::from_millis(50), fetch_stream.next())
+        let fetch_message = timeout(Duration::from_millis(50), fetch_stream.next())
             .await
             .unwrap()
             .unwrap()
             .unwrap();
+        let fetch_payload = into_fetch_payload(fetch_message);
+
         assert_eq!(
-            fetch_response
+            fetch_payload
                 .mrecord_batch
                 .as_ref()
                 .unwrap()
@@ -966,11 +1094,7 @@ mod tests {
             [12]
         );
         assert_eq!(
-            fetch_response
-                .mrecord_batch
-                .as_ref()
-                .unwrap()
-                .mrecord_buffer,
+            fetch_payload.mrecord_batch.as_ref().unwrap().mrecord_buffer,
             "test-doc-baz"
         );
     }
@@ -1007,12 +1131,12 @@ mod tests {
         let index_uid: IndexUid = "test-index:0".into();
         let source_id: SourceId = "test-source".into();
         let shard_id: ShardId = 1;
-        let mut from_position_exclusive = Position::from(0u64);
+        let mut from_position_exclusive = Position::offset(0u64);
 
         let ingester_ids: Vec<NodeId> = vec!["test-ingester-0".into(), "test-ingester-1".into()];
         let ingester_pool = IngesterPool::default();
 
-        let (fetch_response_tx, mut fetch_stream) = ServiceStream::new_bounded(5);
+        let (fetch_message_tx, mut fetch_stream) = ServiceStream::new_bounded(5);
         let (service_stream_tx_1, service_stream_1) = ServiceStream::new_unbounded();
 
         let mut ingester_mock_1 = IngesterServiceClient::mock();
@@ -1023,7 +1147,7 @@ mod tests {
                 assert_eq!(request.index_uid, "test-index:0");
                 assert_eq!(request.source_id, "test-source");
                 assert_eq!(request.shard_id, 1);
-                assert_eq!(request.from_position_exclusive(), Position::from(0u64));
+                assert_eq!(request.from_position_exclusive(), Position::offset(0u64));
 
                 Ok(service_stream_1)
             });
@@ -1031,25 +1155,25 @@ mod tests {
 
         ingester_pool.insert("test-ingester-1".into(), ingester_1);
 
-        let fetch_response = FetchResponseV2 {
+        let fetch_payload = FetchPayload {
             index_uid: "test-index:0".into(),
             source_id: "test-source".into(),
             shard_id: 1,
-            mrecord_batch: None,
-            from_position_exclusive: Some(Position::from(0u64)),
-            to_position_inclusive: Some(Position::from(1u64)),
+            mrecord_batch: MRecordBatch::for_test(["\0\0test-doc-foo"]),
+            from_position_exclusive: Some(Position::offset(0u64)),
+            to_position_inclusive: Some(Position::offset(1u64)),
         };
-        service_stream_tx_1.send(Ok(fetch_response)).unwrap();
+        let fetch_message = FetchMessage::new_payload(fetch_payload);
+        service_stream_tx_1.send(Ok(fetch_message)).unwrap();
 
-        let fetch_response = FetchResponseV2 {
+        let fetch_eof = FetchEof {
             index_uid: "test-index:0".into(),
             source_id: "test-source".into(),
             shard_id: 1,
-            mrecord_batch: None,
-            from_position_exclusive: Some(Position::from(1u64)),
-            to_position_inclusive: Some(Position::Eof),
+            eof_position: Some(Position::eof(1u64)),
         };
-        service_stream_tx_1.send(Ok(fetch_response)).unwrap();
+        let fetch_message = FetchMessage::new_eof(fetch_eof);
+        service_stream_tx_1.send(Ok(fetch_message)).unwrap();
 
         fault_tolerant_fetch_stream(
             client_id,
@@ -1059,31 +1183,34 @@ mod tests {
             &mut from_position_exclusive,
             &ingester_ids,
             ingester_pool,
-            fetch_response_tx,
+            fetch_message_tx,
         )
         .await;
 
-        let fetch_response = timeout(Duration::from_millis(50), fetch_stream.next())
+        let fetch_message = timeout(Duration::from_millis(50), fetch_stream.next())
             .await
             .unwrap()
             .unwrap()
             .unwrap();
-        assert_eq!(
-            fetch_response.from_position_exclusive(),
-            Position::from(0u64)
-        );
-        assert_eq!(fetch_response.to_position_inclusive(), 1u64);
+        let fetch_payload = into_fetch_payload(fetch_message);
 
-        let fetch_response = timeout(Duration::from_millis(50), fetch_stream.next())
+        assert_eq!(
+            fetch_payload.from_position_exclusive(),
+            Position::offset(0u64)
+        );
+        assert_eq!(
+            fetch_payload.to_position_inclusive(),
+            Position::offset(1u64)
+        );
+
+        let fetch_message = timeout(Duration::from_millis(50), fetch_stream.next())
             .await
             .unwrap()
             .unwrap()
             .unwrap();
-        assert_eq!(
-            fetch_response.from_position_exclusive(),
-            Position::from(1u64)
-        );
-        assert_eq!(fetch_response.to_position_inclusive(), Position::Eof);
+        let fetch_eof = into_fetch_eof(fetch_message);
+
+        assert_eq!(fetch_eof.eof_position(), Position::eof(1u64));
 
         assert!(timeout(Duration::from_millis(50), fetch_stream.next())
             .await
@@ -1097,12 +1224,12 @@ mod tests {
         let index_uid: IndexUid = "test-index:0".into();
         let source_id: SourceId = "test-source".into();
         let shard_id: ShardId = 1;
-        let mut from_position_exclusive = Position::from(0u64);
+        let mut from_position_exclusive = Position::offset(0u64);
 
         let ingester_ids: Vec<NodeId> = vec!["test-ingester-0".into(), "test-ingester-1".into()];
         let ingester_pool = IngesterPool::default();
 
-        let (fetch_response_tx, mut fetch_stream) = ServiceStream::new_bounded(5);
+        let (fetch_message_tx, mut fetch_stream) = ServiceStream::new_bounded(5);
         let (service_stream_tx_1, service_stream_1) = ServiceStream::new_unbounded();
 
         let mut ingester_mock_0 = IngesterServiceClient::mock();
@@ -1113,7 +1240,7 @@ mod tests {
                 assert_eq!(request.index_uid, "test-index:0");
                 assert_eq!(request.source_id, "test-source");
                 assert_eq!(request.shard_id, 1);
-                assert_eq!(request.from_position_exclusive(), 0u64);
+                assert_eq!(request.from_position_exclusive(), Position::offset(0u64));
 
                 Err(IngestV2Error::Internal(
                     "open fetch stream error".to_string(),
@@ -1129,7 +1256,7 @@ mod tests {
                 assert_eq!(request.index_uid, "test-index:0");
                 assert_eq!(request.source_id, "test-source");
                 assert_eq!(request.shard_id, 1);
-                assert_eq!(request.from_position_exclusive(), Position::from(0u64));
+                assert_eq!(request.from_position_exclusive(), Position::offset(0u64));
 
                 Ok(service_stream_1)
             });
@@ -1138,25 +1265,25 @@ mod tests {
         ingester_pool.insert("test-ingester-0".into(), ingester_0);
         ingester_pool.insert("test-ingester-1".into(), ingester_1);
 
-        let fetch_response = FetchResponseV2 {
+        let fetch_payload = FetchPayload {
             index_uid: "test-index:0".into(),
             source_id: "test-source".into(),
             shard_id: 1,
-            mrecord_batch: None,
-            from_position_exclusive: Some(Position::from(0u64)),
-            to_position_inclusive: Some(Position::from(1u64)),
+            mrecord_batch: MRecordBatch::for_test(["\0\0test-doc-foo"]),
+            from_position_exclusive: Some(Position::offset(0u64)),
+            to_position_inclusive: Some(Position::offset(1u64)),
         };
-        service_stream_tx_1.send(Ok(fetch_response)).unwrap();
+        let fetch_message = FetchMessage::new_payload(fetch_payload);
+        service_stream_tx_1.send(Ok(fetch_message)).unwrap();
 
-        let fetch_response = FetchResponseV2 {
+        let fetch_eof = FetchEof {
             index_uid: "test-index:0".into(),
             source_id: "test-source".into(),
             shard_id: 1,
-            mrecord_batch: None,
-            from_position_exclusive: Some(Position::from(1u64)),
-            to_position_inclusive: Some(Position::Eof),
+            eof_position: Some(Position::eof(1u64)),
         };
-        service_stream_tx_1.send(Ok(fetch_response)).unwrap();
+        let fetch_message = FetchMessage::new_eof(fetch_eof);
+        service_stream_tx_1.send(Ok(fetch_message)).unwrap();
 
         fault_tolerant_fetch_stream(
             client_id,
@@ -1166,31 +1293,34 @@ mod tests {
             &mut from_position_exclusive,
             &ingester_ids,
             ingester_pool,
-            fetch_response_tx,
+            fetch_message_tx,
         )
         .await;
 
-        let fetch_response = timeout(Duration::from_millis(50), fetch_stream.next())
+        let fetch_message = timeout(Duration::from_millis(50), fetch_stream.next())
             .await
             .unwrap()
             .unwrap()
             .unwrap();
-        assert_eq!(
-            fetch_response.from_position_exclusive(),
-            Position::from(0u64)
-        );
-        assert_eq!(fetch_response.to_position_inclusive(), 1u64);
+        let fetch_payload = into_fetch_payload(fetch_message);
 
-        let fetch_response = timeout(Duration::from_millis(50), fetch_stream.next())
+        assert_eq!(
+            fetch_payload.from_position_exclusive(),
+            Position::offset(0u64)
+        );
+        assert_eq!(
+            fetch_payload.to_position_inclusive(),
+            Position::offset(1u64)
+        );
+
+        let fetch_message = timeout(Duration::from_millis(50), fetch_stream.next())
             .await
             .unwrap()
             .unwrap()
             .unwrap();
-        assert_eq!(
-            fetch_response.from_position_exclusive(),
-            Position::from(1u64)
-        );
-        assert_eq!(fetch_response.to_position_inclusive(), Position::Eof);
+        let fetch_eof = into_fetch_eof(fetch_message);
+
+        assert_eq!(fetch_eof.eof_position(), Position::eof(1u64));
 
         assert!(timeout(Duration::from_millis(50), fetch_stream.next())
             .await
@@ -1204,12 +1334,12 @@ mod tests {
         let index_uid: IndexUid = "test-index:0".into();
         let source_id: SourceId = "test-source".into();
         let shard_id: ShardId = 1;
-        let mut from_position_exclusive = Position::from(0u64);
+        let mut from_position_exclusive = Position::offset(0u64);
 
         let ingester_ids: Vec<NodeId> = vec!["test-ingester-0".into(), "test-ingester-1".into()];
         let ingester_pool = IngesterPool::default();
 
-        let (fetch_response_tx, mut fetch_stream) = ServiceStream::new_bounded(5);
+        let (fetch_message_tx, mut fetch_stream) = ServiceStream::new_bounded(5);
         let (service_stream_tx_0, service_stream_0) = ServiceStream::new_unbounded();
         let (service_stream_tx_1, service_stream_1) = ServiceStream::new_unbounded();
 
@@ -1221,7 +1351,7 @@ mod tests {
                 assert_eq!(request.index_uid, "test-index:0");
                 assert_eq!(request.source_id, "test-source");
                 assert_eq!(request.shard_id, 1);
-                assert_eq!(request.from_position_exclusive(), 0u64);
+                assert_eq!(request.from_position_exclusive(), Position::offset(0u64));
 
                 Ok(service_stream_0)
             });
@@ -1235,7 +1365,7 @@ mod tests {
                 assert_eq!(request.index_uid, "test-index:0");
                 assert_eq!(request.source_id, "test-source");
                 assert_eq!(request.shard_id, 1);
-                assert_eq!(request.from_position_exclusive(), 1u64);
+                assert_eq!(request.from_position_exclusive(), Position::offset(1u64));
 
                 Ok(service_stream_1)
             });
@@ -1244,28 +1374,28 @@ mod tests {
         ingester_pool.insert("test-ingester-0".into(), ingester_0);
         ingester_pool.insert("test-ingester-1".into(), ingester_1);
 
-        let fetch_response = FetchResponseV2 {
+        let fetch_payload = FetchPayload {
             index_uid: "test-index:0".into(),
             source_id: "test-source".into(),
             shard_id: 1,
-            mrecord_batch: None,
-            from_position_exclusive: Some(Position::from(0u64)),
-            to_position_inclusive: Some(Position::from(1u64)),
+            mrecord_batch: MRecordBatch::for_test(["\0\0test-doc-foo"]),
+            from_position_exclusive: Some(Position::offset(0u64)),
+            to_position_inclusive: Some(Position::offset(1u64)),
         };
-        service_stream_tx_0.send(Ok(fetch_response)).unwrap();
+        let fetch_message = FetchMessage::new_payload(fetch_payload);
+        service_stream_tx_0.send(Ok(fetch_message)).unwrap();
 
         let ingest_error = IngestV2Error::Internal("fetch stream error".into());
         service_stream_tx_0.send(Err(ingest_error)).unwrap();
 
-        let fetch_response = FetchResponseV2 {
+        let fetch_eof = FetchEof {
             index_uid: "test-index:0".into(),
             source_id: "test-source".into(),
             shard_id: 1,
-            mrecord_batch: None,
-            from_position_exclusive: Some(Position::from(1u64)),
-            to_position_inclusive: Some(Position::Eof),
+            eof_position: Some(Position::eof(1u64)),
         };
-        service_stream_tx_1.send(Ok(fetch_response)).unwrap();
+        let fetch_message = FetchMessage::new_eof(fetch_eof);
+        service_stream_tx_1.send(Ok(fetch_message)).unwrap();
 
         fault_tolerant_fetch_stream(
             client_id,
@@ -1275,31 +1405,34 @@ mod tests {
             &mut from_position_exclusive,
             &ingester_ids,
             ingester_pool,
-            fetch_response_tx,
+            fetch_message_tx,
         )
         .await;
 
-        let fetch_response = timeout(Duration::from_millis(50), fetch_stream.next())
+        let fetch_message = timeout(Duration::from_millis(50), fetch_stream.next())
             .await
             .unwrap()
             .unwrap()
             .unwrap();
-        assert_eq!(
-            fetch_response.from_position_exclusive(),
-            Position::from(0u64)
-        );
-        assert_eq!(fetch_response.to_position_inclusive(), 1u64);
+        let fetch_payload = into_fetch_payload(fetch_message);
 
-        let fetch_response = timeout(Duration::from_millis(50), fetch_stream.next())
+        assert_eq!(
+            fetch_payload.from_position_exclusive(),
+            Position::offset(0u64)
+        );
+        assert_eq!(
+            fetch_payload.to_position_inclusive(),
+            Position::offset(1u64)
+        );
+
+        let fetch_message = timeout(Duration::from_millis(50), fetch_stream.next())
             .await
             .unwrap()
             .unwrap()
             .unwrap();
-        assert_eq!(
-            fetch_response.from_position_exclusive(),
-            Position::from(1u64)
-        );
-        assert_eq!(fetch_response.to_position_inclusive(), Position::Eof);
+        let fetch_eof = into_fetch_eof(fetch_message);
+
+        assert_eq!(fetch_eof.eof_position(), Position::eof(1u64));
 
         assert!(timeout(Duration::from_millis(50), fetch_stream.next())
             .await
@@ -1313,12 +1446,12 @@ mod tests {
         let index_uid: IndexUid = "test-index:0".into();
         let source_id: SourceId = "test-source".into();
         let shard_id: ShardId = 1;
-        let from_position_exclusive = Position::from(0u64);
+        let from_position_exclusive = Position::offset(0u64);
 
         let ingester_ids: Vec<NodeId> = vec!["test-ingester".into()];
         let ingester_pool = IngesterPool::default();
 
-        let (fetch_response_tx, mut fetch_stream) = ServiceStream::new_bounded(5);
+        let (fetch_message_tx, mut fetch_stream) = ServiceStream::new_bounded(5);
         let (service_stream_tx_1, service_stream_1) = ServiceStream::new_unbounded();
         let (service_stream_tx_2, service_stream_2) = ServiceStream::new_unbounded();
 
@@ -1334,7 +1467,7 @@ mod tests {
                 assert_eq!(request.index_uid, "test-index:0");
                 assert_eq!(request.source_id, "test-source");
                 assert_eq!(request.shard_id, 1);
-                assert_eq!(request.from_position_exclusive(), 0u64);
+                assert_eq!(request.from_position_exclusive(), Position::offset(0u64));
 
                 Err(IngestV2Error::Internal(
                     "open fetch stream error".to_string(),
@@ -1348,7 +1481,7 @@ mod tests {
                 assert_eq!(request.index_uid, "test-index:0");
                 assert_eq!(request.source_id, "test-source");
                 assert_eq!(request.shard_id, 1);
-                assert_eq!(request.from_position_exclusive(), 0u64);
+                assert_eq!(request.from_position_exclusive(), Position::offset(0u64));
 
                 Ok(service_stream_1)
             });
@@ -1360,7 +1493,7 @@ mod tests {
                 assert_eq!(request.index_uid, "test-index:0");
                 assert_eq!(request.source_id, "test-source");
                 assert_eq!(request.shard_id, 1);
-                assert_eq!(request.from_position_exclusive(), 1u64);
+                assert_eq!(request.from_position_exclusive(), Position::offset(1u64));
 
                 Ok(service_stream_2)
             });
@@ -1368,28 +1501,30 @@ mod tests {
 
         ingester_pool.insert("test-ingester".into(), ingester);
 
-        let fetch_response = FetchResponseV2 {
+        let fetch_payload = FetchPayload {
             index_uid: "test-index:0".into(),
             source_id: "test-source".into(),
             shard_id: 1,
-            mrecord_batch: None,
-            from_position_exclusive: Some(Position::from(0u64)),
-            to_position_inclusive: Some(Position::from(1u64)),
+            mrecord_batch: MRecordBatch::for_test(["\0\0test-doc-foo"]),
+            from_position_exclusive: Some(Position::offset(0u64)),
+            to_position_inclusive: Some(Position::offset(1u64)),
         };
-        service_stream_tx_1.send(Ok(fetch_response)).unwrap();
+        let fetch_message = FetchMessage::new_payload(fetch_payload);
+        service_stream_tx_1.send(Ok(fetch_message)).unwrap();
 
         let ingest_error = IngestV2Error::Internal("fetch stream error #1".into());
         service_stream_tx_1.send(Err(ingest_error)).unwrap();
 
-        let fetch_response = FetchResponseV2 {
+        let fetch_payload = FetchPayload {
             index_uid: "test-index:0".into(),
             source_id: "test-source".into(),
             shard_id: 1,
-            mrecord_batch: None,
-            from_position_exclusive: Some(Position::from(1u64)),
-            to_position_inclusive: Some(Position::from(2u64)),
+            mrecord_batch: MRecordBatch::for_test(["\0\0test-doc-bar"]),
+            from_position_exclusive: Some(Position::offset(1u64)),
+            to_position_inclusive: Some(Position::offset(2u64)),
         };
-        service_stream_tx_2.send(Ok(fetch_response)).unwrap();
+        let fetch_message = FetchMessage::new_payload(fetch_payload);
+        service_stream_tx_2.send(Ok(fetch_message)).unwrap();
 
         let ingest_error = IngestV2Error::Internal("fetch stream error #2".into());
         service_stream_tx_2.send(Err(ingest_error)).unwrap();
@@ -1403,7 +1538,7 @@ mod tests {
             ingester_ids,
             ingester_pool,
             retry_params,
-            fetch_response_tx,
+            fetch_message_tx,
         )
         .await;
 
@@ -1417,16 +1552,21 @@ mod tests {
             matches!(ingest_error, IngestV2Error::Internal(message) if message == "open fetch stream error")
         );
 
-        let fetch_response = timeout(Duration::from_millis(50), fetch_stream.next())
+        let fetch_message = timeout(Duration::from_millis(50), fetch_stream.next())
             .await
             .unwrap()
             .unwrap()
             .unwrap();
+        let fetch_payload = into_fetch_payload(fetch_message);
+
         assert_eq!(
-            fetch_response.from_position_exclusive(),
-            Position::from(0u64)
+            fetch_payload.from_position_exclusive(),
+            Position::offset(0u64)
         );
-        assert_eq!(fetch_response.to_position_inclusive(), Position::from(1u64));
+        assert_eq!(
+            fetch_payload.to_position_inclusive(),
+            Position::offset(1u64)
+        );
 
         let fetch_stream_error = timeout(Duration::from_millis(50), fetch_stream.next())
             .await
@@ -1437,16 +1577,21 @@ mod tests {
             matches!(fetch_stream_error.ingest_error, IngestV2Error::Internal(message) if message == "fetch stream error #1")
         );
 
-        let fetch_response = timeout(Duration::from_millis(50), fetch_stream.next())
+        let fetch_message = timeout(Duration::from_millis(50), fetch_stream.next())
             .await
             .unwrap()
             .unwrap()
             .unwrap();
+        let fetch_payload = into_fetch_payload(fetch_message);
+
         assert_eq!(
-            fetch_response.from_position_exclusive(),
-            Position::from(1u64)
+            fetch_payload.from_position_exclusive(),
+            Position::offset(1u64)
         );
-        assert_eq!(fetch_response.to_position_inclusive(), Position::from(2u64));
+        assert_eq!(
+            fetch_payload.to_position_inclusive(),
+            Position::offset(2u64)
+        );
 
         let fetch_stream_error = timeout(Duration::from_millis(50), fetch_stream.next())
             .await

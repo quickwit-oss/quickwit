@@ -1082,14 +1082,14 @@ mod tests {
                             index_uid: "test-index-0:0".to_string(),
                             source_id: "test-source".to_string(),
                             shard_id: 1,
-                            replication_position_inclusive: Some(Position::from(1u64)),
+                            replication_position_inclusive: Some(Position::offset(1u64)),
                         },
                         PersistSuccess {
                             subrequest_id: 1,
                             index_uid: "test-index-1:0".to_string(),
                             source_id: "test-source".to_string(),
                             shard_id: 1,
-                            replication_position_inclusive: Some(Position::from(0u64)),
+                            replication_position_inclusive: Some(Position::offset(0u64)),
                         },
                     ],
                     failures: Vec::new(),
@@ -1122,7 +1122,7 @@ mod tests {
                         index_uid: "test-index-0:0".to_string(),
                         source_id: "test-source".to_string(),
                         shard_id: 1,
-                        replication_position_inclusive: Some(Position::from(3u64)),
+                        replication_position_inclusive: Some(Position::offset(3u64)),
                     }],
                     failures: Vec::new(),
                 };
@@ -1158,7 +1158,7 @@ mod tests {
                         index_uid: "test-index-1:0".to_string(),
                         source_id: "test-source".to_string(),
                         shard_id: 2,
-                        replication_position_inclusive: Some(Position::from(0u64)),
+                        replication_position_inclusive: Some(Position::offset(0u64)),
                     }],
                     failures: Vec::new(),
                 };
@@ -1293,7 +1293,7 @@ mod tests {
                         index_uid: "test-index-0:0".to_string(),
                         source_id: "test-source".to_string(),
                         shard_id: 1,
-                        replication_position_inclusive: Some(Position::from(0u64)),
+                        replication_position_inclusive: Some(Position::offset(0u64)),
                     }],
                     failures: Vec::new(),
                 };

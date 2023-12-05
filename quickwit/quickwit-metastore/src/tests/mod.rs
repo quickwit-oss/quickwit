@@ -943,7 +943,7 @@ pub async fn test_metastore_publish_splits_empty_splits_array_is_allowed<
             source_checkpoint
                 .position_for_partition(&PartitionId::default())
                 .unwrap(),
-            &Position::from(100u64 - 1)
+            &Position::offset(100u64 - 1)
         );
         cleanup_index(&mut metastore, index_uid).await;
     }
@@ -1565,7 +1565,7 @@ pub async fn test_metastore_publish_splits_concurrency<
                 let source_delta = SourceCheckpointDelta::from_partition_delta(
                     PartitionId::from(partition_id as u64),
                     Position::Beginning,
-                    Position::from(partition_id as u64),
+                    Position::offset(partition_id as u64),
                 )
                 .unwrap();
                 let checkpoint_delta = IndexCheckpointDelta {

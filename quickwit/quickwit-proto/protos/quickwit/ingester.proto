@@ -32,7 +32,7 @@ service IngesterService {
 
   // Streams records from a leader or a follower. The client can optionally specify a range of positions to fetch,
   // otherwise the stream will go undefinitely or until the shard is closed.
-  rpc OpenFetchStream(OpenFetchStreamRequest) returns (stream FetchResponseV2);
+  rpc OpenFetchStream(OpenFetchStreamRequest) returns (stream FetchMessage);
 
   // Streams status updates, called "observations", from an ingester.
   rpc OpenObservationStream(OpenObservationStreamRequest) returns (stream ObservationMessage);
@@ -211,13 +211,27 @@ message OpenFetchStreamRequest {
   quickwit.ingest.Position from_position_exclusive = 5;
 }
 
-message FetchResponseV2 {
+message FetchMessage {
+  oneof message {
+    FetchPayload payload = 1;
+    FetchEof eof = 2;
+  }
+}
+
+message FetchPayload {
   string index_uid = 1;
   string source_id = 2;
   uint64 shard_id = 3;
   quickwit.ingest.MRecordBatch mrecord_batch = 4;
   quickwit.ingest.Position from_position_exclusive = 5;
   quickwit.ingest.Position to_position_inclusive = 6;
+}
+
+message FetchEof {
+  string index_uid = 1;
+  string source_id = 2;
+  uint64 shard_id = 3;
+  quickwit.ingest.Position eof_position = 4;
 }
 
 message InitShardsRequest {

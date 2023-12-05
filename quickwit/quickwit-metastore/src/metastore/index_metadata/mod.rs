@@ -145,7 +145,7 @@ impl TestableForRegression for IndexMetadata {
         let delta = SourceCheckpointDelta::from_partition_delta(
             PartitionId::from(0i64),
             Position::Beginning,
-            Position::from(42u64),
+            Position::offset(42u64),
         )
         .unwrap();
         source_checkpoint.try_apply_delta(delta).unwrap();

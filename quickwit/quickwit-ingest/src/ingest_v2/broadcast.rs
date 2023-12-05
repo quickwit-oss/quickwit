@@ -194,9 +194,9 @@ impl BroadcastLocalShardsTask {
                 source_id,
             };
             // Shard ingestion rate in MiB/s.
-            let ingestion_rate_u64 =
-                rate_meter.harvest().rescale(Duration::from_secs(1)).work() / ONE_MIB.as_u64();
-            let ingestion_rate = RateMibPerSec(ingestion_rate_u64 as u16);
+            let ingestion_rate_per_sec = rate_meter.harvest().rescale(Duration::from_secs(1));
+            let ingestion_rate_mib_per_sec_u64 = ingestion_rate_per_sec.work() / ONE_MIB.as_u64();
+            let ingestion_rate = RateMibPerSec(ingestion_rate_mib_per_sec_u64 as u16);
 
             let shard_info = ShardInfo {
                 shard_id,
@@ -471,7 +471,8 @@ mod tests {
         let mut state_guard = state.write().await;
 
         let queue_id_01 = queue_id("test-index:0", "test-source", 1);
-        let shard = IngesterShard::new_solo(ShardState::Open, Position::Beginning, Position::Eof);
+        let shard =
+            IngesterShard::new_solo(ShardState::Open, Position::Beginning, Position::Beginning);
         state_guard.shards.insert(queue_id_01.clone(), shard);
 
         let rate_limiter = RateLimiter::from_settings(RateLimiterSettings::default());

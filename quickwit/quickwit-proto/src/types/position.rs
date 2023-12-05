@@ -20,14 +20,14 @@
 use std::fmt;
 use std::fmt::{Debug, Display};
 
-use bytes::Bytes;
+use bytes::{Bytes, BytesMut};
 use bytestring::ByteString;
 use prost::{self, DecodeError};
 use serde::{Deserialize, Serialize};
 
 const BEGINNING: &str = "";
 
-const EOF: &str = "~eof";
+const EOF_PREFIX: &str = "~";
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Hash, Ord, PartialOrd)]
 pub struct Offset(ByteString);
@@ -56,6 +56,30 @@ impl fmt::Display for Offset {
     }
 }
 
+impl From<i64> for Offset {
+    fn from(offset: i64) -> Self {
+        Self(ByteString::from(format!("{offset:0>20}")))
+    }
+}
+
+impl From<u64> for Offset {
+    fn from(offset: u64) -> Self {
+        Self(ByteString::from(format!("{offset:0>20}")))
+    }
+}
+
+impl From<usize> for Offset {
+    fn from(offset: usize) -> Self {
+        Self(ByteString::from(format!("{offset:0>20}")))
+    }
+}
+
+impl From<&str> for Offset {
+    fn from(offset: &str) -> Self {
+        Self(ByteString::from(offset))
+    }
+}
+
 /// Marks a position within a specific partition/shard of a source.
 ///
 /// The nature of the position depends on the source.
@@ -74,162 +98,120 @@ pub enum Position {
     #[default]
     Beginning,
     Offset(Offset),
-    Eof,
+    /// End of partition/shard at the given offset. `Eof(None)` means no records were ever written.
+    Eof(Option<Offset>),
 }
 
 impl Debug for Position {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
             Self::Beginning => write!(f, "Position::Beginning"),
-            // The derive implementation would show `Offset(Offset(0000001))` here.
-            Self::Offset(offset) => write!(f, "Position::Offset({})", offset.0),
-            Self::Eof => write!(f, "Position::Eof"),
+            // The derive implementation would show `Offset(Offset(0000001u64))` here.
+            Self::Offset(offset) => write!(f, "Position::Offset({offset})"),
+            Self::Eof(Some(offset)) => write!(f, "Position::Eof({offset})"),
+            Self::Eof(None) => write!(f, "Position::Eof"),
         }
     }
 }
 
 impl Position {
-    fn as_bytes(&self) -> Bytes {
-        match self {
-            Self::Beginning => Bytes::from_static(BEGINNING.as_bytes()),
-            Self::Offset(offset) => offset.0.as_bytes().clone(),
-            Self::Eof => Bytes::from_static(EOF.as_bytes()),
-        }
+    pub fn offset(offset: impl Into<Offset>) -> Self {
+        Self::Offset(offset.into())
     }
 
-    pub fn as_str(&self) -> &str {
+    pub fn eof(offset: impl Into<Offset>) -> Self {
+        Self::Eof(Some(offset.into()))
+    }
+
+    pub fn as_eof(&self) -> Self {
         match self {
-            Self::Beginning => BEGINNING,
-            Self::Offset(offset) => offset.as_str(),
-            Self::Eof => EOF,
+            Self::Beginning => Self::Eof(None),
+            Self::Offset(offset) => Self::Eof(Some(offset.clone())),
+            _ => self.clone(),
         }
     }
 
     pub fn as_i64(&self) -> Option<i64> {
         match self {
-            Self::Beginning => None,
-            Self::Offset(offset) => offset.as_i64(),
-            Self::Eof => None,
+            Self::Offset(offset) | Self::Eof(Some(offset)) => offset.as_i64(),
+            _ => None,
         }
     }
 
     pub fn as_u64(&self) -> Option<u64> {
         match self {
-            Self::Beginning => None,
-            Self::Offset(offset) => offset.as_u64(),
-            Self::Eof => None,
+            Self::Offset(offset) | Self::Eof(Some(offset)) => offset.as_u64(),
+            _ => None,
         }
     }
 
     pub fn as_usize(&self) -> Option<usize> {
         match self {
-            Self::Beginning => None,
-            Self::Offset(offset) => offset.as_usize(),
-            Self::Eof => None,
+            Self::Offset(offset) | Self::Eof(Some(offset)) => offset.as_usize(),
+            _ => None,
+        }
+    }
+
+    pub fn is_eof(&self) -> bool {
+        matches!(self, Self::Eof(_))
+    }
+
+    fn as_bytes(&self) -> Bytes {
+        match self {
+            Self::Beginning => Bytes::from_static(BEGINNING.as_bytes()),
+            Self::Offset(offset) => offset.0.as_bytes().clone(),
+            Self::Eof(Some(offset)) => {
+                let mut bytes = BytesMut::with_capacity(EOF_PREFIX.len() + offset.0.len());
+                bytes.extend_from_slice(EOF_PREFIX.as_bytes());
+                bytes.extend_from_slice(offset.0.as_bytes());
+                bytes.freeze()
+            }
+            Self::Eof(None) => Bytes::from_static(EOF_PREFIX.as_bytes()),
         }
     }
 }
 
 impl Display for Position {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-        write!(f, "{}", self.as_str())
-    }
-}
-
-impl From<i64> for Position {
-    fn from(offset: i64) -> Self {
-        assert!(offset >= 0);
-        Self::from(format!("{offset:0>20}"))
-    }
-}
-
-impl From<u64> for Position {
-    fn from(offset: u64) -> Self {
-        Self::from(format!("{offset:0>20}"))
-    }
-}
-
-impl From<usize> for Position {
-    fn from(offset: usize) -> Self {
-        Self::from(format!("{offset:0>20}"))
-    }
-}
-
-impl<T> From<Option<T>> for Position
-where Position: From<T>
-{
-    fn from(offset_opt: Option<T>) -> Self {
-        match offset_opt {
-            Some(offset) => Self::from(offset),
-            None => Self::Beginning,
+        match self {
+            Self::Beginning => write!(f, "{BEGINNING}"),
+            Self::Offset(offset) => write!(f, "{offset}"),
+            Self::Eof(Some(offset)) => write!(f, "{EOF_PREFIX}{offset}"),
+            Self::Eof(None) => write!(f, "{EOF_PREFIX}"),
         }
-    }
-}
-
-impl PartialEq<i64> for Position {
-    fn eq(&self, other: &i64) -> bool {
-        self.as_i64() == Some(*other)
-    }
-}
-
-impl PartialEq<u64> for Position {
-    fn eq(&self, other: &u64) -> bool {
-        self.as_u64() == Some(*other)
-    }
-}
-
-impl PartialEq<usize> for Position {
-    fn eq(&self, other: &usize) -> bool {
-        self.as_usize() == Some(*other)
-    }
-}
-
-impl From<String> for Position {
-    fn from(string: String) -> Self {
-        Self::from(ByteString::from(string))
-    }
-}
-
-impl From<&'static str> for Position {
-    fn from(string: &'static str) -> Self {
-        Self::from(ByteString::from_static(string))
     }
 }
 
 impl From<ByteString> for Position {
-    fn from(byte_string: ByteString) -> Self {
-        if byte_string.is_empty() {
-            Self::Beginning
-        } else if byte_string == EOF {
-            Self::Eof
-        } else {
-            Self::Offset(Offset(byte_string))
+    fn from(position: ByteString) -> Self {
+        match &position[..] {
+            BEGINNING => Self::Beginning,
+            EOF_PREFIX => Self::Eof(None),
+            offset if offset.starts_with(EOF_PREFIX) => {
+                let offset = ByteString::from(&offset[EOF_PREFIX.len()..]);
+                Self::Eof(Some(Offset(offset)))
+            }
+            _ => Self::Offset(Offset(position)),
         }
     }
 }
 
-impl PartialEq<&str> for Position {
-    fn eq(&self, other: &&str) -> bool {
-        self.as_str() == *other
-    }
-}
-
-impl PartialEq<String> for Position {
-    fn eq(&self, other: &String) -> bool {
-        self.as_str() == *other
+impl From<String> for Position {
+    fn from(position: String) -> Self {
+        Self::from(ByteString::from(position))
     }
 }
 
 impl Serialize for Position {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        serializer.serialize_str(self.as_str())
+        serializer.collect_str(self)
     }
 }
 
 impl<'de> Deserialize<'de> for Position {
     fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let string = String::deserialize(deserializer)?;
-        Ok(Self::from(string))
+        let position_str = String::deserialize(deserializer)?;
+        Ok(Self::from(position_str))
     }
 }
 
@@ -286,21 +268,29 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_position_partial_eq() {
-        assert_eq!(Position::Beginning, "");
-        assert_eq!(Position::Beginning, "".to_string());
-        assert_eq!(Position::from(0u64), 0i64);
-        assert_eq!(Position::from(0u64), 0u64);
-        assert_eq!(Position::from(0u64), 0usize);
+    fn test_position_eof() {
+        let eof_position = Position::Beginning.as_eof();
+
+        assert!(eof_position.is_eof());
+        assert!(eof_position.as_u64().is_none());
+
+        let eof_position = Position::offset(0u64).as_eof();
+
+        assert!(eof_position.is_eof());
+        assert_eq!(eof_position.as_u64().unwrap(), 0u64);
     }
 
     #[test]
     #[allow(clippy::cmp_owned)]
     fn test_position_ord() {
-        assert!(Position::Beginning < Position::from(0u64));
-        assert!(Position::from(0u64) < Position::from(1u64));
-        assert!(Position::from(1u64) < Position::Eof);
-        assert!(Position::Beginning < Position::Eof);
+        assert!(Position::Beginning < Position::offset(0u64));
+        assert!(Position::Beginning < Position::Eof(None));
+        assert!(Position::Beginning < Position::eof(0u64));
+
+        assert!(Position::offset(0u64) < Position::offset(1u64));
+
+        assert!(Position::Eof(None) < Position::eof(0u64));
+        assert!(Position::eof(0u64) < Position::eof(1u64));
     }
 
     #[test]
@@ -310,45 +300,66 @@ mod tests {
         let deserialized: Position = serde_json::from_str(&serialized).unwrap();
         assert_eq!(deserialized, Position::Beginning);
 
-        let serialized = serde_json::to_string(&Position::from(0u64)).unwrap();
+        let serialized = serde_json::to_string(&Position::offset(0u64)).unwrap();
         assert_eq!(serialized, r#""00000000000000000000""#);
         let deserialized: Position = serde_json::from_str(&serialized).unwrap();
-        assert_eq!(deserialized, Position::from(0u64));
+        assert_eq!(deserialized, Position::offset(0u64));
 
-        let serialized = serde_json::to_string(&Position::Eof).unwrap();
-        assert_eq!(serialized, r#""~eof""#);
+        let serialized = serde_json::to_string(&Position::Eof(None)).unwrap();
+        assert_eq!(serialized, r#""~""#);
         let deserialized: Position = serde_json::from_str(&serialized).unwrap();
-        assert_eq!(deserialized, Position::Eof);
+        assert_eq!(deserialized, Position::Eof(None));
+
+        let serialized = serde_json::to_string(&Position::eof(0u64)).unwrap();
+        assert_eq!(serialized, r#""~00000000000000000000""#);
+        let deserialized: Position = serde_json::from_str(&serialized).unwrap();
+        assert_eq!(deserialized, Position::eof(0u64));
     }
 
     #[test]
     fn test_position_prost_serde_roundtrip() {
-        let mut buffer = Vec::new();
-        Position::Beginning.encode(&mut buffer).unwrap();
+        let encoded = Position::Beginning.encode_to_vec();
         assert_eq!(
-            Position::decode(Bytes::from(buffer)).unwrap(),
+            Position::decode(Bytes::from(encoded)).unwrap(),
+            Position::Beginning
+        );
+        let encoded = Position::Beginning.encode_length_delimited_to_vec();
+        assert_eq!(
+            Position::decode_length_delimited(Bytes::from(encoded)).unwrap(),
             Position::Beginning
         );
 
-        let mut buffer = Vec::new();
-        Position::from("0").encode(&mut buffer).unwrap();
+        let encoded = Position::offset(0u64).encode_to_vec();
         assert_eq!(
-            Position::decode(Bytes::from(buffer)).unwrap(),
-            Position::from("0")
+            Position::decode(Bytes::from(encoded)).unwrap(),
+            Position::offset(0u64)
+        );
+        let encoded = Position::offset(0u64).encode_length_delimited_to_vec();
+        assert_eq!(
+            Position::decode_length_delimited(Bytes::from(encoded)).unwrap(),
+            Position::offset(0u64)
         );
 
-        let mut buffer = Vec::new();
-        Position::from(0u64).encode(&mut buffer).unwrap();
+        let encoded = Position::Eof(None).encode_to_vec();
         assert_eq!(
-            Position::decode(Bytes::from(buffer)).unwrap(),
-            Position::from(0u64)
+            Position::decode(Bytes::from(encoded)).unwrap(),
+            Position::Eof(None)
+        );
+        let encoded = Position::Eof(None).encode_length_delimited_to_vec();
+        assert_eq!(
+            Position::decode_length_delimited(Bytes::from(encoded)).unwrap(),
+            Position::Eof(None)
         );
 
-        let mut buffer = Vec::new();
-        Position::Eof.encode(&mut buffer).unwrap();
+        let encoded = Position::eof(0u64).encode_to_vec();
         assert_eq!(
-            Position::decode(Bytes::from(buffer)).unwrap(),
-            Position::Eof
+            Position::decode(Bytes::from(encoded)).unwrap(),
+            Position::eof(0u64)
+        );
+        let encoded = Position::eof(0u64).encode_length_delimited_to_vec();
+        assert_eq!(
+            Position::decode_length_delimited(Bytes::from(encoded)).unwrap(),
+            Position::eof(0u64)
         );
     }
 }
