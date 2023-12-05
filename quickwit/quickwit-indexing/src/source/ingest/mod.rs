@@ -348,7 +348,7 @@ impl IngestSource {
     /// If the new assignment removes a shard that we were in the middle of indexing (ie they have
     /// not reached `IndexingStatus::Complete` status yet), we need to reset the pipeline:
     ///
-    /// Ongoing work and splits travelling through the pipeline will be dropped.
+    /// Ongoing work and splits traveling through the pipeline will be dropped.
     async fn reset_if_needed(
         &mut self,
         new_assigned_shard_ids: &BTreeSet<ShardId>,
