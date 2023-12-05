@@ -5912,6 +5912,7 @@ dependencies = [
  "num_cpus",
  "once_cell",
  "opentelemetry",
+ "prost-types",
  "quickwit-actors",
  "quickwit-cluster",
  "quickwit-common",

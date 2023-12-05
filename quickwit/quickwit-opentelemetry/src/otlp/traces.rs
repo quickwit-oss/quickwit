@@ -724,7 +724,7 @@ impl OtlpGrpcTracesService {
             .inc_by(num_bytes);
 
         let response = ExportTraceServiceResponse {
-            // `rejected_spans=0` and `error_message=""` is consided a "full" success.
+            // `rejected_spans=0` and `error_message=""` is considered a "full" success.
             partial_success: Some(ExportTracePartialSuccess {
                 rejected_spans: num_parse_errors as i64,
                 error_message,
