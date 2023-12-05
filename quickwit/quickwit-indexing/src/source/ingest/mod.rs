@@ -175,7 +175,9 @@ impl IngestSource {
             ingester_pool.clone(),
             retry_params,
         );
-        let publish_lock = PublishLock::default();
+        // We start as dead. The first reset with a non-empty list of shards will create an alive
+        // publish lock.
+        let publish_lock = PublishLock::dead();
         let publish_token = client_id.new_publish_token();
 
         Ok(IngestSource {
@@ -349,26 +351,38 @@ impl IngestSource {
     /// not reached `IndexingStatus::Complete` status yet), we need to reset the pipeline:
     ///
     /// Ongoing work and splits traveling through the pipeline will be dropped.
+    ///
+    /// After this method has returned we are guaranteed to have the following post condition:
+    /// - a alive publish lock / non-empty publish token
+    /// - all currently assigned shards included in the `new_assigned_shard_ids` set.
     async fn reset_if_needed(
         &mut self,
         new_assigned_shard_ids: &BTreeSet<ShardId>,
         doc_processor_mailbox: &Mailbox<DocProcessor>,
         ctx: &SourceContext,
     ) -> anyhow::Result<()> {
-        let reset_needed: bool = self.assigned_shards.is_empty() ||
-                // If we removed one shard that has not reach the complete status yet,
-                // we need to reset the pipeline.
-                self
-                    .assigned_shards
-                    .keys()
-                    .copied()
-                    .filter(|shard_id| !new_assigned_shard_ids.contains(shard_id))
-                    .any(|removed_shard_id| {
-                        let Some(assigned_shard) = self.assigned_shards.get(&removed_shard_id) else {
-                            return false;
-                        };
-                        assigned_shard.status != IndexingStatus::Complete
-                    });
+        // No need to do anything if the list of shards before and after are empty.
+        if new_assigned_shard_ids.is_empty() && self.assigned_shards.is_empty() {
+            return Ok(());
+        }
+
+        // There are two reasons why we might want to reset the pipeline.
+        // 1) it has never been initialized in the first place. This happens typically on the first
+        // call to `assign_shards` with a non-empty list of shards. We check that by looking at
+        // whether the publish lock is dead or not.
+        // 2) we are removing a shard that has not reached the complete status yet.
+        let reset_needed: bool = self.publish_lock.is_dead()
+            || self
+                .assigned_shards
+                .keys()
+                .copied()
+                .filter(|shard_id| !new_assigned_shard_ids.contains(shard_id))
+                .any(|removed_shard_id| {
+                    let Some(assigned_shard) = self.assigned_shards.get(&removed_shard_id) else {
+                        return false;
+                    };
+                    assigned_shard.status != IndexingStatus::Complete
+                });
 
         if !reset_needed {
             // Not need to reset the fetch streams, we can just remove the shard that have been
@@ -596,7 +610,7 @@ mod tests {
 
     // In this test, we simulate a source to which we sequentially assign the following set of
     // shards []
-    // [1]
+    // [1] (triggers a reset, and the creation of a publish lock)
     // [1,2]
     // [2,3] (which triggers a reset)
     #[tokio::test]
@@ -866,8 +880,10 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(sequence_rx.recv().await.unwrap(), 1);
-        assert!(publish_lock.is_alive());
-        assert_eq!(publish_lock, source.publish_lock);
+        assert!(!publish_lock.is_alive());
+
+        assert!(source.publish_lock.is_alive());
+        assert!(!source.publish_token.is_empty());
 
         // We assign [0,1] (previously [0]). This should just add the shard 1.
         // The stream does not need to be reset.
@@ -901,7 +917,7 @@ mod tests {
             .recv_typed_message::<NewPublishLock>()
             .await
             .unwrap();
-        assert_eq!(&source.publish_lock, &publish_lock);
+        assert_ne!(&source.publish_lock, &publish_lock);
 
         // assert!(publish_token != source.publish_token);
 
