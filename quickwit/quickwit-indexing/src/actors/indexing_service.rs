@@ -505,7 +505,7 @@ impl IndexingService {
                 })
             })
             .collect();
-        self.spawn_pipelines(&pipeline_ids_to_add[..], ctx).await
+        self.spawn_pipelines(&pipeline_ids_to_add, ctx).await
     }
 
     /// For all Ingest V2 pipelines, assigns the set of shards they should be working on.

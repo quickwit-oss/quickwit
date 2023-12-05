@@ -463,10 +463,10 @@ impl IndexingPipeline {
             .set_mailboxes(source_mailbox, source_inbox)
             .set_kill_switch(self.kill_switch.clone())
             .spawn(actor_source);
-        let assign_shard_message = AssignShards(Assignment {
+        let assign_shards_message = AssignShards(Assignment {
             shard_ids: self.shard_ids.clone(),
         });
-        source_mailbox.send_message(assign_shard_message).await?;
+        source_mailbox.send_message(assign_shards_message).await?;
 
         // Increment generation once we are sure there will be no spawning error.
         self.previous_generations_statistics = self.statistics.clone();
@@ -561,7 +561,7 @@ impl Handler<AssignShards> for IndexingPipeline {
     ) -> Result<(), ActorExitStatus> {
         self.shard_ids = assign_shards_message.0.shard_ids.clone();
         // If the pipeline is running, we forward the message to its source.
-        // If it is not, then it will soon be respawn, and the shard will be assign after that.
+        // If it is not, it will be respawned soon, and the shards will be assigned afterward.
         if let Some(handles) = &mut self.handles_opt {
             info!(
                 shard_ids=?assign_shards_message.0.shard_ids,
