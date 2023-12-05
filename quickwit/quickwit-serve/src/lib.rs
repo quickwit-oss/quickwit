@@ -383,7 +383,7 @@ pub async fn serve_quickwit(
     let (ingest_router_service, ingester_service_opt) = setup_ingest_v2(
         &node_config,
         &cluster,
-        event_broker.clone(),
+        &event_broker,
         control_plane_service.clone(),
         ingester_pool,
     )
@@ -583,7 +583,7 @@ pub async fn serve_quickwit(
 async fn setup_ingest_v2(
     config: &NodeConfig,
     cluster: &Cluster,
-    event_broker: EventBroker,
+    event_broker: &EventBroker,
     control_plane: ControlPlaneServiceClient,
     ingester_pool: IngesterPool,
 ) -> anyhow::Result<(IngestRouterServiceClient, Option<IngesterServiceClient>)> {
@@ -596,11 +596,11 @@ async fn setup_ingest_v2(
         .get();
     let ingest_router = IngestRouter::new(
         self_node_id.clone(),
-        event_broker,
         control_plane,
         ingester_pool.clone(),
         replication_factor,
     );
+    ingest_router.subscribe(event_broker);
     let ingest_router_service = IngestRouterServiceClient::new(ingest_router);
 
     // We compute the burst limit as something a bit larger than the content length limit, because
@@ -626,6 +626,7 @@ async fn setup_ingest_v2(
             replication_factor,
         )
         .await?;
+        ingester.subscribe(event_broker);
         let ingester_service = IngesterServiceClient::new(ingester);
         Some(ingester_service)
     } else {

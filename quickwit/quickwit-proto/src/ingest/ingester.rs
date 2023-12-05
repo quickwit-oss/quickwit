@@ -190,7 +190,9 @@ impl TruncateShardsSubrequest {
         queue_id(&self.index_uid, &self.source_id, self.shard_id)
     }
 
-    pub fn to_position_inclusive(&self) -> Position {
-        self.to_position_inclusive.clone().unwrap_or_default()
+    pub fn truncate_up_to_position_inclusive(&self) -> Position {
+        self.truncate_up_to_position_inclusive
+            .clone()
+            .unwrap_or_default()
     }
 }
