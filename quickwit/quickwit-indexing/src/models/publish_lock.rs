@@ -63,6 +63,14 @@ impl Default for PublishLockInner {
 }
 
 impl PublishLock {
+    pub fn dead() -> Self {
+        PublishLock {
+            inner: Arc::new(PublishLockInner {
+                alive: AtomicBool::new(false),
+                mutex: Mutex::default(),
+            }),
+        }
+    }
     pub async fn acquire(&self) -> Option<MutexGuard<'_, ()>> {
         let guard = self.inner.mutex.lock().await;
         if self.is_dead() {
@@ -111,5 +119,11 @@ mod tests {
         lock.kill().await;
         assert!(lock.is_dead());
         assert!(lock.acquire().await.is_none());
+    }
+
+    #[test]
+    fn test_publish_lock_dead() {
+        let publish_lock = PublishLock::dead();
+        assert!(publish_lock.is_dead());
     }
 }

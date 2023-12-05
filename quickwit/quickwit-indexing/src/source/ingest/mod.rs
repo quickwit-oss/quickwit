@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::BTreeSet;
 use std::fmt;
 use std::sync::Arc;
 use std::time::Duration;
@@ -24,7 +25,6 @@ use std::time::Duration;
 use anyhow::{bail, Context};
 use async_trait::async_trait;
 use fnv::FnvHashMap;
-use itertools::Itertools;
 use quickwit_actors::{ActorExitStatus, Mailbox};
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::retry::RetryParams;
@@ -116,10 +116,10 @@ impl ClientId {
 enum IndexingStatus {
     #[default]
     Active,
-    // We have emitted all documents of the pipeline until EOF.
-    // Disclaimer: a complete status does not mean that all documents have been indexed.
-    // Some document might be still travelling in the pipeline, and may not have been published
-    // yet.
+    // We have received all documents from the stream. Note they
+    // are not necessarily published yet.
+    EofReached,
+    // All documents have been indexed AND published.
     Complete,
     Error,
 }
@@ -128,6 +128,7 @@ enum IndexingStatus {
 struct AssignedShard {
     leader_id: NodeId,
     follower_id_opt: Option<NodeId>,
+    // This is just the shard id converted to a partition id object.
     partition_id: PartitionId,
     current_position_inclusive: Position,
     status: IndexingStatus,
@@ -174,7 +175,9 @@ impl IngestSource {
             ingester_pool.clone(),
             retry_params,
         );
-        let publish_lock = PublishLock::default();
+        // We start as dead. The first reset with a non-empty list of shards will create an alive
+        // publish lock.
+        let publish_lock = PublishLock::dead();
         let publish_token = client_id.new_publish_token();
 
         Ok(IngestSource {
@@ -217,7 +220,7 @@ impl IngestSource {
                     batch_builder.force_commit();
                 }
                 MRecord::Eof => {
-                    assigned_shard.status = IndexingStatus::Complete;
+                    assigned_shard.status = IndexingStatus::EofReached;
                     break;
                 }
                 MRecord::Unknown => {
@@ -239,7 +242,9 @@ impl IngestSource {
 
     fn process_fetch_stream_error(&mut self, fetch_stream_error: FetchStreamError) {
         if let Some(shard) = self.assigned_shards.get_mut(&fetch_stream_error.shard_id) {
-            if shard.status != IndexingStatus::Complete {
+            if shard.status != IndexingStatus::Complete
+                || shard.status != IndexingStatus::EofReached
+            {
                 shard.status = IndexingStatus::Error;
             }
         }
@@ -250,8 +255,21 @@ impl IngestSource {
             self.client_id.source_uid.clone(),
             truncate_positions.clone(),
         );
+
+        // Let's record all shards that have reached Eof as complete.
+        for (shard, truncate_position) in &truncate_positions {
+            if truncate_position == &Position::Eof {
+                if let Some(assigned_shard) = self.assigned_shards.get_mut(shard) {
+                    assigned_shard.status = IndexingStatus::Complete;
+                }
+            }
+        }
+
+        // We publish the event to the event broker.
         self.event_broker.publish(shard_positions_update);
 
+        // Finally, we push the information to ingesters in a best effort manner.
+        // If the request fail, we just log an error.
         let mut per_ingester_truncate_subrequests: FnvHashMap<
             &NodeId,
             Vec<TruncateShardsSubrequest>,
@@ -328,6 +346,76 @@ impl IngestSource {
         }
         false
     }
+
+    /// If the new assignment removes a shard that we were in the middle of indexing (ie they have
+    /// not reached `IndexingStatus::Complete` status yet), we need to reset the pipeline:
+    ///
+    /// Ongoing work and splits traveling through the pipeline will be dropped.
+    ///
+    /// After this method has returned we are guaranteed to have the following post condition:
+    /// - a alive publish lock / non-empty publish token
+    /// - all currently assigned shards included in the `new_assigned_shard_ids` set.
+    async fn reset_if_needed(
+        &mut self,
+        new_assigned_shard_ids: &BTreeSet<ShardId>,
+        doc_processor_mailbox: &Mailbox<DocProcessor>,
+        ctx: &SourceContext,
+    ) -> anyhow::Result<()> {
+        // No need to do anything if the list of shards before and after are empty.
+        if new_assigned_shard_ids.is_empty() && self.assigned_shards.is_empty() {
+            return Ok(());
+        }
+
+        // There are two reasons why we might want to reset the pipeline.
+        // 1) it has never been initialized in the first place. This happens typically on the first
+        // call to `assign_shards` with a non-empty list of shards. We check that by looking at
+        // whether the publish lock is dead or not.
+        // 2) we are removing a shard that has not reached the complete status yet.
+        let reset_needed: bool = self.publish_lock.is_dead()
+            || self
+                .assigned_shards
+                .keys()
+                .copied()
+                .filter(|shard_id| !new_assigned_shard_ids.contains(shard_id))
+                .any(|removed_shard_id| {
+                    let Some(assigned_shard) = self.assigned_shards.get(&removed_shard_id) else {
+                        return false;
+                    };
+                    assigned_shard.status != IndexingStatus::Complete
+                });
+
+        if !reset_needed {
+            // Not need to reset the fetch streams, we can just remove the shard that have been
+            // completely indexed.
+            self.assigned_shards.retain(|shard_id, assignment| {
+                if new_assigned_shard_ids.contains(shard_id) {
+                    true
+                } else {
+                    assert_eq!(assignment.status, IndexingStatus::Complete);
+                    false
+                }
+            });
+            return Ok(());
+        }
+
+        warn!("resetting pipeline");
+        self.assigned_shards.clear();
+        self.fetch_stream.reset();
+        self.publish_lock.kill().await;
+        self.publish_lock = PublishLock::default();
+        self.publish_token = self.client_id.new_publish_token();
+        ctx.send_message(
+            doc_processor_mailbox,
+            NewPublishLock(self.publish_lock.clone()),
+        )
+        .await?;
+        ctx.send_message(
+            doc_processor_mailbox,
+            NewPublishToken(self.publish_token.clone()),
+        )
+        .await?;
+        Ok(())
+    }
 }
 
 #[async_trait]
@@ -376,47 +464,37 @@ impl Source for IngestSource {
 
     async fn assign_shards(
         &mut self,
-        mut new_assigned_shard_ids: Vec<ShardId>,
+        new_assigned_shard_ids: BTreeSet<ShardId>,
         doc_processor_mailbox: &Mailbox<DocProcessor>,
         ctx: &SourceContext,
     ) -> anyhow::Result<()> {
-        // TODO: Remove this check once the control plane stops sending identical assignments.
-        let current_assigned_shard_ids = self
+        self.reset_if_needed(&new_assigned_shard_ids, doc_processor_mailbox, ctx)
+            .await?;
+
+        // As enforced by `reset_if_needed`, at this point, all currently assigned shards should be
+        // in the new_assigned_shards.
+        debug_assert!(self
             .assigned_shards
             .keys()
-            .copied()
-            .sorted()
-            .collect::<Vec<ShardId>>();
+            .all(|shard_id| new_assigned_shard_ids.contains(shard_id)));
 
-        new_assigned_shard_ids.sort();
-
-        if current_assigned_shard_ids == new_assigned_shard_ids {
+        if self.assigned_shards.len() == new_assigned_shard_ids.len() {
+            // Nothing to do.
+            // The set shards is unchanged.
             return Ok(());
         }
-        info!("new shard assignment: `{:?}`", new_assigned_shard_ids);
 
-        self.assigned_shards.clear();
-        self.fetch_stream.reset();
-        self.publish_lock.kill().await;
-        self.publish_lock = PublishLock::default();
-        self.publish_token = self.client_id.new_publish_token();
+        let added_shard_ids: Vec<ShardId> = new_assigned_shard_ids
+            .into_iter()
+            .filter(|shard_id| !self.assigned_shards.contains_key(shard_id))
+            .collect();
 
-        ctx.send_message(
-            doc_processor_mailbox,
-            NewPublishLock(self.publish_lock.clone()),
-        )
-        .await?;
-
-        ctx.send_message(
-            doc_processor_mailbox,
-            NewPublishToken(self.publish_token.clone()),
-        )
-        .await?;
+        info!(added_shards=?added_shard_ids, "adding shards assignment");
 
         let acquire_shards_subrequest = AcquireShardsSubrequest {
             index_uid: self.client_id.source_uid.index_uid.to_string(),
             source_id: self.client_id.source_uid.source_id.clone(),
-            shard_ids: new_assigned_shard_ids,
+            shard_ids: added_shard_ids,
             publish_token: self.publish_token.clone(),
         };
         let acquire_shards_request = AcquireShardsRequest {
@@ -426,7 +504,6 @@ impl Source for IngestSource {
             .protect_future(self.metastore.acquire_shards(acquire_shards_request))
             .await
             .context("failed to acquire shards")?;
-
         let acquire_shards_subresponse = acquire_shards_response
             .subresponses
             .into_iter()
@@ -466,7 +543,6 @@ impl Source for IngestSource {
                 IndexingStatus::Active
             };
             truncate_positions.push((shard_id, current_position_inclusive.clone()));
-
             let assigned_shard = AssignedShard {
                 leader_id,
                 follower_id_opt,
@@ -477,6 +553,7 @@ impl Source for IngestSource {
             self.assigned_shards.insert(shard_id, assigned_shard);
         }
         self.truncate(truncate_positions).await;
+
         Ok(())
     }
 
@@ -491,7 +568,6 @@ impl Source for IngestSource {
             let shard_id = partition_id.as_u64().expect("shard ID should be a u64");
             truncate_positions.push((shard_id, position));
         }
-
         self.truncate(truncate_positions).await;
         Ok(())
     }
@@ -511,9 +587,11 @@ impl Source for IngestSource {
 
 #[cfg(test)]
 mod tests {
+    use std::iter::once;
     use std::path::PathBuf;
 
     use bytes::Bytes;
+    use itertools::Itertools;
     use quickwit_actors::{ActorContext, Universe};
     use quickwit_common::ServiceStream;
     use quickwit_config::{SourceConfig, SourceParams};
@@ -530,6 +608,11 @@ mod tests {
     use crate::models::RawDocBatch;
     use crate::source::SourceActor;
 
+    // In this test, we simulate a source to which we sequentially assign the following set of
+    // shards []
+    // [1] (triggers a reset, and the creation of a publish lock)
+    // [1,2]
+    // [2,3] (which triggers a reset)
     #[tokio::test]
     async fn test_ingest_source_assign_shards() {
         let pipeline_id = IndexingPipelineId {
@@ -545,14 +628,46 @@ mod tests {
         let mut mock_metastore = MetastoreServiceClient::mock();
         mock_metastore
             .expect_acquire_shards()
+            .withf(|request| {
+                assert_eq!(request.subrequests.len(), 1);
+                request.subrequests[0].shard_ids == [0]
+            })
             .once()
+            .returning(|request| {
+                let subrequest = &request.subrequests[0];
+                assert_eq!(subrequest.index_uid, "test-index:0");
+                assert_eq!(subrequest.source_id, "test-source");
+                let response = AcquireShardsResponse {
+                    subresponses: vec![AcquireShardsSubresponse {
+                        index_uid: "test-index:0".to_string(),
+                        source_id: "test-source".to_string(),
+                        acquired_shards: vec![Shard {
+                            leader_id: "test-ingester-0".to_string(),
+                            follower_id: None,
+                            index_uid: "test-index:0".to_string(),
+                            source_id: "test-source".to_string(),
+                            shard_id: 0,
+                            shard_state: ShardState::Open as i32,
+                            publish_position_inclusive: Some(10u64.into()),
+                            publish_token: Some(publish_token.to_string()),
+                        }],
+                    }],
+                };
+                Ok(response)
+            });
+        mock_metastore
+            .expect_acquire_shards()
+            .once()
+            .withf(|request| {
+                assert_eq!(request.subrequests.len(), 1);
+                request.subrequests[0].shard_ids == [1]
+            })
             .returning(|request| {
                 assert_eq!(request.subrequests.len(), 1);
 
                 let subrequest = &request.subrequests[0];
                 assert_eq!(subrequest.index_uid, "test-index:0");
                 assert_eq!(subrequest.source_id, "test-source");
-                assert_eq!(subrequest.shard_ids, vec![1, 2]);
 
                 let response = AcquireShardsResponse {
                     subresponses: vec![AcquireShardsSubresponse {
@@ -572,27 +687,108 @@ mod tests {
                 };
                 Ok(response)
             });
-        let ingester_pool = IngesterPool::default();
-
-        let mut ingester_mock_0 = IngesterServiceClient::mock();
-        ingester_mock_0
-            .expect_open_fetch_stream()
+        mock_metastore
+            .expect_acquire_shards()
+            .withf(|request| {
+                assert_eq!(request.subrequests.len(), 1);
+                request.subrequests[0].shard_ids == [1, 2]
+            })
             .once()
             .returning(|request| {
+                assert_eq!(request.subrequests.len(), 1);
+
+                let subrequest = &request.subrequests[0];
+                assert_eq!(subrequest.index_uid, "test-index:0");
+                assert_eq!(subrequest.source_id, "test-source");
+
+                let response = AcquireShardsResponse {
+                    subresponses: vec![AcquireShardsSubresponse {
+                        index_uid: "test-index:0".to_string(),
+                        source_id: "test-source".to_string(),
+                        acquired_shards: vec![
+                            Shard {
+                                leader_id: "test-ingester-0".to_string(),
+                                follower_id: None,
+                                index_uid: "test-index:0".to_string(),
+                                source_id: "test-source".to_string(),
+                                shard_id: 1,
+                                shard_state: ShardState::Open as i32,
+                                publish_position_inclusive: Some(11u64.into()),
+                                publish_token: Some(publish_token.to_string()),
+                            },
+                            Shard {
+                                leader_id: "test-ingester-0".to_string(),
+                                follower_id: None,
+                                index_uid: "test-index:0".to_string(),
+                                source_id: "test-source".to_string(),
+                                shard_id: 2,
+                                shard_state: ShardState::Open as i32,
+                                publish_position_inclusive: Some(12u64.into()),
+                                publish_token: Some(publish_token.to_string()),
+                            },
+                        ],
+                    }],
+                };
+                Ok(response)
+            });
+        let ingester_pool = IngesterPool::default();
+
+        // This sequence is used to remove the race condition by waiting for the fetch stream
+        // request.
+        let (sequence_tx, mut sequence_rx) = tokio::sync::mpsc::unbounded_channel::<usize>();
+
+        let mut ingester_mock_0 = IngesterServiceClient::mock();
+        let sequence_tx_clone1 = sequence_tx.clone();
+        ingester_mock_0
+            .expect_open_fetch_stream()
+            .withf(|req| req.from_position_exclusive == Some(10u64.into()) && req.shard_id == 0)
+            .once()
+            .returning(move |request| {
+                sequence_tx_clone1.send(1).unwrap();
                 assert_eq!(
                     request.client_id,
                     "indexer/test-node/test-index:0/test-source/00000000000000000000000000"
                 );
                 assert_eq!(request.index_uid, "test-index:0");
                 assert_eq!(request.source_id, "test-source");
-                assert_eq!(request.shard_id, 1);
-                assert_eq!(request.from_position_exclusive, Some(11u64.into()));
-
+                let (_service_stream_tx, service_stream) = ServiceStream::new_bounded(1);
+                Ok(service_stream)
+            });
+        let sequence_tx_clone2 = sequence_tx.clone();
+        ingester_mock_0
+            .expect_open_fetch_stream()
+            .withf(|req| req.from_position_exclusive == Some(11u64.into()) && req.shard_id == 1)
+            .times(2)
+            .returning(move |request| {
+                sequence_tx_clone2.send(2).unwrap();
+                assert_eq!(
+                    request.client_id,
+                    "indexer/test-node/test-index:0/test-source/00000000000000000000000000"
+                );
+                assert_eq!(request.index_uid, "test-index:0");
+                assert_eq!(request.source_id, "test-source");
+                let (_service_stream_tx, service_stream) = ServiceStream::new_bounded(1);
+                Ok(service_stream)
+            });
+        let sequence_tx_clone3 = sequence_tx.clone();
+        ingester_mock_0
+            .expect_open_fetch_stream()
+            .withf(|req| req.from_position_exclusive == Some(12u64.into()) && req.shard_id == 2)
+            .once()
+            .returning(move |request| {
+                sequence_tx_clone3.send(3).unwrap();
+                assert_eq!(
+                    request.client_id,
+                    "indexer/test-node/test-index:0/test-source/00000000000000000000000000"
+                );
+                assert_eq!(request.index_uid, "test-index:0");
+                assert_eq!(request.source_id, "test-source");
                 let (_service_stream_tx, service_stream) = ServiceStream::new_bounded(1);
                 Ok(service_stream)
             });
         ingester_mock_0
             .expect_truncate_shards()
+            .withf(|truncate_req| truncate_req.subrequests[0].shard_id == 0)
             .once()
             .returning(|request| {
                 assert_eq!(request.ingester_id, "test-ingester-0");
@@ -601,8 +797,45 @@ mod tests {
                 let subrequest = &request.subrequests[0];
                 assert_eq!(subrequest.index_uid, "test-index:0");
                 assert_eq!(subrequest.source_id, "test-source");
-                assert_eq!(subrequest.shard_id, 1);
+                assert_eq!(subrequest.to_position_inclusive, Some(10u64.into()));
+
+                let response = TruncateShardsResponse {};
+                Ok(response)
+            });
+
+        ingester_mock_0
+            .expect_truncate_shards()
+            .withf(|truncate_req| truncate_req.subrequests[0].shard_id == 1)
+            .once()
+            .returning(|request| {
+                assert_eq!(request.ingester_id, "test-ingester-0");
+                assert_eq!(request.subrequests.len(), 1);
+                let subrequest = &request.subrequests[0];
+                assert_eq!(subrequest.index_uid, "test-index:0");
+                assert_eq!(subrequest.source_id, "test-source");
                 assert_eq!(subrequest.to_position_inclusive, Some(11u64.into()));
+                Ok(TruncateShardsResponse {})
+            });
+        ingester_mock_0
+            .expect_truncate_shards()
+            .withf(|truncate_req| {
+                truncate_req.subrequests.len() == 2
+                    && truncate_req.subrequests[0].shard_id == 1
+                    && truncate_req.subrequests[1].shard_id == 2
+            })
+            .once()
+            .returning(|request| {
+                assert_eq!(request.ingester_id, "test-ingester-0");
+
+                let subrequest = &request.subrequests[0];
+                assert_eq!(subrequest.index_uid, "test-index:0");
+                assert_eq!(subrequest.source_id, "test-source");
+                assert_eq!(subrequest.to_position_inclusive, Some(11u64.into()));
+
+                let subrequest = &request.subrequests[1];
+                assert_eq!(subrequest.index_uid, "test-index:0");
+                assert_eq!(subrequest.source_id, "test-source");
+                assert_eq!(subrequest.to_position_inclusive, Some(12u64.into()));
 
                 let response = TruncateShardsResponse {};
                 Ok(response)
@@ -638,22 +871,53 @@ mod tests {
         let ctx: SourceContext =
             ActorContext::for_test(&universe, source_mailbox, observable_state_tx);
 
-        // In this scenario, the indexer will only be able to acquire shard 1.
+        // We assign [0] (previously []).
+        // The stream does not need to be reset.
+        let shard_ids: BTreeSet<ShardId> = once(0).collect();
         let publish_lock = source.publish_lock.clone();
-
         source
-            .assign_shards(vec![1, 2], &doc_processor_mailbox, &ctx)
+            .assign_shards(shard_ids, &doc_processor_mailbox, &ctx)
+            .await
+            .unwrap();
+        assert_eq!(sequence_rx.recv().await.unwrap(), 1);
+        assert!(!publish_lock.is_alive());
+
+        assert!(source.publish_lock.is_alive());
+        assert!(!source.publish_token.is_empty());
+
+        // We assign [0,1] (previously [0]). This should just add the shard 1.
+        // The stream does not need to be reset.
+        let shard_ids: BTreeSet<ShardId> = (0..2).collect();
+        let publish_lock = source.publish_lock.clone();
+        source
+            .assign_shards(shard_ids, &doc_processor_mailbox, &ctx)
+            .await
+            .unwrap();
+        assert_eq!(sequence_rx.recv().await.unwrap(), 2);
+        assert!(publish_lock.is_alive());
+        assert_eq!(publish_lock, source.publish_lock);
+
+        // We assign [1,2]. (previously [0,1]) This should reset the stream
+        // because the shard 0 has to be removed.
+        // The publish lock should be killed and a new one should be created.
+        let shard_ids: BTreeSet<ShardId> = (1..3).collect();
+        let publish_lock = source.publish_lock.clone();
+        source
+            .assign_shards(shard_ids, &doc_processor_mailbox, &ctx)
             .await
             .unwrap();
 
-        assert!(publish_lock.is_dead());
+        assert_eq!(sequence_rx.recv().await.unwrap(), 2);
+        assert_eq!(sequence_rx.recv().await.unwrap(), 3);
+        assert!(!publish_lock.is_alive());
         assert!(source.publish_lock.is_alive());
+        assert_ne!(publish_lock, source.publish_lock);
 
         let NewPublishLock(publish_lock) = doc_processor_inbox
             .recv_typed_message::<NewPublishLock>()
             .await
             .unwrap();
-        assert_eq!(&source.publish_lock, &publish_lock);
+        assert_ne!(&source.publish_lock, &publish_lock);
 
         // assert!(publish_token != source.publish_token);
 
@@ -663,7 +927,7 @@ mod tests {
             .unwrap();
         assert_eq!(source.publish_token, publish_token);
 
-        assert_eq!(source.assigned_shards.len(), 1);
+        assert_eq!(source.assigned_shards.len(), 2);
 
         let assigned_shard = source.assigned_shards.get(&1).unwrap();
         let expected_assigned_shard = AssignedShard {
@@ -671,6 +935,16 @@ mod tests {
             follower_id_opt: None,
             partition_id: 1u64.into(),
             current_position_inclusive: 11u64.into(),
+            status: IndexingStatus::Active,
+        };
+        assert_eq!(assigned_shard, &expected_assigned_shard);
+
+        let assigned_shard = source.assigned_shards.get(&2).unwrap();
+        let expected_assigned_shard = AssignedShard {
+            leader_id: "test-ingester-0".into(),
+            follower_id_opt: None,
+            partition_id: 2u64.into(),
+            current_position_inclusive: 12u64.into(),
             status: IndexingStatus::Active,
         };
         assert_eq!(assigned_shard, &expected_assigned_shard);
@@ -779,8 +1053,11 @@ mod tests {
         let ctx: SourceContext =
             ActorContext::for_test(&universe, source_mailbox, observable_state_tx);
 
+        // In this scenario, the indexer will only be able to acquire shard 1.
+        let shard_ids: BTreeSet<ShardId> = once(1).collect();
+
         source
-            .assign_shards(vec![1], &doc_processor_mailbox, &ctx)
+            .assign_shards(shard_ids, &doc_processor_mailbox, &ctx)
             .await
             .unwrap();
 
@@ -862,7 +1139,7 @@ mod tests {
             .returning(|request| {
                 assert_eq!(
                     request.client_id,
-                    "indexer/test-node/test-index:0/test-source/0"
+                    "indexer/test-node/test-index:0/test-source/00000000000000000000000000"
                 );
                 assert_eq!(request.index_uid, "test-index:0");
                 assert_eq!(request.source_id, "test-source");
@@ -932,6 +1209,8 @@ mod tests {
         let ctx: SourceContext =
             ActorContext::for_test(&universe, source_mailbox, observable_state_tx);
 
+        // In this scenario, the indexer will only be able to acquire shard 1.
+        let shard_ids: BTreeSet<ShardId> = (1..3).collect();
         assert_eq!(
             shard_positions_update_rx.try_recv().unwrap_err(),
             TryRecvError::Empty
@@ -939,7 +1218,7 @@ mod tests {
 
         // In this scenario, the indexer will only be able to acquire shard 1.
         source
-            .assign_shards(vec![1, 2], &doc_processor_mailbox, &ctx)
+            .assign_shards(shard_ids, &doc_processor_mailbox, &ctx)
             .await
             .unwrap();
 
@@ -1079,7 +1358,7 @@ mod tests {
             .await
             .unwrap();
         let shard = source.assigned_shards.get(&2).unwrap();
-        assert_eq!(shard.status, IndexingStatus::Complete);
+        assert_eq!(shard.status, IndexingStatus::EofReached);
 
         fetch_response_tx
             .send(Err(FetchStreamError {

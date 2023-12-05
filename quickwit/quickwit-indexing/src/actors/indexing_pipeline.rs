@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -37,6 +38,7 @@ use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::metastore::{
     IndexMetadataRequest, MetastoreError, MetastoreService, MetastoreServiceClient,
 };
+use quickwit_proto::types::ShardId;
 use quickwit_storage::{Storage, StorageResolver};
 use tokio::sync::Semaphore;
 use tracing::{debug, error, info, instrument};
@@ -50,7 +52,9 @@ use crate::actors::uploader::UploaderType;
 use crate::actors::{Indexer, Packager, Publisher, Uploader};
 use crate::merge_policy::MergePolicy;
 use crate::models::IndexingStatistics;
-use crate::source::{quickwit_supported_sources, AssignShards, SourceActor, SourceRuntimeArgs};
+use crate::source::{
+    quickwit_supported_sources, AssignShards, Assignment, SourceActor, SourceRuntimeArgs,
+};
 use crate::split_store::IndexingSplitStore;
 use crate::SplitsUpdateMailbox;
 
@@ -119,6 +123,10 @@ pub struct IndexingPipeline {
     handles_opt: Option<IndexingPipelineHandles>,
     // Killswitch used for the actors in the pipeline. This is not the supervisor killswitch.
     kill_switch: KillSwitch,
+    // The set of shard is something that can change dynamically without necessarily
+    // requiring a respawn of the pipeline.
+    // We keep the list of shards here however, to reassign them after a respawn.
+    shard_ids: BTreeSet<ShardId>,
 }
 
 #[async_trait]
@@ -153,12 +161,13 @@ impl Actor for IndexingPipeline {
 
 impl IndexingPipeline {
     pub fn new(params: IndexingPipelineParams) -> Self {
-        Self {
+        IndexingPipeline {
             params,
             previous_generations_statistics: Default::default(),
             handles_opt: None,
             kill_switch: KillSwitch::default(),
             statistics: IndexingStatistics::default(),
+            shard_ids: Default::default(),
         }
     }
 
@@ -258,6 +267,7 @@ impl IndexingPipeline {
             .set_num_spawn_attempts(self.statistics.num_spawn_attempts);
         let pipeline_metrics_opt = handles.indexer.last_observation().pipeline_metrics_opt;
         self.statistics.pipeline_metrics_opt = pipeline_metrics_opt;
+        self.statistics.shard_ids = self.shard_ids.clone();
         ctx.observe(self);
     }
 
@@ -453,6 +463,10 @@ impl IndexingPipeline {
             .set_mailboxes(source_mailbox, source_inbox)
             .set_kill_switch(self.kill_switch.clone())
             .spawn(actor_source);
+        let assign_shards_message = AssignShards(Assignment {
+            shard_ids: self.shard_ids.clone(),
+        });
+        source_mailbox.send_message(assign_shards_message).await?;
 
         // Increment generation once we are sure there will be no spawning error.
         self.previous_generations_statistics = self.statistics.clone();
@@ -543,18 +557,23 @@ impl Handler<AssignShards> for IndexingPipeline {
     async fn handle(
         &mut self,
         assign_shards_message: AssignShards,
-        _ctx: &ActorContext<Self>,
+        ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
+        self.shard_ids = assign_shards_message.0.shard_ids.clone();
+        // If the pipeline is running, we forward the message to its source.
+        // If it is not, it will be respawned soon, and the shards will be assigned afterward.
         if let Some(handles) = &mut self.handles_opt {
             info!(
                 shard_ids=?assign_shards_message.0.shard_ids,
-                "assigning shards to indexing pipeline."
+                "assigning shards to indexing pipeline"
             );
             handles
                 .source_mailbox
                 .send_message(assign_shards_message)
                 .await?;
         }
+        // We perform observe to make sure the set of shard ids is up to date.
+        self.perform_observe(ctx);
         Ok(())
     }
 }
