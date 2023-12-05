@@ -466,38 +466,34 @@ impl IndexingService {
         Ok(merge_planner_mailbox)
     }
 
-    /// Applies the indexing plan by:
-    /// - Stopping the running pipelines not present in the provided plan.
-    /// - Starting the pipelines that are not running.
-    /// Note: the indexing is a list of `IndexingTask` and has no ordinal
-    /// like a pipeline. We assign an ordinal for each `IndexingTask` from
-    /// [0, n) with n the number of indexing tasks given a (index_id, source_id).
-    async fn apply_indexing_plan(
-        &mut self,
-        ctx: &ActorContext<Self>,
-        physical_indexing_plan_request: ApplyIndexingPlanRequest,
-    ) -> Result<ApplyIndexingPlanResponse, IndexingError> {
-        let pipelines_uid_in_plan: FnvHashSet<PipelineUid> = physical_indexing_plan_request
-            .indexing_tasks
+    async fn find_and_shutdown_decommissioned_pipelines(&mut self, tasks: &[IndexingTask]) {
+        let pipeline_uids_in_plan: FnvHashSet<PipelineUid> = tasks
             .iter()
             .map(|indexing_task| indexing_task.pipeline_uid())
             .collect();
-        let pipeline_to_add: FnvHashSet<&IndexingTask> = physical_indexing_plan_request
-            .indexing_tasks
+
+        let pipeline_uids_to_remove: Vec<PipelineUid> = self
+            .indexing_pipelines
+            .keys()
+            .cloned()
+            .filter(|pipeline_uid| !pipeline_uids_in_plan.contains(pipeline_uid))
+            .collect::<Vec<_>>();
+
+        // Shut down currently running pipelines that are missing in the new plan.
+        self.shutdown_pipelines(&pipeline_uids_to_remove).await;
+    }
+
+    async fn find_and_spawn_new_pipelines(
+        &mut self,
+        tasks: &[IndexingTask],
+        ctx: &ActorContext<Self>,
+    ) -> Result<Vec<IndexingPipelineId>, IndexingError> {
+        let pipeline_ids_to_add: Vec<IndexingPipelineId> = tasks
             .iter()
             .filter(|indexing_task| {
                 let pipeline_uid = indexing_task.pipeline_uid();
                 !self.indexing_pipelines.contains_key(&pipeline_uid)
             })
-            .collect::<FnvHashSet<_>>();
-        let pipeline_uid_to_remove: Vec<PipelineUid> = self
-            .indexing_pipelines
-            .keys()
-            .cloned()
-            .filter(|pipeline_uid| !pipelines_uid_in_plan.contains(pipeline_uid))
-            .collect::<Vec<_>>();
-        let indexing_pipeline_ids_to_add: Vec<IndexingPipelineId> = pipeline_to_add
-            .iter()
             .flat_map(|indexing_task| {
                 let pipeline_uid = indexing_task.pipeline_uid();
                 let index_uid = IndexUid::parse(indexing_task.index_uid.clone()).ok()?;
@@ -509,23 +505,25 @@ impl IndexingService {
                 })
             })
             .collect();
+        self.spawn_pipelines(&pipeline_ids_to_add, ctx).await
+    }
 
-        // Spawn new pipeline in the new plan that are not currently running
-        let failed_spawning_pipeline_ids = self
-            .spawn_pipelines(ctx, &indexing_pipeline_ids_to_add[..])
-            .await?;
-
-        // TODO: Temporary hack to assign shards to pipelines.
-        for indexing_task in &physical_indexing_plan_request.indexing_tasks {
-            if indexing_task.shard_ids.is_empty() {
+    /// For all Ingest V2 pipelines, assigns the set of shards they should be working on.
+    /// This is done regardless of whether there has been a change in their shard list
+    /// or not.
+    ///
+    /// If a pipeline actor has failed, this function just logs an error.
+    async fn assign_shards_to_pipelines(&mut self, tasks: &[IndexingTask]) {
+        for task in tasks {
+            if task.shard_ids.is_empty() {
                 continue;
             }
-            let pipeline_uid = indexing_task.pipeline_uid();
+            let pipeline_uid = task.pipeline_uid();
             let Some(pipeline_handle) = self.indexing_pipelines.get(&pipeline_uid) else {
                 continue;
             };
             let assignment = Assignment {
-                shard_ids: indexing_task.shard_ids.clone(),
+                shard_ids: task.shard_ids.iter().copied().collect(),
             };
             let message = AssignShards(assignment);
 
@@ -533,27 +531,37 @@ impl IndexingService {
                 error!(error=%error, "failed to assign shards to indexing pipeline");
             }
         }
+    }
 
-        // Shut down currently running pipelines that are missing in the new plan.
-        self.shutdown_pipelines(&pipeline_uid_to_remove).await;
-
+    /// Applies the indexing plan by:
+    /// - Stopping the running pipelines not present in the provided plan.
+    /// - Starting the pipelines that are not running.
+    /// Note: the indexing is a list of `IndexingTask` and has no ordinal
+    /// like a pipeline. We assign an ordinal for each `IndexingTask` from
+    /// [0, n) with n the number of indexing tasks given a (index_id, source_id).
+    async fn apply_indexing_plan(
+        &mut self,
+        tasks: &[IndexingTask],
+        ctx: &ActorContext<Self>,
+    ) -> Result<(), IndexingError> {
+        self.find_and_shutdown_decommissioned_pipelines(tasks).await;
+        let failed_spawning_pipeline_ids = self.find_and_spawn_new_pipelines(tasks, ctx).await?;
+        self.assign_shards_to_pipelines(tasks).await;
         self.update_cluster_running_indexing_tasks_in_chitchat()
             .await;
-
         if !failed_spawning_pipeline_ids.is_empty() {
             return Err(IndexingError::SpawnPipelinesError {
                 pipeline_ids: failed_spawning_pipeline_ids,
             });
         }
-
-        Ok(ApplyIndexingPlanResponse {})
+        Ok(())
     }
 
     /// Spawns the pipelines with supplied ids and returns a list of failed pipelines.
     async fn spawn_pipelines(
         &mut self,
-        ctx: &ActorContext<Self>,
         added_pipeline_ids: &[IndexingPipelineId],
+        ctx: &ActorContext<Self>,
     ) -> Result<Vec<IndexingPipelineId>, IndexingError> {
         // We fetch the new indexes metadata.
         let indexes_metadata_futures = added_pipeline_ids
@@ -645,21 +653,23 @@ impl IndexingService {
     }
 
     async fn update_cluster_running_indexing_tasks_in_chitchat(&self) {
-        let indexing_tasks = self
+        let mut indexing_tasks: Vec<IndexingTask> = self
             .indexing_pipelines
             .values()
-            .map(|pipeline_handle| &pipeline_handle.indexing_pipeline_id)
-            .map(|pipeline_id| IndexingTask {
-                index_uid: pipeline_id.index_uid.to_string(),
-                source_id: pipeline_id.source_id.clone(),
-                pipeline_uid: Some(pipeline_id.pipeline_uid),
-                shard_ids: Vec::new(),
+            .map(|handle| IndexingTask {
+                index_uid: handle.indexing_pipeline_id.index_uid.to_string(),
+                source_id: handle.indexing_pipeline_id.source_id.clone(),
+                pipeline_uid: Some(handle.indexing_pipeline_id.pipeline_uid),
+                shard_ids: handle
+                    .handle
+                    .last_observation()
+                    .shard_ids
+                    .iter()
+                    .copied()
+                    .collect(),
             })
-            // Sort indexing tasks so it's more readable for debugging purpose.
-            .sorted_by(|left, right| {
-                (&left.index_uid, &left.source_id).cmp(&(&right.index_uid, &right.source_id))
-            })
-            .collect_vec();
+            .collect();
+        indexing_tasks.sort_unstable_by_key(|task| task.pipeline_uid);
 
         if let Err(error) = self
             .cluster
@@ -820,7 +830,10 @@ impl Handler<ApplyIndexingPlanRequest> for IndexingService {
         plan_request: ApplyIndexingPlanRequest,
         ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
-        Ok(self.apply_indexing_plan(ctx, plan_request).await)
+        Ok(self
+            .apply_indexing_plan(&plan_request.indexing_tasks, ctx)
+            .await
+            .map(|_| ApplyIndexingPlanResponse {}))
     }
 }
 

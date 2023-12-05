@@ -447,7 +447,7 @@ pub fn parse_indexing_tasks(node_state: &NodeState) -> Vec<IndexingTask> {
 ///
 /// If previous indexing tasks were present in the node state but were not in the given tasks, they
 /// are marked for deletion.
-pub fn set_indexing_tasks_in_node_state(
+pub(crate) fn set_indexing_tasks_in_node_state(
     indexing_tasks: &[IndexingTask],
     node_state: &mut NodeState,
 ) {
