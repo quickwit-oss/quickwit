@@ -318,6 +318,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
 
                     let split_streamer = SplitPayloadBuilder::get_split_payload(
                         &packaged_split.split_files,
+                        &packaged_split.serialized_split_fields,
                         &packaged_split.hotcache_bytes,
                     )?;
                     let split_metadata = create_split_metadata(
@@ -465,6 +466,7 @@ async fn upload_split(
 ) -> anyhow::Result<()> {
     let split_streamer = SplitPayloadBuilder::get_split_payload(
         &packaged_split.split_files,
+        &packaged_split.serialized_split_fields,
         &packaged_split.hotcache_bytes,
     )?;
 
@@ -561,6 +563,7 @@ mod tests {
                         delete_opstamp: 10,
                         num_merge_ops: 0,
                     },
+                    serialized_split_fields: Vec::new(),
                     split_scratch_directory,
                     tags: Default::default(),
                     hotcache_bytes: Vec::new(),
@@ -672,6 +675,7 @@ mod tests {
                 delete_opstamp: 0,
                 num_merge_ops: 0,
             },
+            serialized_split_fields: Vec::new(),
             split_scratch_directory: split_scratch_directory_1,
             tags: Default::default(),
             split_files: Vec::new(),
@@ -695,6 +699,7 @@ mod tests {
                 delete_opstamp: 0,
                 num_merge_ops: 0,
             },
+            serialized_split_fields: Vec::new(),
             split_scratch_directory: split_scratch_directory_2,
             tags: Default::default(),
             split_files: Vec::new(),
@@ -812,6 +817,7 @@ mod tests {
                         delete_opstamp: 10,
                         num_merge_ops: 0,
                     },
+                    serialized_split_fields: Vec::new(),
                     split_scratch_directory,
                     tags: Default::default(),
                     hotcache_bytes: Vec::new(),
@@ -990,6 +996,7 @@ mod tests {
                         delete_opstamp: 10,
                         num_merge_ops: 0,
                     },
+                    serialized_split_fields: Vec::new(),
                     split_scratch_directory,
                     tags: Default::default(),
                     hotcache_bytes: Vec::new(),

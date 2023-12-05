@@ -188,11 +188,11 @@ impl ClusterSandbox {
         Ok(Self {
             node_configs,
             searcher_rest_client: QuickwitClientBuilder::new(transport_url(
-                searcher_config.node_config.rest_listen_addr,
+                searcher_config.node_config.rest_config.listen_addr,
             ))
             .build(),
             indexer_rest_client: QuickwitClientBuilder::new(transport_url(
-                indexer_config.node_config.rest_listen_addr,
+                indexer_config.node_config.rest_config.listen_addr,
             ))
             .build(),
             _temp_dir: temp_dir,

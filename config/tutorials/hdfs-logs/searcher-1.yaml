@@ -1,7 +1,11 @@
 version: 0.6
 node_id: searcher-1
 listen_address: 127.0.0.1
-rest_listen_port: 7280
+rest:
+  listen_port: 7280
+ingest_api:
+  max_queue_memory_usage: 4GiB
+  max_queue_disk_usage: 8GiB
 peer_seeds:
   - 127.0.0.1:7290 # searcher-2
   - 127.0.0.1:7300 # searcher-3

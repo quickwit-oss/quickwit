@@ -18,7 +18,6 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashMap;
-use std::fmt::Debug;
 use std::io::{self, SeekFrom};
 use std::ops::Range;
 use std::path::{Path, PathBuf};
@@ -27,6 +26,7 @@ use async_trait::async_trait;
 use aws_smithy_http::byte_stream::ByteStream;
 use futures::{stream, StreamExt};
 use hyper::body::Body;
+use quickwit_common::shared_consts::SPLIT_FIELDS_FILE_NAME;
 use tokio::io::{AsyncReadExt, AsyncSeekExt};
 use tokio_util::io::ReaderStream;
 
@@ -106,9 +106,11 @@ impl PutPayload for FilePayload {
 }
 
 /// SplitPayloadBuilder is used to create a `SplitPayload`.
-#[derive(Debug, Default)]
+#[derive(Default)]
 pub struct SplitPayloadBuilder {
-    metadata: BundleStorageFileOffsets,
+    /// File name, payload, and range of the payload in the bundle file
+    /// Range coud be computed on the fly, and is just kept here for convenience.
+    payloads: Vec<(String, Box<dyn PutPayload>, Range<u64>)>,
     current_offset: usize,
 }
 
@@ -116,42 +118,61 @@ impl SplitPayloadBuilder {
     /// Creates a new SplitPayloadBuilder for given files and hotcache.
     pub fn get_split_payload(
         split_files: &[PathBuf],
+        serialized_split_fields: &[u8],
         hotcache: &[u8],
     ) -> anyhow::Result<SplitPayload> {
         let mut split_payload_builder = SplitPayloadBuilder::default();
         for file in split_files {
             split_payload_builder.add_file(file)?;
         }
+        split_payload_builder.add_payload(
+            SPLIT_FIELDS_FILE_NAME.to_string(),
+            Box::new(serialized_split_fields.to_vec()),
+        );
         let offsets = split_payload_builder.finalize(hotcache)?;
         Ok(offsets)
     }
 
+    /// Adds the payload to the bundle file.
+    pub fn add_payload(&mut self, file_name: String, payload: Box<dyn PutPayload>) {
+        let range = self.current_offset as u64..self.current_offset as u64 + payload.len();
+        self.current_offset += payload.len() as usize;
+        self.payloads.push((file_name, payload, range));
+    }
+
     /// Adds the file to the bundle file.
-    ///
-    /// The hotcache needs to be the last file that is added, in order to be able to read
-    /// the hotcache and the metadata in one continuous read.
     pub fn add_file(&mut self, path: &Path) -> io::Result<()> {
         let file = std::fs::metadata(path)?;
-        let file_range = self.current_offset as u64..self.current_offset as u64 + file.len();
-        self.current_offset += file.len() as usize;
-        self.metadata.files.insert(path.to_owned(), file_range);
+        let file_name = path
+            .file_name()
+            .and_then(std::ffi::OsStr::to_str)
+            .map(ToOwned::to_owned)
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!("Invalid file name in path {:?}", path),
+                )
+            })?;
+
+        let file_payload = FilePayload {
+            path: path.to_owned(),
+            len: file.len(),
+        };
+
+        self.add_payload(file_name, Box::new(file_payload));
+
         Ok(())
     }
 
     /// Writes the bundle file offsets metadata at the end of the bundle file,
     /// and returns the byte-range of this metadata information.
     pub fn finalize(self, hotcache: &[u8]) -> anyhow::Result<SplitPayload> {
+        // Add the fields metadata to the bundle metadata.
         // Build the footer.
-        let mut footer_bytes = Vec::new();
-        // Fix paths to be relative
         let metadata_with_fixed_paths = self
-            .metadata
-            .files
+            .payloads
             .iter()
-            .map(|(path, range)| {
-                let file_name = path.file_name().ok_or_else(|| {
-                    anyhow::anyhow!("could not extract file_name from path {path:?}")
-                })?;
+            .map(|(file_name, _, range)| {
                 let file_name = PathBuf::from(file_name);
                 Ok((file_name, range.start..range.end))
             })
@@ -163,23 +184,19 @@ impl SplitPayloadBuilder {
         let metadata_json =
             BundleStorageFileOffsetsVersions::serialize(&bundle_storage_file_offsets);
 
+        // The hotcache needs to be the next to the metadata in order to be able to read both
+        // in one continuous read.
+        let mut footer_bytes = Vec::new();
         footer_bytes.extend(&metadata_json);
         footer_bytes.extend((metadata_json.len() as u32).to_le_bytes());
         footer_bytes.extend(hotcache);
         footer_bytes.extend((hotcache.len() as u32).to_le_bytes());
 
-        let mut payloads: Vec<Box<dyn PutPayload>> = Vec::new();
-
-        let mut sorted_files = self.metadata.files.iter().collect::<Vec<_>>();
-        sorted_files.sort_by_key(|(_file, range)| range.start);
-
-        for (path, byte_range) in sorted_files {
-            let file_payload = FilePayload {
-                path: path.to_owned(),
-                len: byte_range.end - byte_range.start,
-            };
-            payloads.push(Box::new(file_payload));
-        }
+        let mut payloads: Vec<Box<dyn PutPayload>> = self
+            .payloads
+            .into_iter()
+            .map(|(_, payload, _)| payload)
+            .collect();
 
         payloads.push(Box::new(footer_bytes.to_vec()));
 
@@ -250,9 +267,9 @@ mod tests {
         file2.write_all(b"world")?;
 
         let split_payload =
-            SplitPayloadBuilder::get_split_payload(&[test_filepath1, test_filepath2], b"abc")?;
+            SplitPayloadBuilder::get_split_payload(&[test_filepath1, test_filepath2], &[], b"abc")?;
 
-        assert_eq!(split_payload.len(), 91);
+        assert_eq!(split_payload.len(), 128);
 
         Ok(())
     }
@@ -383,6 +400,7 @@ mod tests {
 
         let split_streamer = SplitPayloadBuilder::get_split_payload(
             &[test_filepath1.clone(), test_filepath2.clone()],
+            &[],
             &[1, 2, 3],
         )?;
 

@@ -164,6 +164,7 @@ mod tests {
     use std::fs::File;
     use std::io::Write;
 
+    use quickwit_common::shared_consts::SPLIT_FIELDS_FILE_NAME;
     use quickwit_storage::{PutPayload, SplitPayloadBuilder};
 
     use super::*;
@@ -182,6 +183,7 @@ mod tests {
 
         let split_streamer = SplitPayloadBuilder::get_split_payload(
             &[test_filepath1.clone(), test_filepath2.clone()],
+            &[],
             &[
                 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
             ],
@@ -213,6 +215,7 @@ mod tests {
 
         let split_streamer = SplitPayloadBuilder::get_split_payload(
             &[test_filepath1.clone(), test_filepath2.clone()],
+            &[],
             &[
                 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18,
             ],
@@ -251,12 +254,16 @@ mod tests {
 
         let split_streamer = SplitPayloadBuilder::get_split_payload(
             &[test_filepath1.clone(), test_filepath2.clone()],
+            &[5, 5, 5],
             &[1, 2, 3],
         )?;
 
         let data = split_streamer.read_all().await?;
 
         let bundle_dir = BundleDirectory::open_split(FileSlice::from(data.to_vec()))?;
+
+        let field_data = bundle_dir.atomic_read(Path::new(SPLIT_FIELDS_FILE_NAME))?;
+        assert_eq!(&*field_data, &[5, 5, 5]);
 
         let f1_data = bundle_dir.atomic_read(Path::new("f1"))?;
         assert_eq!(&*f1_data, &[123u8, 76u8]);

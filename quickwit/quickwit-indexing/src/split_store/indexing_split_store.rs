@@ -358,7 +358,11 @@ mod tests {
                 .store_split(
                     &split_metadata1,
                     &split_path,
-                    Box::new(SplitPayloadBuilder::get_split_payload(&[], &[5, 5, 5])?),
+                    Box::new(SplitPayloadBuilder::get_split_payload(
+                        &[],
+                        &[],
+                        &[5, 5, 5],
+                    )?),
                 )
                 .await?;
             assert!(!split_path.try_exists()?);
@@ -383,7 +387,11 @@ mod tests {
                 .store_split(
                     &split_metadata2,
                     &split_path,
-                    Box::new(SplitPayloadBuilder::get_split_payload(&[], &[5, 5, 5])?),
+                    Box::new(SplitPayloadBuilder::get_split_payload(
+                        &[],
+                        &[],
+                        &[5, 5, 5],
+                    )?),
                 )
                 .await?;
             assert!(!split_path.try_exists()?);

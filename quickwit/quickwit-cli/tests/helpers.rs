@@ -84,7 +84,8 @@ const DEFAULT_QUICKWIT_CONFIG: &str = r#"
     version: 0.6
     metastore_uri: #metastore_uri
     data_dir: #data_dir
-    rest_listen_port: #rest_listen_port
+    rest:
+        listen_port: #rest_listen_port
     grpc_listen_port: #grpc_listen_port
 "#;
 

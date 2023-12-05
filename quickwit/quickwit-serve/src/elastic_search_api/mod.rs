@@ -113,6 +113,7 @@ mod tests {
     use serde_json::Value as JsonValue;
     use warp::Filter;
 
+    use super::elastic_api_handlers;
     use super::model::ElasticSearchError;
     use crate::elastic_search_api::model::MultiSearchResponse;
     use crate::elastic_search_api::rest_handler::es_compat_cluster_info_handler;
@@ -160,6 +161,7 @@ mod tests {
             .reply(&es_search_api_handler)
             .await;
         assert_eq!(resp.status(), 200);
+        assert!(resp.headers().get("x-elastic-product").is_none(),);
         let string_body = String::from_utf8(resp.body().to_vec()).unwrap();
         let es_msearch_response: MultiSearchResponse = serde_json::from_str(&string_body).unwrap();
         assert_eq!(es_msearch_response.responses.len(), 2);
@@ -251,7 +253,7 @@ mod tests {
     async fn test_msearch_api_return_400_with_malformed_request_body() {
         let config = Arc::new(NodeConfig::for_test());
         let mock_search_service = MockSearchService::new();
-        let es_search_api_handler = super::elastic_api_handlers(
+        let es_search_api_handler = elastic_api_handlers(
             config,
             Arc::new(mock_search_service),
             ingest_service_client(),

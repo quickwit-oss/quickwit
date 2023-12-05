@@ -551,9 +551,12 @@ mod tests {
         file1.write_all(b"ab").unwrap();
         let mut file2 = File::create(&test_filepath2).unwrap();
         file2.write_all(b"def").unwrap();
-        let split_streamer =
-            SplitPayloadBuilder::get_split_payload(&[test_filepath1, test_filepath2], b"hotcache")
-                .unwrap();
+        let split_streamer = SplitPayloadBuilder::get_split_payload(
+            &[test_filepath1, test_filepath2],
+            &[],
+            b"hotcache",
+        )
+        .unwrap();
         let data = split_streamer.read_all().await.unwrap();
         let bundle_dir = BundleDirectory::open_split(FileSlice::from(data.to_vec())).unwrap();
         let f1_data = bundle_dir.atomic_read(Path::new("f1")).unwrap();
