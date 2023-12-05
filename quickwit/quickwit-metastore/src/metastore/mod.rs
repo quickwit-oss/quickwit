@@ -40,7 +40,7 @@ use quickwit_proto::metastore::{
     serde_utils, AddSourceRequest, CreateIndexRequest, DeleteTask, IndexMetadataRequest,
     IndexMetadataResponse, ListIndexesMetadataResponse, ListSplitsRequest, ListSplitsResponse,
     MetastoreError, MetastoreResult, MetastoreService, MetastoreServiceClient,
-    PublishSplitsRequest, StageSplitsRequest,
+    MetastoreServiceStream, PublishSplitsRequest, StageSplitsRequest,
 };
 use quickwit_proto::types::{IndexUid, SplitId};
 use time::OffsetDateTime;
@@ -49,7 +49,7 @@ use crate::checkpoint::IndexCheckpointDelta;
 use crate::{Split, SplitMetadata, SplitState};
 
 /// Splits batch size returned by the stream splits API
-const STREAM_SPLITS_CHUNK_SIZE: usize = 1000;
+const STREAM_SPLITS_CHUNK_SIZE: usize = 1_000;
 
 static METASTORE_METRICS_LAYER: Lazy<PrometheusMetricsLayer<1>> =
     Lazy::new(|| PrometheusMetricsLayer::new("metastore", ["request"]));
@@ -74,23 +74,52 @@ pub trait MetastoreServiceExt: MetastoreService {
             Err(error) => Err(error),
         }
     }
+}
 
-    /// Lists all splits matching the given query.
-    /// It calls `stream_splits` and collects the splits into a single vector.
-    /// This method is added for convenience and may be removed in the future to avoid
-    /// loading all splits in memory.
-    async fn list_splits(&mut self, query: ListSplitsRequest) -> MetastoreResult<Vec<Split>> {
-        let mut stream = self.stream_splits(query).await?;
+impl MetastoreServiceExt for MetastoreServiceClient {}
+
+/// Helper trait to collect splits from a [`MetastoreServiceStream<ListSplitsResponse>`].
+#[async_trait]
+pub trait MetastoreServiceStreamSplitsExt {
+    /// Collects all splits from a [`MetastoreServiceStream<ListSplitsResponse>`].
+    async fn collect_splits(mut self) -> MetastoreResult<Vec<Split>>;
+
+    /// Collects all splits metadata from a [`MetastoreServiceStream<ListSplitsResponse>`].
+    async fn collect_splits_metadata(mut self) -> MetastoreResult<Vec<SplitMetadata>>;
+
+    /// Collects all splits IDs from a [`MetastoreServiceStream<ListSplitsResponse>`].
+    async fn collect_split_ids(mut self) -> MetastoreResult<Vec<SplitId>>;
+}
+
+#[async_trait]
+impl MetastoreServiceStreamSplitsExt for MetastoreServiceStream<ListSplitsResponse> {
+    async fn collect_splits(mut self) -> MetastoreResult<Vec<Split>> {
         let mut all_splits = Vec::new();
-        while let Some(list_splits_response) = stream.try_next().await? {
+        while let Some(list_splits_response) = self.try_next().await? {
             let splits = list_splits_response.deserialize_splits()?;
             all_splits.extend(splits);
         }
         Ok(all_splits)
     }
-}
 
-impl MetastoreServiceExt for MetastoreServiceClient {}
+    async fn collect_splits_metadata(mut self) -> MetastoreResult<Vec<SplitMetadata>> {
+        let mut all_splits_metadata = Vec::new();
+        while let Some(list_splits_response) = self.try_next().await? {
+            let splits_metadata = list_splits_response.deserialize_splits_metadata()?;
+            all_splits_metadata.extend(splits_metadata);
+        }
+        Ok(all_splits_metadata)
+    }
+
+    async fn collect_split_ids(mut self) -> MetastoreResult<Vec<SplitId>> {
+        let mut all_splits = Vec::new();
+        while let Some(list_splits_response) = self.try_next().await? {
+            let splits = list_splits_response.deserialize_split_ids()?;
+            all_splits.extend(splits);
+        }
+        Ok(all_splits)
+    }
+}
 
 /// Helper trait to build a [`CreateIndexRequest`] and deserialize its payload.
 pub trait CreateIndexRequestExt {

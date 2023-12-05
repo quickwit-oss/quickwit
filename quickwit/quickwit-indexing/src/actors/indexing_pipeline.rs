@@ -850,7 +850,7 @@ mod tests {
                 Ok(IndexMetadataResponse::try_from_index_metadata(index_metadata).unwrap())
             });
         mock_metastore
-            .expect_stream_splits()
+            .expect_list_splits()
             .returning(|_| Ok(ServiceStream::empty()));
         let universe = Universe::with_accelerated_time();
         let node_id = "test-node";

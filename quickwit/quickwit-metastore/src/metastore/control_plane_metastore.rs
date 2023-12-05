@@ -142,11 +142,11 @@ impl MetastoreService for ControlPlaneMetastore {
         self.metastore.publish_splits(request).await
     }
 
-    async fn stream_splits(
+    async fn list_splits(
         &mut self,
         request: ListSplitsRequest,
     ) -> MetastoreResult<MetastoreServiceStream<ListSplitsResponse>> {
-        self.metastore.stream_splits(request).await
+        self.metastore.list_splits(request).await
     }
 
     async fn list_stale_splits(

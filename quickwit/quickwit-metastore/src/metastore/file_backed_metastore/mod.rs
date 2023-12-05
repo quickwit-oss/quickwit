@@ -637,7 +637,7 @@ impl MetastoreService for FileBackedMetastore {
 
     /// Streams of splits for the given request.
     /// No error is returned if one of the requested `index_uid` does not exist.
-    async fn stream_splits(
+    async fn list_splits(
         &mut self,
         request: ListSplitsRequest,
     ) -> MetastoreResult<MetastoreServiceStream<ListSplitsResponse>> {
@@ -646,7 +646,8 @@ impl MetastoreService for FileBackedMetastore {
             .chunks(STREAM_SPLITS_CHUNK_SIZE)
             .map(|chunk| ListSplitsResponse::try_from_splits(chunk.to_vec()))
             .collect();
-        Ok(ServiceStream::from(splits_responses))
+        let splits_responses_stream = Box::pin(futures::stream::iter(splits_responses));
+        Ok(ServiceStream::new(splits_responses_stream))
     }
 
     async fn list_stale_splits(
@@ -991,6 +992,7 @@ mod tests {
         fetch_or_init_indexes_states, meta_path, put_index_given_index_id, put_indexes_states,
     };
     use super::*;
+    use crate::metastore::MetastoreServiceStreamSplitsExt;
     use crate::tests::DefaultForTest;
     use crate::{metastore_test_suite, IndexMetadata, ListSplitsQuery, SplitMetadata, SplitState};
 
@@ -1156,14 +1158,26 @@ mod tests {
         let query =
             ListSplitsQuery::for_index(index_uid.clone()).with_split_state(SplitState::Published);
         let list_splits_request = ListSplitsRequest::try_from_list_splits_query(query).unwrap();
-        let splits = metastore.list_splits(list_splits_request).await.unwrap();
+        let splits = metastore
+            .list_splits(list_splits_request)
+            .await
+            .unwrap()
+            .collect_splits()
+            .await
+            .unwrap();
         assert!(splits.is_empty());
 
         let list_splits_query =
             ListSplitsQuery::for_index(index_uid.clone()).with_split_state(SplitState::Staged);
         let list_splits_request =
             ListSplitsRequest::try_from_list_splits_query(list_splits_query).unwrap();
-        let splits = metastore.list_splits(list_splits_request).await.unwrap();
+        let splits = metastore
+            .list_splits(list_splits_request)
+            .await
+            .unwrap()
+            .collect_splits()
+            .await
+            .unwrap();
         assert!(!splits.is_empty());
     }
 
@@ -1218,6 +1232,9 @@ mod tests {
         let splits = metastore
             .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
             .await
+            .unwrap()
+            .collect_splits()
+            .await
             .unwrap();
         assert!(splits.is_empty());
 
@@ -1235,6 +1252,9 @@ mod tests {
 
         let splits = metastore
             .list_splits(ListSplitsRequest::try_from_index_uid(index_uid).unwrap())
+            .await
+            .unwrap()
+            .collect_splits()
             .await
             .unwrap();
         assert_eq!(splits.len(), 1);
@@ -1264,11 +1284,17 @@ mod tests {
         let splits = metastore_write
             .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
             .await
+            .unwrap()
+            .collect_splits()
+            .await
             .unwrap();
         assert!(splits.is_empty());
 
         let splits = metastore_read
             .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
+            .await
+            .unwrap()
+            .collect_splits()
             .await
             .unwrap();
         assert!(splits.is_empty());
@@ -1288,6 +1314,9 @@ mod tests {
         let splits = metastore_read
             .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
             .await
+            .unwrap()
+            .collect_splits()
+            .await
             .unwrap();
         assert!(splits.is_empty());
 
@@ -1296,6 +1325,9 @@ mod tests {
 
             let splits = metastore_read
                 .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
+                .await
+                .unwrap()
+                .collect_splits()
                 .await
                 .unwrap();
             if !splits.is_empty() {
@@ -1365,7 +1397,13 @@ mod tests {
             ListSplitsQuery::for_index(index_uid.clone()).with_split_state(SplitState::Published);
         let list_splits_request =
             ListSplitsRequest::try_from_list_splits_query(list_splits_query).unwrap();
-        let splits = metastore.list_splits(list_splits_request).await.unwrap();
+        let splits = metastore
+            .list_splits(list_splits_request)
+            .await
+            .unwrap()
+            .collect_splits()
+            .await
+            .unwrap();
 
         // Make sure that all 20 splits are in `Published` state.
         assert_eq!(splits.len(), 20);

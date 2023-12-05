@@ -451,8 +451,8 @@ mod tests {
 
     use itertools::Itertools;
     use quickwit_indexing::TestSandbox;
-    use quickwit_metastore::{ListSplitsRequestExt, MetastoreServiceExt};
-    use quickwit_proto::metastore::ListSplitsRequest;
+    use quickwit_metastore::{ListSplitsRequestExt, MetastoreServiceStreamSplitsExt};
+    use quickwit_proto::metastore::{ListSplitsRequest, MetastoreService};
     use quickwit_query::query_ast::qast_json_helper;
     use serde_json::json;
     use tantivy::time::{Duration, OffsetDateTime};
@@ -501,7 +501,10 @@ mod tests {
         let splits = test_sandbox
             .metastore()
             .list_splits(ListSplitsRequest::try_from_index_uid(test_sandbox.index_uid()).unwrap())
-            .await?;
+            .await?
+            .collect_splits()
+            .await
+            .unwrap();
         let splits_offsets = splits
             .into_iter()
             .map(|split| extract_split_and_footer_offsets(&split.split_metadata))
@@ -577,6 +580,8 @@ mod tests {
         let splits = test_sandbox
             .metastore()
             .list_splits(ListSplitsRequest::try_from_index_uid(test_sandbox.index_uid()).unwrap())
+            .await?
+            .collect_splits()
             .await?;
         let splits_offsets = splits
             .into_iter()
@@ -632,6 +637,8 @@ mod tests {
         let splits = test_sandbox
             .metastore()
             .list_splits(ListSplitsRequest::try_from_index_uid(test_sandbox.index_uid()).unwrap())
+            .await?
+            .collect_splits()
             .await?;
         let splits_offsets = splits
             .into_iter()
@@ -720,6 +727,8 @@ mod tests {
         let splits = test_sandbox
             .metastore()
             .list_splits(ListSplitsRequest::try_from_index_uid(test_sandbox.index_uid()).unwrap())
+            .await?
+            .collect_splits()
             .await?;
         let splits_offsets = splits
             .into_iter()

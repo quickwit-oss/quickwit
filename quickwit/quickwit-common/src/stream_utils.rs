@@ -47,16 +47,6 @@ where T: Send + 'static
     }
 }
 
-impl<T> From<Vec<T>> for ServiceStream<T>
-where T: Send + 'static
-{
-    fn from(values: Vec<T>) -> Self {
-        Self {
-            inner: Box::pin(stream::iter(values)),
-        }
-    }
-}
-
 impl<T> fmt::Debug for ServiceStream<T>
 where T: 'static
 {
@@ -180,6 +170,17 @@ where T: Send + 'static
         });
         Self {
             inner: Box::pin(message_stream),
+        }
+    }
+}
+
+#[cfg(any(test, feature = "testsuite"))]
+impl<T> From<Vec<T>> for ServiceStream<T>
+where T: Send + 'static
+{
+    fn from(values: Vec<T>) -> Self {
+        Self {
+            inner: Box::pin(stream::iter(values)),
         }
     }
 }

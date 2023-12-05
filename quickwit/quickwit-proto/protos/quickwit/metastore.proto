@@ -101,7 +101,7 @@ service MetastoreService {
   rpc DeleteIndex(DeleteIndexRequest) returns (EmptyResponse);
 
   // Streams splits from index.
-  rpc StreamSplits(ListSplitsRequest) returns (stream ListSplitsResponse);
+  rpc ListSplits(ListSplitsRequest) returns (stream ListSplitsResponse);
 
   // Stages several splits.
   rpc StageSplits(StageSplitsRequest) returns (EmptyResponse);

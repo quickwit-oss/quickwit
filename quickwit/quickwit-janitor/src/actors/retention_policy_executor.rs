@@ -348,7 +348,7 @@ mod tests {
 
         let mut sequence = Sequence::new();
         mock_metastore
-            .expect_stream_splits()
+            .expect_list_splits()
             .times(..)
             .returning(|_| Ok(ServiceStream::empty()));
         mock_metastore
@@ -457,7 +457,7 @@ mod tests {
             });
 
         mock_metastore
-            .expect_stream_splits()
+            .expect_list_splits()
             .times(2..=4)
             .returning(|list_splits_request| {
                 let query = list_splits_request.deserialize_list_splits_query().unwrap();

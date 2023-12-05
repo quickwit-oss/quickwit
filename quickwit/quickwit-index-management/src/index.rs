@@ -25,8 +25,8 @@ use quickwit_config::{validate_identifier, IndexConfig, SourceConfig};
 use quickwit_indexing::check_source_connectivity;
 use quickwit_metastore::{
     AddSourceRequestExt, CreateIndexRequestExt, IndexMetadata, IndexMetadataResponseExt,
-    ListSplitsQuery, ListSplitsRequestExt, MetastoreServiceExt, SplitInfo, SplitMetadata,
-    SplitState,
+    ListSplitsQuery, ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, SplitInfo,
+    SplitMetadata, SplitState,
 };
 use quickwit_proto::metastore::{
     AddSourceRequest, CreateIndexRequest, DeleteIndexRequest, EntityKind, IndexMetadataRequest,
@@ -178,6 +178,8 @@ impl IndexService {
                 .metastore
                 .list_splits(list_splits_request)
                 .await?
+                .collect_splits()
+                .await?
                 .into_iter()
                 .map(|split| split.split_metadata.as_split_info())
                 .collect();
@@ -191,9 +193,8 @@ impl IndexService {
             .metastore
             .list_splits(list_splits_request)
             .await?
-            .into_iter()
-            .map(|split| split.split_metadata.split_id)
-            .collect();
+            .collect_split_ids()
+            .await?;
         let mark_splits_for_deletion_request =
             MarkSplitsForDeletionRequest::new(index_uid.clone(), split_ids);
         self.metastore
@@ -204,19 +205,18 @@ impl IndexService {
         let query = ListSplitsQuery::for_index(index_uid.clone())
             .with_split_state(SplitState::MarkedForDeletion);
         let list_splits_request = ListSplitsRequest::try_from_list_splits_query(query)?;
-        let splits_to_delete: Vec<SplitMetadata> = self
+        let splits_metadata_to_delete: Vec<SplitMetadata> = self
             .metastore
             .list_splits(list_splits_request)
             .await?
-            .into_iter()
-            .map(|split| split.split_metadata)
-            .collect();
+            .collect_splits_metadata()
+            .await?;
 
         let deleted_splits = delete_splits_from_storage_and_metastore(
             index_uid.clone(),
             storage,
             self.metastore.clone(),
-            splits_to_delete,
+            splits_metadata_to_delete,
             None,
         )
         .await?;
@@ -294,9 +294,8 @@ impl IndexService {
             .metastore
             .list_splits(list_splits_request)
             .await?
-            .into_iter()
-            .map(|split| split.split_metadata)
-            .collect();
+            .collect_splits_metadata()
+            .await?;
         let split_ids: Vec<SplitId> = splits_metadata
             .iter()
             .map(|split| split.split_id.to_string())
@@ -422,7 +421,9 @@ mod tests {
 
     use quickwit_common::uri::Uri;
     use quickwit_config::IndexConfig;
-    use quickwit_metastore::{metastore_for_test, SplitMetadata, StageSplitsRequestExt};
+    use quickwit_metastore::{
+        metastore_for_test, MetastoreServiceExt, SplitMetadata, StageSplitsRequestExt,
+    };
     use quickwit_proto::metastore::StageSplitsRequest;
     use quickwit_storage::PutPayload;
 
@@ -501,6 +502,9 @@ mod tests {
         let splits = metastore
             .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
             .await
+            .unwrap()
+            .collect_splits()
+            .await
             .unwrap();
         assert_eq!(splits.len(), 1);
 
@@ -516,6 +520,9 @@ mod tests {
         assert!(!metastore.index_exists(index_id).await.unwrap());
         let splits = metastore
             .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
+            .await
+            .unwrap()
+            .collect_splits()
             .await
             .unwrap();
         assert!(splits.is_empty());

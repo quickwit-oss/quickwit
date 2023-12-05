@@ -263,7 +263,7 @@ mod tests {
 
         let mut mock_metastore = MetastoreServiceClient::mock();
         mock_metastore
-            .expect_stream_splits()
+            .expect_list_splits()
             .times(2)
             .returning(|list_splits_request| {
                 let query = list_splits_request.deserialize_list_splits_query().unwrap();
@@ -358,7 +358,7 @@ mod tests {
                 )
             });
         mock_metastore
-            .expect_stream_splits()
+            .expect_list_splits()
             .times(2)
             .returning(|list_splits_request| {
                 let query = list_splits_request.deserialize_list_splits_query().unwrap();
@@ -434,7 +434,7 @@ mod tests {
                 )
             });
         mock_metastore
-            .expect_stream_splits()
+            .expect_list_splits()
             .times(6)
             .returning(|list_splits_request| {
                 let query = list_splits_request.deserialize_list_splits_query().unwrap();
@@ -604,7 +604,7 @@ mod tests {
                 )
             });
         mock_metastore
-            .expect_stream_splits()
+            .expect_list_splits()
             .times(3)
             .returning(|list_splits_request| {
                 let query = list_splits_request.deserialize_list_splits_query().unwrap();
@@ -686,7 +686,7 @@ mod tests {
                 )
             });
         mock_metastore
-            .expect_stream_splits()
+            .expect_list_splits()
             .times(4)
             .returning(|list_splits_request| {
                 let query = list_splits_request.deserialize_list_splits_query().unwrap();

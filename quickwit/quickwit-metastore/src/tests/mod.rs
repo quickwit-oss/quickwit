@@ -36,9 +36,9 @@ pub(crate) mod shard;
 pub(crate) mod source;
 pub(crate) mod split;
 
-use crate::{ListSplitsRequestExt, MetastoreServiceExt, Split};
-
 use self::shard::RunTests;
+use crate::metastore::MetastoreServiceStreamSplitsExt;
+use crate::{ListSplitsRequestExt, MetastoreServiceExt, Split};
 
 #[async_trait]
 pub trait DefaultForTest {
@@ -124,6 +124,9 @@ async fn cleanup_index(metastore: &mut dyn MetastoreServiceExt, index_uid: Index
     // List all splits.
     let all_splits = metastore
         .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
+        .await
+        .unwrap()
+        .collect_splits()
         .await
         .unwrap();
 

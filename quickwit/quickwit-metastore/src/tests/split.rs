@@ -34,6 +34,7 @@ use tracing::{error, info};
 
 use super::DefaultForTest;
 use crate::checkpoint::{IndexCheckpointDelta, PartitionId, SourceCheckpointDelta};
+use crate::metastore::MetastoreServiceStreamSplitsExt;
 use crate::tests::{cleanup_index, collect_split_ids};
 use crate::{
     CreateIndexRequestExt, IndexMetadataResponseExt, ListSplitsQuery, ListSplitsRequestExt,
@@ -1239,7 +1240,13 @@ pub async fn test_metastore_mark_splits_for_deletion<
             .with_split_state(SplitState::MarkedForDeletion),
     )
     .unwrap();
-    let marked_splits = metastore.list_splits(list_splits_request).await.unwrap();
+    let marked_splits = metastore
+        .list_splits(list_splits_request)
+        .await
+        .unwrap()
+        .collect_splits()
+        .await
+        .unwrap();
 
     assert_eq!(marked_splits.len(), 1);
     assert_eq!(marked_splits[0].split_id(), split_id_3);
@@ -1269,7 +1276,13 @@ pub async fn test_metastore_mark_splits_for_deletion<
             .with_split_state(SplitState::MarkedForDeletion),
     )
     .unwrap();
-    let mut marked_splits = metastore.list_splits(list_splits_request).await.unwrap();
+    let mut marked_splits = metastore
+        .list_splits(list_splits_request)
+        .await
+        .unwrap()
+        .collect_splits()
+        .await
+        .unwrap();
 
     marked_splits.sort_by_key(|split| split.split_id().to_string());
 
@@ -1395,6 +1408,9 @@ pub async fn test_metastore_delete_splits<MetastoreToTest: MetastoreServiceExt +
             .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
             .await
             .unwrap()
+            .collect_splits()
+            .await
+            .unwrap()
             .len(),
         2
     );
@@ -1424,6 +1440,9 @@ pub async fn test_metastore_delete_splits<MetastoreToTest: MetastoreServiceExt +
     assert_eq!(
         metastore
             .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
+            .await
+            .unwrap()
+            .collect_splits()
             .await
             .unwrap()
             .len(),
@@ -1478,6 +1497,9 @@ pub async fn test_metastore_split_update_timestamp<
     let split_meta = metastore
         .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
         .await
+        .unwrap()
+        .collect_splits()
+        .await
         .unwrap()[0]
         .clone();
     assert!(split_meta.update_timestamp > current_timestamp);
@@ -1504,6 +1526,9 @@ pub async fn test_metastore_split_update_timestamp<
     let split_meta = metastore
         .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
         .await
+        .unwrap()
+        .collect_splits()
+        .await
         .unwrap()[0]
         .clone();
     assert!(split_meta.update_timestamp > current_timestamp);
@@ -1523,6 +1548,9 @@ pub async fn test_metastore_split_update_timestamp<
         .unwrap();
     let split_meta = metastore
         .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
+        .await
+        .unwrap()
+        .collect_splits()
         .await
         .unwrap()[0]
         .clone();
@@ -1592,6 +1620,9 @@ pub async fn test_metastore_stage_splits<MetastoreToTest: MetastoreServiceExt + 
     let query = ListSplitsQuery::for_index(index_uid.clone()).with_split_state(SplitState::Staged);
     let splits = metastore
         .list_splits(ListSplitsRequest::try_from_list_splits_query(query).unwrap())
+        .await
+        .unwrap()
+        .collect_splits()
         .await
         .unwrap();
     let split_ids = collect_split_ids(&splits);
@@ -1696,7 +1727,7 @@ pub async fn test_metastore_update_splits_delete_opstamp<
     };
 
     {
-        info!("Update splits delete opstamp on a non-existent index.");
+        info!("update splits delete opstamp on a non-existent index");
         let update_splits_delete_opstamp_request = UpdateSplitsDeleteOpstampRequest {
             index_uid: IndexUid::new_with_random_ulid("index-not-found").to_string(),
             split_ids: vec![split_id_1.clone()],
@@ -1714,7 +1745,7 @@ pub async fn test_metastore_update_splits_delete_opstamp<
     }
 
     {
-        info!("Update splits delete opstamp on an index.");
+        info!("update splits delete opstamp on an index");
         let create_index_request =
             CreateIndexRequest::try_from_index_config(index_config.clone()).unwrap();
         let index_uid: IndexUid = metastore

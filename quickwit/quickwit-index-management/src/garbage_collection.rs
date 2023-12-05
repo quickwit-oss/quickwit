@@ -23,14 +23,14 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use futures::Future;
-use quickwit_common::{PrettySample, Progress};
+use quickwit_common::{PrettySample, Progress, ServiceStream};
 use quickwit_metastore::{
-    ListSplitsQuery, ListSplitsRequestExt, MetastoreServiceExt, SplitInfo, SplitMetadata,
-    SplitState,
+    ListSplitsQuery, ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, SplitInfo,
+    SplitMetadata, SplitState,
 };
 use quickwit_proto::metastore::{
-    DeleteSplitsRequest, ListSplitsRequest, MarkSplitsForDeletionRequest, MetastoreError,
-    MetastoreService, MetastoreServiceClient,
+    DeleteSplitsRequest, ListSplitsRequest, ListSplitsResponse, MarkSplitsForDeletionRequest,
+    MetastoreError, MetastoreResult, MetastoreService, MetastoreServiceClient,
 };
 use quickwit_proto::types::{IndexUid, SplitId};
 use quickwit_storage::{BulkDeleteError, Storage};
@@ -106,9 +106,8 @@ pub async fn run_garbage_collect(
         metastore.list_splits(list_deletable_staged_request),
     )
     .await?
-    .into_iter()
-    .map(|split| split.split_metadata)
-    .collect();
+    .collect_splits_metadata()
+    .await?;
 
     if dry_run {
         let marked_for_deletion_query = ListSplitsQuery::for_index(index_uid.clone())
@@ -120,9 +119,8 @@ pub async fn run_garbage_collect(
             metastore.list_splits(marked_for_deletion_request),
         )
         .await?
-        .into_iter()
-        .map(|split| split.split_metadata)
-        .collect();
+        .collect_splits_metadata()
+        .await?;
         splits_marked_for_deletion.extend(deletable_staged_splits);
 
         let candidate_entries: Vec<SplitInfo> = splits_marked_for_deletion
@@ -195,21 +193,27 @@ async fn delete_splits_marked_for_deletion(
                 break;
             }
         };
-        let list_splits_result =
+        let splits_stream_result =
             protect_future(progress_opt, metastore.list_splits(list_splits_request)).await;
+        let splits_to_delete_stream: ServiceStream<MetastoreResult<ListSplitsResponse>> =
+            match splits_stream_result {
+                Ok(splits_stream) => splits_stream,
+                Err(error) => {
+                    error!(error = ?error, "failed to fetch stream splits");
+                    break;
+                }
+            };
 
-        let splits_to_delete: Vec<SplitMetadata> = match list_splits_result {
-            Ok(splits) => splits
-                .into_iter()
-                .map(|split| split.split_metadata)
-                .collect(),
-            Err(error) => {
-                error!(error = ?error, "failed to fetch deletable splits");
-                break;
-            }
-        };
+        let splits_metadata_to_delete: Vec<SplitMetadata> =
+            match splits_to_delete_stream.collect_splits_metadata().await {
+                Ok(splits) => splits,
+                Err(error) => {
+                    error!(error = ?error, "failed to collect splits");
+                    break;
+                }
+            };
 
-        let num_splits_to_delete = splits_to_delete.len();
+        let num_splits_to_delete = splits_metadata_to_delete.len();
 
         if num_splits_to_delete == 0 {
             break;
@@ -218,7 +222,7 @@ async fn delete_splits_marked_for_deletion(
             index_uid.clone(),
             storage.clone(),
             metastore.clone(),
-            splits_to_delete,
+            splits_metadata_to_delete,
             progress_opt,
         )
         .await;
@@ -350,8 +354,8 @@ mod tests {
     use quickwit_common::ServiceStream;
     use quickwit_config::IndexConfig;
     use quickwit_metastore::{
-        metastore_for_test, CreateIndexRequestExt, ListSplitsQuery, SplitMetadata, SplitState,
-        StageSplitsRequestExt,
+        metastore_for_test, CreateIndexRequestExt, ListSplitsQuery,
+        MetastoreServiceStreamSplitsExt, SplitMetadata, SplitState, StageSplitsRequestExt,
     };
     use quickwit_proto::metastore::{CreateIndexRequest, EntityKind, StageSplitsRequest};
     use quickwit_proto::types::IndexUid;
@@ -396,6 +400,9 @@ mod tests {
                 .list_splits(list_splits_request)
                 .await
                 .unwrap()
+                .collect_splits()
+                .await
+                .unwrap()
                 .len(),
             1
         );
@@ -421,6 +428,9 @@ mod tests {
                 .list_splits(list_splits_request)
                 .await
                 .unwrap()
+                .collect_splits()
+                .await
+                .unwrap()
                 .len(),
             1
         );
@@ -444,6 +454,9 @@ mod tests {
         assert_eq!(
             metastore
                 .list_splits(list_splits_request)
+                .await
+                .unwrap()
+                .collect_splits()
                 .await
                 .unwrap()
                 .len(),
@@ -491,6 +504,9 @@ mod tests {
                 .list_splits(list_splits_request)
                 .await
                 .unwrap()
+                .collect_splits()
+                .await
+                .unwrap()
                 .len(),
             1
         );
@@ -514,6 +530,9 @@ mod tests {
         assert_eq!(
             metastore
                 .list_splits(list_splits_request)
+                .await
+                .unwrap()
+                .collect_splits()
                 .await
                 .unwrap()
                 .len(),
@@ -540,6 +559,9 @@ mod tests {
                 .list_splits(list_splits_request)
                 .await
                 .unwrap()
+                .collect_splits()
+                .await
+                .unwrap()
                 .len(),
             0
         );
@@ -551,7 +573,7 @@ mod tests {
         let storage = storage_for_test();
         let mut metastore = MetastoreServiceClient::mock();
         metastore
-            .expect_stream_splits()
+            .expect_list_splits()
             .times(2)
             .returning(|_| Ok(ServiceStream::empty()));
         run_garbage_collect(
@@ -609,6 +631,9 @@ mod tests {
         let splits = metastore
             .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
             .await
+            .unwrap()
+            .collect_splits()
+            .await
             .unwrap();
         assert_eq!(splits.len(), 1);
 
@@ -631,6 +656,9 @@ mod tests {
         assert!(!storage.exists(split_path).await.unwrap());
         assert!(metastore
             .list_splits(ListSplitsRequest::try_from_index_uid(index_uid).unwrap())
+            .await
+            .unwrap()
+            .collect_splits()
             .await
             .unwrap()
             .is_empty());
@@ -722,6 +750,9 @@ mod tests {
 
         let splits = metastore
             .list_splits(ListSplitsRequest::try_from_index_uid(index_uid).unwrap())
+            .await
+            .unwrap()
+            .collect_splits()
             .await
             .unwrap();
         assert_eq!(splits.len(), 1);

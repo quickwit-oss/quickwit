@@ -1467,7 +1467,7 @@ mod tests {
             Ok(IndexMetadataResponse::try_from_index_metadata(index_metadata.clone()).unwrap())
         });
         metastore
-            .expect_stream_splits()
+            .expect_list_splits()
             .returning(|_| Ok(ServiceStream::empty()));
         let universe = Universe::new();
         let temp_dir = tempfile::tempdir().unwrap();

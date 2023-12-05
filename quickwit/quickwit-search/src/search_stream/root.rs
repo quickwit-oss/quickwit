@@ -158,7 +158,7 @@ mod tests {
         mock_metastore.expect_index_metadata().returning(move |_| {
             Ok(IndexMetadataResponse::try_from_index_metadata(index_metadata.clone()).unwrap())
         });
-        mock_metastore.expect_stream_splits().returning(move |_| {
+        mock_metastore.expect_list_splits().returning(move |_| {
             let splits = vec![MockSplitBuilder::new("split1")
                 .with_index_uid(&index_uid)
                 .build()];
@@ -216,7 +216,7 @@ mod tests {
         mock_metastore.expect_index_metadata().returning(move |_| {
             Ok(IndexMetadataResponse::try_from_index_metadata(index_metadata.clone()).unwrap())
         });
-        mock_metastore.expect_stream_splits().returning(move |_| {
+        mock_metastore.expect_list_splits().returning(move |_| {
             let splits = vec![MockSplitBuilder::new("split1")
                 .with_index_uid(&index_uid)
                 .build()];
@@ -272,7 +272,7 @@ mod tests {
         mock_metastore.expect_index_metadata().returning(move |_| {
             Ok(IndexMetadataResponse::try_from_index_metadata(index_metadata.clone()).unwrap())
         });
-        mock_metastore.expect_stream_splits().returning(move |_| {
+        mock_metastore.expect_list_splits().returning(move |_| {
             let splits = vec![
                 MockSplitBuilder::new("split1")
                     .with_index_uid(&index_uid)
@@ -333,7 +333,7 @@ mod tests {
         mock_metastore.expect_index_metadata().returning(move |_| {
             Ok(IndexMetadataResponse::try_from_index_metadata(index_metadata.clone()).unwrap())
         });
-        mock_metastore.expect_stream_splits().returning(move |_| {
+        mock_metastore.expect_list_splits().returning(move |_| {
             let splits = vec![MockSplitBuilder::new("split")
                 .with_index_uid(&index_uid)
                 .build()];

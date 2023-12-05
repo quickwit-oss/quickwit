@@ -281,8 +281,8 @@ pub fn mock_split_meta(split_id: &str, index_uid: &IndexUid) -> SplitMetadata {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_metastore::{ListSplitsRequestExt, MetastoreServiceExt};
-    use quickwit_proto::metastore::ListSplitsRequest;
+    use quickwit_metastore::{ListSplitsRequestExt, MetastoreServiceStreamSplitsExt};
+    use quickwit_proto::metastore::{ListSplitsRequest, MetastoreService};
 
     use super::TestSandbox;
 
@@ -311,6 +311,8 @@ mod tests {
                 .list_splits(
                     ListSplitsRequest::try_from_index_uid(test_sandbox.index_uid()).unwrap(),
                 )
+                .await?
+                .collect_splits()
                 .await?;
             assert_eq!(splits.len(), 1);
             test_sandbox.add_documents(vec![
@@ -322,6 +324,8 @@ mod tests {
                 .list_splits(
                     ListSplitsRequest::try_from_index_uid(test_sandbox.index_uid()).unwrap(),
                 )
+                .await?
+                .collect_splits()
                 .await?;
             assert_eq!(splits.len(), 2);
         }

@@ -32,10 +32,12 @@ use quickwit_common::temp_dir::TempDirectory;
 use quickwit_common::KillSwitch;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::{
-    ListSplitsQuery, ListSplitsRequestExt, MetastoreServiceExt, SplitMetadata, SplitState,
+    ListSplitsQuery, ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, SplitState,
 };
 use quickwit_proto::indexing::IndexingPipelineId;
-use quickwit_proto::metastore::{ListSplitsRequest, MetastoreError, MetastoreServiceClient};
+use quickwit_proto::metastore::{
+    ListSplitsRequest, MetastoreError, MetastoreService, MetastoreServiceClient,
+};
 use time::OffsetDateTime;
 use tracing::{debug, error, info, instrument};
 
@@ -221,12 +223,12 @@ impl MergePipeline {
             .with_split_state(SplitState::Published)
             .retain_immature(OffsetDateTime::now_utc());
         let list_splits_request = ListSplitsRequest::try_from_list_splits_query(query)?;
-        let published_splits_metadata: Vec<SplitMetadata> = ctx
+        let published_splits_stream = ctx
             .protect_future(self.params.metastore.list_splits(list_splits_request))
-            .await?
-            .into_iter()
-            .map(|split| split.split_metadata)
-            .collect();
+            .await?;
+        let published_splits_metadata = ctx
+            .protect_future(published_splits_stream.collect_splits_metadata())
+            .await?;
 
         info!(
             num_splits = published_splits_metadata.len(),
@@ -508,7 +510,7 @@ mod tests {
             pipeline_uid: PipelineUid::default(),
         };
         metastore
-            .expect_stream_splits()
+            .expect_list_splits()
             .times(1)
             .withf(move |list_splits_request| {
                 let list_split_query = list_splits_request.deserialize_list_splits_query().unwrap();

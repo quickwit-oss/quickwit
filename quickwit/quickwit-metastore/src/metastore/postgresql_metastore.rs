@@ -805,7 +805,7 @@ impl MetastoreService for PostgresqlMetastore {
     }
 
     #[instrument(skip(self))]
-    async fn stream_splits(
+    async fn list_splits(
         &mut self,
         request: ListSplitsRequest,
     ) -> MetastoreResult<MetastoreServiceStream<ListSplitsResponse>> {

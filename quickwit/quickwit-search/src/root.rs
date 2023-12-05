@@ -31,7 +31,7 @@ use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
 use quickwit_doc_mapper::{DocMapper, DYNAMIC_FIELD_NAME};
 use quickwit_metastore::{
     IndexMetadata, IndexMetadataResponseExt, ListIndexesMetadataResponseExt, ListSplitsRequestExt,
-    MetastoreServiceExt, SplitMetadata,
+    MetastoreServiceStreamSplitsExt, SplitMetadata,
 };
 use quickwit_proto::metastore::{
     IndexMetadataRequest, ListIndexesMetadataRequest, ListSplitsRequest, MetastoreService,
@@ -1016,9 +1016,8 @@ pub async fn root_list_terms(
         .clone()
         .list_splits(list_splits_request)
         .await?
-        .into_iter()
-        .map(|split| split.split_metadata)
-        .collect();
+        .collect_splits_metadata()
+        .await?;
 
     let index_uri = &index_config.index_uri;
 
@@ -1467,7 +1466,7 @@ mod tests {
                 .unwrap())
             });
         mock_metastore
-            .expect_stream_splits()
+            .expect_list_splits()
             .returning(move |_filter| {
                 let splits = vec![
                     MockSplitBuilder::new("split1")
@@ -1565,7 +1564,7 @@ mod tests {
                 .unwrap())
             });
         metastore
-            .expect_stream_splits()
+            .expect_list_splits()
             .returning(move |_list_splits_request| {
                 let splits = vec![MockSplitBuilder::new("split1")
                     .with_index_uid(&index_uid)
@@ -1633,7 +1632,7 @@ mod tests {
                 ])
                 .unwrap())
             });
-        metastore.expect_stream_splits().returning(move |_filter| {
+        metastore.expect_list_splits().returning(move |_filter| {
             let splits = vec![
                 MockSplitBuilder::new("split1")
                     .with_index_uid(&index_uid)
@@ -1729,7 +1728,7 @@ mod tests {
                 ])
                 .unwrap())
             });
-        metastore.expect_stream_splits().returning(move |_filter| {
+        metastore.expect_list_splits().returning(move |_filter| {
             let splits = vec![
                 MockSplitBuilder::new("split1")
                     .with_index_uid(&index_uid)
@@ -1909,7 +1908,7 @@ mod tests {
                 ])
                 .unwrap())
             });
-        metastore.expect_stream_splits().returning(move |_filter| {
+        metastore.expect_list_splits().returning(move |_filter| {
             let splits = vec![
                 MockSplitBuilder::new("split1")
                     .with_index_uid(&index_uid)
@@ -2084,7 +2083,7 @@ mod tests {
                 ])
                 .unwrap())
             });
-        metastore.expect_stream_splits().returning(move |_filter| {
+        metastore.expect_list_splits().returning(move |_filter| {
             let splits = vec![
                 MockSplitBuilder::new("split1")
                     .with_index_uid(&index_uid)
@@ -2205,7 +2204,7 @@ mod tests {
                 ])
                 .unwrap())
             });
-        metastore.expect_stream_splits().returning(move |_filter| {
+        metastore.expect_list_splits().returning(move |_filter| {
             let splits = vec![
                 MockSplitBuilder::new("split1")
                     .with_index_uid(&index_uid)
@@ -2337,7 +2336,7 @@ mod tests {
                 .unwrap())
             });
         metastore
-            .expect_stream_splits()
+            .expect_list_splits()
             .returning(move |_list_splits_request| {
                 let splits = vec![MockSplitBuilder::new("split1")
                     .with_index_uid(&index_uid)
@@ -2416,7 +2415,7 @@ mod tests {
                 ])
                 .unwrap())
             });
-        metastore.expect_stream_splits().returning(move |_filter| {
+        metastore.expect_list_splits().returning(move |_filter| {
             let splits = vec![MockSplitBuilder::new("split1")
                 .with_index_uid(&index_uid)
                 .build()];
@@ -2479,7 +2478,7 @@ mod tests {
                 ])
                 .unwrap())
             });
-        metastore.expect_stream_splits().returning(move |_filter| {
+        metastore.expect_list_splits().returning(move |_filter| {
             let splits = vec![MockSplitBuilder::new("split1")
                 .with_index_uid(&index_uid)
                 .build()];
@@ -2568,7 +2567,7 @@ mod tests {
                 ])
                 .unwrap())
             });
-        metastore.expect_stream_splits().returning(move |_filter| {
+        metastore.expect_list_splits().returning(move |_filter| {
             let splits = vec![MockSplitBuilder::new("split1")
                 .with_index_uid(&index_uid)
                 .build()];
@@ -2641,7 +2640,7 @@ mod tests {
                 .unwrap())
             });
         mock_metastore
-            .expect_stream_splits()
+            .expect_list_splits()
             .returning(move |_filter| {
                 let splits = vec![MockSplitBuilder::new("split")
                     .with_index_uid(&index_uid)
@@ -2726,7 +2725,7 @@ mod tests {
                 ])
                 .unwrap())
             });
-        metastore.expect_stream_splits().returning(move |_filter| {
+        metastore.expect_list_splits().returning(move |_filter| {
             let splits = vec![MockSplitBuilder::new("split1")
                 .with_index_uid(&index_uid)
                 .build()];
@@ -2774,7 +2773,7 @@ mod tests {
                 .unwrap())
             });
         mock_metastore
-            .expect_stream_splits()
+            .expect_list_splits()
             .returning(move |_filter| {
                 let splits = vec![MockSplitBuilder::new("split1")
                     .with_index_uid(&index_uid)
@@ -2975,7 +2974,7 @@ mod tests {
                         .unwrap(),
                 )
             });
-        metastore.expect_stream_splits().returning(move |_filter| {
+        metastore.expect_list_splits().returning(move |_filter| {
             let splits = vec![
                 MockSplitBuilder::new("split1")
                     .with_index_uid(&index_uid)
@@ -3167,7 +3166,7 @@ mod tests {
             },
         );
         metastore
-            .expect_stream_splits()
+            .expect_list_splits()
             .return_once(move |list_splits_request| {
                 let list_splits_query =
                     list_splits_request.deserialize_list_splits_query().unwrap();

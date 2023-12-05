@@ -609,7 +609,7 @@ pub trait MetastoreService: std::fmt::Debug + dyn_clone::DynClone + Send + Sync 
         request: DeleteIndexRequest,
     ) -> crate::metastore::MetastoreResult<EmptyResponse>;
     /// Streams splits from index.
-    async fn stream_splits(
+    async fn list_splits(
         &mut self,
         request: ListSplitsRequest,
     ) -> crate::metastore::MetastoreResult<MetastoreServiceStream<ListSplitsResponse>>;
@@ -811,11 +811,11 @@ impl MetastoreService for MetastoreServiceClient {
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
         self.inner.delete_index(request).await
     }
-    async fn stream_splits(
+    async fn list_splits(
         &mut self,
         request: ListSplitsRequest,
     ) -> crate::metastore::MetastoreResult<MetastoreServiceStream<ListSplitsResponse>> {
-        self.inner.stream_splits(request).await
+        self.inner.list_splits(request).await
     }
     async fn stage_splits(
         &mut self,
@@ -959,13 +959,13 @@ pub mod metastore_service_mock {
         ) -> crate::metastore::MetastoreResult<super::EmptyResponse> {
             self.inner.lock().await.delete_index(request).await
         }
-        async fn stream_splits(
+        async fn list_splits(
             &mut self,
             request: super::ListSplitsRequest,
         ) -> crate::metastore::MetastoreResult<
             MetastoreServiceStream<super::ListSplitsResponse>,
         > {
-            self.inner.lock().await.stream_splits(request).await
+            self.inner.lock().await.list_splits(request).await
         }
         async fn stage_splits(
             &mut self,
@@ -1166,7 +1166,7 @@ impl tower::Service<ListSplitsRequest> for Box<dyn MetastoreService> {
     }
     fn call(&mut self, request: ListSplitsRequest) -> Self::Future {
         let mut svc = self.clone();
-        let fut = async move { svc.stream_splits(request).await };
+        let fut = async move { svc.list_splits(request).await };
         Box::pin(fut)
     }
 }
@@ -1466,7 +1466,7 @@ struct MetastoreServiceTowerBlock {
         EmptyResponse,
         crate::metastore::MetastoreError,
     >,
-    stream_splits_svc: quickwit_common::tower::BoxService<
+    list_splits_svc: quickwit_common::tower::BoxService<
         ListSplitsRequest,
         MetastoreServiceStream<ListSplitsResponse>,
         crate::metastore::MetastoreError,
@@ -1565,7 +1565,7 @@ impl Clone for MetastoreServiceTowerBlock {
             index_metadata_svc: self.index_metadata_svc.clone(),
             list_indexes_metadata_svc: self.list_indexes_metadata_svc.clone(),
             delete_index_svc: self.delete_index_svc.clone(),
-            stream_splits_svc: self.stream_splits_svc.clone(),
+            list_splits_svc: self.list_splits_svc.clone(),
             stage_splits_svc: self.stage_splits_svc.clone(),
             publish_splits_svc: self.publish_splits_svc.clone(),
             mark_splits_for_deletion_svc: self.mark_splits_for_deletion_svc.clone(),
@@ -1614,11 +1614,11 @@ impl MetastoreService for MetastoreServiceTowerBlock {
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
         self.delete_index_svc.ready().await?.call(request).await
     }
-    async fn stream_splits(
+    async fn list_splits(
         &mut self,
         request: ListSplitsRequest,
     ) -> crate::metastore::MetastoreResult<MetastoreServiceStream<ListSplitsResponse>> {
-        self.stream_splits_svc.ready().await?.call(request).await
+        self.list_splits_svc.ready().await?.call(request).await
     }
     async fn stage_splits(
         &mut self,
@@ -1768,7 +1768,7 @@ pub struct MetastoreServiceTowerBlockBuilder {
         >,
     >,
     #[allow(clippy::type_complexity)]
-    stream_splits_layer: Option<
+    list_splits_layer: Option<
         quickwit_common::tower::BoxLayer<
             Box<dyn MetastoreService>,
             ListSplitsRequest,
@@ -2092,7 +2092,7 @@ impl MetastoreServiceTowerBlockBuilder {
             quickwit_common::tower::BoxLayer::new(layer.clone()),
         );
         self
-            .stream_splits_layer = Some(
+            .list_splits_layer = Some(
             quickwit_common::tower::BoxLayer::new(layer.clone()),
         );
         self
@@ -2219,7 +2219,7 @@ impl MetastoreServiceTowerBlockBuilder {
         self.delete_index_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
-    pub fn stream_splits_layer<L>(mut self, layer: L) -> Self
+    pub fn list_splits_layer<L>(mut self, layer: L) -> Self
     where
         L: tower::Layer<Box<dyn MetastoreService>> + Send + Sync + 'static,
         L::Service: tower::Service<
@@ -2229,7 +2229,7 @@ impl MetastoreServiceTowerBlockBuilder {
             > + Clone + Send + Sync + 'static,
         <L::Service as tower::Service<ListSplitsRequest>>::Future: Send + 'static,
     {
-        self.stream_splits_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
+        self.list_splits_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
     pub fn stage_splits_layer<L>(mut self, layer: L) -> Self
@@ -2539,7 +2539,7 @@ impl MetastoreServiceTowerBlockBuilder {
         } else {
             quickwit_common::tower::BoxService::new(boxed_instance.clone())
         };
-        let stream_splits_svc = if let Some(layer) = self.stream_splits_layer {
+        let list_splits_svc = if let Some(layer) = self.list_splits_layer {
             layer.layer(boxed_instance.clone())
         } else {
             quickwit_common::tower::BoxService::new(boxed_instance.clone())
@@ -2642,7 +2642,7 @@ impl MetastoreServiceTowerBlockBuilder {
             index_metadata_svc,
             list_indexes_metadata_svc,
             delete_index_svc,
-            stream_splits_svc,
+            list_splits_svc,
             stage_splits_svc,
             publish_splits_svc,
             mark_splits_for_deletion_svc,
@@ -2905,7 +2905,7 @@ where
     ) -> crate::metastore::MetastoreResult<EmptyResponse> {
         self.call(request).await
     }
-    async fn stream_splits(
+    async fn list_splits(
         &mut self,
         request: ListSplitsRequest,
     ) -> crate::metastore::MetastoreResult<MetastoreServiceStream<ListSplitsResponse>> {
@@ -3100,12 +3100,12 @@ where
             .map(|response| response.into_inner())
             .map_err(|error| error.into())
     }
-    async fn stream_splits(
+    async fn list_splits(
         &mut self,
         request: ListSplitsRequest,
     ) -> crate::metastore::MetastoreResult<MetastoreServiceStream<ListSplitsResponse>> {
         self.inner
-            .stream_splits(request)
+            .list_splits(request)
             .await
             .map(|response| {
                 let streaming: tonic::Streaming<_> = response.into_inner();
@@ -3359,16 +3359,16 @@ for MetastoreServiceGrpcServerAdapter {
             .map(tonic::Response::new)
             .map_err(|error| error.into())
     }
-    type StreamSplitsStream = quickwit_common::ServiceStream<
+    type ListSplitsStream = quickwit_common::ServiceStream<
         tonic::Result<ListSplitsResponse>,
     >;
-    async fn stream_splits(
+    async fn list_splits(
         &self,
         request: tonic::Request<ListSplitsRequest>,
-    ) -> Result<tonic::Response<Self::StreamSplitsStream>, tonic::Status> {
+    ) -> Result<tonic::Response<Self::ListSplitsStream>, tonic::Status> {
         self.inner
             .clone()
-            .stream_splits(request.into_inner())
+            .list_splits(request.into_inner())
             .await
             .map(|stream| tonic::Response::new(stream.map_err(|error| error.into())))
             .map_err(|error| error.into())
@@ -3811,7 +3811,7 @@ pub mod metastore_service_grpc_client {
             self.inner.unary(req, path, codec).await
         }
         /// Streams splits from index.
-        pub async fn stream_splits(
+        pub async fn list_splits(
             &mut self,
             request: impl tonic::IntoRequest<super::ListSplitsRequest>,
         ) -> std::result::Result<
@@ -3829,15 +3829,12 @@ pub mod metastore_service_grpc_client {
                 })?;
             let codec = tonic::codec::ProstCodec::default();
             let path = http::uri::PathAndQuery::from_static(
-                "/quickwit.metastore.MetastoreService/StreamSplits",
+                "/quickwit.metastore.MetastoreService/ListSplits",
             );
             let mut req = request.into_request();
             req.extensions_mut()
                 .insert(
-                    GrpcMethod::new(
-                        "quickwit.metastore.MetastoreService",
-                        "StreamSplits",
-                    ),
+                    GrpcMethod::new("quickwit.metastore.MetastoreService", "ListSplits"),
                 );
             self.inner.server_streaming(req, path, codec).await
         }
@@ -4377,20 +4374,17 @@ pub mod metastore_service_grpc_server {
             &self,
             request: tonic::Request<super::DeleteIndexRequest>,
         ) -> std::result::Result<tonic::Response<super::EmptyResponse>, tonic::Status>;
-        /// Server streaming response type for the StreamSplits method.
-        type StreamSplitsStream: futures_core::Stream<
+        /// Server streaming response type for the ListSplits method.
+        type ListSplitsStream: futures_core::Stream<
                 Item = std::result::Result<super::ListSplitsResponse, tonic::Status>,
             >
             + Send
             + 'static;
         /// Streams splits from index.
-        async fn stream_splits(
+        async fn list_splits(
             &self,
             request: tonic::Request<super::ListSplitsRequest>,
-        ) -> std::result::Result<
-            tonic::Response<Self::StreamSplitsStream>,
-            tonic::Status,
-        >;
+        ) -> std::result::Result<tonic::Response<Self::ListSplitsStream>, tonic::Status>;
         /// Stages several splits.
         async fn stage_splits(
             &self,
@@ -4818,15 +4812,15 @@ pub mod metastore_service_grpc_server {
                     };
                     Box::pin(fut)
                 }
-                "/quickwit.metastore.MetastoreService/StreamSplits" => {
+                "/quickwit.metastore.MetastoreService/ListSplits" => {
                     #[allow(non_camel_case_types)]
-                    struct StreamSplitsSvc<T: MetastoreServiceGrpc>(pub Arc<T>);
+                    struct ListSplitsSvc<T: MetastoreServiceGrpc>(pub Arc<T>);
                     impl<
                         T: MetastoreServiceGrpc,
                     > tonic::server::ServerStreamingService<super::ListSplitsRequest>
-                    for StreamSplitsSvc<T> {
+                    for ListSplitsSvc<T> {
                         type Response = super::ListSplitsResponse;
-                        type ResponseStream = T::StreamSplitsStream;
+                        type ResponseStream = T::ListSplitsStream;
                         type Future = BoxFuture<
                             tonic::Response<Self::ResponseStream>,
                             tonic::Status,
@@ -4836,9 +4830,7 @@ pub mod metastore_service_grpc_server {
                             request: tonic::Request<super::ListSplitsRequest>,
                         ) -> Self::Future {
                             let inner = Arc::clone(&self.0);
-                            let fut = async move {
-                                (*inner).stream_splits(request).await
-                            };
+                            let fut = async move { (*inner).list_splits(request).await };
                             Box::pin(fut)
                         }
                     }
@@ -4849,7 +4841,7 @@ pub mod metastore_service_grpc_server {
                     let inner = self.inner.clone();
                     let fut = async move {
                         let inner = inner.0;
-                        let method = StreamSplitsSvc(inner);
+                        let method = ListSplitsSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

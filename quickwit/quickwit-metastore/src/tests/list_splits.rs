@@ -34,6 +34,7 @@ use tokio::time::sleep;
 use tracing::info;
 
 use super::{to_btree_set, DefaultForTest};
+use crate::metastore::MetastoreServiceStreamSplitsExt;
 use crate::tests::{cleanup_index, collect_split_ids};
 use crate::{
     CreateIndexRequestExt, ListSplitsQuery, ListSplitsRequestExt, ListSplitsResponseExt,
@@ -95,6 +96,9 @@ pub async fn test_metastore_list_all_splits<
             .unwrap(),
         )
         .await
+        .unwrap()
+        .collect_splits()
+        .await
         .unwrap();
     assert!(no_splits.is_empty());
 
@@ -141,6 +145,9 @@ pub async fn test_metastore_list_all_splits<
 
     let splits = metastore
         .list_splits(ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap())
+        .await
+        .unwrap()
+        .collect_splits()
         .await
         .unwrap();
     let split_ids = collect_split_ids(&splits);
@@ -209,10 +216,7 @@ pub async fn test_metastore_stream_splits<MetastoreToTest: MetastoreServiceExt +
     }
 
     let stream_splits_request = ListSplitsRequest::try_from_index_uid(index_uid.clone()).unwrap();
-    let mut stream_response = metastore
-        .stream_splits(stream_splits_request)
-        .await
-        .unwrap();
+    let mut stream_response = metastore.list_splits(stream_splits_request).await.unwrap();
     let mut all_splits = Vec::new();
     for _ in 0..10 {
         let mut splits = stream_response
@@ -312,6 +316,9 @@ pub async fn test_metastore_list_splits<MetastoreToTest: MetastoreServiceExt + D
         let splits = metastore
             .list_splits(ListSplitsRequest::try_from_list_splits_query(query).unwrap())
             .await
+            .unwrap()
+            .collect_splits()
+            .await
             .unwrap();
         assert!(splits.is_empty());
     }
@@ -342,6 +349,9 @@ pub async fn test_metastore_list_splits<MetastoreToTest: MetastoreServiceExt + D
         let splits = metastore
             .list_splits(ListSplitsRequest::try_from_list_splits_query(query).unwrap())
             .await
+            .unwrap()
+            .collect_splits()
+            .await
             .unwrap();
         assert_eq!(
             splits.len(),
@@ -352,6 +362,9 @@ pub async fn test_metastore_list_splits<MetastoreToTest: MetastoreServiceExt + D
         let query = ListSplitsQuery::for_index(index_uid.clone()).with_offset(3);
         let splits = metastore
             .list_splits(ListSplitsRequest::try_from_list_splits_query(query).unwrap())
+            .await
+            .unwrap()
+            .collect_splits()
             .await
             .unwrap();
         assert_eq!(
@@ -368,6 +381,9 @@ pub async fn test_metastore_list_splits<MetastoreToTest: MetastoreServiceExt + D
         let splits = metastore
             .list_splits(ListSplitsRequest::try_from_list_splits_query(query).unwrap())
             .await
+            .unwrap()
+            .collect_splits()
+            .await
             .unwrap();
         let split_ids: Vec<&str> = splits
             .iter()
@@ -383,6 +399,9 @@ pub async fn test_metastore_list_splits<MetastoreToTest: MetastoreServiceExt + D
         let splits = metastore
             .list_splits(ListSplitsRequest::try_from_list_splits_query(query).unwrap())
             .await
+            .unwrap()
+            .collect_splits()
+            .await
             .unwrap();
         let split_ids = collect_split_ids(&splits);
         assert_eq!(split_ids, &[&split_id_3, &split_id_4, &split_id_5]);
@@ -392,6 +411,9 @@ pub async fn test_metastore_list_splits<MetastoreToTest: MetastoreServiceExt + D
             .with_time_range_end_lt(200);
         let splits = metastore
             .list_splits(ListSplitsRequest::try_from_list_splits_query(query).unwrap())
+            .await
+            .unwrap()
+            .collect_splits()
             .await
             .unwrap();
         let split_ids = collect_split_ids(&splits);
@@ -404,6 +426,9 @@ pub async fn test_metastore_list_splits<MetastoreToTest: MetastoreServiceExt + D
         let splits = metastore
             .list_splits(ListSplitsRequest::try_from_list_splits_query(query).unwrap())
             .await
+            .unwrap()
+            .collect_splits()
+            .await
             .unwrap();
         let split_ids = collect_split_ids(&splits);
         assert_eq!(split_ids, &[&split_id_1, &split_id_5]);
@@ -414,6 +439,9 @@ pub async fn test_metastore_list_splits<MetastoreToTest: MetastoreServiceExt + D
             .with_time_range_end_lt(101);
         let splits = metastore
             .list_splits(ListSplitsRequest::try_from_list_splits_query(query).unwrap())
+            .await
+            .unwrap()
+            .collect_splits()
             .await
             .unwrap();
         let split_ids = collect_split_ids(&splits);
@@ -426,6 +454,9 @@ pub async fn test_metastore_list_splits<MetastoreToTest: MetastoreServiceExt + D
         let splits = metastore
             .list_splits(ListSplitsRequest::try_from_list_splits_query(query).unwrap())
             .await
+            .unwrap()
+            .collect_splits()
+            .await
             .unwrap();
         let split_ids = collect_split_ids(&splits);
         assert_eq!(split_ids, &[&split_id_1, &split_id_2, &split_id_5]);
@@ -437,6 +468,9 @@ pub async fn test_metastore_list_splits<MetastoreToTest: MetastoreServiceExt + D
         let splits = metastore
             .list_splits(ListSplitsRequest::try_from_list_splits_query(query).unwrap())
             .await
+            .unwrap()
+            .collect_splits()
+            .await
             .unwrap();
         let split_ids = collect_split_ids(&splits);
         assert_eq!(split_ids, &[&split_id_1, &split_id_2, &split_id_5]);
@@ -447,6 +481,9 @@ pub async fn test_metastore_list_splits<MetastoreToTest: MetastoreServiceExt + D
             .with_time_range_end_lt(201);
         let splits = metastore
             .list_splits(ListSplitsRequest::try_from_list_splits_query(query).unwrap())
+            .await
+            .unwrap()
+            .collect_splits()
             .await
             .unwrap();
         let split_ids = collect_split_ids(&splits);
@@ -462,6 +499,9 @@ pub async fn test_metastore_list_splits<MetastoreToTest: MetastoreServiceExt + D
         let splits = metastore
             .list_splits(ListSplitsRequest::try_from_list_splits_query(query).unwrap())
             .await
+            .unwrap()
+            .collect_splits()
+            .await
             .unwrap();
         let split_ids = collect_split_ids(&splits);
         assert_eq!(
@@ -476,6 +516,9 @@ pub async fn test_metastore_list_splits<MetastoreToTest: MetastoreServiceExt + D
         let splits = metastore
             .list_splits(ListSplitsRequest::try_from_list_splits_query(query).unwrap())
             .await
+            .unwrap()
+            .collect_splits()
+            .await
             .unwrap();
         let split_ids = collect_split_ids(&splits);
         assert_eq!(
@@ -489,6 +532,9 @@ pub async fn test_metastore_list_splits<MetastoreToTest: MetastoreServiceExt + D
             .with_time_range_end_lt(301);
         let splits = metastore
             .list_splits(ListSplitsRequest::try_from_list_splits_query(query).unwrap())
+            .await
+            .unwrap()
+            .collect_splits()
             .await
             .unwrap();
         let split_ids = collect_split_ids(&splits);
@@ -510,6 +556,9 @@ pub async fn test_metastore_list_splits<MetastoreToTest: MetastoreServiceExt + D
         let splits = metastore
             .list_splits(ListSplitsRequest::try_from_list_splits_query(query).unwrap())
             .await
+            .unwrap()
+            .collect_splits()
+            .await
             .unwrap();
         let split_ids = collect_split_ids(&splits);
         assert_eq!(split_ids, &[&split_id_4, &split_id_5]);
@@ -520,6 +569,9 @@ pub async fn test_metastore_list_splits<MetastoreToTest: MetastoreServiceExt + D
             .with_time_range_end_lt(400);
         let splits = metastore
             .list_splits(ListSplitsRequest::try_from_list_splits_query(query).unwrap())
+            .await
+            .unwrap()
+            .collect_splits()
             .await
             .unwrap();
         let split_ids = collect_split_ids(&splits);
@@ -532,6 +584,9 @@ pub async fn test_metastore_list_splits<MetastoreToTest: MetastoreServiceExt + D
         let splits = metastore
             .list_splits(ListSplitsRequest::try_from_list_splits_query(query).unwrap())
             .await
+            .unwrap()
+            .collect_splits()
+            .await
             .unwrap();
         let split_ids = collect_split_ids(&splits);
         assert_eq!(split_ids, &[&split_id_3, &split_id_4, &split_id_5]);
@@ -542,6 +597,9 @@ pub async fn test_metastore_list_splits<MetastoreToTest: MetastoreServiceExt + D
             .with_time_range_end_lt(400);
         let splits = metastore
             .list_splits(ListSplitsRequest::try_from_list_splits_query(query).unwrap())
+            .await
+            .unwrap()
+            .collect_splits()
             .await
             .unwrap();
         let split_ids = collect_split_ids(&splits);
@@ -554,6 +612,9 @@ pub async fn test_metastore_list_splits<MetastoreToTest: MetastoreServiceExt + D
         let splits = metastore
             .list_splits(ListSplitsRequest::try_from_list_splits_query(query).unwrap())
             .await
+            .unwrap()
+            .collect_splits()
+            .await
             .unwrap();
         let split_ids = collect_split_ids(&splits);
         assert_eq!(split_ids, &[&split_id_3, &split_id_4, &split_id_5]);
@@ -565,19 +626,8 @@ pub async fn test_metastore_list_splits<MetastoreToTest: MetastoreServiceExt + D
         let splits = metastore
             .list_splits(ListSplitsRequest::try_from_list_splits_query(query).unwrap())
             .await
-            .unwrap();
-        let split_ids = collect_split_ids(&splits);
-        assert_eq!(
-            split_ids,
-            &[&split_id_2, &split_id_3, &split_id_4, &split_id_5]
-        );
-
-        let query = ListSplitsQuery::for_index(index_uid.clone())
-            .with_split_state(SplitState::Staged)
-            .with_time_range_start_gte(101)
-            .with_time_range_end_lt(400);
-        let splits = metastore
-            .list_splits(ListSplitsRequest::try_from_list_splits_query(query).unwrap())
+            .unwrap()
+            .collect_splits()
             .await
             .unwrap();
         let split_ids = collect_split_ids(&splits);
@@ -592,6 +642,26 @@ pub async fn test_metastore_list_splits<MetastoreToTest: MetastoreServiceExt + D
             .with_time_range_end_lt(400);
         let splits = metastore
             .list_splits(ListSplitsRequest::try_from_list_splits_query(query).unwrap())
+            .await
+            .unwrap()
+            .collect_splits()
+            .await
+            .unwrap();
+        let split_ids = collect_split_ids(&splits);
+        assert_eq!(
+            split_ids,
+            &[&split_id_2, &split_id_3, &split_id_4, &split_id_5]
+        );
+
+        let query = ListSplitsQuery::for_index(index_uid.clone())
+            .with_split_state(SplitState::Staged)
+            .with_time_range_start_gte(101)
+            .with_time_range_end_lt(400);
+        let splits = metastore
+            .list_splits(ListSplitsRequest::try_from_list_splits_query(query).unwrap())
+            .await
+            .unwrap()
+            .collect_splits()
             .await
             .unwrap();
         let split_ids = collect_split_ids(&splits);
@@ -607,6 +677,9 @@ pub async fn test_metastore_list_splits<MetastoreToTest: MetastoreServiceExt + D
         let splits = metastore
             .list_splits(ListSplitsRequest::try_from_list_splits_query(query).unwrap())
             .await
+            .unwrap()
+            .collect_splits()
+            .await
             .unwrap();
         let split_ids = collect_split_ids(&splits);
 
@@ -621,6 +694,9 @@ pub async fn test_metastore_list_splits<MetastoreToTest: MetastoreServiceExt + D
             .with_time_range_end_lt(400);
         let splits = metastore
             .list_splits(ListSplitsRequest::try_from_list_splits_query(query).unwrap())
+            .await
+            .unwrap()
+            .collect_splits()
             .await
             .unwrap();
         let split_ids = collect_split_ids(&splits);
@@ -641,6 +717,9 @@ pub async fn test_metastore_list_splits<MetastoreToTest: MetastoreServiceExt + D
             .with_time_range_end_lt(1100);
         let splits = metastore
             .list_splits(ListSplitsRequest::try_from_list_splits_query(query).unwrap())
+            .await
+            .unwrap()
+            .collect_splits()
             .await
             .unwrap();
         let split_ids = collect_split_ids(&splits);
@@ -669,6 +748,9 @@ pub async fn test_metastore_list_splits<MetastoreToTest: MetastoreServiceExt + D
         let splits = metastore
             .list_splits(ListSplitsRequest::try_from_list_splits_query(query).unwrap())
             .await
+            .unwrap()
+            .collect_splits()
+            .await
             .unwrap();
         let split_ids = collect_split_ids(&splits);
         assert_eq!(
@@ -693,6 +775,9 @@ pub async fn test_metastore_list_splits<MetastoreToTest: MetastoreServiceExt + D
         let splits = metastore
             .list_splits(ListSplitsRequest::try_from_list_splits_query(query).unwrap())
             .await
+            .unwrap()
+            .collect_splits()
+            .await
             .unwrap();
         let split_ids = collect_split_ids(&splits);
         assert_eq!(
@@ -710,6 +795,9 @@ pub async fn test_metastore_list_splits<MetastoreToTest: MetastoreServiceExt + D
             .with_update_timestamp_gte(current_timestamp);
         let splits = metastore
             .list_splits(ListSplitsRequest::try_from_list_splits_query(query).unwrap())
+            .await
+            .unwrap()
+            .collect_splits()
             .await
             .unwrap();
         let split_ids = collect_split_ids(&splits);
@@ -730,6 +818,9 @@ pub async fn test_metastore_list_splits<MetastoreToTest: MetastoreServiceExt + D
         let splits = metastore
             .list_splits(ListSplitsRequest::try_from_list_splits_query(query).unwrap())
             .await
+            .unwrap()
+            .collect_splits()
+            .await
             .unwrap();
         let split_ids: Vec<&String> = splits
             .iter()
@@ -742,6 +833,9 @@ pub async fn test_metastore_list_splits<MetastoreToTest: MetastoreServiceExt + D
             .with_create_timestamp_lt(split_metadata_6.create_timestamp);
         let splits = metastore
             .list_splits(ListSplitsRequest::try_from_list_splits_query(query).unwrap())
+            .await
+            .unwrap()
+            .collect_splits()
             .await
             .unwrap();
         let split_ids = collect_split_ids(&splits);
@@ -760,6 +854,9 @@ pub async fn test_metastore_list_splits<MetastoreToTest: MetastoreServiceExt + D
         let splits = metastore
             .list_splits(ListSplitsRequest::try_from_list_splits_query(query).unwrap())
             .await
+            .unwrap()
+            .collect_splits()
+            .await
             .unwrap();
         let split_ids = collect_split_ids(&splits);
         assert_eq!(
@@ -775,6 +872,9 @@ pub async fn test_metastore_list_splits<MetastoreToTest: MetastoreServiceExt + D
         let splits = metastore
             .list_splits(ListSplitsRequest::try_from_list_splits_query(query).unwrap())
             .await
+            .unwrap()
+            .collect_splits()
+            .await
             .unwrap();
         let split_ids = collect_split_ids(&splits);
         assert_eq!(
@@ -786,6 +886,9 @@ pub async fn test_metastore_list_splits<MetastoreToTest: MetastoreServiceExt + D
             .retain_immature(maturity_evaluation_timestamp);
         let splits = metastore
             .list_splits(ListSplitsRequest::try_from_list_splits_query(query).unwrap())
+            .await
+            .unwrap()
+            .collect_splits()
             .await
             .unwrap();
         let split_ids = collect_split_ids(&splits);
@@ -864,7 +967,7 @@ pub async fn test_metastore_list_stale_splits<
     assert!(no_splits.is_empty());
 
     {
-        info!("List stale splits on an index");
+        info!("list stale splits on an index");
         let create_index_request =
             CreateIndexRequest::try_from_index_config(index_config.clone()).unwrap();
         let index_uid: IndexUid = metastore

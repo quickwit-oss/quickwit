@@ -86,7 +86,7 @@ mod tests {
         metastore.expect_index_metadata().returning(move |_| {
             Ok(IndexMetadataResponse::try_from_index_metadata(index_metadata.clone()).unwrap())
         });
-        metastore.expect_stream_splits().returning(move |_| {
+        metastore.expect_list_splits().returning(move |_| {
             let splits = vec![
                 MockSplitBuilder::new("split_1")
                     .with_index_uid(&index_uid)
