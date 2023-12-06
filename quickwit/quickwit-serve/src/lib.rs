@@ -901,8 +901,7 @@ async fn check_cluster_configuration(
 
 #[cfg(test)]
 mod tests {
-    use chitchat::transport::ChannelTransport;
-    use quickwit_cluster::{create_cluster_for_test, ClusterNode};
+    use quickwit_cluster::{create_cluster_for_test, ChannelTransport, ClusterNode};
     use quickwit_common::uri::Uri;
     use quickwit_config::SearcherConfig;
     use quickwit_metastore::{metastore_for_test, IndexMetadata};

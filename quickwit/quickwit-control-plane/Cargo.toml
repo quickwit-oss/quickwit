@@ -45,7 +45,6 @@ mockall = { workspace = true }
 proptest = { workspace = true }
 rand = { workspace = true }
 
-chitchat = { workspace = true }
 quickwit-actors = { workspace = true, features = ["testsuite"] }
 quickwit-cluster = { workspace = true, features = ["testsuite"] }
 quickwit-common = { workspace = true, features = ["testsuite"] }

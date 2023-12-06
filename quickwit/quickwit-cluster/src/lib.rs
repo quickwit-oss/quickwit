@@ -24,11 +24,9 @@ mod cluster;
 mod member;
 mod node;
 
-#[cfg(any(test, feature = "testsuite"))]
 pub use chitchat::transport::ChannelTransport;
 use chitchat::transport::UdpTransport;
-use chitchat::FailureDetectorConfig;
-pub use chitchat::{KeyChangeEvent, ListenerHandle};
+pub use chitchat::{FailureDetectorConfig, KeyChangeEvent, ListenerHandle};
 use quickwit_config::service::QuickwitService;
 use quickwit_config::NodeConfig;
 use quickwit_proto::indexing::CpuCapacity;

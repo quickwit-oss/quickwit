@@ -5190,7 +5190,6 @@ dependencies = [
  "async-trait",
  "bytes",
  "bytesize",
- "chitchat",
  "chrono",
  "clap",
  "colored",
@@ -5385,7 +5384,6 @@ version = "0.6.5-dev"
 dependencies = [
  "anyhow",
  "async-trait",
- "chitchat",
  "dyn-clone",
  "fnv",
  "futures",
@@ -5954,7 +5952,6 @@ dependencies = [
  "async-trait",
  "bytes",
  "bytesize",
- "chitchat",
  "elasticsearch-dsl",
  "futures",
  "futures-util",
