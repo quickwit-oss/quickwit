@@ -857,9 +857,8 @@ mod tests {
     use std::path::Path;
     use std::time::Duration;
 
-    use chitchat::transport::ChannelTransport;
     use quickwit_actors::{Health, ObservationType, Supervisable, Universe, HEARTBEAT};
-    use quickwit_cluster::create_cluster_for_test;
+    use quickwit_cluster::{create_cluster_for_test, ChannelTransport};
     use quickwit_common::rand::append_random_suffix;
     use quickwit_config::{
         IngestApiConfig, KafkaSourceParams, SourceConfig, SourceInputFormat, SourceParams,

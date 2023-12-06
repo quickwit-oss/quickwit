@@ -28,7 +28,7 @@ mod node;
 pub use chitchat::transport::ChannelTransport;
 use chitchat::transport::UdpTransport;
 use chitchat::FailureDetectorConfig;
-pub use chitchat::ListenerHandle;
+pub use chitchat::{KeyChangeEvent, ListenerHandle};
 use quickwit_config::service::QuickwitService;
 use quickwit_config::NodeConfig;
 use quickwit_proto::indexing::CpuCapacity;

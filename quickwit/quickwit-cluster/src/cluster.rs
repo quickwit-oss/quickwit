@@ -28,7 +28,7 @@ use anyhow::Context;
 use chitchat::transport::Transport;
 use chitchat::{
     spawn_chitchat, Chitchat, ChitchatConfig, ChitchatHandle, ChitchatId, ClusterStateSnapshot,
-    FailureDetectorConfig, ListenerHandle, NodeState,
+    FailureDetectorConfig, KeyChangeEvent, ListenerHandle, NodeState,
 };
 use futures::Stream;
 use itertools::Itertools;
@@ -266,7 +266,7 @@ impl Cluster {
     pub async fn subscribe(
         &self,
         key_prefix: &str,
-        callback: impl Fn(&str, &str) + Send + Sync + 'static,
+        callback: impl Fn(KeyChangeEvent) + Send + Sync + 'static,
     ) -> ListenerHandle {
         self.chitchat()
             .await
