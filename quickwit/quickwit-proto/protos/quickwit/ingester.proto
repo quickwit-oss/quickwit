@@ -65,8 +65,7 @@ message PersistSubrequest {
   string index_uid = 2;
   string source_id = 3;
   uint64 shard_id = 4;
-  optional string follower_id = 5;
-  quickwit.ingest.DocBatchV2 doc_batch = 6;
+  quickwit.ingest.DocBatchV2 doc_batch = 5;
 }
 
 message PersistResponse {

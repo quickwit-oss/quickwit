@@ -1166,6 +1166,7 @@ mod tests {
             ingestion_rate: RateMibPerSec(1),
         }]);
         let local_shards_update = LocalShardsUpdate {
+            leader_id: "test-ingester".into(),
             source_uid: source_uid.clone(),
             shard_infos,
         };
@@ -1227,6 +1228,7 @@ mod tests {
             },
         ]);
         let local_shards_update = LocalShardsUpdate {
+            leader_id: "test-ingester".into(),
             source_uid: source_uid.clone(),
             shard_infos,
         };
@@ -1248,6 +1250,7 @@ mod tests {
             },
         ]);
         let local_shards_update = LocalShardsUpdate {
+            leader_id: "test-ingester".into(),
             source_uid: source_uid.clone(),
             shard_infos,
         };

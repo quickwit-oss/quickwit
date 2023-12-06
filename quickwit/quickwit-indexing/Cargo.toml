@@ -20,7 +20,6 @@ async-trait = { workspace = true }
 backoff = { workspace = true, optional = true }
 bytes = { workspace = true }
 bytesize = { workspace = true }
-chitchat = { workspace = true }
 fail = { workspace = true }
 flume = { workspace = true }
 fnv = { workspace = true }

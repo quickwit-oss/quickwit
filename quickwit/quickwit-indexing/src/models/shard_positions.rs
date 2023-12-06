@@ -23,10 +23,9 @@ use std::fmt::Debug;
 
 use anyhow::Context;
 use async_trait::async_trait;
-use chitchat::ListenerHandle;
 use fnv::FnvHashMap;
 use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, SpawnContext};
-use quickwit_cluster::Cluster;
+use quickwit_cluster::{Cluster, ListenerHandle};
 use quickwit_common::pubsub::{Event, EventBroker};
 use quickwit_proto::indexing::ShardPositionsUpdate;
 use quickwit_proto::types::{IndexUid, Position, ShardId, SourceUid};
@@ -117,13 +116,13 @@ impl Actor for ShardPositionsService {
         let mailbox = ctx.mailbox().clone();
         self.cluster_listener_handle_opt = Some(
             self.cluster
-                .subscribe(SHARD_POSITIONS_PREFIX, move |key, value| {
-                    let shard_positions= match parse_shard_positions_from_kv(key, value) {
+                .subscribe(SHARD_POSITIONS_PREFIX, move |event| {
+                    let shard_positions= match parse_shard_positions_from_kv(event.key, event.value) {
                         Ok(shard_positions) => {
                             shard_positions
                         }
                         Err(error) => {
-                            error!(key=key, value=value, error=%error, "failed to parse shard positions from cluster kv");
+                            error!(key=event.key, value=event.value, error=%error, "failed to parse shard positions from cluster kv");
                             return;
                         }
                     };
@@ -276,9 +275,8 @@ impl ShardPositionsService {
 mod tests {
     use std::time::Duration;
 
-    use chitchat::transport::ChannelTransport;
     use quickwit_actors::Universe;
-    use quickwit_cluster::create_cluster_for_test;
+    use quickwit_cluster::{create_cluster_for_test, ChannelTransport};
     use quickwit_common::pubsub::EventBroker;
     use quickwit_proto::types::IndexUid;
 

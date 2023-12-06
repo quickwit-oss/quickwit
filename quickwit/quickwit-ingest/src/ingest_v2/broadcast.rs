@@ -28,7 +28,7 @@ use quickwit_common::shared_consts::INGESTER_PRIMARY_SHARDS_PREFIX;
 use quickwit_common::sorted_iter::{KeyDiff, SortedByKeyIterator};
 use quickwit_common::tower::Rate;
 use quickwit_proto::ingest::ShardState;
-use quickwit_proto::types::{split_queue_id, QueueId, ShardId, SourceUid};
+use quickwit_proto::types::{split_queue_id, NodeId, QueueId, ShardId, SourceUid};
 use serde::{Deserialize, Serialize, Serializer};
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
@@ -276,8 +276,7 @@ fn parse_key(key: &str) -> Option<SourceUid> {
 
 #[derive(Debug, Clone)]
 pub struct LocalShardsUpdate {
-    // TODO: add leader ID in order to update routing table.
-    // leader_id: NodeId,
+    pub leader_id: NodeId,
     pub source_uid: SourceUid,
     pub shard_infos: ShardInfos,
 }
@@ -289,16 +288,19 @@ pub async fn setup_local_shards_update_listener(
     event_broker: EventBroker,
 ) -> ListenerHandle {
     cluster
-        .subscribe(INGESTER_PRIMARY_SHARDS_PREFIX, move |key, value| {
-            let Some(source_uid) = parse_key(key) else {
-                warn!("failed to parse source UID `{key}`");
+        .subscribe(INGESTER_PRIMARY_SHARDS_PREFIX, move |event| {
+            let Some(source_uid) = parse_key(event.key) else {
+                warn!("failed to parse source UID `{}`", event.key);
                 return;
             };
-            let Ok(shard_infos) = serde_json::from_str::<ShardInfos>(value) else {
-                warn!("failed to parse shard infos `{value}`");
+            let Ok(shard_infos) = serde_json::from_str::<ShardInfos>(event.value) else {
+                warn!("failed to parse shard infos `{}`", event.value);
                 return;
             };
+            let leader_id: NodeId = event.node.node_id.clone().into();
+
             let local_shards_update = LocalShardsUpdate {
+                leader_id,
                 source_uid,
                 shard_infos,
             };

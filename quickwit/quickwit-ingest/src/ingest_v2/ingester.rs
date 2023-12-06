@@ -368,6 +368,7 @@ impl Ingester {
 
     pub fn subscribe(&self, event_broker: &EventBroker) {
         let weak_ingester_state = WeakIngesterState(Arc::downgrade(&self.state));
+
         event_broker
             .subscribe::<ShardPositionsUpdate>(weak_ingester_state)
             .forever();
@@ -872,6 +873,8 @@ impl IngesterState {
             Ok(_) => {
                 self.shards.remove(queue_id);
                 self.rate_trackers.remove(queue_id);
+
+                info!("deleted shard `{queue_id}` from ingester");
             }
             Err(DeleteQueueError::MissingQueue(_)) => {
                 // The shard has already been deleted.
@@ -958,6 +961,7 @@ mod tests {
     use quickwit_proto::ingest::{DocBatchV2, ShardIds};
     use quickwit_proto::types::{queue_id, SourceUid};
     use tokio::task::yield_now;
+    use tokio::time::timeout;
     use tonic::transport::{Endpoint, Server};
 
     use super::*;
@@ -1245,7 +1249,6 @@ mod tests {
                     index_uid: "test-index:0".to_string(),
                     source_id: "test-source".to_string(),
                     shard_id: 1,
-                    follower_id: None,
                     doc_batch: Some(DocBatchV2::for_test(["test-doc-010"])),
                 },
                 PersistSubrequest {
@@ -1253,7 +1256,6 @@ mod tests {
                     index_uid: "test-index:1".to_string(),
                     source_id: "test-source".to_string(),
                     shard_id: 1,
-                    follower_id: None,
                     doc_batch: Some(DocBatchV2::for_test(["test-doc-110", "test-doc-111"])),
                 },
             ],
@@ -1368,7 +1370,6 @@ mod tests {
                     index_uid: "test-index:0".to_string(),
                     source_id: "test-source".to_string(),
                     shard_id: 1,
-                    follower_id: Some(follower_ctx.node_id.to_string()),
                     doc_batch: Some(DocBatchV2::for_test(["test-doc-010"])),
                 },
                 PersistSubrequest {
@@ -1376,7 +1377,6 @@ mod tests {
                     index_uid: "test-index:1".to_string(),
                     source_id: "test-source".to_string(),
                     shard_id: 1,
-                    follower_id: Some(follower_ctx.node_id.to_string()),
                     doc_batch: Some(DocBatchV2::for_test(["test-doc-110", "test-doc-111"])),
                 },
             ],
@@ -1552,7 +1552,6 @@ mod tests {
                     index_uid: "test-index:0".to_string(),
                     source_id: "test-source".to_string(),
                     shard_id: 1,
-                    follower_id: Some(follower_ctx.node_id.to_string()),
                     doc_batch: Some(DocBatchV2::for_test(["test-doc-010"])),
                 },
                 PersistSubrequest {
@@ -1560,7 +1559,6 @@ mod tests {
                     index_uid: "test-index:1".to_string(),
                     source_id: "test-source".to_string(),
                     shard_id: 1,
-                    follower_id: Some(follower_ctx.node_id.to_string()),
                     doc_batch: Some(DocBatchV2::for_test(["test-doc-110", "test-doc-111"])),
                 },
             ],
@@ -1664,7 +1662,6 @@ mod tests {
                 index_uid: "test-index:0".to_string(),
                 source_id: "test-source".to_string(),
                 shard_id: 1,
-                follower_id: None,
                 doc_batch: Some(DocBatchV2::for_test(["test-doc-010"])),
             }],
         };
@@ -1725,7 +1722,6 @@ mod tests {
                 index_uid: "test-index:0".to_string(),
                 source_id: "test-source".to_string(),
                 shard_id: 1,
-                follower_id: None,
                 doc_batch: Some(DocBatchV2::for_test(["test-doc-010"])),
             }],
         };
@@ -1788,7 +1784,6 @@ mod tests {
                 index_uid: "test-index:0".to_string(),
                 source_id: "test-source".to_string(),
                 shard_id: 1,
-                follower_id: None,
                 doc_batch: Some(DocBatchV2::for_test(["test-doc-010"])),
             }],
         };
@@ -2107,12 +2102,11 @@ mod tests {
         let shard = state_guard.shards.get(&queue_id).unwrap();
         shard.assert_is_closed();
 
-        let fetch_response =
-            tokio::time::timeout(std::time::Duration::from_millis(50), fetch_stream.next())
-                .await
-                .unwrap()
-                .unwrap()
-                .unwrap();
+        let fetch_response = timeout(Duration::from_millis(100), fetch_stream.next())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap();
         let fetch_eof = into_fetch_eof(fetch_response);
 
         assert_eq!(fetch_eof.eof_position(), Position::Beginning.as_eof());

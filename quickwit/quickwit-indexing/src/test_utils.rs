@@ -23,9 +23,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 
 use bytes::Bytes;
-use chitchat::transport::ChannelTransport;
 use quickwit_actors::{Mailbox, Universe};
-use quickwit_cluster::create_cluster_for_test;
+use quickwit_cluster::{create_cluster_for_test, ChannelTransport};
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::rand::append_random_suffix;
 use quickwit_common::uri::Uri;

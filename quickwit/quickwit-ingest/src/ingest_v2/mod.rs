@@ -26,7 +26,7 @@ mod mrecordlog_utils;
 mod rate_meter;
 mod replication;
 mod router;
-mod shard_table;
+mod routing_table;
 #[cfg(test)]
 mod test_utils;
 mod workbench;

@@ -21,9 +21,7 @@ pub struct PersistSubrequest {
     pub source_id: ::prost::alloc::string::String,
     #[prost(uint64, tag = "4")]
     pub shard_id: u64,
-    #[prost(string, optional, tag = "5")]
-    pub follower_id: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(message, optional, tag = "6")]
+    #[prost(message, optional, tag = "5")]
     pub doc_batch: ::core::option::Option<super::DocBatchV2>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]

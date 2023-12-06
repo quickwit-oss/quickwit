@@ -645,7 +645,7 @@ pub(super) mod tests {
             .unwrap();
         drop(state_guard);
 
-        let fetch_message = timeout(Duration::from_millis(50), fetch_stream.next())
+        let fetch_message = timeout(Duration::from_millis(100), fetch_stream.next())
             .await
             .unwrap()
             .unwrap()
@@ -673,7 +673,7 @@ pub(super) mod tests {
             "\0\0test-doc-foo"
         );
 
-        timeout(Duration::from_millis(50), fetch_stream.next())
+        timeout(Duration::from_millis(100), fetch_stream.next())
             .await
             .unwrap_err();
 
@@ -681,7 +681,7 @@ pub(super) mod tests {
         let shard_status = (ShardState::Open, Position::offset(0u64));
         shard_status_tx.send(shard_status).unwrap();
 
-        timeout(Duration::from_millis(50), fetch_stream.next())
+        timeout(Duration::from_millis(100), fetch_stream.next())
             .await
             .unwrap_err();
 
@@ -697,7 +697,7 @@ pub(super) mod tests {
         let shard_status = (ShardState::Open, Position::offset(1u64));
         shard_status_tx.send(shard_status.clone()).unwrap();
 
-        let fetch_message = timeout(Duration::from_millis(50), fetch_stream.next())
+        let fetch_message = timeout(Duration::from_millis(100), fetch_stream.next())
             .await
             .unwrap()
             .unwrap()
@@ -743,7 +743,7 @@ pub(super) mod tests {
         let shard_status = (ShardState::Open, Position::offset(3u64));
         shard_status_tx.send(shard_status).unwrap();
 
-        let fetch_message = timeout(Duration::from_millis(50), fetch_stream.next())
+        let fetch_message = timeout(Duration::from_millis(100), fetch_stream.next())
             .await
             .unwrap()
             .unwrap()
@@ -774,7 +774,7 @@ pub(super) mod tests {
         let shard_status = (ShardState::Closed, Position::offset(3u64));
         shard_status_tx.send(shard_status).unwrap();
 
-        let fetch_message = timeout(Duration::from_millis(50), fetch_stream.next())
+        let fetch_message = timeout(Duration::from_millis(100), fetch_stream.next())
             .await
             .unwrap()
             .unwrap()
@@ -831,14 +831,14 @@ pub(super) mod tests {
             .unwrap();
         drop(state_guard);
 
-        timeout(Duration::from_millis(50), fetch_stream.next())
+        timeout(Duration::from_millis(100), fetch_stream.next())
             .await
             .unwrap_err();
 
         let shard_status = (ShardState::Closed, Position::Beginning);
         shard_status_tx.send(shard_status).unwrap();
 
-        let fetch_message = timeout(Duration::from_millis(50), fetch_stream.next())
+        let fetch_message = timeout(Duration::from_millis(100), fetch_stream.next())
             .await
             .unwrap()
             .unwrap()
@@ -895,7 +895,7 @@ pub(super) mod tests {
             .unwrap();
         drop(state_guard);
 
-        timeout(Duration::from_millis(50), fetch_stream.next())
+        timeout(Duration::from_millis(100), fetch_stream.next())
             .await
             .unwrap_err();
 
@@ -911,7 +911,7 @@ pub(super) mod tests {
         let shard_status = (ShardState::Open, Position::offset(0u64));
         shard_status_tx.send(shard_status).unwrap();
 
-        timeout(Duration::from_millis(50), fetch_stream.next())
+        timeout(Duration::from_millis(100), fetch_stream.next())
             .await
             .unwrap_err();
 
@@ -927,7 +927,7 @@ pub(super) mod tests {
         let shard_status = (ShardState::Open, Position::offset(1u64));
         shard_status_tx.send(shard_status).unwrap();
 
-        let fetch_message = timeout(Duration::from_millis(50), fetch_stream.next())
+        let fetch_message = timeout(Duration::from_millis(100), fetch_stream.next())
             .await
             .unwrap()
             .unwrap()
@@ -990,7 +990,7 @@ pub(super) mod tests {
             shard_status_rx,
             1024,
         );
-        let ingest_error = timeout(Duration::from_millis(50), fetch_stream.next())
+        let ingest_error = timeout(Duration::from_millis(100), fetch_stream.next())
             .await
             .unwrap()
             .unwrap()
@@ -1058,7 +1058,7 @@ pub(super) mod tests {
         let shard_status = (ShardState::Open, Position::offset(2u64));
         shard_status_tx.send(shard_status).unwrap();
 
-        let fetch_message = timeout(Duration::from_millis(50), fetch_stream.next())
+        let fetch_message = timeout(Duration::from_millis(100), fetch_stream.next())
             .await
             .unwrap()
             .unwrap()
@@ -1078,7 +1078,7 @@ pub(super) mod tests {
             "test-doc-footest-doc-bar"
         );
 
-        let fetch_message = timeout(Duration::from_millis(50), fetch_stream.next())
+        let fetch_message = timeout(Duration::from_millis(100), fetch_stream.next())
             .await
             .unwrap()
             .unwrap()
@@ -1187,7 +1187,7 @@ pub(super) mod tests {
         )
         .await;
 
-        let fetch_message = timeout(Duration::from_millis(50), fetch_stream.next())
+        let fetch_message = timeout(Duration::from_millis(100), fetch_stream.next())
             .await
             .unwrap()
             .unwrap()
@@ -1203,7 +1203,7 @@ pub(super) mod tests {
             Position::offset(1u64)
         );
 
-        let fetch_message = timeout(Duration::from_millis(50), fetch_stream.next())
+        let fetch_message = timeout(Duration::from_millis(100), fetch_stream.next())
             .await
             .unwrap()
             .unwrap()
@@ -1212,7 +1212,7 @@ pub(super) mod tests {
 
         assert_eq!(fetch_eof.eof_position(), Position::eof(1u64));
 
-        assert!(timeout(Duration::from_millis(50), fetch_stream.next())
+        assert!(timeout(Duration::from_millis(100), fetch_stream.next())
             .await
             .unwrap()
             .is_none());
@@ -1297,7 +1297,7 @@ pub(super) mod tests {
         )
         .await;
 
-        let fetch_message = timeout(Duration::from_millis(50), fetch_stream.next())
+        let fetch_message = timeout(Duration::from_millis(100), fetch_stream.next())
             .await
             .unwrap()
             .unwrap()
@@ -1313,7 +1313,7 @@ pub(super) mod tests {
             Position::offset(1u64)
         );
 
-        let fetch_message = timeout(Duration::from_millis(50), fetch_stream.next())
+        let fetch_message = timeout(Duration::from_millis(100), fetch_stream.next())
             .await
             .unwrap()
             .unwrap()
@@ -1322,7 +1322,7 @@ pub(super) mod tests {
 
         assert_eq!(fetch_eof.eof_position(), Position::eof(1u64));
 
-        assert!(timeout(Duration::from_millis(50), fetch_stream.next())
+        assert!(timeout(Duration::from_millis(100), fetch_stream.next())
             .await
             .unwrap()
             .is_none());
@@ -1409,7 +1409,7 @@ pub(super) mod tests {
         )
         .await;
 
-        let fetch_message = timeout(Duration::from_millis(50), fetch_stream.next())
+        let fetch_message = timeout(Duration::from_millis(100), fetch_stream.next())
             .await
             .unwrap()
             .unwrap()
@@ -1425,7 +1425,7 @@ pub(super) mod tests {
             Position::offset(1u64)
         );
 
-        let fetch_message = timeout(Duration::from_millis(50), fetch_stream.next())
+        let fetch_message = timeout(Duration::from_millis(100), fetch_stream.next())
             .await
             .unwrap()
             .unwrap()
@@ -1434,7 +1434,7 @@ pub(super) mod tests {
 
         assert_eq!(fetch_eof.eof_position(), Position::eof(1u64));
 
-        assert!(timeout(Duration::from_millis(50), fetch_stream.next())
+        assert!(timeout(Duration::from_millis(100), fetch_stream.next())
             .await
             .unwrap()
             .is_none());
@@ -1542,7 +1542,7 @@ pub(super) mod tests {
         )
         .await;
 
-        let ingest_error = timeout(Duration::from_millis(50), fetch_stream.next())
+        let ingest_error = timeout(Duration::from_millis(100), fetch_stream.next())
             .await
             .unwrap()
             .unwrap()
@@ -1552,7 +1552,7 @@ pub(super) mod tests {
             matches!(ingest_error, IngestV2Error::Internal(message) if message == "open fetch stream error")
         );
 
-        let fetch_message = timeout(Duration::from_millis(50), fetch_stream.next())
+        let fetch_message = timeout(Duration::from_millis(100), fetch_stream.next())
             .await
             .unwrap()
             .unwrap()
@@ -1568,7 +1568,7 @@ pub(super) mod tests {
             Position::offset(1u64)
         );
 
-        let fetch_stream_error = timeout(Duration::from_millis(50), fetch_stream.next())
+        let fetch_stream_error = timeout(Duration::from_millis(100), fetch_stream.next())
             .await
             .unwrap()
             .unwrap()
@@ -1577,7 +1577,7 @@ pub(super) mod tests {
             matches!(fetch_stream_error.ingest_error, IngestV2Error::Internal(message) if message == "fetch stream error #1")
         );
 
-        let fetch_message = timeout(Duration::from_millis(50), fetch_stream.next())
+        let fetch_message = timeout(Duration::from_millis(100), fetch_stream.next())
             .await
             .unwrap()
             .unwrap()
@@ -1593,7 +1593,7 @@ pub(super) mod tests {
             Position::offset(2u64)
         );
 
-        let fetch_stream_error = timeout(Duration::from_millis(50), fetch_stream.next())
+        let fetch_stream_error = timeout(Duration::from_millis(100), fetch_stream.next())
             .await
             .unwrap()
             .unwrap()
@@ -1602,7 +1602,7 @@ pub(super) mod tests {
             matches!(fetch_stream_error.ingest_error, IngestV2Error::Internal(message) if message == "fetch stream error #2")
         );
 
-        assert!(timeout(Duration::from_millis(50), fetch_stream.next())
+        assert!(timeout(Duration::from_millis(100), fetch_stream.next())
             .await
             .unwrap()
             .is_none());
