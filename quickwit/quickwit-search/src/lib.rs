@@ -167,7 +167,7 @@ fn extract_split_and_footer_offsets(split_metadata: &SplitMetadata) -> SplitIdAn
     }
 }
 
-/// Extract the list of relevant splits for a given query.
+/// Extract the list of relevant splits for a given request.
 async fn list_relevant_splits(
     index_uids: Vec<IndexUid>,
     start_timestamp: Option<i64>,

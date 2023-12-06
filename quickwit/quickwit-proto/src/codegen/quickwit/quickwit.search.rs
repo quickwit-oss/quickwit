@@ -108,9 +108,9 @@ pub struct ListFieldsEntryResponse {
     /// The field name
     #[prost(string, tag = "1")]
     pub field_name: ::prost::alloc::string::String,
-    /// The tantivy field type
-    #[prost(int32, tag = "2")]
-    pub field_type: i32,
+    /// The tantivy field type mapped via `to_code`.
+    #[prost(uint32, tag = "2")]
+    pub field_type: u32,
     /// The index ids the field exists
     #[prost(string, repeated, tag = "3")]
     pub index_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
