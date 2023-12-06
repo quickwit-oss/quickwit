@@ -29,11 +29,11 @@ use quickwit_config::SearcherConfig;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_proto::search::{
-    FetchDocsRequest, FetchDocsResponse, GetKvRequest, Hit, LeafListTermsRequest,
-    LeafListTermsResponse, LeafSearchRequest, LeafSearchResponse, LeafSearchStreamRequest,
-    LeafSearchStreamResponse, ListTermsRequest, ListTermsResponse, PutKvRequest,
-    ReportSplitsRequest, ReportSplitsResponse, ScrollRequest, SearchRequest, SearchResponse,
-    SearchStreamRequest, SnippetRequest,
+    FetchDocsRequest, FetchDocsResponse, GetKvRequest, Hit, LeafListFieldsRequest,
+    LeafListTermsRequest, LeafListTermsResponse, LeafSearchRequest, LeafSearchResponse,
+    LeafSearchStreamRequest, LeafSearchStreamResponse, ListFieldsRequest, ListFieldsResponse,
+    ListTermsRequest, ListTermsResponse, PutKvRequest, ReportSplitsRequest, ReportSplitsResponse,
+    ScrollRequest, SearchRequest, SearchResponse, SearchStreamRequest, SnippetRequest,
 };
 use quickwit_storage::{
     MemorySizedCache, QuickwitCache, SplitCache, StorageCache, StorageResolver,
@@ -43,6 +43,7 @@ use tokio::sync::Semaphore;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
 use crate::leaf_cache::LeafSearchCache;
+use crate::list_fields::{leaf_list_fields, root_list_fields};
 use crate::root::fetch_docs_phase;
 use crate::scroll_context::{MiniKV, ScrollContext, ScrollKeyAndStartOffset};
 use crate::search_stream::{leaf_search_stream, root_search_stream};
@@ -136,6 +137,18 @@ pub trait SearchService: 'static + Send + Sync {
     /// Indexers call report_splits to inform searchers node about the presence of a split, which
     /// would then be considered as a candidate for the searcher split cache.
     async fn report_splits(&self, report_splits: ReportSplitsRequest) -> ReportSplitsResponse;
+
+    /// Return the list of fields for a given or multiple indices.
+    async fn root_list_fields(
+        &self,
+        list_fields: ListFieldsRequest,
+    ) -> crate::Result<ListFieldsResponse>;
+
+    /// Return the list of fields for one index.
+    async fn leaf_list_fields(
+        &self,
+        list_fields: LeafListFieldsRequest,
+    ) -> crate::Result<ListFieldsResponse>;
 }
 
 impl SearchServiceImpl {
@@ -313,6 +326,29 @@ impl SearchService for SearchServiceImpl {
             split_cache.report_splits(report_splits.report_splits);
         }
         ReportSplitsResponse {}
+    }
+
+    async fn root_list_fields(
+        &self,
+        list_fields_req: ListFieldsRequest,
+    ) -> crate::Result<ListFieldsResponse> {
+        root_list_fields(
+            list_fields_req,
+            &self.cluster_client,
+            self.metastore.clone(),
+        )
+        .await
+    }
+
+    async fn leaf_list_fields(
+        &self,
+        list_fields_req: LeafListFieldsRequest,
+    ) -> crate::Result<ListFieldsResponse> {
+        let index_uri = Uri::from_str(&list_fields_req.index_uri)?;
+        let storage = self.storage_resolver.resolve(&index_uri).await?;
+        let index_id = list_fields_req.index_id;
+        let split_ids = list_fields_req.split_offsets;
+        leaf_list_fields(index_id, storage, &self.searcher_context, &split_ids[..]).await
     }
 }
 

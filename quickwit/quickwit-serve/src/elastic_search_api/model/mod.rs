@@ -20,6 +20,7 @@
 mod bulk_body;
 mod bulk_query_params;
 mod error;
+mod field_capability;
 mod multi_search;
 mod scroll;
 mod search_body;
