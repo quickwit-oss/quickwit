@@ -70,13 +70,6 @@ pub struct ListSplitsRequest {
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct StreamSplitsRequest {
-    #[prost(string, tag = "1")]
-    pub query_json: ::prost::alloc::string::String,
-}
-#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListSplitsResponse {
     /// TODO use repeated and encode splits json individually.
     #[prost(string, tag = "1")]

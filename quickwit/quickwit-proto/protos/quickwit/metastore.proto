@@ -206,10 +206,6 @@ message ListSplitsRequest {
   string query_json = 1;
 }
 
-message StreamSplitsRequest {
-  string query_json = 1;
-}
-
 message ListSplitsResponse {
   // TODO use repeated and encode splits json individually.
   string splits_serialized_json = 1;
