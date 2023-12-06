@@ -814,7 +814,7 @@ async fn test_garbage_collect_index_cli() {
     metastore
         .mark_splits_for_deletion(MarkSplitsForDeletionRequest::new(
             index_uid.clone(),
-            vec![split_metadata.clone().split_id.to_string()],
+            vec![split_metadata.split_id.to_string()],
         ))
         .await
         .unwrap();

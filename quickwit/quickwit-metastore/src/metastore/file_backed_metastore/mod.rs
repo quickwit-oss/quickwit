@@ -320,7 +320,7 @@ impl FileBackedMetastore {
     }
 
     /// Returns the list of splits for the given request.
-    /// No error is returned if one of the requested `index_uid` does not exist.
+    /// No error is returned if any of the requested `index_uid` does not exist.
     async fn inner_list_splits(&self, request: ListSplitsRequest) -> MetastoreResult<Vec<Split>> {
         let list_splits_query = request.deserialize_list_splits_query()?;
         let mut all_splits = Vec::new();
@@ -636,7 +636,7 @@ impl MetastoreService for FileBackedMetastore {
     /// Read-only accessors
 
     /// Streams of splits for the given request.
-    /// No error is returned if one of the requested `index_uid` does not exist.
+    /// No error is returned if any of the requested `index_uid` does not exist.
     async fn list_splits(
         &mut self,
         request: ListSplitsRequest,
