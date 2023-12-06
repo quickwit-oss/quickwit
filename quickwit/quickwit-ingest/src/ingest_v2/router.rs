@@ -19,13 +19,13 @@
 
 use std::collections::{HashMap, HashSet};
 use std::fmt;
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 use std::time::Duration;
 
 use async_trait::async_trait;
 use futures::stream::FuturesUnordered;
 use futures::{Future, StreamExt};
-use quickwit_common::pubsub::{EventBroker, EventSubscriber, EventSubscriptionHandle};
+use quickwit_common::pubsub::{EventBroker, EventSubscriber};
 use quickwit_proto::control_plane::{
     ControlPlaneService, ControlPlaneServiceClient, GetOrCreateOpenShardsRequest,
     GetOrCreateOpenShardsSubrequest,
@@ -67,7 +67,6 @@ pub struct IngestRouter {
     ingester_pool: IngesterPool,
     state: Arc<RwLock<RouterState>>,
     replication_factor: usize,
-    _local_shards_update_subscription_handle: EventSubscriptionHandle,
 }
 
 struct RouterState {
@@ -86,7 +85,6 @@ impl fmt::Debug for IngestRouter {
 impl IngestRouter {
     pub fn new(
         self_node_id: NodeId,
-        event_broker: EventBroker,
         control_plane: ControlPlaneServiceClient,
         ingester_pool: IngesterPool,
         replication_factor: usize,
@@ -97,17 +95,19 @@ impl IngestRouter {
                 table: HashMap::default(),
             },
         }));
-        let _local_shards_update_subscription_handle =
-            event_broker.subscribe::<LocalShardsUpdate>(state.clone());
-
         Self {
             self_node_id,
             control_plane,
             ingester_pool,
             state,
             replication_factor,
-            _local_shards_update_subscription_handle,
         }
+    }
+
+    pub fn subscribe(&self, event_broker: &EventBroker) {
+        event_broker
+            .subscribe::<LocalShardsUpdate>(Arc::downgrade(&self.state))
+            .forever();
     }
 
     /// Inspects the shard table for each subrequest and returns the appropriate
@@ -391,8 +391,11 @@ impl IngestRouterService for IngestRouter {
 }
 
 #[async_trait]
-impl EventSubscriber<LocalShardsUpdate> for Arc<RwLock<RouterState>> {
+impl EventSubscriber<LocalShardsUpdate> for Weak<RwLock<RouterState>> {
     async fn handle_event(&mut self, local_shards_update: LocalShardsUpdate) {
+        let Some(state) = self.upgrade() else {
+            return;
+        };
         // TODO: Insert the new shards in the shard table when `LocalShardsUpdate` also carries the
         // leader ID.
         let index_uid = local_shards_update.source_uid.index_uid;
@@ -404,7 +407,8 @@ impl EventSubscriber<LocalShardsUpdate> for Arc<RwLock<RouterState>> {
             .map(|shard_info| shard_info.shard_id)
             .collect();
 
-        self.write()
+        state
+            .write()
             .await
             .shard_table
             .close_shards(&index_uid, &source_id, &closed_shard_ids);
@@ -442,13 +446,11 @@ mod tests {
     #[tokio::test]
     async fn test_router_make_get_or_create_open_shard_request() {
         let self_node_id = "test-router".into();
-        let event_broker = EventBroker::default();
         let control_plane: ControlPlaneServiceClient = ControlPlaneServiceClient::mock().into();
         let ingester_pool = IngesterPool::default();
         let replication_factor = 1;
         let router = IngestRouter::new(
             self_node_id,
-            event_broker,
             control_plane,
             ingester_pool.clone(),
             replication_factor,
@@ -559,7 +561,6 @@ mod tests {
     #[tokio::test]
     async fn test_router_populate_shard_table() {
         let self_node_id = "test-router".into();
-        let event_broker = EventBroker::default();
 
         let mut control_plane_mock = ControlPlaneServiceClient::mock();
         control_plane_mock
@@ -636,7 +637,6 @@ mod tests {
         let replication_factor = 1;
         let mut router = IngestRouter::new(
             self_node_id,
-            event_broker,
             control_plane,
             ingester_pool.clone(),
             replication_factor,
@@ -744,13 +744,11 @@ mod tests {
     #[tokio::test]
     async fn test_router_process_persist_results_record_persist_successes() {
         let self_node_id = "test-router".into();
-        let event_broker = EventBroker::default();
         let control_plane = ControlPlaneServiceClient::mock().into();
         let ingester_pool = IngesterPool::default();
         let replication_factor = 1;
         let mut router = IngestRouter::new(
             self_node_id,
-            event_broker,
             control_plane,
             ingester_pool.clone(),
             replication_factor,
@@ -796,13 +794,11 @@ mod tests {
     #[tokio::test]
     async fn test_router_process_persist_results_record_persist_failures() {
         let self_node_id = "test-router".into();
-        let event_broker = EventBroker::default();
         let control_plane = ControlPlaneServiceClient::mock().into();
         let ingester_pool = IngesterPool::default();
         let replication_factor = 1;
         let mut router = IngestRouter::new(
             self_node_id,
-            event_broker,
             control_plane,
             ingester_pool.clone(),
             replication_factor,
@@ -848,13 +844,11 @@ mod tests {
     #[tokio::test]
     async fn test_router_process_persist_results_closes_shards() {
         let self_node_id = "test-router".into();
-        let event_broker = EventBroker::default();
         let control_plane = ControlPlaneServiceClient::mock().into();
         let ingester_pool = IngesterPool::default();
         let replication_factor = 1;
         let mut router = IngestRouter::new(
             self_node_id,
-            event_broker,
             control_plane,
             ingester_pool.clone(),
             replication_factor,
@@ -914,7 +908,6 @@ mod tests {
     #[tokio::test]
     async fn test_router_process_persist_results_removes_unavailable_leaders() {
         let self_node_id = "test-router".into();
-        let event_broker = EventBroker::default();
         let control_plane = ControlPlaneServiceClient::mock().into();
 
         let ingester_pool = IngesterPool::default();
@@ -930,7 +923,6 @@ mod tests {
         let replication_factor = 1;
         let mut router = IngestRouter::new(
             self_node_id,
-            event_broker,
             control_plane,
             ingester_pool.clone(),
             replication_factor,
@@ -996,13 +988,11 @@ mod tests {
     #[tokio::test]
     async fn test_router_ingest() {
         let self_node_id = "test-router".into();
-        let event_broker = EventBroker::default();
         let control_plane = ControlPlaneServiceClient::mock().into();
         let ingester_pool = IngesterPool::default();
         let replication_factor = 1;
         let mut router = IngestRouter::new(
             self_node_id,
-            event_broker,
             control_plane,
             ingester_pool.clone(),
             replication_factor,
@@ -1209,13 +1199,11 @@ mod tests {
     #[tokio::test]
     async fn test_router_ingest_retry() {
         let self_node_id = "test-router".into();
-        let event_broker = EventBroker::default();
         let control_plane = ControlPlaneServiceClient::mock().into();
         let ingester_pool = IngesterPool::default();
         let replication_factor = 1;
         let mut router = IngestRouter::new(
             self_node_id,
-            event_broker,
             control_plane,
             ingester_pool.clone(),
             replication_factor,
@@ -1317,17 +1305,17 @@ mod tests {
     #[tokio::test]
     async fn test_router_closes_shards_on_local_shards_update() {
         let self_node_id = "test-router".into();
-        let event_broker = EventBroker::default();
         let control_plane = ControlPlaneServiceClient::mock().into();
         let ingester_pool = IngesterPool::default();
         let replication_factor = 1;
         let router = IngestRouter::new(
             self_node_id,
-            event_broker.clone(),
             control_plane,
             ingester_pool.clone(),
             replication_factor,
         );
+        let event_broker = EventBroker::default();
+        router.subscribe(&event_broker);
 
         let mut state_guard = router.state.write().await;
         state_guard.shard_table.set_shards(

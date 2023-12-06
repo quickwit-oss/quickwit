@@ -77,7 +77,10 @@ pub(super) fn check_enough_capacity(
 }
 
 /// Deletes a queue from the WAL. Returns without error if the queue does not exist.
-pub async fn delete_queue(mrecordlog: &mut MultiRecordLog, queue_id: &QueueId) -> io::Result<()> {
+pub async fn force_delete_queue(
+    mrecordlog: &mut MultiRecordLog,
+    queue_id: &QueueId,
+) -> io::Result<()> {
     match mrecordlog.delete_queue(queue_id).await {
         Ok(_) | Err(DeleteQueueError::MissingQueue(_)) => Ok(()),
         Err(DeleteQueueError::IoError(error)) => Err(error),

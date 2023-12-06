@@ -245,8 +245,11 @@ pub struct TruncateShardsSubrequest {
     pub source_id: ::prost::alloc::string::String,
     #[prost(uint64, tag = "3")]
     pub shard_id: u64,
+    /// The position up to which the shard should be truncated (inclusive).
     #[prost(message, optional, tag = "4")]
-    pub to_position_inclusive: ::core::option::Option<crate::types::Position>,
+    pub truncate_up_to_position_inclusive: ::core::option::Option<
+        crate::types::Position,
+    >,
 }
 /// TODO
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
