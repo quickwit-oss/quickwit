@@ -67,12 +67,9 @@ pub struct ListFieldsRequest {
     /// Optional limit query to a set of indexes.
     #[prost(string, repeated, tag = "1")]
     pub index_id: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    /// Optional limit query to a set of splits.
-    #[prost(string, repeated, tag = "2")]
-    pub split_id: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     /// Optional limit query to a list of fields
     /// Wildcard expressions are supported.
-    #[prost(string, repeated, tag = "3")]
+    #[prost(string, repeated, tag = "2")]
     pub fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]

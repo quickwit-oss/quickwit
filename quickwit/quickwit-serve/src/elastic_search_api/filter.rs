@@ -23,7 +23,9 @@ use serde::de::DeserializeOwned;
 use warp::reject::LengthRequired;
 use warp::{Filter, Rejection};
 
-use super::model::MultiSearchQueryParams;
+use super::model::{
+    FieldCapabilityQueryParams, FieldCapabilityRequestBody, MultiSearchQueryParams,
+};
 use crate::elastic_search_api::model::{
     ElasticIngestOptions, ScrollQueryParams, SearchBody, SearchQueryParams,
 };
@@ -98,6 +100,22 @@ fn json_or_empty<T: DeserializeOwned + Send + Default>(
             }
         })
         .unify()
+}
+
+#[utoipa::path(get, tag = "metadata", path = "/{index}/_field_caps")]
+pub(crate) fn elastic_index_field_capabilities_filter() -> impl Filter<
+    Extract = (
+        Vec<String>,
+        FieldCapabilityQueryParams,
+        FieldCapabilityRequestBody,
+    ),
+    Error = Rejection,
+> + Clone {
+    warp::path!("_elastic" / String / "_field_caps")
+        .and_then(extract_index_id_patterns)
+        .and(warp::get().or(warp::post()).unify())
+        .and(serde_qs::warp::query(serde_qs::Config::default()))
+        .and(json_or_empty())
 }
 
 #[utoipa::path(get, tag = "Search", path = "/{index}/_search")]

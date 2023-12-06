@@ -120,11 +120,9 @@ message ReportSplitsResponse {}
 message ListFieldsRequest {
   // Optional limit query to a set of indexes.
   repeated string index_id = 1;
-  // Optional limit query to a set of splits.
-  repeated string split_id = 2;
   // Optional limit query to a list of fields
   // Wildcard expressions are supported.
-  repeated string fields = 3;
+  repeated string fields = 2;
 
   // Control if the the request will fail if split_ids contains a split that does not exist. 
   // optional bool fail_on_missing_index = 3;
