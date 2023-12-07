@@ -50,7 +50,8 @@ use quickwit_indexing::merge_policy::MergeOperation;
 use quickwit_indexing::models::MergeScratch;
 use quickwit_indexing::{get_tantivy_directory_from_split_bundle, TestSandbox};
 use quickwit_metastore::{
-    ListSplitsQuery, ListSplitsRequestExt, ListSplitsResponseExt, SplitMetadata, SplitState,
+    ListSplitsQuery, ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, SplitMetadata,
+    SplitState,
 };
 use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::metastore::{ListSplitsRequest, MetastoreService};
@@ -193,7 +194,8 @@ async fn aux_test_failpoints() -> anyhow::Result<()> {
         .list_splits(list_splits_request)
         .await
         .unwrap()
-        .deserialize_splits()
+        .collect_splits()
+        .await
         .unwrap();
     splits.sort_by_key(|split| *split.split_metadata.time_range.clone().unwrap().start());
     assert_eq!(splits.len(), 2);
@@ -270,7 +272,8 @@ async fn test_merge_executor_controlled_directory_kill_switch() -> anyhow::Resul
     let split_metadatas: Vec<SplitMetadata> = metastore
         .list_splits(ListSplitsRequest::try_from_index_uid(test_index_builder.index_uid()).unwrap())
         .await?
-        .deserialize_splits_metadata()
+        .collect_splits_metadata()
+        .await
         .unwrap();
     let merge_scratch_directory = TempDirectory::for_test();
 
