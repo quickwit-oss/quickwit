@@ -1220,7 +1220,7 @@ dependencies = [
 [[package]]
 name = "chitchat"
 version = "0.8.0"
-source = "git+https://github.com/quickwit-oss/chitchat.git?rev=72a994f#72a994fa0acdc7472d60ec8d1179fff92190855e"
+source = "git+https://github.com/quickwit-oss/chitchat.git?rev=a3e3f8b#a3e3f8bd483b489e4da1ca953175b417e4949f90"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5190,7 +5190,6 @@ dependencies = [
  "async-trait",
  "bytes",
  "bytesize",
- "chitchat",
  "chrono",
  "clap",
  "colored",
@@ -5355,6 +5354,8 @@ dependencies = [
  "chrono",
  "cron",
  "enum-iterator",
+ "http",
+ "http-serde",
  "humantime",
  "itertools 0.12.0",
  "json_comments",
@@ -5383,7 +5384,6 @@ version = "0.6.5-dev"
 dependencies = [
  "anyhow",
  "async-trait",
- "chitchat",
  "dyn-clone",
  "fnv",
  "futures",
@@ -5532,7 +5532,6 @@ dependencies = [
  "backoff",
  "bytes",
  "bytesize",
- "chitchat",
  "criterion",
  "fail",
  "flume",
@@ -5581,6 +5580,7 @@ dependencies = [
  "ulid",
  "utoipa",
  "vrl",
+ "zstd 0.13.0",
 ]
 
 [[package]]
@@ -5952,7 +5952,6 @@ dependencies = [
  "async-trait",
  "bytes",
  "bytesize",
- "chitchat",
  "elasticsearch-dsl",
  "futures",
  "futures-util",

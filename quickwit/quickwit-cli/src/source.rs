@@ -433,7 +433,7 @@ where
         .iter()
         .map(|(partition_id, position)| CheckpointRow {
             partition_id: partition_id.0.to_string(),
-            offset: position.as_str().to_string(),
+            offset: position.to_string(),
         })
         .sorted_by(|left, right| left.partition_id.cmp(&right.partition_id));
     let checkpoint_table = make_table("Checkpoint", checkpoint_rows, false);
@@ -734,7 +734,9 @@ mod tests {
 
         let checkpoint: SourceCheckpoint = vec![("shard-000", ""), ("shard-001", "1234567890")]
             .into_iter()
-            .map(|(partition_id, offset)| (PartitionId::from(partition_id), Position::from(offset)))
+            .map(|(partition_id, offset)| {
+                (PartitionId::from(partition_id), Position::offset(offset))
+            })
             .collect();
         let sources = vec![SourceConfig {
             source_id: "foo-source".to_string(),

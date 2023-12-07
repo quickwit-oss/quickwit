@@ -72,6 +72,7 @@ mod source_factory;
 mod vec_source;
 mod void_source;
 
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::time::Duration;
 
@@ -238,7 +239,7 @@ pub trait Source: Send + 'static {
     /// plane.
     async fn assign_shards(
         &mut self,
-        _assignement: Assignment,
+        _shard_ids: BTreeSet<ShardId>,
         _doc_processor_mailbox: &Mailbox<DocProcessor>,
         _ctx: &SourceContext,
     ) -> anyhow::Result<()> {
@@ -299,7 +300,7 @@ struct Loop;
 
 #[derive(Debug)]
 pub struct Assignment {
-    pub shard_ids: Vec<ShardId>,
+    pub shard_ids: BTreeSet<ShardId>,
 }
 
 #[derive(Debug)]
@@ -367,12 +368,12 @@ impl Handler<AssignShards> for SourceActor {
 
     async fn handle(
         &mut self,
-        message: AssignShards,
+        assign_shards_message: AssignShards,
         ctx: &SourceContext,
     ) -> Result<(), ActorExitStatus> {
-        let AssignShards(assignment) = message;
+        let AssignShards(Assignment { shard_ids }) = assign_shards_message;
         self.source
-            .assign_shards(assignment, &self.doc_processor_mailbox, ctx)
+            .assign_shards(shard_ids, &self.doc_processor_mailbox, ctx)
             .await?;
         Ok(())
     }

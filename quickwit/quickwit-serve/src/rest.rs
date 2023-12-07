@@ -85,46 +85,9 @@ pub(crate) async fn start_rest_server(
     // `/metrics` route.
     let metrics_routes = warp::path("metrics").and(warp::get()).map(metrics_handler);
 
-    let ingest_router = quickwit_services.ingest_router_service.clone();
-    let ingest_service = quickwit_services.ingest_service.clone();
-
     // `/api/v1/*` routes.
-    let api_v1_root_url = warp::path!("api" / "v1" / ..);
-    let api_v1_routes = cluster_handler(quickwit_services.cluster.clone())
-        .or(node_info_handler(
-            BuildInfo::get(),
-            RuntimeInfo::get(),
-            quickwit_services.node_config.clone(),
-        ))
-        .or(indexing_get_handler(
-            quickwit_services.indexing_service_opt.clone(),
-        ))
-        .or(search_get_handler(quickwit_services.search_service.clone()))
-        .or(search_post_handler(
-            quickwit_services.search_service.clone(),
-        ))
-        .or(search_stream_handler(
-            quickwit_services.search_service.clone(),
-        ))
-        .or(ingest_api_handlers(
-            ingest_router,
-            ingest_service.clone(),
-            quickwit_services.node_config.ingest_api_config.clone(),
-        ))
-        .or(index_management_handlers(
-            quickwit_services.index_manager.clone(),
-            quickwit_services.node_config.clone(),
-        ))
-        .or(delete_task_api_handlers(
-            quickwit_services.metastore_client.clone(),
-        ))
-        .or(elastic_api_handlers(
-            quickwit_services.node_config.clone(),
-            quickwit_services.search_service.clone(),
-            ingest_service.clone(),
-        ));
+    let api_v1_root_route = api_v1_routes(quickwit_services.clone());
 
-    let api_v1_root_route = api_v1_root_url.and(api_v1_routes);
     let redirect_root_to_ui_route = warp::path::end()
         .and(warp::get())
         .map(|| redirect(http::Uri::from_static("/ui/search")));
@@ -143,7 +106,7 @@ pub(crate) async fn start_rest_server(
     let warp_service = warp::service(rest_routes);
     let compression_predicate =
         DefaultPredicate::new().and(SizeAbove::new(MINIMUM_RESPONSE_COMPRESSION_SIZE));
-    let cors = build_cors(&quickwit_services.node_config.rest_cors_allow_origins);
+    let cors = build_cors(&quickwit_services.node_config.rest_config.cors_allow_origins);
 
     let service = ServiceBuilder::new()
         .layer(
@@ -175,6 +138,66 @@ pub(crate) async fn start_rest_server(
     let (serve_res, _trigger_res) = tokio::join!(serve_fut, readiness_trigger);
     serve_res?;
     Ok(())
+}
+
+fn api_v1_routes(
+    quickwit_services: Arc<QuickwitServices>,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    if !quickwit_services
+        .node_config
+        .rest_config
+        .extra_headers
+        .is_empty()
+    {
+        info!(
+            "Extra headers will be added to all responses: {:?}",
+            quickwit_services.node_config.rest_config.extra_headers
+        );
+    }
+    let api_v1_root_url = warp::path!("api" / "v1" / ..);
+    api_v1_root_url
+        .and(
+            cluster_handler(quickwit_services.cluster.clone())
+                .or(node_info_handler(
+                    BuildInfo::get(),
+                    RuntimeInfo::get(),
+                    quickwit_services.node_config.clone(),
+                ))
+                .or(indexing_get_handler(
+                    quickwit_services.indexing_service_opt.clone(),
+                ))
+                .or(search_get_handler(quickwit_services.search_service.clone()))
+                .or(search_post_handler(
+                    quickwit_services.search_service.clone(),
+                ))
+                .or(search_stream_handler(
+                    quickwit_services.search_service.clone(),
+                ))
+                .or(ingest_api_handlers(
+                    quickwit_services.ingest_router_service.clone(),
+                    quickwit_services.ingest_service.clone(),
+                    quickwit_services.node_config.ingest_api_config.clone(),
+                ))
+                .or(index_management_handlers(
+                    quickwit_services.index_manager.clone(),
+                    quickwit_services.node_config.clone(),
+                ))
+                .or(delete_task_api_handlers(
+                    quickwit_services.metastore_client.clone(),
+                ))
+                .or(elastic_api_handlers(
+                    quickwit_services.node_config.clone(),
+                    quickwit_services.search_service.clone(),
+                    quickwit_services.ingest_service.clone(),
+                )),
+        )
+        .with(warp::reply::with::headers(
+            quickwit_services
+                .node_config
+                .rest_config
+                .extra_headers
+                .clone(),
+        ))
 }
 
 /// This function returns a formatted error based on the given rejection reason.
@@ -309,10 +332,26 @@ mod tests {
     use std::pin::Pin;
     use std::task::{Context, Poll};
 
+    use http::HeaderName;
     use hyper::{Request, Response, StatusCode};
+    use quickwit_cluster::{create_cluster_for_test, ChannelTransport};
+    use quickwit_config::NodeConfig;
+    use quickwit_index_management::IndexService;
+    use quickwit_ingest::{IngestApiService, IngestServiceClient};
+    use quickwit_proto::control_plane::ControlPlaneServiceClient;
+    use quickwit_proto::ingest::router::IngestRouterServiceClient;
+    use quickwit_proto::metastore::MetastoreServiceClient;
+    use quickwit_search::MockSearchService;
+    use quickwit_storage::StorageResolver;
     use tower::Service;
 
     use super::*;
+
+    pub(crate) fn ingest_service_client() -> IngestServiceClient {
+        let universe = quickwit_actors::Universe::new();
+        let (ingest_service_mailbox, _) = universe.create_test_mailbox::<IngestApiService>();
+        IngestServiceClient::from_mailbox(ingest_service_mailbox)
+    }
 
     #[tokio::test]
     async fn test_cors() {
@@ -524,5 +563,60 @@ mod tests {
 
             Box::pin(fut)
         }
+    }
+
+    #[tokio::test]
+    async fn test_extra_headers() {
+        let mut node_config = NodeConfig::for_test();
+        node_config.rest_config.extra_headers.insert(
+            HeaderName::from_static("x-custom-header"),
+            HeaderValue::from_static("custom-value"),
+        );
+        node_config.rest_config.extra_headers.insert(
+            HeaderName::from_static("x-custom-header-2"),
+            HeaderValue::from_static("custom-value-2"),
+        );
+        let metastore_client = MetastoreServiceClient::from(MetastoreServiceClient::mock());
+        let index_service =
+            IndexService::new(metastore_client.clone(), StorageResolver::unconfigured());
+        let control_plane_service =
+            ControlPlaneServiceClient::from(ControlPlaneServiceClient::mock());
+        let transport = ChannelTransport::default();
+        let cluster = create_cluster_for_test(Vec::new(), &[], &transport, false)
+            .await
+            .unwrap();
+        let quickwit_services = QuickwitServices {
+            _report_splits_subscription_handle_opt: None,
+            _local_shards_update_listener_handle_opt: None,
+            cluster,
+            control_plane_service,
+            indexing_service_opt: None,
+            index_manager: index_service,
+            ingest_service: ingest_service_client(),
+
+            ingester_service_opt: None,
+            ingest_router_service: IngestRouterServiceClient::from(
+                IngestRouterServiceClient::mock(),
+            ),
+            janitor_service_opt: None,
+            metastore_client,
+            metastore_server_opt: None,
+            node_config: Arc::new(node_config.clone()),
+            search_service: Arc::new(MockSearchService::new()),
+        };
+        let handler = api_v1_routes(Arc::new(quickwit_services));
+        let resp = warp::test::request()
+            .path("/api/v1/version")
+            .reply(&handler)
+            .await;
+        assert_eq!(resp.status(), 200);
+        assert_eq!(
+            resp.headers().get("x-custom-header").unwrap(),
+            "custom-value"
+        );
+        assert_eq!(
+            resp.headers().get("x-custom-header-2").unwrap(),
+            "custom-value-2"
+        );
     }
 }

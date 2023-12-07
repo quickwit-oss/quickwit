@@ -28,7 +28,7 @@ use anyhow::Context;
 use chitchat::transport::Transport;
 use chitchat::{
     spawn_chitchat, Chitchat, ChitchatConfig, ChitchatHandle, ChitchatId, ClusterStateSnapshot,
-    FailureDetectorConfig, ListenerHandle, NodeState,
+    FailureDetectorConfig, KeyChangeEvent, ListenerHandle, NodeState,
 };
 use futures::Stream;
 use itertools::Itertools;
@@ -266,7 +266,7 @@ impl Cluster {
     pub async fn subscribe(
         &self,
         key_prefix: &str,
-        callback: impl Fn(&str, &str) + Send + Sync + 'static,
+        callback: impl Fn(KeyChangeEvent) + Send + Sync + 'static,
     ) -> ListenerHandle {
         self.chitchat()
             .await
@@ -447,7 +447,7 @@ pub fn parse_indexing_tasks(node_state: &NodeState) -> Vec<IndexingTask> {
 ///
 /// If previous indexing tasks were present in the node state but were not in the given tasks, they
 /// are marked for deletion.
-pub fn set_indexing_tasks_in_node_state(
+pub(crate) fn set_indexing_tasks_in_node_state(
     indexing_tasks: &[IndexingTask],
     node_state: &mut NodeState,
 ) {

@@ -1,6 +1,7 @@
 ---
 title: Index configuration
 sidebar_position: 3
+toc_max_heading_level: 4
 ---
 
 This page describes how to configure an index.
@@ -82,11 +83,11 @@ The file storage will not work when running quickwit in distributed mode. Instea
 
 ## Doc mapping
 
-The doc mapping defines how a document and the fields it contains are stored and indexed for a given index. A document is a collection of named fields, each having its own data type (text, binary, datetime, bool, i64, u64, f64).
+The doc mapping defines how a document and the fields it contains are stored and indexed for a given index. A document is a collection of named fields, each having its own data type (text, bytes, datetime, bool, i64, u64, f64, ip, json).
 
 | Variable      | Description   | Default value |
 | ------------- | ------------- | ------------- |
-| `field_mappings` | Collection of field mapping, each having its own data type (text, binary, datetime, bool, i64, u64, f64).   | `[]` |
+| `field_mappings` | Collection of field mapping, each having its own data type (text, binary, datetime, bool, i64, u64, f64, ip, json).   | `[]` |
 | `mode`        | Defines how quickwit should handle document fields that are not present in the `field_mappings`. In particular, the "dynamic" mode makes it possible to use quickwit in a schemaless manner. (See [mode](#mode)) | `dynamic`
 | `dynamic_mapping` | This parameter is only allowed when `mode` is set to `dynamic`. It then defines whether dynamically mapped fields should be indexed, stored, etc.  | (See [mode](#mode))
 | `tag_fields` | Collection of fields* already defined in `field_mappings` whose values will be stored as part of the `tags` metadata. [Learn more about tags](../overview/concepts/querying.md#tag-pruning). | `[]` |
@@ -101,7 +102,7 @@ The doc mapping defines how a document and the fields it contains are stored and
 ### Field types
 
 Each field[^1] has a type that indicates the kind of data it contains, such as integer on 64 bits or text.
-Quickwit supports the following raw types [`text`](#text-type), [`i64`](#numeric-types-i64-u64-and-f64-type), [`u64`](#numeric-types-i64-u64-and-f64-type), [`f64`](#numeric-types-i64-u64-and-f64-type), [`datetime`](#datetime-type), [`bool`](#bool-type), [`ip`](#ip-type), and [`bytes`](#bytes-type), and also supports composite types such as array and object. Behind the scenes, Quickwit is using tantivy field types, don't hesitate to look at [tantivy documentation](https://github.com/tantivy-search/tantivy) if you want to go into the details.
+Quickwit supports the following raw types [`text`](#text-type), [`i64`](#numeric-types-i64-u64-and-f64-type), [`u64`](#numeric-types-i64-u64-and-f64-type), [`f64`](#numeric-types-i64-u64-and-f64-type), [`datetime`](#datetime-type), [`bool`](#bool-type), [`ip`](#ip-type), [`bytes`](#bytes-type), and [`json`](#json-type), and also supports composite types such as array and object. Behind the scenes, Quickwit is using tantivy field types, don't hesitate to look at [tantivy documentation](https://github.com/tantivy-search/tantivy) if you want to go into the details.
 
 ### Raw types
 
@@ -135,7 +136,7 @@ fast:
 | `fieldnorms` | Whether to store fieldnorms for the field. Fieldnorms are required to calculate the BM25 Score of the document. | `false` |
 | `fast`     | Whether value is stored in a fast field. The fast field will contain the term ids and the dictionary. The default behaviour for `true` is to store the original text unchanged. The normalizers on the fast field is seperately configured. It can be configured via `normalizer: lowercase`. ([See normalizers](#description-of-available-normalizers)) for a list of available normalizers. | `false` |
 
-#### **Description of available tokenizers**
+##### Description of available tokenizers
 
 | Tokenizer     | Description   |
 | ------------- | ------------- |
@@ -145,7 +146,7 @@ fast:
 | `chinese_compatible` |  Chop between each CJK character in addition to what `default` does. Should be used with `record: position` to be able to properly search |
 | `lowercase` |  Applies a lowercase transformation on the text. It does not tokenize the text. |
 
-#### **Description of available normalizers**
+##### Description of available normalizers
 
 | Normalizer     | Description   |
 | ------------- | ------------- |
@@ -387,13 +388,13 @@ If, in addition, `attributes` is set as a default search field, then `color:red`
 
 ### Composite types
 
-#### **array**
+#### array
 
 Quickwit supports arrays for all raw types except for `object` types.
 
 To declare an array type of `i64` in the index config, you just have to set the type to `array<i64>`.
 
-#### **object**
+#### object
 
 Quickwit supports nested objects as long as it does not contain arrays of objects.
 

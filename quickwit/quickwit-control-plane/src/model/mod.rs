@@ -28,7 +28,7 @@ use quickwit_config::SourceConfig;
 use quickwit_ingest::ShardInfos;
 use quickwit_metastore::{IndexMetadata, ListIndexesMetadataResponseExt};
 use quickwit_proto::control_plane::ControlPlaneResult;
-use quickwit_proto::ingest::{Shard, ShardState};
+use quickwit_proto::ingest::Shard;
 use quickwit_proto::metastore::{
     self, EntityKind, ListIndexesMetadataRequest, ListShardsSubrequest, MetastoreError,
     MetastoreService, MetastoreServiceClient, SourceType,
@@ -38,7 +38,7 @@ use serde::Serialize;
 pub(super) use shard_table::{
     NextShardId, ScalingMode, ShardEntry, ShardStats, ShardTable, ShardTableEntry,
 };
-use tracing::{info, warn};
+use tracing::{info, instrument, warn};
 
 /// The control plane maintains a model in sync with the metastore.
 ///
@@ -73,6 +73,7 @@ impl ControlPlaneModel {
         }
     }
 
+    #[instrument(skip_all)]
     pub async fn load_from_metastore(
         &mut self,
         metastore: &mut MetastoreServiceClient,
@@ -108,7 +109,7 @@ impl ControlPlaneModel {
                 let request = ListShardsSubrequest {
                     index_uid: index_metadata.index_uid.clone().into(),
                     source_id: source_config.source_id.clone(),
-                    shard_state: Some(ShardState::Open as i32),
+                    shard_state: None,
                 };
                 subrequests.push(request);
             }
@@ -318,7 +319,7 @@ impl ControlPlaneModel {
 mod tests {
     use quickwit_config::{SourceConfig, SourceParams, INGEST_SOURCE_ID};
     use quickwit_metastore::IndexMetadata;
-    use quickwit_proto::ingest::Shard;
+    use quickwit_proto::ingest::{Shard, ShardState};
     use quickwit_proto::metastore::ListIndexesMetadataResponse;
 
     use super::*;
@@ -353,11 +354,17 @@ mod tests {
 
             assert_eq!(request.subrequests[0].index_uid, "test-index-0:0");
             assert_eq!(request.subrequests[0].source_id, INGEST_SOURCE_ID);
-            assert_eq!(request.subrequests[0].shard_state(), ShardState::Open);
+            assert_eq!(
+                request.subrequests[0].shard_state(),
+                ShardState::Unspecified
+            );
 
             assert_eq!(request.subrequests[1].index_uid, "test-index-1:0");
             assert_eq!(request.subrequests[1].source_id, INGEST_SOURCE_ID);
-            assert_eq!(request.subrequests[1].shard_state(), ShardState::Open);
+            assert_eq!(
+                request.subrequests[1].shard_state(),
+                ShardState::Unspecified
+            );
 
             let subresponses = vec![
                 metastore::ListShardsSubresponse {
@@ -365,6 +372,7 @@ mod tests {
                     source_id: INGEST_SOURCE_ID.to_string(),
                     shards: vec![Shard {
                         shard_id: 42,
+                        shard_state: ShardState::Open as i32,
                         ..Default::default()
                     }],
                     next_shard_id: 43,

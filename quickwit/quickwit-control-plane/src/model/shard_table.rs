@@ -107,6 +107,10 @@ impl ShardTableEntry {
     pub fn from_shards(shards: Vec<Shard>, next_shard_id: NextShardId) -> Self {
         let shard_entries = shards
             .into_iter()
+            .filter(|shard| {
+                let shard_state = shard.shard_state();
+                shard_state == ShardState::Open || shard_state == ShardState::Closed
+            })
             .map(|shard| (shard.shard_id, shard.into()))
             .collect();
         Self {

@@ -19,7 +19,7 @@
 
 use bytes::Bytes;
 
-use self::ingester::{FetchResponseV2, PersistFailureReason, ReplicateFailureReason};
+use self::ingester::{PersistFailureReason, ReplicateFailureReason};
 use self::router::IngestFailureReason;
 use super::types::NodeId;
 use super::{ServiceError, ServiceErrorCode};
@@ -123,16 +123,6 @@ impl DocBatchV2 {
     }
 }
 
-impl FetchResponseV2 {
-    pub fn from_position_exclusive(&self) -> Position {
-        self.from_position_exclusive.clone().unwrap_or_default()
-    }
-
-    pub fn to_position_inclusive(&self) -> Position {
-        self.to_position_inclusive.clone().unwrap_or_default()
-    }
-}
-
 impl MRecordBatch {
     pub fn encoded_mrecords(&self) -> impl Iterator<Item = Bytes> + '_ {
         self.mrecord_lengths
@@ -155,6 +145,21 @@ impl MRecordBatch {
 
     pub fn num_mrecords(&self) -> usize {
         self.mrecord_lengths.len()
+    }
+
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn for_test(mrecords: impl IntoIterator<Item = &'static str>) -> Option<Self> {
+        let mut mrecord_buffer = Vec::new();
+        let mut mrecord_lengths = Vec::new();
+
+        for mrecord in mrecords {
+            mrecord_buffer.extend(mrecord.as_bytes());
+            mrecord_lengths.push(mrecord.len() as u32);
+        }
+        Some(Self {
+            mrecord_lengths,
+            mrecord_buffer: Bytes::from(mrecord_buffer),
+        })
     }
 }
 

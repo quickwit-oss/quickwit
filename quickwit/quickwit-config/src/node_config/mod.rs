@@ -28,6 +28,7 @@ use std::time::Duration;
 
 use anyhow::{bail, ensure};
 use bytesize::ByteSize;
+use http::HeaderMap;
 use quickwit_common::net::HostAddr;
 use quickwit_common::uri::Uri;
 use quickwit_proto::indexing::CpuCapacity;
@@ -40,6 +41,15 @@ use crate::storage_config::StorageConfigs;
 use crate::{ConfigFormat, MetastoreConfigs};
 
 pub const DEFAULT_QW_CONFIG_PATH: &str = "config/quickwit.yaml";
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RestConfig {
+    pub listen_addr: SocketAddr,
+    pub cors_allow_origins: Vec<String>,
+    #[serde(with = "http_serde::header_map")]
+    pub extra_headers: HeaderMap,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -304,7 +314,6 @@ pub struct NodeConfig {
     pub cluster_id: String,
     pub node_id: String,
     pub enabled_services: HashSet<QuickwitService>,
-    pub rest_listen_addr: SocketAddr,
     pub gossip_listen_addr: SocketAddr,
     pub grpc_listen_addr: SocketAddr,
     pub gossip_advertise_addr: SocketAddr,
@@ -313,7 +322,7 @@ pub struct NodeConfig {
     pub data_dir_path: PathBuf,
     pub metastore_uri: Uri,
     pub default_index_root_uri: Uri,
-    pub rest_cors_allow_origins: Vec<String>,
+    pub rest_config: RestConfig,
     pub storage_configs: StorageConfigs,
     pub metastore_configs: MetastoreConfigs,
     pub indexer_config: IndexerConfig,

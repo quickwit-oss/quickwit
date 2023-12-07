@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::fmt;
+use std::ops::Deref;
 
 use serde::Serialize;
 use tokio::sync::{oneshot, watch};
@@ -193,7 +194,7 @@ impl<A: Actor> ActorHandle<A> {
                 );
             }
         }
-        let state = self.last_observation();
+        let state = self.last_observation().clone();
         Observation {
             obs_type: ObservationType::PostMortem,
             state,
@@ -254,8 +255,8 @@ impl<A: Actor> ActorHandle<A> {
         (exit_status, observation)
     }
 
-    pub fn last_observation(&self) -> A::ObservableState {
-        self.last_state.borrow().clone()
+    pub fn last_observation(&self) -> impl Deref<Target = A::ObservableState> + '_ {
+        self.last_state.borrow()
     }
 
     async fn wait_for_observable_state_callback(
@@ -271,12 +272,12 @@ impl<A: Actor> ActorHandle<A> {
                 Observation { obs_type, state }
             }
             Ok(Err(_)) => {
-                let state = self.last_observation();
+                let state = self.last_observation().clone();
                 let obs_type = ObservationType::PostMortem;
                 Observation { obs_type, state }
             }
             Err(_) => {
-                let state = self.last_observation();
+                let state = self.last_observation().clone();
                 let obs_type = if self.actor_context.state().is_exit() {
                     ObservationType::PostMortem
                 } else {

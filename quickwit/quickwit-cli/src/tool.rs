@@ -26,13 +26,11 @@ use std::time::{Duration, Instant};
 use std::{env, fmt, io};
 
 use anyhow::{bail, Context};
-use chitchat::transport::ChannelTransport;
-use chitchat::FailureDetectorConfig;
 use clap::{arg, ArgMatches, Command};
 use colored::{ColoredString, Colorize};
 use humantime::format_duration;
 use quickwit_actors::{ActorExitStatus, ActorHandle, Universe};
-use quickwit_cluster::{Cluster, ClusterMember};
+use quickwit_cluster::{ChannelTransport, Cluster, ClusterMember, FailureDetectorConfig};
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::uri::Uri;

@@ -610,7 +610,9 @@ impl ReplicationTask {
                     .await
                     .expect("TODO")
             }
-            .into();
+            .map(Position::offset)
+            .expect("records should not be empty");
+
             let batch_num_bytes = doc_batch.num_bytes() as u64;
             let batch_num_docs = doc_batch.num_docs() as u64;
 
@@ -861,7 +863,7 @@ mod tests {
                 shard_id: 1,
                 doc_batch: Some(DocBatchV2::for_test(["test-doc-foo"])),
                 from_position_exclusive: None,
-                to_position_inclusive: Some(Position::from(0u64)),
+                to_position_inclusive: Some(Position::offset(0u64)),
             },
             ReplicateSubrequest {
                 subrequest_id: 1,
@@ -870,7 +872,7 @@ mod tests {
                 shard_id: 2,
                 doc_batch: Some(DocBatchV2::for_test(["test-doc-bar", "test-doc-baz"])),
                 from_position_exclusive: None,
-                to_position_inclusive: Some(Position::from(1u64)),
+                to_position_inclusive: Some(Position::offset(1u64)),
             },
             ReplicateSubrequest {
                 subrequest_id: 2,
@@ -878,8 +880,8 @@ mod tests {
                 source_id: "test-source".to_string(),
                 shard_id: 1,
                 doc_batch: Some(DocBatchV2::for_test(["test-qux", "test-doc-tux"])),
-                from_position_exclusive: Some(Position::from(0u64)),
-                to_position_inclusive: Some(Position::from(2u64)),
+                from_position_exclusive: Some(Position::offset(0u64)),
+                to_position_inclusive: Some(Position::offset(2u64)),
             },
         ];
         let replicate_response = replication_stream_task_handle
@@ -901,19 +903,28 @@ mod tests {
         assert_eq!(replicate_success_0.index_uid, "test-index:0");
         assert_eq!(replicate_success_0.source_id, "test-source");
         assert_eq!(replicate_success_0.shard_id, 1);
-        assert_eq!(replicate_success_0.replication_position_inclusive(), 0u64);
+        assert_eq!(
+            replicate_success_0.replication_position_inclusive(),
+            Position::offset(0u64)
+        );
 
         let replicate_success_1 = &replicate_response.successes[1];
         assert_eq!(replicate_success_1.index_uid, "test-index:0");
         assert_eq!(replicate_success_1.source_id, "test-source");
         assert_eq!(replicate_success_1.shard_id, 2);
-        assert_eq!(replicate_success_1.replication_position_inclusive(), 1u64);
+        assert_eq!(
+            replicate_success_1.replication_position_inclusive(),
+            Position::offset(1u64)
+        );
 
         let replicate_success_2 = &replicate_response.successes[2];
         assert_eq!(replicate_success_2.index_uid, "test-index:1");
         assert_eq!(replicate_success_2.source_id, "test-source");
         assert_eq!(replicate_success_2.shard_id, 1);
-        assert_eq!(replicate_success_2.replication_position_inclusive(), 2u64);
+        assert_eq!(
+            replicate_success_2.replication_position_inclusive(),
+            Position::offset(2u64)
+        );
     }
 
     #[tokio::test]
@@ -1099,7 +1110,7 @@ mod tests {
                     shard_id: 1,
                     doc_batch: Some(DocBatchV2::for_test(["test-doc-foo"])),
                     from_position_exclusive: None,
-                    to_position_inclusive: Some(Position::from(0u64)),
+                    to_position_inclusive: Some(Position::offset(0u64)),
                 },
                 ReplicateSubrequest {
                     subrequest_id: 1,
@@ -1108,7 +1119,7 @@ mod tests {
                     shard_id: 2,
                     doc_batch: Some(DocBatchV2::for_test(["test-doc-bar", "test-doc-baz"])),
                     from_position_exclusive: None,
-                    to_position_inclusive: Some(Position::from(1u64)),
+                    to_position_inclusive: Some(Position::offset(1u64)),
                 },
                 ReplicateSubrequest {
                     subrequest_id: 2,
@@ -1117,7 +1128,7 @@ mod tests {
                     shard_id: 1,
                     doc_batch: Some(DocBatchV2::for_test(["test-doc-qux", "test-doc-tux"])),
                     from_position_exclusive: None,
-                    to_position_inclusive: Some(Position::from(1u64)),
+                    to_position_inclusive: Some(Position::offset(1u64)),
                 },
             ],
             replication_seqno: 3,
@@ -1140,19 +1151,28 @@ mod tests {
         assert_eq!(replicate_success_0.index_uid, "test-index:0");
         assert_eq!(replicate_success_0.source_id, "test-source");
         assert_eq!(replicate_success_0.shard_id, 1);
-        assert_eq!(replicate_success_0.replication_position_inclusive(), 0u64);
+        assert_eq!(
+            replicate_success_0.replication_position_inclusive(),
+            Position::offset(0u64)
+        );
 
         let replicate_success_1 = &replicate_response.successes[1];
         assert_eq!(replicate_success_1.index_uid, "test-index:0");
         assert_eq!(replicate_success_1.source_id, "test-source");
         assert_eq!(replicate_success_1.shard_id, 2);
-        assert_eq!(replicate_success_1.replication_position_inclusive(), 1u64);
+        assert_eq!(
+            replicate_success_1.replication_position_inclusive(),
+            Position::offset(1u64)
+        );
 
         let replicate_success_2 = &replicate_response.successes[2];
         assert_eq!(replicate_success_2.index_uid, "test-index:1");
         assert_eq!(replicate_success_2.source_id, "test-source");
         assert_eq!(replicate_success_2.shard_id, 1);
-        assert_eq!(replicate_success_2.replication_position_inclusive(), 1u64);
+        assert_eq!(
+            replicate_success_2.replication_position_inclusive(),
+            Position::offset(1u64)
+        );
 
         let state_guard = state.read().await;
 
@@ -1183,8 +1203,8 @@ mod tests {
                 source_id: "test-source".to_string(),
                 shard_id: 1,
                 doc_batch: Some(DocBatchV2::for_test(["test-doc-moo"])),
-                from_position_exclusive: Some(Position::from(0u64)),
-                to_position_inclusive: Some(Position::from(1u64)),
+                from_position_exclusive: Some(Position::offset(0u64)),
+                to_position_inclusive: Some(Position::offset(1u64)),
             }],
             replication_seqno: 4,
         };
@@ -1206,7 +1226,10 @@ mod tests {
         assert_eq!(replicate_success_0.index_uid, "test-index:0");
         assert_eq!(replicate_success_0.source_id, "test-source");
         assert_eq!(replicate_success_0.shard_id, 1);
-        assert_eq!(replicate_success_0.replication_position_inclusive(), 1u64);
+        assert_eq!(
+            replicate_success_0.replication_position_inclusive(),
+            Position::offset(1u64)
+        );
 
         let state_guard = state.read().await;
 
@@ -1274,8 +1297,8 @@ mod tests {
                 source_id: "test-source".to_string(),
                 shard_id: 1,
                 doc_batch: Some(DocBatchV2::for_test(["test-doc-foo"])),
-                from_position_exclusive: Position::from(0u64).into(),
-                to_position_inclusive: Some(Position::from(1u64)),
+                from_position_exclusive: Position::offset(0u64).into(),
+                to_position_inclusive: Some(Position::offset(1u64)),
             }],
             replication_seqno: 0,
         };
@@ -1360,7 +1383,7 @@ mod tests {
                 shard_id: 1,
                 doc_batch: Some(DocBatchV2::for_test(["test-doc-foo"])),
                 from_position_exclusive: None,
-                to_position_inclusive: Some(Position::from(0u64)),
+                to_position_inclusive: Some(Position::offset(0u64)),
             }],
             replication_seqno: 0,
         };
