@@ -291,7 +291,7 @@ mod tests {
     use quickwit_common::pubsub::EventBroker;
     use quickwit_common::temp_dir::TempDirectory;
     use quickwit_indexing::TestSandbox;
-    use quickwit_metastore::{ListSplitsRequestExt, ListSplitsResponseExt, SplitState};
+    use quickwit_metastore::{ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, SplitState};
     use quickwit_proto::metastore::{DeleteQuery, ListSplitsRequest, MetastoreService};
     use quickwit_proto::search::{LeafSearchRequest, LeafSearchResponse};
     use quickwit_search::{
@@ -420,7 +420,8 @@ mod tests {
             .list_splits(ListSplitsRequest::try_from_index_uid(index_uid).unwrap())
             .await
             .unwrap()
-            .deserialize_splits()
+            .collect_splits()
+            .await
             .unwrap();
         assert_eq!(splits.len(), 2);
         let published_split = splits

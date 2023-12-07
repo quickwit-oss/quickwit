@@ -100,8 +100,8 @@ service MetastoreService {
   // Deletes an index
   rpc DeleteIndex(DeleteIndexRequest) returns (EmptyResponse);
 
-  // Gets splits from index.
-  rpc ListSplits(ListSplitsRequest) returns (ListSplitsResponse);
+  // Streams splits from index.
+  rpc ListSplits(ListSplitsRequest) returns (stream ListSplitsResponse);
 
   // Stages several splits.
   rpc StageSplits(StageSplitsRequest) returns (EmptyResponse);

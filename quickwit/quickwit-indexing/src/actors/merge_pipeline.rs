@@ -32,7 +32,7 @@ use quickwit_common::temp_dir::TempDirectory;
 use quickwit_common::KillSwitch;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::{
-    ListSplitsQuery, ListSplitsRequestExt, ListSplitsResponseExt, SplitMetadata, SplitState,
+    ListSplitsQuery, ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, SplitState,
 };
 use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::metastore::{
@@ -223,10 +223,12 @@ impl MergePipeline {
             .with_split_state(SplitState::Published)
             .retain_immature(OffsetDateTime::now_utc());
         let list_splits_request = ListSplitsRequest::try_from_list_splits_query(query)?;
-        let published_splits_metadata: Vec<SplitMetadata> = ctx
+        let published_splits_stream = ctx
             .protect_future(self.params.metastore.list_splits(list_splits_request))
-            .await?
-            .deserialize_splits_metadata()?;
+            .await?;
+        let published_splits_metadata = ctx
+            .protect_future(published_splits_stream.collect_splits_metadata())
+            .await?;
 
         info!(
             num_splits = published_splits_metadata.len(),
@@ -485,10 +487,11 @@ mod tests {
 
     use quickwit_actors::{ActorExitStatus, Universe};
     use quickwit_common::temp_dir::TempDirectory;
+    use quickwit_common::ServiceStream;
     use quickwit_doc_mapper::default_doc_mapper_for_test;
-    use quickwit_metastore::{ListSplitsRequestExt, ListSplitsResponseExt};
+    use quickwit_metastore::ListSplitsRequestExt;
     use quickwit_proto::indexing::IndexingPipelineId;
-    use quickwit_proto::metastore::{ListSplitsResponse, MetastoreServiceClient};
+    use quickwit_proto::metastore::MetastoreServiceClient;
     use quickwit_proto::types::{IndexUid, PipelineUid};
     use quickwit_storage::RamStorage;
 
@@ -521,7 +524,7 @@ mod tests {
                 };
                 true
             })
-            .returning(|_| Ok(ListSplitsResponse::try_from_splits(Vec::new()).unwrap()));
+            .returning(|_| Ok(ServiceStream::empty()));
         let universe = Universe::with_accelerated_time();
         let storage = Arc::new(RamStorage::default());
         let split_store = IndexingSplitStore::create_without_local_store_for_test(storage.clone());

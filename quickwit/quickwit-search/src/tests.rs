@@ -1029,7 +1029,8 @@ async fn test_search_util(test_sandbox: &TestSandbox, query: &str) -> Vec<u32> {
         .list_splits(ListSplitsRequest::try_from_index_uid(test_sandbox.index_uid()).unwrap())
         .await
         .unwrap()
-        .deserialize_splits()
+        .collect_splits()
+        .await
         .unwrap();
     let splits_offsets: Vec<_> = splits
         .into_iter()
@@ -1667,7 +1668,9 @@ async fn test_single_node_list_terms() -> anyhow::Result<()> {
         .metastore()
         .list_splits(ListSplitsRequest::try_from_index_uid(test_sandbox.index_uid()).unwrap())
         .await?
-        .deserialize_splits()?;
+        .collect_splits()
+        .await
+        .unwrap();
     let splits_offsets: Vec<_> = splits
         .into_iter()
         .map(|split| extract_split_and_footer_offsets(&split.split_metadata))

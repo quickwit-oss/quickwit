@@ -5758,6 +5758,7 @@ dependencies = [
  "md5",
  "mockall",
  "once_cell",
+ "ouroboros",
  "quickwit-common",
  "quickwit-config",
  "quickwit-doc-mapper",

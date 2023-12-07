@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 use std::fmt::{self, Display, Write};
 use std::ops::Bound;
 use std::str::FromStr;
@@ -25,8 +25,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+use futures::stream::BoxStream;
+use futures::StreamExt;
+use ouroboros::self_referencing;
 use quickwit_common::uri::Uri;
-use quickwit_common::PrettySample;
+use quickwit_common::{PrettySample, ServiceStream};
 use quickwit_config::{
     validate_index_id_pattern, MetastoreBackend, MetastoreConfig, PostgresMetastoreConfig,
 };
@@ -39,9 +42,10 @@ use quickwit_proto::metastore::{
     LastDeleteOpstampResponse, ListDeleteTasksRequest, ListDeleteTasksResponse,
     ListIndexesMetadataRequest, ListIndexesMetadataResponse, ListShardsRequest, ListShardsResponse,
     ListSplitsRequest, ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest,
-    MetastoreError, MetastoreResult, MetastoreService, MetastoreServiceClient, OpenShardsRequest,
-    OpenShardsResponse, PublishSplitsRequest, ResetSourceCheckpointRequest, StageSplitsRequest,
-    ToggleSourceRequest, UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
+    MetastoreError, MetastoreResult, MetastoreService, MetastoreServiceClient,
+    MetastoreServiceStream, OpenShardsRequest, OpenShardsResponse, PublishSplitsRequest,
+    ResetSourceCheckpointRequest, StageSplitsRequest, ToggleSourceRequest,
+    UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
 };
 use quickwit_proto::types::IndexUid;
 use sea_query::{
@@ -52,9 +56,11 @@ use sqlx::migrate::Migrator;
 use sqlx::postgres::{PgConnectOptions, PgDatabaseError, PgPoolOptions};
 use sqlx::{ConnectOptions, Pool, Postgres, Transaction};
 use tokio::sync::Mutex;
+use tokio_stream::Stream;
 use tracing::log::LevelFilter;
 use tracing::{debug, error, info, instrument, warn};
 
+use super::STREAM_SPLITS_CHUNK_SIZE;
 use crate::checkpoint::IndexCheckpointDelta;
 use crate::metastore::postgresql_model::{PgDeleteTask, PgIndex, PgSplit, Splits, ToTimestampFunc};
 use crate::metastore::{instrument_metastore, FilterRange, PublishSplitsRequestExt};
@@ -802,54 +808,51 @@ impl MetastoreService for PostgresqlMetastore {
     async fn list_splits(
         &mut self,
         request: ListSplitsRequest,
-    ) -> MetastoreResult<ListSplitsResponse> {
+    ) -> MetastoreResult<MetastoreServiceStream<ListSplitsResponse>> {
         let query = request.deserialize_list_splits_query()?;
         let mut sql = Query::select();
         sql.column(Asterisk).from(Splits::Table);
         append_query_filters(&mut sql, &query);
 
         let (sql, values) = sql.build_sqlx(PostgresQueryBuilder);
+        let split_stream = SplitStream::new(
+            self.connection_pool.clone(),
+            sql,
+            |connection_pool: &Pool<Postgres>, sql: &String| {
+                sqlx::query_as_with::<_, PgSplit, _>(sql, values).fetch(connection_pool)
+            },
+        );
 
-        let pg_splits = sqlx::query_as_with::<_, PgSplit, _>(&sql, values)
-            .fetch_all(&self.connection_pool)
-            .await?;
-
-        // If no splits were returned, maybe some indexes do not exist in the first place?
-        // TODO: the file-backed metastore is more accurate as it checks for index existence before
-        // returning splits. We could do the same here or remove index existence check `list_splits`
-        // for all metastore implementations.
-        if pg_splits.is_empty() {
-            let index_ids_str: Vec<String> = query
-                .index_uids
-                .iter()
-                .map(|index_uid| index_uid.index_id().to_string())
-                .collect();
-            let list_indexes_metadata_request = ListIndexesMetadataRequest {
-                index_id_patterns: index_ids_str.clone(),
-            };
-            let found_index_ids: HashSet<String> = self
-                .list_indexes_metadata(list_indexes_metadata_request)
-                .await?
-                .deserialize_indexes_metadata()?
-                .into_iter()
-                .map(|index_metadata| index_metadata.index_id().to_string())
-                .collect();
-            let not_found_index_ids: Vec<String> = index_ids_str
-                .into_iter()
-                .filter(|index_id| !found_index_ids.contains(index_id))
-                .collect();
-            if !not_found_index_ids.is_empty() {
-                return Err(MetastoreError::NotFound(EntityKind::Indexes {
-                    index_ids: not_found_index_ids,
-                }));
-            }
-        }
-        let splits = pg_splits
-            .into_iter()
-            .map(|pg_split| pg_split.try_into())
-            .collect::<MetastoreResult<Vec<Split>>>()?;
-        let response = ListSplitsResponse::try_from_splits(splits)?;
-        Ok(response)
+        let mapped_split_stream =
+            split_stream
+                .chunks(STREAM_SPLITS_CHUNK_SIZE)
+                .map(|pg_splits_res| {
+                    let mut splits = Vec::with_capacity(pg_splits_res.len());
+                    for pg_split_res in pg_splits_res {
+                        let pg_split = match pg_split_res {
+                            Ok(pg_split) => pg_split,
+                            Err(error) => {
+                                return Err(MetastoreError::Internal {
+                                    message: "failed to fetch splits".to_string(),
+                                    cause: error.to_string(),
+                                })
+                            }
+                        };
+                        let split: Split = match pg_split.try_into() {
+                            Ok(split) => split,
+                            Err(error) => {
+                                return Err(MetastoreError::Internal {
+                                    message: "failed to convert `PgSplit` into `Split`".to_string(),
+                                    cause: error.to_string(),
+                                })
+                            }
+                        };
+                        splits.push(split);
+                    }
+                    ListSplitsResponse::try_from_splits(splits)
+                });
+        let service_stream = ServiceStream::new(Box::pin(mapped_split_stream));
+        Ok(service_stream)
     }
 
     #[instrument(skip(self))]
@@ -1271,16 +1274,6 @@ impl MetastoreService for PostgresqlMetastore {
         .fetch_all(&self.connection_pool)
         .await?;
 
-        // If no splits were returned, maybe the index does not exist in the first place?
-        if pg_stale_splits.is_empty()
-            && index_opt_for_uid(&self.connection_pool, index_uid.clone())
-                .await?
-                .is_none()
-        {
-            return Err(MetastoreError::NotFound(EntityKind::Index {
-                index_id: index_uid.index_id().to_string(),
-            }));
-        }
         let splits = pg_stale_splits
             .into_iter()
             .map(|pg_split| pg_split.try_into())
@@ -1319,6 +1312,28 @@ impl MetastoreService for PostgresqlMetastore {
 }
 
 impl MetastoreServiceExt for PostgresqlMetastore {}
+
+#[self_referencing]
+struct SplitStream<T> {
+    connection_pool: Pool<Postgres>,
+    sql: String,
+    #[borrows(connection_pool, sql)]
+    #[covariant]
+    inner: BoxStream<'this, Result<T, sqlx::Error>>,
+}
+
+impl<T> Stream for SplitStream<T> {
+    type Item = Result<T, sqlx::Error>;
+
+    fn poll_next(
+        mut self: std::pin::Pin<&mut Self>,
+        cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Option<Self::Item>> {
+        SplitStream::with_inner_mut(&mut self, |this| {
+            std::pin::Pin::new(&mut this.as_mut()).poll_next(cx)
+        })
+    }
+}
 
 // We use dollar-quoted strings in Postgresql.
 //
