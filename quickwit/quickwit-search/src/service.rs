@@ -348,7 +348,15 @@ impl SearchService for SearchServiceImpl {
         let storage = self.storage_resolver.resolve(&index_uri).await?;
         let index_id = list_fields_req.index_id;
         let split_ids = list_fields_req.split_offsets;
-        leaf_list_fields(index_id, storage, &self.searcher_context, &split_ids[..]).await
+        let doc_mapper = deserialize_doc_mapper(&list_fields_req.doc_mapper)?;
+        leaf_list_fields(
+            index_id,
+            storage,
+            &self.searcher_context,
+            &split_ids[..],
+            doc_mapper,
+        )
+        .await
     }
 }
 

@@ -140,6 +140,9 @@ message LeafListFieldsRequest {
   // Optional limit query to a list of fields
   // Wildcard expressions are supported.
   repeated string fields = 4;
+  
+  // `DocMapper` as json serialized trait.
+  string doc_mapper = 5;
 }
 
 message ListFieldsResponse {

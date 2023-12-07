@@ -27,6 +27,8 @@ use futures::future::try_join_all;
 use itertools::Itertools;
 use quickwit_common::shared_consts::SPLIT_FIELDS_FILE_NAME;
 use quickwit_common::uri::Uri;
+use quickwit_config::build_doc_mapper;
+use quickwit_doc_mapper::DocMapper;
 use quickwit_indexing::models::read_split_fields;
 use quickwit_metastore::{ListIndexesMetadataResponseExt, SplitMetadata};
 use quickwit_proto::metastore::{
@@ -50,7 +52,7 @@ pub async fn get_fields_from_split<'a>(
     index_id: String,
     split_and_footer_offsets: &'a SplitIdAndFooterOffsets,
     index_storage: Arc<dyn Storage>,
-) -> anyhow::Result<impl Iterator<Item = io::Result<ListFieldsEntryResponse>>> {
+) -> anyhow::Result<Box<dyn Iterator<Item = io::Result<ListFieldsEntryResponse>> + Send>> {
     // TODO: Add fancy caching
     let (_, split_bundle) =
         open_split_bundle(searcher_context, index_storage, split_and_footer_offsets).await?;
@@ -65,18 +67,48 @@ pub async fn get_fields_from_split<'a>(
             serialized_split_fields_len,
         )
     })?;
+    Ok(Box::new(list_fields_iter.map(move |metadata| {
+        metadata.map(|metadata| field_metadata_to_fields_entry_response(metadata, &index_id))
+    })))
+}
 
-    Ok(list_fields_iter.map(move |metadata| {
-        metadata.map(|metadata| ListFieldsEntryResponse {
-            field_name: metadata.field_name,
-            field_type: metadata.typ.to_code() as u32,
-            index_ids: vec![index_id.to_string()],
-            searchable: metadata.indexed,
-            aggregatable: metadata.fast,
-            non_searchable_index_ids: Vec::new(),
-            non_aggregatable_index_ids: Vec::new(),
+/// Get the list of splits for the request which we need to scan.
+pub fn get_fields_from_schema(
+    index_id: String,
+    doc_mapper: Arc<dyn DocMapper>,
+) -> Box<dyn Iterator<Item = io::Result<ListFieldsEntryResponse>> + Send> {
+    let schema = doc_mapper.schema();
+    let mut list_fields = schema
+        .fields()
+        .map(|(_field, entry)| FieldMetadata {
+            field_name: entry.name().to_string(),
+            typ: entry.field_type().value_type(),
+            indexed: entry.is_indexed(),
+            fast: entry.is_fast(),
+            stored: entry.is_stored(),
         })
-    }))
+        .collect_vec();
+    list_fields.sort();
+    Box::new(
+        list_fields
+            .into_iter()
+            .map(move |metadata| Ok(field_metadata_to_fields_entry_response(metadata, &index_id))),
+    )
+}
+
+fn field_metadata_to_fields_entry_response(
+    metadata: FieldMetadata,
+    index_id: &str,
+) -> ListFieldsEntryResponse {
+    ListFieldsEntryResponse {
+        field_name: metadata.field_name,
+        field_type: metadata.typ.to_code() as u32,
+        index_ids: vec![index_id.to_string()],
+        searchable: metadata.indexed,
+        aggregatable: metadata.fast,
+        non_searchable_index_ids: Vec::new(),
+        non_aggregatable_index_ids: Vec::new(),
+    }
 }
 
 /// Since we want to kmerge the results, we simplify by always using `FieldMetadata`, to enforce
@@ -214,8 +246,10 @@ pub async fn leaf_list_fields(
     index_storage: Arc<dyn Storage>,
     searcher_context: &SearcherContext,
     split_ids: &[SplitIdAndFooterOffsets],
+    doc_mapper: Arc<dyn DocMapper>,
 ) -> crate::Result<ListFieldsResponse> {
     let mut iter_per_split = Vec::new();
+    // This only works well, if the field data is in a local cache.
     for split_id in split_ids.iter() {
         let fields = get_fields_from_split(
             searcher_context,
@@ -223,11 +257,31 @@ pub async fn leaf_list_fields(
             split_id,
             index_storage.clone(),
         )
-        .await?;
-        iter_per_split.push(fields);
+        .await;
+        match fields {
+            Ok(fields) => iter_per_split.push(fields),
+            Err(_err) => {
+                // Schema fallback
+                iter_per_split.push(get_fields_from_schema(
+                    index_id.to_string(),
+                    doc_mapper.clone(),
+                ));
+            }
+        }
     }
     let fields = merge_leaf_list_fields(iter_per_split)?;
     Ok(ListFieldsResponse { fields })
+}
+
+/// Index metas needed for executing a leaf search request.
+#[derive(Clone, Debug)]
+pub struct IndexMetasForLeafSearch {
+    /// Index id.
+    pub index_id: String,
+    /// Index URI.
+    pub index_uri: Uri,
+    /// Doc mapper json string.
+    pub doc_mapper_str: String,
 }
 
 /// Performs a distributed list fields request.
@@ -254,15 +308,33 @@ pub async fn root_list_fields(
         .list_indexes_metadata(list_indexes_metadata_request)
         .await?
         .deserialize_indexes_metadata()?;
-    let index_uid_to_index_id: HashMap<IndexUid, (Uri, String)> = indexes_metadatas
+    let index_uid_to_index_meta: HashMap<IndexUid, IndexMetasForLeafSearch> = indexes_metadatas
         .iter()
         .map(|index_metadata| {
+            let doc_mapper = build_doc_mapper(
+                &index_metadata.index_config.doc_mapping,
+                &index_metadata.index_config.search_settings,
+            )
+            .map_err(|err| {
+                SearchError::Internal(format!("failed to build doc mapper. cause: {err}"))
+            })
+            .unwrap();
+
+            let index_metadata_for_leaf_search = IndexMetasForLeafSearch {
+                index_uri: index_metadata.index_uri().clone(),
+                index_id: index_metadata.index_config.index_id.to_string(),
+                doc_mapper_str: serde_json::to_string(&doc_mapper)
+                    .map_err(|err| {
+                        SearchError::Internal(format!(
+                            "failed to serialize doc mapper. cause: {err}"
+                        ))
+                    })
+                    .unwrap(),
+            };
+
             (
                 index_metadata.index_uid.clone(),
-                (
-                    index_metadata.index_config.index_uri.clone(),
-                    index_metadata.index_config.index_id.to_string(),
-                ),
+                index_metadata_for_leaf_search,
             )
         })
         .collect();
@@ -285,7 +357,7 @@ pub async fn root_list_fields(
     let mut leaf_request_tasks = Vec::new();
     for (client, client_jobs) in assigned_leaf_search_jobs {
         let leaf_requests =
-            jobs_to_leaf_requests(&list_fields_req, &index_uid_to_index_id, client_jobs)?;
+            jobs_to_leaf_requests(&list_fields_req, &index_uid_to_index_meta, client_jobs)?;
         for leaf_request in leaf_requests {
             leaf_request_tasks.push(cluster_client.leaf_list_fields(leaf_request, client.clone()));
         }
@@ -305,21 +377,22 @@ pub async fn root_list_fields(
 /// Builds a list of [`LeafListFieldsRequest`], one per index, from a list of [`SearchJob`].
 pub fn jobs_to_leaf_requests(
     request: &ListFieldsRequest,
-    index_uid_to_id: &HashMap<IndexUid, (Uri, String)>,
+    index_uid_to_id: &HashMap<IndexUid, IndexMetasForLeafSearch>,
     jobs: Vec<SearchJob>,
 ) -> crate::Result<Vec<LeafListFieldsRequest>> {
     let search_request_for_leaf = request.clone();
     let mut leaf_search_requests = Vec::new();
     // Group jobs by index uid.
     for (index_uid, job_group) in &jobs.into_iter().group_by(|job| job.index_uid.clone()) {
-        let (index_uri, index_id) = index_uid_to_id.get(&index_uid).ok_or_else(|| {
+        let index_meta = index_uid_to_id.get(&index_uid).ok_or_else(|| {
             SearchError::Internal(format!(
                 "received list fields job for an unknown index {index_uid}. it should never happen"
             ))
         })?;
         let leaf_search_request = LeafListFieldsRequest {
-            index_id: index_id.to_string(),
-            index_uri: index_uri.to_string(),
+            index_id: index_meta.index_id.to_string(),
+            index_uri: index_meta.index_uri.to_string(),
+            doc_mapper: index_meta.doc_mapper_str.to_string(),
             fields: search_request_for_leaf.fields.clone(),
             split_offsets: job_group.into_iter().map(|job| job.offsets).collect(),
         };
