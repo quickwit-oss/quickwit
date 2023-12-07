@@ -17,8 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::fmt;
 use std::fmt::{Debug, Display};
+use std::{fmt, mem};
 
 use bytes::{Bytes, BytesMut};
 use bytestring::ByteString;
@@ -128,6 +128,14 @@ impl Position {
             Self::Beginning => Self::Eof(None),
             Self::Offset(offset) => Self::Eof(Some(offset.clone())),
             _ => self.clone(),
+        }
+    }
+
+    pub fn to_eof(&mut self) {
+        match self {
+            Self::Beginning => *self = Self::Eof(None),
+            Self::Offset(offset) => *self = Self::Eof(Some(mem::take(offset))),
+            _ => (),
         }
     }
 
@@ -268,7 +276,20 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_position_eof() {
+    #[allow(clippy::cmp_owned)]
+    fn test_position_ord() {
+        assert!(Position::Beginning < Position::offset(0u64));
+        assert!(Position::Beginning < Position::Eof(None));
+        assert!(Position::Beginning < Position::eof(0u64));
+
+        assert!(Position::offset(0u64) < Position::offset(1u64));
+
+        assert!(Position::Eof(None) < Position::eof(0u64));
+        assert!(Position::eof(0u64) < Position::eof(1u64));
+    }
+
+    #[test]
+    fn test_position_as_eof() {
         let eof_position = Position::Beginning.as_eof();
 
         assert!(eof_position.is_eof());
@@ -281,16 +302,14 @@ mod tests {
     }
 
     #[test]
-    #[allow(clippy::cmp_owned)]
-    fn test_position_ord() {
-        assert!(Position::Beginning < Position::offset(0u64));
-        assert!(Position::Beginning < Position::Eof(None));
-        assert!(Position::Beginning < Position::eof(0u64));
+    fn test_position_to_eof() {
+        let mut position = Position::Beginning;
+        position.to_eof();
+        assert!(matches!(position, Position::Eof(None)));
 
-        assert!(Position::offset(0u64) < Position::offset(1u64));
-
-        assert!(Position::Eof(None) < Position::eof(0u64));
-        assert!(Position::eof(0u64) < Position::eof(1u64));
+        let mut position = Position::offset(0u64);
+        position.to_eof();
+        assert!(matches!(position, Position::Eof(Some(offset)) if offset.as_u64().unwrap() == 0));
     }
 
     #[test]

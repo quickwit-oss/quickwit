@@ -475,14 +475,32 @@ async fn fault_tolerant_fetch_stream(
         };
         let mut fetch_stream = match ingester.open_fetch_stream(open_fetch_stream_request).await {
             Ok(fetch_stream) => fetch_stream,
-            Err(ingest_error) => {
+            Err(shard_not_found_error @ IngestV2Error::ShardNotFound { .. }) => {
+                error!(
+                    client_id=%client_id,
+                    index_uid=%index_uid,
+                    source_id=%source_id,
+                    shard_id=%shard_id,
+                    "failed to open fetch stream from ingester `{ingester_id}`: shard not found"
+                );
+                let fetch_stream_error = FetchStreamError {
+                    index_uid,
+                    source_id,
+                    shard_id,
+                    ingest_error: shard_not_found_error,
+                };
+                let _ = fetch_message_tx.send(Err(fetch_stream_error)).await;
+                from_position_exclusive.to_eof();
+                return;
+            }
+            Err(other_ingest_error) => {
                 if let Some(failover_ingester_id) = failover_ingester_id_opt {
                     warn!(
                         client_id=%client_id,
                         index_uid=%index_uid,
                         source_id=%source_id,
                         shard_id=%shard_id,
-                        error=%ingest_error,
+                        error=%other_ingest_error,
                         "failed to open fetch stream from ingester `{ingester_id}`: failing over to ingester `{failover_ingester_id}`"
                     );
                 } else {
@@ -491,14 +509,14 @@ async fn fault_tolerant_fetch_stream(
                         index_uid=%index_uid,
                         source_id=%source_id,
                         shard_id=%shard_id,
-                        error=%ingest_error,
+                        error=%other_ingest_error,
                         "failed to open fetch stream from ingester `{ingester_id}`: closing fetch stream"
                     );
                     let fetch_stream_error = FetchStreamError {
                         index_uid,
                         source_id,
                         shard_id,
-                        ingest_error,
+                        ingest_error: other_ingest_error,
                     };
                     let _ = fetch_message_tx.send(Err(fetch_stream_error)).await;
                     return;
@@ -1438,6 +1456,59 @@ pub(super) mod tests {
             .await
             .unwrap()
             .is_none());
+    }
+
+    #[tokio::test]
+    async fn test_fault_tolerant_fetch_stream_shard_not_found() {
+        let client_id = "test-client".to_string();
+        let index_uid: IndexUid = "test-index:0".into();
+        let source_id: SourceId = "test-source".into();
+        let shard_id: ShardId = 1;
+        let mut from_position_exclusive = Position::offset(0u64);
+
+        let ingester_ids: Vec<NodeId> = vec!["test-ingester-0".into(), "test-ingester-1".into()];
+        let ingester_pool = IngesterPool::default();
+
+        let (fetch_message_tx, mut fetch_stream) = ServiceStream::new_bounded(5);
+
+        let mut ingester_mock_0 = IngesterServiceClient::mock();
+        ingester_mock_0
+            .expect_open_fetch_stream()
+            .return_once(move |request| {
+                assert_eq!(request.client_id, "test-client");
+                assert_eq!(request.index_uid, "test-index:0");
+                assert_eq!(request.source_id, "test-source");
+                assert_eq!(request.shard_id, 1);
+                assert_eq!(request.from_position_exclusive(), Position::offset(0u64));
+
+                Err(IngestV2Error::ShardNotFound { shard_id: 1 })
+            });
+        let ingester_0: IngesterServiceClient = ingester_mock_0.into();
+        ingester_pool.insert("test-ingester-0".into(), ingester_0);
+
+        fault_tolerant_fetch_stream(
+            client_id,
+            index_uid,
+            source_id,
+            shard_id,
+            &mut from_position_exclusive,
+            &ingester_ids,
+            ingester_pool,
+            fetch_message_tx,
+        )
+        .await;
+
+        let fetch_stream_error = timeout(Duration::from_millis(100), fetch_stream.next())
+            .await
+            .unwrap()
+            .unwrap()
+            .unwrap_err();
+
+        assert!(matches!(
+            fetch_stream_error.ingest_error,
+            IngestV2Error::ShardNotFound { shard_id: 1 }
+        ));
+        assert!(from_position_exclusive.is_eof());
     }
 
     #[tokio::test]
