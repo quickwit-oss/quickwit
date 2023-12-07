@@ -206,6 +206,7 @@ impl IngestRouter {
         mut persist_futures: FuturesUnordered<impl Future<Output = PersistResult>>,
     ) {
         let mut closed_shards: HashMap<(IndexUid, SourceId), Vec<ShardId>> = HashMap::new();
+        let mut deleted_shards: HashMap<(IndexUid, SourceId), Vec<ShardId>> = HashMap::new();
 
         while let Some((persist_summary, persist_result)) = persist_futures.next().await {
             match persist_result {
@@ -214,15 +215,23 @@ impl IngestRouter {
                         workbench.record_persist_success(persist_success);
                     }
                     for persist_failure in persist_response.failures {
+                        workbench.record_persist_failure(&persist_failure);
+
                         if persist_failure.reason() == PersistFailureReason::ShardClosed {
-                            let index_uid: IndexUid = persist_failure.index_uid.clone().into();
-                            let source_id: SourceId = persist_failure.source_id.clone();
+                            let index_uid: IndexUid = persist_failure.index_uid.into();
+                            let source_id: SourceId = persist_failure.source_id;
                             closed_shards
                                 .entry((index_uid, source_id))
                                 .or_default()
                                 .push(persist_failure.shard_id);
+                        } else if persist_failure.reason() == PersistFailureReason::ShardNotFound {
+                            let index_uid: IndexUid = persist_failure.index_uid.into();
+                            let source_id: SourceId = persist_failure.source_id;
+                            deleted_shards
+                                .entry((index_uid, source_id))
+                                .or_default()
+                                .push(persist_failure.shard_id);
                         }
-                        workbench.record_persist_failure(persist_failure);
                     }
                 }
                 Err(persist_error) => {
@@ -258,13 +267,18 @@ impl IngestRouter {
                 }
             };
         }
-        if !closed_shards.is_empty() {
+        if !closed_shards.is_empty() || !deleted_shards.is_empty() {
             let mut state_guard = self.state.write().await;
 
             for ((index_uid, source_id), shard_ids) in closed_shards {
                 state_guard
                     .routing_table
                     .close_shards(&index_uid, source_id, &shard_ids);
+            }
+            for ((index_uid, source_id), shard_ids) in deleted_shards {
+                state_guard
+                    .routing_table
+                    .delete_shards(&index_uid, source_id, &shard_ids);
             }
         }
     }
@@ -891,7 +905,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_router_process_persist_results_closes_shards() {
+    async fn test_router_process_persist_results_closes_and_deletes_shards() {
         let self_node_id = "test-router".into();
         let control_plane = ControlPlaneServiceClient::mock().into();
         let ingester_pool = IngesterPool::default();
@@ -906,13 +920,22 @@ mod tests {
         state_guard.routing_table.replace_shards(
             "test-index-0:0",
             "test-source",
-            vec![Shard {
-                index_uid: "test-index-0:0".to_string(),
-                shard_id: 1,
-                shard_state: ShardState::Open as i32,
-                leader_id: "test-ingester-0".to_string(),
-                ..Default::default()
-            }],
+            vec![
+                Shard {
+                    index_uid: "test-index-0:0".to_string(),
+                    shard_id: 1,
+                    shard_state: ShardState::Open as i32,
+                    leader_id: "test-ingester-0".to_string(),
+                    ..Default::default()
+                },
+                Shard {
+                    index_uid: "test-index-0:0".to_string(),
+                    shard_id: 2,
+                    shard_state: ShardState::Open as i32,
+                    leader_id: "test-ingester-0".to_string(),
+                    ..Default::default()
+                },
+            ],
         );
         drop(state_guard);
 
@@ -927,13 +950,22 @@ mod tests {
             let persist_result = Ok::<_, IngestV2Error>(PersistResponse {
                 leader_id: "test-ingester-0".to_string(),
                 successes: Vec::new(),
-                failures: vec![PersistFailure {
-                    subrequest_id: 0,
-                    index_uid: "test-index-0:0".to_string(),
-                    source_id: "test-source".to_string(),
-                    shard_id: 1,
-                    reason: PersistFailureReason::ShardClosed as i32,
-                }],
+                failures: vec![
+                    PersistFailure {
+                        subrequest_id: 0,
+                        index_uid: "test-index-0:0".to_string(),
+                        source_id: "test-source".to_string(),
+                        shard_id: 1,
+                        reason: PersistFailureReason::ShardNotFound as i32,
+                    },
+                    PersistFailure {
+                        subrequest_id: 1,
+                        index_uid: "test-index-0:0".to_string(),
+                        source_id: "test-source".to_string(),
+                        shard_id: 2,
+                        reason: PersistFailureReason::ShardClosed as i32,
+                    },
+                ],
             });
             (persist_summary, persist_result)
         });
@@ -947,11 +979,10 @@ mod tests {
             .find_entry("test-index-0", "test-source")
             .unwrap();
         assert_eq!(routing_table_entry.len(), 1);
-        assert_eq!(routing_table_entry.all_shards()[0].shard_id, 1);
-        assert_eq!(
-            routing_table_entry.all_shards()[0].shard_state,
-            ShardState::Closed
-        );
+
+        let shard = routing_table_entry.all_shards()[0];
+        assert_eq!(shard.shard_id, 2);
+        assert_eq!(shard.shard_state, ShardState::Closed);
     }
 
     #[tokio::test]
