@@ -21,16 +21,23 @@ use hyper::StatusCode;
 use itertools::Itertools;
 use quickwit_jaeger::JaegerService;
 use quickwit_proto::jaeger::storage::v1::span_reader_plugin_server::SpanReaderPlugin;
-use quickwit_proto::jaeger::storage::v1::{FindTracesRequest, GetOperationsRequest, GetServicesRequest, GetTraceRequest, SpansResponseChunk, TraceQueryParameters};
+use quickwit_proto::jaeger::storage::v1::{
+    FindTracesRequest, GetOperationsRequest, GetServicesRequest, GetTraceRequest,
+    SpansResponseChunk, TraceQueryParameters,
+};
 use quickwit_proto::tonic;
 use quickwit_proto::tonic::Request;
 use tokio_stream::StreamExt;
+use tracing::info;
 use warp::{Filter, Rejection};
 
-use crate::jaeger_api::model::{JaegerError, JaegerResponseBody, JaegerSearchBody, JaegerSpan, JaegerTrace, TracesSearchQueryParams};
+use crate::jaeger_api::model::{
+    JaegerError, JaegerResponseBody, JaegerSpan, JaegerTrace, TracesSearchQueryParams,
+    ALL_OPERATIONS, DEFAULT_NUMBER_OF_TRACES,
+};
+use crate::jaeger_api::util::{hex_string_to_bytes, to_well_known_timestamp};
 use crate::json_api_response::JsonApiResponse;
 use crate::{require, BodyFormat};
-use crate::jaeger_api::util::{hex_string_to_bytes, to_well_known_timestamp};
 
 /// Setup Jaeger API handlers
 ///
@@ -146,7 +153,8 @@ async fn jaeger_services(
 async fn jaeger_service_operations(
     service_name: String,
     jaeger_service: JaegerService,
-) -> Result<JaegerSearchBody, JaegerError> {
+    // ) -> Result<JaegerSearchBody, JaegerError> {
+) -> Result<JaegerResponseBody<Vec<String>>, JaegerError> {
     let get_operations_request = GetOperationsRequest {
         service: service_name,
         span_kind: "".to_string(),
@@ -157,15 +165,17 @@ async fn jaeger_service_operations(
         .unwrap()
         .into_inner();
 
-    Ok(JaegerSearchBody {
-        data: Some(
-            get_operations_response
-                .operations
-                .into_iter()
-                .map(|op| op.name)
-                .collect_vec(),
-        ),
-    })
+    let operations = get_operations_response
+        .operations
+        .into_iter()
+        .map(|op| op.name)
+        .collect_vec();
+    Ok(JaegerResponseBody::<Vec<String>> { data: operations })
+    // Ok(JaegerSearchBody {
+    //     data: Some(
+    //         vec,
+    //     ),
+    // })
 }
 
 async fn jaeger_traces_search(
@@ -176,13 +186,15 @@ async fn jaeger_traces_search(
     let start_time_max = search_params.end.map(to_well_known_timestamp);
     let query = TraceQueryParameters {
         service_name: search_params.service.unwrap_or_default(),
-        operation_name: search_params.operation.unwrap_or("all".to_string()),
+        operation_name: search_params
+            .operation
+            .unwrap_or(ALL_OPERATIONS.to_string()),
         tags: Default::default(),
         start_time_min,
         start_time_max,
-        duration_min: None,
-        duration_max: None,
-        num_traces: search_params.limit.unwrap_or(20),
+        duration_min: None, // TODO, e.g. 1.2s, 100ms, 500us
+        duration_max: None, // TODO, e.g. 1.2s, 100ms, 500us
+        num_traces: search_params.limit.unwrap_or(DEFAULT_NUMBER_OF_TRACES),
     };
     let find_traces_request = FindTracesRequest { query: Some(query) };
 
@@ -198,12 +210,12 @@ async fn jaeger_traces_search(
         .map(|span| JaegerSpan::find_better_name_for_pb_convert(&span))
         .group_by(|span| span.trace_id.clone())
         .into_iter()
-        .map(|(span_id, group)|
-            JaegerTrace::new(span_id, group.collect_vec()))
+        .map(|(span_id, group)| JaegerTrace::new(span_id, group.collect_vec()))
         .collect_vec();
 
-    Ok(JaegerResponseBody { data: result })
+    info!("traces {:?}", result);
 
+    Ok(JaegerResponseBody { data: result })
 }
 
 async fn jaeger_get_trace_by_id(
@@ -211,9 +223,7 @@ async fn jaeger_get_trace_by_id(
     jaeger_service: JaegerService,
 ) -> Result<JaegerResponseBody<Vec<JaegerTrace>>, JaegerError> {
     let trace_id = hex_string_to_bytes(trace_id_json.as_str());
-    let get_trace_request = GetTraceRequest {
-        trace_id
-    };
+    let get_trace_request = GetTraceRequest { trace_id };
     let mut span_stream = jaeger_service
         .get_trace(with_tonic(get_trace_request))
         .await
@@ -226,8 +236,7 @@ async fn jaeger_get_trace_by_id(
         .map(|span| JaegerSpan::find_better_name_for_pb_convert(&span))
         .group_by(|span| span.trace_id.clone())
         .into_iter()
-        .map(|(span_id, group)|
-            JaegerTrace::new(span_id, group.collect_vec()))
+        .map(|(span_id, group)| JaegerTrace::new(span_id, group.collect_vec()))
         .collect_vec();
 
     Ok(JaegerResponseBody { data: result })
