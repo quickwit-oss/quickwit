@@ -18,11 +18,12 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashMap;
-use std::fmt;
 use std::time::Duration;
+use std::{env, fmt};
 
 use fnv::{FnvHashMap, FnvHashSet};
 use itertools::Itertools;
+use once_cell::sync::{Lazy, OnceCell};
 use quickwit_common::{PrettySample, Progress};
 use quickwit_ingest::{IngesterPool, LocalShardsUpdate};
 use quickwit_proto::control_plane::{
@@ -219,12 +220,10 @@ impl IngestController {
             &local_shards_update.source_uid,
             &local_shards_update.shard_infos,
         );
-        if shard_stats.avg_ingestion_rate >= SCALE_UP_SHARDS_THRESHOLD_MIB_PER_SEC {
+        if self.should_scale_up(&shard_stats) {
             self.try_scale_up_shards(local_shards_update.source_uid, shard_stats, model, progress)
                 .await;
-        } else if shard_stats.avg_ingestion_rate <= SCALE_DOWN_SHARDS_THRESHOLD_MIB_PER_SEC
-            && shard_stats.num_open_shards > 1
-        {
+        } else if self.should_scale_down(&shard_stats) {
             self.try_scale_down_shards(
                 local_shards_update.source_uid,
                 shard_stats,
@@ -419,6 +418,23 @@ impl IngestController {
         Ok(())
     }
 
+    fn should_scale_up(&self, shard_stats: &ShardStats) -> bool {
+        static MAX_SHARDS_PER_SOURCE: Lazy<usize> = Lazy::new(|| {
+            env::var("QW_INGEST_MAX_SHARDS_PER_SOURCE")
+                .ok()
+                .and_then(|max_shards_str| max_shards_str.parse::<usize>().ok())
+                .unwrap_or(1_000)
+        });
+        if shard_stats.num_open_shards >= *MAX_SHARDS_PER_SOURCE {
+            warn!(
+                "failed to scale up number of shards: reached max number of shards per source ({})",
+                *MAX_SHARDS_PER_SOURCE
+            );
+            return false;
+        }
+        shard_stats.avg_ingestion_rate >= SCALE_UP_SHARDS_THRESHOLD_MIB_PER_SEC
+    }
+
     /// Attempts to increase the number of shards. This operation is rate limited to avoid creating
     /// to many shards in a short period of time. As a result, this method may not create any
     /// shard.
@@ -502,6 +518,11 @@ impl IngestController {
             .open_shards_total
             .with_label_values(label_values)
             .set(new_num_open_shards as i64);
+    }
+
+    fn should_scale_down(&self, shard_stats: &ShardStats) -> bool {
+        shard_stats.num_open_shards > 1
+            && shard_stats.avg_ingestion_rate < SCALE_DOWN_SHARDS_THRESHOLD_MIB_PER_SEC
     }
 
     /// Attempts to decrease the number of shards. This operation is rate limited to avoid closing
