@@ -20,7 +20,6 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
-use bytes::Bytes;
 use reqwest::StatusCode;
 use serde::de::DeserializeOwned;
 
@@ -79,7 +78,7 @@ impl ApiResponse {
 
 #[derive(Clone)]
 pub enum IngestSource {
-    Bytes(Bytes),
+    Str(String),
     File(PathBuf),
     Stdin,
 }

@@ -28,7 +28,6 @@ use std::time::{Duration, Instant};
 use std::{fmt, io};
 
 use anyhow::{anyhow, bail, Context};
-use bytes::Bytes;
 use bytesize::ByteSize;
 use clap::{arg, Arg, ArgAction, ArgMatches, Command};
 use colored::{ColoredString, Colorize};
@@ -466,6 +465,9 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
     println!("❯ Creating index...");
     let storage_resolver = StorageResolver::unconfigured();
     let file_content = load_file(&storage_resolver, &args.index_config_uri).await?;
+    let index_config_str: String = std::str::from_utf8(&file_content)
+        .with_context(|| format!("Invalid utf8: `{}`", args.index_config_uri))?
+        .to_string();
     let config_format = ConfigFormat::sniff_from_uri(&args.index_config_uri)?;
     let qw_client = args.client_args.client();
     // TODO: nice to have: check first if the index exists by send a GET request, if we get a 404,
@@ -479,10 +481,9 @@ pub async fn create_index_cli(args: CreateIndexArgs) -> anyhow::Result<()> {
             return Ok(());
         }
     }
-    let bytes = Bytes::from(file_content.to_vec());
     qw_client
         .indexes()
-        .create(bytes, config_format, args.overwrite)
+        .create(&index_config_str, config_format, args.overwrite)
         .await?;
     println!("{} Index successfully created.", "✔".color(GREEN_COLOR));
     Ok(())
