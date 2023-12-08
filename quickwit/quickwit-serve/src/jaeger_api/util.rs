@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use go_parse_duration::parse_duration;
 use prost_types::{Duration as WellKnownDuration, Timestamp as WellKnownTimestamp};
 
 // TODO move to `TraceId` and simplify if possible
@@ -45,6 +46,18 @@ pub fn from_well_known_timestamp(timestamp_opt: &Option<WellKnownTimestamp>) -> 
         Some(timestamp) => timestamp.seconds * 1_000_000 + i64::from(timestamp.nanos / 1000),
         None => 0i64,
     }
+}
+
+pub fn parse_duration_with_units(duration_string_opt: Option<String>) -> Option<WellKnownDuration> {
+    duration_string_opt
+        .and_then(|duration_string| parse_duration(duration_string.as_str()).ok())
+        .map(to_well_known_duration)
+}
+
+fn to_well_known_duration(timestamp_nanos: i64) -> WellKnownDuration {
+    let seconds = timestamp_nanos / 1_000_000;
+    let nanos = (timestamp_nanos % 1_000_000) as i32;
+    WellKnownDuration { seconds, nanos }
 }
 
 pub fn from_well_known_duration(duration_opt: &Option<WellKnownDuration>) -> i64 {

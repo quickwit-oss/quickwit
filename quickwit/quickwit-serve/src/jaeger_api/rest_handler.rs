@@ -35,7 +35,9 @@ use crate::jaeger_api::model::{
     JaegerError, JaegerResponseBody, JaegerSpan, JaegerTrace, TracesSearchQueryParams,
     ALL_OPERATIONS, DEFAULT_NUMBER_OF_TRACES,
 };
-use crate::jaeger_api::util::{hex_string_to_bytes, to_well_known_timestamp};
+use crate::jaeger_api::util::{
+    hex_string_to_bytes, parse_duration_with_units, to_well_known_timestamp,
+};
 use crate::json_api_response::JsonApiResponse;
 use crate::{require, BodyFormat};
 
@@ -153,7 +155,6 @@ async fn jaeger_services(
 async fn jaeger_service_operations(
     service_name: String,
     jaeger_service: JaegerService,
-    // ) -> Result<JaegerSearchBody, JaegerError> {
 ) -> Result<JaegerResponseBody<Vec<String>>, JaegerError> {
     let get_operations_request = GetOperationsRequest {
         service: service_name,
@@ -171,29 +172,22 @@ async fn jaeger_service_operations(
         .map(|op| op.name)
         .collect_vec();
     Ok(JaegerResponseBody::<Vec<String>> { data: operations })
-    // Ok(JaegerSearchBody {
-    //     data: Some(
-    //         vec,
-    //     ),
-    // })
 }
 
 async fn jaeger_traces_search(
     search_params: TracesSearchQueryParams,
     jaeger_service: JaegerService,
 ) -> Result<JaegerResponseBody<Vec<JaegerTrace>>, JaegerError> {
-    let start_time_min = search_params.start.map(to_well_known_timestamp);
-    let start_time_max = search_params.end.map(to_well_known_timestamp);
     let query = TraceQueryParameters {
         service_name: search_params.service.unwrap_or_default(),
         operation_name: search_params
             .operation
             .unwrap_or(ALL_OPERATIONS.to_string()),
         tags: Default::default(),
-        start_time_min,
-        start_time_max,
-        duration_min: None, // TODO, e.g. 1.2s, 100ms, 500us
-        duration_max: None, // TODO, e.g. 1.2s, 100ms, 500us
+        start_time_min: search_params.start.map(to_well_known_timestamp),
+        start_time_max: search_params.end.map(to_well_known_timestamp),
+        duration_min: parse_duration_with_units(search_params.min_duration),
+        duration_max: parse_duration_with_units(search_params.max_duration),
         num_traces: search_params.limit.unwrap_or(DEFAULT_NUMBER_OF_TRACES),
     };
     let find_traces_request = FindTracesRequest { query: Some(query) };

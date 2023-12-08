@@ -17,6 +17,7 @@ bytesize = { workspace = true }
 elasticsearch-dsl = "0.4.15"
 futures = { workspace = true }
 futures-util = { workspace = true }
+go-parse-duration = "0.1.1"
 humantime = { workspace = true }
 http-serde = { workspace = true }
 hyper = { workspace = true }

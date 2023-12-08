@@ -177,7 +177,8 @@ impl JaegerSpan {
             .collect_vec();
 
         // TODO what's the best way to handle unwrap here?
-        let process: JaegerProcess = JaegerProcess::convert_from_proto(span.process.clone().unwrap());
+        let process: JaegerProcess =
+            JaegerProcess::convert_from_proto(span.process.clone().unwrap());
 
         Self {
             trace_id: bytes_to_hex_string(&span.trace_id),
@@ -190,7 +191,8 @@ impl JaegerSpan {
             tags,
             logs,
             process,
-            process_id: "no_value".to_string(), // TODO we need to initialize it somehow to mutate it further
+            process_id: "no_value".to_string(), /* TODO we need to initialize it somehow to
+                                                 * mutate it further */
             warnings: span.warnings.iter().map(|s| s.to_string()).collect_vec(),
         }
     }
