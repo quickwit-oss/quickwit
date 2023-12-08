@@ -20,7 +20,6 @@
 use std::str::FromStr;
 
 use anyhow::{bail, Context};
-use bytes::Bytes;
 use clap::{arg, ArgMatches, Command};
 use colored::Colorize;
 use itertools::Itertools;
@@ -330,11 +329,13 @@ async fn create_source_cli(args: CreateSourceArgs) -> anyhow::Result<()> {
     println!("❯ Creating source...");
     let storage_resolver = StorageResolver::unconfigured();
     let source_config_content = load_file(&storage_resolver, &args.source_config_uri).await?;
+    let source_config_str: &str = std::str::from_utf8(&source_config_content)
+        .with_context(|| format!("source config is not utf-8: {}", args.source_config_uri))?;
     let config_format = ConfigFormat::sniff_from_uri(&args.source_config_uri)?;
     let qw_client = args.client_args.client();
     qw_client
         .sources(&args.index_id)
-        .create(Bytes::from(source_config_content.to_vec()), config_format)
+        .create(source_config_str, config_format)
         .await?;
     println!("{} Source successfully created.", "✔".color(GREEN_COLOR));
     Ok(())
