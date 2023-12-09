@@ -608,6 +608,7 @@ mod tests {
             metastore_server_opt: None,
             node_config: Arc::new(node_config.clone()),
             search_service: Arc::new(MockSearchService::new()),
+            jaeger_service_opt: None,
         };
         let handler = api_v1_routes(Arc::new(quickwit_services));
         let resp = warp::test::request()

@@ -90,7 +90,7 @@ impl JaegerTrace {
     /// The logic has been replicated from
     /// https://github.com/jaegertracing/jaeger/blob/995231c42cadd70bce2bbbf02579e33f6e6329c8/model/converter/json/process_hashtable.go#L37
     fn handle_span_processes(
-        spans: &mut Vec<JaegerSpan>,
+        spans: &mut [JaegerSpan],
         count: &mut i32,
         acc: &mut HashMap<u64, Vec<JaegerProcess>>,
     ) {
@@ -126,7 +126,7 @@ impl JaegerTrace {
         data: &HashMap<u64, Vec<JaegerProcess>>,
     ) -> HashMap<String, JaegerProcess> {
         let mut result: HashMap<String, JaegerProcess> = HashMap::new();
-        for (_, processes) in data {
+        for processes in data.values() {
             for process in processes {
                 result.insert(process.key.clone(), process.clone());
             }
@@ -315,7 +315,6 @@ impl JaegerProcess {
         }
     }
 
-    ///
     pub fn next_key(count: &i32) -> String {
         format!("p{}", count)
     }

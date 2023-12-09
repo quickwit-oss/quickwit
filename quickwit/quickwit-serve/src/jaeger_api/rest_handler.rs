@@ -201,7 +201,7 @@ async fn jaeger_traces_search(
 
     let result: Vec<JaegerTrace> = spans
         .iter()
-        .map(|span| JaegerSpan::find_better_name_for_pb_convert(&span))
+        .map(JaegerSpan::find_better_name_for_pb_convert)
         .group_by(|span| span.trace_id.clone())
         .into_iter()
         .map(|(span_id, group)| JaegerTrace::new(span_id, group.collect_vec()))
@@ -227,7 +227,7 @@ async fn jaeger_get_trace_by_id(
 
     let result: Vec<JaegerTrace> = spans
         .iter()
-        .map(|span| JaegerSpan::find_better_name_for_pb_convert(&span))
+        .map(JaegerSpan::find_better_name_for_pb_convert)
         .group_by(|span| span.trace_id.clone())
         .into_iter()
         .map(|(span_id, group)| JaegerTrace::new(span_id, group.collect_vec()))
