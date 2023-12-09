@@ -21,17 +21,16 @@ use quickwit_common::rand::append_random_suffix;
 use quickwit_common::uri::Uri;
 use quickwit_config::{IndexConfig, SourceConfig};
 use quickwit_proto::metastore::{
-    AddSourceRequest, CreateIndexRequest, EntityKind, MetastoreError, MetastoreService,
-    OpenShardsRequest, OpenShardsSubrequest, MetastoreResult, AcquireShardsRequest, AcquireShardsSubrequest
+    AddSourceRequest, CreateIndexRequest, EntityKind, MetastoreError, MetastoreResult,
+    MetastoreService, OpenShardsRequest, OpenShardsSubrequest,
 };
 use quickwit_proto::types::{IndexUid, SourceId};
-use crate::metastore::postgresql_metastore::PostgresqlMetastore;
-use crate::metastore::postgresql_model::PgShard;
 use sqlx::{Pool, Postgres};
 
 use super::DefaultForTest;
+use crate::metastore::postgresql_metastore::PostgresqlMetastore;
 use crate::tests::cleanup_index;
-use crate::{AddSourceRequestExt, CreateIndexRequestExt, FileBackedMetastore, MetastoreServiceExt, metastore};
+use crate::{AddSourceRequestExt, CreateIndexRequestExt, FileBackedMetastore, MetastoreServiceExt};
 
 // TODO: Remove when `PostgresqlMetastore` implements Shard API.
 pub trait RunTests {
@@ -259,21 +258,7 @@ pub async fn test_metastore_acquire_shards<
     )
     .await;
 
-    //Test empty subrequests
-    let acquire_shards_request = AcquireShardsRequest {
-        subrequests: Vec::new()
-    };
-
-    let acquire_shards_response = metastore.acquire_shards(acquire_shards_request).await.unwrap();
-
-    assert_eq!(acquire_shards_response.subresponses.len(), 0);
-
-    let acquire_shards_request = AcquireShardsRequest {
-        subrequests: vec![AcquireShardsSubrequest {
-            index_uid: 
-        }]
-    };
-
+    // TODO
 
     cleanup_index(&mut metastore, test_index.index_uid).await;
 }
@@ -318,7 +303,9 @@ pub async fn test_metastore_delete_shards<
     cleanup_index(&mut metastore, test_index.index_uid).await;
 }
 
-pub async fn test_postgres_metastore_open_shards(connection_pool: Pool<Postgres>) -> MetastoreResult<()> {
+pub async fn test_postgres_metastore_open_shards(
+    connection_pool: Pool<Postgres>,
+) -> MetastoreResult<()> {
     dotenv::dotenv().ok();
     let uri: Uri = std::env::var("QW_TEST_DATABASE_URL")
         .expect("Environment variable `QW_TEST_DATABASE_URL` should be set.")
@@ -327,7 +314,7 @@ pub async fn test_postgres_metastore_open_shards(connection_pool: Pool<Postgres>
 
     let mut metastore = PostgresqlMetastore {
         uri,
-        connection_pool: connection_pool.clone()
+        connection_pool: connection_pool.clone(),
     };
 
     let test_index = TestIndex::create_index_with_source(
@@ -345,22 +332,24 @@ pub async fn test_postgres_metastore_open_shards(connection_pool: Pool<Postgres>
     assert!(open_shards_response.subresponses.is_empty());
 
     // Test index not found.
-    // let open_shards_request = OpenShardsRequest {
-    //     subrequests: vec![OpenShardsSubrequest {
-    //         index_uid: "index-does-not-exist:0".to_string(),
-    //         source_id: test_index.source_config.source_id.clone(),
-    //         leader_id: "test-ingester-foo".to_string(),
-    //         next_shard_id: 1,
-    //         ..Default::default()
-    //     }],
-    // };
-    // let error = metastore
-    //     .open_shards(open_shards_request)
-    //     .await
-    //     .unwrap_err();
-    // assert!(
-    //     matches!(error, MetastoreError::NotFound(EntityKind::Index { index_id }) if index_id == "index-does-not-exist")
-    // );
+    let open_shards_request = OpenShardsRequest {
+        subrequests: vec![OpenShardsSubrequest {
+            index_uid: "index-does-not-exist:0".to_string(),
+            source_id: test_index.source_config.source_id.clone(),
+            leader_id: "test-ingester-foo".to_string(),
+            next_shard_id: 1,
+            ..Default::default()
+        }],
+    };
+    let error = metastore
+        .open_shards(open_shards_request)
+        .await
+        .unwrap_err();
+    assert!(
+        matches!(error, MetastoreError::NotFound(EntityKind::Index { index_id }) if index_id == "index-does-not-exist")
+    );
+
+    // TODO: THE SOURCE NOT FOUND TEST IS REMOVED NEED TO ADD IT BACK
 
     // Test open shard #1.
     let open_shards_request = OpenShardsRequest {
@@ -452,6 +441,5 @@ pub async fn test_postgres_metastore_open_shards(connection_pool: Pool<Postgres>
         MetastoreError::InconsistentControlPlaneState
     ));
 
-
-    return Ok(())
+    Ok(())
 }

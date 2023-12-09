@@ -1,0 +1,1 @@
+ALTER TABLE shards ALTER COLUMN shard_id TYPE BIGINT;

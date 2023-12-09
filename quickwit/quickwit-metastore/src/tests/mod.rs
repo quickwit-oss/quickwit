@@ -4035,7 +4035,6 @@ macro_rules! metastore_test_suite {
             }
 
             /// Shard API tests
-
             #[tokio::test]
             async fn test_metastore_open_shards() {
                 $crate::tests::shard::test_metastore_open_shards::<$metastore_type>().await;
@@ -4060,21 +4059,18 @@ macro_rules! metastore_test_suite {
 }
 
 #[macro_export]
-macro_rules! postgres_test_suite {
+macro_rules! postgres_shards_test_suite {
     () => {
         #[cfg(test)]
-        #[cfg(feature = "postgres")]
-        mod postgres_tests {
-            use sqlx::{Pool, Postgres};
+        mod postgres_shards_tests {
             use quickwit_proto::metastore::MetastoreResult;
-            use crate::metastore::postgresql_metastore::MIGRATOR;
+            use sqlx::{Pool, Postgres};
+            use $crate::metastore::postgresql_metastore::MIGRATOR;
 
             #[sqlx::test(migrator = "MIGRATOR")]
             async fn test_postgres_open_shards(pool: Pool<Postgres>) -> MetastoreResult<()> {
                 $crate::tests::shard::test_postgres_metastore_open_shards(pool).await
             }
-
-
-        } 
-    }
+        }
+    };
 }

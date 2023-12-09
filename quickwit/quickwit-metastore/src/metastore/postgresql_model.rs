@@ -222,17 +222,6 @@ pub enum PgShardState {
     Closed,
 }
 
-impl From<PgShardState> for String {
-    fn from(val: PgShardState) -> Self {
-        match val {
-            PgShardState::Unspecified => String::from("unspecified"),
-            PgShardState::Open => String::from("open"),
-            PgShardState::Unavailable => String::from("unavailable"),
-            PgShardState::Closed => String::from("closed"),
-        }
-    }
-}
-
 impl From<PgShardState> for ShardState {
     fn from(val: PgShardState) -> Self {
         match val {
@@ -255,8 +244,8 @@ impl TryFrom<i32> for PgShardState {
             1 => Ok(PgShardState::Open),
             2 => Ok(PgShardState::Unavailable),
             3 => Ok(PgShardState::Closed),
-            _ => Err(MetastoreError::InvalidArgument {
-                message: "The shard state is incorrect".to_string(),
+            other => Err(MetastoreError::InvalidArgument {
+                message: format!("unknown shard state `{other}`"),
             }),
         }
     }
