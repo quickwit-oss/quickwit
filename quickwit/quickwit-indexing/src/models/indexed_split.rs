@@ -123,7 +123,7 @@ impl IndexedSplitBuilder {
             index_id=%self.split_attrs.pipeline_id.index_uid.index_id(),
             source_id=%self.split_attrs.pipeline_id.source_id,
             node_id=%self.split_attrs.pipeline_id.node_id,
-            pipeline_id=%self.split_attrs.pipeline_id.pipeline_ord,
+            pipeline_uid=%self.split_attrs.pipeline_id.pipeline_uid,
             split_id=%self.split_attrs.split_id,
             partition_id=%self.split_attrs.partition_id,
             num_docs=%self.split_attrs.num_docs,

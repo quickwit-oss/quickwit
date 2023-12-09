@@ -19,7 +19,8 @@
 
 use bytes::Bytes;
 
-use self::ingester::FetchResponseV2;
+use self::ingester::{PersistFailureReason, ReplicateFailureReason};
+use self::router::IngestFailureReason;
 use super::types::NodeId;
 use super::{ServiceError, ServiceErrorCode};
 use crate::control_plane::ControlPlaneError;
@@ -122,16 +123,6 @@ impl DocBatchV2 {
     }
 }
 
-impl FetchResponseV2 {
-    pub fn from_position_exclusive(&self) -> Position {
-        self.from_position_exclusive.clone().unwrap_or_default()
-    }
-
-    pub fn to_position_inclusive(&self) -> Position {
-        self.to_position_inclusive.clone().unwrap_or_default()
-    }
-}
-
 impl MRecordBatch {
     pub fn encoded_mrecords(&self) -> impl Iterator<Item = Bytes> + '_ {
         self.mrecord_lengths
@@ -154,6 +145,21 @@ impl MRecordBatch {
 
     pub fn num_mrecords(&self) -> usize {
         self.mrecord_lengths.len()
+    }
+
+    #[cfg(any(test, feature = "testsuite"))]
+    pub fn for_test(mrecords: impl IntoIterator<Item = &'static str>) -> Option<Self> {
+        let mut mrecord_buffer = Vec::new();
+        let mut mrecord_lengths = Vec::new();
+
+        for mrecord in mrecords {
+            mrecord_buffer.extend(mrecord.as_bytes());
+            mrecord_lengths.push(mrecord.len() as u32);
+        }
+        Some(Self {
+            mrecord_lengths,
+            mrecord_buffer: Bytes::from(mrecord_buffer),
+        })
     }
 }
 
@@ -217,6 +223,29 @@ impl ShardIds {
         self.shard_ids
             .iter()
             .map(|shard_id| queue_id(&self.index_uid, &self.source_id, *shard_id))
+    }
+}
+
+impl From<PersistFailureReason> for IngestFailureReason {
+    fn from(reason: PersistFailureReason) -> Self {
+        match reason {
+            PersistFailureReason::Unspecified => IngestFailureReason::Unspecified,
+            PersistFailureReason::ShardNotFound => IngestFailureReason::NoShardsAvailable,
+            PersistFailureReason::ShardClosed => IngestFailureReason::NoShardsAvailable,
+            PersistFailureReason::ResourceExhausted => IngestFailureReason::ResourceExhausted,
+            PersistFailureReason::RateLimited => IngestFailureReason::RateLimited,
+        }
+    }
+}
+
+impl From<ReplicateFailureReason> for PersistFailureReason {
+    fn from(reason: ReplicateFailureReason) -> Self {
+        match reason {
+            ReplicateFailureReason::Unspecified => PersistFailureReason::Unspecified,
+            ReplicateFailureReason::ShardNotFound => PersistFailureReason::ShardNotFound,
+            ReplicateFailureReason::ShardClosed => PersistFailureReason::ShardClosed,
+            ReplicateFailureReason::ResourceExhausted => PersistFailureReason::ResourceExhausted,
+        }
     }
 }
 

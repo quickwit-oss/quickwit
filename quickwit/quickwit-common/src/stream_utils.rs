@@ -33,6 +33,20 @@ pub struct ServiceStream<T> {
     inner: BoxStream<T>,
 }
 
+impl<T> ServiceStream<T>
+where T: Send + 'static
+{
+    pub fn new(inner: BoxStream<T>) -> Self {
+        Self { inner }
+    }
+
+    pub fn empty() -> Self {
+        Self {
+            inner: Box::pin(stream::empty()),
+        }
+    }
+}
+
 impl<T> fmt::Debug for ServiceStream<T>
 where T: 'static
 {
@@ -156,6 +170,17 @@ where T: Send + 'static
         });
         Self {
             inner: Box::pin(message_stream),
+        }
+    }
+}
+
+#[cfg(any(test, feature = "testsuite"))]
+impl<T> From<Vec<T>> for ServiceStream<T>
+where T: Send + 'static
+{
+    fn from(values: Vec<T>) -> Self {
+        Self {
+            inner: Box::pin(stream::iter(values)),
         }
     }
 }

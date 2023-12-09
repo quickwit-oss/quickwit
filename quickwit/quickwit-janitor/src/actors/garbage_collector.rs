@@ -212,6 +212,7 @@ mod tests {
 
     use quickwit_actors::Universe;
     use quickwit_common::shared_consts::DELETION_GRACE_PERIOD;
+    use quickwit_common::ServiceStream;
     use quickwit_metastore::{
         IndexMetadata, ListSplitsRequestExt, ListSplitsResponseExt, Split, SplitMetadata,
         SplitState,
@@ -292,7 +293,8 @@ mod tests {
                     }
                     _ => panic!("only Staged and MarkedForDeletion expected."),
                 };
-                Ok(ListSplitsResponse::try_from_splits(splits).unwrap())
+                let splits = ListSplitsResponse::try_from_splits(splits).unwrap();
+                Ok(ServiceStream::from(vec![Ok(splits)]))
             });
         mock_metastore
             .expect_mark_splits_for_deletion()
@@ -368,7 +370,8 @@ mod tests {
                     }
                     _ => panic!("only Staged and MarkedForDeletion expected."),
                 };
-                Ok(ListSplitsResponse::try_from_splits(splits).unwrap())
+                let splits = ListSplitsResponse::try_from_splits(splits).unwrap();
+                Ok(ServiceStream::from(vec![Ok(splits)]))
             });
         mock_metastore
             .expect_mark_splits_for_deletion()
@@ -443,7 +446,8 @@ mod tests {
                     }
                     _ => panic!("only Staged and MarkedForDeletion expected."),
                 };
-                Ok(ListSplitsResponse::try_from_splits(splits).unwrap())
+                let splits = ListSplitsResponse::try_from_splits(splits).unwrap();
+                Ok(ServiceStream::from(vec![Ok(splits)]))
             });
         mock_metastore
             .expect_mark_splits_for_deletion()
@@ -618,7 +622,8 @@ mod tests {
                     }
                     _ => panic!("only Staged and MarkedForDeletion expected."),
                 };
-                Ok(ListSplitsResponse::try_from_splits(splits).unwrap())
+                let splits = ListSplitsResponse::try_from_splits(splits).unwrap();
+                Ok(ServiceStream::from(vec![Ok(splits)]))
             });
         mock_metastore
             .expect_mark_splits_for_deletion()
@@ -693,7 +698,8 @@ mod tests {
                     }
                     _ => panic!("only Staged and MarkedForDeletion expected."),
                 };
-                Ok(ListSplitsResponse::try_from_splits(splits).unwrap())
+                let splits = ListSplitsResponse::try_from_splits(splits).unwrap();
+                Ok(ServiceStream::from(vec![Ok(splits)]))
             });
         mock_metastore
             .expect_mark_splits_for_deletion()

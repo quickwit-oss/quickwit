@@ -160,7 +160,7 @@ mod tests {
         let split_store = {
             let mut storage_builder = RamStorageBuilder::default();
             for split in &splits_to_merge {
-                let buffer = SplitPayloadBuilder::get_split_payload(&[], &[1, 2, 3])?
+                let buffer = SplitPayloadBuilder::get_split_payload(&[], &[], &[1, 2, 3])?
                     .read_all()
                     .await?;
                 storage_builder = storage_builder.put(&split_file(split.split_id()), &buffer);

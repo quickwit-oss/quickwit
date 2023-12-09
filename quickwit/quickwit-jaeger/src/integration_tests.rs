@@ -54,7 +54,7 @@ use quickwit_proto::opentelemetry::proto::trace::v1::span::{Event as OtlpEvent, 
 use quickwit_proto::opentelemetry::proto::trace::v1::{
     ResourceSpans, ScopeSpans, Span as OtlpSpan, Status as OtlpStatus,
 };
-use quickwit_proto::types::IndexUid;
+use quickwit_proto::types::{IndexUid, PipelineUid};
 use quickwit_search::{
     start_searcher_service, SearchJobPlacer, SearchService, SearchServiceClient, SearcherContext,
     SearcherPool,
@@ -427,7 +427,7 @@ async fn setup_traces_index(
     let spawn_pipeline_request = SpawnPipeline {
         index_id: index_id.clone(),
         source_config,
-        pipeline_ord: 0,
+        pipeline_uid: PipelineUid::default(),
     };
     indexer_service
         .ask_for_res(spawn_pipeline_request)

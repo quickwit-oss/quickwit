@@ -40,8 +40,10 @@ use quickwit_rest_client::models::Timeout;
 use quickwit_rest_client::rest_client::{QuickwitClient, QuickwitClientBuilder, DEFAULT_BASE_URL};
 use quickwit_storage::{load_file, StorageResolver};
 use reqwest::Url;
-use tabled::object::Rows;
-use tabled::{Alignment, Header, Modify, Style, Table, Tabled};
+use tabled::settings::object::Rows;
+use tabled::settings::panel::Header;
+use tabled::settings::{Alignment, Modify, Style};
+use tabled::{Table, Tabled};
 use tracing::info;
 
 use crate::checklist::run_checklist;
@@ -297,11 +299,9 @@ pub fn make_table<T: Tabled>(
     rows: impl IntoIterator<Item = T>,
     transpose: bool,
 ) -> Table {
-    let table = if transpose {
-        let mut index_builder = Table::builder(rows).index();
-        index_builder.set_index(0);
-        index_builder.transpose();
-        index_builder.build()
+    let mut table = if transpose {
+        let index_builder = Table::builder(rows).index();
+        index_builder.column(0).transpose().build()
     } else {
         Table::builder(rows).build()
     };
@@ -309,8 +309,10 @@ pub fn make_table<T: Tabled>(
     table
         .with(Modify::new(Rows::new(1..)).with(Alignment::left()))
         .with(Style::ascii())
-        .with(Header(header))
-        .with(Modify::new(Rows::single(0)).with(Alignment::center()))
+        .with(Header::new(header))
+        .with(Modify::new(Rows::single(0)).with(Alignment::center()));
+
+    table
 }
 
 /// Prompts user for confirmation.

@@ -212,23 +212,21 @@ impl Shards {
         force: bool,
     ) -> MetastoreResult<MutationOccurred<()>> {
         let mut mutation_occurred = false;
-
         for shard_id in subrequest.shard_ids {
             if let Entry::Occupied(entry) = self.shards.entry(shard_id) {
                 let shard = entry.get();
-                if force || shard.publish_position_inclusive() == Position::Eof {
-                    mutation_occurred = true;
-                    info!(
-                        index_id=%self.index_uid.index_id(),
-                        source_id=%self.source_id,
-                        shard_id=%shard.shard_id,
-                        "deleted shard",
-                    );
-                    entry.remove();
-                    continue;
+                if !force && !shard.publish_position_inclusive().is_eof() {
+                    let message = format!("shard `{shard_id}` is not deletable");
+                    return Err(MetastoreError::InvalidArgument { message });
                 }
-                let message = format!("shard `{shard_id}` is not deletable");
-                return Err(MetastoreError::InvalidArgument { message });
+                info!(
+                    index_id=%self.index_uid.index_id(),
+                    source_id=%self.source_id,
+                    shard_id=%shard.shard_id,
+                    "deleted shard",
+                );
+                entry.remove();
+                mutation_occurred = true;
             }
         }
         Ok(MutationOccurred::from(mutation_occurred))
@@ -286,7 +284,7 @@ impl Shards {
         for (shard_id, publish_position_inclusive) in shard_ids {
             let shard = self.get_shard_mut(shard_id).expect("shard should exist");
 
-            if publish_position_inclusive == Position::Eof {
+            if publish_position_inclusive.is_eof() {
                 shard.shard_state = ShardState::Closed as i32;
             }
             shard.publish_position_inclusive = Some(publish_position_inclusive);

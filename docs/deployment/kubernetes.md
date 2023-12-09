@@ -83,12 +83,13 @@ config:
     username: quickwit
     password: <my strong password> # This password will be stored as a Kubernetes Secret
 
-  s3:
-    region: eu-east-1
-    # We recommend using IAM roles and permissions to access Amazon S3 resources,
-    # but you can specify a pair of access and secret keys if necessary.
-    access_key: <my access key>
-    secret_key: <my secret key>
+  storage: {}
+    s3:
+      region: eu-east-1
+      # We recommend using IAM roles and permissions to access Amazon S3 resources,
+      # but you can specify a pair of access and secret keys if necessary.
+      access_key_id: <my access key>
+      secret_access_key: <my secret key>
 ```
 
 ## Uninstall the deployment

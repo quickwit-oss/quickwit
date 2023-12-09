@@ -46,7 +46,8 @@ const MAX_VALUES_PER_TAG_FIELD: usize = if cfg!(any(test, feature = "testsuite")
 
 use crate::actors::Uploader;
 use crate::models::{
-    EmptySplit, IndexedSplit, IndexedSplitBatch, PackagedSplit, PackagedSplitBatch,
+    serialize_split_fields, EmptySplit, IndexedSplit, IndexedSplitBatch, PackagedSplit,
+    PackagedSplitBatch,
 };
 
 /// The role of the packager is to get an index writer and
@@ -186,7 +187,6 @@ impl Handler<EmptySplit> for Packager {
     }
 }
 
-/// returns true iff merge is required to reach a state where
 fn list_split_files(
     segment_metas: &[SegmentMeta],
     scratch_directory: &TempDirectory,
@@ -287,6 +287,9 @@ fn create_packaged_split(
         .reader_builder()
         .reload_policy(ReloadPolicy::Manual)
         .try_into()?;
+
+    let fields_metadata = split.index.fields_metadata()?;
+
     let mut tags = BTreeSet::default();
     for named_field in tag_fields {
         let inverted_indexes = index_reader
@@ -312,8 +315,10 @@ fn create_packaged_split(
     let mut hotcache_bytes = Vec::new();
     build_hotcache(split.split_scratch_directory.path(), &mut hotcache_bytes)?;
     ctx.record_progress();
+    let serialized_split_fields = serialize_split_fields(&fields_metadata);
 
     let packaged_split = PackagedSplit {
+        serialized_split_fields,
         split_attrs: split.split_attrs,
         split_scratch_directory: split.split_scratch_directory,
         tags,
@@ -338,7 +343,7 @@ mod tests {
     use quickwit_actors::{ObservationType, Universe};
     use quickwit_metastore::checkpoint::IndexCheckpointDelta;
     use quickwit_proto::indexing::IndexingPipelineId;
-    use quickwit_proto::types::IndexUid;
+    use quickwit_proto::types::{IndexUid, PipelineUid};
     use tantivy::directory::MmapDirectory;
     use tantivy::schema::{NumericOptions, Schema, FAST, STRING, TEXT};
     use tantivy::{doc, DateTime, IndexBuilder, IndexSettings};
@@ -413,7 +418,7 @@ mod tests {
             index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::default(),
         };
 
         // TODO: In the future we would like that kind of segment flush to emit a new split,

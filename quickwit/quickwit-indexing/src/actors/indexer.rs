@@ -186,7 +186,7 @@ impl IndexerState {
         let batch_parent_span = info_span!(target: "quickwit-indexing", "index-doc-batches",
             index_id=%self.pipeline_id.index_uid.index_id(),
             source_id=%self.pipeline_id.source_id,
-            pipeline_ord=%self.pipeline_id.pipeline_ord,
+            pipeline_uid=%self.pipeline_id.pipeline_uid,
             workbench_id=%workbench_id,
         );
         let indexing_span = info_span!(parent: batch_parent_span.id(), "indexer");
@@ -682,7 +682,7 @@ mod tests {
     use quickwit_doc_mapper::{default_doc_mapper_for_test, DefaultDocMapper};
     use quickwit_metastore::checkpoint::SourceCheckpointDelta;
     use quickwit_proto::metastore::{EmptyResponse, LastDeleteOpstampResponse};
-    use quickwit_proto::types::IndexUid;
+    use quickwit_proto::types::{IndexUid, PipelineUid};
     use tantivy::{doc, DateTime};
 
     use super::*;
@@ -724,7 +724,7 @@ mod tests {
             index_uid: index_uid.clone(),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::default(),
         };
         let doc_mapper = Arc::new(default_doc_mapper_for_test());
         let last_delete_opstamp = 10;
@@ -861,7 +861,7 @@ mod tests {
             index_uid: index_uid.clone(),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::default(),
         };
         let doc_mapper = Arc::new(default_doc_mapper_for_test());
         let last_delete_opstamp = 10;
@@ -938,7 +938,7 @@ mod tests {
             index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::default(),
         };
         let doc_mapper = Arc::new(default_doc_mapper_for_test());
         let last_delete_opstamp = 10;
@@ -1022,7 +1022,7 @@ mod tests {
             index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::default(),
         };
         let doc_mapper = Arc::new(default_doc_mapper_for_test());
         let last_delete_opstamp = 10;
@@ -1097,7 +1097,7 @@ mod tests {
             index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::default(),
         };
         let doc_mapper = Arc::new(default_doc_mapper_for_test());
         let schema = doc_mapper.schema();
@@ -1176,7 +1176,7 @@ mod tests {
             index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::default(),
         };
         let doc_mapper: Arc<dyn DocMapper> = Arc::new(
             serde_json::from_str::<DefaultDocMapper>(DOCMAPPER_WITH_PARTITION_JSON).unwrap(),
@@ -1274,7 +1274,7 @@ mod tests {
             index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::default(),
         };
         let doc_mapper: Arc<dyn DocMapper> =
             Arc::new(serde_json::from_str::<DefaultDocMapper>(DOCMAPPER_SIMPLE_JSON).unwrap());
@@ -1344,7 +1344,7 @@ mod tests {
             index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::default(),
         };
         let doc_mapper: Arc<dyn DocMapper> =
             Arc::new(serde_json::from_str::<DefaultDocMapper>(DOCMAPPER_SIMPLE_JSON).unwrap());
@@ -1416,7 +1416,7 @@ mod tests {
             index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::default(),
         };
         let doc_mapper: Arc<dyn DocMapper> =
             Arc::new(serde_json::from_str::<DefaultDocMapper>(DOCMAPPER_SIMPLE_JSON).unwrap());
@@ -1481,7 +1481,7 @@ mod tests {
             index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::default(),
         };
         let doc_mapper: Arc<dyn DocMapper> =
             Arc::new(serde_json::from_str::<DefaultDocMapper>(DOCMAPPER_SIMPLE_JSON).unwrap());
@@ -1542,7 +1542,7 @@ mod tests {
             index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::default(),
         };
         let doc_mapper = Arc::new(default_doc_mapper_for_test());
         let last_delete_opstamp = 10;

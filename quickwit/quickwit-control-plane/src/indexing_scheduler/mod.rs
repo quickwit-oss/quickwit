@@ -30,14 +30,14 @@ use quickwit_proto::indexing::{
     ApplyIndexingPlanRequest, CpuCapacity, IndexingService, IndexingTask, PIPELINE_FULL_CAPACITY,
 };
 use quickwit_proto::metastore::SourceType;
-use quickwit_proto::types::NodeId;
+use quickwit_proto::types::{NodeId, ShardId};
 use scheduling::{SourceToSchedule, SourceToScheduleType};
 use serde::Serialize;
 use tracing::{debug, error, info, warn};
 
-use crate::control_plane_model::ControlPlaneModel;
 use crate::indexing_plan::PhysicalIndexingPlan;
 use crate::indexing_scheduler::scheduling::build_physical_indexing_plan;
+use crate::model::ControlPlaneModel;
 use crate::{IndexerNodeInfo, IndexerPool};
 
 pub(crate) const MIN_DURATION_BETWEEN_SCHEDULING: Duration =
@@ -117,6 +117,7 @@ impl fmt::Debug for IndexingScheduler {
 
 fn get_sources_to_schedule(model: &ControlPlaneModel) -> Vec<SourceToSchedule> {
     let mut sources = Vec::new();
+
     for (source_uid, source_config) in model.get_source_configs() {
         if !source_config.enabled {
             continue;
@@ -137,11 +138,17 @@ fn get_sources_to_schedule(model: &ControlPlaneModel) -> Vec<SourceToSchedule> {
                 });
             }
             SourceType::IngestV2 => {
-                let shards = model.list_shards(&source_uid);
+                // Expect: the source should exist since we just read it from `get_source_configs`.
+                let shard_ids: Vec<ShardId> = model
+                    .list_shards(&source_uid)
+                    .expect("source should exist")
+                    .map(|shard| shard.shard_id)
+                    .collect();
+
                 sources.push(SourceToSchedule {
                     source_uid,
                     source_type: SourceToScheduleType::Sharded {
-                        shards,
+                        shard_ids,
                         // FIXME
                         load_per_shard: NonZeroU32::new(250u32).unwrap(),
                     },
@@ -243,10 +250,12 @@ impl IndexingScheduler {
             }
         }
 
-        let mut indexers = self.get_indexers_from_indexer_pool();
+        let mut indexers: Vec<(String, IndexerNodeInfo)> = self.get_indexers_from_indexer_pool();
         let running_indexing_tasks_by_node_id: FnvHashMap<String, Vec<IndexingTask>> = indexers
             .iter()
-            .map(|indexer| (indexer.0.clone(), indexer.1.indexing_tasks.clone()))
+            .map(|(indexer_id, indexer_node_info)| {
+                (indexer_id.clone(), indexer_node_info.indexing_tasks.clone())
+            })
             .collect();
 
         let indexing_plans_diff = get_indexing_plans_diff(
@@ -470,7 +479,7 @@ mod tests {
     use proptest::{prop_compose, proptest};
     use quickwit_config::{IndexConfig, KafkaSourceParams, SourceConfig, SourceParams};
     use quickwit_metastore::IndexMetadata;
-    use quickwit_proto::types::{IndexUid, SourceUid};
+    use quickwit_proto::types::{IndexUid, PipelineUid, SourceUid};
 
     use super::*;
     #[test]
@@ -485,22 +494,30 @@ mod tests {
             let mut running_plan = FnvHashMap::default();
             let mut desired_plan = FnvHashMap::default();
             let task_1 = IndexingTask {
+                pipeline_uid: Some(PipelineUid::from_u128(10u128)),
+                index_uid: "index-1:11111111111111111111111111".to_string(),
+                source_id: "source-1".to_string(),
+                shard_ids: Vec::new(),
+            };
+            let task_1b = IndexingTask {
+                pipeline_uid: Some(PipelineUid::from_u128(11u128)),
                 index_uid: "index-1:11111111111111111111111111".to_string(),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
             };
             let task_2 = IndexingTask {
+                pipeline_uid: Some(PipelineUid::from_u128(20u128)),
                 index_uid: "index-1:11111111111111111111111111".to_string(),
                 source_id: "source-2".to_string(),
                 shard_ids: Vec::new(),
             };
             running_plan.insert(
                 "indexer-1".to_string(),
-                vec![task_1.clone(), task_1.clone(), task_2.clone()],
+                vec![task_1.clone(), task_1b.clone(), task_2.clone()],
             );
             desired_plan.insert(
                 "indexer-1".to_string(),
-                vec![task_2, task_1.clone(), task_1],
+                vec![task_2, task_1.clone(), task_1b.clone()],
             );
             let indexing_plans_diff = get_indexing_plans_diff(&running_plan, &desired_plan);
             assert!(indexing_plans_diff.is_empty());
@@ -509,11 +526,13 @@ mod tests {
             let mut running_plan = FnvHashMap::default();
             let mut desired_plan = FnvHashMap::default();
             let task_1 = IndexingTask {
+                pipeline_uid: Some(PipelineUid::from_u128(1u128)),
                 index_uid: "index-1:11111111111111111111111111".to_string(),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
             };
             let task_2 = IndexingTask {
+                pipeline_uid: Some(PipelineUid::from_u128(2u128)),
                 index_uid: "index-1:11111111111111111111111111".to_string(),
                 source_id: "source-2".to_string(),
                 shard_ids: Vec::new(),
@@ -539,11 +558,13 @@ mod tests {
             let mut running_plan = FnvHashMap::default();
             let mut desired_plan = FnvHashMap::default();
             let task_1 = IndexingTask {
+                pipeline_uid: Some(PipelineUid::from_u128(1u128)),
                 index_uid: "index-1:11111111111111111111111111".to_string(),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
             };
             let task_2 = IndexingTask {
+                pipeline_uid: Some(PipelineUid::from_u128(2u128)),
                 index_uid: "index-2:11111111111111111111111111".to_string(),
                 source_id: "source-2".to_string(),
                 shard_ids: Vec::new(),
@@ -576,15 +597,28 @@ mod tests {
             // Diff with 3 same tasks running but only one on the desired plan.
             let mut running_plan = FnvHashMap::default();
             let mut desired_plan = FnvHashMap::default();
-            let task_1 = IndexingTask {
+            let task_1a = IndexingTask {
+                pipeline_uid: Some(PipelineUid::from_u128(10u128)),
                 index_uid: "index-1:11111111111111111111111111".to_string(),
                 source_id: "source-1".to_string(),
                 shard_ids: Vec::new(),
             };
-            running_plan.insert("indexer-1".to_string(), vec![task_1.clone()]);
+            let task_1b = IndexingTask {
+                pipeline_uid: Some(PipelineUid::from_u128(11u128)),
+                index_uid: "index-1:11111111111111111111111111".to_string(),
+                source_id: "source-1".to_string(),
+                shard_ids: Vec::new(),
+            };
+            let task_1c = IndexingTask {
+                pipeline_uid: Some(PipelineUid::from_u128(12u128)),
+                index_uid: "index-1:11111111111111111111111111".to_string(),
+                source_id: "source-1".to_string(),
+                shard_ids: Vec::new(),
+            };
+            running_plan.insert("indexer-1".to_string(), vec![task_1a.clone()]);
             desired_plan.insert(
                 "indexer-1".to_string(),
-                vec![task_1.clone(), task_1.clone(), task_1.clone()],
+                vec![task_1a.clone(), task_1b.clone(), task_1c.clone()],
             );
 
             let indexing_plans_diff = get_indexing_plans_diff(&running_plan, &desired_plan);
@@ -593,31 +627,7 @@ mod tests {
             assert!(!indexing_plans_diff.has_same_tasks());
             assert_eq!(
                 indexing_plans_diff.missing_tasks_by_node_id,
-                FnvHashMap::from_iter([("indexer-1", vec![&task_1, &task_1])])
-            );
-        }
-        {
-            // Diff with 3 same tasks on desired plan but only one running.
-            let mut running_plan = FnvHashMap::default();
-            let mut desired_plan = FnvHashMap::default();
-            let task_1 = IndexingTask {
-                index_uid: "index-1:11111111111111111111111111".to_string(),
-                source_id: "source-1".to_string(),
-                shard_ids: Vec::new(),
-            };
-            running_plan.insert(
-                "indexer-1".to_string(),
-                vec![task_1.clone(), task_1.clone(), task_1.clone()],
-            );
-            desired_plan.insert("indexer-1".to_string(), vec![task_1.clone()]);
-
-            let indexing_plans_diff = get_indexing_plans_diff(&running_plan, &desired_plan);
-            assert!(!indexing_plans_diff.is_empty());
-            assert!(indexing_plans_diff.has_same_nodes());
-            assert!(!indexing_plans_diff.has_same_tasks());
-            assert_eq!(
-                indexing_plans_diff.unplanned_tasks_by_node_id,
-                FnvHashMap::from_iter([("indexer-1", vec![&task_1, &task_1])])
+                FnvHashMap::from_iter([("indexer-1", vec![&task_1b, &task_1c])])
             );
         }
     }
@@ -786,8 +796,8 @@ mod tests {
                     match &source_to_schedule.source_type {
                         SourceToScheduleType::IngestV1 => {}
                         SourceToScheduleType::Sharded {
-                            shards: _,
                             load_per_shard,
+                            ..
                         } => {
                             load_in_node += load_per_shard.get() * task.shard_ids.len() as u32;
                         }

@@ -58,6 +58,7 @@ use quickwit_cluster::{
     start_cluster_service, Cluster, ClusterChange, ClusterMember, ListenerHandle,
 };
 use quickwit_common::pubsub::{EventBroker, EventSubscriptionHandle};
+use quickwit_common::rate_limiter::RateLimiterSettings;
 use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::tower::{
     BalanceChannel, BoxFutureInfaillible, BufferLayer, Change, ConstantRate, EstimateRateLayer,
@@ -65,15 +66,16 @@ use quickwit_common::tower::{
 };
 use quickwit_config::service::QuickwitService;
 use quickwit_config::NodeConfig;
-use quickwit_control_plane::control_plane::ControlPlane;
+use quickwit_control_plane::control_plane::{ControlPlane, ControlPlaneEventSubscriber};
 use quickwit_control_plane::{IndexerNodeInfo, IndexerPool};
 use quickwit_index_management::{IndexService as IndexManager, IndexServiceError};
 use quickwit_indexing::actors::IndexingService;
+use quickwit_indexing::models::ShardPositionsService;
 use quickwit_indexing::start_indexing_service;
 use quickwit_ingest::{
     setup_local_shards_update_listener, start_ingest_api_service, wait_for_ingester_decommission,
     GetMemoryCapacity, IngestApiService, IngestRequest, IngestRouter, IngestServiceClient,
-    Ingester, IngesterPool, RateLimiterSettings,
+    Ingester, IngesterPool, LocalShardsUpdate,
 };
 use quickwit_jaeger::JaegerService;
 use quickwit_janitor::{start_janitor_service, JanitorService};
@@ -82,7 +84,7 @@ use quickwit_metastore::{
 };
 use quickwit_opentelemetry::otlp::{OtlpGrpcLogsService, OtlpGrpcTracesService};
 use quickwit_proto::control_plane::ControlPlaneServiceClient;
-use quickwit_proto::indexing::IndexingServiceClient;
+use quickwit_proto::indexing::{IndexingServiceClient, ShardPositionsUpdate};
 use quickwit_proto::ingest::ingester::IngesterServiceClient;
 use quickwit_proto::ingest::router::IngestRouterServiceClient;
 use quickwit_proto::metastore::{
@@ -213,6 +215,7 @@ async fn start_ingest_client_if_needed(
 async fn start_control_plane_if_needed(
     node_config: &NodeConfig,
     cluster: &Cluster,
+    event_broker: &EventBroker,
     metastore_client: &MetastoreServiceClient,
     universe: &Universe,
     indexer_pool: &IndexerPool,
@@ -227,7 +230,7 @@ async fn start_control_plane_if_needed(
         .await?;
 
         let cluster_id = cluster.cluster_id().to_string();
-        let self_node_id = cluster.self_node_id().to_string();
+        let self_node_id: NodeId = cluster.self_node_id().into();
 
         let replication_factor = node_config
             .ingest_api_config
@@ -236,6 +239,7 @@ async fn start_control_plane_if_needed(
             .get();
         let control_plane_mailbox = setup_control_plane(
             universe,
+            event_broker,
             cluster_id,
             self_node_id,
             indexer_pool.clone(),
@@ -321,12 +325,24 @@ pub async fn serve_quickwit(
     let control_plane_service: ControlPlaneServiceClient = start_control_plane_if_needed(
         &node_config,
         &cluster,
+        &event_broker,
         &metastore_client,
         &universe,
         &indexer_pool,
         &ingester_pool,
     )
     .await?;
+
+    // If one of the two following service is enabled, we need to enable the shard position service:
+    // - the control plane: as it is in charge of cleaning up shard reach eof.
+    // - the indexer: as it hosts ingesters, and ingesters use the shard positions to truncate
+    // their the queue associated to shards in mrecordlog, and publish indexers' progress to
+    // chitchat.
+    if node_config.is_service_enabled(QuickwitService::Indexer)
+        || node_config.is_service_enabled(QuickwitService::ControlPlane)
+    {
+        ShardPositionsService::spawn(universe.spawn_ctx(), event_broker.clone(), cluster.clone());
+    }
 
     // Set up the "control plane proxy" for the metastore.
     let metastore_through_control_plane = MetastoreServiceClient::new(ControlPlaneMetastore::new(
@@ -370,7 +386,7 @@ pub async fn serve_quickwit(
     let (ingest_router_service, ingester_service_opt) = setup_ingest_v2(
         &node_config,
         &cluster,
-        event_broker.clone(),
+        &event_broker,
         control_plane_service.clone(),
         ingester_pool,
     )
@@ -483,7 +499,7 @@ pub async fn serve_quickwit(
     };
 
     let grpc_listen_addr = node_config.grpc_listen_addr;
-    let rest_listen_addr = node_config.rest_listen_addr;
+    let rest_listen_addr = node_config.rest_config.listen_addr;
     let quickwit_services: Arc<QuickwitServices> = Arc::new(QuickwitServices {
         node_config: Arc::new(node_config),
         cluster: cluster.clone(),
@@ -583,7 +599,7 @@ pub async fn serve_quickwit(
 async fn setup_ingest_v2(
     config: &NodeConfig,
     cluster: &Cluster,
-    event_broker: EventBroker,
+    event_broker: &EventBroker,
     control_plane: ControlPlaneServiceClient,
     ingester_pool: IngesterPool,
 ) -> anyhow::Result<(IngestRouterServiceClient, Option<IngesterServiceClient>)> {
@@ -596,20 +612,18 @@ async fn setup_ingest_v2(
         .get();
     let ingest_router = IngestRouter::new(
         self_node_id.clone(),
-        event_broker,
         control_plane,
         ingester_pool.clone(),
         replication_factor,
     );
+    ingest_router.subscribe(event_broker);
     let ingest_router_service = IngestRouterServiceClient::new(ingest_router);
 
     // We compute the burst limit as something a bit larger than the content length limit, because
     // we actually rewrite the `\n-delimited format into a tiny bit larger buffer, where the
     // line length is prefixed.
-    let burst_limit = ByteSize::b(
-        (config.ingest_api_config.content_length_limit.as_u64() * 3 / 2)
-            .clamp(10_000_000, 200_000_000),
-    );
+    let burst_limit = (config.ingest_api_config.content_length_limit.as_u64() * 3 / 2)
+        .clamp(10_000_000, 200_000_000);
     let rate_limiter_settings = RateLimiterSettings {
         burst_limit,
         ..Default::default()
@@ -628,6 +642,7 @@ async fn setup_ingest_v2(
             replication_factor,
         )
         .await?;
+        ingester.subscribe(event_broker);
         let ingester_service = IngesterServiceClient::new(ingester);
         Some(ingester_service)
     } else {
@@ -711,16 +726,17 @@ async fn setup_searcher(
     Ok((search_job_placer, search_service))
 }
 
+#[allow(clippy::too_many_arguments)]
 async fn setup_control_plane(
     universe: &Universe,
+    event_broker: &EventBroker,
     cluster_id: String,
-    self_node_id: String,
+    self_node_id: NodeId,
     indexer_pool: IndexerPool,
     ingester_pool: IngesterPool,
     metastore: MetastoreServiceClient,
     replication_factor: usize,
 ) -> anyhow::Result<Mailbox<ControlPlane>> {
-    let self_node_id: NodeId = self_node_id.into();
     let (control_plane_mailbox, _control_plane_handle) = ControlPlane::spawn(
         universe,
         cluster_id,
@@ -730,6 +746,15 @@ async fn setup_control_plane(
         metastore,
         replication_factor,
     );
+    let subscriber = ControlPlaneEventSubscriber::new(control_plane_mailbox.downgrade());
+
+    event_broker
+        .subscribe::<LocalShardsUpdate>(subscriber.clone())
+        .forever();
+    event_broker
+        .subscribe::<ShardPositionsUpdate>(subscriber)
+        .forever();
+
     Ok(control_plane_mailbox)
 }
 
@@ -892,13 +917,13 @@ async fn check_cluster_configuration(
 
 #[cfg(test)]
 mod tests {
-    use chitchat::transport::ChannelTransport;
-    use quickwit_cluster::{create_cluster_for_test, ClusterNode};
+    use quickwit_cluster::{create_cluster_for_test, ChannelTransport, ClusterNode};
     use quickwit_common::uri::Uri;
     use quickwit_config::SearcherConfig;
     use quickwit_metastore::{metastore_for_test, IndexMetadata};
     use quickwit_proto::indexing::IndexingTask;
     use quickwit_proto::metastore::ListIndexesMetadataResponse;
+    use quickwit_proto::types::PipelineUid;
     use quickwit_search::Job;
     use tokio::sync::{mpsc, watch};
     use tokio_stream::wrappers::{ReceiverStream, UnboundedReceiverStream};
@@ -1001,6 +1026,7 @@ mod tests {
         assert!(new_indexer_node_info.indexing_tasks.is_empty());
 
         let new_indexing_task = IndexingTask {
+            pipeline_uid: Some(PipelineUid::from_u128(0u128)),
             index_uid: "test-index:0".to_string(),
             source_id: "test-source".to_string(),
             shard_ids: Vec::new(),

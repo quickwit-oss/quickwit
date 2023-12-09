@@ -100,8 +100,8 @@ service MetastoreService {
   // Deletes an index
   rpc DeleteIndex(DeleteIndexRequest) returns (EmptyResponse);
 
-  // Gets splits from index.
-  rpc ListSplits(ListSplitsRequest) returns (ListSplitsResponse);
+  // Streams splits from index.
+  rpc ListSplits(ListSplitsRequest) returns (stream ListSplitsResponse);
 
   // Stages several splits.
   rpc StageSplits(StageSplitsRequest) returns (EmptyResponse);
@@ -155,6 +155,8 @@ service MetastoreService {
   // list of acquired shards along with the positions to index from.
   rpc AcquireShards(AcquireShardsRequest) returns (AcquireShardsResponse);
 
+  // Deletes a set of shards. This RPC deletes the shards from the metastore and the storage.
+  // If the shard did not exist to begin with, the operation is successful and does not return any error.
   rpc DeleteShards(DeleteShardsRequest) returns (DeleteShardsResponse);
 
   rpc ListShards(ListShardsRequest) returns (ListShardsResponse);

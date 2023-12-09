@@ -15,6 +15,9 @@ pub struct IndexingTask {
     /// The task's source ID.
     #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,
+    /// pipeline id
+    #[prost(message, optional, tag = "4")]
+    pub pipeline_uid: ::core::option::Option<crate::types::PipelineUid>,
     /// The shards assigned to the indexer.
     #[prost(uint64, repeated, tag = "3")]
     pub shard_ids: ::prost::alloc::vec::Vec<u64>,
@@ -90,8 +93,8 @@ impl IndexingServiceClient {
         let client = indexing_service_grpc_client::IndexingServiceGrpcClient::new(
                 balance_channel,
             )
-            .max_decoding_message_size(10 * 1024 * 1024)
-            .max_encoding_message_size(10 * 1024 * 1024);
+            .max_decoding_message_size(20 * 1024 * 1024)
+            .max_encoding_message_size(20 * 1024 * 1024);
         let adapter = IndexingServiceGrpcClientAdapter::new(
             client,
             connection_keys_watcher,

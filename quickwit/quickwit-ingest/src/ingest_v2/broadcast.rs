@@ -28,7 +28,7 @@ use quickwit_common::shared_consts::INGESTER_PRIMARY_SHARDS_PREFIX;
 use quickwit_common::sorted_iter::{KeyDiff, SortedByKeyIterator};
 use quickwit_common::tower::Rate;
 use quickwit_proto::ingest::ShardState;
-use quickwit_proto::types::{split_queue_id, QueueId, ShardId, SourceUid};
+use quickwit_proto::types::{split_queue_id, NodeId, QueueId, ShardId, SourceUid};
 use serde::{Deserialize, Serialize, Serializer};
 use tokio::sync::RwLock;
 use tokio::task::JoinHandle;
@@ -194,9 +194,9 @@ impl BroadcastLocalShardsTask {
                 source_id,
             };
             // Shard ingestion rate in MiB/s.
-            let ingestion_rate_u64 =
-                rate_meter.harvest().rescale(Duration::from_secs(1)).work() / ONE_MIB.as_u64();
-            let ingestion_rate = RateMibPerSec(ingestion_rate_u64 as u16);
+            let ingestion_rate_per_sec = rate_meter.harvest().rescale(Duration::from_secs(1));
+            let ingestion_rate_mib_per_sec_u64 = ingestion_rate_per_sec.work() / ONE_MIB.as_u64();
+            let ingestion_rate = RateMibPerSec(ingestion_rate_mib_per_sec_u64 as u16);
 
             let shard_info = ShardInfo {
                 shard_id,
@@ -276,8 +276,7 @@ fn parse_key(key: &str) -> Option<SourceUid> {
 
 #[derive(Debug, Clone)]
 pub struct LocalShardsUpdate {
-    // TODO: add leader ID in order to update routing table.
-    // leader_id: NodeId,
+    pub leader_id: NodeId,
     pub source_uid: SourceUid,
     pub shard_infos: ShardInfos,
 }
@@ -289,16 +288,19 @@ pub async fn setup_local_shards_update_listener(
     event_broker: EventBroker,
 ) -> ListenerHandle {
     cluster
-        .subscribe(INGESTER_PRIMARY_SHARDS_PREFIX, move |key, value| {
-            let Some(source_uid) = parse_key(key) else {
-                warn!("failed to parse source UID `{key}`");
+        .subscribe(INGESTER_PRIMARY_SHARDS_PREFIX, move |event| {
+            let Some(source_uid) = parse_key(event.key) else {
+                warn!("failed to parse source UID `{}`", event.key);
                 return;
             };
-            let Ok(shard_infos) = serde_json::from_str::<ShardInfos>(value) else {
-                warn!("failed to parse shard infos `{value}`");
+            let Ok(shard_infos) = serde_json::from_str::<ShardInfos>(event.value) else {
+                warn!("failed to parse shard infos `{}`", event.value);
                 return;
             };
+            let leader_id: NodeId = event.node.node_id.clone().into();
+
             let local_shards_update = LocalShardsUpdate {
+                leader_id,
                 source_uid,
                 shard_infos,
             };
@@ -315,6 +317,7 @@ mod tests {
 
     use mrecordlog::MultiRecordLog;
     use quickwit_cluster::{create_cluster_for_test, ChannelTransport};
+    use quickwit_common::rate_limiter::{RateLimiter, RateLimiterSettings};
     use quickwit_proto::ingest::ingester::{IngesterStatus, ObservationMessage};
     use quickwit_proto::ingest::ShardState;
     use quickwit_proto::types::{queue_id, Position};
@@ -322,9 +325,7 @@ mod tests {
 
     use super::*;
     use crate::ingest_v2::models::IngesterShard;
-    use crate::ingest_v2::rate_limiter::RateLimiter;
     use crate::ingest_v2::rate_meter::RateMeter;
-    use crate::RateLimiterSettings;
 
     #[test]
     fn test_shard_info_serde() {
@@ -472,7 +473,8 @@ mod tests {
         let mut state_guard = state.write().await;
 
         let queue_id_01 = queue_id("test-index:0", "test-source", 1);
-        let shard = IngesterShard::new_solo(ShardState::Open, Position::Beginning, Position::Eof);
+        let shard =
+            IngesterShard::new_solo(ShardState::Open, Position::Beginning, Position::Beginning);
         state_guard.shards.insert(queue_id_01.clone(), shard);
 
         let rate_limiter = RateLimiter::from_settings(RateLimiterSettings::default());

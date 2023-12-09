@@ -50,8 +50,8 @@ pub use metastore::postgresql_metastore::PostgresqlMetastore;
 pub use metastore::{
     file_backed_metastore, AddSourceRequestExt, CreateIndexRequestExt, IndexMetadata,
     IndexMetadataResponseExt, ListIndexesMetadataResponseExt, ListSplitsQuery,
-    ListSplitsRequestExt, ListSplitsResponseExt, MetastoreServiceExt, PublishSplitsRequestExt,
-    StageSplitsRequestExt,
+    ListSplitsRequestExt, ListSplitsResponseExt, MetastoreServiceExt,
+    MetastoreServiceStreamSplitsExt, PublishSplitsRequestExt, StageSplitsRequestExt,
 };
 pub use metastore_factory::{MetastoreFactory, UnsupportedMetastore};
 pub use metastore_resolver::MetastoreResolver;

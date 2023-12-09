@@ -19,6 +19,7 @@
 
 use bytes::{Buf, Bytes};
 use quickwit_proto::ingest::MRecordBatch;
+use tracing::warn;
 
 /// The first byte of a [`MRecord`] is the version of the record header.
 #[derive(Debug)]
@@ -37,15 +38,10 @@ const DOC_HEADER_V0: &[u8; MRECORD_HEADER_LEN] = &[HeaderVersion::V0 as u8, 0];
 /// `Commit` header v0 composed of the header version and the `Commit = 1` record type.
 const COMMIT_HEADER_V0: &[u8; MRECORD_HEADER_LEN] = &[HeaderVersion::V0 as u8, 1];
 
-/// `Eof` header v0 composed of the header version and the `Eof = 2` record type.
-const EOF_HEADER_V0: &[u8; MRECORD_HEADER_LEN] = &[HeaderVersion::V0 as u8, 2];
-
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub enum MRecord {
     Doc(Bytes),
     Commit,
-    Eof,
-    Unknown,
 }
 
 impl MRecord {
@@ -53,26 +49,28 @@ impl MRecord {
         match &self {
             Self::Doc(doc) => DOC_HEADER_V0.chain(doc.clone()),
             Self::Commit => COMMIT_HEADER_V0.chain(Bytes::new()),
-            Self::Eof => EOF_HEADER_V0.chain(Bytes::new()),
-            Self::Unknown => panic!("unknown mrecord type should not be encoded"),
         }
     }
 
-    pub fn decode(mut buf: impl Buf) -> Self {
+    pub fn decode(mut buf: impl Buf) -> Option<Self> {
         let header_version = buf.get_u8();
 
         if header_version != HeaderVersion::V0 as u8 {
-            return Self::Unknown;
+            warn!("unknown mrecord header version `{header_version}`");
+            return None;
         }
-        match buf.get_u8() {
+        let mrecord = match buf.get_u8() {
             0 => {
                 let doc = buf.copy_to_bytes(buf.remaining());
                 Self::Doc(doc)
             }
             1 => Self::Commit,
-            2 => Self::Eof,
-            _ => Self::Unknown,
-        }
+            other => {
+                warn!("unknown mrecord type `{other}`");
+                return None;
+            }
+        };
+        Some(mrecord)
     }
 
     #[cfg(any(test, feature = "testsuite"))]
@@ -82,11 +80,7 @@ impl MRecord {
 }
 
 pub fn decoded_mrecords(mrecord_batch: &MRecordBatch) -> impl Iterator<Item = MRecord> + '_ {
-    mrecord_batch.encoded_mrecords().map(MRecord::decode)
-}
-
-pub(super) fn is_eof_mrecord(mrecord: &[u8]) -> bool {
-    mrecord == EOF_HEADER_V0
+    mrecord_batch.encoded_mrecords().flat_map(MRecord::decode)
 }
 
 #[cfg(test)]
@@ -97,7 +91,7 @@ mod tests {
     fn test_mrecord_doc_roundtrip() {
         let record = MRecord::new_doc("hello");
         let encoded_record = record.encode();
-        let decoded_record = MRecord::decode(encoded_record);
+        let decoded_record = MRecord::decode(encoded_record).unwrap();
         assert_eq!(record, decoded_record);
     }
 
@@ -105,21 +99,7 @@ mod tests {
     fn test_mrecord_commit_roundtrip() {
         let record = MRecord::Commit;
         let encoded_record = record.encode();
-        let decoded_record = MRecord::decode(encoded_record);
+        let decoded_record = MRecord::decode(encoded_record).unwrap();
         assert_eq!(record, decoded_record);
-    }
-
-    #[test]
-    fn test_mrecord_eof_roundtrip() {
-        let record = MRecord::Eof;
-        let encoded_record = record.encode();
-        let decoded_record = MRecord::decode(encoded_record);
-        assert_eq!(record, decoded_record);
-    }
-
-    #[test]
-    fn test_mrecord_is_eof_mrecord() {
-        assert!(is_eof_mrecord(EOF_HEADER_V0));
-        assert!(!is_eof_mrecord(COMMIT_HEADER_V0));
     }
 }

@@ -108,7 +108,7 @@ pub enum ShardState {
     /// The ingester hosting the shard is unavailable.
     Unavailable = 2,
     /// The shard is closed and cannot be written to.
-    /// It can be safely deleted if the publish position is superior or equal to the replication position.
+    /// It can be safely deleted if the publish position is superior or equal to `~eof`.
     Closed = 3,
 }
 impl ShardState {

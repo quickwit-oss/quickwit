@@ -21,7 +21,8 @@ use quickwit_actors::ActorContext;
 use quickwit_common::PrettySample;
 use quickwit_config::RetentionPolicy;
 use quickwit_metastore::{
-    ListSplitsQuery, ListSplitsRequestExt, ListSplitsResponseExt, SplitMetadata, SplitState,
+    ListSplitsQuery, ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, SplitMetadata,
+    SplitState,
 };
 use quickwit_proto::metastore::{
     ListSplitsRequest, MarkSplitsForDeletionRequest, MetastoreService, MetastoreServiceClient,
@@ -58,9 +59,9 @@ pub async fn run_execute_retention_policy(
     let (expired_splits, ignored_splits): (Vec<SplitMetadata>, Vec<SplitMetadata>) = ctx
         .protect_future(metastore.list_splits(list_splits_request))
         .await?
-        .deserialize_splits()?
+        .collect_splits_metadata()
+        .await?
         .into_iter()
-        .map(|split| split.split_metadata)
         .partition(|split_metadata| split_metadata.time_range.is_some());
 
     if !ignored_splits.is_empty() {

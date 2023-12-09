@@ -100,8 +100,8 @@ impl Source for FileSource {
                     .checkpoint_delta
                     .record_partition_delta(
                         partition_id,
-                        Position::from(self.counters.previous_offset),
-                        Position::from(self.counters.current_offset),
+                        Position::offset(self.counters.previous_offset),
+                        Position::offset(self.counters.current_offset),
                     )
                     .unwrap();
             }
@@ -364,8 +364,8 @@ mod tests {
         let partition_id = PartitionId::from(temp_file_path.to_string_lossy().to_string());
         let checkpoint_delta = SourceCheckpointDelta::from_partition_delta(
             partition_id,
-            Position::from(0u64),
-            Position::from(4u64),
+            Position::offset(0u64),
+            Position::offset(4u64),
         )
         .unwrap();
         checkpoint.try_apply_delta(checkpoint_delta).unwrap();
