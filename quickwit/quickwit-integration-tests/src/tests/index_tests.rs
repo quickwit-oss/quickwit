@@ -20,7 +20,6 @@
 use std::collections::HashSet;
 use std::time::Duration;
 
-use bytes::Bytes;
 use quickwit_common::test_utils::wait_until_predicate;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::ConfigFormat;
@@ -40,7 +39,7 @@ async fn test_restarting_standalone_server() {
     quickwit_common::setup_logging_for_tests();
     let sandbox = ClusterSandbox::start_standalone_node().await.unwrap();
     let index_id = "test-index-with-restarting";
-    let index_config = Bytes::from(format!(
+    let index_config = format!(
         r#"
             version: 0.6
             index_id: {}
@@ -56,7 +55,7 @@ async fn test_restarting_standalone_server() {
                     max_merge_factor: 3
             "#,
         index_id
-    ));
+    );
 
     // Create the index.
     sandbox
@@ -287,7 +286,7 @@ async fn test_ingest_v2_happy_path() {
     sandbox
         .indexer_rest_client
         .indexes()
-        .create(TEST_INDEX_CONFIG.into(), ConfigFormat::Yaml, false)
+        .create(TEST_INDEX_CONFIG, ConfigFormat::Yaml, false)
         .await
         .unwrap();
     sandbox
@@ -330,7 +329,7 @@ async fn test_commit_modes() {
     sandbox
         .indexer_rest_client
         .indexes()
-        .create(TEST_INDEX_CONFIG.into(), ConfigFormat::Yaml, false)
+        .create(TEST_INDEX_CONFIG, ConfigFormat::Yaml, false)
         .await
         .unwrap();
 
@@ -475,8 +474,7 @@ async fn test_very_large_index_name() {
                     - name: body
                       type: text
                 "#,
-            )
-            .into(),
+            ),
             ConfigFormat::Yaml,
             false,
         )
@@ -531,8 +529,7 @@ async fn test_very_large_index_name() {
                         - name: body
                           type: text
                     "#,
-            )
-            .into(),
+            ),
             ConfigFormat::Yaml,
             false,
         )
@@ -568,8 +565,7 @@ async fn test_shutdown() {
                 type: text
             indexing_settings:
               commit_timeout_secs: 1
-            "#
-            .into(),
+            "#,
             ConfigFormat::Yaml,
             false,
         )

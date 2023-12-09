@@ -104,7 +104,7 @@ fn transport_url(addr: SocketAddr) -> Url {
 #[macro_export]
 macro_rules! ingest_json {
     ($($json:tt)+) => {
-        quickwit_rest_client::models::IngestSource::Bytes(json!($($json)+).to_string().into())
+        quickwit_rest_client::models::IngestSource::Str(json!($($json)+).to_string())
     };
 }
 

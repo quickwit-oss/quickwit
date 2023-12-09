@@ -106,8 +106,7 @@ async fn test_standalone_server() {
                   field_mappings:
                   - name: body
                     type: text
-                "#
-                .into(),
+                "#,
                 quickwit_config::ConfigFormat::Yaml,
                 false,
             )
@@ -178,8 +177,7 @@ async fn test_multi_nodes_cluster() {
                 type: text
             indexing_settings:
               commit_timeout_secs: 1
-            "#
-            .into(),
+            "#,
             quickwit_config::ConfigFormat::Yaml,
             false,
         )

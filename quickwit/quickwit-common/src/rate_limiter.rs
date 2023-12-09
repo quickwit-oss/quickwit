@@ -101,6 +101,21 @@ impl RateLimiter {
         }
     }
 
+    /// Acquires some permits from the rate limiter.
+    /// If the permits are not available, returns the duration to wait before trying again.
+    pub fn acquire_with_duration(&mut self, num_permits: u64) -> Result<(), Duration> {
+        if self.acquire_inner(num_permits) {
+            return Ok(());
+        }
+        self.refill(Instant::now());
+        if self.acquire_inner(num_permits) {
+            return Ok(());
+        }
+        let missing = num_permits - self.available_permits;
+        let wait = Duration::from_micros(missing * self.refill_period_micros / self.refill_amount);
+        Err(wait)
+    }
+
     pub fn acquire_bytes(&mut self, bytes: ByteSize) -> bool {
         self.acquire(bytes.as_u64())
     }

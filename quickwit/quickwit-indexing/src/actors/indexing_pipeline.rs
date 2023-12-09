@@ -612,13 +612,13 @@ mod tests {
     use std::sync::Arc;
 
     use quickwit_actors::{Command, Universe};
+    use quickwit_common::ServiceStream;
     use quickwit_config::{IndexingSettings, SourceInputFormat, SourceParams, VoidSourceParams};
     use quickwit_doc_mapper::{default_doc_mapper_for_test, DefaultDocMapper};
     use quickwit_metastore::checkpoint::IndexCheckpointDelta;
-    use quickwit_metastore::{IndexMetadata, ListSplitsResponseExt, PublishSplitsRequestExt};
+    use quickwit_metastore::{IndexMetadata, PublishSplitsRequestExt};
     use quickwit_proto::metastore::{
-        EmptyResponse, IndexMetadataResponse, LastDeleteOpstampResponse, ListSplitsResponse,
-        MetastoreError,
+        EmptyResponse, IndexMetadataResponse, LastDeleteOpstampResponse, MetastoreError,
     };
     use quickwit_proto::types::{IndexUid, PipelineUid};
     use quickwit_storage::RamStorage;
@@ -851,7 +851,7 @@ mod tests {
             });
         mock_metastore
             .expect_list_splits()
-            .returning(|_| Ok(ListSplitsResponse::empty()));
+            .returning(|_| Ok(ServiceStream::empty()));
         let universe = Universe::with_accelerated_time();
         let node_id = "test-node";
         let doc_mapper = Arc::new(default_doc_mapper_for_test());

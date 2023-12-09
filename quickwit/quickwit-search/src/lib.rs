@@ -62,7 +62,8 @@ pub use find_trace_ids_collector::FindTraceIdsCollector;
 use quickwit_config::SearcherConfig;
 use quickwit_doc_mapper::tag_pruning::TagFilterAst;
 use quickwit_metastore::{
-    ListSplitsQuery, ListSplitsRequestExt, ListSplitsResponseExt, SplitMetadata, SplitState,
+    ListSplitsQuery, ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, SplitMetadata,
+    SplitState,
 };
 use quickwit_proto::search::{PartialHit, SearchRequest, SearchResponse, SplitIdAndFooterOffsets};
 use quickwit_proto::types::IndexUid;
@@ -189,10 +190,8 @@ async fn list_relevant_splits(
     let splits_metadata: Vec<SplitMetadata> = metastore
         .list_splits(list_splits_request)
         .await?
-        .deserialize_splits()?
-        .into_iter()
-        .map(|split| split.split_metadata)
-        .collect();
+        .collect_splits_metadata()
+        .await?;
     Ok(splits_metadata)
 }
 

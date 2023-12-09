@@ -860,6 +860,7 @@ mod tests {
     use quickwit_actors::{Health, ObservationType, Supervisable, Universe, HEARTBEAT};
     use quickwit_cluster::{create_cluster_for_test, ChannelTransport};
     use quickwit_common::rand::append_random_suffix;
+    use quickwit_common::ServiceStream;
     use quickwit_config::{
         IngestApiConfig, KafkaSourceParams, SourceConfig, SourceInputFormat, SourceParams,
         VecSourceParams,
@@ -867,12 +868,12 @@ mod tests {
     use quickwit_ingest::{init_ingest_api, CreateQueueIfNotExistsRequest};
     use quickwit_metastore::{
         metastore_for_test, AddSourceRequestExt, CreateIndexRequestExt,
-        ListIndexesMetadataResponseExt, ListSplitsResponseExt,
+        ListIndexesMetadataResponseExt,
     };
     use quickwit_proto::indexing::IndexingTask;
     use quickwit_proto::metastore::{
         AddSourceRequest, CreateIndexRequest, DeleteIndexRequest, IndexMetadataResponse,
-        ListIndexesMetadataResponse, ListSplitsResponse,
+        ListIndexesMetadataResponse,
     };
 
     use super::*;
@@ -1467,7 +1468,7 @@ mod tests {
         });
         metastore
             .expect_list_splits()
-            .returning(|_| Ok(ListSplitsResponse::try_from_splits(Vec::new()).unwrap()));
+            .returning(|_| Ok(ServiceStream::empty()));
         let universe = Universe::new();
         let temp_dir = tempfile::tempdir().unwrap();
         let (indexing_service, indexing_service_handle) = spawn_indexing_service_for_test(
