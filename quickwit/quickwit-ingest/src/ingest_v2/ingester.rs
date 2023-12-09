@@ -117,7 +117,7 @@ impl Ingester {
         rate_limiter_settings: RateLimiterSettings,
         replication_factor: usize,
     ) -> IngestV2Result<Self> {
-        let self_node_id: NodeId = cluster.self_node_id().clone().into();
+        let self_node_id: NodeId = cluster.self_node_id().into();
         let mrecordlog = MultiRecordLog::open_with_prefs(
             wal_dir_path,
             mrecordlog::SyncPolicy::OnDelay(Duration::from_secs(5)),
