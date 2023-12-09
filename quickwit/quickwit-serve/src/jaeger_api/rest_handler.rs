@@ -20,6 +20,7 @@
 use hyper::StatusCode;
 use itertools::Itertools;
 use quickwit_jaeger::JaegerService;
+use quickwit_proto::jaeger::api_v2::Span;
 use quickwit_proto::jaeger::storage::v1::span_reader_plugin_server::SpanReaderPlugin;
 use quickwit_proto::jaeger::storage::v1::{
     FindTracesRequest, GetOperationsRequest, GetServicesRequest, GetTraceRequest,
@@ -198,18 +199,9 @@ async fn jaeger_traces_search(
         .unwrap()
         .into_inner();
     let SpansResponseChunk { spans } = span_stream.next().await.unwrap().unwrap();
-
-    let result: Vec<JaegerTrace> = spans
-        .iter()
-        .map(JaegerSpan::find_better_name_for_pb_convert)
-        .group_by(|span| span.trace_id.clone())
-        .into_iter()
-        .map(|(span_id, group)| JaegerTrace::new(span_id, group.collect_vec()))
-        .collect_vec();
-
-    info!("traces {:?}", result);
-
-    Ok(JaegerResponseBody { data: result })
+    Ok(JaegerResponseBody {
+        data: create_jaeger_trace(spans),
+    })
 }
 
 async fn jaeger_get_trace_by_id(
@@ -224,7 +216,12 @@ async fn jaeger_get_trace_by_id(
         .unwrap()
         .into_inner();
     let SpansResponseChunk { spans } = span_stream.next().await.unwrap().unwrap();
+    Ok(JaegerResponseBody {
+        data: create_jaeger_trace(spans),
+    })
+}
 
+fn create_jaeger_trace(spans: Vec<Span>) -> Vec<JaegerTrace> {
     let result: Vec<JaegerTrace> = spans
         .iter()
         .map(JaegerSpan::find_better_name_for_pb_convert)
@@ -232,8 +229,8 @@ async fn jaeger_get_trace_by_id(
         .into_iter()
         .map(|(span_id, group)| JaegerTrace::new(span_id, group.collect_vec()))
         .collect_vec();
-
-    Ok(JaegerResponseBody { data: result })
+    info!("traces {:?}", result);
+    result
 }
 
 fn make_jaeger_api_response<T: serde::Serialize>(
