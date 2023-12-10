@@ -971,6 +971,17 @@ impl crate::tests::DefaultForTest for FileBackedMetastore {
 }
 
 #[cfg(test)]
+#[async_trait]
+impl crate::tests::DefaultForShard for FileBackedMetastore {
+    async fn default_for_shard_test(_data: crate::tests::MetastoreShardsTestInput) -> Self {
+        use quickwit_storage::RamStorage;
+        FileBackedMetastore::try_new(Arc::new(RamStorage::default()), None)
+            .await
+            .unwrap()
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use std::collections::HashMap;
     use std::ops::RangeInclusive;
@@ -994,9 +1005,13 @@ mod tests {
     use super::*;
     use crate::metastore::MetastoreServiceStreamSplitsExt;
     use crate::tests::DefaultForTest;
-    use crate::{metastore_test_suite, IndexMetadata, ListSplitsQuery, SplitMetadata, SplitState};
+    use crate::{
+        file_backed_index_shards_test_suite, metastore_test_suite, IndexMetadata, ListSplitsQuery,
+        SplitMetadata, SplitState,
+    };
 
     metastore_test_suite!(crate::FileBackedMetastore);
+    file_backed_index_shards_test_suite!(crate::FileBackedMetastore);
 
     #[tokio::test]
     async fn test_metastore_connectivity_and_endpoints() {

@@ -36,6 +36,9 @@ pub(crate) mod shard;
 pub(crate) mod source;
 pub(crate) mod split;
 
+#[cfg(feature = "postgres")]
+use sqlx::{Pool, Postgres};
+
 use self::shard::RunTests;
 use crate::metastore::MetastoreServiceStreamSplitsExt;
 use crate::{ListSplitsRequestExt, MetastoreServiceExt, Split};
@@ -43,6 +46,18 @@ use crate::{ListSplitsRequestExt, MetastoreServiceExt, Split};
 #[async_trait]
 pub trait DefaultForTest {
     async fn default_for_test() -> Self;
+}
+
+#[non_exhaustive]
+pub enum MetastoreShardsTestInput {
+    FileBackedIndex,
+    #[cfg(feature = "postgres")]
+    PostgresIndex(Pool<Postgres>),
+}
+
+#[async_trait]
+pub trait DefaultForShard {
+    async fn default_for_shard_test(data: MetastoreShardsTestInput) -> Self;
 }
 
 // We implement the trait to test the gRPC adapter backed by a file backed metastore.
@@ -362,10 +377,22 @@ macro_rules! metastore_test_suite {
                 $crate::tests::split::test_metastore_stage_splits::<$metastore_type>().await;
             }
 
+        }
+    };
+}
+
+#[macro_export]
+macro_rules! file_backed_index_shards_test_suite {
+    ($metastore_type:ty) => {
+        #[cfg(test)]
+        mod file_backed_index_shards_tests {
             /// Shard API tests
             #[tokio::test]
             async fn test_metastore_open_shards() {
-                $crate::tests::shard::test_metastore_open_shards::<$metastore_type>().await;
+                $crate::tests::shard::test_metastore_open_shards::<$metastore_type>(
+                    $crate::tests::MetastoreShardsTestInput::FileBackedIndex,
+                )
+                .await;
             }
 
             #[tokio::test]
@@ -388,7 +415,7 @@ macro_rules! metastore_test_suite {
 
 #[macro_export]
 macro_rules! postgres_shards_test_suite {
-    () => {
+    ($metastore_type:ty) => {
         #[cfg(test)]
         mod postgres_shards_tests {
             use quickwit_proto::metastore::MetastoreResult;
@@ -397,7 +424,11 @@ macro_rules! postgres_shards_test_suite {
 
             #[sqlx::test(migrator = "MIGRATOR")]
             async fn test_postgres_open_shards(pool: Pool<Postgres>) -> MetastoreResult<()> {
-                $crate::tests::shard::test_postgres_metastore_open_shards(pool).await
+                $crate::tests::shard::test_metastore_open_shards::<$metastore_type>(
+                    $crate::tests::MetastoreShardsTestInput::PostgresIndex(pool),
+                )
+                .await;
+                Ok(())
             }
         }
     };

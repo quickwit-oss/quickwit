@@ -27,6 +27,7 @@ use std::time::Duration;
 use async_trait::async_trait;
 use futures::stream::BoxStream;
 use futures::StreamExt;
+use itertools::Itertools;
 use ouroboros::self_referencing;
 use quickwit_common::uri::Uri;
 use quickwit_common::{PrettySample, ServiceStream};
@@ -44,9 +45,9 @@ use quickwit_proto::metastore::{
     ListIndexesMetadataRequest, ListIndexesMetadataResponse, ListShardsRequest, ListShardsResponse,
     ListSplitsRequest, ListSplitsResponse, ListStaleSplitsRequest, MarkSplitsForDeletionRequest,
     MetastoreError, MetastoreResult, MetastoreService, MetastoreServiceClient,
-    MetastoreServiceStream, OpenShardsRequest, OpenShardsResponse, PublishSplitsRequest,
-    ResetSourceCheckpointRequest, StageSplitsRequest, ToggleSourceRequest,
-    UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
+    MetastoreServiceStream, OpenShardsRequest, OpenShardsResponse, OpenShardsSubrequest,
+    OpenShardsSubresponse, PublishSplitsRequest, ResetSourceCheckpointRequest, StageSplitsRequest,
+    ToggleSourceRequest, UpdateSplitsDeleteOpstampRequest, UpdateSplitsDeleteOpstampResponse,
 };
 use quickwit_proto::types::{IndexUid, Position};
 use sea_query::{
@@ -544,10 +545,16 @@ impl MetastoreService for PostgresqlMetastore {
         request: DeleteIndexRequest,
     ) -> MetastoreResult<EmptyResponse> {
         let index_uid: IndexUid = request.index_uid.into();
+        sqlx::query("DELETE FROM shards WHERE index_uid = $1")
+            .bind(index_uid.to_string())
+            .execute(&self.connection_pool)
+            .await?;
+
         let delete_res = sqlx::query("DELETE FROM indexes WHERE index_uid = $1")
             .bind(index_uid.to_string())
             .execute(&self.connection_pool)
             .await?;
+
         if delete_res.rows_affected() == 0 {
             return Err(MetastoreError::NotFound(EntityKind::Index {
                 index_id: index_uid.index_id().to_string(),
@@ -1291,77 +1298,103 @@ impl MetastoreService for PostgresqlMetastore {
     ) -> MetastoreResult<OpenShardsResponse> {
         let mut subresponses = Vec::with_capacity(request.subrequests.len());
 
-        for subrequest in request.subrequests {
-            let max_shard_opt: Option<PgShard> = sqlx::query_as::<_,PgShard>(
-                    r#"SELECT * FROM shards WHERE index_uid = $1 AND source_id = $2 ORDER BY shard_id DESC LIMIT 1;"#
-                )
-                .bind(subrequest.index_uid.as_str())
-                .bind(&subrequest.source_id)
-                .fetch_optional(&self.connection_pool)
-                .await
-                .map_err(|error| {
-                    let index_uid: IndexUid = subrequest.index_uid.clone().into();
+        let grouped_requests: HashMap<IndexUid, Vec<OpenShardsSubrequest>> = request
+            .subrequests
+            .into_iter()
+            .into_group_map_by(|subrequest| IndexUid::from(subrequest.index_uid.clone()));
 
-                    convert_sqlx_err(
-                        index_uid.index_id(),
-                        error,
-                    )
-                })?;
+        for (index_uid, grouped_subrequests) in grouped_requests {
+            let index_metadata_request = IndexMetadataRequest {
+                index_id: None,
+                index_uid: Some(index_uid.to_string()),
+            };
 
-            if let Some(max_shard) = max_shard_opt {
-                let max_shard_id = max_shard.shard_id + 1;
-                let ok_next_shard_ids = max_shard_id - 1..=max_shard_id;
-
-                if !ok_next_shard_ids.contains(&subrequest.next_shard_id) {
-                    warn!(
-                        "Control plane state is inconsistent with that of the metastore, expected \
-                         next shard ID `{}`, got `{}`",
-                        max_shard_id, subrequest.next_shard_id
-                    );
-                    return Err(MetastoreError::InconsistentControlPlaneState);
-                }
-            }
-
-            let pg_shards: Vec<PgShard> = sqlx::query_as::<_, PgShard>(
-                    r#"
-                    INSERT INTO shards (index_uid, source_id, shard_id, leader_id, follower_id, shard_state, publish_position_inclusive, publish_token) 
-                    VALUES($1, $2, $3, $4, $5, CAST($6 as SHARD_STATE), $7, $8) 
-                    ON CONFLICT (index_uid, source_id, shard_id) DO UPDATE SET index_uid = shards.index_uid RETURNING *;
-                    "#,
-                )
-                .bind(subrequest.index_uid.as_str())
-                .bind(&subrequest.source_id)
-                .bind(subrequest.next_shard_id as i64)
-                .bind(&subrequest.leader_id)
-                .bind(&subrequest.follower_id)
-                .bind((ShardState::Open).as_json_str_name())
-                .bind(Position::Beginning.to_string())
-                .bind(String::from(""))
-                .fetch_all(&self.connection_pool)
-                .await
-                .map_err(|error| {
-                    let index_uid: IndexUid = subrequest.index_uid.clone().into();
-
-                    convert_sqlx_err(
-                        index_uid.index_id(),
-                        error,
-                    )
-                })?;
-
-            let pg_shard = pg_shards
-                .into_iter()
-                .max_by_key(|shard| shard.shard_id)
+            let index_metadata: IndexMetadata = self
+                .index_metadata(index_metadata_request)
+                .await?
+                .deserialize_index_metadata()
                 .unwrap();
-            let next_shard_id = pg_shard.shard_id as u64 + 1;
-            let opened_shards: Vec<Shard> = vec![pg_shard.into()];
 
-            subresponses.push(OpenShardsSubresponse {
-                subrequest_id: subrequest.subrequest_id,
-                index_uid: subrequest.index_uid,
-                source_id: subrequest.source_id,
-                opened_shards,
-                next_shard_id,
-            });
+            for subrequest in grouped_subrequests {
+                if !index_metadata.sources.contains_key(&subrequest.source_id) {
+                    return Err(MetastoreError::NotFound(EntityKind::Source {
+                        index_id: index_uid.index_id().to_string(),
+                        source_id: subrequest.source_id.to_string(),
+                    }));
+                }
+
+                let max_shard_opt: Option<PgShard> = sqlx::query_as::<_,PgShard>(
+                        r#"SELECT * FROM shards WHERE index_uid = $1 AND source_id = $2 ORDER BY shard_id DESC LIMIT 1;"#
+                    )
+                    .bind(index_uid.as_str())
+                    .bind(&subrequest.source_id)
+                    .fetch_optional(&self.connection_pool)
+                    .await
+                    .map_err(|error| {
+                        let index_uid: IndexUid = index_uid.clone();
+
+                        convert_sqlx_err(
+                            index_uid.index_id(),
+                            error,
+                        )
+                    })?;
+
+                if let Some(max_shard) = max_shard_opt {
+                    // The next_shard_id is +1 of the max_shard_id in the shards table.
+                    let max_shard_id = max_shard.shard_id + 1;
+                    let ok_next_shard_ids = max_shard_id - 1..=max_shard_id;
+
+                    if !ok_next_shard_ids.contains(&subrequest.next_shard_id) {
+                        warn!(
+                            "Control plane state is inconsistent with that of the metastore, \
+                             expected next shard ID `{}`, got `{}`",
+                            max_shard_id, subrequest.next_shard_id
+                        );
+                        return Err(MetastoreError::InconsistentControlPlaneState);
+                    }
+                }
+
+                let pg_shards: Vec<PgShard> = sqlx::query_as::<_, PgShard>(
+                        r#"
+                        INSERT INTO shards (index_uid, source_id, shard_id, leader_id, follower_id, shard_state, publish_position_inclusive, publish_token) 
+                        VALUES($1, $2, $3, $4, $5, CAST($6 as SHARD_STATE), $7, $8) 
+                        ON CONFLICT (index_uid, source_id, shard_id) DO UPDATE SET index_uid = shards.index_uid RETURNING *;
+                        "#,
+                    )
+                    .bind(index_uid.as_str())
+                    .bind(&subrequest.source_id)
+                    .bind(subrequest.next_shard_id as i64)
+                    .bind(&subrequest.leader_id)
+                    .bind(&subrequest.follower_id)
+                    .bind((ShardState::Open).as_json_str_name())
+                    .bind(Position::Beginning.to_string())
+                    .bind(String::from(""))
+                    .fetch_all(&self.connection_pool)
+                    .await
+                    .map_err(|error| {
+                        let index_uid: IndexUid = index_uid.clone();
+
+                        convert_sqlx_err(
+                            index_uid.index_id(),
+                            error,
+                        )
+                    })?;
+
+                let pg_shard = pg_shards
+                    .into_iter()
+                    .max_by_key(|shard| shard.shard_id)
+                    .unwrap();
+                let next_shard_id = pg_shard.shard_id as u64 + 1;
+                let opened_shards: Vec<Shard> = vec![pg_shard.into()];
+
+                subresponses.push(OpenShardsSubresponse {
+                    subrequest_id: subrequest.subrequest_id,
+                    index_uid: index_uid.to_string(),
+                    source_id: subrequest.source_id,
+                    opened_shards,
+                    next_shard_id,
+                });
+            }
         }
 
         Ok(OpenShardsResponse { subresponses })
@@ -1602,6 +1635,32 @@ impl crate::tests::DefaultForTest for PostgresqlMetastore {
 }
 
 #[cfg(test)]
+#[async_trait]
+impl crate::tests::DefaultForShard for PostgresqlMetastore {
+    async fn default_for_shard_test(
+        connection_input: crate::tests::MetastoreShardsTestInput,
+    ) -> Self {
+        dotenv::dotenv().ok();
+        let uri: Uri = std::env::var("QW_TEST_DATABASE_URL")
+            .expect("Environment variable `QW_TEST_DATABASE_URL` should be set.")
+            .parse()
+            .expect("Environment variable `QW_TEST_DATABASE_URL` should be a valid URI.");
+
+        match connection_input {
+            crate::tests::MetastoreShardsTestInput::PostgresIndex(connection_pool) => {
+                PostgresqlMetastore {
+                    uri,
+                    connection_pool,
+                }
+            }
+            _ => PostgresqlMetastore::new(&PostgresMetastoreConfig::default(), &uri)
+                .await
+                .expect("Failed to initialize test PostgreSQL metastore."),
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use quickwit_common::uri::Protocol;
     use quickwit_doc_mapper::tag_pruning::{no_tag, tag, TagFilterAst};
@@ -1617,7 +1676,7 @@ mod tests {
     use crate::{metastore_test_suite, postgres_shards_test_suite, ListSplitsQuery, SplitState};
 
     metastore_test_suite!(crate::PostgresqlMetastore);
-    postgres_shards_test_suite!();
+    postgres_shards_test_suite!(crate::PostgresqlMetastore);
 
     #[tokio::test]
     async fn test_metastore_connectivity_and_endpoints() {

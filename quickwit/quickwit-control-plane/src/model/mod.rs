@@ -196,7 +196,7 @@ impl ControlPlaneModel {
     ) -> ControlPlaneResult<()> {
         let index_metadata = self.index_table.get_mut(index_uid).ok_or_else(|| {
             MetastoreError::NotFound(EntityKind::Index {
-                index_id: index_uid.to_string(),
+                index_id: index_uid.index_id().to_string(),
             })
         })?;
         let source_id = source_config.source_id.clone();
