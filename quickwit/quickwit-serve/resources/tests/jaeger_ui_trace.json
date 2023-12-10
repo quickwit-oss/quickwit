@@ -3,11 +3,12 @@
     "spans": [
       {
         "traceID": "0000000000000001",
-        "spanID": "0000000000000002",
+        "spanID": "0000000000000001",
         "operationName": "test-general-conversion",
         "references": [],
         "startTime": 1485467191639875,
         "duration": 5,
+        "flags": 0,
         "tags": [],
         "logs": [
           {
@@ -32,13 +33,14 @@
           }
         ],
         "processID": "p1",
-        "warnings": null
+        "warnings": []
       },
       {
         "traceID": "0000000000000001",
         "spanID": "0000000000000002",
         "operationName": "some-operation",
         "references": [],
+        "flags": 0,
         "startTime": 1485467191639875,
         "duration": 5,
         "tags": [
@@ -75,12 +77,13 @@
         ],
         "logs": [],
         "processID": "p1",
-        "warnings": null
+        "warnings": []
       },
       {
         "traceID": "0000000000000001",
         "spanID": "0000000000000003",
         "operationName": "some-operation",
+        "flags": 0,
         "references": [
           {
             "refType": "CHILD_OF",
@@ -93,12 +96,13 @@
         "tags": [],
         "logs": [],
         "processID": "p2",
-        "warnings": null
+        "warnings": []
       },
       {
         "traceID": "0000000000000001",
         "spanID": "0000000000000004",
         "operationName": "reference-test",
+        "flags": 0,
         "references": [
           {
             "refType": "CHILD_OF",
@@ -129,6 +133,7 @@
         "traceID": "0000000000000001",
         "spanID": "0000000000000005",
         "operationName": "preserveParentID-test",
+        "flags": 0,
         "references": [
           {
             "refType": "CHILD_OF",
@@ -149,14 +154,15 @@
     "processes": {
       "p1": {
         "serviceName": "service-x",
+        "key": "p1",
         "tags": []
       },
       "p2": {
         "serviceName": "service-y",
+        "key": "p2",
         "tags": []
       }
     },
     "warnings": [
-      "some trace warning"
     ]
   }

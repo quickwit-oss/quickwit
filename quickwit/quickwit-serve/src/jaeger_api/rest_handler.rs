@@ -37,9 +37,7 @@ use crate::jaeger_api::model::{
     JaegerError, JaegerResponseBody, JaegerSpan, JaegerTrace, TracesSearchQueryParams,
     ALL_OPERATIONS, DEFAULT_NUMBER_OF_TRACES,
 };
-use crate::jaeger_api::util::{
-    hex_string_to_bytes, parse_duration_with_units, to_well_known_timestamp,
-};
+use crate::jaeger_api::util::{parse_duration_with_units, to_well_known_timestamp};
 use crate::json_api_response::JsonApiResponse;
 use crate::{require, BodyFormat};
 
@@ -224,10 +222,16 @@ async fn collect_and_build_jaeger_spans(
 }
 
 async fn jaeger_get_trace_by_id(
-    trace_id_json: String,
+    trace_id_string: String,
     jaeger_service: JaegerService,
 ) -> Result<JaegerResponseBody<Vec<JaegerTrace>>, JaegerError> {
-    let trace_id = hex_string_to_bytes(trace_id_json.as_str());
+    let trace_id = hex::decode(trace_id_string).map_err(|error| {
+        info!(error = ?error, "failed to decode trace id");
+        JaegerError {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            message: "failed to decode trace id".to_string(),
+        }
+    })?;
     let get_trace_request = GetTraceRequest { trace_id };
     let spans_chunk_stream = jaeger_service
         .get_trace(with_tonic(get_trace_request))

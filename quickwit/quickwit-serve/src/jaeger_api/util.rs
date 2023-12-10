@@ -20,20 +20,8 @@
 use go_parse_duration::parse_duration;
 use prost_types::{Duration as WellKnownDuration, Timestamp as WellKnownTimestamp};
 
-// TODO move to `TraceId` and simplify if possible
-pub fn hex_string_to_bytes(hex_string: &str) -> Vec<u8> {
-    if hex_string.len() % 2 != 0 {
-        panic!("Hex string must have an even number of characters");
-    }
-    (0..hex_string.len())
-        .step_by(2)
-        .map(|i| u8::from_str_radix(&hex_string[i..i + 2], 16).expect("Failed to parse hex"))
-        .collect()
-}
-
-// TODO: use hex::encode instead
 pub fn bytes_to_hex_string(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{:02x}", b)).collect()
+    format!("{:0>16}", hex::encode(bytes))
 }
 
 pub fn to_well_known_timestamp(timestamp_nanos: i64) -> WellKnownTimestamp {
