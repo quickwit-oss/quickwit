@@ -20,7 +20,6 @@
 use hyper::StatusCode;
 use itertools::Itertools;
 use quickwit_jaeger::JaegerService;
-use quickwit_proto::jaeger::api_v2::Span;
 use quickwit_proto::jaeger::storage::v1::span_reader_plugin_server::SpanReaderPlugin;
 use quickwit_proto::jaeger::storage::v1::{
     FindTracesRequest, GetOperationsRequest, GetServicesRequest, GetTraceRequest,
@@ -28,17 +27,17 @@ use quickwit_proto::jaeger::storage::v1::{
 };
 use quickwit_proto::tonic;
 use quickwit_proto::tonic::Request;
+use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
 use tracing::info;
 use warp::{Filter, Rejection};
 
+use super::model::build_jaeger_traces;
 use crate::jaeger_api::model::{
     JaegerError, JaegerResponseBody, JaegerSpan, JaegerTrace, TracesSearchQueryParams,
     ALL_OPERATIONS, DEFAULT_NUMBER_OF_TRACES,
 };
-use crate::jaeger_api::util::{
-    hex_string_to_bytes, parse_duration_with_units, to_well_known_timestamp,
-};
+use crate::jaeger_api::util::{parse_duration_with_units, to_well_known_timestamp};
 use crate::json_api_response::JsonApiResponse;
 use crate::{require, BodyFormat};
 
@@ -192,45 +191,64 @@ async fn jaeger_traces_search(
         num_traces: search_params.limit.unwrap_or(DEFAULT_NUMBER_OF_TRACES),
     };
     let find_traces_request = FindTracesRequest { query: Some(query) };
-
-    let mut span_stream = jaeger_service
+    let spans_chunk_stream = jaeger_service
         .find_traces(with_tonic(find_traces_request))
         .await
-        .unwrap()
+        .map_err(|error| {
+            info!(error = ?error, "failed to fetch traces");
+            JaegerError {
+                status: StatusCode::INTERNAL_SERVER_ERROR,
+                message: "failed to fetch traces".to_string(),
+            }
+        })?
         .into_inner();
-    let SpansResponseChunk { spans } = span_stream.next().await.unwrap().unwrap();
+    let jaeger_spans = collect_and_build_jaeger_spans(spans_chunk_stream).await?;
+    let jaeger_traces: Vec<JaegerTrace> = build_jaeger_traces(jaeger_spans)?;
     Ok(JaegerResponseBody {
-        data: create_jaeger_trace(spans),
+        data: jaeger_traces,
     })
+}
+
+async fn collect_and_build_jaeger_spans(
+    mut spans_chunk_stream: ReceiverStream<Result<SpansResponseChunk, tonic::Status>>,
+) -> anyhow::Result<Vec<JaegerSpan>> {
+    let mut all_spans = Vec::<JaegerSpan>::new();
+    while let Some(Ok(SpansResponseChunk { spans })) = spans_chunk_stream.next().await {
+        let jaeger_spans: Vec<JaegerSpan> =
+            spans.into_iter().map(JaegerSpan::try_from).try_collect()?;
+        all_spans.extend(jaeger_spans);
+    }
+    Ok(all_spans)
 }
 
 async fn jaeger_get_trace_by_id(
-    trace_id_json: String,
+    trace_id_string: String,
     jaeger_service: JaegerService,
 ) -> Result<JaegerResponseBody<Vec<JaegerTrace>>, JaegerError> {
-    let trace_id = hex_string_to_bytes(trace_id_json.as_str());
+    let trace_id = hex::decode(trace_id_string).map_err(|error| {
+        info!(error = ?error, "failed to decode trace id");
+        JaegerError {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            message: "failed to decode trace id".to_string(),
+        }
+    })?;
     let get_trace_request = GetTraceRequest { trace_id };
-    let mut span_stream = jaeger_service
+    let spans_chunk_stream = jaeger_service
         .get_trace(with_tonic(get_trace_request))
         .await
-        .unwrap()
+        .map_err(|error| {
+            info!(error = ?error, "failed to fetch trace");
+            JaegerError {
+                status: StatusCode::INTERNAL_SERVER_ERROR,
+                message: "failed to fetch trace".to_string(),
+            }
+        })?
         .into_inner();
-    let SpansResponseChunk { spans } = span_stream.next().await.unwrap().unwrap();
+    let jaeger_spans = collect_and_build_jaeger_spans(spans_chunk_stream).await?;
+    let jaeger_traces: Vec<JaegerTrace> = build_jaeger_traces(jaeger_spans)?;
     Ok(JaegerResponseBody {
-        data: create_jaeger_trace(spans),
+        data: jaeger_traces,
     })
-}
-
-fn create_jaeger_trace(spans: Vec<Span>) -> Vec<JaegerTrace> {
-    let result: Vec<JaegerTrace> = spans
-        .iter()
-        .map(JaegerSpan::find_better_name_for_pb_convert)
-        .group_by(|span| span.trace_id.clone())
-        .into_iter()
-        .map(|(span_id, group)| JaegerTrace::new(span_id, group.collect_vec()))
-        .collect_vec();
-    info!("traces {:?}", result);
-    result
 }
 
 fn make_jaeger_api_response<T: serde::Serialize>(
