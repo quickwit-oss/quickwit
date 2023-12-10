@@ -31,6 +31,7 @@ pub fn hex_string_to_bytes(hex_string: &str) -> Vec<u8> {
         .collect()
 }
 
+// TODO: use hex::encode instead
 pub fn bytes_to_hex_string(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{:02x}", b)).collect()
 }
@@ -43,7 +44,10 @@ pub fn to_well_known_timestamp(timestamp_nanos: i64) -> WellKnownTimestamp {
 
 pub fn from_well_known_timestamp(timestamp_opt: &Option<WellKnownTimestamp>) -> i64 {
     match timestamp_opt {
-        Some(timestamp) => timestamp.seconds * 1_000_000 + i64::from(timestamp.nanos / 1000),
+        Some(timestamp) => timestamp
+            .seconds
+            .saturating_mul(1_000_000)
+            .saturating_add(i64::from(timestamp.nanos / 1000)),
         None => 0i64,
     }
 }

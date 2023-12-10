@@ -32,8 +32,18 @@ use crate::jaeger_api::util::{
     bytes_to_hex_string, from_well_known_duration, from_well_known_timestamp,
 };
 
-pub const ALL_OPERATIONS: &str = "";
-pub const DEFAULT_NUMBER_OF_TRACES: i32 = 20;
+pub(super) const ALL_OPERATIONS: &str = "";
+pub(super) const DEFAULT_NUMBER_OF_TRACES: i32 = 20;
+
+pub(super) fn build_jaeger_traces(spans: Vec<JaegerSpan>) -> anyhow::Result<Vec<JaegerTrace>> {
+    let jaeger_traces = spans
+        .into_iter()
+        .group_by(|span| span.trace_id.clone())
+        .into_iter()
+        .map(|(span_id, group)| JaegerTrace::new(span_id, group.collect_vec()))
+        .collect_vec();
+    Ok(jaeger_traces)
+}
 
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -61,7 +71,7 @@ pub struct TracesSearchQueryParams {
 // Jaeger Model for UI
 // Source: https://github.com/jaegertracing/jaeger/blob/main/model/json/model.go#L82
 
-#[derive(Clone, Default, Debug, Serialize, Deserialize, utoipa::IntoParams)]
+#[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize, utoipa::IntoParams)]
 #[serde(rename_all = "camelCase")]
 pub struct JaegerTrace {
     #[serde(rename = "traceID")]
@@ -73,13 +83,11 @@ pub struct JaegerTrace {
 
 impl JaegerTrace {
     pub fn new(trace_id: String, mut spans: Vec<JaegerSpan>) -> Self {
-        let mut count = 0;
-        let mut hashcode_to_processes: HashMap<u64, Vec<JaegerProcess>> = HashMap::new();
-        Self::handle_span_processes(&mut spans, &mut count, &mut hashcode_to_processes);
+        let processes = Self::create_processes(&mut spans);
         JaegerTrace {
             trace_id,
             spans,
-            processes: Self::create_key_to_process_mapping(&hashcode_to_processes),
+            processes,
             warnings: vec![],
         }
     }
@@ -89,15 +97,13 @@ impl JaegerTrace {
     /// processed `JaegerProcess` objects and assigns a new key to each unique `service_name` value.
     /// The logic has been replicated from
     /// https://github.com/jaegertracing/jaeger/blob/995231c42cadd70bce2bbbf02579e33f6e6329c8/model/converter/json/process_hashtable.go#L37
-    fn handle_span_processes(
-        spans: &mut [JaegerSpan],
-        count: &mut i32,
-        acc: &mut HashMap<u64, Vec<JaegerProcess>>,
-    ) {
+    fn create_processes(spans: &mut [JaegerSpan]) -> HashMap<String, JaegerProcess> {
+        let mut hash_process_map: HashMap<u64, Vec<JaegerProcess>> = HashMap::new();
+        let count: i32 = 0;
         for span in spans.iter_mut() {
             let mut current_process = span.process.clone();
-            let hash = current_process.hash_code();
-            if let Some(entries) = acc.get_mut(&hash) {
+            let hash = current_process.service_hash();
+            if let Some(entries) = hash_process_map.get_mut(&hash) {
                 if let Some(existing_p) = entries
                     .iter_mut()
                     .find(|p| p.service_name == current_process.service_name)
@@ -105,37 +111,33 @@ impl JaegerTrace {
                     current_process.key = existing_p.key.clone();
                     span.update_process_id(existing_p.key.clone());
                 } else {
-                    let new_key = JaegerProcess::next_key(&count.add(1));
+                    let new_key = JaegerProcess::key(&count.add(1));
                     span.update_process_id(new_key.clone());
                     current_process.key = new_key.clone();
                     entries.push(current_process.clone());
                 }
             } else {
-                let new_key = JaegerProcess::next_key(&count.add(1));
+                let new_key = JaegerProcess::key(&count.add(1));
                 current_process.key = new_key.clone();
                 span.update_process_id(new_key.clone());
-                acc.insert(hash, vec![current_process.clone()]);
+                hash_process_map.insert(hash, vec![current_process.clone()]);
             }
         }
-    }
 
-    /// Get the accumulated mapping of `key` to the corresponding `JaegerProcess`
-    /// The logic has been replicated from
-    // https://github.com/jaegertracing/jaeger/blob/995231c42cadd70bce2bbbf02579e33f6e6329c8/model/converter/json/process_hashtable.go#L59
-    fn create_key_to_process_mapping(
-        data: &HashMap<u64, Vec<JaegerProcess>>,
-    ) -> HashMap<String, JaegerProcess> {
-        let mut result: HashMap<String, JaegerProcess> = HashMap::new();
-        for processes in data.values() {
+        // Get the accumulated mapping of `key` to the corresponding `JaegerProcess`
+        // The logic has been replicated from
+        // https://github.com/jaegertracing/jaeger/blob/995231c42cadd70bce2bbbf02579e33f6e6329c8/model/converter/json/process_hashtable.go#L59
+        let mut process_map: HashMap<String, JaegerProcess> = HashMap::new();
+        for processes in hash_process_map.into_values() {
             for process in processes {
-                result.insert(process.key.clone(), process.clone());
+                process_map.insert(process.key.clone(), process);
             }
         }
-        result
+        process_map
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct JaegerSpan {
     #[serde(rename = "traceID")]
@@ -156,31 +158,26 @@ pub struct JaegerSpan {
     pub warnings: Vec<String>,
 }
 
-impl JaegerSpan {
-    pub fn find_better_name_for_pb_convert(span: &Span) -> Self {
+impl TryFrom<Span> for JaegerSpan {
+    type Error = anyhow::Error;
+    fn try_from(span: Span) -> Result<Self, Self::Error> {
         let references = span
             .references
             .iter()
-            .map(JaegerSpanRef::convert_from_proto)
+            .map(JaegerSpanRef::from)
             .collect_vec();
 
-        let tags = span
-            .tags
-            .iter()
-            .map(JaegerKeyValue::convert_from_proto)
-            .collect_vec();
+        let tags = span.tags.iter().map(JaegerKeyValue::from).collect_vec();
 
-        let logs = span
-            .logs
-            .iter()
-            .map(JaegerLog::convert_from_proto)
-            .collect_vec();
+        let logs = span.logs.iter().map(JaegerLog::from).collect_vec();
 
         // TODO what's the best way to handle unwrap here?
-        let process: JaegerProcess =
-            JaegerProcess::convert_from_proto(span.process.clone().unwrap());
+        let process: JaegerProcess = span
+            .process
+            .map(JaegerProcess::from)
+            .unwrap_or_else(JaegerProcess::default);
 
-        Self {
+        Ok(Self {
             trace_id: bytes_to_hex_string(&span.trace_id),
             span_id: bytes_to_hex_string(&span.span_id),
             operation_name: span.operation_name.clone(),
@@ -194,15 +191,17 @@ impl JaegerSpan {
             process_id: "no_value".to_string(), /* TODO we need to initialize it somehow to
                                                  * mutate it further */
             warnings: span.warnings.iter().map(|s| s.to_string()).collect_vec(),
-        }
+        })
     }
+}
 
+impl JaegerSpan {
     pub fn update_process_id(&mut self, new_process_id: String) {
         self.process_id = new_process_id
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct JaegerSpanRef {
     trace_id: String,
@@ -210,8 +209,8 @@ pub struct JaegerSpanRef {
     ref_type: String,
 }
 
-impl JaegerSpanRef {
-    fn convert_from_proto(sr: &SpanRef) -> Self {
+impl From<&SpanRef> for JaegerSpanRef {
+    fn from(sr: &SpanRef) -> Self {
         Self {
             trace_id: bytes_to_hex_string(sr.trace_id.as_slice()),
             span_id: bytes_to_hex_string(sr.span_id.as_slice()),
@@ -224,76 +223,72 @@ impl JaegerSpanRef {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct JaegerKeyValue {
     key: String,
     #[serde(rename = "type")]
-    type_: String,
+    value_type: String,
     value: Value,
 }
 
-impl JaegerKeyValue {
-    fn convert_from_proto(kv: &KeyValue) -> Self {
+impl From<&KeyValue> for JaegerKeyValue {
+    fn from(kv: &KeyValue) -> Self {
         match kv.v_type {
             // String = 0,
             0 => Self {
                 key: kv.key.to_string(),
-                type_: ValueType::String.as_str_name().to_lowercase(),
+                value_type: ValueType::String.as_str_name().to_lowercase(),
                 value: json!(kv.v_str.to_string()),
             },
             // Bool = 1,
             1 => Self {
                 key: kv.key.to_string(),
-                type_: ValueType::Bool.as_str_name().to_lowercase(),
+                value_type: ValueType::Bool.as_str_name().to_lowercase(),
                 value: json!(kv.v_bool),
             },
             // Int64 = 2,
             2 => Self {
                 key: kv.key.to_string(),
-                type_: ValueType::Int64.as_str_name().to_lowercase(),
+                value_type: ValueType::Int64.as_str_name().to_lowercase(),
                 value: json!(kv.v_int64),
             },
             // Float64 = 3,
             3 => Self {
                 key: kv.key.to_string(),
-                type_: ValueType::Float64.as_str_name().to_lowercase(),
+                value_type: ValueType::Float64.as_str_name().to_lowercase(),
                 value: json!(kv.v_float64),
             },
             // Binary = 4,
             4 => Self {
                 key: kv.key.to_string(),
-                type_: ValueType::Binary.as_str_name().to_lowercase(),
+                value_type: ValueType::Binary.as_str_name().to_lowercase(),
                 value: json!(kv.v_binary),
             },
             _ => Self {
                 key: "no_value".to_string(),
-                type_: "unsupported_type".to_string(),
+                value_type: "unsupported_type".to_string(),
                 value: Default::default(),
             },
         }
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct JaegerLog {
     timestamp: i64, // microseconds since Unix epoch
     fields: Vec<JaegerKeyValue>,
 }
 
-impl JaegerLog {
-    fn convert_from_proto(log: &Log) -> Self {
+impl From<&Log> for JaegerLog {
+    fn from(log: &Log) -> Self {
         Self {
             timestamp: from_well_known_timestamp(&log.timestamp),
-            fields: log
-                .fields
-                .iter()
-                .map(JaegerKeyValue::convert_from_proto)
-                .collect_vec(),
+            fields: log.fields.iter().map(JaegerKeyValue::from).collect_vec(),
         }
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct JaegerProcess {
     service_name: String,
@@ -302,24 +297,32 @@ struct JaegerProcess {
     tags: Vec<JaegerKeyValue>,
 }
 
-impl JaegerProcess {
-    fn convert_from_proto(process: Process) -> Self {
+impl Default for JaegerProcess {
+    fn default() -> Self {
+        Self {
+            service_name: "none".to_string(),
+            key: "".to_string(),
+            tags: vec![],
+        }
+    }
+}
+
+impl From<Process> for JaegerProcess {
+    fn from(process: Process) -> Self {
         Self {
             service_name: process.service_name.to_string(),
             key: "".to_string(),
-            tags: process
-                .tags
-                .iter()
-                .map(JaegerKeyValue::convert_from_proto)
-                .collect_vec(),
+            tags: process.tags.iter().map(JaegerKeyValue::from).collect_vec(),
         }
     }
+}
 
-    pub fn next_key(count: &i32) -> String {
+impl JaegerProcess {
+    fn key(count: &i32) -> String {
         format!("p{}", count)
     }
 
-    pub fn hash_code(&self) -> u64 {
+    fn service_hash(&self) -> u64 {
         let mut hasher = DefaultHasher::new();
         self.service_name.hash(&mut hasher);
         hasher.finish()
@@ -333,11 +336,60 @@ pub struct JaegerError {
     pub message: String,
 }
 
-// impl JaegerError { // TODO remove?
-//     pub fn internal_jaeger_error() -> Self {
-//         JaegerError {
-//             status: StatusCode::INTERNAL_SERVER_ERROR,
-//             message: "Jaeger is not available".to_string(),
-//         }
-//     }
-// }
+impl From<anyhow::Error> for JaegerError {
+    fn from(error: anyhow::Error) -> Self {
+        Self {
+            status: StatusCode::INTERNAL_SERVER_ERROR,
+            message: error.to_string(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::JaegerTrace;
+    use crate::jaeger_api::model::{build_jaeger_traces, JaegerSpan};
+
+    #[test]
+    fn test_convert_grpc_jaeger_spans_into_jaeger_ui_model() {
+        let file_content = std::fs::read_to_string(get_jaeger_ui_trace_filepath()).unwrap();
+        let expected_jaeger_trace: JaegerTrace = serde_json::from_str(&file_content).unwrap();
+        let grpc_spans = create_grpc_spans();
+        let jaeger_spans: Vec<JaegerSpan> = grpc_spans
+            .iter()
+            .map(|span| super::JaegerSpan::try_from(span.clone()).unwrap())
+            .collect();
+        let traces = build_jaeger_traces(jaeger_spans).unwrap();
+        assert_eq!(traces.len(), 1);
+        assert_eq!(traces[0], expected_jaeger_trace);
+    }
+
+    fn get_jaeger_ui_trace_filepath() -> String {
+        format!(
+            "{}/resources/tests/jaeger_ui_trace.json",
+            env!("CARGO_MANIFEST_DIR"),
+        )
+    }
+
+    fn create_grpc_spans() -> Vec<quickwit_proto::jaeger::api_v2::Span> {
+        let mut spans = vec![];
+        let mut span = quickwit_proto::jaeger::api_v2::Span::default();
+        span.operation_name = "operation_name".to_string();
+        span.span_id = vec![1, 2, 3];
+        span.trace_id = vec![1, 2, 3];
+        span.start_time = Some(prost_types::Timestamp {
+            seconds: 1,
+            nanos: 1,
+        });
+        span.duration = Some(prost_types::Duration {
+            seconds: 1,
+            nanos: 1,
+        });
+        span.process = Some(quickwit_proto::jaeger::api_v2::Process {
+            service_name: "service_name".to_string(),
+            tags: vec![],
+        });
+        spans.push(span);
+        spans
+    }
+}
