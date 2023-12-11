@@ -21,13 +21,15 @@ use std::collections::HashMap;
 use std::fmt;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex, Weak};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use async_trait::async_trait;
 use tokio::sync::Mutex as TokioMutex;
-use tracing::warn;
+use tracing::{error, warn};
 
 use crate::type_map::TypeMap;
+
+const PUB_SUB_TIMEOUT: Duration = Duration::from_secs(20);
 
 pub trait Event: fmt::Debug + Clone + Send + Sync + 'static {}
 
@@ -68,6 +70,10 @@ struct InnerEventBroker {
     subscriptions: Mutex<TypeMap>,
 }
 
+fn typename_of_val<T>(_val: &T) -> &'static str {
+    std::any::type_name::<T>()
+}
+
 impl EventBroker {
     /// Subscribes to an event type.
     #[must_use]
@@ -87,8 +93,10 @@ impl EventBroker {
             .subscription_sequence
             .fetch_add(1, Ordering::Relaxed);
 
+        let name = typename_of_val(&subscriber);
         let subscription = EventSubscription {
             subscriber: Arc::new(TokioMutex::new(Box::new(subscriber))),
+            name,
         };
         let typed_subscriptions = subscriptions
             .get_mut::<EventSubscriptions<E>>()
@@ -122,16 +130,32 @@ impl EventBroker {
 
         if let Some(typed_subscriptions) = subscriptions.get::<EventSubscriptions<E>>() {
             for subscription in typed_subscriptions.values() {
+                let subscription_name = subscription.name;
                 let event = event.clone();
                 let subscriber_clone = subscription.subscriber.clone();
+                let subscriber_callback = async move {
+                    let start = Instant::now();
+                    subscriber_clone.lock().await.handle_event(event).await;
+                    let elapsed = start.elapsed();
+                    if elapsed > Duration::from_secs(2) {
+                        warn!(
+                            "`{}` event handler {:?} took {:?}",
+                            std::any::type_name::<E>(),
+                            subscription_name,
+                            elapsed
+                        );
+                    }
+                };
                 let handle_event_fut = async move {
-                    if tokio::time::timeout(Duration::from_secs(1), async {
-                        subscriber_clone.lock().await.handle_event(event).await
-                    })
-                    .await
-                    .is_err()
+                    if tokio::time::timeout(PUB_SUB_TIMEOUT, subscriber_callback)
+                        .await
+                        .is_err()
                     {
-                        warn!("`{}` event handler timed out", std::any::type_name::<E>());
+                        error!(
+                            "`{}` event handler {:?} timed out ",
+                            std::any::type_name::<E>(),
+                            subscription_name
+                        );
                     }
                 };
                 tokio::spawn(handle_event_fut);
@@ -142,6 +166,7 @@ impl EventBroker {
 
 struct EventSubscription<E> {
     subscriber: Arc<TokioMutex<Box<dyn EventSubscriber<E>>>>,
+    name: &'static str,
 }
 
 #[derive(Clone)]

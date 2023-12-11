@@ -441,21 +441,24 @@ impl EventSubscriber<ShardPositionsUpdate> for WeakRouterState {
         let Some(state) = self.0.upgrade() else {
             return;
         };
-        let mut deleted_shard_ids: Vec<ShardId> = Vec::new();
 
-        for (shard_id, shard_position) in shard_positions_update.shard_positions {
+        let ShardPositionsUpdate {
+            source_uid,
+            shard_positions,
+        } = shard_positions_update;
+
+        let mut deleted_shard_ids: Vec<ShardId> = Vec::new();
+        for (shard_id, shard_position) in shard_positions {
             if shard_position.is_eof() {
                 deleted_shard_ids.push(shard_id);
             }
         }
         let mut state_guard = state.write().await;
-
-        let index_uid = shard_positions_update.source_uid.index_uid;
-        let source_id = shard_positions_update.source_uid.source_id;
-
-        state_guard
-            .routing_table
-            .delete_shards(&index_uid, &source_id, &deleted_shard_ids);
+        state_guard.routing_table.delete_shards(
+            &source_uid.index_uid,
+            &source_uid.source_id,
+            &deleted_shard_ids,
+        );
     }
 }
 
