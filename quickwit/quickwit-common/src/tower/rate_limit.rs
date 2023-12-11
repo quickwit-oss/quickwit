@@ -276,7 +276,9 @@ mod tests {
             .call(Request { cost: 1 })
             .await
             .unwrap();
-        assert!(now.elapsed() < Duration::from_millis(1));
+        // The request should go through immediately but in some rare instance the test is slow to
+        // run and the call to `call` takes more than 1 ms.
+        assert!(now.elapsed() < Duration::from_millis(5));
 
         let now = Instant::now();
         // The first request goes through, but the second one is rate limited.

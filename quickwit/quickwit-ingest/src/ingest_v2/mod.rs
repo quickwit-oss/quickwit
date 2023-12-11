@@ -17,19 +17,24 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+mod broadcast;
 mod fetch;
 mod ingester;
 mod models;
 mod mrecord;
 mod mrecordlog_utils;
-mod rate_limiter;
+mod rate_meter;
 mod replication;
 mod router;
-mod shard_table;
+mod routing_table;
 #[cfg(test)]
 mod test_utils;
 mod workbench;
 
+use std::fmt;
+use std::ops::{Add, AddAssign};
+
+pub use broadcast::{setup_local_shards_update_listener, LocalShardsUpdate, ShardInfo, ShardInfos};
 use bytesize::ByteSize;
 use quickwit_common::tower::Pool;
 use quickwit_proto::ingest::ingester::IngesterServiceClient;
@@ -40,7 +45,6 @@ pub use self::fetch::{FetchStreamError, MultiFetchStream};
 pub use self::ingester::{wait_for_ingester_decommission, Ingester};
 use self::mrecord::MRECORD_HEADER_LEN;
 pub use self::mrecord::{decoded_mrecords, MRecord};
-pub use self::rate_limiter::RateLimiterSettings;
 pub use self::router::IngestRouter;
 
 pub type IngesterPool = Pool<NodeId, IngesterServiceClient>;
@@ -55,6 +59,37 @@ pub type FollowerId = NodeId;
 pub(super) fn estimate_size(doc_batch: &DocBatchV2) -> ByteSize {
     let estimate = doc_batch.num_bytes() + doc_batch.num_docs() * MRECORD_HEADER_LEN;
     ByteSize(estimate as u64)
+}
+
+#[derive(Debug, Clone, Copy, Default, Eq, PartialEq, Ord, PartialOrd)]
+pub struct RateMibPerSec(pub u16);
+
+impl fmt::Display for RateMibPerSec {
+    fn fmt(&self, f: &mut fmt::Formatter) -> std::fmt::Result {
+        write!(f, "{}MiB/s", self.0)
+    }
+}
+
+impl PartialEq<u16> for RateMibPerSec {
+    fn eq(&self, other: &u16) -> bool {
+        self.0 == *other
+    }
+}
+
+impl Add<RateMibPerSec> for RateMibPerSec {
+    type Output = RateMibPerSec;
+
+    #[inline(always)]
+    fn add(self, rhs: RateMibPerSec) -> Self::Output {
+        RateMibPerSec(self.0 + rhs.0)
+    }
+}
+
+impl AddAssign<RateMibPerSec> for RateMibPerSec {
+    #[inline(always)]
+    fn add_assign(&mut self, rhs: RateMibPerSec) {
+        self.0 += rhs.0;
+    }
 }
 
 #[cfg(test)]

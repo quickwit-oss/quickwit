@@ -67,12 +67,11 @@ time = { workspace = true }
 
 [dev-dependencies]
 assert-json-diff = { workspace = true }
-chitchat = { workspace = true }
 itertools = { workspace = true }
 mockall = { workspace = true }
 rand = { workspace = true }
-tokio = { workspace = true }
 tempfile = { workspace = true }
+tokio = { workspace = true }
 
 quickwit-actors = { workspace = true, features = ["testsuite"] }
 quickwit-cluster = { workspace = true, features = ["testsuite"] }

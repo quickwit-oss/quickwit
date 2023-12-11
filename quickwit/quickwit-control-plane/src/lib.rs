@@ -18,11 +18,11 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 pub mod control_plane;
-pub(crate) mod control_plane_model;
 pub mod indexing_plan;
 pub mod indexing_scheduler;
 pub mod ingest;
 pub(crate) mod metrics;
+pub(crate) mod model;
 
 use quickwit_common::tower::Pool;
 use quickwit_proto::indexing::{CpuCapacity, IndexingServiceClient, IndexingTask};

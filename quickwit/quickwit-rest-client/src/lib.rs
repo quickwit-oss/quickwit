@@ -29,6 +29,10 @@ pub mod error;
 pub mod models;
 pub mod rest_client;
 
+// re-exports
+pub use quickwit_config::ConfigFormat;
+pub use reqwest::Url;
+
 pub(crate) struct BatchLineReader {
     buf_reader: BufReader<Box<dyn AsyncRead + Send + Sync + Unpin>>,
     buffer: Vec<u8>,
@@ -107,10 +111,11 @@ impl BatchLineReader {
         self.has_next
     }
 
-    fn from_bytes(bytes: Bytes, max_batch_num_bytes: usize) -> Self {
-        use std::io::Cursor;
-
-        Self::new(Box::new(Cursor::new(bytes.to_vec())), max_batch_num_bytes)
+    fn from_string(payload: impl ToString, max_batch_num_bytes: usize) -> Self {
+        Self::new(
+            Box::new(std::io::Cursor::new(payload.to_string().into_bytes())),
+            max_batch_num_bytes,
+        )
     }
 }
 
@@ -121,12 +126,12 @@ mod tests {
     #[tokio::test]
     async fn test_batch_reader() {
         {
-            let mut batch_reader = BatchLineReader::from_bytes("".into(), 10);
+            let mut batch_reader = BatchLineReader::from_string("".to_string(), 10);
             assert!(batch_reader.next_batch().await.unwrap().is_none());
             assert!(batch_reader.next_batch().await.unwrap().is_none());
         }
         {
-            let mut batch_reader = BatchLineReader::from_bytes("foo\n".into(), 10);
+            let mut batch_reader = BatchLineReader::from_string("foo\n", 10);
             assert_eq!(
                 &batch_reader.next_batch().await.unwrap().unwrap()[..],
                 b"foo\n"
@@ -135,7 +140,7 @@ mod tests {
             assert!(batch_reader.next_batch().await.unwrap().is_none());
         }
         {
-            let mut batch_reader = BatchLineReader::from_bytes("foo\nbar\nqux\n".into(), 10);
+            let mut batch_reader = BatchLineReader::from_string("foo\nbar\nqux\n", 10);
             assert_eq!(
                 &batch_reader.next_batch().await.unwrap().unwrap()[..],
                 b"foo\nbar\n"
@@ -148,7 +153,7 @@ mod tests {
             assert!(batch_reader.next_batch().await.unwrap().is_none());
         }
         {
-            let mut batch_reader = BatchLineReader::from_bytes("fooo\nbaar\nqux\n".into(), 10);
+            let mut batch_reader = BatchLineReader::from_string("fooo\nbaar\nqux\n", 10);
             assert_eq!(
                 &batch_reader.next_batch().await.unwrap().unwrap()[..],
                 b"fooo\nbaar\n"
@@ -162,7 +167,7 @@ mod tests {
         }
         {
             let mut batch_reader =
-                BatchLineReader::from_bytes("foobarquxbaz\nfoo\nbar\nqux\n".into(), 10);
+                BatchLineReader::from_string("foobarquxbaz\nfoo\nbar\nqux\n", 10);
             assert_eq!(
                 &batch_reader.next_batch().await.unwrap().unwrap()[..],
                 b"foo\nbar\n"
@@ -176,7 +181,7 @@ mod tests {
         }
         {
             let mut batch_reader =
-                BatchLineReader::from_bytes("foo\nbar\nfoobarquxbaz\nqux\n".into(), 10);
+                BatchLineReader::from_string("foo\nbar\nfoobarquxbaz\nqux\n", 10);
             assert_eq!(
                 &batch_reader.next_batch().await.unwrap().unwrap()[..],
                 b"foo\nbar\n"

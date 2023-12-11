@@ -57,7 +57,7 @@ pub fn es_compat_cluster_info_handler(
     build_info: &'static BuildInfo,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     elastic_cluster_info_filter()
-        .and(with_arg(node_config))
+        .and(with_arg(node_config.clone()))
         .and(with_arg(build_info))
         .then(
             |config: Arc<NodeConfig>, build_info: &'static BuildInfo| async move {

@@ -30,7 +30,7 @@ use quickwit_doc_mapper::{analyze_text, TokenizerConfig};
 use quickwit_index_management::{IndexService, IndexServiceError};
 use quickwit_metastore::{
     IndexMetadata, IndexMetadataResponseExt, ListIndexesMetadataResponseExt, ListSplitsQuery,
-    ListSplitsRequestExt, ListSplitsResponseExt, Split, SplitInfo, SplitState,
+    ListSplitsRequestExt, MetastoreServiceStreamSplitsExt, Split, SplitInfo, SplitState,
 };
 use quickwit_proto::metastore::{
     DeleteSourceRequest, EntityKind, IndexMetadataRequest, ListIndexesMetadataRequest,
@@ -201,7 +201,8 @@ async fn describe_index(
     let splits = metastore
         .list_splits(list_splits_request)
         .await?
-        .deserialize_splits()?;
+        .collect_splits()
+        .await?;
     let published_splits: Vec<Split> = splits
         .into_iter()
         .filter(|split| split.split_state == SplitState::Published)
@@ -350,7 +351,8 @@ async fn list_splits(
     let splits = metastore
         .list_splits(list_splits_request)
         .await?
-        .deserialize_splits()?;
+        .collect_splits()
+        .await?;
     Ok(ListSplitsResponse {
         offset,
         size: splits.len(),
@@ -869,9 +871,10 @@ mod tests {
 
     use assert_json_diff::assert_json_include;
     use quickwit_common::uri::Uri;
+    use quickwit_common::ServiceStream;
     use quickwit_config::{SourceParams, VecSourceParams};
     use quickwit_indexing::{mock_split, MockSplitBuilder};
-    use quickwit_metastore::{metastore_for_test, IndexMetadata};
+    use quickwit_metastore::{metastore_for_test, IndexMetadata, ListSplitsResponseExt};
     use quickwit_proto::metastore::{
         EmptyResponse, IndexMetadataResponse, ListIndexesMetadataResponse, ListSplitsResponse,
         MetastoreServiceClient, SourceType,
@@ -958,7 +961,8 @@ mod tests {
                     let splits = vec![MockSplitBuilder::new("split_1")
                         .with_index_uid(&index_uid)
                         .build()];
-                    return Ok(ListSplitsResponse::try_from_splits(splits).unwrap());
+                    let splits = ListSplitsResponse::try_from_splits(splits).unwrap();
+                    return Ok(ServiceStream::from(vec![Ok(splits)]));
                 }
                 Err(MetastoreError::Internal {
                     message: "".to_string(),
@@ -1038,7 +1042,8 @@ mod tests {
             })
             .return_once(move |_| {
                 let splits = vec![split_1, split_2];
-                Ok(ListSplitsResponse::try_from_splits(splits).unwrap())
+                let splits = ListSplitsResponse::try_from_splits(splits).unwrap();
+                Ok(ServiceStream::from(vec![Ok(splits)]))
             });
 
         let index_service = IndexService::new(
@@ -1090,7 +1095,7 @@ mod tests {
                     && list_split_query.time_range.is_unbounded()
                     && list_split_query.create_timestamp.is_unbounded()
                 {
-                    return Ok(ListSplitsResponse::empty());
+                    return Ok(ServiceStream::empty());
                 }
                 Err(MetastoreError::Internal {
                     message: "".to_string(),
@@ -1224,7 +1229,8 @@ mod tests {
             )
         });
         mock_metastore.expect_list_splits().return_once(|_| {
-            Ok(ListSplitsResponse::try_from_splits(vec![mock_split("split_1")]).unwrap())
+            let splits = ListSplitsResponse::try_from_splits(vec![mock_split("split_1")]).unwrap();
+            Ok(ServiceStream::from(vec![Ok(splits)]))
         });
         mock_metastore
             .expect_mark_splits_for_deletion()
@@ -1269,7 +1275,9 @@ mod tests {
         mock_metastore
             .expect_list_splits()
             .returning(|_| {
-                Ok(ListSplitsResponse::try_from_splits(vec![mock_split("split_1")]).unwrap())
+                let splits =
+                    ListSplitsResponse::try_from_splits(vec![mock_split("split_1")]).unwrap();
+                Ok(ServiceStream::from(vec![Ok(splits)]))
             })
             .times(3);
         mock_metastore

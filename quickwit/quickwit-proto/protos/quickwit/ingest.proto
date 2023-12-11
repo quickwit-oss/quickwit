@@ -55,7 +55,7 @@ enum ShardState {
   // The ingester hosting the shard is unavailable.
   SHARD_STATE_UNAVAILABLE = 2;
   // The shard is closed and cannot be written to.
-  // It can be safely deleted if the publish position is superior or equal to the replication position.
+  // It can be safely deleted if the publish position is superior or equal to `~eof`.
   SHARD_STATE_CLOSED = 3;
 }
 

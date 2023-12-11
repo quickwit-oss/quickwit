@@ -232,11 +232,11 @@ impl QuickwitClient {
         IndexClient::new(&self.transport, self.timeout)
     }
 
-    pub fn splits<'a, 'b: 'a>(&'a self, index_id: &'b str) -> SplitClient {
+    pub fn splits<'a>(&'a self, index_id: &'a str) -> SplitClient {
         SplitClient::new(&self.transport, self.timeout, index_id)
     }
 
-    pub fn sources<'a, 'b: 'a>(&'a self, index_id: &'b str) -> SourceClient {
+    pub fn sources<'a>(&'a self, index_id: &'a str) -> SourceClient {
         SourceClient::new(&self.transport, self.timeout, index_id)
     }
 
@@ -271,7 +271,9 @@ impl QuickwitClient {
                 BatchLineReader::from_file(&filepath, batch_size_limit).await?
             }
             IngestSource::Stdin => BatchLineReader::from_stdin(batch_size_limit),
-            IngestSource::Bytes(bytes) => BatchLineReader::from_bytes(bytes, batch_size_limit),
+            IngestSource::Str(ingest_payload) => {
+                BatchLineReader::from_string(ingest_payload, batch_size_limit)
+            }
         };
         while let Some(batch) = batch_reader.next_batch().await? {
             loop {
@@ -329,11 +331,12 @@ impl<'a> IndexClient<'a> {
 
     pub async fn create(
         &self,
-        body: Bytes,
+        index_config: impl ToString,
         config_format: ConfigFormat,
         overwrite: bool,
     ) -> Result<IndexMetadata, Error> {
         let header_map = header_from_config_format(config_format);
+        let body = Bytes::from(index_config.to_string());
         let response = self
             .transport
             .send(
@@ -449,14 +452,14 @@ impl<'a, 'b> SplitClient<'a, 'b> {
 }
 
 /// Client for source APIs.
-pub struct SourceClient<'a, 'b> {
+pub struct SourceClient<'a> {
     transport: &'a Transport,
     timeout: Timeout,
-    index_id: &'b str,
+    index_id: &'a str,
 }
 
-impl<'a, 'b> SourceClient<'a, 'b> {
-    fn new(transport: &'a Transport, timeout: Timeout, index_id: &'b str) -> Self {
+impl<'a> SourceClient<'a> {
+    fn new(transport: &'a Transport, timeout: Timeout, index_id: &'a str) -> Self {
         Self {
             transport,
             timeout,
@@ -470,10 +473,11 @@ impl<'a, 'b> SourceClient<'a, 'b> {
 
     pub async fn create(
         &self,
-        body: Bytes,
+        source_config_input: impl ToString,
         config_format: ConfigFormat,
     ) -> Result<SourceConfig, Error> {
         let header_map = header_from_config_format(config_format);
+        let source_config_bytes: Bytes = Bytes::from(source_config_input.to_string());
         let response = self
             .transport
             .send::<()>(
@@ -481,7 +485,7 @@ impl<'a, 'b> SourceClient<'a, 'b> {
                 &self.sources_root_url(),
                 Some(header_map),
                 None,
-                Some(body),
+                Some(source_config_bytes),
                 self.timeout,
             )
             .await?;
@@ -651,7 +655,6 @@ mod test {
     use std::path::PathBuf;
     use std::str::FromStr;
 
-    use bytes::Bytes;
     use quickwit_config::{ConfigFormat, SourceConfig};
     use quickwit_indexing::mock_split;
     use quickwit_ingest::CommitType;
@@ -886,7 +889,7 @@ mod test {
             .up_to_n_times(1)
             .mount(&mock_server)
             .await;
-        let post_body = Bytes::from(serde_json::to_vec(&index_config_to_create).unwrap());
+        let post_body = serde_json::to_string(&index_config_to_create).unwrap();
         assert_eq!(
             qw_client
                 .indexes()
@@ -909,7 +912,7 @@ mod test {
         assert_eq!(
             qw_client
                 .indexes()
-                .create(Bytes::from("".as_bytes()), ConfigFormat::Yaml, false)
+                .create("", ConfigFormat::Yaml, false)
                 .await
                 .unwrap(),
             index_metadata
@@ -1044,7 +1047,7 @@ mod test {
         assert_eq!(
             qw_client
                 .sources("my-index")
-                .create(Bytes::from("".as_bytes()), ConfigFormat::Toml)
+                .create("", ConfigFormat::Toml)
                 .await
                 .unwrap(),
             source_config

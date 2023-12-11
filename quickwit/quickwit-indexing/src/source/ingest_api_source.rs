@@ -182,9 +182,9 @@ impl Source for IngestApiSource {
                 partition_id,
                 self.counters
                     .previous_offset
-                    .map(Position::from)
-                    .unwrap_or(Position::Beginning),
-                Position::from(current_offset),
+                    .map(Position::offset)
+                    .unwrap_or_default(),
+                Position::offset(current_offset),
             )
             .map_err(anyhow::Error::from)?;
 
@@ -408,8 +408,8 @@ mod tests {
         let partition_id: PartitionId = ingest_api_service.ask(GetPartitionId).await?.into();
         let checkpoint_delta = SourceCheckpointDelta::from_partition_delta(
             partition_id.clone(),
-            Position::from(0u64),
-            Position::from(1200u64),
+            Position::offset(0u64),
+            Position::offset(1200u64),
         )
         .unwrap();
         checkpoint.try_apply_delta(checkpoint_delta).unwrap();
@@ -686,7 +686,7 @@ mod tests {
 
         let partition_id = ingest_api_service.ask(GetPartitionId).await?.into();
         let mut source_checkpoint = SourceCheckpoint::default();
-        source_checkpoint.add_partition(partition_id, Position::from(10u64));
+        source_checkpoint.add_partition(partition_id, Position::offset(10u64));
         let ingest_api_source = IngestApiSource::try_new(ctx, source_checkpoint).await?;
         let ingest_api_source_actor = SourceActor {
             source: Box::new(ingest_api_source),

@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::BTreeSet;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -37,6 +38,7 @@ use quickwit_proto::indexing::IndexingPipelineId;
 use quickwit_proto::metastore::{
     IndexMetadataRequest, MetastoreError, MetastoreService, MetastoreServiceClient,
 };
+use quickwit_proto::types::ShardId;
 use quickwit_storage::{Storage, StorageResolver};
 use tokio::sync::Semaphore;
 use tracing::{debug, error, info, instrument};
@@ -50,7 +52,9 @@ use crate::actors::uploader::UploaderType;
 use crate::actors::{Indexer, Packager, Publisher, Uploader};
 use crate::merge_policy::MergePolicy;
 use crate::models::IndexingStatistics;
-use crate::source::{quickwit_supported_sources, AssignShards, SourceActor, SourceRuntimeArgs};
+use crate::source::{
+    quickwit_supported_sources, AssignShards, Assignment, SourceActor, SourceRuntimeArgs,
+};
 use crate::split_store::IndexingSplitStore;
 use crate::SplitsUpdateMailbox;
 
@@ -119,6 +123,10 @@ pub struct IndexingPipeline {
     handles_opt: Option<IndexingPipelineHandles>,
     // Killswitch used for the actors in the pipeline. This is not the supervisor killswitch.
     kill_switch: KillSwitch,
+    // The set of shard is something that can change dynamically without necessarily
+    // requiring a respawn of the pipeline.
+    // We keep the list of shards here however, to reassign them after a respawn.
+    shard_ids: BTreeSet<ShardId>,
 }
 
 #[async_trait]
@@ -146,19 +154,20 @@ impl Actor for IndexingPipeline {
     ) -> anyhow::Result<()> {
         // We update the observation to ensure our last "black box" observation
         // is up to date.
-        self.perform_observe(ctx).await;
+        self.perform_observe(ctx);
         Ok(())
     }
 }
 
 impl IndexingPipeline {
     pub fn new(params: IndexingPipelineParams) -> Self {
-        Self {
+        IndexingPipeline {
             params,
             previous_generations_statistics: Default::default(),
             handles_opt: None,
             kill_switch: KillSwitch::default(),
             statistics: IndexingStatistics::default(),
+            shard_ids: Default::default(),
         }
     }
 
@@ -237,7 +246,7 @@ impl IndexingPipeline {
         self.statistics.generation
     }
 
-    async fn perform_observe(&mut self, ctx: &ActorContext<Self>) {
+    fn perform_observe(&mut self, ctx: &ActorContext<Self>) {
         let Some(handles) = &self.handles_opt else {
             return;
         };
@@ -258,6 +267,7 @@ impl IndexingPipeline {
             .set_num_spawn_attempts(self.statistics.num_spawn_attempts);
         let pipeline_metrics_opt = handles.indexer.last_observation().pipeline_metrics_opt;
         self.statistics.pipeline_metrics_opt = pipeline_metrics_opt;
+        self.statistics.shard_ids = self.shard_ids.clone();
         ctx.observe(self);
     }
 
@@ -311,7 +321,7 @@ impl IndexingPipeline {
         info!(
             index_id=%index_id,
             source_id=%source_id,
-            pipeline_ord=%self.params.pipeline_id.pipeline_ord,
+            pipeline_uid=%self.params.pipeline_id.pipeline_uid,
             "spawning indexing pipeline",
         );
         let (source_mailbox, source_inbox) = ctx
@@ -453,6 +463,10 @@ impl IndexingPipeline {
             .set_mailboxes(source_mailbox, source_inbox)
             .set_kill_switch(self.kill_switch.clone())
             .spawn(actor_source);
+        let assign_shards_message = AssignShards(Assignment {
+            shard_ids: self.shard_ids.clone(),
+        });
+        source_mailbox.send_message(assign_shards_message).await?;
 
         // Increment generation once we are sure there will be no spawning error.
         self.previous_generations_statistics = self.statistics.clone();
@@ -494,7 +508,7 @@ impl Handler<SuperviseLoop> for IndexingPipeline {
         supervise_loop_token: SuperviseLoop,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
-        self.perform_observe(ctx).await;
+        self.perform_observe(ctx);
         self.perform_health_check(ctx).await?;
         ctx.schedule_self_msg(SUPERVISE_INTERVAL, supervise_loop_token)
             .await;
@@ -542,16 +556,24 @@ impl Handler<AssignShards> for IndexingPipeline {
 
     async fn handle(
         &mut self,
-        message: AssignShards,
-        _ctx: &ActorContext<Self>,
+        assign_shards_message: AssignShards,
+        ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
+        self.shard_ids = assign_shards_message.0.shard_ids.clone();
+        // If the pipeline is running, we forward the message to its source.
+        // If it is not, it will be respawned soon, and the shards will be assigned afterward.
         if let Some(handles) = &mut self.handles_opt {
             info!(
-                shard_ids=?message.0.shard_ids,
-                "assigning shards to indexing pipeline."
+                shard_ids=?assign_shards_message.0.shard_ids,
+                "assigning shards to indexing pipeline"
             );
-            handles.source_mailbox.send_message(message).await?;
+            handles
+                .source_mailbox
+                .send_message(assign_shards_message)
+                .await?;
         }
+        // We perform observe to make sure the set of shard ids is up to date.
+        self.perform_observe(ctx);
         Ok(())
     }
 }
@@ -590,15 +612,15 @@ mod tests {
     use std::sync::Arc;
 
     use quickwit_actors::{Command, Universe};
+    use quickwit_common::ServiceStream;
     use quickwit_config::{IndexingSettings, SourceInputFormat, SourceParams, VoidSourceParams};
     use quickwit_doc_mapper::{default_doc_mapper_for_test, DefaultDocMapper};
     use quickwit_metastore::checkpoint::IndexCheckpointDelta;
-    use quickwit_metastore::{IndexMetadata, ListSplitsResponseExt, PublishSplitsRequestExt};
+    use quickwit_metastore::{IndexMetadata, PublishSplitsRequestExt};
     use quickwit_proto::metastore::{
-        EmptyResponse, IndexMetadataResponse, LastDeleteOpstampResponse, ListSplitsResponse,
-        MetastoreError,
+        EmptyResponse, IndexMetadataResponse, LastDeleteOpstampResponse, MetastoreError,
     };
-    use quickwit_proto::types::IndexUid;
+    use quickwit_proto::types::{IndexUid, PipelineUid};
     use quickwit_storage::RamStorage;
 
     use super::{IndexingPipeline, *};
@@ -670,7 +692,7 @@ mod tests {
             index_uid: "test-index:11111111111111111111111111".to_string().into(),
             source_id: "test-source".to_string(),
             node_id: node_id.to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::from_u128(0u128),
         };
         let source_config = SourceConfig {
             source_id: "test-source".to_string(),
@@ -770,7 +792,7 @@ mod tests {
             index_uid: "test-index:11111111111111111111111111".to_string().into(),
             source_id: "test-source".to_string(),
             node_id: node_id.to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::from_u128(0u128),
         };
         let source_config = SourceConfig {
             source_id: "test-source".to_string(),
@@ -829,7 +851,7 @@ mod tests {
             });
         mock_metastore
             .expect_list_splits()
-            .returning(|_| Ok(ListSplitsResponse::empty()));
+            .returning(|_| Ok(ServiceStream::empty()));
         let universe = Universe::with_accelerated_time();
         let node_id = "test-node";
         let doc_mapper = Arc::new(default_doc_mapper_for_test());
@@ -837,7 +859,7 @@ mod tests {
             index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
             node_id: node_id.to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::from_u128(0u128),
         };
         let source_config = SourceConfig {
             source_id: "test-source".to_string(),
@@ -955,7 +977,7 @@ mod tests {
             index_uid: "test-index:11111111111111111111111111".to_string().into(),
             source_id: "test-source".to_string(),
             node_id: node_id.to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::from_u128(0u128),
         };
         let source_config = SourceConfig {
             source_id: "test-source".to_string(),

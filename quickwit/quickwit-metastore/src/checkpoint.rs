@@ -28,8 +28,9 @@ use std::sync::Arc;
 use quickwit_proto::types::{Position, SourceId};
 use serde::ser::SerializeMap;
 use serde::{Deserialize, Serialize};
+/// Updates running indexing tasks in chitchat cluster state.
 use thiserror::Error;
-use tracing::{info, warn};
+use tracing::{debug, warn};
 
 /// A `PartitionId` uniquely identifies a partition for a given source.
 #[derive(Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd, Serialize, Deserialize)]
@@ -195,7 +196,7 @@ impl SourceCheckpoint {
 /// let checkpoint: SourceCheckpoint = [(0u64, 0u64), (1u64, 2u64)]
 ///     .into_iter()
 ///     .map(|(partition_id, offset)| {
-///         (PartitionId::from(partition_id), Position::from(offset))
+///         (PartitionId::from(partition_id), Position::offset(offset))
 ///     })
 ///     .collect();
 /// ```
@@ -213,7 +214,7 @@ impl Serialize for SourceCheckpoint {
     where S: serde::Serializer {
         let mut map = serializer.serialize_map(Some(self.per_partition.len()))?;
         for (partition, position) in &self.per_partition {
-            map.serialize_entry(&*partition.0, position.as_str())?;
+            map.serialize_entry(&*partition.0, position)?;
         }
         map.end()
     }
@@ -327,7 +328,7 @@ impl SourceCheckpoint {
         delta: SourceCheckpointDelta,
     ) -> Result<(), IncompatibleCheckpointDelta> {
         self.check_compatibility(&delta)?;
-        info!(delta=?delta, checkpoint=?self, "applying delta to checkpoint");
+        debug!(delta=?delta, checkpoint=?self, "applying delta to checkpoint");
 
         for (partition_id, partition_position) in delta.per_partition {
             self.per_partition
@@ -343,7 +344,7 @@ impl fmt::Debug for SourceCheckpoint {
         for (i, (partition_id, position)) in self.per_partition.iter().enumerate() {
             f.write_str(&partition_id.0)?;
             f.write_str(":")?;
-            f.write_str(position.as_str())?;
+            write!(f, "{}", position)?;
             let is_last = i == self.per_partition.len() - 1;
             if !is_last {
                 f.write_str(" ")?;
@@ -403,9 +404,7 @@ impl fmt::Debug for SourceCheckpointDelta {
             write!(
                 f,
                 "{}:({}..{}]",
-                partition_id.0,
-                partition_delta.from.as_str(),
-                partition_delta.to.as_str()
+                partition_id.0, partition_delta.from, partition_delta.to,
             )?;
             if i != self.per_partition.len() - 1 {
                 f.write_str(" ")?;
@@ -425,12 +424,12 @@ impl TryFrom<Range<u64>> for SourceCheckpointDelta {
         let from_position = if range.start == 0 {
             Position::Beginning
         } else {
-            Position::from(range.start - 1)
+            Position::offset(range.start - 1)
         };
         let to_position = if range.end == 0 {
             Position::Beginning
         } else {
-            Position::from(range.end - 1)
+            Position::offset(range.end - 1)
         };
         SourceCheckpointDelta::from_partition_delta(
             PartitionId::default(),
@@ -564,15 +563,15 @@ mod tests {
         let delta = {
             let mut delta = SourceCheckpointDelta::from_partition_delta(
                 PartitionId::from("a"),
-                Position::from(123u64),
-                Position::from(128u64),
+                Position::offset(123u64),
+                Position::offset(128u64),
             )
             .unwrap();
             delta
                 .record_partition_delta(
                     PartitionId::from("b"),
-                    Position::from(60002u64),
-                    Position::from(60187u64),
+                    Position::offset(60002u64),
+                    Position::offset(60187u64),
                 )
                 .unwrap();
             delta
@@ -596,14 +595,14 @@ mod tests {
         let delta1 = {
             let mut delta = SourceCheckpointDelta::from_partition_delta(
                 PartitionId::from("a"),
-                Position::from("00123"),
-                Position::from("00128"),
+                Position::offset("00123"),
+                Position::offset("00128"),
             )
             .unwrap();
             delta.record_partition_delta(
                 PartitionId::from("b"),
-                Position::from("60002"),
-                Position::from("60187"),
+                Position::offset("60002"),
+                Position::offset("60187"),
             )?;
             delta
         };
@@ -611,14 +610,14 @@ mod tests {
         let delta2 = {
             let mut delta = SourceCheckpointDelta::from_partition_delta(
                 PartitionId::from("a"),
-                Position::from("00128"),
-                Position::from("00129"),
+                Position::offset("00128"),
+                Position::offset("00129"),
             )
             .unwrap();
             delta.record_partition_delta(
                 PartitionId::from("b"),
-                Position::from("50099"),
-                Position::from("60002"),
+                Position::offset("50099"),
+                Position::offset("60002"),
             )?;
             delta
         };
@@ -637,14 +636,14 @@ mod tests {
         let delta1 = {
             let mut delta = SourceCheckpointDelta::from_partition_delta(
                 PartitionId::from("a"),
-                Position::from("00123"),
-                Position::from("00128"),
+                Position::offset("00123"),
+                Position::offset("00128"),
             )
             .unwrap();
             delta.record_partition_delta(
                 PartitionId::from("b"),
-                Position::from("60002"),
-                Position::from("60187"),
+                Position::offset("60002"),
+                Position::offset("60187"),
             )?;
             delta
         };
@@ -652,14 +651,14 @@ mod tests {
         let delta3 = {
             let mut delta = SourceCheckpointDelta::from_partition_delta(
                 PartitionId::from("b"),
-                Position::from("60187"),
-                Position::from("60190"),
+                Position::offset("60187"),
+                Position::offset("60190"),
             )
             .unwrap();
             delta.record_partition_delta(
                 PartitionId::from("c"),
-                Position::from("20001"),
-                Position::from("20008"),
+                Position::offset("20001"),
+                Position::offset("20008"),
             )?;
             delta
         };
@@ -673,15 +672,15 @@ mod tests {
         let mut delta1 = {
             let mut delta = SourceCheckpointDelta::from_partition_delta(
                 PartitionId::from("a"),
-                Position::from("00123"),
-                Position::from("00128"),
+                Position::offset("00123"),
+                Position::offset("00128"),
             )
             .unwrap();
             delta
                 .record_partition_delta(
                     PartitionId::from("b"),
-                    Position::from("60002"),
-                    Position::from("60187"),
+                    Position::offset("60002"),
+                    Position::offset("60187"),
                 )
                 .unwrap();
             delta
@@ -689,15 +688,15 @@ mod tests {
         let delta2 = {
             let mut delta = SourceCheckpointDelta::from_partition_delta(
                 PartitionId::from("b"),
-                Position::from("60187"),
-                Position::from("60348"),
+                Position::offset("60187"),
+                Position::offset("60348"),
             )
             .unwrap();
             delta
                 .record_partition_delta(
                     PartitionId::from("c"),
-                    Position::from("20001"),
-                    Position::from("20008"),
+                    Position::offset("20001"),
+                    Position::offset("20008"),
                 )
                 .unwrap();
             delta
@@ -705,22 +704,22 @@ mod tests {
         let delta3 = {
             let mut delta = SourceCheckpointDelta::from_partition_delta(
                 PartitionId::from("a"),
-                Position::from("00123"),
-                Position::from("00128"),
+                Position::offset("00123"),
+                Position::offset("00128"),
             )
             .unwrap();
             delta
                 .record_partition_delta(
                     PartitionId::from("b"),
-                    Position::from("60002"),
-                    Position::from("60348"),
+                    Position::offset("60002"),
+                    Position::offset("60348"),
                 )
                 .unwrap();
             delta
                 .record_partition_delta(
                     PartitionId::from("c"),
-                    Position::from("20001"),
-                    Position::from("20008"),
+                    Position::offset("20001"),
+                    Position::offset("20008"),
                 )
                 .unwrap();
             delta
@@ -730,8 +729,8 @@ mod tests {
 
         let delta4 = SourceCheckpointDelta::from_partition_delta(
             PartitionId::from("a"),
-            Position::from("00130"),
-            Position::from("00142"),
+            Position::offset("00130"),
+            Position::offset("00142"),
         )
         .unwrap();
         let result = delta1.extend(delta4);
@@ -739,16 +738,10 @@ mod tests {
             result,
             Err(PartitionDeltaError::from(IncompatibleCheckpointDelta {
                 partition_id: PartitionId::from("a"),
-                partition_position: Position::from("00128"),
-                delta_from_position: Position::from("00130")
+                partition_position: Position::offset("00128"),
+                delta_from_position: Position::offset("00130")
             }))
         );
-    }
-
-    #[test]
-    fn test_position_u64() {
-        let pos = Position::from(4u64);
-        assert_eq!(pos.as_str(), "00000000000000000004");
     }
 
     #[test]
@@ -756,8 +749,8 @@ mod tests {
         {
             let delta_error = SourceCheckpointDelta::from_partition_delta(
                 PartitionId::from("a"),
-                Position::from("20"),
-                Position::from("20"),
+                Position::offset("20"),
+                Position::offset("20"),
             )
             .unwrap_err();
             matches!(
@@ -770,8 +763,8 @@ mod tests {
             let delta_error = delta
                 .record_partition_delta(
                     PartitionId::from("a"),
-                    Position::from("20"),
-                    Position::from("10"),
+                    Position::offset("20"),
+                    Position::offset("10"),
                 )
                 .unwrap_err();
             matches!(
@@ -809,14 +802,14 @@ mod tests {
         let partition = PartitionId::from("a");
         let delta = SourceCheckpointDelta::from_partition_delta(
             partition.clone(),
-            Position::from(42u64),
-            Position::from(43u64),
+            Position::offset(42u64),
+            Position::offset(43u64),
         )
         .unwrap();
         let checkpoint: SourceCheckpoint = delta.get_source_checkpoint();
         assert_eq!(
             checkpoint.position_for_partition(&partition).unwrap(),
-            &Position::from(43u64)
+            &Position::offset(43u64)
         );
     }
 }

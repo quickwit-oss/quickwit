@@ -23,7 +23,31 @@ include!("../codegen/quickwit/quickwit.ingest.ingester.rs");
 
 pub use ingester_service_grpc_server::IngesterServiceGrpcServer;
 
-impl FetchResponseV2 {
+impl FetchMessage {
+    pub fn new_payload(payload: FetchPayload) -> Self {
+        assert!(
+            matches!(&payload.mrecord_batch, Some(batch) if !batch.mrecord_lengths.is_empty()),
+            "`mrecord_batch` must be set and non-empty"
+        );
+
+        Self {
+            message: Some(fetch_message::Message::Payload(payload)),
+        }
+    }
+
+    pub fn new_eof(eof: FetchEof) -> Self {
+        assert!(
+            matches!(eof.eof_position, Some(Position::Eof(_))),
+            "`eof_position` must be set"
+        );
+
+        Self {
+            message: Some(fetch_message::Message::Eof(eof)),
+        }
+    }
+}
+
+impl FetchPayload {
     pub fn queue_id(&self) -> QueueId {
         queue_id(&self.index_uid, &self.source_id, self.shard_id)
     }
@@ -34,6 +58,20 @@ impl FetchResponseV2 {
         } else {
             0
         }
+    }
+
+    pub fn from_position_exclusive(&self) -> Position {
+        self.from_position_exclusive.clone().unwrap_or_default()
+    }
+
+    pub fn to_position_inclusive(&self) -> Position {
+        self.to_position_inclusive.clone().unwrap_or_default()
+    }
+}
+
+impl FetchEof {
+    pub fn eof_position(&self) -> Position {
+        self.eof_position.clone().unwrap_or_default()
     }
 }
 
@@ -67,18 +105,17 @@ impl SynReplicationMessage {
         }
     }
 
-    pub fn into_replicate_request(self) -> Option<ReplicateRequest> {
-        match self.message {
-            Some(syn_replication_message::Message::ReplicateRequest(replicate_request)) => {
-                Some(replicate_request)
-            }
-            _ => None,
-        }
-    }
-
     pub fn new_open_request(open_request: OpenReplicationStreamRequest) -> Self {
         Self {
             message: Some(syn_replication_message::Message::OpenRequest(open_request)),
+        }
+    }
+
+    pub fn new_init_replica_request(init_replica_request: InitReplicaRequest) -> Self {
+        Self {
+            message: Some(syn_replication_message::Message::InitRequest(
+                init_replica_request,
+            )),
         }
     }
 
@@ -105,6 +142,14 @@ impl AckReplicationMessage {
         Self {
             message: Some(ack_replication_message::Message::OpenResponse(
                 open_response,
+            )),
+        }
+    }
+
+    pub fn new_init_replica_response(init_replica_response: InitReplicaResponse) -> Self {
+        Self {
+            message: Some(ack_replication_message::Message::InitResponse(
+                init_replica_response,
             )),
         }
     }
@@ -145,7 +190,9 @@ impl TruncateShardsSubrequest {
         queue_id(&self.index_uid, &self.source_id, self.shard_id)
     }
 
-    pub fn to_position_inclusive(&self) -> Position {
-        self.to_position_inclusive.clone().unwrap_or_default()
+    pub fn truncate_up_to_position_inclusive(&self) -> Position {
+        self.truncate_up_to_position_inclusive
+            .clone()
+            .unwrap_or_default()
     }
 }

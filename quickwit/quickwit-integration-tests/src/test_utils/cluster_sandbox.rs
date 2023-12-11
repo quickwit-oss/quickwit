@@ -104,7 +104,7 @@ fn transport_url(addr: SocketAddr) -> Url {
 #[macro_export]
 macro_rules! ingest_json {
     ($($json:tt)+) => {
-        quickwit_rest_client::models::IngestSource::Bytes(json!($($json)+).to_string().into())
+        quickwit_rest_client::models::IngestSource::Str(json!($($json)+).to_string())
     };
 }
 
@@ -188,11 +188,11 @@ impl ClusterSandbox {
         Ok(Self {
             node_configs,
             searcher_rest_client: QuickwitClientBuilder::new(transport_url(
-                searcher_config.node_config.rest_listen_addr,
+                searcher_config.node_config.rest_config.listen_addr,
             ))
             .build(),
             indexer_rest_client: QuickwitClientBuilder::new(transport_url(
-                indexer_config.node_config.rest_listen_addr,
+                indexer_config.node_config.rest_config.listen_addr,
             ))
             .build(),
             _temp_dir: temp_dir,

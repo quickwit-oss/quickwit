@@ -186,8 +186,7 @@ fn merge_segment_fruits(mut segment_fruits: Vec<Vec<Span>>, num_traces: usize) -
     let mut seen_trace_ids: FnvHashSet<TraceId> = FnvHashSet::default();
 
     for span in segment_fruits.into_iter().kmerge() {
-        if !seen_trace_ids.contains(&span.trace_id) {
-            seen_trace_ids.insert(span.trace_id);
+        if seen_trace_ids.insert(span.trace_id) {
             spans.push(span);
 
             if spans.len() == num_traces {
@@ -327,7 +326,6 @@ impl SelectTraceIds {
             return;
         }
         self.select();
-
         for trace_id in self.select_workbench.drain(..self.num_traces) {
             self.dedup_workbench
                 .insert(trace_id.term_ord, trace_id.span_timestamp);

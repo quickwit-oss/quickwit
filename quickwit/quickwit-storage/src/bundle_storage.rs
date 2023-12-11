@@ -344,6 +344,7 @@ mod tests {
 
         let buffer = SplitPayloadBuilder::get_split_payload(
             &[test_filepath1.clone(), test_filepath2.clone()],
+            &[],
             &[5, 5, 5],
         )?
         .read_all()
@@ -385,6 +386,7 @@ mod tests {
 
         let buffer = SplitPayloadBuilder::get_split_payload(
             &[test_filepath1.clone(), test_filepath2.clone()],
+            &[],
             &[1, 3, 3, 7],
         )?
         .read_all()
@@ -422,7 +424,7 @@ mod tests {
 
     #[tokio::test]
     async fn bundlestorage_test_empty() -> anyhow::Result<()> {
-        let buffer = SplitPayloadBuilder::get_split_payload(&[], &[])?
+        let buffer = SplitPayloadBuilder::get_split_payload(&[], &[], &[])?
             .read_all()
             .await?;
 

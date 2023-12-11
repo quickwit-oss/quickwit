@@ -254,6 +254,7 @@ mod tests {
 
     use mockall::Sequence;
     use quickwit_actors::Universe;
+    use quickwit_common::ServiceStream;
     use quickwit_config::RetentionPolicy;
     use quickwit_metastore::{
         IndexMetadata, ListSplitsRequestExt, ListSplitsResponseExt, Split, SplitMetadata,
@@ -349,7 +350,7 @@ mod tests {
         mock_metastore
             .expect_list_splits()
             .times(..)
-            .returning(|_| Ok(ListSplitsResponse::empty()));
+            .returning(|_| Ok(ServiceStream::empty()));
         mock_metastore
             .expect_list_indexes_metadata()
             .times(1)
@@ -472,7 +473,8 @@ mod tests {
                     "index-2" => Vec::new(),
                     unknown => panic!("Unknown index: `{unknown}`."),
                 };
-                Ok(ListSplitsResponse::try_from_splits(splits).unwrap())
+                let splits_response = ListSplitsResponse::try_from_splits(splits).unwrap();
+                Ok(ServiceStream::from(vec![Ok(splits_response)]))
             });
 
         mock_metastore

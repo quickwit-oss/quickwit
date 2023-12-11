@@ -197,8 +197,8 @@ Now that we have indexed the logs and can search from one instance, it's time to
 
 ## Start two more instances
 
-Quickwit needs a port `rest_listen_port` for serving the HTTP rest API via TCP as well as maintaining the cluster formation via UDP. 
-Also, it needs `{rest_listen_port} + 1` for gRPC communication between instances.
+Quickwit needs a port `rest.listen_port` for serving the HTTP rest API via TCP as well as maintaining the cluster formation via UDP. 
+Also, it needs `{rest.listen_port} + 1` for gRPC communication between instances.
 
 In AWS, you can create a security group to group these inbound rules. Check out the [network section](../../guides/aws-setup) of our AWS setup guide.
 

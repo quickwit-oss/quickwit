@@ -318,6 +318,7 @@ impl Handler<PackagedSplitBatch> for Uploader {
 
                     let split_streamer = SplitPayloadBuilder::get_split_payload(
                         &packaged_split.split_files,
+                        &packaged_split.serialized_split_fields,
                         &packaged_split.hotcache_bytes,
                     )?;
                     let split_metadata = create_split_metadata(
@@ -465,6 +466,7 @@ async fn upload_split(
 ) -> anyhow::Result<()> {
     let split_streamer = SplitPayloadBuilder::get_split_payload(
         &packaged_split.split_files,
+        &packaged_split.serialized_split_fields,
         &packaged_split.hotcache_bytes,
     )?;
 
@@ -490,6 +492,7 @@ mod tests {
     use quickwit_metastore::checkpoint::{IndexCheckpointDelta, SourceCheckpointDelta};
     use quickwit_proto::indexing::IndexingPipelineId;
     use quickwit_proto::metastore::EmptyResponse;
+    use quickwit_proto::types::PipelineUid;
     use quickwit_storage::RamStorage;
     use tantivy::DateTime;
     use tokio::sync::oneshot;
@@ -507,7 +510,7 @@ mod tests {
             index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::default(),
         };
         let (sequencer_mailbox, sequencer_inbox) =
             universe.create_test_mailbox::<Sequencer<Publisher>>();
@@ -560,6 +563,7 @@ mod tests {
                         delete_opstamp: 10,
                         num_merge_ops: 0,
                     },
+                    serialized_split_fields: Vec::new(),
                     split_scratch_directory,
                     tags: Default::default(),
                     hotcache_bytes: Vec::new(),
@@ -618,7 +622,7 @@ mod tests {
             index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::default(),
         };
         let universe = Universe::new();
         let (sequencer_mailbox, sequencer_inbox) =
@@ -671,6 +675,7 @@ mod tests {
                 delete_opstamp: 0,
                 num_merge_ops: 0,
             },
+            serialized_split_fields: Vec::new(),
             split_scratch_directory: split_scratch_directory_1,
             tags: Default::default(),
             split_files: Vec::new(),
@@ -694,6 +699,7 @@ mod tests {
                 delete_opstamp: 0,
                 num_merge_ops: 0,
             },
+            serialized_split_fields: Vec::new(),
             split_scratch_directory: split_scratch_directory_2,
             tags: Default::default(),
             split_files: Vec::new(),
@@ -765,7 +771,7 @@ mod tests {
             index_uid: IndexUid::from("test-index-no-sequencer:11111111111111111111111111"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::default(),
         };
         let universe = Universe::new();
         let (publisher_mailbox, publisher_inbox) = universe.create_test_mailbox::<Publisher>();
@@ -811,6 +817,7 @@ mod tests {
                         delete_opstamp: 10,
                         num_merge_ops: 0,
                     },
+                    serialized_split_fields: Vec::new(),
                     split_scratch_directory,
                     tags: Default::default(),
                     hotcache_bytes: Vec::new(),
@@ -945,7 +952,7 @@ mod tests {
             index_uid: IndexUid::new_with_random_ulid("test-index"),
             source_id: "test-source".to_string(),
             node_id: "test-node".to_string(),
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::default(),
         };
         let mut mock_metastore = MetastoreServiceClient::mock();
         mock_metastore
@@ -989,6 +996,7 @@ mod tests {
                         delete_opstamp: 10,
                         num_merge_ops: 0,
                     },
+                    serialized_split_fields: Vec::new(),
                     split_scratch_directory,
                     tags: Default::default(),
                     hotcache_bytes: Vec::new(),
