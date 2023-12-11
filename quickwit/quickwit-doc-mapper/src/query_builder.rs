@@ -100,7 +100,7 @@ pub(crate) fn build_query(
         with_validation,
     )?;
 
-    let term_set_query_fields = extract_term_set_query_fields(query_ast);
+    let term_set_query_fields = extract_term_set_query_fields(query_ast, &schema)?;
     let term_ranges_grouped_by_field =
         extract_prefix_term_ranges(query_ast, &schema, tokenizer_manager)?;
 
@@ -115,8 +115,7 @@ pub(crate) fn build_query(
     });
 
     let warmup_info = WarmupInfo {
-        term_dict_field_names: term_set_query_fields.clone(),
-        posting_field_names: term_set_query_fields,
+        term_dict_fields: term_set_query_fields,
         terms_grouped_by_field,
         term_ranges_grouped_by_field,
         fast_field_names,
@@ -133,28 +132,43 @@ fn is_fast_field(schema: &Schema, field_name: &str) -> bool {
     false
 }
 
-#[derive(Default)]
-struct ExtractTermSetFields {
-    term_dict_fields_to_warm_up: HashSet<String>,
+struct ExtractTermSetFields<'a> {
+    term_dict_fields_to_warm_up: HashSet<Field>,
+    schema: &'a Schema,
 }
 
-impl<'a> QueryAstVisitor<'a> for ExtractTermSetFields {
+impl<'a> ExtractTermSetFields<'a> {
+    fn new(schema: &'a Schema) -> Self {
+        ExtractTermSetFields {
+            term_dict_fields_to_warm_up: HashSet::new(),
+            schema,
+        }
+    }
+}
+
+impl<'a, 'b> QueryAstVisitor<'a> for ExtractTermSetFields<'b> {
     type Err = anyhow::Error;
 
     fn visit_term_set(&mut self, term_set_query: &'a TermSetQuery) -> anyhow::Result<()> {
         for field in term_set_query.terms_per_field.keys() {
-            self.term_dict_fields_to_warm_up.insert(field.to_string());
+            if let Ok((field, _field_entry, _path)) = find_field_or_hit_dynamic(field, self.schema)
+            {
+                self.term_dict_fields_to_warm_up.insert(field);
+            } else {
+                anyhow::bail!("field does not exist: {}", field);
+            }
         }
         Ok(())
     }
 }
 
-fn extract_term_set_query_fields(query_ast: &QueryAst) -> HashSet<String> {
-    let mut visitor = ExtractTermSetFields::default();
-    visitor
-        .visit(query_ast)
-        .expect("Extracting term set queries's field should never return an error.");
-    visitor.term_dict_fields_to_warm_up
+fn extract_term_set_query_fields(
+    query_ast: &QueryAst,
+    schema: &Schema,
+) -> anyhow::Result<HashSet<Field>> {
+    let mut visitor = ExtractTermSetFields::new(schema);
+    visitor.visit(query_ast)?;
+    Ok(visitor.term_dict_fields_to_warm_up)
 }
 
 fn prefix_term_to_range(prefix: Term) -> (Bound<Term>, Bound<Term>) {
@@ -635,10 +649,10 @@ mod test {
 
     #[test]
     fn test_build_query_warmup_info() {
-        let query_with_set = query_ast_from_user_text("title: IN [hello]", None)
+        let query_with_set = query_ast_from_user_text("desc: IN [hello]", None)
             .parse_user_query(&[])
             .unwrap();
-        let query_without_set = query_ast_from_user_text("title:hello", None)
+        let query_without_set = query_ast_from_user_text("desc:hello", None)
             .parse_user_query(&[])
             .unwrap();
 
@@ -650,10 +664,10 @@ mod test {
             true,
         )
         .unwrap();
-        assert_eq!(warmup_info.term_dict_field_names.len(), 1);
-        assert_eq!(warmup_info.posting_field_names.len(), 1);
-        assert!(warmup_info.term_dict_field_names.contains("title"));
-        assert!(warmup_info.posting_field_names.contains("title"));
+        assert_eq!(warmup_info.term_dict_fields.len(), 1);
+        assert!(warmup_info
+            .term_dict_fields
+            .contains(&tantivy::schema::Field::from_field_id(1)));
 
         let (_, warmup_info) = build_query(
             &query_without_set,
@@ -663,7 +677,6 @@ mod test {
             true,
         )
         .unwrap();
-        assert!(warmup_info.term_dict_field_names.is_empty());
-        assert!(warmup_info.posting_field_names.is_empty());
+        assert!(warmup_info.term_dict_fields.is_empty());
     }
 }

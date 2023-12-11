@@ -177,12 +177,9 @@ pub struct TermRange {
 /// running the query.
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub struct WarmupInfo {
-    /// Name of fields from the term dictionary which needs to be entirely
-    /// loaded
-    pub term_dict_field_names: HashSet<String>,
-    /// Name of fields from the posting lists which needs to be entirely
-    /// loaded
-    pub posting_field_names: HashSet<String>,
+    /// Name of fields from the term dictionary and posting list which needs to
+    /// be entirely loaded
+    pub term_dict_fields: HashSet<Field>,
     /// Name of fast fields which needs to be loaded
     pub fast_field_names: HashSet<String>,
     /// Whether to warmup field norms. Used mostly for scoring.
@@ -196,9 +193,7 @@ pub struct WarmupInfo {
 impl WarmupInfo {
     /// Merge other WarmupInfo into self.
     pub fn merge(&mut self, other: WarmupInfo) {
-        self.term_dict_field_names
-            .extend(other.term_dict_field_names);
-        self.posting_field_names.extend(other.posting_field_names);
+        self.term_dict_fields.extend(other.term_dict_fields);
         self.fast_field_names.extend(other.fast_field_names);
         self.field_norms |= other.field_norms;
 
@@ -218,6 +213,27 @@ impl WarmupInfo {
                 *sub_map.entry(term_range).or_default() |= include_position;
             }
         }
+    }
+
+    /// Simplify a WarmupInfo, removing some redundant tasks
+    pub fn simplify(&mut self) {
+        self.terms_grouped_by_field.retain(|field, terms| {
+            if self.term_dict_fields.contains(field) {
+                // we are already about to full-load this dictionary. We only care about terms
+                // which needs additional position
+                terms.retain(|_term, include_position| *include_position);
+            }
+            // if no term is left, remove the entry from the hashmap
+            !terms.is_empty()
+        });
+        self.term_ranges_grouped_by_field.retain(|field, terms| {
+            if self.term_dict_fields.contains(field) {
+                terms.retain(|_term, include_position| *include_position);
+            }
+            !terms.is_empty()
+        });
+        // TODO we could remove from terms_grouped_by_field for ranges with no `limit` in
+        // term_ranges_grouped_by_field
     }
 }
 
@@ -403,6 +419,13 @@ mod tests {
         elements.iter().map(|elem| elem.to_string()).collect()
     }
 
+    fn hashset_field(elements: &[u32]) -> HashSet<Field> {
+        elements
+            .iter()
+            .map(|elem| Field::from_field_id(*elem))
+            .collect()
+    }
+
     fn hashmap(elements: &[(u32, &str, bool)]) -> HashMap<Field, HashMap<Term, bool>> {
         let mut result: HashMap<Field, HashMap<Term, bool>> = HashMap::new();
         for (field, term, pos) in elements {
@@ -437,8 +460,7 @@ mod tests {
     #[test]
     fn test_warmup_info_merge() {
         let wi_base = WarmupInfo {
-            term_dict_field_names: hashset(&["termdict1", "termdict2"]),
-            posting_field_names: hashset(&["posting1", "posting2"]),
+            term_dict_fields: hashset_field(&[1, 2]),
             fast_field_names: hashset(&["fast1", "fast2"]),
             field_norms: false,
             terms_grouped_by_field: hashmap(&[(1, "term1", false), (1, "term2", false)]),
@@ -455,8 +477,7 @@ mod tests {
 
         let mut wi_base = wi_base;
         let wi_2 = WarmupInfo {
-            term_dict_field_names: hashset(&["termdict2", "termdict3"]),
-            posting_field_names: hashset(&["posting2", "posting3"]),
+            term_dict_fields: hashset_field(&[2, 3]),
             fast_field_names: hashset(&["fast2", "fast3"]),
             field_norms: true,
             terms_grouped_by_field: hashmap(&[(2, "term1", false), (1, "term2", true)]),
@@ -467,14 +488,7 @@ mod tests {
         };
         wi_base.merge(wi_2.clone());
 
-        assert_eq!(
-            wi_base.term_dict_field_names,
-            hashset(&["termdict1", "termdict2", "termdict3"])
-        );
-        assert_eq!(
-            wi_base.posting_field_names,
-            hashset(&["posting1", "posting2", "posting3"])
-        );
+        assert_eq!(wi_base.term_dict_fields, hashset_field(&[1, 2, 3]));
         assert_eq!(
             wi_base.fast_field_names,
             hashset(&["fast1", "fast2", "fast3"])
@@ -522,6 +536,38 @@ mod tests {
         let mut wi_cloned = wi_base.clone();
         wi_cloned.merge(wi_2);
         assert_eq!(wi_cloned, wi_base);
+    }
+
+    #[test]
+    fn test_warmup_info_simplify() {
+        let mut warmup_info = WarmupInfo {
+            term_dict_fields: hashset_field(&[1]),
+            fast_field_names: hashset(&["fast1", "fast2"]),
+            field_norms: false,
+            terms_grouped_by_field: hashmap(&[
+                (1, "term1", false),
+                (1, "term2", true),
+                (2, "term3", false),
+            ]),
+            term_ranges_grouped_by_field: hashmap_ranges(&[
+                (1, "term1", false),
+                (1, "term2", true),
+                (2, "term3", false),
+            ]),
+        };
+        let expected = WarmupInfo {
+            term_dict_fields: hashset_field(&[1]),
+            fast_field_names: hashset(&["fast1", "fast2"]),
+            field_norms: false,
+            terms_grouped_by_field: hashmap(&[(1, "term2", true), (2, "term3", false)]),
+            term_ranges_grouped_by_field: hashmap_ranges(&[
+                (1, "term2", true),
+                (2, "term3", false),
+            ]),
+        };
+
+        warmup_info.simplify();
+        assert_eq!(warmup_info, expected);
     }
 
     #[test]
