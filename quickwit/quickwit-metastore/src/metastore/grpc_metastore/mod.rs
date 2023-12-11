@@ -82,7 +82,9 @@ impl MetastoreGrpcClient {
         let underlying = MetastoreServiceClient::with_interceptor(
             balance_channel.clone(),
             SpanContextInterceptor,
-        );
+        )
+        .max_decoding_message_size(20 * 1024 * 1024)
+        .max_encoding_message_size(20 * 1024 * 1024);
         let uri = QuickwitUri::from_well_formed(GRPC_METASTORE_BASE_URI);
         Ok(Self {
             underlying,
