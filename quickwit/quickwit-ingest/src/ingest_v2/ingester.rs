@@ -705,7 +705,9 @@ impl IngesterService for Ingester {
             .await
             .shards
             .get(&queue_id)
-            .ok_or_else(|| IngestV2Error::Internal("shard not found".to_string()))?
+            .ok_or(IngestV2Error::ShardNotFound {
+                shard_id: open_fetch_stream_request.shard_id,
+            })?
             .shard_status_rx
             .clone();
         let (service_stream, _fetch_task_handle) = FetchStreamTask::spawn(
@@ -1853,6 +1855,19 @@ mod tests {
     #[tokio::test]
     async fn test_ingester_open_fetch_stream() {
         let (_ingester_ctx, mut ingester) = IngesterForTest::default().build().await;
+
+        let open_fetch_stream_request = OpenFetchStreamRequest {
+            client_id: "test-client".to_string(),
+            index_uid: "test-index:0".to_string(),
+            source_id: "test-source".to_string(),
+            shard_id: 1337,
+            from_position_exclusive: None,
+        };
+        let error = ingester
+            .open_fetch_stream(open_fetch_stream_request)
+            .await
+            .unwrap_err();
+        assert!(matches!(error, IngestV2Error::ShardNotFound { shard_id } if shard_id == 1337));
 
         let shard = Shard {
             index_uid: "test-index:0".to_string(),

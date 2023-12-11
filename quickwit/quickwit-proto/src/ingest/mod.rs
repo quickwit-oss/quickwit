@@ -24,7 +24,7 @@ use self::router::IngestFailureReason;
 use super::types::NodeId;
 use super::{ServiceError, ServiceErrorCode};
 use crate::control_plane::ControlPlaneError;
-use crate::types::{queue_id, Position, QueueId};
+use crate::types::{queue_id, Position, QueueId, ShardId};
 
 pub mod ingester;
 pub mod router;
@@ -39,6 +39,8 @@ pub enum IngestV2Error {
     Internal(String),
     #[error("failed to connect to ingester `{ingester_id}`")]
     IngesterUnavailable { ingester_id: NodeId },
+    #[error("shard `{shard_id}` not found")]
+    ShardNotFound { shard_id: ShardId },
     #[error("request timed out")]
     Timeout,
     // TODO: Merge `Transport` and `IngesterUnavailable` into a single `Unavailable` error.
@@ -57,6 +59,7 @@ impl From<IngestV2Error> for tonic::Status {
         let code = match &error {
             IngestV2Error::IngesterUnavailable { .. } => tonic::Code::Unavailable,
             IngestV2Error::Internal(_) => tonic::Code::Internal,
+            IngestV2Error::ShardNotFound { .. } => tonic::Code::NotFound,
             IngestV2Error::Timeout { .. } => tonic::Code::DeadlineExceeded,
             IngestV2Error::Transport { .. } => tonic::Code::Unavailable,
         };
@@ -79,6 +82,7 @@ impl ServiceError for IngestV2Error {
         match self {
             Self::IngesterUnavailable { .. } => ServiceErrorCode::Unavailable,
             Self::Internal { .. } => ServiceErrorCode::Internal,
+            Self::ShardNotFound { .. } => ServiceErrorCode::NotFound,
             Self::Timeout { .. } => ServiceErrorCode::Timeout,
             Self::Transport { .. } => ServiceErrorCode::Unavailable,
         }
