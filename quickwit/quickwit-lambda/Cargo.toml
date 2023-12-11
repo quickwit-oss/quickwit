@@ -1,0 +1,21 @@
+[package]
+name = "quickwit-lambda"
+version = "0.6.3"
+authors = ["Quickwit, Inc. <hello@quickwit.io>"]
+edition = "2021"
+license = "AGPL-3.0-or-later"                               # For a commercial, license, contact hello@quickwit.io
+description = "Quickwit is a cost-efficient search engine."
+repository = "https://github.com/quickwit-oss/quickwit"
+homepage = "https://quickwit.io/"
+documentation = "https://quickwit.io/docs/"
+
+[dependencies]
+anyhow = { workspace = true }
+lambda_runtime = "0.8.0"
+serde_json = { workspace = true }
+tokio = { workspace = true }
+
+quickwit-serve = { workspace = true }
+
+[features]
+lambda = []
