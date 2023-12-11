@@ -240,6 +240,34 @@ fn merge_leaf_list_fields(
     Ok(responses)
 }
 
+fn matches_any_pattern(field_name: &str, field_patterns: &[String]) -> bool {
+    if field_patterns.is_empty() {
+        return true;
+    }
+    field_patterns
+        .iter()
+        .any(|pattern| matches_pattern(pattern, field_name))
+}
+
+/// Supports up to 1 wildcard.
+fn matches_pattern(field_pattern: &str, field_name: &str) -> bool {
+    match field_pattern.find('*') {
+        None => field_pattern == field_name,
+        Some(index) => {
+            if index == 0 {
+                // "*field"
+                field_name.ends_with(&field_pattern[1..])
+            } else if index == field_pattern.len() - 1 {
+                // "field*"
+                field_name.starts_with(&field_pattern[..index])
+            } else {
+                // "fi*eld"
+                field_name.starts_with(&field_pattern[..index])
+                    && field_name.ends_with(&field_pattern[index + 1..])
+            }
+        }
+    }
+}
 ///
 pub async fn leaf_list_fields(
     index_id: String,
@@ -247,6 +275,7 @@ pub async fn leaf_list_fields(
     searcher_context: &SearcherContext,
     split_ids: &[SplitIdAndFooterOffsets],
     doc_mapper: Arc<dyn DocMapper>,
+    field_patterns: &[String],
 ) -> crate::Result<ListFieldsResponse> {
     let mut iter_per_split = Vec::new();
     // This only works well, if the field data is in a local cache.
@@ -258,16 +287,29 @@ pub async fn leaf_list_fields(
             index_storage.clone(),
         )
         .await;
-        match fields {
-            Ok(fields) => iter_per_split.push(fields),
+        let list_fields_iter = match fields {
+            Ok(fields) => fields,
             Err(_err) => {
                 // Schema fallback
-                iter_per_split.push(get_fields_from_schema(
-                    index_id.to_string(),
-                    doc_mapper.clone(),
-                ));
+                get_fields_from_schema(index_id.to_string(), doc_mapper.clone())
             }
-        }
+        };
+        let list_fields_iter = list_fields_iter.filter(|field| {
+            if let Ok(field) = field {
+                // We don't want to leak the _dynamic hack to the user API.
+                if field.field_name.starts_with("_dynamic.") {
+                    return matches_any_pattern(&field.field_name, field_patterns)
+                        || matches_any_pattern(
+                            &field.field_name["_dynamic.".len()..],
+                            field_patterns,
+                        );
+                } else {
+                    return matches_any_pattern(&field.field_name, field_patterns);
+                };
+            }
+            true
+        });
+        iter_per_split.push(list_fields_iter);
     }
     let fields = merge_leaf_list_fields(iter_per_split)?;
     Ok(ListFieldsResponse { fields })
@@ -407,6 +449,37 @@ mod tests {
     use tantivy::schema::Type;
 
     use super::*;
+
+    #[test]
+    fn test_pattern() {
+        assert!(matches_any_pattern("field", &["field".to_string()]));
+        assert!(matches_any_pattern("field", &["fi*eld".to_string()]));
+        assert!(matches_any_pattern("field", &["*field".to_string()]));
+        assert!(matches_any_pattern("field", &["field*".to_string()]));
+
+        assert!(matches_any_pattern("field1", &["field*".to_string()]));
+        assert!(!matches_any_pattern("field1", &["*field".to_string()]));
+        assert!(!matches_any_pattern("field1", &["fi*eld".to_string()]));
+        assert!(!matches_any_pattern("field1", &["field".to_string()]));
+
+        // 2.nd pattern matches
+        assert!(matches_any_pattern(
+            "field",
+            &["a".to_string(), "field".to_string()]
+        ));
+        assert!(matches_any_pattern(
+            "field",
+            &["a".to_string(), "fi*eld".to_string()]
+        ));
+        assert!(matches_any_pattern(
+            "field",
+            &["a".to_string(), "*field".to_string()]
+        ));
+        assert!(matches_any_pattern(
+            "field",
+            &["a".to_string(), "field*".to_string()]
+        ));
+    }
 
     #[test]
     fn merge_leaf_list_fields_identical_test() {

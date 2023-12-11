@@ -355,6 +355,7 @@ impl SearchService for SearchServiceImpl {
             &self.searcher_context,
             &split_ids[..],
             doc_mapper,
+            &list_fields_req.fields,
         )
         .await
     }

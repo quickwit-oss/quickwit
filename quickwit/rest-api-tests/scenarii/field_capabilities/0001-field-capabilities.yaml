@@ -1,4 +1,4 @@
-# Test date histogram aggregation
+# Test date _field_caps API
 method: [GET]
 engines:
   - quickwit
@@ -113,6 +113,112 @@ expected:
         aggregatable: true
         indices:
         - fieldcaps
-
+---
+# Test fields parameter with `.dynamic` suffix
+method: [GET]
+engines:
+  - quickwit
+endpoint: _elastic/fieldcaps/_field_caps?fields=_dynamic.nested.response,nested.name
+expected:
+  indices:
+  - fieldcaps
+  fields:
+    _dynamic.nested.response:
+      long:
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+        indices:
+        - fieldcaps
+    _dynamic.nested.name:
+      keyword:
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+        indices:
+        - fieldcaps
+      text:
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+        indices:
+        - fieldcaps
+---
+# Test fields parameter with wildcard
+method: [GET]
+engines:
+  - quickwit
+endpoint: _elastic/fieldcaps/_field_caps?fields=nest*
+expected:
+  indices:
+  - fieldcaps
+  fields:
+    _dynamic.nested.response:
+      long:
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+        indices:
+        - fieldcaps
+    _dynamic.nested.name:
+      keyword:
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+        indices:
+        - fieldcaps
+      text:
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+        indices:
+        - fieldcaps
+---
+# Test fields parameter with wildcard
+method: [GET]
+engines:
+  - quickwit
+endpoint: _elastic/fieldcaps/_field_caps?fields=_dynamic.nest*
+expected:
+  indices:
+  - fieldcaps
+  fields:
+    _dynamic.nested.response:
+      long:
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+        indices:
+        - fieldcaps
+    _dynamic.nested.name:
+      keyword:
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+        indices:
+        - fieldcaps
+      text:
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+        indices:
+        - fieldcaps
+---
+# Test fields parameter with wildcard
+method: [GET]
+engines:
+  - quickwit
+endpoint: _elastic/fieldcaps/_field_caps?fields=nes*se
+expected:
+  indices:
+  - fieldcaps
+  fields:
+    _dynamic.nested.response:
+      long:
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+        indices:
+        - fieldcaps
 
 
