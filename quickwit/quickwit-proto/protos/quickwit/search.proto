@@ -185,6 +185,10 @@ enum CountHits {
 message SortField {
   string field_name = 1;
   SortOrder sort_order = 2;
+  // Optional sort value format for datetime field only.
+  // If none, the default output format for datetime field is
+  // unix_timestamp_nanos.
+  optional SortDatetimeFormat sort_datetime_format = 3;
 }
 
 enum SortOrder {
@@ -192,6 +196,13 @@ enum SortOrder {
   ASC = 0;
   // Descending order.
   DESC = 1; //< This will be the default value;
+}
+
+// Sort value format for datetime field.
+// We keep an enum with only one format
+// for future extension.
+enum SortDatetimeFormat {
+  UNIX_TIMESTAMP_MILLIS = 0;
 }
 
 message SearchResponse {
