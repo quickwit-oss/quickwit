@@ -1,0 +1,118 @@
+# Test date histogram aggregation
+method: [GET]
+engines:
+  - quickwit
+endpoint: _elastic/fieldcaps/_field_caps
+expected:
+  indices:
+  - fieldcaps
+  fields:
+    _dynamic.nested.response:
+      long:
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+        indices:
+        - fieldcaps
+    _dynamic.nested.name:
+      keyword:
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+        indices:
+        - fieldcaps
+      text:
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+        indices:
+        - fieldcaps
+    _dynamic.host:
+      keyword:
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+        indices:
+        - fieldcaps
+      text:
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+        indices:
+        - fieldcaps
+    _dynamic.mixed: # This is a little weird case (values [5, -5.5]), since coercion happens only on the columnar side. That's why `long` is not aggregatable.
+      long: 
+        metadata_field: false
+        searchable: true
+        aggregatable: false 
+        indices:
+        - fieldcaps
+      double:
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+        indices:
+        - fieldcaps
+    date:
+      date_nanos:
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+        indices:
+        - fieldcaps
+    _field_presence:
+      long:
+        metadata_field: false
+        searchable: true
+        aggregatable: false
+        indices:
+        - fieldcaps
+    _dynamic.response:
+      long:
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+        indices:
+        - fieldcaps
+    _dynamic.id:
+      long:
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+        indices:
+        - fieldcaps
+      double:
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+        indices:
+        - fieldcaps
+    _dynamic.name:
+      keyword:
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+        indices:
+        - fieldcaps
+      text:
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+        indices:
+        - fieldcaps
+    _dynamic.tags:
+      keyword:
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+        indices:
+        - fieldcaps
+      text:
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+        indices:
+        - fieldcaps
+
+
+
