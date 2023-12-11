@@ -35,6 +35,7 @@ use tokio::task::JoinHandle;
 use tracing::{debug, warn};
 
 use super::ingester::IngesterState;
+use super::metrics::INGEST_V2_METRICS;
 use crate::RateMibPerSec;
 
 const BROADCAST_INTERVAL_PERIOD: Duration = if cfg!(test) {
@@ -207,6 +208,26 @@ impl BroadcastLocalShardsTask {
                 .entry(source_uid)
                 .or_default()
                 .insert(shard_info);
+        }
+        for (source_uid, shard_infos) in &per_source_shard_infos {
+            let mut num_open_shards = 0;
+            let mut num_closed_shards = 0;
+
+            for shard_info in shard_infos {
+                match shard_info.shard_state {
+                    ShardState::Open => num_open_shards += 1,
+                    ShardState::Closed => num_closed_shards += 1,
+                    ShardState::Unavailable | ShardState::Unspecified => {}
+                }
+            }
+            INGEST_V2_METRICS
+                .shards
+                .with_label_values(["open", source_uid.index_uid.index_id()])
+                .set(num_open_shards as i64);
+            INGEST_V2_METRICS
+                .shards
+                .with_label_values(["closed", source_uid.index_uid.index_id()])
+                .set(num_closed_shards as i64);
         }
         let snapshot = LocalShardsSnapshot {
             per_source_shard_infos,

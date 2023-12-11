@@ -47,7 +47,7 @@ use super::ingester::PERSIST_REQUEST_TIMEOUT;
 use super::routing_table::RoutingTable;
 use super::workbench::IngestWorkbench;
 use super::IngesterPool;
-use crate::LeaderId;
+use crate::{with_request_metrics, LeaderId};
 
 /// Duration after which ingest requests time out with [`IngestV2Error::Timeout`].
 pub(super) const INGEST_REQUEST_TIMEOUT: Duration = if cfg!(any(test, feature = "testsuite")) {
@@ -122,13 +122,14 @@ impl IngestRouter {
         subrequests: impl Iterator<Item = &IngestSubrequest>,
         ingester_pool: &IngesterPool,
     ) -> GetOrCreateOpenShardsRequest {
-        let state_guard = self.state.read().await;
         let mut get_open_shards_subrequests = Vec::new();
 
         // `closed_shards` and `unavailable_leaders` are populated by calls to `has_open_shards`
         // as we're looking for open shards to route the subrequests to.
         let mut closed_shards: Vec<ShardIds> = Vec::new();
         let mut unavailable_leaders: HashSet<NodeId> = HashSet::new();
+
+        let state_guard = self.state.read().await;
 
         for subrequest in subrequests {
             if !state_guard.routing_table.has_open_shards(
@@ -146,6 +147,8 @@ impl IngestRouter {
                 get_open_shards_subrequests.push(subrequest);
             }
         }
+        drop(state_guard);
+
         if !closed_shards.is_empty() {
             info!(
                 "reporting {} closed shard(s) to control plane",
@@ -175,7 +178,13 @@ impl IngestRouter {
         if request.subrequests.is_empty() {
             return;
         }
-        let response = match self.control_plane.get_or_create_open_shards(request).await {
+        let response_result = with_request_metrics!(
+            self.control_plane.get_or_create_open_shards(request).await,
+            "router",
+            "client",
+            "get_or_create_open_shards"
+        );
+        let response = match response_result {
             Ok(response) => response,
             Err(control_plane_error) => {
                 if workbench.is_last_attempt() {
@@ -195,6 +204,8 @@ impl IngestRouter {
                 success.open_shards,
             );
         }
+        drop(state_guard);
+
         for failure in response.failures {
             workbench.record_get_or_create_open_shards_failure(failure);
         }
@@ -349,12 +360,17 @@ impl IngestRouter {
                 commit_type: commit_type as i32,
             };
             let persist_future = async move {
-                let persist_result = tokio::time::timeout(
-                    PERSIST_REQUEST_TIMEOUT,
-                    ingester.persist(persist_request),
-                )
-                .await
-                .unwrap_or_else(|_| Err(IngestV2Error::Timeout));
+                let persist_result = with_request_metrics!(
+                    tokio::time::timeout(
+                        PERSIST_REQUEST_TIMEOUT,
+                        ingester.persist(persist_request),
+                    )
+                    .await
+                    .unwrap_or_else(|_| Err(IngestV2Error::Timeout)),
+                    "router",
+                    "client",
+                    "persist"
+                );
                 (persist_summary, persist_result)
             };
             persist_futures.push(persist_future);
@@ -403,8 +419,13 @@ impl IngestRouterService for IngestRouter {
         &mut self,
         ingest_request: IngestRequestV2,
     ) -> IngestV2Result<IngestResponseV2> {
-        self.ingest_timeout(ingest_request, INGEST_REQUEST_TIMEOUT)
-            .await
+        with_request_metrics!(
+            self.ingest_timeout(ingest_request, INGEST_REQUEST_TIMEOUT)
+                .await,
+            "router",
+            "server",
+            "ingest"
+        )
     }
 }
 

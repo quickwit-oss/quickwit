@@ -37,6 +37,12 @@ pub enum ControlPlaneError {
     Unavailable(String),
 }
 
+impl ControlPlaneError {
+    pub fn label_value(&self) -> &'static str {
+        "error"
+    }
+}
+
 impl From<ControlPlaneError> for MetastoreError {
     fn from(error: ControlPlaneError) -> Self {
         match error {
