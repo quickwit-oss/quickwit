@@ -38,6 +38,12 @@ pub struct LeafSearchCache {
 // match, the merged_time_range is strictly smaller, and every hit we had fits in the new
 // timebound, we can reply from cache, saying we hit only result.partial_hits.len() res. It always
 // undercount, and necessarily returns the right hits.
+// TODO if we stored a result for X hits, but a subsequent request asks for Y < X hits, we can
+// modify the answer and serve from cache.
+// TODO mix of 1 and 3.
+// TODO this means given a request for X documents, we could search for k*X docs in each split,
+// truncate to X while merging, and get free results from cache for at least the next k subsequent
+// queries which vary only by search_after.
 
 impl LeafSearchCache {
     pub fn new(capacity: usize) -> LeafSearchCache {
