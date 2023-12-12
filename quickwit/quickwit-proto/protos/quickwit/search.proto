@@ -119,7 +119,7 @@ message ReportSplitsResponse {}
 
 message ListFieldsRequest {
   // Optional limit query to a set of indexes.
-  repeated string index_id = 1;
+  repeated string index_ids = 1;
   // Optional limit query to a list of fields
   // Wildcard expressions are supported.
   repeated string fields = 2;

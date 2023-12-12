@@ -335,12 +335,12 @@ pub async fn root_list_fields(
     cluster_client: &ClusterClient,
     mut metastore: MetastoreServiceClient,
 ) -> crate::Result<ListFieldsResponse> {
-    let list_indexes_metadata_request = if list_fields_req.index_id.is_empty() {
+    let list_indexes_metadata_request = if list_fields_req.index_ids.is_empty() {
         ListIndexesMetadataRequest::all()
     } else {
         ListIndexesMetadataRequest {
             // TODO: Check index id pattern
-            index_id_patterns: list_fields_req.index_id.clone(),
+            index_id_patterns: list_fields_req.index_ids.clone(),
         }
     };
 

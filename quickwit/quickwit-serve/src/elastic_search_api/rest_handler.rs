@@ -31,7 +31,8 @@ use itertools::Itertools;
 use quickwit_common::truncate_str;
 use quickwit_config::{validate_index_id_pattern, NodeConfig};
 use quickwit_proto::search::{
-    CountHits, ListFieldsResponse, PartialHit, ScrollRequest, SearchResponse, SortByValue, SortDatetimeFormat,
+    CountHits, ListFieldsResponse, PartialHit, ScrollRequest, SearchResponse, SortByValue,
+    SortDatetimeFormat,
 };
 use quickwit_proto::ServiceErrorCode;
 use quickwit_query::query_ast::{QueryAst, UserInputQuery};
