@@ -332,4 +332,211 @@ mod tests {
         );
         Ok(())
     }
+
+    #[tokio::test]
+    async fn test_jaeger_service_operations() -> anyhow::Result<()> {
+        let mut mock_search_service = MockSearchService::new();
+        mock_search_service
+            .expect_root_list_terms()
+            .withf(|req| {
+                req.index_id == OTEL_TRACES_INDEX_ID
+                    && req.field == "span_fingerprint"
+                    && req.start_timestamp.is_some()
+            })
+            .return_once(|_| {
+                Ok(quickwit_proto::search::ListTermsResponse {
+                    num_hits: 1,
+                    terms: vec![
+                        encode_term_for_test!(
+                            "service1\u{0}2\u{0}delete_splits_marked_for_deletion"
+                        ),
+                        encode_term_for_test!("service1\u{0}2\u{0}fetch_and_open_split"),
+                        encode_term_for_test!("service1\u{0}2\u{0}fetch_docs_phase"),
+                    ],
+                    elapsed_time_micros: 0,
+                    errors: Vec::new(),
+                })
+            });
+
+        let mock_search_service = Arc::new(mock_search_service);
+        let jaeger = JaegerService::new(JaegerConfig::default(), mock_search_service);
+
+        let jaeger_api_handler = jaeger_api_handlers(Some(jaeger)).recover(recover_fn);
+        let resp = warp::test::request()
+            .path("/otel-traces-v0_6/jaeger/api/services/service1/operations")
+            .reply(&jaeger_api_handler)
+            .await;
+
+        assert_eq!(resp.status(), 200);
+        let actual_response_json: JsonValue = serde_json::from_slice(resp.body())?;
+        let expected_response_json = serde_json::json!([
+            "delete_splits_marked_for_deletion",
+            "fetch_and_open_split",
+            "fetch_docs_phase"
+        ]);
+        assert_json_include!(
+            actual: actual_response_json.get("data").unwrap(),
+            expected: expected_response_json
+        );
+        Ok(())
+    }
+
+    // TODO: WIP
+    #[tokio::test]
+    async fn test_jaeger_traces_search() -> anyhow::Result<()> {
+        let mut mock_search_service = MockSearchService::new();
+
+        let mock_search_service = Arc::new(mock_search_service);
+        let jaeger = JaegerService::new(JaegerConfig::default(), mock_search_service);
+
+        let jaeger_api_handler = jaeger_api_handlers(Some(jaeger)).recover(recover_fn);
+        let resp = warp::test::request()
+            .path(
+                "/otel-traces-v0_6/jaeger/api/traces?service=quickwit&\
+                 operation=delete_splits_marked_for_deletion&minDuration=500us&maxDuration=1.2s&\
+                 limit=1&start=1702352106016000&end=1702373706016000&lookback=custom",
+            )
+            .reply(&jaeger_api_handler)
+            .await;
+        assert_eq!(resp.status(), 200);
+
+        Ok(())
+    }
+
+    // TODO: WIP
+    #[tokio::test]
+    async fn test_jaeger_trace_by_id() -> anyhow::Result<()> {
+        let mut mock_search_service = MockSearchService::new();
+        mock_search_service
+            .expect_root_search()
+            .withf(|req| req.index_id_patterns == vec![OTEL_TRACES_INDEX_ID.to_string()])
+            .return_once(|_| {
+                Ok(quickwit_proto::search::SearchResponse {
+                    num_hits: 0,
+                    hits: vec![quickwit_proto::search::Hit {
+                        json: "{\"resource_attributes\":{\"service.version\":\"0.6.5-dev-nightly\"\
+                               },\"scope_name\":\"opentelemetry-otlp\",\"scope_version\":\"0.12.0\\
+                               ",\"service_name\":\"quickwit\",\"span_attributes\":{\"busy_ns\":\
+                               61583,\"code.filepath\":\"quickwit-index-management/src/\
+                               garbage_collection.rs\",\"code.lineno\":167,\"code.namespace\":\"\
+                               quickwit_index_management::garbage_collection\",\"idle_ns\":12750,\\
+                               "index_uid\":\"IndexUid(\\\"otel-logs-v0_6:\
+                               01HF4HGB1J935VS4CQ4JXVAJPB\\\")\",\"thread.id\":10,\"thread.name\":\
+                               \"tokio-runtime-worker\",\"updated_before_timestamp\":1702290254},\\
+                               "span_end_timestamp_nanos\":1702292174438954000,\"span_fingerprint\\
+                               ":\"quickwit\\u00001\\u0000delete_splits_marked_for_deletion\",\"\
+                               span_id\":\"dRv5oqYVjNM=\",\"span_kind\":1,\"span_name\":\"\
+                               delete_splits_marked_for_deletion\",\"span_start_timestamp_nanos\":\
+                               1702292174438876000,\"trace_id\":\"FQYCbd0hYklVVlMhjciKbA==\"}"
+                            .to_string(),
+                        partial_hit: None,
+                        snippet: None,
+                        index_id: "otel-traces-v0_6".to_string(),
+                    }],
+                    elapsed_time_micros: 0,
+                    errors: vec![],
+                    aggregation: None,
+                    scroll_id: None,
+                })
+            });
+        let mock_search_service = Arc::new(mock_search_service);
+        let jaeger = JaegerService::new(JaegerConfig::default(), mock_search_service);
+
+        let jaeger_api_handler = jaeger_api_handlers(Some(jaeger)).recover(recover_fn);
+        let resp = warp::test::request()
+            .path("/otel-traces-v0_6/jaeger/api/traces/1506026ddd216249555653218dc88a6c")
+            .reply(&jaeger_api_handler)
+            .await;
+
+        assert_eq!(resp.status(), 200);
+        let actual_response_json: JsonValue = serde_json::from_slice(resp.body())?;
+        let expected_response_json_str = r#"[
+          {
+            "processes": {
+              "p1": {
+                "key": "p1",
+                "serviceName": "quickwit",
+                "tags": [
+                  {
+                    "key": "service.version",
+                    "type": "string",
+                    "value": "0.6.5-dev-nightly"
+                  }
+                ]
+              }
+            },
+            "spans": [
+              {
+                "duration": 78,
+                "flags": 0,
+                "logs": [],
+                "operationName": "delete_splits_marked_for_deletion",
+                "processID": "p1",
+                "references": [],
+                "spanID": "751bf9a2a6158cd3",
+                "startTime": 1702292174438876,
+                "tags": [
+                  {
+                    "key": "code.namespace",
+                    "type": "string",
+                    "value": "quickwit_index_management::garbage_collection"
+                  },
+                  {
+                    "key": "idle_ns",
+                    "type": "int64",
+                    "value": 12750
+                  },
+                  {
+                    "key": "index_uid",
+                    "type": "string",
+                    "value": "IndexUid(\"otel-logs-v0_6:01HF4HGB1J935VS4CQ4JXVAJPB\")"
+                  },
+                  {
+                    "key": "busy_ns",
+                    "type": "int64",
+                    "value": 61583
+                  },
+                  {
+                    "key": "thread.id",
+                    "type": "int64",
+                    "value": 10
+                  },
+                  {
+                    "key": "code.lineno",
+                    "type": "int64",
+                    "value": 167
+                  },
+                  {
+                    "key": "thread.name",
+                    "type": "string",
+                    "value": "tokio-runtime-worker"
+                  },
+                  {
+                    "key": "updated_before_timestamp",
+                    "type": "int64",
+                    "value": 1702290254
+                  },
+                  {
+                    "key": "code.filepath",
+                    "type": "string",
+                    "value": "quickwit-index-management/src/garbage_collection.rs"
+                  }
+                ],
+                "traceID": "1506026ddd216249555653218dc88a6c",
+                "warnings": []
+              }
+            ],
+            "traceID": "1506026ddd216249555653218dc88a6c",
+            "warnings": []
+          }
+        ]"#;
+
+        let expected_response_json =
+            serde_json::from_str::<Vec<JaegerTrace>>(expected_response_json_str).unwrap();
+        assert_json_include!(
+            actual: actual_response_json.get("data").unwrap(),
+            expected: expected_response_json
+        );
+        Ok(())
+    }
 }
