@@ -34,8 +34,6 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 serde_qs = { workspace = true }
 serde_with = { workspace =  true }
-# TODO move to test dependency???
-tantivy = { workspace = true }
 termcolor = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }

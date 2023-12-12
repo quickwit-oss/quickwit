@@ -27,11 +27,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use serde_with::serde_as;
 
-use crate::jaeger_api::util::{
-    bytes_to_hex_string, from_well_known_duration, from_well_known_timestamp,
-};
+use super::util::convert_timestamp_to_microsecs;
+use crate::jaeger_api::util::{bytes_to_hex_string, convert_duration_to_microsecs};
 
-pub(super) const ALL_OPERATIONS: &str = "";
 pub(super) const DEFAULT_NUMBER_OF_TRACES: i32 = 20;
 
 pub(super) fn build_jaeger_traces(spans: Vec<JaegerSpan>) -> anyhow::Result<Vec<JaegerTrace>> {
@@ -102,14 +100,16 @@ impl JaegerTrace {
         let mut process_map: HashMap<String, JaegerProcess> = HashMap::new();
         let mut process_counter: i32 = 0;
         for span in spans.iter_mut() {
-            let mut current_process = span.process.clone();
+            let Some(current_process) = span.process.as_mut() else {
+                continue;
+            };
             if let Some(process_id) = service_name_to_process_id.get(&current_process.service_name)
             {
-                span.update_process_id(process_id.clone());
+                span.process_id = Some(process_id.clone());
             } else {
                 process_counter += 1;
                 current_process.key = format!("p{}", process_counter);
-                span.update_process_id(current_process.key.clone());
+                span.process_id = Some(current_process.key.clone());
                 process_map.insert(current_process.key.clone(), current_process.clone());
                 service_name_to_process_id.insert(
                     current_process.service_name.clone(),
@@ -139,9 +139,9 @@ pub struct JaegerSpan {
     logs: Vec<JaegerLog>,
     #[serde(default)]
     #[serde(skip_serializing)]
-    process: JaegerProcess,
+    process: Option<JaegerProcess>,
     #[serde(rename = "processID")]
-    process_id: Option<String>,
+    pub process_id: Option<String>,
     pub warnings: Vec<String>,
 }
 
@@ -153,37 +153,29 @@ impl TryFrom<Span> for JaegerSpan {
             .iter()
             .map(JaegerSpanRef::from)
             .collect_vec();
-
         let tags = span.tags.iter().map(JaegerKeyValue::from).collect_vec();
-
         let logs = span.logs.iter().map(JaegerLog::from).collect_vec();
-
-        // TODO what's the best way to handle unwrap here?
-        let process: JaegerProcess = span
-            .process
-            .map(JaegerProcess::from)
-            .unwrap_or_else(JaegerProcess::default);
-
         Ok(Self {
             trace_id: bytes_to_hex_string(&span.trace_id),
             span_id: bytes_to_hex_string(&span.span_id),
             operation_name: span.operation_name.clone(),
             references,
             flags: span.flags,
-            start_time: from_well_known_timestamp(&span.start_time),
-            duration: from_well_known_duration(&span.duration),
+            start_time: span
+                .start_time
+                .as_ref()
+                .map(convert_timestamp_to_microsecs)
+                .unwrap_or(0),
+            duration: span
+                .duration
+                .map(convert_duration_to_microsecs)
+                .unwrap_or(0),
             tags,
             logs,
-            process,
+            process: span.process.map(JaegerProcess::from),
             process_id: None,
             warnings: span.warnings.iter().map(|s| s.to_string()).collect_vec(),
         })
-    }
-}
-
-impl JaegerSpan {
-    pub fn update_process_id(&mut self, new_process_id: String) {
-        self.process_id = Some(new_process_id)
     }
 }
 
@@ -280,7 +272,11 @@ pub struct JaegerLog {
 impl From<&Log> for JaegerLog {
     fn from(log: &Log) -> Self {
         Self {
-            timestamp: from_well_known_timestamp(&log.timestamp),
+            timestamp: log
+                .timestamp
+                .as_ref()
+                .map(convert_timestamp_to_microsecs)
+                .unwrap_or(0),
             fields: log.fields.iter().map(JaegerKeyValue::from).collect_vec(),
         }
     }
