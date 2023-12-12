@@ -195,8 +195,8 @@ impl IngestRouterServiceClient {
     {
         IngestRouterServiceClient::new(IngestRouterServiceMailbox::new(mailbox))
     }
-    pub fn tower() -> IngestRouterServiceTowerBlockBuilder {
-        IngestRouterServiceTowerBlockBuilder::default()
+    pub fn tower() -> IngestRouterServiceTowerLayerStack {
+        IngestRouterServiceTowerLayerStack::default()
     }
     #[cfg(any(test, feature = "testsuite"))]
     pub fn mock() -> MockIngestRouterService {
@@ -256,9 +256,9 @@ impl tower::Service<IngestRequestV2> for Box<dyn IngestRouterService> {
         Box::pin(fut)
     }
 }
-/// A tower block is a set of towers. Each tower is stack of layers (middlewares) that are applied to a service.
+/// A tower service stack is a set of tower services.
 #[derive(Debug)]
-struct IngestRouterServiceTowerBlock {
+struct IngestRouterServiceTowerServiceStack {
     inner: Box<dyn IngestRouterService>,
     ingest_svc: quickwit_common::tower::BoxService<
         IngestRequestV2,
@@ -266,7 +266,7 @@ struct IngestRouterServiceTowerBlock {
         crate::ingest::IngestV2Error,
     >,
 }
-impl Clone for IngestRouterServiceTowerBlock {
+impl Clone for IngestRouterServiceTowerServiceStack {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
@@ -275,7 +275,7 @@ impl Clone for IngestRouterServiceTowerBlock {
     }
 }
 #[async_trait::async_trait]
-impl IngestRouterService for IngestRouterServiceTowerBlock {
+impl IngestRouterService for IngestRouterServiceTowerServiceStack {
     async fn ingest(
         &mut self,
         request: IngestRequestV2,
@@ -283,35 +283,61 @@ impl IngestRouterService for IngestRouterServiceTowerBlock {
         self.ingest_svc.ready().await?.call(request).await
     }
 }
-#[derive(Debug, Default)]
-pub struct IngestRouterServiceTowerBlockBuilder {
-    #[allow(clippy::type_complexity)]
-    ingest_layer: Option<
-        quickwit_common::tower::BoxLayer<
-            Box<dyn IngestRouterService>,
-            IngestRequestV2,
-            IngestResponseV2,
-            crate::ingest::IngestV2Error,
-        >,
+type IngestLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        IngestRequestV2,
+        IngestResponseV2,
+        crate::ingest::IngestV2Error,
     >,
+    IngestRequestV2,
+    IngestResponseV2,
+    crate::ingest::IngestV2Error,
+>;
+#[derive(Debug, Default)]
+pub struct IngestRouterServiceTowerLayerStack {
+    ingest_layers: Vec<IngestLayer>,
 }
-impl IngestRouterServiceTowerBlockBuilder {
-    pub fn shared_layer<L>(mut self, layer: L) -> Self
+impl IngestRouterServiceTowerLayerStack {
+    pub fn stack_layer<L>(mut self, layer: L) -> Self
     where
-        L: tower::Layer<Box<dyn IngestRouterService>> + Clone + Send + Sync + 'static,
-        L::Service: tower::Service<
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    IngestRequestV2,
+                    IngestResponseV2,
+                    crate::ingest::IngestV2Error,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                IngestRequestV2,
+                IngestResponseV2,
+                crate::ingest::IngestV2Error,
+            >,
+        >>::Service: tower::Service<
                 IngestRequestV2,
                 Response = IngestResponseV2,
                 Error = crate::ingest::IngestV2Error,
             > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<IngestRequestV2>>::Future: Send + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                IngestRequestV2,
+                IngestResponseV2,
+                crate::ingest::IngestV2Error,
+            >,
+        >>::Service as tower::Service<IngestRequestV2>>::Future: Send + 'static,
     {
-        self.ingest_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
+        self.ingest_layers.push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         self
     }
-    pub fn ingest_layer<L>(mut self, layer: L) -> Self
+    pub fn stack_ingest_layer<L>(mut self, layer: L) -> Self
     where
-        L: tower::Layer<Box<dyn IngestRouterService>> + Send + Sync + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    IngestRequestV2,
+                    IngestResponseV2,
+                    crate::ingest::IngestV2Error,
+                >,
+            > + Send + Sync + 'static,
         L::Service: tower::Service<
                 IngestRequestV2,
                 Response = IngestResponseV2,
@@ -319,7 +345,7 @@ impl IngestRouterServiceTowerBlockBuilder {
             > + Clone + Send + Sync + 'static,
         <L::Service as tower::Service<IngestRequestV2>>::Future: Send + 'static,
     {
-        self.ingest_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
+        self.ingest_layers.push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
     pub fn build<T>(self, instance: T) -> IngestRouterServiceClient
@@ -359,16 +385,19 @@ impl IngestRouterServiceTowerBlockBuilder {
         self,
         boxed_instance: Box<dyn IngestRouterService>,
     ) -> IngestRouterServiceClient {
-        let ingest_svc = if let Some(layer) = self.ingest_layer {
-            layer.layer(boxed_instance.clone())
-        } else {
-            quickwit_common::tower::BoxService::new(boxed_instance.clone())
-        };
-        let tower_block = IngestRouterServiceTowerBlock {
+        let ingest_svc = self
+            .ingest_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let tower_svc_stack = IngestRouterServiceTowerServiceStack {
             inner: boxed_instance.clone(),
             ingest_svc,
         };
-        IngestRouterServiceClient::new(tower_block)
+        IngestRouterServiceClient::new(tower_svc_stack)
     }
 }
 #[derive(Debug, Clone)]

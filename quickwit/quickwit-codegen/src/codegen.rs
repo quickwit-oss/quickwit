@@ -20,7 +20,7 @@
 use std::collections::HashSet;
 
 use anyhow::ensure;
-use heck::ToSnakeCase;
+use heck::{ToSnakeCase, ToUpperCamelCase};
 use proc_macro2::TokenStream;
 use prost_build::{Comments, Method, Service, ServiceGenerator};
 use quote::{quote, ToTokens};
@@ -186,8 +186,8 @@ struct CodegenContext {
     stream_type_alias: TokenStream,
     methods: Vec<SynMethod>,
     client_name: Ident,
-    tower_block_name: Ident,
-    tower_block_builder_name: Ident,
+    tower_svc_stack_name: Ident,
+    tower_layer_stack_name: Ident,
     mailbox_name: Ident,
     mock_mod_name: Ident,
     mock_name: Ident,
@@ -228,8 +228,8 @@ impl CodegenContext {
         let methods = SynMethod::parse_prost_methods(&service.methods);
 
         let client_name = quote::format_ident!("{}Client", service.name);
-        let tower_block_name = quote::format_ident!("{}TowerBlock", service.name);
-        let tower_block_builder_name = quote::format_ident!("{}TowerBlockBuilder", service.name);
+        let tower_svc_stack_name = quote::format_ident!("{}TowerServiceStack", service.name);
+        let tower_layer_stack_name = quote::format_ident!("{}TowerLayerStack", service.name);
         let mailbox_name = quote::format_ident!("{}Mailbox", service.name);
 
         let grpc_client_name = quote::format_ident!("{}GrpcClient", service.name);
@@ -254,8 +254,8 @@ impl CodegenContext {
             stream_type_alias,
             methods,
             client_name,
-            tower_block_name,
-            tower_block_builder_name,
+            tower_svc_stack_name,
+            tower_layer_stack_name,
             mailbox_name,
             mock_mod_name,
             mock_name,
@@ -288,8 +288,8 @@ fn generate_all(
     let service_trait = generate_service_trait(&context);
     let client = generate_client(&context);
     let tower_services = generate_tower_services(&context);
-    let tower_block = generate_tower_block(&context);
-    let tower_block_builder = generate_tower_block_builder(&context);
+    let tower_svc_stack = generate_tower_svc_stack(&context);
+    let tower_layer_stack = generate_tower_layer_stack(&context);
     let tower_mailbox = generate_tower_mailbox(&context);
     let grpc_client_adapter = generate_grpc_client_adapter(&context);
     let grpc_server_adapter = generate_grpc_server_adapter(&context);
@@ -317,9 +317,9 @@ fn generate_all(
 
         #tower_services
 
-        #tower_block
+        #tower_svc_stack
 
-        #tower_block_builder
+        #tower_layer_stack
 
         #tower_mailbox
 
@@ -498,7 +498,7 @@ fn generate_service_trait_methods(context: &CodegenContext) -> TokenStream {
     stream
 }
 
-fn generate_additional_methods_calling_inner() -> TokenStream {
+fn generate_extra_methods_calling_inner() -> TokenStream {
     quote! {
         async fn check_connectivity(&mut self) -> anyhow::Result<()> {
             self.inner.check_connectivity().await
@@ -526,19 +526,19 @@ fn generate_client(context: &CodegenContext) -> TokenStream {
     let mock_mod_name = &context.mock_mod_name;
     let mock_methods = generate_client_methods(context, true);
     let mailbox_name = &context.mailbox_name;
-    let tower_block_builder_name = &context.tower_block_builder_name;
+    let tower_layer_stack_name = &context.tower_layer_stack_name;
     let mock_name = &context.mock_name;
     let mock_wrapper_name = quote::format_ident!("{}Wrapper", mock_name);
     let error_mesage = format!(
         "`{}` must be wrapped in a `{}`. Use `{}::from(mock)` to instantiate the client.",
         mock_name, mock_wrapper_name, mock_name
     );
-    let additional_client_methods = if context.generate_extra_service_methods {
-        generate_additional_methods_calling_inner()
+    let extra_client_methods = if context.generate_extra_service_methods {
+        generate_extra_methods_calling_inner()
     } else {
         TokenStream::new()
     };
-    let additional_mock_methods = if context.generate_extra_service_methods {
+    let extra_mock_methods = if context.generate_extra_service_methods {
         quote! {
             async fn check_connectivity(&mut self) -> anyhow::Result<()> {
                 self.inner.lock().await.check_connectivity().await
@@ -602,8 +602,8 @@ fn generate_client(context: &CodegenContext) -> TokenStream {
                 #client_name::new(#mailbox_name::new(mailbox))
             }
 
-            pub fn tower() -> #tower_block_builder_name {
-                #tower_block_builder_name::default()
+            pub fn tower() -> #tower_layer_stack_name {
+                #tower_layer_stack_name::default()
             }
 
             #[cfg(any(test, feature = "testsuite"))]
@@ -615,7 +615,7 @@ fn generate_client(context: &CodegenContext) -> TokenStream {
         #[async_trait::async_trait]
         impl #service_name for #client_name {
             #client_methods
-            #additional_client_methods
+            #extra_client_methods
         }
 
         #[cfg(any(test, feature = "testsuite"))]
@@ -630,7 +630,7 @@ fn generate_client(context: &CodegenContext) -> TokenStream {
             #[async_trait::async_trait]
             impl #service_name for #mock_wrapper_name {
                 #mock_methods
-                #additional_mock_methods
+                #extra_mock_methods
             }
 
             impl From<#mock_name> for #client_name {
@@ -710,29 +710,29 @@ fn generate_tower_services(context: &CodegenContext) -> TokenStream {
     stream
 }
 
-fn generate_tower_block(context: &CodegenContext) -> TokenStream {
-    let tower_block_name = &context.tower_block_name;
+fn generate_tower_svc_stack(context: &CodegenContext) -> TokenStream {
+    let tower_svc_stack_name = &context.tower_svc_stack_name;
     let service_name = &context.service_name;
-    let tower_block_attributes = generate_tower_block_attributes(context);
-    let tower_block_clone_impl = generate_tower_block_clone_impl(context);
-    let tower_block_service_impl = generate_tower_block_service_impl(context);
+    let tower_svc_stack_attributes = generate_tower_svc_stack_attributes(context);
+    let tower_svc_stack_clone_impl = generate_tower_svc_stack_clone_impl(context);
+    let tower_svc_stack_service_impl = generate_tower_svc_stack_service_impl(context);
 
     quote! {
-        /// A tower block is a set of towers. Each tower is stack of layers (middlewares) that are applied to a service.
+        /// A tower service stack is a set of tower services.
         #[derive(Debug)]
-        struct #tower_block_name {
+        struct #tower_svc_stack_name {
             inner: Box<dyn #service_name>,
 
-            #tower_block_attributes
+            #tower_svc_stack_attributes
         }
 
-        #tower_block_clone_impl
+        #tower_svc_stack_clone_impl
 
-        #tower_block_service_impl
+        #tower_svc_stack_service_impl
     }
 }
 
-fn generate_tower_block_attributes(context: &CodegenContext) -> TokenStream {
+fn generate_tower_svc_stack_attributes(context: &CodegenContext) -> TokenStream {
     let error_type = &context.error_type;
 
     let mut stream = TokenStream::new();
@@ -750,8 +750,8 @@ fn generate_tower_block_attributes(context: &CodegenContext) -> TokenStream {
     stream
 }
 
-fn generate_tower_block_clone_impl(context: &CodegenContext) -> TokenStream {
-    let tower_block_name = &context.tower_block_name;
+fn generate_tower_svc_stack_clone_impl(context: &CodegenContext) -> TokenStream {
+    let tower_svc_stack_name = &context.tower_svc_stack_name;
 
     let mut cloned_attributes = TokenStream::new();
 
@@ -764,7 +764,7 @@ fn generate_tower_block_clone_impl(context: &CodegenContext) -> TokenStream {
     }
 
     quote! {
-        impl Clone for #tower_block_name {
+        impl Clone for #tower_svc_stack_name {
             fn clone(&self) -> Self {
                 Self {
                     inner: self.inner.clone(),
@@ -775,12 +775,12 @@ fn generate_tower_block_clone_impl(context: &CodegenContext) -> TokenStream {
     }
 }
 
-fn generate_tower_block_service_impl(context: &CodegenContext) -> TokenStream {
+fn generate_tower_svc_stack_service_impl(context: &CodegenContext) -> TokenStream {
     let service_name = &context.service_name;
-    let tower_block_name = &context.tower_block_name;
+    let tower_svc_stack_name = &context.tower_svc_stack_name;
     let result_type = &context.result_type;
-    let additional_client_methods = if context.generate_extra_service_methods {
-        generate_additional_methods_calling_inner()
+    let extra_client_methods = if context.generate_extra_service_methods {
+        generate_extra_methods_calling_inner()
     } else {
         TokenStream::new()
     };
@@ -802,106 +802,112 @@ fn generate_tower_block_service_impl(context: &CodegenContext) -> TokenStream {
 
     quote! {
         #[async_trait::async_trait]
-        impl #service_name for #tower_block_name {
+        impl #service_name for #tower_svc_stack_name {
             #methods
-            #additional_client_methods
+            #extra_client_methods
         }
     }
 }
 
-fn generate_tower_block_builder(context: &CodegenContext) -> TokenStream {
-    let tower_block_builder_name = &context.tower_block_builder_name;
-    let tower_block_builder_attributes = generate_tower_block_builder_attributes(context);
-    let tower_block_builder_impl = generate_tower_block_builder_impl(context);
+fn generate_tower_layer_stack(context: &CodegenContext) -> TokenStream {
+    let tower_layer_stack_name = &context.tower_layer_stack_name;
+    let (tower_layer_stack_types, layer_stack_attributes) =
+        generate_layer_stack_types_and_attributes(context);
+    let layer_stack_impl = generate_layer_stack_impl(context);
 
     quote! {
+        #tower_layer_stack_types
+
         #[derive(Debug, Default)]
-        pub struct #tower_block_builder_name {
-            #tower_block_builder_attributes
+        pub struct #tower_layer_stack_name {
+            #layer_stack_attributes
         }
 
-        #tower_block_builder_impl
+        #layer_stack_impl
     }
 }
 
-fn generate_tower_block_builder_attributes(context: &CodegenContext) -> TokenStream {
-    let service_name = &context.service_name;
+fn generate_layer_stack_types_and_attributes(
+    context: &CodegenContext,
+) -> (TokenStream, TokenStream) {
     let error_type = &context.error_type;
 
-    let mut stream = TokenStream::new();
+    let mut type_aliases = TokenStream::new();
+    let mut attributes = TokenStream::new();
 
     for syn_method in &context.methods {
-        let attribute_name = quote::format_ident!("{}_layer", syn_method.name);
+        let service_name_upper_camel_case = syn_method.name.to_string().to_upper_camel_case();
+        let type_alias_name = quote::format_ident!("{service_name_upper_camel_case}Layer");
+        let attribute_name = quote::format_ident!("{}_layers", syn_method.name);
         let request_type = syn_method.request_type(false);
         let response_type = syn_method.response_type(context, false);
 
-        let attribute = quote! {
-            #[allow(clippy::type_complexity)]
-            #attribute_name: Option<quickwit_common::tower::BoxLayer<Box<dyn #service_name>, #request_type, #response_type, #error_type>>,
+        let type_alias = quote! {
+            type #type_alias_name = quickwit_common::tower::BoxLayer<quickwit_common::tower::BoxService<#request_type, #response_type, #error_type>, #request_type, #response_type, #error_type>;
         };
-        stream.extend(attribute);
+        let attribute = quote! {
+            #attribute_name: Vec<#type_alias_name>,
+        };
+        type_aliases.extend(type_alias);
+        attributes.extend(attribute);
     }
-    stream
+    (type_aliases, attributes)
 }
 
-fn generate_tower_block_builder_impl(context: &CodegenContext) -> TokenStream {
+fn generate_layer_stack_impl(context: &CodegenContext) -> TokenStream {
     let service_name = &context.service_name;
     let client_name = &context.client_name;
     let mailbox_name = &context.mailbox_name;
-    let tower_block_name = &context.tower_block_name;
-    let tower_block_builder_name = &context.tower_block_builder_name;
+    let tower_svc_stack_name = &context.tower_svc_stack_name;
+    let tower_layer_stack_name = &context.tower_layer_stack_name;
     let error_type = &context.error_type;
 
+    let mut shared_layer_method_bounds = TokenStream::new();
     let mut layer_method_bounds = TokenStream::new();
     let mut layer_method_statements = TokenStream::new();
     let mut layer_methods = TokenStream::new();
     let mut svc_statements = TokenStream::new();
     let mut svc_attribute_idents = Vec::with_capacity(context.methods.len());
 
-    for (i, syn_method) in context.methods.iter().enumerate() {
-        let layer_attribute_name = quote::format_ident!("{}_layer", syn_method.name);
+    for syn_method in &context.methods {
+        let layer_attribute_name = quote::format_ident!("{}_layers", syn_method.name);
+        let layer_method_name = quote::format_ident!("stack_{}_layer", syn_method.name);
         let svc_attribute_name = quote::format_ident!("{}_svc", syn_method.name);
         let request_type = syn_method.request_type(false);
         let response_type = syn_method.response_type(context, false);
 
+        let shared_layer_method_bound = quote! {
+            L: tower::Layer<quickwit_common::tower::BoxService<#request_type, #response_type, #error_type>> + Clone + Send + Sync + 'static,
+            <L as tower::Layer<quickwit_common::tower::BoxService<#request_type, #response_type, #error_type>>>::Service: tower::Service<#request_type, Response = #response_type, Error = #error_type> + Clone + Send + Sync + 'static,
+            <<L as tower::Layer<quickwit_common::tower::BoxService<#request_type, #response_type, #error_type>>>::Service as tower::Service<#request_type>>::Future: Send + 'static,
+        };
         let layer_method_bound = quote! {
+            L: tower::Layer<quickwit_common::tower::BoxService<#request_type, #response_type, #error_type>> + Send + Sync + 'static,
             L::Service: tower::Service<#request_type, Response = #response_type, Error = #error_type> + Clone + Send + Sync + 'static,
             <L::Service as tower::Service<#request_type>>::Future: Send + 'static,
         };
-
-        let layer_method_statement = if i == context.methods.len() - 1 {
-            quote! {
-                self.#layer_attribute_name = Some(quickwit_common::tower::BoxLayer::new(layer));
-            }
-        } else {
-            quote! {
-                self.#layer_attribute_name = Some(quickwit_common::tower::BoxLayer::new(layer.clone()));
-            }
+        let layer_method_statement = quote! {
+            self.#layer_attribute_name.push(quickwit_common::tower::BoxLayer::new(layer.clone()));
         };
-
         let layer_method = quote! {
-            pub fn #layer_attribute_name<L>(
+            pub fn #layer_method_name<L>(
                 mut self,
                 layer: L
             ) -> Self
             where
-                L: tower::Layer<Box<dyn #service_name>> + Send + Sync + 'static,
                 #layer_method_bound
             {
-                self.#layer_attribute_name = Some(quickwit_common::tower::BoxLayer::new(layer));
+                self.#layer_attribute_name.push(quickwit_common::tower::BoxLayer::new(layer));
                 self
             }
         };
+        shared_layer_method_bounds.extend(shared_layer_method_bound);
         layer_method_bounds.extend(layer_method_bound);
         layer_method_statements.extend(layer_method_statement);
         layer_methods.extend(layer_method);
 
         let svc_statement = quote! {
-            let #svc_attribute_name = if let Some(layer) = self.#layer_attribute_name {
-                layer.layer(boxed_instance.clone())
-            } else {
-                quickwit_common::tower::BoxService::new(boxed_instance.clone())
-            };
+            let #svc_attribute_name = self.#layer_attribute_name.into_iter().rev().fold(quickwit_common::tower::BoxService::new(boxed_instance.clone()), |svc, layer| layer.layer(svc));
         };
         svc_statements.extend(svc_statement);
 
@@ -909,11 +915,10 @@ fn generate_tower_block_builder_impl(context: &CodegenContext) -> TokenStream {
     }
 
     quote! {
-        impl #tower_block_builder_name {
-            pub fn shared_layer<L>(mut self, layer: L) -> Self
+        impl #tower_layer_stack_name {
+            pub fn stack_layer<L>(mut self, layer: L) -> Self
             where
-                L: tower::Layer<Box<dyn #service_name>> + Clone + Send + Sync + 'static,
-                #layer_method_bounds
+                #shared_layer_method_bounds
             {
                 #layer_method_statements
                 self
@@ -950,11 +955,11 @@ fn generate_tower_block_builder_impl(context: &CodegenContext) -> TokenStream {
             {
                 #svc_statements
 
-                let tower_block = #tower_block_name {
+                let tower_svc_stack = #tower_svc_stack_name {
                     inner: boxed_instance.clone(),
                     #(#svc_attribute_idents),*
                 };
-                #client_name::new(tower_block)
+                #client_name::new(tower_svc_stack)
             }
         }
     }
@@ -964,7 +969,7 @@ fn generate_tower_mailbox(context: &CodegenContext) -> TokenStream {
     let service_name = &context.service_name;
     let mailbox_name = &context.mailbox_name;
     let error_type = &context.error_type;
-    let additional_mailbox_methods = if context.generate_extra_service_methods {
+    let extra_mailbox_methods = if context.generate_extra_service_methods {
         quote! {
             async fn check_connectivity(&mut self) -> anyhow::Result<()> {
                 if self.inner.is_disconnected() {
@@ -1063,7 +1068,7 @@ fn generate_tower_mailbox(context: &CodegenContext) -> TokenStream {
             #mailbox_name<A>: #(#mailbox_bounds)+*,
         {
             #mailbox_methods
-            #additional_mailbox_methods
+            #extra_mailbox_methods
         }
     }
 }
@@ -1105,7 +1110,7 @@ fn generate_grpc_client_adapter(context: &CodegenContext) -> TokenStream {
     let grpc_client_name = &context.grpc_client_name;
     let grpc_client_adapter_name = &context.grpc_client_adapter_name;
     let grpc_server_adapter_methods = generate_grpc_client_adapter_methods(context);
-    let additional_grpc_server_adapter_methods = if context.generate_extra_service_methods {
+    let extra_grpc_server_adapter_methods = if context.generate_extra_service_methods {
         quote! {
             async fn check_connectivity(&mut self) -> anyhow::Result<()> {
                 if self.connection_addrs_rx.borrow().len() == 0 {
@@ -1153,7 +1158,7 @@ fn generate_grpc_client_adapter(context: &CodegenContext) -> TokenStream {
             T::Future: Send
         {
             #grpc_server_adapter_methods
-            #additional_grpc_server_adapter_methods
+            #extra_grpc_server_adapter_methods
         }
     }
 }

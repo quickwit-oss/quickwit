@@ -469,55 +469,17 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_hello_codegen_tower_layers() {
+    async fn test_hello_codegen_tower_stack_layers() {
+        let layer = CounterLayer::default();
         let hello_layer = CounterLayer::default();
         let goodbye_layer = CounterLayer::default();
         let ping_layer = CounterLayer::default();
 
         let mut hello_tower = HelloClient::tower()
-            .hello_layer(hello_layer.clone())
-            .goodbye_layer(goodbye_layer.clone())
-            .ping_layer(ping_layer.clone())
-            .build(HelloImpl);
-
-        hello_tower
-            .hello(HelloRequest {
-                name: "Tower".to_string(),
-            })
-            .await
-            .unwrap();
-
-        hello_tower
-            .goodbye(GoodbyeRequest {
-                name: "Tower".to_string(),
-            })
-            .await
-            .unwrap();
-
-        let (ping_stream_tx, ping_stream) = ServiceStream::new_bounded(1);
-        let mut pong_stream = hello_tower.ping(ping_stream).await.unwrap();
-
-        ping_stream_tx
-            .try_send(PingRequest {
-                name: "Tower".to_string(),
-            })
-            .unwrap();
-        assert_eq!(
-            pong_stream.next().await.unwrap().unwrap().message,
-            "Pong, Tower!"
-        );
-
-        assert_eq!(hello_layer.counter.load(Ordering::Relaxed), 1);
-        assert_eq!(goodbye_layer.counter.load(Ordering::Relaxed), 1);
-        assert_eq!(ping_layer.counter.load(Ordering::Relaxed), 1);
-    }
-
-    #[tokio::test]
-    async fn test_hello_codegen_tower_shared_layer() {
-        let layer = CounterLayer::default();
-
-        let mut hello_tower = HelloClient::tower()
-            .shared_layer(layer.clone())
+            .stack_layer(layer.clone())
+            .stack_hello_layer(hello_layer.clone())
+            .stack_goodbye_layer(goodbye_layer.clone())
+            .stack_ping_layer(ping_layer.clone())
             .build(HelloImpl);
 
         hello_tower
@@ -548,6 +510,9 @@ mod tests {
         );
 
         assert_eq!(layer.counter.load(Ordering::Relaxed), 3);
+        assert_eq!(hello_layer.counter.load(Ordering::Relaxed), 1);
+        assert_eq!(goodbye_layer.counter.load(Ordering::Relaxed), 1);
+        assert_eq!(ping_layer.counter.load(Ordering::Relaxed), 1);
     }
 
     #[tokio::test]

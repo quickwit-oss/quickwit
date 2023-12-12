@@ -652,8 +652,8 @@ impl IngesterServiceClient {
     {
         IngesterServiceClient::new(IngesterServiceMailbox::new(mailbox))
     }
-    pub fn tower() -> IngesterServiceTowerBlockBuilder {
-        IngesterServiceTowerBlockBuilder::default()
+    pub fn tower() -> IngesterServiceTowerLayerStack {
+        IngesterServiceTowerLayerStack::default()
     }
     #[cfg(any(test, feature = "testsuite"))]
     pub fn mock() -> MockIngesterService {
@@ -973,9 +973,9 @@ impl tower::Service<DecommissionRequest> for Box<dyn IngesterService> {
         Box::pin(fut)
     }
 }
-/// A tower block is a set of towers. Each tower is stack of layers (middlewares) that are applied to a service.
+/// A tower service stack is a set of tower services.
 #[derive(Debug)]
-struct IngesterServiceTowerBlock {
+struct IngesterServiceTowerServiceStack {
     inner: Box<dyn IngesterService>,
     persist_svc: quickwit_common::tower::BoxService<
         PersistRequest,
@@ -1028,7 +1028,7 @@ struct IngesterServiceTowerBlock {
         crate::ingest::IngestV2Error,
     >,
 }
-impl Clone for IngesterServiceTowerBlock {
+impl Clone for IngesterServiceTowerServiceStack {
     fn clone(&self) -> Self {
         Self {
             inner: self.inner.clone(),
@@ -1046,7 +1046,7 @@ impl Clone for IngesterServiceTowerBlock {
     }
 }
 #[async_trait::async_trait]
-impl IngesterService for IngesterServiceTowerBlock {
+impl IngesterService for IngesterServiceTowerServiceStack {
     async fn persist(
         &mut self,
         request: PersistRequest,
@@ -1108,109 +1108,425 @@ impl IngesterService for IngesterServiceTowerBlock {
         self.decommission_svc.ready().await?.call(request).await
     }
 }
+type PersistLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        PersistRequest,
+        PersistResponse,
+        crate::ingest::IngestV2Error,
+    >,
+    PersistRequest,
+    PersistResponse,
+    crate::ingest::IngestV2Error,
+>;
+type OpenReplicationStreamLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        quickwit_common::ServiceStream<SynReplicationMessage>,
+        IngesterServiceStream<AckReplicationMessage>,
+        crate::ingest::IngestV2Error,
+    >,
+    quickwit_common::ServiceStream<SynReplicationMessage>,
+    IngesterServiceStream<AckReplicationMessage>,
+    crate::ingest::IngestV2Error,
+>;
+type OpenFetchStreamLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        OpenFetchStreamRequest,
+        IngesterServiceStream<FetchMessage>,
+        crate::ingest::IngestV2Error,
+    >,
+    OpenFetchStreamRequest,
+    IngesterServiceStream<FetchMessage>,
+    crate::ingest::IngestV2Error,
+>;
+type OpenObservationStreamLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        OpenObservationStreamRequest,
+        IngesterServiceStream<ObservationMessage>,
+        crate::ingest::IngestV2Error,
+    >,
+    OpenObservationStreamRequest,
+    IngesterServiceStream<ObservationMessage>,
+    crate::ingest::IngestV2Error,
+>;
+type InitShardsLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        InitShardsRequest,
+        InitShardsResponse,
+        crate::ingest::IngestV2Error,
+    >,
+    InitShardsRequest,
+    InitShardsResponse,
+    crate::ingest::IngestV2Error,
+>;
+type RetainShardsLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        RetainShardsRequest,
+        RetainShardsResponse,
+        crate::ingest::IngestV2Error,
+    >,
+    RetainShardsRequest,
+    RetainShardsResponse,
+    crate::ingest::IngestV2Error,
+>;
+type TruncateShardsLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        TruncateShardsRequest,
+        TruncateShardsResponse,
+        crate::ingest::IngestV2Error,
+    >,
+    TruncateShardsRequest,
+    TruncateShardsResponse,
+    crate::ingest::IngestV2Error,
+>;
+type CloseShardsLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        CloseShardsRequest,
+        CloseShardsResponse,
+        crate::ingest::IngestV2Error,
+    >,
+    CloseShardsRequest,
+    CloseShardsResponse,
+    crate::ingest::IngestV2Error,
+>;
+type PingLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        PingRequest,
+        PingResponse,
+        crate::ingest::IngestV2Error,
+    >,
+    PingRequest,
+    PingResponse,
+    crate::ingest::IngestV2Error,
+>;
+type DecommissionLayer = quickwit_common::tower::BoxLayer<
+    quickwit_common::tower::BoxService<
+        DecommissionRequest,
+        DecommissionResponse,
+        crate::ingest::IngestV2Error,
+    >,
+    DecommissionRequest,
+    DecommissionResponse,
+    crate::ingest::IngestV2Error,
+>;
 #[derive(Debug, Default)]
-pub struct IngesterServiceTowerBlockBuilder {
-    #[allow(clippy::type_complexity)]
-    persist_layer: Option<
-        quickwit_common::tower::BoxLayer<
-            Box<dyn IngesterService>,
-            PersistRequest,
-            PersistResponse,
-            crate::ingest::IngestV2Error,
-        >,
-    >,
-    #[allow(clippy::type_complexity)]
-    open_replication_stream_layer: Option<
-        quickwit_common::tower::BoxLayer<
-            Box<dyn IngesterService>,
-            quickwit_common::ServiceStream<SynReplicationMessage>,
-            IngesterServiceStream<AckReplicationMessage>,
-            crate::ingest::IngestV2Error,
-        >,
-    >,
-    #[allow(clippy::type_complexity)]
-    open_fetch_stream_layer: Option<
-        quickwit_common::tower::BoxLayer<
-            Box<dyn IngesterService>,
-            OpenFetchStreamRequest,
-            IngesterServiceStream<FetchMessage>,
-            crate::ingest::IngestV2Error,
-        >,
-    >,
-    #[allow(clippy::type_complexity)]
-    open_observation_stream_layer: Option<
-        quickwit_common::tower::BoxLayer<
-            Box<dyn IngesterService>,
-            OpenObservationStreamRequest,
-            IngesterServiceStream<ObservationMessage>,
-            crate::ingest::IngestV2Error,
-        >,
-    >,
-    #[allow(clippy::type_complexity)]
-    init_shards_layer: Option<
-        quickwit_common::tower::BoxLayer<
-            Box<dyn IngesterService>,
-            InitShardsRequest,
-            InitShardsResponse,
-            crate::ingest::IngestV2Error,
-        >,
-    >,
-    #[allow(clippy::type_complexity)]
-    retain_shards_layer: Option<
-        quickwit_common::tower::BoxLayer<
-            Box<dyn IngesterService>,
-            RetainShardsRequest,
-            RetainShardsResponse,
-            crate::ingest::IngestV2Error,
-        >,
-    >,
-    #[allow(clippy::type_complexity)]
-    truncate_shards_layer: Option<
-        quickwit_common::tower::BoxLayer<
-            Box<dyn IngesterService>,
-            TruncateShardsRequest,
-            TruncateShardsResponse,
-            crate::ingest::IngestV2Error,
-        >,
-    >,
-    #[allow(clippy::type_complexity)]
-    close_shards_layer: Option<
-        quickwit_common::tower::BoxLayer<
-            Box<dyn IngesterService>,
-            CloseShardsRequest,
-            CloseShardsResponse,
-            crate::ingest::IngestV2Error,
-        >,
-    >,
-    #[allow(clippy::type_complexity)]
-    ping_layer: Option<
-        quickwit_common::tower::BoxLayer<
-            Box<dyn IngesterService>,
-            PingRequest,
-            PingResponse,
-            crate::ingest::IngestV2Error,
-        >,
-    >,
-    #[allow(clippy::type_complexity)]
-    decommission_layer: Option<
-        quickwit_common::tower::BoxLayer<
-            Box<dyn IngesterService>,
-            DecommissionRequest,
-            DecommissionResponse,
-            crate::ingest::IngestV2Error,
-        >,
-    >,
+pub struct IngesterServiceTowerLayerStack {
+    persist_layers: Vec<PersistLayer>,
+    open_replication_stream_layers: Vec<OpenReplicationStreamLayer>,
+    open_fetch_stream_layers: Vec<OpenFetchStreamLayer>,
+    open_observation_stream_layers: Vec<OpenObservationStreamLayer>,
+    init_shards_layers: Vec<InitShardsLayer>,
+    retain_shards_layers: Vec<RetainShardsLayer>,
+    truncate_shards_layers: Vec<TruncateShardsLayer>,
+    close_shards_layers: Vec<CloseShardsLayer>,
+    ping_layers: Vec<PingLayer>,
+    decommission_layers: Vec<DecommissionLayer>,
 }
-impl IngesterServiceTowerBlockBuilder {
-    pub fn shared_layer<L>(mut self, layer: L) -> Self
+impl IngesterServiceTowerLayerStack {
+    pub fn stack_layer<L>(mut self, layer: L) -> Self
     where
-        L: tower::Layer<Box<dyn IngesterService>> + Clone + Send + Sync + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    PersistRequest,
+                    PersistResponse,
+                    crate::ingest::IngestV2Error,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                PersistRequest,
+                PersistResponse,
+                crate::ingest::IngestV2Error,
+            >,
+        >>::Service: tower::Service<
+                PersistRequest,
+                Response = PersistResponse,
+                Error = crate::ingest::IngestV2Error,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                PersistRequest,
+                PersistResponse,
+                crate::ingest::IngestV2Error,
+            >,
+        >>::Service as tower::Service<PersistRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    quickwit_common::ServiceStream<SynReplicationMessage>,
+                    IngesterServiceStream<AckReplicationMessage>,
+                    crate::ingest::IngestV2Error,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                quickwit_common::ServiceStream<SynReplicationMessage>,
+                IngesterServiceStream<AckReplicationMessage>,
+                crate::ingest::IngestV2Error,
+            >,
+        >>::Service: tower::Service<
+                quickwit_common::ServiceStream<SynReplicationMessage>,
+                Response = IngesterServiceStream<AckReplicationMessage>,
+                Error = crate::ingest::IngestV2Error,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                quickwit_common::ServiceStream<SynReplicationMessage>,
+                IngesterServiceStream<AckReplicationMessage>,
+                crate::ingest::IngestV2Error,
+            >,
+        >>::Service as tower::Service<
+            quickwit_common::ServiceStream<SynReplicationMessage>,
+        >>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    OpenFetchStreamRequest,
+                    IngesterServiceStream<FetchMessage>,
+                    crate::ingest::IngestV2Error,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                OpenFetchStreamRequest,
+                IngesterServiceStream<FetchMessage>,
+                crate::ingest::IngestV2Error,
+            >,
+        >>::Service: tower::Service<
+                OpenFetchStreamRequest,
+                Response = IngesterServiceStream<FetchMessage>,
+                Error = crate::ingest::IngestV2Error,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                OpenFetchStreamRequest,
+                IngesterServiceStream<FetchMessage>,
+                crate::ingest::IngestV2Error,
+            >,
+        >>::Service as tower::Service<OpenFetchStreamRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    OpenObservationStreamRequest,
+                    IngesterServiceStream<ObservationMessage>,
+                    crate::ingest::IngestV2Error,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                OpenObservationStreamRequest,
+                IngesterServiceStream<ObservationMessage>,
+                crate::ingest::IngestV2Error,
+            >,
+        >>::Service: tower::Service<
+                OpenObservationStreamRequest,
+                Response = IngesterServiceStream<ObservationMessage>,
+                Error = crate::ingest::IngestV2Error,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                OpenObservationStreamRequest,
+                IngesterServiceStream<ObservationMessage>,
+                crate::ingest::IngestV2Error,
+            >,
+        >>::Service as tower::Service<
+            OpenObservationStreamRequest,
+        >>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    InitShardsRequest,
+                    InitShardsResponse,
+                    crate::ingest::IngestV2Error,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                InitShardsRequest,
+                InitShardsResponse,
+                crate::ingest::IngestV2Error,
+            >,
+        >>::Service: tower::Service<
+                InitShardsRequest,
+                Response = InitShardsResponse,
+                Error = crate::ingest::IngestV2Error,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                InitShardsRequest,
+                InitShardsResponse,
+                crate::ingest::IngestV2Error,
+            >,
+        >>::Service as tower::Service<InitShardsRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    RetainShardsRequest,
+                    RetainShardsResponse,
+                    crate::ingest::IngestV2Error,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                RetainShardsRequest,
+                RetainShardsResponse,
+                crate::ingest::IngestV2Error,
+            >,
+        >>::Service: tower::Service<
+                RetainShardsRequest,
+                Response = RetainShardsResponse,
+                Error = crate::ingest::IngestV2Error,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                RetainShardsRequest,
+                RetainShardsResponse,
+                crate::ingest::IngestV2Error,
+            >,
+        >>::Service as tower::Service<RetainShardsRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    TruncateShardsRequest,
+                    TruncateShardsResponse,
+                    crate::ingest::IngestV2Error,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                TruncateShardsRequest,
+                TruncateShardsResponse,
+                crate::ingest::IngestV2Error,
+            >,
+        >>::Service: tower::Service<
+                TruncateShardsRequest,
+                Response = TruncateShardsResponse,
+                Error = crate::ingest::IngestV2Error,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                TruncateShardsRequest,
+                TruncateShardsResponse,
+                crate::ingest::IngestV2Error,
+            >,
+        >>::Service as tower::Service<TruncateShardsRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    CloseShardsRequest,
+                    CloseShardsResponse,
+                    crate::ingest::IngestV2Error,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                CloseShardsRequest,
+                CloseShardsResponse,
+                crate::ingest::IngestV2Error,
+            >,
+        >>::Service: tower::Service<
+                CloseShardsRequest,
+                Response = CloseShardsResponse,
+                Error = crate::ingest::IngestV2Error,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                CloseShardsRequest,
+                CloseShardsResponse,
+                crate::ingest::IngestV2Error,
+            >,
+        >>::Service as tower::Service<CloseShardsRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    PingRequest,
+                    PingResponse,
+                    crate::ingest::IngestV2Error,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                PingRequest,
+                PingResponse,
+                crate::ingest::IngestV2Error,
+            >,
+        >>::Service: tower::Service<
+                PingRequest,
+                Response = PingResponse,
+                Error = crate::ingest::IngestV2Error,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                PingRequest,
+                PingResponse,
+                crate::ingest::IngestV2Error,
+            >,
+        >>::Service as tower::Service<PingRequest>>::Future: Send + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    DecommissionRequest,
+                    DecommissionResponse,
+                    crate::ingest::IngestV2Error,
+                >,
+            > + Clone + Send + Sync + 'static,
+        <L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                DecommissionRequest,
+                DecommissionResponse,
+                crate::ingest::IngestV2Error,
+            >,
+        >>::Service: tower::Service<
+                DecommissionRequest,
+                Response = DecommissionResponse,
+                Error = crate::ingest::IngestV2Error,
+            > + Clone + Send + Sync + 'static,
+        <<L as tower::Layer<
+            quickwit_common::tower::BoxService<
+                DecommissionRequest,
+                DecommissionResponse,
+                crate::ingest::IngestV2Error,
+            >,
+        >>::Service as tower::Service<DecommissionRequest>>::Future: Send + 'static,
+    {
+        self.persist_layers.push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.open_replication_stream_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.open_fetch_stream_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.open_observation_stream_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.init_shards_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.retain_shards_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.truncate_shards_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.close_shards_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.ping_layers.push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self.decommission_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer.clone()));
+        self
+    }
+    pub fn stack_persist_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    PersistRequest,
+                    PersistResponse,
+                    crate::ingest::IngestV2Error,
+                >,
+            > + Send + Sync + 'static,
         L::Service: tower::Service<
                 PersistRequest,
                 Response = PersistResponse,
                 Error = crate::ingest::IngestV2Error,
             > + Clone + Send + Sync + 'static,
         <L::Service as tower::Service<PersistRequest>>::Future: Send + 'static,
+    {
+        self.persist_layers.push(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn stack_open_replication_stream_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    quickwit_common::ServiceStream<SynReplicationMessage>,
+                    IngesterServiceStream<AckReplicationMessage>,
+                    crate::ingest::IngestV2Error,
+                >,
+            > + Send + Sync + 'static,
         L::Service: tower::Service<
                 quickwit_common::ServiceStream<SynReplicationMessage>,
                 Response = IngesterServiceStream<AckReplicationMessage>,
@@ -1219,124 +1535,20 @@ impl IngesterServiceTowerBlockBuilder {
         <L::Service as tower::Service<
             quickwit_common::ServiceStream<SynReplicationMessage>,
         >>::Future: Send + 'static,
-        L::Service: tower::Service<
-                OpenFetchStreamRequest,
-                Response = IngesterServiceStream<FetchMessage>,
-                Error = crate::ingest::IngestV2Error,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<OpenFetchStreamRequest>>::Future: Send + 'static,
-        L::Service: tower::Service<
-                OpenObservationStreamRequest,
-                Response = IngesterServiceStream<ObservationMessage>,
-                Error = crate::ingest::IngestV2Error,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<
-            OpenObservationStreamRequest,
-        >>::Future: Send + 'static,
-        L::Service: tower::Service<
-                InitShardsRequest,
-                Response = InitShardsResponse,
-                Error = crate::ingest::IngestV2Error,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<InitShardsRequest>>::Future: Send + 'static,
-        L::Service: tower::Service<
-                RetainShardsRequest,
-                Response = RetainShardsResponse,
-                Error = crate::ingest::IngestV2Error,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<RetainShardsRequest>>::Future: Send + 'static,
-        L::Service: tower::Service<
-                TruncateShardsRequest,
-                Response = TruncateShardsResponse,
-                Error = crate::ingest::IngestV2Error,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<TruncateShardsRequest>>::Future: Send + 'static,
-        L::Service: tower::Service<
-                CloseShardsRequest,
-                Response = CloseShardsResponse,
-                Error = crate::ingest::IngestV2Error,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<CloseShardsRequest>>::Future: Send + 'static,
-        L::Service: tower::Service<
-                PingRequest,
-                Response = PingResponse,
-                Error = crate::ingest::IngestV2Error,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<PingRequest>>::Future: Send + 'static,
-        L::Service: tower::Service<
-                DecommissionRequest,
-                Response = DecommissionResponse,
-                Error = crate::ingest::IngestV2Error,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<DecommissionRequest>>::Future: Send + 'static,
     {
-        self.persist_layer = Some(quickwit_common::tower::BoxLayer::new(layer.clone()));
-        self
-            .open_replication_stream_layer = Some(
-            quickwit_common::tower::BoxLayer::new(layer.clone()),
-        );
-        self
-            .open_fetch_stream_layer = Some(
-            quickwit_common::tower::BoxLayer::new(layer.clone()),
-        );
-        self
-            .open_observation_stream_layer = Some(
-            quickwit_common::tower::BoxLayer::new(layer.clone()),
-        );
-        self
-            .init_shards_layer = Some(
-            quickwit_common::tower::BoxLayer::new(layer.clone()),
-        );
-        self
-            .retain_shards_layer = Some(
-            quickwit_common::tower::BoxLayer::new(layer.clone()),
-        );
-        self
-            .truncate_shards_layer = Some(
-            quickwit_common::tower::BoxLayer::new(layer.clone()),
-        );
-        self
-            .close_shards_layer = Some(
-            quickwit_common::tower::BoxLayer::new(layer.clone()),
-        );
-        self.ping_layer = Some(quickwit_common::tower::BoxLayer::new(layer.clone()));
-        self.decommission_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
+        self.open_replication_stream_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
-    pub fn persist_layer<L>(mut self, layer: L) -> Self
+    pub fn stack_open_fetch_stream_layer<L>(mut self, layer: L) -> Self
     where
-        L: tower::Layer<Box<dyn IngesterService>> + Send + Sync + 'static,
-        L::Service: tower::Service<
-                PersistRequest,
-                Response = PersistResponse,
-                Error = crate::ingest::IngestV2Error,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<PersistRequest>>::Future: Send + 'static,
-    {
-        self.persist_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
-        self
-    }
-    pub fn open_replication_stream_layer<L>(mut self, layer: L) -> Self
-    where
-        L: tower::Layer<Box<dyn IngesterService>> + Send + Sync + 'static,
-        L::Service: tower::Service<
-                quickwit_common::ServiceStream<SynReplicationMessage>,
-                Response = IngesterServiceStream<AckReplicationMessage>,
-                Error = crate::ingest::IngestV2Error,
-            > + Clone + Send + Sync + 'static,
-        <L::Service as tower::Service<
-            quickwit_common::ServiceStream<SynReplicationMessage>,
-        >>::Future: Send + 'static,
-    {
-        self
-            .open_replication_stream_layer = Some(
-            quickwit_common::tower::BoxLayer::new(layer),
-        );
-        self
-    }
-    pub fn open_fetch_stream_layer<L>(mut self, layer: L) -> Self
-    where
-        L: tower::Layer<Box<dyn IngesterService>> + Send + Sync + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    OpenFetchStreamRequest,
+                    IngesterServiceStream<FetchMessage>,
+                    crate::ingest::IngestV2Error,
+                >,
+            > + Send + Sync + 'static,
         L::Service: tower::Service<
                 OpenFetchStreamRequest,
                 Response = IngesterServiceStream<FetchMessage>,
@@ -1344,15 +1556,18 @@ impl IngesterServiceTowerBlockBuilder {
             > + Clone + Send + Sync + 'static,
         <L::Service as tower::Service<OpenFetchStreamRequest>>::Future: Send + 'static,
     {
-        self
-            .open_fetch_stream_layer = Some(
-            quickwit_common::tower::BoxLayer::new(layer),
-        );
+        self.open_fetch_stream_layers.push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
-    pub fn open_observation_stream_layer<L>(mut self, layer: L) -> Self
+    pub fn stack_open_observation_stream_layer<L>(mut self, layer: L) -> Self
     where
-        L: tower::Layer<Box<dyn IngesterService>> + Send + Sync + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    OpenObservationStreamRequest,
+                    IngesterServiceStream<ObservationMessage>,
+                    crate::ingest::IngestV2Error,
+                >,
+            > + Send + Sync + 'static,
         L::Service: tower::Service<
                 OpenObservationStreamRequest,
                 Response = IngesterServiceStream<ObservationMessage>,
@@ -1362,15 +1577,19 @@ impl IngesterServiceTowerBlockBuilder {
             OpenObservationStreamRequest,
         >>::Future: Send + 'static,
     {
-        self
-            .open_observation_stream_layer = Some(
-            quickwit_common::tower::BoxLayer::new(layer),
-        );
+        self.open_observation_stream_layers
+            .push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
-    pub fn init_shards_layer<L>(mut self, layer: L) -> Self
+    pub fn stack_init_shards_layer<L>(mut self, layer: L) -> Self
     where
-        L: tower::Layer<Box<dyn IngesterService>> + Send + Sync + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    InitShardsRequest,
+                    InitShardsResponse,
+                    crate::ingest::IngestV2Error,
+                >,
+            > + Send + Sync + 'static,
         L::Service: tower::Service<
                 InitShardsRequest,
                 Response = InitShardsResponse,
@@ -1378,12 +1597,18 @@ impl IngesterServiceTowerBlockBuilder {
             > + Clone + Send + Sync + 'static,
         <L::Service as tower::Service<InitShardsRequest>>::Future: Send + 'static,
     {
-        self.init_shards_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
+        self.init_shards_layers.push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
-    pub fn retain_shards_layer<L>(mut self, layer: L) -> Self
+    pub fn stack_retain_shards_layer<L>(mut self, layer: L) -> Self
     where
-        L: tower::Layer<Box<dyn IngesterService>> + Send + Sync + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    RetainShardsRequest,
+                    RetainShardsResponse,
+                    crate::ingest::IngestV2Error,
+                >,
+            > + Send + Sync + 'static,
         L::Service: tower::Service<
                 RetainShardsRequest,
                 Response = RetainShardsResponse,
@@ -1391,12 +1616,18 @@ impl IngesterServiceTowerBlockBuilder {
             > + Clone + Send + Sync + 'static,
         <L::Service as tower::Service<RetainShardsRequest>>::Future: Send + 'static,
     {
-        self.retain_shards_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
+        self.retain_shards_layers.push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
-    pub fn truncate_shards_layer<L>(mut self, layer: L) -> Self
+    pub fn stack_truncate_shards_layer<L>(mut self, layer: L) -> Self
     where
-        L: tower::Layer<Box<dyn IngesterService>> + Send + Sync + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    TruncateShardsRequest,
+                    TruncateShardsResponse,
+                    crate::ingest::IngestV2Error,
+                >,
+            > + Send + Sync + 'static,
         L::Service: tower::Service<
                 TruncateShardsRequest,
                 Response = TruncateShardsResponse,
@@ -1404,12 +1635,18 @@ impl IngesterServiceTowerBlockBuilder {
             > + Clone + Send + Sync + 'static,
         <L::Service as tower::Service<TruncateShardsRequest>>::Future: Send + 'static,
     {
-        self.truncate_shards_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
+        self.truncate_shards_layers.push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
-    pub fn close_shards_layer<L>(mut self, layer: L) -> Self
+    pub fn stack_close_shards_layer<L>(mut self, layer: L) -> Self
     where
-        L: tower::Layer<Box<dyn IngesterService>> + Send + Sync + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    CloseShardsRequest,
+                    CloseShardsResponse,
+                    crate::ingest::IngestV2Error,
+                >,
+            > + Send + Sync + 'static,
         L::Service: tower::Service<
                 CloseShardsRequest,
                 Response = CloseShardsResponse,
@@ -1417,12 +1654,18 @@ impl IngesterServiceTowerBlockBuilder {
             > + Clone + Send + Sync + 'static,
         <L::Service as tower::Service<CloseShardsRequest>>::Future: Send + 'static,
     {
-        self.close_shards_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
+        self.close_shards_layers.push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
-    pub fn ping_layer<L>(mut self, layer: L) -> Self
+    pub fn stack_ping_layer<L>(mut self, layer: L) -> Self
     where
-        L: tower::Layer<Box<dyn IngesterService>> + Send + Sync + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    PingRequest,
+                    PingResponse,
+                    crate::ingest::IngestV2Error,
+                >,
+            > + Send + Sync + 'static,
         L::Service: tower::Service<
                 PingRequest,
                 Response = PingResponse,
@@ -1430,12 +1673,18 @@ impl IngesterServiceTowerBlockBuilder {
             > + Clone + Send + Sync + 'static,
         <L::Service as tower::Service<PingRequest>>::Future: Send + 'static,
     {
-        self.ping_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
+        self.ping_layers.push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
-    pub fn decommission_layer<L>(mut self, layer: L) -> Self
+    pub fn stack_decommission_layer<L>(mut self, layer: L) -> Self
     where
-        L: tower::Layer<Box<dyn IngesterService>> + Send + Sync + 'static,
+        L: tower::Layer<
+                quickwit_common::tower::BoxService<
+                    DecommissionRequest,
+                    DecommissionResponse,
+                    crate::ingest::IngestV2Error,
+                >,
+            > + Send + Sync + 'static,
         L::Service: tower::Service<
                 DecommissionRequest,
                 Response = DecommissionResponse,
@@ -1443,7 +1692,7 @@ impl IngesterServiceTowerBlockBuilder {
             > + Clone + Send + Sync + 'static,
         <L::Service as tower::Service<DecommissionRequest>>::Future: Send + 'static,
     {
-        self.decommission_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
+        self.decommission_layers.push(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
     pub fn build<T>(self, instance: T) -> IngesterServiceClient
@@ -1483,61 +1732,87 @@ impl IngesterServiceTowerBlockBuilder {
         self,
         boxed_instance: Box<dyn IngesterService>,
     ) -> IngesterServiceClient {
-        let persist_svc = if let Some(layer) = self.persist_layer {
-            layer.layer(boxed_instance.clone())
-        } else {
-            quickwit_common::tower::BoxService::new(boxed_instance.clone())
-        };
-        let open_replication_stream_svc = if let Some(layer)
-            = self.open_replication_stream_layer
-        {
-            layer.layer(boxed_instance.clone())
-        } else {
-            quickwit_common::tower::BoxService::new(boxed_instance.clone())
-        };
-        let open_fetch_stream_svc = if let Some(layer) = self.open_fetch_stream_layer {
-            layer.layer(boxed_instance.clone())
-        } else {
-            quickwit_common::tower::BoxService::new(boxed_instance.clone())
-        };
-        let open_observation_stream_svc = if let Some(layer)
-            = self.open_observation_stream_layer
-        {
-            layer.layer(boxed_instance.clone())
-        } else {
-            quickwit_common::tower::BoxService::new(boxed_instance.clone())
-        };
-        let init_shards_svc = if let Some(layer) = self.init_shards_layer {
-            layer.layer(boxed_instance.clone())
-        } else {
-            quickwit_common::tower::BoxService::new(boxed_instance.clone())
-        };
-        let retain_shards_svc = if let Some(layer) = self.retain_shards_layer {
-            layer.layer(boxed_instance.clone())
-        } else {
-            quickwit_common::tower::BoxService::new(boxed_instance.clone())
-        };
-        let truncate_shards_svc = if let Some(layer) = self.truncate_shards_layer {
-            layer.layer(boxed_instance.clone())
-        } else {
-            quickwit_common::tower::BoxService::new(boxed_instance.clone())
-        };
-        let close_shards_svc = if let Some(layer) = self.close_shards_layer {
-            layer.layer(boxed_instance.clone())
-        } else {
-            quickwit_common::tower::BoxService::new(boxed_instance.clone())
-        };
-        let ping_svc = if let Some(layer) = self.ping_layer {
-            layer.layer(boxed_instance.clone())
-        } else {
-            quickwit_common::tower::BoxService::new(boxed_instance.clone())
-        };
-        let decommission_svc = if let Some(layer) = self.decommission_layer {
-            layer.layer(boxed_instance.clone())
-        } else {
-            quickwit_common::tower::BoxService::new(boxed_instance.clone())
-        };
-        let tower_block = IngesterServiceTowerBlock {
+        let persist_svc = self
+            .persist_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let open_replication_stream_svc = self
+            .open_replication_stream_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let open_fetch_stream_svc = self
+            .open_fetch_stream_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let open_observation_stream_svc = self
+            .open_observation_stream_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let init_shards_svc = self
+            .init_shards_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let retain_shards_svc = self
+            .retain_shards_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let truncate_shards_svc = self
+            .truncate_shards_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let close_shards_svc = self
+            .close_shards_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let ping_svc = self
+            .ping_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let decommission_svc = self
+            .decommission_layers
+            .into_iter()
+            .rev()
+            .fold(
+                quickwit_common::tower::BoxService::new(boxed_instance.clone()),
+                |svc, layer| layer.layer(svc),
+            );
+        let tower_svc_stack = IngesterServiceTowerServiceStack {
             inner: boxed_instance.clone(),
             persist_svc,
             open_replication_stream_svc,
@@ -1550,7 +1825,7 @@ impl IngesterServiceTowerBlockBuilder {
             ping_svc,
             decommission_svc,
         };
-        IngesterServiceClient::new(tower_block)
+        IngesterServiceClient::new(tower_svc_stack)
     }
 }
 #[derive(Debug, Clone)]
