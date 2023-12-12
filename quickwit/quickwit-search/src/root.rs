@@ -353,7 +353,7 @@ fn validate_sort_by_field(
     has_timestamp_format: bool,
     schema: &Schema,
 ) -> crate::Result<()> {
-    if field_name == "_score" {
+    if ["_score", "_shard_doc", "_doc"].contains(&field_name) {
         return Ok(());
     }
     let dynamic_field_opt = schema.get_field(DYNAMIC_FIELD_NAME).ok();

@@ -169,7 +169,7 @@ following syntax.
 {
   // ...
   "sort" : [
-    { "timestamp" : {"order" : "asc"}},
+    { "timestamp" : {"format": "epoch_millis","order" : "asc"}},
     { "serial_number" : "desc" }
   ]
   // ...
@@ -185,6 +185,44 @@ It is also possible to not supply an order and rely on the default order using t
   // ...
 }
 ```
+
+If no format is provided for timestamps, timestamps are returned with nanosecond precision. Beware
+this means the resulting json may contain high numbers for which there is loss of precision when
+using languages where all numbers are floats, such as JavaScript.
+
+#### Search after
+
+When sorting results, the answer looks like the following
+
+```json
+{
+  // ...
+  "hits": {
+    // ...
+    "hits": [
+      // ...
+      {
+        // ...
+        "sort": [
+          1701962929199000000
+        ]
+      }
+    ]
+  }
+}
+```
+
+You can pass the `sort` value of the last hit in a subsequent request where other fields are kept unchanged:
+```json
+{
+  // keep all fields from the original request
+  "seach_after": [
+    1701962929199000000
+  ]
+}
+```
+
+This allows you to paginate your results.
 
 ### `_msearch` &nbsp; Multi search API
 
