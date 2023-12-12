@@ -48,6 +48,15 @@ pub enum IngestV2Error {
     Transport(String),
 }
 
+impl IngestV2Error {
+    pub fn label_value(&self) -> &'static str {
+        match self {
+            Self::Timeout { .. } => "timeout",
+            _ => "error",
+        }
+    }
+}
+
 impl From<ControlPlaneError> for IngestV2Error {
     fn from(error: ControlPlaneError) -> Self {
         Self::Internal(error.to_string())

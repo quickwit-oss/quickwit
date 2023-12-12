@@ -42,8 +42,9 @@ use super::ingester::IngesterState;
 use super::models::IngesterShard;
 use super::mrecord::MRecord;
 use super::mrecordlog_utils::check_enough_capacity;
-use crate::estimate_size;
+use crate::ingest_v2::metrics::INGEST_V2_METRICS;
 use crate::metrics::INGEST_METRICS;
+use crate::{estimate_size, with_request_metrics};
 
 pub(super) const SYN_REPLICATION_STREAM_CAPACITY: usize = 5;
 
@@ -294,6 +295,15 @@ pub(super) enum ReplicationError {
     Timeout,
 }
 
+impl ReplicationError {
+    pub(super) fn label_value(&self) -> &'static str {
+        match self {
+            Self::Timeout { .. } => "timeout",
+            _ => "error",
+        }
+    }
+}
+
 // DO NOT derive or implement `Clone` for this object.
 #[derive(Debug)]
 pub(super) struct ReplicationClient {
@@ -319,15 +329,19 @@ impl ReplicationClient {
         let replication_request = ReplicationRequest::Init(init_replica_request);
 
         async {
-            self.submit(replication_request)
-                .await
-                .map(|replication_response| {
-                    if let ReplicationResponse::Init(init_replica_response) = replication_response {
-                        init_replica_response
-                    } else {
-                        panic!("response should be an init replica response")
-                    }
-                })
+            with_request_metrics!(
+                self.submit(replication_request).await,
+                "ingester",
+                "client",
+                "init_replica"
+            )
+            .map(|replication_response| {
+                if let ReplicationResponse::Init(init_replica_response) = replication_response {
+                    init_replica_response
+                } else {
+                    panic!("response should be an init replica response")
+                }
+            })
         }
     }
 
@@ -350,16 +364,19 @@ impl ReplicationClient {
         let replication_request = ReplicationRequest::Replicate(replicate_request);
 
         async {
-            self.submit(replication_request)
-                .await
-                .map(|replication_response| {
-                    if let ReplicationResponse::Replicate(replicate_response) = replication_response
-                    {
-                        replicate_response
-                    } else {
-                        panic!("response should be a replicate response")
-                    }
-                })
+            with_request_metrics!(
+                self.submit(replication_request).await,
+                "ingester",
+                "client",
+                "replicate"
+            )
+            .map(|replication_response| {
+                if let ReplicationResponse::Replicate(replicate_response) = replication_response {
+                    replicate_response
+                } else {
+                    panic!("response should be a replicate response")
+                }
+            })
         }
     }
 
@@ -574,24 +591,27 @@ impl ReplicationTask {
             };
             let requested_capacity = estimate_size(&doc_batch);
 
-            if let Err(error) = check_enough_capacity(
+            let current_usage = match check_enough_capacity(
                 &state_guard.mrecordlog,
                 self.disk_capacity,
                 self.memory_capacity,
                 requested_capacity,
             ) {
-                warn!("failed to replicate records: {error}");
+                Ok(usage) => usage,
+                Err(error) => {
+                    warn!("failed to replicate records: {error}");
 
-                let replicate_failure = ReplicateFailure {
-                    subrequest_id: subrequest.subrequest_id,
-                    index_uid: subrequest.index_uid,
-                    source_id: subrequest.source_id,
-                    shard_id: subrequest.shard_id,
-                    reason: ReplicateFailureReason::ResourceExhausted as i32,
-                };
-                replicate_failures.push(replicate_failure);
-                continue;
-            }
+                    let replicate_failure = ReplicateFailure {
+                        subrequest_id: subrequest.subrequest_id,
+                        index_uid: subrequest.index_uid,
+                        source_id: subrequest.source_id,
+                        shard_id: subrequest.shard_id,
+                        reason: ReplicateFailureReason::ResourceExhausted as i32,
+                    };
+                    replicate_failures.push(replicate_failure);
+                    continue;
+                }
+            };
             let current_position_inclusive: Position = if force_commit {
                 let encoded_mrecords = doc_batch
                     .docs()
@@ -612,6 +632,16 @@ impl ReplicationTask {
             }
             .map(Position::offset)
             .expect("records should not be empty");
+
+            let new_disk_usage = current_usage.disk + requested_capacity;
+            let new_memory_usage = current_usage.memory + requested_capacity;
+
+            INGEST_V2_METRICS
+                .wal_disk_usage_bytes
+                .set(new_disk_usage.as_u64() as i64);
+            INGEST_V2_METRICS
+                .wal_memory_usage_bytes
+                .set(new_memory_usage.as_u64() as i64);
 
             let batch_num_bytes = doc_batch.num_bytes() as u64;
             let batch_num_docs = doc_batch.num_docs() as u64;
@@ -661,14 +691,24 @@ impl ReplicationTask {
                 Some(syn_replication_message::Message::OpenRequest(_)) => {
                     panic!("TODO: this should not happen, internal error");
                 }
-                Some(syn_replication_message::Message::InitRequest(init_replica_request)) => self
-                    .init_replica(init_replica_request)
-                    .await
-                    .map(AckReplicationMessage::new_init_replica_response),
-                Some(syn_replication_message::Message::ReplicateRequest(replicate_request)) => self
-                    .replicate(replicate_request)
-                    .await
-                    .map(AckReplicationMessage::new_replicate_response),
+                Some(syn_replication_message::Message::InitRequest(init_replica_request)) => {
+                    with_request_metrics!(
+                        self.init_replica(init_replica_request).await,
+                        "ingester",
+                        "server",
+                        "init_replica"
+                    )
+                    .map(AckReplicationMessage::new_init_replica_response)
+                }
+                Some(syn_replication_message::Message::ReplicateRequest(replicate_request)) => {
+                    with_request_metrics!(
+                        self.replicate(replicate_request).await,
+                        "ingester",
+                        "server",
+                        "replicate"
+                    )
+                    .map(AckReplicationMessage::new_replicate_response)
+                }
                 None => {
                     warn!("received empty SYN replication message");
                     continue;

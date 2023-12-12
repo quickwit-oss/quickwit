@@ -53,6 +53,7 @@ use tokio::sync::{watch, RwLock};
 use tracing::{debug, error, info, warn};
 
 use super::fetch::FetchStreamTask;
+use super::metrics::INGEST_V2_METRICS;
 use super::models::IngesterShard;
 use super::mrecord::MRecord;
 use super::mrecordlog_utils::{check_enough_capacity, force_delete_queue};
@@ -65,7 +66,7 @@ use super::IngesterPool;
 use crate::ingest_v2::broadcast::BroadcastLocalShardsTask;
 use crate::ingest_v2::mrecordlog_utils::queue_position_range;
 use crate::metrics::INGEST_METRICS;
-use crate::{estimate_size, FollowerId, LeaderId};
+use crate::{estimate_size, with_lock_metrics, with_request_metrics, FollowerId, LeaderId};
 
 /// Duration after which persist requests time out with
 /// [`quickwit_proto::ingest::IngestV2Error::Timeout`].
@@ -344,9 +345,14 @@ impl Ingester {
                 .ok_or(IngestV2Error::IngesterUnavailable {
                     ingester_id: follower_id.clone(),
                 })?;
-        let mut ack_replication_stream = ingester
-            .open_replication_stream(syn_replication_stream)
-            .await?;
+        let mut ack_replication_stream = with_request_metrics!(
+            ingester
+                .open_replication_stream(syn_replication_stream)
+                .await,
+            "ingester",
+            "client",
+            "open_replication_stream"
+        )?;
         ack_replication_stream
             .next()
             .await
@@ -373,11 +379,8 @@ impl Ingester {
             .subscribe::<ShardPositionsUpdate>(weak_ingester_state)
             .forever();
     }
-}
 
-#[async_trait]
-impl IngesterService for Ingester {
-    async fn persist(
+    async fn persist_inner(
         &mut self,
         persist_request: PersistRequest,
     ) -> IngestV2Result<PersistResponse> {
@@ -395,7 +398,7 @@ impl IngesterService for Ingester {
         let force_commit = commit_type == CommitTypeV2::Force;
         let leader_id: NodeId = persist_request.leader_id.into();
 
-        let mut state_guard = self.state.write().await;
+        let mut state_guard = with_lock_metrics!(self.state.write().await, "persist", "write");
 
         if state_guard.status != IngesterStatus::Ready {
             persist_failures.reserve_exact(persist_request.subrequests.len());
@@ -465,26 +468,29 @@ impl IngesterService for Ingester {
             };
             let requested_capacity = estimate_size(&doc_batch);
 
-            if let Err(error) = check_enough_capacity(
+            let current_usage = match check_enough_capacity(
                 &state_guard.mrecordlog,
                 self.disk_capacity,
                 self.memory_capacity,
                 requested_capacity,
             ) {
-                warn!(
-                    "failed to persist records to ingester `{}`: {error}",
-                    self.self_node_id
-                );
-                let persist_failure = PersistFailure {
-                    subrequest_id: subrequest.subrequest_id,
-                    index_uid: subrequest.index_uid,
-                    source_id: subrequest.source_id,
-                    shard_id: subrequest.shard_id,
-                    reason: PersistFailureReason::ResourceExhausted as i32,
-                };
-                persist_failures.push(persist_failure);
-                continue;
-            }
+                Ok(usage) => usage,
+                Err(error) => {
+                    warn!(
+                        "failed to persist records to ingester `{}`: {error}",
+                        self.self_node_id
+                    );
+                    let persist_failure = PersistFailure {
+                        subrequest_id: subrequest.subrequest_id,
+                        index_uid: subrequest.index_uid,
+                        source_id: subrequest.source_id,
+                        shard_id: subrequest.shard_id,
+                        reason: PersistFailureReason::ResourceExhausted as i32,
+                    };
+                    persist_failures.push(persist_failure);
+                    continue;
+                }
+            };
             let (rate_limiter, rate_meter) = state_guard
                 .rate_trackers
                 .get_mut(&queue_id)
@@ -528,6 +534,19 @@ impl IngesterService for Ingester {
             }
             .map(Position::offset)
             .expect("records should not be empty");
+
+            // It's more precise the compute the new usage from the current usage + the requested
+            // capacity than from continuously summing up the requested capacities, which are
+            // approximations.
+            let new_disk_usage = current_usage.disk + requested_capacity;
+            let new_memory_usage = current_usage.memory + requested_capacity;
+
+            INGEST_V2_METRICS
+                .wal_disk_usage_bytes
+                .set(new_disk_usage.as_u64() as i64);
+            INGEST_V2_METRICS
+                .wal_memory_usage_bytes
+                .set(new_memory_usage.as_u64() as i64);
 
             INGEST_METRICS.ingested_num_bytes.inc_by(batch_num_bytes);
             INGEST_METRICS.ingested_num_docs.inc_by(batch_num_docs);
@@ -643,7 +662,7 @@ impl IngesterService for Ingester {
     }
 
     /// Opens a replication stream, which is a bi-directional gRPC stream. The client-side stream
-    async fn open_replication_stream(
+    async fn open_replication_stream_inner(
         &mut self,
         mut syn_replication_stream: quickwit_common::ServiceStream<SynReplicationMessage>,
     ) -> IngestV2Result<IngesterServiceStream<AckReplicationMessage>> {
@@ -694,7 +713,7 @@ impl IngesterService for Ingester {
         Ok(ack_replication_stream)
     }
 
-    async fn open_fetch_stream(
+    async fn open_fetch_stream_inner(
         &mut self,
         open_fetch_stream_request: OpenFetchStreamRequest,
     ) -> IngestV2Result<ServiceStream<IngestV2Result<FetchMessage>>> {
@@ -719,7 +738,88 @@ impl IngesterService for Ingester {
         Ok(service_stream)
     }
 
-    async fn ping(&mut self, ping_request: PingRequest) -> IngestV2Result<PingResponse> {
+    async fn open_observation_stream_inner(
+        &mut self,
+        _open_observation_stream_request: OpenObservationStreamRequest,
+    ) -> IngestV2Result<IngesterServiceStream<ObservationMessage>> {
+        let observation_stream = self.observation_rx.clone().into();
+        Ok(observation_stream)
+    }
+
+    async fn init_shards_inner(
+        &mut self,
+        init_shards_request: InitShardsRequest,
+    ) -> IngestV2Result<InitShardsResponse> {
+        let mut state_guard = with_lock_metrics!(self.state.write().await, "init_shards", "write");
+
+        if state_guard.status != IngesterStatus::Ready {
+            return Err(IngestV2Error::Internal("node decommissioned".to_string()));
+        }
+
+        for shard in init_shards_request.shards {
+            self.init_primary_shard(&mut state_guard, shard).await?;
+        }
+        Ok(InitShardsResponse {})
+    }
+
+    async fn truncate_shards_inner(
+        &mut self,
+        truncate_shards_request: TruncateShardsRequest,
+    ) -> IngestV2Result<TruncateShardsResponse> {
+        if truncate_shards_request.ingester_id != self.self_node_id {
+            return Err(IngestV2Error::Internal(format!(
+                "routing error: expected ingester `{}`, got `{}`",
+                self.self_node_id, truncate_shards_request.ingester_id,
+            )));
+        }
+        let mut state_guard =
+            with_lock_metrics!(self.state.write().await, "truncate_shards", "write");
+
+        for subrequest in truncate_shards_request.subrequests {
+            let queue_id = subrequest.queue_id();
+            let truncate_up_to_position_inclusive = subrequest.truncate_up_to_position_inclusive();
+
+            if truncate_up_to_position_inclusive.is_eof() {
+                state_guard.delete_shard(&queue_id).await;
+            } else {
+                state_guard
+                    .truncate_shard(&queue_id, truncate_up_to_position_inclusive)
+                    .await;
+            }
+        }
+        let current_disk_usage = state_guard.mrecordlog.disk_usage();
+        let current_memory_usage = state_guard.mrecordlog.memory_usage();
+
+        INGEST_V2_METRICS
+            .wal_disk_usage_bytes
+            .set(current_disk_usage as i64);
+        INGEST_V2_METRICS
+            .wal_memory_usage_bytes
+            .set(current_memory_usage as i64);
+
+        self.check_decommissioning_status(&mut state_guard);
+        let truncate_response = TruncateShardsResponse {};
+        Ok(truncate_response)
+    }
+
+    async fn close_shards_inner(
+        &mut self,
+        close_shards_request: CloseShardsRequest,
+    ) -> IngestV2Result<CloseShardsResponse> {
+        let mut state_guard = with_lock_metrics!(self.state.write().await, "close_shards", "write");
+
+        for shard_ids in close_shards_request.shards {
+            for queue_id in shard_ids.queue_ids() {
+                if let Some(shard) = state_guard.shards.get_mut(&queue_id) {
+                    shard.shard_state = ShardState::Closed;
+                    shard.notify_shard_status();
+                }
+            }
+        }
+        Ok(CloseShardsResponse {})
+    }
+
+    async fn ping_inner(&mut self, ping_request: PingRequest) -> IngestV2Result<PingResponse> {
         let state_guard = self.state.read().await;
 
         if state_guard.status != IngesterStatus::Ready {
@@ -739,74 +839,17 @@ impl IngesterService for Ingester {
                 ingester_id: follower_id,
             }
         })?;
-        ingester.ping(ping_request).await?;
+        with_request_metrics!(
+            ingester.ping(ping_request).await,
+            "ingester",
+            "client",
+            "ping"
+        )?;
         let ping_response = PingResponse {};
         Ok(ping_response)
     }
 
-    async fn init_shards(
-        &mut self,
-        init_shards_request: InitShardsRequest,
-    ) -> IngestV2Result<InitShardsResponse> {
-        let mut state_guard = self.state.write().await;
-
-        if state_guard.status != IngesterStatus::Ready {
-            return Err(IngestV2Error::Internal("node decommissioned".to_string()));
-        }
-
-        for shard in init_shards_request.shards {
-            self.init_primary_shard(&mut state_guard, shard).await?;
-        }
-        Ok(InitShardsResponse {})
-    }
-
-    async fn truncate_shards(
-        &mut self,
-        truncate_shards_request: TruncateShardsRequest,
-    ) -> IngestV2Result<TruncateShardsResponse> {
-        if truncate_shards_request.ingester_id != self.self_node_id {
-            return Err(IngestV2Error::Internal(format!(
-                "routing error: expected ingester `{}`, got `{}`",
-                self.self_node_id, truncate_shards_request.ingester_id,
-            )));
-        }
-        let mut state_guard = self.state.write().await;
-
-        for subrequest in truncate_shards_request.subrequests {
-            let queue_id = subrequest.queue_id();
-            let truncate_up_to_position_inclusive = subrequest.truncate_up_to_position_inclusive();
-
-            if truncate_up_to_position_inclusive.is_eof() {
-                state_guard.delete_shard(&queue_id).await;
-            } else {
-                state_guard
-                    .truncate_shard(&queue_id, truncate_up_to_position_inclusive)
-                    .await;
-            }
-        }
-        self.check_decommissioning_status(&mut state_guard);
-        let truncate_response = TruncateShardsResponse {};
-        Ok(truncate_response)
-    }
-
-    async fn close_shards(
-        &mut self,
-        close_shards_request: CloseShardsRequest,
-    ) -> IngestV2Result<CloseShardsResponse> {
-        let mut state_guard = self.state.write().await;
-
-        for shard_ids in close_shards_request.shards {
-            for queue_id in shard_ids.queue_ids() {
-                if let Some(shard) = state_guard.shards.get_mut(&queue_id) {
-                    shard.shard_state = ShardState::Closed;
-                    shard.notify_shard_status();
-                }
-            }
-        }
-        Ok(CloseShardsResponse {})
-    }
-
-    async fn decommission(
+    async fn decommission_inner(
         &mut self,
         _decommission_request: DecommissionRequest,
     ) -> IngestV2Result<DecommissionResponse> {
@@ -822,13 +865,116 @@ impl IngesterService for Ingester {
 
         Ok(DecommissionResponse {})
     }
+}
+
+#[async_trait]
+impl IngesterService for Ingester {
+    async fn persist(
+        &mut self,
+        persist_request: PersistRequest,
+    ) -> IngestV2Result<PersistResponse> {
+        with_request_metrics!(
+            self.persist_inner(persist_request).await,
+            "ingester",
+            "server",
+            "persist"
+        )
+    }
+
+    async fn open_replication_stream(
+        &mut self,
+        syn_replication_stream: quickwit_common::ServiceStream<SynReplicationMessage>,
+    ) -> IngestV2Result<IngesterServiceStream<AckReplicationMessage>> {
+        with_request_metrics!(
+            self.open_replication_stream_inner(syn_replication_stream)
+                .await,
+            "ingester",
+            "server",
+            "open_replication_stream"
+        )
+    }
+
+    async fn open_fetch_stream(
+        &mut self,
+        open_fetch_stream_request: OpenFetchStreamRequest,
+    ) -> IngestV2Result<ServiceStream<IngestV2Result<FetchMessage>>> {
+        with_request_metrics!(
+            self.open_fetch_stream_inner(open_fetch_stream_request)
+                .await,
+            "ingester",
+            "server",
+            "open_fetch_stream"
+        )
+    }
 
     async fn open_observation_stream(
         &mut self,
-        _open_observation_stream_request: OpenObservationStreamRequest,
+        open_observation_stream_request: OpenObservationStreamRequest,
     ) -> IngestV2Result<IngesterServiceStream<ObservationMessage>> {
-        let observation_stream = self.observation_rx.clone().into();
-        Ok(observation_stream)
+        with_request_metrics!(
+            self.open_observation_stream_inner(open_observation_stream_request)
+                .await,
+            "ingester",
+            "server",
+            "open_observation_stream"
+        )
+    }
+
+    async fn init_shards(
+        &mut self,
+        init_shards_request: InitShardsRequest,
+    ) -> IngestV2Result<InitShardsResponse> {
+        with_request_metrics!(
+            self.init_shards_inner(init_shards_request).await,
+            "ingester",
+            "server",
+            "init_shards"
+        )
+    }
+
+    async fn truncate_shards(
+        &mut self,
+        truncate_shards_request: TruncateShardsRequest,
+    ) -> IngestV2Result<TruncateShardsResponse> {
+        with_request_metrics!(
+            self.truncate_shards_inner(truncate_shards_request).await,
+            "ingester",
+            "server",
+            "truncate_shards"
+        )
+    }
+
+    async fn close_shards(
+        &mut self,
+        close_shards_request: CloseShardsRequest,
+    ) -> IngestV2Result<CloseShardsResponse> {
+        with_request_metrics!(
+            self.close_shards_inner(close_shards_request).await,
+            "ingester",
+            "server",
+            "close_shards"
+        )
+    }
+
+    async fn ping(&mut self, ping_request: PingRequest) -> IngestV2Result<PingResponse> {
+        with_request_metrics!(
+            self.ping_inner(ping_request).await,
+            "ingester",
+            "server",
+            "ping"
+        )
+    }
+
+    async fn decommission(
+        &mut self,
+        decommission_request: DecommissionRequest,
+    ) -> IngestV2Result<DecommissionResponse> {
+        with_request_metrics!(
+            self.decommission_inner(decommission_request).await,
+            "ingester",
+            "server",
+            "decommission"
+        )
     }
 }
 
@@ -896,7 +1042,7 @@ impl EventSubscriber<ShardPositionsUpdate> for WeakIngesterState {
         let Some(state) = self.0.upgrade() else {
             return;
         };
-        let mut state_guard = state.write().await;
+        let mut state_guard = with_lock_metrics!(state.write().await, "gc_shards", "write");
 
         let index_uid = shard_positions_update.source_uid.index_uid;
         let source_id = shard_positions_update.source_uid.source_id;

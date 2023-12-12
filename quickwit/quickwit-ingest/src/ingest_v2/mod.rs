@@ -20,6 +20,7 @@
 mod broadcast;
 mod fetch;
 mod ingester;
+mod metrics;
 mod models;
 mod mrecord;
 mod mrecordlog_utils;
