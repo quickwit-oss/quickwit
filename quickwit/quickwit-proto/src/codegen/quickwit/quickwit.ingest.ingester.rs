@@ -1,6 +1,28 @@
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RetainShardsForSource {
+    #[prost(string, tag = "1")]
+    pub index_uid: ::prost::alloc::string::String,
+    #[prost(string, tag = "2")]
+    pub source_id: ::prost::alloc::string::String,
+    #[prost(uint64, repeated, tag = "3")]
+    pub shard_ids: ::prost::alloc::vec::Vec<u64>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RetainShardsRequest {
+    #[prost(message, repeated, tag = "1")]
+    pub retain_shards_for_sources: ::prost::alloc::vec::Vec<RetainShardsForSource>,
+}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct RetainShardsResponse {}
+#[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
 pub struct PersistRequest {
     #[prost(string, tag = "1")]
     pub leader_id: ::prost::alloc::string::String,
@@ -534,6 +556,12 @@ pub trait IngesterService: std::fmt::Debug + dyn_clone::DynClone + Send + Sync +
         &mut self,
         request: InitShardsRequest,
     ) -> crate::ingest::IngestV2Result<InitShardsResponse>;
+    /// Only retain the shards that are listed in the request.
+    /// Other shards are deleted.
+    async fn retain_shards(
+        &mut self,
+        request: RetainShardsRequest,
+    ) -> crate::ingest::IngestV2Result<RetainShardsResponse>;
     /// Truncates a set of shards at the given positions. This RPC is called by indexers on leaders AND followers.
     async fn truncate_shards(
         &mut self,
@@ -664,6 +692,12 @@ impl IngesterService for IngesterServiceClient {
     ) -> crate::ingest::IngestV2Result<InitShardsResponse> {
         self.inner.init_shards(request).await
     }
+    async fn retain_shards(
+        &mut self,
+        request: RetainShardsRequest,
+    ) -> crate::ingest::IngestV2Result<RetainShardsResponse> {
+        self.inner.retain_shards(request).await
+    }
     async fn truncate_shards(
         &mut self,
         request: TruncateShardsRequest,
@@ -731,6 +765,12 @@ pub mod ingester_service_mock {
             request: super::InitShardsRequest,
         ) -> crate::ingest::IngestV2Result<super::InitShardsResponse> {
             self.inner.lock().await.init_shards(request).await
+        }
+        async fn retain_shards(
+            &mut self,
+            request: super::RetainShardsRequest,
+        ) -> crate::ingest::IngestV2Result<super::RetainShardsResponse> {
+            self.inner.lock().await.retain_shards(request).await
         }
         async fn truncate_shards(
             &mut self,
@@ -853,6 +893,22 @@ impl tower::Service<InitShardsRequest> for Box<dyn IngesterService> {
         Box::pin(fut)
     }
 }
+impl tower::Service<RetainShardsRequest> for Box<dyn IngesterService> {
+    type Response = RetainShardsResponse;
+    type Error = crate::ingest::IngestV2Error;
+    type Future = BoxFuture<Self::Response, Self::Error>;
+    fn poll_ready(
+        &mut self,
+        _cx: &mut std::task::Context<'_>,
+    ) -> std::task::Poll<Result<(), Self::Error>> {
+        std::task::Poll::Ready(Ok(()))
+    }
+    fn call(&mut self, request: RetainShardsRequest) -> Self::Future {
+        let mut svc = self.clone();
+        let fut = async move { svc.retain_shards(request).await };
+        Box::pin(fut)
+    }
+}
 impl tower::Service<TruncateShardsRequest> for Box<dyn IngesterService> {
     type Response = TruncateShardsResponse;
     type Error = crate::ingest::IngestV2Error;
@@ -946,6 +1002,11 @@ struct IngesterServiceTowerBlock {
         InitShardsResponse,
         crate::ingest::IngestV2Error,
     >,
+    retain_shards_svc: quickwit_common::tower::BoxService<
+        RetainShardsRequest,
+        RetainShardsResponse,
+        crate::ingest::IngestV2Error,
+    >,
     truncate_shards_svc: quickwit_common::tower::BoxService<
         TruncateShardsRequest,
         TruncateShardsResponse,
@@ -976,6 +1037,7 @@ impl Clone for IngesterServiceTowerBlock {
             open_fetch_stream_svc: self.open_fetch_stream_svc.clone(),
             open_observation_stream_svc: self.open_observation_stream_svc.clone(),
             init_shards_svc: self.init_shards_svc.clone(),
+            retain_shards_svc: self.retain_shards_svc.clone(),
             truncate_shards_svc: self.truncate_shards_svc.clone(),
             close_shards_svc: self.close_shards_svc.clone(),
             ping_svc: self.ping_svc.clone(),
@@ -1014,6 +1076,12 @@ impl IngesterService for IngesterServiceTowerBlock {
         request: InitShardsRequest,
     ) -> crate::ingest::IngestV2Result<InitShardsResponse> {
         self.init_shards_svc.ready().await?.call(request).await
+    }
+    async fn retain_shards(
+        &mut self,
+        request: RetainShardsRequest,
+    ) -> crate::ingest::IngestV2Result<RetainShardsResponse> {
+        self.retain_shards_svc.ready().await?.call(request).await
     }
     async fn truncate_shards(
         &mut self,
@@ -1084,6 +1152,15 @@ pub struct IngesterServiceTowerBlockBuilder {
             Box<dyn IngesterService>,
             InitShardsRequest,
             InitShardsResponse,
+            crate::ingest::IngestV2Error,
+        >,
+    >,
+    #[allow(clippy::type_complexity)]
+    retain_shards_layer: Option<
+        quickwit_common::tower::BoxLayer<
+            Box<dyn IngesterService>,
+            RetainShardsRequest,
+            RetainShardsResponse,
             crate::ingest::IngestV2Error,
         >,
     >,
@@ -1163,6 +1240,12 @@ impl IngesterServiceTowerBlockBuilder {
             > + Clone + Send + Sync + 'static,
         <L::Service as tower::Service<InitShardsRequest>>::Future: Send + 'static,
         L::Service: tower::Service<
+                RetainShardsRequest,
+                Response = RetainShardsResponse,
+                Error = crate::ingest::IngestV2Error,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<RetainShardsRequest>>::Future: Send + 'static,
+        L::Service: tower::Service<
                 TruncateShardsRequest,
                 Response = TruncateShardsResponse,
                 Error = crate::ingest::IngestV2Error,
@@ -1202,6 +1285,10 @@ impl IngesterServiceTowerBlockBuilder {
         );
         self
             .init_shards_layer = Some(
+            quickwit_common::tower::BoxLayer::new(layer.clone()),
+        );
+        self
+            .retain_shards_layer = Some(
             quickwit_common::tower::BoxLayer::new(layer.clone()),
         );
         self
@@ -1292,6 +1379,19 @@ impl IngesterServiceTowerBlockBuilder {
         <L::Service as tower::Service<InitShardsRequest>>::Future: Send + 'static,
     {
         self.init_shards_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
+        self
+    }
+    pub fn retain_shards_layer<L>(mut self, layer: L) -> Self
+    where
+        L: tower::Layer<Box<dyn IngesterService>> + Send + Sync + 'static,
+        L::Service: tower::Service<
+                RetainShardsRequest,
+                Response = RetainShardsResponse,
+                Error = crate::ingest::IngestV2Error,
+            > + Clone + Send + Sync + 'static,
+        <L::Service as tower::Service<RetainShardsRequest>>::Future: Send + 'static,
+    {
+        self.retain_shards_layer = Some(quickwit_common::tower::BoxLayer::new(layer));
         self
     }
     pub fn truncate_shards_layer<L>(mut self, layer: L) -> Self
@@ -1412,6 +1512,11 @@ impl IngesterServiceTowerBlockBuilder {
         } else {
             quickwit_common::tower::BoxService::new(boxed_instance.clone())
         };
+        let retain_shards_svc = if let Some(layer) = self.retain_shards_layer {
+            layer.layer(boxed_instance.clone())
+        } else {
+            quickwit_common::tower::BoxService::new(boxed_instance.clone())
+        };
         let truncate_shards_svc = if let Some(layer) = self.truncate_shards_layer {
             layer.layer(boxed_instance.clone())
         } else {
@@ -1439,6 +1544,7 @@ impl IngesterServiceTowerBlockBuilder {
             open_fetch_stream_svc,
             open_observation_stream_svc,
             init_shards_svc,
+            retain_shards_svc,
             truncate_shards_svc,
             close_shards_svc,
             ping_svc,
@@ -1559,6 +1665,12 @@ where
             Future = BoxFuture<InitShardsResponse, crate::ingest::IngestV2Error>,
         >
         + tower::Service<
+            RetainShardsRequest,
+            Response = RetainShardsResponse,
+            Error = crate::ingest::IngestV2Error,
+            Future = BoxFuture<RetainShardsResponse, crate::ingest::IngestV2Error>,
+        >
+        + tower::Service<
             TruncateShardsRequest,
             Response = TruncateShardsResponse,
             Error = crate::ingest::IngestV2Error,
@@ -1611,6 +1723,12 @@ where
         &mut self,
         request: InitShardsRequest,
     ) -> crate::ingest::IngestV2Result<InitShardsResponse> {
+        self.call(request).await
+    }
+    async fn retain_shards(
+        &mut self,
+        request: RetainShardsRequest,
+    ) -> crate::ingest::IngestV2Result<RetainShardsResponse> {
         self.call(request).await
     }
     async fn truncate_shards(
@@ -1734,6 +1852,16 @@ where
             .map(|response| response.into_inner())
             .map_err(|error| error.into())
     }
+    async fn retain_shards(
+        &mut self,
+        request: RetainShardsRequest,
+    ) -> crate::ingest::IngestV2Result<RetainShardsResponse> {
+        self.inner
+            .retain_shards(request)
+            .await
+            .map(|response| response.into_inner())
+            .map_err(|error| error.into())
+    }
     async fn truncate_shards(
         &mut self,
         request: TruncateShardsRequest,
@@ -1853,6 +1981,17 @@ for IngesterServiceGrpcServerAdapter {
         self.inner
             .clone()
             .init_shards(request.into_inner())
+            .await
+            .map(tonic::Response::new)
+            .map_err(|error| error.into())
+    }
+    async fn retain_shards(
+        &self,
+        request: tonic::Request<RetainShardsRequest>,
+    ) -> Result<tonic::Response<RetainShardsResponse>, tonic::Status> {
+        self.inner
+            .clone()
+            .retain_shards(request.into_inner())
             .await
             .map(tonic::Response::new)
             .map_err(|error| error.into())
@@ -2145,6 +2284,38 @@ pub mod ingester_service_grpc_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        /// Only retain the shards that are listed in the request.
+        /// Other shards are deleted.
+        pub async fn retain_shards(
+            &mut self,
+            request: impl tonic::IntoRequest<super::RetainShardsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::RetainShardsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.ingest.ingester.IngesterService/RetainShards",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new(
+                        "quickwit.ingest.ingester.IngesterService",
+                        "RetainShards",
+                    ),
+                );
+            self.inner.unary(req, path, codec).await
+        }
         /// Truncates a set of shards at the given positions. This RPC is called by indexers on leaders AND followers.
         pub async fn truncate_shards(
             &mut self,
@@ -2326,6 +2497,15 @@ pub mod ingester_service_grpc_server {
             request: tonic::Request<super::InitShardsRequest>,
         ) -> std::result::Result<
             tonic::Response<super::InitShardsResponse>,
+            tonic::Status,
+        >;
+        /// Only retain the shards that are listed in the request.
+        /// Other shards are deleted.
+        async fn retain_shards(
+            &self,
+            request: tonic::Request<super::RetainShardsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::RetainShardsResponse>,
             tonic::Status,
         >;
         /// Truncates a set of shards at the given positions. This RPC is called by indexers on leaders AND followers.
@@ -2655,6 +2835,52 @@ pub mod ingester_service_grpc_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = InitShardsSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.ingest.ingester.IngesterService/RetainShards" => {
+                    #[allow(non_camel_case_types)]
+                    struct RetainShardsSvc<T: IngesterServiceGrpc>(pub Arc<T>);
+                    impl<
+                        T: IngesterServiceGrpc,
+                    > tonic::server::UnaryService<super::RetainShardsRequest>
+                    for RetainShardsSvc<T> {
+                        type Response = super::RetainShardsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::RetainShardsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).retain_shards(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = RetainShardsSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(
