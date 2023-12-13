@@ -38,8 +38,7 @@ pub(super) struct MemoryUsage(ByteSize);
 #[derive(Debug, Clone, Copy, thiserror::Error)]
 pub(super) enum NotEnoughCapacityError {
     #[error(
-        "write-ahead log is full, capacity: usage: {usage}, capacity: {capacity}, requested: \
-         {requested}"
+        "write-ahead log is full, capacity: {capacity}, usage: {usage}, requested: {requested}"
     )]
     Disk {
         usage: ByteSize,
@@ -47,7 +46,7 @@ pub(super) enum NotEnoughCapacityError {
         requested: ByteSize,
     },
     #[error(
-        "write-ahead log memory buffer is full, usage: {usage}, capacity: {capacity}, requested: \
+        "write-ahead log memory buffer is full: capacity: {capacity}, usage: {usage}, requested: \
          {requested}"
     )]
     Memory {

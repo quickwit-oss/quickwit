@@ -41,7 +41,7 @@ pub enum IngestServiceError {
     IoError(String),
     #[error("rate limited")]
     RateLimited,
-    #[error("the ingest service is unavailable")]
+    #[error("ingest service is unavailable")]
     Unavailable,
 }
 
