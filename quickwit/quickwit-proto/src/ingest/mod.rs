@@ -43,6 +43,8 @@ pub enum IngestV2Error {
     ShardNotFound { shard_id: ShardId },
     #[error("request timed out")]
     Timeout,
+    #[error("too many requests")]
+    TooManyRequests,
     // TODO: Merge `Transport` and `IngesterUnavailable` into a single `Unavailable` error.
     #[error("transport error: {0}")]
     Transport(String),
@@ -70,6 +72,7 @@ impl From<IngestV2Error> for tonic::Status {
             IngestV2Error::Internal(_) => tonic::Code::Internal,
             IngestV2Error::ShardNotFound { .. } => tonic::Code::NotFound,
             IngestV2Error::Timeout { .. } => tonic::Code::DeadlineExceeded,
+            IngestV2Error::TooManyRequests => tonic::Code::ResourceExhausted,
             IngestV2Error::Transport { .. } => tonic::Code::Unavailable,
         };
         let message: String = error.to_string();
@@ -79,10 +82,12 @@ impl From<IngestV2Error> for tonic::Status {
 
 impl From<tonic::Status> for IngestV2Error {
     fn from(status: tonic::Status) -> Self {
-        if status.code() == tonic::Code::Unavailable {
-            return IngestV2Error::Transport(status.message().to_string());
+        dbg!(&status);
+        match status.code() {
+            tonic::Code::Unavailable => IngestV2Error::Transport(status.message().to_string()),
+            tonic::Code::ResourceExhausted => IngestV2Error::TooManyRequests,
+            _ => IngestV2Error::Internal(status.message().to_string()),
         }
-        IngestV2Error::Internal(status.message().to_string())
     }
 }
 
@@ -94,6 +99,7 @@ impl ServiceError for IngestV2Error {
             Self::ShardNotFound { .. } => ServiceErrorCode::NotFound,
             Self::Timeout { .. } => ServiceErrorCode::Timeout,
             Self::Transport { .. } => ServiceErrorCode::Unavailable,
+            Self::TooManyRequests => ServiceErrorCode::RateLimited,
         }
     }
 }
