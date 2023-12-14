@@ -1729,6 +1729,27 @@ mod tests {
     }
 
     #[test]
+    fn test_validate_sort_by_docid() {
+        let sort_fields = vec![
+            SortField {
+                field_name: "_doc".to_string(),
+                sort_order: 0,
+                sort_datetime_format: None,
+            },
+            SortField {
+                field_name: "_shard_doc".to_string(),
+                sort_order: 0,
+                sort_datetime_format: None,
+            },
+        ];
+        let mut schema_builder = Schema::builder();
+        schema_builder.add_date_field("timestamp", FAST);
+        schema_builder.add_u64_field("id", FAST);
+        let schema = schema_builder.build();
+        validate_sort_by_fields_and_search_after(&sort_fields, &None, &schema).unwrap();
+    }
+
+    #[test]
     fn test_validate_sort_by_fields_and_search_after_invalid_1() {
         // 2 sort fields + search after with only one sort value is invalid.
         let sort_fields = vec![

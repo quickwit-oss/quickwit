@@ -169,7 +169,7 @@ following syntax.
 {
   // ...
   "sort" : [
-    { "timestamp" : {"format": "epoch_millis","order" : "asc"}},
+    { "timestamp" : {"format": "epoch_millis_as_int","order" : "asc"}},
     { "serial_number" : "desc" }
   ]
   // ...
