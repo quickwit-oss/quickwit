@@ -353,7 +353,7 @@ fn validate_sort_by_field(
     has_timestamp_format: bool,
     schema: &Schema,
 ) -> crate::Result<()> {
-    if field_name == "_score" {
+    if ["_score", "_shard_doc", "_doc"].contains(&field_name) {
         return Ok(());
     }
     let dynamic_field_opt = schema.get_field(DYNAMIC_FIELD_NAME).ok();
@@ -1726,6 +1726,27 @@ mod tests {
         };
         validate_sort_by_fields_and_search_after(&sort_fields, &Some(partial_hit), &schema)
             .unwrap();
+    }
+
+    #[test]
+    fn test_validate_sort_by_docid() {
+        let sort_fields = vec![
+            SortField {
+                field_name: "_doc".to_string(),
+                sort_order: 0,
+                sort_datetime_format: None,
+            },
+            SortField {
+                field_name: "_shard_doc".to_string(),
+                sort_order: 0,
+                sort_datetime_format: None,
+            },
+        ];
+        let mut schema_builder = Schema::builder();
+        schema_builder.add_date_field("timestamp", FAST);
+        schema_builder.add_u64_field("id", FAST);
+        let schema = schema_builder.build();
+        validate_sort_by_fields_and_search_after(&sort_fields, &None, &schema).unwrap();
     }
 
     #[test]

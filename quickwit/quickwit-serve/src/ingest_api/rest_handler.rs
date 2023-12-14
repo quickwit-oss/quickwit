@@ -188,7 +188,7 @@ fn convert_ingest_response_v2(
         IngestFailureReason::Internal => IngestServiceError::Internal("Internal error".to_string()),
         IngestFailureReason::NoShardsAvailable => IngestServiceError::Unavailable,
         IngestFailureReason::RateLimited => IngestServiceError::RateLimited,
-        IngestFailureReason::ResourceExhausted => IngestServiceError::Unavailable,
+        IngestFailureReason::ResourceExhausted => IngestServiceError::RateLimited,
     })
 }
 

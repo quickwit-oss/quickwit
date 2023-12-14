@@ -47,6 +47,7 @@ use super::ingester::PERSIST_REQUEST_TIMEOUT;
 use super::routing_table::RoutingTable;
 use super::workbench::IngestWorkbench;
 use super::IngesterPool;
+use crate::semaphore_with_waiter::SemaphoreWithMaxWaiters;
 use crate::{with_request_metrics, LeaderId};
 
 /// Duration after which ingest requests time out with [`IngestV2Error::Timeout`].
@@ -67,6 +68,7 @@ pub struct IngestRouter {
     ingester_pool: IngesterPool,
     state: Arc<RwLock<RouterState>>,
     replication_factor: usize,
+    write_semaphore: SemaphoreWithMaxWaiters,
 }
 
 struct RouterState {
@@ -101,6 +103,7 @@ impl IngestRouter {
             ingester_pool,
             state,
             replication_factor,
+            write_semaphore: SemaphoreWithMaxWaiters::new(1, 10),
         }
     }
 
@@ -419,6 +422,11 @@ impl IngestRouterService for IngestRouter {
         &mut self,
         ingest_request: IngestRequestV2,
     ) -> IngestV2Result<IngestResponseV2> {
+        let _permit = self
+            .write_semaphore
+            .acquire()
+            .await
+            .map_err(|()| IngestV2Error::TooManyRequests)?;
         with_request_metrics!(
             self.ingest_timeout(ingest_request, INGEST_REQUEST_TIMEOUT)
                 .await,

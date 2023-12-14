@@ -63,7 +63,7 @@ pub enum IndexingError {
     StorageResolverError(String),
     #[error("an internal error occurred: {0}")]
     Internal(String),
-    #[error("the ingest service is unavailable")]
+    #[error("indexing service is unavailable")]
     Unavailable,
 }
 
