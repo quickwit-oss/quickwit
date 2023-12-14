@@ -105,12 +105,10 @@ pub struct ListFieldsResponse {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListFieldsEntryResponse {
-    /// The field name
     #[prost(string, tag = "1")]
     pub field_name: ::prost::alloc::string::String,
-    /// The tantivy field type mapped via `to_code`.
-    #[prost(uint32, tag = "2")]
-    pub field_type: u32,
+    #[prost(enumeration = "ListFieldType", tag = "2")]
+    pub field_type: i32,
     /// The index ids the field exists
     #[prost(string, repeated, tag = "3")]
     pub index_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
@@ -132,6 +130,31 @@ pub struct ListFieldsEntryResponse {
     pub non_aggregatable_index_ids: ::prost::alloc::vec::Vec<
         ::prost::alloc::string::String,
     >,
+}
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[derive(Eq)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListFieldSerialized {
+    /// The field name
+    #[prost(string, tag = "1")]
+    pub field_name: ::prost::alloc::string::String,
+    /// The tantivy field type.
+    #[prost(enumeration = "ListFieldType", tag = "2")]
+    pub field_type: i32,
+    /// Is the field searchable
+    #[prost(bool, tag = "4")]
+    pub searchable: bool,
+    /// Is the field aggregatable
+    #[prost(bool, tag = "5")]
+    pub aggregatable: bool,
+}
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListFields {
+    #[prost(message, repeated, tag = "1")]
+    pub fields: ::prost::alloc::vec::Vec<ListFieldSerialized>,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[derive(Eq, Hash)]
@@ -576,6 +599,58 @@ pub struct LeafSearchStreamResponse {
     /// Split id.
     #[prost(string, tag = "2")]
     pub split_id: ::prost::alloc::string::String,
+}
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum ListFieldType {
+    Str = 0,
+    U64 = 1,
+    I64 = 2,
+    F64 = 3,
+    Bool = 4,
+    Date = 5,
+    Facet = 6,
+    Bytes = 7,
+    IpAddr = 8,
+    Json = 9,
+}
+impl ListFieldType {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            ListFieldType::Str => "STR",
+            ListFieldType::U64 => "U64",
+            ListFieldType::I64 => "I64",
+            ListFieldType::F64 => "F64",
+            ListFieldType::Bool => "BOOL",
+            ListFieldType::Date => "DATE",
+            ListFieldType::Facet => "FACET",
+            ListFieldType::Bytes => "BYTES",
+            ListFieldType::IpAddr => "IP_ADDR",
+            ListFieldType::Json => "JSON",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "STR" => Some(Self::Str),
+            "U64" => Some(Self::U64),
+            "I64" => Some(Self::I64),
+            "F64" => Some(Self::F64),
+            "BOOL" => Some(Self::Bool),
+            "DATE" => Some(Self::Date),
+            "FACET" => Some(Self::Facet),
+            "BYTES" => Some(Self::Bytes),
+            "IP_ADDR" => Some(Self::IpAddr),
+            "JSON" => Some(Self::Json),
+            _ => None,
+        }
+    }
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]

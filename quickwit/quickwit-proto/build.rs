@@ -128,6 +128,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .type_attribute("PartialHit", "#[derive(Eq, Hash)]")
         .type_attribute("PartialHit.sort_value", "#[derive(Copy)]")
         .type_attribute("SearchRequest", "#[derive(Eq, Hash)]")
+        .type_attribute("ListFieldSerialized", "#[derive(Eq)]")
         .type_attribute("SortByValue", "#[derive(Ord, PartialOrd)]")
         .type_attribute("SortField", "#[derive(Eq, Hash)]")
         .out_dir("src/codegen/quickwit")

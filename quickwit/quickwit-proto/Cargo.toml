@@ -25,6 +25,7 @@ prost-types = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 sqlx = { workspace = true, optional = true }
+tantivy = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tonic = { workspace = true }
@@ -33,6 +34,7 @@ tracing = { workspace = true }
 tracing-opentelemetry = { workspace = true }
 ulid = { workspace = true }
 utoipa = { workspace = true }
+zstd = { workspace = true }
 
 quickwit-actors = { workspace = true }
 quickwit-common = { workspace = true }

@@ -19,8 +19,11 @@
 
 use std::cmp::Ordering;
 use std::fmt;
+use std::io::{self, Read};
 
+use prost::Message;
 pub use sort_by_value::SortValue;
+use tantivy::schema::Type;
 
 include!("../codegen/quickwit/quickwit.search.rs");
 
@@ -242,4 +245,66 @@ impl PartialHit {
             None
         }
     }
+}
+
+impl From<Type> for ListFieldType {
+    fn from(typ: Type) -> Self {
+        match typ {
+            Type::Str => ListFieldType::Str,
+            Type::U64 => ListFieldType::U64,
+            Type::I64 => ListFieldType::I64,
+            Type::F64 => ListFieldType::F64,
+            Type::Bool => ListFieldType::Bool,
+            Type::Date => ListFieldType::Date,
+            Type::Facet => ListFieldType::Facet,
+            Type::Bytes => ListFieldType::Bytes,
+            Type::Json => ListFieldType::Json,
+            Type::IpAddr => ListFieldType::IpAddr,
+        }
+    }
+}
+
+/// Serializes the Split fields.
+///
+/// `fields_metadata` has to be sorted.
+pub fn serialize_split_fields(list_fields: ListFields) -> Vec<u8> {
+    let payload = list_fields.encode_to_vec();
+    let compression_level = 3;
+    let payload_compressed = zstd::stream::encode_all(&mut &payload[..], compression_level)
+        .expect("zstd encoding failed");
+    let mut out = Vec::new();
+    // Write Header -- Format Version 2
+    let format_version = 2u8;
+    out.push(format_version);
+    // Write Payload
+    out.extend_from_slice(&payload_compressed);
+    out
+}
+
+/// Reads a fixed number of bytes into an array and returns the array.
+fn read_exact_array<R: Read, const N: usize>(reader: &mut R) -> io::Result<[u8; N]> {
+    let mut buffer = [0u8; N];
+    reader.read_exact(&mut buffer)?;
+    Ok(buffer)
+}
+
+/// Reads the Split fields from a zstd compressed stream of bytes
+pub fn deserialize_split_fields<R: Read>(mut reader: R) -> io::Result<ListFields> {
+    let format_version = read_exact_array::<_, 1>(&mut reader)?[0];
+    if format_version != 2 {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            format!("Unsupported split field format version: {}", format_version),
+        ));
+    }
+    let reader = zstd::Decoder::new(reader)?;
+    read_split_fields_from_zstd(reader)
+}
+
+/// Reads the Split fields from a stream of bytes
+fn read_split_fields_from_zstd<R: Read>(reader: R) -> io::Result<ListFields> {
+    let all_bytes: Vec<_> = reader.bytes().collect::<Result<_, _>>()?;
+    let serialized_list_fields: ListFields = prost::Message::decode(&all_bytes[..])?;
+
+    Ok(serialized_list_fields)
 }

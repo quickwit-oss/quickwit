@@ -150,10 +150,8 @@ message ListFieldsResponse {
 }
 
 message ListFieldsEntryResponse {
-  // The field name
   string field_name = 1;
-  // The tantivy field type mapped via `to_code`.
-  uint32 field_type = 2;
+  ListFieldType field_type = 2;
   // The index ids the field exists
   repeated string index_ids = 3;
   // True means the field is searchable (indexed) in at least some indices.
@@ -168,6 +166,31 @@ message ListFieldsEntryResponse {
   repeated string non_aggregatable_index_ids = 7;
 }
 
+enum ListFieldType {
+    STR = 0;
+    U64 = 1;
+    I64 = 2;
+    F64 = 3;
+    BOOL = 4;
+    DATE = 5;
+    FACET = 6;
+    BYTES = 7;
+    IP_ADDR = 8;
+    JSON = 9;
+}
+message ListFieldSerialized {
+  // The field name
+  string field_name = 1;
+  // The tantivy field type.
+  ListFieldType field_type = 2;
+  // Is the field searchable
+  bool searchable = 4;
+  // Is the field aggregatable
+  bool aggregatable = 5;
+}
+message ListFields {
+  repeated ListFieldSerialized fields = 1;
+}
 // -- Search -------------------
 
 message SearchRequest {

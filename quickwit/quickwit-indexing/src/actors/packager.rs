@@ -32,8 +32,11 @@ use quickwit_common::temp_dir::TempDirectory;
 use quickwit_directories::write_hotcache;
 use quickwit_doc_mapper::tag_pruning::append_to_tag_set;
 use quickwit_doc_mapper::NamedField;
+use quickwit_proto::search::{
+    serialize_split_fields, ListFieldSerialized, ListFieldType, ListFields,
+};
 use tantivy::schema::FieldType;
-use tantivy::{InvertedIndexReader, ReloadPolicy, SegmentMeta};
+use tantivy::{FieldMetadata, InvertedIndexReader, ReloadPolicy, SegmentMeta};
 use tokio::runtime::Handle;
 use tracing::{debug, info, instrument, warn};
 
@@ -46,8 +49,7 @@ const MAX_VALUES_PER_TAG_FIELD: usize = if cfg!(any(test, feature = "testsuite")
 
 use crate::actors::Uploader;
 use crate::models::{
-    serialize_split_fields, EmptySplit, IndexedSplit, IndexedSplitBatch, PackagedSplit,
-    PackagedSplitBatch,
+    EmptySplit, IndexedSplit, IndexedSplitBatch, PackagedSplit, PackagedSplitBatch,
 };
 
 /// The role of the packager is to get an index writer and
@@ -315,7 +317,8 @@ fn create_packaged_split(
     let mut hotcache_bytes = Vec::new();
     build_hotcache(split.split_scratch_directory.path(), &mut hotcache_bytes)?;
     ctx.record_progress();
-    let serialized_split_fields = serialize_split_fields(&fields_metadata);
+
+    let serialized_split_fields = serialize_field_metadata(&fields_metadata);
 
     let packaged_split = PackagedSplit {
         serialized_split_fields,
@@ -326,6 +329,27 @@ fn create_packaged_split(
         hotcache_bytes,
     };
     Ok(packaged_split)
+}
+
+/// Serializes the Split fields.
+///
+/// `fields_metadata` has to be sorted.
+pub fn serialize_field_metadata(fields_metadata: &[FieldMetadata]) -> Vec<u8> {
+    let fields = fields_metadata
+        .iter()
+        .map(field_metadata_to_list_field_serialized)
+        .collect::<Vec<_>>();
+
+    serialize_split_fields(ListFields { fields })
+}
+
+fn field_metadata_to_list_field_serialized(field_metadata: &FieldMetadata) -> ListFieldSerialized {
+    ListFieldSerialized {
+        field_name: field_metadata.field_name.to_string(),
+        field_type: ListFieldType::from(field_metadata.typ) as i32,
+        searchable: field_metadata.indexed,
+        aggregatable: field_metadata.fast,
+    }
 }
 
 /// Reads u64 from stored term data.
@@ -343,14 +367,63 @@ mod tests {
     use quickwit_actors::{ObservationType, Universe};
     use quickwit_metastore::checkpoint::IndexCheckpointDelta;
     use quickwit_proto::indexing::IndexingPipelineId;
+    use quickwit_proto::search::deserialize_split_fields;
     use quickwit_proto::types::{IndexUid, PipelineUid};
     use tantivy::directory::MmapDirectory;
-    use tantivy::schema::{NumericOptions, Schema, FAST, STRING, TEXT};
+    use tantivy::schema::{NumericOptions, Schema, Type, FAST, STRING, TEXT};
     use tantivy::{doc, DateTime, IndexBuilder, IndexSettings};
     use tracing::Span;
 
     use super::*;
     use crate::models::{PublishLock, SplitAttrs};
+
+    #[test]
+    fn serialize_field_metadata_test() {
+        let fields_metadata = vec![
+            FieldMetadata {
+                field_name: "test".to_string(),
+                typ: Type::Str,
+                indexed: true,
+                stored: true,
+                fast: true,
+            },
+            FieldMetadata {
+                field_name: "test2".to_string(),
+                typ: Type::Str,
+                indexed: true,
+                stored: false,
+                fast: false,
+            },
+            FieldMetadata {
+                field_name: "test3".to_string(),
+                typ: Type::U64,
+                indexed: true,
+                stored: false,
+                fast: true,
+            },
+        ];
+
+        let out = serialize_field_metadata(&fields_metadata);
+
+        let deserialized: Vec<ListFieldSerialized> =
+            deserialize_split_fields(&mut &out[..]).unwrap().fields;
+
+        assert_eq!(fields_metadata.len(), deserialized.len());
+        assert_eq!(deserialized[0].field_name, "test");
+        assert_eq!(deserialized[0].field_type, ListFieldType::Str as i32);
+        assert!(deserialized[0].searchable);
+        assert!(deserialized[0].aggregatable);
+
+        assert_eq!(deserialized[1].field_name, "test2");
+        assert_eq!(deserialized[1].field_type, ListFieldType::Str as i32);
+        assert!(deserialized[1].searchable);
+        assert!(!deserialized[1].aggregatable);
+
+        assert_eq!(deserialized[2].field_name, "test3");
+        assert_eq!(deserialized[2].field_type, ListFieldType::U64 as i32);
+        assert!(deserialized[2].searchable);
+        assert!(deserialized[2].aggregatable);
+    }
 
     fn make_indexed_split_for_test(
         segment_timestamps: &[DateTime],

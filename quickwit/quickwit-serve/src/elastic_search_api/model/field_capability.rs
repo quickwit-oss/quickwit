@@ -19,9 +19,8 @@
 
 use std::collections::HashMap;
 
-use quickwit_proto::search::{ListFieldsEntryResponse, ListFieldsResponse};
+use quickwit_proto::search::{ListFieldType, ListFieldsEntryResponse, ListFieldsResponse};
 use serde::{Deserialize, Serialize};
-use tantivy::schema::Type;
 
 use super::search_query_params::*;
 use super::ElasticSearchError;
@@ -126,11 +125,11 @@ pub fn convert_to_es_field_capabilities_response(
             .entry(list_field_resp.field_name.to_string())
             .or_default();
 
-        let field_type = Type::from_code(list_field_resp.field_type as u8).unwrap();
+        let field_type = ListFieldType::from_i32(list_field_resp.field_type).unwrap();
         let add_entry =
             FieldCapabilityEntryResponse::from_list_field_entry_response(list_field_resp);
         match field_type {
-            Type::Str => {
+            ListFieldType::Str => {
                 if add_entry.aggregatable {
                     entry.keyword = Some(add_entry.clone());
                 }
@@ -138,15 +137,15 @@ pub fn convert_to_es_field_capabilities_response(
                     entry.text = Some(add_entry);
                 }
             }
-            Type::U64 => entry.long = Some(add_entry),
-            Type::I64 => entry.long = Some(add_entry),
-            Type::F64 => entry.double = Some(add_entry),
-            Type::Bool => entry.boolean = Some(add_entry),
-            Type::Date => entry.date_nanos = Some(add_entry),
-            Type::Facet => continue,
-            Type::Bytes => entry.binary = Some(add_entry), // Is this mapping correct?
-            Type::Json => continue,
-            Type::IpAddr => entry.ip = Some(add_entry),
+            ListFieldType::U64 => entry.long = Some(add_entry),
+            ListFieldType::I64 => entry.long = Some(add_entry),
+            ListFieldType::F64 => entry.double = Some(add_entry),
+            ListFieldType::Bool => entry.boolean = Some(add_entry),
+            ListFieldType::Date => entry.date_nanos = Some(add_entry),
+            ListFieldType::Facet => continue,
+            ListFieldType::Json => continue,
+            ListFieldType::Bytes => entry.binary = Some(add_entry), // Is this mapping correct?
+            ListFieldType::IpAddr => entry.ip = Some(add_entry),
         }
     }
     FieldCapabilityResponse { indices, fields }

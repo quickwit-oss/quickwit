@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
 use std::io;
 use std::path::Path;
@@ -29,17 +30,17 @@ use quickwit_common::shared_consts::SPLIT_FIELDS_FILE_NAME;
 use quickwit_common::uri::Uri;
 use quickwit_config::build_doc_mapper;
 use quickwit_doc_mapper::DocMapper;
-use quickwit_indexing::models::read_split_fields;
 use quickwit_metastore::{ListIndexesMetadataResponseExt, SplitMetadata};
 use quickwit_proto::metastore::{
     ListIndexesMetadataRequest, MetastoreService, MetastoreServiceClient,
 };
 use quickwit_proto::search::{
-    LeafListFieldsRequest, ListFieldsEntryResponse, ListFieldsRequest, ListFieldsResponse,
-    SplitIdAndFooterOffsets,
+    deserialize_split_fields, LeafListFieldsRequest, ListFieldSerialized, ListFieldType,
+    ListFieldsEntryResponse, ListFieldsRequest, ListFieldsResponse, SplitIdAndFooterOffsets,
 };
 use quickwit_proto::types::IndexUid;
 use quickwit_storage::Storage;
+use tantivy::schema::Type;
 use tantivy::FieldMetadata;
 
 use crate::leaf::open_split_bundle;
@@ -61,14 +62,21 @@ pub async fn get_fields_from_split<'a>(
         .get_all(Path::new(SPLIT_FIELDS_FILE_NAME))
         .await?;
     let serialized_split_fields_len = serialized_split_fields.len();
-    let list_fields_iter = read_split_fields(serialized_split_fields).with_context(|| {
-        format!(
-            "could not read split fields (serialized len: {})",
-            serialized_split_fields_len,
-        )
-    })?;
-    Ok(Box::new(list_fields_iter.map(move |metadata| {
-        metadata.map(|metadata| field_metadata_to_fields_entry_response(metadata, &index_id))
+    let mut list_fields = deserialize_split_fields(serialized_split_fields)
+        .with_context(|| {
+            format!(
+                "could not read split fields (serialized len: {})",
+                serialized_split_fields_len,
+            )
+        })?
+        .fields;
+    // Prepare for grouping by field name and type
+    list_fields.sort_by(|left, right| match left.field_name.cmp(&right.field_name) {
+        Ordering::Equal => left.field_type.cmp(&right.field_type),
+        other => other,
+    });
+    Ok(Box::new(list_fields.into_iter().map(move |metadata| {
+        Ok(field_to_fields_entry_response(metadata, &index_id))
     })))
 }
 
@@ -80,34 +88,52 @@ pub fn get_fields_from_schema(
     let schema = doc_mapper.schema();
     let mut list_fields = schema
         .fields()
-        .map(|(_field, entry)| FieldMetadata {
+        .map(|(_field, entry)| ListFieldSerialized {
             field_name: entry.name().to_string(),
-            typ: entry.field_type().value_type(),
-            indexed: entry.is_indexed(),
-            fast: entry.is_fast(),
-            stored: entry.is_stored(),
+            field_type: ListFieldType::from(entry.field_type().value_type()) as i32,
+            searchable: entry.is_indexed(),
+            aggregatable: entry.is_fast(),
         })
         .collect_vec();
-    list_fields.sort();
+    // Prepare for grouping by field name and type
+    list_fields.sort_by(|left, right| match left.field_name.cmp(&right.field_name) {
+        Ordering::Equal => left.field_type.cmp(&right.field_type),
+        other => other,
+    });
     Box::new(
         list_fields
             .into_iter()
-            .map(move |metadata| Ok(field_metadata_to_fields_entry_response(metadata, &index_id))),
+            .map(move |metadata| Ok(field_to_fields_entry_response(metadata, &index_id))),
     )
 }
 
-fn field_metadata_to_fields_entry_response(
-    metadata: FieldMetadata,
+fn field_to_fields_entry_response(
+    metadata: ListFieldSerialized,
     index_id: &str,
 ) -> ListFieldsEntryResponse {
     ListFieldsEntryResponse {
         field_name: metadata.field_name,
-        field_type: metadata.typ.to_code() as u32,
+        field_type: metadata.field_type,
         index_ids: vec![index_id.to_string()],
-        searchable: metadata.indexed,
-        aggregatable: metadata.fast,
+        searchable: metadata.searchable,
+        aggregatable: metadata.aggregatable,
         non_searchable_index_ids: Vec::new(),
         non_aggregatable_index_ids: Vec::new(),
+    }
+}
+
+fn protobuf_type_to_tantivy_type(typ: ListFieldType) -> Type {
+    match typ {
+        ListFieldType::Str => Type::Str,
+        ListFieldType::U64 => Type::U64,
+        ListFieldType::I64 => Type::I64,
+        ListFieldType::F64 => Type::F64,
+        ListFieldType::Bool => Type::Bool,
+        ListFieldType::Date => Type::Date,
+        ListFieldType::Facet => Type::Facet,
+        ListFieldType::Bytes => Type::Bytes,
+        ListFieldType::IpAddr => Type::IpAddr,
+        ListFieldType::Json => Type::Json,
     }
 }
 
@@ -116,7 +142,7 @@ fn field_metadata_to_fields_entry_response(
 fn field_metadata_from_list_field_response(resp: &ListFieldsEntryResponse) -> FieldMetadata {
     FieldMetadata {
         field_name: resp.field_name.to_string(),
-        typ: tantivy::schema::Type::from_code(resp.field_type as u8).expect("invalid field type"),
+        typ: protobuf_type_to_tantivy_type(ListFieldType::from_i32(resp.field_type).unwrap()),
         indexed: resp.aggregatable,
         fast: resp.searchable,
         stored: true,
@@ -200,6 +226,8 @@ fn merge_same_field_group(
 }
 
 /// Merge iterators of sorted (FieldMetadata, index_id) into a Vec<ListFieldsEntryResponse>.
+///
+/// The iterators need to be sorted by (field_name, fieldtype)
 fn merge_leaf_list_fields(
     iterators: Vec<impl Iterator<Item = io::Result<ListFieldsEntryResponse>>>,
 ) -> crate::Result<Vec<ListFieldsEntryResponse>> {
@@ -446,7 +474,6 @@ pub fn jobs_to_leaf_requests(
 #[cfg(test)]
 mod tests {
     use quickwit_proto::search::ListFieldsEntryResponse;
-    use tantivy::schema::Type;
 
     use super::*;
 
@@ -485,7 +512,7 @@ mod tests {
     fn merge_leaf_list_fields_identical_test() {
         let entry1 = ListFieldsEntryResponse {
             field_name: "field1".to_string(),
-            field_type: Type::Str.to_code() as u32,
+            field_type: ListFieldType::Str as i32,
             searchable: true,
             aggregatable: true,
             non_searchable_index_ids: Vec::new(),
@@ -494,7 +521,7 @@ mod tests {
         };
         let entry2 = ListFieldsEntryResponse {
             field_name: "field1".to_string(),
-            field_type: Type::Str.to_code() as u32,
+            field_type: ListFieldType::Str as i32,
             searchable: true,
             aggregatable: true,
             non_searchable_index_ids: Vec::new(),
@@ -512,7 +539,7 @@ mod tests {
     fn merge_leaf_list_fields_different_test() {
         let entry1 = ListFieldsEntryResponse {
             field_name: "field1".to_string(),
-            field_type: Type::Str.to_code() as u32,
+            field_type: ListFieldType::Str as i32,
             searchable: true,
             aggregatable: true,
             non_searchable_index_ids: Vec::new(),
@@ -521,7 +548,7 @@ mod tests {
         };
         let entry2 = ListFieldsEntryResponse {
             field_name: "field2".to_string(),
-            field_type: Type::Str.to_code() as u32,
+            field_type: ListFieldType::Str as i32,
             searchable: true,
             aggregatable: true,
             non_searchable_index_ids: Vec::new(),
@@ -539,7 +566,7 @@ mod tests {
     fn merge_leaf_list_fields_non_searchable_test() {
         let entry1 = ListFieldsEntryResponse {
             field_name: "field1".to_string(),
-            field_type: Type::Str.to_code() as u32,
+            field_type: ListFieldType::Str as i32,
             searchable: true,
             aggregatable: true,
             non_searchable_index_ids: Vec::new(),
@@ -548,7 +575,7 @@ mod tests {
         };
         let entry2 = ListFieldsEntryResponse {
             field_name: "field1".to_string(),
-            field_type: Type::Str.to_code() as u32,
+            field_type: ListFieldType::Str as i32,
             searchable: false,
             aggregatable: true,
             non_searchable_index_ids: Vec::new(),
@@ -562,7 +589,7 @@ mod tests {
         .unwrap();
         let expected = ListFieldsEntryResponse {
             field_name: "field1".to_string(),
-            field_type: Type::Str.to_code() as u32,
+            field_type: ListFieldType::Str as i32,
             searchable: true,
             aggregatable: true,
             non_searchable_index_ids: vec!["index2".to_string()],
@@ -575,7 +602,7 @@ mod tests {
     fn merge_leaf_list_fields_non_aggregatable_test() {
         let entry1 = ListFieldsEntryResponse {
             field_name: "field1".to_string(),
-            field_type: Type::Str.to_code() as u32,
+            field_type: ListFieldType::Str as i32,
             searchable: true,
             aggregatable: true,
             non_searchable_index_ids: Vec::new(),
@@ -584,7 +611,7 @@ mod tests {
         };
         let entry2 = ListFieldsEntryResponse {
             field_name: "field1".to_string(),
-            field_type: Type::Str.to_code() as u32,
+            field_type: ListFieldType::Str as i32,
             searchable: true,
             aggregatable: false,
             non_searchable_index_ids: Vec::new(),
@@ -598,7 +625,7 @@ mod tests {
         .unwrap();
         let expected = ListFieldsEntryResponse {
             field_name: "field1".to_string(),
-            field_type: Type::Str.to_code() as u32,
+            field_type: ListFieldType::Str as i32,
             searchable: true,
             aggregatable: true,
             non_searchable_index_ids: Vec::new(),
@@ -611,7 +638,7 @@ mod tests {
     fn merge_leaf_list_fields_mixed_types1() {
         let entry1 = ListFieldsEntryResponse {
             field_name: "field1".to_string(),
-            field_type: Type::Str.to_code() as u32,
+            field_type: ListFieldType::Str as i32,
             searchable: true,
             aggregatable: true,
             non_searchable_index_ids: Vec::new(),
@@ -620,7 +647,7 @@ mod tests {
         };
         let entry2 = ListFieldsEntryResponse {
             field_name: "field1".to_string(),
-            field_type: Type::Str.to_code() as u32,
+            field_type: ListFieldType::Str as i32,
             searchable: true,
             aggregatable: true,
             non_searchable_index_ids: Vec::new(),
@@ -629,7 +656,7 @@ mod tests {
         };
         let entry3 = ListFieldsEntryResponse {
             field_name: "field1".to_string(),
-            field_type: Type::U64.to_code() as u32,
+            field_type: ListFieldType::U64 as i32,
             searchable: true,
             aggregatable: true,
             non_searchable_index_ids: Vec::new(),
@@ -649,7 +676,7 @@ mod tests {
     fn merge_leaf_list_fields_mixed_types2() {
         let entry1 = ListFieldsEntryResponse {
             field_name: "field1".to_string(),
-            field_type: Type::Str.to_code() as u32,
+            field_type: ListFieldType::Str as i32,
             searchable: true,
             aggregatable: true,
             non_searchable_index_ids: Vec::new(),
@@ -658,7 +685,7 @@ mod tests {
         };
         let entry2 = ListFieldsEntryResponse {
             field_name: "field1".to_string(),
-            field_type: Type::Str.to_code() as u32,
+            field_type: ListFieldType::Str as i32,
             searchable: true,
             aggregatable: true,
             non_searchable_index_ids: Vec::new(),
@@ -667,7 +694,7 @@ mod tests {
         };
         let entry3 = ListFieldsEntryResponse {
             field_name: "field1".to_string(),
-            field_type: Type::U64.to_code() as u32,
+            field_type: ListFieldType::U64 as i32,
             searchable: true,
             aggregatable: true,
             non_searchable_index_ids: Vec::new(),
@@ -687,7 +714,7 @@ mod tests {
     fn merge_leaf_list_fields_multiple_field_names() {
         let entry1 = ListFieldsEntryResponse {
             field_name: "field1".to_string(),
-            field_type: Type::Str.to_code() as u32,
+            field_type: ListFieldType::Str as i32,
             searchable: true,
             aggregatable: true,
             non_searchable_index_ids: Vec::new(),
@@ -696,7 +723,7 @@ mod tests {
         };
         let entry2 = ListFieldsEntryResponse {
             field_name: "field1".to_string(),
-            field_type: Type::Str.to_code() as u32,
+            field_type: ListFieldType::Str as i32,
             searchable: true,
             aggregatable: true,
             non_searchable_index_ids: Vec::new(),
@@ -705,7 +732,7 @@ mod tests {
         };
         let entry3 = ListFieldsEntryResponse {
             field_name: "field2".to_string(),
-            field_type: Type::Str.to_code() as u32,
+            field_type: ListFieldType::Str as i32,
             searchable: true,
             aggregatable: true,
             non_searchable_index_ids: Vec::new(),
@@ -725,7 +752,7 @@ mod tests {
     fn merge_leaf_list_fields_non_aggregatable_list_test() {
         let entry1 = ListFieldsEntryResponse {
             field_name: "field1".to_string(),
-            field_type: Type::Str.to_code() as u32,
+            field_type: ListFieldType::Str as i32,
             searchable: true,
             aggregatable: true,
             non_searchable_index_ids: vec!["index1".to_string()],
@@ -738,7 +765,7 @@ mod tests {
         };
         let entry2 = ListFieldsEntryResponse {
             field_name: "field1".to_string(),
-            field_type: Type::Str.to_code() as u32,
+            field_type: ListFieldType::Str as i32,
             searchable: false,
             aggregatable: true,
             non_searchable_index_ids: Vec::new(),
@@ -752,7 +779,7 @@ mod tests {
         .unwrap();
         let expected = ListFieldsEntryResponse {
             field_name: "field1".to_string(),
-            field_type: Type::Str.to_code() as u32,
+            field_type: ListFieldType::Str as i32,
             searchable: true,
             aggregatable: true,
             non_searchable_index_ids: vec!["index1".to_string(), "index4".to_string()],

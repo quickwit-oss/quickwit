@@ -50,7 +50,6 @@ quickwit-opentelemetry = { workspace = true }
 quickwit-proto = { workspace = true }
 quickwit-query = { workspace = true }
 quickwit-storage = { workspace = true }
-quickwit-indexing = { workspace = true }
 
 [dev-dependencies]
 assert-json-diff = { workspace = true }

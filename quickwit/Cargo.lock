@@ -5831,6 +5831,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sqlx",
+ "tantivy",
  "thiserror",
  "tokio",
  "tonic 0.9.2",
@@ -5840,6 +5841,7 @@ dependencies = [
  "tracing-opentelemetry",
  "ulid",
  "utoipa",
+ "zstd 0.13.0",
 ]
 
 [[package]]
@@ -5990,7 +5992,6 @@ dependencies = [
  "serde_json",
  "serde_qs 0.12.0",
  "serde_with 3.4.0",
- "tantivy",
  "tempfile",
  "termcolor",
  "thiserror",
