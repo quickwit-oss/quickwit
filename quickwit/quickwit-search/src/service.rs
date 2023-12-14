@@ -357,6 +357,7 @@ pub(crate) async fn scroll(
 
     if let Some(scroll_ttl_secs) = scroll_request.scroll_ttl_secs {
         if scroll_context_modified {
+            scroll_context.truncate_start();
             let payload = scroll_context.serialize();
             let scroll_ttl = Duration::from_secs(scroll_ttl_secs as u64);
             cluster_client

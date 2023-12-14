@@ -85,6 +85,17 @@ impl ScrollContext {
         &truncated_partial_hits[..num_partial_hits]
     }
 
+    /// Truncate the first few stored partial hits if we have more than SCROLL_BATCH_LEN of them.
+    pub fn truncate_start(&mut self) {
+        if self.cached_partial_hits.len() <= SCROLL_BATCH_LEN {
+            return;
+        }
+
+        let to_truncate = self.cached_partial_hits.len() - SCROLL_BATCH_LEN;
+        self.cached_partial_hits.drain(..to_truncate);
+        self.cached_partial_hits_start_offset += to_truncate as u64;
+    }
+
     pub fn serialize(&self) -> Vec<u8> {
         let uncompressed_payload = serde_json::to_string(self).unwrap();
         uncompressed_payload.as_bytes().to_vec()
@@ -104,11 +115,27 @@ impl ScrollContext {
         cluster_client: &ClusterClient,
         searcher_context: &SearcherContext,
     ) -> crate::Result<bool> {
-        if self.cached_partial_hits_start_offset <= start_offset && self.last_page_in_cache() {
+        // if start_offset - 1 isn't in cache, either we got a query which we already answered
+        // earlier, or we got a request from the future (forged, or we failed to write in the kv
+        // store)
+        if !(self.cached_partial_hits_start_offset
+            ..self.cached_partial_hits_start_offset + self.cached_partial_hits.len() as u64)
+            .contains(&(start_offset - 1))
+        {
+            return Err(crate::SearchError::InvalidQuery(
+                "Reused scroll_id".to_string(),
+            ));
+        }
+
+        if self.last_page_in_cache() {
             return Ok(false);
         }
-        self.search_request.max_hits = SCROLL_BATCH_LEN as u64;
-        self.search_request.start_offset = start_offset;
+
+        let previous_last_hit = self.cached_partial_hits
+            [(start_offset - 1 - self.cached_partial_hits_start_offset) as usize]
+            .clone();
+
+        self.search_request.search_after = Some(previous_last_hit);
         let leaf_search_response: LeafSearchResponse = crate::root::search_partial_hits_phase(
             searcher_context,
             &self.indexes_metas_for_leaf_search,

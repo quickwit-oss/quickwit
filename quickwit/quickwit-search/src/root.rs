@@ -460,7 +460,7 @@ async fn search_partial_hits_phase_with_scroll(
         // This is a scroll request.
         //
         // We increase max hits to add populate the scroll cache.
-        search_request.max_hits = SCROLL_BATCH_LEN as u64;
+        search_request.max_hits = search_request.max_hits.max(SCROLL_BATCH_LEN as u64);
         search_request.scroll_ttl_secs = None;
         let mut leaf_search_resp = search_partial_hits_phase(
             searcher_context,
@@ -475,7 +475,7 @@ async fn search_partial_hits_phase_with_scroll(
 
         let scroll_context_search_request =
             simplify_search_request_for_scroll_api(&search_request)?;
-        let scroll_ctx = ScrollContext {
+        let mut scroll_ctx = ScrollContext {
             indexes_metas_for_leaf_search: indexes_metas_for_leaf_search.clone(),
             split_metadatas: split_metadatas.to_vec(),
             search_request: scroll_context_search_request,
@@ -491,6 +491,7 @@ async fn search_partial_hits_phase_with_scroll(
             )
             .next_page(leaf_search_resp.partial_hits.len() as u64);
 
+        scroll_ctx.truncate_start();
         let payload: Vec<u8> = scroll_ctx.serialize();
         let scroll_key = scroll_key_and_start_offset.scroll_key();
         cluster_client
@@ -3383,7 +3384,11 @@ mod tests {
         assert_eq!(timestamp_range_extractor.end_timestamp, Some(1620283880));
     }
 
-    fn create_search_resp(index_uri: &str, hit_range: Range<usize>) -> LeafSearchResponse {
+    fn create_search_resp(
+        index_uri: &str,
+        hit_range: Range<usize>,
+        search_after: Option<PartialHit>,
+    ) -> LeafSearchResponse {
         let (num_total_hits, split_id) = match index_uri {
             "ram:///test-index-1" => (TOTAL_NUM_HITS_INDEX_1, "split1"),
             "ram:///test-index-2" => (TOTAL_NUM_HITS_INDEX_2, "split2"),
@@ -3392,6 +3397,17 @@ mod tests {
 
         let doc_ids = (0..num_total_hits)
             .rev()
+            .filter(|elem| {
+                if let Some(search_after) = &search_after {
+                    if split_id == search_after.split_id {
+                        *elem < (search_after.doc_id as usize)
+                    } else {
+                        split_id < search_after.split_id.as_str()
+                    }
+                } else {
+                    true
+                }
+            })
             .skip(hit_range.start)
             .take(hit_range.end - hit_range.start);
         quickwit_proto::search::LeafSearchResponse {
@@ -3439,43 +3455,49 @@ mod tests {
         let mut mock_search_service = MockSearchService::new();
         mock_search_service.expect_leaf_search().times(2).returning(
             |req: quickwit_proto::search::LeafSearchRequest| {
-                let search_req: &SearchRequest = req.search_request.as_ref().unwrap();
+                let search_req = req.search_request.unwrap();
                 // the leaf request does not need to know about the scroll_ttl.
                 assert_eq!(search_req.start_offset, 0u64);
                 assert!(search_req.scroll_ttl_secs.is_none());
                 assert_eq!(search_req.max_hits as usize, SCROLL_BATCH_LEN);
+                assert!(search_req.search_after.is_none());
                 Ok(create_search_resp(
                     &req.index_uri,
                     search_req.start_offset as usize
                         ..(search_req.start_offset + search_req.max_hits) as usize,
+                    search_req.search_after,
                 ))
             },
         );
         mock_search_service.expect_leaf_search().times(2).returning(
             |req: quickwit_proto::search::LeafSearchRequest| {
-                let search_req: &SearchRequest = req.search_request.as_ref().unwrap();
+                let search_req = req.search_request.unwrap();
                 // the leaf request does not need to know about the scroll_ttl.
                 assert_eq!(search_req.start_offset, 0u64);
                 assert!(search_req.scroll_ttl_secs.is_none());
-                assert_eq!(search_req.max_hits as usize, 2 * SCROLL_BATCH_LEN);
+                assert_eq!(search_req.max_hits as usize, SCROLL_BATCH_LEN);
+                assert!(search_req.search_after.is_some());
                 Ok(create_search_resp(
                     &req.index_uri,
                     search_req.start_offset as usize
                         ..(search_req.start_offset + search_req.max_hits) as usize,
+                    search_req.search_after,
                 ))
             },
         );
         mock_search_service.expect_leaf_search().times(2).returning(
             |req: quickwit_proto::search::LeafSearchRequest| {
-                let search_req: &SearchRequest = req.search_request.as_ref().unwrap();
+                let search_req = req.search_request.unwrap();
                 // the leaf request does not need to know about the scroll_ttl.
                 assert_eq!(search_req.start_offset, 0u64);
                 assert!(search_req.scroll_ttl_secs.is_none());
-                assert_eq!(search_req.max_hits as usize, 3 * SCROLL_BATCH_LEN);
+                assert_eq!(search_req.max_hits as usize, SCROLL_BATCH_LEN);
+                assert!(search_req.search_after.is_some());
                 Ok(create_search_resp(
                     &req.index_uri,
                     search_req.start_offset as usize
                         ..(search_req.start_offset + search_req.max_hits) as usize,
+                    search_req.search_after,
                 ))
             },
         );
