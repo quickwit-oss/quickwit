@@ -21,4 +21,4 @@ mod model;
 mod rest_handler;
 mod util;
 
-pub(crate) use rest_handler::jaeger_api_handlers;
+pub(crate) use rest_handler::{jaeger_api_handlers, JaegerApi};

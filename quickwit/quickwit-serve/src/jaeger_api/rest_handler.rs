@@ -28,7 +28,7 @@ use quickwit_proto::jaeger::storage::v1::{
 use quickwit_proto::tonic;
 use tokio_stream::wrappers::ReceiverStream;
 use tokio_stream::StreamExt;
-use tracing::info;
+use tracing::error;
 use warp::{Filter, Rejection};
 
 use super::model::build_jaeger_traces;
@@ -39,6 +39,15 @@ use crate::jaeger_api::model::{
 use crate::jaeger_api::util::{parse_duration_with_units, to_well_known_timestamp};
 use crate::json_api_response::JsonApiResponse;
 use crate::{require, BodyFormat};
+
+#[derive(utoipa::OpenApi)]
+#[openapi(paths(
+    jaeger_services_handler,
+    jaeger_service_operations_handler,
+    jaeger_traces_search_handler,
+    jaeger_traces_handler
+))]
+pub(crate) struct JaegerApi;
 
 /// Setup Jaeger API handlers
 ///
@@ -61,7 +70,7 @@ pub(crate) fn jaeger_api_handlers(
 
 #[utoipa::path(
     get,
-    tag = "Jaeger Services",
+    tag = "Jaeger",
     path = "/otel-traces-v0_6/jaeger/api/services",
     responses(
         (status = 200, description = "Successfully fetched services names.", body = JaegerResponseBody )
@@ -79,7 +88,7 @@ pub fn jaeger_services_handler(
 
 #[utoipa::path(
     get,
-    tag = "Jaeger Operations",
+    tag = "Jaeger",
     path = "/otel-traces-v0_6/jaeger/api/services/{service}/operations",
     responses(
         (status = 200, description = "Successfully fetched operations names  the given service.", body = JaegerResponseBody )
@@ -97,7 +106,7 @@ pub fn jaeger_service_operations_handler(
 
 #[utoipa::path(
     get,
-    tag = "Jaeger Traces",
+    tag = "Jaeger",
     path = "/otel-traces-v0_6/jaeger/api/traces?service={service}&start={start_in_ns}&end={end_in_ns}&lookback=custom",
     responses(
         (status = 200, description = "Successfully fetched traces information.", body = JaegerResponseBody )
@@ -122,7 +131,7 @@ pub fn jaeger_traces_search_handler(
 
 #[utoipa::path(
     get,
-    tag = "Jaeger Traces",
+    tag = "Jaeger",
     path = "/otel-traces-v0_6/jaeger/api/traces/{id}",
     responses(
         (status = 200, description = "Successfully fetched traces spans for the provided trace ID.", body = JaegerResponseBody )
@@ -200,7 +209,7 @@ async fn jaeger_traces_search(
         .find_traces(tonic::Request::new(find_traces_request))
         .await
         .map_err(|error| {
-            info!(error = ?error, "failed to fetch traces");
+            error!(error = ?error, "failed to fetch traces");
             JaegerError {
                 status: StatusCode::INTERNAL_SERVER_ERROR,
                 message: "failed to fetch traces".to_string(),
@@ -230,8 +239,8 @@ async fn jaeger_get_trace_by_id(
     trace_id_string: String,
     jaeger_service: JaegerService,
 ) -> Result<JaegerResponseBody<Vec<JaegerTrace>>, JaegerError> {
-    let trace_id = hex::decode(trace_id_string).map_err(|error| {
-        info!(error = ?error, "failed to decode trace id");
+    let trace_id = hex::decode(trace_id_string.clone()).map_err(|error| {
+        error!(error = ?error, "failed to decode trace `{}`", trace_id_string.clone());
         JaegerError {
             status: StatusCode::INTERNAL_SERVER_ERROR,
             message: "failed to decode trace id".to_string(),
@@ -242,7 +251,7 @@ async fn jaeger_get_trace_by_id(
         .get_trace(tonic::Request::new(get_trace_request))
         .await
         .map_err(|error| {
-            info!(error = ?error, "failed to fetch trace");
+            error!(error = ?error, "failed to fetch trace `{}`", trace_id_string.clone());
             JaegerError {
                 status: StatusCode::INTERNAL_SERVER_ERROR,
                 message: "failed to fetch trace".to_string(),
