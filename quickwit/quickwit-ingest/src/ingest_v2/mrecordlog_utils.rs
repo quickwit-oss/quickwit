@@ -25,12 +25,20 @@ use mrecordlog::error::DeleteQueueError;
 use mrecordlog::MultiRecordLog;
 use quickwit_proto::types::QueueId;
 
+#[derive(Debug, Clone, Copy)]
+pub(super) struct MRecordLogUsage {
+    pub disk: ByteSize,
+    pub memory: ByteSize,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(super) struct MemoryUsage(ByteSize);
+
 /// Error returned when the mrecordlog does not have enough capacity to store some records.
 #[derive(Debug, Clone, Copy, thiserror::Error)]
 pub(super) enum NotEnoughCapacityError {
     #[error(
-        "write-ahead log is full, capacity: usage: {usage}, capacity: {capacity}, requested: \
-         {requested}"
+        "write-ahead log is full, capacity: {capacity}, usage: {usage}, requested: {requested}"
     )]
     Disk {
         usage: ByteSize,
@@ -38,7 +46,7 @@ pub(super) enum NotEnoughCapacityError {
         requested: ByteSize,
     },
     #[error(
-        "write-ahead log memory buffer is full, usage: {usage}, capacity: {capacity}, requested: \
+        "write-ahead log memory buffer is full: capacity: {capacity}, usage: {usage}, requested: \
          {requested}"
     )]
     Memory {
@@ -54,7 +62,7 @@ pub(super) fn check_enough_capacity(
     disk_capacity: ByteSize,
     memory_capacity: ByteSize,
     requested_capacity: ByteSize,
-) -> Result<(), NotEnoughCapacityError> {
+) -> Result<MRecordLogUsage, NotEnoughCapacityError> {
     let disk_usage = ByteSize(mrecordlog.disk_usage() as u64);
 
     if disk_usage + requested_capacity > disk_capacity {
@@ -73,7 +81,11 @@ pub(super) fn check_enough_capacity(
             requested: requested_capacity,
         });
     }
-    Ok(())
+    let usage = MRecordLogUsage {
+        disk: disk_usage,
+        memory: memory_usage,
+    };
+    Ok(usage)
 }
 
 /// Deletes a queue from the WAL. Returns without error if the queue does not exist.

@@ -38,7 +38,7 @@ use tracing::{debug, error, warn};
 
 use super::ingester::IngesterState;
 use super::models::ShardStatus;
-use crate::{ClientId, IngesterPool};
+use crate::{with_lock_metrics, ClientId, IngesterPool};
 
 /// A fetch stream task is responsible for waiting and pushing new records written to a shard's
 /// record log into a channel named `fetch_message_tx`.
@@ -126,7 +126,7 @@ impl FetchStreamTask {
             let mut mrecord_buffer = BytesMut::with_capacity(self.batch_num_bytes);
             let mut mrecord_lengths = Vec::new();
 
-            let state_guard = self.state.read().await;
+            let state_guard = with_lock_metrics!(self.state.read().await, "fetch", "read");
 
             let Ok(mrecords) = state_guard
                 .mrecordlog
