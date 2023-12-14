@@ -92,7 +92,7 @@ pub(crate) async fn start_rest_server(
         .and(warp::get())
         .map(|| redirect(http::Uri::from_static("/ui/search")));
 
-    let extra_header = warp::reply::with::headers(
+    let extra_headers = warp::reply::with::headers(
         quickwit_services
             .node_config
             .rest_config
@@ -109,7 +109,7 @@ pub(crate) async fn start_rest_server(
         .or(metrics_routes)
         .with(request_counter)
         .recover(recover_fn)
-        .with(extra_header)
+        .with(extra_headers)
         .boxed();
 
     let warp_service = warp::service(rest_routes);
