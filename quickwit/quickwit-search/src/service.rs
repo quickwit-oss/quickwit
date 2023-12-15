@@ -44,6 +44,7 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 
 use crate::leaf_cache::LeafSearchCache;
 use crate::list_fields::{leaf_list_fields, root_list_fields};
+use crate::list_fields_cache::ListFieldsCache;
 use crate::root::fetch_docs_phase;
 use crate::scroll_context::{MiniKV, ScrollContext, ScrollKeyAndStartOffset};
 use crate::search_stream::{leaf_search_stream, root_search_stream};
@@ -449,6 +450,8 @@ pub struct SearcherContext {
     pub leaf_search_cache: LeafSearchCache,
     /// Search split cache. `None` if no split cache is configured.
     pub split_cache_opt: Option<Arc<SplitCache>>,
+    /// List fields cache. Caches the list fields response for a given split.
+    pub list_fields_cache: ListFieldsCache,
 }
 
 impl std::fmt::Debug for SearcherContext {
@@ -487,6 +490,8 @@ impl SearcherContext {
         let storage_long_term_cache = Arc::new(QuickwitCache::new(fast_field_cache_capacity));
         let leaf_search_cache =
             LeafSearchCache::new(searcher_config.partial_request_cache_capacity.as_u64() as usize);
+        let list_fields_cache =
+            ListFieldsCache::new(searcher_config.partial_request_cache_capacity.as_u64() as usize);
 
         Self {
             searcher_config,
@@ -495,6 +500,7 @@ impl SearcherContext {
             split_footer_cache: global_split_footer_cache,
             split_stream_semaphore,
             leaf_search_cache,
+            list_fields_cache,
             split_cache_opt,
         }
     }

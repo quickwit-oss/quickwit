@@ -35,8 +35,8 @@ use quickwit_proto::metastore::{
     ListIndexesMetadataRequest, MetastoreService, MetastoreServiceClient,
 };
 use quickwit_proto::search::{
-    deserialize_split_fields, LeafListFieldsRequest, ListFieldType, ListFieldsEntryResponse,
-    ListFieldsRequest, ListFieldsResponse, SplitIdAndFooterOffsets,
+    deserialize_split_fields, LeafListFieldsRequest, ListFieldType, ListFields,
+    ListFieldsEntryResponse, ListFieldsRequest, ListFieldsResponse, SplitIdAndFooterOffsets,
 };
 use quickwit_proto::types::IndexUid;
 use quickwit_storage::Storage;
@@ -52,7 +52,12 @@ pub async fn get_fields_from_split<'a>(
     split_and_footer_offsets: &'a SplitIdAndFooterOffsets,
     index_storage: Arc<dyn Storage>,
 ) -> anyhow::Result<Box<dyn Iterator<Item = ListFieldsEntryResponse> + Send>> {
-    // TODO: Add fancy caching
+    if let Some(list_fields) = searcher_context
+        .list_fields_cache
+        .get(split_and_footer_offsets.clone())
+    {
+        return Ok(Box::new(list_fields.fields.into_iter()));
+    }
     let (_, split_bundle) =
         open_split_bundle(searcher_context, index_storage, split_and_footer_offsets).await?;
 
@@ -68,17 +73,23 @@ pub async fn get_fields_from_split<'a>(
             )
         })?
         .fields;
+    for list_field_entry in list_fields.iter_mut() {
+        list_field_entry.index_ids = vec![index_id.to_string()];
+    }
     // Prepare for grouping by field name and type
     list_fields.sort_by(|left, right| match left.field_name.cmp(&right.field_name) {
         Ordering::Equal => left.field_type.cmp(&right.field_type),
         other => other,
     });
-    Ok(Box::new(list_fields.into_iter().map(
-        move |mut metadata| {
-            metadata.index_ids = vec![index_id.to_string()];
-            metadata
+    // Put result into cache
+    searcher_context.list_fields_cache.put(
+        split_and_footer_offsets.clone(),
+        ListFields {
+            fields: list_fields.clone(),
         },
-    )))
+    );
+
+    Ok(Box::new(list_fields.into_iter()))
 }
 
 /// Get the list of splits for the request which we need to scan.
@@ -326,6 +337,11 @@ pub async fn root_list_fields(
         .list_indexes_metadata(list_indexes_metadata_request)
         .await?
         .deserialize_indexes_metadata()?;
+    if indexes_metadatas.is_empty() {
+        return Err(SearchError::IndexesNotFound {
+            index_ids: list_fields_req.index_ids.clone(),
+        });
+    }
     let index_uid_to_index_meta: HashMap<IndexUid, IndexMetasForLeafSearch> = indexes_metadatas
         .iter()
         .map(|index_metadata| {
