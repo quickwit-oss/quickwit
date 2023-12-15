@@ -104,6 +104,16 @@ impl ServiceError for IngestV2Error {
     }
 }
 
+impl Shard {
+    /// List of nodes that are storing the shard (the leader, and optionally the follower).
+    pub fn ingester_nodes(&self) -> impl Iterator<Item = NodeId> + '_ {
+        [Some(&self.leader_id), self.follower_id.as_ref()]
+            .into_iter()
+            .flatten()
+            .map(|node_id| NodeId::new(node_id.clone()))
+    }
+}
+
 impl DocBatchV2 {
     pub fn docs(&self) -> impl Iterator<Item = Bytes> + '_ {
         self.doc_lengths.iter().scan(0, |start_offset, doc_length| {
