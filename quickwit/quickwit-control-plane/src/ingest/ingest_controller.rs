@@ -113,8 +113,8 @@ impl IngestController {
     async fn sync_with_ingester(&self, ingester: &NodeId, model: &ControlPlaneModel) {
         info!(ingester = %ingester, "sync_with_ingester");
         let Some(mut ingester_client) = self.ingester_pool.get(ingester) else {
-            // TODO: (Maybe) We should mark the ingester as unavailable, and stop advertise its shard
-            // to routers.
+            // TODO: (Maybe) We should mark the ingester as unavailable, and stop advertise its
+            // shard to routers.
             warn!("failed to sync with ingester `{ingester}`: not available");
             return;
         };
