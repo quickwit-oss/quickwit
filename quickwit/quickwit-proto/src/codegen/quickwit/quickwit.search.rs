@@ -132,29 +132,11 @@ pub struct ListFieldsEntryResponse {
     >,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
-#[derive(Eq)]
-#[allow(clippy::derive_partial_eq_without_eq)]
-#[derive(Clone, PartialEq, ::prost::Message)]
-pub struct ListFieldSerialized {
-    /// The field name
-    #[prost(string, tag = "1")]
-    pub field_name: ::prost::alloc::string::String,
-    /// The tantivy field type.
-    #[prost(enumeration = "ListFieldType", tag = "2")]
-    pub field_type: i32,
-    /// Is the field searchable
-    #[prost(bool, tag = "4")]
-    pub searchable: bool,
-    /// Is the field aggregatable
-    #[prost(bool, tag = "5")]
-    pub aggregatable: bool,
-}
-#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListFields {
     #[prost(message, repeated, tag = "1")]
-    pub fields: ::prost::alloc::vec::Vec<ListFieldSerialized>,
+    pub fields: ::prost::alloc::vec::Vec<ListFieldsEntryResponse>,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[derive(Eq, Hash)]

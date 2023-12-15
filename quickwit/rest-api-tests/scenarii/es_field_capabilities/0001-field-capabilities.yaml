@@ -1,20 +1,18 @@
-# Test date _field_caps API
+# Test _field_caps API
 method: [GET]
-engines:
-  - quickwit
 endpoint: _elastic/fieldcaps/_field_caps
 expected:
   indices:
   - fieldcaps
   fields:
-    _dynamic.nested.response:
+    nested.response:
       long:
         metadata_field: false
         searchable: true
         aggregatable: true
         indices:
         - fieldcaps
-    _dynamic.nested.name:
+    nested.name:
       keyword:
         metadata_field: false
         searchable: true
@@ -27,7 +25,7 @@ expected:
         aggregatable: true
         indices:
         - fieldcaps
-    _dynamic.host:
+    host:
       keyword:
         metadata_field: false
         searchable: true
@@ -40,7 +38,7 @@ expected:
         aggregatable: true
         indices:
         - fieldcaps
-    _dynamic.mixed: # This is a little weird case (values [5, -5.5]), since coercion happens only on the columnar side. That's why `long` is not aggregatable.
+    mixed: # This is a little weird case (values [5, -5.5]), since coercion happens only on the columnar side. That's why `long` is not aggregatable.
       long: 
         metadata_field: false
         searchable: true
@@ -67,14 +65,14 @@ expected:
         aggregatable: false
         indices:
         - fieldcaps
-    _dynamic.response:
+    response:
       long:
         metadata_field: false
         searchable: true
         aggregatable: true
         indices:
         - fieldcaps
-    _dynamic.id:
+    id:
       long:
         metadata_field: false
         searchable: true
@@ -87,7 +85,7 @@ expected:
         aggregatable: true
         indices:
         - fieldcaps
-    _dynamic.name:
+    name:
       keyword:
         metadata_field: false
         searchable: true
@@ -100,7 +98,7 @@ expected:
         aggregatable: true
         indices:
         - fieldcaps
-    _dynamic.tags:
+    tags:
       keyword:
         metadata_field: false
         searchable: true
@@ -118,19 +116,19 @@ expected:
 method: [GET]
 engines:
   - quickwit
-endpoint: _elastic/fieldcaps/_field_caps?fields=_dynamic.nested.response,nested.name
+endpoint: _elastic/fieldcaps/_field_caps?fields=nested.response,nested.name
 expected:
   indices:
   - fieldcaps
   fields:
-    _dynamic.nested.response:
+    nested.response:
       long:
         metadata_field: false
         searchable: true
         aggregatable: true
         indices:
         - fieldcaps
-    _dynamic.nested.name:
+    nested.name:
       keyword:
         metadata_field: false
         searchable: true
@@ -153,14 +151,14 @@ expected:
   indices:
   - fieldcaps
   fields:
-    _dynamic.nested.response:
+    nested.response:
       long:
         metadata_field: false
         searchable: true
         aggregatable: true
         indices:
         - fieldcaps
-    _dynamic.nested.name:
+    nested.name:
       keyword:
         metadata_field: false
         searchable: true
@@ -178,19 +176,19 @@ expected:
 method: [GET]
 engines:
   - quickwit
-endpoint: _elastic/fieldcaps/_field_caps?fields=_dynamic.nest*
+endpoint: _elastic/fieldcaps/_field_caps?fields=nest*
 expected:
   indices:
   - fieldcaps
   fields:
-    _dynamic.nested.response:
+    nested.response:
       long:
         metadata_field: false
         searchable: true
         aggregatable: true
         indices:
         - fieldcaps
-    _dynamic.nested.name:
+    nested.name:
       keyword:
         metadata_field: false
         searchable: true
@@ -208,12 +206,12 @@ expected:
 method: [GET]
 engines:
   - quickwit
-endpoint: _elastic/fieldcaps/_field_caps?fields=nes*se
+endpoint: _elastic/fieldcaps/_field_caps?fields=nested.*ponse
 expected:
   indices:
   - fieldcaps
   fields:
-    _dynamic.nested.response:
+    nested.response:
       long:
         metadata_field: false
         searchable: true

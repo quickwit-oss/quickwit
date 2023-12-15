@@ -19,7 +19,6 @@
 
 use std::cmp::Ordering;
 use std::collections::{HashMap, HashSet};
-use std::io;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -35,13 +34,11 @@ use quickwit_proto::metastore::{
     ListIndexesMetadataRequest, MetastoreService, MetastoreServiceClient,
 };
 use quickwit_proto::search::{
-    deserialize_split_fields, LeafListFieldsRequest, ListFieldSerialized, ListFieldType,
-    ListFieldsEntryResponse, ListFieldsRequest, ListFieldsResponse, SplitIdAndFooterOffsets,
+    deserialize_split_fields, LeafListFieldsRequest, ListFieldType, ListFieldsEntryResponse,
+    ListFieldsRequest, ListFieldsResponse, SplitIdAndFooterOffsets,
 };
 use quickwit_proto::types::IndexUid;
 use quickwit_storage::Storage;
-use tantivy::schema::Type;
-use tantivy::FieldMetadata;
 
 use crate::leaf::open_split_bundle;
 use crate::service::SearcherContext;
@@ -53,7 +50,7 @@ pub async fn get_fields_from_split<'a>(
     index_id: String,
     split_and_footer_offsets: &'a SplitIdAndFooterOffsets,
     index_storage: Arc<dyn Storage>,
-) -> anyhow::Result<Box<dyn Iterator<Item = io::Result<ListFieldsEntryResponse>> + Send>> {
+) -> anyhow::Result<Box<dyn Iterator<Item = ListFieldsEntryResponse> + Send>> {
     // TODO: Add fancy caching
     let (_, split_bundle) =
         open_split_bundle(searcher_context, index_storage, split_and_footer_offsets).await?;
@@ -75,24 +72,30 @@ pub async fn get_fields_from_split<'a>(
         Ordering::Equal => left.field_type.cmp(&right.field_type),
         other => other,
     });
-    Ok(Box::new(list_fields.into_iter().map(move |metadata| {
-        Ok(field_to_fields_entry_response(metadata, &index_id))
-    })))
+    Ok(Box::new(list_fields.into_iter().map(
+        move |mut metadata| {
+            metadata.index_ids = vec![index_id.to_string()];
+            metadata
+        },
+    )))
 }
 
 /// Get the list of splits for the request which we need to scan.
 pub fn get_fields_from_schema(
     index_id: String,
     doc_mapper: Arc<dyn DocMapper>,
-) -> Box<dyn Iterator<Item = io::Result<ListFieldsEntryResponse>> + Send> {
+) -> Box<dyn Iterator<Item = ListFieldsEntryResponse> + Send> {
     let schema = doc_mapper.schema();
     let mut list_fields = schema
         .fields()
-        .map(|(_field, entry)| ListFieldSerialized {
+        .map(|(_field, entry)| ListFieldsEntryResponse {
             field_name: entry.name().to_string(),
             field_type: ListFieldType::from(entry.field_type().value_type()) as i32,
+            index_ids: vec![index_id.to_string()],
             searchable: entry.is_indexed(),
             aggregatable: entry.is_fast(),
+            non_searchable_index_ids: Vec::new(),
+            non_aggregatable_index_ids: Vec::new(),
         })
         .collect_vec();
     // Prepare for grouping by field name and type
@@ -100,53 +103,7 @@ pub fn get_fields_from_schema(
         Ordering::Equal => left.field_type.cmp(&right.field_type),
         other => other,
     });
-    Box::new(
-        list_fields
-            .into_iter()
-            .map(move |metadata| Ok(field_to_fields_entry_response(metadata, &index_id))),
-    )
-}
-
-fn field_to_fields_entry_response(
-    metadata: ListFieldSerialized,
-    index_id: &str,
-) -> ListFieldsEntryResponse {
-    ListFieldsEntryResponse {
-        field_name: metadata.field_name,
-        field_type: metadata.field_type,
-        index_ids: vec![index_id.to_string()],
-        searchable: metadata.searchable,
-        aggregatable: metadata.aggregatable,
-        non_searchable_index_ids: Vec::new(),
-        non_aggregatable_index_ids: Vec::new(),
-    }
-}
-
-fn protobuf_type_to_tantivy_type(typ: ListFieldType) -> Type {
-    match typ {
-        ListFieldType::Str => Type::Str,
-        ListFieldType::U64 => Type::U64,
-        ListFieldType::I64 => Type::I64,
-        ListFieldType::F64 => Type::F64,
-        ListFieldType::Bool => Type::Bool,
-        ListFieldType::Date => Type::Date,
-        ListFieldType::Facet => Type::Facet,
-        ListFieldType::Bytes => Type::Bytes,
-        ListFieldType::IpAddr => Type::IpAddr,
-        ListFieldType::Json => Type::Json,
-    }
-}
-
-/// Since we want to kmerge the results, we simplify by always using `FieldMetadata`, to enforce
-/// the same ordering
-fn field_metadata_from_list_field_response(resp: &ListFieldsEntryResponse) -> FieldMetadata {
-    FieldMetadata {
-        field_name: resp.field_name.to_string(),
-        typ: protobuf_type_to_tantivy_type(ListFieldType::from_i32(resp.field_type).unwrap()),
-        indexed: resp.aggregatable,
-        fast: resp.searchable,
-        stored: true,
-    }
+    Box::new(list_fields.into_iter())
 }
 
 /// `current_group` needs to contain at least one element.
@@ -225,21 +182,15 @@ fn merge_same_field_group(
     }
 }
 
-/// Merge iterators of sorted (FieldMetadata, index_id) into a Vec<ListFieldsEntryResponse>.
+/// Merge iterators of ListFieldsEntryResponse into a Vec<ListFieldsEntryResponse>.
 ///
 /// The iterators need to be sorted by (field_name, fieldtype)
 fn merge_leaf_list_fields(
-    iterators: Vec<impl Iterator<Item = io::Result<ListFieldsEntryResponse>>>,
+    iterators: Vec<impl Iterator<Item = ListFieldsEntryResponse>>,
 ) -> crate::Result<Vec<ListFieldsEntryResponse>> {
-    let merged = iterators.into_iter().kmerge_by(|a, b| {
-        match (a, b) {
-            (Ok(ref a_field), Ok(ref b_field)) => {
-                field_metadata_from_list_field_response(a_field)
-                    <= field_metadata_from_list_field_response(b_field)
-            }
-            _ => true, // Prioritize error results to halt early on errors
-        }
-    });
+    let merged = iterators
+        .into_iter()
+        .kmerge_by(|a, b| (&a.field_name, a.field_type) <= (&b.field_name, b.field_type));
     let mut responses = Vec::new();
 
     let mut current_group: Vec<ListFieldsEntryResponse> = Vec::new();
@@ -251,9 +202,6 @@ fn merge_leaf_list_fields(
     };
 
     for entry in merged {
-        let entry =
-            entry.map_err(|err| crate::error::SearchError::Internal(format!("{:?}", err)))?; // TODO: No early return on error
-
         if let Some(last) = current_group.last() {
             if last.field_name != entry.field_name || last.field_type != entry.field_type {
                 flush_group(&mut responses, &mut current_group);
@@ -322,21 +270,15 @@ pub async fn leaf_list_fields(
                 get_fields_from_schema(index_id.to_string(), doc_mapper.clone())
             }
         };
-        let list_fields_iter = list_fields_iter.filter(|field| {
-            if let Ok(field) = field {
+        let list_fields_iter = list_fields_iter
+            .map(|mut entry| {
                 // We don't want to leak the _dynamic hack to the user API.
-                if field.field_name.starts_with("_dynamic.") {
-                    return matches_any_pattern(&field.field_name, field_patterns)
-                        || matches_any_pattern(
-                            &field.field_name["_dynamic.".len()..],
-                            field_patterns,
-                        );
-                } else {
-                    return matches_any_pattern(&field.field_name, field_patterns);
-                };
-            }
-            true
-        });
+                if entry.field_name.starts_with("_dynamic.") {
+                    entry.field_name.replace_range(.."_dynamic.".len(), "");
+                }
+                entry
+            })
+            .filter(|field| matches_any_pattern(&field.field_name, field_patterns));
         iter_per_split.push(list_fields_iter);
     }
     let fields = merge_leaf_list_fields(iter_per_split)?;
@@ -413,8 +355,6 @@ pub async fn root_list_fields(
         .map(|index_metadata| index_metadata.index_uid)
         .collect();
 
-    // TODO if search after is set, we sort by timestamp and we don't want to count all results,
-    // we can refine more here. Same if we sort by _shard_doc
     let split_metadatas: Vec<SplitMetadata> =
         list_relevant_splits(index_uids, None, None, None, &mut metastore).await?;
 
@@ -425,6 +365,7 @@ pub async fn root_list_fields(
         .assign_jobs(jobs, &HashSet::default())
         .await?;
     let mut leaf_request_tasks = Vec::new();
+    // For each node, forward to a node with an affinity for that index id.
     for (client, client_jobs) in assigned_leaf_search_jobs {
         let leaf_requests =
             jobs_to_leaf_requests(&list_fields_req, &index_uid_to_index_meta, client_jobs)?;
@@ -436,14 +377,12 @@ pub async fn root_list_fields(
     let fields = merge_leaf_list_fields(
         leaf_search_responses
             .into_iter()
-            .map(|resp| resp.fields.into_iter().map(Result::Ok))
+            .map(|resp| resp.fields.into_iter())
             .collect_vec(),
     )?;
     Ok(ListFieldsResponse { fields })
-
-    // Extract the list of index ids from the splits.
-    // For each node, forward to a node with an affinity for that index id.
 }
+
 /// Builds a list of [`LeafListFieldsRequest`], one per index, from a list of [`SearchJob`].
 pub fn jobs_to_leaf_requests(
     request: &ListFieldsRequest,
@@ -529,8 +468,8 @@ mod tests {
             index_ids: vec!["index1".to_string()],
         };
         let resp = merge_leaf_list_fields(vec![
-            vec![entry1.clone()].into_iter().map(Result::Ok),
-            vec![entry2.clone()].into_iter().map(Result::Ok),
+            vec![entry1.clone()].into_iter(),
+            vec![entry2.clone()].into_iter(),
         ])
         .unwrap();
         assert_eq!(resp, vec![entry1]);
@@ -556,8 +495,8 @@ mod tests {
             index_ids: vec!["index1".to_string()],
         };
         let resp = merge_leaf_list_fields(vec![
-            vec![entry1.clone()].into_iter().map(Result::Ok),
-            vec![entry2.clone()].into_iter().map(Result::Ok),
+            vec![entry1.clone()].into_iter(),
+            vec![entry2.clone()].into_iter(),
         ])
         .unwrap();
         assert_eq!(resp, vec![entry1, entry2]);
@@ -583,8 +522,8 @@ mod tests {
             index_ids: vec!["index2".to_string()],
         };
         let resp = merge_leaf_list_fields(vec![
-            vec![entry1.clone()].into_iter().map(Result::Ok),
-            vec![entry2.clone()].into_iter().map(Result::Ok),
+            vec![entry1.clone()].into_iter(),
+            vec![entry2.clone()].into_iter(),
         ])
         .unwrap();
         let expected = ListFieldsEntryResponse {
@@ -619,8 +558,8 @@ mod tests {
             index_ids: vec!["index2".to_string()],
         };
         let resp = merge_leaf_list_fields(vec![
-            vec![entry1.clone()].into_iter().map(Result::Ok),
-            vec![entry2.clone()].into_iter().map(Result::Ok),
+            vec![entry1.clone()].into_iter(),
+            vec![entry2.clone()].into_iter(),
         ])
         .unwrap();
         let expected = ListFieldsEntryResponse {
@@ -664,10 +603,8 @@ mod tests {
             index_ids: vec!["index1".to_string()],
         };
         let resp = merge_leaf_list_fields(vec![
-            vec![entry1.clone(), entry2.clone()]
-                .into_iter()
-                .map(Result::Ok),
-            vec![entry3.clone()].into_iter().map(Result::Ok),
+            vec![entry1.clone(), entry2.clone()].into_iter(),
+            vec![entry3.clone()].into_iter(),
         ])
         .unwrap();
         assert_eq!(resp, vec![entry1.clone(), entry3.clone()]);
@@ -702,10 +639,8 @@ mod tests {
             index_ids: vec!["index1".to_string()],
         };
         let resp = merge_leaf_list_fields(vec![
-            vec![entry1.clone(), entry3.clone()]
-                .into_iter()
-                .map(Result::Ok),
-            vec![entry2.clone()].into_iter().map(Result::Ok),
+            vec![entry1.clone(), entry3.clone()].into_iter(),
+            vec![entry2.clone()].into_iter(),
         ])
         .unwrap();
         assert_eq!(resp, vec![entry1.clone(), entry3.clone()]);
@@ -740,10 +675,8 @@ mod tests {
             index_ids: vec!["index1".to_string()],
         };
         let resp = merge_leaf_list_fields(vec![
-            vec![entry1.clone(), entry3.clone()]
-                .into_iter()
-                .map(Result::Ok),
-            vec![entry2.clone()].into_iter().map(Result::Ok),
+            vec![entry1.clone(), entry3.clone()].into_iter(),
+            vec![entry2.clone()].into_iter(),
         ])
         .unwrap();
         assert_eq!(resp, vec![entry1.clone(), entry3.clone()]);
@@ -773,8 +706,8 @@ mod tests {
             index_ids: vec!["index4".to_string()],
         };
         let resp = merge_leaf_list_fields(vec![
-            vec![entry1.clone()].into_iter().map(Result::Ok),
-            vec![entry2.clone()].into_iter().map(Result::Ok),
+            vec![entry1.clone()].into_iter(),
+            vec![entry2.clone()].into_iter(),
         ])
         .unwrap();
         let expected = ListFieldsEntryResponse {

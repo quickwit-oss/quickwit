@@ -28,7 +28,6 @@ use quickwit_common::pubsub::Event;
 use serde::{Deserialize, Serialize};
 use thiserror;
 
-use crate::search::ListFieldSerialized;
 use crate::types::{IndexUid, PipelineUid, Position, ShardId, SourceId, SourceUid};
 use crate::{ServiceError, ServiceErrorCode};
 
@@ -342,21 +341,6 @@ impl IndexingTask {
     pub fn pipeline_uid(&self) -> PipelineUid {
         self.pipeline_uid
             .expect("Pipeline UID should always be present.")
-    }
-}
-
-impl Ord for ListFieldSerialized {
-    fn cmp(&self, other: &Self) -> std::cmp::Ordering {
-        match self.field_name.cmp(&other.field_name) {
-            std::cmp::Ordering::Less => std::cmp::Ordering::Less,
-            std::cmp::Ordering::Greater => std::cmp::Ordering::Greater,
-            std::cmp::Ordering::Equal => self.field_type.cmp(&other.field_type),
-        }
-    }
-}
-impl PartialOrd for ListFieldSerialized {
-    fn partial_cmp(&self, other: &Self) -> Option<std::cmp::Ordering> {
-        Some(self.cmp(other))
     }
 }
 

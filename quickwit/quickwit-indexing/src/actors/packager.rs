@@ -33,7 +33,7 @@ use quickwit_directories::write_hotcache;
 use quickwit_doc_mapper::tag_pruning::append_to_tag_set;
 use quickwit_doc_mapper::NamedField;
 use quickwit_proto::search::{
-    serialize_split_fields, ListFieldSerialized, ListFieldType, ListFields,
+    serialize_split_fields, ListFieldType, ListFields, ListFieldsEntryResponse,
 };
 use tantivy::schema::FieldType;
 use tantivy::{FieldMetadata, InvertedIndexReader, ReloadPolicy, SegmentMeta};
@@ -343,12 +343,17 @@ pub fn serialize_field_metadata(fields_metadata: &[FieldMetadata]) -> Vec<u8> {
     serialize_split_fields(ListFields { fields })
 }
 
-fn field_metadata_to_list_field_serialized(field_metadata: &FieldMetadata) -> ListFieldSerialized {
-    ListFieldSerialized {
+fn field_metadata_to_list_field_serialized(
+    field_metadata: &FieldMetadata,
+) -> ListFieldsEntryResponse {
+    ListFieldsEntryResponse {
         field_name: field_metadata.field_name.to_string(),
         field_type: ListFieldType::from(field_metadata.typ) as i32,
         searchable: field_metadata.indexed,
         aggregatable: field_metadata.fast,
+        index_ids: vec![],
+        non_searchable_index_ids: vec![],
+        non_aggregatable_index_ids: vec![],
     }
 }
 
@@ -367,7 +372,7 @@ mod tests {
     use quickwit_actors::{ObservationType, Universe};
     use quickwit_metastore::checkpoint::IndexCheckpointDelta;
     use quickwit_proto::indexing::IndexingPipelineId;
-    use quickwit_proto::search::deserialize_split_fields;
+    use quickwit_proto::search::{deserialize_split_fields, ListFieldsEntryResponse};
     use quickwit_proto::types::{IndexUid, PipelineUid};
     use tantivy::directory::MmapDirectory;
     use tantivy::schema::{NumericOptions, Schema, Type, FAST, STRING, TEXT};
@@ -405,7 +410,7 @@ mod tests {
 
         let out = serialize_field_metadata(&fields_metadata);
 
-        let deserialized: Vec<ListFieldSerialized> =
+        let deserialized: Vec<ListFieldsEntryResponse> =
             deserialize_split_fields(&mut &out[..]).unwrap().fields;
 
         assert_eq!(fields_metadata.len(), deserialized.len());

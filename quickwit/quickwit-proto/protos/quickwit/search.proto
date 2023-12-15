@@ -178,18 +178,8 @@ enum ListFieldType {
     IP_ADDR = 8;
     JSON = 9;
 }
-message ListFieldSerialized {
-  // The field name
-  string field_name = 1;
-  // The tantivy field type.
-  ListFieldType field_type = 2;
-  // Is the field searchable
-  bool searchable = 4;
-  // Is the field aggregatable
-  bool aggregatable = 5;
-}
 message ListFields {
-  repeated ListFieldSerialized fields = 1;
+  repeated ListFieldsEntryResponse fields = 1;
 }
 // -- Search -------------------
 
