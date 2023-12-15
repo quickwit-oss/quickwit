@@ -28,15 +28,13 @@ use futures::future::try_join_all;
 use itertools::Itertools;
 use quickwit_common::shared_consts::SPLIT_FIELDS_FILE_NAME;
 use quickwit_common::uri::Uri;
-use quickwit_config::build_doc_mapper;
-use quickwit_doc_mapper::DocMapper;
 use quickwit_metastore::{ListIndexesMetadataResponseExt, SplitMetadata};
 use quickwit_proto::metastore::{
     ListIndexesMetadataRequest, MetastoreService, MetastoreServiceClient,
 };
 use quickwit_proto::search::{
-    deserialize_split_fields, LeafListFieldsRequest, ListFieldType, ListFields,
-    ListFieldsEntryResponse, ListFieldsRequest, ListFieldsResponse, SplitIdAndFooterOffsets,
+    deserialize_split_fields, LeafListFieldsRequest, ListFields, ListFieldsEntryResponse,
+    ListFieldsRequest, ListFieldsResponse, SplitIdAndFooterOffsets,
 };
 use quickwit_proto::types::IndexUid;
 use quickwit_storage::Storage;
@@ -90,32 +88,6 @@ pub async fn get_fields_from_split<'a>(
     );
 
     Ok(Box::new(list_fields.into_iter()))
-}
-
-/// Get the list of splits for the request which we need to scan.
-pub fn get_fields_from_schema(
-    index_id: String,
-    doc_mapper: Arc<dyn DocMapper>,
-) -> Box<dyn Iterator<Item = ListFieldsEntryResponse> + Send> {
-    let schema = doc_mapper.schema();
-    let mut list_fields = schema
-        .fields()
-        .map(|(_field, entry)| ListFieldsEntryResponse {
-            field_name: entry.name().to_string(),
-            field_type: ListFieldType::from(entry.field_type().value_type()) as i32,
-            index_ids: vec![index_id.to_string()],
-            searchable: entry.is_indexed(),
-            aggregatable: entry.is_fast(),
-            non_searchable_index_ids: Vec::new(),
-            non_aggregatable_index_ids: Vec::new(),
-        })
-        .collect_vec();
-    // Prepare for grouping by field name and type
-    list_fields.sort_by(|left, right| match left.field_name.cmp(&right.field_name) {
-        Ordering::Equal => left.field_type.cmp(&right.field_type),
-        other => other,
-    });
-    Box::new(list_fields.into_iter())
 }
 
 /// `current_group` needs to contain at least one element.
@@ -262,7 +234,6 @@ pub async fn leaf_list_fields(
     index_storage: Arc<dyn Storage>,
     searcher_context: &SearcherContext,
     split_ids: &[SplitIdAndFooterOffsets],
-    doc_mapper: Arc<dyn DocMapper>,
     field_patterns: &[String],
 ) -> crate::Result<ListFieldsResponse> {
     let mut iter_per_split = Vec::new();
@@ -282,10 +253,7 @@ pub async fn leaf_list_fields(
     for fields in result {
         let list_fields_iter = match fields {
             Ok(fields) => fields,
-            Err(_err) => {
-                // Schema fallback
-                get_fields_from_schema(index_id.to_string(), doc_mapper.clone())
-            }
+            Err(_err) => Box::new(std::iter::empty()),
         };
         let list_fields_iter = list_fields_iter
             .map(|mut entry| {
@@ -309,8 +277,6 @@ pub struct IndexMetasForLeafSearch {
     pub index_id: String,
     /// Index URI.
     pub index_uri: Uri,
-    /// Doc mapper json string.
-    pub doc_mapper_str: String,
 }
 
 /// Performs a distributed list fields request.
@@ -345,25 +311,9 @@ pub async fn root_list_fields(
     let index_uid_to_index_meta: HashMap<IndexUid, IndexMetasForLeafSearch> = indexes_metadatas
         .iter()
         .map(|index_metadata| {
-            let doc_mapper = build_doc_mapper(
-                &index_metadata.index_config.doc_mapping,
-                &index_metadata.index_config.search_settings,
-            )
-            .map_err(|err| {
-                SearchError::Internal(format!("failed to build doc mapper. cause: {err}"))
-            })
-            .unwrap();
-
             let index_metadata_for_leaf_search = IndexMetasForLeafSearch {
                 index_uri: index_metadata.index_uri().clone(),
                 index_id: index_metadata.index_config.index_id.to_string(),
-                doc_mapper_str: serde_json::to_string(&doc_mapper)
-                    .map_err(|err| {
-                        SearchError::Internal(format!(
-                            "failed to serialize doc mapper. cause: {err}"
-                        ))
-                    })
-                    .unwrap(),
             };
 
             (
@@ -423,7 +373,6 @@ pub fn jobs_to_leaf_requests(
         let leaf_search_request = LeafListFieldsRequest {
             index_id: index_meta.index_id.to_string(),
             index_uri: index_meta.index_uri.to_string(),
-            doc_mapper: index_meta.doc_mapper_str.to_string(),
             fields: search_request_for_leaf.fields.clone(),
             split_offsets: job_group.into_iter().map(|job| job.offsets).collect(),
         };
@@ -434,7 +383,7 @@ pub fn jobs_to_leaf_requests(
 
 #[cfg(test)]
 mod tests {
-    use quickwit_proto::search::ListFieldsEntryResponse;
+    use quickwit_proto::search::{ListFieldType, ListFieldsEntryResponse};
 
     use super::*;
 

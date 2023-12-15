@@ -141,8 +141,6 @@ message LeafListFieldsRequest {
   // Wildcard expressions are supported.
   repeated string fields = 4;
   
-  // `DocMapper` as json serialized trait.
-  string doc_mapper = 5;
 }
 
 message ListFieldsResponse {

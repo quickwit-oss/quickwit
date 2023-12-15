@@ -35,7 +35,7 @@ use quickwit_doc_mapper::NamedField;
 use quickwit_proto::search::{
     serialize_split_fields, ListFieldType, ListFields, ListFieldsEntryResponse,
 };
-use tantivy::schema::FieldType;
+use tantivy::schema::{FieldType, Type};
 use tantivy::{FieldMetadata, InvertedIndexReader, ReloadPolicy, SegmentMeta};
 use tokio::runtime::Handle;
 use tracing::{debug, info, instrument, warn};
@@ -343,12 +343,27 @@ pub fn serialize_field_metadata(fields_metadata: &[FieldMetadata]) -> Vec<u8> {
     serialize_split_fields(ListFields { fields })
 }
 
+fn tantivy_type_to_list_field_type(typ: Type) -> ListFieldType {
+    match typ {
+        Type::Str => ListFieldType::Str,
+        Type::U64 => ListFieldType::U64,
+        Type::I64 => ListFieldType::I64,
+        Type::F64 => ListFieldType::F64,
+        Type::Bool => ListFieldType::Bool,
+        Type::Date => ListFieldType::Date,
+        Type::Facet => ListFieldType::Facet,
+        Type::Bytes => ListFieldType::Bytes,
+        Type::Json => ListFieldType::Json,
+        Type::IpAddr => ListFieldType::IpAddr,
+    }
+}
+
 fn field_metadata_to_list_field_serialized(
     field_metadata: &FieldMetadata,
 ) -> ListFieldsEntryResponse {
     ListFieldsEntryResponse {
         field_name: field_metadata.field_name.to_string(),
-        field_type: ListFieldType::from(field_metadata.typ) as i32,
+        field_type: tantivy_type_to_list_field_type(field_metadata.typ) as i32,
         searchable: field_metadata.indexed,
         aggregatable: field_metadata.fast,
         index_ids: vec![],

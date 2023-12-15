@@ -23,7 +23,6 @@ use std::io::{self, Read};
 
 use prost::Message;
 pub use sort_by_value::SortValue;
-use tantivy::schema::Type;
 
 include!("../codegen/quickwit/quickwit.search.rs");
 
@@ -243,23 +242,6 @@ impl PartialHit {
             sort_value.sort_value
         } else {
             None
-        }
-    }
-}
-
-impl From<Type> for ListFieldType {
-    fn from(typ: Type) -> Self {
-        match typ {
-            Type::Str => ListFieldType::Str,
-            Type::U64 => ListFieldType::U64,
-            Type::I64 => ListFieldType::I64,
-            Type::F64 => ListFieldType::F64,
-            Type::Bool => ListFieldType::Bool,
-            Type::Date => ListFieldType::Date,
-            Type::Facet => ListFieldType::Facet,
-            Type::Bytes => ListFieldType::Bytes,
-            Type::Json => ListFieldType::Json,
-            Type::IpAddr => ListFieldType::IpAddr,
         }
     }
 }

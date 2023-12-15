@@ -90,9 +90,6 @@ pub struct LeafListFieldsRequest {
     /// Wildcard expressions are supported.
     #[prost(string, repeated, tag = "4")]
     pub fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
-    /// `DocMapper` as json serialized trait.
-    #[prost(string, tag = "5")]
-    pub doc_mapper: ::prost::alloc::string::String,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
