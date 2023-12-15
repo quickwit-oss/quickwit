@@ -131,9 +131,9 @@ impl ShardTableEntry {
 }
 
 // A table that keeps track of the existing shards for each index and source,
-// and for each ingester, the list of shard it is support to host.
+// and for each ingester, the list of shards it is supposed to host.
 //
-// (All mutable methods need to maintain the two consistent)
+// (All mutable methods must maintain the two consistent)
 #[derive(Debug, Default)]
 pub(crate) struct ShardTable {
     table_entries: FnvHashMap<SourceUid, ShardTableEntry>,
@@ -211,7 +211,7 @@ impl ShardTable {
         }
     }
 
-    /// List all of the shards on a given node, regardless of whether it is a
+    /// Lists all the shards hosted on a given node, regardless of whether it is a
     /// leader or a follower.
     pub fn list_shards_for_node(
         &self,

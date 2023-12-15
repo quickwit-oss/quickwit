@@ -92,7 +92,7 @@ impl IngestController {
 
     /// Send a list retain shard request to the given list of ingesters.
     ///
-    /// If the request fail, we just log an error.
+    /// If the request fails, we just log an error.
     pub(crate) async fn sync_with_ingesters(
         &self,
         ingesters: &BTreeSet<NodeId>,
