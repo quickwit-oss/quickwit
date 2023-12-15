@@ -2265,7 +2265,6 @@ mod tests {
             ..Default::default()
         };
         let queue_id_17 = queue_id(&shard_17.index_uid, &shard_17.source_id, shard_17.shard_id);
-        let queue_id_18 = queue_id(&shard_18.index_uid, &shard_18.source_id, shard_18.shard_id);
 
         let mut state_guard = ingester.state.write().await;
         ingester
@@ -2274,26 +2273,6 @@ mod tests {
             .unwrap();
         ingester
             .init_primary_shard(&mut state_guard, shard_18)
-            .await
-            .unwrap();
-
-        let records = [
-            MRecord::new_doc("test-doc-foo").encode(),
-            MRecord::new_doc("test-doc-bar").encode(),
-        ]
-        .into_iter();
-
-        state_guard
-            .mrecordlog
-            .append_records(&queue_id_17, None, records)
-            .await
-            .unwrap();
-
-        let records = [MRecord::new_doc("test-doc-baz").encode()].into_iter();
-
-        state_guard
-            .mrecordlog
-            .append_records(&queue_id_18, None, records)
             .await
             .unwrap();
 

@@ -474,8 +474,8 @@ impl ShardTable {
         self.check_invariant();
     }
 
-    // Set the shards for a given source.
-    // This function panics if an entry was previously associated to the source uid.
+    /// Set the shards for a given source.
+    /// This function panics if an entry was previously associated to the source uid.
     pub(crate) fn initialize_source_shards(
         &mut self,
         source_uid: SourceUid,
