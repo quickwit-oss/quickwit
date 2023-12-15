@@ -90,7 +90,7 @@ impl IngestController {
         }
     }
 
-    /// Send a list retain shard request to the given list of ingesters.
+    /// Sends a retain shard request to the given list of ingesters.
     ///
     /// If the request fails, we just log an error.
     pub(crate) async fn sync_with_ingesters(
