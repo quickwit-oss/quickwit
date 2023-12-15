@@ -72,7 +72,7 @@ fn fire_and_forget(
     fut: impl Future<Output = ()> + Send + 'static,
     operation: impl std::fmt::Display + Send + Sync + 'static,
 ) {
-    let _ = tokio::spawn(async move {
+    tokio::spawn(async move {
         if let Err(_timeout_elapsed) = tokio::time::timeout(FIRE_AND_FORGET_TIMEOUT, fut).await {
             error!(operation=%operation, "timeout elapsed");
         }
