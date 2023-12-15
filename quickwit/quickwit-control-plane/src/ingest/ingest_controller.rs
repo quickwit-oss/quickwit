@@ -19,6 +19,7 @@
 
 use std::collections::{BTreeSet, HashMap};
 use std::fmt;
+use std::future::Future;
 use std::time::Duration;
 
 use fnv::{FnvHashMap, FnvHashSet};
@@ -60,6 +61,23 @@ const PING_LEADER_TIMEOUT: Duration = if cfg!(test) {
 } else {
     Duration::from_secs(2)
 };
+
+const FIRE_AND_FORGET_TIMEOUT: Duration = Duration::from_secs(3);
+
+/// Spawn a new task to execute the given future,
+/// and stops polling it/drops it after a timeout.
+///
+/// All errors are ignored, and not even logged.
+fn fire_and_forget(
+    fut: impl Future<Output = ()> + Send + 'static,
+    operation: impl std::fmt::Display + Send + Sync + 'static,
+) {
+    let _ = tokio::spawn(async move {
+        if let Err(_timeout_elapsed) = tokio::time::timeout(FIRE_AND_FORGET_TIMEOUT, fut).await {
+            error!(operation=%operation, "timeout elapsed");
+        }
+    });
+}
 
 pub struct IngestController {
     metastore: MetastoreServiceClient,
@@ -131,9 +149,17 @@ impl IngestController {
                 .push(shards_for_source);
         }
         info!(ingester = %ingester, "retain shards ingester");
-        if let Err(retain_shards_err) = ingester_client.retain_shards(retain_shards_req).await {
-            error!(%retain_shards_err, "retain shards error");
-        }
+        let operation: String = format!("retain shards `{ingester}`");
+        fire_and_forget(
+            async move {
+                if let Err(retain_shards_err) =
+                    ingester_client.retain_shards(retain_shards_req).await
+                {
+                    error!(%retain_shards_err, "retain shards error");
+                }
+            },
+            operation,
+        );
     }
 
     /// Pings an ingester to determine whether it is available for hosting a shard. If a follower ID
