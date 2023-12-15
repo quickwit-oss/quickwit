@@ -23,6 +23,7 @@ use std::path::Path;
 use std::sync::Arc;
 
 use anyhow::Context;
+use futures::future;
 use futures::future::try_join_all;
 use itertools::Itertools;
 use quickwit_common::shared_consts::SPLIT_FIELDS_FILE_NAME;
@@ -254,15 +255,20 @@ pub async fn leaf_list_fields(
     field_patterns: &[String],
 ) -> crate::Result<ListFieldsResponse> {
     let mut iter_per_split = Vec::new();
+    let get_field_futures: Vec<_> = split_ids
+        .iter()
+        .map(|split_id| {
+            get_fields_from_split(
+                searcher_context,
+                index_id.to_string(),
+                split_id,
+                index_storage.clone(),
+            )
+        })
+        .collect();
+    let result = future::join_all(get_field_futures).await;
     // This only works well, if the field data is in a local cache.
-    for split_id in split_ids.iter() {
-        let fields = get_fields_from_split(
-            searcher_context,
-            index_id.to_string(),
-            split_id,
-            index_storage.clone(),
-        )
-        .await;
+    for fields in result {
         let list_fields_iter = match fields {
             Ok(fields) => fields,
             Err(_err) => {
