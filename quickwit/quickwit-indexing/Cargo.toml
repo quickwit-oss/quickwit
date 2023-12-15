@@ -51,9 +51,6 @@ utoipa = { workspace = true }
 vrl = { workspace = true, optional = true }
 zstd = { workspace = true }
 
-# TODO: tmp: move to dev dep
-prost = { workspace = true }
-
 quickwit-actors = { workspace = true }
 quickwit-aws = { workspace = true }
 quickwit-cluster = { workspace = true }
@@ -93,6 +90,7 @@ proptest = { workspace = true }
 rand = { workspace = true }
 reqwest = { workspace = true }
 tempfile = { workspace = true }
+prost = { workspace = true }
 
 quickwit-actors = { workspace = true, features = ["testsuite"] }
 quickwit-cluster = { workspace = true, features = ["testsuite"] }
