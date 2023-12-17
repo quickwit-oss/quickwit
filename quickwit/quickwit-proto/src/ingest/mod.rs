@@ -24,7 +24,7 @@ use self::router::IngestFailureReason;
 use super::types::NodeId;
 use super::{ServiceError, ServiceErrorCode};
 use crate::control_plane::ControlPlaneError;
-use crate::types::{queue_id, Position, QueueId};
+use crate::types::{queue_id, Position, QueueId, ShardId};
 
 pub mod ingester;
 pub mod router;
@@ -39,11 +39,24 @@ pub enum IngestV2Error {
     Internal(String),
     #[error("failed to connect to ingester `{ingester_id}`")]
     IngesterUnavailable { ingester_id: NodeId },
+    #[error("shard `{shard_id}` not found")]
+    ShardNotFound { shard_id: ShardId },
     #[error("request timed out")]
     Timeout,
+    #[error("too many requests")]
+    TooManyRequests,
     // TODO: Merge `Transport` and `IngesterUnavailable` into a single `Unavailable` error.
     #[error("transport error: {0}")]
     Transport(String),
+}
+
+impl IngestV2Error {
+    pub fn label_value(&self) -> &'static str {
+        match self {
+            Self::Timeout { .. } => "timeout",
+            _ => "error",
+        }
+    }
 }
 
 impl From<ControlPlaneError> for IngestV2Error {
@@ -57,7 +70,9 @@ impl From<IngestV2Error> for tonic::Status {
         let code = match &error {
             IngestV2Error::IngesterUnavailable { .. } => tonic::Code::Unavailable,
             IngestV2Error::Internal(_) => tonic::Code::Internal,
+            IngestV2Error::ShardNotFound { .. } => tonic::Code::NotFound,
             IngestV2Error::Timeout { .. } => tonic::Code::DeadlineExceeded,
+            IngestV2Error::TooManyRequests => tonic::Code::ResourceExhausted,
             IngestV2Error::Transport { .. } => tonic::Code::Unavailable,
         };
         let message: String = error.to_string();
@@ -67,10 +82,12 @@ impl From<IngestV2Error> for tonic::Status {
 
 impl From<tonic::Status> for IngestV2Error {
     fn from(status: tonic::Status) -> Self {
-        if status.code() == tonic::Code::Unavailable {
-            return IngestV2Error::Transport(status.message().to_string());
+        dbg!(&status);
+        match status.code() {
+            tonic::Code::Unavailable => IngestV2Error::Transport(status.message().to_string()),
+            tonic::Code::ResourceExhausted => IngestV2Error::TooManyRequests,
+            _ => IngestV2Error::Internal(status.message().to_string()),
         }
-        IngestV2Error::Internal(status.message().to_string())
     }
 }
 
@@ -79,9 +96,21 @@ impl ServiceError for IngestV2Error {
         match self {
             Self::IngesterUnavailable { .. } => ServiceErrorCode::Unavailable,
             Self::Internal { .. } => ServiceErrorCode::Internal,
+            Self::ShardNotFound { .. } => ServiceErrorCode::NotFound,
             Self::Timeout { .. } => ServiceErrorCode::Timeout,
             Self::Transport { .. } => ServiceErrorCode::Unavailable,
+            Self::TooManyRequests => ServiceErrorCode::RateLimited,
         }
+    }
+}
+
+impl Shard {
+    /// List of nodes that are storing the shard (the leader, and optionally the follower).
+    pub fn ingester_nodes(&self) -> impl Iterator<Item = NodeId> + '_ {
+        [Some(&self.leader_id), self.follower_id.as_ref()]
+            .into_iter()
+            .flatten()
+            .map(|node_id| NodeId::new(node_id.clone()))
     }
 }
 

@@ -22,12 +22,12 @@ use std::collections::HashMap;
 use quickwit_proto::control_plane::{
     GetOrCreateOpenShardsFailure, GetOrCreateOpenShardsFailureReason,
 };
-use quickwit_proto::ingest::ingester::{PersistFailure, PersistSuccess};
+use quickwit_proto::ingest::ingester::{PersistFailure, PersistFailureReason, PersistSuccess};
 use quickwit_proto::ingest::router::{
     IngestFailure, IngestFailureReason, IngestResponseV2, IngestSubrequest, IngestSuccess,
 };
 use quickwit_proto::ingest::IngestV2Result;
-use quickwit_proto::types::SubrequestId;
+use quickwit_proto::types::{ShardId, SubrequestId};
 use tracing::warn;
 
 /// A helper struct for managing the state of the subrequests of an ingest request during multiple
@@ -137,7 +137,7 @@ impl IngestWorkbench {
         subworkbench.persist_success_opt = Some(persist_success);
     }
 
-    pub fn record_persist_failure(&mut self, persist_failure: PersistFailure) {
+    pub fn record_persist_failure(&mut self, persist_failure: &PersistFailure) {
         let Some(subworkbench) = self.subworkbenches.get_mut(&persist_failure.subrequest_id) else {
             warn!(
                 "could not find subrequest `{}` in workbench",
@@ -146,7 +146,10 @@ impl IngestWorkbench {
             return;
         };
         subworkbench.num_attempts += 1;
-        subworkbench.last_failure_opt = Some(SubworkbenchFailure::Persist(persist_failure));
+        subworkbench.last_failure_opt = Some(SubworkbenchFailure::Persist((
+            persist_failure.shard_id,
+            persist_failure.reason(),
+        )));
     }
 
     pub fn record_no_shards_available(&mut self, subrequest_id: SubrequestId) {
@@ -222,7 +225,7 @@ pub(super) enum SubworkbenchFailure {
     IndexNotFound,
     SourceNotFound,
     NoShardsAvailable,
-    Persist(PersistFailure),
+    Persist((ShardId, PersistFailureReason)),
     Internal(String),
 }
 
@@ -233,7 +236,7 @@ impl SubworkbenchFailure {
             Self::SourceNotFound => IngestFailureReason::SourceNotFound,
             Self::Internal(_) => IngestFailureReason::Internal,
             Self::NoShardsAvailable => IngestFailureReason::NoShardsAvailable,
-            Self::Persist(persist_failure) => persist_failure.reason().into(),
+            Self::Persist((_shard_id, persist_failure_reason)) => (*persist_failure_reason).into(),
         }
     }
 }
@@ -356,7 +359,7 @@ mod tests {
             subrequest_id: 1,
             ..Default::default()
         };
-        workbench.record_persist_failure(persist_failure);
+        workbench.record_persist_failure(&persist_failure);
 
         assert_eq!(workbench.num_successes, 1);
         assert_eq!(workbench.pending_subrequests().count(), 1);
@@ -459,21 +462,22 @@ mod tests {
             reason: PersistFailureReason::RateLimited as i32,
             ..Default::default()
         };
-        workbench.record_persist_failure(persist_failure);
+        workbench.record_persist_failure(&persist_failure);
 
         let persist_failure = PersistFailure {
             subrequest_id: 0,
+            shard_id: 1,
             reason: PersistFailureReason::ResourceExhausted as i32,
             ..Default::default()
         };
-        workbench.record_persist_failure(persist_failure);
+        workbench.record_persist_failure(&persist_failure);
 
         assert_eq!(workbench.num_successes, 0);
 
         let subworkbench = workbench.subworkbenches.get(&0).unwrap();
         assert!(matches!(
             subworkbench.last_failure_opt,
-            Some(SubworkbenchFailure::Persist ( PersistFailure { reason, .. })) if reason == PersistFailureReason::ResourceExhausted as i32
+            Some(SubworkbenchFailure::Persist((shard_id, reason))) if shard_id == 1 && reason == PersistFailureReason::ResourceExhausted
         ));
         assert_eq!(subworkbench.num_attempts, 1);
     }

@@ -1308,11 +1308,13 @@ mod tests {
                         SortField {
                             field_name: field.to_string(),
                             sort_order: SortOrder::Asc.into(),
+                            sort_datetime_format: None,
                         }
                     } else {
                         SortField {
                             field_name: field.to_string(),
                             sort_order: SortOrder::Desc.into(),
+                            sort_datetime_format: None,
                         }
                     }
                 })
@@ -1538,10 +1540,12 @@ mod tests {
                     SortField {
                         field_name: "sort1".to_string(),
                         sort_order: SortOrder::Desc.into(),
+                        sort_datetime_format: None,
                     },
                     SortField {
                         field_name: "sort2".to_string(),
                         sort_order: SortOrder::Asc.into(),
+                        sort_datetime_format: None,
                     },
                 ],
                 search_after: Some(search_after),
@@ -1580,6 +1584,7 @@ mod tests {
                 sort_fields: vec![SortField {
                     field_name: "_shard_doc".to_string(),
                     sort_order: SortOrder::Desc.into(),
+                    sort_datetime_format: None,
                 }],
                 search_after: Some(search_after),
                 ..SearchRequest::default()
@@ -1660,6 +1665,7 @@ mod tests {
                 sort_fields: vec![SortField {
                     field_name: "timestamp".to_string(),
                     sort_order: SortOrder::Desc as i32,
+                    sort_datetime_format: None,
                 }],
                 aggregation_request: None,
                 ..Default::default()
@@ -1703,6 +1709,7 @@ mod tests {
                 sort_fields: vec![SortField {
                     field_name: "timestamp".to_string(),
                     sort_order: SortOrder::Desc as i32,
+                    sort_datetime_format: None,
                 }],
                 aggregation_request: None,
                 ..Default::default()
@@ -1788,6 +1795,7 @@ mod tests {
                 sort_fields: vec![SortField {
                     field_name: "timestamp".to_string(),
                     sort_order: SortOrder::Asc as i32,
+                    sort_datetime_format: None,
                 }],
                 aggregation_request: None,
                 ..Default::default()

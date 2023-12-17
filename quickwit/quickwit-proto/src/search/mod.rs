@@ -104,7 +104,19 @@ impl SortByValue {
                     return None;
                 }
             }
-            String(_) | Array(_) | Object(_) => return None,
+            // Strings that can be converted to a number are accepted.
+            // Some clients (like JS clients) can't easily handle large integers
+            // without losing precision, so we accept them as strings.
+            String(value) => {
+                if let Ok(number) = value.parse::<i64>() {
+                    Some(SortValue::I64(number))
+                } else if let Ok(number) = value.parse::<u64>() {
+                    Some(SortValue::U64(number))
+                } else {
+                    return None;
+                }
+            }
+            Array(_) | Object(_) => return None,
         };
         Some(SortByValue { sort_value })
     }

@@ -119,6 +119,11 @@ pub struct SortField {
     pub field_name: ::prost::alloc::string::String,
     #[prost(enumeration = "SortOrder", tag = "2")]
     pub sort_order: i32,
+    /// Optional sort value format for datetime field only.
+    /// If none, the default output format for datetime field is
+    /// unix_timestamp_nanos.
+    #[prost(enumeration = "SortDatetimeFormat", optional, tag = "3")]
+    pub sort_datetime_format: ::core::option::Option<i32>,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -558,6 +563,34 @@ impl SortOrder {
         match value {
             "ASC" => Some(Self::Asc),
             "DESC" => Some(Self::Desc),
+            _ => None,
+        }
+    }
+}
+/// Sort value format for datetime field.
+/// We keep an enum with only one format
+/// for future extension.
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum SortDatetimeFormat {
+    UnixTimestampMillis = 0,
+}
+impl SortDatetimeFormat {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            SortDatetimeFormat::UnixTimestampMillis => "UNIX_TIMESTAMP_MILLIS",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "UNIX_TIMESTAMP_MILLIS" => Some(Self::UnixTimestampMillis),
             _ => None,
         }
     }

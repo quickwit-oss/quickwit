@@ -994,6 +994,7 @@ pub async fn search_index(args: SearchIndexArgs) -> anyhow::Result<SearchRespons
             sort_fields: vec![SortField {
                 field_name: "_score".to_string(),
                 sort_order: SortOrder::Desc as i32,
+                sort_datetime_format: None,
             }],
         })
         .unwrap_or_default();

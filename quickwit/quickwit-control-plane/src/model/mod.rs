@@ -19,6 +19,9 @@
 
 mod shard_table;
 
+use std::borrow::Cow;
+use std::collections::BTreeSet;
+use std::ops::Deref;
 use std::time::Instant;
 
 use anyhow::bail;
@@ -27,17 +30,15 @@ use quickwit_common::Progress;
 use quickwit_config::SourceConfig;
 use quickwit_ingest::ShardInfos;
 use quickwit_metastore::{IndexMetadata, ListIndexesMetadataResponseExt};
-use quickwit_proto::control_plane::ControlPlaneResult;
+use quickwit_proto::control_plane::{ControlPlaneError, ControlPlaneResult};
 use quickwit_proto::ingest::Shard;
 use quickwit_proto::metastore::{
-    self, EntityKind, ListIndexesMetadataRequest, ListShardsSubrequest, MetastoreError,
-    MetastoreService, MetastoreServiceClient, SourceType,
+    self, EntityKind, ListIndexesMetadataRequest, ListShardsSubrequest, ListShardsSubresponse,
+    MetastoreError, MetastoreService, MetastoreServiceClient, SourceType,
 };
 use quickwit_proto::types::{IndexId, IndexUid, NodeId, ShardId, SourceId, SourceUid};
 use serde::Serialize;
-pub(super) use shard_table::{
-    NextShardId, ScalingMode, ShardEntry, ShardStats, ShardTable, ShardTableEntry,
-};
+pub(super) use shard_table::{NextShardId, ScalingMode, ShardEntry, ShardStats, ShardTable};
 use tracing::{info, instrument, warn};
 
 /// The control plane maintains a model in sync with the metastore.
@@ -69,7 +70,7 @@ impl ControlPlaneModel {
 
     pub fn observable_state(&self) -> ControlPlaneModelMetrics {
         ControlPlaneModelMetrics {
-            num_shards: self.shard_table.table_entries.len(),
+            num_shards: self.shard_table.num_shards(),
         }
     }
 
@@ -120,24 +121,24 @@ impl ControlPlaneModel {
                 .protect_future(metastore.list_shards(list_shards_request))
                 .await?;
 
-            self.shard_table
-                .table_entries
-                .reserve(list_shard_response.subresponses.len());
-
             for list_shards_subresponse in list_shard_response.subresponses {
                 num_shards += list_shards_subresponse.shards.len();
-
+                let ListShardsSubresponse {
+                    index_uid,
+                    source_id,
+                    shards,
+                    next_shard_id,
+                } = list_shards_subresponse;
                 let source_uid = SourceUid {
-                    index_uid: list_shards_subresponse.index_uid.into(),
-                    source_id: list_shards_subresponse.source_id,
+                    index_uid: IndexUid::parse(&index_uid).map_err(|invalid_index_uri| {
+                        ControlPlaneError::Internal(format!(
+                            "invalid index uid received from the metastore: {invalid_index_uri:?}"
+                        ))
+                    })?,
+                    source_id,
                 };
-                let table_entry = ShardTableEntry::from_shards(
-                    list_shards_subresponse.shards,
-                    list_shards_subresponse.next_shard_id,
-                );
                 self.shard_table
-                    .table_entries
-                    .insert(source_uid, table_entry);
+                    .initialize_source_shards(source_uid, shards, next_shard_id);
             }
         }
         info!(
@@ -205,16 +206,17 @@ impl ControlPlaneModel {
         Ok(())
     }
 
-    pub(crate) fn delete_source(&mut self, index_uid: &IndexUid, source_id: &SourceId) {
+    pub(crate) fn delete_source(&mut self, source_uid: &SourceUid) {
         // Removing shards from shard table.
-        self.shard_table.delete_source(index_uid, source_id);
+        self.shard_table
+            .delete_source(&source_uid.index_uid, &source_uid.source_id);
         // Remove source from index config.
-        let Some(index_model) = self.index_table.get_mut(index_uid) else {
-            warn!(index_uid=%index_uid, source_id=%source_id, "delete source: index not found");
+        let Some(index_model) = self.index_table.get_mut(&source_uid.index_uid) else {
+            warn!(index_uid=%source_uid.index_uid, source_id=%source_uid.source_id, "delete source: index not found");
             return;
         };
-        if index_model.sources.remove(source_id).is_none() {
-            warn!(index_uid=%index_uid, source_id=%source_id, "delete source: source not found");
+        if index_model.sources.remove(&source_uid.source_id).is_none() {
+            warn!(index_uid=%source_uid.index_uid, source_id=%source_uid.source_id, "delete source: source not found");
         };
     }
 
@@ -237,12 +239,38 @@ impl ControlPlaneModel {
         Ok(has_changed)
     }
 
-    pub fn all_shards_mut(&mut self) -> impl Iterator<Item = &mut ShardEntry> + '_ {
+    pub(crate) fn all_shards_mut(&mut self) -> impl Iterator<Item = &mut ShardEntry> + '_ {
         self.shard_table.all_shards_mut()
     }
 
+    #[cfg(test)]
+    pub(crate) fn all_shards(&self) -> impl Iterator<Item = &ShardEntry> + '_ {
+        self.shard_table.all_shards()
+    }
+
+    pub fn list_shards_for_node(
+        &self,
+        ingester: &NodeId,
+    ) -> impl Deref<Target = FnvHashMap<SourceUid, BTreeSet<ShardId>>> + '_ {
+        if let Some(shards_for_node) = self.shard_table.list_shards_for_node(ingester) {
+            Cow::Borrowed(shards_for_node)
+        } else {
+            Cow::Owned(FnvHashMap::default())
+        }
+    }
+
+    pub fn list_shards_for_index<'a>(
+        &'a self,
+        index_uid: &'a IndexUid,
+    ) -> impl Iterator<Item = &'a ShardEntry> + 'a {
+        self.shard_table.list_shards_for_index(index_uid)
+    }
+
     /// Lists the shards of a given source. Returns `None` if the source does not exist.
-    pub fn list_shards(&self, source_uid: &SourceUid) -> Option<impl Iterator<Item = &ShardEntry>> {
+    pub fn list_shards_for_source(
+        &self,
+        source_uid: &SourceUid,
+    ) -> Option<impl Iterator<Item = &ShardEntry>> {
         self.shard_table.list_shards(source_uid)
     }
 
@@ -372,7 +400,10 @@ mod tests {
                     source_id: INGEST_SOURCE_ID.to_string(),
                     shards: vec![Shard {
                         shard_id: 42,
+                        index_uid: "test-index-0:0".to_string(),
+                        source_id: INGEST_SOURCE_ID.to_string(),
                         shard_state: ShardState::Open as i32,
+                        leader_id: "node1".to_string(),
                         ..Default::default()
                     }],
                     next_shard_id: 43,
@@ -408,14 +439,17 @@ mod tests {
             "test-index-2:0"
         );
 
-        assert_eq!(model.shard_table.table_entries.len(), 2);
+        assert_eq!(model.shard_table.num_shards(), 1);
 
         let source_uid_0 = SourceUid {
             index_uid: "test-index-0:0".into(),
             source_id: INGEST_SOURCE_ID.to_string(),
         };
-        let table_entry = model.shard_table.table_entries.get(&source_uid_0).unwrap();
-        let shards = table_entry.shards();
+        let shards: Vec<&ShardEntry> = model
+            .shard_table
+            .list_shards(&source_uid_0)
+            .unwrap()
+            .collect();
         assert_eq!(shards.len(), 1);
         assert_eq!(shards[0].shard_id, 42);
 
@@ -426,8 +460,11 @@ mod tests {
             index_uid: "test-index-1:0".into(),
             source_id: INGEST_SOURCE_ID.to_string(),
         };
-        let table_entry = model.shard_table.table_entries.get(&source_uid_1).unwrap();
-        let shards = table_entry.shards();
+        let shards: Vec<&ShardEntry> = model
+            .shard_table
+            .list_shards(&source_uid_1)
+            .unwrap()
+            .collect();
         assert_eq!(shards.len(), 0);
 
         let next_shard_id = model.next_shard_id(&source_uid_1).unwrap();

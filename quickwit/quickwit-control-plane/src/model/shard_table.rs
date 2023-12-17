@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::hash_map::Entry;
+use std::collections::BTreeSet;
 use std::ops::{Deref, DerefMut};
 use std::time::Duration;
 
@@ -129,17 +130,111 @@ impl ShardTableEntry {
     }
 }
 
-// A table that keeps track of the existing shards for each index and source.
+// A table that keeps track of the existing shards for each index and source,
+// and for each ingester, the list of shards it is supposed to host.
+//
+// (All mutable methods must maintain the two consistent)
 #[derive(Debug, Default)]
 pub(crate) struct ShardTable {
-    pub table_entries: FnvHashMap<SourceUid, ShardTableEntry>,
+    table_entries: FnvHashMap<SourceUid, ShardTableEntry>,
+    ingester_shards: FnvHashMap<NodeId, FnvHashMap<SourceUid, BTreeSet<ShardId>>>,
+}
+
+// Removes the shards from the ingester_shards map.
+//
+// This function is used to maintain the shard table invariant.
+fn remove_shard_from_ingesters_internal(
+    source_uid: &SourceUid,
+    shard: &Shard,
+    ingester_shards: &mut FnvHashMap<NodeId, FnvHashMap<SourceUid, BTreeSet<ShardId>>>,
+) {
+    for node in shard.ingester_nodes() {
+        let ingester_shards = ingester_shards
+            .get_mut(&node)
+            .expect("shard table reached inconsistent state");
+        let shard_ids = ingester_shards.get_mut(source_uid).unwrap();
+        shard_ids.remove(&shard.shard_id);
+    }
 }
 
 impl ShardTable {
     /// Removes all the entries that match the target index ID.
     pub fn delete_index(&mut self, index_id: &str) {
+        let shards_removed = self
+            .table_entries
+            .iter()
+            .filter(|(source_uid, _)| source_uid.index_uid.index_id() == index_id)
+            .flat_map(|(source_uid, shard_table_entry)| {
+                shard_table_entry
+                    .shard_entries
+                    .values()
+                    .map(move |shard_entry: &ShardEntry| (source_uid, &shard_entry.shard))
+            });
+        for (source_uid, shard) in shards_removed {
+            remove_shard_from_ingesters_internal(source_uid, shard, &mut self.ingester_shards);
+        }
         self.table_entries
             .retain(|source_uid, _| source_uid.index_uid.index_id() != index_id);
+        self.check_invariant();
+    }
+
+    /// Checks whether the shard table is consistent.
+    ///
+    /// Panics if it is not.
+    fn check_invariant(&self) {
+        // This function is expensive! Let's not call it in release mode.
+        if !cfg!(debug_assertions) {
+            return;
+        };
+        let mut shard_sets_in_shard_table = FnvHashSet::default();
+        for (source_uid, shard_table_entry) in &self.table_entries {
+            for (shard_id, shard_entry) in &shard_table_entry.shard_entries {
+                debug_assert_eq!(shard_id, &shard_entry.shard.shard_id);
+                debug_assert_eq!(source_uid.index_uid.as_str(), &shard_entry.shard.index_uid);
+                for node in shard_entry.shard.ingester_nodes() {
+                    shard_sets_in_shard_table.insert((node, source_uid, shard_id));
+                }
+            }
+        }
+        for (node, ingester_shards) in &self.ingester_shards {
+            for (source_uid, shard_ids) in ingester_shards {
+                for shard_id in shard_ids {
+                    let shard_table_entry = self.table_entries.get(source_uid).unwrap();
+                    debug_assert!(shard_table_entry.shard_entries.contains_key(shard_id));
+                    debug_assert!(shard_sets_in_shard_table.remove(&(
+                        node.clone(),
+                        source_uid,
+                        shard_id
+                    )));
+                }
+            }
+        }
+    }
+
+    /// Lists all the shards hosted on a given node, regardless of whether it is a
+    /// leader or a follower.
+    pub fn list_shards_for_node(
+        &self,
+        ingester: &NodeId,
+    ) -> Option<&FnvHashMap<SourceUid, BTreeSet<ShardId>>> {
+        self.ingester_shards.get(ingester)
+    }
+
+    pub fn list_shards_for_index<'a>(
+        &'a self,
+        index_uid: &'a IndexUid,
+    ) -> impl Iterator<Item = &'a ShardEntry> + 'a {
+        self.table_entries
+            .iter()
+            .filter(move |(source_uid, _)| source_uid.index_uid == *index_uid)
+            .flat_map(|(_, shard_table_entry)| shard_table_entry.shard_entries.values())
+    }
+
+    pub fn num_shards(&self) -> usize {
+        self.table_entries
+            .values()
+            .map(|shard_table_entry| shard_table_entry.shard_entries.len())
+            .sum()
     }
 
     /// Adds a new empty entry for the given index and source.
@@ -161,6 +256,7 @@ impl ShardTable {
                 );
             }
         }
+        self.check_invariant();
     }
 
     pub fn delete_source(&mut self, index_uid: &IndexUid, source_id: &SourceId) {
@@ -168,10 +264,27 @@ impl ShardTable {
             index_uid: index_uid.clone(),
             source_id: source_id.clone(),
         };
-        self.table_entries.remove(&source_uid);
+        let Some(shard_table_entry) = self.table_entries.remove(&source_uid) else {
+            return;
+        };
+        for shard_entry in shard_table_entry.shard_entries.values() {
+            remove_shard_from_ingesters_internal(
+                &source_uid,
+                &shard_entry.shard,
+                &mut self.ingester_shards,
+            );
+        }
+        self.check_invariant();
     }
 
-    pub fn all_shards_mut(&mut self) -> impl Iterator<Item = &mut ShardEntry> + '_ {
+    #[cfg(test)]
+    pub(crate) fn all_shards(&self) -> impl Iterator<Item = &ShardEntry> + '_ {
+        self.table_entries
+            .values()
+            .flat_map(|table_entry| table_entry.shard_entries.values())
+    }
+
+    pub(crate) fn all_shards_mut(&mut self) -> impl Iterator<Item = &mut ShardEntry> + '_ {
         self.table_entries
             .values_mut()
             .flat_map(|table_entry| table_entry.shard_entries.values_mut())
@@ -202,6 +315,23 @@ impl ShardTable {
             index_uid: index_uid.clone(),
             source_id: source_id.clone(),
         };
+        for shard in &opened_shards {
+            if shard.index_uid != source_uid.index_uid.as_str()
+                || shard.source_id != source_uid.source_id
+            {
+                panic!(
+                    "shard source UID `{}/{}` does not match source UID `{source_uid}`",
+                    shard.index_uid, shard.source_id,
+                );
+            }
+        }
+        for shard in &opened_shards {
+            for node in shard.ingester_nodes() {
+                let ingester_shards = self.ingester_shards.entry(node).or_default();
+                let shard_ids = ingester_shards.entry(source_uid.clone()).or_default();
+                shard_ids.insert(shard.shard_id);
+            }
+        }
         match self.table_entries.entry(source_uid) {
             Entry::Occupied(mut entry) => {
                 let table_entry = entry.get_mut();
@@ -232,6 +362,7 @@ impl ShardTable {
                 entry.insert(table_entry);
             }
         }
+        self.check_invariant();
     }
 
     /// Finds open shards for a given index and source and whose leaders are not in the set of
@@ -296,6 +427,7 @@ impl ShardTable {
         } else {
             0.0
         };
+
         ShardStats {
             num_open_shards,
             avg_ingestion_rate,
@@ -322,13 +454,45 @@ impl ShardTable {
 
     /// Removes the shards identified by their index UID, source ID, and shard IDs.
     pub fn delete_shards(&mut self, source_uid: &SourceUid, shard_ids: &[ShardId]) {
+        let mut shard_entries_to_remove: Vec<ShardEntry> = Vec::new();
         if let Some(table_entry) = self.table_entries.get_mut(source_uid) {
             for shard_id in shard_ids {
-                if table_entry.shard_entries.remove(shard_id).is_none() {
+                if let Some(shard_entry) = table_entry.shard_entries.remove(shard_id) {
+                    shard_entries_to_remove.push(shard_entry);
+                } else {
                     warn!(shard = *shard_id, "deleting a non-existing shard");
                 }
             }
         }
+        for shard_entry in shard_entries_to_remove {
+            remove_shard_from_ingesters_internal(
+                source_uid,
+                &shard_entry.shard,
+                &mut self.ingester_shards,
+            );
+        }
+        self.check_invariant();
+    }
+
+    /// Set the shards for a given source.
+    /// This function panics if an entry was previously associated to the source uid.
+    pub(crate) fn initialize_source_shards(
+        &mut self,
+        source_uid: SourceUid,
+        shards: Vec<Shard>,
+        next_shard_id: NextShardId,
+    ) {
+        for shard in &shards {
+            for node in shard.ingester_nodes() {
+                let ingester_shards = self.ingester_shards.entry(node).or_default();
+                let shard_ids = ingester_shards.entry(source_uid.clone()).or_default();
+                shard_ids.insert(shard.shard_id);
+            }
+        }
+        let table_entry = ShardTableEntry::from_shards(shards, next_shard_id);
+        let previous_entry = self.table_entries.insert(source_uid, table_entry);
+        assert!(previous_entry.is_none());
+        self.check_invariant();
     }
 
     pub fn acquire_scaling_permits(
@@ -621,21 +785,29 @@ mod tests {
         let mut shard_table = ShardTable::default();
 
         let shard_01 = Shard {
+            index_uid: index_uid.to_string(),
+            source_id: source_id.clone(),
             shard_id: 1,
             shard_state: ShardState::Open as i32,
             ..Default::default()
         };
         let shard_02 = Shard {
+            index_uid: index_uid.to_string(),
+            source_id: source_id.clone(),
             shard_id: 2,
             shard_state: ShardState::Open as i32,
             ..Default::default()
         };
         let shard_03 = Shard {
+            index_uid: index_uid.to_string(),
+            source_id: source_id.clone(),
             shard_id: 3,
             shard_state: ShardState::Unavailable as i32,
             ..Default::default()
         };
         let shard_04 = Shard {
+            index_uid: index_uid.to_string(),
+            source_id: source_id.clone(),
             shard_id: 4,
             shard_state: ShardState::Open as i32,
             ..Default::default()
@@ -747,7 +919,7 @@ mod tests {
             vec![shard_01, shard_02],
             3,
         );
-        shard_table.insert_newly_opened_shards(&index_uid_0, &source_id, vec![shard_11], 2);
+        shard_table.insert_newly_opened_shards(&index_uid_1, &source_id, vec![shard_11], 2);
 
         let source_uid_0 = SourceUid {
             index_uid: index_uid_0,

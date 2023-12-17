@@ -386,6 +386,7 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
         sort_fields: vec![SortField {
             field_name: "ts".to_string(),
             sort_order: SortOrder::Desc as i32,
+            sort_datetime_format: None,
         }],
         ..Default::default()
     };
@@ -409,6 +410,7 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
         sort_fields: vec![SortField {
             field_name: "ts".to_string(),
             sort_order: SortOrder::Desc as i32,
+            sort_datetime_format: None,
         }],
         ..Default::default()
     };
@@ -431,6 +433,7 @@ async fn test_single_node_filtering() -> anyhow::Result<()> {
         sort_fields: vec![SortField {
             field_name: "ts".to_string(),
             sort_order: SortOrder::Desc as i32,
+            sort_datetime_format: None,
         }],
         ..Default::default()
     };
@@ -575,6 +578,7 @@ async fn single_node_search_sort_by_field(
         sort_fields: vec![SortField {
             field_name: sort_by_field.to_string(),
             sort_order: SortOrder::Desc as i32,
+            sort_datetime_format: None,
         }],
         ..Default::default()
     };
@@ -660,6 +664,7 @@ async fn test_sort_bm25() {
             sort_fields: vec![SortField {
                 field_name: "_score".to_string(),
                 sort_order: SortOrder::Desc as i32,
+                sort_datetime_format: None,
             }],
             ..Default::default()
         };
@@ -752,6 +757,7 @@ async fn test_sort_by_static_and_dynamic_field() {
             sort_fields: vec![SortField {
                 field_name: sort_field.to_string(),
                 sort_order: order as i32,
+                sort_datetime_format: None,
             }],
             ..Default::default()
         };
@@ -850,10 +856,12 @@ async fn test_sort_by_2_field() {
                     SortField {
                         field_name: sort_field1.to_string(),
                         sort_order: order1 as i32,
+                        sort_datetime_format: None,
                     },
                     SortField {
                         field_name: sort_field2.to_string(),
                         sort_order: order2 as i32,
+                        sort_datetime_format: None,
                     },
                 ],
                 ..Default::default()
@@ -932,6 +940,7 @@ async fn test_single_node_invalid_sorting_with_query() {
         sort_fields: vec![SortField {
             field_name: "description".to_string(),
             sort_order: SortOrder::Desc as i32,
+            sort_datetime_format: None,
         }],
         ..Default::default()
     };

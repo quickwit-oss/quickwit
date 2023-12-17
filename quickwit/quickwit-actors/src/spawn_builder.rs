@@ -285,7 +285,6 @@ impl<A: Actor> ActorExecutionEnv<A> {
                 self.process_one_message(envelope).await?;
             }
             self.ctx.yield_now().await;
-
             if self.inbox.is_empty() {
                 break;
             }
@@ -293,9 +292,16 @@ impl<A: Actor> ActorExecutionEnv<A> {
         self.actor.get_mut().on_drained_messages(&self.ctx).await?;
         self.ctx.idle();
         if self.ctx.mailbox().is_last_mailbox() {
-            // No one will be able to send us more messages.
-            // We can exit the actor.
-            return Err(ActorExitStatus::Success);
+            // We double check here that the mailbox does not contain any messages,
+            // as someone on different runtime thread could have added a last message
+            // and dropped the last mailbox right before this block.
+            // See #4248
+            if self.inbox.is_empty() {
+                // No one will be able to send us more messages.
+                // We can exit the actor.
+                info!(actor = self.ctx.actor_instance_id(), "no more messages");
+                return Err(ActorExitStatus::Success);
+            }
         }
 
         Ok(())

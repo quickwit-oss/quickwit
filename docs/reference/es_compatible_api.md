@@ -133,7 +133,7 @@ If a parameter appears both as a query string parameter and in the JSON payload,
 | `from`             | `Integer`     | The rank of the first hit to return. This is useful for pagination.              | 0             |
 | `q`                | `String`      | The search query.                                                                | (Optional)    |
 | `size`             | `Integer`     | Number of hits to return.                                                        | 10            |
-| `sort`             | `String`      | Describes how documents should be ranked. See [Sort order](#sort-order)          | `[]`          | (Optional) |
+| `sort`             | `String`      | Describes how documents should be ranked. See [Sort order](#sort-order)          | (Optional)    |
 | `scroll`           | `Duration`    | Creates a scroll context for "time to live". See [Scroll](#_scroll--scroll-api). | (Optional)    |
 
 #### Supported Request Body parameters
@@ -145,7 +145,8 @@ If a parameter appears both as a query string parameter and in the JSON payload,
 | `query`            | `Json object`     | Describe the search query. See [Query DSL](#query-dsl)                         | (Optional)    |
 | `size`             | `Integer`         | Number of hits to return.                                                      | 10            |
 | `sort`             | `JsonObject[]`    | Describes how documents should be ranked. See [Sort order](#sort-order)        | `[]`          |
-| `aggs`             | `Json object`     | Aggregation definition. See [Aggregations](aggregation.md).                    | `{}`          | ` |
+| `search_after`     | `Any[]`           | Ignore documents with a SortingValue preceding or equal to the parameter       | (Optional)    |
+| `aggs`             | `Json object`     | Aggregation definition. See [Aggregations](aggregation.md).                    | `{}`          |
 
 
 #### Sort order
@@ -168,7 +169,7 @@ following syntax.
 {
   // ...
   "sort" : [
-    { "timestamp" : {"order" : "asc"}},
+    { "timestamp" : {"format": "epoch_millis_as_int","order" : "asc"}},
     { "serial_number" : "desc" }
   ]
   // ...
@@ -184,6 +185,44 @@ It is also possible to not supply an order and rely on the default order using t
   // ...
 }
 ```
+
+If no format is provided for timestamps, timestamps are returned with nanosecond precision. Beware
+this means the resulting json may contain high numbers for which there is loss of precision when
+using languages where all numbers are floats, such as JavaScript.
+
+#### Search after
+
+When sorting results, the answer looks like the following
+
+```json
+{
+  // ...
+  "hits": {
+    // ...
+    "hits": [
+      // ...
+      {
+        // ...
+        "sort": [
+          1701962929199000000
+        ]
+      }
+    ]
+  }
+}
+```
+
+You can pass the `sort` value of the last hit in a subsequent request where other fields are kept unchanged:
+```json
+{
+  // keep all fields from the original request
+  "seach_after": [
+    1701962929199000000
+  ]
+}
+```
+
+This allows you to paginate your results.
 
 ### `_msearch` &nbsp; Multi search API
 
@@ -219,7 +258,7 @@ GET api/v1/_elastic/_search/scroll
 
 | Variable    | Type                                        | Description | Default value |
 | ----------- | ------------------------------------------- | ----------- | ------------- |
-| `scroll_id` | Scroll id (obtained from a search response) | Required    |
+| `scroll_id` | Scroll id (obtained from a search response) | Required    |               |
 
 
 The `_search/scroll` endpoint, in combination with the `_search` API makes it possible to request successive pages of search results.

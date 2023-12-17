@@ -140,7 +140,7 @@ fn get_sources_to_schedule(model: &ControlPlaneModel) -> Vec<SourceToSchedule> {
             SourceType::IngestV2 => {
                 // Expect: the source should exist since we just read it from `get_source_configs`.
                 let shard_ids: Vec<ShardId> = model
-                    .list_shards(&source_uid)
+                    .list_shards_for_source(&source_uid)
                     .expect("source should exist")
                     .map(|shard| shard.shard_id)
                     .collect();

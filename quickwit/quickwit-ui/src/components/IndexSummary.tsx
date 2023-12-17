@@ -75,7 +75,7 @@ export function IndexSummary({ index }: { index: Index }) {
           {dayjs
             .unix(index.metadata.create_timestamp)
             .utc()
-            .format("YYYY/MM/DD HH:MM")}
+            .format("YYYY/MM/DD HH:mm")}
         </IndexRow>
         <IndexRow title="URI:">{index.metadata.index_config.index_uri}</IndexRow>
         <IndexRow title="Number of published documents:">

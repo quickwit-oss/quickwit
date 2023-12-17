@@ -31,15 +31,35 @@ pub use error::ElasticSearchError;
 pub use multi_search::{
     MultiSearchHeader, MultiSearchQueryParams, MultiSearchResponse, MultiSearchSingleResponse,
 };
-use quickwit_proto::search::SortOrder;
+use quickwit_proto::search::{SortDatetimeFormat, SortOrder};
 pub use scroll::ScrollQueryParams;
 pub use search_body::SearchBody;
 pub use search_query_params::SearchQueryParams;
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Eq, PartialEq)]
 pub struct SortField {
     pub field: String,
     pub order: SortOrder,
+    pub date_format: Option<ElasticDateFormat>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ElasticDateFormat {
+    /// We don't want to use the format `EpochMillis` as elasticsearch
+    /// returns milliseconds as strings when used. Instead, we support
+    /// `EpochMillisAsInt` which returns milliseconds as integers to
+    /// make it explicit for the user.
+    EpochMillisAsInt,
+}
+
+impl From<ElasticDateFormat> for SortDatetimeFormat {
+    fn from(date_format: ElasticDateFormat) -> Self {
+        match date_format {
+            ElasticDateFormat::EpochMillisAsInt => SortDatetimeFormat::UnixTimestampMillis,
+        }
+    }
 }
 
 pub(crate) fn default_elasticsearch_sort_order(field_name: &str) -> SortOrder {
