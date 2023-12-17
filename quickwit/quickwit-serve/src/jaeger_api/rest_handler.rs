@@ -19,6 +19,8 @@
 
 use hyper::StatusCode;
 use itertools::Itertools;
+use prost_types::{Duration, Timestamp};
+use quickwit_common::parse_duration::parse_duration;
 use quickwit_jaeger::JaegerService;
 use quickwit_proto::jaeger::storage::v1::span_reader_plugin_server::SpanReaderPlugin;
 use quickwit_proto::jaeger::storage::v1::{
@@ -36,7 +38,6 @@ use crate::jaeger_api::model::{
     JaegerError, JaegerResponseBody, JaegerSpan, JaegerTrace, TracesSearchQueryParams,
     DEFAULT_NUMBER_OF_TRACES,
 };
-use crate::jaeger_api::util::{parse_duration_with_units, to_well_known_timestamp};
 use crate::json_api_response::JsonApiResponse;
 use crate::{require, BodyFormat};
 
@@ -274,6 +275,22 @@ fn make_jaeger_api_response<T: serde::Serialize>(
         Err(err) => err.status,
     };
     JsonApiResponse::new(&jaeger_result, status_code, &format)
+}
+
+fn to_well_known_timestamp(timestamp_nanos: i64) -> Timestamp {
+    let seconds = timestamp_nanos / 1_000_000;
+    let nanos = (timestamp_nanos % 1_000_000) as i32;
+    Timestamp { seconds, nanos }
+}
+
+fn parse_duration_with_units(duration_string: String) -> anyhow::Result<Duration> {
+    parse_duration(&duration_string)
+        .map(|duration_nanos| to_well_known_timestamp(duration_nanos))
+        .map(|timestamp| Duration {
+            seconds: timestamp.seconds,
+            nanos: timestamp.nanos,
+        })
+        .map_err(|error| anyhow::anyhow!("Failed to parse duration: {:?}", error))
 }
 
 #[cfg(test)]

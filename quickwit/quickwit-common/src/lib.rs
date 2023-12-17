@@ -27,6 +27,7 @@ pub mod io;
 mod kill_switch;
 pub mod metrics;
 pub mod net;
+pub mod parse_duration;
 mod path_hasher;
 mod progress;
 pub mod pubsub;

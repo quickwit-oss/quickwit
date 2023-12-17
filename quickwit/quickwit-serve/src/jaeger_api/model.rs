@@ -22,13 +22,11 @@ use std::collections::HashMap;
 use base64::prelude::{Engine, BASE64_STANDARD};
 use hyper::StatusCode;
 use itertools::Itertools;
+use prost_types::{Duration, Timestamp};
 use quickwit_proto::jaeger::api_v2::{KeyValue, Log, Process, Span, SpanRef, ValueType};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use serde_with::serde_as;
-
-use super::util::convert_timestamp_to_microsecs;
-use crate::jaeger_api::util::{bytes_to_hex_string, convert_duration_to_microsecs};
 
 pub(super) const DEFAULT_NUMBER_OF_TRACES: i32 = 20;
 
@@ -324,6 +322,18 @@ impl From<anyhow::Error> for JaegerError {
             message: error.to_string(),
         }
     }
+}
+
+fn bytes_to_hex_string(bytes: &[u8]) -> String {
+    format!("{:0>16}", hex::encode(bytes))
+}
+
+fn convert_timestamp_to_microsecs(timestamp: &Timestamp) -> i64 {
+    timestamp.seconds * 1_000_000 + i64::from(timestamp.nanos / 1000)
+}
+
+fn convert_duration_to_microsecs(duration: Duration) -> i64 {
+    duration.seconds * 1_000_000 + i64::from(duration.nanos / 1000)
 }
 
 #[cfg(test)]
