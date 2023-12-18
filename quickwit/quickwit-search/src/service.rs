@@ -29,11 +29,11 @@ use quickwit_config::SearcherConfig;
 use quickwit_doc_mapper::DocMapper;
 use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_proto::search::{
-    FetchDocsRequest, FetchDocsResponse, GetKvRequest, Hit, LeafListTermsRequest,
-    LeafListTermsResponse, LeafSearchRequest, LeafSearchResponse, LeafSearchStreamRequest,
-    LeafSearchStreamResponse, ListTermsRequest, ListTermsResponse, PutKvRequest,
-    ReportSplitsRequest, ReportSplitsResponse, ScrollRequest, SearchRequest, SearchResponse,
-    SearchStreamRequest, SnippetRequest,
+    FetchDocsRequest, FetchDocsResponse, GetKvRequest, Hit, LeafListFieldsRequest,
+    LeafListTermsRequest, LeafListTermsResponse, LeafSearchRequest, LeafSearchResponse,
+    LeafSearchStreamRequest, LeafSearchStreamResponse, ListFieldsRequest, ListFieldsResponse,
+    ListTermsRequest, ListTermsResponse, PutKvRequest, ReportSplitsRequest, ReportSplitsResponse,
+    ScrollRequest, SearchRequest, SearchResponse, SearchStreamRequest, SnippetRequest,
 };
 use quickwit_storage::{
     MemorySizedCache, QuickwitCache, SplitCache, StorageCache, StorageResolver,
@@ -43,6 +43,8 @@ use tokio::sync::Semaphore;
 use tokio_stream::wrappers::UnboundedReceiverStream;
 
 use crate::leaf_cache::LeafSearchCache;
+use crate::list_fields::{leaf_list_fields, root_list_fields};
+use crate::list_fields_cache::ListFieldsCache;
 use crate::root::fetch_docs_phase;
 use crate::scroll_context::{MiniKV, ScrollContext, ScrollKeyAndStartOffset};
 use crate::search_stream::{leaf_search_stream, root_search_stream};
@@ -136,6 +138,18 @@ pub trait SearchService: 'static + Send + Sync {
     /// Indexers call report_splits to inform searchers node about the presence of a split, which
     /// would then be considered as a candidate for the searcher split cache.
     async fn report_splits(&self, report_splits: ReportSplitsRequest) -> ReportSplitsResponse;
+
+    /// Return the list of fields for a given or multiple indices.
+    async fn root_list_fields(
+        &self,
+        list_fields: ListFieldsRequest,
+    ) -> crate::Result<ListFieldsResponse>;
+
+    /// Return the list of fields for one index.
+    async fn leaf_list_fields(
+        &self,
+        list_fields: LeafListFieldsRequest,
+    ) -> crate::Result<ListFieldsResponse>;
 }
 
 impl SearchServiceImpl {
@@ -314,6 +328,36 @@ impl SearchService for SearchServiceImpl {
         }
         ReportSplitsResponse {}
     }
+
+    async fn root_list_fields(
+        &self,
+        list_fields_req: ListFieldsRequest,
+    ) -> crate::Result<ListFieldsResponse> {
+        root_list_fields(
+            list_fields_req,
+            &self.cluster_client,
+            self.metastore.clone(),
+        )
+        .await
+    }
+
+    async fn leaf_list_fields(
+        &self,
+        list_fields_req: LeafListFieldsRequest,
+    ) -> crate::Result<ListFieldsResponse> {
+        let index_uri = Uri::from_str(&list_fields_req.index_uri)?;
+        let storage = self.storage_resolver.resolve(&index_uri).await?;
+        let index_id = list_fields_req.index_id;
+        let split_ids = list_fields_req.split_offsets;
+        leaf_list_fields(
+            index_id,
+            storage,
+            &self.searcher_context,
+            &split_ids[..],
+            &list_fields_req.fields,
+        )
+        .await
+    }
 }
 
 pub(crate) async fn scroll(
@@ -404,6 +448,8 @@ pub struct SearcherContext {
     pub leaf_search_cache: LeafSearchCache,
     /// Search split cache. `None` if no split cache is configured.
     pub split_cache_opt: Option<Arc<SplitCache>>,
+    /// List fields cache. Caches the list fields response for a given split.
+    pub list_fields_cache: ListFieldsCache,
 }
 
 impl std::fmt::Debug for SearcherContext {
@@ -442,6 +488,8 @@ impl SearcherContext {
         let storage_long_term_cache = Arc::new(QuickwitCache::new(fast_field_cache_capacity));
         let leaf_search_cache =
             LeafSearchCache::new(searcher_config.partial_request_cache_capacity.as_u64() as usize);
+        let list_fields_cache =
+            ListFieldsCache::new(searcher_config.partial_request_cache_capacity.as_u64() as usize);
 
         Self {
             searcher_config,
@@ -450,6 +498,7 @@ impl SearcherContext {
             split_footer_cache: global_split_footer_cache,
             split_stream_semaphore,
             leaf_search_cache,
+            list_fields_cache,
             split_cache_opt,
         }
     }

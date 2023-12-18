@@ -23,9 +23,9 @@ use base64::Engine;
 use futures::future::ready;
 use futures::{Future, StreamExt};
 use quickwit_proto::search::{
-    FetchDocsRequest, FetchDocsResponse, GetKvRequest, LeafListTermsRequest, LeafListTermsResponse,
-    LeafSearchRequest, LeafSearchResponse, LeafSearchStreamRequest, LeafSearchStreamResponse,
-    PutKvRequest,
+    FetchDocsRequest, FetchDocsResponse, GetKvRequest, LeafListFieldsRequest, LeafListTermsRequest,
+    LeafListTermsResponse, LeafSearchRequest, LeafSearchResponse, LeafSearchStreamRequest,
+    LeafSearchStreamResponse, ListFieldsResponse, PutKvRequest,
 };
 use tantivy::aggregation::intermediate_agg_result::IntermediateAggregationResults;
 use tokio::sync::mpsc::error::SendError;
@@ -110,6 +110,15 @@ impl ClusterClient {
             response_res = merge_leaf_search_results(response_res, retry_result);
         }
         response_res
+    }
+
+    /// Leaf search with retry on another node client.
+    pub async fn leaf_list_fields(
+        &self,
+        request: LeafListFieldsRequest,
+        mut client: SearchServiceClient,
+    ) -> crate::Result<ListFieldsResponse> {
+        client.leaf_list_fields(request.clone()).await
     }
 
     /// Leaf search stream with retry on another node client.

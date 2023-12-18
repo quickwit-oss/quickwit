@@ -1,0 +1,267 @@
+# Test _field_caps API
+method: [GET]
+engines:
+  - quickwit
+endpoint: fieldcaps/_field_caps
+expected:
+  indices:
+  - fieldcaps
+  fields:
+    nested.response:
+      long:
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+        indices:
+        - fieldcaps
+    nested.name:
+      keyword:
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+        indices:
+        - fieldcaps
+      text:
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+        indices:
+        - fieldcaps
+    host:
+      ip:
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+        indices:
+        - fieldcaps
+    mixed: # This is a little weird case (values [5, -5.5]), since coercion happens only on the columnar side. That's why `long` is not aggregatable.
+      long: 
+        metadata_field: false
+        searchable: true
+        aggregatable: false 
+        indices:
+        - fieldcaps
+      double:
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+        indices:
+        - fieldcaps
+    date:
+      date_nanos:
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+        indices:
+        - fieldcaps
+    _field_presence:
+      long:
+        metadata_field: false
+        searchable: true
+        aggregatable: false
+        indices:
+        - fieldcaps
+    response:
+      long:
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+        indices:
+        - fieldcaps
+    id:
+      long:
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+        indices:
+        - fieldcaps
+      double:
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+        indices:
+        - fieldcaps
+    name:
+      keyword:
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+        indices:
+        - fieldcaps
+      text:
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+        indices:
+        - fieldcaps
+    tags:
+      keyword:
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+        indices:
+        - fieldcaps
+      text:
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+        indices:
+        - fieldcaps
+---
+# Test fields parameter with `.dynamic` suffix
+engines:
+  - quickwit
+method: [GET]
+engines:
+  - quickwit
+endpoint: fieldcaps/_field_caps?fields=nested.response,nested.name
+expected:
+  indices:
+  - fieldcaps
+  fields:
+    nested.response:
+      long:
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+        indices:
+        - fieldcaps
+    nested.name:
+      keyword:
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+        indices:
+        - fieldcaps
+      text:
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+        indices:
+        - fieldcaps
+---
+# Test fields parameter with wildcard
+method: [GET]
+engines:
+  - quickwit
+endpoint: fieldcaps/_field_caps?fields=nest*
+expected:
+  indices:
+  - fieldcaps
+  fields:
+    nested.response:
+      long:
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+        indices:
+        - fieldcaps
+    nested.name:
+      keyword:
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+        indices:
+        - fieldcaps
+      text:
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+        indices:
+        - fieldcaps
+---
+# Test fields parameter with wildcard
+method: [GET]
+engines:
+  - quickwit
+endpoint: fieldcaps/_field_caps?fields=nest*
+expected:
+  indices:
+  - fieldcaps
+  fields:
+    nested.response:
+      long:
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+        indices:
+        - fieldcaps
+    nested.name:
+      keyword:
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+        indices:
+        - fieldcaps
+      text:
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+        indices:
+        - fieldcaps
+---
+# Test fields parameter with wildcard
+method: [GET]
+engines:
+  - quickwit
+endpoint: fieldcaps/_field_caps?fields=nested.*ponse
+expected:
+  indices:
+  - fieldcaps
+  fields:
+    nested.response:
+      long:
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+        indices:
+        - fieldcaps
+---
+# Compare with elastic search
+method: [GET]
+engines:
+  - quickwit
+  - elasticsearch
+endpoint: fieldcaps/_field_caps?fields=nested.*ponse
+expected:
+  indices:
+  - fieldcaps
+  fields:
+    nested.response:
+      long:
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+---
+# Compare ip field with elastic search
+method: [GET]
+engines:
+  - quickwit
+  - elasticsearch
+endpoint: fieldcaps/_field_caps?fields=host
+expected:
+  indices:
+  - fieldcaps
+  fields:
+    host:
+      ip:
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+---
+# Compare ip field with elastic search
+method: [GET]
+engines:
+  - quickwit
+  - elasticsearch
+endpoint: fieldcaps/_field_caps?fields=date
+expected:
+  indices:
+  - fieldcaps
+  fields:
+    date:
+      date_nanos:
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+

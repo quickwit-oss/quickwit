@@ -5840,6 +5840,7 @@ dependencies = [
  "tracing-opentelemetry",
  "ulid",
  "utoipa",
+ "zstd 0.13.0",
 ]
 
 [[package]]

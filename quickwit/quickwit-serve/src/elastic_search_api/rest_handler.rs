@@ -31,7 +31,8 @@ use itertools::Itertools;
 use quickwit_common::truncate_str;
 use quickwit_config::{validate_index_id_pattern, NodeConfig};
 use quickwit_proto::search::{
-    CountHits, PartialHit, ScrollRequest, SearchResponse, SortByValue, SortDatetimeFormat,
+    CountHits, ListFieldsResponse, PartialHit, ScrollRequest, SearchResponse, SortByValue,
+    SortDatetimeFormat,
 };
 use quickwit_proto::ServiceErrorCode;
 use quickwit_query::query_ast::{QueryAst, UserInputQuery};
@@ -41,11 +42,14 @@ use serde_json::json;
 use warp::{Filter, Rejection};
 
 use super::filter::{
-    elastic_cluster_info_filter, elastic_index_search_filter, elastic_multi_search_filter,
-    elastic_scroll_filter, elastic_search_filter,
+    elastic_cluster_info_filter, elastic_index_field_capabilities_filter,
+    elastic_index_search_filter, elastic_multi_search_filter, elastic_scroll_filter,
+    elastic_search_filter,
 };
 use super::model::{
-    ElasticSearchError, MultiSearchHeader, MultiSearchQueryParams, MultiSearchResponse,
+    build_list_field_request_for_es_api, convert_to_es_field_capabilities_response,
+    ElasticSearchError, FieldCapabilityQueryParams, FieldCapabilityRequestBody,
+    FieldCapabilityResponse, MultiSearchHeader, MultiSearchQueryParams, MultiSearchResponse,
     MultiSearchSingleResponse, ScrollQueryParams, SearchBody, SearchQueryParams,
 };
 use super::{make_elastic_api_response, TrackTotalHits};
@@ -91,6 +95,17 @@ pub fn es_compat_search_handler(
         };
         make_json_api_response::<(), _>(Err(api_error), BodyFormat::default())
     })
+}
+
+/// GET or POST _elastic/{index}/_field_caps
+/// TODO: add route handling for _elastic/_field_caps
+pub fn es_compat_index_field_capabilities_handler(
+    search_service: Arc<dyn SearchService>,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    elastic_index_field_capabilities_filter()
+        .and(with_arg(search_service))
+        .then(es_compat_index_field_capabilities)
+        .map(|result| make_elastic_api_response(result, BodyFormat::default()))
 }
 
 /// GET or POST _elastic/{index}/_search
@@ -285,6 +300,21 @@ async fn es_compat_index_search(
     let mut search_response_rest: ElasticSearchResponse =
         convert_to_es_search_response(search_response, append_shard_doc);
     search_response_rest.took = elapsed.as_millis() as u32;
+    Ok(search_response_rest)
+}
+
+async fn es_compat_index_field_capabilities(
+    index_id_patterns: Vec<String>,
+    search_params: FieldCapabilityQueryParams,
+    search_body: FieldCapabilityRequestBody,
+    search_service: Arc<dyn SearchService>,
+) -> Result<FieldCapabilityResponse, ElasticSearchError> {
+    let search_request =
+        build_list_field_request_for_es_api(index_id_patterns, search_params, search_body)?;
+    let search_response: ListFieldsResponse =
+        search_service.root_list_fields(search_request).await?;
+    let search_response_rest: FieldCapabilityResponse =
+        convert_to_es_field_capabilities_response(search_response);
     Ok(search_response_rest)
 }
 

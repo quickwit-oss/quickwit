@@ -72,9 +72,11 @@ const MAX_SCROLL_TTL: Duration = Duration::from_secs(DELETION_GRACE_PERIOD.as_se
 /// SearchJob to be assigned to search clients by the [`SearchJobPlacer`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct SearchJob {
-    index_uid: IndexUid,
+    /// The index UID.
+    pub index_uid: IndexUid,
     cost: usize,
-    offsets: SplitIdAndFooterOffsets,
+    /// The split ID and footer offsets of the split.
+    pub offsets: SplitIdAndFooterOffsets,
 }
 
 impl SearchJob {
