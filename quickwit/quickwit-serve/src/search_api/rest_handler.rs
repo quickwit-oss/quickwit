@@ -58,9 +58,10 @@ pub struct SearchApi;
 pub(crate) async fn extract_index_id_patterns(
     comma_separated_index_patterns: String,
 ) -> Result<Vec<String>, Rejection> {
-    let index_pattern = percent_decode_str(&*comma_separated_index_patterns)
+    let index_pattern = percent_decode_str(&comma_separated_index_patterns)
         .decode_utf8()
-        .unwrap();
+        .expect("the index_pattern should be url decoded")
+        .to_string();
 
     let mut index_ids_patterns = Vec::new();
     for index_id_pattern in index_pattern.split(',').collect::<Vec<_>>() {
