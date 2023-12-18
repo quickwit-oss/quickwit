@@ -24,6 +24,10 @@ jobs:
             platform: linux/arm64
     runs-on: ${{ matrix.os }}
     steps:
+      - name: Set the build ID
+        run: |
+          echo "BUILD_ID=${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
+
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -79,7 +83,7 @@ jobs:
       - name: Upload digest
         uses: actions/upload-artifact@v4
         with:
-          name: digests
+          name: digest-${{ env.BUILD_ID }}
           path: /tmp/digests/*
           if-no-files-found: error
           retention-days: 1
@@ -91,7 +95,7 @@ jobs:
       - name: Download digests
         uses: actions/download-artifact@v4
         with:
-          name: digests
+          name: digest-${{ env.BUILD_ID }}
           path: /tmp/digests
 
       - name: Set up Docker Buildx
