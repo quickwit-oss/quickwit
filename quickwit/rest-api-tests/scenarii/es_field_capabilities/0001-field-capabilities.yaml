@@ -1,6 +1,8 @@
 # Test _field_caps API
 method: [GET]
-endpoint: _elastic/fieldcaps/_field_caps
+engines:
+  - quickwit
+endpoint: fieldcaps/_field_caps
 expected:
   indices:
   - fieldcaps
@@ -113,10 +115,12 @@ expected:
         - fieldcaps
 ---
 # Test fields parameter with `.dynamic` suffix
+engines:
+  - quickwit
 method: [GET]
 engines:
   - quickwit
-endpoint: _elastic/fieldcaps/_field_caps?fields=nested.response,nested.name
+endpoint: fieldcaps/_field_caps?fields=nested.response,nested.name
 expected:
   indices:
   - fieldcaps
@@ -146,7 +150,7 @@ expected:
 method: [GET]
 engines:
   - quickwit
-endpoint: _elastic/fieldcaps/_field_caps?fields=nest*
+endpoint: fieldcaps/_field_caps?fields=nest*
 expected:
   indices:
   - fieldcaps
@@ -176,7 +180,7 @@ expected:
 method: [GET]
 engines:
   - quickwit
-endpoint: _elastic/fieldcaps/_field_caps?fields=nest*
+endpoint: fieldcaps/_field_caps?fields=nest*
 expected:
   indices:
   - fieldcaps
@@ -206,7 +210,7 @@ expected:
 method: [GET]
 engines:
   - quickwit
-endpoint: _elastic/fieldcaps/_field_caps?fields=nested.*ponse
+endpoint: fieldcaps/_field_caps?fields=nested.*ponse
 expected:
   indices:
   - fieldcaps
@@ -218,5 +222,22 @@ expected:
         aggregatable: true
         indices:
         - fieldcaps
+---
+# Compare with elastic search
+method: [GET]
+engines:
+  - quickwit
+  - elasticsearch
+endpoint: fieldcaps/_field_caps?fields=nested.*ponse
+expected:
+  indices:
+  - fieldcaps
+  fields:
+    nested.response:
+      long:
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+
 
 

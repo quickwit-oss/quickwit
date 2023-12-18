@@ -65,7 +65,7 @@ def run_request_with_retry(run_req, expected_status_code=None, num_retries=10, w
         if try_number < num_retries:
             print("Retrying...")
             time.sleep(wait_time)
-    raise Exception("Wrong status code. Got %s, expected %s" % (r.status_code, expected_status_code))
+    raise Exception("Wrong status code. Got %s, expected %s, url %s" % (r.status_code, expected_status_code, run_req().url))
 
 
 def resolve_previous_result(c, previous_result):

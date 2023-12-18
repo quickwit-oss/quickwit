@@ -264,7 +264,7 @@ pub fn serialize_split_fields(list_fields: ListFields) -> Vec<u8> {
 }
 
 /// Reads a fixed number of bytes into an array and returns the array.
-fn read_exact_array<R: Read, const N: usize>(reader: &mut R) -> io::Result<[u8; N]> {
+fn read_exact_array<const N: usize>(reader: &mut impl Read) -> io::Result<[u8; N]> {
     let mut buffer = [0u8; N];
     reader.read_exact(&mut buffer)?;
     Ok(buffer)
@@ -272,7 +272,7 @@ fn read_exact_array<R: Read, const N: usize>(reader: &mut R) -> io::Result<[u8; 
 
 /// Reads the Split fields from a zstd compressed stream of bytes
 pub fn deserialize_split_fields<R: Read>(mut reader: R) -> io::Result<ListFields> {
-    let format_version = read_exact_array::<_, 1>(&mut reader)?[0];
+    let format_version = read_exact_array::<1>(&mut reader)?[0];
     if format_version != 2 {
         return Err(io::Error::new(
             io::ErrorKind::InvalidData,

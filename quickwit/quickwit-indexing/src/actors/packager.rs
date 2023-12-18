@@ -334,7 +334,7 @@ fn create_packaged_split(
 /// Serializes the Split fields.
 ///
 /// `fields_metadata` has to be sorted.
-pub fn serialize_field_metadata(fields_metadata: &[FieldMetadata]) -> Vec<u8> {
+fn serialize_field_metadata(fields_metadata: &[FieldMetadata]) -> Vec<u8> {
     let fields = fields_metadata
         .iter()
         .map(field_metadata_to_list_field_serialized)

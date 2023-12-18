@@ -1,10 +1,12 @@
 # Delete possibly remaining index
 method: DELETE
+api_root: http://localhost:7280/api/v1/
 endpoint: indexes/fieldcaps
 status_code: null
 ---
 # Create index
 method: POST
+api_root: http://localhost:7280/api/v1/
 endpoint: indexes/
 json:
   version: "0.6"
@@ -24,6 +26,7 @@ json:
 ---
 # Ingest documents
 method: POST
+api_root: http://localhost:7280/api/v1/
 endpoint: fieldcaps/ingest
 num_retries: 10
 params:
@@ -34,6 +37,7 @@ ndjson:
 ---
 # Ingest documents split #2
 method: POST
+api_root: http://localhost:7280/api/v1/
 endpoint: fieldcaps/ingest
 params:
   commit: force
@@ -42,6 +46,7 @@ ndjson:
 ---
 # Ingest documents split #3
 method: POST
+api_root: http://localhost:7280/api/v1/
 endpoint: fieldcaps/ingest
 params:
   commit: force
