@@ -28,6 +28,7 @@ use elasticsearch_dsl::{HitsMetadata, Source, TotalHits, TotalHitsRelation};
 use futures_util::StreamExt;
 use hyper::StatusCode;
 use itertools::Itertools;
+use percent_encoding::percent_decode_str;
 use quickwit_common::truncate_str;
 use quickwit_config::{validate_index_id_pattern, NodeConfig};
 use quickwit_proto::search::{
@@ -38,7 +39,6 @@ use quickwit_query::query_ast::{QueryAst, UserInputQuery};
 use quickwit_query::BooleanOperand;
 use quickwit_search::{SearchError, SearchService};
 use serde_json::json;
-use urlencoding::decode;
 use warp::{Filter, Rejection};
 
 use super::filter::{
@@ -349,7 +349,7 @@ async fn es_compat_index_multi_search(
 
         let mut index_ids_patterns = Vec::new();
         for index in &request_header.index {
-            match decode(index) {
+            match percent_decode_str(index).decode_utf8() {
                 Ok(decode_index) => {
                     validate_index_id_pattern(decode_index.to_string().as_str()).map_err(
                         |err| {

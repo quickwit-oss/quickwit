@@ -23,6 +23,7 @@ use std::sync::Arc;
 use futures::stream::StreamExt;
 use hyper::header::HeaderValue;
 use hyper::HeaderMap;
+use percent_encoding::percent_decode_str;
 use quickwit_config::validate_index_id_pattern;
 use quickwit_proto::search::{CountHits, OutputFormat, SortField, SortOrder};
 use quickwit_proto::ServiceError;
@@ -31,7 +32,6 @@ use quickwit_search::{SearchError, SearchResponseRest, SearchService};
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
 use tracing::info;
-use urlencoding::decode;
 use warp::hyper::header::CONTENT_TYPE;
 use warp::hyper::StatusCode;
 use warp::{reply, Filter, Rejection, Reply};
@@ -58,9 +58,9 @@ pub struct SearchApi;
 pub(crate) async fn extract_index_id_patterns(
     comma_separated_index_patterns: String,
 ) -> Result<Vec<String>, Rejection> {
-    let index_pattern = decode(&comma_separated_index_patterns)
-        .expect("the index_pattern should be url decoded")
-        .to_string();
+    let index_pattern = percent_decode_str(&*comma_separated_index_patterns)
+        .decode_utf8()
+        .unwrap();
 
     let mut index_ids_patterns = Vec::new();
     for index_id_pattern in index_pattern.split(',').collect::<Vec<_>>() {
