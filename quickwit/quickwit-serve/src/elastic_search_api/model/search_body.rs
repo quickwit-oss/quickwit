@@ -174,7 +174,7 @@ mod tests {
         let json = r#"
         {
             "sort": [
-                { "timestamp": { "order": "desc", "format": "epoch_millis_as_int" } },
+                { "timestamp": { "order": "desc", "format": "epoch_nanos_int" } },
                 { "uid": { "order": "asc" } },
                 { "my_field": "asc" },
                 { "hello": {}},
@@ -189,7 +189,7 @@ mod tests {
         assert_eq!(sort_fields[0].order, SortOrder::Desc);
         assert_eq!(
             sort_fields[0].date_format,
-            Some(ElasticDateFormat::EpochMillisAsInt)
+            Some(ElasticDateFormat::EpochNanosInt)
         );
         assert_eq!(sort_fields[1].field, "uid");
         assert_eq!(sort_fields[1].order, SortOrder::Asc);

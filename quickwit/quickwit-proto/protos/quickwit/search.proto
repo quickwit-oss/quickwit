@@ -270,6 +270,7 @@ enum SortOrder {
 // for future extension.
 enum SortDatetimeFormat {
   UNIX_TIMESTAMP_MILLIS = 0;
+  UNIX_TIMESTAMP_NANOS = 1;
 }
 
 message SearchResponse {
