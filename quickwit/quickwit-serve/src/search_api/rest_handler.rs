@@ -20,6 +20,7 @@
 use std::convert::TryFrom;
 use std::sync::Arc;
 
+use anyhow::Context;
 use futures::stream::StreamExt;
 use hyper::header::HeaderValue;
 use hyper::HeaderMap;
@@ -60,7 +61,8 @@ pub(crate) async fn extract_index_id_patterns(
 ) -> Result<Vec<String>, Rejection> {
     let index_pattern = percent_decode_str(&comma_separated_index_patterns)
         .decode_utf8()
-        .expect("the index_pattern should be url decoded")
+        .context("index pattern does not contain valid utf8 characters")
+        .unwrap()
         .to_string();
 
     let mut index_ids_patterns = Vec::new();
