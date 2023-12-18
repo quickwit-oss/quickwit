@@ -44,7 +44,7 @@ impl fmt::Display for DurationError {
 /// "2h45m".
 ///
 /// Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h".
-/// Taken from https://crates.io/crates/go-parse-duration
+/// Taken from <https://github.com/aprimadi/parse-duration-rs/blob/8cc8881cb0a07c41473d4d4208c13cc665eef46e/src/lib.rs#L63>
 pub fn parse_duration(string: &str) -> Result<i64, DurationError> {
     let mut s = string;
     let mut duration: i64 = 0;
