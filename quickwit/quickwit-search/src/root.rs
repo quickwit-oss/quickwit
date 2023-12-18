@@ -226,7 +226,7 @@ fn validate_request_and_build_metadata(
 
         // Validate request against the current index schema.
         let schema = doc_mapper.schema();
-        validate_request(&schema, &doc_mapper.timestamp_field_name(), &search_request)?;
+        validate_request(&schema, &doc_mapper.timestamp_field_name(), search_request)?;
 
         validate_sort_field_types(
             &schema,
@@ -274,7 +274,7 @@ fn validate_sort_field_types(
         .iter()
         .zip(sort_fields_are_datetime_opt.iter_mut())
     {
-        if let Some(sort_field_entry) = get_sort_by_field_entry(&sort_field.field_name, &schema)? {
+        if let Some(sort_field_entry) = get_sort_by_field_entry(&sort_field.field_name, schema)? {
             validate_sort_by_field_type(
                 sort_field_entry,
                 sort_field.sort_datetime_format.is_some(),
@@ -457,7 +457,7 @@ fn validate_request(
         )));
     }
 
-    validate_requested_snippet_fields(&schema, &search_request.snippet_fields)?;
+    validate_requested_snippet_fields(schema, &search_request.snippet_fields)?;
 
     if let Some(agg) = search_request.aggregation_request.as_ref() {
         let _aggs: QuickwitAggregations = serde_json::from_str(agg).map_err(|_err| {
