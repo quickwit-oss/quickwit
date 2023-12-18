@@ -89,7 +89,7 @@ jobs:
     needs: [docker]
     steps:
       - name: Download digests
-        uses: actions/download-artifact@v3
+        uses: actions/download-artifact@v4
         with:
           name: digest
           path: /tmp/digests
