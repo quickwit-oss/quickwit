@@ -23,6 +23,9 @@ json:
           - rfc3339
         fast_precision: seconds
         fast: true
+      - name: host
+        type: ip
+        fast: true
 ---
 # Ingest documents
 method: POST

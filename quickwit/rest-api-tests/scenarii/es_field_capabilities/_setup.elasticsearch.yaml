@@ -15,6 +15,10 @@ json: {
         "norms": false,
         "index_options": "docs"
       },
+      "host": {
+        "type": "ip",
+        "store": true
+      },
     }
   }
 }

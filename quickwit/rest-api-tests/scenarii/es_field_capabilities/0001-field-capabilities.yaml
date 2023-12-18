@@ -28,13 +28,7 @@ expected:
         indices:
         - fieldcaps
     host:
-      keyword:
-        metadata_field: false
-        searchable: true
-        aggregatable: true
-        indices:
-        - fieldcaps
-      text:
+      ip:
         metadata_field: false
         searchable: true
         aggregatable: true
@@ -238,6 +232,20 @@ expected:
         metadata_field: false
         searchable: true
         aggregatable: true
-
-
+---
+# Compare ip field with elastic search
+method: [GET]
+engines:
+  - quickwit
+  - elasticsearch
+endpoint: fieldcaps/_field_caps?fields=host
+expected:
+  indices:
+  - fieldcaps
+  fields:
+    host:
+      ip:
+        metadata_field: false
+        searchable: true
+        aggregatable: true
 
