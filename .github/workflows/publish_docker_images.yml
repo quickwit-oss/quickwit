@@ -24,10 +24,6 @@ jobs:
             platform: linux/arm64
     runs-on: ${{ matrix.os }}
     steps:
-      - name: Set the build ID
-        run: |
-          echo "BUILD_ID=${{ github.run_id }}-${{ github.run_number }}-${{ github.run_attempt }}" >> "$GITHUB_ENV"
-
       - name: Checkout
         uses: actions/checkout@v4
 
@@ -76,15 +72,15 @@ jobs:
 
       - name: Export digest
         run: |
-          mkdir -p /tmp/digests
+          mkdir -p /tmp/digests/${{ matrix.platform }}
           digest="${{ steps.build.outputs.digest }}"
           touch "/tmp/digests/${digest#sha256:}"
 
       - name: Upload digest
         uses: actions/upload-artifact@v4
         with:
-          name: digest-${{ env.BUILD_ID }}-${{ matrix.platform }}
-          path: /tmp/digests/*
+          name: digest
+          path: /tmp/digests/${{ matrix.platform }}/*
           if-no-files-found: error
           retention-days: 1
 
@@ -95,8 +91,8 @@ jobs:
       - name: Download digests
         uses: actions/download-artifact@v4
         with:
-          name: digest-${{ env.BUILD_ID }}-${{ matrix.platform }}
-          path: /tmp/digests
+          name: digest
+          path: /tmp/digests/${{ matrix.platform }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -118,7 +114,7 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_ACCESS_TOKEN }}
       - name: Create manifest list and push tags
-        working-directory: /tmp/digests
+        working-directory: /tmp/digests/${{ matrix.platform }}
         run: |
           docker buildx imagetools create $(jq -cr '.tags | map("-t " + .) | join(" ")' <<< "$DOCKER_METADATA_OUTPUT_JSON") \
             $(printf '${{ env.REGISTRY_IMAGE }}@sha256:%s ' *)
