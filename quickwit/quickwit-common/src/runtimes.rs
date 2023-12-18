@@ -67,7 +67,9 @@ impl RuntimesConfig {
         let num_threads_non_blocking = if num_cpus > 6 { 2 } else { 1 };
         // On the other hand the blocking actors are cpu intensive. We allocate
         // almost all of the threads to them.
-        let num_threads_blocking = (num_cpus - num_threads_non_blocking).max(1);
+        // We actually attribute more threads than we have cores, because merge do IO on their threads
+        // at the moment.
+        let num_threads_blocking = ((num_cpus * 3 / 2) - num_threads_non_blocking ).max(1);
         RuntimesConfig {
             num_threads_non_blocking,
             num_threads_blocking,
@@ -97,6 +99,8 @@ fn start_runtimes(config: RuntimesConfig) -> HashMap<RuntimeType, Runtime> {
     runtimes.insert(RuntimeType::Blocking, blocking_runtime);
     let non_blocking_runtime = tokio::runtime::Builder::new_multi_thread()
         .worker_threads(config.num_threads_non_blocking)
+        // The lifo slot is disabled to avoid #4103 and similar problems.
+        .disable_lifo_slot()
         .thread_name_fn(|| {
             static ATOMIC_ID: AtomicUsize = AtomicUsize::new(0);
             let id = ATOMIC_ID.fetch_add(1, Ordering::AcqRel);
