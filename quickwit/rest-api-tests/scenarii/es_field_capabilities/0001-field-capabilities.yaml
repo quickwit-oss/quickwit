@@ -248,4 +248,20 @@ expected:
         metadata_field: false
         searchable: true
         aggregatable: true
+---
+# Compare ip field with elastic search
+method: [GET]
+engines:
+  - quickwit
+  - elasticsearch
+endpoint: fieldcaps/_field_caps?fields=date
+expected:
+  indices:
+  - fieldcaps
+  fields:
+    date:
+      date_nanos:
+        metadata_field: false
+        searchable: true
+        aggregatable: true
 
