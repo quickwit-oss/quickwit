@@ -83,7 +83,7 @@ jobs:
       - name: Upload digest
         uses: actions/upload-artifact@v4
         with:
-          name: digest-${{ env.BUILD_ID }}
+          name: digest-${{ env.BUILD_ID }}-${{ matrix.platform }}
           path: /tmp/digests/*
           if-no-files-found: error
           retention-days: 1
@@ -95,7 +95,7 @@ jobs:
       - name: Download digests
         uses: actions/download-artifact@v4
         with:
-          name: digest-${{ env.BUILD_ID }}
+          name: digest-${{ env.BUILD_ID }}-${{ matrix.platform }}
           path: /tmp/digests
 
       - name: Set up Docker Buildx
