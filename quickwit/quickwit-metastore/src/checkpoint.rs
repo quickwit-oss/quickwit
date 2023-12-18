@@ -239,8 +239,9 @@ impl<'de> Deserialize<'de> for SourceCheckpoint {
 /// the checkpoint.
 #[derive(Clone, Debug, Error, Eq, PartialEq, Serialize, Deserialize)]
 #[error(
-    "incompatible checkpoint delta at partition `{partition_id}`: cur_pos:{partition_position:?} \
-     delta_pos:{delta_from_position:?}"
+    "incompatible checkpoint delta at partition `{partition_id}`: end position is \
+     `{partition_position:?}` (inclusive), whereas delta starts at `{delta_from_position:?}` \
+     (exclusive)"
 )]
 pub struct IncompatibleCheckpointDelta {
     /// The partition ID for which the incompatibility has been detected.
