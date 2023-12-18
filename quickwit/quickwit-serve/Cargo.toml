@@ -38,6 +38,7 @@ tower-http = { workspace = true }
 tower = { workspace = true }
 tracing = { workspace = true }
 tracing-opentelemetry = { workspace = true }
+urlencoding = { workspace = true }
 utoipa = { workspace = true }
 opentelemetry = { workspace = true }
 warp = { workspace = true }

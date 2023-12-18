@@ -38,6 +38,7 @@ use quickwit_query::query_ast::{QueryAst, UserInputQuery};
 use quickwit_query::BooleanOperand;
 use quickwit_search::{SearchError, SearchService};
 use serde_json::json;
+use urlencoding::decode;
 use warp::{Filter, Rejection};
 
 use super::filter::{
@@ -345,15 +346,29 @@ async fn es_compat_index_multi_search(
                 "`_msearch` request header must define at least one index".to_string(),
             )));
         }
+
+        let mut index_ids_patterns = Vec::new();
         for index in &request_header.index {
-            validate_index_id_pattern(index).map_err(|err| {
-                SearchError::InvalidArgument(format!(
-                    "request header contains an invalid index: {}",
-                    err
-                ))
-            })?;
+            match decode(index) {
+                Ok(decode_index) => {
+                    validate_index_id_pattern(decode_index.to_string().as_str()).map_err(
+                        |err| {
+                            SearchError::InvalidArgument(format!(
+                                "request header contains an invalid index: {}",
+                                err
+                            ))
+                        },
+                    )?;
+                    index_ids_patterns.push(decode_index.to_string());
+                }
+                Err(err) => {
+                    SearchError::InvalidArgument(format!(
+                        "request header contains an invalid index: {}",
+                        err
+                    ));
+                }
+            }
         }
-        let index_ids_patterns = request_header.index.clone();
         let search_body = payload_lines
             .next()
             .ok_or_else(|| {

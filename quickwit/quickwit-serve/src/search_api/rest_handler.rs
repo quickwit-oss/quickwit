@@ -23,16 +23,15 @@ use std::sync::Arc;
 use futures::stream::StreamExt;
 use hyper::header::HeaderValue;
 use hyper::HeaderMap;
-use once_cell::sync::Lazy;
 use quickwit_config::validate_index_id_pattern;
 use quickwit_proto::search::{CountHits, OutputFormat, SortField, SortOrder};
 use quickwit_proto::ServiceError;
 use quickwit_query::query_ast::query_ast_from_user_text;
 use quickwit_search::{SearchError, SearchResponseRest, SearchService};
-use regex::Regex;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 use serde_json::Value as JsonValue;
 use tracing::info;
+use urlencoding::decode;
 use warp::hyper::header::CONTENT_TYPE;
 use warp::hyper::StatusCode;
 use warp::{reply, Filter, Rejection, Reply};
@@ -56,17 +55,15 @@ use crate::{with_arg, BodyFormat};
 )]
 pub struct SearchApi;
 
-// Matches index patterns separated by commas or its URL encoded version '%2C'.
-static COMMA_SEPARATED_INDEX_PATTERNS_REGEX: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r",|%2C").expect("the regular expression should compile"));
-
 pub(crate) async fn extract_index_id_patterns(
     comma_separated_index_patterns: String,
 ) -> Result<Vec<String>, Rejection> {
+    let index_pattern = decode(&comma_separated_index_patterns)
+        .expect("the index_pattern should be url decoded")
+        .to_string();
+
     let mut index_ids_patterns = Vec::new();
-    for index_id_pattern in
-        COMMA_SEPARATED_INDEX_PATTERNS_REGEX.split(&comma_separated_index_patterns)
-    {
+    for index_id_pattern in index_pattern.split(',').collect::<Vec<_>>() {
         validate_index_id_pattern(index_id_pattern).map_err(|error| {
             warp::reject::custom(crate::rest::InvalidArgument(error.to_string()))
         })?;
@@ -538,16 +535,16 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(
-            extract_index_id_patterns("my-index-1,my-index-2".to_string())
+            extract_index_id_patterns("my-index-1,my-index-2%2A".to_string())
                 .await
                 .unwrap(),
-            vec!["my-index-1".to_string(), "my-index-2".to_string()]
+            vec!["my-index-1".to_string(), "my-index-2*".to_string()]
         );
         assert_eq!(
-            extract_index_id_patterns("my-index-1%2Cmy-index-2".to_string())
+            extract_index_id_patterns("my-index-1%2Cmy-index-%2A".to_string())
                 .await
                 .unwrap(),
-            vec!["my-index-1".to_string(), "my-index-2".to_string()]
+            vec!["my-index-1".to_string(), "my-index-*".to_string()]
         );
         extract_index_id_patterns("".to_string()).await.unwrap_err();
         extract_index_id_patterns(" ".to_string())

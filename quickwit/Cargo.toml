@@ -221,6 +221,7 @@ vrl = { version = "0.8.1", default-features = false, features = [
   "stdlib",
   "value",
 ] }
+urlencoding = "2.1.3"
 warp = "0.3"
 whichlang = { git = "https://github.com/quickwit-oss/whichlang", rev = "fe406416" }
 wiremock = "0.5"
