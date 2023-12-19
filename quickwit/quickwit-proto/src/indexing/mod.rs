@@ -337,6 +337,11 @@ pub struct ShardPositionsUpdate {
 
 impl Event for ShardPositionsUpdate {}
 
+#[derive(Copy, Clone, Debug)]
+pub struct IndexerNodeChange;
+
+impl Event for IndexerNodeChange {}
+
 impl IndexingTask {
     pub fn pipeline_uid(&self) -> PipelineUid {
         self.pipeline_uid

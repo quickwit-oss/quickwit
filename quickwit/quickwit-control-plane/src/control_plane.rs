@@ -35,7 +35,7 @@ use quickwit_proto::control_plane::{
     ControlPlaneError, ControlPlaneResult, GetOrCreateOpenShardsRequest,
     GetOrCreateOpenShardsResponse,
 };
-use quickwit_proto::indexing::ShardPositionsUpdate;
+use quickwit_proto::indexing::{IndexerNodeChange, ShardPositionsUpdate};
 use quickwit_proto::metastore::{
     serde_utils as metastore_serde_utils, AddSourceRequest, CreateIndexRequest,
     CreateIndexResponse, DeleteIndexRequest, DeleteShardsRequest, DeleteShardsSubrequest,
@@ -529,6 +529,21 @@ impl Handler<LocalShardsUpdate> for ControlPlane {
     }
 }
 
+#[async_trait]
+impl Handler<IndexerNodeChange> for ControlPlane {
+    type Reply = ControlPlaneResult<()>;
+
+    async fn handle(
+        &mut self,
+        _: IndexerNodeChange,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        self.indexing_scheduler
+            .schedule_indexing_plan_if_needed(&self.model);
+        Ok(Ok(()))
+    }
+}
+
 #[derive(Clone)]
 pub struct ControlPlaneEventSubscriber(WeakMailbox<ControlPlane>);
 
@@ -561,6 +576,20 @@ impl EventSubscriber<ShardPositionsUpdate> for ControlPlaneEventSubscriber {
                 .await
             {
                 error!(error=%error, "failed to forward shard positions update to control plane");
+            }
+        }
+    }
+}
+
+#[async_trait]
+impl EventSubscriber<IndexerNodeChange> for ControlPlaneEventSubscriber {
+    async fn handle_event(&mut self, indexer_node_change: IndexerNodeChange) {
+        if let Some(control_plane_mailbox) = self.0.upgrade() {
+            if let Err(error) = control_plane_mailbox
+                .send_message(indexer_node_change)
+                .await
+            {
+                error!(error=%error, "failed to forward indexer change");
             }
         }
     }
