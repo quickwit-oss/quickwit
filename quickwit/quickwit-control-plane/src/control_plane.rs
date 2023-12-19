@@ -347,11 +347,11 @@ impl Handler<DeleteIndexRequest> for ControlPlane {
             .flat_map(|shard_entry| shard_entry.ingester_nodes())
             .collect();
 
+        self.model.delete_index(&index_uid);
+
         self.ingest_controller
             .sync_with_ingesters(&ingester_needing_resync, &self.model)
             .await;
-
-        self.model.delete_index(&index_uid);
 
         // TODO: Refine the event. Notify index will have the effect to reload the entire state from
         // the metastore. We should update the state of the control plane.
