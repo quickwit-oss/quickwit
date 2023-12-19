@@ -8,6 +8,10 @@ sidebar_position: 5
 
 To send docker container logs into Quickwit, you just need to setup an OpenTelemetry Collector with the file logs receiver. In this tutorial, we will use `docker compose` to start the collector and Quickwit.
 
+You only needs a minute to get you Quickwit log UI!
+
+![Quickwit UI Logs](../../assets/images/screenshot-quickwit-ui-docker-compose-logs.png)
+
 ## OTEL collector configuration
 
 The following collector configuration will collect docker logs in `/var/lib/docker/containers/*/*-json.log` (depending on your system, log files can be at a different location), add a few attributes and send them to Quickwit through gRPC at `http://quickwit:7281`.
