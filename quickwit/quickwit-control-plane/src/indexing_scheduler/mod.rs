@@ -258,6 +258,9 @@ impl IndexingScheduler {
             })
             .collect();
 
+        debug!(running_plan=?running_indexing_tasks_by_node_id, "running plan");
+        debug!(last_applied_plan=?last_applied_plan.indexing_tasks_per_indexer(), "last applied plan");
+
         let indexing_plans_diff = get_indexing_plans_diff(
             &running_indexing_tasks_by_node_id,
             last_applied_plan.indexing_tasks_per_indexer(),
