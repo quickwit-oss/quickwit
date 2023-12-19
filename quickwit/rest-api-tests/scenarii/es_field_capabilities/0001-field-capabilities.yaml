@@ -271,4 +271,63 @@ expected:
         metadata_field: false
         searchable: true
         aggregatable: true
+---
+# Wildcard on index name
+method: [GET]
+engines:
+  - quickwit
+  - elasticsearch
+endpoint: fieldca*/_field_caps?fields=date
+expected:
+  indices:
+  - fieldcaps
+  fields:
+    date:
+      date_nanos:
+        type: date_nanos
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+---
+# Wildcard on index name + Wildcard without match
+method: [GET]
+engines:
+  - quickwit
+  - elasticsearch
+endpoint: fieldca*,blub*/_field_caps?fields=date
+expected:
+  indices:
+  - fieldcaps
+  fields:
+    date:
+      date_nanos:
+        type: date_nanos
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+
+---
+# Exact match index + Non matching excact index
+method: [GET]
+engines:
+  - quickwit
+  - elasticsearch
+endpoint: fieldcaps,blub/_field_caps?fields=date
+status_code: 404
+---
+# Compare ip field with elastic search
+method: [GET]
+engines:
+  - quickwit
+  - elasticsearch
+endpoint: doesnotexist/_field_caps?fields=date
+status_code: 404
+---
+# Compare ip field with elastic search
+method: [GET]
+engines:
+  - quickwit
+  - elasticsearch
+endpoint: doesno*texist/_field_caps?fields=date
+status_code: 200
 

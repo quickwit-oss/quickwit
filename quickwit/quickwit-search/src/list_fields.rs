@@ -40,6 +40,7 @@ use quickwit_proto::types::IndexUid;
 use quickwit_storage::Storage;
 
 use crate::leaf::open_split_bundle;
+use crate::root::check_all_index_metadata_found;
 use crate::service::SearcherContext;
 use crate::{list_relevant_splits, ClusterClient, SearchError, SearchJob};
 
@@ -292,23 +293,22 @@ pub async fn root_list_fields(
         ListIndexesMetadataRequest::all()
     } else {
         ListIndexesMetadataRequest {
-            // TODO: Check index id pattern
             index_id_patterns: list_fields_req.index_ids.clone(),
         }
     };
 
     // Get the index ids from the request
-    let indexes_metadatas = metastore
+    let indexes_metadata = metastore
         .clone()
         .list_indexes_metadata(list_indexes_metadata_request)
         .await?
         .deserialize_indexes_metadata()?;
-    if indexes_metadatas.is_empty() {
-        return Err(SearchError::IndexesNotFound {
-            index_ids: list_fields_req.index_ids.clone(),
-        });
+    check_all_index_metadata_found(&indexes_metadata[..], &list_fields_req.index_ids[..])?;
+    // The request contains a wildcard, but couldn't find any index.
+    if indexes_metadata.is_empty() {
+        return Ok(ListFieldsResponse { fields: vec![] });
     }
-    let index_uid_to_index_meta: HashMap<IndexUid, IndexMetasForLeafSearch> = indexes_metadatas
+    let index_uid_to_index_meta: HashMap<IndexUid, IndexMetasForLeafSearch> = indexes_metadata
         .iter()
         .map(|index_metadata| {
             let index_metadata_for_leaf_search = IndexMetasForLeafSearch {
@@ -322,7 +322,7 @@ pub async fn root_list_fields(
             )
         })
         .collect();
-    let index_uids: Vec<IndexUid> = indexes_metadatas
+    let index_uids: Vec<IndexUid> = indexes_metadata
         .into_iter()
         .map(|index_metadata| index_metadata.index_uid)
         .collect();
