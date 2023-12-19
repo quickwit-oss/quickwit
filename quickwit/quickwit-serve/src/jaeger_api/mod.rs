@@ -18,5 +18,6 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 mod model;
+mod parse_duration;
 mod rest_handler;
 pub(crate) use rest_handler::{jaeger_api_handlers, JaegerApi};
