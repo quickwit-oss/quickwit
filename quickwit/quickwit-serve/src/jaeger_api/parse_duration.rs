@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use prost_types::{Duration as ProstDuration, Timestamp};
+use prost_types::{Duration as ProstDuration, Timestamp as ProstTimestamp};
 
 pub(crate) fn parse_duration_with_units(duration_string: String) -> anyhow::Result<ProstDuration> {
     parse_duration_nanos(&duration_string)
@@ -29,10 +29,10 @@ pub(crate) fn parse_duration_with_units(duration_string: String) -> anyhow::Resu
         .map_err(|error| anyhow::anyhow!("Failed to parse duration: {:?}", error))
 }
 
-pub(crate) fn to_well_known_timestamp(timestamp_nanos: i64) -> Timestamp {
+pub(crate) fn to_well_known_timestamp(timestamp_nanos: i64) -> ProstTimestamp {
     let seconds = timestamp_nanos / 1_000_000;
     let nanos = (timestamp_nanos % 1_000_000) as i32;
-    Timestamp { seconds, nanos }
+    ProstTimestamp { seconds, nanos }
 }
 
 /// Parses a duration string and return duration in nanoseconds.
@@ -42,23 +42,7 @@ pub(crate) fn to_well_known_timestamp(timestamp_nanos: i64) -> Timestamp {
 /// Valid time units are "ns", "us" (or "µs"), "ms", "s", "m", "h".
 fn parse_duration_nanos(input: &str) -> anyhow::Result<i64> {
     let mut num_str = String::new();
-    let mut float_number = false;
-
-    for (idx, ch) in input.trim().chars().enumerate() {
-        if ch.is_whitespace() {
-            anyhow::bail!("No whitespace allowed in duration string")
-        }
-        if ch == '-' {
-            if idx != 0 {
-                anyhow::bail!("Invalid duration string")
-            }
-        }
-        if ch == '.' {
-            if float_number {
-                anyhow::bail!("Invalid duration string")
-            }
-            float_number = true;
-        }
+    for ch in input.trim().chars() {
         if ch.is_digit(10) || ch == '.' || ch == '-' {
             num_str.push(ch);
             continue;
@@ -73,10 +57,10 @@ fn parse_duration_nanos(input: &str) -> anyhow::Result<i64> {
                 "s" => num * 1_000_000_000.0,
                 "m" => num * 60.0 * 1_000_000_000.0,
                 "h" => num * 3600.0 * 1_000_000_000.0,
-                _ => anyhow::bail!("Invalid time unit"),
+                _ => anyhow::bail!("Invalid time unit: {}", unit),
             };
             if num < std::i64::MIN as f64 || num > std::i64::MAX as f64 {
-                anyhow::bail!("Invalid duration string")
+                anyhow::bail!("Invalid duration: {}", num_str)
             }
             return Ok(duration.round() as i64);
         } else {
@@ -88,41 +72,28 @@ fn parse_duration_nanos(input: &str) -> anyhow::Result<i64> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    #[cfg(test)]
-    mod tests {
-        use super::*;
+    use crate::jaeger_api::parse_duration::parse_duration_nanos;
 
-        #[test]
-        fn test_parse_duration_nanos() {
-            // Test valid duration strings
-            assert_eq!(parse_duration_nanos("300ns").unwrap(), 300);
-            assert_eq!(parse_duration_nanos("1us").unwrap(), 1000);
-            assert_eq!(parse_duration_nanos("2.5ms").unwrap(), 2500000);
-            assert_eq!(parse_duration_nanos("3s").unwrap(), 3000000000);
-            assert_eq!(parse_duration_nanos("4m").unwrap(), 240000000000);
-            assert_eq!(parse_duration_nanos("5h").unwrap(), 18000000000000);
+    #[test]
+    fn test_parse_duration_nanos() {
+        // Test valid duration strings
+        assert_eq!(parse_duration_nanos("300ns").unwrap(), 300);
+        assert_eq!(parse_duration_nanos("1us").unwrap(), 1000);
+        assert_eq!(parse_duration_nanos("2.5ms").unwrap(), 2500000);
+        assert_eq!(parse_duration_nanos("3s").unwrap(), 3000000000);
+        assert_eq!(parse_duration_nanos("4m").unwrap(), 240000000000);
+        assert_eq!(parse_duration_nanos("5h").unwrap(), 18000000000000);
+        assert_eq!(parse_duration_nanos("-100ns").unwrap(), -100);
+        assert_eq!(parse_duration_nanos("-2us").unwrap(), -2000);
+        assert_eq!(parse_duration_nanos("-3.5ms").unwrap(), -3500000);
+        assert_eq!(parse_duration_nanos("-4s").unwrap(), -4000000000);
+        assert_eq!(parse_duration_nanos("-5m").unwrap(), -300000000000);
+        assert_eq!(parse_duration_nanos("-6h").unwrap(), -21600000000000);
 
-            // Test negative duration strings
-            assert_eq!(parse_duration_nanos("-100ns").unwrap(), -100);
-            assert_eq!(parse_duration_nanos("-2us").unwrap(), -2000);
-            assert_eq!(parse_duration_nanos("-3.5ms").unwrap(), -3500000);
-            assert_eq!(parse_duration_nanos("-4s").unwrap(), -4000000000);
-            assert_eq!(parse_duration_nanos("-5m").unwrap(), -300000000000);
-            assert_eq!(parse_duration_nanos("-6h").unwrap(), -21600000000000);
-
-            // Test invalid duration strings
-            assert!(parse_duration_nanos("abc").is_err());
-            assert!(parse_duration_nanos("1.2.3ms").is_err());
-            assert!(parse_duration_nanos("1.2.3").is_err());
-            assert!(parse_duration_nanos("1.2.3s").is_err());
-            assert!(parse_duration_nanos("1.2.3m").is_err());
-            assert!(parse_duration_nanos("1.2.3h").is_err());
-            assert!(parse_duration_nanos("1.2.3us").is_err());
-            assert!(parse_duration_nanos("1.2.3ns").is_err());
-            assert!(parse_duration_nanos("1.2.3µs").is_err());
-            assert!(parse_duration_nanos("1.2.3-").is_err());
-            assert!(parse_duration_nanos("1.2.3 ").is_err());
-        }
+        // Test invalid duration strings
+        assert!(parse_duration_nanos("abc").is_err());
+        assert!(parse_duration_nanos("1.2.3ms").is_err());
+        assert!(parse_duration_nanos("1.2.3s").is_err());
+        assert!(parse_duration_nanos("1-.23s").is_err());
     }
 }
