@@ -47,7 +47,7 @@ use super::{is_zero, TryFromSpanIdError, TryFromTraceIdError};
 use crate::otlp::metrics::OTLP_SERVICE_METRICS;
 use crate::otlp::{extract_attributes, SpanId, TraceId};
 
-pub const OTEL_TRACES_INDEX_ID: &str = "otel-traces-v0_6";
+pub const OTEL_TRACES_INDEX_ID: &str = "otel-traces-v0_7";
 
 const OTEL_TRACES_INDEX_CONFIG: &str = r#"
 version: 0.6
@@ -91,6 +91,7 @@ doc_mapping:
     - name: span_name
       type: text
       tokenizer: raw
+      fast: true
     - name: span_fingerprint
       type: text
       tokenizer: raw
@@ -111,10 +112,10 @@ doc_mapping:
       type: u64
       indexed: false
       fast: true
-      stored: false
     - name: span_attributes
       type: json
       tokenizer: raw
+      fast: true
     - name: span_dropped_attributes_count
       type: u64
       indexed: false
@@ -133,6 +134,7 @@ doc_mapping:
     - name: events
       type: array<json>
       tokenizer: raw
+      fast: true
     - name: event_names
       type: array<text>
       tokenizer: default
