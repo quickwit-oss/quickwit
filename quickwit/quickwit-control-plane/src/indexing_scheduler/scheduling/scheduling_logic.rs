@@ -629,10 +629,10 @@ mod tests {
 
     #[test]
     fn test_problem_leading_to_zero_shard() {
-        let mut problem = SchedulingProblem::with_indexer_cpu_capacities(
-            vec![CpuCapacity::from_cpu_millis(0),
-                 CpuCapacity::from_cpu_millis(0),
-           ]);
+        let mut problem = SchedulingProblem::with_indexer_cpu_capacities(vec![
+            CpuCapacity::from_cpu_millis(0),
+            CpuCapacity::from_cpu_millis(0),
+        ]);
         problem.add_source(0, NonZeroU32::new(1).unwrap());
         let mut previous_solution = problem.new_solution();
         previous_solution.indexer_assignments[0].add_shards(0, 0);
@@ -641,7 +641,6 @@ mod tests {
         assert_eq!(solution.indexer_assignments[0].num_shards(0), 0);
         assert_eq!(solution.indexer_assignments[1].num_shards(0), 0);
         assert!(still_unassigned.is_empty());
-
     }
 
     proptest! {
