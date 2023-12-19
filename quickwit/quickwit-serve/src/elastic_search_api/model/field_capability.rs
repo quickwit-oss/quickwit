@@ -40,6 +40,8 @@ pub struct FieldCapabilityQueryParams {
     #[serde(deserialize_with = "from_simple_list")]
     #[serde(default)]
     pub fields: Option<Vec<String>>,
+    #[serde(default)]
+    pub ignore_unavailable: Option<bool>,
 }
 
 #[derive(Debug, Default, Clone, Deserialize, PartialEq)]
@@ -58,24 +60,34 @@ pub struct FieldCapabilityResponse {
     indices: Vec<String>,
     fields: HashMap<String, FieldCapabilityFieldTypesResponse>,
 }
-#[derive(Serialize, Deserialize, Debug, Default)]
-struct FieldCapabilityFieldTypesResponse {
-    #[serde(skip_serializing_if = "Option::is_none")]
-    long: Option<FieldCapabilityEntryResponse>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    keyword: Option<FieldCapabilityEntryResponse>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    text: Option<FieldCapabilityEntryResponse>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    date_nanos: Option<FieldCapabilityEntryResponse>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    binary: Option<FieldCapabilityEntryResponse>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    double: Option<FieldCapabilityEntryResponse>, // Do we need float ?
-    #[serde(skip_serializing_if = "Option::is_none")]
-    boolean: Option<FieldCapabilityEntryResponse>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    ip: Option<FieldCapabilityEntryResponse>,
+
+type FieldCapabilityFieldTypesResponse =
+    HashMap<FieldCapabilityEntryType, FieldCapabilityEntryResponse>;
+
+#[derive(Serialize, Deserialize, Debug, Clone, Eq, PartialEq, Hash)]
+enum FieldCapabilityEntryType {
+    #[serde(rename = "long")]
+    Long,
+    #[serde(rename = "keyword")]
+    Keyword,
+    #[serde(rename = "text")]
+    Text,
+    #[serde(rename = "date_nanos")]
+    DateNanos,
+    #[serde(rename = "binary")]
+    Binary,
+    #[serde(rename = "double")]
+    Double,
+    #[serde(rename = "boolean")]
+    Boolean,
+    #[serde(rename = "ip")]
+    Ip,
+    // Unmapped currently
+    #[serde(rename = "nested")]
+    Nested,
+    // Unmapped currently
+    #[serde(rename = "object")]
+    Object,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -83,6 +95,9 @@ struct FieldCapabilityEntryResponse {
     metadata_field: bool, // Always false
     searchable: bool,
     aggregatable: bool,
+    // Option since it is filled later
+    #[serde(rename = "type")]
+    typ: Option<FieldCapabilityEntryType>,
     indices: Vec<String>, // [ "index1", "index2" ],
     #[serde(skip_serializing_if = "Vec::is_empty")]
     non_aggregatable_indices: Vec<String>, // [ "index1" ]
@@ -95,6 +110,7 @@ impl FieldCapabilityEntryResponse {
             metadata_field: false,
             searchable: entry.searchable,
             aggregatable: entry.aggregatable,
+            typ: None,
             indices: entry.index_ids.clone(),
             non_aggregatable_indices: entry.non_aggregatable_index_ids,
             non_searchable_indices: entry.non_searchable_index_ids,
@@ -128,24 +144,27 @@ pub fn convert_to_es_field_capabilities_response(
         let field_type = ListFieldType::from_i32(list_field_resp.field_type).unwrap();
         let add_entry =
             FieldCapabilityEntryResponse::from_list_field_entry_response(list_field_resp);
-        match field_type {
+        let types = match field_type {
             ListFieldType::Str => {
-                if add_entry.aggregatable {
-                    entry.keyword = Some(add_entry.clone());
-                }
-                if add_entry.searchable {
-                    entry.text = Some(add_entry);
-                }
+                vec![
+                    FieldCapabilityEntryType::Keyword,
+                    FieldCapabilityEntryType::Text,
+                ]
             }
-            ListFieldType::U64 => entry.long = Some(add_entry),
-            ListFieldType::I64 => entry.long = Some(add_entry),
-            ListFieldType::F64 => entry.double = Some(add_entry),
-            ListFieldType::Bool => entry.boolean = Some(add_entry),
-            ListFieldType::Date => entry.date_nanos = Some(add_entry),
+            ListFieldType::U64 => vec![FieldCapabilityEntryType::Long],
+            ListFieldType::I64 => vec![FieldCapabilityEntryType::Long],
+            ListFieldType::F64 => vec![FieldCapabilityEntryType::Double],
+            ListFieldType::Bool => vec![FieldCapabilityEntryType::Boolean],
+            ListFieldType::Date => vec![FieldCapabilityEntryType::DateNanos],
             ListFieldType::Facet => continue,
             ListFieldType::Json => continue,
-            ListFieldType::Bytes => entry.binary = Some(add_entry), // Is this mapping correct?
-            ListFieldType::IpAddr => entry.ip = Some(add_entry),
+            ListFieldType::Bytes => vec![FieldCapabilityEntryType::Binary],
+            ListFieldType::IpAddr => vec![FieldCapabilityEntryType::Ip],
+        };
+        for field_type in types {
+            let mut add_entry = add_entry.clone();
+            add_entry.typ = Some(field_type.clone());
+            entry.insert(field_type, add_entry);
         }
     }
     FieldCapabilityResponse { indices, fields }

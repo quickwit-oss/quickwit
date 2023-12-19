@@ -9,6 +9,7 @@ expected:
   fields:
     nested.response:
       long:
+        type: long
         metadata_field: false
         searchable: true
         aggregatable: true
@@ -16,12 +17,14 @@ expected:
         - fieldcaps
     nested.name:
       keyword:
+        type: keyword
         metadata_field: false
         searchable: true
         aggregatable: true
         indices:
         - fieldcaps
       text:
+        type: text
         metadata_field: false
         searchable: true
         aggregatable: true
@@ -29,6 +32,7 @@ expected:
         - fieldcaps
     host:
       ip:
+        type: ip
         metadata_field: false
         searchable: true
         aggregatable: true
@@ -229,6 +233,7 @@ expected:
   fields:
     nested.response:
       long:
+        type: long
         metadata_field: false
         searchable: true
         aggregatable: true
@@ -245,6 +250,7 @@ expected:
   fields:
     host:
       ip:
+        type: ip
         metadata_field: false
         searchable: true
         aggregatable: true
@@ -261,6 +267,7 @@ expected:
   fields:
     date:
       date_nanos:
+        type: date_nanos
         metadata_field: false
         searchable: true
         aggregatable: true
