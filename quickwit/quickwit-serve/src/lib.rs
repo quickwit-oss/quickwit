@@ -82,7 +82,7 @@ use quickwit_metastore::{
 };
 use quickwit_opentelemetry::otlp::{OtlpGrpcLogsService, OtlpGrpcTracesService};
 use quickwit_proto::control_plane::ControlPlaneServiceClient;
-use quickwit_proto::indexing::{IndexingServiceClient, ShardPositionsUpdate};
+use quickwit_proto::indexing::{IndexerNodeChange, IndexingServiceClient, ShardPositionsUpdate};
 use quickwit_proto::ingest::ingester::IngesterServiceClient;
 use quickwit_proto::ingest::router::IngestRouterServiceClient;
 use quickwit_proto::metastore::{
@@ -377,6 +377,7 @@ pub async fn serve_quickwit(
         cluster_change_stream,
         indexer_pool.clone(),
         indexing_service_opt.clone(),
+        event_broker.clone(),
     );
 
     // Setup ingest service v2.
@@ -736,7 +737,10 @@ async fn setup_control_plane(
         .subscribe::<LocalShardsUpdate>(subscriber.clone())
         .forever();
     event_broker
-        .subscribe::<ShardPositionsUpdate>(subscriber)
+        .subscribe::<ShardPositionsUpdate>(subscriber.clone())
+        .forever();
+    event_broker
+        .subscribe::<IndexerNodeChange>(subscriber)
         .forever();
 
     Ok(control_plane_mailbox)
@@ -746,21 +750,42 @@ fn setup_indexer_pool(
     cluster_change_stream: impl Stream<Item = ClusterChange> + Send + 'static,
     indexer_pool: IndexerPool,
     indexing_service_opt: Option<Mailbox<IndexingService>>,
+    event_broker: EventBroker,
 ) {
     let indexer_change_stream = cluster_change_stream.filter_map(move |cluster_change| {
         let indexing_service_clone_opt = indexing_service_opt.clone();
+        let event_broker_clone = event_broker.clone();
         Box::pin(async move {
-            match cluster_change {
-                ClusterChange::Add(node) | ClusterChange::Update(node)
-                    if node.enabled_services().contains(&QuickwitService::Indexer) =>
-                {
-                    let node_id = node.node_id().to_string();
-                    let indexing_tasks = node.indexing_tasks().to_vec();
-                    let indexing_capacity = node.indexing_capacity();
-                    if node.is_self_node() {
-                        if let Some(indexing_service_clone) = indexing_service_clone_opt {
-                            let client =
-                                IndexingServiceClient::from_mailbox(indexing_service_clone);
+            let indexer_node_change_opt: Option<Change<String, IndexerNodeInfo>> =
+                match cluster_change {
+                    ClusterChange::Add(node) | ClusterChange::Update(node)
+                        if node.enabled_services().contains(&QuickwitService::Indexer) =>
+                    {
+                        let node_id = node.node_id().to_string();
+                        let indexing_tasks = node.indexing_tasks().to_vec();
+                        let indexing_capacity = node.indexing_capacity();
+                        if node.is_self_node() {
+                            if let Some(indexing_service_clone) = indexing_service_clone_opt {
+                                let client =
+                                    IndexingServiceClient::from_mailbox(indexing_service_clone);
+                                Some(Change::Insert(
+                                    node_id,
+                                    IndexerNodeInfo {
+                                        client,
+                                        indexing_tasks,
+                                        indexing_capacity,
+                                    },
+                                ))
+                            } else {
+                                // That means that cluster thinks we are supposed to have an
+                                // indexer, but we actually don't.
+                                None
+                            }
+                        } else {
+                            let client = IndexingServiceClient::from_channel(
+                                node.grpc_advertise_addr(),
+                                node.channel(),
+                            );
                             Some(Change::Insert(
                                 node_id,
                                 IndexerNodeInfo {
@@ -769,29 +794,15 @@ fn setup_indexer_pool(
                                     indexing_capacity,
                                 },
                             ))
-                        } else {
-                            // That means that cluster thinks we are supposed to have an indexer,
-                            // but we actually don't.
-                            None
                         }
-                    } else {
-                        let client = IndexingServiceClient::from_channel(
-                            node.grpc_advertise_addr(),
-                            node.channel(),
-                        );
-                        Some(Change::Insert(
-                            node_id,
-                            IndexerNodeInfo {
-                                client,
-                                indexing_tasks,
-                                indexing_capacity,
-                            },
-                        ))
                     }
-                }
-                ClusterChange::Remove(node) => Some(Change::Remove(node.node_id().to_string())),
-                _ => None,
+                    ClusterChange::Remove(node) => Some(Change::Remove(node.node_id().to_string())),
+                    _ => None,
+                };
+            if indexer_node_change_opt.is_some() {
+                event_broker_clone.publish(IndexerNodeChange);
             }
+            indexer_node_change_opt
         })
     });
     indexer_pool.listen_for_changes(indexer_change_stream);
