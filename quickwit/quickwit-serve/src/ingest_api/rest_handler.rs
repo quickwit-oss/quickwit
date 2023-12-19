@@ -27,7 +27,7 @@ use quickwit_proto::ingest::router::{
     IngestFailureReason, IngestRequestV2, IngestResponseV2, IngestRouterService,
     IngestRouterServiceClient, IngestSubrequest,
 };
-use quickwit_proto::ingest::{DocBatchV2, IngestV2Error};
+use quickwit_proto::ingest::DocBatchV2;
 use quickwit_proto::types::IndexId;
 use serde::Deserialize;
 use thiserror::Error;
@@ -150,10 +150,7 @@ async fn ingest_v2(
         commit_type: ingest_options.commit_type as i32,
         subrequests: vec![subrequest],
     };
-    let response = ingest_router
-        .ingest(request)
-        .await
-        .map_err(|err: IngestV2Error| IngestServiceError::Internal(err.to_string()))?;
+    let response = ingest_router.ingest(request).await?;
     convert_ingest_response_v2(response, num_docs)
 }
 
