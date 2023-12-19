@@ -1057,11 +1057,14 @@ impl IngesterState {
             Ok(_) => {
                 self.shards.remove(queue_id);
                 self.rate_trackers.remove(queue_id);
-
                 info!("deleted shard `{queue_id}` from ingester");
             }
             Err(DeleteQueueError::MissingQueue(_)) => {
                 // The shard has already been deleted.
+                info!(
+                    queue_id = queue_id,
+                    "Attempted to delete shard but was already absent"
+                );
             }
             Err(DeleteQueueError::IoError(_)) => {
                 panic!("TODO: handle IO error")
