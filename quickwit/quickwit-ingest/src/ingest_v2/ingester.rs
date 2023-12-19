@@ -953,6 +953,7 @@ impl IngesterService for Ingester {
                     })
             })
             .collect();
+        info!(retain_queue_ids=?retain_queue_ids, "retain-shard-request");
         let mut state_guard = self.state.write().await;
         let remove_queue_ids: HashSet<QueueId> = state_guard
             .shards
@@ -960,6 +961,12 @@ impl IngesterService for Ingester {
             .filter(move |shard_id| !retain_queue_ids.contains(*shard_id))
             .map(ToString::to_string)
             .collect();
+        for shard in state_guard.shards.keys() {
+            info!(shard=%shard, "currently in shard hashmap");
+        }
+        for queue in state_guard.mrecordlog.list_queues() {
+            info!(queue=queue, "currently in mrecordlog");
+        }
         info!(queues=?remove_queue_ids, "removing queues");
         for queue_id in remove_queue_ids {
             state_guard.delete_shard(&queue_id).await;
