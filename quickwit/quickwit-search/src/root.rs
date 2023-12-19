@@ -830,7 +830,7 @@ fn finalize_aggregation_if_any(
 /// We put this check here and not in the metastore to make sure the logic is independent
 /// of the metastore implementation, and some different use cases could require different
 /// behaviors. This specification was principally motivated by #4042.
-fn check_all_index_metadata_found(
+pub fn check_all_index_metadata_found(
     index_metadatas: &[IndexMetadata],
     index_id_patterns: &[String],
 ) -> crate::Result<()> {
