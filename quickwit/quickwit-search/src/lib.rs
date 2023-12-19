@@ -31,6 +31,8 @@ mod filters;
 mod find_trace_ids_collector;
 mod leaf;
 mod leaf_cache;
+mod list_fields;
+mod list_fields_cache;
 mod retry;
 mod root;
 mod scroll_context;
@@ -166,7 +168,7 @@ fn extract_split_and_footer_offsets(split_metadata: &SplitMetadata) -> SplitIdAn
     }
 }
 
-/// Extract the list of relevant splits for a given search request.
+/// Extract the list of relevant splits for a given request.
 async fn list_relevant_splits(
     index_uids: Vec<IndexUid>,
     start_timestamp: Option<i64>,

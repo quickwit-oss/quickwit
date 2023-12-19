@@ -256,9 +256,8 @@ impl Shards {
         }
         self.checkpoint
             .check_compatibility(&checkpoint_delta)
-            .map_err(|_error| {
-                let message = "incompatible partition delta: FIXME".to_string();
-                MetastoreError::InvalidArgument { message }
+            .map_err(|error| MetastoreError::InvalidArgument {
+                message: error.to_string(),
             })?;
 
         let mut shard_ids = Vec::with_capacity(checkpoint_delta.num_partitions());

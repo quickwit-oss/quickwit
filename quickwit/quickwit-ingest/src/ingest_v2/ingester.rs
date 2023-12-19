@@ -18,7 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::hash_map::Entry;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fmt;
 use std::iter::once;
 use std::path::Path;
@@ -44,8 +44,9 @@ use quickwit_proto::ingest::ingester::{
     ObservationMessage, OpenFetchStreamRequest, OpenObservationStreamRequest,
     OpenReplicationStreamRequest, OpenReplicationStreamResponse, PersistFailure,
     PersistFailureReason, PersistRequest, PersistResponse, PersistSuccess, PingRequest,
-    PingResponse, ReplicateFailureReason, ReplicateSubrequest, SynReplicationMessage,
-    TruncateShardsRequest, TruncateShardsResponse,
+    PingResponse, ReplicateFailureReason, ReplicateSubrequest, RetainShardsForSource,
+    RetainShardsRequest, RetainShardsResponse, SynReplicationMessage, TruncateShardsRequest,
+    TruncateShardsResponse,
 };
 use quickwit_proto::ingest::{CommitTypeV2, IngestV2Error, IngestV2Result, Shard, ShardState};
 use quickwit_proto::types::{queue_id, NodeId, Position, QueueId};
@@ -930,6 +931,41 @@ impl IngesterService for Ingester {
             "server",
             "init_shards"
         )
+    }
+
+    async fn retain_shards(
+        &mut self,
+        request: RetainShardsRequest,
+    ) -> IngestV2Result<RetainShardsResponse> {
+        let retain_queue_ids: HashSet<QueueId> = request
+            .retain_shards_for_sources
+            .into_iter()
+            .flat_map(|retain_shards_for_source: RetainShardsForSource| {
+                retain_shards_for_source
+                    .shard_ids
+                    .into_iter()
+                    .map(move |shard_id| {
+                        queue_id(
+                            &retain_shards_for_source.index_uid,
+                            &retain_shards_for_source.source_id,
+                            shard_id,
+                        )
+                    })
+            })
+            .collect();
+        let mut state_guard = self.state.write().await;
+        let remove_queue_ids: HashSet<QueueId> = state_guard
+            .shards
+            .keys()
+            .filter(move |shard_id| !retain_queue_ids.contains(*shard_id))
+            .map(ToString::to_string)
+            .collect();
+        info!(queues=?remove_queue_ids, "removing queues");
+        for queue_id in remove_queue_ids {
+            state_guard.delete_shard(&queue_id).await;
+        }
+        self.check_decommissioning_status(&mut state_guard);
+        Ok(RetainShardsResponse {})
     }
 
     async fn truncate_shards(
@@ -2207,6 +2243,60 @@ mod tests {
 
         assert!(!state_guard.shards.contains_key(&queue_id_02));
         assert!(!state_guard.mrecordlog.queue_exists(&queue_id_02));
+    }
+
+    #[tokio::test]
+    async fn test_ingester_retain_shards() {
+        let (_ingester_ctx, mut ingester) = IngesterForTest::default().build().await;
+
+        let shard_17 = Shard {
+            index_uid: "test-index:0".to_string(),
+            source_id: "test-source".to_string(),
+            shard_id: 17,
+            shard_state: ShardState::Open as i32,
+            ..Default::default()
+        };
+
+        let shard_18 = Shard {
+            index_uid: "test-index:0".to_string(),
+            source_id: "test-source".to_string(),
+            shard_id: 18,
+            shard_state: ShardState::Closed as i32,
+            ..Default::default()
+        };
+        let queue_id_17 = queue_id(&shard_17.index_uid, &shard_17.source_id, shard_17.shard_id);
+
+        let mut state_guard = ingester.state.write().await;
+        ingester
+            .init_primary_shard(&mut state_guard, shard_17)
+            .await
+            .unwrap();
+        ingester
+            .init_primary_shard(&mut state_guard, shard_18)
+            .await
+            .unwrap();
+
+        drop(state_guard);
+
+        {
+            let state_guard = ingester.state.read().await;
+            assert_eq!(state_guard.shards.len(), 2);
+        }
+
+        let retain_shard_request = RetainShardsRequest {
+            retain_shards_for_sources: vec![RetainShardsForSource {
+                index_uid: "test-index:0".to_string(),
+                source_id: "test-source".to_string(),
+                shard_ids: vec![17u64],
+            }],
+        };
+        ingester.retain_shards(retain_shard_request).await.unwrap();
+
+        {
+            let state_guard = ingester.state.read().await;
+            assert_eq!(state_guard.shards.len(), 1);
+            assert!(state_guard.shards.contains_key(&queue_id_17));
+        }
     }
 
     #[tokio::test]

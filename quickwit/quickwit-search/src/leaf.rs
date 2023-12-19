@@ -83,18 +83,14 @@ async fn get_split_footer_from_cache_or_fetch(
     Ok(footer_data_opt)
 }
 
-/// Opens a `tantivy::Index` for the given split with several cache layers:
+/// Returns hotcache_bytes and the split directory (`BundleStorage`) with cache layer:
 /// - A split footer cache given by `SearcherContext.split_footer_cache`.
-/// - A fast fields cache given by `SearcherContext.storage_long_term_cache`.
-/// - An ephemeral unbounded cache directory whose lifetime is tied to the returned `Index`.
 #[instrument(skip_all, fields(split_footer_start=split_and_footer_offsets.split_footer_start, split_footer_end=split_and_footer_offsets.split_footer_end))]
-pub(crate) async fn open_index_with_caches(
+pub(crate) async fn open_split_bundle(
     searcher_context: &SearcherContext,
     index_storage: Arc<dyn Storage>,
     split_and_footer_offsets: &SplitIdAndFooterOffsets,
-    tokenizer_manager: Option<&TokenizerManager>,
-    ephemeral_unbounded_cache: bool,
-) -> anyhow::Result<Index> {
+) -> anyhow::Result<(FileSlice, BundleStorage)> {
     let split_file = PathBuf::from(format!("{}.split", split_and_footer_offsets.split_id));
     let footer_data = get_split_footer_from_cache_or_fetch(
         index_storage.clone(),
@@ -117,17 +113,38 @@ pub(crate) async fn open_index_with_caches(
         split_file,
         FileSlice::new(Arc::new(footer_data)),
     )?;
+
+    Ok((hotcache_bytes, bundle_storage))
+}
+
+/// Opens a `tantivy::Index` for the given split with several cache layers:
+/// - A split footer cache given by `SearcherContext.split_footer_cache`.
+/// - A fast fields cache given by `SearcherContext.storage_long_term_cache`.
+/// - An ephemeral unbounded cache directory whose lifetime is tied to the returned `Index`.
+#[instrument(skip_all, fields(split_footer_start=split_and_footer_offsets.split_footer_start, split_footer_end=split_and_footer_offsets.split_footer_end))]
+pub(crate) async fn open_index_with_caches(
+    searcher_context: &SearcherContext,
+    index_storage: Arc<dyn Storage>,
+    split_and_footer_offsets: &SplitIdAndFooterOffsets,
+    tokenizer_manager: Option<&TokenizerManager>,
+    ephemeral_unbounded_cache: bool,
+) -> anyhow::Result<Index> {
+    let (hotcache_bytes, bundle_storage) =
+        open_split_bundle(searcher_context, index_storage, split_and_footer_offsets).await?;
+
     let bundle_storage_with_cache = wrap_storage_with_cache(
         searcher_context.fast_fields_cache.clone(),
         Arc::new(bundle_storage),
     );
     let directory = StorageDirectory::new(bundle_storage_with_cache);
+
     let hot_directory = if ephemeral_unbounded_cache {
         let caching_directory = CachingDirectory::new_unbounded(Arc::new(directory));
         HotDirectory::open(caching_directory, hotcache_bytes.read_bytes()?)?
     } else {
         HotDirectory::open(directory, hotcache_bytes.read_bytes()?)?
     };
+
     let mut index = Index::open(hot_directory)?;
     if let Some(tokenizer_manager) = tokenizer_manager {
         index.set_tokenizers(tokenizer_manager.tantivy_manager().clone());

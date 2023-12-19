@@ -82,7 +82,6 @@ impl From<IngestV2Error> for tonic::Status {
 
 impl From<tonic::Status> for IngestV2Error {
     fn from(status: tonic::Status) -> Self {
-        dbg!(&status);
         match status.code() {
             tonic::Code::Unavailable => IngestV2Error::Transport(status.message().to_string()),
             tonic::Code::ResourceExhausted => IngestV2Error::TooManyRequests,
@@ -101,6 +100,16 @@ impl ServiceError for IngestV2Error {
             Self::Transport { .. } => ServiceErrorCode::Unavailable,
             Self::TooManyRequests => ServiceErrorCode::RateLimited,
         }
+    }
+}
+
+impl Shard {
+    /// List of nodes that are storing the shard (the leader, and optionally the follower).
+    pub fn ingester_nodes(&self) -> impl Iterator<Item = NodeId> + '_ {
+        [Some(&self.leader_id), self.follower_id.as_ref()]
+            .into_iter()
+            .flatten()
+            .map(|node_id| NodeId::new(node_id.clone()))
     }
 }
 

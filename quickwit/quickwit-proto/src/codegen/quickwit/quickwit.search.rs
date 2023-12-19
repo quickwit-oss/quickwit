@@ -61,6 +61,81 @@ pub struct ReportSplitsRequest {
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ReportSplitsResponse {}
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListFieldsRequest {
+    /// Optional limit query to a set of indexes.
+    #[prost(string, repeated, tag = "1")]
+    pub index_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// Optional limit query to a list of fields
+    /// Wildcard expressions are supported.
+    #[prost(string, repeated, tag = "2")]
+    pub fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct LeafListFieldsRequest {
+    /// The index id
+    #[prost(string, tag = "1")]
+    pub index_id: ::prost::alloc::string::String,
+    /// The index uri
+    #[prost(string, tag = "2")]
+    pub index_uri: ::prost::alloc::string::String,
+    /// Index split ids to apply the query on.
+    /// This ids are resolved from the index_uri defined in the search_request.
+    #[prost(message, repeated, tag = "3")]
+    pub split_offsets: ::prost::alloc::vec::Vec<SplitIdAndFooterOffsets>,
+    /// Optional limit query to a list of fields
+    /// Wildcard expressions are supported.
+    #[prost(string, repeated, tag = "4")]
+    pub fields: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+}
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListFieldsResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub fields: ::prost::alloc::vec::Vec<ListFieldsEntryResponse>,
+}
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListFieldsEntryResponse {
+    #[prost(string, tag = "1")]
+    pub field_name: ::prost::alloc::string::String,
+    #[prost(enumeration = "ListFieldType", tag = "2")]
+    pub field_type: i32,
+    /// The index ids the field exists
+    #[prost(string, repeated, tag = "3")]
+    pub index_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    /// True means the field is searchable (indexed) in at least some indices.
+    /// False means the field is not searchable in any indices.
+    #[prost(bool, tag = "4")]
+    pub searchable: bool,
+    /// True means the field is aggregatable (fast) in at least some indices.
+    /// False means the field is not aggregatable in any indices.
+    #[prost(bool, tag = "5")]
+    pub aggregatable: bool,
+    /// The index ids the field exists, but is not searchable.
+    #[prost(string, repeated, tag = "6")]
+    pub non_searchable_index_ids: ::prost::alloc::vec::Vec<
+        ::prost::alloc::string::String,
+    >,
+    /// The index ids the field exists, but is not aggregatable
+    #[prost(string, repeated, tag = "7")]
+    pub non_aggregatable_index_ids: ::prost::alloc::vec::Vec<
+        ::prost::alloc::string::String,
+    >,
+}
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct ListFields {
+    #[prost(message, repeated, tag = "1")]
+    pub fields: ::prost::alloc::vec::Vec<ListFieldsEntryResponse>,
+}
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[derive(Eq, Hash)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
@@ -503,6 +578,58 @@ pub struct LeafSearchStreamResponse {
     /// Split id.
     #[prost(string, tag = "2")]
     pub split_id: ::prost::alloc::string::String,
+}
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[serde(rename_all = "snake_case")]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, ::prost::Enumeration)]
+#[repr(i32)]
+pub enum ListFieldType {
+    Str = 0,
+    U64 = 1,
+    I64 = 2,
+    F64 = 3,
+    Bool = 4,
+    Date = 5,
+    Facet = 6,
+    Bytes = 7,
+    IpAddr = 8,
+    Json = 9,
+}
+impl ListFieldType {
+    /// String value of the enum field names used in the ProtoBuf definition.
+    ///
+    /// The values are not transformed in any way and thus are considered stable
+    /// (if the ProtoBuf definition does not change) and safe for programmatic use.
+    pub fn as_str_name(&self) -> &'static str {
+        match self {
+            ListFieldType::Str => "STR",
+            ListFieldType::U64 => "U64",
+            ListFieldType::I64 => "I64",
+            ListFieldType::F64 => "F64",
+            ListFieldType::Bool => "BOOL",
+            ListFieldType::Date => "DATE",
+            ListFieldType::Facet => "FACET",
+            ListFieldType::Bytes => "BYTES",
+            ListFieldType::IpAddr => "IP_ADDR",
+            ListFieldType::Json => "JSON",
+        }
+    }
+    /// Creates an enum from field names used in the ProtoBuf definition.
+    pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
+        match value {
+            "STR" => Some(Self::Str),
+            "U64" => Some(Self::U64),
+            "I64" => Some(Self::I64),
+            "F64" => Some(Self::F64),
+            "BOOL" => Some(Self::Bool),
+            "DATE" => Some(Self::Date),
+            "FACET" => Some(Self::Facet),
+            "BYTES" => Some(Self::Bytes),
+            "IP_ADDR" => Some(Self::IpAddr),
+            "JSON" => Some(Self::Json),
+            _ => None,
+        }
+    }
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
@@ -991,6 +1118,58 @@ pub mod search_service_client {
                 );
             self.inner.unary(req, path, codec).await
         }
+        pub async fn list_fields(
+            &mut self,
+            request: impl tonic::IntoRequest<super::ListFieldsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListFieldsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.search.SearchService/ListFields",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(GrpcMethod::new("quickwit.search.SearchService", "ListFields"));
+            self.inner.unary(req, path, codec).await
+        }
+        pub async fn leaf_list_fields(
+            &mut self,
+            request: impl tonic::IntoRequest<super::LeafListFieldsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListFieldsResponse>,
+            tonic::Status,
+        > {
+            self.inner
+                .ready()
+                .await
+                .map_err(|e| {
+                    tonic::Status::new(
+                        tonic::Code::Unknown,
+                        format!("Service was not ready: {}", e.into()),
+                    )
+                })?;
+            let codec = tonic::codec::ProstCodec::default();
+            let path = http::uri::PathAndQuery::from_static(
+                "/quickwit.search.SearchService/LeafListFields",
+            );
+            let mut req = request.into_request();
+            req.extensions_mut()
+                .insert(
+                    GrpcMethod::new("quickwit.search.SearchService", "LeafListFields"),
+                );
+            self.inner.unary(req, path, codec).await
+        }
     }
 }
 /// Generated server implementations.
@@ -1096,6 +1275,20 @@ pub mod search_service_server {
             request: tonic::Request<super::ReportSplitsRequest>,
         ) -> std::result::Result<
             tonic::Response<super::ReportSplitsResponse>,
+            tonic::Status,
+        >;
+        async fn list_fields(
+            &self,
+            request: tonic::Request<super::ListFieldsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListFieldsResponse>,
+            tonic::Status,
+        >;
+        async fn leaf_list_fields(
+            &self,
+            request: tonic::Request<super::LeafListFieldsRequest>,
+        ) -> std::result::Result<
+            tonic::Response<super::ListFieldsResponse>,
             tonic::Status,
         >;
     }
@@ -1611,6 +1804,96 @@ pub mod search_service_server {
                     let fut = async move {
                         let inner = inner.0;
                         let method = ReportSplitsSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.search.SearchService/ListFields" => {
+                    #[allow(non_camel_case_types)]
+                    struct ListFieldsSvc<T: SearchService>(pub Arc<T>);
+                    impl<
+                        T: SearchService,
+                    > tonic::server::UnaryService<super::ListFieldsRequest>
+                    for ListFieldsSvc<T> {
+                        type Response = super::ListFieldsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::ListFieldsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move { (*inner).list_fields(request).await };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = ListFieldsSvc(inner);
+                        let codec = tonic::codec::ProstCodec::default();
+                        let mut grpc = tonic::server::Grpc::new(codec)
+                            .apply_compression_config(
+                                accept_compression_encodings,
+                                send_compression_encodings,
+                            )
+                            .apply_max_message_size_config(
+                                max_decoding_message_size,
+                                max_encoding_message_size,
+                            );
+                        let res = grpc.unary(method, req).await;
+                        Ok(res)
+                    };
+                    Box::pin(fut)
+                }
+                "/quickwit.search.SearchService/LeafListFields" => {
+                    #[allow(non_camel_case_types)]
+                    struct LeafListFieldsSvc<T: SearchService>(pub Arc<T>);
+                    impl<
+                        T: SearchService,
+                    > tonic::server::UnaryService<super::LeafListFieldsRequest>
+                    for LeafListFieldsSvc<T> {
+                        type Response = super::ListFieldsResponse;
+                        type Future = BoxFuture<
+                            tonic::Response<Self::Response>,
+                            tonic::Status,
+                        >;
+                        fn call(
+                            &mut self,
+                            request: tonic::Request<super::LeafListFieldsRequest>,
+                        ) -> Self::Future {
+                            let inner = Arc::clone(&self.0);
+                            let fut = async move {
+                                (*inner).leaf_list_fields(request).await
+                            };
+                            Box::pin(fut)
+                        }
+                    }
+                    let accept_compression_encodings = self.accept_compression_encodings;
+                    let send_compression_encodings = self.send_compression_encodings;
+                    let max_decoding_message_size = self.max_decoding_message_size;
+                    let max_encoding_message_size = self.max_encoding_message_size;
+                    let inner = self.inner.clone();
+                    let fut = async move {
+                        let inner = inner.0;
+                        let method = LeafListFieldsSvc(inner);
                         let codec = tonic::codec::ProstCodec::default();
                         let mut grpc = tonic::server::Grpc::new(codec)
                             .apply_compression_config(

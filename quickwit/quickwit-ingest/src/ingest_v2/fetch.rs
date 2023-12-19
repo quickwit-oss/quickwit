@@ -207,7 +207,8 @@ impl FetchStreamTask {
             }
         }
         if !to_position_inclusive.is_eof() {
-            error!(
+            // This can happen if we delete the associated source or index.
+            warn!(
                 client_id=%self.client_id,
                 index_uid=%self.index_uid,
                 source_id=%self.source_id,
