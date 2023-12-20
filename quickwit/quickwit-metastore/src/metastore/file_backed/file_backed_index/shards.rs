@@ -27,11 +27,11 @@ use quickwit_proto::metastore::{
     ListShardsSubrequest, ListShardsSubresponse, MetastoreError, MetastoreResult,
     OpenShardsSubrequest, OpenShardsSubresponse,
 };
-use quickwit_proto::types::{queue_id, IndexUid, Position, ShardId, SourceId};
+use quickwit_proto::types::{queue_id, IndexUid, Position, PublishToken, ShardId, SourceId};
 use tracing::{info, warn};
 
 use crate::checkpoint::{PartitionId, SourceCheckpoint, SourceCheckpointDelta};
-use crate::file_backed_metastore::MutationOccurred;
+use crate::file_backed::MutationOccurred;
 
 // TODO: Rename `SourceShards`
 /// Manages the shards of a source.
@@ -204,8 +204,8 @@ impl Shards {
             if let Entry::Occupied(entry) = self.shards.entry(shard_id.clone()) {
                 let shard = entry.get();
                 if !force && !shard.publish_position_inclusive().is_eof() {
-                    let message = format!("shard `{shard_id}` is not deletable");
-                    return Err(MetastoreError::InvalidArgument { message });
+                    warn!("shard `{shard_id}` is not deletable");
+                    continue;
                 }
                 info!(
                     index_id=%self.index_uid.index_id(),
@@ -236,7 +236,7 @@ impl Shards {
     pub(super) fn try_apply_delta(
         &mut self,
         checkpoint_delta: SourceCheckpointDelta,
-        publish_token: String,
+        publish_token: PublishToken,
     ) -> MetastoreResult<MutationOccurred<()>> {
         if checkpoint_delta.is_empty() {
             return Ok(MutationOccurred::No(()));
@@ -293,6 +293,15 @@ mod tests {
     use quickwit_proto::ingest::ShardState;
 
     use super::*;
+
+    impl Shards {
+        pub(crate) fn insert_shards(&mut self, shards: Vec<Shard>) {
+            for shard in shards {
+                let shard_id = shard.shard_id().clone();
+                self.shards.insert(shard_id, shard);
+            }
+        }
+    }
 
     #[test]
     fn test_open_shards() {

@@ -154,7 +154,7 @@ impl MetastoreFactory for FileBackedMetastoreFactory {
 mod tests {
     use std::time::Duration;
 
-    use crate::metastore::file_backed_metastore::file_backed_metastore_factory::extract_polling_interval_from_uri;
+    use crate::metastore::file_backed::file_backed_metastore_factory::extract_polling_interval_from_uri;
 
     #[test]
     fn test_extract_polling_interval_from_uri() {

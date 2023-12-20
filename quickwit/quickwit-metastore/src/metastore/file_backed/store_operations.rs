@@ -27,7 +27,7 @@ use quickwit_storage::{Storage, StorageError, StorageErrorKind};
 use serde::{Deserialize, Serialize};
 
 use super::{IndexState, LazyFileBackedIndex};
-use crate::metastore::file_backed_metastore::file_backed_index::FileBackedIndex;
+use crate::metastore::file_backed::file_backed_index::FileBackedIndex;
 
 /// Indexes states file managed by [`FileBackedMetastore`](crate::FileBackedMetastore).
 const INDEXES_STATES_FILENAME: &str = "indexes_states.json";

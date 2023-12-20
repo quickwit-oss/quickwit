@@ -191,6 +191,12 @@ impl PartialEq<String> for IndexUid {
     }
 }
 
+impl PartialEq<IndexUid> for String {
+    fn eq(&self, other: &IndexUid) -> bool {
+        *self == other.0
+    }
+}
+
 /// It can however appear only once in a given index.
 /// In itself, `SourceId` is not unique, but the pair `(IndexUid, SourceId)` is.
 #[derive(PartialEq, Eq, Debug, PartialOrd, Ord, Hash, Clone)]

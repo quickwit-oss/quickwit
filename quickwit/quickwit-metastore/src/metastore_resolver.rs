@@ -28,9 +28,9 @@ use quickwit_config::{MetastoreBackend, MetastoreConfig, MetastoreConfigs};
 use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_storage::StorageResolver;
 
-use crate::metastore::file_backed_metastore::FileBackedMetastoreFactory;
+use crate::metastore::file_backed::FileBackedMetastoreFactory;
 #[cfg(feature = "postgres")]
-use crate::metastore::postgresql_metastore::PostgresqlMetastoreFactory;
+use crate::metastore::postgres::PostgresqlMetastoreFactory;
 use crate::{MetastoreFactory, MetastoreResolverError};
 
 type FactoryAndConfig = (Box<dyn MetastoreFactory>, MetastoreConfig);

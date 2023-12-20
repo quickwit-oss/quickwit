@@ -27,7 +27,7 @@ use quickwit_proto::types::SourceId;
 use serde::{Deserialize, Serialize};
 
 use super::shards::Shards;
-use crate::file_backed_metastore::file_backed_index::FileBackedIndex;
+use crate::file_backed::file_backed_index::FileBackedIndex;
 use crate::metastore::DeleteTask;
 use crate::{IndexMetadata, Split};
 

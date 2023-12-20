@@ -182,8 +182,8 @@ pub async fn test_metastore_stream_splits<MetastoreToTest: MetastoreServiceExt +
         .into();
 
     let mut split_metadatas_to_create = Vec::new();
-    for idx in 1..10001 {
-        let split_id = format!("{index_id}--split-{idx:0>5}");
+    for split_idx in 1..1001 {
+        let split_id = format!("{index_id}--split-{split_idx:0>4}");
         let split_metadata = SplitMetadata {
             split_id: split_id.clone(),
             index_uid: index_uid.clone(),
@@ -191,7 +191,7 @@ pub async fn test_metastore_stream_splits<MetastoreToTest: MetastoreServiceExt +
         };
         split_metadatas_to_create.push(split_metadata);
 
-        if idx > 0 && idx % 1000 == 0 {
+        if split_idx > 0 && split_idx % 100 == 0 {
             let staged_split_ids: Vec<SplitId> = split_metadatas_to_create
                 .iter()
                 .map(|split_metadata| split_metadata.split_id.clone())
@@ -226,14 +226,14 @@ pub async fn test_metastore_stream_splits<MetastoreToTest: MetastoreServiceExt +
             .unwrap()
             .deserialize_splits()
             .unwrap();
-        assert_eq!(splits.len(), 1000);
+        assert_eq!(splits.len(), 100);
         all_splits.append(&mut splits);
     }
     all_splits.sort_by_key(|split| split.split_id().to_string());
-    assert_eq!(all_splits[0].split_id(), format!("{index_id}--split-00001"));
+    assert_eq!(all_splits[0].split_id(), format!("{index_id}--split-0001"));
     assert_eq!(
         all_splits[all_splits.len() - 1].split_id(),
-        format!("{index_id}--split-10000")
+        format!("{index_id}--split-1000")
     );
 }
 

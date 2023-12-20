@@ -980,7 +980,9 @@ mod tests {
     use futures::executor::block_on;
     use quickwit_common::uri::Protocol;
     use quickwit_config::IndexConfig;
+    use quickwit_proto::ingest::Shard;
     use quickwit_proto::metastore::{DeleteQuery, MetastoreError};
+    use quickwit_proto::types::SourceId;
     use quickwit_query::query_ast::qast_helper;
     use quickwit_storage::{MockStorage, RamStorage, Storage, StorageErrorKind};
     use rand::Rng;
@@ -993,8 +995,35 @@ mod tests {
     };
     use super::*;
     use crate::metastore::MetastoreServiceStreamSplitsExt;
+    use crate::tests::shard::ReadWriteShardsForTest;
     use crate::tests::DefaultForTest;
     use crate::{metastore_test_suite, IndexMetadata, ListSplitsQuery, SplitMetadata, SplitState};
+
+    #[async_trait]
+    impl ReadWriteShardsForTest for FileBackedMetastore {
+        async fn insert_shards(
+            &mut self,
+            index_uid: &IndexUid,
+            source_id: &SourceId,
+            shards: Vec<Shard>,
+        ) {
+            self.mutate(index_uid.clone(), |index| {
+                index.insert_shards(source_id, shards);
+                Ok(MutationOccurred::Yes(()))
+            })
+            .await
+            .unwrap();
+        }
+
+        async fn list_all_shards(&self, index_uid: &IndexUid, source_id: &SourceId) -> Vec<Shard> {
+            self.read(index_uid.clone(), |index| {
+                let shards = index.list_all_shards(source_id);
+                Ok(shards)
+            })
+            .await
+            .unwrap()
+        }
+    }
 
     metastore_test_suite!(crate::FileBackedMetastore);
 

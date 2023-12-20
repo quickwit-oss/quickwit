@@ -20,8 +20,9 @@
 use std::convert::TryInto;
 use std::str::FromStr;
 
+use quickwit_proto::ingest::{Shard, ShardState};
 use quickwit_proto::metastore::{DeleteQuery, DeleteTask, MetastoreError, MetastoreResult};
-use quickwit_proto::types::IndexUid;
+use quickwit_proto::types::{IndexUid, ShardId, SourceId};
 use sea_query::{Iden, Write};
 use tracing::error;
 
@@ -208,5 +209,69 @@ impl TryInto<DeleteTask> for PgDeleteTask {
             opstamp: self.opstamp as u64,
             delete_query: Some(delete_query),
         })
+    }
+}
+
+#[derive(Iden, Clone, Copy)]
+#[allow(dead_code)]
+pub enum Shards {
+    Table,
+    IndexUid,
+    SourceId,
+    ShardId,
+    ShardState,
+    LeaderId,
+    FollowerId,
+    PublishPositionInclusive,
+    PublishToken,
+}
+
+#[derive(sqlx::Type, PartialEq, Debug)]
+#[sqlx(type_name = "SHARD_STATE", rename_all = "snake_case")]
+pub enum PgShardState {
+    Unspecified,
+    Open,
+    Unavailable,
+    Closed,
+}
+
+impl From<PgShardState> for ShardState {
+    fn from(pg_shard_state: PgShardState) -> Self {
+        match pg_shard_state {
+            PgShardState::Unspecified => ShardState::Unspecified,
+            PgShardState::Open => ShardState::Open,
+            PgShardState::Unavailable => ShardState::Unavailable,
+            PgShardState::Closed => ShardState::Closed,
+        }
+    }
+}
+
+#[derive(sqlx::FromRow, Debug)]
+pub struct PgShard {
+    #[sqlx(try_from = "String")]
+    pub index_uid: IndexUid,
+    #[sqlx(try_from = "String")]
+    pub source_id: SourceId,
+    #[sqlx(try_from = "String")]
+    pub shard_id: ShardId,
+    pub leader_id: String,
+    pub follower_id: Option<String>,
+    pub shard_state: PgShardState,
+    pub publish_position_inclusive: String,
+    pub publish_token: Option<String>,
+}
+
+impl From<PgShard> for Shard {
+    fn from(pg_shard: PgShard) -> Self {
+        Shard {
+            index_uid: pg_shard.index_uid.into(),
+            source_id: pg_shard.source_id,
+            shard_id: Some(pg_shard.shard_id),
+            shard_state: ShardState::from(pg_shard.shard_state) as i32,
+            leader_id: pg_shard.leader_id,
+            follower_id: pg_shard.follower_id,
+            publish_position_inclusive: Some(pg_shard.publish_position_inclusive.into()),
+            publish_token: pg_shard.publish_token,
+        }
     }
 }
