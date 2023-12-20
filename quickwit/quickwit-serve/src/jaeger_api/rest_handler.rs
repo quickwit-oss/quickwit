@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::HashMap;
 use hyper::StatusCode;
 use itertools::Itertools;
 use quickwit_jaeger::JaegerService;
@@ -114,8 +115,13 @@ pub fn jaeger_service_operations_handler(
     params(
         TracesSearchQueryParams,
         ("service" = Option<String>, Query, description = "The service name."),
+        ("operation" = Option<String>, Query, description = "The operation name."),
         ("start" = Option<i64>, Query, description = "The start time in nanoseconds."),
         ("end" = Option<i64>, Query, description = "The end time in nanoseconds."),
+        ("tags" = Option<String>, Query, description = "Sets tags with values in the logfmt format, such as error=true status=200."),
+        ("min_duration" = Option<String>, Query, description = "Filters all traces with a duration higher than the set value. Possible values are 1.2s, 100ms, 500us."),
+        ("max_duration" = Option<String>, Query, description = "Filters all traces with a duration lower than the set value. Possible values are 1.2s, 100ms, 500us."),
+        ("limit" = Option<i32>, Query, description = "Limits the number of traces returned."),
     )
 )]
 pub fn jaeger_traces_search_handler(
@@ -194,10 +200,14 @@ async fn jaeger_traces_search(
         .max_duration
         .map(parse_duration_with_units)
         .transpose()?;
+    let tags = search_params
+        .tags
+        .map(|s| serde_json::from_str::<HashMap<String, String>>(&s).unwrap_or_default())
+        .unwrap_or(Default::default());
     let query = TraceQueryParameters {
         service_name: search_params.service.unwrap_or_default(),
         operation_name: search_params.operation.unwrap_or_default(),
-        tags: Default::default(),
+        tags,
         start_time_min: search_params.start.map(to_well_known_timestamp),
         start_time_max: search_params.end.map(to_well_known_timestamp),
         duration_min,
@@ -397,6 +407,7 @@ mod tests {
             .path(
                 "/otel-traces-v0_6/jaeger/api/traces?service=quickwit&\
                  operation=delete_splits_marked_for_deletion&minDuration=500us&maxDuration=1.2s&\
+                 tags=%7B%22tag.first%22%3A%22common%22%2C%22tag.second%22%3A%22true%22%7D&\
                  limit=1&start=1702352106016000&end=1702373706016000&lookback=custom",
             )
             .reply(&jaeger_api_handler)

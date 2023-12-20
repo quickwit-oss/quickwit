@@ -57,6 +57,7 @@ pub struct TracesSearchQueryParams {
     pub operation: Option<String>,
     pub start: Option<i64>,
     pub end: Option<i64>,
+    pub tags: Option<String>,
     pub min_duration: Option<String>,
     pub max_duration: Option<String>,
     pub lookback: Option<String>,
