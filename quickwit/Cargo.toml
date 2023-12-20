@@ -123,6 +123,7 @@ openssl-probe = "0.1.5"
 opentelemetry = { version = "0.19", features = ["rt-tokio"] }
 opentelemetry-otlp = "0.12.0"
 ouroboros = "0.18.0"
+percent-encoding = "2.3.1"
 pin-project = "1.1.0"
 pnet = { version = "0.33.0", features = ["std"] }
 postcard = { version = "1.0.4", features = [

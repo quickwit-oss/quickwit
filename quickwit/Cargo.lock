@@ -5965,6 +5965,7 @@ dependencies = [
  "num_cpus",
  "once_cell",
  "opentelemetry",
+ "percent-encoding",
  "quickwit-actors",
  "quickwit-cluster",
  "quickwit-common",

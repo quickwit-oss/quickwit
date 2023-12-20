@@ -24,6 +24,7 @@ itertools = { workspace = true }
 mime_guess = { workspace = true }
 num_cpus = { workspace = true }
 once_cell = { workspace = true }
+percent-encoding = { workspace = true }
 regex = { workspace = true }
 rust-embed = { workspace = true }
 serde = { workspace = true }
