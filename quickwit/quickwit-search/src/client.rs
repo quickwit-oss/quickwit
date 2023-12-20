@@ -140,6 +140,24 @@ impl SearchServiceClient {
         }
     }
 
+    /// Perform leaf search.
+    pub async fn leaf_list_fields(
+        &mut self,
+        request: quickwit_proto::search::LeafListFieldsRequest,
+    ) -> crate::Result<quickwit_proto::search::ListFieldsResponse> {
+        match &mut self.client_impl {
+            SearchServiceClientImpl::Grpc(grpc_client) => {
+                let tonic_request = Request::new(request);
+                let tonic_response = grpc_client
+                    .leaf_list_fields(tonic_request)
+                    .await
+                    .map_err(|tonic_error| parse_grpc_error(&tonic_error))?;
+                Ok(tonic_response.into_inner())
+            }
+            SearchServiceClientImpl::Local(service) => service.leaf_list_fields(request).await,
+        }
+    }
+
     /// Perform leaf stream.
     pub async fn leaf_search_stream(
         &mut self,

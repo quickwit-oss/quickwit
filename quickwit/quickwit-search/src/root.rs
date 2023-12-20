@@ -72,9 +72,11 @@ const MAX_SCROLL_TTL: Duration = Duration::from_secs(DELETION_GRACE_PERIOD.as_se
 /// SearchJob to be assigned to search clients by the [`SearchJobPlacer`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct SearchJob {
-    index_uid: IndexUid,
+    /// The index UID.
+    pub index_uid: IndexUid,
     cost: usize,
-    offsets: SplitIdAndFooterOffsets,
+    /// The split ID and footer offsets of the split.
+    pub offsets: SplitIdAndFooterOffsets,
 }
 
 impl SearchJob {
@@ -828,7 +830,7 @@ fn finalize_aggregation_if_any(
 /// We put this check here and not in the metastore to make sure the logic is independent
 /// of the metastore implementation, and some different use cases could require different
 /// behaviors. This specification was principally motivated by #4042.
-fn check_all_index_metadata_found(
+pub fn check_all_index_metadata_found(
     index_metadatas: &[IndexMetadata],
     index_id_patterns: &[String],
 ) -> crate::Result<()> {

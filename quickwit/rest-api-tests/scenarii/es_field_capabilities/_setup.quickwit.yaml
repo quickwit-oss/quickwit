@@ -1,0 +1,59 @@
+# Delete possibly remaining index
+method: DELETE
+api_root: http://localhost:7280/api/v1/
+endpoint: indexes/fieldcaps
+status_code: null
+---
+# Create index
+method: POST
+api_root: http://localhost:7280/api/v1/
+endpoint: indexes/
+json:
+  version: "0.6"
+  index_id: fieldcaps
+  doc_mapping:
+    mode: dynamic
+    dynamic_mapping:
+      tokenizer: default
+      fast: true
+    field_mappings:
+      - name: date
+        type: datetime
+        input_formats:
+          - rfc3339
+        fast_precision: seconds
+        fast: true
+      - name: host
+        type: ip
+        fast: true
+---
+# Ingest documents
+method: POST
+api_root: http://localhost:7280/api/v1/
+endpoint: fieldcaps/ingest
+num_retries: 10
+params:
+  commit: force
+ndjson:
+  - {"name": "Fritz", "response": 30, "id": 5, "host": "192.168.0.1", "tags": ["nice", "cool"]}
+  - {"nested": {"name": "Fritz", "response": 30}, "date": "2015-01-11T12:10:30Z", "host": "192.168.0.11", "tags": ["nice"]}
+---
+# Ingest documents split #2
+method: POST
+api_root: http://localhost:7280/api/v1/
+endpoint: fieldcaps/ingest
+params:
+  commit: force
+ndjson:
+  - {"id": -5.5} # cross split mixed type
+---
+# Ingest documents split #3
+method: POST
+api_root: http://localhost:7280/api/v1/
+endpoint: fieldcaps/ingest
+params:
+  commit: force
+ndjson:
+  - {"mixed": 5} # inter split mixed type
+  - {"mixed": -5.5} 
+

@@ -82,7 +82,6 @@ impl From<IngestV2Error> for tonic::Status {
 
 impl From<tonic::Status> for IngestV2Error {
     fn from(status: tonic::Status) -> Self {
-        dbg!(&status);
         match status.code() {
             tonic::Code::Unavailable => IngestV2Error::Transport(status.message().to_string()),
             tonic::Code::ResourceExhausted => IngestV2Error::TooManyRequests,

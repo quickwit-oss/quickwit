@@ -45,6 +45,7 @@ use crate::{
 /// with some metadata
 pub struct BundleStorage {
     storage: Arc<dyn Storage>,
+    /// The file path of the bundle in the storage.
     bundle_filepath: PathBuf,
     metadata: BundleStorageFileOffsets,
 }

@@ -22,6 +22,7 @@ use std::io;
 use mrecordlog::error::*;
 use quickwit_actors::AskError;
 use quickwit_common::tower::BufferError;
+use quickwit_proto::ingest::IngestV2Error;
 use quickwit_proto::{tonic, ServiceError, ServiceErrorCode};
 use serde::Serialize;
 
@@ -67,6 +68,23 @@ impl From<BufferError> for IngestServiceError {
 impl From<io::Error> for IngestServiceError {
     fn from(io_error: io::Error) -> Self {
         IngestServiceError::IoError(io_error.to_string())
+    }
+}
+impl From<IngestV2Error> for IngestServiceError {
+    fn from(err: IngestV2Error) -> Self {
+        match err {
+            IngestV2Error::Internal(_) => IngestServiceError::Internal(err.to_string()),
+            IngestV2Error::IngesterUnavailable { ingester_id } => {
+                IngestServiceError::Internal(format!("ingester {} is unavailable", ingester_id))
+            }
+            IngestV2Error::ShardNotFound { shard_id } => IngestServiceError::Internal(format!(
+                "shard {} is not found in the ingester",
+                shard_id
+            )),
+            IngestV2Error::Timeout => IngestServiceError::Unavailable,
+            IngestV2Error::TooManyRequests => IngestServiceError::RateLimited,
+            IngestV2Error::Transport(msg) => IngestServiceError::Internal(msg.to_string()),
+        }
     }
 }
 

@@ -5840,6 +5840,7 @@ dependencies = [
  "tracing-opentelemetry",
  "ulid",
  "utoipa",
+ "zstd 0.13.0",
 ]
 
 [[package]]
@@ -5966,6 +5967,7 @@ dependencies = [
  "num_cpus",
  "once_cell",
  "opentelemetry",
+ "percent-encoding",
  "prost-types",
  "quickwit-actors",
  "quickwit-cluster",
