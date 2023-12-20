@@ -65,6 +65,7 @@ impl From<SearchError> for tonic::Status {
 
 /// Parse tonic error and returns `SearchError`.
 pub fn parse_grpc_error(grpc_error: &tonic::Status) -> SearchError {
+    // TODO: the serialization to JSON part is missing.
     serde_json::from_str(grpc_error.message())
         .unwrap_or_else(|_| SearchError::Internal(grpc_error.message().to_string()))
 }

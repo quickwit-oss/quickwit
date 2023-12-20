@@ -33,6 +33,7 @@ tracing = { workspace = true }
 tracing-opentelemetry = { workspace = true }
 ulid = { workspace = true }
 utoipa = { workspace = true }
+zstd = { workspace = true }
 
 quickwit-actors = { workspace = true }
 quickwit-common = { workspace = true }
