@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashMap;
+
 use hyper::StatusCode;
 use itertools::Itertools;
 use quickwit_jaeger::JaegerService;
