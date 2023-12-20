@@ -21,7 +21,7 @@ use prost_types::{Duration as ProstDuration, Timestamp as ProstTimestamp};
 
 pub(crate) fn parse_duration_with_units(duration_string: String) -> anyhow::Result<ProstDuration> {
     parse_duration_nanos(&duration_string)
-        .map(|duration_nanos| to_well_known_timestamp(duration_nanos))
+        .map(to_well_known_timestamp)
         .map(|timestamp| ProstDuration {
             seconds: timestamp.seconds,
             nanos: timestamp.nanos,
@@ -43,7 +43,7 @@ pub(crate) fn to_well_known_timestamp(timestamp_nanos: i64) -> ProstTimestamp {
 fn parse_duration_nanos(input: &str) -> anyhow::Result<i64> {
     let mut num_str = String::new();
     for ch in input.trim().chars() {
-        if ch.is_digit(10) || ch == '.' || ch == '-' {
+        if ch.is_ascii_digit() || ch == '.' || ch == '-' {
             num_str.push(ch);
             continue;
         }
