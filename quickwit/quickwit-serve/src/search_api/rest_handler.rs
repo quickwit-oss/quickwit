@@ -62,14 +62,12 @@ pub(crate) async fn extract_index_id_patterns(
     let index_pattern = percent_decode_str(&comma_separated_index_patterns)
         .decode_utf8()
         .context("index pattern does not contain valid utf8 characters")
-        .unwrap()
-        .to_string();
+        .map_err(|error| crate::rest::InvalidArgument(error.to_string()))?;
 
     let mut index_ids_patterns = Vec::new();
     for index_id_pattern in index_pattern.split(',').collect::<Vec<_>>() {
-        validate_index_id_pattern(index_id_pattern).map_err(|error| {
-            warp::reject::custom(crate::rest::InvalidArgument(error.to_string()))
-        })?;
+        validate_index_id_pattern(index_id_pattern)
+            .map_err(|error| crate::rest::InvalidArgument(error.to_string()))?;
         index_ids_patterns.push(index_id_pattern.to_string());
     }
     assert!(!index_ids_patterns.is_empty());
