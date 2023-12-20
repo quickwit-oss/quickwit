@@ -345,7 +345,6 @@ async fn es_compat_index_multi_search(
                 "`_msearch` request header must define at least one index".to_string(),
             )));
         }
-
         for index in &request_header.index {
             validate_index_id_pattern(index).map_err(|err| {
                 SearchError::InvalidArgument(format!(
@@ -354,7 +353,6 @@ async fn es_compat_index_multi_search(
                 ))
             })?;
         }
-
         let index_ids_patterns = request_header.index.clone();
         let search_body = payload_lines
             .next()
