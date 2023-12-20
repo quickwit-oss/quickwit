@@ -152,7 +152,7 @@ struct RequestMetadata {
     timestamp_field_opt: Option<String>,
     query_ast_resolved: QueryAst,
     indexes_meta_for_leaf_search: IndexesMetasForLeafSearch,
-    sort_fields_are_datetime_opt: Vec<Option<bool>>,
+    sort_fields_are_datetime: Vec<bool>,
 }
 
 /// Validates request against each index's doc mapper and ensures that:
@@ -255,11 +255,18 @@ fn validate_request_and_build_metadata(
         )
     })?;
 
+    let sort_fields_are_datetime: Vec<bool> = sort_fields_are_datetime_opt
+        .into_iter()
+        .map(|sort_field_is_datetime_opt| {
+            sort_field_is_datetime_opt
+                .expect("sort field is datetime must be set when `validate_sort_field_types`")
+        })
+        .collect();
     Ok(RequestMetadata {
         timestamp_field_opt,
         query_ast_resolved,
         indexes_meta_for_leaf_search,
-        sort_fields_are_datetime_opt,
+        sort_fields_are_datetime,
     })
 }
 
@@ -293,6 +300,8 @@ fn validate_sort_field_types(
                 }
                 _ => {}
             }
+        } else {
+            *sort_field_is_datetime_opt = Some(false);
         }
     }
     Ok(())
@@ -963,7 +972,7 @@ pub async fn root_search(
     // convert search_after datetime values from input datetime format to nanos.
     convert_search_after_datetime_values(
         &mut search_request,
-        &request_metadata.sort_fields_are_datetime_opt,
+        &request_metadata.sort_fields_are_datetime,
     )?;
 
     // update_search_after_datetime_in_nanos(&mut search_request)?;
@@ -1007,16 +1016,16 @@ pub async fn root_search(
 /// `sort_fields_are_datetime_opt` must be of the same length as `search_request.sort_fields`.
 fn convert_search_after_datetime_values(
     search_request: &mut SearchRequest,
-    sort_fields_are_datetime_opt: &[Option<bool>],
+    sort_fields_are_datetime: &[bool],
 ) -> crate::Result<()> {
     assert_eq!(
         search_request.sort_fields.len(),
-        sort_fields_are_datetime_opt.len()
+        sort_fields_are_datetime.len()
     );
     // By default, sort fields on datetime fields are in milliseconds. This is the default behavior
     // of ES on date field.
-    for (idx, sort_field_is_datetime_opt) in sort_fields_are_datetime_opt.iter().enumerate() {
-        if sort_field_is_datetime_opt.unwrap_or(false) {
+    for (idx, sort_field_is_datetime) in sort_fields_are_datetime.iter().enumerate() {
+        if *sort_field_is_datetime {
             let sort_field = search_request
                 .sort_fields
                 .get_mut(idx)
@@ -1539,11 +1548,8 @@ mod tests {
         );
         assert_eq!(request_metadata.query_ast_resolved, request_query_ast);
         assert_eq!(request_metadata.indexes_meta_for_leaf_search.len(), 3);
-        assert_eq!(request_metadata.sort_fields_are_datetime_opt.len(), 2);
-        assert_eq!(
-            request_metadata.sort_fields_are_datetime_opt,
-            vec![Some(true), None]
-        );
+        assert_eq!(request_metadata.sort_fields_are_datetime.len(), 2);
+        assert_eq!(request_metadata.sort_fields_are_datetime, vec![true, false]);
     }
 
     #[test]
