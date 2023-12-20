@@ -28,7 +28,6 @@ use elasticsearch_dsl::{HitsMetadata, Source, TotalHits, TotalHitsRelation};
 use futures_util::StreamExt;
 use hyper::StatusCode;
 use itertools::Itertools;
-use percent_encoding::percent_decode_str;
 use quickwit_common::truncate_str;
 use quickwit_config::{validate_index_id_pattern, NodeConfig};
 use quickwit_proto::search::{
@@ -347,28 +346,16 @@ async fn es_compat_index_multi_search(
             )));
         }
 
-        let mut index_ids_patterns = Vec::new();
         for index in &request_header.index {
-            match percent_decode_str(index).decode_utf8() {
-                Ok(decode_index) => {
-                    validate_index_id_pattern(decode_index.to_string().as_str()).map_err(
-                        |err| {
-                            SearchError::InvalidArgument(format!(
-                                "request header contains an invalid index: {}",
-                                err
-                            ))
-                        },
-                    )?;
-                    index_ids_patterns.push(decode_index.to_string());
-                }
-                Err(err) => {
-                    SearchError::InvalidArgument(format!(
-                        "request header contains an invalid index: {}",
-                        err
-                    ));
-                }
-            }
+            validate_index_id_pattern(index).map_err(|err| {
+                SearchError::InvalidArgument(format!(
+                    "request header contains an invalid index: {}",
+                    err
+                ))
+            })?;
         }
+
+        let index_ids_patterns = request_header.index.clone();
         let search_body = payload_lines
             .next()
             .ok_or_else(|| {
