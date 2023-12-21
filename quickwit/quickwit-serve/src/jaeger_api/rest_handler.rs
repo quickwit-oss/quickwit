@@ -93,7 +93,7 @@ pub fn jaeger_services_handler(
     tag = "Jaeger",
     path = "/otel-traces-v0_6/jaeger/api/services/{service}/operations",
     responses(
-        (status = 200, description = "Successfully fetched operations names  the given service.", body = JaegerResponseBody )
+        (status = 200, description = "Successfully fetched operations names the given service.", body = JaegerResponseBody )
     )
 )]
 pub fn jaeger_service_operations_handler(
@@ -201,20 +201,24 @@ async fn jaeger_traces_search(
         .max_duration
         .map(parse_duration_with_units)
         .transpose()?;
-    let tags_opt = search_params
+    let tags = search_params
         .tags
         .clone()
         .map(|s| {
             serde_json::from_str::<HashMap<String, String>>(&s).map_err(|error| {
-                error!(error = ?error, "failed to convert tags `{:?}`",search_params.tags.clone());
+                let error_msg = format!(
+                    "failed to deserialize tags `{:?}`: {:?}",
+                    search_params.tags, error
+                );
+                error!(error_msg);
                 JaegerError {
                     status: StatusCode::INTERNAL_SERVER_ERROR,
-                    message: "failed to to convert tags".to_string(),
+                    message: error_msg,
                 }
             })
         })
-        .transpose()?;
-    let tags = tags_opt.unwrap_or(Default::default());
+        .transpose()?
+        .unwrap_or(Default::default());
     let query = TraceQueryParameters {
         service_name: search_params.service.unwrap_or_default(),
         operation_name: search_params.operation.unwrap_or_default(),

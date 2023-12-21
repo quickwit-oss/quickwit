@@ -153,8 +153,7 @@ pub(crate) async fn start_grpc_server(
         None
     };
 
-    // Mount gRPC jaeger service if the endpoint in the config and `QuickwitService::Searcher` are
-    // enabled on node.
+    // Mount gRPC jaeger service if present.
     let jaeger_grpc_service = if let Some(jaeger_service) = services.jaeger_service_opt.clone() {
         enabled_grpc_services.insert("jaeger");
         Some(SpanReaderPluginServer::new(jaeger_service))

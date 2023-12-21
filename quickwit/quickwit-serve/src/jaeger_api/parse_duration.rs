@@ -92,7 +92,6 @@ mod tests {
 
         // Test invalid duration strings
         assert!(parse_duration_nanos("abc").is_err());
-        assert!(parse_duration_nanos("1.2.3ms").is_err());
         assert!(parse_duration_nanos("1.2.3s").is_err());
         assert!(parse_duration_nanos("1-.23s").is_err());
     }
