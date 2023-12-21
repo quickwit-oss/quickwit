@@ -46,13 +46,13 @@ Save and run the recipe:
 $ docker compose up
 ```
 
-You should be able to access Quickwit'UI on `http://localhost:7280/` and Grafana's UI on `http://localhost:3000/`.
+You should be able to access Quickwit's UI on `http://localhost:7280/` and Grafana's UI on `http://localhost:3000/`.
 
 ## Setting up the datasource
 
 In Grafana, head to [Data Sources](http://localhost:3000/connections/datasources). If the plugin is installed correctly you should be able to find Quickwit in the list.
 
-We're going to set up a new Quickwit data source lookig at Quickwit's own OpenTelemetry traces, configure the datasource with the following parameters:
+We're going to set up a new Quickwit data source lookig at Quickwit's own OpenTelemetry traces, let's configure the datasource with the following parameters:
 
 - URL : `http://quickwit:7280/api/v1/` _This uses the docker service name as the host_
 - Index ID : `otel-traces-v0_6`
@@ -66,8 +66,29 @@ Save and test, you should obtain a confirmation that the datasource is correctly
 
 ## Creating a dashboard
 
-Then [create a new dashboard](http://localhost:3000/dashboard/new) and add a visualization : you should be able to choose your new quickwit datasource here.
+You can then [create a new dashboard](http://localhost:3000/dashboard/new) and add a visualization : you should be able to choose our new quickwit datasource here.
 
-Quickwit sends itself its own traces, so we should already have data. Configure your panel to taste and apply to see Quickwit in Grafana ! 
+Quickwit sends itself its own traces, so you should already have data to display. Let's configure some panels !
 
-![Quickwit Panel in Grafana Dashboard](../../assets/images/screenshot-grafana-tutorial-otel-traces.png)
+- a Table counting span_names 
+  - **Panel type** : Table
+  - **Query**: _empty_
+  - **Metric** : Count
+  - **Group by** : Terms : `span_name` : order by Count
+- a Bar Chart showing the amount of tantivy searches per hour :
+  - **Panel type**: Time Series
+  - **Query** : "span_name:tantivy_search"
+  - **Metric**: Count
+  - **Group by** : Date Histogram : `span_start_timestamp_nanos` : Interval 1h
+- a Bar Chart showing the amount of ERROR logs per hour for the last 6 hours :
+  - **Panel type**: Bar Chart
+  - **Query**: "service_name:quickwit AND events.event_attributes.level:ERROR"
+  - **Metric**: Count
+  - **Group by** : Terms : `span_start_timestamp_nanos` : Interval 1h
+- another query on the same Bar Chart for WARN logs
+
+## The result
+
+Here's what your first dashboard can look like :
+
+![Quickwit Panel in Grafana Dashboard](../../assets/images/screenshot-grafana-tutorial-dashboard.png)
