@@ -59,6 +59,8 @@ doc_mapping:
   field_mappings:
     - name: trace_id
       type: bytes
+      input_format: hex
+      output_format: hex
       fast: true
     - name: trace_state
       type: text
@@ -86,6 +88,8 @@ doc_mapping:
       indexed: false
     - name: span_id
       type: bytes
+      input_format: hex
+      output_format: hex
     - name: span_kind
       type: u64
     - name: span_name
@@ -130,6 +134,8 @@ doc_mapping:
       indexed: true
     - name: parent_span_id
       type: bytes
+      input_format: hex
+      output_format: hex
       indexed: false
     - name: events
       type: array<json>
