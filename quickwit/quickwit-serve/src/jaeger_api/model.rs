@@ -67,18 +67,19 @@ pub struct TracesSearchQueryParams {
 // Jaeger Model for UI
 // Source: https://github.com/jaegertracing/jaeger/blob/main/model/json/model.go#L82
 
-#[derive(Clone, Default, Debug, PartialEq, Serialize, Deserialize, utoipa::IntoParams)]
+#[derive(Clone, Default, Debug, PartialEq, Serialize, utoipa::IntoParams)]
 #[serde(rename_all = "camelCase")]
 pub struct JaegerTrace {
     #[serde(rename = "traceID")]
-    trace_id: String,
+    #[serde(serialize_with = "serialize_bytes_to_hex")]
+    trace_id: Vec<u8>,
     spans: Vec<JaegerSpan>,
     processes: HashMap<String, JaegerProcess>,
     warnings: Vec<String>,
 }
 
 impl JaegerTrace {
-    pub fn new(trace_id: String, mut spans: Vec<JaegerSpan>) -> Self {
+    pub fn new(trace_id: Vec<u8>, mut spans: Vec<JaegerSpan>) -> Self {
         let processes = Self::build_process_map(&mut spans);
         JaegerTrace {
             trace_id,
@@ -121,13 +122,15 @@ impl JaegerTrace {
 }
 
 #[serde_as]
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct JaegerSpan {
     #[serde(rename = "traceID")]
-    pub trace_id: String,
+    #[serde(serialize_with = "serialize_bytes_to_hex")]
+    pub trace_id: Vec<u8>,
     #[serde(rename = "spanID")]
-    span_id: String,
+    #[serde(serialize_with = "serialize_bytes_to_hex")]
+    span_id: Vec<u8>,
     operation_name: String,
     references: Vec<JaegerSpanRef>,
     #[serde(default)]
@@ -152,8 +155,8 @@ impl TryFrom<Span> for JaegerSpan {
         let tags: Vec<JaegerKeyValue> = span.tags.iter().map(JaegerKeyValue::from).collect();
         let logs: Vec<JaegerLog> = span.logs.iter().map(JaegerLog::from).collect();
         Ok(Self {
-            trace_id: bytes_to_hex_string(&span.trace_id),
-            span_id: bytes_to_hex_string(&span.span_id),
+            trace_id: span.trace_id,
+            span_id: span.span_id,
             operation_name: span.operation_name.clone(),
             references,
             flags: span.flags,
@@ -179,17 +182,19 @@ impl TryFrom<Span> for JaegerSpan {
 #[serde(rename_all = "camelCase")]
 pub struct JaegerSpanRef {
     #[serde(rename = "traceID")]
-    trace_id: String,
+    #[serde(serialize_with = "serialize_bytes_to_hex")]
+    trace_id: Vec<u8>,
     #[serde(rename = "spanID")]
-    span_id: String,
+    #[serde(serialize_with = "serialize_bytes_to_hex")]
+    span_id: Vec<u8>,
     ref_type: String,
 }
 
 impl From<&SpanRef> for JaegerSpanRef {
     fn from(sr: &SpanRef) -> Self {
         Self {
-            trace_id: bytes_to_hex_string(sr.trace_id.as_slice()),
-            span_id: bytes_to_hex_string(sr.span_id.as_slice()),
+            trace_id: sr.trace_id.clone(),
+            span_id: sr.span_id.clone(),
             ref_type: if sr.ref_type == 0 {
                 "CHILD_OF".to_string()
             } else {
@@ -322,8 +327,9 @@ impl From<anyhow::Error> for JaegerError {
     }
 }
 
-fn bytes_to_hex_string(bytes: &[u8]) -> String {
-    format!("{:0>16}", hex::encode(bytes))
+fn serialize_bytes_to_hex<S>(bytes: &Vec<u8>, s: S) -> Result<S::Ok, S::Error>
+where S: serde::Serializer {
+    s.serialize_str(&format!("{:0>16}", hex::encode(bytes)))
 }
 
 fn convert_timestamp_to_microsecs(timestamp: &Timestamp) -> i64 {

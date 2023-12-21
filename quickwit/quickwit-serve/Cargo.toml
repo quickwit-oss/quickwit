@@ -46,7 +46,6 @@ utoipa = { workspace = true }
 opentelemetry = { workspace = true }
 warp = { workspace = true }
 
-
 quickwit-actors = { workspace = true }
 quickwit-cluster = { workspace = true }
 quickwit-common = { workspace = true }
