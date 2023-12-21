@@ -31,12 +31,12 @@ use serde_with::serde_as;
 pub(super) const DEFAULT_NUMBER_OF_TRACES: i32 = 20;
 
 pub(super) fn build_jaeger_traces(spans: Vec<JaegerSpan>) -> anyhow::Result<Vec<JaegerTrace>> {
-    let jaeger_traces = spans
+    let jaeger_traces: Vec<JaegerTrace> = spans
         .into_iter()
         .group_by(|span| span.trace_id.clone())
         .into_iter()
-        .map(|(span_id, group)| JaegerTrace::new(span_id, group.collect_vec()))
-        .collect_vec();
+        .map(|(span_id, group)| JaegerTrace::new(span_id, group.collect()))
+        .collect();
     Ok(jaeger_traces)
 }
 
@@ -147,13 +147,10 @@ pub struct JaegerSpan {
 impl TryFrom<Span> for JaegerSpan {
     type Error = anyhow::Error;
     fn try_from(span: Span) -> Result<Self, Self::Error> {
-        let references = span
-            .references
-            .iter()
-            .map(JaegerSpanRef::from)
-            .collect_vec();
-        let tags = span.tags.iter().map(JaegerKeyValue::from).collect_vec();
-        let logs = span.logs.iter().map(JaegerLog::from).collect_vec();
+        let references: Vec<JaegerSpanRef> =
+            span.references.iter().map(JaegerSpanRef::from).collect();
+        let tags: Vec<JaegerKeyValue> = span.tags.iter().map(JaegerKeyValue::from).collect();
+        let logs: Vec<JaegerLog> = span.logs.iter().map(JaegerLog::from).collect();
         Ok(Self {
             trace_id: bytes_to_hex_string(&span.trace_id),
             span_id: bytes_to_hex_string(&span.span_id),
@@ -173,7 +170,7 @@ impl TryFrom<Span> for JaegerSpan {
             logs,
             process: span.process.map(JaegerProcess::from),
             process_id: None,
-            warnings: span.warnings.iter().map(|s| s.to_string()).collect_vec(),
+            warnings: span.warnings.iter().map(|s| s.to_string()).collect(),
         })
     }
 }
@@ -276,7 +273,7 @@ impl From<&Log> for JaegerLog {
                 .as_ref()
                 .map(convert_timestamp_to_microsecs)
                 .unwrap_or(0),
-            fields: log.fields.iter().map(JaegerKeyValue::from).collect_vec(),
+            fields: log.fields.iter().map(JaegerKeyValue::from).collect(),
         }
     }
 }
@@ -304,7 +301,7 @@ impl From<Process> for JaegerProcess {
         Self {
             service_name: process.service_name.to_string(),
             key: "".to_string(),
-            tags: process.tags.iter().map(JaegerKeyValue::from).collect_vec(),
+            tags: process.tags.iter().map(JaegerKeyValue::from).collect(),
         }
     }
 }
