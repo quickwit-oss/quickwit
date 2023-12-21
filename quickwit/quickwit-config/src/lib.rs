@@ -23,7 +23,7 @@ use std::str::FromStr;
 
 use anyhow::{bail, Context};
 use json_comments::StripComments;
-use once_cell::sync::OnceCell;
+use once_cell::sync::Lazy;
 use quickwit_common::net::is_valid_hostname;
 use quickwit_common::uri::Uri;
 use regex::Regex;
@@ -105,12 +105,10 @@ pub struct ConfigApiSchemas;
 
 /// Checks whether an identifier conforms to Quickwit object naming conventions.
 pub fn validate_identifier(label: &str, value: &str) -> anyhow::Result<()> {
-    static IDENTIFIER_REGEX: OnceCell<Regex> = OnceCell::new();
-
-    if IDENTIFIER_REGEX
-        .get_or_init(|| Regex::new(r"^[a-zA-Z][a-zA-Z0-9-_\.]{2,254}$").expect("Failed to compile regular expression. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues."))
-        .is_match(value)
-    {
+    static IDENTIFIER_REGEX: Lazy<Regex> = Lazy::new(|| {
+        Regex::new(r"^[a-zA-Z][a-zA-Z0-9-_\.]{2,254}$").expect("regular expression should compile")
+    });
+    if IDENTIFIER_REGEX.is_match(value) {
         return Ok(());
     }
     bail!(
@@ -123,34 +121,30 @@ pub fn validate_identifier(label: &str, value: &str) -> anyhow::Result<()> {
 /// Index ID patterns accept the same characters as identifiers AND accept `*`
 /// chars to allow for glob-like patterns.
 pub fn validate_index_id_pattern(pattern: &str) -> anyhow::Result<()> {
-    static IDENTIFIER_REGEX_WITH_GLOB_PATTERN: OnceCell<Regex> = OnceCell::new();
-
-    if !IDENTIFIER_REGEX_WITH_GLOB_PATTERN
-        .get_or_init(|| Regex::new(r"^[a-zA-Z\*][a-zA-Z0-9-_\.\*]{0,254}$").expect("Failed to compile regular expression. This should never happen! Please, report on https://github.com/quickwit-oss/quickwit/issues."))
-        .is_match(pattern)
-    {
+    static IDENTIFIER_REGEX_WITH_GLOB_PATTERN: Lazy<Regex> = Lazy::new(|| {
+        Regex::new(r"^[a-zA-Z\*][a-zA-Z0-9-_\.\*]{0,254}$")
+            .expect("regular expression should compile")
+    });
+    if !IDENTIFIER_REGEX_WITH_GLOB_PATTERN.is_match(pattern) {
         bail!(
-            "index ID pattern `{pattern}` is invalid. patterns must match the following regular \
+            "index ID pattern `{pattern}` is invalid: patterns must match the following regular \
              expression: `^[a-zA-Z\\*][a-zA-Z0-9-_\\.\\*]{{0,254}}$`"
         );
     }
-
     // Forbid multiple stars in the pattern to force the user making simpler patterns
     // as multiple stars does not bring any value.
     if pattern.contains("**") {
         bail!(
-            "index ID pattern `{pattern}` is invalid. patterns must not contain multiple \
+            "index ID pattern `{pattern}` is invalid: patterns must not contain multiple \
              consecutive `*`"
         );
     }
-
     // If there is no star in the pattern, we need at least 3 characters.
     if !pattern.contains('*') && pattern.len() < 3 {
         bail!(
-            "index ID pattern `{pattern}` is invalid. an index ID must have at least 3 characters"
+            "index ID pattern `{pattern}` is invalid: an index ID must have at least 3 characters"
         );
     }
-
     Ok(())
 }
 
@@ -283,6 +277,6 @@ mod tests {
         assert!(validate_index_id_pattern("foo!")
             .unwrap_err()
             .to_string()
-            .contains("index ID pattern `foo!` is invalid."));
+            .contains("index ID pattern `foo!` is invalid:"));
     }
 }

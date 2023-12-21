@@ -20,7 +20,6 @@
 use std::convert::TryFrom;
 use std::sync::Arc;
 
-use anyhow::Context;
 use futures::stream::StreamExt;
 use hyper::header::HeaderValue;
 use hyper::HeaderMap;
@@ -57,21 +56,27 @@ use crate::{with_arg, BodyFormat};
 pub struct SearchApi;
 
 pub(crate) async fn extract_index_id_patterns(
-    comma_separated_index_patterns: String,
+    comma_separated_index_id_patterns: String,
 ) -> Result<Vec<String>, Rejection> {
-    let index_pattern = percent_decode_str(&comma_separated_index_patterns)
-        .decode_utf8()
-        .context("index pattern does not contain valid utf8 characters")
-        .map_err(|error| crate::rest::InvalidArgument(error.to_string()))?;
+    let percent_decoded_comma_separated_index_id_patterns =
+        percent_decode_str(&comma_separated_index_id_patterns)
+            .decode_utf8()
+            .map_err(|error| {
+                let message = format!(
+                    "failed to percent decode comma-separated index ID patterns \
+                     `{comma_separated_index_id_patterns}`: {error}"
+                );
+                crate::rest::InvalidArgument(message)
+            })?;
+    let mut index_id_patterns = Vec::new();
 
-    let mut index_ids_patterns = Vec::new();
-    for index_id_pattern in index_pattern.split(',').collect::<Vec<_>>() {
+    for index_id_pattern in percent_decoded_comma_separated_index_id_patterns.split(',') {
         validate_index_id_pattern(index_id_pattern)
             .map_err(|error| crate::rest::InvalidArgument(error.to_string()))?;
-        index_ids_patterns.push(index_id_pattern.to_string());
+        index_id_patterns.push(index_id_pattern.to_string());
     }
-    assert!(!index_ids_patterns.is_empty());
-    Ok(index_ids_patterns)
+    assert!(!index_id_patterns.is_empty());
+    Ok(index_id_patterns)
 }
 
 #[derive(Debug, Default, Eq, PartialEq, Deserialize, utoipa::ToSchema)]
@@ -654,7 +659,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             rejection.0,
-            "index ID pattern `quickwit-demo-index**` is invalid. patterns must not contain \
+            "index ID pattern `quickwit-demo-index**` is invalid: patterns must not contain \
              multiple consecutive `*`"
         );
     }
