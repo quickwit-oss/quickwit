@@ -201,10 +201,20 @@ async fn jaeger_traces_search(
         .max_duration
         .map(parse_duration_with_units)
         .transpose()?;
-    let tags = search_params
+    let tags_opt = search_params
         .tags
-        .map(|s| serde_json::from_str::<HashMap<String, String>>(&s).unwrap_or_default())
-        .unwrap_or(Default::default());
+        .clone()
+        .map(|s| {
+            serde_json::from_str::<HashMap<String, String>>(&s).map_err(|error| {
+                error!(error = ?error, "failed to convert tags `{:?}`",search_params.tags.clone());
+                JaegerError {
+                    status: StatusCode::INTERNAL_SERVER_ERROR,
+                    message: "failed to to convert tags".to_string(),
+                }
+            })
+        })
+        .transpose()?;
+    let tags = tags_opt.unwrap_or(Default::default());
     let query = TraceQueryParameters {
         service_name: search_params.service.unwrap_or_default(),
         operation_name: search_params.operation.unwrap_or_default(),
@@ -390,7 +400,21 @@ mod tests {
         let mut mock_search_service = MockSearchService::new();
         mock_search_service
             .expect_root_search()
-            .withf(|req| req.index_id_patterns == vec![OTEL_TRACES_INDEX_ID.to_string()])
+            .withf(|req| {
+                assert!(req.query_ast.contains(
+                    "{\"type\":\"term\",\"field\":\"resource_attributes.tag.first\",\"value\":\"\
+                     common\"}"
+                ));
+                assert!(req.query_ast.contains(
+                    "{\"type\":\"term\",\"field\":\"resource_attributes.tag.second\",\"value\":\"\
+                     true\"}"
+                ));
+                assert_eq!(
+                    req.index_id_patterns,
+                    vec![OTEL_TRACES_INDEX_ID.to_string()]
+                );
+                true
+            })
             .return_once(|_| {
                 Ok(quickwit_proto::search::SearchResponse {
                     num_hits: 0,
