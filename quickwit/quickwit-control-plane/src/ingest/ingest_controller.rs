@@ -23,6 +23,7 @@ use std::future::Future;
 use std::time::Duration;
 
 use fnv::{FnvHashMap, FnvHashSet};
+use futures::stream::FuturesUnordered;
 use itertools::Itertools;
 use quickwit_common::{PrettySample, Progress};
 use quickwit_ingest::{IngesterPool, LocalShardsUpdate};
@@ -476,7 +477,8 @@ impl IngestController {
                     .push(shard.clone());
             }
         }
-        // TODO: Init shards in parallel.
+        let init_shards_futures = FuturesUnordered::new();
+
         for (leader_id, shards) in per_leader_opened_shards {
             let init_shards_request = InitShardsRequest { shards };
 
@@ -484,9 +486,26 @@ impl IngestController {
                 warn!("failed to init shards: ingester `{leader_id}` is unavailable");
                 continue;
             };
-            progress
-                .protect_future(leader.init_shards(init_shards_request))
-                .await?;
+            let init_shards_future = async move { leader.init_shards(init_shards_request).await };
+            init_shards_futures.push(init_shards_future);
+        }
+        let num_opened_shards = open_shards_response.subresponses.iter().map(|subresponse| subresponse.opened_shards.len()).sum();
+        let successes = Vec::with_capacity(num_opened_shards);
+        let mut failures = Vec::new();
+
+        while let Some(init_shards_response) = progress
+            .protect_future(init_shards_futures.next())
+            .await
+            .transpose()?
+        {
+            for init_shards_subresponse in init_shards_response.subresponses {
+                if let Err(error) = init_shards_subresponse.error {
+                    warn!(
+                        "failed to init shards: {error}",
+                        error = error,
+                    );
+                }
+            }
         }
         Ok(())
     }

@@ -351,7 +351,12 @@ pub struct InitShardsRequest {
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
-pub struct InitShardsResponse {}
+pub struct InitShardsResponse {
+    #[prost(message, repeated, tag = "1")]
+    pub successes: ::prost::alloc::vec::Vec<super::Shard>,
+    #[prost(message, repeated, tag = "2")]
+    pub failures: ::prost::alloc::vec::Vec<super::Shard>,
+}
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]

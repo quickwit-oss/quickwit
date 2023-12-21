@@ -269,10 +269,7 @@ impl Ingester {
             Err(CreateQueueError::AlreadyExists) => panic!("queue should not exist"),
             Err(CreateQueueError::IoError(io_error)) => {
                 // TODO: Close all shards and set readiness to false.
-                error!(
-                    "failed to create mrecordlog queue `{}`: {}",
-                    queue_id, io_error
-                );
+                error!("failed to create WAL queue `{queue_id}`: {io_error}");
                 return Err(IngestV2Error::IngesterUnavailable {
                     ingester_id: shard.leader_id.into(),
                 });
@@ -282,26 +279,20 @@ impl Ingester {
         let rate_meter = RateMeter::default();
         state
             .rate_trackers
-            .insert(queue_id, (rate_limiter, rate_meter));
+            .insert(queue_id.clone(), (rate_limiter, rate_meter));
 
-        let primary_shard = if let Some(follower_id) = &shard.follower_id {
-            let leader_id: NodeId = shard.leader_id.clone().into();
-            let follower_id: NodeId = follower_id.clone().into();
-
-            let replication_client = self
-                .init_replication_stream(
-                    &mut state.replication_streams,
-                    leader_id,
-                    follower_id.clone(),
-                )
-                .await?;
-
-            if let Err(error) = replication_client.init_replica(shard).await {
-                error!("failed to initialize replica shard: {error}",);
-                return Err(IngestV2Error::Internal(format!(
-                    "failed to initialize replica shard: {error}"
-                )));
+        let primary_shard = if let Some(follower_id) = shard.follower_id.clone() {
+            if let Err(error) = self
+                .init_replica_shard(&mut state.replication_streams, shard)
+                .await
+            {
+                if let Err(io_error) = force_delete_queue(&mut state.mrecordlog, &queue_id).await {
+                    error!("failed to delete dangling WAL queue `{queue_id}`: {io_error}");
+                }
+                return Err(error);
             }
+            let follower_id: NodeId = follower_id.into();
+
             IngesterShard::new_primary(
                 follower_id,
                 ShardState::Open,
@@ -312,6 +303,34 @@ impl Ingester {
             IngesterShard::new_solo(ShardState::Open, Position::Beginning, Position::Beginning)
         };
         entry.insert(primary_shard);
+        Ok(())
+    }
+
+    /// Initializes a replica shard.
+    ///
+    /// # Panics
+    ///
+    /// Panics if the shard's follower ID is not set.
+    async fn init_replica_shard(
+        &self,
+        replication_streams: &mut HashMap<FollowerId, ReplicationStreamTaskHandle>,
+        shard: Shard,
+    ) -> IngestV2Result<()> {
+        let leader_id: NodeId = shard.leader_id.clone().into();
+        let follower_id: NodeId = shard
+            .follower_id
+            .clone()
+            .expect("follower ID should be set")
+            .into();
+        let replication_client = self
+            .init_replication_stream(replication_streams, leader_id, follower_id)
+            .await?;
+        replication_client
+            .init_replica(shard)
+            .await
+            .map_err(|error| {
+                IngestV2Error::Internal(format!("failed to initialize replica shard: {error}"))
+            })?;
         Ok(())
     }
 
@@ -363,8 +382,8 @@ impl Ingester {
             .expect("first message should be an open response");
 
         let replication_stream_task_handle = ReplicationStreamTask::spawn(
-            leader_id.clone(),
-            follower_id.clone(),
+            leader_id,
+            follower_id,
             syn_replication_stream_tx,
             ack_replication_stream,
         );
@@ -751,16 +770,29 @@ impl Ingester {
         &mut self,
         init_shards_request: InitShardsRequest,
     ) -> IngestV2Result<InitShardsResponse> {
+        let mut successes = Vec::with_capacity(init_shards_request.shards.len());
+        let mut failures = Vec::new();
+
         let mut state_guard = with_lock_metrics!(self.state.write().await, "init_shards", "write");
 
         if state_guard.status != IngesterStatus::Ready {
             return Err(IngestV2Error::Internal("node decommissioned".to_string()));
         }
-
         for shard in init_shards_request.shards {
-            self.init_primary_shard(&mut state_guard, shard).await?;
+            if self
+                .init_primary_shard(&mut state_guard, shard.clone())
+                .await
+                .is_ok()
+            {
+                successes.push(shard);
+            } else {
+                failures.push(shard);
+            }
         }
-        Ok(InitShardsResponse {})
+        Ok(InitShardsResponse {
+            successes,
+            failures,
+        })
     }
 
     async fn truncate_shards_inner(
@@ -1333,6 +1365,56 @@ mod tests {
             .assert_records_eq(&queue_id_02, .., &[(1, "\0\0test-doc-bar")]);
 
         state_guard.rate_trackers.contains_key(&queue_id_02);
+    }
+
+    #[tokio::test]
+    async fn test_ingester_init_shards() {
+        let (_ingester_ctx, mut ingester) = IngesterForTest::default().build().await;
+
+        let init_shards_request = InitShardsRequest::default();
+        ingester.init_shards(init_shards_request).await.unwrap();
+
+        let init_shards_request = InitShardsRequest {
+            shards: vec![
+                Shard {
+                    index_uid: "test-index:0".to_string(),
+                    source_id: "test-source".to_string(),
+                    shard_id: 1,
+                    shard_state: ShardState::Open as i32,
+                    leader_id: "test-leader".to_string(),
+                    ..Default::default()
+                },
+                Shard {
+                    index_uid: "test-index:0".to_string(),
+                    source_id: "test-source".to_string(),
+                    shard_id: 2,
+                    shard_state: ShardState::Open as i32,
+                    leader_id: "test-leader".to_string(),
+                    follower_id: Some("test-follower".to_string()),
+                    ..Default::default()
+                },
+            ],
+        };
+        let init_shards_response = ingester.init_shards(init_shards_request).await.unwrap();
+        assert_eq!(init_shards_response.successes.len(), 1);
+        assert_eq!(init_shards_response.successes[0].shard_id, 1);
+
+        assert_eq!(init_shards_response.failures.len(), 1);
+        assert_eq!(init_shards_response.failures[0].shard_id, 2);
+
+        let state_guard = ingester.state.read().await;
+        assert_eq!(state_guard.shards.len(), 1);
+
+        let queue_id = queue_id("test-index:0", "test-source", 1);
+        let shard = state_guard.shards.get(&queue_id).unwrap();
+        shard.assert_is_solo();
+        shard.assert_is_open();
+        shard.assert_replication_position(Position::Beginning);
+        shard.assert_truncation_position(Position::Beginning);
+
+        let queues: Vec<&str> = state_guard.mrecordlog.list_queues().collect();
+        assert_eq!(queues.len(), 1);
+        assert_eq!(queues[0], queue_id);
     }
 
     #[tokio::test]

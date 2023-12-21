@@ -256,6 +256,8 @@ message InitShardsRequest {
 }
 
 message InitShardsResponse {
+  repeated quickwit.ingest.Shard  successes = 1;
+  repeated quickwit.ingest.Shard  failures = 2;
 }
 
 message CloseShardsRequest {
