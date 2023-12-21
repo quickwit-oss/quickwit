@@ -152,7 +152,7 @@ struct RequestMetadata {
     timestamp_field_opt: Option<String>,
     query_ast_resolved: QueryAst,
     indexes_meta_for_leaf_search: IndexesMetasForLeafSearch,
-    sort_fields_are_datetime: Vec<bool>,
+    sort_fields_is_datetime: HashMap<String, bool>,
 }
 
 /// Validates request against each index's doc mapper and ensures that:
@@ -178,8 +178,7 @@ fn validate_request_and_build_metadata(
         HashMap::new();
     let mut query_ast_resolved_opt: Option<QueryAst> = None;
     let mut timestamp_field_opt: Option<String> = None;
-    let mut sort_fields_are_datetime_opt: Vec<Option<bool>> =
-        vec![None; search_request.sort_fields.len()];
+    let mut sort_fields_is_datetime: HashMap<String, bool> = HashMap::new();
 
     for index_metadata in indexes_metadata {
         let doc_mapper = build_doc_mapper(
@@ -231,7 +230,7 @@ fn validate_request_and_build_metadata(
         validate_sort_field_types(
             &schema,
             &search_request.sort_fields,
-            &mut sort_fields_are_datetime_opt,
+            &mut sort_fields_is_datetime,
         )?;
 
         // Validates the query by effectively building it against the current schema.
@@ -255,18 +254,11 @@ fn validate_request_and_build_metadata(
         )
     })?;
 
-    let sort_fields_are_datetime: Vec<bool> = sort_fields_are_datetime_opt
-        .into_iter()
-        .map(|sort_field_is_datetime_opt| {
-            sort_field_is_datetime_opt
-                .expect("sort field is datetime must be set when `validate_sort_field_types`")
-        })
-        .collect();
     Ok(RequestMetadata {
         timestamp_field_opt,
         query_ast_resolved,
         indexes_meta_for_leaf_search,
-        sort_fields_are_datetime,
+        sort_fields_is_datetime,
     })
 }
 
@@ -274,34 +266,30 @@ fn validate_request_and_build_metadata(
 fn validate_sort_field_types(
     schema: &Schema,
     sort_fields: &[SortField],
-    sort_fields_are_datetime_opt: &mut [Option<bool>],
+    sort_field_is_datetime: &mut HashMap<String, bool>,
 ) -> crate::Result<()> {
-    assert_eq!(sort_fields.len(), sort_fields_are_datetime_opt.len());
-    for (sort_field, sort_field_is_datetime_opt) in sort_fields
-        .iter()
-        .zip(sort_fields_are_datetime_opt.iter_mut())
-    {
-        if let Some(sort_field_entry) = get_sort_by_field_entry(&sort_field.field_name, schema)? {
+    for sort_field in sort_fields.iter() {
+        if let Some(sort_field_entry) = get_sort_by_field_entry(&sort_field.field_name, &schema)? {
             validate_sort_by_field_type(
                 sort_field_entry,
                 sort_field.sort_datetime_format.is_some(),
             )?;
-
             // If sort field type is a date, ensure it's true for all indexes.
-            match sort_field_is_datetime_opt {
-                Some(is_date_type) if *is_date_type != sort_field_entry.field_type().is_date() => {
+            if let Some(is_datetime) = sort_field_is_datetime.get(&sort_field.field_name) {
+                if *is_datetime != sort_field_entry.field_type().is_date() {
                     return Err(SearchError::InvalidQuery(format!(
                         "sort datetime field `{}` must be of type datetime on all indexes",
                         sort_field_entry.name(),
                     )));
                 }
-                None => {
-                    *sort_field_is_datetime_opt = Some(sort_field_entry.field_type().is_date());
-                }
-                _ => {}
+            } else {
+                sort_field_is_datetime.insert(
+                    sort_field.field_name.to_string(),
+                    sort_field_entry.field_type().is_date(),
+                );
             }
         } else {
-            *sort_field_is_datetime_opt = Some(false);
+            sort_field_is_datetime.insert(sort_field.field_name.to_string(), false);
         }
     }
     Ok(())
@@ -972,7 +960,7 @@ pub async fn root_search(
     // convert search_after datetime values from input datetime format to nanos.
     convert_search_after_datetime_values(
         &mut search_request,
-        &request_metadata.sort_fields_are_datetime,
+        &request_metadata.sort_fields_is_datetime,
     )?;
 
     // update_search_after_datetime_in_nanos(&mut search_request)?;
@@ -1016,20 +1004,13 @@ pub async fn root_search(
 /// `sort_fields_are_datetime_opt` must be of the same length as `search_request.sort_fields`.
 fn convert_search_after_datetime_values(
     search_request: &mut SearchRequest,
-    sort_fields_are_datetime: &[bool],
+    sort_fields_is_datetime: &HashMap<String, bool>,
 ) -> crate::Result<()> {
-    assert_eq!(
-        search_request.sort_fields.len(),
-        sort_fields_are_datetime.len()
-    );
-    // By default, sort fields on datetime fields are in milliseconds. This is the default behavior
-    // of ES on date field.
-    for (idx, sort_field_is_datetime) in sort_fields_are_datetime.iter().enumerate() {
-        if *sort_field_is_datetime {
-            let sort_field = search_request
-                .sort_fields
-                .get_mut(idx)
-                .expect("sort field must be set");
+    for sort_field in search_request.sort_fields.iter_mut() {
+        if *sort_fields_is_datetime
+            .get(&sort_field.field_name)
+            .unwrap_or(&false)
+        {
             if sort_field.sort_datetime_format.is_none() {
                 sort_field.sort_datetime_format =
                     Some(SortDatetimeFormat::UnixTimestampMillis as i32);
@@ -1548,8 +1529,15 @@ mod tests {
         );
         assert_eq!(request_metadata.query_ast_resolved, request_query_ast);
         assert_eq!(request_metadata.indexes_meta_for_leaf_search.len(), 3);
-        assert_eq!(request_metadata.sort_fields_are_datetime.len(), 2);
-        assert_eq!(request_metadata.sort_fields_are_datetime, vec![true, false]);
+        assert_eq!(request_metadata.sort_fields_is_datetime.len(), 2);
+        assert_eq!(
+            request_metadata.sort_fields_is_datetime.get("timestamp"),
+            Some(&true)
+        );
+        assert_eq!(
+            request_metadata.sort_fields_is_datetime.get("_doc"),
+            Some(&false)
+        );
     }
 
     #[test]
@@ -1783,9 +1771,10 @@ mod tests {
         schema_builder.add_date_field("timestamp", FAST);
         schema_builder.add_u64_field("id", FAST);
         let schema = schema_builder.build();
-        let mut sort_field_are_datetime = [None, None];
+        let mut sort_field_are_datetime = HashMap::new();
         validate_sort_field_types(&schema, &sort_fields, &mut sort_field_are_datetime).unwrap();
-        assert_eq!(sort_field_are_datetime, [None, None]);
+        assert_eq!(sort_field_are_datetime.get("_doc"), Some(&false));
+        assert_eq!(sort_field_are_datetime.get("_shard_doc"), Some(&false));
     }
 
     #[test]
@@ -1806,9 +1795,10 @@ mod tests {
         schema_builder.add_date_field("timestamp", FAST);
         schema_builder.add_u64_field("id", FAST);
         let schema = schema_builder.build();
-        let mut sort_field_are_datetime = [None, None];
+        let mut sort_field_are_datetime = HashMap::new();
         validate_sort_field_types(&schema, &sort_fields, &mut sort_field_are_datetime).unwrap();
-        assert_eq!(sort_field_are_datetime, [Some(true), Some(false)]);
+        assert_eq!(sort_field_are_datetime.get("timestamp"), Some(&true));
+        assert_eq!(sort_field_are_datetime.get("id"), Some(&false));
     }
 
     #[test]
@@ -1830,7 +1820,9 @@ mod tests {
         schema_builder.add_u64_field("id", FAST);
         let schema = schema_builder.build();
         {
-            let mut sort_field_are_datetime = [Some(false), None];
+            let mut sort_field_are_datetime = HashMap::new();
+            sort_field_are_datetime.insert("timestamp".to_string(), false);
+            sort_field_are_datetime.insert("id".to_string(), false);
             let error =
                 validate_sort_field_types(&schema, &sort_fields, &mut sort_field_are_datetime)
                     .unwrap_err();
@@ -1840,7 +1832,8 @@ mod tests {
             );
         }
         {
-            let mut sort_field_are_datetime = [None, Some(true)];
+            let mut sort_field_are_datetime = HashMap::new();
+            sort_field_are_datetime.insert("id".to_string(), true);
             let error =
                 validate_sort_field_types(&schema, &sort_fields, &mut sort_field_are_datetime)
                     .unwrap_err();
@@ -1972,7 +1965,22 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_sort_by_fields_and_search_after_invalid_2() {
+    fn test_validate_sort_by_field_type_invalid() {
+        // sort non-datetime field with a datetime format is invalid.
+        let mut schema_builder = Schema::builder();
+        let field = schema_builder.add_u64_field("timestamp", FAST);
+        let schema = schema_builder.build();
+        let field_entry = schema.get_field_entry(field);
+        let error = validate_sort_by_field_type(field_entry, true).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "Invalid argument: sort by field with a timestamp format must be a datetime field and \
+             the field `timestamp` is not"
+        );
+    }
+
+    #[test]
+    fn test_validate_sort_by_fields_and_search_after_invalid_3() {
         // 3 sort fields is not possible.
         let sort_fields = vec![
             SortField {
