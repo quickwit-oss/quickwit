@@ -269,7 +269,7 @@ fn validate_sort_field_types(
     sort_field_is_datetime: &mut HashMap<String, bool>,
 ) -> crate::Result<()> {
     for sort_field in sort_fields.iter() {
-        if let Some(sort_field_entry) = get_sort_by_field_entry(&sort_field.field_name, &schema)? {
+        if let Some(sort_field_entry) = get_sort_by_field_entry(&sort_field.field_name, schema)? {
             validate_sort_by_field_type(
                 sort_field_entry,
                 sort_field.sort_datetime_format.is_some(),
@@ -1010,11 +1010,9 @@ fn convert_search_after_datetime_values(
         if *sort_fields_is_datetime
             .get(&sort_field.field_name)
             .unwrap_or(&false)
+            && sort_field.sort_datetime_format.is_none()
         {
-            if sort_field.sort_datetime_format.is_none() {
-                sort_field.sort_datetime_format =
-                    Some(SortDatetimeFormat::UnixTimestampMillis as i32);
-            }
+            sort_field.sort_datetime_format = Some(SortDatetimeFormat::UnixTimestampMillis as i32);
         }
     }
     if let Some(partial_hit) = search_request.search_after.as_mut() {
