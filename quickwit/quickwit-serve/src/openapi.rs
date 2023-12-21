@@ -34,6 +34,7 @@ use crate::health_check_api::HealthCheckApi;
 use crate::index_api::IndexApi;
 use crate::indexing_api::IndexingApi;
 use crate::ingest_api::{IngestApi, IngestApiSchemas};
+use crate::jaeger_api::JaegerApi;
 use crate::metrics_api::MetricsApi;
 use crate::node_info_handler::NodeInfoApi;
 use crate::search_api::SearchApi;
@@ -74,6 +75,7 @@ pub fn build_docs() -> utoipa::openapi::OpenApi {
         Tag::new("Node Info"),
         Tag::new("Indexing"),
         Tag::new("Splits"),
+        Tag::new("Jaeger"),
     ];
     docs_base.tags = Some(tags);
 
@@ -89,6 +91,7 @@ pub fn build_docs() -> utoipa::openapi::OpenApi {
     docs_base
         .merge_components_and_paths(ElasticCompatibleApi::openapi().with_path_prefix("/api/v1"));
     docs_base.merge_components_and_paths(NodeInfoApi::openapi().with_path_prefix("/api/v1"));
+    docs_base.merge_components_and_paths(JaegerApi::openapi().with_path_prefix("/api/v1"));
 
     // Schemas
     docs_base.merge_components_and_paths(MetastoreApiSchemas::openapi());

@@ -23,7 +23,6 @@ use std::sync::Arc;
 
 use quickwit_common::tower::BoxFutureInfaillible;
 use quickwit_config::service::QuickwitService;
-use quickwit_jaeger::JaegerService;
 use quickwit_opentelemetry::otlp::{OtlpGrpcLogsService, OtlpGrpcTracesService};
 use quickwit_proto::indexing::IndexingServiceClient;
 use quickwit_proto::jaeger::storage::v1::span_reader_plugin_server::SpanReaderPluginServer;
@@ -153,18 +152,11 @@ pub(crate) async fn start_grpc_server(
     } else {
         None
     };
-    let enable_jaeger_endpoint = services.node_config.jaeger_config.enable_endpoint;
-    let jaeger_grpc_service = if enable_jaeger_endpoint
-        && services
-            .node_config
-            .is_service_enabled(QuickwitService::Searcher)
-    {
+
+    // Mount gRPC jaeger service if present.
+    let jaeger_grpc_service = if let Some(jaeger_service) = services.jaeger_service_opt.clone() {
         enabled_grpc_services.insert("jaeger");
-        let search_service = services.search_service.clone();
-        Some(SpanReaderPluginServer::new(JaegerService::new(
-            services.node_config.jaeger_config.clone(),
-            search_service,
-        )))
+        Some(SpanReaderPluginServer::new(jaeger_service))
     } else {
         None
     };

@@ -27,6 +27,7 @@ mod health_check_api;
 mod index_api;
 mod indexing_api;
 mod ingest_api;
+mod jaeger_api;
 mod json_api_response;
 mod metrics;
 mod metrics_api;
@@ -76,6 +77,7 @@ use quickwit_ingest::{
     GetMemoryCapacity, IngestApiService, IngestRequest, IngestRouter, IngestServiceClient,
     Ingester, IngesterPool, LocalShardsUpdate,
 };
+use quickwit_jaeger::JaegerService;
 use quickwit_janitor::{start_janitor_service, JanitorService};
 use quickwit_metastore::{
     ControlPlaneMetastore, ListIndexesMetadataResponseExt, MetastoreResolver,
@@ -130,6 +132,7 @@ struct QuickwitServices {
     pub ingest_router_service: IngestRouterServiceClient,
     pub ingester_service_opt: Option<IngesterServiceClient>,
     pub janitor_service_opt: Option<Mailbox<JanitorService>>,
+    pub jaeger_service_opt: Option<JaegerService>,
     /// We do have a search service even on nodes that are not running `search`.
     /// It is only used to serve the rest API calls and will only execute
     /// the root requests.
@@ -483,6 +486,18 @@ pub async fn serve_quickwit(
         None
     };
 
+    let jaeger_service_opt = if node_config.jaeger_config.enable_endpoint
+        && node_config.is_service_enabled(QuickwitService::Searcher)
+    {
+        let search_service = search_service.clone();
+        Some(JaegerService::new(
+            node_config.jaeger_config.clone(),
+            search_service,
+        ))
+    } else {
+        None
+    };
+
     let grpc_listen_addr = node_config.grpc_listen_addr;
     let rest_listen_addr = node_config.rest_config.listen_addr;
     let quickwit_services: Arc<QuickwitServices> = Arc::new(QuickwitServices {
@@ -499,6 +514,7 @@ pub async fn serve_quickwit(
         ingest_service,
         ingester_service_opt: ingester_service_opt.clone(),
         janitor_service_opt,
+        jaeger_service_opt,
         search_service,
     });
     // Setup and start gRPC server.
