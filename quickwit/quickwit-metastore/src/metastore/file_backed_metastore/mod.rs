@@ -1902,7 +1902,7 @@ mod tests {
             &build_regex_exprs_from_pattern("index-**-1")
                 .unwrap_err()
                 .to_string(),
-            "index ID pattern `index-**-1` is invalid. patterns must not contain multiple \
+            "index ID pattern `index-**-1` is invalid: patterns must not contain multiple \
              consecutive `*`",
         );
         assert!(build_regex_exprs_from_pattern("-index-1").is_err());
