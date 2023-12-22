@@ -296,7 +296,6 @@ pub async fn test_metastore_publish_splits<
             .publish_splits(publish_splits_request)
             .await
             .unwrap_err();
-        println!("{:?}", error);
         assert!(matches!(
             error,
             MetastoreError::FailedPrecondition {
