@@ -30,10 +30,11 @@ use quickwit_proto::indexing::{
     ApplyIndexingPlanRequest, CpuCapacity, IndexingService, IndexingTask, PIPELINE_FULL_CAPACITY,
 };
 use quickwit_proto::metastore::SourceType;
-use quickwit_proto::types::{NodeId, ShardId};
+use quickwit_proto::types::{IndexUid, NodeId, ShardId};
 use scheduling::{SourceToSchedule, SourceToScheduleType};
 use serde::Serialize;
 use tracing::{debug, error, info, warn};
+use ulid::Ulid;
 
 use crate::indexing_plan::PhysicalIndexingPlan;
 use crate::indexing_scheduler::scheduling::build_physical_indexing_plan;
@@ -224,6 +225,16 @@ impl IndexingScheduler {
             &indexer_id_to_cpu_capacities,
             self.state.last_applied_physical_plan.as_ref(),
         );
+        println!("\n\n\n\n\n\n\n===============");
+        println!("# CURRENT PLAN");
+        println!("---------------");
+        display_plan(&new_physical_plan);
+        println!("# PREVIOUS PLAN");
+        println!("---------------");
+        if let Some(last_applied_plan) = self.state.last_applied_physical_plan.as_ref() {
+            display_plan(last_applied_plan);
+        }
+        println!("===============");
         if let Some(last_applied_plan) = &self.state.last_applied_physical_plan {
             let plans_diff = get_indexing_plans_diff(
                 last_applied_plan.indexing_tasks_per_indexer(),
@@ -231,6 +242,7 @@ impl IndexingScheduler {
             );
             // No need to apply the new plan as it is the same as the old one.
             if plans_diff.is_empty() {
+                info!("no difference");
                 return;
             }
         }
@@ -321,6 +333,29 @@ impl IndexingScheduler {
         self.state.num_applied_physical_indexing_plan += 1;
         self.state.last_applied_plan_timestamp = Some(Instant::now());
         self.state.last_applied_physical_plan = Some(new_physical_plan);
+    }
+}
+
+fn display_plan(plan: &PhysicalIndexingPlan) {
+    for (node, tasks) in plan.indexing_tasks_per_indexer() {
+        println!("{node}");
+        for task in tasks {
+            if task.source_id == "_ingest-source" {
+                if task.shard_ids.is_empty() {
+                    continue;
+                }
+                let index_uid = IndexUid::parse(&task.index_uid).unwrap();
+                println!(
+                    "   {:.5}:{} => {:?}",
+                    task.pipeline_uid
+                        .as_ref()
+                        .map(|pipeline_uid| pipeline_uid.0)
+                        .unwrap_or(Ulid::new()),
+                    index_uid.index_id(),
+                    task.shard_ids
+                );
+            }
+        }
     }
 }
 
