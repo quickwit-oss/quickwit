@@ -2348,7 +2348,7 @@ mod tests {
         {
             let agg_result_json = r#"[
                 {
-                    "trace_id": "AQEBAQEBAQEBAQEBAQEBAQ==",
+                    "trace_id": "01010101010101010101010101010101",
                     "span_timestamp": 1684857492783747000
                 }
             ]"#;
@@ -2359,11 +2359,11 @@ mod tests {
         {
             let agg_result_json = r#"[
                 {
-                    "trace_id": "AQIDBAUGBwgJCgsMDQ4PEA==",
+                    "trace_id": "0102030405060708090a0b0c0d0e0f10",
                     "span_timestamp": 1684857492783747000
                 },
                 {
-                    "trace_id": "AgICAgICAgICAgICAgICAg==",
+                    "trace_id": "02020202020202020202020202020202",
                     "span_timestamp": 1684857826019627000
                 }
             ]"#;
