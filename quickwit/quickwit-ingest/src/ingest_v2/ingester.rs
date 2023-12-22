@@ -965,7 +965,7 @@ impl IngesterService for Ingester {
             info!(shard=%shard, "currently in shard hashmap");
         }
         for queue in state_guard.mrecordlog.list_queues() {
-            info!(queue=queue, "currently in mrecordlog");
+            info!(queue = queue, "currently in mrecordlog");
         }
         info!(queues=?remove_queue_ids, "removing queues");
         for queue_id in remove_queue_ids {

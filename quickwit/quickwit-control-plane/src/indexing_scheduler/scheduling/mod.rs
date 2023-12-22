@@ -396,7 +396,6 @@ fn convert_scheduling_solution_to_physical_plan(
     }
 
     new_physical_plan.normalize();
-
     new_physical_plan
 }
 

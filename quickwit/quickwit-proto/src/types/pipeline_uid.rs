@@ -28,7 +28,7 @@ const ULID_SIZE: usize = 16;
 
 /// A pipeline uid identify an indexing pipeline and an indexing task.
 #[derive(Clone, Copy, Default, Hash, Eq, PartialEq, Ord, PartialOrd)]
-pub struct PipelineUid(Ulid);
+pub struct PipelineUid(pub Ulid);
 
 impl std::fmt::Debug for PipelineUid {
     fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
