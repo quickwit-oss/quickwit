@@ -3,10 +3,14 @@ title: Trace analytics with Grafana
 description: A simple tutorial to use Grafana with Quickwit's datasource plugin.
 icon_url: /img/tutorials/quickwit-logo.png
 tags: [grafana, integration]
-sidebar_position: 4
+sidebar_position: 2
 ---
 
-In this tutorial, we will set up a Grafana Dashboard showing Quickwit traces using Docker Compose
+In this tutorial, we will set up a Grafana Dashboard showing Quickwit traces using Docker Compose.
+
+You only need a few minutes to get Grafana working with Quickwit and build meaningful dashboards.
+
+![Quickwit Panel in Grafana Dashboard](../../assets/images/screenshot-grafana-tutorial-dashboard.png)
 
 ## Create a Docker Compose recipe
 
@@ -34,7 +38,7 @@ Then we create a [Grafana](https://grafana.com/docs/grafana/latest/setup-grafana
     ports:
       - "${MAP_HOST_GRAFANA:-127.0.0.1}:3000:3000"
     environment:
-      GF_INSTALL_PLUGINS: https://github.com/quickwit-oss/quickwit-datasource/releases/download/v0.3.0-beta.0/quickwit-quickwit-datasource-0.3.0-beta.0.zip;quickwit-quickwit-datasource
+      GF_INSTALL_PLUGINS: https://github.com/quickwit-oss/quickwit-datasource/releases/download/v0.3.0-beta.2/quickwit-quickwit-datasource-0.3.0-beta.2.zip;quickwit-quickwit-datasource
       GF_AUTH_DISABLE_LOGIN_FORM: "true"
       GF_AUTH_ANONYMOUS_ENABLED: "true"
       GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
