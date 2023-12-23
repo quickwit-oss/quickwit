@@ -10,8 +10,6 @@ In this tutorial, we will set up a Grafana Dashboard showing Quickwit traces usi
 
 You only need a few minutes to get Grafana working with Quickwit and build meaningful dashboards.
 
-![Quickwit Panel in Grafana Dashboard](../../assets/images/screenshot-grafana-tutorial-dashboard.png)
-
 ## Create a Docker Compose recipe
 
 Let's add a [Quickwit instance](../installation.md) with the OTLP service enabled.

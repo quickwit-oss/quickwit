@@ -3,7 +3,7 @@ title: Index a logging dataset locally
 description: Index log entries on a local machine.
 tags: [self-hosted, setup]
 icon_url: /img/quickwit-icon.svg
-sidebar_position: 2
+sidebar_position: 3
 ---
 
 import Tabs from '@theme/Tabs';

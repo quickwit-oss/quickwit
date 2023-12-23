@@ -7,9 +7,6 @@ In this quick start guide, we will set up a Quickwit instance and analyze its ow
 
 You only need a minute to get Jaeger working with Quickwit storage backend.
 
-![Jaeger trace view](../../assets/images/jaeger-ui-quickwit-trace-view.png)
-
-
 ## Start Quickwit and Jaeger
 
 Let's use `docker compose` with the following configuration:
@@ -78,7 +75,6 @@ Here are a couple of query examples:
 That's it! You can level up with the following tutorials to discover all Quickwit features.
 
 ## Next tutorials
-
 
 - [Send traces using an OTEL collector](/docs/distributed-tracing/send-traces/using-otel-collector.md)
 - [Send traces from a python web server](/docs/distributed-tracing/send-traces/using-otel-sdk-python.md)
