@@ -564,6 +564,7 @@ mod tests {
                 partial_request_cache_capacity: ByteSize::mb(64),
                 max_num_concurrent_split_searches: 150,
                 max_num_concurrent_split_streams: 120,
+                query_string_size_limit: ByteSize::b(256),
                 split_cache: None,
             }
         );

@@ -170,6 +170,7 @@ pub struct SearcherConfig {
     pub partial_request_cache_capacity: ByteSize,
     pub max_num_concurrent_split_searches: usize,
     pub max_num_concurrent_split_streams: usize,
+    pub query_string_size_limit: ByteSize,
     // Strangely, if None, this will also have the effect of not forwarding
     // to searcher.
     // TODO document and fix if necessary.
@@ -187,6 +188,7 @@ impl Default for SearcherConfig {
             max_num_concurrent_split_searches: 100,
             aggregation_memory_limit: ByteSize::mb(500),
             aggregation_bucket_limit: 65000,
+            query_string_size_limit: ByteSize::b(1024),
             split_cache: None,
         }
     }

@@ -55,7 +55,8 @@
         "fast_field_cache_capacity": "10G",
         "split_footer_cache_capacity": "1G",
         "max_num_concurrent_split_streams": 120,
-        "max_num_concurrent_split_searches": 150
+        "max_num_concurrent_split_searches": 150,
+        "query_string_size_limit": "256B"
     },
     "jaeger": {
         "enable_endpoint": true,
