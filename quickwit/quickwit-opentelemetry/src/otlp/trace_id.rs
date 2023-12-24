@@ -17,9 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use base64::display::Base64Display;
-use base64::engine::GeneralPurpose;
-use base64::prelude::BASE64_STANDARD;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
@@ -40,8 +37,8 @@ impl TraceId {
         self.0.to_vec()
     }
 
-    pub fn base64_display(&self) -> Base64Display<'_, '_, GeneralPurpose> {
-        Base64Display::new(&self.0, &BASE64_STANDARD)
+    pub fn hex_display(&self) -> String {
+        hex::encode(self.0)
     }
 }
 

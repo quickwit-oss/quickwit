@@ -36,7 +36,8 @@ pub mod tag_pruning;
 
 pub use default_doc_mapper::{
     analyze_text, DefaultDocMapper, DefaultDocMapperBuilder, FieldMappingEntry, Mode, ModeType,
-    QuickwitJsonOptions, TokenizerConfig, TokenizerEntry,
+    QuickwitJsonOptions, TokenizerConfig, TokenizerEntry, QuickwitBytesOptions, FieldMappingType,
+    BinaryFormat,
 };
 use default_doc_mapper::{
     FastFieldOptions, FieldMappingEntryForSerialization, IndexRecordOptionSchema,
@@ -60,9 +61,12 @@ const QW_RESERVED_FIELD_NAMES: &[&str] = &[
     FIELD_PRESENCE_FIELD_NAME,
 ];
 
+/// Cardinality of a field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub(crate) enum Cardinality {
+pub enum Cardinality {
+    /// Single value field.
     SingleValue,
+    /// Multi values field.
     MultiValues,
 }
 

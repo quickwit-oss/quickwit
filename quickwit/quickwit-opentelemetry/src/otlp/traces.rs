@@ -48,6 +48,7 @@ use crate::otlp::metrics::OTLP_SERVICE_METRICS;
 use crate::otlp::{extract_attributes, SpanId, TraceId};
 
 pub const OTEL_TRACES_INDEX_ID: &str = "otel-traces-v0_7";
+pub const OTEL_TRACES_INDEX_ID_PATTERN: &str = "otel-traces-v0_*";
 
 const OTEL_TRACES_INDEX_CONFIG: &str = r#"
 version: 0.6

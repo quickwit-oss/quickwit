@@ -37,7 +37,7 @@ pub use trace_id::{TraceId, TryFromTraceIdError};
 pub use traces::{
     parse_otlp_spans_json, parse_otlp_spans_protobuf, Event, JsonSpanIterator, Link,
     OtlpGrpcTracesService, OtlpTraceError, Span, SpanFingerprint, SpanKind, SpanStatus,
-    OTEL_TRACES_INDEX_ID,
+    OTEL_TRACES_INDEX_ID, OTEL_TRACES_INDEX_ID_PATTERN,
 };
 
 impl From<OtlpTraceError> for tonic::Status {

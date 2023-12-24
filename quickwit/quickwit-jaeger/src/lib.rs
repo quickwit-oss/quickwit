@@ -30,7 +30,7 @@ use prost_types::{Duration as WellKnownDuration, Timestamp as WellKnownTimestamp
 use quickwit_config::JaegerConfig;
 use quickwit_opentelemetry::otlp::{
     Event as QwEvent, Link as QwLink, Span as QwSpan, SpanFingerprint, SpanId,
-    SpanKind as QwSpanKind, SpanStatus as QwSpanStatus, TraceId, OTEL_TRACES_INDEX_ID,
+    SpanKind as QwSpanKind, SpanStatus as QwSpanStatus, TraceId, OTEL_TRACES_INDEX_ID, OTEL_TRACES_INDEX_ID_PATTERN,
 };
 use quickwit_proto::jaeger::api_v2::{
     KeyValue as JaegerKeyValue, Log as JaegerLog, Process as JaegerProcess, Span as JaegerSpan,
@@ -231,7 +231,6 @@ impl JaegerService {
         &self,
         trace_query: TraceQueryParameters,
     ) -> Result<(Vec<TraceId>, TimeIntervalSecs), Status> {
-        let index_id = OTEL_TRACES_INDEX_ID.to_string();
         let span_kind_opt = None;
         let min_span_start_timestamp_secs_opt = trace_query.start_time_min.map(|ts| ts.seconds);
         let max_span_start_timestamp_secs_opt = trace_query.start_time_max.map(|ts| ts.seconds);
@@ -256,7 +255,7 @@ impl JaegerService {
         let aggregation_query = build_aggregations_query(trace_query.num_traces as usize);
         let max_hits = 0;
         let search_request = SearchRequest {
-            index_id_patterns: vec![index_id],
+            index_id_patterns: vec![OTEL_TRACES_INDEX_ID_PATTERN.to_string()],
             query_ast,
             aggregation_request: Some(aggregation_query),
             max_hits,
@@ -292,7 +291,7 @@ impl JaegerService {
         let mut query = BoolQuery::default();
 
         for trace_id in trace_ids {
-            let value = trace_id.base64_display().to_string();
+            let value = trace_id.hex_display();
             let term_query = TermQuery {
                 field: "trace_id".to_string(),
                 value,
@@ -305,7 +304,7 @@ impl JaegerService {
             serde_json::to_string(&query_ast).map_err(|err| Status::internal(err.to_string()))?;
 
         let search_request = SearchRequest {
-            index_id_patterns: vec![OTEL_TRACES_INDEX_ID.to_string()],
+            index_id_patterns: vec![OTEL_TRACES_INDEX_ID_PATTERN.to_string()],
             query_ast,
             start_timestamp: Some(*search_window.start()),
             end_timestamp: Some(*search_window.end()),
