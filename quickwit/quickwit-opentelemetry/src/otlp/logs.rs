@@ -83,8 +83,12 @@ doc_mapping:
       indexed: false
     - name: trace_id
       type: bytes
+      input_format: hex
+      output_format: hex
     - name: span_id
       type: bytes
+      input_format: hex
+      output_format: hex
     - name: trace_flags
       type: u64
       indexed: false

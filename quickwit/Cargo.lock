@@ -5782,7 +5782,6 @@ version = "0.6.5-dev"
 dependencies = [
  "anyhow",
  "async-trait",
- "base64 0.21.5",
  "hex",
  "once_cell",
  "prost",
