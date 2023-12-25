@@ -807,7 +807,7 @@ fn term_to_data(field: Field, field_type: &FieldType, field_value: &[u8]) -> Vec
 }
 
 /// `leaf` step of list terms.
-#[instrument(skip_all, fields(index = ?request.index_id))]
+#[instrument(skip_all)]
 pub async fn leaf_list_terms(
     searcher_context: Arc<SearcherContext>,
     request: &ListTermsRequest,

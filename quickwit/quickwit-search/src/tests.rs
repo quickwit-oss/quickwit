@@ -1688,7 +1688,7 @@ async fn test_single_node_list_terms() -> anyhow::Result<()> {
 
     {
         let request = ListTermsRequest {
-            index_id: test_sandbox.index_uid().index_id().to_string(),
+            index_id_patterns: vec![test_sandbox.index_uid().index_id().to_string()],
             field: "title".to_string(),
             start_key: None,
             end_key: None,
@@ -1709,7 +1709,7 @@ async fn test_single_node_list_terms() -> anyhow::Result<()> {
     }
     {
         let request = ListTermsRequest {
-            index_id: test_sandbox.index_uid().index_id().to_string(),
+            index_id_patterns: vec![test_sandbox.index_uid().index_id().to_string()],
             field: "title".to_string(),
             start_key: None,
             end_key: None,
@@ -1730,7 +1730,7 @@ async fn test_single_node_list_terms() -> anyhow::Result<()> {
     }
     {
         let request = ListTermsRequest {
-            index_id: test_sandbox.index_uid().index_id().to_string(),
+            index_id_patterns: vec![test_sandbox.index_uid().index_id().to_string()],
             field: "title".to_string(),
             start_key: Some("casper".as_bytes().to_vec()),
             end_key: None,
@@ -1751,7 +1751,7 @@ async fn test_single_node_list_terms() -> anyhow::Result<()> {
     }
     {
         let request = ListTermsRequest {
-            index_id: test_sandbox.index_uid().index_id().to_string(),
+            index_id_patterns: vec![test_sandbox.index_uid().index_id().to_string()],
             field: "title".to_string(),
             start_key: None,
             end_key: Some("casper".as_bytes().to_vec()),

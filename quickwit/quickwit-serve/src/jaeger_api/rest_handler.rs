@@ -333,7 +333,7 @@ mod tests {
         mock_search_service
             .expect_root_list_terms()
             .withf(|req| {
-                req.index_id == OTEL_TRACES_INDEX_ID
+                req.index_id_patterns == vec![OTEL_TRACES_INDEX_ID]
                     && req.field == "service_name"
                     && req.start_timestamp.is_some()
             })
@@ -370,7 +370,7 @@ mod tests {
         mock_search_service
             .expect_root_list_terms()
             .withf(|req| {
-                req.index_id == OTEL_TRACES_INDEX_ID
+                req.index_id_patterns == vec![OTEL_TRACES_INDEX_ID]
                     && req.field == "span_fingerprint"
                     && req.start_timestamp.is_some()
             })

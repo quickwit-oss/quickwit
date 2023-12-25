@@ -64,9 +64,9 @@ pub struct ReportSplitsResponse {}
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListFieldsRequest {
-    /// Optional limit query to a set of indexes.
+    /// Index ID patterns
     #[prost(string, repeated, tag = "1")]
-    pub index_ids: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
+    pub index_id_patterns: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     /// Optional limit query to a list of fields
     /// Wildcard expressions are supported.
     #[prost(string, repeated, tag = "2")]
@@ -448,9 +448,9 @@ pub struct FetchDocsResponse {
 #[allow(clippy::derive_partial_eq_without_eq)]
 #[derive(Clone, PartialEq, ::prost::Message)]
 pub struct ListTermsRequest {
-    /// Index ID
-    #[prost(string, tag = "1")]
-    pub index_id: ::prost::alloc::string::String,
+    /// Index ID patterns
+    #[prost(string, repeated, tag = "1")]
+    pub index_id_patterns: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
     /// Field to search on
     #[prost(string, tag = "3")]
     pub field: ::prost::alloc::string::String,
