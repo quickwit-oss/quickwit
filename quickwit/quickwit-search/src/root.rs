@@ -26,7 +26,7 @@ use itertools::Itertools;
 use quickwit_common::shared_consts::{DELETION_GRACE_PERIOD, SCROLL_BATCH_LEN};
 use quickwit_common::uri::Uri;
 use quickwit_common::PrettySample;
-use quickwit_config::{build_doc_mapper, IndexConfig};
+use quickwit_config::build_doc_mapper;
 use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
 use quickwit_doc_mapper::{DocMapper, DYNAMIC_FIELD_NAME};
 use quickwit_metastore::{IndexMetadata, ListIndexesMetadataResponseExt, SplitMetadata};
@@ -1297,7 +1297,7 @@ mod tests {
 
     use quickwit_common::shared_consts::SCROLL_BATCH_LEN;
     use quickwit_common::ServiceStream;
-    use quickwit_config::{DocMapping, IndexingSettings, SearchSettings};
+    use quickwit_config::{DocMapping, IndexConfig, IndexingSettings, SearchSettings};
     use quickwit_indexing::MockSplitBuilder;
     use quickwit_metastore::{IndexMetadata, ListSplitsRequestExt, ListSplitsResponseExt};
     use quickwit_proto::metastore::{ListIndexesMetadataResponse, ListSplitsResponse};

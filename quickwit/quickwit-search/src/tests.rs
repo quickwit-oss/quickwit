@@ -39,6 +39,7 @@ use tantivy::Term;
 
 use super::*;
 use crate::find_trace_ids_collector::Span;
+use crate::list_terms::leaf_list_terms;
 use crate::service::SearcherContext;
 use crate::single_node_search;
 

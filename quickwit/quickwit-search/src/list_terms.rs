@@ -146,7 +146,7 @@ pub async fn root_list_terms(
     // For each node, forward to a node with an affinity for that index id.
     for (client, client_jobs) in assigned_leaf_search_jobs {
         let leaf_requests =
-            jobs_to_leaf_requests(&list_terms_request, &index_uid_to_index_uri, client_jobs)?;
+            jobs_to_leaf_requests(list_terms_request, &index_uid_to_index_uri, client_jobs)?;
         for leaf_request in leaf_requests {
             leaf_request_tasks.push(cluster_client.leaf_list_terms(leaf_request, client.clone()));
         }
