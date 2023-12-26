@@ -17,11 +17,12 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-import { Box, styled, Typography, Link, Tab } from '@mui/material';
+import { Box, styled, Typography, Tab } from '@mui/material';
+import Link, { LinkProps } from '@mui/material/Link';
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Client } from '../services/client';
 import Loader from '../components/Loader';
-import { useParams } from 'react-router-dom';
+import { Link as RouterLink, useParams } from 'react-router-dom';
 import { Index } from '../utils/models';
 import { TabContext, TabList, TabPanel } from '@mui/lab';
 import { IndexSummary } from '../components/IndexSummary';
@@ -38,6 +39,16 @@ padding-left: 0;
 padding-right: 0;
 height: 100%;
 `;
+
+// NOTE : https://mui.com/material-ui/react-breadcrumbs/#integration-with-react-router
+interface LinkRouterProps extends LinkProps {
+  to: string;
+  replace?: boolean;
+}
+
+function LinkRouter(props: LinkRouterProps) {
+  return <Link {...props} component={RouterLink} />;
+}
 
 function IndexView() {
   const { indexId } = useParams();
@@ -123,9 +134,9 @@ function IndexView() {
     <ViewUnderAppBarBox>
       <FullBoxContainer>
         <QBreadcrumbs aria-label="breadcrumb">
-          <Link underline="hover" color="inherit" href="../indexes">
+          <LinkRouter underline="hover" color="inherit" to="/indexes">
             <Typography color="text.primary">Indexes</Typography>
-          </Link>
+          </LinkRouter>
           <Typography color="text.primary">{indexId}</Typography>
         </QBreadcrumbs>
         { renderFetchIndexResult() }

@@ -17,12 +17,12 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-import { render, unmountComponentAtNode } from "react-dom";
-import { waitFor } from "@testing-library/react";
-import { screen } from '@testing-library/dom';
+import { unmountComponentAtNode } from "react-dom";
+import { render, waitFor, screen } from "@testing-library/react";
 import { act } from "react-dom/test-utils";
 import { Client } from "../services/client";
 import IndexView from "./IndexView";
+import { BrowserRouter } from "react-router-dom";
 
 jest.mock('../services/client');
 const mockedUsedNavigate = jest.fn();
@@ -32,20 +32,6 @@ jest.mock('react-router-dom', () => ({
     indexId: 'my-new-fresh-index-id'
   })
 }));
-
-let container = null;
-beforeEach(() => {
-  // setup a DOM element as a render target
-  container = document.createElement("div");
-  document.body.appendChild(container);
-});
-
-afterEach(() => {
-  // cleanup on exiting
-  unmountComponentAtNode(container);
-  container.remove();
-  container = null;
-});
 
 test('renders IndexView', async () => {
   const index = {
@@ -59,7 +45,7 @@ test('renders IndexView', async () => {
   Client.prototype.getIndex.mockImplementation(() => Promise.resolve(index));
 
   await act(async () => {
-    render(<IndexView />, container);
+    render( <IndexView /> , {wrapper: BrowserRouter});
   });
 
   await waitFor(() => expect(screen.getByText(/my-new-fresh-index-uri/)).toBeInTheDocument());
