@@ -246,6 +246,7 @@ impl IndexerState {
         indexing_workbench_opt: &'a mut Option<IndexingWorkbench>,
         ctx: &'a ActorContext<Indexer>,
     ) -> anyhow::Result<&'a mut IndexingWorkbench> {
+        warn!(pipeline_uid=%self.pipeline_id.pipeline_uid.0, index=self.pipeline_id.index_uid.index_id(), "get-or-create-workbench");
         if indexing_workbench_opt.is_none() {
             let indexing_workbench = self.create_workbench(ctx).await?;
             let commit_timeout_message = CommitTimeout {
@@ -488,6 +489,7 @@ impl Handler<NewPublishLock> for Indexer {
         message: NewPublishLock,
         _ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
+        warn!("new-publish-lock");
         let NewPublishLock(publish_lock) = message;
         self.indexing_workbench_opt = None;
         self.indexer_state.publish_lock = publish_lock;
@@ -652,7 +654,7 @@ impl Indexer {
         }
         let num_splits = splits.len() as u64;
         let split_ids = splits.iter().map(|split| split.split_id()).join(",");
-        info!(commit_trigger=?commit_trigger, split_ids=%split_ids, num_docs=self.counters.num_docs_in_workbench, "send-to-index-serializer");
+        warn!(commit_trigger=?commit_trigger, split_ids=%split_ids, num_docs=self.counters.num_docs_in_workbench, delta=?checkpoint_delta.source_delta, index=?self.indexer_state.pipeline_id.index_uid.index_id(), pipeline_id=%self.indexer_state.pipeline_id.pipeline_uid, "send-to-index-serializer");
         ctx.send_message(
             &self.index_serializer_mailbox,
             IndexedSplitBatchBuilder {

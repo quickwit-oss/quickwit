@@ -41,7 +41,7 @@ use quickwit_proto::metastore::{
 use quickwit_proto::types::ShardId;
 use quickwit_storage::{Storage, StorageResolver};
 use tokio::sync::Semaphore;
-use tracing::{debug, error, info, instrument};
+use tracing::{debug, error, info, instrument, warn};
 
 use super::MergePlanner;
 use crate::actors::doc_processor::DocProcessor;
@@ -560,6 +560,7 @@ impl Handler<AssignShards> for IndexingPipeline {
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         self.shard_ids = assign_shards_message.0.shard_ids.clone();
+        warn!(shard_ids=?self.shard_ids, index=self.params.pipeline_id.index_uid.index_id(), pipeline=%self.params.pipeline_id.pipeline_uid.0, "assign shards");
         // If the pipeline is running, we forward the message to its source.
         // If it is not, it will be respawned soon, and the shards will be assigned afterward.
         if let Some(handles) = &mut self.handles_opt {

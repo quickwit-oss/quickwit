@@ -65,9 +65,8 @@ impl PhysicalIndexingPlan {
     }
 
     pub fn normalize(&mut self) {
-        self.indexing_tasks_per_indexer_id.retain(|_indexer_id,  tasks| {
-            !tasks.is_empty()
-        });
+        self.indexing_tasks_per_indexer_id
+            .retain(|_indexer_id, tasks| !tasks.is_empty());
         for tasks in self.indexing_tasks_per_indexer_id.values_mut() {
             tasks.sort_by(|left, right| {
                 left.index_uid
