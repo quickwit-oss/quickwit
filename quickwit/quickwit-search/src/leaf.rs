@@ -37,7 +37,7 @@ use quickwit_storage::{
 };
 use tantivy::directory::FileSlice;
 use tantivy::fastfield::FastFieldReaders;
-use tantivy::schema::{Field, FieldType};
+use tantivy::schema::Field;
 use tantivy::{Index, ReloadPolicy, Searcher, Term};
 use tracing::*;
 
