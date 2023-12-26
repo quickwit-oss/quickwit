@@ -35,6 +35,7 @@ use serde::Serialize;
 use serde_json::Value as JsonValue;
 use tantivy::schema::{Field, Value};
 use tantivy::{DateTime, TantivyDocument};
+use thiserror::Error;
 use tokio::runtime::Handle;
 use tracing::warn;
 
@@ -79,12 +80,16 @@ impl JsonDoc {
     }
 }
 
-#[derive(Debug)]
+#[derive(Error, Debug)]
 pub enum DocProcessorError {
+    #[error("doc mapper parsing error: {0}")]
     DocMapperParsing(DocParsingError),
+    #[error("OLTP trace parsing error: {0}")]
     OltpTraceParsing(OtlpTraceError),
+    #[error("doc parsing error: {0}")]
     Parsing(String),
     #[cfg(feature = "vrl")]
+    #[error("VRL transform error: {0}")]
     Transform(VrlTerminate),
 }
 
@@ -309,7 +314,7 @@ impl DocProcessorCounters {
             }
             DocProcessorError::Parsing(_) => {
                 self.num_doc_parsing_errors.fetch_add(1, Ordering::Relaxed);
-                "json_parsing_error"
+                "parsing_error"
             }
             #[cfg(feature = "vrl")]
             DocProcessorError::Transform(_) => {
@@ -408,7 +413,12 @@ impl DocProcessor {
                     processed_docs.push(processed_doc);
                 }
                 Err(error) => {
-                    warn!(index_id=self.counters.index_id, source_id=self.counters.source_id, error=?error);
+                    warn!(
+                        index_id = self.counters.index_id,
+                        source_id = self.counters.source_id,
+                        "{}",
+                        error
+                    );
                     self.counters.record_error(error, num_bytes as u64);
                 }
             }
