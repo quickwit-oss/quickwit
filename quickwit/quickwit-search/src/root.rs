@@ -26,9 +26,9 @@ use itertools::Itertools;
 use quickwit_common::shared_consts::{DELETION_GRACE_PERIOD, SCROLL_BATCH_LEN};
 use quickwit_common::uri::Uri;
 use quickwit_common::PrettySample;
-use quickwit_config::{build_doc_mapper, IndexConfig};
+use quickwit_config::{build_doc_mapper, IndexConfig, SearcherConfig};
 use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
-use quickwit_doc_mapper::{DocMapper, DYNAMIC_FIELD_NAME};
+use quickwit_doc_mapper::DYNAMIC_FIELD_NAME;
 use quickwit_metastore::{
     IndexMetadata, IndexMetadataResponseExt, ListIndexesMetadataResponseExt, ListSplitsRequestExt,
     MetastoreServiceStreamSplitsExt, SplitMetadata,
@@ -164,12 +164,15 @@ type TimestampFieldOpt = Option<String>;
 fn validate_request_and_build_metadatas(
     indexes_metadata: &[IndexMetadata],
     search_request: &SearchRequest,
+    searcher_config: &SearcherConfig,
 ) -> crate::Result<(TimestampFieldOpt, QueryAst, IndexesMetasForLeafSearch)> {
     let mut metadatas_for_leaf: HashMap<IndexUid, IndexMetasForLeafSearch> = HashMap::new();
     let query_ast: QueryAst = serde_json::from_str(&search_request.query_ast)
         .map_err(|err| SearchError::InvalidQuery(err.to_string()))?;
     let mut query_ast_resolved_opt: Option<QueryAst> = None;
     let mut timestamp_field_opt: Option<String> = None;
+
+    validate_request(searcher_config, search_request)?;
 
     for index_metadata in indexes_metadata {
         let doc_mapper = build_doc_mapper(
@@ -214,7 +217,24 @@ fn validate_request_and_build_metadatas(
             }
         }
 
-        validate_request(&*doc_mapper, search_request)?;
+        let schema = doc_mapper.schema();
+        if doc_mapper.timestamp_field_name().is_none()
+            && (search_request.start_timestamp.is_some() || search_request.end_timestamp.is_some())
+        {
+            return Err(SearchError::InvalidQuery(format!(
+                "the timestamp field is not set in index: {:?} definition but start-timestamp or \
+                 end-timestamp are set in the query",
+                search_request.index_id_patterns
+            )));
+        }
+
+        validate_requested_snippet_fields(&schema, &search_request.snippet_fields)?;
+
+        validate_sort_by_fields_and_search_after(
+            &search_request.sort_fields,
+            &search_request.search_after,
+            &schema,
+        )?;
 
         // Validates the query by effectively building it against the current schema.
         doc_mapper.query(doc_mapper.schema(), &query_ast_resolved_for_index, true)?;
@@ -386,27 +406,16 @@ fn validate_sort_by_field(
 }
 
 fn validate_request(
-    doc_mapper: &dyn DocMapper,
+    searcher_config: &SearcherConfig,
     search_request: &SearchRequest,
 ) -> crate::Result<()> {
-    let schema = doc_mapper.schema();
-    if doc_mapper.timestamp_field_name().is_none()
-        && (search_request.start_timestamp.is_some() || search_request.end_timestamp.is_some())
-    {
+    if search_request.query_ast.len() > searcher_config.query_string_size_limit.as_u64() as usize {
         return Err(SearchError::InvalidQuery(format!(
-            "the timestamp field is not set in index: {:?} definition but start-timestamp or \
-             end-timestamp are set in the query",
-            search_request.index_id_patterns
+            "max size for query string is {} bytes, but got a query of size {}",
+            searcher_config.query_string_size_limit.as_u64(),
+            search_request.query_ast.len()
         )));
     }
-
-    validate_requested_snippet_fields(&schema, &search_request.snippet_fields)?;
-
-    validate_sort_by_fields_and_search_after(
-        &search_request.sort_fields,
-        &search_request.search_after,
-        &schema,
-    )?;
 
     if let Some(agg) = search_request.aggregation_request.as_ref() {
         let _aggs: QuickwitAggregations = serde_json::from_str(agg).map_err(|_err| {
@@ -907,7 +916,11 @@ pub async fn root_search(
         .map(|index_metadata| index_metadata.index_uid.clone())
         .collect_vec();
     let (timestamp_field_opt, query_ast_resolved, indexes_metas_for_leaf_search) =
-        validate_request_and_build_metadatas(&indexes_metadata, &search_request)?;
+        validate_request_and_build_metadatas(
+            &indexes_metadata,
+            &search_request,
+            &searcher_context.searcher_config,
+        )?;
     search_request.query_ast = serde_json::to_string(&query_ast_resolved)?;
 
     // convert search_after datetime values from input datetime format to nanos.
@@ -1514,6 +1527,7 @@ mod tests {
             start_offset: 10,
             ..Default::default()
         };
+        let searcher_config = SearcherConfig::default();
         let index_metadata = IndexMetadata::for_test("test-index-1", "ram:///test-index-1");
         let index_metadata_with_other_config =
             index_metadata_for_multi_indexes_test("test-index-2", "ram:///test-index-2");
@@ -1531,6 +1545,7 @@ mod tests {
                     index_metadata_no_timestamp,
                 ],
                 &search_request,
+                &searcher_config,
             )
             .unwrap();
         assert_eq!(timestamp_field, Some("timestamp".to_string()));
@@ -1547,6 +1562,7 @@ mod tests {
             start_offset: 10,
             ..Default::default()
         };
+        let searcher_config = SearcherConfig::default();
         let index_metadata_1 = IndexMetadata::for_test("test-index-1", "ram:///test-index-1");
         let mut index_metadata_2 = IndexMetadata::for_test("test-index-2", "ram:///test-index-2");
         let doc_mapping_json_2 = r#"{
@@ -1574,6 +1590,7 @@ mod tests {
         let timestamp_field_different = validate_request_and_build_metadatas(
             &[index_metadata_1, index_metadata_2],
             &search_request,
+            &searcher_config,
         )
         .unwrap_err();
         assert_eq!(
@@ -1592,6 +1609,7 @@ mod tests {
             start_offset: 10,
             ..Default::default()
         };
+        let searcher_config = SearcherConfig::default();
         let index_metadata_1 = IndexMetadata::for_test("test-index-1", "ram:///test-index-1");
         let mut index_metadata_2 = IndexMetadata::for_test("test-index-2", "ram:///test-index-2");
         index_metadata_2
@@ -1601,12 +1619,38 @@ mod tests {
         let timestamp_field_different = validate_request_and_build_metadatas(
             &[index_metadata_1, index_metadata_2],
             &search_request,
+            &searcher_config,
         )
         .unwrap_err();
         assert_eq!(
             timestamp_field_different.to_string(),
             "resolved query ASTs must be the same across indexes. resolving queries with \
              different default fields are different between indexes is not supported"
+        );
+    }
+
+    #[test]
+    fn test_validate_request_and_build_metadatas_fail_with_large_query_string() {
+        let request_query_ast = qast_helper("body:xdvncprunkplzditmkiwlzlgvflgxtoomfwhoulbnttelvbolsyhjczjgsfxwkinitouwdxrhktbowuttacewdrdqxolaagnvllybdbfgfgutlkrpdxguhphudruszcopsflrtulyajbeknzvxlpybjchchbozkbrdnlumrobfzgiblesagdaxdvtxikvufhbnzhifhsaxujopxhylhwidliopghahihfwroidayzqqlexwtentdbeddxphwsnxuxnbmnqpcnbpgsjxmuixoidqkyysoyiieytlnnfeaknvmnvavvecgccwjnocudznpzznzietzxxeudrcachcygjxpretuslwnbbdxzxdknvfudhwajatoqjylnvzrwaazuqtezwvkgnrxchacxljepfggodniexrflvfpenqfbkonzvcpgwdcljpmwejhmtijodoeheeijpdxfunkcvtesuyxiejvzzzqrqtirszilmxlvbwolvcguylebilcdhuvhgwpccgoihglgnclsigoewenbejyqojmbkdodbofxogdfrmvgcdtizkfypdnqntyhtsbymiwwmkjovlgcukolyizfvpipxycqoxzcsqstjygqxiwzzwbbibqcgudypxaywawdghzhjbunpynoumybslzikkqsnayoerdrobhupuhbetmwxlngbwliycpvobaxcistnkgbiwquyuudqontzoqufqvrydrowtequlwwxihyjechkhpspzswxssuikonwjdvvnfyxrtqehostebdktuakiyhilmwobkqkjifzzozhpgvpaygvncsvkhdtwgoreezfkxcebcckiuckzbvsokwvqrrprtdzuzvoaiyzhwihsdfuormefriswonrpkofxmxerngutjqnxuialtpkpivrwwomnhnvgfscinoezhpaibvwlyjeutjkrhgwrfmfvcwpraoqvndicyswucgffnneuwglufushjaibpxwgvwjgmqvlucqrnlujelltd", &[]);
+        let search_request = quickwit_proto::search::SearchRequest {
+            index_id_patterns: vec!["test-index".to_string()],
+            query_ast: serde_json::to_string(&request_query_ast).unwrap(),
+            max_hits: 10,
+            start_offset: 10,
+            ..Default::default()
+        };
+        let searcher_config = SearcherConfig::default();
+        let index_metadata = IndexMetadata::for_test("test-index-1", "ram:///test-index-1");
+        let query_over_size_limit = validate_request_and_build_metadatas(
+            &[index_metadata],
+            &search_request,
+            &searcher_config,
+        )
+        .unwrap_err();
+
+        assert_eq!(
+            query_over_size_limit.to_string(),
+            "max size for query string is 1024 bytes, but got a query of size 1130"
         );
     }
 
