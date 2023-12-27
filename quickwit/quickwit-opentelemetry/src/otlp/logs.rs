@@ -238,6 +238,7 @@ impl OtlpGrpcLogsService {
     async fn export_inner(
         &mut self,
         request: ExportLogsServiceRequest,
+        index_id: String,
         labels: [&str; 4],
     ) -> Result<ExportLogsServiceResponse, Status> {
         let ParsedLogRecords {
@@ -247,7 +248,7 @@ impl OtlpGrpcLogsService {
             error_message,
         } = tokio::task::spawn_blocking({
             let parent_span = RuntimeSpan::current();
-            || Self::parse_logs(request, parent_span)
+            || Self::parse_logs(request, parent_span, index_id)
         })
         .await
         .map_err(|join_error| {
@@ -283,6 +284,7 @@ impl OtlpGrpcLogsService {
     fn parse_logs(
         request: ExportLogsServiceRequest,
         parent_span: RuntimeSpan,
+        index_id: String,
     ) -> Result<ParsedLogRecords, Status> {
         let mut log_records = BTreeSet::new();
         let mut num_log_records = 0;
@@ -389,7 +391,7 @@ impl OtlpGrpcLogsService {
                 }
             }
         }
-        let mut doc_batch = DocBatchBuilder::new(OTEL_LOGS_INDEX_ID.to_string()).json_writer();
+        let mut doc_batch = DocBatchBuilder::new(index_id).json_writer();
         for log_record in log_records {
             if let Err(error) = doc_batch.ingest_doc(&log_record.0) {
                 error!(error=?error, "failed to JSON serialize span");
@@ -435,16 +437,17 @@ impl OtlpGrpcLogsService {
             .requests_total
             .with_label_values(labels)
             .inc();
-        let (export_res, is_error) = match self.export_inner(request, labels).await {
-            ok @ Ok(_) => (ok, "false"),
-            err @ Err(_) => {
-                OTLP_SERVICE_METRICS
-                    .request_errors_total
-                    .with_label_values(labels)
-                    .inc();
-                (err, "true")
-            }
-        };
+        let (export_res, is_error) =
+            match self.export_inner(request, index_id.clone(), labels).await {
+                ok @ Ok(_) => (ok, "false"),
+                err @ Err(_) => {
+                    OTLP_SERVICE_METRICS
+                        .request_errors_total
+                        .with_label_values(labels)
+                        .inc();
+                    (err, "true")
+                }
+            };
         let elapsed = start.elapsed().as_secs_f64();
         let labels = ["logs", &index_id, "grpc", "protobuf", is_error];
         OTLP_SERVICE_METRICS
