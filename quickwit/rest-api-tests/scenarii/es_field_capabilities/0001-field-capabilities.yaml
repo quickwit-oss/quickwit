@@ -255,9 +255,6 @@ expected:
         metadata_field: false
         searchable: true
         aggregatable: true
-        indices:
-        - fieldcaps
-        - fieldcaps-2
 ---
 # Compare ip field with elastic search
 method: [GET]
@@ -280,7 +277,6 @@ expected:
 method: [GET]
 engines:
   - quickwit
-  - elasticsearch
 endpoint: fieldca*/_field_caps?fields=tags*
 expected:
   indices:

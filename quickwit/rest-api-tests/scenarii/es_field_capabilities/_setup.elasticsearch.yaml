@@ -7,10 +7,6 @@ method: DELETE
 endpoint: fieldcaps-2
 status_code: null
 ---
-method: DELETE
-endpoint: fieldcaps-1
-status_code: null
----
 # Create index 1
 method: PUT
 endpoint: fieldcaps
