@@ -236,6 +236,17 @@ impl IngestApiConfig {
 
     fn validate(&self) -> anyhow::Result<()> {
         self.replication_factor()?;
+        ensure!(
+            self.max_queue_disk_usage > ByteSize::mib(256),
+            "max_queue_disk_usage must be at least 256MB, got `{}`",
+            self.max_queue_disk_usage
+        );
+        ensure!(
+            self.max_queue_disk_usage >= self.max_queue_memory_usage,
+            "max_queue_disk_usage ({}) must be at least max_queue_memory_usage ({})",
+            self.max_queue_disk_usage,
+            self.max_queue_memory_usage
+        );
         Ok(())
     }
 }
@@ -392,6 +403,7 @@ impl NodeConfig {
 mod tests {
     use quickwit_proto::indexing::CpuCapacity;
 
+    use super::*;
     use crate::IndexerConfig;
 
     #[test]
@@ -434,6 +446,35 @@ mod tests {
                     .as_str()
                     .unwrap(),
                 "1500m"
+            );
+        }
+    }
+    #[test]
+    fn test_validate_ingest_api_config() {
+        {
+            let indexer_config: IngestApiConfig = serde_yaml::from_str(
+                r#"
+                    max_queue_disk_usage: 100M
+                "#,
+            )
+            .unwrap();
+            assert_eq!(
+                indexer_config.validate().unwrap_err().to_string(),
+                "max_queue_disk_usage must be at least 256MB, got `100.0 MB`"
+            );
+        }
+        {
+            let indexer_config: IngestApiConfig = serde_yaml::from_str(
+                r#"
+                    max_queue_memory_usage: 600M
+                    max_queue_disk_usage: 500M
+                "#,
+            )
+            .unwrap();
+            assert_eq!(
+                indexer_config.validate().unwrap_err().to_string(),
+                "max_queue_disk_usage (500.0 MB) must be at least max_queue_memory_usage (600.0 \
+                 MB)"
             );
         }
     }

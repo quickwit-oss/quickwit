@@ -156,7 +156,7 @@ indexer:
 | Property | Description | Default value |
 | --- | --- | --- |
 | `max_queue_memory_usage` | Maximum size in bytes of the in-memory Ingest queue. | `2GiB` |
-| `max_queue_disk_usage` | Maximum disk-space in bytes taken by the Ingest queue. This is typically higher than the max in-memory queue. | `4GiB` |
+| `max_queue_disk_usage` | Maximum disk-space in bytes taken by the Ingest queue. The minimum size is at least `256M` and be at least `max_queue_memory_usage`. | `4GiB` |
 
 Example:
 
