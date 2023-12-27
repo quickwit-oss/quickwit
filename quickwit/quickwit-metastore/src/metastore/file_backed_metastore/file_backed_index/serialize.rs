@@ -114,12 +114,13 @@ impl From<FileBackedIndexV0_6> for FileBackedIndex {
                 .filter(|field_mapping| {
                     field_mapping.name == "trace_id" || field_mapping.name == "span_id"
                 })
-                .for_each(|field_mapping| match &mut field_mapping.mapping_type {
-                    FieldMappingType::Bytes(bytes_options, _) => {
+                .for_each(|field_mapping| {
+                    if let FieldMappingType::Bytes(bytes_options, _) =
+                        &mut field_mapping.mapping_type
+                    {
                         bytes_options.input_format = BinaryFormat::Hex;
                         bytes_options.output_format = BinaryFormat::Hex;
                     }
-                    _ => {}
                 });
         }
         // Override split index_id to support old SplitMetadata format.
