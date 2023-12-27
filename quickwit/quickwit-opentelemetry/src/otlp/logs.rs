@@ -36,11 +36,14 @@ use tonic::{Request, Response, Status};
 use tracing::field::Empty;
 use tracing::{error, instrument, warn, Span as RuntimeSpan};
 
-use super::{is_zero, parse_log_record_body, SpanId, TraceId};
+use super::{
+    extract_otel_traces_index_from_metadata, is_zero, parse_log_record_body, SpanId, TraceId,
+};
 use crate::otlp::extract_attributes;
 use crate::otlp::metrics::OTLP_SERVICE_METRICS;
 
 pub const OTEL_LOGS_INDEX_ID: &str = "otel-logs-v0_6";
+const HEADER_NAME_OTEL_LOGS_INDEX: &str = "otel-logs-index";
 
 const OTEL_LOGS_INDEX_CONFIG: &str = r#"
 version: 0.6
@@ -235,7 +238,7 @@ impl OtlpGrpcLogsService {
     async fn export_inner(
         &mut self,
         request: ExportLogsServiceRequest,
-        labels: [&'static str; 4],
+        labels: [&str; 4],
     ) -> Result<ExportLogsServiceResponse, Status> {
         let ParsedLogRecords {
             doc_batch,
@@ -422,10 +425,11 @@ impl OtlpGrpcLogsService {
     async fn export_instrumented(
         &mut self,
         request: ExportLogsServiceRequest,
+        index_id: String,
     ) -> Result<ExportLogsServiceResponse, Status> {
         let start = std::time::Instant::now();
 
-        let labels = ["logs", OTEL_LOGS_INDEX_ID, "grpc", "protobuf"];
+        let labels = ["logs", &index_id, "grpc", "protobuf"];
 
         OTLP_SERVICE_METRICS
             .requests_total
@@ -442,7 +446,7 @@ impl OtlpGrpcLogsService {
             }
         };
         let elapsed = start.elapsed().as_secs_f64();
-        let labels = ["logs", OTEL_LOGS_INDEX_ID, "grpc", "protobuf", is_error];
+        let labels = ["logs", &index_id, "grpc", "protobuf", is_error];
         OTLP_SERVICE_METRICS
             .request_duration_seconds
             .with_label_values(labels)
@@ -459,9 +463,13 @@ impl LogsService for OtlpGrpcLogsService {
         &self,
         request: Request<ExportLogsServiceRequest>,
     ) -> Result<Response<ExportLogsServiceResponse>, Status> {
+        let index_id = extract_otel_traces_index_from_metadata(
+            request.metadata(),
+            HEADER_NAME_OTEL_LOGS_INDEX,
+        )?;
         let request = request.into_inner();
         self.clone()
-            .export_instrumented(request)
+            .export_instrumented(request, index_id)
             .await
             .map(Response::new)
     }
