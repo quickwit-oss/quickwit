@@ -4,6 +4,11 @@ api_root: http://localhost:7280/api/v1/
 endpoint: indexes/fieldcaps
 status_code: null
 ---
+method: DELETE
+api_root: http://localhost:7280/api/v1/
+endpoint: indexes/fieldcaps-2
+status_code: null
+---
 # Create index
 method: POST
 api_root: http://localhost:7280/api/v1/
@@ -11,6 +16,29 @@ endpoint: indexes/
 json:
   version: "0.6"
   index_id: fieldcaps
+  doc_mapping:
+    mode: dynamic
+    dynamic_mapping:
+      tokenizer: default
+      fast: true
+    field_mappings:
+      - name: date
+        type: datetime
+        input_formats:
+          - rfc3339
+        fast_precision: seconds
+        fast: true
+      - name: host
+        type: ip
+        fast: true
+---
+# Create index
+method: POST
+api_root: http://localhost:7280/api/v1/
+endpoint: indexes/
+json:
+  version: "0.6"
+  index_id: fieldcaps-2
   doc_mapping:
     mode: dynamic
     dynamic_mapping:
@@ -56,4 +84,12 @@ params:
 ndjson:
   - {"mixed": 5} # inter split mixed type
   - {"mixed": -5.5} 
-
+---
+# Ingest documents in index 2
+method: POST
+api_root: http://localhost:7280/api/v1/
+endpoint: fieldcaps-2/ingest
+params:
+  commit: force
+ndjson:
+  - {"name": "Fritz", "response": 30, "id": 6, "host": "192.168.0.1", "tags": ["nice", "cool"], "tags-2": ["awesome"]}

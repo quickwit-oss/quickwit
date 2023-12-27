@@ -1,3 +1,6 @@
 # # Delete index
 method: DELETE
 endpoint: fieldcaps
+---
+method: DELETE
+endpoint: fieldcaps-2

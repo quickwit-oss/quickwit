@@ -2,3 +2,7 @@
 method: DELETE
 api_root: http://localhost:7280/api/v1/
 endpoint: indexes/fieldcaps
+---
+method: DELETE
+api_root: http://localhost:7280/api/v1/
+endpoint: indexes/fieldcaps-2

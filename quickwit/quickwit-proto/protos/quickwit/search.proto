@@ -118,8 +118,8 @@ message ReportSplitsResponse {}
 // -- ListFields -------------------
 
 message ListFieldsRequest {
-  // Optional limit query to a set of indexes.
-  repeated string index_ids = 1;
+  // Index ID patterns
+  repeated string index_id_patterns = 1;
   // Optional limit query to a list of fields
   // Wildcard expressions are supported.
   repeated string fields = 2;
@@ -465,8 +465,8 @@ message FetchDocsResponse {
 }
 
 message ListTermsRequest {
-  // Index ID
-  string index_id = 1;
+  // Index ID patterns
+  repeated string index_id_patterns = 1;
 
   // Field to search on
   string field = 3;

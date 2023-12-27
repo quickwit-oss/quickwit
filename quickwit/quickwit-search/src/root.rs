@@ -26,22 +26,17 @@ use itertools::Itertools;
 use quickwit_common::shared_consts::{DELETION_GRACE_PERIOD, SCROLL_BATCH_LEN};
 use quickwit_common::uri::Uri;
 use quickwit_common::PrettySample;
-use quickwit_config::{build_doc_mapper, IndexConfig};
+use quickwit_config::build_doc_mapper;
 use quickwit_doc_mapper::tag_pruning::extract_tags_from_query;
 use quickwit_doc_mapper::{DocMapper, DYNAMIC_FIELD_NAME};
-use quickwit_metastore::{
-    IndexMetadata, IndexMetadataResponseExt, ListIndexesMetadataResponseExt, ListSplitsRequestExt,
-    MetastoreServiceStreamSplitsExt, SplitMetadata,
-};
+use quickwit_metastore::{IndexMetadata, ListIndexesMetadataResponseExt, SplitMetadata};
 use quickwit_proto::metastore::{
-    IndexMetadataRequest, ListIndexesMetadataRequest, ListSplitsRequest, MetastoreService,
-    MetastoreServiceClient,
+    ListIndexesMetadataRequest, MetastoreService, MetastoreServiceClient,
 };
 use quickwit_proto::search::{
-    FetchDocsRequest, FetchDocsResponse, Hit, LeafHit, LeafListTermsRequest, LeafListTermsResponse,
-    LeafSearchRequest, LeafSearchResponse, ListTermsRequest, ListTermsResponse, PartialHit,
-    SearchRequest, SearchResponse, SnippetRequest, SortDatetimeFormat, SortField, SortValue,
-    SplitIdAndFooterOffsets,
+    FetchDocsRequest, FetchDocsResponse, Hit, LeafHit, LeafSearchRequest, LeafSearchResponse,
+    PartialHit, SearchRequest, SearchResponse, SnippetRequest, SortDatetimeFormat, SortField,
+    SortValue, SplitIdAndFooterOffsets,
 };
 use quickwit_proto::types::{IndexUid, SplitId};
 use quickwit_query::query_ast::{
@@ -1170,128 +1165,6 @@ impl<'a, 'b> QueryAstVisitor<'b> for ExtractTimestampRange<'a> {
     }
 }
 
-/// Performs a distributed list terms.
-/// 1. Sends leaf request over gRPC to multiple leaf nodes.
-/// 2. Merges the search results.
-/// 3. Builds the response and returns.
-/// this is much simpler than `root_search` as it doesn't need to get actual docs.
-#[instrument(skip(list_terms_request, cluster_client, metastore))]
-pub async fn root_list_terms(
-    list_terms_request: &ListTermsRequest,
-    mut metastore: MetastoreServiceClient,
-    cluster_client: &ClusterClient,
-) -> crate::Result<ListTermsResponse> {
-    let start_instant = tokio::time::Instant::now();
-    let index_metadata_request =
-        IndexMetadataRequest::for_index_id(list_terms_request.index_id.clone());
-    let index_metadata = metastore
-        .index_metadata(index_metadata_request)
-        .await?
-        .deserialize_index_metadata()?;
-    let index_uid = index_metadata.index_uid.clone();
-    let index_config: IndexConfig = index_metadata.into_index_config();
-
-    let doc_mapper = build_doc_mapper(&index_config.doc_mapping, &index_config.search_settings)
-        .map_err(|err| {
-            SearchError::Internal(format!("failed to build doc mapper. cause: {err}"))
-        })?;
-
-    let schema = doc_mapper.schema();
-    let field = schema.get_field(&list_terms_request.field).map_err(|_| {
-        SearchError::InvalidQuery(format!(
-            "failed to list terms in `{}`, field doesn't exist",
-            list_terms_request.field
-        ))
-    })?;
-
-    let field_entry = schema.get_field_entry(field);
-    if !field_entry.is_indexed() {
-        return Err(SearchError::InvalidQuery(
-            "trying to list terms on field which isn't indexed".to_string(),
-        ));
-    }
-
-    let mut query = quickwit_metastore::ListSplitsQuery::for_index(index_uid)
-        .with_split_state(quickwit_metastore::SplitState::Published);
-
-    if let Some(start_ts) = list_terms_request.start_timestamp {
-        query = query.with_time_range_start_gte(start_ts);
-    }
-
-    if let Some(end_ts) = list_terms_request.end_timestamp {
-        query = query.with_time_range_end_lt(end_ts);
-    }
-    let list_splits_request = ListSplitsRequest::try_from_list_splits_query(query)?;
-    let split_metadatas: Vec<SplitMetadata> = metastore
-        .clone()
-        .list_splits(list_splits_request)
-        .await?
-        .collect_splits_metadata()
-        .await?;
-
-    let index_uri = &index_config.index_uri;
-
-    let jobs: Vec<SearchJob> = split_metadatas.iter().map(SearchJob::from).collect();
-    let assigned_leaf_search_jobs = cluster_client
-        .search_job_placer
-        .assign_jobs(jobs, &HashSet::default())
-        .await?;
-    let leaf_search_responses: Vec<LeafListTermsResponse> =
-        try_join_all(assigned_leaf_search_jobs.map(|(client, client_jobs)| {
-            cluster_client.leaf_list_terms(
-                LeafListTermsRequest {
-                    list_terms_request: Some(list_terms_request.clone()),
-                    split_offsets: client_jobs.into_iter().map(|job| job.offsets).collect(),
-                    index_uri: index_uri.to_string(),
-                },
-                client,
-            )
-        }))
-        .await?;
-
-    let failed_splits: Vec<_> = leaf_search_responses
-        .iter()
-        .flat_map(|leaf_search_response| &leaf_search_response.failed_splits)
-        .collect();
-
-    if !failed_splits.is_empty() {
-        error!(failed_splits = ?failed_splits, "leaf search response contains at least one failed split");
-        let errors: String = failed_splits
-            .iter()
-            .map(|splits| splits.to_string())
-            .collect::<Vec<_>>()
-            .join(", ");
-        return Err(SearchError::Internal(errors));
-    }
-
-    // Merging is a cpu-bound task, but probably fast enough to not require
-    // spawning it on a blocking thread.
-    let merged_iter = leaf_search_responses
-        .into_iter()
-        .map(|leaf_search_response| leaf_search_response.terms)
-        .kmerge()
-        .dedup();
-    let leaf_list_terms_response: Vec<Vec<u8>> = if let Some(limit) = list_terms_request.max_hits {
-        merged_iter.take(limit as usize).collect()
-    } else {
-        merged_iter.collect()
-    };
-
-    debug!(
-        leaf_list_terms_response_count = leaf_list_terms_response.len(),
-        "Merged leaf search response."
-    );
-
-    let elapsed = start_instant.elapsed();
-
-    Ok(ListTermsResponse {
-        num_hits: leaf_list_terms_response.len() as u64,
-        terms: leaf_list_terms_response,
-        elapsed_time_micros: elapsed.as_micros() as u64,
-        errors: Vec::new(),
-    })
-}
-
 async fn assign_client_fetch_docs_jobs(
     partial_hits: &[PartialHit],
     split_metadatas: &[SplitMetadata],
@@ -1424,9 +1297,9 @@ mod tests {
 
     use quickwit_common::shared_consts::SCROLL_BATCH_LEN;
     use quickwit_common::ServiceStream;
-    use quickwit_config::{DocMapping, IndexingSettings, SearchSettings};
+    use quickwit_config::{DocMapping, IndexConfig, IndexingSettings, SearchSettings};
     use quickwit_indexing::MockSplitBuilder;
-    use quickwit_metastore::{IndexMetadata, ListSplitsResponseExt};
+    use quickwit_metastore::{IndexMetadata, ListSplitsRequestExt, ListSplitsResponseExt};
     use quickwit_proto::metastore::{ListIndexesMetadataResponse, ListSplitsResponse};
     use quickwit_proto::search::{
         ScrollRequest, SortByValue, SortOrder, SortValue, SplitSearchError,

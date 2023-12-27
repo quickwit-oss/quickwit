@@ -103,7 +103,7 @@ impl JaegerService {
             Some(OffsetDateTime::now_utc().unix_timestamp() - self.lookback_period_secs);
 
         let search_request = ListTermsRequest {
-            index_id,
+            index_id_patterns: vec![index_id],
             field: "service_name".to_string(),
             max_hits,
             start_timestamp,
@@ -140,7 +140,7 @@ impl JaegerService {
         let end_key = SpanFingerprint::end_key(&request.service, span_kind_opt);
 
         let search_request = ListTermsRequest {
-            index_id,
+            index_id_patterns: vec![index_id],
             field: "span_fingerprint".to_string(),
             max_hits,
             start_timestamp,
@@ -2379,7 +2379,7 @@ mod tests {
         service
             .expect_root_list_terms()
             .withf(|req| {
-                req.index_id == OTEL_TRACES_INDEX_ID
+                req.index_id_patterns == vec![OTEL_TRACES_INDEX_ID]
                     && req.field == "service_name"
                     && req.start_timestamp.is_some()
             })
