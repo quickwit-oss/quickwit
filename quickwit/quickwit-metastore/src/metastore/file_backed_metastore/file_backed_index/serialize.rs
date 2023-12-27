@@ -20,7 +20,7 @@
 use std::collections::HashMap;
 
 use itertools::Itertools;
-use quickwit_doc_mapper::{FieldMappingType, BinaryFormat};
+use quickwit_doc_mapper::{BinaryFormat, FieldMappingType};
 use quickwit_proto::types::SourceId;
 use serde::{Deserialize, Serialize};
 
@@ -96,18 +96,21 @@ impl From<FileBackedIndexV0_6> for FileBackedIndex {
         // to be compatible with the v0_6 version.
         // TODO: remove after 0.8 release.
         if index.metadata.index_id() == "otel-traces-v0_6" {
-            index.metadata.index_config.doc_mapping
+            index
+                .metadata
+                .index_config
+                .doc_mapping
                 .field_mappings
                 .iter_mut()
-                .filter(|field_mapping| field_mapping.name == "trace_id" || field_mapping.name == "span_id")
-                .for_each(|field_mapping| {
-                    match &mut field_mapping.mapping_type {
-                        FieldMappingType::Bytes(bytes_options, _) => {
-                            bytes_options.input_format = BinaryFormat::Hex;
-                            bytes_options.output_format = BinaryFormat::Hex;
-                        }
-                        _ => {}
+                .filter(|field_mapping| {
+                    field_mapping.name == "trace_id" || field_mapping.name == "span_id"
+                })
+                .for_each(|field_mapping| match &mut field_mapping.mapping_type {
+                    FieldMappingType::Bytes(bytes_options, _) => {
+                        bytes_options.input_format = BinaryFormat::Hex;
+                        bytes_options.output_format = BinaryFormat::Hex;
                     }
+                    _ => {}
                 });
         }
         // Override split index_id to support old SplitMetadata format.

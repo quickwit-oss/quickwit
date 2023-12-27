@@ -19,6 +19,7 @@
 
 use std::collections::HashMap;
 
+use quickwit_config::{validate_identifier, validate_index_id_pattern};
 use quickwit_proto::opentelemetry::proto::common::v1::any_value::Value as OtlpValue;
 use quickwit_proto::opentelemetry::proto::common::v1::{
     AnyValue as OtlpAnyValue, ArrayValue as OtlpArrayValue, KeyValue as OtlpKeyValue,
@@ -33,11 +34,12 @@ mod traces;
 
 pub use logs::{OtlpGrpcLogsService, OTEL_LOGS_INDEX_ID};
 pub use span_id::{SpanId, TryFromSpanIdError};
+use tonic::Status;
 pub use trace_id::{TraceId, TryFromTraceIdError};
 pub use traces::{
     parse_otlp_spans_json, parse_otlp_spans_protobuf, Event, JsonSpanIterator, Link,
     OtlpGrpcTracesService, OtlpTraceError, Span, SpanFingerprint, SpanKind, SpanStatus,
-    OTEL_TRACES_INDEX_ID, OTEL_TRACES_INDEX_ID_PATTERN,
+    HEADER_NAME_OTEL_TRACES_INDEX, OTEL_TRACES_INDEX_ID, OTEL_TRACES_INDEX_ID_PATTERN,
 };
 
 impl From<OtlpTraceError> for tonic::Status {
@@ -129,6 +131,62 @@ pub(crate) fn parse_log_record_body(body: OtlpAnyValue) -> Option<JsonValue> {
 
 fn is_zero(count: &u32) -> bool {
     *count == 0
+}
+
+pub fn extract_otel_traces_index_patterns_from_metadata(
+    metadata: &tonic::metadata::MetadataMap,
+    otel_index_header_name: &str,
+) -> Result<Vec<String>, Status> {
+    let comma_separated_index_id_patterns = metadata
+        .get(otel_index_header_name)
+        .map(|index| index.to_str().map(|index| index.to_string()))
+        .transpose()
+        .map_err(|error| {
+            Status::internal(format!(
+                "Failed to extract index ID from request metadata: {}",
+                error
+            ))
+        })?
+        .unwrap_or_else(|| OTEL_TRACES_INDEX_ID_PATTERN.to_string());
+    let mut index_id_patterns = Vec::new();
+    for index_id_pattern in comma_separated_index_id_patterns.split(',') {
+        validate_index_id_pattern(index_id_pattern).map_err(|error| {
+            Status::internal(format!(
+                "Invalid index ID pattern in request metadata: {}",
+                error
+            ))
+        })?;
+        index_id_patterns.push(index_id_pattern.to_string());
+    }
+    Ok(index_id_patterns)
+}
+
+pub(crate) fn extract_otel_traces_index_from_metadata(
+    metadata: &tonic::metadata::MetadataMap,
+    otel_index_header_name: &str,
+) -> Result<String, Status> {
+    let index_id = metadata
+        .get(otel_index_header_name)
+        .map(
+            |index: &tonic::metadata::MetadataValue<tonic::metadata::Ascii>| {
+                index.to_str().map(|index| index.to_string())
+            },
+        )
+        .transpose()
+        .map_err(|error| {
+            Status::internal(format!(
+                "Failed to extract index ID from request metadata: {}",
+                error
+            ))
+        })?
+        .unwrap_or_else(|| OTEL_TRACES_INDEX_ID.to_string());
+    validate_identifier("index_id", &index_id).map_err(|error| {
+        Status::internal(format!(
+            "Invalid index ID pattern in request metadata: {}",
+            error
+        ))
+    })?;
+    Ok(index_id)
 }
 
 #[cfg(test)]

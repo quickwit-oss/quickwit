@@ -729,14 +729,13 @@ fn split_query_predicate(split: &&Split, query: &ListSplitsQuery) -> bool {
 mod tests {
     use std::collections::BTreeSet;
 
-    use quickwit_doc_mapper::{FieldMappingType, BinaryFormat};
     use quickwit_doc_mapper::tag_pruning::TagFilterAst;
+    use quickwit_doc_mapper::{BinaryFormat, FieldMappingType};
     use quickwit_proto::types::IndexUid;
 
+    use super::FileBackedIndex;
     use crate::file_backed_metastore::file_backed_index::split_query_predicate;
     use crate::{ListSplitsQuery, Split, SplitMetadata, SplitState};
-
-    use super::FileBackedIndex;
 
     fn make_splits() -> [Split; 3] {
         [
@@ -942,27 +941,43 @@ mod tests {
         "#;
 
         let file_backed_index: FileBackedIndex = serde_json::from_str(index_json_str).unwrap();
-        let field_mapping = file_backed_index.metadata.index_config.doc_mapping.field_mappings;
-        assert!(field_mapping.iter().filter(|field_mapping| field_mapping.name == "tenant_id").count() == 1);
-        assert!(field_mapping.iter().filter(|field_mapping| field_mapping.name == "trace_id").count() == 1);
-        assert!(field_mapping.iter().filter(|field_mapping| field_mapping.name == "span_id").count() == 1);
+        let field_mapping = file_backed_index
+            .metadata
+            .index_config
+            .doc_mapping
+            .field_mappings;
+        assert!(
+            field_mapping
+                .iter()
+                .filter(|field_mapping| field_mapping.name == "tenant_id")
+                .count()
+                == 1
+        );
+        assert!(
+            field_mapping
+                .iter()
+                .filter(|field_mapping| field_mapping.name == "trace_id")
+                .count()
+                == 1
+        );
+        assert!(
+            field_mapping
+                .iter()
+                .filter(|field_mapping| field_mapping.name == "span_id")
+                .count()
+                == 1
+        );
         for field_mapping in field_mapping.iter() {
             if field_mapping.name == "tenant_id" {
-                match &field_mapping.mapping_type {
-                    FieldMappingType::Bytes(bytes_options, _) => {
-                        assert_eq!(bytes_options.input_format, BinaryFormat::Base64);
-                        assert_eq!(bytes_options.output_format, BinaryFormat::Base64);
-                    }
-                    _ => {}
+                if let FieldMappingType::Bytes(bytes_options, _) = &field_mapping.mapping_type {
+                    assert_eq!(bytes_options.input_format, BinaryFormat::Base64);
+                    assert_eq!(bytes_options.output_format, BinaryFormat::Base64);
                 }
             }
             if field_mapping.name == "trace_id" || field_mapping.name == "span_id" {
-                match &field_mapping.mapping_type {
-                    FieldMappingType::Bytes(bytes_options, _) => {
-                        assert_eq!(bytes_options.input_format, BinaryFormat::Hex);
-                        assert_eq!(bytes_options.output_format, BinaryFormat::Hex);
-                    }
-                    _ => {}
+                if let FieldMappingType::Bytes(bytes_options, _) = &field_mapping.mapping_type {
+                    assert_eq!(bytes_options.input_format, BinaryFormat::Hex);
+                    assert_eq!(bytes_options.output_format, BinaryFormat::Hex);
                 }
             }
         }

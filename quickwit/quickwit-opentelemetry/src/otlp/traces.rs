@@ -43,12 +43,15 @@ use tonic::{Request, Response, Status};
 use tracing::field::Empty;
 use tracing::{error, instrument, warn, Span as RuntimeSpan};
 
-use super::{is_zero, TryFromSpanIdError, TryFromTraceIdError};
+use super::{
+    extract_otel_traces_index_from_metadata, is_zero, TryFromSpanIdError, TryFromTraceIdError,
+};
 use crate::otlp::metrics::OTLP_SERVICE_METRICS;
 use crate::otlp::{extract_attributes, SpanId, TraceId};
 
 pub const OTEL_TRACES_INDEX_ID: &str = "otel-traces-v0_7";
 pub const OTEL_TRACES_INDEX_ID_PATTERN: &str = "otel-traces-v0_*";
+pub const HEADER_NAME_OTEL_TRACES_INDEX: &str = "otel-traces-index";
 
 const OTEL_TRACES_INDEX_CONFIG: &str = r#"
 version: 0.6
@@ -698,7 +701,7 @@ impl OtlpGrpcTracesService {
     pub async fn export_inner(
         &mut self,
         request: ExportTraceServiceRequest,
-        labels: [&'static str; 4],
+        labels: [&str; 4],
     ) -> Result<ExportTraceServiceResponse, Status> {
         let ParsedSpans {
             doc_batch,
@@ -789,10 +792,11 @@ impl OtlpGrpcTracesService {
     async fn export_instrumented(
         &mut self,
         request: ExportTraceServiceRequest,
+        index_id: String,
     ) -> Result<ExportTraceServiceResponse, Status> {
         let start = std::time::Instant::now();
 
-        let labels = ["trace", OTEL_TRACES_INDEX_ID, "grpc", "protobuf"];
+        let labels = ["trace", &index_id, "grpc", "protobuf"];
 
         OTLP_SERVICE_METRICS
             .requests_total
@@ -809,7 +813,7 @@ impl OtlpGrpcTracesService {
             }
         };
         let elapsed = start.elapsed().as_secs_f64();
-        let labels = ["trace", OTEL_TRACES_INDEX_ID, "grpc", "protobuf", is_error];
+        let labels = ["trace", &index_id, "grpc", "protobuf", is_error];
         OTLP_SERVICE_METRICS
             .request_duration_seconds
             .with_label_values(labels)
@@ -826,9 +830,13 @@ impl TraceService for OtlpGrpcTracesService {
         &self,
         request: Request<ExportTraceServiceRequest>,
     ) -> Result<Response<ExportTraceServiceResponse>, Status> {
+        let index_id = extract_otel_traces_index_from_metadata(
+            request.metadata(),
+            HEADER_NAME_OTEL_TRACES_INDEX,
+        )?;
         let request = request.into_inner();
         self.clone()
-            .export_instrumented(request)
+            .export_instrumented(request, index_id)
             .await
             .map(Response::new)
     }
