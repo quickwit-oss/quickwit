@@ -1001,9 +1001,9 @@ mod tests_vrl {
             .state;
         assert_eq!(counters.index_id, index_id.to_string());
         assert_eq!(counters.source_id, source_id.to_string());
-        assert_eq!(counters.num_doc_parsing_errors.load(Ordering::Relaxed), 1);
+        assert_eq!(counters.num_doc_parsing_errors.load(Ordering::Relaxed), 2);
         assert_eq!(counters.num_transform_errors.load(Ordering::Relaxed), 0);
-        assert_eq!(counters.num_oltp_trace_errors.load(Ordering::Relaxed), 1);
+        assert_eq!(counters.num_oltp_trace_errors.load(Ordering::Relaxed), 0);
         assert_eq!(counters.num_valid_docs.load(Ordering::Relaxed), 2);
         assert_eq!(counters.num_bytes_total.load(Ordering::Relaxed), 397);
 
