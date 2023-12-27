@@ -243,10 +243,11 @@ method: [GET]
 engines:
   - quickwit
   - elasticsearch
-endpoint: fieldcaps/_field_caps?fields=host
+endpoint: fieldcaps*/_field_caps?fields=host
 expected:
   indices:
   - fieldcaps
+  - fieldcaps-2
   fields:
     host:
       ip:
@@ -276,18 +277,29 @@ expected:
 method: [GET]
 engines:
   - quickwit
-  - elasticsearch
-endpoint: fieldca*/_field_caps?fields=date
+endpoint: fieldca*/_field_caps?fields=tags*
 expected:
   indices:
   - fieldcaps
+  - fieldcaps-2
   fields:
-    date:
-      date_nanos:
-        type: date_nanos
+    tags:
+      keyword:
+        type: keyword
         metadata_field: false
         searchable: true
         aggregatable: true
+        indices:
+          - fieldcaps
+          - fieldcaps-2
+    tags-2:
+      keyword:
+        type: keyword
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+        indices:
+          - fieldcaps-2
 ---
 # Wildcard on index name + Wildcard without match
 method: [GET]
@@ -298,6 +310,7 @@ endpoint: fieldca*,blub*/_field_caps?fields=date
 expected:
   indices:
   - fieldcaps
+  - fieldcaps-2
   fields:
     date:
       date_nanos:

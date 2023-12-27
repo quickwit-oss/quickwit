@@ -45,13 +45,11 @@ use tokio_stream::wrappers::UnboundedReceiverStream;
 use crate::leaf_cache::LeafSearchCache;
 use crate::list_fields::{leaf_list_fields, root_list_fields};
 use crate::list_fields_cache::ListFieldsCache;
+use crate::list_terms::{leaf_list_terms, root_list_terms};
 use crate::root::fetch_docs_phase;
 use crate::scroll_context::{MiniKV, ScrollContext, ScrollKeyAndStartOffset};
 use crate::search_stream::{leaf_search_stream, root_search_stream};
-use crate::{
-    fetch_docs, leaf_list_terms, leaf_search, root_list_terms, root_search, ClusterClient,
-    SearchError,
-};
+use crate::{fetch_docs, leaf_search, root_search, ClusterClient, SearchError};
 
 #[derive(Clone)]
 /// The search service implementation.

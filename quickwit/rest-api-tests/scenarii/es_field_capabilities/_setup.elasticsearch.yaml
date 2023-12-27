@@ -3,9 +3,30 @@ method: DELETE
 endpoint: fieldcaps
 status_code: null
 ---
+method: DELETE
+endpoint: fieldcaps-2
+status_code: null
+---
 # Create index 1
 method: PUT
 endpoint: fieldcaps
+json: {
+  "mappings": {
+    "properties": {
+      "host": {
+        "type": "ip",
+        "store": true
+      },
+      "date": {
+        "type": "date_nanos"
+      },
+    }
+  }
+}
+---
+# Create index 2
+method: PUT
+endpoint: fieldcaps-2
 json: {
   "mappings": {
     "properties": {
@@ -31,4 +52,5 @@ ndjson:
   - {"name": "Fritz", "response": 30, "id": 5, "host": "192.168.0.1", "tags": ["nice", "cool"]}
   - "index": { "_index": "fieldcaps" }
   - {"nested": {"name": "Fritz", "response": 30}, "date": "2015-01-11T12:10:30Z", "host": "192.168.0.11", "tags": ["nice"]}
-
+  - "index": { "_index": "fieldcaps-2" }
+  - {"name": "Fritz", "response": 30, "id": 6, "host": "192.168.0.1", "tags": ["nice", "cool"], "tags-2": ["awesome"]}

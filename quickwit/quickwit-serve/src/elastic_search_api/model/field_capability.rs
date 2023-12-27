@@ -176,7 +176,7 @@ pub fn build_list_field_request_for_es_api(
     _search_body: FieldCapabilityRequestBody,
 ) -> Result<quickwit_proto::search::ListFieldsRequest, ElasticSearchError> {
     Ok(quickwit_proto::search::ListFieldsRequest {
-        index_ids: index_id_patterns,
+        index_id_patterns,
         fields: search_params.fields.unwrap_or_default(),
     })
 }

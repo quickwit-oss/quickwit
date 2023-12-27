@@ -229,7 +229,8 @@ fn matches_pattern(field_pattern: &str, field_name: &str) -> bool {
         }
     }
 }
-///
+
+/// `leaf` step of list fields.
 pub async fn leaf_list_fields(
     index_id: String,
     index_storage: Arc<dyn Storage>,
@@ -289,11 +290,11 @@ pub async fn root_list_fields(
     cluster_client: &ClusterClient,
     mut metastore: MetastoreServiceClient,
 ) -> crate::Result<ListFieldsResponse> {
-    let list_indexes_metadata_request = if list_fields_req.index_ids.is_empty() {
+    let list_indexes_metadata_request = if list_fields_req.index_id_patterns.is_empty() {
         ListIndexesMetadataRequest::all()
     } else {
         ListIndexesMetadataRequest {
-            index_id_patterns: list_fields_req.index_ids.clone(),
+            index_id_patterns: list_fields_req.index_id_patterns.clone(),
         }
     };
 
@@ -303,7 +304,10 @@ pub async fn root_list_fields(
         .list_indexes_metadata(list_indexes_metadata_request)
         .await?
         .deserialize_indexes_metadata()?;
-    check_all_index_metadata_found(&indexes_metadata[..], &list_fields_req.index_ids[..])?;
+    check_all_index_metadata_found(
+        &indexes_metadata[..],
+        &list_fields_req.index_id_patterns[..],
+    )?;
     // The request contains a wildcard, but couldn't find any index.
     if indexes_metadata.is_empty() {
         return Ok(ListFieldsResponse { fields: vec![] });
@@ -326,7 +330,6 @@ pub async fn root_list_fields(
         .into_iter()
         .map(|index_metadata| index_metadata.index_uid)
         .collect();
-
     let split_metadatas: Vec<SplitMetadata> =
         list_relevant_splits(index_uids, None, None, None, &mut metastore).await?;
 

@@ -33,6 +33,7 @@ mod leaf;
 mod leaf_cache;
 mod list_fields;
 mod list_fields_cache;
+mod list_terms;
 mod retry;
 mod root;
 mod scroll_context;
@@ -79,10 +80,8 @@ pub use crate::client::{
 pub use crate::cluster_client::ClusterClient;
 pub use crate::error::{parse_grpc_error, SearchError};
 use crate::fetch_docs::fetch_docs;
-use crate::leaf::{leaf_list_terms, leaf_search};
-pub use crate::root::{
-    jobs_to_leaf_requests, root_list_terms, root_search, IndexMetasForLeafSearch, SearchJob,
-};
+use crate::leaf::leaf_search;
+pub use crate::root::{jobs_to_leaf_requests, root_search, IndexMetasForLeafSearch, SearchJob};
 pub use crate::search_job_placer::{Job, SearchJobPlacer};
 pub use crate::search_response_rest::SearchResponseRest;
 pub use crate::search_stream::root_search_stream;
