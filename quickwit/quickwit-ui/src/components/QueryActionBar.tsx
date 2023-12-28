@@ -39,7 +39,17 @@ export function QueryEditorActionBar(props: SearchComponentProps) {
         </Button>
       </Box>
       { shouldDisplayTimeRangeSelect && <TimeRangeSelect
-        { ...props } />
+          timeRange={{
+            startTimestamp:props.searchRequest.startTimestamp,
+            endTimestamp:props.searchRequest.endTimestamp
+          }}
+          onUpdate={
+            (timeRange)=>{
+              props.runSearch({...props.searchRequest, ...timeRange});
+            }
+          }
+          disabled={props.queryRunning || !props.searchRequest.indexId}
+       />
       }
     </Box>
   )
