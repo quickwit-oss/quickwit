@@ -35,7 +35,6 @@ import { Dayjs, default as dayjs } from 'dayjs';
 import relativeTime from "dayjs/plugin/relativeTime"
 import utc from "dayjs/plugin/utc"
 import { DateTimePicker } from '@mui/x-date-pickers';
-import { SearchComponentProps } from "../utils/SearchComponentProps";
 import { AdapterDayjs, } from '@mui/x-date-pickers/AdapterDayjs';
 import { LocalizationProvider } from '@mui/x-date-pickers';
 import { DATE_TIME_WITH_SECONDS_FORMAT } from "../utils/models";
@@ -53,13 +52,24 @@ const TIME_RANGE_CHOICES = [
   ["Last year", 365 * 24 * 60 * 60],
 ];
 
+type TimeRange = {
+  startTimestamp: number | null,
+  endTimestamp: number | null,
+}
+
+export interface TimeRangeSelectProps {
+  timeRange: TimeRange;
+  disabled?: boolean;
+  onUpdate(newTimeRange:TimeRange): void;
+}
+
 interface TimeRangeSelectState {
   anchor: HTMLElement | null;
   customDatesPanelOpen: boolean;
   width: number;
 }
 
-export function TimeRangeSelect(props: SearchComponentProps): JSX.Element {
+export function TimeRangeSelect(props: TimeRangeSelectProps): JSX.Element {
   const getInitialState = () => {return {width: 220, anchor: null, customDatesPanelOpen: false}};
   const initialState = useMemo(() => {return getInitialState(); }, []);
   const [state, setState] = useState<TimeRangeSelectState>(initialState);
@@ -78,7 +88,7 @@ export function TimeRangeSelect(props: SearchComponentProps): JSX.Element {
 
   useEffect(() => {
     setState(initialState);
-  }, [props.queryRunning, initialState])
+  }, [props.disabled, initialState])
 
   const handleClose = () => {
     setState(initialState);
@@ -92,11 +102,11 @@ export function TimeRangeSelect(props: SearchComponentProps): JSX.Element {
     secondsBeforeNow = +secondsBeforeNow;
     setState(initialState);
     const startTimestamp = Math.trunc(Date.now() / 1000) - secondsBeforeNow;
-    props.runSearch({...props.searchRequest, startTimestamp: startTimestamp, endTimestamp: null});
+    props.onUpdate({startTimestamp, endTimestamp:null})
   };
 
   const handleReset = () => {
-    props.runSearch({...props.searchRequest, startTimestamp: null, endTimestamp: null});
+    props.onUpdate({startTimestamp:null, endTimestamp:null})
   };
 
   const open = Boolean(state.anchor);
@@ -109,9 +119,9 @@ export function TimeRangeSelect(props: SearchComponentProps): JSX.Element {
         disableElevation
         onClick={handleOpenClick}
         startIcon={<AccessTime />}
-        disabled={props.queryRunning || props.searchRequest.indexId == null}
+        disabled={props.disabled}
       >
-        <DateTimeRangeLabel startTimestamp={props.searchRequest.startTimestamp} endTimestamp={props.searchRequest.endTimestamp} />
+        <DateTimeRangeLabel startTimestamp={props.timeRange.startTimestamp} endTimestamp={props.timeRange.endTimestamp} />
       </Button>
       <Popover
         id={id}
@@ -173,25 +183,25 @@ export function TimeRangeSelect(props: SearchComponentProps): JSX.Element {
   );
 }
 
-function CustomDatesPanel(props: SearchComponentProps): JSX.Element {
+function CustomDatesPanel(props: TimeRangeSelectProps): JSX.Element {
   const [startDate, setStartDate] = useState<Dayjs | null>(null);
   const [endDate, setEndDate] = useState<Dayjs | null>(null);
 
   useEffect(() => {
-    setStartDate(props.searchRequest.startTimestamp ? convertTimestampSecsIntoDateUtc(props.searchRequest.startTimestamp) : null);
-    setEndDate(props.searchRequest.endTimestamp ? convertTimestampSecsIntoDateUtc(props.searchRequest.endTimestamp) : null);
-  }, [props.searchRequest.startTimestamp, props.searchRequest.endTimestamp]);
+    setStartDate(props.timeRange.startTimestamp ? convertTimestampSecsIntoDateUtc(props.timeRange.startTimestamp) : null);
+    setEndDate(props.timeRange.endTimestamp ? convertTimestampSecsIntoDateUtc(props.timeRange.endTimestamp) : null);
+  }, [props.timeRange.startTimestamp, props.timeRange.endTimestamp]);
   const handleReset = (event: React.MouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
     setStartDate(null);
     setEndDate(null)
-    props.onSearchRequestUpdate({...props.searchRequest, startTimestamp: null, endTimestamp: null});
+    props.onUpdate({startTimestamp:null, endTimestamp:null});
   };
   const handleApply = (event: React.MouseEvent<HTMLButtonElement>) => {
     event.preventDefault();
     const startTimestamp = startDate ? startDate.valueOf() / 1000 : null;
     const endTimestamp = endDate ? endDate.valueOf() / 1000 : null;
-    props.runSearch({...props.searchRequest, startTimestamp: startTimestamp, endTimestamp: endTimestamp});
+    props.onUpdate({startTimestamp, endTimestamp});
   };
 
   return (
