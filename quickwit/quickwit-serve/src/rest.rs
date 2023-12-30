@@ -43,6 +43,7 @@ use crate::jaeger_api::jaeger_api_handlers;
 use crate::json_api_response::{ApiError, JsonApiResponse};
 use crate::metrics_api::metrics_handler;
 use crate::node_info_handler::node_info_handler;
+use crate::otlp_api::otlp_ingest_api_handlers;
 use crate::search_api::{search_get_handler, search_post_handler, search_stream_handler};
 use crate::ui_handler::ui_handler;
 use crate::{BodyFormat, BuildInfo, QuickwitServices, RuntimeInfo};
@@ -186,6 +187,10 @@ fn api_v1_routes(
                 quickwit_services.ingest_router_service.clone(),
                 quickwit_services.ingest_service.clone(),
                 quickwit_services.node_config.ingest_api_config.clone(),
+            ))
+            .or(otlp_ingest_api_handlers(
+                quickwit_services.otlp_logs_service_opt.clone(),
+                quickwit_services.otlp_traces_service_opt.clone(),
             ))
             .or(index_management_handlers(
                 quickwit_services.index_manager.clone(),
@@ -598,12 +603,13 @@ mod tests {
             indexing_service_opt: None,
             index_manager: index_service,
             ingest_service: ingest_service_client(),
-
             ingester_service_opt: None,
             ingest_router_service: IngestRouterServiceClient::from(
                 IngestRouterServiceClient::mock(),
             ),
             janitor_service_opt: None,
+            otlp_logs_service_opt: None,
+            otlp_traces_service_opt: None,
             metastore_client,
             metastore_server_opt: None,
             node_config: Arc::new(node_config.clone()),

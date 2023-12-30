@@ -5960,6 +5960,7 @@ dependencies = [
  "once_cell",
  "opentelemetry",
  "percent-encoding",
+ "prost",
  "prost-types",
  "quickwit-actors",
  "quickwit-cluster",
