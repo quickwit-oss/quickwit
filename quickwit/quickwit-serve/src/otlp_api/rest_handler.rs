@@ -51,7 +51,7 @@ pub(crate) fn oltp_ingest_logs_handler(
     otlp_log_service: Option<OtlpGrpcLogsService>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     require(otlp_log_service)
-        .and(warp::path!(String / "otlp" / "logs"))
+        .and(warp::path!(String / "ingest" / "otlp" / "v1" / "logs"))
         .and(warp::post())
         .and(warp::body::bytes())
         .then(otlp_ingest_logs)
@@ -63,7 +63,7 @@ pub(crate) fn oltp_ingest_traces_handler(
     otlp_traces_service: Option<OtlpGrpcTracesService>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     require(otlp_traces_service)
-        .and(warp::path!(String / "otlp" / "traces"))
+        .and(warp::path!(String / "ingest" / "otlp" / "v1" / "traces"))
         .and(warp::post())
         .and(warp::body::bytes())
         .then(otlp_ingest_traces)
@@ -108,7 +108,6 @@ async fn otlp_ingest_traces(
     _index_id: String, // <- TODO: use index ID when gRPC service supports it.
     body: Bytes,
 ) -> Result<ExportTraceServiceResponse, OtlpApiError> {
-    println!("otlp_ingest_traces");
     let export_traces_request: ExportTraceServiceRequest = prost::Message::decode(&body[..])
         .map_err(|err| OtlpApiError::InvalidPayload(err.to_string()))?;
     let response = otlp_traces_service
@@ -186,7 +185,7 @@ mod tests {
         let otlp_traces_api_handler =
             otlp_ingest_api_handlers(Some(logs_service), Some(traces_service)).recover(recover_fn);
         let resp = warp::test::request()
-            .path("/otel-traces-v0_6/otlp/logs")
+            .path("/otel-traces-v0_6/ingest/otlp/v1/logs")
             .method("POST")
             .body(body)
             .reply(&otlp_traces_api_handler)
@@ -231,7 +230,7 @@ mod tests {
         let otlp_traces_api_handler =
             otlp_ingest_api_handlers(Some(logs_service), Some(traces_service)).recover(recover_fn);
         let resp = warp::test::request()
-            .path("/otel-traces-v0_6/otlp/traces")
+            .path("/otel-traces-v0_6/ingest/otlp/v1/traces")
             .method("POST")
             .body(body)
             .reply(&otlp_traces_api_handler)

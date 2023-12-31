@@ -29,14 +29,14 @@ mod logs;
 mod metrics;
 mod span_id;
 #[cfg(any(test, feature = "testsuite"))]
-mod tests;
+mod test_utils;
 mod trace_id;
 mod traces;
 
 pub use logs::{OtlpGrpcLogsService, OTEL_LOGS_INDEX_ID};
 pub use span_id::{SpanId, TryFromSpanIdError};
 #[cfg(any(test, feature = "testsuite"))]
-pub use tests::make_resource_spans_for_test;
+pub use test_utils::make_resource_spans_for_test;
 pub use trace_id::{TraceId, TryFromTraceIdError};
 pub use traces::{
     parse_otlp_spans_json, parse_otlp_spans_protobuf, Event, JsonSpanIterator, Link,
