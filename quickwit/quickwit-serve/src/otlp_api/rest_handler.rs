@@ -51,7 +51,7 @@ pub(crate) fn oltp_ingest_logs_handler(
     otlp_log_service: Option<OtlpGrpcLogsService>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     require(otlp_log_service)
-        .and(warp::path!(String / "oltp" / "logs"))
+        .and(warp::path!(String / "otlp" / "logs"))
         .and(warp::post())
         .and(warp::body::bytes())
         .then(otlp_ingest_logs)
@@ -63,7 +63,7 @@ pub(crate) fn oltp_ingest_traces_handler(
     otlp_traces_service: Option<OtlpGrpcTracesService>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     require(otlp_traces_service)
-        .and(warp::path!(String / "oltp" / "traces"))
+        .and(warp::path!(String / "otlp" / "traces"))
         .and(warp::post())
         .and(warp::body::bytes())
         .then(otlp_ingest_traces)
@@ -108,6 +108,7 @@ async fn otlp_ingest_traces(
     _index_id: String, // <- TODO: use index ID when gRPC service supports it.
     body: Bytes,
 ) -> Result<ExportTraceServiceResponse, OtlpApiError> {
+    println!("otlp_ingest_traces");
     let export_traces_request: ExportTraceServiceRequest = prost::Message::decode(&body[..])
         .map_err(|err| OtlpApiError::InvalidPayload(err.to_string()))?;
     let response = otlp_traces_service
@@ -118,4 +119,128 @@ async fn otlp_ingest_traces(
 }
 
 #[cfg(test)]
-mod tests {}
+mod tests {
+    use prost::Message;
+    use quickwit_ingest::{CommitType, IngestResponse, IngestServiceClient};
+    use quickwit_opentelemetry::otlp::{
+        make_resource_spans_for_test, OtlpGrpcLogsService, OtlpGrpcTracesService,
+    };
+    use quickwit_proto::opentelemetry::proto::collector::logs::v1::{
+        ExportLogsServiceRequest, ExportLogsServiceResponse,
+    };
+    use quickwit_proto::opentelemetry::proto::collector::trace::v1::{
+        ExportTraceServiceRequest, ExportTraceServiceResponse,
+    };
+    use quickwit_proto::opentelemetry::proto::logs::v1::{LogRecord, ResourceLogs, ScopeLogs};
+    use quickwit_proto::opentelemetry::proto::resource::v1::Resource;
+    use warp::Filter;
+
+    use super::otlp_ingest_api_handlers;
+    use crate::rest::recover_fn;
+
+    #[tokio::test]
+    async fn test_otlp_ingest_logs_handler() {
+        let mut ingest_service_mock = IngestServiceClient::mock();
+        ingest_service_mock
+            .expect_ingest()
+            .withf(|request| {
+                request.doc_batches.len() == 1
+                    // && request.commit == CommitType::Auto as i32
+                    && request.doc_batches[0].doc_lengths.len() == 1
+            })
+            .returning(|_| {
+                Ok(IngestResponse {
+                    num_docs_for_processing: 1,
+                })
+            });
+        let ingest_service_client = IngestServiceClient::from(ingest_service_mock);
+        let logs_service = OtlpGrpcLogsService::new(ingest_service_client.clone());
+        let traces_service =
+            OtlpGrpcTracesService::new(ingest_service_client, Some(CommitType::Force));
+        let export_logs_request = ExportLogsServiceRequest {
+            resource_logs: vec![ResourceLogs {
+                resource: Some(Resource {
+                    attributes: vec![],
+                    dropped_attributes_count: 0,
+                }),
+                scope_logs: vec![ScopeLogs {
+                    log_records: vec![LogRecord {
+                        body: None,
+                        attributes: vec![],
+                        dropped_attributes_count: 0,
+                        time_unix_nano: 1704036033047000000,
+                        severity_number: 0,
+                        severity_text: "ERROR".to_string(),
+                        span_id: vec![],
+                        trace_id: vec![],
+                        flags: 0,
+                        observed_time_unix_nano: 0,
+                    }],
+                    scope: None,
+                    schema_url: "".to_string(),
+                }],
+                schema_url: "".to_string(),
+            }],
+        };
+        let body = export_logs_request.encode_to_vec();
+        let otlp_traces_api_handler =
+            otlp_ingest_api_handlers(Some(logs_service), Some(traces_service)).recover(recover_fn);
+        let resp = warp::test::request()
+            .path("/otel-traces-v0_6/otlp/logs")
+            .method("POST")
+            .body(body)
+            .reply(&otlp_traces_api_handler)
+            .await;
+
+        assert_eq!(resp.status(), 200);
+        let actual_response: ExportLogsServiceResponse =
+            serde_json::from_slice(resp.body()).unwrap();
+        assert!(actual_response.partial_success.is_some());
+        assert_eq!(
+            actual_response
+                .partial_success
+                .unwrap()
+                .rejected_log_records,
+            0
+        );
+    }
+
+    #[tokio::test]
+    async fn test_otlp_ingest_traces_handler() {
+        let mut ingest_service_mock = IngestServiceClient::mock();
+        ingest_service_mock
+            .expect_ingest()
+            .withf(|request| {
+                request.doc_batches.len() == 1
+                    && request.commit == CommitType::Force as i32
+                    && request.doc_batches[0].doc_lengths.len() == 5
+            })
+            .returning(|_| {
+                Ok(IngestResponse {
+                    num_docs_for_processing: 1,
+                })
+            });
+        let ingest_service_client = IngestServiceClient::from(ingest_service_mock);
+        let logs_service = OtlpGrpcLogsService::new(ingest_service_client.clone());
+        let traces_service =
+            OtlpGrpcTracesService::new(ingest_service_client, Some(CommitType::Force));
+        let export_trace_request = ExportTraceServiceRequest {
+            resource_spans: make_resource_spans_for_test(),
+        };
+        let body = export_trace_request.encode_to_vec();
+        let otlp_traces_api_handler =
+            otlp_ingest_api_handlers(Some(logs_service), Some(traces_service)).recover(recover_fn);
+        let resp = warp::test::request()
+            .path("/otel-traces-v0_6/otlp/traces")
+            .method("POST")
+            .body(body)
+            .reply(&otlp_traces_api_handler)
+            .await;
+
+        assert_eq!(resp.status(), 200);
+        let actual_response: ExportTraceServiceResponse =
+            serde_json::from_slice(resp.body()).unwrap();
+        assert!(actual_response.partial_success.is_some());
+        assert_eq!(actual_response.partial_success.unwrap().rejected_spans, 0);
+    }
+}

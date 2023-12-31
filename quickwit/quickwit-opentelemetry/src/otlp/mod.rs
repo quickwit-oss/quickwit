@@ -28,11 +28,15 @@ use serde_json::{Number as JsonNumber, Value as JsonValue};
 mod logs;
 mod metrics;
 mod span_id;
+#[cfg(any(test, feature = "testsuite"))]
+mod tests;
 mod trace_id;
 mod traces;
 
 pub use logs::{OtlpGrpcLogsService, OTEL_LOGS_INDEX_ID};
 pub use span_id::{SpanId, TryFromSpanIdError};
+#[cfg(any(test, feature = "testsuite"))]
+pub use tests::make_resource_spans_for_test;
 pub use trace_id::{TraceId, TryFromTraceIdError};
 pub use traces::{
     parse_otlp_spans_json, parse_otlp_spans_protobuf, Event, JsonSpanIterator, Link,
@@ -129,124 +133,4 @@ pub(crate) fn parse_log_record_body(body: OtlpAnyValue) -> Option<JsonValue> {
 
 fn is_zero(count: &u32) -> bool {
     *count == 0
-}
-
-#[cfg(test)]
-mod tests {
-    use quickwit_proto::opentelemetry::proto::common::v1::any_value::Value as OtlpAnyValueValue;
-    use quickwit_proto::opentelemetry::proto::common::v1::ArrayValue as OtlpArrayValue;
-    use serde_json::json;
-
-    use super::*;
-
-    #[test]
-    fn test_to_json_value() {
-        assert_eq!(
-            to_json_value(OtlpValue::ArrayValue(OtlpArrayValue { values: Vec::new() })),
-            Some(json!([]))
-        );
-        assert_eq!(
-            to_json_value(OtlpValue::ArrayValue(OtlpArrayValue {
-                values: vec![OtlpAnyValue {
-                    value: Some(OtlpAnyValueValue::IntValue(1337))
-                }]
-            })),
-            Some(json!([1337]))
-        );
-        assert_eq!(to_json_value(OtlpValue::BoolValue(true)), Some(json!(true)));
-        assert_eq!(
-            to_json_value(OtlpValue::DoubleValue(12.0)),
-            Some(json!(12.0))
-        );
-        assert_eq!(to_json_value(OtlpValue::IntValue(42)), Some(json!(42)));
-        assert_eq!(
-            to_json_value(OtlpValue::StringValue("foo".to_string())),
-            Some(json!("foo"))
-        );
-    }
-
-    #[test]
-    fn test_extract_attributes() {
-        assert!(extract_attributes(vec![]).is_empty());
-
-        let attributes = vec![
-            OtlpKeyValue {
-                key: "".to_string(),
-                value: None,
-            },
-            OtlpKeyValue {
-                key: "".to_string(),
-                value: Some(OtlpAnyValue {
-                    value: Some(OtlpAnyValueValue::BoolValue(true)),
-                }),
-            },
-            OtlpKeyValue {
-                key: "empty_value".to_string(),
-                value: None,
-            },
-            OtlpKeyValue {
-                key: "empty_value_value".to_string(),
-                value: Some(OtlpAnyValue { value: None }),
-            },
-        ];
-        assert!(extract_attributes(attributes).is_empty());
-
-        let attributes = vec![
-            OtlpKeyValue {
-                key: "array_key".to_string(),
-                value: Some(OtlpAnyValue {
-                    value: Some(OtlpAnyValueValue::ArrayValue(OtlpArrayValue {
-                        values: vec![OtlpAnyValue {
-                            value: Some(OtlpAnyValueValue::IntValue(1337)),
-                        }],
-                    })),
-                }),
-            },
-            OtlpKeyValue {
-                key: "bool_key".to_string(),
-                value: Some(OtlpAnyValue {
-                    value: Some(OtlpAnyValueValue::BoolValue(true)),
-                }),
-            },
-            OtlpKeyValue {
-                key: "double_key".to_string(),
-                value: Some(OtlpAnyValue {
-                    value: Some(OtlpAnyValueValue::DoubleValue(12.0)),
-                }),
-            },
-            OtlpKeyValue {
-                key: "int_key".to_string(),
-                value: Some(OtlpAnyValue {
-                    value: Some(OtlpAnyValueValue::IntValue(42)),
-                }),
-            },
-            OtlpKeyValue {
-                key: "string_key".to_string(),
-                value: Some(OtlpAnyValue {
-                    value: Some(OtlpAnyValueValue::StringValue("foo".to_string())),
-                }),
-            },
-        ];
-        let expected_attributes = HashMap::from_iter([
-            ("array_key".to_string(), json!([1337])),
-            ("bool_key".to_string(), json!(true)),
-            ("double_key".to_string(), json!(12.0)),
-            ("int_key".to_string(), json!(42)),
-            ("string_key".to_string(), json!("foo")),
-        ]);
-        assert_eq!(extract_attributes(attributes), expected_attributes);
-    }
-
-    #[test]
-    fn test_parse_log_record_body() {
-        let value = parse_log_record_body(OtlpAnyValue {
-            value: Some(OtlpAnyValueValue::StringValue("body".to_string())),
-        })
-        .unwrap();
-        let JsonValue::Object(map) = value else {
-            panic!("Expected object, got {value:?}");
-        };
-        assert_eq!(map.len(), 1);
-        assert_eq!(map["message"], json!("body"));
-    }
 }
