@@ -52,6 +52,7 @@ pub(crate) fn oltp_ingest_logs_handler(
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     require(otlp_log_service)
         .and(warp::path!(String / "ingest" / "otlp" / "v1" / "logs"))
+        .and(warp::header::exact_ignore_case("content-type", "application/x-protobuf"))
         .and(warp::post())
         .and(warp::body::bytes())
         .then(otlp_ingest_logs)
@@ -64,6 +65,7 @@ pub(crate) fn oltp_ingest_traces_handler(
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     require(otlp_traces_service)
         .and(warp::path!(String / "ingest" / "otlp" / "v1" / "traces"))
+        .and(warp::header::exact_ignore_case("content-type", "application/x-protobuf"))
         .and(warp::post())
         .and(warp::body::bytes())
         .then(otlp_ingest_traces)
@@ -187,6 +189,7 @@ mod tests {
         let resp = warp::test::request()
             .path("/otel-traces-v0_6/ingest/otlp/v1/logs")
             .method("POST")
+            .header("content-type", "application/x-protobuf")
             .body(body)
             .reply(&otlp_traces_api_handler)
             .await;
@@ -232,6 +235,7 @@ mod tests {
         let resp = warp::test::request()
             .path("/otel-traces-v0_6/ingest/otlp/v1/traces")
             .method("POST")
+            .header("content-type", "application/x-protobuf")
             .body(body)
             .reply(&otlp_traces_api_handler)
             .await;
