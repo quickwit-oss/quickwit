@@ -3,7 +3,7 @@
 method: POST
 endpoint: indexes/
 json:
-  version: "0.6"
+  version: "0.7"
   index_id: failing1
   doc_mapping:
     mode: lenient
@@ -21,7 +21,7 @@ expected:
 method: POST
 endpoint: indexes/
 json:
-  version: "0.6"
+  version: "0.7"
   index_id: failing2
   doc_mapping:
     mode: dynamic
@@ -40,7 +40,7 @@ expected:
 method: POST
 endpoint: indexes/
 json:
-  version: "0.6"
+  version: "0.7"
   index_id: failing3
   doc_mapping:
     mode: dynamic

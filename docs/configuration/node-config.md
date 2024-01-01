@@ -19,7 +19,7 @@ A commented example is available here: [quickwit.yaml](https://github.com/quickw
 
 | Property | Description | Env variable | Default value |
 | --- | --- | --- | --- |
-| `version` | Config file version. `0.6` is the only available value with a retro compatibility on `0.5` and `0.4`. | | |
+| `version` | Config file version. `0.7` is the only available value with a retro compatibility on `0.5` and `0.4`. | | |
 | `cluster_id` | Unique identifier of the cluster the node will be joining. Clusters sharing the same network should use distinct cluster IDs.| `QW_CLUSTER_ID` | `quickwit-default-cluster` |
 | `node_id` | Unique identifier of the node. It must be distinct from the node IDs of its cluster peers. Defaults to the instance's short hostname if not set. | `QW_NODE_ID` | short hostname |
 | `enabled_services` | Enabled services (control_plane, indexer, janitor, metastore, searcher) | `QW_ENABLED_SERVICES` | all services |
@@ -233,7 +233,7 @@ export QW_LISTEN_ADDRESS=0.0.0.0
 
 ```yaml
 # config.yaml
-version: 0.6
+version: 0.7
 cluster_id: quickwit-cluster
 node_id: my-unique-node-id
 listen_address: ${QW_LISTEN_ADDRESS}
@@ -244,7 +244,7 @@ rest:
 Will be interpreted by Quickwit as:
 
 ```yaml
-version: 0.6
+version: 0.7
 cluster_id: quickwit-cluster
 node_id: my-unique-node-id
 listen_address: 0.0.0.0

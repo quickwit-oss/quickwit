@@ -63,4 +63,4 @@ Use cases where you would likely *not* want to use Quickwit include:
 
 - [Quickstart](../get-started/quickstart.md)
 - [Concepts](architecture.md)
-- [Last release blog post](https://quickwit.io/blog/quickwit-0.6)
+- [Last release blog post](https://quickwit.io/blog/quickwit-0.7)

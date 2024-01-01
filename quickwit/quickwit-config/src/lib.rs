@@ -41,7 +41,7 @@ mod templating;
 
 // We export that one for backward compatibility.
 // See #2048
-use index_config::serialize::{IndexConfigV0_6, VersionedIndexConfig};
+use index_config::serialize::{IndexConfigV0_7, VersionedIndexConfig};
 pub use index_config::{
     build_doc_mapper, load_index_config_from_user_config, DocMapping, IndexConfig,
     IndexingResources, IndexingSettings, RetentionPolicy, SearchSettings,
@@ -67,7 +67,7 @@ pub use crate::node_config::{
     IndexerConfig, IngestApiConfig, JaegerConfig, NodeConfig, SearcherConfig, SplitCacheLimits,
     DEFAULT_QW_CONFIG_PATH,
 };
-use crate::source_config::serialize::{SourceConfigV0_6, VersionedSourceConfig};
+use crate::source_config::serialize::{SourceConfigV0_7, VersionedSourceConfig};
 pub use crate::storage_config::{
     AzureStorageConfig, FileStorageConfig, RamStorageConfig, S3StorageConfig, StorageBackend,
     StorageBackendFlavor, StorageConfig, StorageConfigs,
@@ -82,9 +82,9 @@ pub use crate::storage_config::{
     MergePolicyConfig,
     DocMapping,
     VersionedSourceConfig,
-    SourceConfigV0_6,
+    SourceConfigV0_7,
     VersionedIndexConfig,
-    IndexConfigV0_6,
+    IndexConfigV0_7,
     SourceInputFormat,
     SourceParams,
     FileSourceParams,

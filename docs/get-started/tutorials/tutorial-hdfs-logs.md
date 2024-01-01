@@ -84,7 +84,7 @@ The `timestamp_field` and `tag_fields` are used by Quickwit for [splits pruning]
 Check out the [index config docs](../../configuration/index-config) for more details.
 
 ```yaml title="hdfs-logs-index.yaml"
-version: 0.6
+version: 0.7
 
 index_id: hdfs-logs
 
