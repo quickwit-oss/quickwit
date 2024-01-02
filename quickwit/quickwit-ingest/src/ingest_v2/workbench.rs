@@ -65,6 +65,8 @@ impl IngestWorkbench {
         self.num_attempts += 1;
     }
 
+    /// Returns true if all subrequests were successful or if the number of
+    /// attempts has been exhausted.
     pub fn is_complete(&self) -> bool {
         self.num_successes >= self.subworkbenches.len()
             || self.num_attempts >= self.max_num_attempts
@@ -262,11 +264,15 @@ impl IngestSubworkbench {
         self.persist_success_opt.is_none() && self.last_failure_is_transient()
     }
 
+    /// Returns `false` if and only if the last attempt suggest retrying will fail.
+    /// e.g.:
+    /// - the index does not exist
+    /// - the source does not exist.
     fn last_failure_is_transient(&self) -> bool {
         match self.last_failure_opt {
             Some(SubworkbenchFailure::IndexNotFound) => false,
             Some(SubworkbenchFailure::SourceNotFound) => false,
-            Some(SubworkbenchFailure::Internal(_)) => false,
+            Some(SubworkbenchFailure::Internal(_)) => true,
             Some(SubworkbenchFailure::NoShardsAvailable) => true,
             Some(SubworkbenchFailure::Persist(_)) => true,
             None => true,

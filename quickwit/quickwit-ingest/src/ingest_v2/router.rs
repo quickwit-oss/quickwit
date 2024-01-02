@@ -109,7 +109,6 @@ impl IngestRouter {
 
     pub fn subscribe(&self, event_broker: &EventBroker) {
         let weak_router_state = WeakRouterState(Arc::downgrade(&self.state));
-
         event_broker
             .subscribe::<LocalShardsUpdate>(weak_router_state.clone())
             .forever();
@@ -138,8 +137,8 @@ impl IngestRouter {
             if !state_guard.routing_table.has_open_shards(
                 &subrequest.index_id,
                 &subrequest.source_id,
-                &mut closed_shards,
                 ingester_pool,
+                &mut closed_shards,
                 &mut unavailable_leaders,
             ) {
                 let subrequest = GetOrCreateOpenShardsSubrequest {
@@ -153,16 +152,10 @@ impl IngestRouter {
         drop(state_guard);
 
         if !closed_shards.is_empty() {
-            info!(
-                "reporting {} closed shard(s) to control plane",
-                closed_shards.len()
-            )
+            info!(closed_shards=?closed_shards, "reporting closed shard(s) to control plane");
         }
         if !unavailable_leaders.is_empty() {
-            info!(
-                "reporting {} unavailable leader(s) to control plane",
-                unavailable_leaders.len()
-            );
+            info!(unvailable_leaders=?unavailable_leaders, "reporting unavailable leader(s) to control plane");
         }
         GetOrCreateOpenShardsRequest {
             subrequests: get_open_shards_subrequests,
@@ -267,9 +260,10 @@ impl IngestRouter {
                             for subrequest_id in persist_summary.subrequest_ids {
                                 workbench.record_no_shards_available(subrequest_id);
                             }
-                            self.ingester_pool.remove(&persist_summary.leader_id);
                         }
-                        _ => {
+                        IngestV2Error::TooManyRequests
+                        | IngestV2Error::Internal(_)
+                        | IngestV2Error::ShardNotFound { .. } => {
                             for subrequest_id in persist_summary.subrequest_ids {
                                 workbench.record_internal_error(
                                     subrequest_id,
@@ -394,7 +388,6 @@ impl IngestRouter {
     ) -> IngestV2Result<IngestResponseV2> {
         let commit_type = ingest_request.commit_type();
         let mut workbench = IngestWorkbench::new(ingest_request.subrequests, max_num_attempts);
-
         while !workbench.is_complete() {
             workbench.new_attempt();
             self.batch_persist(&mut workbench, commit_type).await;

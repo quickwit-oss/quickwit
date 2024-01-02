@@ -43,6 +43,7 @@ pub enum IngestV2Error {
     ShardNotFound { shard_id: ShardId },
     #[error("request timed out")]
     Timeout,
+    // This error is provoked by semaphore located on the router.
     #[error("too many requests")]
     TooManyRequests,
     // TODO: Merge `Transport` and `IngesterUnavailable` into a single `Unavailable` error.
