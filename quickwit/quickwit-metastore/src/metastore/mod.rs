@@ -52,7 +52,7 @@ use crate::{Split, SplitMetadata, SplitState};
 const STREAM_SPLITS_CHUNK_SIZE: usize = 1_000;
 
 static METASTORE_METRICS_LAYER: Lazy<PrometheusMetricsLayer<1>> =
-    Lazy::new(|| PrometheusMetricsLayer::new("metastore", ["request"]));
+    Lazy::new(|| PrometheusMetricsLayer::new("quickwit_metastore", ["request"]));
 
 pub(crate) fn instrument_metastore(
     metastore_impl: impl MetastoreService,
