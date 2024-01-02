@@ -111,15 +111,25 @@ impl RoutingTableEntry {
     /// unavailable ingesters encountered along the way.
     pub fn has_open_shards(
         &self,
-        closed_shard_ids: &mut Vec<ShardId>,
         ingester_pool: &IngesterPool,
+        closed_shard_ids: &mut Vec<ShardId>,
         unavailable_leaders: &mut HashSet<NodeId>,
     ) -> bool {
-        for shards in [&self.local_shards, &self.remote_shards] {
-            for shard in shards {
-                if shard.shard_state.is_closed() {
+        let shards = self.local_shards.iter().chain(self.remote_shards.iter());
+
+        for shard in shards {
+            match shard.shard_state {
+                ShardState::Closed => {
                     closed_shard_ids.push(shard.shard_id);
-                } else if shard.shard_state.is_open() {
+                    continue;
+                }
+                ShardState::Unavailable | ShardState::Unspecified => {
+                    continue;
+                }
+                ShardState::Open => {
+                    if unavailable_leaders.contains(&shard.leader_id) {
+                        continue;
+                    }
                     if ingester_pool.contains_key(&shard.leader_id) {
                         return true;
                     } else {
@@ -328,31 +338,36 @@ impl RoutingTable {
         self.table.get(&key)
     }
 
+    /// Returns `true` if the router already knows about a shard for a given source that has
+    /// an available `leader`.
+    ///
+    /// If this function returns false, it populates the set of unavailable leaders and closed
+    /// shards. These will be joined to the GetOrCreate shard request emitted to the control
+    /// plane.
     pub fn has_open_shards(
         &self,
         index_id: impl Into<IndexId>,
         source_id: impl Into<SourceId>,
-        closed_shards: &mut Vec<ShardIds>,
         ingester_pool: &IngesterPool,
+        closed_shards: &mut Vec<ShardIds>,
         unavailable_leaders: &mut HashSet<NodeId>,
     ) -> bool {
-        if let Some(entry) = self.find_entry(index_id, source_id) {
-            let mut closed_shard_ids: Vec<ShardId> = Vec::new();
+        let Some(entry) = self.find_entry(index_id, source_id) else {
+            return false;
+        };
+        let mut closed_shard_ids: Vec<ShardId> = Vec::new();
 
-            let result =
-                entry.has_open_shards(&mut closed_shard_ids, ingester_pool, unavailable_leaders);
+        let result =
+            entry.has_open_shards(ingester_pool, &mut closed_shard_ids, unavailable_leaders);
 
-            if !closed_shard_ids.is_empty() {
-                closed_shards.push(ShardIds {
-                    index_uid: entry.index_uid.clone().into(),
-                    source_id: entry.source_id.clone(),
-                    shard_ids: closed_shard_ids,
-                });
-            }
-            result
-        } else {
-            false
+        if !closed_shard_ids.is_empty() {
+            closed_shards.push(ShardIds {
+                index_uid: entry.index_uid.clone().into(),
+                source_id: entry.source_id.clone(),
+                shard_ids: closed_shard_ids,
+            });
         }
+        result
     }
 
     /// Replaces the routing table entry for the source with the provided shards.
@@ -530,8 +545,8 @@ mod tests {
         let mut unavailable_leaders = HashSet::new();
 
         assert!(!table_entry.has_open_shards(
-            &mut closed_shard_ids,
             &ingester_pool,
+            &mut closed_shard_ids,
             &mut unavailable_leaders
         ));
         assert!(closed_shard_ids.is_empty());
@@ -570,8 +585,8 @@ mod tests {
             remote_round_robin_idx: AtomicUsize::default(),
         };
         assert!(table_entry.has_open_shards(
-            &mut closed_shard_ids,
             &ingester_pool,
+            &mut closed_shard_ids,
             &mut unavailable_leaders
         ));
         assert_eq!(closed_shard_ids.len(), 1);
@@ -611,8 +626,8 @@ mod tests {
             remote_round_robin_idx: AtomicUsize::default(),
         };
         assert!(table_entry.has_open_shards(
-            &mut closed_shard_ids,
             &ingester_pool,
+            &mut closed_shard_ids,
             &mut unavailable_leaders
         ));
         assert_eq!(closed_shard_ids.len(), 1);

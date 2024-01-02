@@ -37,12 +37,15 @@ pub type IngestV2Result<T> = std::result::Result<T, IngestV2Error>;
 pub enum IngestV2Error {
     #[error("an internal error occurred: {0}")]
     Internal(String),
+    /// Emitted when an ingester was not available for a given operation,
+    /// either directly or through replication.
     #[error("failed to connect to ingester `{ingester_id}`")]
     IngesterUnavailable { ingester_id: NodeId },
     #[error("shard `{shard_id}` not found")]
     ShardNotFound { shard_id: ShardId },
     #[error("request timed out")]
     Timeout,
+    // This error is provoked by semaphore located on the router.
     #[error("too many requests")]
     TooManyRequests,
     // TODO: Merge `Transport` and `IngesterUnavailable` into a single `Unavailable` error.
