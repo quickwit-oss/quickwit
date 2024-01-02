@@ -25,6 +25,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// Search response
+#[serde(deny_unknown_fields)]
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
 pub struct ElasticSearchResponse {
     /// The time that it took Elasticsearch to process the query
@@ -43,6 +44,7 @@ pub struct ElasticSearchResponse {
     pub scroll_id: Option<String>,
 
     /// Dynamically fetched fields
+    #[serde(default)]
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub fields: BTreeMap<String, Value>,
 
@@ -56,6 +58,7 @@ pub struct ElasticSearchResponse {
 
     /// Maximum document score. [None] when documents are implicitly sorted
     /// by a field other than `_score`
+    #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub max_score: Option<f32>,
 
@@ -75,9 +78,12 @@ pub struct ElasticSearchResponse {
     pub aggregations: Option<Value>,
 
     /// Suggest response
+    #[serde(default)]
     #[serde(skip_serializing_if = "BTreeMap::is_empty")]
     pub suggest: BTreeMap<String, Vec<Suggest>>,
 
-    /// Keywoards
+    /// Matching keywords by field name
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub matching_keywords_by_field_name: Vec<MatchingKeywordsByFieldName>,
 }
