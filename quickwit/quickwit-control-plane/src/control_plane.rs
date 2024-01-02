@@ -32,8 +32,9 @@ use quickwit_config::SourceConfig;
 use quickwit_ingest::{IngesterPool, LocalShardsUpdate};
 use quickwit_metastore::IndexMetadata;
 use quickwit_proto::control_plane::{
-    ControlPlaneError, ControlPlaneResult, GetOrCreateOpenShardsRequest,
-    GetOrCreateOpenShardsResponse,
+    ControlPlaneError, ControlPlaneResult, GetDebugStateRequest, GetDebugStateResponse,
+    GetOrCreateOpenShardsRequest, GetOrCreateOpenShardsResponse, PhysicalIndexingPlanEntry,
+    ShardTableEntry,
 };
 use quickwit_proto::indexing::ShardPositionsUpdate;
 use quickwit_proto::metastore::{
@@ -178,6 +179,37 @@ impl ControlPlane {
         self.indexing_scheduler
             .schedule_indexing_plan_if_needed(&self.model);
         Ok(())
+    }
+
+    fn debug_state(&self) -> GetDebugStateResponse {
+        let shard_table = self
+            .model
+            .all_shards_with_source()
+            .map(|(source, shards)| ShardTableEntry {
+                source_id: source.to_string(),
+                shards: shards
+                    .map(|shard_entry| shard_entry.shard.clone())
+                    .collect(),
+            })
+            .collect();
+        let physical_index_plan = self
+            .indexing_scheduler
+            .observable_state()
+            .last_applied_physical_plan
+            .map(|plan| {
+                plan.indexing_tasks_per_indexer()
+                    .iter()
+                    .map(|(node_id, tasks)| PhysicalIndexingPlanEntry {
+                        node_id: node_id.clone(),
+                        tasks: tasks.clone(),
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        GetDebugStateResponse {
+            shard_table,
+            physical_index_plan,
+        }
     }
 }
 
@@ -525,6 +557,19 @@ impl Handler<LocalShardsUpdate> for ControlPlane {
         self.indexing_scheduler
             .schedule_indexing_plan_if_needed(&self.model);
         Ok(Ok(()))
+    }
+}
+
+#[async_trait]
+impl Handler<GetDebugStateRequest> for ControlPlane {
+    type Reply = ControlPlaneResult<GetDebugStateResponse>;
+
+    async fn handle(
+        &mut self,
+        _: GetDebugStateRequest,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<Self::Reply, ActorExitStatus> {
+        Ok(Ok(self.debug_state()))
     }
 }
 
