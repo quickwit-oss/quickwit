@@ -171,6 +171,10 @@ impl Shards {
         }
     }
 
+    /// If the shard is absent from the metastore, this method still returns response, but the
+    /// targeted shard will be missing from the list of acquired shards.
+    ///
+    /// A warn log will be emitted.
     pub(super) fn acquire_shards(
         &mut self,
         subrequest: AcquireShardsSubrequest,

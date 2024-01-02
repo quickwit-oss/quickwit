@@ -438,7 +438,10 @@ impl IngestSource {
             return Ok(());
         }
 
-        warn!("resetting pipeline");
+        warn!(
+            index = self.client_id.source_uid.index_uid.index_id(),
+            "resetting pipeline"
+        );
         self.assigned_shards.clear();
         self.fetch_stream.reset();
         self.publish_lock.kill().await;
@@ -458,7 +461,7 @@ impl IngestSource {
     }
 
     fn contains_publish_token(&self, subresponse: &AcquireShardsSubresponse) -> bool {
-        if let Some(acquired_shard) = subresponse.acquired_shards.get(0) {
+        if let Some(acquired_shard) = subresponse.acquired_shards.first() {
             if let Some(publish_token) = &acquired_shard.publish_token {
                 return *publish_token == self.publish_token;
             }
@@ -526,9 +529,11 @@ impl Source for IngestSource {
         doc_processor_mailbox: &Mailbox<DocProcessor>,
         ctx: &SourceContext,
     ) -> anyhow::Result<()> {
+        info!(index=self.client_id.source_uid.index_uid.index_id(), "assign shard in ingest source");
         self.reset_if_needed(&new_assigned_shard_ids, doc_processor_mailbox, ctx)
             .await?;
 
+        info!(new_assigned_shard_ids=?new_assigned_shard_ids, assigned_shards=?self.assigned_shards, "assign shard ids new old shard ids");
         // As enforced by `reset_if_needed`, at this point, all currently assigned shards should be
         // in the new_assigned_shards.
         debug_assert!(self

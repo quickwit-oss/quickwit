@@ -267,6 +267,7 @@ impl IngestRouter {
                             for subrequest_id in persist_summary.subrequest_ids {
                                 workbench.record_no_shards_available(subrequest_id);
                             }
+                            // BUG
                             self.ingester_pool.remove(&persist_summary.leader_id);
                         }
                         _ => {
