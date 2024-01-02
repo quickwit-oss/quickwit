@@ -73,7 +73,16 @@ impl From<FileBackedIndex> for FileBackedIndexV0_6 {
         let shards = index
             .per_source_shards
             .into_iter()
-            .map(|(source_id, shards)| (source_id, SerdeShards::from(shards)))
+            .filter_map(|(source_id, shards)| {
+                // Skip serializing empty shards since the feature is hidden and disabled by
+                // default. This way, we can still modify the serialization format without worrying
+                // about backward compatibility post `0.7`.
+                if shards.next_shard_id > 1 {
+                    Some((source_id, SerdeShards::from(shards)))
+                } else {
+                    None
+                }
+            })
             .collect();
         let delete_tasks = index
             .delete_tasks
