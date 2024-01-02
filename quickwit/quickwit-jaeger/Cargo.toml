@@ -43,6 +43,7 @@ quickwit-cluster = { workspace = true }
 quickwit-indexing = { workspace = true, features = ["testsuite"] }
 quickwit-ingest = { workspace = true }
 quickwit-metastore = { workspace = true, features = ["testsuite"] }
+quickwit-opentelemetry = { workspace = true, features = ["testsuite"] }
 quickwit-search = { workspace = true, features = ["testsuite"] }
 quickwit-storage = { workspace = true, features = ["testsuite"] }
 

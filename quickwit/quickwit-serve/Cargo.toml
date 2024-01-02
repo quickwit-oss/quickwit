@@ -27,6 +27,7 @@ mime_guess = { workspace = true }
 num_cpus = { workspace = true }
 once_cell = { workspace = true }
 percent-encoding = { workspace = true }
+prost = { workspace = true }
 prost-types = { workspace = true }
 regex = { workspace = true }
 rust-embed = { workspace = true }
@@ -76,6 +77,7 @@ mockall = { workspace = true }
 rand = { workspace = true }
 tempfile = { workspace = true }
 tokio = { workspace = true }
+tonic = { workspace = true }
 
 quickwit-actors = { workspace = true, features = ["testsuite"] }
 quickwit-cluster = { workspace = true, features = ["testsuite"] }
@@ -86,6 +88,7 @@ quickwit-indexing = { workspace = true, features = ["testsuite"] }
 quickwit-ingest = { workspace = true, features = ["testsuite"] }
 quickwit-janitor = { workspace = true, features = ["testsuite"] }
 quickwit-metastore = { workspace = true, features = ["testsuite"] }
+quickwit-opentelemetry = { workspace = true, features = ["testsuite"] }
 quickwit-proto = { workspace = true, features = ["testsuite"] }
 quickwit-search = { workspace = true, features = ["testsuite"] }
 quickwit-storage = { workspace = true, features = ["testsuite"] }

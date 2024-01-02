@@ -33,6 +33,7 @@ mod metrics;
 mod metrics_api;
 mod node_info_handler;
 mod openapi;
+mod otlp_api;
 mod rate_modulator;
 mod rest;
 mod search_api;
@@ -133,6 +134,8 @@ struct QuickwitServices {
     pub ingester_service_opt: Option<IngesterServiceClient>,
     pub janitor_service_opt: Option<Mailbox<JanitorService>>,
     pub jaeger_service_opt: Option<JaegerService>,
+    pub otlp_logs_service_opt: Option<OtlpGrpcLogsService>,
+    pub otlp_traces_service_opt: Option<OtlpGrpcTracesService>,
     /// We do have a search service even on nodes that are not running `search`.
     /// It is only used to serve the rest API calls and will only execute
     /// the root requests.
@@ -498,6 +501,22 @@ pub async fn serve_quickwit(
         None
     };
 
+    let otlp_logs_service_opt = if node_config.is_service_enabled(QuickwitService::Searcher)
+        && node_config.indexer_config.enable_otlp_endpoint
+    {
+        Some(OtlpGrpcLogsService::new(ingest_service.clone()))
+    } else {
+        None
+    };
+
+    let otlp_traces_service_opt = if node_config.is_service_enabled(QuickwitService::Searcher)
+        && node_config.indexer_config.enable_otlp_endpoint
+    {
+        Some(OtlpGrpcTracesService::new(ingest_service.clone(), None))
+    } else {
+        None
+    };
+
     let grpc_listen_addr = node_config.grpc_listen_addr;
     let rest_listen_addr = node_config.rest_config.listen_addr;
     let quickwit_services: Arc<QuickwitServices> = Arc::new(QuickwitServices {
@@ -515,6 +534,8 @@ pub async fn serve_quickwit(
         ingester_service_opt: ingester_service_opt.clone(),
         janitor_service_opt,
         jaeger_service_opt,
+        otlp_logs_service_opt,
+        otlp_traces_service_opt,
         search_service,
     });
     // Setup and start gRPC server.

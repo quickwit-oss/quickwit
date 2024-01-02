@@ -23,7 +23,6 @@ use std::sync::Arc;
 
 use quickwit_common::tower::BoxFutureInfaillible;
 use quickwit_config::service::QuickwitService;
-use quickwit_opentelemetry::otlp::{OtlpGrpcLogsService, OtlpGrpcTracesService};
 use quickwit_proto::indexing::IndexingServiceClient;
 use quickwit_proto::jaeger::storage::v1::span_reader_plugin_server::SpanReaderPluginServer;
 use quickwit_proto::opentelemetry::proto::collector::logs::v1::logs_service_server::LogsServiceServer;
@@ -109,37 +108,24 @@ pub(crate) async fn start_grpc_server(
     } else {
         None
     };
-    // Mount gRPC OpenTelemetry OTLP trace service if `QuickwitService::Indexer` is enabled on node.
-    let enable_opentelemetry_otlp_grpc_service =
-        services.node_config.indexer_config.enable_otlp_endpoint;
-    let otlp_trace_grpc_service = if enable_opentelemetry_otlp_grpc_service
-        && services
-            .node_config
-            .is_service_enabled(QuickwitService::Indexer)
-    {
-        enabled_grpc_services.insert("otlp-trace");
-        let ingest_service = services.ingest_service.clone();
-        let commit_type_opt = None;
-        let trace_service =
-            TraceServiceServer::new(OtlpGrpcTracesService::new(ingest_service, commit_type_opt))
+    // Mount gRPC OpenTelemetry OTLP services if present.
+    let otlp_trace_grpc_service =
+        if let Some(otlp_traces_service) = services.otlp_traces_service_opt.clone() {
+            enabled_grpc_services.insert("otlp-trace");
+            let trace_service = TraceServiceServer::new(otlp_traces_service)
                 .accept_compressed(CompressionEncoding::Gzip);
-        Some(trace_service)
-    } else {
-        None
-    };
-    let otlp_log_grpc_service = if enable_opentelemetry_otlp_grpc_service
-        && services
-            .node_config
-            .is_service_enabled(QuickwitService::Indexer)
-    {
-        enabled_grpc_services.insert("otlp-logs");
-        let ingest_service = services.ingest_service.clone();
-        let logs_service = LogsServiceServer::new(OtlpGrpcLogsService::new(ingest_service))
-            .accept_compressed(CompressionEncoding::Gzip);
-        Some(logs_service)
-    } else {
-        None
-    };
+            Some(trace_service)
+        } else {
+            None
+        };
+    let otlp_log_grpc_service =
+        if let Some(otlp_logs_service) = services.otlp_logs_service_opt.clone() {
+            let logs_service = LogsServiceServer::new(otlp_logs_service)
+                .accept_compressed(CompressionEncoding::Gzip);
+            Some(logs_service)
+        } else {
+            None
+        };
     // Mount gRPC search service if `QuickwitService::Searcher` is enabled on node.
     let search_grpc_service = if services
         .node_config

@@ -28,11 +28,15 @@ use serde_json::{Number as JsonNumber, Value as JsonValue};
 mod logs;
 mod metrics;
 mod span_id;
+#[cfg(any(test, feature = "testsuite"))]
+mod test_utils;
 mod trace_id;
 mod traces;
 
 pub use logs::{OtlpGrpcLogsService, OTEL_LOGS_INDEX_ID};
 pub use span_id::{SpanId, TryFromSpanIdError};
+#[cfg(any(test, feature = "testsuite"))]
+pub use test_utils::make_resource_spans_for_test;
 pub use trace_id::{TraceId, TryFromTraceIdError};
 pub use traces::{
     parse_otlp_spans_json, parse_otlp_spans_protobuf, Event, JsonSpanIterator, Link,
@@ -133,11 +137,14 @@ fn is_zero(count: &u32) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_proto::opentelemetry::proto::common::v1::any_value::Value as OtlpAnyValueValue;
+    use quickwit_proto::opentelemetry::proto::common::v1::any_value::{
+        Value as OtlpValue, Value as OtlpAnyValueValue,
+    };
     use quickwit_proto::opentelemetry::proto::common::v1::ArrayValue as OtlpArrayValue;
-    use serde_json::json;
+    use serde_json::{json, Value as JsonValue};
 
     use super::*;
+    use crate::otlp::{extract_attributes, parse_log_record_body, to_json_value};
 
     #[test]
     fn test_to_json_value() {
@@ -227,7 +234,7 @@ mod tests {
                 }),
             },
         ];
-        let expected_attributes = HashMap::from_iter([
+        let expected_attributes = std::collections::HashMap::from_iter([
             ("array_key".to_string(), json!([1337])),
             ("bool_key".to_string(), json!(true)),
             ("double_key".to_string(), json!(12.0)),
