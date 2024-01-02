@@ -196,7 +196,7 @@ async fn start_ingest_client_if_needed(
         let min_rate = ConstantRate::new(ByteSize::mib(1).as_u64(), Duration::from_millis(100));
         let rate_modulator = RateModulator::new(rate_estimator.clone(), memory_capacity, min_rate);
         let ingest_service = IngestServiceClient::tower()
-            .ingest_layer(
+            .stack_ingest_layer(
                 ServiceBuilder::new()
                     .layer(EstimateRateLayer::<IngestRequest, _>::new(rate_estimator))
                     .layer(BufferLayer::new(100))
@@ -282,11 +282,11 @@ pub async fn serve_quickwit(
                 .await?;
             let broker_layer = EventListenerLayer::new(event_broker.clone());
             let metastore = MetastoreServiceClient::tower()
-                .create_index_layer(broker_layer.clone())
-                .delete_index_layer(broker_layer.clone())
-                .add_source_layer(broker_layer.clone())
-                .delete_source_layer(broker_layer.clone())
-                .toggle_source_layer(broker_layer)
+                .stack_create_index_layer(broker_layer.clone())
+                .stack_delete_index_layer(broker_layer.clone())
+                .stack_add_source_layer(broker_layer.clone())
+                .stack_delete_source_layer(broker_layer.clone())
+                .stack_toggle_source_layer(broker_layer)
                 .build(metastore);
             Some(metastore)
         } else {
@@ -316,7 +316,7 @@ pub async fn serve_quickwit(
             let metastore_client = MetastoreServiceClient::from_balance_channel(balance_channel);
             let retry_layer = RetryLayer::new(RetryPolicy::default());
             MetastoreServiceClient::tower()
-                .shared_layer(retry_layer)
+                .stack_layer(retry_layer)
                 .build(metastore_client)
         };
 

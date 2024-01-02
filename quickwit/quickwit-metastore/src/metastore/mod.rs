@@ -58,7 +58,7 @@ pub(crate) fn instrument_metastore(
     metastore_impl: impl MetastoreService,
 ) -> MetastoreServiceClient {
     MetastoreServiceClient::tower()
-        .shared_layer(METASTORE_METRICS_LAYER.clone())
+        .stack_layer(METASTORE_METRICS_LAYER.clone())
         .build(metastore_impl)
 }
 
