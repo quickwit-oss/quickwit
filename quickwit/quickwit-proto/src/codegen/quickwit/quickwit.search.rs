@@ -703,6 +703,7 @@ impl SortOrder {
 #[repr(i32)]
 pub enum SortDatetimeFormat {
     UnixTimestampMillis = 0,
+    UnixTimestampNanos = 1,
 }
 impl SortDatetimeFormat {
     /// String value of the enum field names used in the ProtoBuf definition.
@@ -712,12 +713,14 @@ impl SortDatetimeFormat {
     pub fn as_str_name(&self) -> &'static str {
         match self {
             SortDatetimeFormat::UnixTimestampMillis => "UNIX_TIMESTAMP_MILLIS",
+            SortDatetimeFormat::UnixTimestampNanos => "UNIX_TIMESTAMP_NANOS",
         }
     }
     /// Creates an enum from field names used in the ProtoBuf definition.
     pub fn from_str_name(value: &str) -> ::core::option::Option<Self> {
         match value {
             "UNIX_TIMESTAMP_MILLIS" => Some(Self::UnixTimestampMillis),
+            "UNIX_TIMESTAMP_NANOS" => Some(Self::UnixTimestampNanos),
             _ => None,
         }
     }

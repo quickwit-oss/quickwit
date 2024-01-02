@@ -52,17 +52,17 @@ pub struct SortField {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum ElasticDateFormat {
-    /// We don't want to use the format `EpochMillis` as elasticsearch
-    /// returns milliseconds as strings when used. Instead, we support
-    /// `EpochMillisAsInt` which returns milliseconds as integers to
-    /// make it explicit for the user.
-    EpochMillisAsInt,
+    /// Sort values are in milliseconds by default to ease migration from ES.
+    /// We allow the user to sepecify nanoseconds if needed.
+    /// We add `Int` to the name to avoid confusion ES variant `EpochMillis` which,
+    /// returns milliseconds as strings.
+    EpochNanosInt,
 }
 
 impl From<ElasticDateFormat> for SortDatetimeFormat {
     fn from(date_format: ElasticDateFormat) -> Self {
         match date_format {
-            ElasticDateFormat::EpochMillisAsInt => SortDatetimeFormat::UnixTimestampMillis,
+            ElasticDateFormat::EpochNanosInt => SortDatetimeFormat::UnixTimestampNanos,
         }
     }
 }
