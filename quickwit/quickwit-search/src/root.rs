@@ -1387,16 +1387,18 @@ pub fn jobs_to_fetch_docs_requests(
     Ok(fetch_docs_requests)
 }
 
-/// Extract matching keywords from the query ASTD
+/// Extract matching keywords from the query AST for highlighting in Grafana.
+/// This is not an accurate implementation as it doesn't use the tokenizer.
+/// We consider it sufficient for highlighting in Grafana.
 #[derive(Default)]
 struct ExtractMatchingKeywords {
     keywords_by_field_name: BTreeMap<String, BTreeSet<String>>,
 }
 
-impl<'a, 'b> QueryAstVisitor<'b> for ExtractMatchingKeywords {
+impl<'a> QueryAstVisitor<'a> for ExtractMatchingKeywords {
     type Err = std::convert::Infallible;
 
-    fn visit_bool(&mut self, bool_query: &'b BoolQuery) -> Result<(), Self::Err> {
+    fn visit_bool(&mut self, bool_query: &'a BoolQuery) -> Result<(), Self::Err> {
         // we only want to visit sub-queries which are positive requirements
         for ast in bool_query
             .should
@@ -1408,7 +1410,7 @@ impl<'a, 'b> QueryAstVisitor<'b> for ExtractMatchingKeywords {
         Ok(())
     }
 
-    fn visit_term(&mut self, term_query: &'b TermQuery) -> Result<(), Self::Err> {
+    fn visit_term(&mut self, term_query: &'a TermQuery) -> Result<(), Self::Err> {
         self.keywords_by_field_name
             .entry(term_query.field.clone())
             .or_insert_with(BTreeSet::new)
@@ -1416,7 +1418,7 @@ impl<'a, 'b> QueryAstVisitor<'b> for ExtractMatchingKeywords {
         Ok(())
     }
 
-    fn visit_term_set(&mut self, term_query: &'b TermSetQuery) -> Result<(), Self::Err> {
+    fn visit_term_set(&mut self, term_query: &'a TermSetQuery) -> Result<(), Self::Err> {
         term_query
             .terms_per_field
             .iter()
@@ -1431,7 +1433,7 @@ impl<'a, 'b> QueryAstVisitor<'b> for ExtractMatchingKeywords {
 
     fn visit_full_text(
         &mut self,
-        full_text_query: &'b quickwit_query::query_ast::FullTextQuery,
+        full_text_query: &'a quickwit_query::query_ast::FullTextQuery,
     ) -> Result<(), Self::Err> {
         self.keywords_by_field_name
             .entry(full_text_query.field.clone())
