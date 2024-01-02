@@ -25,8 +25,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 /// Search response
-#[serde(deny_unknown_fields)]
 #[derive(Debug, Default, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
 pub struct ElasticSearchResponse {
     /// The time that it took Elasticsearch to process the query
     pub took: u32,
