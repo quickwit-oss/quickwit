@@ -476,8 +476,8 @@ impl FileBackedIndex {
 
         self.metadata.add_source(source_config)?;
 
-        self.per_source_shards
-            .insert(source_id.clone(), Shards::empty(index_uid, source_id));
+        let shards = Shards::empty(index_uid, source_id.clone());
+        self.per_source_shards.insert(source_id, shards);
         Ok(())
     }
 
