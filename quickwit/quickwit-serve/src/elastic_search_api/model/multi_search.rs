@@ -17,7 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use elasticsearch_dsl::search::SearchResponse as ElasticSearchResponse;
 use elasticsearch_dsl::ErrorCause;
 use hyper::StatusCode;
 use serde::{Deserialize, Serialize};
@@ -25,7 +24,7 @@ use serde_with::formats::PreferMany;
 use serde_with::{serde_as, OneOrMany};
 
 use super::search_query_params::ExpandWildcards;
-use super::ElasticSearchError;
+use super::{ElasticSearchError, ElasticSearchResponse};
 use crate::simple_list::{from_simple_list, to_simple_list};
 
 // Multi search doc: https://www.elastic.co/guide/en/elasticsearch/reference/current/search-multi-search.html

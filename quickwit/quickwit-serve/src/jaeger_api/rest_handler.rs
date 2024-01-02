@@ -425,6 +425,7 @@ mod tests {
                     hits: vec![],
                     elapsed_time_micros: 0,
                     errors: vec![],
+                    matching_keywords_by_field_name: Vec::new(),
                     aggregation: None,
                     scroll_id: None,
                 })
@@ -455,6 +456,7 @@ mod tests {
                     num_hits: 0,
                     hits: vec![],
                     elapsed_time_micros: 0,
+                    matching_keywords_by_field_name: Vec::new(),
                     errors: vec![],
                     aggregation: None,
                     scroll_id: None,
