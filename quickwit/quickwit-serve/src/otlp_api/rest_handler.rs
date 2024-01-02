@@ -18,7 +18,9 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use bytes::Bytes;
-use quickwit_opentelemetry::otlp::{OtlpGrpcLogsService, OtlpGrpcTracesService, OTEL_LOGS_INDEX_ID, OTEL_TRACES_INDEX_ID};
+use quickwit_opentelemetry::otlp::{
+    OtlpGrpcLogsService, OtlpGrpcTracesService, OTEL_LOGS_INDEX_ID, OTEL_TRACES_INDEX_ID,
+};
 use quickwit_proto::opentelemetry::proto::collector::logs::v1::logs_service_server::LogsService;
 use quickwit_proto::opentelemetry::proto::collector::logs::v1::{
     ExportLogsServiceRequest, ExportLogsServiceResponse,
@@ -62,8 +64,7 @@ pub(crate) fn otlp_default_logs_handler(
         .and(warp::post())
         .and(warp::body::bytes())
         .then(|otlp_logs_service, body| async move {
-            otlp_ingest_logs(otlp_logs_service, OTEL_LOGS_INDEX_ID.to_string(), body)
-                .await
+            otlp_ingest_logs(otlp_logs_service, OTEL_LOGS_INDEX_ID.to_string(), body).await
         })
         .and(with_arg(BodyFormat::default()))
         .map(make_json_api_response)
@@ -97,8 +98,7 @@ pub(crate) fn otlp_default_traces_handler(
         .and(warp::post())
         .and(warp::body::bytes())
         .then(|otlp_traces_service, body| async move {
-            otlp_ingest_traces(otlp_traces_service, OTEL_TRACES_INDEX_ID.to_string(), body)
-                .await
+            otlp_ingest_traces(otlp_traces_service, OTEL_TRACES_INDEX_ID.to_string(), body).await
         })
         .and(with_arg(BodyFormat::default()))
         .map(make_json_api_response)
@@ -236,12 +236,12 @@ mod tests {
         {
             // Test default otlp endpoint
             let resp = warp::test::request()
-            .path("/otlp/v1/logs")
-            .method("POST")
-            .header("content-type", "application/x-protobuf")
-            .body(body.clone())
-            .reply(&otlp_traces_api_handler)
-            .await;
+                .path("/otlp/v1/logs")
+                .method("POST")
+                .header("content-type", "application/x-protobuf")
+                .body(body.clone())
+                .reply(&otlp_traces_api_handler)
+                .await;
             assert_eq!(resp.status(), 200);
             let actual_response: ExportLogsServiceResponse =
                 serde_json::from_slice(resp.body()).unwrap();
@@ -257,12 +257,12 @@ mod tests {
         {
             // Test endpoint with given index ID.
             let resp = warp::test::request()
-            .path("/otel-traces-v0_6/otlp/v1/logs")
-            .method("POST")
-            .header("content-type", "application/x-protobuf")
-            .body(body.clone())
-            .reply(&otlp_traces_api_handler)
-            .await;
+                .path("/otel-traces-v0_6/otlp/v1/logs")
+                .method("POST")
+                .header("content-type", "application/x-protobuf")
+                .body(body.clone())
+                .reply(&otlp_traces_api_handler)
+                .await;
             assert_eq!(resp.status(), 200);
             let actual_response: ExportLogsServiceResponse =
                 serde_json::from_slice(resp.body()).unwrap();
