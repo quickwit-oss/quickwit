@@ -44,6 +44,8 @@ pub use self::storage::Storage;
 mod bundle_storage;
 mod error;
 mod local_file_storage;
+
+mod opendal_storage;
 mod object_storage;
 mod payload;
 mod prefix_storage;
