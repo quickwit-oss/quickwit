@@ -20,7 +20,7 @@
 #[cfg(any(test, feature = "testsuite"))]
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 use std::time::Instant;
 
 use anyhow::Context;
@@ -66,18 +66,6 @@ struct InnerIndexingSplitStore {
     /// The remote storage.
     remote_storage: Arc<dyn Storage>,
     local_split_store: Arc<LocalSplitStore>,
-}
-
-pub struct WeakIndexingSplitStore {
-    inner: Weak<InnerIndexingSplitStore>,
-}
-
-impl WeakIndexingSplitStore {
-    pub fn upgrade(&self) -> Option<IndexingSplitStore> {
-        self.inner
-            .upgrade()
-            .map(|inner| IndexingSplitStore { inner })
-    }
 }
 
 impl IndexingSplitStore {
@@ -224,12 +212,6 @@ impl IndexingSplitStore {
             .instrument(info_span!("fetch_split_from_remote_storage", path=?path))
             .await?;
         get_tantivy_directory_from_split_bundle(&dest_filepath)
-    }
-
-    pub fn downgrade(&self) -> WeakIndexingSplitStore {
-        WeakIndexingSplitStore {
-            inner: Arc::downgrade(&self.inner),
-        }
     }
 
     /// Takes a snapshot of the cache view (only used for testing).
