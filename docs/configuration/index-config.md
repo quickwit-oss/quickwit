@@ -333,8 +333,8 @@ output_foramt: hex
 | `stored`    | Whether value is stored in the document store | `true` |
 | `indexed`   | Whether value is indexed | `true` |
 | `fast`     | Whether value is stored in a fast field. Only on 1:1 cardinality, not supported on `array<bytes>` fields | `false` |
-| `input_format`   | Formats used to parse input bytesn either `hex` or `base64` | `base64` |
-| `output_format`   |  Format used to display bytes in search results, either `hex` or `base64` | `base64` |
+| `input_format`   | Encoding used to represent input bytes, either `hex` or `base64` | `base64` |
+| `output_format`   |  Encoding used to represent bytes in search results, either `hex` or `base64` | `base64` |
 
 #### `json` type
 

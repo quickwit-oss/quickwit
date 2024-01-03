@@ -68,7 +68,7 @@ impl<'de> Deserialize<'de> for TraceId {
             }
             let mut trace_id_bytes = [0u8; 16];
             hex::decode_to_slice(hextrace_id, &mut trace_id_bytes).map_err(|error| {
-                let message = format!("failed to decode hex span ID: {:?}", error);
+                let message = format!("failed to decode hex span ID: {error:?}");
                 de::Error::custom(message)
             })?;
             Ok(TraceId(trace_id_bytes))

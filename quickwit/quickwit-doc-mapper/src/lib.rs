@@ -64,9 +64,9 @@ const QW_RESERVED_FIELD_NAMES: &[&str] = &[
 /// Cardinality of a field.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Cardinality {
-    /// Single value field.
+    /// Single-valued field.
     SingleValue,
-    /// Multi values field.
+    /// Multivalued field.
     MultiValues,
 }
 

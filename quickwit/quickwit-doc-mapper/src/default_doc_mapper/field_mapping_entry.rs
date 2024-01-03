@@ -50,7 +50,7 @@ pub struct QuickwitObjectOptions {
 pub struct FieldMappingEntry {
     /// Field name in the index schema.
     pub name: String,
-    /// Property parameters which defines the type and the way the value must be indexed.
+    /// Property parameters which define the type and the way the value must be indexed.
     pub mapping_type: FieldMappingType,
 }
 
@@ -143,7 +143,7 @@ impl Default for QuickwitBoolOptions {
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct QuickwitBytesOptions {
-    /// Optional description of bytes object.
+    /// Optional description of the bytes field.
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
@@ -177,7 +177,7 @@ impl Default for QuickwitBytesOptions {
     }
 }
 
-/// Options associated to a numeric field.
+/// Available binary formats.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BinaryFormat {

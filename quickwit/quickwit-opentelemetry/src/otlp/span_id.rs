@@ -60,7 +60,7 @@ impl<'de> Deserialize<'de> for SpanId {
         }
         let mut span_id = [0u8; 8];
         hex::decode_to_slice(hexspan_id, &mut span_id).map_err(|error| {
-            let message = format!("failed to decode hex span ID: {:?}", error);
+            let message = format!("failed to decode hex span ID: {error:?}");
             de::Error::custom(message)
         })?;
         Ok(SpanId(span_id))
