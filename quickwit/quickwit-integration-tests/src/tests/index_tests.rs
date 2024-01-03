@@ -663,7 +663,7 @@ async fn test_ingest_traces_with_otlp_grpc_api() {
     {
         let mut tonic_request = tonic::Request::new(request);
         tonic_request.metadata_mut().insert(
-            "otel-traces-index",
+            "qw-otel-traces-index",
             tonic::metadata::MetadataValue::try_from("non-existing-index").unwrap(),
         );
         let status = sandbox
