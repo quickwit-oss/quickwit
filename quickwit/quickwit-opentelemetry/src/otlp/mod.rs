@@ -170,7 +170,7 @@ pub fn extract_otel_traces_index_id_patterns_from_metadata(
                 "failed to extract index ID from request header: {error}",
             ))
         })?
-        .unwrap_or_else(|| OTEL_TRACES_INDEX_ID_PATTERN);
+        .unwrap_or(OTEL_TRACES_INDEX_ID_PATTERN);
     let mut index_id_patterns = Vec::new();
     for index_id_pattern in comma_separated_index_id_patterns.split(',') {
         if index_id_pattern.is_empty() {
@@ -201,7 +201,7 @@ pub(crate) fn extract_otel_index_id_from_metadata(
             ))
         })?
         .unwrap_or_else(|| otel_signal.default_index_id());
-    validate_identifier("index_id", &index_id).map_err(|error| {
+    validate_identifier("index_id", index_id).map_err(|error| {
         Status::internal(format!(
             "Invalid index ID pattern in request metadata: {}",
             error
