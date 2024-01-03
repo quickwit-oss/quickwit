@@ -30,6 +30,7 @@ use quickwit_proto::opentelemetry::proto::collector::logs::v1::logs_service_serv
 use quickwit_proto::opentelemetry::proto::collector::logs::v1::{
     ExportLogsPartialSuccess, ExportLogsServiceRequest, ExportLogsServiceResponse,
 };
+use quickwit_proto::types::IndexId;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use tonic::{Request, Response, Status};
@@ -37,13 +38,13 @@ use tracing::field::Empty;
 use tracing::{error, instrument, warn, Span as RuntimeSpan};
 
 use super::{
-    extract_otel_traces_index_from_metadata, is_zero, parse_log_record_body, SpanId, TraceId,
+    extract_otel_index_id_from_metadata, is_zero, parse_log_record_body, OtelSignal, SpanId,
+    TraceId,
 };
 use crate::otlp::extract_attributes;
 use crate::otlp::metrics::OTLP_SERVICE_METRICS;
 
 pub const OTEL_LOGS_INDEX_ID: &str = "otel-logs-v0_6";
-const HEADER_NAME_OTEL_LOGS_INDEX: &str = "otel-logs-index";
 
 const OTEL_LOGS_INDEX_CONFIG: &str = r#"
 version: 0.6
@@ -238,7 +239,7 @@ impl OtlpGrpcLogsService {
     async fn export_inner(
         &mut self,
         request: ExportLogsServiceRequest,
-        index_id: String,
+        index_id: IndexId,
         labels: [&str; 4],
     ) -> Result<ExportLogsServiceResponse, Status> {
         let ParsedLogRecords {
@@ -284,7 +285,7 @@ impl OtlpGrpcLogsService {
     fn parse_logs(
         request: ExportLogsServiceRequest,
         parent_span: RuntimeSpan,
-        index_id: String,
+        index_id: IndexId,
     ) -> Result<ParsedLogRecords, Status> {
         let mut log_records = BTreeSet::new();
         let mut num_log_records = 0;
@@ -427,7 +428,7 @@ impl OtlpGrpcLogsService {
     async fn export_instrumented(
         &mut self,
         request: ExportLogsServiceRequest,
-        index_id: String,
+        index_id: IndexId,
     ) -> Result<ExportLogsServiceResponse, Status> {
         let start = std::time::Instant::now();
 
@@ -466,10 +467,7 @@ impl LogsService for OtlpGrpcLogsService {
         &self,
         request: Request<ExportLogsServiceRequest>,
     ) -> Result<Response<ExportLogsServiceResponse>, Status> {
-        let index_id = extract_otel_traces_index_from_metadata(
-            request.metadata(),
-            HEADER_NAME_OTEL_LOGS_INDEX,
-        )?;
+        let index_id = extract_otel_index_id_from_metadata(request.metadata(), &OtelSignal::Logs)?;
         let request = request.into_inner();
         self.clone()
             .export_instrumented(request, index_id)

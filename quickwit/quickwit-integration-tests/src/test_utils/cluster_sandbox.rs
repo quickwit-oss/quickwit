@@ -188,10 +188,6 @@ impl ClusterSandbox {
             // is formed.
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
-        println!(
-            "grpc client connecting {}",
-            indexer_config.node_config.grpc_listen_addr
-        );
         let channel = channel::Endpoint::from_str(&format!(
             "http://{}",
             indexer_config.node_config.grpc_listen_addr

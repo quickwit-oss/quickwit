@@ -43,8 +43,29 @@ pub use trace_id::{TraceId, TryFromTraceIdError};
 pub use traces::{
     parse_otlp_spans_json, parse_otlp_spans_protobuf, Event, JsonSpanIterator, Link,
     OtlpGrpcTracesService, OtlpTraceError, Span, SpanFingerprint, SpanKind, SpanStatus,
-    HEADER_NAME_OTEL_TRACES_INDEX, OTEL_TRACES_INDEX_ID, OTEL_TRACES_INDEX_ID_PATTERN,
+    OTEL_TRACES_INDEX_ID, OTEL_TRACES_INDEX_ID_PATTERN,
 };
+
+pub enum OtelSignal {
+    Logs,
+    Traces,
+}
+
+impl OtelSignal {
+    pub fn header_name(&self) -> &'static str {
+        match self {
+            OtelSignal::Logs => "qw-otel-logs-index",
+            OtelSignal::Traces => "qw-otel-traces-index",
+        }
+    }
+
+    pub fn default_index_id(&self) -> &'static str {
+        match self {
+            OtelSignal::Logs => OTEL_LOGS_INDEX_ID,
+            OtelSignal::Traces => OTEL_TRACES_INDEX_ID,
+        }
+    }
+}
 
 impl From<OtlpTraceError> for tonic::Status {
     fn from(error: OtlpTraceError) -> Self {
@@ -137,27 +158,27 @@ fn is_zero(count: &u32) -> bool {
     *count == 0
 }
 
-pub fn extract_otel_traces_index_patterns_from_metadata(
+pub fn extract_otel_traces_index_id_patterns_from_metadata(
     metadata: &tonic::metadata::MetadataMap,
-    otel_index_header_name: &str,
 ) -> Result<Vec<String>, Status> {
     let comma_separated_index_id_patterns = metadata
-        .get(otel_index_header_name)
-        .map(|index| index.to_str().map(|index| index.to_string()))
+        .get(OtelSignal::Traces.header_name())
+        .map(|index| index.to_str())
         .transpose()
         .map_err(|error| {
             Status::internal(format!(
-                "Failed to extract index ID from request metadata: {}",
-                error
+                "failed to extract index ID from request header: {error}",
             ))
         })?
-        .unwrap_or_else(|| OTEL_TRACES_INDEX_ID_PATTERN.to_string());
+        .unwrap_or_else(|| OTEL_TRACES_INDEX_ID_PATTERN);
     let mut index_id_patterns = Vec::new();
     for index_id_pattern in comma_separated_index_id_patterns.split(',') {
+        if index_id_pattern.is_empty() {
+            continue;
+        }
         validate_index_id_pattern(index_id_pattern).map_err(|error| {
             Status::internal(format!(
-                "Invalid index ID pattern in request metadata: {}",
-                error
+                "invalid index ID pattern in request header: {error}",
             ))
         })?;
         index_id_patterns.push(index_id_pattern.to_string());
@@ -165,17 +186,13 @@ pub fn extract_otel_traces_index_patterns_from_metadata(
     Ok(index_id_patterns)
 }
 
-pub(crate) fn extract_otel_traces_index_from_metadata(
+pub(crate) fn extract_otel_index_id_from_metadata(
     metadata: &tonic::metadata::MetadataMap,
-    otel_index_header_name: &str,
+    otel_signal: &OtelSignal,
 ) -> Result<String, Status> {
     let index_id = metadata
-        .get(otel_index_header_name)
-        .map(
-            |index: &tonic::metadata::MetadataValue<tonic::metadata::Ascii>| {
-                index.to_str().map(|index| index.to_string())
-            },
-        )
+        .get(otel_signal.header_name())
+        .map(|index: &tonic::metadata::MetadataValue<tonic::metadata::Ascii>| index.to_str())
         .transpose()
         .map_err(|error| {
             Status::internal(format!(
@@ -183,14 +200,14 @@ pub(crate) fn extract_otel_traces_index_from_metadata(
                 error
             ))
         })?
-        .unwrap_or_else(|| OTEL_TRACES_INDEX_ID.to_string());
+        .unwrap_or_else(|| otel_signal.default_index_id());
     validate_identifier("index_id", &index_id).map_err(|error| {
         Status::internal(format!(
             "Invalid index ID pattern in request metadata: {}",
             error
         ))
     })?;
-    Ok(index_id)
+    Ok(index_id.to_string())
 }
 
 #[cfg(test)]
@@ -313,5 +330,87 @@ mod tests {
         };
         assert_eq!(map.len(), 1);
         assert_eq!(map["message"], json!("body"));
+    }
+
+    #[test]
+    fn test_extract_otel_index_id_patterns_from_metadata() {
+        let mut metadata = tonic::metadata::MetadataMap::new();
+        metadata.insert("qw-otel-traces-index", "foo,bar".parse().unwrap());
+        let index_id_patterns =
+            extract_otel_traces_index_id_patterns_from_metadata(&metadata).unwrap();
+        assert_eq!(
+            index_id_patterns,
+            vec!["foo".to_string(), "bar".to_string()]
+        );
+
+        let mut metadata = tonic::metadata::MetadataMap::new();
+        metadata.insert("bad-header", "foo,bar".parse().unwrap());
+        let index_id_patterns =
+            extract_otel_traces_index_id_patterns_from_metadata(&metadata).unwrap();
+        assert_eq!(index_id_patterns, vec![OTEL_TRACES_INDEX_ID_PATTERN]);
+
+        let mut metadata = tonic::metadata::MetadataMap::new();
+        metadata.insert("qw-otel-traces-index", "foo,bar".parse().unwrap());
+        let index_id_patterns =
+            extract_otel_traces_index_id_patterns_from_metadata(&metadata).unwrap();
+        assert_eq!(
+            index_id_patterns,
+            vec!["foo".to_string(), "bar".to_string()]
+        );
+
+        let mut metadata = tonic::metadata::MetadataMap::new();
+        metadata.insert("qw-otel-traces-index", "foo,bar,".parse().unwrap());
+        let index_id_patterns =
+            extract_otel_traces_index_id_patterns_from_metadata(&metadata).unwrap();
+        assert_eq!(
+            index_id_patterns,
+            vec!["foo".to_string(), "bar".to_string()]
+        );
+
+        let mut metadata = tonic::metadata::MetadataMap::new();
+        metadata.insert("qw-otel-traces-index", "foo,bar,,".parse().unwrap());
+        let index_id_patterns =
+            extract_otel_traces_index_id_patterns_from_metadata(&metadata).unwrap();
+        assert_eq!(
+            index_id_patterns,
+            vec!["foo".to_string(), "bar".to_string()]
+        );
+
+        // invalid index ID pattern
+        let mut metadata = tonic::metadata::MetadataMap::new();
+        metadata.insert("qw-otel-traces-index", "foo,bar, ,".parse().unwrap());
+        let extract_res = extract_otel_traces_index_id_patterns_from_metadata(&metadata);
+        assert!(extract_res.is_err());
+    }
+
+    #[test]
+    fn test_extract_otel_index_id_from_metadata() {
+        let mut metadata = tonic::metadata::MetadataMap::new();
+        metadata.insert("qw-otel-logs-index", "foo".parse().unwrap());
+        let index_id = extract_otel_index_id_from_metadata(&metadata, &OtelSignal::Logs).unwrap();
+        assert_eq!(index_id, "foo");
+
+        // default index ID
+        let mut metadata = tonic::metadata::MetadataMap::new();
+        metadata.insert("wrong-header", "foo".parse().unwrap());
+        let index_id = extract_otel_index_id_from_metadata(&metadata, &OtelSignal::Logs).unwrap();
+        assert_eq!(index_id, OTEL_LOGS_INDEX_ID);
+
+        let mut metadata = tonic::metadata::MetadataMap::new();
+        metadata.insert("qw-otel-traces-index", "foo".parse().unwrap());
+        let index_id = extract_otel_index_id_from_metadata(&metadata, &OtelSignal::Traces).unwrap();
+        assert_eq!(index_id, "foo");
+
+        // default index ID
+        let mut metadata = tonic::metadata::MetadataMap::new();
+        metadata.insert("wrong-header", "foo".parse().unwrap());
+        let index_id = extract_otel_index_id_from_metadata(&metadata, &OtelSignal::Traces).unwrap();
+        assert_eq!(index_id, OTEL_TRACES_INDEX_ID);
+
+        // invalid index ID
+        let mut metadata = tonic::metadata::MetadataMap::new();
+        metadata.insert("qw-otel-traces-index", "foo bar".parse().unwrap());
+        let extract_res = extract_otel_index_id_from_metadata(&metadata, &OtelSignal::Traces);
+        assert!(extract_res.is_err());
     }
 }

@@ -946,28 +946,28 @@ mod tests {
             .index_config
             .doc_mapping
             .field_mappings;
-        assert!(
+        assert_eq!(
             field_mapping
                 .iter()
                 .filter(|field_mapping| field_mapping.name == "tenant_id")
-                .count()
-                == 1
+                .count(),
+            1
         );
-        assert!(
+        assert_eq!(
             field_mapping
                 .iter()
                 .filter(|field_mapping| field_mapping.name == "trace_id")
-                .count()
-                == 1
+                .count(),
+            1
         );
-        assert!(
+        assert_eq!(
             field_mapping
                 .iter()
                 .filter(|field_mapping| field_mapping.name == "span_id")
-                .count()
-                == 1
+                .count(),
+            1
         );
-        for field_mapping in field_mapping.iter() {
+        for field_mapping in &field_mapping {
             if field_mapping.name == "tenant_id" {
                 if let FieldMappingType::Bytes(bytes_options, _) = &field_mapping.mapping_type {
                     assert_eq!(bytes_options.input_format, BinaryFormat::Base64);

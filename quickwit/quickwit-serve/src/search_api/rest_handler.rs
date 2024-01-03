@@ -58,10 +58,6 @@ pub struct SearchApi;
 pub(crate) async fn extract_index_id_patterns(
     comma_separated_index_id_patterns: String,
 ) -> Result<Vec<String>, Rejection> {
-    println!(
-        "comma_separated_index_id_patterns: {}",
-        comma_separated_index_id_patterns
-    );
     let percent_decoded_comma_separated_index_id_patterns =
         percent_decode_str(&comma_separated_index_id_patterns)
             .decode_utf8()

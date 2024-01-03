@@ -29,9 +29,9 @@ use prost::Message;
 use prost_types::{Duration as WellKnownDuration, Timestamp as WellKnownTimestamp};
 use quickwit_config::JaegerConfig;
 use quickwit_opentelemetry::otlp::{
-    extract_otel_traces_index_patterns_from_metadata, Event as QwEvent, Link as QwLink,
+    extract_otel_traces_index_id_patterns_from_metadata, Event as QwEvent, Link as QwLink,
     Span as QwSpan, SpanFingerprint, SpanId, SpanKind as QwSpanKind, SpanStatus as QwSpanStatus,
-    TraceId, HEADER_NAME_OTEL_TRACES_INDEX, OTEL_TRACES_INDEX_ID,
+    TraceId, OTEL_TRACES_INDEX_ID,
 };
 use quickwit_proto::jaeger::api_v2::{
     KeyValue as JaegerKeyValue, Log as JaegerLog, Process as JaegerProcess, Span as JaegerSpan,
@@ -479,10 +479,8 @@ impl SpanReaderPlugin for JaegerService {
         &self,
         request: Request<GetServicesRequest>,
     ) -> Result<Response<GetServicesResponse>, Status> {
-        let index_id_patterns = extract_otel_traces_index_patterns_from_metadata(
-            request.metadata(),
-            HEADER_NAME_OTEL_TRACES_INDEX,
-        )?;
+        let index_id_patterns =
+            extract_otel_traces_index_id_patterns_from_metadata(request.metadata())?;
         metrics!(
             self.get_services_for_indexes(request.into_inner(), index_id_patterns)
                 .await,
@@ -494,10 +492,8 @@ impl SpanReaderPlugin for JaegerService {
         &self,
         request: Request<GetOperationsRequest>,
     ) -> Result<Response<GetOperationsResponse>, Status> {
-        let index_id_patterns = extract_otel_traces_index_patterns_from_metadata(
-            request.metadata(),
-            HEADER_NAME_OTEL_TRACES_INDEX,
-        )?;
+        let index_id_patterns =
+            extract_otel_traces_index_id_patterns_from_metadata(request.metadata())?;
         metrics!(
             self.get_operations_for_indexes(request.into_inner(), index_id_patterns)
                 .await,
@@ -509,10 +505,8 @@ impl SpanReaderPlugin for JaegerService {
         &self,
         request: Request<FindTraceIDsRequest>,
     ) -> Result<Response<FindTraceIDsResponse>, Status> {
-        let index_id_patterns = extract_otel_traces_index_patterns_from_metadata(
-            request.metadata(),
-            HEADER_NAME_OTEL_TRACES_INDEX,
-        )?;
+        let index_id_patterns =
+            extract_otel_traces_index_id_patterns_from_metadata(request.metadata())?;
         metrics!(
             self.find_trace_ids_for_indexes(request.into_inner(), index_id_patterns)
                 .await,
@@ -524,10 +518,8 @@ impl SpanReaderPlugin for JaegerService {
         &self,
         request: Request<FindTracesRequest>,
     ) -> Result<Response<Self::FindTracesStream>, Status> {
-        let index_id_patterns = extract_otel_traces_index_patterns_from_metadata(
-            request.metadata(),
-            HEADER_NAME_OTEL_TRACES_INDEX,
-        )?;
+        let index_id_patterns =
+            extract_otel_traces_index_id_patterns_from_metadata(request.metadata())?;
         self.find_traces_for_indexes(
             request.into_inner(),
             "find_traces",
@@ -542,10 +534,8 @@ impl SpanReaderPlugin for JaegerService {
         &self,
         request: Request<GetTraceRequest>,
     ) -> Result<Response<Self::GetTraceStream>, Status> {
-        let index_id_patterns = extract_otel_traces_index_patterns_from_metadata(
-            request.metadata(),
-            HEADER_NAME_OTEL_TRACES_INDEX,
-        )?;
+        let index_id_patterns =
+            extract_otel_traces_index_id_patterns_from_metadata(request.metadata())?;
         self.get_trace_for_indexes(
             request.into_inner(),
             "get_trace",
@@ -1080,9 +1070,7 @@ where T: Deserialize<'a> {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_opentelemetry::otlp::{
-        HEADER_NAME_OTEL_TRACES_INDEX, OTEL_TRACES_INDEX_ID_PATTERN,
-    };
+    use quickwit_opentelemetry::otlp::{OtelSignal, OTEL_TRACES_INDEX_ID_PATTERN};
     use quickwit_proto::jaeger::api_v2::ValueType;
     use quickwit_search::{encode_term_for_test, MockSearchService, QuickwitAggregations};
     use serde_json::json;
@@ -2487,7 +2475,7 @@ mod tests {
 
         let mut request = tonic::Request::new(GetServicesRequest {});
         request.metadata_mut().insert(
-            HEADER_NAME_OTEL_TRACES_INDEX,
+            OtelSignal::Traces.header_name(),
             "index-1,index-3*".parse().unwrap(),
         );
         let response = jaeger.get_services(request).await.unwrap().into_inner();

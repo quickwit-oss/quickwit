@@ -37,6 +37,7 @@ use quickwit_proto::opentelemetry::proto::resource::v1::Resource as OtlpResource
 use quickwit_proto::opentelemetry::proto::trace::v1::span::Link as OtlpLink;
 use quickwit_proto::opentelemetry::proto::trace::v1::status::StatusCode as OtlpStatusCode;
 use quickwit_proto::opentelemetry::proto::trace::v1::{Span as OtlpSpan, Status as OtlpStatus};
+use quickwit_proto::types::IndexId;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use tonic::{Request, Response, Status};
@@ -44,14 +45,14 @@ use tracing::field::Empty;
 use tracing::{error, instrument, warn, Span as RuntimeSpan};
 
 use super::{
-    extract_otel_traces_index_from_metadata, is_zero, TryFromSpanIdError, TryFromTraceIdError,
+    extract_otel_index_id_from_metadata, is_zero, OtelSignal, TryFromSpanIdError,
+    TryFromTraceIdError,
 };
 use crate::otlp::metrics::OTLP_SERVICE_METRICS;
 use crate::otlp::{extract_attributes, SpanId, TraceId};
 
 pub const OTEL_TRACES_INDEX_ID: &str = "otel-traces-v0_7";
 pub const OTEL_TRACES_INDEX_ID_PATTERN: &str = "otel-traces-v0_*";
-pub const HEADER_NAME_OTEL_TRACES_INDEX: &str = "otel-traces-index";
 
 const OTEL_TRACES_INDEX_CONFIG: &str = r#"
 version: 0.6
@@ -701,7 +702,7 @@ impl OtlpGrpcTracesService {
     pub async fn export_inner(
         &mut self,
         request: ExportTraceServiceRequest,
-        index_id: String,
+        index_id: IndexId,
         labels: [&str; 4],
     ) -> Result<ExportTraceServiceResponse, Status> {
         let ParsedSpans {
@@ -750,7 +751,7 @@ impl OtlpGrpcTracesService {
     fn parse_spans(
         request: ExportTraceServiceRequest,
         parent_span: RuntimeSpan,
-        index_id: String,
+        index_id: IndexId,
     ) -> tonic::Result<ParsedSpans> {
         let spans = parse_otlp_spans(request)?;
         let num_spans = spans.len() as u64;
@@ -793,7 +794,7 @@ impl OtlpGrpcTracesService {
     async fn export_instrumented(
         &mut self,
         request: ExportTraceServiceRequest,
-        index_id: String,
+        index_id: IndexId,
     ) -> Result<ExportTraceServiceResponse, Status> {
         let start = std::time::Instant::now();
 
@@ -832,10 +833,8 @@ impl TraceService for OtlpGrpcTracesService {
         &self,
         request: Request<ExportTraceServiceRequest>,
     ) -> Result<Response<ExportTraceServiceResponse>, Status> {
-        let index_id = extract_otel_traces_index_from_metadata(
-            request.metadata(),
-            HEADER_NAME_OTEL_TRACES_INDEX,
-        )?;
+        let index_id =
+            extract_otel_index_id_from_metadata(request.metadata(), &OtelSignal::Traces)?;
         let request = request.into_inner();
         self.clone()
             .export_instrumented(request, index_id)
