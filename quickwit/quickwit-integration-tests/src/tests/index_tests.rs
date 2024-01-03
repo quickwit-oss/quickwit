@@ -26,6 +26,8 @@ use quickwit_config::ConfigFormat;
 use quickwit_indexing::actors::INDEXING_DIR_NAME;
 use quickwit_janitor::actors::DELETE_SERVICE_TASK_DIR_NAME;
 use quickwit_metastore::SplitState;
+use quickwit_proto::opentelemetry::proto::collector::trace::v1::ExportTraceServiceRequest;
+use quickwit_proto::opentelemetry::proto::trace::v1::{ResourceSpans, ScopeSpans, Span};
 use quickwit_rest_client::error::{ApiError, Error};
 use quickwit_rest_client::rest_client::CommitType;
 use quickwit_serve::SearchRequestQueryString;
@@ -603,4 +605,75 @@ async fn test_shutdown() {
         .await
         .unwrap()
         .unwrap();
+}
+
+#[tokio::test]
+async fn test_ingest_traces_with_otlp_grpc_api() {
+    quickwit_common::setup_logging_for_tests();
+    let sandbox = ClusterSandbox::start_standalone_with_otlp_service()
+        .await
+        .unwrap();
+    // Wait fo the pipelines to start (one for logs and one for traces)
+    sandbox.wait_for_indexing_pipelines(2).await.unwrap();
+
+    let scope_spans = vec![ScopeSpans {
+        spans: vec![
+            Span {
+                trace_id: vec![1; 16],
+                span_id: vec![2; 8],
+                start_time_unix_nano: 1_000_000_001,
+                end_time_unix_nano: 1_000_000_002,
+                ..Default::default()
+            },
+            Span {
+                trace_id: vec![3; 16],
+                span_id: vec![4; 8],
+                start_time_unix_nano: 2_000_000_001,
+                end_time_unix_nano: 2_000_000_002,
+                ..Default::default()
+            },
+        ],
+        ..Default::default()
+    }];
+    let resource_spans = vec![ResourceSpans {
+        scope_spans,
+        ..Default::default()
+    }];
+    let request = ExportTraceServiceRequest { resource_spans };
+
+    // Send the spans on the default index.
+    {
+        let response = sandbox
+            .trace_client
+            .clone()
+            .export(request.clone())
+            .await
+            .unwrap();
+        assert_eq!(
+            response
+                .into_inner()
+                .partial_success
+                .unwrap()
+                .rejected_spans,
+            0
+        );
+    }
+
+    // Send the spans on a non existing index, should return an error.
+    {
+        let mut tonic_request = tonic::Request::new(request);
+        tonic_request.metadata_mut().insert(
+            "qw-otel-traces-index",
+            tonic::metadata::MetadataValue::try_from("non-existing-index").unwrap(),
+        );
+        let status = sandbox
+            .trace_client
+            .clone()
+            .export(tonic_request)
+            .await
+            .unwrap_err();
+        assert_eq!(status.code(), tonic::Code::NotFound);
+    }
+
+    sandbox.shutdown().await.unwrap();
 }

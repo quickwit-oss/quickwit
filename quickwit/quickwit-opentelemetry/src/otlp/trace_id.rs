@@ -17,17 +17,13 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use base64::display::Base64Display;
-use base64::engine::GeneralPurpose;
-use base64::prelude::BASE64_STANDARD;
-use base64::Engine;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct TraceId([u8; 16]);
 
 impl TraceId {
-    pub const BASE64_LENGTH: usize = 24;
+    pub const HEX_LENGTH: usize = 32;
 
     pub fn new(bytes: [u8; 16]) -> Self {
         Self(bytes)
@@ -41,16 +37,16 @@ impl TraceId {
         self.0.to_vec()
     }
 
-    pub fn base64_display(&self) -> Base64Display<'_, '_, GeneralPurpose> {
-        Base64Display::new(&self.0, &BASE64_STANDARD)
+    pub fn hex_display(&self) -> String {
+        hex::encode(self.0)
     }
 }
 
 impl Serialize for TraceId {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         if serializer.is_human_readable() {
-            let b64trace_id = BASE64_STANDARD.encode(self.0);
-            serializer.serialize_str(&b64trace_id)
+            let hextrace_id = hex::encode(self.0);
+            serializer.serialize_str(&hextrace_id)
         } else {
             self.0.serialize(serializer)
         }
@@ -61,24 +57,20 @@ impl<'de> Deserialize<'de> for TraceId {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where D: Deserializer<'de> {
         if deserializer.is_human_readable() {
-            let b64trace_id = String::deserialize(deserializer)?;
-            if b64trace_id.len() != TraceId::BASE64_LENGTH {
+            let hextrace_id = String::deserialize(deserializer)?;
+            if hextrace_id.len() != TraceId::HEX_LENGTH {
                 let message = format!(
-                    "base64 trace ID must be {} bytes long, got {}",
-                    TraceId::BASE64_LENGTH,
-                    b64trace_id.len()
+                    "hex trace ID must be {} bytes long, got {}",
+                    TraceId::HEX_LENGTH,
+                    hextrace_id.len()
                 );
                 return Err(de::Error::custom(message));
             }
             let mut trace_id_bytes = [0u8; 16];
-            BASE64_STANDARD
-                // Using the unchecked version here because otherwise the engine gets the wrong size
-                // estimate and fails.
-                .decode_slice_unchecked(b64trace_id.as_bytes(), &mut trace_id_bytes)
-                .map_err(|error| {
-                    let message = format!("failed to decode base64 trace ID: {:?}", error);
-                    de::Error::custom(message)
-                })?;
+            hex::decode_to_slice(hextrace_id, &mut trace_id_bytes).map_err(|error| {
+                let message = format!("failed to decode hex span ID: {error:?}");
+                de::Error::custom(message)
+            })?;
             Ok(TraceId(trace_id_bytes))
         } else {
             let trace_id_bytes: [u8; 16] = <[u8; 16]>::deserialize(deserializer)?;
@@ -118,7 +110,7 @@ mod tests {
     fn test_trace_id_serde() {
         let expected_trace_id = TraceId::new([1; 16]);
         let trace_id_json = serde_json::to_string(&expected_trace_id).unwrap();
-        assert_eq!(trace_id_json, r#""AQEBAQEBAQEBAQEBAQEBAQ==""#);
+        assert_eq!(trace_id_json, r#""01010101010101010101010101010101""#);
 
         let trace_id = serde_json::from_str::<TraceId>(&trace_id_json).unwrap();
         assert_eq!(trace_id, expected_trace_id,);

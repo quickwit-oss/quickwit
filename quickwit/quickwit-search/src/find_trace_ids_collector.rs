@@ -226,7 +226,7 @@ impl SegmentCollector for FindTraceIdsSegmentCollector {
     }
 
     fn harvest(self) -> Self::Fruit {
-        let mut buffer = Vec::with_capacity(TraceId::BASE64_LENGTH);
+        let mut buffer = Vec::with_capacity(TraceId::HEX_LENGTH);
         self.select_trace_ids
             .harvest()
             .into_iter()

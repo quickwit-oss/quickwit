@@ -37,17 +37,22 @@ use quickwit_proto::opentelemetry::proto::resource::v1::Resource as OtlpResource
 use quickwit_proto::opentelemetry::proto::trace::v1::span::Link as OtlpLink;
 use quickwit_proto::opentelemetry::proto::trace::v1::status::StatusCode as OtlpStatusCode;
 use quickwit_proto::opentelemetry::proto::trace::v1::{Span as OtlpSpan, Status as OtlpStatus};
+use quickwit_proto::types::IndexId;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use tonic::{Request, Response, Status};
 use tracing::field::Empty;
 use tracing::{error, instrument, warn, Span as RuntimeSpan};
 
-use super::{is_zero, TryFromSpanIdError, TryFromTraceIdError};
+use super::{
+    extract_otel_index_id_from_metadata, is_zero, OtelSignal, TryFromSpanIdError,
+    TryFromTraceIdError,
+};
 use crate::otlp::metrics::OTLP_SERVICE_METRICS;
 use crate::otlp::{extract_attributes, SpanId, TraceId};
 
-pub const OTEL_TRACES_INDEX_ID: &str = "otel-traces-v0_6";
+pub const OTEL_TRACES_INDEX_ID: &str = "otel-traces-v0_7";
+pub const OTEL_TRACES_INDEX_ID_PATTERN: &str = "otel-traces-v0_*";
 
 const OTEL_TRACES_INDEX_CONFIG: &str = r#"
 version: 0.6
@@ -59,6 +64,8 @@ doc_mapping:
   field_mappings:
     - name: trace_id
       type: bytes
+      input_format: hex
+      output_format: hex
       fast: true
     - name: trace_state
       type: text
@@ -86,11 +93,14 @@ doc_mapping:
       indexed: false
     - name: span_id
       type: bytes
+      input_format: hex
+      output_format: hex
     - name: span_kind
       type: u64
     - name: span_name
       type: text
       tokenizer: raw
+      fast: true
     - name: span_fingerprint
       type: text
       tokenizer: raw
@@ -111,10 +121,10 @@ doc_mapping:
       type: u64
       indexed: false
       fast: true
-      stored: false
     - name: span_attributes
       type: json
       tokenizer: raw
+      fast: true
     - name: span_dropped_attributes_count
       type: u64
       indexed: false
@@ -129,10 +139,13 @@ doc_mapping:
       indexed: true
     - name: parent_span_id
       type: bytes
+      input_format: hex
+      output_format: hex
       indexed: false
     - name: events
       type: array<json>
       tokenizer: raw
+      fast: true
     - name: event_names
       type: array<text>
       tokenizer: default
@@ -689,7 +702,8 @@ impl OtlpGrpcTracesService {
     pub async fn export_inner(
         &mut self,
         request: ExportTraceServiceRequest,
-        labels: [&'static str; 4],
+        index_id: IndexId,
+        labels: [&str; 4],
     ) -> Result<ExportTraceServiceResponse, Status> {
         let ParsedSpans {
             doc_batch,
@@ -698,7 +712,7 @@ impl OtlpGrpcTracesService {
             error_message,
         } = tokio::task::spawn_blocking({
             let parent_span = RuntimeSpan::current();
-            || Self::parse_spans(request, parent_span)
+            || Self::parse_spans(request, parent_span, index_id)
         })
         .await
         .map_err(|join_error| {
@@ -737,14 +751,14 @@ impl OtlpGrpcTracesService {
     fn parse_spans(
         request: ExportTraceServiceRequest,
         parent_span: RuntimeSpan,
+        index_id: IndexId,
     ) -> tonic::Result<ParsedSpans> {
         let spans = parse_otlp_spans(request)?;
         let num_spans = spans.len() as u64;
         let mut num_parse_errors = 0;
         let mut error_message = String::new();
 
-        let mut doc_batch_builder =
-            DocBatchBuilder::new(OTEL_TRACES_INDEX_ID.to_string()).json_writer();
+        let mut doc_batch_builder = DocBatchBuilder::new(index_id).json_writer();
         for span in spans {
             if let Err(error) = doc_batch_builder.ingest_doc(&span.0) {
                 error!(error=?error, "failed to JSON serialize span");
@@ -780,27 +794,29 @@ impl OtlpGrpcTracesService {
     async fn export_instrumented(
         &mut self,
         request: ExportTraceServiceRequest,
+        index_id: IndexId,
     ) -> Result<ExportTraceServiceResponse, Status> {
         let start = std::time::Instant::now();
 
-        let labels = ["trace", OTEL_TRACES_INDEX_ID, "grpc", "protobuf"];
+        let labels = ["trace", &index_id, "grpc", "protobuf"];
 
         OTLP_SERVICE_METRICS
             .requests_total
             .with_label_values(labels)
             .inc();
-        let (export_res, is_error) = match self.export_inner(request, labels).await {
-            ok @ Ok(_) => (ok, "false"),
-            err @ Err(_) => {
-                OTLP_SERVICE_METRICS
-                    .request_errors_total
-                    .with_label_values(labels)
-                    .inc();
-                (err, "true")
-            }
-        };
+        let (export_res, is_error) =
+            match self.export_inner(request, index_id.clone(), labels).await {
+                ok @ Ok(_) => (ok, "false"),
+                err @ Err(_) => {
+                    OTLP_SERVICE_METRICS
+                        .request_errors_total
+                        .with_label_values(labels)
+                        .inc();
+                    (err, "true")
+                }
+            };
         let elapsed = start.elapsed().as_secs_f64();
-        let labels = ["trace", OTEL_TRACES_INDEX_ID, "grpc", "protobuf", is_error];
+        let labels = ["trace", &index_id, "grpc", "protobuf", is_error];
         OTLP_SERVICE_METRICS
             .request_duration_seconds
             .with_label_values(labels)
@@ -817,9 +833,11 @@ impl TraceService for OtlpGrpcTracesService {
         &self,
         request: Request<ExportTraceServiceRequest>,
     ) -> Result<Response<ExportTraceServiceResponse>, Status> {
+        let index_id =
+            extract_otel_index_id_from_metadata(request.metadata(), &OtelSignal::Traces)?;
         let request = request.into_inner();
         self.clone()
-            .export_instrumented(request)
+            .export_instrumented(request, index_id)
             .await
             .map(Response::new)
     }

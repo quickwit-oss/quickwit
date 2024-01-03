@@ -34,6 +34,7 @@ use quickwit_common::uri::Uri as QuickwitUri;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::NodeConfig;
 use quickwit_metastore::{MetastoreResolver, SplitState};
+use quickwit_proto::opentelemetry::proto::collector::trace::v1::trace_service_client::TraceServiceClient;
 use quickwit_rest_client::models::IngestSource;
 use quickwit_rest_client::rest_client::{
     CommitType, QuickwitClient, QuickwitClientBuilder, DEFAULT_BASE_URL,
@@ -44,6 +45,7 @@ use reqwest::Url;
 use tempfile::TempDir;
 use tokio::sync::watch::{self, Receiver, Sender};
 use tokio::task::JoinHandle;
+use tonic::transport::channel;
 use tracing::debug;
 
 /// Configuration of a node made of a [`NodeConfig`] and a
@@ -89,6 +91,7 @@ pub struct ClusterSandbox {
     pub node_configs: Vec<TestNodeConfig>,
     pub searcher_rest_client: QuickwitClient,
     pub indexer_rest_client: QuickwitClient,
+    pub trace_client: TraceServiceClient<tonic::transport::Channel>,
     _temp_dir: TempDir,
     join_handles: Vec<JoinHandle<Result<HashMap<String, ActorExitStatus>, anyhow::Error>>>,
     shutdown_trigger: ClusterShutdownTrigger,
@@ -185,6 +188,12 @@ impl ClusterSandbox {
             // is formed.
             tokio::time::sleep(Duration::from_millis(100)).await;
         }
+        let channel = channel::Endpoint::from_str(&format!(
+            "http://{}",
+            indexer_config.node_config.grpc_listen_addr
+        ))
+        .unwrap()
+        .connect_lazy();
         Ok(Self {
             node_configs,
             searcher_rest_client: QuickwitClientBuilder::new(transport_url(
@@ -195,6 +204,7 @@ impl ClusterSandbox {
                 indexer_config.node_config.rest_config.listen_addr,
             ))
             .build(),
+            trace_client: TraceServiceClient::new(channel),
             _temp_dir: temp_dir,
             join_handles,
             shutdown_trigger,
@@ -210,6 +220,17 @@ impl ClusterSandbox {
         let temp_dir = tempfile::tempdir()?;
         let services = QuickwitService::supported_services();
         let node_configs = build_node_configs(temp_dir.path().to_path_buf(), &[services]);
+        Self::start_cluster_with_configs(temp_dir, node_configs).await
+    }
+
+    pub async fn start_standalone_with_otlp_service() -> anyhow::Result<Self> {
+        let temp_dir = tempfile::tempdir()?;
+        let services = QuickwitService::supported_services();
+        let mut node_configs = build_node_configs(temp_dir.path().to_path_buf(), &[services]);
+        node_configs[0]
+            .node_config
+            .indexer_config
+            .enable_otlp_endpoint = true;
         Self::start_cluster_with_configs(temp_dir, node_configs).await
     }
 
