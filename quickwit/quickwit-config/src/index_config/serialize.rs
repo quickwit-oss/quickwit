@@ -28,22 +28,23 @@ use crate::{
 };
 
 /// Alias for the latest serialization format.
-type IndexConfigForSerialization = IndexConfigV0_6;
+type IndexConfigForSerialization = IndexConfigV0_7;
 
 #[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(tag = "version")]
 pub(crate) enum VersionedIndexConfig {
-    #[serde(rename = "0.6")]
+    #[serde(rename = "0.7")]
     // Retro compatibility
     #[serde(alias = "0.4")]
     #[serde(alias = "0.5")]
-    V0_6(IndexConfigV0_6),
+    #[serde(alias = "0.6")]
+    V0_7(IndexConfigV0_7),
 }
 
 impl From<VersionedIndexConfig> for IndexConfigForSerialization {
     fn from(versioned_config: VersionedIndexConfig) -> IndexConfigForSerialization {
         match versioned_config {
-            VersionedIndexConfig::V0_6(v0_6) => v0_6,
+            VersionedIndexConfig::V0_7(v0_6) => v0_6,
         }
     }
 }
@@ -118,7 +119,7 @@ impl IndexConfigForSerialization {
 
 impl From<IndexConfig> for VersionedIndexConfig {
     fn from(index_config: IndexConfig) -> Self {
-        VersionedIndexConfig::V0_6(index_config.into())
+        VersionedIndexConfig::V0_7(index_config.into())
     }
 }
 
@@ -127,14 +128,14 @@ impl TryFrom<VersionedIndexConfig> for IndexConfig {
 
     fn try_from(versioned_index_config: VersionedIndexConfig) -> anyhow::Result<Self> {
         match versioned_index_config {
-            VersionedIndexConfig::V0_6(v0_6) => v0_6.validate_and_build(None),
+            VersionedIndexConfig::V0_7(v0_6) => v0_6.validate_and_build(None),
         }
     }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
-pub struct IndexConfigV0_6 {
+pub struct IndexConfigV0_7 {
     pub index_id: String,
     #[schema(value_type = String)]
     #[serde(default)]
@@ -149,9 +150,9 @@ pub struct IndexConfigV0_6 {
     pub retention_policy: Option<RetentionPolicy>,
 }
 
-impl From<IndexConfig> for IndexConfigV0_6 {
+impl From<IndexConfig> for IndexConfigV0_7 {
     fn from(index_config: IndexConfig) -> Self {
-        IndexConfigV0_6 {
+        IndexConfigV0_7 {
             index_id: index_config.index_id,
             index_uri: Some(index_config.index_uri),
             doc_mapping: index_config.doc_mapping,
@@ -228,7 +229,7 @@ mod test {
     #[test]
     fn test_minimal_index_config_missing_root_uri_no_default_uri() {
         let config_yaml = r#"
-            version: 0.6
+            version: 0.7
             index_id: hdfs-logs
             doc_mapping: {}
         "#;
@@ -240,7 +241,7 @@ mod test {
     #[test]
     fn test_minimal_index_config_missing_root_uri_with_default_index_root_uri() {
         let config_yaml = r#"
-            version: 0.6
+            version: 0.7
             index_id: hdfs-logs
             doc_mapping: {}
         "#;

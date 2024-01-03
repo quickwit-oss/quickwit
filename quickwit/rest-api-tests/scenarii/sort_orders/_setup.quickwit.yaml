@@ -7,7 +7,7 @@ status_code: null
 method: POST
 endpoint: indexes/
 json:
-  version: "0.6"
+  version: "0.7"
   index_id: sortorder
   doc_mapping:
     mode: dynamic

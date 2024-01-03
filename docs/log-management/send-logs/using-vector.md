@@ -48,7 +48,7 @@ Let's embrace the OpenTelemetry standard and take advantage of Quickwit features
 Here is the OpenTelemetry index configuration for reference.
 
 ```yaml title="otel-logs_v0_6"
-version: 0.6
+version: 0.7
 
 index_id: otel-logs-v0_6
 

@@ -1355,7 +1355,7 @@ mod tests {
                 .path("/indexes?overwrite=true")
                 .method("POST")
                 .json(&true)
-                .body(r#"{"version": "0.6", "index_id": "hdfs-logs", "doc_mapping": {"field_mappings":[{"name": "timestamp", "type": "i64", "fast": true, "indexed": true}]}}"#)
+                .body(r#"{"version": "0.7", "index_id": "hdfs-logs", "doc_mapping": {"field_mappings":[{"name": "timestamp", "type": "i64", "fast": true, "indexed": true}]}}"#)
                 .reply(&index_management_handler)
                 .await;
             assert_eq!(resp.status(), 200);
@@ -1365,7 +1365,7 @@ mod tests {
                 .path("/indexes?overwrite=true")
                 .method("POST")
                 .json(&true)
-                .body(r#"{"version": "0.6", "index_id": "hdfs-logs", "doc_mapping": {"field_mappings":[{"name": "timestamp", "type": "i64", "fast": true, "indexed": true}]}}"#)
+                .body(r#"{"version": "0.7", "index_id": "hdfs-logs", "doc_mapping": {"field_mappings":[{"name": "timestamp", "type": "i64", "fast": true, "indexed": true}]}}"#)
                 .reply(&index_management_handler)
                 .await;
             assert_eq!(resp.status(), 200);
@@ -1375,7 +1375,7 @@ mod tests {
                 .path("/indexes")
                 .method("POST")
                 .json(&true)
-                .body(r#"{"version": "0.6", "index_id": "hdfs-logs", "doc_mapping": {"field_mappings":[{"name": "timestamp", "type": "i64", "fast": true, "indexed": true}]}}"#)
+                .body(r#"{"version": "0.7", "index_id": "hdfs-logs", "doc_mapping": {"field_mappings":[{"name": "timestamp", "type": "i64", "fast": true, "indexed": true}]}}"#)
                 .reply(&index_management_handler)
                 .await;
             assert_eq!(resp.status(), 400);
@@ -1394,7 +1394,7 @@ mod tests {
             .path("/indexes")
             .method("POST")
             .json(&true)
-            .body(r#"{"version": "0.6", "index_id": "hdfs-logs", "doc_mapping": {"field_mappings":[{"name": "timestamp", "type": "i64", "fast": true, "indexed": true}]}}"#)
+            .body(r#"{"version": "0.7", "index_id": "hdfs-logs", "doc_mapping": {"field_mappings":[{"name": "timestamp", "type": "i64", "fast": true, "indexed": true}]}}"#)
             .reply(&index_management_handler)
             .await;
         assert_eq!(resp.status(), 200);
@@ -1408,7 +1408,7 @@ mod tests {
         assert_json_include!(actual: resp_json, expected: expected_response_json);
 
         // Create source.
-        let source_config_body = r#"{"version": "0.6", "source_id": "vec-source", "source_type": "vec", "params": {"docs": [], "batch_num_docs": 10}}"#;
+        let source_config_body = r#"{"version": "0.7", "source_id": "vec-source", "source_type": "vec", "params": {"docs": [], "batch_num_docs": 10}}"#;
         let resp = warp::test::request()
             .path("/indexes/hdfs-logs/sources")
             .method("POST")
@@ -1513,7 +1513,7 @@ mod tests {
         let index_management_handler =
             super::index_management_handlers(index_service, Arc::new(node_config))
                 .recover(recover_fn);
-        let source_config_body = r#"{"version": "0.6", "source_id": "file-source", "source_type":
+        let source_config_body = r#"{"version": "0.7", "source_id": "file-source", "source_type":
     "file", "params": {"filepath": "FILEPATH"}}"#;
         let resp = warp::test::request()
             .path("/indexes/hdfs-logs/sources")
@@ -1541,7 +1541,7 @@ mod tests {
             .header("content-type", "application/yaml")
             .body(
                 r#"
-            version: 0.6
+            version: 0.7
             index_id: hdfs-logs
             doc_mapping:
               field_mappings:
@@ -1579,7 +1579,7 @@ mod tests {
             .header("content-type", "application/toml")
             .body(
                 r#"
-            version = "0.6"
+            version = "0.7"
             index_id = "hdfs-logs"
             [doc_mapping]
             field_mappings = [
@@ -1636,7 +1636,7 @@ mod tests {
             .method("POST")
             .json(&true)
             .body(
-                r#"{"version": "0.6", "index_id": "hdfs-log", "doc_mapping":
+                r#"{"version": "0.7", "index_id": "hdfs-log", "doc_mapping":
     {"field_mappings":[{"name": "timestamp", "type": "unknown", "fast": true, "indexed":
     true}]}}"#,
             )
@@ -1675,7 +1675,7 @@ mod tests {
                 .method("POST")
                 .json(&true)
                 .body(
-                    r#"{"version": "0.6", "source_id": "pulsar-source",
+                    r#"{"version": "0.7", "source_id": "pulsar-source",
     "desired_num_pipelines": 2, "source_type": "pulsar", "params": {"topics": ["my-topic"],
     "address": "pulsar://localhost:6650" }}"#,
                 )

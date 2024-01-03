@@ -27,7 +27,7 @@ Let's create a schemaless index with only one field `timestamp`. The mode `dynam
 
 ```yaml title="index-config.yaml"
 
-version: 0.6
+version: 0.7
 
 index_id: fluentbit-logs
 
@@ -111,4 +111,4 @@ Quickwit is now ingesting logs coming from Fluentbit and you can search them eit
 
 ## Further improvements
 
-You will soon be able to do aggregations on dynamic fields (planned for 0.6).
+You will soon be able to do aggregations on dynamic fields (planned for 0.7).

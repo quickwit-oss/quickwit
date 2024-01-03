@@ -32,29 +32,30 @@ use crate::{IndexMetadata, Split};
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(tag = "version")]
 pub(crate) enum VersionedFileBackedIndex {
-    #[serde(rename = "0.6")]
+    #[serde(rename = "0.7")]
     // Retro compatibility.
+    #[serde(alias = "0.6")]
     #[serde(alias = "0.5")]
     #[serde(alias = "0.4")]
-    V0_6(FileBackedIndexV0_6),
+    V0_7(FileBackedIndexV0_7),
 }
 
 impl From<FileBackedIndex> for VersionedFileBackedIndex {
     fn from(index: FileBackedIndex) -> Self {
-        VersionedFileBackedIndex::V0_6(index.into())
+        VersionedFileBackedIndex::V0_7(index.into())
     }
 }
 
 impl From<VersionedFileBackedIndex> for FileBackedIndex {
     fn from(index: VersionedFileBackedIndex) -> Self {
         match index {
-            VersionedFileBackedIndex::V0_6(v0_6) => v0_6.into(),
+            VersionedFileBackedIndex::V0_7(v0_6) => v0_6.into(),
         }
     }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub(crate) struct FileBackedIndexV0_6 {
+pub(crate) struct FileBackedIndexV0_7 {
     #[serde(rename = "index")]
     metadata: IndexMetadata,
     splits: Vec<Split>,
@@ -64,7 +65,7 @@ pub(crate) struct FileBackedIndexV0_6 {
     delete_tasks: Vec<DeleteTask>,
 }
 
-impl From<FileBackedIndex> for FileBackedIndexV0_6 {
+impl From<FileBackedIndex> for FileBackedIndexV0_7 {
     fn from(index: FileBackedIndex) -> Self {
         let splits = index
             .splits
@@ -99,8 +100,8 @@ impl From<FileBackedIndex> for FileBackedIndexV0_6 {
     }
 }
 
-impl From<FileBackedIndexV0_6> for FileBackedIndex {
-    fn from(mut index: FileBackedIndexV0_6) -> Self {
+impl From<FileBackedIndexV0_7> for FileBackedIndex {
+    fn from(mut index: FileBackedIndexV0_7) -> Self {
         // if the index is otel-traces-v0_6, convert set bytes fields input and output format to hex
         // to be compatible with the v0_6 version.
         // TODO: remove after 0.8 release.
