@@ -416,7 +416,7 @@ fn get_sort_by_field_entry<'a>(
     field_name: &str,
     schema: &'a Schema,
 ) -> crate::Result<Option<&'a FieldEntry>> {
-    if ["_score"].contains(&field_name) || SORT_DOC_FIELD_NAMES.contains(&field_name) {
+    if "_score" == field_name || SORT_DOC_FIELD_NAMES.contains(&field_name) {
         return Ok(None);
     }
     let dynamic_field_opt = schema.get_field(DYNAMIC_FIELD_NAME).ok();
