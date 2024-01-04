@@ -223,7 +223,8 @@ impl ClusterSandbox {
         Self::start_cluster_with_configs(temp_dir, node_configs).await
     }
 
-    pub async fn start_cluster_with_otlp_service(nodes_services: &[HashSet<QuickwitService>],
+    pub async fn start_cluster_with_otlp_service(
+        nodes_services: &[HashSet<QuickwitService>],
     ) -> anyhow::Result<Self> {
         let temp_dir = tempfile::tempdir()?;
         let mut node_configs = build_node_configs(temp_dir.path().to_path_buf(), nodes_services);
