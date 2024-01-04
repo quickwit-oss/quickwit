@@ -27,8 +27,10 @@ import {
   ListItemIcon,
   ListItemText,
   Popover,
+  SxProps,
   TextField,
   TextFieldProps,
+  Theme,
 } from "@mui/material";
 import { AccessTime, ChevronRight, DateRange } from "@mui/icons-material";
 import { Dayjs, default as dayjs } from 'dayjs';
@@ -52,7 +54,7 @@ const TIME_RANGE_CHOICES = [
   ["Last year", 365 * 24 * 60 * 60],
 ];
 
-type TimeRange = {
+export type TimeRange = {
   startTimestamp: number | null,
   endTimestamp: number | null,
 }
@@ -60,6 +62,8 @@ type TimeRange = {
 export interface TimeRangeSelectProps {
   timeRange: TimeRange;
   disabled?: boolean;
+  variant?: "contained" | "outlined",
+  sx?: SxProps<Theme>,
   onUpdate(newTimeRange:TimeRange): void;
 }
 
@@ -69,7 +73,13 @@ interface TimeRangeSelectState {
   width: number;
 }
 
-export function TimeRangeSelect(props: TimeRangeSelectProps): JSX.Element {
+export function TimeRangeSelect(argProps: TimeRangeSelectProps): JSX.Element {
+  // Set defaut props
+  const [props, setProps] = useState<TimeRangeSelectProps>(argProps)
+  useEffect(()=>{
+    setProps({...{variant:'contained'}, ...argProps});
+  }, [argProps])
+
   const getInitialState = () => {return {width: 220, anchor: null, customDatesPanelOpen: false}};
   const initialState = useMemo(() => {return getInitialState(); }, []);
   const [state, setState] = useState<TimeRangeSelectState>(initialState);
@@ -113,9 +123,10 @@ export function TimeRangeSelect(props: TimeRangeSelectProps): JSX.Element {
   const id = open ? "time-range-select-popover" : undefined;
 
   return (
-    <div>
+    <Box sx={props.sx}>
       <Button
-        variant="contained"
+        sx={{width:'inherit'}}
+        variant={props.variant}
         disableElevation
         onClick={handleOpenClick}
         startIcon={<AccessTime />}
@@ -179,7 +190,7 @@ export function TimeRangeSelect(props: TimeRangeSelectProps): JSX.Element {
           </Box>
         </Box>
       </Popover>
-    </div>
+    </Box>
   );
 }
 
