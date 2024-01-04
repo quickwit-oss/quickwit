@@ -21,6 +21,6 @@ mod indexing_split_store;
 mod local_split_store;
 mod split_store_quota;
 
-pub use indexing_split_store::{IndexingSplitStore, WeakIndexingSplitStore};
+pub use indexing_split_store::IndexingSplitStore;
 pub use local_split_store::{get_tantivy_directory_from_split_bundle, LocalSplitStore};
 pub use split_store_quota::SplitStoreQuota;

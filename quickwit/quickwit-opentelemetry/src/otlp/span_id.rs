@@ -17,15 +17,13 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use base64::prelude::BASE64_STANDARD;
-use base64::Engine;
 use serde::{de, Deserialize, Deserializer, Serialize, Serializer};
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash)]
 pub struct SpanId([u8; 8]);
 
 impl SpanId {
-    pub const BASE64_LENGTH: usize = 12;
+    pub const HEX_LENGTH: usize = 16;
 
     pub fn new(bytes: [u8; 8]) -> Self {
         Self(bytes)
@@ -42,33 +40,29 @@ impl SpanId {
 
 impl Serialize for SpanId {
     fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
-        let b64span_id = BASE64_STANDARD.encode(self.0);
-        serializer.serialize_str(&b64span_id)
+        let hexspan_id = hex::encode(self.0);
+        serializer.serialize_str(&hexspan_id)
     }
 }
 
 impl<'de> Deserialize<'de> for SpanId {
     fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
     where D: Deserializer<'de> {
-        let b64span_id = String::deserialize(deserializer)?;
+        let hexspan_id = String::deserialize(deserializer)?;
 
-        if b64span_id.len() != SpanId::BASE64_LENGTH {
+        if hexspan_id.len() != SpanId::HEX_LENGTH {
             let message = format!(
-                "base64 span ID must be {} bytes long, got {}",
-                SpanId::BASE64_LENGTH,
-                b64span_id.len()
+                "hex span ID must be {} bytes long, got {}",
+                SpanId::HEX_LENGTH,
+                hexspan_id.len()
             );
             return Err(de::Error::custom(message));
         }
         let mut span_id = [0u8; 8];
-        BASE64_STANDARD
-            // Using the unchecked version here because otherwise the engine gets the wrong size
-            // estimate and fails.
-            .decode_slice_unchecked(b64span_id.as_bytes(), &mut span_id)
-            .map_err(|error| {
-                let message = format!("failed to decode base64 span ID: {:?}", error);
-                de::Error::custom(message)
-            })?;
+        hex::decode_to_slice(hexspan_id, &mut span_id).map_err(|error| {
+            let message = format!("failed to decode hex span ID: {error:?}");
+            de::Error::custom(message)
+        })?;
         Ok(SpanId(span_id))
     }
 }
@@ -104,7 +98,7 @@ mod tests {
     fn test_span_id_serde() {
         let expected_span_id = SpanId::new([1; 8]);
         let span_id_json = serde_json::to_string(&expected_span_id).unwrap();
-        assert_eq!(span_id_json, r#""AQEBAQEBAQE=""#);
+        assert_eq!(span_id_json, r#""0101010101010101""#);
 
         let span_id = serde_json::from_str::<SpanId>(&span_id_json).unwrap();
         assert_eq!(span_id, expected_span_id,);

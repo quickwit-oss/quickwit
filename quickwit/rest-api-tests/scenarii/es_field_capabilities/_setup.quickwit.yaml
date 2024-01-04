@@ -14,7 +14,7 @@ method: POST
 api_root: http://localhost:7280/api/v1/
 endpoint: indexes/
 json:
-  version: "0.6"
+  version: "0.7"
   index_id: fieldcaps
   doc_mapping:
     mode: dynamic
@@ -37,7 +37,7 @@ method: POST
 api_root: http://localhost:7280/api/v1/
 endpoint: indexes/
 json:
-  version: "0.6"
+  version: "0.7"
   index_id: fieldcaps-2
   doc_mapping:
     mode: dynamic

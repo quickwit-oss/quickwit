@@ -29,8 +29,9 @@ use prost::Message;
 use prost_types::{Duration as WellKnownDuration, Timestamp as WellKnownTimestamp};
 use quickwit_config::JaegerConfig;
 use quickwit_opentelemetry::otlp::{
-    Event as QwEvent, Link as QwLink, Span as QwSpan, SpanFingerprint, SpanId,
-    SpanKind as QwSpanKind, SpanStatus as QwSpanStatus, TraceId, OTEL_TRACES_INDEX_ID,
+    extract_otel_traces_index_id_patterns_from_metadata, Event as QwEvent, Link as QwLink,
+    Span as QwSpan, SpanFingerprint, SpanId, SpanKind as QwSpanKind, SpanStatus as QwSpanStatus,
+    TraceId, OTEL_TRACES_INDEX_ID,
 };
 use quickwit_proto::jaeger::api_v2::{
     KeyValue as JaegerKeyValue, Log as JaegerLog, Process as JaegerProcess, Span as JaegerSpan,
@@ -91,19 +92,19 @@ impl JaegerService {
     }
 
     #[instrument("get_services", skip_all)]
-    async fn get_services_inner(
+    pub async fn get_services_for_indexes(
         &self,
         request: GetServicesRequest,
+        index_id_patterns: Vec<String>,
     ) -> JaegerResult<GetServicesResponse> {
-        debug!(request=?request, "`get_services` request");
+        debug!(request=?request, index_ids=?index_id_patterns, "`get_services` request");
 
-        let index_id = OTEL_TRACES_INDEX_ID.to_string();
         let max_hits = Some(1_000);
         let start_timestamp =
             Some(OffsetDateTime::now_utc().unix_timestamp() - self.lookback_period_secs);
 
         let search_request = ListTermsRequest {
-            index_id_patterns: vec![index_id],
+            index_id_patterns,
             field: "service_name".to_string(),
             max_hits,
             start_timestamp,
@@ -124,13 +125,13 @@ impl JaegerService {
     }
 
     #[instrument("get_operations", skip_all, fields(service=%request.service, span_kind=%request.span_kind))]
-    async fn get_operations_inner(
+    pub async fn get_operations_for_indexes(
         &self,
         request: GetOperationsRequest,
+        index_id_patterns: Vec<String>,
     ) -> JaegerResult<GetOperationsResponse> {
-        debug!(request=?request, "`get_operations` request");
+        debug!(request=?request, request=?request, index_ids=?index_id_patterns, "`get_operations` request");
 
-        let index_id = OTEL_TRACES_INDEX_ID.to_string();
         let max_hits = Some(1_000);
         let start_timestamp =
             Some(OffsetDateTime::now_utc().unix_timestamp() - self.lookback_period_secs);
@@ -140,7 +141,7 @@ impl JaegerService {
         let end_key = SpanFingerprint::end_key(&request.service, span_kind_opt);
 
         let search_request = ListTermsRequest {
-            index_id_patterns: vec![index_id],
+            index_id_patterns,
             field: "span_fingerprint".to_string(),
             max_hits,
             start_timestamp,
@@ -164,17 +165,18 @@ impl JaegerService {
     }
 
     // Instrumentation happens in `find_trace_ids`.
-    async fn find_trace_ids_inner(
+    pub async fn find_trace_ids_for_indexes(
         &self,
         request: FindTraceIDsRequest,
+        index_id_patterns: Vec<String>,
     ) -> JaegerResult<FindTraceIDsResponse> {
-        debug!(request=?request, "`find_trace_ids` request");
+        debug!(request=?request, index_ids=?index_id_patterns, "`find_trace_ids` request");
 
         let trace_query = request
             .query
             .ok_or_else(|| Status::invalid_argument("Query is empty."))?;
 
-        let (trace_ids, _) = self.find_trace_ids(trace_query).await?;
+        let (trace_ids, _) = self.find_trace_ids(trace_query, index_id_patterns).await?;
         let trace_ids = trace_ids
             .into_iter()
             .map(|trace_id| trace_id.to_vec())
@@ -185,33 +187,43 @@ impl JaegerService {
     }
 
     #[instrument("find_traces", skip_all)]
-    async fn find_traces_inner(
+    pub async fn find_traces_for_indexes(
         &self,
         request: FindTracesRequest,
         operation_name: &'static str,
         request_start: Instant,
+        index_id_patterns: Vec<String>,
     ) -> JaegerResult<SpanStream> {
         debug!(request=?request, "`find_traces` request");
 
         let trace_query = request
             .query
             .ok_or_else(|| Status::invalid_argument("Trace query is empty."))?;
-        let (trace_ids, span_timestamps_range) = self.find_trace_ids(trace_query).await?;
+        let (trace_ids, span_timestamps_range) = self
+            .find_trace_ids(trace_query, index_id_patterns.clone())
+            .await?;
         let start = span_timestamps_range.start() - self.max_trace_duration_secs;
         let end = span_timestamps_range.end() + self.max_trace_duration_secs;
         let search_window = start..=end;
         let response = self
-            .stream_spans(&trace_ids, search_window, operation_name, request_start)
+            .stream_spans(
+                &trace_ids,
+                search_window,
+                operation_name,
+                request_start,
+                index_id_patterns,
+            )
             .await?;
         Ok(response)
     }
 
-    #[instrument("find_traces", skip_all)]
-    async fn get_trace_inner(
+    #[instrument("get_trace", skip_all)]
+    pub async fn get_trace_for_indexes(
         &self,
         request: GetTraceRequest,
         operation_name: &'static str,
         request_start: Instant,
+        index_id_patterns: Vec<String>,
     ) -> JaegerResult<SpanStream> {
         debug!(request=?request, "`get_trace` request");
         debug_assert_eq!(request.trace_id.len(), 16);
@@ -221,7 +233,13 @@ impl JaegerService {
         let start = end - self.lookback_period_secs;
         let search_window = start..=end;
         let response = self
-            .stream_spans(&[trace_id], search_window, operation_name, request_start)
+            .stream_spans(
+                &[trace_id],
+                search_window,
+                operation_name,
+                request_start,
+                index_id_patterns,
+            )
             .await?;
         Ok(response)
     }
@@ -230,8 +248,8 @@ impl JaegerService {
     async fn find_trace_ids(
         &self,
         trace_query: TraceQueryParameters,
+        index_id_patterns: Vec<String>,
     ) -> Result<(Vec<TraceId>, TimeIntervalSecs), Status> {
-        let index_id = OTEL_TRACES_INDEX_ID.to_string();
         let span_kind_opt = None;
         let min_span_start_timestamp_secs_opt = trace_query.start_time_min.map(|ts| ts.seconds);
         let max_span_start_timestamp_secs_opt = trace_query.start_time_max.map(|ts| ts.seconds);
@@ -256,7 +274,7 @@ impl JaegerService {
         let aggregation_query = build_aggregations_query(trace_query.num_traces as usize);
         let max_hits = 0;
         let search_request = SearchRequest {
-            index_id_patterns: vec![index_id],
+            index_id_patterns,
             query_ast,
             aggregation_request: Some(aggregation_query),
             max_hits,
@@ -283,6 +301,7 @@ impl JaegerService {
         search_window: TimeIntervalSecs,
         operation_name: &'static str,
         request_start: Instant,
+        index_id_patterns: Vec<String>,
     ) -> Result<SpanStream, Status> {
         if trace_ids.is_empty() {
             let (_tx, rx) = mpsc::channel(1);
@@ -292,7 +311,7 @@ impl JaegerService {
         let mut query = BoolQuery::default();
 
         for trace_id in trace_ids {
-            let value = trace_id.base64_display().to_string();
+            let value = trace_id.hex_display();
             let term_query = TermQuery {
                 field: "trace_id".to_string(),
                 value,
@@ -305,7 +324,7 @@ impl JaegerService {
             serde_json::to_string(&query_ast).map_err(|err| Status::internal(err.to_string()))?;
 
         let search_request = SearchRequest {
-            index_id_patterns: vec![OTEL_TRACES_INDEX_ID.to_string()],
+            index_id_patterns,
             query_ast,
             start_timestamp: Some(*search_window.start()),
             end_timestamp: Some(*search_window.end()),
@@ -460,8 +479,11 @@ impl SpanReaderPlugin for JaegerService {
         &self,
         request: Request<GetServicesRequest>,
     ) -> Result<Response<GetServicesResponse>, Status> {
+        let index_id_patterns =
+            extract_otel_traces_index_id_patterns_from_metadata(request.metadata())?;
         metrics!(
-            self.get_services_inner(request.into_inner()).await,
+            self.get_services_for_indexes(request.into_inner(), index_id_patterns)
+                .await,
             [get_services, OTEL_TRACES_INDEX_ID]
         );
     }
@@ -470,8 +492,11 @@ impl SpanReaderPlugin for JaegerService {
         &self,
         request: Request<GetOperationsRequest>,
     ) -> Result<Response<GetOperationsResponse>, Status> {
+        let index_id_patterns =
+            extract_otel_traces_index_id_patterns_from_metadata(request.metadata())?;
         metrics!(
-            self.get_operations_inner(request.into_inner()).await,
+            self.get_operations_for_indexes(request.into_inner(), index_id_patterns)
+                .await,
             [get_operations, OTEL_TRACES_INDEX_ID]
         );
     }
@@ -480,8 +505,11 @@ impl SpanReaderPlugin for JaegerService {
         &self,
         request: Request<FindTraceIDsRequest>,
     ) -> Result<Response<FindTraceIDsResponse>, Status> {
+        let index_id_patterns =
+            extract_otel_traces_index_id_patterns_from_metadata(request.metadata())?;
         metrics!(
-            self.find_trace_ids_inner(request.into_inner()).await,
+            self.find_trace_ids_for_indexes(request.into_inner(), index_id_patterns)
+                .await,
             [find_trace_ids, OTEL_TRACES_INDEX_ID]
         );
     }
@@ -490,18 +518,32 @@ impl SpanReaderPlugin for JaegerService {
         &self,
         request: Request<FindTracesRequest>,
     ) -> Result<Response<Self::FindTracesStream>, Status> {
-        self.find_traces_inner(request.into_inner(), "find_traces", Instant::now())
-            .await
-            .map(Response::new)
+        let index_id_patterns =
+            extract_otel_traces_index_id_patterns_from_metadata(request.metadata())?;
+        self.find_traces_for_indexes(
+            request.into_inner(),
+            "find_traces",
+            Instant::now(),
+            index_id_patterns,
+        )
+        .await
+        .map(Response::new)
     }
 
     async fn get_trace(
         &self,
         request: Request<GetTraceRequest>,
     ) -> Result<Response<Self::GetTraceStream>, Status> {
-        self.get_trace_inner(request.into_inner(), "get_trace", Instant::now())
-            .await
-            .map(Response::new)
+        let index_id_patterns =
+            extract_otel_traces_index_id_patterns_from_metadata(request.metadata())?;
+        self.get_trace_for_indexes(
+            request.into_inner(),
+            "get_trace",
+            Instant::now(),
+            index_id_patterns,
+        )
+        .await
+        .map(Response::new)
     }
 }
 
@@ -1028,6 +1070,7 @@ where T: Deserialize<'a> {
 
 #[cfg(test)]
 mod tests {
+    use quickwit_opentelemetry::otlp::{OtelSignal, OTEL_TRACES_INDEX_ID_PATTERN};
     use quickwit_proto::jaeger::api_v2::ValueType;
     use quickwit_search::{encode_term_for_test, MockSearchService, QuickwitAggregations};
     use serde_json::json;
@@ -2348,7 +2391,7 @@ mod tests {
         {
             let agg_result_json = r#"[
                 {
-                    "trace_id": "AQEBAQEBAQEBAQEBAQEBAQ==",
+                    "trace_id": "01010101010101010101010101010101",
                     "span_timestamp": 1684857492783747000
                 }
             ]"#;
@@ -2359,11 +2402,11 @@ mod tests {
         {
             let agg_result_json = r#"[
                 {
-                    "trace_id": "AQIDBAUGBwgJCgsMDQ4PEA==",
+                    "trace_id": "0102030405060708090a0b0c0d0e0f10",
                     "span_timestamp": 1684857492783747000
                 },
                 {
-                    "trace_id": "AgICAgICAgICAgICAgICAg==",
+                    "trace_id": "02020202020202020202020202020202",
                     "span_timestamp": 1684857826019627000
                 }
             ]"#;
@@ -2379,7 +2422,7 @@ mod tests {
         service
             .expect_root_list_terms()
             .withf(|req| {
-                req.index_id_patterns == vec![OTEL_TRACES_INDEX_ID]
+                req.index_id_patterns == vec![OTEL_TRACES_INDEX_ID_PATTERN]
                     && req.field == "service_name"
                     && req.start_timestamp.is_some()
             })
@@ -2400,6 +2443,41 @@ mod tests {
         let jaeger = JaegerService::new(JaegerConfig::default(), service);
 
         let request = tonic::Request::new(GetServicesRequest {});
+        let response = jaeger.get_services(request).await.unwrap().into_inner();
+        assert_eq!(response.services, &["service1", "service2", "service3"]);
+    }
+
+    #[tokio::test]
+    async fn test_get_services_on_custom_indexes() {
+        let mut service = MockSearchService::new();
+        service
+            .expect_root_list_terms()
+            .withf(|req| {
+                req.index_id_patterns == vec!["index-1", "index-3*"]
+                    && req.field == "service_name"
+                    && req.start_timestamp.is_some()
+            })
+            .return_once(|_| {
+                Ok(quickwit_proto::search::ListTermsResponse {
+                    num_hits: 3,
+                    terms: vec![
+                        encode_term_for_test!("service1"),
+                        encode_term_for_test!("service2"),
+                        encode_term_for_test!("service3"),
+                    ],
+                    elapsed_time_micros: 0,
+                    errors: Vec::new(),
+                })
+            });
+
+        let service = Arc::new(service);
+        let jaeger = JaegerService::new(JaegerConfig::default(), service);
+
+        let mut request = tonic::Request::new(GetServicesRequest {});
+        request.metadata_mut().insert(
+            OtelSignal::Traces.header_name(),
+            "index-1,index-3*".parse().unwrap(),
+        );
         let response = jaeger.get_services(request).await.unwrap().into_inner();
         assert_eq!(response.services, &["service1", "service2", "service3"]);
     }

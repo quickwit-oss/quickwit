@@ -480,7 +480,7 @@ async fn test_single_node_without_timestamp_with_query_start_timestamp_enabled(
     let start_timestamp = OffsetDateTime::now_utc().unix_timestamp();
     for i in 0..30 {
         let body = format!("info @ t:{}", i + 1);
-        docs.push(json!({"body": body}));
+        docs.push(json!({ "body": body }));
     }
     test_sandbox.add_documents(docs).await?;
 
@@ -1783,6 +1783,8 @@ async fn test_single_node_find_trace_ids_collector() {
               - name: trace_id
                 type: bytes
                 fast: true
+                input_format: hex
+                output_format: hex
               - name: span_timestamp_secs
                 type: datetime
                 fast: true

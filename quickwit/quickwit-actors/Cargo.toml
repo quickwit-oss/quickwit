@@ -1,6 +1,6 @@
 [package]
 name = "quickwit-actors"
-version = "0.6.5-dev"
+version = "0.7.0"
 authors = ["Quickwit, Inc. <hello@quickwit.io>"]
 edition = "2021"
 license = "MIT"

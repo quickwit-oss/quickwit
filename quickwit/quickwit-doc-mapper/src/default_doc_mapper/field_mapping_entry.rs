@@ -50,8 +50,8 @@ pub struct QuickwitObjectOptions {
 pub struct FieldMappingEntry {
     /// Field name in the index schema.
     pub name: String,
-    /// Property parameters which defines the type and the way the value must be indexed.
-    pub(crate) mapping_type: FieldMappingType,
+    /// Property parameters which define the type and the way the value must be indexed.
+    pub mapping_type: FieldMappingType,
 }
 
 // Struct used for serialization and deserialization
@@ -139,20 +139,27 @@ impl Default for QuickwitBoolOptions {
     }
 }
 
+/// Options associated to a bytes field.
 #[derive(Clone, Serialize, Deserialize, Debug, PartialEq, utoipa::ToSchema)]
 #[serde(deny_unknown_fields)]
 pub struct QuickwitBytesOptions {
+    /// Optional description of the bytes field.
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    /// If true, the field will be stored in the doc store.
     #[serde(default = "default_as_true")]
     pub stored: bool,
+    /// If true, the field will be indexed.
     #[serde(default = "default_as_true")]
     pub indexed: bool,
+    /// If true, the field will be stored in columnar format.
     #[serde(default)]
     pub fast: bool,
+    /// Input format of the bytes field.
     #[serde(default)]
     pub input_format: BinaryFormat,
+    /// Output format of the bytes field.
     #[serde(default)]
     pub output_format: BinaryFormat,
 }
@@ -170,15 +177,19 @@ impl Default for QuickwitBytesOptions {
     }
 }
 
+/// Available binary formats.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Default, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BinaryFormat {
+    /// Base64 format.
     #[default]
     Base64,
+    /// Hexadecimal format.
     Hex,
 }
 
 impl BinaryFormat {
+    /// Returns the string representation of the format.
     pub fn as_str(&self) -> &str {
         match self {
             Self::Base64 => "base64",
@@ -186,6 +197,7 @@ impl BinaryFormat {
         }
     }
 
+    /// Returns representation of the format in `serde_json::Value`.
     pub fn format_to_json(&self, value: &[u8]) -> JsonValue {
         match self {
             Self::Base64 => BASE64_STANDARD.encode(value).into(),
@@ -193,6 +205,7 @@ impl BinaryFormat {
         }
     }
 
+    /// Parses the `serde_json::Value` into `tantivy::schema::Value`.
     pub fn parse_json(&self, json_val: JsonValue) -> Result<TantivyValue, String> {
         let byte_str = if let JsonValue::String(byte_str) = json_val {
             byte_str
