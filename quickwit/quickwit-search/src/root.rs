@@ -64,6 +64,8 @@ use crate::{
 /// Maximum accepted scroll TTL.
 const MAX_SCROLL_TTL: Duration = Duration::from_secs(DELETION_GRACE_PERIOD.as_secs() - 60 * 2);
 
+const SORT_DOC_FIELD_NAMES: &[&str] = &["_shard_doc", "_doc"];
+
 /// SearchJob to be assigned to search clients by the [`SearchJobPlacer`].
 #[derive(Debug, Clone, PartialEq)]
 pub struct SearchJob {
@@ -371,6 +373,20 @@ fn validate_sort_by_fields_and_search_after(
     let Some(search_after_partial_hit) = search_after.as_ref() else {
         return Ok(());
     };
+
+    let sort_fields_without_doc_count = sort_fields
+        .iter()
+        .filter(|sort_field| !SORT_DOC_FIELD_NAMES.contains(&sort_field.field_name.as_str()))
+        .count();
+    let has_doc_sort_field = sort_fields_without_doc_count != sort_fields.len();
+    if has_doc_sort_field && search_after_partial_hit.split_id.is_empty() {
+        return Err(SearchError::InvalidArgument(
+            "search_after with a sort field `_doc` must define a split ID, segment ID and doc ID \
+             values"
+                .to_string(),
+        ));
+    }
+
     let mut search_after_sort_value_count = 0;
     // TODO: we could validate if the search after sort value types of consistent with the sort
     // field types.
@@ -384,7 +400,7 @@ fn validate_sort_by_fields_and_search_after(
             .context("sort value must be set")?;
         search_after_sort_value_count += 1;
     }
-    if search_after_sort_value_count != sort_fields.len() {
+    if search_after_sort_value_count != sort_fields_without_doc_count {
         return Err(SearchError::InvalidArgument(format!(
             "`search_after` must have the same number of sort values as sort by fields {:?}",
             sort_fields
@@ -400,7 +416,7 @@ fn get_sort_by_field_entry<'a>(
     field_name: &str,
     schema: &'a Schema,
 ) -> crate::Result<Option<&'a FieldEntry>> {
-    if ["_score", "_shard_doc", "_doc"].contains(&field_name) {
+    if "_score" == field_name || SORT_DOC_FIELD_NAMES.contains(&field_name) {
         return Ok(None);
     }
     let dynamic_field_opt = schema.get_field(DYNAMIC_FIELD_NAME).ok();
@@ -1880,6 +1896,32 @@ mod tests {
             sort_value2: Some(SortByValue {
                 sort_value: Some(SortValue::U64(2)),
             }),
+            split_id: "".to_string(),
+            segment_ord: 0,
+            doc_id: 0,
+        };
+        validate_sort_by_fields_and_search_after(&sort_fields, &Some(partial_hit)).unwrap();
+    }
+
+    #[test]
+    fn test_validate_sort_by_fields_and_search_after_ok_with_doc_sort_field() {
+        let sort_fields = vec![
+            SortField {
+                field_name: "timestamp".to_string(),
+                sort_order: 0,
+                sort_datetime_format: Some(SortDatetimeFormat::UnixTimestampMillis as i32),
+            },
+            SortField {
+                field_name: "_doc".to_string(),
+                sort_order: 0,
+                sort_datetime_format: None,
+            },
+        ];
+        let partial_hit = PartialHit {
+            sort_value: Some(SortByValue {
+                sort_value: Some(SortValue::U64(1)),
+            }),
+            sort_value2: None,
             split_id: "split1".to_string(),
             segment_ord: 1,
             doc_id: 1,
@@ -1931,6 +1973,72 @@ mod tests {
 
     #[test]
     fn test_validate_sort_by_fields_and_search_after_invalid_1() {
+        // 2 sort fields + search after with only one sort value is invalid.
+        let sort_fields = vec![
+            SortField {
+                field_name: "timestamp".to_string(),
+                sort_order: 0,
+                sort_datetime_format: Some(SortDatetimeFormat::UnixTimestampMillis as i32),
+            },
+            SortField {
+                field_name: "id".to_string(),
+                sort_order: 0,
+                sort_datetime_format: None,
+            },
+        ];
+        let partial_hit = PartialHit {
+            sort_value: Some(SortByValue {
+                sort_value: Some(SortValue::U64(1)),
+            }),
+            sort_value2: None,
+            split_id: "split1".to_string(),
+            segment_ord: 1,
+            doc_id: 1,
+        };
+        let error =
+            validate_sort_by_fields_and_search_after(&sort_fields, &Some(partial_hit)).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "Invalid argument: `search_after` must have the same number of sort values as sort by \
+             fields [\"timestamp\", \"id\"]"
+        );
+    }
+
+    #[test]
+    fn test_validate_sort_by_fields_and_search_after_invalid_with_missing_split_id() {
+        // 2 sort fields + search after with only one sort value is invalid.
+        let sort_fields = vec![
+            SortField {
+                field_name: "timestamp".to_string(),
+                sort_order: 0,
+                sort_datetime_format: Some(SortDatetimeFormat::UnixTimestampMillis as i32),
+            },
+            SortField {
+                field_name: "_doc".to_string(),
+                sort_order: 0,
+                sort_datetime_format: None,
+            },
+        ];
+        let partial_hit = PartialHit {
+            sort_value: Some(SortByValue {
+                sort_value: Some(SortValue::U64(1)),
+            }),
+            sort_value2: None,
+            split_id: "".to_string(),
+            segment_ord: 1,
+            doc_id: 1,
+        };
+        let error =
+            validate_sort_by_fields_and_search_after(&sort_fields, &Some(partial_hit)).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "Invalid argument: search_after with a sort field `_doc` must define a split ID, \
+             segment ID and doc ID values"
+        );
+    }
+
+    #[test]
+    fn test_validate_sort_by_fields_and_search_valid_1() {
         // 2 sort fields + search after with only one sort value is invalid.
         let sort_fields = vec![
             SortField {
