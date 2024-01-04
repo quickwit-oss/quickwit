@@ -610,7 +610,14 @@ async fn test_shutdown() {
 #[tokio::test]
 async fn test_ingest_traces_with_otlp_grpc_api() {
     quickwit_common::setup_logging_for_tests();
-    let sandbox = ClusterSandbox::start_standalone_with_otlp_service()
+    let nodes_services = vec![
+        HashSet::from_iter([QuickwitService::Searcher]),
+        HashSet::from_iter([QuickwitService::Metastore]),
+        HashSet::from_iter([QuickwitService::Indexer]),
+        HashSet::from_iter([QuickwitService::ControlPlane]),
+        HashSet::from_iter([QuickwitService::Janitor]),
+    ];
+    let sandbox = ClusterSandbox::start_cluster_with_otlp_service(&nodes_services)
         .await
         .unwrap();
     // Wait fo the pipelines to start (one for logs and one for traces)
