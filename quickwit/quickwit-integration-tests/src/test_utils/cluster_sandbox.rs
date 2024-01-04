@@ -223,14 +223,17 @@ impl ClusterSandbox {
         Self::start_cluster_with_configs(temp_dir, node_configs).await
     }
 
-    pub async fn start_standalone_with_otlp_service() -> anyhow::Result<Self> {
+    pub async fn start_cluster_with_otlp_service(
+        nodes_services: &[HashSet<QuickwitService>],
+    ) -> anyhow::Result<Self> {
         let temp_dir = tempfile::tempdir()?;
-        let services = QuickwitService::supported_services();
-        let mut node_configs = build_node_configs(temp_dir.path().to_path_buf(), &[services]);
-        node_configs[0]
-            .node_config
-            .indexer_config
-            .enable_otlp_endpoint = true;
+        let mut node_configs = build_node_configs(temp_dir.path().to_path_buf(), nodes_services);
+        // Set OTLP endpoint for indexers.
+        for node_config in node_configs.iter_mut() {
+            if node_config.services.contains(&QuickwitService::Indexer) {
+                node_config.node_config.indexer_config.enable_otlp_endpoint = true;
+            }
+        }
         Self::start_cluster_with_configs(temp_dir, node_configs).await
     }
 

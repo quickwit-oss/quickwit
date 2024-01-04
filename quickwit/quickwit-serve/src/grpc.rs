@@ -120,6 +120,7 @@ pub(crate) async fn start_grpc_server(
         };
     let otlp_log_grpc_service =
         if let Some(otlp_logs_service) = services.otlp_logs_service_opt.clone() {
+            enabled_grpc_services.insert("otlp-log");
             let logs_service = LogsServiceServer::new(otlp_logs_service)
                 .accept_compressed(CompressionEncoding::Gzip);
             Some(logs_service)

@@ -501,7 +501,7 @@ pub async fn serve_quickwit(
         None
     };
 
-    let otlp_logs_service_opt = if node_config.is_service_enabled(QuickwitService::Searcher)
+    let otlp_logs_service_opt = if node_config.is_service_enabled(QuickwitService::Indexer)
         && node_config.indexer_config.enable_otlp_endpoint
     {
         Some(OtlpGrpcLogsService::new(ingest_service.clone()))
@@ -509,7 +509,7 @@ pub async fn serve_quickwit(
         None
     };
 
-    let otlp_traces_service_opt = if node_config.is_service_enabled(QuickwitService::Searcher)
+    let otlp_traces_service_opt = if node_config.is_service_enabled(QuickwitService::Indexer)
         && node_config.indexer_config.enable_otlp_endpoint
     {
         Some(OtlpGrpcTracesService::new(ingest_service.clone(), None))
