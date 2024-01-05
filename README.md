@@ -14,7 +14,7 @@
 </p>
 
 <h2 align="center">
-Cloud-native search engine for Observability (logs, traces, and soon metrics!). An open-source alternative to DataDog, Elasticsearch, etc.
+Cloud-native search engine for observability (logs, traces, and soon metrics!). An open-source alternative to Datadog, Elasticsearch,  Loki, and Tempo.
 </h2>
 
 <h4 align="center">
@@ -28,10 +28,10 @@ Cloud-native search engine for Observability (logs, traces, and soon metrics!). 
 
 <b>We just released Quickwit 0.7! Read the [blog post](https://quickwit.io/blog/quickwit-0.7) to learn about the latest powerful features!</b>
 
-### **Quickwit is the fastest search engine on cloud storage. It's the perfect fit for observability use cases.**
+### **Quickwit is the fastest search engine on cloud storage. It's the perfect fit for observability use cases**
 
 - [Log management](https://quickwit.io/docs/log-management/overview)
-- [Distributed traces](https://quickwit.io/docs/distributed-tracing/overview)
+- [Distributed tracing](https://quickwit.io/docs/distributed-tracing/overview)
 - Metrics support is on the roadmap
 
 <br/>
@@ -44,12 +44,12 @@ Cloud-native search engine for Observability (logs, traces, and soon metrics!). 
 # 💡 Features
 
 - Full-text search and aggregation queries
-- Elasticsearch compatible API
+- Elasticsearch-compatible API, use Quickwit with any Elasticsearch or OpenSearch client
 - [Jaeger-native](https://quickwit.io/docs/distributed-tracing/plug-quickwit-to-jaeger)
 - OTEL-native for [logs](https://quickwit.io/docs/log-management/overview) and [traces](https://quickwit.io/docs/distributed-tracing/overview)
 - [Schemaless](https://quickwit.io/docs/guides/schemaless) or strict schema indexing
 - Schemaless analytics
-- Sub-second search on cloud storage (Amazon S3, Azure Blob Storage, …)
+- Sub-second search on cloud storage (Amazon S3, Azure Blob Storage, Google Cloud Storage, …)
 - Decoupled compute and storage, stateless indexers & searchers
 - [Grafana data source](https://github.com/quickwit-oss/quickwit-datasource)
 - Kubernetes ready - See our [helm-chart](https://quickwit.io/docs/deployment/kubernetes)
