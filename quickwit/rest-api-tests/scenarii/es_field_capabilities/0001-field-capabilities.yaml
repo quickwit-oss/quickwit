@@ -301,6 +301,34 @@ expected:
         indices:
           - fieldcaps-2
 ---
+# _field_caps without index endpoint
+method: [GET]
+engines:
+  - quickwit
+endpoint: _field_caps?fields=tags*
+expected:
+  indices:
+  - fieldcaps
+  - fieldcaps-2
+  fields:
+    tags:
+      keyword:
+        type: keyword
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+        indices:
+          - fieldcaps
+          - fieldcaps-2
+    tags-2:
+      keyword:
+        type: keyword
+        metadata_field: false
+        searchable: true
+        aggregatable: true
+        indices:
+          - fieldcaps-2
+---
 # Wildcard on index name + Wildcard without match
 method: [GET]
 engines:
@@ -318,7 +346,6 @@ expected:
         metadata_field: false
         searchable: true
         aggregatable: true
-
 ---
 # Exact match index + Non matching excact index
 method: [GET]

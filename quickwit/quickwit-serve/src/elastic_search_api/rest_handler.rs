@@ -42,9 +42,9 @@ use serde_json::json;
 use warp::{Filter, Rejection};
 
 use super::filter::{
-    elastic_cluster_info_filter, elastic_index_field_capabilities_filter,
-    elastic_index_search_filter, elastic_multi_search_filter, elastic_scroll_filter,
-    elastic_search_filter,
+    elastic_cluster_info_filter, elastic_field_capabilities_filter,
+    elastic_index_field_capabilities_filter, elastic_index_search_filter,
+    elastic_multi_search_filter, elastic_scroll_filter, elastic_search_filter,
 };
 use super::model::{
     build_list_field_request_for_es_api, convert_to_es_field_capabilities_response,
@@ -98,11 +98,12 @@ pub fn es_compat_search_handler(
 }
 
 /// GET or POST _elastic/{index}/_field_caps
-/// TODO: add route handling for _elastic/_field_caps
 pub fn es_compat_index_field_capabilities_handler(
     search_service: Arc<dyn SearchService>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     elastic_index_field_capabilities_filter()
+        .or(elastic_field_capabilities_filter())
+        .unify()
         .and(with_arg(search_service))
         .then(es_compat_index_field_capabilities)
         .map(|result| make_elastic_api_response(result, BodyFormat::default()))
@@ -115,16 +116,6 @@ pub fn es_compat_index_search_handler(
     elastic_index_search_filter()
         .and(with_arg(search_service))
         .then(es_compat_index_search)
-        .map(|result| make_elastic_api_response(result, BodyFormat::default()))
-}
-
-/// GET or POST _elastic/_search/scroll
-pub fn es_compat_scroll_handler(
-    search_service: Arc<dyn SearchService>,
-) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    elastic_scroll_filter()
-        .and(with_arg(search_service))
-        .then(es_scroll)
         .map(|result| make_elastic_api_response(result, BodyFormat::default()))
 }
 
@@ -142,6 +133,16 @@ pub fn es_compat_index_multi_search_handler(
             };
             JsonApiResponse::new(&result, status_code, &BodyFormat::default())
         })
+}
+
+/// GET or POST _elastic/_search/scroll
+pub fn es_compat_scroll_handler(
+    search_service: Arc<dyn SearchService>,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    elastic_scroll_filter()
+        .and(with_arg(search_service))
+        .then(es_scroll)
+        .map(|result| make_elastic_api_response(result, BodyFormat::default()))
 }
 
 fn build_request_for_es_api(

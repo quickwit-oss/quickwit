@@ -29,7 +29,7 @@ use super::model::{
 use crate::elastic_search_api::model::{
     ElasticBulkOptions, ScrollQueryParams, SearchBody, SearchQueryParams,
 };
-use crate::search_api::extract_index_id_patterns;
+use crate::search_api::{extract_index_id_patterns, extract_index_id_patterns_default};
 
 const BODY_LENGTH_LIMIT: ByteSize = ByteSize::mib(1);
 const CONTENT_LENGTH_LIMIT: ByteSize = ByteSize::mib(10);
@@ -79,56 +79,6 @@ pub(crate) fn elastic_bulk_filter(
         .and(serde_qs::warp::query(serde_qs::Config::default()))
 }
 
-/// Like the warp json filter, but accepts an empty body and interprets it as `T::default`.
-fn json_or_empty<T: DeserializeOwned + Send + Default>(
-) -> impl Filter<Extract = (T,), Error = Rejection> + Copy {
-    warp::body::content_length_limit(BODY_LENGTH_LIMIT.as_u64())
-        .and(warp::body::bytes().and_then(|buf: Bytes| async move {
-            if buf.is_empty() {
-                return Ok(T::default());
-            }
-            serde_json::from_slice(&buf)
-                .map_err(|err| warp::reject::custom(crate::rest::InvalidJsonRequest(err)))
-        }))
-        .recover(|rejection: Rejection| async {
-            // Not having a header with content length is not an error as long as
-            // there are no body.
-            if rejection.find::<LengthRequired>().is_some() {
-                Ok(T::default())
-            } else {
-                Err(rejection)
-            }
-        })
-        .unify()
-}
-
-#[utoipa::path(get, tag = "metadata", path = "/{index}/_field_caps")]
-pub(crate) fn elastic_index_field_capabilities_filter() -> impl Filter<
-    Extract = (
-        Vec<String>,
-        FieldCapabilityQueryParams,
-        FieldCapabilityRequestBody,
-    ),
-    Error = Rejection,
-> + Clone {
-    warp::path!("_elastic" / String / "_field_caps")
-        .and_then(extract_index_id_patterns)
-        .and(warp::get().or(warp::post()).unify())
-        .and(serde_qs::warp::query(serde_qs::Config::default()))
-        .and(json_or_empty())
-}
-
-#[utoipa::path(get, tag = "Search", path = "/{index}/_search")]
-pub(crate) fn elastic_index_search_filter(
-) -> impl Filter<Extract = (Vec<String>, SearchQueryParams, SearchBody), Error = Rejection> + Clone
-{
-    warp::path!("_elastic" / String / "_search")
-        .and_then(extract_index_id_patterns)
-        .and(warp::get().or(warp::post()).unify())
-        .and(serde_qs::warp::query(serde_qs::Config::default()))
-        .and(json_or_empty())
-}
-
 #[utoipa::path(
     post,
     tag = "Ingest",
@@ -152,6 +102,72 @@ pub(crate) fn elastic_index_bulk_filter(
         .and(serde_qs::warp::query::<ElasticBulkOptions>(
             serde_qs::Config::default(),
         ))
+}
+
+/// Like the warp json filter, but accepts an empty body and interprets it as `T::default`.
+fn json_or_empty<T: DeserializeOwned + Send + Default>(
+) -> impl Filter<Extract = (T,), Error = Rejection> + Copy {
+    warp::body::content_length_limit(BODY_LENGTH_LIMIT.as_u64())
+        .and(warp::body::bytes().and_then(|buf: Bytes| async move {
+            if buf.is_empty() {
+                return Ok(T::default());
+            }
+            serde_json::from_slice(&buf)
+                .map_err(|err| warp::reject::custom(crate::rest::InvalidJsonRequest(err)))
+        }))
+        .recover(|rejection: Rejection| async {
+            // Not having a header with content length is not an error as long as
+            // there are no body.
+            if rejection.find::<LengthRequired>().is_some() {
+                Ok(T::default())
+            } else {
+                Err(rejection)
+            }
+        })
+        .unify()
+}
+
+#[utoipa::path(get, tag = "Metadata", path = "/{index}/_field_caps")]
+pub(crate) fn elastic_index_field_capabilities_filter() -> impl Filter<
+    Extract = (
+        Vec<String>,
+        FieldCapabilityQueryParams,
+        FieldCapabilityRequestBody,
+    ),
+    Error = Rejection,
+> + Clone {
+    warp::path!("_elastic" / String / "_field_caps")
+        .and_then(extract_index_id_patterns)
+        .and(warp::get().or(warp::post()).unify())
+        .and(serde_qs::warp::query(serde_qs::Config::default()))
+        .and(json_or_empty())
+}
+
+#[utoipa::path(get, tag = "Metadata", path = "/_field_caps")]
+pub(crate) fn elastic_field_capabilities_filter() -> impl Filter<
+    Extract = (
+        Vec<String>,
+        FieldCapabilityQueryParams,
+        FieldCapabilityRequestBody,
+    ),
+    Error = Rejection,
+> + Clone {
+    warp::path!("_elastic" / "_field_caps")
+        .and_then(extract_index_id_patterns_default)
+        .and(warp::get().or(warp::post()).unify())
+        .and(serde_qs::warp::query(serde_qs::Config::default()))
+        .and(json_or_empty())
+}
+
+#[utoipa::path(get, tag = "Search", path = "/{index}/_search")]
+pub(crate) fn elastic_index_search_filter(
+) -> impl Filter<Extract = (Vec<String>, SearchQueryParams, SearchBody), Error = Rejection> + Clone
+{
+    warp::path!("_elastic" / String / "_search")
+        .and_then(extract_index_id_patterns)
+        .and(warp::get().or(warp::post()).unify())
+        .and(serde_qs::warp::query(serde_qs::Config::default()))
+        .and(json_or_empty())
 }
 
 #[utoipa::path(post, tag = "Search", path = "/_msearch")]
