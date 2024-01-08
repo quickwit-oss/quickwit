@@ -51,7 +51,6 @@ bench-index:
 
 bench-search-term:
 	mem_sizes=( 1024 2048 4096 8192 )
-	export QW_LAMBDA_PARTIAL_REQUEST_CACHE_CAPACITY=0
 	for mem_size in "$${mem_sizes[@]}"
 	do
 		export SEARCHER_MEMORY_SIZE=$${mem_size}
@@ -61,7 +60,6 @@ bench-search-term:
 
 bench-search-histogram:
 	mem_sizes=( 1024 2048 4096 8192 )
-	export QW_LAMBDA_PARTIAL_REQUEST_CACHE_CAPACITY=0
 	for mem_size in "$${mem_sizes[@]}"
 	do
 		export SEARCHER_MEMORY_SIZE=$${mem_size}
@@ -77,6 +75,11 @@ bench-search:
 		$(MAKE) bench-search-term
 		$(MAKE) bench-search-histogram
 		export QW_LAMBDA_DISABLE_SEARCH_CACHE=false
+		export QW_LAMBDA_PARTIAL_REQUEST_CACHE_CAPACITY=0
+		$(MAKE) bench-search-term
+		$(MAKE) bench-search-histogram
+		export QW_LAMBDA_DISABLE_SEARCH_CACHE=false
+		export QW_LAMBDA_PARTIAL_REQUEST_CACHE_CAPACITY=64MB
 		$(MAKE) bench-search-term
 		$(MAKE) bench-search-histogram
 	done
