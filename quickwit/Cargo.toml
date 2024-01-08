@@ -35,6 +35,7 @@ members = [
   "quickwit-storage",
   "quickwit-telemetry",
 ]
+default-members = ["quickwit-cli"]
 
 [profile.dev]
 debug = false

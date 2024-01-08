@@ -17,16 +17,13 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-#[cfg(feature = "lambda")]
-use quickwit_lambda::run;
+use lambda_runtime::service_fn;
+use quickwit_lambda::query_handler;
 
-#[cfg(feature = "lambda")]
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    run().await.map_err(|e| anyhow::anyhow!(e))
-}
-
-#[cfg(not(feature = "lambda"))]
-fn main() -> anyhow::Result<()> {
-    anyhow::bail!("Enable the lambda feature to build the lambda binary")
+    let func = service_fn(query_handler);
+    lambda_runtime::run(func)
+        .await
+        .map_err(|e| anyhow::anyhow!(e))
 }

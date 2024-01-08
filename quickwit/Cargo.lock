@@ -5852,10 +5852,27 @@ name = "quickwit-lambda"
 version = "0.6.3"
 dependencies = [
  "anyhow",
+ "chitchat",
  "lambda_runtime",
+ "quickwit-actors",
+ "quickwit-cli",
+ "quickwit-cluster",
+ "quickwit-common",
+ "quickwit-config",
+ "quickwit-directories",
+ "quickwit-doc-mapper",
+ "quickwit-index-management",
+ "quickwit-indexing",
+ "quickwit-metastore",
+ "quickwit-proto",
+ "quickwit-rest-client",
+ "quickwit-search",
  "quickwit-serve",
+ "quickwit-storage",
+ "quickwit-telemetry",
  "serde_json",
  "tokio",
+ "tracing",
 ]
 
 [[package]]

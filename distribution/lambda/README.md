@@ -37,13 +37,15 @@ pip install -r requirements-dev.txt
 ```
 
 
-## Deploy
+## Deploy and run
 
+The Makefile is a usefull entrypoint to show how the Lambda deployement can used.
 ```bash
 export CDK_ACCOUNT=123456789
 export CDK_REGION=us-east-1
-cdk bootstrap aws://$CDK_ACCOUNT/$CDK_REGION
-cdk deploy
+make init
+make deploy 
+...
 ```
 
 
