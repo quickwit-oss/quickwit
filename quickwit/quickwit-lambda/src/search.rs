@@ -19,9 +19,7 @@
 
 use quickwit_proto::search::SearchResponse;
 use quickwit_search::{single_node_search, SearchResponseRest};
-use quickwit_serve::{
-    search_request_from_api_request, BodyFormat, SearchRequestQueryString, SortBy,
-};
+use quickwit_serve::{search_request_from_api_request, SearchRequestQueryString};
 use tracing::debug;
 
 use crate::utils::load_node_config;
@@ -36,39 +34,13 @@ data_dir: /tmp
 #[derive(Debug, Eq, PartialEq)]
 pub struct SearchArgs {
     pub index_id: String,
-    pub query: String,
-    pub aggregation: Option<String>,
-    pub max_hits: usize,
-    pub start_offset: usize,
-    pub search_fields: Option<Vec<String>>,
-    pub snippet_fields: Option<Vec<String>>,
-    pub start_timestamp: Option<i64>,
-    pub end_timestamp: Option<i64>,
-    pub sort_by_field: Option<String>,
+    pub query: SearchRequestQueryString,
 }
 
 pub async fn search(args: SearchArgs) -> anyhow::Result<SearchResponseRest> {
     debug!(args=?args, "lambda-search");
     let (_, storage_resolver, metastore) = load_node_config(CONFIGURATION_TEMPLATE).await?;
-    let aggs = args
-        .aggregation
-        .map(|agg_string| serde_json::from_str(&agg_string))
-        .transpose()?;
-    let sort_by: SortBy = args.sort_by_field.map(SortBy::from).unwrap_or_default();
-    let search_request_query_string = SearchRequestQueryString {
-        query: args.query,
-        start_offset: args.start_offset as u64,
-        max_hits: args.max_hits as u64,
-        search_fields: args.search_fields,
-        snippet_fields: args.snippet_fields,
-        start_timestamp: args.start_timestamp,
-        end_timestamp: args.end_timestamp,
-        aggs,
-        format: BodyFormat::Json,
-        sort_by,
-    };
-    let search_request =
-        search_request_from_api_request(vec![args.index_id], search_request_query_string)?;
+    let search_request = search_request_from_api_request(vec![args.index_id], args.query)?;
     debug!(search_request=?search_request, "search-request");
     let search_response: SearchResponse =
         single_node_search(search_request, metastore, storage_resolver).await?;

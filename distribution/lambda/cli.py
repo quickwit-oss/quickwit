@@ -98,6 +98,6 @@ def invoke_searcher():
         FunctionName=function_name,
         InvocationType="RequestResponse",
         LogType="Tail",
-        Payload="{}",
+        Payload="""{"query": "tenant_id:1 AND HDFS_WRITE", "sort_by": "timestamp", "max_hits": 10}""",
     )
     _format_lambda_output(resp, time.time() - invoke_start)

@@ -22,6 +22,7 @@ use quickwit_serve::BuildInfo;
 use tracing::Level;
 
 mod ingest;
+mod model;
 mod search;
 mod utils;
 
@@ -30,4 +31,5 @@ pub fn setup_lambda_tracer() -> anyhow::Result<()> {
 }
 
 pub use ingest::{ingest, IngestArgs};
+pub use model::IndexerEvent;
 pub use search::{search, SearchArgs};

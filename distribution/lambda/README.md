@@ -8,6 +8,16 @@
 - Install the AWS CLI
   - https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html
 
+## AWS Lambda service quotas
+
+For newly created AWS accounts, a conservative quota of 10 concurrent executions
+is applied to Lambda in each individual region. If that's the case, CDK won't be
+able to apply the reserved concurrency of the indexing Quickwit lambda. You can
+increase the quota without charge using the [Service Quotas
+console](https://console.aws.amazon.com/servicequotas/home/services/lambda/quotas).
+
+> **Note:** The request can take hours or even days to be processed.
+
 ## Python venv
 
 This project is set up like a standard Python project. The initialization
@@ -54,7 +64,6 @@ export CDK_REGION=us-east-1
 make init
 make deploy
 make upload-src-file
-# create the index using steps described in `make index-creation-instruction`
 make invoke-indexer
 make invoke-searcher
 ```

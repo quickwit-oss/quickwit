@@ -1,6 +1,6 @@
+import aws_cdk
+from aws_cdk import aws_lambda, aws_s3
 from constructs import Construct
-from aws_cdk import aws_lambda, aws_s3, Duration, CfnOutput
-import os
 
 
 class IndexerService(Construct):
@@ -27,12 +27,15 @@ class IndexerService(Construct):
                 "INDEX_ID": index_id,
                 "INDEX_CONFIG_URI": index_config_uri,
             },
-            timeout=Duration.seconds(30),
+            timeout=aws_cdk.Duration.seconds(30),
+            # reserved_concurrent_executions=1,
+            memory_size=1024,
+            ephemeral_storage_size=aws_cdk.Size.gibibytes(10),
         )
 
         store_bucket.grant_read_write(handler)
 
-        CfnOutput(
+        aws_cdk.CfnOutput(
             self,
             "indexer-function-name",
             value=handler.function_name,
