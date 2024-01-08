@@ -18,11 +18,11 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use lambda_runtime::service_fn;
-use quickwit_lambda::query_handler;
+use quickwit_lambda::search_handler;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
-    let func = service_fn(query_handler);
+    let func = service_fn(search_handler);
     lambda_runtime::run(func)
         .await
         .map_err(|e| anyhow::anyhow!(e))
