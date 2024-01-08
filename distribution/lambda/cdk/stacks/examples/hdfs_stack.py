@@ -2,9 +2,8 @@ import aws_cdk
 from aws_cdk import Stack, aws_s3_assets
 from constructs import Construct
 import yaml
-import os
 
-from .services import quickwit_service
+from ..services import quickwit_service
 
 
 INDEX_STORE_BUCKET_NAME_EXPORT_NAME = "hdfs-index-store-bucket-name"
@@ -13,7 +12,16 @@ SEARCHER_FUNCTION_NAME_EXPORT_NAME = "hdfs-searcher-function-name"
 
 
 class HdfsStack(Stack):
-    def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
+    def __init__(
+        self,
+        scope: Construct,
+        construct_id: str,
+        indexer_memory_size: int,
+        searcher_memory_size: int,
+        indexer_package_location: str,
+        searcher_package_location: str,
+        **kwargs
+    ) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
         index_config_local_path = "./resources/hdfs-logs.yaml"
@@ -27,16 +35,22 @@ class HdfsStack(Stack):
             "mock-data-index-config",
             path=index_config_local_path,
         )
+        lambda_env = {
+            **quickwit_service.extract_local_env(),
+            "RUST_LOG": "quickwit=debug",
+        }
         qw_svc = quickwit_service.QuickwitService(
             self,
             "Quickwit",
             index_id=index_id,
             index_config_bucket=index_config.s3_bucket_name,
             index_config_key=index_config.s3_object_key,
-            indexer_memory_size=int(os.environ.get("INDEXER_MEMORY_SIZE", "10240")),
-            searcher_memory_size=int(os.environ.get("SEARCHER_MEMORY_SIZE", "1024")),
-            indexer_environment=quickwit_service.extract_local_env(),
-            searcher_environment=quickwit_service.extract_local_env(),
+            indexer_environment=lambda_env,
+            searcher_environment=lambda_env,
+            indexer_memory_size=indexer_memory_size,
+            searcher_memory_size=searcher_memory_size,
+            indexer_package_location=indexer_package_location,
+            searcher_package_location=searcher_package_location,
         )
 
         aws_cdk.CfnOutput(

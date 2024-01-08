@@ -22,8 +22,10 @@ doc_mapping:
       tokenizer: raw
     - name: price
       type: f64
+      fast: true
     - name: quantity
       type: u64
+      fast: true
     - name: description
       type: text
       tokenizer: default
@@ -31,3 +33,6 @@ doc_mapping:
 
 search_settings:
   default_search_fields: [name, description]
+
+indexing_settings:
+  split_num_docs_target: 2000000
