@@ -104,7 +104,7 @@ async fn load_index_config(
     resolver: &StorageResolver,
     default_index_root_uri: &Uri,
 ) -> anyhow::Result<IndexConfig> {
-    let (dir, file) = dir_and_filename(&Path::new(&*INDEX_CONFIG_URI))?;
+    let (dir, file) = dir_and_filename(Path::new(&*INDEX_CONFIG_URI))?;
     let index_config_storage = resolver.resolve(&dir).await?;
     let bytes = index_config_storage.get_all(file).await?;
     let mut index_config = load_index_config_from_user_config(
@@ -141,15 +141,14 @@ pub async fn ingest(args: IngestArgs) -> anyhow::Result<IndexingStatistics> {
     let checklist_result = run_index_checklist(
         &mut metastore,
         &storage_resolver,
-        &*INDEX_ID,
+        &INDEX_ID,
         Some(&source_config),
     )
     .await;
     if let Err(e) = checklist_result {
-        let is_not_found = e.downcast_ref().is_some_and(|meta_error| match meta_error {
-            MetastoreError::NotFound(_) => true,
-            _ => false,
-        });
+        let is_not_found = e
+            .downcast_ref()
+            .is_some_and(|meta_error| matches!(meta_error, MetastoreError::NotFound(_)));
         if !is_not_found {
             bail!(e);
         }
@@ -177,7 +176,7 @@ pub async fn ingest(args: IngestArgs) -> anyhow::Result<IndexingStatistics> {
             "Overwrite enabled, clearing existing index",
         );
         let mut index_service = IndexService::new(metastore.clone(), storage_resolver.clone());
-        index_service.clear_index(&*INDEX_ID).await?;
+        index_service.clear_index(&INDEX_ID).await?;
     }
     // The indexing service needs to update its cluster chitchat state so that the control plane is
     // aware of the running tasks. We thus create a fake cluster to instantiate the indexing service
