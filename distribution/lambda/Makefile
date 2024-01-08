@@ -25,12 +25,13 @@ package:
 	mkdir -p cdk.out
 	if [ "$${QW_LAMBDA_BUILD:-0}" = "1" ]
 	then
+	  pushd ../../quickwit/
 	  cargo lambda build \
-	    --manifest-path=../../quickwit/Cargo.toml \
 	    -p quickwit-lambda \
 	    --release \
 	    --output-format zip \
-		--target x86_64-unknown-linux-gnu
+	    --target x86_64-unknown-linux-gnu
+	  popd
 	  cp -u ../../quickwit/target/lambda/searcher/bootstrap.zip $(SEARCHER_PACKAGE_PATH)
 	  cp -u ../../quickwit/target/lambda/indexer/bootstrap.zip $(INDEXER_PACKAGE_PATH)
 	else
