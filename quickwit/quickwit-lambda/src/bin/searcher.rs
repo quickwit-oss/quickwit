@@ -19,21 +19,14 @@
 
 use lambda_runtime::{service_fn, Error, LambdaEvent};
 use quickwit_lambda::{search, setup_lambda_tracer, SearchArgs};
+use quickwit_serve::SearchRequestQueryString;
 use serde_json::Value;
 use tracing::{debug, error};
 
-pub async fn handler(_event: LambdaEvent<Value>) -> Result<Value, Error> {
+pub async fn handler(event: LambdaEvent<SearchRequestQueryString>) -> Result<Value, Error> {
     let ingest_res = search(SearchArgs {
         index_id: std::env::var("INDEX_ID")?,
-        query: String::new(),
-        aggregation: None,
-        max_hits: 10,
-        start_offset: 0,
-        search_fields: None,
-        snippet_fields: None,
-        start_timestamp: None,
-        end_timestamp: None,
-        sort_by_field: None,
+        query: event.payload,
     })
     .await;
     match ingest_res {

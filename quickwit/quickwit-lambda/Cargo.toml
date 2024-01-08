@@ -19,11 +19,13 @@ path = "src/bin/searcher.rs"
 
 [dependencies]
 anyhow = { workspace = true }
+aws_lambda_events = "0.11.1"
+chitchat = { workspace = true }
 lambda_runtime = "0.8.0"
+serde = { workspace = true }
 serde_json = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
-chitchat = { workspace = true }
 
 quickwit-actors = { workspace = true }
 quickwit-cli = { workspace = true }

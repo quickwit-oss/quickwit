@@ -1,5 +1,6 @@
+import aws_cdk
+from aws_cdk import aws_lambda, aws_s3
 from constructs import Construct
-from aws_cdk import aws_lambda, aws_s3, Duration, CfnOutput
 
 
 class SearcherService(Construct):
@@ -24,12 +25,14 @@ class SearcherService(Construct):
                 "METASTORE_BUCKET": store_bucket.bucket_name,
                 "INDEX_ID": index_id,
             },
-            timeout=Duration.seconds(30),
+            timeout=aws_cdk.Duration.seconds(30),
+            memory_size=1024,
+            ephemeral_storage_size=aws_cdk.Size.gibibytes(10),
         )
 
         store_bucket.grant_read_write(handler)
 
-        CfnOutput(
+        aws_cdk.CfnOutput(
             self,
             "searcher-function-name",
             value=handler.function_name,

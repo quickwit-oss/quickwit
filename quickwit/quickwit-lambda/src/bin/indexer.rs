@@ -17,26 +17,18 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::path::PathBuf;
-
 use lambda_runtime::{service_fn, Error, LambdaEvent};
-use quickwit_lambda::{ingest, setup_lambda_tracer, IngestArgs};
+use quickwit_lambda::{ingest, setup_lambda_tracer, IndexerEvent, IngestArgs};
 use serde_json::Value;
 use tracing::{error, info};
 
-pub async fn handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
-    let source_uri = if let Some(source_uri) = event.payload["source_uri"].as_str() {
-        source_uri
-    } else {
-        println!("Missing source_uri");
-        return Err(anyhow::anyhow!("Missing source_uri").into());
-    };
+pub async fn handler(event: LambdaEvent<IndexerEvent>) -> Result<Value, Error> {
     let ingest_res = ingest(IngestArgs {
         index_config_uri: std::env::var("INDEX_CONFIG_URI")?,
         index_id: std::env::var("INDEX_ID")?,
-        input_path: PathBuf::from(source_uri),
+        input_path: event.payload.uri(),
         input_format: quickwit_config::SourceInputFormat::Json,
-        overwrite: true,
+        overwrite: false,
         vrl_script: None,
         clear_cache: true,
     })
