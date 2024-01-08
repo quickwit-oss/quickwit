@@ -11,11 +11,11 @@ documentation = "https://quickwit.io/docs/"
 
 [[bin]]
 name = "indexer"
-path = "src/indexer.rs"
+path = "src/bin/indexer.rs"
 
 [[bin]]
 name = "searcher"
-path = "src/searcher.rs"
+path = "src/bin/searcher.rs"
 
 [dependencies]
 anyhow = { workspace = true }
@@ -41,6 +41,3 @@ quickwit-search = { workspace = true }
 quickwit-serve = { workspace = true }
 quickwit-storage = { workspace = true }
 quickwit-telemetry = { workspace = true }
-
-[features]
-lambda = []
