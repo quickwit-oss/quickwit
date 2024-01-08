@@ -2,7 +2,7 @@
 # Index config file for hdfs-logs dataset.
 #
 
-version: 0.7
+version: 0.6
 
 index_id: hdfs-logs
 
@@ -20,6 +20,7 @@ doc_mapping:
     - name: severity_text
       type: text
       tokenizer: raw
+      fast: true
     - name: body
       type: text
       tokenizer: default
@@ -32,3 +33,6 @@ doc_mapping:
 
 search_settings:
   default_search_fields: [severity_text, body]
+
+indexing_settings:
+  split_num_docs_target: 2000000

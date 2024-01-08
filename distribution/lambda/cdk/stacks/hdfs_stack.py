@@ -16,7 +16,7 @@ class HdfsStack(Stack):
     def __init__(self, scope: Construct, construct_id: str, **kwargs) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
-        index_config_local_path = "../../config/tutorials/hdfs-logs/index-config.yaml"
+        index_config_local_path = "./resources/hdfs-logs.yaml"
 
         with open(index_config_local_path) as f:
             index_config_dict = yaml.safe_load(f)
