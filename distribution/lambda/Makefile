@@ -54,12 +54,12 @@ bench-search:
 		$(MAKE) deploy-hdfs
 		python -c 'from cdk import cli; cli.benchmark_hdfs_search("""{"query": "severity_text:ERROR"}""")'
 	done
-	for mem_size in "$${mem_sizes[@]}"
-	do
-		export SEARCHER_MEMORY_SIZE=$${mem_size}
-		$(MAKE) deploy-hdfs
-		python -c 'from cdk import cli; cli.benchmark_hdfs_search("""{ "query": "*", "max_hits": 0, "aggs": { "events": { "date_histogram": { "field": "timestamp", "fixed_interval": "1h" }, "aggs": { "log_level": { "terms": { "size": 10, "field": "severity_text", "order": { "_count": "desc" } } } } } } }""")'
-	done
+	# for mem_size in "$${mem_sizes[@]}"
+	# do
+	# 	export SEARCHER_MEMORY_SIZE=$${mem_size}
+	# 	$(MAKE) deploy-hdfs
+	# 	python -c 'from cdk import cli; cli.benchmark_hdfs_search("""{ "query": "*", "max_hits": 0, "aggs": { "events": { "date_histogram": { "field": "timestamp", "fixed_interval": "1h" }, "aggs": { "log_level": { "terms": { "size": 10, "field": "severity_text", "order": { "_count": "desc" } } } } } } }""")'
+	# done
 
 destroy:
 	cdk destroy -a cdk/app.py HdfsStack MockDataStack

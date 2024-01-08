@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use anyhow::Context;
@@ -38,3 +39,5 @@ pub(crate) async fn load_node_config(
     let metastore = metastore_resolver.resolve(&config.metastore_uri).await?;
     Ok((config, storage_resolver, metastore))
 }
+
+pub static ALREADY_EXECUTED: AtomicBool = AtomicBool::new(false);

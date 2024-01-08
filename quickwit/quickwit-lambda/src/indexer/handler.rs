@@ -17,17 +17,20 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::sync::atomic::Ordering::SeqCst;
+
 use lambda_runtime::{Error, LambdaEvent};
 use serde_json::Value;
-use tracing::{debug, error, info, instrument};
+use tracing::{debug, error, info, span, Instrument, Level};
 
+use super::environment::{DISABLE_MERGE, INDEX_CONFIG_URI, INDEX_ID};
 use super::ingest::{ingest, IngestArgs};
 use super::model::IndexerEvent;
 use crate::logger;
+use crate::utils::ALREADY_EXECUTED;
 
-#[instrument(level = "info", name = "indexer_handler", skip(event), fields(memory=event.context.env_config.memory))]
-pub async fn handler_impl(event: LambdaEvent<Value>) -> Result<Value, Error> {
-    debug!(payload = event.payload.to_string(), "Received event");
+async fn indexer_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
+    debug!(payload = event.payload.to_string(), "Handler start");
     let payload_res = serde_json::from_value::<IndexerEvent>(event.payload);
 
     if let Err(e) = payload_res {
@@ -36,14 +39,11 @@ pub async fn handler_impl(event: LambdaEvent<Value>) -> Result<Value, Error> {
     }
 
     let ingest_res = ingest(IngestArgs {
-        index_config_uri: std::env::var("QW_LAMBDA_INDEX_CONFIG_URI")?,
-        index_id: std::env::var("QW_LAMBDA_INDEX_ID")?,
         input_path: payload_res.unwrap().uri(),
         input_format: quickwit_config::SourceInputFormat::Json,
         overwrite: false,
         vrl_script: None,
         clear_cache: true,
-        disable_merge: std::env::var("QW_LAMBDA_DISABLE_MERGE").is_ok_and(|v| v.as_str() == "true"),
     })
     .await;
 
@@ -61,7 +61,19 @@ pub async fn handler_impl(event: LambdaEvent<Value>) -> Result<Value, Error> {
 }
 
 pub async fn handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
-    let result = handler_impl(event).await;
+    let cold = !ALREADY_EXECUTED.swap(true, SeqCst);
+    let memory = event.context.env_config.memory;
+    let result = indexer_handler(event)
+        .instrument(span!(
+            parent: &span!(Level::INFO, "indexer_handler", cold),
+            Level::TRACE,
+            logger::RUNTIME_CONTEXT_SPAN,
+            memory,
+            env.INDEX_CONFIG_URI = *INDEX_CONFIG_URI,
+            env.INDEX_ID = *INDEX_ID,
+            env.DISABLE_MERGE = *DISABLE_MERGE
+        ))
+        .await;
     logger::flush_tracer();
     result
 }
