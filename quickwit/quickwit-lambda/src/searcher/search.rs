@@ -45,6 +45,7 @@ struct LambdaSearchCtx {
 
 impl LambdaSearchCtx {
     async fn instantiate(
+        searcher_config: SearcherConfig,
         metastore: MetastoreServiceClient,
         storage_resolver: StorageResolver,
     ) -> Self {
@@ -52,7 +53,6 @@ impl LambdaSearchCtx {
         let searcher_pool = SearcherPool::default();
         let search_job_placer = SearchJobPlacer::new(searcher_pool.clone());
         let cluster_client = ClusterClient::new(search_job_placer);
-        let searcher_config = SearcherConfig::default();
         let searcher_context = Arc::new(SearcherContext::new(searcher_config, None));
         let search_service = Arc::new(SearchServiceImpl::new(
             metastore,
@@ -71,17 +71,20 @@ impl LambdaSearchCtx {
 }
 
 async fn single_node_search(
+    search_config: SearcherConfig,
     search_request: SearchRequest,
     metastore: MetastoreServiceClient,
     storage_resolver: StorageResolver,
 ) -> SearchResult<SearchResponse> {
     let lambda_search_ctx = if *ENABLE_SEARCH_CACHE {
         let cached_ctx = LAMBDA_SEARCH_CACHE
-            .get_or_init(|| LambdaSearchCtx::instantiate(metastore.clone(), storage_resolver))
+            .get_or_init(|| {
+                LambdaSearchCtx::instantiate(search_config, metastore.clone(), storage_resolver)
+            })
             .await;
         LambdaSearchCtx::clone(cached_ctx)
     } else {
-        LambdaSearchCtx::instantiate(metastore.clone(), storage_resolver).await
+        LambdaSearchCtx::instantiate(search_config, metastore.clone(), storage_resolver).await
     };
     root_search(
         &lambda_search_ctx.searcher_context,
@@ -99,11 +102,17 @@ pub struct SearchArgs {
 
 pub async fn search(args: SearchArgs) -> anyhow::Result<SearchResponseRest> {
     debug!(args=?args, "lambda-search");
-    let (_, storage_resolver, metastore) = load_node_config(CONFIGURATION_TEMPLATE).await?;
+    let (node_config, storage_resolver, metastore) =
+        load_node_config(CONFIGURATION_TEMPLATE).await?;
     let search_request = search_request_from_api_request(vec![INDEX_ID.clone()], args.query)?;
     debug!(search_request=?search_request, "search-request");
-    let search_response: SearchResponse =
-        single_node_search(search_request, metastore, storage_resolver).await?;
+    let search_response: SearchResponse = single_node_search(
+        node_config.searcher_config,
+        search_request,
+        metastore,
+        storage_resolver,
+    )
+    .await?;
     let search_response_rest = SearchResponseRest::try_from(search_response)?;
     Ok(search_response_rest)
 }
