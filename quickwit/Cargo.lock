@@ -764,7 +764,7 @@ version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2c2981b7ab5d084f06dfa6764e2b51347e836fe9559b549b332e451e6a8287ae"
 dependencies = [
- "base64 0.21.5",
+ "base64 0.21.7",
  "bytes",
  "chrono",
  "flate2",
@@ -3325,7 +3325,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "2505c4a24f5a8d8ac66a87691215ec1f79736c5bc6e62bb921788dca9753f650"
 dependencies = [
  "aws_lambda_events",
- "base64 0.21.5",
+ "base64 0.21.7",
  "bytes",
  "encoding_rs",
  "futures",
@@ -4365,9 +4365,9 @@ dependencies = [
 
 [[package]]
 name = "opentelemetry-http"
-version = "0.8.0"
+version = "0.9.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a819b71d6530c4297b49b3cae2939ab3a8cc1b9f382826a1bc29dd0ca3864906"
+checksum = "c7594ec0e11d8e33faf03530a4c49af7064ebba81c1480e01be67d90b356508b"
 dependencies = [
  "async-trait",
  "bytes",
@@ -4385,6 +4385,7 @@ dependencies = [
  "async-trait",
  "futures-core",
  "http",
+ "opentelemetry-http",
  "opentelemetry-proto",
  "opentelemetry-semantic-conventions",
  "opentelemetry_api",
@@ -5918,7 +5919,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-lambda"
-version = "0.6.3"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "aws_lambda_events",
@@ -5930,7 +5931,6 @@ dependencies = [
  "opentelemetry",
  "opentelemetry-otlp",
  "quickwit-actors",
- "quickwit-cli",
  "quickwit-cluster",
  "quickwit-common",
  "quickwit-config",
@@ -6613,6 +6613,7 @@ dependencies = [
  "percent-encoding",
  "pin-project-lite",
  "rustls 0.21.10",
+ "rustls-native-certs",
  "rustls-pemfile",
  "serde",
  "serde_json",
@@ -7096,7 +7097,7 @@ version = "4.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c64307a9d3b5af5237b1a95c0b63fbeb45134d7d7c372c284847fa37a6ddee44"
 dependencies = [
- "base64 0.21.5",
+ "base64 0.21.7",
  "serde",
 ]
 
@@ -8518,6 +8519,7 @@ dependencies = [
  "tracing",
  "tracing-core",
  "tracing-log 0.2.0",
+ "tracing-serde",
 ]
 
 [[package]]
