@@ -19,12 +19,13 @@
 
 use lambda_runtime::{Error, LambdaEvent};
 use serde_json::Value;
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, instrument};
 
 use super::ingest::{ingest, IngestArgs};
 use super::model::IndexerEvent;
 use crate::logger;
 
+#[instrument(level = "info", name = "indexer_handler", fields(event=?event.payload, memory=event.context.env_config.memory))]
 pub async fn handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
     debug!(payload = event.payload.to_string(), "Received event");
     let payload_res = serde_json::from_value::<IndexerEvent>(event.payload);

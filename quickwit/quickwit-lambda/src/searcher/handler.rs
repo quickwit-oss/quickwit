@@ -20,11 +20,12 @@
 use lambda_runtime::{Error, LambdaEvent};
 use quickwit_serve::SearchRequestQueryString;
 use serde_json::Value;
-use tracing::{debug, error};
+use tracing::{debug, error, instrument};
 
 use super::search::{search, SearchArgs};
 use crate::logger;
 
+#[instrument(level = "info", name = "searcher_handler", fields(event=?event.payload, memory=event.context.env_config.memory))]
 pub async fn handler(event: LambdaEvent<SearchRequestQueryString>) -> Result<Value, Error> {
     debug!(payload = ?event.payload, "Received query");
     let ingest_res = search(SearchArgs {
