@@ -26,7 +26,7 @@ use super::search::{search, SearchArgs};
 use crate::logger;
 
 #[instrument(level = "info", name = "searcher_handler", fields(event=?event.payload, memory=event.context.env_config.memory))]
-pub async fn handler(event: LambdaEvent<SearchRequestQueryString>) -> Result<Value, Error> {
+pub async fn handler_impl(event: LambdaEvent<SearchRequestQueryString>) -> Result<Value, Error> {
     debug!(payload = ?event.payload, "Received query");
     let ingest_res = search(SearchArgs {
         index_id: std::env::var("QW_LAMBDA_INDEX_ID")?,
@@ -43,6 +43,12 @@ pub async fn handler(event: LambdaEvent<SearchRequestQueryString>) -> Result<Val
             return Err(anyhow::anyhow!("Query failed").into());
         }
     };
+    logger::flush_tracer();
+    result
+}
+
+pub async fn handler(event: LambdaEvent<SearchRequestQueryString>) -> Result<Value, Error> {
+    let result = handler_impl(event).await;
     logger::flush_tracer();
     result
 }
