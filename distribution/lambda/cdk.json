@@ -1,5 +1,5 @@
 {
-  "app": "python3 app.py",
+  "app": "cargo lambda build --manifest-path=../../quickwit/Cargo.toml -p quickwit-lambda --release --features lambda && python3 app.py",
   "watch": {
     "include": [
       "**"
