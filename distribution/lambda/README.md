@@ -88,6 +88,39 @@ make deploy-mock-data
 make invoke-mock-data-searcher
 ```
 
+## Set up a search API
+
+You can configure an API around the Quickwit search Lambda using the following
+CDK code (`quickwit_service` is an instance of the `QuickwitService`` construct):
+
+```python
+  api = aws_apigateway.RestApi(
+      self,
+      "quickwit-search-api",
+      rest_api_name=f"Quickwit {index_id} search API",
+      deploy=False,
+  )
+  searcher_integration = aws_apigateway.LambdaIntegration(
+      quickwit_service.searcher.lambda_function
+  )
+  search_resource = (
+      api.root.add_resource("v1").add_resource(index_id).add_resource("search")
+  )
+  search_resource.add_method("POST", searcher_integration)
+  api_deployment = aws_apigateway.Deployment(self, "api-deployment", api=api)
+  api_stage = aws_apigateway.Stage(
+      self, "api", deployment=api_deployment, stage_name="api"
+  )
+  api.deployment_stage = api_stage
+```
+
+Note that the response is always gzipped compressed, regardless the
+`Accept-Encoding` request header:
+
+```bash
+curl -d '{"query":"*"}' -H "Content-Type: application/json" -X POST https://{api_id}.execute-api.{region}.amazonaws.com/api/v1/{index-id}/search --compressed
+```
+
 ## Useful CDK commands
 
  * `cdk ls`          list all stacks in the app
