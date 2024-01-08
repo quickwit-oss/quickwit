@@ -46,7 +46,7 @@ use quickwit_ingest::IngesterPool;
 use quickwit_metastore::CreateIndexRequestExt;
 use quickwit_proto::indexing::CpuCapacity;
 use quickwit_proto::metastore::{CreateIndexRequest, MetastoreError, MetastoreService};
-use quickwit_proto::types::NodeId;
+use quickwit_proto::types::{NodeId, PipelineUid};
 use quickwit_storage::StorageResolver;
 use tracing::{debug, info, instrument};
 
@@ -210,7 +210,7 @@ pub async fn ingest(args: IngestArgs) -> anyhow::Result<IndexingStatistics> {
         .ask_for_res(SpawnPipeline {
             index_id: INDEX_ID.clone(),
             source_config,
-            pipeline_ord: 0,
+            pipeline_uid: PipelineUid::default(),
         })
         .await?;
     let merge_pipeline_handle = indexing_server_mailbox
