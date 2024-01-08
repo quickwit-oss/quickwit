@@ -730,8 +730,10 @@ mod tests {
     use std::collections::BTreeSet;
 
     use quickwit_doc_mapper::tag_pruning::TagFilterAst;
+    use quickwit_doc_mapper::{BinaryFormat, FieldMappingType};
     use quickwit_proto::types::IndexUid;
 
+    use super::FileBackedIndex;
     use crate::file_backed_metastore::file_backed_index::split_query_predicate;
     use crate::{ListSplitsQuery, Split, SplitMetadata, SplitState};
 
@@ -877,5 +879,107 @@ mod tests {
         assert!(!split_query_predicate(&&split_1, &query));
         assert!(!split_query_predicate(&&split_2, &query));
         assert!(!split_query_predicate(&&split_3, &query));
+    }
+
+    #[test]
+    fn test_index_otel_bytes_fields_format_conversion() {
+        // TODO: remove after 0.8 release.
+        let index_json_str = r#"
+        {
+            "version": "0.6",
+            "splits": [],
+            "index": {
+                "version": "0.6",
+                "sources": [],
+                "index_uid": "otel-traces-v0_6:00000000000000000000000000",
+                "checkpoint": {
+                "kafka-source": {
+                    "00000000000000000000": "00000000000000000042"
+                }
+                },
+                "create_timestamp": 1789,
+                "index_config": {
+                    "version": "0.6",
+                    "index_id": "otel-traces-v0_6",
+                    "index_uri": "s3://otel-traces-v0_6",
+                    "doc_mapping": {
+                        "field_mappings": [
+                            {
+                                "name": "timestamp",
+                                "type": "datetime",
+                                "fast": true
+                            },
+                            {
+                                "name": "tenant_id",
+                                "type": "bytes",
+                                "fast": true,
+                                "input_format": "base64",
+                                "output_format": "base64"
+                            },
+                            {
+                                "name": "trace_id",
+                                "type": "bytes",
+                                "fast": true,
+                                "input_format": "base64",
+                                "output_format": "base64"
+                            },
+                            {
+                                "name": "span_id",
+                                "type": "bytes",
+                                "fast": true,
+                                "input_format": "base64",
+                                "output_format": "base64"
+                            }
+                        ],
+                        "tag_fields": [],
+                        "timestamp_field": "timestamp",
+                        "store_source": false
+                    }
+                }
+            }
+        }
+        "#;
+
+        let file_backed_index: FileBackedIndex = serde_json::from_str(index_json_str).unwrap();
+        let field_mapping = file_backed_index
+            .metadata
+            .index_config
+            .doc_mapping
+            .field_mappings;
+        assert_eq!(
+            field_mapping
+                .iter()
+                .filter(|field_mapping| field_mapping.name == "tenant_id")
+                .count(),
+            1
+        );
+        assert_eq!(
+            field_mapping
+                .iter()
+                .filter(|field_mapping| field_mapping.name == "trace_id")
+                .count(),
+            1
+        );
+        assert_eq!(
+            field_mapping
+                .iter()
+                .filter(|field_mapping| field_mapping.name == "span_id")
+                .count(),
+            1
+        );
+        for field_mapping in &field_mapping {
+            if field_mapping.name == "tenant_id" {
+                if let FieldMappingType::Bytes(bytes_options, _) = &field_mapping.mapping_type {
+                    assert_eq!(bytes_options.input_format, BinaryFormat::Base64);
+                    assert_eq!(bytes_options.output_format, BinaryFormat::Base64);
+                }
+            }
+            if field_mapping.name == "trace_id" || field_mapping.name == "span_id" {
+                if let FieldMappingType::Bytes(bytes_options, _) = &field_mapping.mapping_type {
+                    assert_eq!(bytes_options.input_format, BinaryFormat::Hex);
+                    assert_eq!(bytes_options.output_format, BinaryFormat::Hex);
+                }
+            }
+        }
     }
 }

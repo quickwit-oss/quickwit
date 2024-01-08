@@ -1,0 +1,85 @@
+version: "3.9"
+
+networks:
+  default:
+    name: quickwit-grafana
+    # ipam:
+    #   config:
+    #   - subnet: 172.16.7.0/24
+    #     gateway: 172.16.7.1
+
+services:
+  quickwit:
+    image: quickwit/quickwit:${QUICKWIT_VERSION:-0.7.0}
+  grafana:
+    image: grafana/grafana-oss:${GRAFANA_VERSION:-9.4.7}
+    container_name: grafana
+    ports:
+      - "${MAP_HOST_GRAFANA:-127.0.0.1}:3000:3000"
+    environment:
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+    volumes:
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning
+
+  jaeger:
+    image: jaegertracing/all-in-one:${JAEGER_VERSION:-1.48.0}
+    container_name: jaeger
+    ports:
+      - "${MAP_HOST_JAEGER:-127.0.0.1}:16686:16686" # Frontend
+    profiles:
+      - jaeger
+      - monitoring
+
+  otel-collector:
+    image: otel/opentelemetry-collector:${OTEL_VERSION:-0.84.0}
+    container_name: otel-collector
+    ports:
+      - "${MAP_HOST_OTEL:-127.0.0.1}:1888:1888"   # pprof extension
+      - "${MAP_HOST_OTEL:-127.0.0.1}:8888:8888"   # Prometheus metrics exposed by the collector
+      - "${MAP_HOST_OTEL:-127.0.0.1}:8889:8889"   # Prometheus exporter metrics
+      - "${MAP_HOST_OTEL:-127.0.0.1}:13133:13133" # health_check extension
+      - "${MAP_HOST_OTEL:-127.0.0.1}:4317:4317"   # OTLP gRPC receiver
+      - "${MAP_HOST_OTEL:-127.0.0.1}:4318:4318"   # OTLP http receiver
+      - "${MAP_HOST_OTEL:-127.0.0.1}:55679:55679" # zpages extension
+    profiles:
+      - otel
+      - monitoring
+    volumes:
+      - ./monitoring/otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    command: ["--config=/etc/otel-collector-config.yaml"]
+
+  prometheus:
+    image: prom/prometheus:${PROMETHEUS_VERSION:-v2.43.0}
+    container_name: prometheus
+    ports:
+      - "${MAP_HOST_PROMETHEUS:-127.0.0.1}:9090:9090"
+    profiles:
+      - prometheus
+      - monitoring
+    volumes:
+      - ./monitoring/prometheus.yaml:/etc/prometheus/prometheus.yml
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  gcp-pubsub-emulator:
+    # It is not an official docker image
+    # if we prefer we can build a docker from the official docker image (gcloud cli)
+    # and install the pubsub emulator https://cloud.google.com/pubsub/docs/emulator
+    image: thekevjames/gcloud-pubsub-emulator:${GCLOUD_EMULATOR:-455.0.0}
+    container_name: gcp-pubsub-emulator
+    ports:
+      - "${MAP_HOST_GCLOUD_EMULATOR:-127.0.0.1}:8681:8681"
+    environment:
+      # create a fake gcp project and a topic / subscription
+      - PUBSUB_PROJECT1=quickwit-emulator,emulator_topic:emulator_subscription
+    profiles:
+      - all
+      - gcp-pubsub
+
+volumes:
+  localstack_data:
+  postgres_data:
+  azurite_data:

@@ -30,16 +30,17 @@ use crate::IndexMetadata;
 #[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
 #[serde(tag = "version")]
 pub(crate) enum VersionedIndexMetadata {
-    #[serde(rename = "0.6")]
+    #[serde(rename = "0.7")]
     // Retro compatibility.
+    #[serde(alias = "0.6")]
     #[serde(alias = "0.5")]
     #[serde(alias = "0.4")]
-    V0_6(IndexMetadataV0_6),
+    V0_7(IndexMetadataV0_7),
 }
 
 impl From<IndexMetadata> for VersionedIndexMetadata {
     fn from(index_metadata: IndexMetadata) -> Self {
-        VersionedIndexMetadata::V0_6(index_metadata.into())
+        VersionedIndexMetadata::V0_7(index_metadata.into())
     }
 }
 
@@ -50,12 +51,12 @@ impl TryFrom<VersionedIndexMetadata> for IndexMetadata {
         match index_metadata {
             // When we have more than one version, you should chain version conversion.
             // ie. Implement conversion from V_k -> V_{k+1}
-            VersionedIndexMetadata::V0_6(v6) => v6.try_into(),
+            VersionedIndexMetadata::V0_7(v6) => v6.try_into(),
         }
     }
 }
 
-impl From<IndexMetadata> for IndexMetadataV0_6 {
+impl From<IndexMetadata> for IndexMetadataV0_7 {
     fn from(index_metadata: IndexMetadata) -> Self {
         let sources: Vec<SourceConfig> = index_metadata.sources.values().cloned().collect();
         Self {
@@ -69,7 +70,7 @@ impl From<IndexMetadata> for IndexMetadataV0_6 {
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, utoipa::ToSchema)]
-pub(crate) struct IndexMetadataV0_6 {
+pub(crate) struct IndexMetadataV0_7 {
     #[schema(value_type = String)]
     // Defaults to nil for backward compatibility.
     #[serde(default, alias = "index_id")]
@@ -84,10 +85,10 @@ pub(crate) struct IndexMetadataV0_6 {
     pub sources: Vec<SourceConfig>,
 }
 
-impl TryFrom<IndexMetadataV0_6> for IndexMetadata {
+impl TryFrom<IndexMetadataV0_7> for IndexMetadata {
     type Error = anyhow::Error;
 
-    fn try_from(v0_6: IndexMetadataV0_6) -> anyhow::Result<Self> {
+    fn try_from(v0_6: IndexMetadataV0_7) -> anyhow::Result<Self> {
         let mut sources: HashMap<String, SourceConfig> = Default::default();
         for source in v0_6.sources {
             if sources.contains_key(&source.source_id) {

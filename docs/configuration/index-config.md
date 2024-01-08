@@ -21,7 +21,7 @@ The index configuration format is YAML. When a key is absent from the configurat
 Here is a complete example suited for the HDFS logs dataset:
 
 ```yaml
-version: 0.6 # File format version.
+version: 0.7 # File format version.
 
 index_id: "hdfs"
 
@@ -321,6 +321,8 @@ type: bytes
 stored: true
 indexed: true
 fast: true
+input_format: hex
+output_foramt: hex
 ```
 
 **Parameters for bytes field**
@@ -331,6 +333,8 @@ fast: true
 | `stored`    | Whether value is stored in the document store | `true` |
 | `indexed`   | Whether value is indexed | `true` |
 | `fast`     | Whether value is stored in a fast field. Only on 1:1 cardinality, not supported on `array<bytes>` fields | `false` |
+| `input_format`   | Encoding used to represent input bytes, either `hex` or `base64` | `base64` |
+| `output_format`   |  Encoding used to represent bytes in search results, either `hex` or `base64` | `base64` |
 
 #### `json` type
 
@@ -422,7 +426,7 @@ The configuration of `dynamic` mode can be set via the `dynamic_mapping` paramet
 `dynamic_mapping` offers the same configuration options as when configuring a `json` field. It defaults to:
 
 ```yaml
-version: 0.6
+version: 0.7
 index_id: my-dynamic-index
 doc_mapping:
   mode: dynamic
@@ -442,7 +446,7 @@ the root of the JSON object.
 For instance, in a entirely schemaless settings, a minimal index configuration could be:
 
 ```yaml
-version: 0.6
+version: 0.7
 index_id: my-dynamic-index
 doc_mapping:
     # If you have a timestamp field, it is important to tell quickwit about it.
@@ -528,7 +532,7 @@ Quickwit's default merge policy is the `stable_log` merge policy
 with the following parameters:
 
 ```yaml
-version: 0.6
+version: 0.7
 index_id: "hdfs"
 # ...
 indexing_settings:
@@ -557,7 +561,7 @@ of the number of merge operation a split should undergo.
 
 
 ```yaml
-version: 0.6
+version: 0.7
 index_id: "hdfs"
 # ...
 indexing_settings:
@@ -586,7 +590,7 @@ This setting is not recommended. Merges are necessary to reduce the number of sp
 :::
 
 ```yaml
-version: 0.6
+version: 0.7
 index_id: "hdfs"
 indexing_settings:
     merge_policy:
@@ -614,7 +618,7 @@ explicitly in the schema, or may refer to a field captured by the dynamic mode. 
 This section describes how Quickwit manages data retention. In Quickwit, the retention policy manager drops data on a split basis as opposed to individually dropping documents. Splits are evaluated based on their `time_range` which is derived from the index timestamp field specified in the (`indexing_settings.timestamp_field`) settings. Using this setting, the retention policy will delete a split when `now() - split.time_range.end >= retention_policy.period`
 
 ```yaml
-version: 0.6
+version: 0.7
 index_id: hdfs
 # ...
 retention:

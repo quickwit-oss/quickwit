@@ -1450,7 +1450,7 @@ checksum = "c2895653b4d9f1538a83970077cb01dfc77a4810524e51a110944688e916b18e"
 dependencies = [
  "prost",
  "prost-types",
- "tonic 0.9.2",
+ "tonic",
  "tracing-core",
 ]
 
@@ -1472,7 +1472,7 @@ dependencies = [
  "thread_local",
  "tokio",
  "tokio-stream",
- "tonic 0.9.2",
+ "tonic",
  "tracing",
  "tracing-core",
  "tracing-subscriber",
@@ -1786,19 +1786,6 @@ dependencies = [
  "darling_core 0.20.3",
  "quote",
  "syn 2.0.39",
-]
-
-[[package]]
-name = "dashmap"
-version = "5.5.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "978747c1d849a7d2ee5e8adc0159961c48fb7e5db2f06af6723b80123bb53856"
-dependencies = [
- "cfg-if",
- "hashbrown 0.14.3",
- "lock_api",
- "once_cell",
- "parking_lot_core",
 ]
 
 [[package]]
@@ -2599,7 +2586,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-retry",
- "tonic 0.9.2",
+ "tonic",
  "tower",
  "tracing",
 ]
@@ -2615,7 +2602,7 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-retry",
- "tonic 0.9.2",
+ "tonic",
  "tower",
  "tracing",
 ]
@@ -2628,7 +2615,7 @@ checksum = "9d905d01fe815c6894b309b18a1ba152371e2e2ba7fcc81f4d22e48865b3014c"
 dependencies = [
  "prost",
  "prost-types",
- "tonic 0.9.2",
+ "tonic",
 ]
 
 [[package]]
@@ -2639,7 +2626,7 @@ checksum = "2a3b24a3f57be08afc02344e693afb55e48172c9c2ab86ff3fdb8efff550e4b9"
 dependencies = [
  "prost",
  "prost-types",
- "tonic 0.9.2",
+ "tonic",
 ]
 
 [[package]]
@@ -4312,9 +4299,9 @@ dependencies = [
 
 [[package]]
 name = "opentelemetry"
-version = "0.19.0"
+version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5f4b8347cc26099d3aeee044065ecc3ae11469796b4d65d065a23a584ed92a6f"
+checksum = "9591d937bc0e6d2feb6f71a559540ab300ea49955229c347a517a28d27784c54"
 dependencies = [
  "opentelemetry_api",
  "opentelemetry_sdk",
@@ -4322,45 +4309,54 @@ dependencies = [
 
 [[package]]
 name = "opentelemetry-otlp"
-version = "0.12.0"
+version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8af72d59a4484654ea8eb183fea5ae4eb6a41d7ac3e3bae5f4d2a282a3a7d3ca"
+checksum = "7e5e5a5c4135864099f3faafbe939eb4d7f9b80ebf68a8448da961b32a7c1275"
 dependencies = [
  "async-trait",
- "futures",
- "futures-util",
+ "futures-core",
  "http",
- "opentelemetry",
  "opentelemetry-proto",
+ "opentelemetry-semantic-conventions",
+ "opentelemetry_api",
+ "opentelemetry_sdk",
  "prost",
  "thiserror",
  "tokio",
- "tonic 0.8.3",
+ "tonic",
 ]
 
 [[package]]
 name = "opentelemetry-proto"
-version = "0.2.0"
+version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "045f8eea8c0fa19f7d48e7bc3128a39c2e5c533d5c61298c548dfefc1064474c"
+checksum = "b1e3f814aa9f8c905d0ee4bde026afd3b2577a97c10e1699912e3e44f0c4cbeb"
 dependencies = [
- "futures",
- "futures-util",
- "opentelemetry",
+ "opentelemetry_api",
+ "opentelemetry_sdk",
  "prost",
- "tonic 0.8.3",
+ "tonic",
+]
+
+[[package]]
+name = "opentelemetry-semantic-conventions"
+version = "0.12.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "73c9f9340ad135068800e7f1b24e9e09ed9e7143f5bf8518ded3d3ec69789269"
+dependencies = [
+ "opentelemetry",
 ]
 
 [[package]]
 name = "opentelemetry_api"
-version = "0.19.0"
+version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ed41783a5bf567688eb38372f2b7a8530f5a607a4b49d38dd7573236c23ca7e2"
+checksum = "8a81f725323db1b1206ca3da8bb19874bbd3f57c3bcd59471bfb04525b265b9b"
 dependencies = [
- "fnv",
  "futures-channel",
  "futures-util",
  "indexmap 1.9.3",
+ "js-sys",
  "once_cell",
  "pin-project-lite",
  "thiserror",
@@ -4369,21 +4365,22 @@ dependencies = [
 
 [[package]]
 name = "opentelemetry_sdk"
-version = "0.19.0"
+version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b3a2a91fdbfdd4d212c0dcc2ab540de2c2bcbbd90be17de7a7daf8822d010c1"
+checksum = "fa8e705a0612d48139799fcbaba0d4a90f06277153e43dd2bdc16c6f0edd8026"
 dependencies = [
  "async-trait",
  "crossbeam-channel",
- "dashmap",
- "fnv",
  "futures-channel",
  "futures-executor",
  "futures-util",
  "once_cell",
  "opentelemetry_api",
+ "ordered-float 3.9.2",
  "percent-encoding",
  "rand 0.8.5",
+ "regex",
+ "serde_json",
  "thiserror",
  "tokio",
  "tokio-stream",
@@ -4394,6 +4391,15 @@ name = "ordered-float"
 version = "2.10.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "68f19d67e5a2795c94e73e0bb1cc1a7edeb2e28efd39e2e1c9b7a40c1108b11c"
+dependencies = [
+ "num-traits",
+]
+
+[[package]]
+name = "ordered-float"
+version = "3.9.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f1e1c390732d15f1d48471625cd92d154e66db2c56645e29a9cd26f4699f72dc"
 dependencies = [
  "num-traits",
 ]
@@ -5231,7 +5237,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-actors"
-version = "0.6.5-dev"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5251,7 +5257,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-aws"
-version = "0.6.5-dev"
+version = "0.7.0"
 dependencies = [
  "async-trait",
  "aws-config",
@@ -5273,7 +5279,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-cli"
-version = "0.6.5-dev"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5323,7 +5329,7 @@ dependencies = [
  "tokio",
  "tokio-util",
  "toml",
- "tonic 0.9.2",
+ "tonic",
  "tracing",
  "tracing-opentelemetry",
  "tracing-subscriber",
@@ -5331,7 +5337,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-cluster"
-version = "0.6.5-dev"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5349,7 +5355,7 @@ dependencies = [
  "time",
  "tokio",
  "tokio-stream",
- "tonic 0.9.2",
+ "tonic",
  "tracing",
  "ulid",
  "utoipa",
@@ -5357,7 +5363,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-codegen"
-version = "0.6.5-dev"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "futures",
@@ -5374,7 +5380,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-codegen-example"
-version = "0.6.5-dev"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5392,14 +5398,14 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-stream",
- "tonic 0.9.2",
+ "tonic",
  "tower",
  "utoipa",
 ]
 
 [[package]]
 name = "quickwit-common"
-version = "0.6.5-dev"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "async-speed-limit",
@@ -5428,14 +5434,14 @@ dependencies = [
  "thiserror",
  "tokio",
  "tokio-stream",
- "tonic 0.9.2",
+ "tonic",
  "tower",
  "tracing",
 ]
 
 [[package]]
 name = "quickwit-config"
-version = "0.6.5-dev"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "bytes",
@@ -5469,7 +5475,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-control-plane"
-version = "0.6.5-dev"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5500,7 +5506,7 @@ dependencies = [
  "time",
  "tokio",
  "tokio-stream",
- "tonic 0.9.2",
+ "tonic",
  "tower",
  "tracing",
  "ulid",
@@ -5508,7 +5514,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-datetime"
-version = "0.6.5-dev"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "itertools 0.12.0",
@@ -5522,7 +5528,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-directories"
-version = "0.6.5-dev"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5543,7 +5549,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-doc-mapper"
-version = "0.6.5-dev"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "base64 0.21.5",
@@ -5578,7 +5584,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-index-management"
-version = "0.6.5-dev"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5610,7 +5616,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-indexing"
-version = "0.6.5-dev"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "arc-swap",
@@ -5674,7 +5680,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-ingest"
-version = "0.6.5-dev"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5703,7 +5709,7 @@ dependencies = [
  "tempfile",
  "thiserror",
  "tokio",
- "tonic 0.9.2",
+ "tonic",
  "tower",
  "tracing",
  "ulid",
@@ -5712,7 +5718,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-integration-tests"
-version = "0.6.5-dev"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "bytes",
@@ -5739,12 +5745,13 @@ dependencies = [
  "tempfile",
  "tokio",
  "tokio-stream",
+ "tonic",
  "tracing",
 ]
 
 [[package]]
 name = "quickwit-jaeger"
-version = "0.6.5-dev"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5772,13 +5779,13 @@ dependencies = [
  "time",
  "tokio",
  "tokio-stream",
- "tonic 0.9.2",
+ "tonic",
  "tracing",
 ]
 
 [[package]]
 name = "quickwit-janitor"
-version = "0.6.5-dev"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5815,7 +5822,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-macros"
-version = "0.6.5-dev"
+version = "0.7.0"
 dependencies = [
  "proc-macro2",
  "quickwit-macros-impl",
@@ -5825,7 +5832,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-macros-impl"
-version = "0.6.5-dev"
+version = "0.7.0"
 dependencies = [
  "heck",
  "proc-macro2",
@@ -5835,7 +5842,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-metastore"
-version = "0.6.5-dev"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5876,11 +5883,11 @@ dependencies = [
 
 [[package]]
 name = "quickwit-opentelemetry"
-version = "0.6.5-dev"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "async-trait",
- "base64 0.21.5",
+ "hex",
  "once_cell",
  "prost",
  "quickwit-actors",
@@ -5894,13 +5901,13 @@ dependencies = [
  "thiserror",
  "time",
  "tokio",
- "tonic 0.9.2",
+ "tonic",
  "tracing",
 ]
 
 [[package]]
 name = "quickwit-proto"
-version = "0.6.5-dev"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -5924,7 +5931,7 @@ dependencies = [
  "sqlx",
  "thiserror",
  "tokio",
- "tonic 0.9.2",
+ "tonic",
  "tonic-build",
  "tower",
  "tracing",
@@ -5936,7 +5943,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-query"
-version = "0.6.5-dev"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "base64 0.21.5",
@@ -5962,7 +5969,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-rest-client"
-version = "0.6.5-dev"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "bytes",
@@ -5986,7 +5993,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-search"
-version = "0.6.5-dev"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "assert-json-diff 2.0.2",
@@ -6037,7 +6044,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-serve"
-version = "0.6.5-dev"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "assert-json-diff 2.0.2",
@@ -6093,7 +6100,7 @@ dependencies = [
  "time",
  "tokio",
  "tokio-stream",
- "tonic 0.9.2",
+ "tonic",
  "tower",
  "tower-http",
  "tracing",
@@ -6104,7 +6111,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-storage"
-version = "0.6.5-dev"
+version = "0.7.0"
 dependencies = [
  "anyhow",
  "async-trait",
@@ -6150,7 +6157,7 @@ dependencies = [
 
 [[package]]
 name = "quickwit-telemetry"
-version = "0.6.5-dev"
+version = "0.7.0"
 dependencies = [
  "async-trait",
  "encoding_rs",
@@ -8184,38 +8191,6 @@ dependencies = [
 
 [[package]]
 name = "tonic"
-version = "0.8.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8f219fad3b929bef19b1f86fbc0358d35daed8f2cac972037ac0dc10bbb8d5fb"
-dependencies = [
- "async-stream",
- "async-trait",
- "axum",
- "base64 0.13.1",
- "bytes",
- "futures-core",
- "futures-util",
- "h2",
- "http",
- "http-body",
- "hyper",
- "hyper-timeout",
- "percent-encoding",
- "pin-project",
- "prost",
- "prost-derive",
- "tokio",
- "tokio-stream",
- "tokio-util",
- "tower",
- "tower-layer",
- "tower-service",
- "tracing",
- "tracing-futures",
-]
-
-[[package]]
-name = "tonic"
 version = "0.9.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3082666a3a6433f7f511c7192923fa1fe07c69332d3c6a2e6bb040b569199d5a"
@@ -8347,16 +8322,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "tracing-futures"
-version = "0.2.5"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "97d095ae15e245a057c8e8451bab9b3ee1e1f68e9ba2b4fbc18d0ac5237835f2"
-dependencies = [
- "pin-project",
- "tracing",
-]
-
-[[package]]
 name = "tracing-log"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8380,9 +8345,9 @@ dependencies = [
 
 [[package]]
 name = "tracing-opentelemetry"
-version = "0.19.0"
+version = "0.20.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "00a39dcf9bfc1742fa4d6215253b33a6e474be78275884c216fc2a06267b3600"
+checksum = "fc09e402904a5261e42cf27aea09ccb7d5318c6717a9eec3d8e2e65c56b18f19"
 dependencies = [
  "once_cell",
  "opentelemetry",
