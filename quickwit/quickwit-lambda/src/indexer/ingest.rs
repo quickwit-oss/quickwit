@@ -222,10 +222,10 @@ pub async fn ingest(args: IngestArgs) -> anyhow::Result<IndexingStatistics> {
     let indexing_pipeline_handle = indexing_server_mailbox
         .ask_for_res(DetachIndexingPipeline { pipeline_id })
         .await?;
-    debug!("Wait for statistics");
+    debug!("Wait for indexing statistics");
     let statistics = start_statistics_reporting_loop(indexing_pipeline_handle, false).await?;
+    debug!("Indexing completed, tear down actors");
     merge_pipeline_handle.quit().await;
-    // Shutdown the indexing server.
     universe
         .send_exit_with_success(&indexing_server_mailbox)
         .await?;
