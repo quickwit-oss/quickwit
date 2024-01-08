@@ -138,7 +138,7 @@ fn setup_logging_and_tracing(
 }
 
 pub fn setup_lambda_tracer() -> anyhow::Result<()> {
-    setup_logging_and_tracing(Level::DEBUG, false, BuildInfo::get())
+    setup_logging_and_tracing(Level::INFO, false, BuildInfo::get())
 }
 
 pub fn flush_tracer() {

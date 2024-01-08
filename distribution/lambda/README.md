@@ -5,8 +5,9 @@
 
 - Install AWS CDK Toolkit (cdk command)
   - `npm install -g aws-cdk `
-- Install the AWS CLI
-  - https://docs.aws.amazon.com/cli/latest/userguide/getting-started-install.html
+- Ensure `curl` and `make` are installed
+- To run the invocation example `make` commands, you will also need Python 3.10
+  or later and `pip` installed (see [Python venv](#python-venv) below).
 
 ## AWS Lambda service quotas
 
@@ -23,9 +24,9 @@ console](https://console.aws.amazon.com/servicequotas/home/services/lambda/quota
 This project is set up like a standard Python project. The initialization
 process also creates a virtualenv within this project, stored under the `.venv`
 directory.  To create the virtualenv it assumes that there is a `python3`
-(or `python` for Windows) executable in your path with access to the `venv`
-package. If for any reason the automatic creation of the virtualenv fails,
-you can create the virtualenv manually.
+executable in your path with access to the `venv` package. If for any reason the
+automatic creation of the virtualenv fails, you can create the virtualenv
+manually.
 
 To manually create a virtualenv on MacOS and Linux:
 
@@ -68,7 +69,7 @@ The Makefile is a usefull entrypoint to show how the Lambda deployment can used.
 
 Configure your shell and AWS account:
 ```bash
-# replace with you AWS account ID and prefered region
+# replace with you AWS account ID and preferred region
 export CDK_ACCOUNT=123456789
 export CDK_REGION=us-east-1
 make bootstrap
@@ -90,35 +91,24 @@ make invoke-mock-data-searcher
 
 ## Set up a search API
 
-You can configure an API around the Quickwit search Lambda using the following
-CDK code (`quickwit_service` is an instance of the `QuickwitService`` construct):
+You can configure an HTTP API endpoint around the Quickwit Searcher Lambda. The
+mock data example stack shows such a configuration. The API Gateway is enabled
+when the `SEARCHER_API_KEY` environment variable is set:
 
-```python
-  api = aws_apigateway.RestApi(
-      self,
-      "quickwit-search-api",
-      rest_api_name=f"Quickwit {index_id} search API",
-      deploy=False,
-  )
-  searcher_integration = aws_apigateway.LambdaIntegration(
-      quickwit_service.searcher.lambda_function
-  )
-  search_resource = (
-      api.root.add_resource("v1").add_resource(index_id).add_resource("search")
-  )
-  search_resource.add_method("POST", searcher_integration)
-  api_deployment = aws_apigateway.Deployment(self, "api-deployment", api=api)
-  api_stage = aws_apigateway.Stage(
-      self, "api", deployment=api_deployment, stage_name="api"
-  )
-  api.deployment_stage = api_stage
+```bash
+SEARCHER_API_KEY=my-at-least-20-char-long-key make deploy-mock-data
 ```
+
+> [!WARNING]  
+> The API key is stored in plain text in the CDK stack. For a real world
+> deployment, the key should be fetched from something like [AWS Secrets
+> Manager](https://docs.aws.amazon.com/cdk/v2/guide/get_secrets_manager_value.html).
 
 Note that the response is always gzipped compressed, regardless the
 `Accept-Encoding` request header:
 
 ```bash
-curl -d '{"query":"*"}' -H "Content-Type: application/json" -X POST https://{api_id}.execute-api.{region}.amazonaws.com/api/v1/{index-id}/search --compressed
+curl -d '{"query":"quantity:>5", "max_hits": 10}' -H "Content-Type: application/json" -H "x-api-key: my-at-least-20-char-long-key" -X POST https://{api_id}.execute-api.{region}.amazonaws.com/api/v1/mock-sales/search --compressed
 ```
 
 ## Useful CDK commands

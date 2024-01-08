@@ -18,9 +18,9 @@ ifndef CDK_REGION
 	$(error CDK_REGION is undefined)
 endif
 
-# Download the packages from the Quickwit release page
-# The package varsion can be set with QW_LAMBDA_VERSION
-# Build them locally by setting QW_LAMBDA_BUILD=1
+# Build or download the packages from the release page
+# - Download by default, the version can be set with QW_LAMBDA_VERSION
+# - To build locally, set QW_LAMBDA_BUILD=1
 package:
 	mkdir -p cdk.out
 	if [ "$${QW_LAMBDA_BUILD:-0}" = "1" ]
@@ -51,12 +51,26 @@ searcher-package-path:
 bootstrap: package check-env
 	cdk bootstrap aws://$$CDK_ACCOUNT/$$CDK_REGION
 
-generate-base-stack:
-	cdk synth -a cdk/app.py BaseQuickwitStack
-
 deploy-hdfs: package check-env
 	cdk deploy -a cdk/app.py HdfsStack
-	
+
+deploy-mock-data: package check-env
+	cdk deploy -a cdk/app.py MockDataStack
+
+destroy-hdfs:
+	cdk destroy -a cdk/app.py HdfsStack
+
+destroy-mock-data:
+	cdk destroy -a cdk/app.py MockDataStack
+
+clean:
+	rm -rf cdk.out
+
+## Invocation examples
+
+invoke-mock-data-searcher: check-env
+	python -c 'from cdk import cli; cli.invoke_mock_data_searcher()'
+
 invoke-hdfs-indexer: check-env
 	python -c 'from cdk import cli; cli.upload_hdfs_src_file()'
 	python -c 'from cdk import cli; cli.invoke_hdfs_indexer()'
@@ -66,12 +80,6 @@ invoke-hdfs-searcher-term: check-env
 
 invoke-hdfs-searcher-histogram: check-env
 	python -c 'from cdk import cli; cli.invoke_hdfs_searcher("""{ "query": "*", "max_hits": 0, "aggs": { "events": { "date_histogram": { "field": "timestamp", "fixed_interval": "1d" }, "aggs": { "log_level": { "terms": { "size": 10, "field": "severity_text", "order": { "_count": "desc" } } } } } } }""")'
-
-deploy-mock-data: package check-env
-	cdk deploy -a cdk/app.py MockDataStack
-
-invoke-mock-data-searcher: check-env
-	python -c 'from cdk import cli; cli.invoke_mock_data_searcher()'
 
 bench-index:
 	mem_sizes=( 10240 8192 6144 4096 3072 2048 )
@@ -101,7 +109,6 @@ bench-search-histogram:
 		python -c 'from cdk import cli; cli.benchmark_hdfs_search("""{ "query": "*", "max_hits": 0, "aggs": { "events": { "date_histogram": { "field": "timestamp", "fixed_interval": "1d" }, "aggs": { "log_level": { "terms": { "size": 10, "field": "severity_text", "order": { "_count": "desc" } } } } } } }""")'
 	done
 
-
 bench-search:
 	for run in {1..30}
 	do 
@@ -117,11 +124,3 @@ bench-search:
 		$(MAKE) bench-search-term
 		$(MAKE) bench-search-histogram
 	done
-
-
-destroy:
-	cdk destroy -a cdk/app.py HdfsStack MockDataStack
-
-
-clean:
-	rm -rf cdk.out
