@@ -19,52 +19,59 @@
 
 use std::sync::atomic::Ordering::SeqCst;
 
-use lambda_runtime::{Error, LambdaEvent};
+use anyhow::Context;
+use flate2::write::GzEncoder;
+use flate2::Compression;
+use lambda_http::http::header::{CONTENT_ENCODING, CONTENT_TYPE};
+use lambda_http::{Body, Error, IntoResponse, Request, RequestExt, RequestPayloadExt, Response};
+use quickwit_search::SearchResponseRest;
 use quickwit_serve::SearchRequestQueryString;
-use serde_json::Value;
-use tracing::{debug, error, span, Instrument, Level};
+use tracing::{instrument, span, Instrument, Level};
 
 use super::environment::{ENABLE_SEARCH_CACHE, INDEX_ID};
 use super::search::{search, SearchArgs};
 use crate::logger;
 use crate::utils::ALREADY_EXECUTED;
 
-async fn searcher_handler(event: LambdaEvent<SearchRequestQueryString>) -> Result<Value, Error> {
-    let ingest_res = search(SearchArgs {
-        query: event.payload,
-    })
-    .await;
-    let result = match ingest_res {
-        Ok(resp) => {
-            debug!(resp=?resp, "Search succeeded");
-            Ok(serde_json::to_value(resp)?)
-        }
-        Err(e) => {
-            error!(err=?e, "Search failed");
-            return Err(anyhow::anyhow!("Query failed").into());
-        }
-    };
-    logger::flush_tracer();
-    result
+#[instrument(skip_all)]
+fn deflate_serialize(resp: SearchResponseRest) -> anyhow::Result<Vec<u8>> {
+    let value = serde_json::to_value(resp)?;
+    let mut buffer = Vec::new();
+    let mut gz = GzEncoder::new(&mut buffer, Compression::default());
+    serde_json::to_writer(&mut gz, &value)?;
+    gz.finish()?;
+    Ok(buffer)
 }
 
-pub async fn handler(event: LambdaEvent<SearchRequestQueryString>) -> Result<Value, Error> {
+pub async fn handler(request: Request) -> Result<impl IntoResponse, Error> {
     let cold = !ALREADY_EXECUTED.swap(true, SeqCst);
-    let memory = event.context.env_config.memory;
-    let payload = format!("{:?}", event.payload);
+    let memory = request.lambda_context().env_config.memory;
+    let payload = request
+        .payload::<SearchRequestQueryString>()?
+        .context("Empty payload")?;
+    let paylog_dbg = format!("{:?}", payload);
 
-    let result = searcher_handler(event)
+    // TODO better handle errors (e.g print them)
+
+    let search_res = search(SearchArgs { query: payload })
         .instrument(span!(
             parent: &span!(Level::INFO, "searcher_handler", cold),
             Level::TRACE,
             logger::RUNTIME_CONTEXT_SPAN,
             memory,
-            payload,
+            payload = paylog_dbg,
             env.INDEX_ID = *INDEX_ID,
             env.ENABLE_SEARCH_CACHE = *ENABLE_SEARCH_CACHE
         ))
-        .await;
+        .await?;
+
+    let response_body = deflate_serialize(search_res)?;
 
     logger::flush_tracer();
-    result
+    let response = Response::builder()
+        .header(CONTENT_ENCODING, "gzip")
+        .header(CONTENT_TYPE, "application/json")
+        .body(Body::Binary(response_body))
+        .context("Could not build response")?;
+    Ok(response)
 }

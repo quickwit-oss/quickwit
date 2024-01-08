@@ -12,6 +12,7 @@ import tempfile
 import time
 from dataclasses import dataclass
 from functools import cache
+from io import BytesIO
 
 import boto3
 import botocore.config
@@ -50,13 +51,38 @@ class LambdaResult:
     function_error: str
     log_tail: str
     payload: str
+    raw_size_bytes: int
 
     @staticmethod
     def from_lambda_response(lambda_resp: dict) -> "LambdaResult":
+        payload = lambda_resp["Payload"].read().decode()
         return LambdaResult(
             function_error=lambda_resp.get("FunctionError", ""),
             log_tail=base64.b64decode(lambda_resp["LogResult"]).decode(),
-            payload=lambda_resp["Payload"].read().decode(),
+            payload=payload,
+            raw_size_bytes=len(payload),
+        )
+
+    @staticmethod
+    def from_lambda_gateway_response(lambda_resp: dict) -> "LambdaResult":
+        gw_str = lambda_resp["Payload"].read().decode()
+        gw_obj = json.loads(gw_str)
+        payload = gw_obj["body"]
+        if gw_obj["isBase64Encoded"]:
+            dec_payload = base64.b64decode(payload)
+            if gw_obj.get("headers", {}).get("content-encoding", "") == "gzip":
+                payload = (
+                    gzip.GzipFile(mode="rb", fileobj=BytesIO(dec_payload))
+                    .read()
+                    .decode()
+                )
+            else:
+                payload = dec_payload.decode()
+        return LambdaResult(
+            function_error=lambda_resp.get("FunctionError", ""),
+            log_tail=base64.b64decode(lambda_resp["LogResult"]).decode(),
+            payload=payload,
+            raw_size_bytes=len(gw_str),
         )
 
     def extract_report(self) -> str:
@@ -64,14 +90,23 @@ class LambdaResult:
         return self.log_tail.strip().splitlines()[-1]
 
 
-def _format_lambda_output(lambda_result: LambdaResult, duration=None):
+def _format_lambda_output(
+    lambda_result: LambdaResult, duration=None, max_resp_size=10 * 1000
+):
     if lambda_result.function_error != "":
         print("\n## FUNCTION ERROR:")
         print(lambda_result.function_error)
     print("\n## LOG TAIL:")
     print(lambda_result.log_tail)
+    print("\n## RAW RESPONSE SIZE (BYTES):")
+    ratio = lambda_result.raw_size_bytes / len(lambda_result.payload)
+    print(f"{lambda_result.raw_size_bytes} ({ratio:.1f}x the final payload)")
     print("\n## RESPONSE:")
-    print(lambda_result.payload)
+    payload_size = len(lambda_result.payload)
+    print(lambda_result.payload[:max_resp_size])
+    if payload_size > max_resp_size:
+        print(f"Response too long ({payload_size}), truncated to {max_resp_size} bytes")
+
     if duration is not None:
         print("\n## TOTAL INVOCATION DURATION:")
         print(duration)
@@ -144,10 +179,19 @@ def _invoke_searcher(
         FunctionName=function_name,
         InvocationType="RequestResponse",
         LogType="Tail",
-        Payload=payload,
+        Payload=json.dumps(
+            {
+                "headers": {"Content-Type": "application/json"},
+                "requestContext": {
+                    "http": {"method": "POST"},
+                },
+                "body": payload,
+                "isBase64Encoded": False,
+            }
+        ),
     )
     invoke_duration = time.time() - invoke_start
-    lambda_result = LambdaResult.from_lambda_response(resp)
+    lambda_result = LambdaResult.from_lambda_gateway_response(resp)
     _format_lambda_output(lambda_result, invoke_duration)
     return lambda_result
 

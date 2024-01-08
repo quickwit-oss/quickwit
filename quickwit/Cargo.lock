@@ -760,6 +760,22 @@ dependencies = [
 
 [[package]]
 name = "aws_lambda_events"
+version = "0.10.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "65991dbc3bfb586939ba1527eefdc99bc21157b6ec891f180fb1e16e2dddc7a9"
+dependencies = [
+ "base64 0.21.4",
+ "bytes",
+ "http",
+ "http-body",
+ "http-serde",
+ "query_map 0.6.0",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "aws_lambda_events"
 version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "771c11de66cef31b3f49f0b38f06d94f0af424f60381409fc21972ff9c8f835b"
@@ -771,7 +787,7 @@ dependencies = [
  "http",
  "http-body",
  "http-serde",
- "query_map",
+ "query_map 0.7.0",
  "serde",
  "serde_dynamo",
  "serde_json",
@@ -3319,6 +3335,29 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "3f35c735096c0293d313e8f2a641627472b83d01b937177fe76e5e2708d31e0d"
 
 [[package]]
+name = "lambda_http"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "8b15e8ab48a5d8eab3110567008caad4d191924d1470b74c5c8b802b904b5a34"
+dependencies = [
+ "aws_lambda_events 0.10.0",
+ "base64 0.21.4",
+ "bytes",
+ "encoding_rs",
+ "futures",
+ "http",
+ "http-body",
+ "hyper",
+ "lambda_runtime",
+ "mime",
+ "percent-encoding",
+ "serde",
+ "serde_json",
+ "serde_urlencoded",
+ "url",
+]
+
+[[package]]
 name = "lambda_runtime"
 version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5269,6 +5308,17 @@ dependencies = [
 
 [[package]]
 name = "query_map"
+version = "0.6.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4465aacac3bebc9484cf7a56dc8b2d7feacb657da6002a9198b4f7af4247a204"
+dependencies = [
+ "form_urlencoded",
+ "serde",
+ "serde_derive",
+]
+
+[[package]]
+name = "query_map"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5eab6b8b1074ef3359a863758dae650c7c0c6027927a085b7af911c8e0bf3a15"
@@ -5897,8 +5947,10 @@ name = "quickwit-lambda"
 version = "0.6.3"
 dependencies = [
  "anyhow",
- "aws_lambda_events",
+ "aws_lambda_events 0.11.1",
  "chitchat",
+ "flate2",
+ "lambda_http",
  "lambda_runtime",
  "once_cell",
  "opentelemetry",
