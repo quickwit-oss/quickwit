@@ -50,8 +50,8 @@ use crate::utils::load_node_config;
 
 const CONFIGURATION_TEMPLATE: &str = "version: 0.6
 node_id: lambda-indexer
-metastore_uri: s3://${METASTORE_BUCKET}
-default_index_root_uri: s3://${INDEX_BUCKET}
+metastore_uri: s3://${METASTORE_BUCKET}/index
+default_index_root_uri: s3://${INDEX_BUCKET}/index
 data_dir: /tmp
 ";
 

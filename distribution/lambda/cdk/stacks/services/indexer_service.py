@@ -12,6 +12,7 @@ class IndexerService(Construct):
         index_id: str,
         index_config_bucket: str,
         index_config_key: str,
+        memory_size: int,
         **kwargs,
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
@@ -28,9 +29,9 @@ class IndexerService(Construct):
                 "INDEX_ID": index_id,
                 "INDEX_CONFIG_URI": f"s3://{index_config_bucket}/{index_config_key}",
             },
-            timeout=aws_cdk.Duration.seconds(30),
+            timeout=aws_cdk.Duration.minutes(15),
             reserved_concurrent_executions=1,
-            memory_size=1024,
+            memory_size=memory_size,
             ephemeral_storage_size=aws_cdk.Size.gibibytes(10),
         )
         self.lambda_function.add_to_role_policy(
