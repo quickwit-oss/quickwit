@@ -49,20 +49,38 @@ bench-index:
 		python -c 'from cdk import cli; cli.benchmark_hdfs_indexing()'
 	done
 
-bench-search:
+bench-search-term:
 	mem_sizes=( 1024 2048 4096 8192 )
+	export QW_LAMBDA_PARTIAL_REQUEST_CACHE_CAPACITY=0
 	for mem_size in "$${mem_sizes[@]}"
 	do
 		export SEARCHER_MEMORY_SIZE=$${mem_size}
 		$(MAKE) deploy-hdfs
 		python -c 'from cdk import cli; cli.benchmark_hdfs_search("""{"query": "severity_text:ERROR", "max_hits": 10}""")'
 	done
+
+bench-search-histogram:
+	mem_sizes=( 1024 2048 4096 8192 )
+	export QW_LAMBDA_PARTIAL_REQUEST_CACHE_CAPACITY=0
 	for mem_size in "$${mem_sizes[@]}"
 	do
 		export SEARCHER_MEMORY_SIZE=$${mem_size}
 		$(MAKE) deploy-hdfs
 		python -c 'from cdk import cli; cli.benchmark_hdfs_search("""{ "query": "*", "max_hits": 0, "aggs": { "events": { "date_histogram": { "field": "timestamp", "fixed_interval": "1d" }, "aggs": { "log_level": { "terms": { "size": 10, "field": "severity_text", "order": { "_count": "desc" } } } } } } }""")'
 	done
+
+
+bench-search:
+	for run in {1..30}
+	do 
+		export QW_LAMBDA_DISABLE_SEARCH_CACHE=true
+		$(MAKE) bench-search-term
+		$(MAKE) bench-search-histogram
+		export QW_LAMBDA_DISABLE_SEARCH_CACHE=false
+		$(MAKE) bench-search-term
+		$(MAKE) bench-search-histogram
+	done
+
 
 destroy:
 	cdk destroy -a cdk/app.py HdfsStack MockDataStack
