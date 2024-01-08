@@ -17,19 +17,21 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::sync::atomic::Ordering::SeqCst;
+
 use lambda_runtime::{Error, LambdaEvent};
 use quickwit_serve::SearchRequestQueryString;
 use serde_json::Value;
-use tracing::{debug, error, instrument};
+use tracing::{debug, error, span, Instrument, Level};
 
+use super::environment::{ENABLE_SEARCH_CACHE, INDEX_ID};
 use super::search::{search, SearchArgs};
 use crate::logger;
+use crate::utils::ALREADY_EXECUTED;
 
-#[instrument(level = "info", name = "searcher_handler", fields(event=?event.payload, memory=event.context.env_config.memory))]
-pub async fn handler_impl(event: LambdaEvent<SearchRequestQueryString>) -> Result<Value, Error> {
-    debug!(payload = ?event.payload, "Received query");
+async fn searcher_handler(event: LambdaEvent<SearchRequestQueryString>) -> Result<Value, Error> {
+    debug!(payload = ?event.payload, "Handler start");
     let ingest_res = search(SearchArgs {
-        index_id: std::env::var("QW_LAMBDA_INDEX_ID")?,
         query: event.payload,
     })
     .await;
@@ -48,7 +50,20 @@ pub async fn handler_impl(event: LambdaEvent<SearchRequestQueryString>) -> Resul
 }
 
 pub async fn handler(event: LambdaEvent<SearchRequestQueryString>) -> Result<Value, Error> {
-    let result = handler_impl(event).await;
+    let cold = !ALREADY_EXECUTED.swap(true, SeqCst);
+    let memory = event.context.env_config.memory;
+
+    let result = searcher_handler(event)
+        .instrument(span!(
+            parent: &span!(Level::INFO, "searcher_handler", cold),
+            Level::TRACE,
+            logger::RUNTIME_CONTEXT_SPAN,
+            memory,
+            env.INDEX_ID = *INDEX_ID,
+            env.ENABLE_SEARCH_CACHE = *ENABLE_SEARCH_CACHE
+        ))
+        .await;
+
     logger::flush_tracer();
     result
 }

@@ -195,7 +195,8 @@ def benchmark_hdfs_indexing():
         "env": {
             k: os.environ[k]
             for k in os.environ.keys()
-            if k != "QW_LAMBDA_OPENTELEMETRY_AUTHORIZATION"
+            if k.startswith("QW_LAMBDA_")
+            and k != "QW_LAMBDA_OPENTELEMETRY_AUTHORIZATION"
         },
     }
     try:
