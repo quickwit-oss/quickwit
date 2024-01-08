@@ -59,6 +59,10 @@ class LambdaResult:
             payload=lambda_resp["Payload"].read().decode(),
         )
 
+    def extract_report(self) -> str:
+        """Expect "REPORT RequestId: xxx Duration: yyy..." as last line in log tail"""
+        return self.log_tail.strip().splitlines()[-1]
+
 
 def _format_lambda_output(lambda_result: LambdaResult, duration=None):
     if lambda_result.function_error != "":
@@ -148,8 +152,8 @@ def _invoke_searcher(
     return lambda_result
 
 
-def invoke_hdfs_searcher(payload: str):
-    _invoke_searcher(
+def invoke_hdfs_searcher(payload: str) -> LambdaResult:
+    return _invoke_searcher(
         app.HDFS_STACK_NAME,
         hdfs_stack.SEARCHER_FUNCTION_NAME_EXPORT_NAME,
         payload,
@@ -189,12 +193,15 @@ def benchmark_hdfs_indexing():
             "ts": time.time(),
             "commit": _git_commit(),
             "memory_size": memory_size,
+            "env": {
+                k: os.environ[k]
+                for k in os.environ.keys()
+                if k != "QW_LAMBDA_OPENTELEMETRY_AUTHORIZATION"
+            },
         }
         try:
             indexer_result = invoke_hdfs_indexer()
-            bench_result[
-                "lambda_report"
-            ] = indexer_result.log_tail.strip().splitlines()[-1]
+            bench_result["lambda_report"] = indexer_result.extract_report()
         except Exception as e:
             bench_result["invokation_error"] = repr(e)
             print(f"Failed to invoke indexer")
@@ -213,12 +220,15 @@ def benchmark_hdfs_search(payload: str):
             "commit": _git_commit(),
             "memory_size": memory_size,
             "payload": json.loads(payload),
+            "env": {
+                k: os.environ[k]
+                for k in os.environ.keys()
+                if k != "QW_LAMBDA_OPENTELEMETRY_AUTHORIZATION"
+            },
         }
         try:
             indexer_result = invoke_hdfs_searcher(payload)
-            bench_result[
-                "lambda_report"
-            ] = indexer_result.log_tail.strip().splitlines()[-1]
+            bench_result["lambda_report"] = indexer_result.extract_report()
         except Exception as e:
             bench_result["invokation_error"] = repr(e)
             print(f"Failed to invoke searcher")

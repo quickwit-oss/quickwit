@@ -22,10 +22,20 @@ anyhow = { workspace = true }
 aws_lambda_events = "0.11.1"
 chitchat = { workspace = true }
 lambda_runtime = "0.8.0"
+once_cell = { workspace = true }
+opentelemetry =  { workspace = true }
+opentelemetry-otlp = { workspace = true, features = [
+    "reqwest-client",
+    "reqwest-rustls",
+    "http-proto",
+] }
 serde = { workspace = true }
 serde_json = { workspace = true }
+time = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
+tracing-opentelemetry = { workspace = true }
+tracing-subscriber = { workspace = true }
 
 quickwit-actors = { workspace = true }
 quickwit-cli = { workspace = true }

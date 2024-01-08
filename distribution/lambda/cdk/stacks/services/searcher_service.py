@@ -11,6 +11,7 @@ class SearcherService(Construct):
         store_bucket: aws_s3.Bucket,
         index_id: str,
         memory_size: int,
+        environment: dict[str, str],
         **kwargs
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
@@ -22,9 +23,10 @@ class SearcherService(Construct):
             runtime=aws_lambda.Runtime.PROVIDED_AL2,
             handler="N/A",
             environment={
-                "INDEX_BUCKET": store_bucket.bucket_name,
-                "METASTORE_BUCKET": store_bucket.bucket_name,
-                "INDEX_ID": index_id,
+                "QW_LAMBDA_INDEX_BUCKET": store_bucket.bucket_name,
+                "QW_LAMBDA_METASTORE_BUCKET": store_bucket.bucket_name,
+                "QW_LAMBDA_INDEX_ID": index_id,
+                **environment,
             },
             timeout=aws_cdk.Duration.seconds(30),
             memory_size=memory_size,
