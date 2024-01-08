@@ -6639,6 +6639,7 @@ dependencies = [
  "percent-encoding",
  "pin-project-lite",
  "rustls 0.21.9",
+ "rustls-native-certs",
  "rustls-pemfile",
  "serde",
  "serde_json",
@@ -8553,6 +8554,7 @@ dependencies = [
  "tracing",
  "tracing-core",
  "tracing-log 0.2.0",
+ "tracing-serde",
 ]
 
 [[package]]
