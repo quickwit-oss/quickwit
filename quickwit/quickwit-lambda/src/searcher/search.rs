@@ -32,7 +32,7 @@ use quickwit_storage::StorageResolver;
 use tokio::sync::OnceCell;
 use tracing::debug;
 
-use super::environment::{CONFIGURATION_TEMPLATE, ENABLE_SEARCH_CACHE, INDEX_ID};
+use super::environment::{CONFIGURATION_TEMPLATE, DISABLE_SEARCH_CACHE, INDEX_ID};
 use crate::utils::load_node_config;
 
 static LAMBDA_SEARCH_CACHE: OnceCell<LambdaSearchCtx> = OnceCell::const_new();
@@ -76,15 +76,15 @@ async fn single_node_search(
     metastore: MetastoreServiceClient,
     storage_resolver: StorageResolver,
 ) -> SearchResult<SearchResponse> {
-    let lambda_search_ctx = if *ENABLE_SEARCH_CACHE {
+    let lambda_search_ctx = if *DISABLE_SEARCH_CACHE {
+        LambdaSearchCtx::instantiate(search_config, metastore.clone(), storage_resolver).await
+    } else {
         let cached_ctx = LAMBDA_SEARCH_CACHE
             .get_or_init(|| {
                 LambdaSearchCtx::instantiate(search_config, metastore.clone(), storage_resolver)
             })
             .await;
         LambdaSearchCtx::clone(cached_ctx)
-    } else {
-        LambdaSearchCtx::instantiate(search_config, metastore.clone(), storage_resolver).await
     };
     root_search(
         &lambda_search_ctx.searcher_context,

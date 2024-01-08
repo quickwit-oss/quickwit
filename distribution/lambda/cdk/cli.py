@@ -23,9 +23,9 @@ from cdk.stacks import hdfs_stack, mock_data_stack
 
 region = os.environ["CDK_REGION"]
 
-example_bucket = "quickwit-datasets-public.s3.amazonaws.com"
-# example_file = "hdfs-logs-multitenants-10000.json"
-example_file = "hdfs-logs-multitenants.json.gz"
+example_host = "quickwit-datasets-public.s3.amazonaws.com"
+# the publicly hosted file is compressed and suffixed with ".gz"
+example_hdfs_file = "hdfs-logs-multitenants.json"
 INDEXING_BOTO_CONFIG = botocore.config.Config(
     retries={"max_attempts": 0}, read_timeout=60 * 15
 )
@@ -129,17 +129,19 @@ def upload_hdfs_src_file():
     bucket_name = _get_cloudformation_output_value(
         app.HDFS_STACK_NAME, hdfs_stack.INDEX_STORE_BUCKET_NAME_EXPORT_NAME
     )
-    uri = f"s3://{bucket_name}/{example_file}"
+    uri = f"s3://{bucket_name}/{example_hdfs_file}"
     try:
-        resp = session.client("s3").head_object(Bucket=bucket_name, Key=example_file)
+        resp = session.client("s3").head_object(
+            Bucket=bucket_name, Key=example_hdfs_file
+        )
         print(f"{uri} already exists ({resp['ContentLength']} bytes), skipping upload")
         return
     except botocore.exceptions.ClientError as e:
         if e.response["Error"]["Code"] != "404":
             raise e
-    print(f"upload src file to {uri}")
-    conn = http.client.HTTPSConnection(example_bucket)
-    conn.request("GET", f"/{example_file}")
+    print(f"download dataset https://{example_host}/{example_hdfs_file}.gz")
+    conn = http.client.HTTPSConnection(example_host)
+    conn.request("GET", f"/{example_hdfs_file}.gz")
     response = conn.getresponse()
     if response.status != 200:
         print(f"Failed to fetch dataset")
@@ -153,8 +155,9 @@ def upload_hdfs_src_file():
             tmp.write(chunk)
         tmp.flush()
         print(f"downloaded {tmp.tell()} bytes")
+        print(f"upload dataset to {uri}")
         session.client("s3").upload_file(
-            Bucket=bucket_name, Filename=tmp.name, Key=example_file
+            Bucket=bucket_name, Filename=tmp.name, Key=example_hdfs_file
         )
 
 
@@ -166,7 +169,7 @@ def invoke_hdfs_indexer() -> LambdaResult:
     bucket_name = _get_cloudformation_output_value(
         app.HDFS_STACK_NAME, hdfs_stack.INDEX_STORE_BUCKET_NAME_EXPORT_NAME
     )
-    source_uri = f"s3://{bucket_name}/{example_file}"
+    source_uri = f"s3://{bucket_name}/{example_hdfs_file}"
     print(f"src_file: {source_uri}")
     invoke_start = time.time()
     resp = session.client("lambda", config=INDEXING_BOTO_CONFIG).invoke(
@@ -182,7 +185,10 @@ def invoke_hdfs_indexer() -> LambdaResult:
 
 
 def _invoke_searcher(
-    stack_name: str, function_export_name: str, payload: str
+    stack_name: str,
+    function_export_name: str,
+    payload: str,
+    download_logs: bool,
 ) -> LambdaResult:
     function_name = _get_cloudformation_output_value(stack_name, function_export_name)
     client = session.client("lambda")
@@ -206,15 +212,17 @@ def _invoke_searcher(
     invoke_duration = time.time() - invoke_start
     lambda_result = LambdaResult.from_lambda_gateway_response(resp)
     _format_lambda_output(lambda_result, invoke_duration)
-    download_logs_to_file(lambda_result.request_id(), function_name, invoke_start)
+    if download_logs:
+        download_logs_to_file(lambda_result.request_id(), function_name, invoke_start)
     return lambda_result
 
 
-def invoke_hdfs_searcher(payload: str) -> LambdaResult:
+def invoke_hdfs_searcher(payload: str, download_logs: bool = True) -> LambdaResult:
     return _invoke_searcher(
         app.HDFS_STACK_NAME,
         hdfs_stack.SEARCHER_FUNCTION_NAME_EXPORT_NAME,
         payload,
+        download_logs,
     )
 
 
@@ -277,6 +285,7 @@ def invoke_mock_data_searcher():
         app.MOCK_DATA_STACK_NAME,
         mock_data_stack.SEARCHER_FUNCTION_NAME_EXPORT_NAME,
         """{"query": "id:1", "sort_by": "ts", "max_hits": 10}""",
+        True,
     )
 
 
@@ -339,7 +348,7 @@ def benchmark_hdfs_search(payload: str):
             },
         }
         try:
-            indexer_result = invoke_hdfs_searcher(payload)
+            indexer_result = invoke_hdfs_searcher(payload, download_logs=False)
             bench_result["lambda_report"] = indexer_result.extract_report()
         except Exception as e:
             bench_result["invokation_error"] = repr(e)

@@ -26,7 +26,7 @@ use quickwit_search::SearchResponseRest;
 use quickwit_serve::SearchRequestQueryString;
 use tracing::{debug_span, error, info_span, instrument, Instrument};
 
-use super::environment::{ENABLE_SEARCH_CACHE, INDEX_ID};
+use super::environment::{DISABLE_SEARCH_CACHE, INDEX_ID};
 use super::search::{search, SearchArgs};
 use crate::logger;
 use crate::utils::LambdaContainerContext;
@@ -53,7 +53,7 @@ pub async fn searcher_handler(request: Request) -> Result<impl IntoResponse, Err
             "search",
             memory,
             env.INDEX_ID = *INDEX_ID,
-            env.ENABLE_SEARCH_CACHE = *ENABLE_SEARCH_CACHE,
+            env.DISABLE_SEARCH_CACHE = *DISABLE_SEARCH_CACHE,
             cold = container_ctx.cold,
             container_id = container_ctx.container_id,
         ))

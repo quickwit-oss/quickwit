@@ -33,5 +33,5 @@ searcher:
 pub(crate) static INDEX_ID: Lazy<String> =
     Lazy::new(|| var("QW_LAMBDA_INDEX_ID").expect("QW_LAMBDA_INDEX_ID must be set"));
 
-pub(crate) static ENABLE_SEARCH_CACHE: Lazy<bool> =
-    Lazy::new(|| var("QW_LAMBDA_ENABLE_SEARCH_CACHE").is_ok_and(|v| v.as_str() == "true"));
+pub(crate) static DISABLE_SEARCH_CACHE: Lazy<bool> =
+    Lazy::new(|| var("QW_LAMBDA_DISABLE_SEARCH_CACHE").is_ok_and(|v| v.as_str() == "true"));
