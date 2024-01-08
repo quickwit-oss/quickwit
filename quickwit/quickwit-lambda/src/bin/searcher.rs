@@ -24,7 +24,7 @@ use tracing::{debug, error};
 
 pub async fn handler(_event: LambdaEvent<Value>) -> Result<Value, Error> {
     let ingest_res = search(SearchArgs {
-        index_id: String::from("hdfs-logs"),
+        index_id: std::env::var("INDEX_ID")?,
         query: String::new(),
         aggregation: None,
         max_hits: 10,

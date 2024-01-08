@@ -32,7 +32,8 @@ pub async fn handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
         return Err(anyhow::anyhow!("Missing source_uri").into());
     };
     let ingest_res = ingest(IngestArgs {
-        index_id: String::from("hdfs-logs"),
+        index_config_uri: std::env::var("INDEX_CONFIG_URI")?,
+        index_id: std::env::var("INDEX_ID")?,
         input_path: PathBuf::from(source_uri),
         input_format: quickwit_config::SourceInputFormat::Json,
         overwrite: true,

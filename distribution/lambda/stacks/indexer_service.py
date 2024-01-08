@@ -1,10 +1,17 @@
 from constructs import Construct
 from aws_cdk import aws_lambda, aws_s3, Duration, CfnOutput
+import os
 
 
 class IndexerService(Construct):
     def __init__(
-        self, scope: Construct, construct_id: str, store_bucket: aws_s3.Bucket, **kwargs
+        self,
+        scope: Construct,
+        construct_id: str,
+        store_bucket: aws_s3.Bucket,
+        index_id: str,
+        index_config_uri: str,
+        **kwargs
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
 
@@ -17,6 +24,8 @@ class IndexerService(Construct):
             environment={
                 "INDEX_BUCKET": store_bucket.bucket_name,
                 "METASTORE_BUCKET": store_bucket.bucket_name,
+                "INDEX_ID": index_id,
+                "INDEX_CONFIG_URI": index_config_uri,
             },
             timeout=Duration.seconds(30),
         )

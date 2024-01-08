@@ -2,15 +2,21 @@
 
 These functions are wrapped by the Makefile for convenience."""
 
-import os
-import boto3
 import base64
 import http.client
+import os
+import time
+from urllib.parse import urlparse
+
+import boto3
 
 region = os.environ["CDK_REGION"]
+index_id = os.environ["INDEX_ID"]
+
 stack_name = "LambdaStack"
 example_bucket = "quickwit-datasets-public.s3.amazonaws.com"
 example_file = "hdfs-logs-multitenants-10000.json"
+index_config_path = "../../config/tutorials/hdfs-logs/index-config.yaml"
 
 session = boto3.Session(region_name=region)
 
@@ -29,7 +35,7 @@ def _get_cloudformation_output_value(export_name: str) -> str:
         exit(1)
 
 
-def _format_lambda_output(lambda_resp):
+def _format_lambda_output(lambda_resp, duration=None):
     if "FunctionError" in lambda_resp and lambda_resp["FunctionError"] != "":
         print("\n## FUNCTION ERROR:")
         print(lambda_resp["FunctionError"])
@@ -37,12 +43,25 @@ def _format_lambda_output(lambda_resp):
     print(base64.b64decode(lambda_resp["LogResult"]).decode())
     print("\n## RESPONSE:")
     print(lambda_resp["Payload"].read().decode())
+    if duration is not None:
+        print("\n## TOTAL INVOCATION DURATION:")
+        print(duration)
+
+
+def upload_index_config():
+    target_uri = _get_cloudformation_output_value("index-config-uri")
+    print(f"upload src file to {target_uri}")
+    target_uri_parsed = urlparse(target_uri, allow_fragments=False)
+    with open(index_config_path, "rb") as f:
+        session.client("s3").put_object(
+            Bucket=target_uri_parsed.netloc, Body=f, Key=target_uri_parsed.path[1:]
+        )
 
 
 def upload_src_file():
     bucket_name = _get_cloudformation_output_value("index-store-bucket-name")
-    source_uri = f"s3://{bucket_name}/{example_file}"
-    print(f"upload src file to {source_uri}")
+    target_uri = f"s3://{bucket_name}/{example_file}"
+    print(f"upload src file to {target_uri}")
     conn = http.client.HTTPSConnection(example_bucket)
     conn.request("GET", f"/{example_file}")
     response = conn.getresponse()
@@ -61,22 +80,24 @@ def invoke_indexer():
     bucket_name = _get_cloudformation_output_value("index-store-bucket-name")
     source_uri = f"s3://{bucket_name}/{example_file}"
     print(f"src_file: {source_uri}")
+    invoke_start = time.time()
     resp = session.client("lambda").invoke(
         FunctionName=function_name,
         InvocationType="RequestResponse",
         LogType="Tail",
         Payload=f"""{{ "source_uri": "{source_uri}" }}""",
     )
-    _format_lambda_output(resp)
+    _format_lambda_output(resp, time.time() - invoke_start)
 
 
 def invoke_searcher():
     function_name = _get_cloudformation_output_value("searcher-function-name")
     print(f"searcher function name: {function_name}")
+    invoke_start = time.time()
     resp = session.client("lambda").invoke(
         FunctionName=function_name,
         InvocationType="RequestResponse",
         LogType="Tail",
         Payload="{}",
     )
-    _format_lambda_output(resp)
+    _format_lambda_output(resp, time.time() - invoke_start)

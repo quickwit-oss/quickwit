@@ -19,9 +19,9 @@
 
 use std::collections::HashSet;
 use std::num::NonZeroUsize;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use anyhow::bail;
+use anyhow::{bail, Context};
 use chitchat::transport::ChannelTransport;
 use chitchat::FailureDetectorConfig;
 use quickwit_actors::Universe;
@@ -30,10 +30,11 @@ use quickwit_cli::{run_index_checklist, start_actor_runtimes};
 use quickwit_cluster::{Cluster, ClusterMember};
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::runtimes::RuntimesConfig;
+use quickwit_common::uri::Uri;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{
-    IndexerConfig, NodeConfig, SourceConfig, SourceInputFormat, SourceParams, TransformConfig,
-    CLI_INGEST_SOURCE_ID,
+    load_index_config_from_user_config, ConfigFormat, IndexConfig, IndexerConfig, NodeConfig,
+    SourceConfig, SourceInputFormat, SourceParams, TransformConfig, CLI_INGEST_SOURCE_ID,
 };
 use quickwit_index_management::{clear_cache_directory, IndexService};
 use quickwit_indexing::actors::{IndexingService, MergePipelineId};
@@ -41,6 +42,8 @@ use quickwit_indexing::models::{
     DetachIndexingPipeline, DetachMergePipeline, IndexingStatistics, SpawnPipeline,
 };
 use quickwit_ingest::IngesterPool;
+use quickwit_proto::metastore::MetastoreError;
+use quickwit_storage::StorageResolver;
 use tracing::{debug, info};
 
 use crate::utils::load_node_config;
@@ -54,6 +57,7 @@ data_dir: /tmp
 
 #[derive(Debug, Eq, PartialEq)]
 pub struct IngestArgs {
+    pub index_config_uri: String,
     pub index_id: String,
     pub input_path: PathBuf,
     pub input_format: SourceInputFormat,
@@ -84,6 +88,36 @@ async fn create_empty_cluster(config: &NodeConfig) -> anyhow::Result<Cluster> {
     Ok(cluster)
 }
 
+/// TODO refactor with `dir_and_filename` in file source
+pub fn dir_and_filename(filepath: &Path) -> anyhow::Result<(Uri, &Path)> {
+    let dir_uri: Uri = filepath
+        .parent()
+        .context("Parent directory could not be resolved")?
+        .to_str()
+        .context("Path cannot be turned to string")?
+        .parse()?;
+    let file_name = filepath
+        .file_name()
+        .context("Path does not appear to be a file")?;
+    Ok((dir_uri, file_name.as_ref()))
+}
+
+async fn load_index_config(
+    resolver: &StorageResolver,
+    config_uri: &str,
+    default_index_root_uri: &Uri,
+) -> anyhow::Result<IndexConfig> {
+    let (dir, file) = dir_and_filename(&Path::new(config_uri))?;
+    let index_config_storage = resolver.resolve(&dir).await?;
+    let bytes = index_config_storage.get_all(file).await?;
+    let index_config = load_index_config_from_user_config(
+        ConfigFormat::Yaml,
+        bytes.as_slice(),
+        default_index_root_uri,
+    )?;
+    Ok(index_config)
+}
+
 pub async fn ingest(args: IngestArgs) -> anyhow::Result<IndexingStatistics> {
     debug!(args=?args, "lambda-ingest");
     let (config, storage_resolver, metastore) = load_node_config(CONFIGURATION_TEMPLATE).await?;
@@ -101,13 +135,42 @@ pub async fn ingest(args: IngestArgs) -> anyhow::Result<IndexingStatistics> {
         transform_config,
         input_format: args.input_format,
     };
-    run_index_checklist(
+
+    let checklist_result = run_index_checklist(
         &*metastore,
         &storage_resolver,
         &args.index_id,
         Some(&source_config),
     )
-    .await?;
+    .await;
+    if let Err(e) = checklist_result {
+        let is_not_found = e.downcast_ref().is_some_and(|meta_error| match meta_error {
+            MetastoreError::NotFound(_) => true,
+            _ => false,
+        });
+        if !is_not_found {
+            bail!(e);
+        }
+        info!(
+            index_id = args.index_id,
+            index_config_uri = args.index_config_uri,
+            "Index not found, creating it"
+        );
+        let index_config = load_index_config(
+            &storage_resolver,
+            &args.index_config_uri,
+            &config.default_index_root_uri,
+        )
+        .await?;
+        if index_config.index_id != args.index_id {
+            bail!(
+                "Expected index ID was {} but config file had {}",
+                args.index_id,
+                index_config.index_id,
+            );
+        }
+        metastore.create_index(index_config).await?;
+    }
 
     if args.overwrite {
         let index_service = IndexService::new(metastore.clone(), storage_resolver.clone());
