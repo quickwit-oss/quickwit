@@ -31,6 +31,7 @@ use quickwit_cluster::{Cluster, ClusterMember};
 use quickwit_common::pubsub::EventBroker;
 use quickwit_common::runtimes::RuntimesConfig;
 use quickwit_common::uri::Uri;
+use quickwit_config::merge_policy_config::MergePolicyConfig;
 use quickwit_config::service::QuickwitService;
 use quickwit_config::{
     load_index_config_from_user_config, ConfigFormat, IndexConfig, IndexerConfig, NodeConfig,
@@ -44,7 +45,7 @@ use quickwit_indexing::models::{
 use quickwit_ingest::IngesterPool;
 use quickwit_proto::metastore::MetastoreError;
 use quickwit_storage::StorageResolver;
-use tracing::{debug, info};
+use tracing::{debug, info, instrument};
 
 use crate::utils::load_node_config;
 
@@ -103,19 +104,25 @@ pub fn dir_and_filename(filepath: &Path) -> anyhow::Result<(Uri, &Path)> {
     Ok((dir_uri, file_name.as_ref()))
 }
 
+#[instrument(level = "debug", skip(resolver))]
 async fn load_index_config(
     resolver: &StorageResolver,
     config_uri: &str,
     default_index_root_uri: &Uri,
+    disable_merge: bool,
 ) -> anyhow::Result<IndexConfig> {
     let (dir, file) = dir_and_filename(&Path::new(config_uri))?;
     let index_config_storage = resolver.resolve(&dir).await?;
     let bytes = index_config_storage.get_all(file).await?;
-    let index_config = load_index_config_from_user_config(
+    let mut index_config = load_index_config_from_user_config(
         ConfigFormat::Yaml,
         bytes.as_slice(),
         default_index_root_uri,
     )?;
+    if disable_merge {
+        debug!("force disable merges");
+        index_config.indexing_settings.merge_policy = MergePolicyConfig::Nop;
+    }
     Ok(index_config)
 }
 
@@ -161,6 +168,7 @@ pub async fn ingest(args: IngestArgs) -> anyhow::Result<IndexingStatistics> {
             &storage_resolver,
             &args.index_config_uri,
             &config.default_index_root_uri,
+            args.disable_merge,
         )
         .await?;
         if index_config.index_id != args.index_id {
@@ -220,10 +228,6 @@ pub async fn ingest(args: IngestArgs) -> anyhow::Result<IndexingStatistics> {
             pipeline_id: MergePipelineId::from(&pipeline_id),
         })
         .await?;
-    if args.disable_merge {
-        debug!("disable merges");
-        merge_pipeline_handle.pause();
-    }
     let indexing_pipeline_handle = indexing_server_mailbox
         .ask_for_res(DetachIndexingPipeline { pipeline_id })
         .await?;
