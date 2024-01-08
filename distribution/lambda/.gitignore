@@ -13,4 +13,4 @@ cdk.out
 # AWS SAM build directory
 .aws-sam
 
-lambda-bench.log
+*.log

@@ -31,13 +31,14 @@ opentelemetry-otlp = { workspace = true, features = [
     "reqwest-rustls",
     "http-proto",
 ] }
+rand = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 time = { workspace = true }
 tokio = { workspace = true }
 tracing = { workspace = true }
 tracing-opentelemetry = { workspace = true }
-tracing-subscriber = { workspace = true }
+tracing-subscriber = { workspace = true, features = [ "json" ] }
 
 quickwit-actors = { workspace = true }
 quickwit-cli = { workspace = true }

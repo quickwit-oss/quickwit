@@ -7,6 +7,7 @@ import gzip
 import http.client
 import json
 import os
+import re
 import subprocess
 import tempfile
 import time
@@ -86,8 +87,20 @@ class LambdaResult:
         )
 
     def extract_report(self) -> str:
-        """Expect "REPORT RequestId: xxx Duration: yyy..." as last line in log tail"""
-        return self.log_tail.strip().splitlines()[-1]
+        """Expect "REPORT RequestId: xxx Duration: yyy..." to be in log tail"""
+        for line in reversed(self.log_tail.strip().splitlines()):
+            if line.startswith("REPORT"):
+                return line
+        else:
+            raise ValueError(f"Could not find report in log tail")
+
+    def request_id(self) -> str:
+        report = self.extract_report()
+        match = re.search(r"RequestId: ([0-9a-z\-]+)", report)
+        if match:
+            return match.group(1)
+        else:
+            raise ValueError(f"Could not find RequestId in report: {report}")
 
 
 def _format_lambda_output(
@@ -193,6 +206,7 @@ def _invoke_searcher(
     invoke_duration = time.time() - invoke_start
     lambda_result = LambdaResult.from_lambda_gateway_response(resp)
     _format_lambda_output(lambda_result, invoke_duration)
+    download_logs_to_file(lambda_result.request_id(), function_name, invoke_start)
     return lambda_result
 
 
@@ -202,6 +216,60 @@ def invoke_hdfs_searcher(payload: str) -> LambdaResult:
         hdfs_stack.SEARCHER_FUNCTION_NAME_EXPORT_NAME,
         payload,
     )
+
+
+def get_logs(
+    function_name: str, request_id: str, timestamp_unix_ms: int, timeout: float = 60
+):
+    print(f"Getting logs for requestId: {request_id}...")
+    client = session.client("logs")
+    log_group_name = f"/aws/lambda/{function_name}"
+    paginator = client.get_paginator("filter_log_events")
+    lower_time_bound = timestamp_unix_ms - 1000 * 3600
+    upper_time_bound = timestamp_unix_ms + 1000 * 3600
+    last_event_id = ""
+    last_event_found = True
+    start_time = time.time()
+    while time.time() - start_time < timeout:
+        for page in paginator.paginate(
+            logGroupName=log_group_name,
+            filterPattern=f"%{request_id}%",
+            startTime=lower_time_bound,
+            endTime=upper_time_bound,
+        ):
+            for event in page["events"]:
+                if last_event_found or event["eventId"] == last_event_id:
+                    last_event_found = True
+                    last_event_id = event["eventId"]
+                    yield event["message"]
+                    if event["message"].startswith("REPORT"):
+                        print(event["message"])
+                        lower_time_bound = int(event["timestamp"])
+                        last_event_id = "REPORT"
+                        break
+            if last_event_id == "REPORT":
+                break
+        if last_event_id == "REPORT":
+            break
+        elif last_event_id == "":
+            print(f"no event found, retrying...")
+        else:
+            print(f"last event not found, retrying...")
+            last_event_found = False
+        time.sleep(3)
+
+    else:
+        raise TimeoutError(f"Log collection timed out after {timeout}s")
+
+
+def download_logs_to_file(request_id: str, function_name: str, invoke_start: float):
+    with open(f"lambda.{request_id}.log", "w") as f:
+        for log in get_logs(
+            function_name,
+            request_id,
+            int(invoke_start * 1000),
+        ):
+            f.write(log)
 
 
 def invoke_mock_data_searcher():

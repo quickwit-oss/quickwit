@@ -47,13 +47,13 @@ bench-index:
 	done
 
 bench-search:
-	mem_sizes=( 8192 )
-	# for mem_size in "$${mem_sizes[@]}"
-	# do
-	# 	export SEARCHER_MEMORY_SIZE=$${mem_size}
-	# 	$(MAKE) deploy-hdfs
-	# 	python -c 'from cdk import cli; cli.benchmark_hdfs_search("""{"query": "severity_text:ERROR"}""")'
-	# done
+	mem_sizes=( 1024 2048 4096 8192 )
+	for mem_size in "$${mem_sizes[@]}"
+	do
+		export SEARCHER_MEMORY_SIZE=$${mem_size}
+		$(MAKE) deploy-hdfs
+		python -c 'from cdk import cli; cli.benchmark_hdfs_search("""{"query": "severity_text:ERROR"}""")'
+	done
 	for mem_size in "$${mem_sizes[@]}"
 	do
 		export SEARCHER_MEMORY_SIZE=$${mem_size}

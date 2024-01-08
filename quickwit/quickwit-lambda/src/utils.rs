@@ -17,7 +17,8 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::AtomicU32;
+use std::sync::atomic::Ordering::SeqCst;
 use std::sync::Arc;
 
 use anyhow::Context;
@@ -40,4 +41,26 @@ pub(crate) async fn load_node_config(
     Ok((config, storage_resolver, metastore))
 }
 
-pub static ALREADY_EXECUTED: AtomicBool = AtomicBool::new(false);
+static CONTAINER_ID: AtomicU32 = AtomicU32::new(0);
+
+pub struct LambdaContainerContext {
+    pub container_id: u32,
+    pub cold: bool,
+}
+
+impl LambdaContainerContext {
+    /// Configure and return the Lambda container context.
+    ///
+    /// The `cold` field returned will be `true` only the first time this
+    /// function is called.
+    pub fn load() -> Self {
+        let mut container_id = CONTAINER_ID.load(SeqCst);
+        let mut cold = false;
+        if container_id == 0 {
+            container_id = rand::random();
+            CONTAINER_ID.store(container_id, SeqCst);
+            cold = true;
+        }
+        Self { container_id, cold }
+    }
+}
