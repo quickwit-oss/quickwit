@@ -50,7 +50,7 @@ async fn indexer_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
     ))
     .await;
 
-    let result = match ingest_res {
+    match ingest_res {
         Ok(stats) => {
             info!(stats=?stats, "Indexing succeeded");
             Ok(serde_json::to_value(stats)?)
@@ -59,8 +59,7 @@ async fn indexer_handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
             error!(err=?e, "Indexing failed");
             Err(anyhow::anyhow!("Indexing failed").into())
         }
-    };
-    result
+    }
 }
 
 pub async fn handler(event: LambdaEvent<Value>) -> Result<Value, Error> {
