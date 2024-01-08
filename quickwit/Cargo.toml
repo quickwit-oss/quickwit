@@ -258,6 +258,7 @@ reqsign = { version = "0.14", default-features = false }
 
 quickwit-actors = { version = "0.7.0", path = "./quickwit-actors" }
 quickwit-aws = { version = "0.7.0", path = "./quickwit-aws" }
+quickwit-cli = { version = "0.7.0", path = "./quickwit-cli" }
 quickwit-cluster = { version = "0.7.0", path = "./quickwit-cluster" }
 quickwit-codegen = { version = "0.7.0", path = "./quickwit-codegen" }
 quickwit-codegen-example = { version = "0.7.0", path = "./quickwit-codegen/example" }
