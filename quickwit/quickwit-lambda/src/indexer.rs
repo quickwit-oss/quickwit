@@ -18,10 +18,11 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use lambda_runtime::service_fn;
-use quickwit_lambda::index_handler;
+use quickwit_lambda::{index_handler, setup_lambda_tracer};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
+    setup_lambda_tracer()?;
     let func = service_fn(index_handler);
     lambda_runtime::run(func)
         .await
