@@ -1,0 +1,66 @@
+name: Build and publish release packages
+
+on:
+  # push:
+  #   tags:
+  #     - "v*"
+  workflow_dispatch:
+  # TODO: Remove before merging
+  pull_request:
+
+env:
+  PRERELEASE_VERSION_NAME: beta
+
+jobs:
+  build-lambdas:
+    name: Build Quickwit Lambdas
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Extract asset version of release
+        run: echo "ASSET_VERSION=${GITHUB_REF/refs\/tags\//}" >> $GITHUB_ENV
+        if: ${{ github.event_name == 'push' }}
+      - name: Setting version as prerelease
+        run: echo "ASSET_VERSION=${{ env.PRERELEASE_VERSION_NAME }}" >> $GITHUB_ENV
+        if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request' }}
+      - name: Extract asset name
+        run: |
+          echo "ASSET_TARGET=x86_64" >> $GITHUB_ENV
+          echo "SEARCHER_ASSET_FULL_NAME=quickwit-lambda-searcher-${{ env.ASSET_VERSION }}-${{ env.ASSET_TARGET }}.zip" >> $GITHUB_ENV
+          echo "INDEXER_ASSET_FULL_NAME=quickwit-lambda-indexer-${{ env.ASSET_VERSION }}-${{ env.ASSET_TARGET }}.zip" >> $GITHUB_ENV
+      - name: Install rustup
+        run: curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain none -y
+      - name: Retrieve and export commit date, hash, and tags
+        run: |
+            echo "QW_COMMIT_DATE=$(TZ=UTC0 git log -1 --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_ENV
+            echo "QW_COMMIT_HASH=$(git rev-parse HEAD)" >> $GITHUB_ENV
+            echo "QW_COMMIT_TAGS=$(git tag --points-at HEAD | tr '\n' ',')" >> $GITHUB_ENV
+      - name: Build Quickwit Lambda
+        run: cargo lambda build -p quickwit-lambda --release
+        env:
+          QW_COMMIT_DATE: ${{ env.QW_COMMIT_DATE }}
+          QW_COMMIT_HASH: ${{ env.QW_COMMIT_HASH }}
+          QW_COMMIT_TAGS: ${{ env.QW_COMMIT_TAGS }}
+        working-directory: ./quickwit
+      - name: Bundle archives
+        run: |
+          zip -FSrj ${{ env.SEARCHER_ASSET_FULL_NAME }} quickwit/target/lambda/searcher/
+          zip -FSrj ${{ env.INDEXER_ASSET_FULL_NAME }} quickwit/target/lambda/indexer/
+      - name: Upload searcher archive
+        uses: quickwit-inc/upload-to-github-release@v1
+        env:
+          GITHUB_TOKEN: ${{ inputs.token }}
+        with:
+          file: ${{ env.SEARCHER_ASSET_FULL_NAME }}
+          overwrite: true
+          draft: ${{ env.ASSET_VERSION != env.PRERELEASE_VERSION_NAME }}
+          tag_name: ${{ env.ASSET_VERSION }}
+      - name: Upload indexer archive
+        uses: quickwit-inc/upload-to-github-release@v1
+        env:
+          GITHUB_TOKEN: ${{ inputs.token }}
+        with:
+          file: ${{ env.INDEXER_ASSET_FULL_NAME }}
+          overwrite: true
+          draft: ${{ env.ASSET_VERSION != env.PRERELEASE_VERSION_NAME }}
+          tag_name: ${{ env.ASSET_VERSION }}
