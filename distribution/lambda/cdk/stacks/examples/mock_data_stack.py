@@ -34,6 +34,9 @@ class Source(Construct):
             self,
             "mock-data",
             removal_policy=aws_cdk.RemovalPolicy.DESTROY,
+            lifecycle_rules=[
+                aws_s3.LifecycleRule(enabled=True, expiration=aws_cdk.Duration.days(1))
+            ],
         )
 
         with open("resources/data-generator.py") as f:
