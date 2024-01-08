@@ -21,7 +21,7 @@ use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
 use quickwit_config::SearcherConfig;
-use quickwit_metastore::Metastore;
+use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_proto::search::{SearchRequest, SearchResponse};
 use quickwit_search::{
     root_search, ClusterClient, Result as SearchResult, SearchJobPlacer, SearchResponseRest,
@@ -44,7 +44,10 @@ struct LambdaSearchCtx {
 }
 
 impl LambdaSearchCtx {
-    async fn instantiate(metastore: Arc<dyn Metastore>, storage_resolver: StorageResolver) -> Self {
+    async fn instantiate(
+        metastore: MetastoreServiceClient,
+        storage_resolver: StorageResolver,
+    ) -> Self {
         let socket_addr = SocketAddr::new(Ipv4Addr::new(127, 0, 0, 1).into(), 7280u16);
         let searcher_pool = SearcherPool::default();
         let search_job_placer = SearchJobPlacer::new(searcher_pool.clone());
@@ -59,9 +62,7 @@ impl LambdaSearchCtx {
         ));
         let search_service_client =
             SearchServiceClient::from_service(search_service.clone(), socket_addr);
-        searcher_pool
-            .insert(socket_addr, search_service_client)
-            .await;
+        searcher_pool.insert(socket_addr, search_service_client);
         Self {
             searcher_context,
             cluster_client,
@@ -71,7 +72,7 @@ impl LambdaSearchCtx {
 
 async fn single_node_search(
     search_request: SearchRequest,
-    metastore: Arc<dyn Metastore>,
+    metastore: MetastoreServiceClient,
     storage_resolver: StorageResolver,
 ) -> SearchResult<SearchResponse> {
     let lambda_search_ctx = if *ENABLE_SEARCH_CACHE {
@@ -85,7 +86,7 @@ async fn single_node_search(
     root_search(
         &lambda_search_ctx.searcher_context,
         search_request,
-        &*metastore,
+        metastore,
         &lambda_search_ctx.cluster_client,
     )
     .await

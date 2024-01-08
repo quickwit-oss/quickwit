@@ -760,25 +760,9 @@ dependencies = [
 
 [[package]]
 name = "aws_lambda_events"
-version = "0.10.0"
+version = "0.12.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "65991dbc3bfb586939ba1527eefdc99bc21157b6ec891f180fb1e16e2dddc7a9"
-dependencies = [
- "base64 0.21.4",
- "bytes",
- "http",
- "http-body",
- "http-serde",
- "query_map 0.6.0",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "aws_lambda_events"
-version = "0.11.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "771c11de66cef31b3f49f0b38f06d94f0af424f60381409fc21972ff9c8f835b"
+checksum = "2c2981b7ab5d084f06dfa6764e2b51347e836fe9559b549b332e451e6a8287ae"
 dependencies = [
  "base64 0.21.5",
  "bytes",
@@ -787,7 +771,7 @@ dependencies = [
  "http",
  "http-body",
  "http-serde",
- "query_map 0.7.0",
+ "query_map",
  "serde",
  "serde_dynamo",
  "serde_json",
@@ -3336,12 +3320,12 @@ checksum = "3f35c735096c0293d313e8f2a641627472b83d01b937177fe76e5e2708d31e0d"
 
 [[package]]
 name = "lambda_http"
-version = "0.8.1"
+version = "0.8.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8b15e8ab48a5d8eab3110567008caad4d191924d1470b74c5c8b802b904b5a34"
+checksum = "2505c4a24f5a8d8ac66a87691215ec1f79736c5bc6e62bb921788dca9753f650"
 dependencies = [
- "aws_lambda_events 0.10.0",
- "base64 0.21.4",
+ "aws_lambda_events",
+ "base64 0.21.5",
  "bytes",
  "encoding_rs",
  "futures",
@@ -3354,6 +3338,7 @@ dependencies = [
  "serde",
  "serde_json",
  "serde_urlencoded",
+ "tokio-stream",
  "url",
 ]
 
@@ -5308,17 +5293,6 @@ dependencies = [
 
 [[package]]
 name = "query_map"
-version = "0.6.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4465aacac3bebc9484cf7a56dc8b2d7feacb657da6002a9198b4f7af4247a204"
-dependencies = [
- "form_urlencoded",
- "serde",
- "serde_derive",
-]
-
-[[package]]
-name = "query_map"
 version = "0.7.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "5eab6b8b1074ef3359a863758dae650c7c0c6027927a085b7af911c8e0bf3a15"
@@ -5947,7 +5921,7 @@ name = "quickwit-lambda"
 version = "0.6.3"
 dependencies = [
  "anyhow",
- "aws_lambda_events 0.11.1",
+ "aws_lambda_events",
  "chitchat",
  "flate2",
  "lambda_http",

@@ -19,17 +19,17 @@
 
 use std::sync::atomic::AtomicU32;
 use std::sync::atomic::Ordering::SeqCst;
-use std::sync::Arc;
 
 use anyhow::Context;
 use quickwit_config::{ConfigFormat, NodeConfig};
-use quickwit_metastore::{Metastore, MetastoreResolver};
+use quickwit_metastore::MetastoreResolver;
+use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_storage::StorageResolver;
 use tracing::info;
 
 pub(crate) async fn load_node_config(
     config_template: &str,
-) -> anyhow::Result<(NodeConfig, StorageResolver, Arc<dyn Metastore>)> {
+) -> anyhow::Result<(NodeConfig, StorageResolver, MetastoreServiceClient)> {
     let config = NodeConfig::load(ConfigFormat::Yaml, config_template.as_bytes())
         .await
         .with_context(|| format!("Failed to parse node config `{config_template}`."))?;
@@ -37,7 +37,8 @@ pub(crate) async fn load_node_config(
     let storage_resolver = StorageResolver::configured(&config.storage_configs);
     let metastore_resolver =
         MetastoreResolver::configured(storage_resolver.clone(), &config.metastore_configs);
-    let metastore = metastore_resolver.resolve(&config.metastore_uri).await?;
+    let metastore: MetastoreServiceClient =
+        metastore_resolver.resolve(&config.metastore_uri).await?;
     Ok((config, storage_resolver, metastore))
 }
 
