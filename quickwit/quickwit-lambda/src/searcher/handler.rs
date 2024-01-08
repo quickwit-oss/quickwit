@@ -17,8 +17,6 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::sync::atomic::Ordering::SeqCst;
-
 use anyhow::Context;
 use flate2::write::GzEncoder;
 use flate2::Compression;
@@ -26,12 +24,12 @@ use lambda_http::http::header::{CONTENT_ENCODING, CONTENT_TYPE};
 use lambda_http::{Body, Error, IntoResponse, Request, RequestExt, RequestPayloadExt, Response};
 use quickwit_search::SearchResponseRest;
 use quickwit_serve::SearchRequestQueryString;
-use tracing::{instrument, span, Instrument, Level};
+use tracing::{debug_span, error, info_span, instrument, Instrument};
 
 use super::environment::{ENABLE_SEARCH_CACHE, INDEX_ID};
 use super::search::{search, SearchArgs};
 use crate::logger;
-use crate::utils::ALREADY_EXECUTED;
+use crate::utils::LambdaContainerContext;
 
 #[instrument(skip_all)]
 fn deflate_serialize(resp: SearchResponseRest) -> anyhow::Result<Vec<u8>> {
@@ -43,35 +41,44 @@ fn deflate_serialize(resp: SearchResponseRest) -> anyhow::Result<Vec<u8>> {
     Ok(buffer)
 }
 
-pub async fn handler(request: Request) -> Result<impl IntoResponse, Error> {
-    let cold = !ALREADY_EXECUTED.swap(true, SeqCst);
+pub async fn searcher_handler(request: Request) -> Result<impl IntoResponse, Error> {
+    let container_ctx = LambdaContainerContext::load();
     let memory = request.lambda_context().env_config.memory;
     let payload = request
         .payload::<SearchRequestQueryString>()?
         .context("Empty payload")?;
-    let paylog_dbg = format!("{:?}", payload);
-
-    // TODO better handle errors (e.g print them)
 
     let search_res = search(SearchArgs { query: payload })
-        .instrument(span!(
-            parent: &span!(Level::INFO, "searcher_handler", cold),
-            Level::TRACE,
-            logger::RUNTIME_CONTEXT_SPAN,
+        .instrument(debug_span!(
+            "search",
             memory,
-            payload = paylog_dbg,
             env.INDEX_ID = *INDEX_ID,
-            env.ENABLE_SEARCH_CACHE = *ENABLE_SEARCH_CACHE
+            env.ENABLE_SEARCH_CACHE = *ENABLE_SEARCH_CACHE,
+            cold = container_ctx.cold,
+            container_id = container_ctx.container_id,
         ))
         .await?;
 
     let response_body = deflate_serialize(search_res)?;
 
-    logger::flush_tracer();
     let response = Response::builder()
         .header(CONTENT_ENCODING, "gzip")
         .header(CONTENT_TYPE, "application/json")
+        .header("x-lambda-request-id", request.lambda_context().request_id)
         .body(Body::Binary(response_body))
         .context("Could not build response")?;
     Ok(response)
+}
+
+pub async fn handler(request: Request) -> Result<impl IntoResponse, Error> {
+    let request_id = request.lambda_context().request_id.clone();
+    let response = searcher_handler(request)
+        .instrument(info_span!("searcher_handler", request_id))
+        .await;
+
+    if let Err(e) = &response {
+        error!(err=?e, "Handler failed");
+    }
+    logger::flush_tracer();
+    response
 }
