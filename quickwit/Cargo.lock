@@ -764,7 +764,7 @@ version = "0.11.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "771c11de66cef31b3f49f0b38f06d94f0af424f60381409fc21972ff9c8f835b"
 dependencies = [
- "base64 0.21.4",
+ "base64 0.21.5",
  "bytes",
  "chrono",
  "flate2",
@@ -775,7 +775,7 @@ dependencies = [
  "serde",
  "serde_dynamo",
  "serde_json",
- "serde_with 3.3.0",
+ "serde_with 3.4.0",
 ]
 
 [[package]]
@@ -4340,6 +4340,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "opentelemetry-http"
+version = "0.8.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "a819b71d6530c4297b49b3cae2939ab3a8cc1b9f382826a1bc29dd0ca3864906"
+dependencies = [
+ "async-trait",
+ "bytes",
+ "http",
+ "opentelemetry_api",
+ "reqwest",
+]
+
+[[package]]
 name = "opentelemetry-otlp"
 version = "0.13.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -4353,6 +4366,7 @@ dependencies = [
  "opentelemetry_api",
  "opentelemetry_sdk",
  "prost",
+ "reqwest",
  "thiserror",
  "tokio",
  "tonic",
@@ -5886,6 +5900,9 @@ dependencies = [
  "aws_lambda_events",
  "chitchat",
  "lambda_runtime",
+ "once_cell",
+ "opentelemetry",
+ "opentelemetry-otlp",
  "quickwit-actors",
  "quickwit-cli",
  "quickwit-cluster",
@@ -5905,8 +5922,11 @@ dependencies = [
  "quickwit-telemetry",
  "serde",
  "serde_json",
+ "time",
  "tokio",
  "tracing",
+ "tracing-opentelemetry",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -7049,7 +7069,7 @@ version = "4.2.6"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c64307a9d3b5af5237b1a95c0b63fbeb45134d7d7c372c284847fa37a6ddee44"
 dependencies = [
- "base64 0.21.4",
+ "base64 0.21.5",
  "serde",
 ]
 

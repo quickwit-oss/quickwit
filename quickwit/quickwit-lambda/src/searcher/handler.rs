@@ -23,15 +23,16 @@ use serde_json::Value;
 use tracing::{debug, error};
 
 use super::search::{search, SearchArgs};
+use crate::logger;
 
 pub async fn handler(event: LambdaEvent<SearchRequestQueryString>) -> Result<Value, Error> {
     debug!(payload = ?event.payload, "Received query");
     let ingest_res = search(SearchArgs {
-        index_id: std::env::var("INDEX_ID")?,
+        index_id: std::env::var("QW_LAMBDA_INDEX_ID")?,
         query: event.payload,
     })
     .await;
-    match ingest_res {
+    let result = match ingest_res {
         Ok(resp) => {
             debug!(resp=?resp, "Search succeeded");
             Ok(serde_json::to_value(resp)?)
@@ -40,5 +41,7 @@ pub async fn handler(event: LambdaEvent<SearchRequestQueryString>) -> Result<Val
             error!(err=?e, "Search failed");
             return Err(anyhow::anyhow!("Query failed").into());
         }
-    }
+    };
+    logger::flush_tracer();
+    result
 }

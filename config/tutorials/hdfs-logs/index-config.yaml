@@ -20,6 +20,7 @@ doc_mapping:
     - name: severity_text
       type: text
       tokenizer: raw
+      fast: true
     - name: body
       type: text
       tokenizer: default

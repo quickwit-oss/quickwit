@@ -35,6 +35,8 @@ class HdfsStack(Stack):
             index_config_key=index_config.s3_object_key,
             indexer_memory_size=int(os.environ.get("INDEXER_MEMORY_SIZE", "10240")),
             searcher_memory_size=int(os.environ.get("SEARCHER_MEMORY_SIZE", "1024")),
+            indexer_environment=quickwit_service.extract_local_env(),
+            searcher_environment=quickwit_service.extract_local_env(),
         )
 
         aws_cdk.CfnOutput(
