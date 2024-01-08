@@ -14,8 +14,8 @@ name = "indexer"
 path = "src/indexer.rs"
 
 [[bin]]
-name = "querier"
-path = "src/querier.rs"
+name = "searcher"
+path = "src/searcher.rs"
 
 [dependencies]
 anyhow = { workspace = true }

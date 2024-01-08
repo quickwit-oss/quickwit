@@ -47,7 +47,7 @@ pub async fn index_handler(_event: LambdaEvent<Value>) -> Result<Value, Error> {
     }))
 }
 
-pub async fn query_handler(_event: LambdaEvent<Value>) -> Result<Value, Error> {
+pub async fn search_handler(_event: LambdaEvent<Value>) -> Result<Value, Error> {
     let ingest_res = local_search_cli(LocalSearchArgs {
         config_uri: Uri::from_well_formed("file:///var/task/config.yaml"),
         index_id: String::from("hdfs-logs"),
