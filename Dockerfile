@@ -20,26 +20,13 @@ ENV QW_COMMIT_DATE=$QW_COMMIT_DATE
 ENV QW_COMMIT_HASH=$QW_COMMIT_HASH
 ENV QW_COMMIT_TAGS=$QW_COMMIT_TAGS
 
-
 RUN apt-get -y update \
     && apt-get -y install ca-certificates \
                           clang \
                           cmake \
-                          curl \
-                          gnupg \
                           libssl-dev \
                           llvm \
                           protobuf-compiler \
-    && rm -rf /var/lib/apt/lists/*
-
-# Install Node.js
-RUN mkdir -p /etc/apt/keyrings \
-    && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
-        | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
-    && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_16.x nodistro main" \
-        | tee /etc/apt/sources.list.d/nodesource.list \
-    && apt-get update \
-    && apt-get -y install nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 # Required by tonic
@@ -60,7 +47,7 @@ RUN echo "Building workspace with feature(s) '$CARGO_FEATURES' and profile '$CAR
     && find target/$CARGO_PROFILE -maxdepth 1 -perm /a+x -type f -exec mv {} /quickwit/bin \;
 
 
-FROM debian:bullseye-slim AS quickwit-base
+FROM debian:bullseye-slim AS quickwit
 
 LABEL org.opencontainers.image.title="Quickwit"
 LABEL maintainer="Quickwit, Inc. <hello@quickwit.io>"
