@@ -34,6 +34,7 @@ quickwit-index-management = { workspace = true }
 quickwit-directories = { workspace = true }
 quickwit-doc-mapper = { workspace = true }
 quickwit-indexing = { workspace = true }
+quickwit-ingest = { workspace = true }
 quickwit-metastore = { workspace = true }
 quickwit-proto = { workspace = true }
 quickwit-rest-client = { workspace = true }
