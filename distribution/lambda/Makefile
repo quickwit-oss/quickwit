@@ -3,6 +3,13 @@
 SHELL := bash
 .SHELLFLAGS := -eu -o pipefail -c
 
+QW_LAMBDA_VERSION?=beta
+PACKAGE_BASE_URL=https://github.com/quickwit-oss/quickwit/releases/download/aws-lambda-$(QW_LAMBDA_VERSION)/
+SEARCHER_PACKAGE_FILE=quickwit-lambda-searcher-$(QW_LAMBDA_VERSION)-x86_64.zip
+INDEXER_PACKAGE_FILE=quickwit-lambda-indexer-$(QW_LAMBDA_VERSION)-x86_64.zip
+export SEARCHER_PACKAGE_PATH=cdk.out/$(SEARCHER_PACKAGE_FILE)
+export INDEXER_PACKAGE_PATH=cdk.out/$(INDEXER_PACKAGE_FILE)
+
 check-env:
 ifndef CDK_ACCOUNT
 	$(error CDK_ACCOUNT is undefined)
@@ -11,16 +18,43 @@ ifndef CDK_REGION
 	$(error CDK_REGION is undefined)
 endif
 
-build:
-	cargo lambda build --manifest-path=../../quickwit/Cargo.toml -p quickwit-lambda --release
+# Download the packages from the Quickwit release page
+# The package varsion can be set with QW_LAMBDA_VERSION
+# Build them locally by setting QW_LAMBDA_BUILD=1
+package:
+	mkdir -p cdk.out
+	if [ "$${QW_LAMBDA_BUILD:-0}" = "1" ]
+	then
+	  cargo lambda build \
+	    --manifest-path=../../quickwit/Cargo.toml \
+	    -p quickwit-lambda \
+	    --release \
+	    --output-format zip \
+		--target x86_64-unknown-linux-gnu
+	  cp -u ../../quickwit/target/lambda/searcher/bootstrap.zip $(SEARCHER_PACKAGE_PATH)
+	  cp -u ../../quickwit/target/lambda/indexer/bootstrap.zip $(INDEXER_PACKAGE_PATH)
+	else
+	  if ! [ -f $(SEARCHER_PACKAGE_PATH) ]; then
+	    curl -C - -Ls -o $(SEARCHER_PACKAGE_PATH) $(PACKAGE_BASE_URL)$(SEARCHER_PACKAGE_FILE)
+	  fi
+	  if ! [ -f $(INDEXER_PACKAGE_PATH) ]; then
+	  	curl -C - -Ls -o $(INDEXER_PACKAGE_PATH) $(PACKAGE_BASE_URL)$(INDEXER_PACKAGE_FILE)
+	  fi
+	fi
 
-bootstrap: build check-env
+indexer-package-path:
+	echo -n $(INDEXER_PACKAGE_PATH)
+
+searcher-package-path:
+	echo -n $(SEARCHER_PACKAGE_PATH)
+
+bootstrap: package check-env
 	cdk bootstrap aws://$$CDK_ACCOUNT/$$CDK_REGION
 
 generate-base-stack:
 	cdk synth -a cdk/app.py BaseQuickwitStack
 
-deploy-hdfs: build check-env
+deploy-hdfs: package check-env
 	cdk deploy -a cdk/app.py HdfsStack
 	
 invoke-hdfs-indexer: check-env
@@ -33,7 +67,7 @@ invoke-hdfs-searcher-term: check-env
 invoke-hdfs-searcher-histogram: check-env
 	python -c 'from cdk import cli; cli.invoke_hdfs_searcher("""{ "query": "*", "max_hits": 0, "aggs": { "events": { "date_histogram": { "field": "timestamp", "fixed_interval": "1d" }, "aggs": { "log_level": { "terms": { "size": 10, "field": "severity_text", "order": { "_count": "desc" } } } } } } }""")'
 
-deploy-mock-data: build check-env
+deploy-mock-data: package check-env
 	cdk deploy -a cdk/app.py MockDataStack
 
 invoke-mock-data-searcher: check-env
@@ -87,3 +121,7 @@ bench-search:
 
 destroy:
 	cdk destroy -a cdk/app.py HdfsStack MockDataStack
+
+
+clean:
+	rm -rf cdk.out

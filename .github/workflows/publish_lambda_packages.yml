@@ -27,37 +27,35 @@ jobs:
         run: mypy distribution/lambda/
 
       - name: Extract asset version of release
-        run: echo "ASSET_VERSION=${GITHUB_REF/refs\/tags\//}-beta" >> $GITHUB_ENV
+        run: echo "QW_LAMBDA_VERSION=${GITHUB_REF/refs\/tags\//}" >> $GITHUB_ENV
         if: ${{ github.event_name == 'push' }}
       - name: Setting version as prerelease
-        run: echo "ASSET_VERSION=${{ env.PRERELEASE_VERSION_NAME }}" >> $GITHUB_ENV
-        if: ${{ github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request' }}
-      - name: Extract asset name
-        run: |
-          echo "SEARCHER_ASSET_FULL_NAME=quickwit-lambda-searcher-${{ env.ASSET_VERSION }}-x86_64.zip" >> $GITHUB_ENV
-          echo "INDEXER_ASSET_FULL_NAME=quickwit-lambda-indexer-${{ env.ASSET_VERSION }}-x86_64.zip" >> $GITHUB_ENV
+        run: echo "QW_LAMBDA_VERSION=${{ env.PRERELEASE_VERSION_NAME }}" >> $GITHUB_ENV
+        if: ${{ github.event_name != 'push' }}
       - name: Retrieve and export commit date, hash, and tags
         run: |
             echo "QW_COMMIT_DATE=$(TZ=UTC0 git log -1 --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_ENV
             echo "QW_COMMIT_HASH=$(git rev-parse HEAD)" >> $GITHUB_ENV
             echo "QW_COMMIT_TAGS=$(git tag --points-at HEAD | tr '\n' ',')" >> $GITHUB_ENV
       - name: Build Quickwit Lambdas
-        run: |
-          cargo lambda build -p quickwit-lambda --release --output-format zip
-          mv target/lambda/searcher/bootstrap.zip ${{ env.SEARCHER_ASSET_FULL_NAME }}
-          mv target/lambda/indexer/bootstrap.zip ${{ env.INDEXER_ASSET_FULL_NAME }}
+        run: make package
         env:
           QW_COMMIT_DATE: ${{ env.QW_COMMIT_DATE }}
           QW_COMMIT_HASH: ${{ env.QW_COMMIT_HASH }}
           QW_COMMIT_TAGS: ${{ env.QW_COMMIT_TAGS }}
-        working-directory: ./quickwit
-
+          QW_LAMBDA_BUILD: 1
+        working-directory: ./distribution/lambda
+      - name: Extract package locations
+        run: |
+          echo "SEARCHER_PACKAGE_LOCATION=./distribution/lambda/$(make searcher-package-path)" >> $GITHUB_ENV
+          echo "INDEXER_PACKAGE_LOCATION=./distribution/lambda/$(make indexer-package-path)" >> $GITHUB_ENV
+        working-directory: ./distribution/lambda
       - name: Upload Lambda archives
         uses: quickwit-inc/upload-to-github-release@v1
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-          file: quickwit/${{ env.SEARCHER_ASSET_FULL_NAME }};quickwit/${{ env.INDEXER_ASSET_FULL_NAME }}
+          file: ${{ env.SEARCHER_PACKAGE_LOCATION }};${{ env.INDEXER_PACKAGE_LOCATION }}
           overwrite: true
-          draft: ${{ env.ASSET_VERSION != env.PRERELEASE_VERSION_NAME }}
-          tag_name: aws-lambda-${{ env.ASSET_VERSION }}
+          draft: ${{ env.QW_LAMBDA_VERSION != env.PRERELEASE_VERSION_NAME }}
+          tag_name: aws-lambda-${{ env.QW_LAMBDA_VERSION }}

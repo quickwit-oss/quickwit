@@ -14,4 +14,7 @@ cdk.out
 # AWS SAM build directory
 .aws-sam
 
+# Benchmark output files
 *.log
+
+# Benchmark output files
