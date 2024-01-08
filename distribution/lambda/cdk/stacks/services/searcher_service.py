@@ -12,6 +12,7 @@ class SearcherService(Construct):
         index_id: str,
         memory_size: int,
         environment: dict[str, str],
+        asset_path: str,
         **kwargs
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
@@ -19,7 +20,7 @@ class SearcherService(Construct):
         self.lambda_function = aws_lambda.Function(
             self,
             id="Lambda",
-            code=aws_lambda.Code.from_asset("../../quickwit/target/lambda/searcher"),
+            code=aws_lambda.Code.from_asset(asset_path),
             runtime=aws_lambda.Runtime.PROVIDED_AL2,
             handler="N/A",
             environment={
