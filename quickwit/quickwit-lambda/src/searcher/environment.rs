@@ -26,6 +26,8 @@ node_id: lambda-searcher
 metastore_uri: s3://${QW_LAMBDA_METASTORE_BUCKET}/index
 default_index_root_uri: s3://${QW_LAMBDA_INDEX_BUCKET}/index
 data_dir: /tmp
+searcher:
+  partial_request_cache_capacity: ${QW_LAMBDA_PARTIAL_REQUEST_CACHE_CAPACITY:-64M}
 ";
 
 pub(crate) static INDEX_ID: Lazy<String> =
