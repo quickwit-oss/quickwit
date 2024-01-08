@@ -1,0 +1,23 @@
+[tool.poetry]
+name = "quickwit-lambda"
+version = "0.1.0"
+description = "Deploy Quickwit on AWS Lambda"
+authors = ["Quickwit, Inc. <hello@quickwit.io>"]
+license = "AGPL-3.0"
+readme = "README.md"
+packages = [{include = "cdk"}]
+
+[tool.poetry.dependencies]
+python = ">=3.9,<4.0"
+aws-cdk-lib = "^2.95.1"
+cargo-lambda = "^0.21.0"
+constructs = ">=10.0.0,<11.0.0"
+pyyaml = "^6.0.1"
+black = "^23.9.1"
+boto3 = "^1.28.59"
+pytest = "^6.2.5"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

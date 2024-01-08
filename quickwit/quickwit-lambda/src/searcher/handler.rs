@@ -17,15 +17,28 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use lambda_runtime::service_fn;
-use quickwit_lambda::searcher::handler;
-use quickwit_lambda::setup_lambda_tracer;
+use lambda_runtime::{Error, LambdaEvent};
+use quickwit_serve::SearchRequestQueryString;
+use serde_json::Value;
+use tracing::{debug, error};
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    setup_lambda_tracer()?;
-    let func = service_fn(handler);
-    lambda_runtime::run(func)
-        .await
-        .map_err(|e| anyhow::anyhow!(e))
+use super::search::{search, SearchArgs};
+
+pub async fn handler(event: LambdaEvent<SearchRequestQueryString>) -> Result<Value, Error> {
+    debug!(payload = ?event.payload, "Received query");
+    let ingest_res = search(SearchArgs {
+        index_id: std::env::var("INDEX_ID")?,
+        query: event.payload,
+    })
+    .await;
+    match ingest_res {
+        Ok(resp) => {
+            debug!(resp=?resp, "Search succeeded");
+            Ok(serde_json::to_value(resp)?)
+        }
+        Err(e) => {
+            error!(err=?e, "Search failed");
+            return Err(anyhow::anyhow!("Query failed").into());
+        }
+    }
 }

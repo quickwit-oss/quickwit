@@ -21,15 +21,10 @@ use quickwit_cli::logger::setup_logging_and_tracing;
 use quickwit_serve::BuildInfo;
 use tracing::Level;
 
-mod ingest;
-mod model;
-mod search;
+pub mod indexer;
+pub mod searcher;
 mod utils;
 
 pub fn setup_lambda_tracer() -> anyhow::Result<()> {
-    setup_logging_and_tracing(Level::INFO, false, BuildInfo::get())
+    setup_logging_and_tracing(Level::DEBUG, false, BuildInfo::get())
 }
-
-pub use ingest::{ingest, IngestArgs};
-pub use model::IndexerEvent;
-pub use search::{search, SearchArgs};

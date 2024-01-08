@@ -6,22 +6,21 @@ import base64
 import http.client
 import os
 import time
-from urllib.parse import urlparse
 
 import boto3
+from cdk.stacks import hdfs_stack, mock_data_stack
+from cdk import app
+
 
 region = os.environ["CDK_REGION"]
-index_id = os.environ["INDEX_ID"]
 
-stack_name = "LambdaStack"
 example_bucket = "quickwit-datasets-public.s3.amazonaws.com"
 example_file = "hdfs-logs-multitenants-10000.json"
-index_config_path = "../../config/tutorials/hdfs-logs/index-config.yaml"
 
 session = boto3.Session(region_name=region)
 
 
-def _get_cloudformation_output_value(export_name: str) -> str:
+def _get_cloudformation_output_value(stack_name: str, export_name: str) -> str:
     client = session.client("cloudformation")
     stacks = client.describe_stacks(StackName=stack_name)["Stacks"]
     if len(stacks) != 1:
@@ -48,18 +47,10 @@ def _format_lambda_output(lambda_resp, duration=None):
         print(duration)
 
 
-def upload_index_config():
-    target_uri = _get_cloudformation_output_value("index-config-uri")
-    print(f"upload src file to {target_uri}")
-    target_uri_parsed = urlparse(target_uri, allow_fragments=False)
-    with open(index_config_path, "rb") as f:
-        session.client("s3").put_object(
-            Bucket=target_uri_parsed.netloc, Body=f, Key=target_uri_parsed.path[1:]
-        )
-
-
-def upload_src_file():
-    bucket_name = _get_cloudformation_output_value("index-store-bucket-name")
+def upload_hdfs_src_file():
+    bucket_name = _get_cloudformation_output_value(
+        app.HDFS_STACK_NAME, hdfs_stack.INDEX_STORE_BUCKET_NAME_EXPORT_NAME
+    )
     target_uri = f"s3://{bucket_name}/{example_file}"
     print(f"upload src file to {target_uri}")
     conn = http.client.HTTPSConnection(example_bucket)
@@ -74,10 +65,14 @@ def upload_src_file():
     )
 
 
-def invoke_indexer():
-    function_name = _get_cloudformation_output_value("indexer-function-name")
+def invoke_hdfs_indexer():
+    function_name = _get_cloudformation_output_value(
+        app.HDFS_STACK_NAME, hdfs_stack.INDEXER_FUNCTION_NAME_EXPORT_NAME
+    )
     print(f"indexer function name: {function_name}")
-    bucket_name = _get_cloudformation_output_value("index-store-bucket-name")
+    bucket_name = _get_cloudformation_output_value(
+        app.HDFS_STACK_NAME, hdfs_stack.INDEX_STORE_BUCKET_NAME_EXPORT_NAME
+    )
     source_uri = f"s3://{bucket_name}/{example_file}"
     print(f"src_file: {source_uri}")
     invoke_start = time.time()
@@ -90,14 +85,30 @@ def invoke_indexer():
     _format_lambda_output(resp, time.time() - invoke_start)
 
 
-def invoke_searcher():
-    function_name = _get_cloudformation_output_value("searcher-function-name")
+def _invoke_searcher(stack_name: str, function_export_name: str, payload: str):
+    function_name = _get_cloudformation_output_value(stack_name, function_export_name)
     print(f"searcher function name: {function_name}")
     invoke_start = time.time()
     resp = session.client("lambda").invoke(
         FunctionName=function_name,
         InvocationType="RequestResponse",
         LogType="Tail",
-        Payload="""{"query": "tenant_id:1 AND HDFS_WRITE", "sort_by": "timestamp", "max_hits": 10}""",
+        Payload=payload,
     )
     _format_lambda_output(resp, time.time() - invoke_start)
+
+
+def invoke_hdfs_searcher():
+    _invoke_searcher(
+        app.HDFS_STACK_NAME,
+        hdfs_stack.SEARCHER_FUNCTION_NAME_EXPORT_NAME,
+        """{"query": "tenant_id:1 AND HDFS_WRITE", "sort_by": "timestamp", "max_hits": 10}""",
+    )
+
+
+def invoke_mock_data_searcher():
+    _invoke_searcher(
+        app.MOCK_DATA_STACK_NAME,
+        mock_data_stack.SEARCHER_FUNCTION_NAME_EXPORT_NAME,
+        """{"query": "id:1", "sort_by": "ts", "max_hits": 10}""",
+    )
