@@ -70,7 +70,7 @@ pub use crate::node_config::{
 use crate::source_config::serialize::{SourceConfigV0_6, VersionedSourceConfig};
 pub use crate::storage_config::{
     AzureStorageConfig, FileStorageConfig, RamStorageConfig, S3StorageConfig, StorageBackend,
-    StorageBackendFlavor, StorageConfig, StorageConfigs,
+    StorageBackendFlavor, StorageConfig, StorageConfigs, GoogleCloudStorageConfig,
 };
 
 #[derive(utoipa::OpenApi)]

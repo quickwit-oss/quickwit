@@ -1,4 +1,4 @@
-// Copyright (C) 2024 Quickwit, Inc.
+// Copyright (C) 2023 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -20,12 +20,17 @@
 use std::fmt;
 use std::ops::Range;
 use std::path::Path;
-use quickwit_common::uri::Uri;
-use opendal::{Operator};
-use crate::{BulkDeleteError, OwnedBytes, PutPayload, Storage, StorageError, StorageErrorKind, StorageResult};
+
 use async_trait::async_trait;
+use opendal::Operator;
+use quickwit_common::uri::Uri;
 use tokio::io::{AsyncRead, AsyncWriteExt};
+
 use crate::storage::SendableAsync;
+use crate::{
+    BulkDeleteError, OwnedBytes, PutPayload, Storage, StorageError, StorageErrorKind,
+    StorageResolverError, StorageResult,
+};
 
 /// OpenDAL based storage implementation.
 /// # TODO
@@ -45,6 +50,18 @@ impl fmt::Debug for OpendalStorage {
             .debug_struct("OpendalStorage")
             .field("operator", &self.op.info())
             .finish()
+    }
+}
+
+impl OpendalStorage {
+    /// Create a new google cloud storage.
+    pub fn new_google_cloud_storage(
+        uri: Uri,
+        cfg: opendal::services::Gcs,
+    ) -> Result<Self, StorageResolverError> {
+        let op = Operator::new(cfg)?.finish();
+
+        Ok(Self { uri, op })
     }
 }
 
@@ -73,7 +90,7 @@ impl Storage for OpendalStorage {
 
     async fn copy_to(&self, path: &Path, output: &mut dyn SendableAsync) -> StorageResult<()> {
         let path = path.as_os_str().to_string_lossy();
-        let mut r =self.op.reader(&path).await?;
+        let mut r = self.op.reader(&path).await?;
         tokio::io::copy(&mut r, output).await?;
         output.flush().await?;
         Ok(())
@@ -87,9 +104,13 @@ impl Storage for OpendalStorage {
         Ok(OwnedBytes::new(bs))
     }
 
-    async fn get_slice_stream(&self, path: &Path, range: Range<usize>) -> StorageResult<Box<dyn AsyncRead + Send + Unpin>> {
+    async fn get_slice_stream(
+        &self,
+        path: &Path,
+        range: Range<usize>,
+    ) -> StorageResult<Box<dyn AsyncRead + Send + Unpin>> {
         let path = path.as_os_str().to_string_lossy();
-        let range = range.start as u64.. range.end as u64;
+        let range = range.start as u64..range.end as u64;
         let r = self.op.reader_with(&path).range(range).await?;
 
         Ok(Box::new(r))
@@ -110,7 +131,10 @@ impl Storage for OpendalStorage {
     }
 
     async fn bulk_delete<'a>(&self, paths: &[&'a Path]) -> Result<(), BulkDeleteError> {
-       let paths = paths.iter().map(|v|v.as_os_str().to_string_lossy().to_string()).collect();
+        let paths = paths
+            .iter()
+            .map(|v| v.as_os_str().to_string_lossy().to_string())
+            .collect();
         self.op.remove(paths).await.map_err(|err| BulkDeleteError {
             error: Some(err.into()),
             ..BulkDeleteError::default()
@@ -138,5 +162,11 @@ impl From<opendal::Error> for StorageError {
             opendal::ErrorKind::ConfigInvalid => StorageErrorKind::Service.with_error(err),
             _ => StorageErrorKind::Io.with_error(err),
         }
+    }
+}
+
+impl From<opendal::Error> for StorageResolverError {
+    fn from(err: opendal::Error) -> Self {
+        StorageResolverError::InvalidConfig(err.to_string())
     }
 }
