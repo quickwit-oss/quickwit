@@ -96,6 +96,7 @@ fn parse_google_uri(uri: &Uri) -> Option<(String, PathBuf)> {
 }
 
 
+#[cfg(tests)]
 mod tests {
     use quickwit_common::uri::Uri;
 

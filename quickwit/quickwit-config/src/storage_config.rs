@@ -581,7 +581,6 @@ mod tests {
 
             let expected_google_cloud_storage_config = GoogleCloudStorageConfig {
                 credential_path: Some("/path/to/credential.json".to_string()),
-                ..Default::default()
             };
             assert_eq!(google_cloud_storage_config, expected_google_cloud_storage_config);
         }
