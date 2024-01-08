@@ -21,8 +21,10 @@ jobs:
         run: sudo apt-get -y install protobuf-compiler python3 python3-pip
       - name: Install rustup
         run: curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain none -y
-      - name: Install cargo lambda
-        run: pip3 install cargo-lambda
+      - name: Install python dependencies
+        run: pip install ./distribution/lambda  
+      - name: Mypy lint
+        run: mypy distribution/lambda/
 
       - name: Extract asset version of release
         run: echo "ASSET_VERSION=${GITHUB_REF/refs\/tags\//}-beta" >> $GITHUB_ENV

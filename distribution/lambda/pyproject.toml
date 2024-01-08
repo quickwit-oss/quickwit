@@ -17,7 +17,7 @@ black = "^23.9.1"
 boto3 = "^1.28.59"
 mypy = "^1.7.0"
 
-[tool.poetry.group.types.dependencies]
+# types
 boto3-stubs = "^1.28.39"
 types-requests = "^2.31.0.2"
 types-pyyaml = "^6.0.12.11"
