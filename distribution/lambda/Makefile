@@ -30,6 +30,9 @@ invoke-hdfs-indexer: check-env
 invoke-hdfs-searcher-severity: check-env
 	python -c 'from cdk import cli; cli.invoke_hdfs_searcher("""{"query": "severity_text:ERROR"}""")'
 
+invoke-hdfs-searcher-histogram: check-env
+	python -c 'from cdk import cli; cli.invoke_hdfs_searcher("""{ "query": "*", "max_hits": 0, "aggs": { "events": { "date_histogram": { "field": "timestamp", "fixed_interval": "1h" }, "aggs": { "log_level": { "terms": { "size": 10, "field": "severity_text", "order": { "_count": "desc" } } } } } } }""")'
+
 deploy-mock-data: build check-env
 	cdk deploy -a cdk/app.py MockDataStack
 
