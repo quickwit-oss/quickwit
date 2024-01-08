@@ -12,6 +12,8 @@ class QuickwitService(Construct):
         index_config_bucket: str,
         index_config_key: str,
         index_id: str,
+        indexer_memory_size: int = 1024,
+        searcher_memory_size: int = 1024,
         **kwargs
     ) -> None:
         super().__init__(scope, construct_id, **kwargs)
@@ -27,10 +29,12 @@ class QuickwitService(Construct):
             index_id=index_id,
             index_config_bucket=index_config_bucket,
             index_config_key=index_config_key,
+            memory_size=indexer_memory_size,
         )
         self.searcher = searcher_service.SearcherService(
             self,
             "Searcher",
             store_bucket=self.bucket,
             index_id=index_id,
+            memory_size=searcher_memory_size,
         )
