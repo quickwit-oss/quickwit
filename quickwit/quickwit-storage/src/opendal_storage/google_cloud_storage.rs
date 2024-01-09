@@ -35,6 +35,13 @@ pub struct GoogleCloudStorageFactory {
     storage_config: GoogleCloudStorageConfig,
 }
 
+impl GoogleCloudStorageFactory {
+    /// Create a new google cloud storage factory via config.
+    pub fn new(storage_config: GoogleCloudStorageConfig) -> Self {
+        Self {storage_config}
+    }
+}
+
 #[async_trait]
 impl StorageFactory for GoogleCloudStorageFactory {
     fn backend(&self) -> StorageBackend {

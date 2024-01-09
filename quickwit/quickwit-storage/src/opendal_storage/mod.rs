@@ -21,3 +21,4 @@ mod base;
 use base::OpendalStorage;
 
 mod google_cloud_storage;
+pub use google_cloud_storage::GoogleCloudStorageFactory;

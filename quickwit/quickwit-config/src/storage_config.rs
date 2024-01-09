@@ -116,6 +116,15 @@ impl StorageConfigs {
             })
     }
 
+    pub fn find_google(&self) -> Option<&GoogleCloudStorageConfig> {
+        self.0
+            .iter()
+            .find_map(|storage_config| match storage_config {
+                StorageConfig::Google(google_storage_config) => Some(google_storage_config),
+                _ => None,
+            })
+    }
+
     pub fn find_file(&self) -> Option<&FileStorageConfig> {
         self.0
             .iter()

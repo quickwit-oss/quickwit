@@ -74,6 +74,8 @@ pub use self::object_storage::{AzureBlobStorage, AzureBlobStorageFactory};
 pub use self::object_storage::{
     MultiPartPolicy, S3CompatibleObjectStorage, S3CompatibleObjectStorageFactory,
 };
+#[cfg(feature = "google")]
+pub use self::opendal_storage::GoogleCloudStorageFactory;
 pub use self::ram_storage::{RamStorage, RamStorageBuilder};
 pub use self::split::{SplitPayload, SplitPayloadBuilder};
 #[cfg(any(test, feature = "testsuite"))]
