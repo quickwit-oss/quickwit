@@ -119,7 +119,7 @@ fn parse_google_uri(uri: &Uri) -> Option<(String, PathBuf)> {
 
     let captures = URI_PTN
         .get_or_init(|| {
-            Regex::new(r"gs(\+[^:]+)?://(?P<bucket>[^/]+)(/(?P<prefix>.+))?")
+            Regex::new(r"gs(\+[^:]+)?://(?P<bucket>[^/]+)(/(?P<prefix>.*))?$")
                 .expect("The regular expression should compile.")
         })
         .captures(uri.as_str())?;
