@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -22,6 +22,7 @@ use std::ops::Range;
 use std::path::Path;
 
 use async_trait::async_trait;
+use bytesize::ByteSize;
 use opendal::Operator;
 use quickwit_common::uri::Uri;
 use tokio::io::{AsyncRead, AsyncWriteExt};
@@ -81,7 +82,11 @@ impl Storage for OpendalStorage {
         let path = path.as_os_str().to_string_lossy();
         let mut r = payload.byte_stream().await?.into_async_read();
 
-        let mut w = self.op.writer_with(&path).buffer(8 * 1024 * 1024).await?;
+        let mut w = self
+            .op
+            .writer_with(&path)
+            .buffer(ByteSize::mb(8).as_u64() as usize)
+            .await?;
         tokio::io::copy(&mut r, &mut w).await?;
         w.close().await?;
 

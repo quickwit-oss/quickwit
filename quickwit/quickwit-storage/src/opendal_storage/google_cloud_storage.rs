@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -95,8 +95,7 @@ fn parse_google_uri(uri: &Uri) -> Option<(String, PathBuf)> {
     Some((bucket, prefix))
 }
 
-
-#[cfg(tests)]
+#[cfg(test)]
 mod tests {
     use quickwit_common::uri::Uri;
 
@@ -106,13 +105,11 @@ mod tests {
     fn test_parse_google_uri() {
         assert!(parse_google_uri(&Uri::for_test("google://")).is_none());
 
-        let (bucket, prefix) =
-            parse_google_uri(&Uri::for_test("google://test-bucket")).unwrap();
+        let (bucket, prefix) = parse_google_uri(&Uri::for_test("google://test-bucket")).unwrap();
         assert_eq!(bucket, "test-bucket");
         assert!(prefix.to_str().unwrap().is_empty());
 
-        let (bucket, prefix) =
-            parse_google_uri(&Uri::for_test("google://test-bucket/")).unwrap();
+        let (bucket, prefix) = parse_google_uri(&Uri::for_test("google://test-bucket/")).unwrap();
         assert_eq!(bucket, "test-bucket");
         assert!(prefix.to_str().unwrap().is_empty());
 
