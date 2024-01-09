@@ -136,7 +136,7 @@ impl Storage for OpendalStorage {
     async fn bulk_delete<'a>(&self, paths: &[&'a Path]) -> Result<(), BulkDeleteError> {
         let paths = paths
             .iter()
-            .map(|v| v.as_os_str().to_string_lossy().to_string())
+            .map(|path| path.as_os_str().to_string_lossy().to_string())
             .collect();
         self.op.remove(paths).await.map_err(|err| BulkDeleteError {
             error: Some(err.into()),
