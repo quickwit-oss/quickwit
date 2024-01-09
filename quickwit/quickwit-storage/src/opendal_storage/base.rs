@@ -19,7 +19,7 @@
 
 use std::fmt;
 use std::ops::Range;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use async_trait::async_trait;
 use bytesize::ByteSize;
@@ -29,8 +29,8 @@ use tokio::io::{AsyncRead, AsyncWriteExt};
 
 use crate::storage::SendableAsync;
 use crate::{
-    BulkDeleteError, OwnedBytes, PutPayload, Storage, StorageError, StorageErrorKind,
-    StorageResolverError, StorageResult,
+    BulkDeleteError, DeleteFailure, OwnedBytes, PutPayload, Storage, StorageError,
+    StorageErrorKind, StorageResolverError, StorageResult,
 };
 
 /// OpenDAL based storage implementation.
@@ -134,10 +134,52 @@ impl Storage for OpendalStorage {
     }
 
     async fn bulk_delete<'a>(&self, paths: &[&'a Path]) -> Result<(), BulkDeleteError> {
-        let paths = paths
+        // The mock service we used in integration testsuite doesn't support bucket delete.
+        // Let's fallback to delete one by one in this case.
+        #[cfg(feature = "integration-testsuite")]
+        {
+            let storage_info = self.op.info();
+            if storage_info.name() == "sample-bucket"
+                && storage_info.scheme() == opendal::Scheme::Gcs
+            {
+                let mut bulk_error = BulkDeleteError::default();
+                for (index, path) in paths.iter().enumerate() {
+                    let result = self.op.delete(&path.as_os_str().to_string_lossy()).await;
+                    if let Err(err) = result {
+                        let storage_error_kind = err.kind();
+                        let storage_error: StorageError = err.into();
+                        bulk_error.failures.insert(
+                            PathBuf::from(&path),
+                            DeleteFailure {
+                                code: Some(storage_error_kind.to_string()),
+                                message: Some(storage_error.to_string()),
+                                error: Some(storage_error.clone()),
+                            },
+                        );
+                        bulk_error.error = Some(storage_error);
+                        for path in paths[index..].iter() {
+                            bulk_error.unattempted.push(PathBuf::from(&path))
+                        }
+                        break;
+                    } else {
+                        bulk_error.successes.push(PathBuf::from(&path))
+                    }
+                }
+
+                return if bulk_error.error.is_some() {
+                    Err(bulk_error)
+                } else {
+                    Ok(())
+                };
+            }
+        }
+
+        let paths: Vec<String> = paths
             .iter()
             .map(|path| path.as_os_str().to_string_lossy().to_string())
             .collect();
+
+        // OpenDAL will check the services' capability internally.
         self.op.remove(paths).await.map_err(|err| BulkDeleteError {
             error: Some(err.into()),
             ..BulkDeleteError::default()

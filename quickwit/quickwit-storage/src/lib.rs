@@ -327,14 +327,9 @@ pub(crate) mod test_suite {
         test_write_and_delete(storage)
             .await
             .context("write_and_delete")?;
-        // Fake GCS Server doesn't support bulk delete correctly.
-        // ref: <https://github.com/fsouza/fake-gcs-server/issues/1443>
-        #[cfg(not(feature = "google"))]
-        {
-            crate::test_suite::test_write_and_bulk_delete(storage)
-                .await
-                .context("write_and_bulk_delete")?;
-        }
+        test_write_and_bulk_delete(storage)
+            .await
+            .context("write_and_bulk_delete")?;
         test_exists(storage).await.context("exists")?;
         test_write_and_delete_with_dir_separator(storage)
             .await

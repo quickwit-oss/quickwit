@@ -59,7 +59,7 @@ impl StorageFactory for GoogleCloudStorageFactory {
 pub fn new_emulated_google_cloud_storage(
     uri: &Uri,
 ) -> Result<OpendalStorage, StorageResolverError> {
-    let (bucket, root) = parse_google_uri(&uri).expect("must be valid google uri");
+    let (bucket, root) = parse_google_uri(uri).expect("must be valid google uri");
 
     let mut cfg = opendal::services::Gcs::default();
     cfg.bucket(&bucket);
