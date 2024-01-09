@@ -78,23 +78,23 @@ impl Storage for OpendalStorage {
     /// If the payload is small enough, we can call `op.write()` at once.
     async fn put(&self, path: &Path, payload: Box<dyn PutPayload>) -> StorageResult<()> {
         let path = path.as_os_str().to_string_lossy();
-        let mut r = payload.byte_stream().await?.into_async_read();
+        let mut payload_reader = payload.byte_stream().await?.into_async_read();
 
-        let mut w = self
+        let mut storage_writer = self
             .op
             .writer_with(&path)
             .buffer(ByteSize::mb(8).as_u64() as usize)
             .await?;
-        tokio::io::copy(&mut r, &mut w).await?;
-        w.close().await?;
+        tokio::io::copy(&mut payload_reader, &mut storage_writer).await?;
+        storage_writer.close().await?;
 
         Ok(())
     }
 
     async fn copy_to(&self, path: &Path, output: &mut dyn SendableAsync) -> StorageResult<()> {
         let path = path.as_os_str().to_string_lossy();
-        let mut r = self.op.reader(&path).await?;
-        tokio::io::copy(&mut r, output).await?;
+        let mut storage_reader = self.op.reader(&path).await?;
+        tokio::io::copy(&mut storage_reader, output).await?;
         output.flush().await?;
         Ok(())
     }
@@ -102,9 +102,9 @@ impl Storage for OpendalStorage {
     async fn get_slice(&self, path: &Path, range: Range<usize>) -> StorageResult<OwnedBytes> {
         let path = path.as_os_str().to_string_lossy();
         let range = range.start as u64..range.end as u64;
-        let bs = self.op.read_with(&path).range(range).await?;
+        let storage_content = self.op.read_with(&path).range(range).await?;
 
-        Ok(OwnedBytes::new(bs))
+        Ok(OwnedBytes::new(storage_content))
     }
 
     async fn get_slice_stream(
@@ -114,16 +114,16 @@ impl Storage for OpendalStorage {
     ) -> StorageResult<Box<dyn AsyncRead + Send + Unpin>> {
         let path = path.as_os_str().to_string_lossy();
         let range = range.start as u64..range.end as u64;
-        let r = self.op.reader_with(&path).range(range).await?;
+        let storage_reader = self.op.reader_with(&path).range(range).await?;
 
-        Ok(Box::new(r))
+        Ok(Box::new(storage_reader))
     }
 
     async fn get_all(&self, path: &Path) -> StorageResult<OwnedBytes> {
         let path = path.as_os_str().to_string_lossy();
-        let bs = self.op.read(&path).await?;
+        let storage_content = self.op.read(&path).await?;
 
-        Ok(OwnedBytes::new(bs))
+        Ok(OwnedBytes::new(storage_content))
     }
 
     async fn delete(&self, path: &Path) -> StorageResult<()> {
