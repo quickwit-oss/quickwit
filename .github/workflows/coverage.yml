@@ -115,6 +115,14 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_ACCESS_TOKEN }}
 
+      fake-gcs-server:
+        image: fsouza/fake-gcs-server:1.47.7
+        ports:
+          - "4443:4443"
+        credentials:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_ACCESS_TOKEN }}
+
     steps:
       - uses: actions/checkout@v4
 
