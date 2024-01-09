@@ -38,7 +38,7 @@ pub struct GoogleCloudStorageFactory {
 impl GoogleCloudStorageFactory {
     /// Create a new google cloud storage factory via config.
     pub fn new(storage_config: GoogleCloudStorageConfig) -> Self {
-        Self {storage_config}
+        Self { storage_config }
     }
 }
 
@@ -52,6 +52,37 @@ impl StorageFactory for GoogleCloudStorageFactory {
         let storage = from_uri(&self.storage_config, uri)?;
         Ok(Arc::new(DebouncedStorage::new(storage)))
     }
+}
+
+/// Creates an emulated storage for testing.
+#[cfg(feature = "integration-testsuite")]
+pub fn new_emulated_google_cloud_storage(
+    uri: &Uri,
+) -> Result<OpendalStorage, StorageResolverError> {
+    let (bucket, root) = parse_google_uri(&uri).expect("must be valid google uri");
+
+    let mut cfg = opendal::services::Gcs::default();
+    cfg.bucket(&bucket);
+    cfg.root(&root.to_string_lossy());
+    // The default port for the fake gcs server is 4443.
+    cfg.endpoint("http://127.0.0.1:4443");
+
+    #[derive(Debug)]
+    struct DummyTokenLoader;
+    #[async_trait]
+    impl reqsign::GoogleTokenLoad for DummyTokenLoader {
+        async fn load(&self, _: reqwest::Client) -> anyhow::Result<Option<reqsign::GoogleToken>> {
+            Ok(Some(reqsign::GoogleToken::new(
+                "dummy",
+                86400,
+                "https://www.googleapis.com/auth/devstorage.full_control",
+            )))
+        }
+    }
+    cfg.customed_token_loader(Box::new(DummyTokenLoader));
+
+    let store = OpendalStorage::new_google_cloud_storage(uri.clone(), cfg)?;
+    Ok(store)
 }
 
 fn from_uri(

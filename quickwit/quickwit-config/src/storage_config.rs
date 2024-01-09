@@ -409,7 +409,8 @@ pub struct GoogleCloudStorageConfig {
 }
 
 impl GoogleCloudStorageConfig {
-    pub const GOOGLE_CLOUD_STORAGE_CREDENTIAL_PATH_ENV_VAR: &'static str = "QW_GOOGLE_CLOUD_STORAGE_CREDENTIAL_PATH";
+    pub const GOOGLE_CLOUD_STORAGE_CREDENTIAL_PATH_ENV_VAR: &'static str =
+        "QW_GOOGLE_CLOUD_STORAGE_CREDENTIAL_PATH";
 
     /// Attempts to find the credential path in the environment variable
     /// `QW_GOOGLE_CLOUD_STORAGE_CREDENTIAL_PATH` or the config.
@@ -591,7 +592,10 @@ mod tests {
             let expected_google_cloud_storage_config = GoogleCloudStorageConfig {
                 credential_path: Some("/path/to/credential.json".to_string()),
             };
-            assert_eq!(google_cloud_storage_config, expected_google_cloud_storage_config);
+            assert_eq!(
+                google_cloud_storage_config,
+                expected_google_cloud_storage_config
+            );
         }
     }
 

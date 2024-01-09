@@ -74,6 +74,8 @@ pub use self::object_storage::{AzureBlobStorage, AzureBlobStorageFactory};
 pub use self::object_storage::{
     MultiPartPolicy, S3CompatibleObjectStorage, S3CompatibleObjectStorageFactory,
 };
+#[cfg(any(feature = "google", feature = "integration-testsuite"))]
+pub use self::opendal_storage::new_emulated_google_cloud_storage;
 #[cfg(feature = "google")]
 pub use self::opendal_storage::GoogleCloudStorageFactory;
 pub use self::ram_storage::{RamStorage, RamStorageBuilder};
@@ -325,9 +327,14 @@ pub(crate) mod test_suite {
         test_write_and_delete(storage)
             .await
             .context("write_and_delete")?;
-        test_write_and_bulk_delete(storage)
-            .await
-            .context("write_and_bulk_delete")?;
+        // Fake GCS Server doesn't support bulk delete correctly.
+        // ref: <https://github.com/fsouza/fake-gcs-server/issues/1443>
+        #[cfg(not(feature = "google"))]
+        {
+            crate::test_suite::test_write_and_bulk_delete(storage)
+                .await
+                .context("write_and_bulk_delete")?;
+        }
         test_exists(storage).await.context("exists")?;
         test_write_and_delete_with_dir_separator(storage)
             .await

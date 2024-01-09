@@ -157,7 +157,8 @@ services:
       - all
       - fake-gcs-server
     volumes:
-      - fake_gcs_server_data:/data
+      - fake_gcs_server_data:/data/sample-bucket
+    command: -scheme http
 
   grafana:
     image: grafana/grafana-oss:${GRAFANA_VERSION:-9.4.7}

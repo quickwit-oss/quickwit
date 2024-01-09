@@ -6142,6 +6142,8 @@ dependencies = [
  "quickwit-proto",
  "rand 0.8.5",
  "regex",
+ "reqsign",
+ "reqwest",
  "serde",
  "serde_json",
  "tantivy",

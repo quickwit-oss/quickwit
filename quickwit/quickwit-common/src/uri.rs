@@ -569,9 +569,7 @@ mod tests {
             "azure://account/container/key"
         );
         assert_eq!(
-            Uri::for_test("gs://bucket")
-                .join("key")
-                .unwrap(),
+            Uri::for_test("gs://bucket").join("key").unwrap(),
             "gs://bucket/key"
         );
         Uri::for_test("s3://bucket/").join("/key").unwrap_err();
