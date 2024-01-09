@@ -73,6 +73,7 @@ azure = [
   "azure_storage_blobs/enable_reqwest_rustls",
 ]
 google = [
+  "dep:opendal",
   "opendal/services-gcs"
 ]
 ci-test = []

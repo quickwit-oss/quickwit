@@ -61,7 +61,6 @@ impl OpendalStorage {
         cfg: opendal::services::Gcs,
     ) -> Result<Self, StorageResolverError> {
         let op = Operator::new(cfg)?.finish();
-
         Ok(Self { uri, op })
     }
 }
@@ -70,7 +69,6 @@ impl OpendalStorage {
 impl Storage for OpendalStorage {
     async fn check_connectivity(&self) -> anyhow::Result<()> {
         self.op.check().await?;
-
         Ok(())
     }
 

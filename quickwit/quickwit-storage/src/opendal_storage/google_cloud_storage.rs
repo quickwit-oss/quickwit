@@ -75,14 +75,13 @@ fn from_uri(
     Ok(store)
 }
 
-/// TODO: maybe we can also support `gs://bucket`?
 fn parse_google_uri(uri: &Uri) -> Option<(String, PathBuf)> {
-    // Ex: google://bucket/prefix.
+    // Ex: gs://bucket/prefix.
     static URI_PTN: OnceCell<Regex> = OnceCell::new();
 
     let captures = URI_PTN
         .get_or_init(|| {
-            Regex::new(r"google(\+[^:]+)?://(?P<bucket>[^/]+)(/(?P<prefix>.+))?")
+            Regex::new(r"gs(\+[^:]+)?://(?P<bucket>[^/]+)(/(?P<prefix>.+))?")
                 .expect("The regular expression should compile.")
         })
         .captures(uri.as_str())?;
@@ -103,18 +102,18 @@ mod tests {
 
     #[test]
     fn test_parse_google_uri() {
-        assert!(parse_google_uri(&Uri::for_test("google://")).is_none());
+        assert!(parse_google_uri(&Uri::for_test("gs://")).is_none());
 
-        let (bucket, prefix) = parse_google_uri(&Uri::for_test("google://test-bucket")).unwrap();
+        let (bucket, prefix) = parse_google_uri(&Uri::for_test("gs://test-bucket")).unwrap();
         assert_eq!(bucket, "test-bucket");
         assert!(prefix.to_str().unwrap().is_empty());
 
-        let (bucket, prefix) = parse_google_uri(&Uri::for_test("google://test-bucket/")).unwrap();
+        let (bucket, prefix) = parse_google_uri(&Uri::for_test("gs://test-bucket/")).unwrap();
         assert_eq!(bucket, "test-bucket");
         assert!(prefix.to_str().unwrap().is_empty());
 
         let (bucket, prefix) =
-            parse_google_uri(&Uri::for_test("google://test-bucket/indexes")).unwrap();
+            parse_google_uri(&Uri::for_test("gs://test-bucket/indexes")).unwrap();
         assert_eq!(bucket, "test-bucket");
         assert_eq!(prefix.to_str().unwrap(), "indexes");
     }
