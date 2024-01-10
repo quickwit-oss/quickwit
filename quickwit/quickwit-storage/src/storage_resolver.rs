@@ -29,7 +29,7 @@ use crate::local_file_storage::LocalFileStorageFactory;
 use crate::ram_storage::RamStorageFactory;
 #[cfg(feature = "azure")]
 use crate::AzureBlobStorageFactory;
-#[cfg(feature = "google")]
+#[cfg(feature = "gcs")]
 use crate::GoogleCloudStorageFactory;
 use crate::{S3CompatibleObjectStorageFactory, Storage, StorageFactory, StorageResolverError};
 
@@ -112,19 +112,19 @@ impl StorageResolver {
                 "Quickwit was compiled without the `azure` feature.",
             ))
         }
-        #[cfg(feature = "google")]
+        #[cfg(feature = "gcs")]
         {
             builder = builder.register(GoogleCloudStorageFactory::new(
                 storage_configs.find_google().cloned().unwrap_or_default(),
             ));
         }
-        #[cfg(not(feature = "google"))]
+        #[cfg(not(feature = "gcs"))]
         {
             use crate::storage_factory::UnsupportedStorage;
 
             builder = builder.register(UnsupportedStorage::new(
                 StorageBackend::Google,
-                "Quickwit was compiled without the `google` feature.",
+                "Quickwit was compiled without the `gcs` feature.",
             ))
         }
         builder

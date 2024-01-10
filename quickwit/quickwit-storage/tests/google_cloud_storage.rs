@@ -20,7 +20,7 @@
 // This file is an integration test that assumes that a connection
 // to Fake GCS Server (the emulated google cloud storage environment)
 
-#[cfg(feature = "integration-testsuite")]
+#[cfg(all(feature = "integration-testsuite", feature = "gcs"))]
 #[tokio::test]
 #[cfg_attr(not(feature = "ci-test"), ignore)]
 async fn google_cloud_storage_test_suite() -> anyhow::Result<()> {
