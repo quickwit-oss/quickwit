@@ -113,6 +113,7 @@ impl IdToOrdMap {
 fn convert_physical_plan_to_solution(
     plan: &PhysicalIndexingPlan,
     id_to_ord_map: &IdToOrdMap,
+    sources: &[SourceToSchedule],
     solution: &mut SchedulingSolution,
 ) {
     for (indexer_id, indexing_tasks) in plan.indexing_tasks_per_indexer() {
@@ -124,7 +125,21 @@ fn convert_physical_plan_to_solution(
                     source_id: indexing_task.source_id.clone(),
                 };
                 if let Some(source_ord) = id_to_ord_map.source_ord(&source_uid) {
-                    indexer_assignment.add_shards(source_ord, indexing_task.shard_ids.len() as u32);
+                    let source_type = &sources[source_ord as usize].source_type;
+                    match source_type {
+                        SourceToScheduleType::Sharded { .. } => {
+                            indexer_assignment
+                                .add_shards(source_ord, indexing_task.shard_ids.len() as u32);
+                        }
+                        SourceToScheduleType::NonSharded { .. } => {
+                            // For non-sharded sources like Kafka, one pipeline = one shard in the
+                            // solutions
+                            indexer_assignment.add_shards(source_ord, 1);
+                        }
+                        SourceToScheduleType::IngestV1 => {
+                            // Ingest V1 is not part of the logical placement algorithm.
+                        }
+                    }
                 }
             }
         }
@@ -310,16 +325,17 @@ fn pick_indexer(capacity_per_node: &[(String, u32)]) -> impl Iterator<Item = &st
 /// We do not support moving shard from one pipeline to another, so if required this function may
 /// also return instruction about deleting / adding new shards.
 fn convert_scheduling_solution_to_physical_plan(
-    mut solution: SchedulingSolution,
+    solution: &SchedulingSolution,
     id_to_ord_map: &IdToOrdMap,
     sources: &[SourceToSchedule],
     previous_plan_opt: Option<&PhysicalIndexingPlan>,
 ) -> PhysicalIndexingPlan {
+    let mut indexer_assignments = solution.indexer_assignments.clone();
     let mut new_physical_plan = PhysicalIndexingPlan::with_indexer_ids(&id_to_ord_map.indexer_ids);
     for (indexer_id, indexer_assignment) in id_to_ord_map
         .indexer_ids
         .iter()
-        .zip(&mut solution.indexer_assignments)
+        .zip(&mut indexer_assignments)
     {
         let previous_tasks_for_indexer = previous_plan_opt
             .and_then(|previous_plan| previous_plan.indexer(indexer_id))
@@ -349,7 +365,7 @@ fn convert_scheduling_solution_to_physical_plan(
         for (indexer, indexing_tasks) in new_physical_plan.indexing_tasks_per_indexer_mut() {
             let indexer_ord = id_to_ord_map.indexer_ord(indexer).unwrap();
             let mut num_shards_for_indexer_source: u32 =
-                solution.indexer_assignments[indexer_ord].num_shards(source_ord);
+                indexer_assignments[indexer_ord].num_shards(source_ord);
             for indexing_task in indexing_tasks {
                 if indexing_task.index_uid == source.source_uid.index_uid.as_str()
                     && indexing_task.source_id == source.source_uid.source_id
@@ -395,9 +411,36 @@ fn convert_scheduling_solution_to_physical_plan(
         }
     }
 
+    assert_post_condition_physical_plan_match_solution(
+        &new_physical_plan,
+        solution,
+        sources,
+        id_to_ord_map,
+    );
+
     new_physical_plan.normalize();
 
     new_physical_plan
+}
+
+// Checks that's the physical solution indeed matches the scheduling solution.
+fn assert_post_condition_physical_plan_match_solution(
+    physical_plan: &PhysicalIndexingPlan,
+    solution: &SchedulingSolution,
+    sources: &[SourceToSchedule],
+    id_to_ord_map: &IdToOrdMap,
+) {
+    let num_indexers = physical_plan.indexing_tasks_per_indexer().len();
+    assert_eq!(num_indexers, solution.indexer_assignments.len());
+    assert_eq!(num_indexers, id_to_ord_map.indexer_ids.len());
+    let mut reconstructed_solution = SchedulingSolution::with_num_indexers(num_indexers);
+    convert_physical_plan_to_solution(
+        physical_plan,
+        id_to_ord_map,
+        sources,
+        &mut reconstructed_solution,
+    );
+    assert_eq!(solution, &reconstructed_solution);
 }
 
 fn add_shard_to_indexer(
@@ -432,6 +475,35 @@ fn add_shard_to_indexer(
             pipeline_uid: Some(PipelineUid::new()),
             shard_ids: vec![missing_shard],
         });
+    }
+}
+
+// If the total node capacities is lower than 110% of the problem load, this
+// function scales the load of the indexer to reach this limit.
+fn inflate_node_capacities_if_necessary(problem: &mut SchedulingProblem) {
+    // First we scale the problem to the point where any indexer can fit the largest shard.
+    let Some(largest_shard_load) = problem.sources().map(|source| source.load_per_shard).max()
+    else {
+        return;
+    };
+    let min_indexer_capacity = (0..problem.num_indexers())
+        .map(|indexer_ord| problem.indexer_cpu_capacity(indexer_ord))
+        .min()
+        .expect("At least one indexer is required");
+    assert_ne!(min_indexer_capacity.cpu_millis(), 0);
+    if min_indexer_capacity.cpu_millis() < largest_shard_load.get() {
+        let scaling_factor =
+            (largest_shard_load.get() as f32) / (min_indexer_capacity.cpu_millis() as f32);
+        problem.scale_node_capacities(scaling_factor);
+    }
+
+    let total_node_capacities: f32 = problem.total_node_capacities().cpu_millis() as f32;
+    let total_load: f32 = problem.total_load() as f32;
+    let inflated_total_load = total_load * 1.2f32;
+    if inflated_total_load >= total_node_capacities {
+        // We need to inflate our node capacities to match the problem.
+        let ratio = inflated_total_load / total_node_capacities;
+        problem.scale_node_capacities(ratio);
     }
 }
 
@@ -477,6 +549,7 @@ pub fn build_physical_indexing_plan(
     }
 
     let mut problem = SchedulingProblem::with_indexer_cpu_capacities(indexer_cpu_capacities);
+
     for source in sources {
         if let Some(source_ord) = populate_problem(source, &mut problem) {
             let registered_source_ord = id_to_ord_map.add_source_uid(source.source_uid.clone());
@@ -487,22 +560,20 @@ pub fn build_physical_indexing_plan(
     // Populate the previous solution.
     let mut previous_solution = problem.new_solution();
     if let Some(previous_plan) = previous_plan_opt {
-        convert_physical_plan_to_solution(previous_plan, &id_to_ord_map, &mut previous_solution);
+        convert_physical_plan_to_solution(
+            previous_plan,
+            &id_to_ord_map,
+            sources,
+            &mut previous_solution,
+        );
     }
 
     // Compute the new scheduling solution
-    let (new_solution, unassigned_shards) = scheduling_logic::solve(&problem, previous_solution);
-
-    if !unassigned_shards.is_empty() {
-        // TODO this is probably a bad idea to just not overschedule, as having a single index trail
-        // behind will prevent the log GC.
-        // A better strategy would probably be to close shard, and start prevent ingestion.
-        error!("unable to assign all sources in the cluster");
-    }
+    let new_solution = scheduling_logic::solve(problem, previous_solution);
 
     // Convert the new scheduling solution back to a physical plan.
     convert_scheduling_solution_to_physical_plan(
-        new_solution,
+        &new_solution,
         &id_to_ord_map,
         sources,
         previous_plan_opt,
@@ -609,7 +680,7 @@ mod tests {
             let physical_plan = build_physical_indexing_plan(&sources, &indexer_max_loads, None);
             assert_eq!(physical_plan.indexing_tasks_per_indexer().len(), 1);
             let expected_tasks = physical_plan.indexer(&indexer1).unwrap();
-            assert_eq!(expected_tasks.len(), 1);
+            assert_eq!(expected_tasks.len(), 2);
             assert_eq!(&expected_tasks[0].source_id, &source_uid1.source_id);
         }
         {

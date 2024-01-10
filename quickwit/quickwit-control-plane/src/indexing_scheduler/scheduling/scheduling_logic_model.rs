@@ -40,6 +40,23 @@ pub struct SchedulingProblem {
 }
 
 impl SchedulingProblem {
+    /// Problem constructor.
+    ///
+    /// Panics if the list of indexers is empty or if one of the
+    /// indexer has a null capacity.
+    pub fn with_indexer_cpu_capacities(
+        indexer_cpu_capacities: Vec<CpuCapacity>,
+    ) -> SchedulingProblem {
+        assert!(!indexer_cpu_capacities.is_empty());
+        assert!(indexer_cpu_capacities
+            .iter()
+            .all(|cpu_capacity| cpu_capacity.cpu_millis() > 0));
+        SchedulingProblem {
+            sources: Vec::new(),
+            indexer_cpu_capacities,
+        }
+    }
+
     pub fn new_solution(&self) -> SchedulingSolution {
         SchedulingSolution::with_num_indexers(self.indexer_cpu_capacities.len())
     }
@@ -48,21 +65,32 @@ impl SchedulingProblem {
         self.indexer_cpu_capacities[indexer_ord]
     }
 
-    pub fn with_indexer_cpu_capacities(
-        indexer_cpu_capacities: Vec<CpuCapacity>,
-    ) -> SchedulingProblem {
-        SchedulingProblem {
-            sources: Vec::new(),
-            indexer_cpu_capacities,
+    /// Scales the cpu capacity by the given scaling factor.
+    ///
+    /// Resulting cpu capacity are ceiled to the next integer millicpus value.
+    pub fn scale_node_capacities(&mut self, scale: f32) {
+        for capacity in &mut self.indexer_cpu_capacities {
+            let scaled_cpu_millis = (capacity.cpu_millis() as f32 * scale).ceil() as u32;
+            *capacity = CpuCapacity::from_cpu_millis(scaled_cpu_millis);
         }
+    }
+
+    pub fn total_node_capacities(&self) -> CpuCapacity {
+        self.indexer_cpu_capacities
+            .iter()
+            .copied()
+            .fold(CpuCapacity::zero(), |left, right| left + right)
+    }
+
+    pub fn total_load(&self) -> u32 {
+        self.sources
+            .iter()
+            .map(|source| source.num_shards * source.load_per_shard.get())
+            .sum()
     }
 
     pub fn sources(&self) -> impl Iterator<Item = Source> + '_ {
         self.sources.iter().copied()
-    }
-
-    pub fn source(&self, source_ord: SourceOrd) -> Source {
-        self.sources[source_ord as usize]
     }
 
     pub fn add_source(&mut self, num_shards: u32, load_per_shard: NonZeroU32) -> SourceOrd {
@@ -88,7 +116,7 @@ impl SchedulingProblem {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IndexerAssignment {
     pub indexer_ord: IndexerOrd,
     pub num_shards_per_source: BTreeMap<SourceOrd, u32>,
@@ -102,25 +130,21 @@ impl IndexerAssignment {
         }
     }
 
-    pub fn indexer_available_capacity(&self, problem: &SchedulingProblem) -> CpuCapacity {
-        let total_cpu_capacity = self.total_cpu_load(problem);
+    /// Returns the number of available `mcpu` in the indexer.
+    /// If the indexer is over-assigned this method returns a negative value.
+    pub fn indexer_available_capacity(&self, problem: &SchedulingProblem) -> i32 {
+        let total_cpu_load = self.total_cpu_load(problem);
         let indexer_cpu_capacity = problem.indexer_cpu_capacities[self.indexer_ord];
-        if indexer_cpu_capacity <= total_cpu_capacity {
-            CpuCapacity::zero()
-        } else {
-            indexer_cpu_capacity - total_cpu_capacity
-        }
+        indexer_cpu_capacity.cpu_millis() as i32 - total_cpu_load as i32
     }
 
-    pub fn total_cpu_load(&self, problem: &SchedulingProblem) -> CpuCapacity {
-        CpuCapacity::from_cpu_millis(
-            self.num_shards_per_source
-                .iter()
-                .map(|(source_ord, num_shards)| {
-                    problem.source_load_per_shard(*source_ord).get() * num_shards
-                })
-                .sum(),
-        )
+    pub fn total_cpu_load(&self, problem: &SchedulingProblem) -> u32 {
+        self.num_shards_per_source
+            .iter()
+            .map(|(source_ord, num_shards)| {
+                problem.source_load_per_shard(*source_ord).get() * num_shards
+            })
+            .sum()
     }
 
     pub fn num_shards(&self, source_ord: SourceOrd) -> u32 {
@@ -150,7 +174,7 @@ impl IndexerAssignment {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SchedulingSolution {
     pub indexer_assignments: Vec<IndexerAssignment>,
 }

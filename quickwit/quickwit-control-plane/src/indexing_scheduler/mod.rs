@@ -196,20 +196,28 @@ impl IndexingScheduler {
     // has happened.
     pub(crate) fn schedule_indexing_plan_if_needed(&mut self, model: &ControlPlaneModel) {
         crate::metrics::CONTROL_PLANE_METRICS.schedule_total.inc();
-        let mut indexers: Vec<(String, IndexerNodeInfo)> = self.get_indexers_from_indexer_pool();
-        if indexers.is_empty() {
-            warn!("no indexer available, cannot schedule an indexing plan");
-            return;
-        };
 
         let sources = get_sources_to_schedule(model);
 
+        let mut indexers: Vec<(String, IndexerNodeInfo)> = self.get_indexers_from_indexer_pool();
+
         let indexer_id_to_cpu_capacities: FnvHashMap<String, CpuCapacity> = indexers
             .iter()
-            .map(|(indexer_id, indexer_node_info)| {
-                (indexer_id.to_string(), indexer_node_info.indexing_capacity)
+            .filter_map(|(indexer_id, indexer_node_info)| {
+                if indexer_node_info.indexing_capacity.cpu_millis() > 0 {
+                    Some((indexer_id.to_string(), indexer_node_info.indexing_capacity))
+                } else {
+                    None
+                }
             })
             .collect();
+
+        if indexer_id_to_cpu_capacities.is_empty() {
+            if !sources.is_empty() {
+                warn!("no indexing capacity available, cannot schedule an indexing plan");
+            }
+            return;
+        };
 
         let new_physical_plan = build_physical_indexing_plan(
             &sources,
@@ -808,37 +816,7 @@ mod tests {
                 let indexer_id = format!("indexer-{i}");
                 indexer_max_loads.insert(indexer_id, mcpu(4_000));
             }
-            let physical_indexing_plan = build_physical_indexing_plan(&sources, &indexer_max_loads, None);
-            let source_map: FnvHashMap<&SourceUid, &SourceToSchedule> = sources
-                .iter()
-                .map(|source| (&source.source_uid, source))
-                .collect();
-            for (node_id, tasks) in physical_indexing_plan.indexing_tasks_per_indexer() {
-                let mut load_in_node = 0u32;
-                for task in tasks {
-                    let source_uid = SourceUid {
-                        index_uid: IndexUid::from(task.index_uid.clone()),
-                        source_id: task.source_id.clone(),
-                    };
-                    let source_to_schedule = source_map.get(&source_uid).unwrap();
-                    match &source_to_schedule.source_type {
-                        SourceToScheduleType::IngestV1 => {}
-                        SourceToScheduleType::Sharded {
-                            load_per_shard,
-                            ..
-                        } => {
-                            load_in_node += load_per_shard.get() * task.shard_ids.len() as u32;
-                        }
-                        SourceToScheduleType::NonSharded {
-                            num_pipelines: _ ,
-                            load_per_pipeline,
-                        } => {
-                            load_in_node += load_per_pipeline.get();
-                        }
-                    }
-                }
-                assert!(load_in_node <= indexer_max_loads.get(node_id).unwrap().cpu_millis());
-            }
+            let _physical_indexing_plan = build_physical_indexing_plan(&sources, &indexer_max_loads, None);
         }
     }
 
