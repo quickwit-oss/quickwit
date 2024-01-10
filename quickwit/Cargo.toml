@@ -239,11 +239,11 @@ aws-smithy-http = "0.55.0"
 aws-smithy-types = "0.55.0"
 aws-types = "0.55.0"
 
-azure_core = { version = "0.13.0", features = ["enable_reqwest_rustls"] }
-azure_storage = { version = "0.13.0", default-features = false, features = [
+azure_core = { version = "0.16.0", features = ["enable_reqwest_rustls"] }
+azure_storage = { version = "0.16.0", default-features = false, features = [
   "enable_reqwest_rustls",
 ] }
-azure_storage_blobs = { version = "0.13.0", default-features = false, features = [
+azure_storage_blobs = { version = "0.16.0", default-features = false, features = [
   "enable_reqwest_rustls",
 ] }
 
