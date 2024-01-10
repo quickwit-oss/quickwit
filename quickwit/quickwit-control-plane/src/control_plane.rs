@@ -569,7 +569,7 @@ impl EventSubscriber<ShardPositionsUpdate> for ControlPlaneEventSubscriber {
 mod tests {
     use mockall::Sequence;
     use quickwit_actors::{AskError, Observe, SupervisorMetrics};
-    use quickwit_config::{IndexConfig, SourceParams, INGEST_SOURCE_ID};
+    use quickwit_config::{IndexConfig, SourceParams, INGEST_V2_SOURCE_ID};
     use quickwit_indexing::IndexingService;
     use quickwit_metastore::{
         CreateIndexRequestExt, IndexMetadata, ListIndexesMetadataResponseExt,
@@ -893,14 +893,14 @@ mod tests {
 
             let subrequest = &request.subrequests[0];
             assert_eq!(subrequest.index_uid, "test-index:0");
-            assert_eq!(subrequest.source_id, INGEST_SOURCE_ID);
+            assert_eq!(subrequest.source_id, INGEST_V2_SOURCE_ID);
 
             let subresponses = vec![ListShardsSubresponse {
                 index_uid: "test-index:0".to_string(),
-                source_id: INGEST_SOURCE_ID.to_string(),
+                source_id: INGEST_V2_SOURCE_ID.to_string(),
                 shards: vec![Shard {
                     index_uid: "test-index:0".to_string(),
-                    source_id: INGEST_SOURCE_ID.to_string(),
+                    source_id: INGEST_V2_SOURCE_ID.to_string(),
                     shard_id: 1,
                     shard_state: ShardState::Open as i32,
                     ..Default::default()
@@ -925,7 +925,7 @@ mod tests {
             subrequests: vec![GetOrCreateOpenShardsSubrequest {
                 subrequest_id: 0,
                 index_id: "test-index".to_string(),
-                source_id: INGEST_SOURCE_ID.to_string(),
+                source_id: INGEST_V2_SOURCE_ID.to_string(),
             }],
             closed_shards: Vec::new(),
             unavailable_leaders: Vec::new(),
@@ -939,7 +939,7 @@ mod tests {
 
         let subresponse = &get_open_shards_response.successes[0];
         assert_eq!(subresponse.index_uid, "test-index:0");
-        assert_eq!(subresponse.source_id, INGEST_SOURCE_ID);
+        assert_eq!(subresponse.source_id, INGEST_V2_SOURCE_ID);
         assert_eq!(subresponse.open_shards.len(), 1);
         assert_eq!(subresponse.open_shards[0].shard_id, 1);
 
@@ -1111,7 +1111,7 @@ mod tests {
                 assert_eq!(delete_shards_request.subrequests.len(), 1);
                 let subrequest = &delete_shards_request.subrequests[0];
                 assert_eq!(subrequest.index_uid, index_uid_clone);
-                assert_eq!(subrequest.source_id, INGEST_SOURCE_ID);
+                assert_eq!(subrequest.source_id, INGEST_V2_SOURCE_ID);
                 assert_eq!(&subrequest.shard_ids[..], &[17]);
                 Ok(DeleteShardsResponse {})
             },
@@ -1119,7 +1119,7 @@ mod tests {
 
         let mut shard = Shard {
             index_uid: index_0.index_uid.to_string(),
-            source_id: INGEST_SOURCE_ID.to_string(),
+            source_id: INGEST_V2_SOURCE_ID.to_string(),
             shard_id: 17,
             leader_id: "test_node".to_string(),
             ..Default::default()
@@ -1132,7 +1132,7 @@ mod tests {
                 let list_shards_resp = ListShardsResponse {
                     subresponses: vec![ListShardsSubresponse {
                         index_uid: index_uid_clone.to_string(),
-                        source_id: INGEST_SOURCE_ID.to_string(),
+                        source_id: INGEST_V2_SOURCE_ID.to_string(),
                         shards: vec![shard],
                         next_shard_id: 18,
                     }],
@@ -1152,7 +1152,7 @@ mod tests {
         );
         let source_uid = SourceUid {
             index_uid: index_0.index_uid.clone(),
-            source_id: INGEST_SOURCE_ID.to_string(),
+            source_id: INGEST_V2_SOURCE_ID.to_string(),
         };
 
         // This update should not triggeer anything in the control plane.
@@ -1246,7 +1246,7 @@ mod tests {
                 assert_eq!(delete_shards_request.subrequests.len(), 1);
                 let subrequest = &delete_shards_request.subrequests[0];
                 assert_eq!(subrequest.index_uid, index_uid_clone);
-                assert_eq!(subrequest.source_id, INGEST_SOURCE_ID);
+                assert_eq!(subrequest.source_id, INGEST_V2_SOURCE_ID);
                 assert_eq!(&subrequest.shard_ids[..], &[17]);
                 Ok(DeleteShardsResponse {})
             },
@@ -1258,7 +1258,7 @@ mod tests {
                 let list_shards_resp = ListShardsResponse {
                     subresponses: vec![ListShardsSubresponse {
                         index_uid: index_uid_clone.to_string(),
-                        source_id: INGEST_SOURCE_ID.to_string(),
+                        source_id: INGEST_V2_SOURCE_ID.to_string(),
                         shards: vec![],
                         next_shard_id: 18,
                     }],
@@ -1278,7 +1278,7 @@ mod tests {
         );
         let source_uid = SourceUid {
             index_uid: index_0.index_uid.clone(),
-            source_id: INGEST_SOURCE_ID.to_string(),
+            source_id: INGEST_V2_SOURCE_ID.to_string(),
         };
 
         // This update should not triggeer anything in the control plane.
@@ -1332,7 +1332,7 @@ mod tests {
                 let list_shards_resp = ListShardsResponse {
                     subresponses: vec![ListShardsSubresponse {
                         index_uid: index_uid_clone.to_string(),
-                        source_id: INGEST_SOURCE_ID.to_string(),
+                        source_id: INGEST_V2_SOURCE_ID.to_string(),
                         shards: vec![Shard {
                             index_uid: index_uid_clone.to_string(),
                             source_id: source.source_id.to_string(),
@@ -1428,7 +1428,7 @@ mod tests {
         mock_metastore.expect_delete_source().return_once(
             move |delete_source_request: DeleteSourceRequest| {
                 assert_eq!(delete_source_request.index_uid, index_uid_clone.to_string());
-                assert_eq!(&delete_source_request.source_id, INGEST_SOURCE_ID);
+                assert_eq!(&delete_source_request.source_id, INGEST_V2_SOURCE_ID);
                 Ok(EmptyResponse {})
             },
         );
@@ -1454,7 +1454,7 @@ mod tests {
                 let list_shards_resp = ListShardsResponse {
                     subresponses: vec![ListShardsSubresponse {
                         index_uid: index_uid_clone.to_string(),
-                        source_id: INGEST_SOURCE_ID.to_string(),
+                        source_id: INGEST_V2_SOURCE_ID.to_string(),
                         shards: vec![Shard {
                             index_uid: index_uid_clone.to_string(),
                             source_id: source.source_id.to_string(),
@@ -1485,7 +1485,7 @@ mod tests {
         control_plane_mailbox
             .ask(DeleteSourceRequest {
                 index_uid: index_0.index_uid.to_string(),
-                source_id: INGEST_SOURCE_ID.to_string(),
+                source_id: INGEST_V2_SOURCE_ID.to_string(),
             })
             .await
             .unwrap()

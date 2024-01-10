@@ -53,7 +53,7 @@ pub use source_config::{
     load_source_config_from_user_config, FileSourceParams, GcpPubSubSourceParams,
     KafkaSourceParams, KinesisSourceParams, PulsarSourceAuth, PulsarSourceParams, RegionOrEndpoint,
     SourceConfig, SourceInputFormat, SourceParams, TransformConfig, VecSourceParams,
-    VoidSourceParams, CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID, INGEST_SOURCE_ID,
+    VoidSourceParams, CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID, INGEST_V2_SOURCE_ID,
 };
 use tracing::warn;
 
@@ -64,8 +64,8 @@ pub use crate::metastore_config::{
     MetastoreBackend, MetastoreConfig, MetastoreConfigs, PostgresMetastoreConfig,
 };
 pub use crate::node_config::{
-    IndexerConfig, IngestApiConfig, JaegerConfig, NodeConfig, SearcherConfig, SplitCacheLimits,
-    DEFAULT_QW_CONFIG_PATH,
+    enable_ingest_v2, IndexerConfig, IngestApiConfig, JaegerConfig, NodeConfig, SearcherConfig,
+    SplitCacheLimits, DEFAULT_QW_CONFIG_PATH,
 };
 use crate::source_config::serialize::{SourceConfigV0_7, VersionedSourceConfig};
 pub use crate::storage_config::{

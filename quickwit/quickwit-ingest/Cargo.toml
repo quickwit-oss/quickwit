@@ -12,6 +12,7 @@ bytes = { workspace = true }
 bytesize = { workspace = true }
 dyn-clone = { workspace = true }
 flume = { workspace = true }
+fnv = { workspace = true }
 futures = { workspace = true }
 http = { workspace = true }
 hyper = { workspace = true }

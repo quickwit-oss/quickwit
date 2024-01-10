@@ -345,7 +345,7 @@ impl ControlPlaneModel {
 
 #[cfg(test)]
 mod tests {
-    use quickwit_config::{SourceConfig, SourceParams, INGEST_SOURCE_ID};
+    use quickwit_config::{SourceConfig, SourceParams, INGEST_V2_SOURCE_ID};
     use quickwit_metastore::IndexMetadata;
     use quickwit_proto::ingest::{Shard, ShardState};
     use quickwit_proto::metastore::ListIndexesMetadataResponse;
@@ -381,14 +381,14 @@ mod tests {
             assert_eq!(request.subrequests.len(), 2);
 
             assert_eq!(request.subrequests[0].index_uid, "test-index-0:0");
-            assert_eq!(request.subrequests[0].source_id, INGEST_SOURCE_ID);
+            assert_eq!(request.subrequests[0].source_id, INGEST_V2_SOURCE_ID);
             assert_eq!(
                 request.subrequests[0].shard_state(),
                 ShardState::Unspecified
             );
 
             assert_eq!(request.subrequests[1].index_uid, "test-index-1:0");
-            assert_eq!(request.subrequests[1].source_id, INGEST_SOURCE_ID);
+            assert_eq!(request.subrequests[1].source_id, INGEST_V2_SOURCE_ID);
             assert_eq!(
                 request.subrequests[1].shard_state(),
                 ShardState::Unspecified
@@ -397,11 +397,11 @@ mod tests {
             let subresponses = vec![
                 metastore::ListShardsSubresponse {
                     index_uid: "test-index-0:0".to_string(),
-                    source_id: INGEST_SOURCE_ID.to_string(),
+                    source_id: INGEST_V2_SOURCE_ID.to_string(),
                     shards: vec![Shard {
                         shard_id: 42,
                         index_uid: "test-index-0:0".to_string(),
-                        source_id: INGEST_SOURCE_ID.to_string(),
+                        source_id: INGEST_V2_SOURCE_ID.to_string(),
                         shard_state: ShardState::Open as i32,
                         leader_id: "node1".to_string(),
                         ..Default::default()
@@ -410,7 +410,7 @@ mod tests {
                 },
                 metastore::ListShardsSubresponse {
                     index_uid: "test-index-1:0".to_string(),
-                    source_id: INGEST_SOURCE_ID.to_string(),
+                    source_id: INGEST_V2_SOURCE_ID.to_string(),
                     shards: Vec::new(),
                     next_shard_id: 1,
                 },
@@ -443,7 +443,7 @@ mod tests {
 
         let source_uid_0 = SourceUid {
             index_uid: "test-index-0:0".into(),
-            source_id: INGEST_SOURCE_ID.to_string(),
+            source_id: INGEST_V2_SOURCE_ID.to_string(),
         };
         let shards: Vec<&ShardEntry> = model
             .shard_table
@@ -458,7 +458,7 @@ mod tests {
 
         let source_uid_1 = SourceUid {
             index_uid: "test-index-1:0".into(),
-            source_id: INGEST_SOURCE_ID.to_string(),
+            source_id: INGEST_V2_SOURCE_ID.to_string(),
         };
         let shards: Vec<&ShardEntry> = model
             .shard_table

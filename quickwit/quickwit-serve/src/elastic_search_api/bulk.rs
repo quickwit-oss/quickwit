@@ -18,17 +18,22 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::HashMap;
+use std::time::Instant;
 
 use bytes::Bytes;
 use hyper::StatusCode;
+use quickwit_config::enable_ingest_v2;
 use quickwit_ingest::{
-    CommitType, DocBatchBuilder, IngestRequest, IngestResponse, IngestService, IngestServiceClient,
+    CommitType, DocBatchBuilder, IngestRequest, IngestService, IngestServiceClient,
 };
+use quickwit_proto::ingest::router::IngestRouterServiceClient;
+use quickwit_proto::types::IndexId;
 use warp::{Filter, Rejection};
 
+use super::bulk_v2::{elastic_bulk_ingest_v2, ElasticBulkResponse};
 use crate::elastic_search_api::filter::{elastic_bulk_filter, elastic_index_bulk_filter};
 use crate::elastic_search_api::make_elastic_api_response;
-use crate::elastic_search_api::model::{BulkAction, ElasticIngestOptions, ElasticSearchError};
+use crate::elastic_search_api::model::{BulkAction, ElasticBulkOptions, ElasticSearchError};
 use crate::format::extract_format_from_qs;
 use crate::ingest_api::lines;
 use crate::with_arg;
@@ -36,11 +41,13 @@ use crate::with_arg;
 /// POST `_elastic/_bulk`
 pub fn es_compat_bulk_handler(
     ingest_service: IngestServiceClient,
+    ingest_router: IngestRouterServiceClient,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     elastic_bulk_filter()
         .and(with_arg(ingest_service))
-        .then(|body, ingest_option, ingest_service| {
-            elastic_ingest_bulk(None, body, ingest_option, ingest_service)
+        .and(with_arg(ingest_router))
+        .then(|body, bulk_options, ingest_service, ingest_router| {
+            elastic_ingest_bulk(None, body, bulk_options, ingest_service, ingest_router)
         })
         .and(extract_format_from_qs())
         .map(make_elastic_api_response)
@@ -49,22 +56,37 @@ pub fn es_compat_bulk_handler(
 /// POST `_elastic/<index>/_bulk`
 pub fn es_compat_index_bulk_handler(
     ingest_service: IngestServiceClient,
+    ingest_router: IngestRouterServiceClient,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     elastic_index_bulk_filter()
         .and(with_arg(ingest_service))
-        .then(|index, body, ingest_option, ingest_service| {
-            elastic_ingest_bulk(Some(index), body, ingest_option, ingest_service)
-        })
+        .and(with_arg(ingest_router))
+        .then(
+            |index_id, body, bulk_options, ingest_service, ingest_router| {
+                elastic_ingest_bulk(
+                    Some(index_id),
+                    body,
+                    bulk_options,
+                    ingest_service,
+                    ingest_router,
+                )
+            },
+        )
         .and(extract_format_from_qs())
         .map(make_elastic_api_response)
 }
 
 async fn elastic_ingest_bulk(
-    index: Option<String>,
+    default_index_id: Option<IndexId>,
     body: Bytes,
-    ingest_options: ElasticIngestOptions,
+    bulk_options: ElasticBulkOptions,
     mut ingest_service: IngestServiceClient,
-) -> Result<IngestResponse, ElasticSearchError> {
+    ingest_router: IngestRouterServiceClient,
+) -> Result<ElasticBulkResponse, ElasticSearchError> {
+    if enable_ingest_v2() {
+        return elastic_bulk_ingest_v2(default_index_id, body, bulk_options, ingest_router).await;
+    }
+    let now = Instant::now();
     let mut doc_batch_builders = HashMap::new();
     let mut lines = lines(&body).enumerate();
 
@@ -85,8 +107,8 @@ async fn elastic_ingest_bulk(
         // ES honors it and create the doc in the requested index. That is, `my-index` is a default
         // value in case _index: is missing, but not a constraint on each sub-action.
         let index_id = action
-            .into_index()
-            .or_else(|| index.clone())
+            .into_index_id()
+            .or_else(|| default_index_id.clone())
             .ok_or_else(|| {
                 ElasticSearchError::new(
                     StatusCode::BAD_REQUEST,
@@ -103,13 +125,19 @@ async fn elastic_ingest_bulk(
         .into_values()
         .map(|builder| builder.build())
         .collect();
-    let commit_type: CommitType = ingest_options.refresh.into();
+    let commit_type: CommitType = bulk_options.refresh.into();
     let ingest_request = IngestRequest {
         doc_batches,
         commit: commit_type.into(),
     };
-    let ingest_response = ingest_service.ingest(ingest_request).await?;
-    Ok(ingest_response)
+    ingest_service.ingest(ingest_request).await?;
+    let took_millis = now.elapsed().as_millis() as u64;
+    let errors = false;
+    let bulk_response = ElasticBulkResponse {
+        took_millis,
+        errors,
+    };
+    Ok(bulk_response)
 }
 
 #[cfg(test)]
@@ -119,11 +147,11 @@ mod tests {
 
     use hyper::StatusCode;
     use quickwit_config::{IngestApiConfig, NodeConfig};
-    use quickwit_ingest::{
-        FetchRequest, IngestResponse, IngestServiceClient, SuggestTruncateRequest,
-    };
+    use quickwit_ingest::{FetchRequest, IngestServiceClient, SuggestTruncateRequest};
+    use quickwit_proto::ingest::router::IngestRouterServiceClient;
     use quickwit_search::MockSearchService;
 
+    use crate::elastic_search_api::bulk_v2::ElasticBulkResponse;
     use crate::elastic_search_api::elastic_api_handlers;
     use crate::elastic_search_api::model::ElasticSearchError;
     use crate::ingest_api::setup_ingest_service;
@@ -134,7 +162,9 @@ mod tests {
         let search_service = Arc::new(MockSearchService::new());
         let (universe, _temp_dir, ingest_service, _) =
             setup_ingest_service(&["my-index"], &IngestApiConfig::default()).await;
-        let elastic_api_handlers = elastic_api_handlers(config, search_service, ingest_service);
+        let ingest_router = IngestRouterServiceClient::from(IngestRouterServiceClient::mock());
+        let elastic_api_handlers =
+            elastic_api_handlers(config, search_service, ingest_service, ingest_router);
         let payload = r#"
             { "create" : { "_index" : "my-index", "_id" : "1"} }
             {"id": 1, "message": "push"}
@@ -156,7 +186,9 @@ mod tests {
         let search_service = Arc::new(MockSearchService::new());
         let (universe, _temp_dir, ingest_service, _) =
             setup_ingest_service(&["my-index-1", "my-index-2"], &IngestApiConfig::default()).await;
-        let elastic_api_handlers = elastic_api_handlers(config, search_service, ingest_service);
+        let ingest_router = IngestRouterServiceClient::from(IngestRouterServiceClient::mock());
+        let elastic_api_handlers =
+            elastic_api_handlers(config, search_service, ingest_service, ingest_router);
         let payload = r#"
             { "create" : { "_index" : "my-index-1", "_id" : "1"} }
             {"id": 1, "message": "push"}
@@ -171,8 +203,8 @@ mod tests {
             .reply(&elastic_api_handlers)
             .await;
         assert_eq!(resp.status(), 200);
-        let ingest_response: IngestResponse = serde_json::from_slice(resp.body()).unwrap();
-        assert_eq!(ingest_response.num_docs_for_processing, 3);
+        let bulk_response: ElasticBulkResponse = serde_json::from_slice(resp.body()).unwrap();
+        assert!(!bulk_response.errors);
         universe.assert_quit().await;
     }
 
@@ -182,7 +214,9 @@ mod tests {
         let search_service = Arc::new(MockSearchService::new());
         let (universe, _temp_dir, ingest_service, _) =
             setup_ingest_service(&["my-index-1"], &IngestApiConfig::default()).await;
-        let elastic_api_handlers = elastic_api_handlers(config, search_service, ingest_service);
+        let ingest_router = IngestRouterServiceClient::from(IngestRouterServiceClient::mock());
+        let elastic_api_handlers =
+            elastic_api_handlers(config, search_service, ingest_service, ingest_router);
         let payload = "
             {\"create\": {\"_index\": \"my-index-1\", \"_id\": \"1674834324802805760\"}}
             \u{20}\u{20}\u{20}\u{20}\n
@@ -194,8 +228,8 @@ mod tests {
             .reply(&elastic_api_handlers)
             .await;
         assert_eq!(resp.status(), 200);
-        let ingest_response: IngestResponse = serde_json::from_slice(resp.body()).unwrap();
-        assert_eq!(ingest_response.num_docs_for_processing, 1);
+        let bulk_response: ElasticBulkResponse = serde_json::from_slice(resp.body()).unwrap();
+        assert!(!bulk_response.errors);
         universe.assert_quit().await;
     }
 
@@ -205,7 +239,9 @@ mod tests {
         let search_service = Arc::new(MockSearchService::new());
         let (universe, _temp_dir, ingest_service, _) =
             setup_ingest_service(&["my-index-1", "my-index-2"], &IngestApiConfig::default()).await;
-        let elastic_api_handlers = elastic_api_handlers(config, search_service, ingest_service);
+        let ingest_router = IngestRouterServiceClient::from(IngestRouterServiceClient::mock());
+        let elastic_api_handlers =
+            elastic_api_handlers(config, search_service, ingest_service, ingest_router);
         let payload = r#"
             { "create" : { "_index" : "my-index-1", "_id" : "1"} }
             {"id": 1, "message": "push"}
@@ -220,8 +256,8 @@ mod tests {
             .reply(&elastic_api_handlers)
             .await;
         assert_eq!(resp.status(), 200);
-        let ingest_response: IngestResponse = serde_json::from_slice(resp.body()).unwrap();
-        assert_eq!(ingest_response.num_docs_for_processing, 3);
+        let bulk_response: ElasticBulkResponse = serde_json::from_slice(resp.body()).unwrap();
+        assert!(!bulk_response.errors);
         universe.assert_quit().await;
     }
 
@@ -231,7 +267,9 @@ mod tests {
         let search_service = Arc::new(MockSearchService::new());
         let (universe, _temp_dir, ingest_service, ingest_service_mailbox) =
             setup_ingest_service(&["my-index-1", "my-index-2"], &IngestApiConfig::default()).await;
-        let elastic_api_handlers = elastic_api_handlers(config, search_service, ingest_service);
+        let ingest_router = IngestRouterServiceClient::from(IngestRouterServiceClient::mock());
+        let elastic_api_handlers =
+            elastic_api_handlers(config, search_service, ingest_service, ingest_router);
         let payload = r#"
             { "create" : { "_index" : "my-index-1", "_id" : "1"} }
             {"id": 1, "message": "push"}
@@ -248,8 +286,8 @@ mod tests {
                 .await;
 
             assert_eq!(resp.status(), 200);
-            let ingest_response: IngestResponse = serde_json::from_slice(resp.body()).unwrap();
-            assert_eq!(ingest_response.num_docs_for_processing, 3);
+            let bulk_response: ElasticBulkResponse = serde_json::from_slice(resp.body()).unwrap();
+            assert!(!bulk_response.errors);
         });
         universe.sleep(Duration::from_secs(10)).await;
         assert!(!handle.is_finished());
@@ -308,7 +346,9 @@ mod tests {
         let search_service = Arc::new(MockSearchService::new());
         let (universe, _temp_dir, ingest_service, ingest_service_mailbox) =
             setup_ingest_service(&["my-index-1", "my-index-2"], &IngestApiConfig::default()).await;
-        let elastic_api_handlers = elastic_api_handlers(config, search_service, ingest_service);
+        let ingest_router = IngestRouterServiceClient::from(IngestRouterServiceClient::mock());
+        let elastic_api_handlers =
+            elastic_api_handlers(config, search_service, ingest_service, ingest_router);
         let payload = r#"
             { "create" : { "_index" : "my-index-1", "_id" : "1"} }
             {"id": 1, "message": "push"}
@@ -325,8 +365,8 @@ mod tests {
                 .await;
 
             assert_eq!(resp.status(), 200);
-            let ingest_response: IngestResponse = serde_json::from_slice(resp.body()).unwrap();
-            assert_eq!(ingest_response.num_docs_for_processing, 3);
+            let bulk_response: ElasticBulkResponse = serde_json::from_slice(resp.body()).unwrap();
+            assert!(!bulk_response.errors);
         });
         universe.sleep(Duration::from_secs(10)).await;
         assert!(!handle.is_finished());
@@ -383,7 +423,9 @@ mod tests {
         let config = Arc::new(NodeConfig::for_test());
         let search_service = Arc::new(MockSearchService::new());
         let ingest_service = IngestServiceClient::from(IngestServiceClient::mock());
-        let elastic_api_handlers = elastic_api_handlers(config, search_service, ingest_service);
+        let ingest_router = IngestRouterServiceClient::from(IngestRouterServiceClient::mock());
+        let elastic_api_handlers =
+            elastic_api_handlers(config, search_service, ingest_service, ingest_router);
         let payload = r#"
             {"create": {"_index": "my-index", "_id": "1"},}
             {"id": 1, "message": "my-doc"}"#;

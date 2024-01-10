@@ -672,7 +672,7 @@ mod tests {
 
     use std::collections::BTreeSet;
 
-    use quickwit_config::{SourceConfig, SourceParams, INGEST_SOURCE_ID};
+    use quickwit_config::{SourceConfig, SourceParams, INGEST_V2_SOURCE_ID};
     use quickwit_ingest::{RateMibPerSec, ShardInfo};
     use quickwit_metastore::IndexMetadata;
     use quickwit_proto::control_plane::GetOrCreateOpenShardsSubrequest;
@@ -1344,7 +1344,7 @@ mod tests {
             .returning(|request| {
                 assert_eq!(request.subrequests.len(), 1);
                 assert_eq!(request.subrequests[0].index_uid, "test-index:0");
-                assert_eq!(request.subrequests[0].source_id, INGEST_SOURCE_ID);
+                assert_eq!(request.subrequests[0].source_id, INGEST_V2_SOURCE_ID);
                 assert_eq!(request.subrequests[0].leader_id, "test-ingester");
                 assert_eq!(request.subrequests[0].next_shard_id, 1);
 
@@ -1355,17 +1355,17 @@ mod tests {
         mock_metastore.expect_open_shards().returning(|request| {
             assert_eq!(request.subrequests.len(), 1);
             assert_eq!(request.subrequests[0].index_uid, "test-index:0");
-            assert_eq!(request.subrequests[0].source_id, INGEST_SOURCE_ID);
+            assert_eq!(request.subrequests[0].source_id, INGEST_V2_SOURCE_ID);
             assert_eq!(request.subrequests[0].leader_id, "test-ingester");
             assert_eq!(request.subrequests[0].next_shard_id, 1);
 
             let subresponses = vec![metastore::OpenShardsSubresponse {
                 subrequest_id: 0,
                 index_uid: "test-index:0".into(),
-                source_id: INGEST_SOURCE_ID.to_string(),
+                source_id: INGEST_V2_SOURCE_ID.to_string(),
                 opened_shards: vec![Shard {
                     index_uid: "test-index:0".into(),
-                    source_id: INGEST_SOURCE_ID.to_string(),
+                    source_id: INGEST_V2_SOURCE_ID.to_string(),
                     shard_id: 1,
                     leader_id: "test-ingester".to_string(),
                     shard_state: ShardState::Open as i32,
@@ -1387,7 +1387,7 @@ mod tests {
         );
 
         let index_uid: IndexUid = "test-index:0".into();
-        let source_id: SourceId = INGEST_SOURCE_ID.to_string();
+        let source_id: SourceId = INGEST_V2_SOURCE_ID.to_string();
 
         let source_uid = SourceUid {
             index_uid: index_uid.clone(),
@@ -1425,7 +1425,7 @@ mod tests {
             .returning(|request| {
                 assert_eq!(request.shards.len(), 1);
                 assert_eq!(request.shards[0].index_uid, "test-index:0");
-                assert_eq!(request.shards[0].source_id, INGEST_SOURCE_ID);
+                assert_eq!(request.shards[0].source_id, INGEST_V2_SOURCE_ID);
                 assert_eq!(request.shards[0].shard_id, 1);
                 assert_eq!(request.shards[0].leader_id, "test-ingester");
 
@@ -1434,7 +1434,7 @@ mod tests {
         ingester_mock.expect_init_shards().returning(|request| {
             assert_eq!(request.shards.len(), 1);
             assert_eq!(request.shards[0].index_uid, "test-index:0");
-            assert_eq!(request.shards[0].source_id, INGEST_SOURCE_ID);
+            assert_eq!(request.shards[0].source_id, INGEST_V2_SOURCE_ID);
             assert_eq!(request.shards[0].shard_id, 1);
             assert_eq!(request.shards[0].leader_id, "test-ingester");
 

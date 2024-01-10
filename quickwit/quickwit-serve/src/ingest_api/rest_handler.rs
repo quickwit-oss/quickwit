@@ -17,17 +17,16 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use bytes::{Buf, BufMut, Bytes, BytesMut};
-use quickwit_config::{IngestApiConfig, INGEST_SOURCE_ID};
+use bytes::{Buf, Bytes};
+use quickwit_config::{IngestApiConfig, INGEST_V2_SOURCE_ID};
 use quickwit_ingest::{
-    CommitType, DocBatchBuilder, FetchResponse, IngestRequest, IngestResponse, IngestService,
-    IngestServiceClient, IngestServiceError, TailRequest,
+    CommitType, DocBatchBuilder, DocBatchV2Builder, FetchResponse, IngestRequest, IngestResponse,
+    IngestService, IngestServiceClient, IngestServiceError, TailRequest,
 };
 use quickwit_proto::ingest::router::{
     IngestFailureReason, IngestRequestV2, IngestResponseV2, IngestRouterService,
     IngestRouterServiceClient, IngestSubrequest,
 };
-use quickwit_proto::ingest::DocBatchV2;
 use quickwit_proto::types::IndexId;
 use serde::Deserialize;
 use thiserror::Error;
@@ -128,22 +127,23 @@ async fn ingest_v2(
     ingest_options: IngestOptions,
     mut ingest_router: IngestRouterServiceClient,
 ) -> Result<IngestResponse, IngestServiceError> {
-    let mut doc_buffer = BytesMut::new();
-    let mut doc_lengths = Vec::new();
+    let mut doc_batch_builder = DocBatchV2Builder::default();
 
-    for line in lines(&body) {
-        doc_lengths.push(line.len() as u32);
-        doc_buffer.put(line);
+    for doc in lines(&body) {
+        doc_batch_builder.add_doc(doc);
     }
-    let num_docs = doc_lengths.len();
-    let doc_batch = DocBatchV2 {
-        doc_buffer: doc_buffer.freeze(),
-        doc_lengths,
+    let doc_batch_opt = doc_batch_builder.build();
+
+    let Some(doc_batch) = doc_batch_opt else {
+        let response = IngestResponse::default();
+        return Ok(response);
     };
+    let num_docs = doc_batch.num_docs();
+
     let subrequest = IngestSubrequest {
         subrequest_id: 0,
         index_id,
-        source_id: INGEST_SOURCE_ID.to_string(),
+        source_id: INGEST_V2_SOURCE_ID.to_string(),
         doc_batch: Some(doc_batch),
     };
     let request = IngestRequestV2 {
@@ -259,8 +259,12 @@ async fn tail_endpoint(
 
 pub(crate) fn lines(body: &Bytes) -> impl Iterator<Item = &[u8]> {
     body.split(|byte| byte == &b'\n')
-        .filter(|line| !line.iter().all(|&b| b.is_ascii_whitespace()))
-        .filter(|line| !line.is_empty())
+        .filter(|line| !is_empty_or_blank_line(line))
+}
+
+#[inline]
+fn is_empty_or_blank_line(line: &[u8]) -> bool {
+    line.is_empty() || line.iter().all(|ch| ch.is_ascii_whitespace())
 }
 
 #[cfg(test)]
