@@ -74,7 +74,7 @@ azure = [
   "azure_storage/enable_reqwest_rustls",
   "azure_storage_blobs/enable_reqwest_rustls",
 ]
-google = [
+gcs = [
   "dep:opendal",
   "opendal/services-gcs"
 ]
@@ -83,7 +83,7 @@ integration-testsuite = [
   "azure",
   "azure_core/azurite_workaround",
   "azure_storage_blobs/azurite_workaround",
-  "google",
+  "gcs", # Stands for Google cloud storage.
   "dep:reqsign",
   "reqsign/services-google",
   "dep:reqwest"
