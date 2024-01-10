@@ -37,6 +37,8 @@ pub enum StorageBackend {
     Ram,
     /// Amazon S3 or S3-compatible storage
     S3,
+    /// Google Cloud Storage
+    Google,
 }
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd, Hash, Serialize, Deserialize)]
@@ -114,6 +116,15 @@ impl StorageConfigs {
             })
     }
 
+    pub fn find_google(&self) -> Option<&GoogleCloudStorageConfig> {
+        self.0
+            .iter()
+            .find_map(|storage_config| match storage_config {
+                StorageConfig::Google(google_storage_config) => Some(google_storage_config),
+                _ => None,
+            })
+    }
+
     pub fn find_file(&self) -> Option<&FileStorageConfig> {
         self.0
             .iter()
@@ -157,13 +168,14 @@ pub enum StorageConfig {
     File(FileStorageConfig),
     Ram(RamStorageConfig),
     S3(S3StorageConfig),
+    Google(GoogleCloudStorageConfig),
 }
 
 impl StorageConfig {
     pub fn redact(&mut self) {
         match self {
             Self::Azure(azure_storage_config) => azure_storage_config.redact(),
-            Self::File(_) | Self::Ram(_) => {}
+            Self::File(_) | Self::Ram(_) | Self::Google(_) => {}
             Self::S3(s3_storage_config) => s3_storage_config.redact(),
         }
     }
@@ -195,6 +207,13 @@ impl StorageConfig {
             _ => None,
         }
     }
+
+    pub fn as_google(&self) -> Option<&GoogleCloudStorageConfig> {
+        match self {
+            Self::Google(google_cloud_storage_config) => Some(google_cloud_storage_config),
+            _ => None,
+        }
+    }
 }
 
 impl From<AzureStorageConfig> for StorageConfig {
@@ -221,6 +240,12 @@ impl From<S3StorageConfig> for StorageConfig {
     }
 }
 
+impl From<GoogleCloudStorageConfig> for StorageConfig {
+    fn from(google_cloud_storage_config: GoogleCloudStorageConfig) -> Self {
+        Self::Google(google_cloud_storage_config)
+    }
+}
+
 impl StorageConfig {
     pub fn backend(&self) -> StorageBackend {
         match self {
@@ -228,6 +253,7 @@ impl StorageConfig {
             Self::File(_) => StorageBackend::File,
             Self::Ram(_) => StorageBackend::Ram,
             Self::S3(_) => StorageBackend::S3,
+            Self::Google(_) => StorageBackend::Google,
         }
     }
 }
@@ -373,6 +399,27 @@ pub struct FileStorageConfig;
 #[derive(Debug, Clone, Default, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RamStorageConfig;
+
+#[derive(Debug, Clone, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct GoogleCloudStorageConfig {
+    #[serde(default)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub credential_path: Option<String>,
+}
+
+impl GoogleCloudStorageConfig {
+    pub const GOOGLE_CLOUD_STORAGE_CREDENTIAL_PATH_ENV_VAR: &'static str =
+        "QW_GOOGLE_CLOUD_STORAGE_CREDENTIAL_PATH";
+
+    /// Attempts to find the credential path in the environment variable
+    /// `QW_GOOGLE_CLOUD_STORAGE_CREDENTIAL_PATH` or the config.
+    pub fn resolve_credential_path(&self) -> Option<String> {
+        env::var(Self::GOOGLE_CLOUD_STORAGE_CREDENTIAL_PATH_ENV_VAR)
+            .ok()
+            .or_else(|| self.credential_path.clone())
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -530,6 +577,25 @@ mod tests {
                 access_key: Some("test-access-key".to_string()),
             };
             assert_eq!(azure_storage_config, expected_azure_config);
+        }
+    }
+
+    #[test]
+    fn test_storage_google_config_serde() {
+        {
+            let google_cloud_storage_config_yaml = r#"
+                credential_path: /path/to/credential.json
+            "#;
+            let google_cloud_storage_config: GoogleCloudStorageConfig =
+                serde_yaml::from_str(google_cloud_storage_config_yaml).unwrap();
+
+            let expected_google_cloud_storage_config = GoogleCloudStorageConfig {
+                credential_path: Some("/path/to/credential.json".to_string()),
+            };
+            assert_eq!(
+                google_cloud_storage_config,
+                expected_google_cloud_storage_config
+            );
         }
     }
 

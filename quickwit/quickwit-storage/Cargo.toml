@@ -50,6 +50,10 @@ quickwit-common = { workspace = true }
 quickwit-config = { workspace = true }
 quickwit-proto = { workspace = true }
 
+opendal = { workspace = true, optional = true }
+reqsign =  { workspace = true, optional = true }
+reqwest = { workspace = true, optional = true }
+
 [dev-dependencies]
 mockall = { workspace = true }
 proptest = { workspace = true }
@@ -70,11 +74,19 @@ azure = [
   "azure_storage/enable_reqwest_rustls",
   "azure_storage_blobs/enable_reqwest_rustls",
 ]
+google = [
+  "dep:opendal",
+  "opendal/services-gcs"
+]
 ci-test = []
 integration-testsuite = [
   "azure",
   "azure_core/azurite_workaround",
   "azure_storage_blobs/azurite_workaround",
+  "google",
+  "dep:reqsign",
+  "reqsign/services-google",
+  "dep:reqwest"
 ]
 testsuite = [
   "mockall",

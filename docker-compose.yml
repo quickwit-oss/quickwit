@@ -148,6 +148,18 @@ services:
         - azurite_data:/data
     command: azurite --blobHost 0.0.0.0 --loose
 
+  fake-gcs-server:
+    image: fsouza/fake-gcs-server:${FAKE_GCS_SERVER_VERSION:-1.47.7}
+    container_name: fake-gcs-server
+    ports:
+      - "${MAP_HOST_FAKE_GCS_SERVER:-127.0.0.1}:4443:4443" # Blob store port
+    profiles:
+      - all
+      - fake-gcs-server
+    volumes:
+      - fake_gcs_server_data:/data/sample-bucket
+    command: -scheme http
+
   grafana:
     image: grafana/grafana-oss:${GRAFANA_VERSION:-9.4.7}
     container_name: grafana
@@ -223,3 +235,4 @@ volumes:
   localstack_data:
   postgres_data:
   azurite_data:
+  fake_gcs_server_data:

@@ -43,8 +43,11 @@ pub use self::storage::Storage;
 
 mod bundle_storage;
 mod error;
+
 mod local_file_storage;
 mod object_storage;
+#[cfg(feature = "google")]
+mod opendal_storage;
 mod payload;
 mod prefix_storage;
 mod ram_storage;
@@ -71,6 +74,10 @@ pub use self::object_storage::{AzureBlobStorage, AzureBlobStorageFactory};
 pub use self::object_storage::{
     MultiPartPolicy, S3CompatibleObjectStorage, S3CompatibleObjectStorageFactory,
 };
+#[cfg(any(feature = "google", feature = "integration-testsuite"))]
+pub use self::opendal_storage::new_emulated_google_cloud_storage;
+#[cfg(feature = "google")]
+pub use self::opendal_storage::GoogleCloudStorageFactory;
 pub use self::ram_storage::{RamStorage, RamStorageBuilder};
 pub use self::split::{SplitPayload, SplitPayloadBuilder};
 #[cfg(any(test, feature = "testsuite"))]

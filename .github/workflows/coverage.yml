@@ -146,6 +146,11 @@ jobs:
       - name: Run Azurite service
         run: DOCKER_SERVICES=azurite make docker-compose-up
 
+      # GitHub Actions does not allow services to be started with a custom command,
+      # so we are running fake gcs server as a container manually.
+      - name: Run Fake GCS Server service
+        run: DOCKER_SERVICES=fake-gcs-server make docker-compose-up
+
       - name: Run Pulsar service
         run: DOCKER_SERVICES=pulsar make docker-compose-up
 
