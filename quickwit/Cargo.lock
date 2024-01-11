@@ -5688,6 +5688,7 @@ dependencies = [
  "bytesize",
  "dyn-clone",
  "flume",
+ "fnv",
  "futures",
  "http",
  "hyper",

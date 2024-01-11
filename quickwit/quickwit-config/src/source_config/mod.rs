@@ -34,7 +34,7 @@ pub use serialize::load_source_config_from_user_config;
 // For backward compatibility.
 use serialize::VersionedSourceConfig;
 
-use crate::TestableForRegression;
+use crate::{enable_ingest_v2, TestableForRegression};
 
 /// Reserved source ID for the `quickwit index ingest` CLI command.
 pub const CLI_INGEST_SOURCE_ID: &str = "_ingest-cli-source";
@@ -44,10 +44,13 @@ pub const INGEST_API_SOURCE_ID: &str = "_ingest-api-source";
 
 /// Reserved source ID used for native Quickwit ingest.
 /// (this is for ingest v2)
-pub const INGEST_SOURCE_ID: &str = "_ingest-source";
+pub const INGEST_V2_SOURCE_ID: &str = "_ingest-source";
 
-pub const RESERVED_SOURCE_IDS: &[&str] =
-    &[CLI_INGEST_SOURCE_ID, INGEST_API_SOURCE_ID, INGEST_SOURCE_ID];
+pub const RESERVED_SOURCE_IDS: &[&str] = &[
+    CLI_INGEST_SOURCE_ID,
+    INGEST_API_SOURCE_ID,
+    INGEST_V2_SOURCE_ID,
+];
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(into = "VersionedSourceConfig")]
@@ -125,10 +128,10 @@ impl SourceConfig {
     /// Creates an ingest source v2.
     pub fn ingest_v2_default() -> Self {
         Self {
-            source_id: INGEST_SOURCE_ID.to_string(),
+            source_id: INGEST_V2_SOURCE_ID.to_string(),
             max_num_pipelines_per_indexer: NonZeroUsize::new(1).expect("1 should be non-zero"),
             desired_num_pipelines: NonZeroUsize::new(1).expect("1 should be non-zero"),
-            enabled: false,
+            enabled: enable_ingest_v2(),
             source_params: SourceParams::Ingest,
             transform_config: None,
             input_format: SourceInputFormat::Json,

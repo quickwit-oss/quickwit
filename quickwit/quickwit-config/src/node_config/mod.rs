@@ -29,6 +29,7 @@ use std::time::Duration;
 use anyhow::{bail, ensure};
 use bytesize::ByteSize;
 use http::HeaderMap;
+use once_cell::sync::Lazy;
 use quickwit_common::net::HostAddr;
 use quickwit_common::uri::Uri;
 use quickwit_proto::indexing::CpuCapacity;
@@ -210,6 +211,12 @@ impl Default for IngestApiConfig {
             content_length_limit: ByteSize::mib(10),
         }
     }
+}
+
+/// Returns true if the ingest API v2 is enabled.
+pub fn enable_ingest_v2() -> bool {
+    static ENABLE_INGEST_V2: Lazy<bool> = Lazy::new(|| env::var("QW_ENABLE_INGEST_V2").is_ok());
+    *ENABLE_INGEST_V2
 }
 
 impl IngestApiConfig {

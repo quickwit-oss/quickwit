@@ -20,6 +20,7 @@
 use elasticsearch_dsl::search::ErrorCause;
 use hyper::StatusCode;
 use quickwit_ingest::IngestServiceError;
+use quickwit_proto::ingest::IngestV2Error;
 use quickwit_proto::ServiceError;
 use quickwit_search::SearchError;
 use serde::{Deserialize, Serialize};
@@ -38,9 +39,9 @@ impl ElasticSearchError {
             error: ErrorCause {
                 reason: Some(reason_string),
                 caused_by: None,
-                root_cause: vec![],
+                root_cause: Vec::new(),
                 stack_trace: None,
-                suppressed: vec![],
+                suppressed: Vec::new(),
                 ty: None,
                 additional_details: Default::default(),
             },
@@ -55,9 +56,9 @@ impl From<SearchError> for ElasticSearchError {
         let reason = ErrorCause {
             reason: Some(search_error.to_string()),
             caused_by: None,
-            root_cause: vec![],
+            root_cause: Vec::new(),
             stack_trace: None,
-            suppressed: vec![],
+            suppressed: Vec::new(),
             ty: None,
             additional_details: Default::default(),
         };
@@ -75,9 +76,29 @@ impl From<IngestServiceError> for ElasticSearchError {
         let reason = ErrorCause {
             reason: Some(ingest_service_error.to_string()),
             caused_by: None,
-            root_cause: vec![],
+            root_cause: Vec::new(),
             stack_trace: None,
-            suppressed: vec![],
+            suppressed: Vec::new(),
+            ty: None,
+            additional_details: Default::default(),
+        };
+        ElasticSearchError {
+            status,
+            error: reason,
+        }
+    }
+}
+
+impl From<IngestV2Error> for ElasticSearchError {
+    fn from(ingest_error: IngestV2Error) -> Self {
+        let status = ingest_error.error_code().to_http_status_code();
+
+        let reason = ErrorCause {
+            reason: Some(ingest_error.to_string()),
+            caused_by: None,
+            root_cause: Vec::new(),
+            stack_trace: None,
+            suppressed: Vec::new(),
             ty: None,
             additional_details: Default::default(),
         };
