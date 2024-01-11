@@ -247,6 +247,9 @@ azure_storage_blobs = { version = "0.13.0", default-features = false, features =
   "enable_reqwest_rustls",
 ] }
 
+opendal = { version = "0.44", default-features = false }
+reqsign = { version = "0.14", default-features = false }
+
 quickwit-actors = { version = "0.7.0", path = "./quickwit-actors" }
 quickwit-aws = { version = "0.7.0", path = "./quickwit-aws" }
 quickwit-cluster = { version = "0.7.0", path = "./quickwit-cluster" }

@@ -34,6 +34,12 @@ Cloud-native search engine for observability (logs, traces, and soon metrics!). 
 - [Distributed tracing](https://quickwit.io/docs/distributed-tracing/overview)
 - Metrics support is on the roadmap
 
+### 🚀 Quickstart
+
+- [Search and analytics on StackOverflow dataset](https://quickwit.io/docs/get-started/quickstart)
+- [Tracing analytics with Grafana](https://quickwit.io/docs/get-started/tutorials/trace-analytics-with-grafana)
+- [Tracing with Jaeger](https://quickwit.io/docs/get-started/tutorials/tutorial-jaeger)
+
 <br/>
 
 <video src="https://github.com/quickwit-oss/quickwit/assets/653704/020b94b9-deeb-4376-9a3a-b82e1168094c" controls="controls" style="max-width: 1200px;">
@@ -62,10 +68,6 @@ Cloud-native search engine for observability (logs, traces, and soon metrics!). 
 - Retention policies
 - Delete tasks (for GDPR use cases)
 - Distributed and highly available* engine that scales out in seconds (*HA indexing only with Kafka)
-
-# 🚀 Quickstart
-
-For a quick guide on how to install Quickwit, start a server, add documents to index, and search them - check out our [Quickstart](https://quickwit.io/docs/get-started/quickstart) guide.
 
 # 📑 Architecture overview
 

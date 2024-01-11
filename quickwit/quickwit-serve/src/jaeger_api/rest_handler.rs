@@ -80,6 +80,9 @@ fn jaeger_api_path_filter() -> impl Filter<Extract = (Vec<String>,), Error = Rej
     path = "/{otel-traces-index-id}/jaeger/api/services",
     responses(
         (status = 200, description = "Successfully fetched services names.", body = JaegerResponseBody )
+    ),
+    params(
+        ("otel-traces-index-id" = String, Path, description = "The name of the index to get services for.")
     )
 )]
 pub fn jaeger_services_handler(
@@ -98,6 +101,10 @@ pub fn jaeger_services_handler(
     path = "/{otel-traces-index-id}/jaeger/api/services/{service}/operations",
     responses(
         (status = 200, description = "Successfully fetched operations names the given service.", body = JaegerResponseBody )
+    ),
+    params(
+        ("otel-traces-index-id" = String, Path, description = "The name of the index to get operations for."),
+        ("service" = String, Path, description = "The name of the service to get operations for."),
     )
 )]
 pub fn jaeger_service_operations_handler(
@@ -113,12 +120,12 @@ pub fn jaeger_service_operations_handler(
 #[utoipa::path(
     get,
     tag = "Jaeger",
-    path = "/{otel-trace-index}/jaeger/api/traces?service={service}&start={start_in_ns}&end={end_in_ns}&lookback=custom",
+    path = "/{otel-traces-index-id}/jaeger/api/traces",
     responses(
         (status = 200, description = "Successfully fetched traces information.", body = JaegerResponseBody )
     ),
     params(
-        TracesSearchQueryParams,
+        ("otel-traces-index-id" = String, Path, description = "The name of the index to get traces for."),
         ("service" = Option<String>, Query, description = "The service name."),
         ("operation" = Option<String>, Query, description = "The operation name."),
         ("start" = Option<i64>, Query, description = "The start time in nanoseconds."),
@@ -143,9 +150,13 @@ pub fn jaeger_traces_search_handler(
 #[utoipa::path(
     get,
     tag = "Jaeger",
-    path = "/{otel-trace-index-id}/jaeger/api/traces/{id}",
+    path = "/{otel-traces-index-id}/jaeger/api/traces/{id}",
     responses(
         (status = 200, description = "Successfully fetched traces spans for the provided trace ID.", body = JaegerResponseBody )
+    ),
+    params(
+        ("otel-traces-index-id" = String, Path, description = "The name of the index to get traces for."),
+        ("id" = String, Path, description = "The ID of the trace to get spans for."),
     )
 )]
 pub fn jaeger_traces_handler(
