@@ -29,6 +29,7 @@ use tower::ServiceBuilder;
 use tower_http::compression::predicate::{DefaultPredicate, Predicate, SizeAbove};
 use tower_http::compression::CompressionLayer;
 use tower_http::cors::CorsLayer;
+use tower_http::trace::TraceLayer;
 use tracing::{error, info};
 use warp::{redirect, Filter, Rejection, Reply};
 
@@ -41,6 +42,7 @@ use crate::indexing_api::indexing_get_handler;
 use crate::ingest_api::ingest_api_handlers;
 use crate::jaeger_api::jaeger_api_handlers;
 use crate::json_api_response::{ApiError, JsonApiResponse};
+use crate::metrics::MetricsRecorder;
 use crate::metrics_api::metrics_handler;
 use crate::node_info_handler::node_info_handler;
 use crate::otlp_api::otlp_ingest_api_handlers;
@@ -69,9 +71,6 @@ pub(crate) async fn start_rest_server(
     readiness_trigger: BoxFutureInfaillible<()>,
     shutdown_signal: BoxFutureInfaillible<()>,
 ) -> anyhow::Result<()> {
-    let request_counter = warp::log::custom(|_| {
-        crate::SERVE_METRICS.http_requests_total.inc();
-    });
     // Docs routes
     let api_doc = warp::path("openapi.json")
         .and(warp::get())
@@ -109,7 +108,6 @@ pub(crate) async fn start_rest_server(
         .or(ui_handler())
         .or(health_check_routes)
         .or(metrics_routes)
-        .with(request_counter)
         .recover(recover_fn)
         .with(extra_headers)
         .boxed();
@@ -119,7 +117,10 @@ pub(crate) async fn start_rest_server(
         DefaultPredicate::new().and(SizeAbove::new(MINIMUM_RESPONSE_COMPRESSION_SIZE));
     let cors = build_cors(&quickwit_services.node_config.rest_config.cors_allow_origins);
 
+    let layer = TraceLayer::new_for_http()
+        .on_request(MetricsRecorder::<hyper::Body>::new());
     let service = ServiceBuilder::new()
+        .layer(layer)
         .layer(
             CompressionLayer::new()
                 .gzip(true)
