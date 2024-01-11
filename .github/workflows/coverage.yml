@@ -26,6 +26,7 @@ jobs:
   test:
     name: Coverage
     runs-on: buildjet-8vcpu-ubuntu-2204 # ubuntu-latest
+    timeout-minutes: 40
     # Setting a containing will require to fix the QW_S3_ENDPOINT to http://localstack:4566
     services:
       localstack:
