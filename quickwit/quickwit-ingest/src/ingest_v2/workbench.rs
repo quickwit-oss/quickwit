@@ -41,7 +41,7 @@ pub(super) struct IngestWorkbench {
     pub num_attempts: usize,
     pub max_num_attempts: usize,
     // List of leaders that have been marked as temporarily unavailable.
-    // This leaders have encounterred a transport error during an attempt and will be treated as if
+    // These leaders have encountered a transport error during an attempt and will be treated as if
     // they were out of the pool for subsequent attempts.
     //
     // (The point here is to make sure we do not wait for the failure detection to kick the node
