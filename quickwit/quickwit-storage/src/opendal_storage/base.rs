@@ -19,7 +19,7 @@
 
 use std::fmt;
 use std::ops::Range;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use async_trait::async_trait;
 use bytesize::ByteSize;
@@ -29,8 +29,8 @@ use tokio::io::{AsyncRead, AsyncWriteExt};
 
 use crate::storage::SendableAsync;
 use crate::{
-    BulkDeleteError, DeleteFailure, OwnedBytes, PutPayload, Storage, StorageError,
-    StorageErrorKind, StorageResolverError, StorageResult,
+    BulkDeleteError, OwnedBytes, PutPayload, Storage, StorageError, StorageErrorKind,
+    StorageResolverError, StorageResult,
 };
 
 /// OpenDAL based storage implementation.
@@ -149,8 +149,8 @@ impl Storage for OpendalStorage {
                         let storage_error_kind = err.kind();
                         let storage_error: StorageError = err.into();
                         bulk_error.failures.insert(
-                            PathBuf::from(&path),
-                            DeleteFailure {
+                            path.to_path_buf(),
+                            crate::DeleteFailure {
                                 code: Some(storage_error_kind.to_string()),
                                 message: Some(storage_error.to_string()),
                                 error: Some(storage_error.clone()),
@@ -158,11 +158,11 @@ impl Storage for OpendalStorage {
                         );
                         bulk_error.error = Some(storage_error);
                         for path in paths[index..].iter() {
-                            bulk_error.unattempted.push(PathBuf::from(&path))
+                            bulk_error.unattempted.push(path.to_path_buf())
                         }
                         break;
                     } else {
-                        bulk_error.successes.push(PathBuf::from(&path))
+                        bulk_error.successes.push(path.to_path_buf())
                     }
                 }
 

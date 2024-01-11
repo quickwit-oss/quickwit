@@ -59,7 +59,6 @@ quickwit-doc-mapper = { workspace = true, features = ["testsuite"] }
 quickwit-storage = { workspace = true, features = ["testsuite"] }
 
 [features]
-azure = ["quickwit-storage/azure"]
 ci-test = []
 postgres = ["quickwit-proto/postgres", "sea-query", "sea-query-binder", "sqlx"]
 testsuite = ["mockall", "tempfile", "quickwit-config/testsuite"]
