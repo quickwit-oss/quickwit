@@ -94,7 +94,8 @@ release-feature-set = [
   "quickwit-indexing/kinesis",
   "quickwit-indexing/pulsar",
   "quickwit-indexing/vrl",
-  "quickwit-metastore/azure",
+  "quickwit-storage/azure",
+  "quickwit-storage/gcs",
   "quickwit-metastore/postgres",
   "quickwit-doc-mapper/multilang",
 ]
@@ -105,7 +106,8 @@ release-feature-vendored-set = [
   "quickwit-indexing/pulsar",
   "quickwit-indexing/vrl",
   "quickwit-indexing/vendored-kafka",
-  "quickwit-metastore/azure",
+  "quickwit-storage/azure",
+  "quickwit-storage/gcs",
   "quickwit-metastore/postgres",
   "quickwit-doc-mapper/multilang",
 ]
@@ -116,7 +118,8 @@ release-macos-feature-vendored-set = [
   "quickwit-indexing/pulsar",
   "quickwit-indexing/vrl",
   "quickwit-indexing/vendored-kafka-macos",
-  "quickwit-metastore/azure",
+  "quickwit-storage/azure",
+  "quickwit-storage/gcs",
   "quickwit-metastore/postgres",
   "quickwit-doc-mapper/multilang",
 ]
