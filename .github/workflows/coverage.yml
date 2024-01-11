@@ -41,9 +41,6 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-        credentials:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_ACCESS_TOKEN }}
 
       postgres:
         image: postgres:latest
@@ -58,9 +55,6 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-        credentials:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_ACCESS_TOKEN }}
 
       kafka-broker:
         image: confluentinc/cp-kafka:7.2.1
@@ -84,9 +78,6 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-        credentials:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_ACCESS_TOKEN }}
 
       zookeeper:
         image: confluentinc/cp-zookeeper:7.2.1
@@ -101,9 +92,6 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
-        credentials:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_ACCESS_TOKEN }}
 
       gcp-pubsub-emulator:
         image: thekevjames/gcloud-pubsub-emulator:7555256f2c
@@ -111,9 +99,6 @@ jobs:
           - "9898:8681"
         env:
           PUBSUB_PROJECT1: "quickwit-emulator,emulator_topic:emulator_subscription"
-        credentials:
-          username: ${{ secrets.DOCKERHUB_USERNAME }}
-          password: ${{ secrets.DOCKERHUB_ACCESS_TOKEN }}
 
     steps:
       - uses: actions/checkout@v4
