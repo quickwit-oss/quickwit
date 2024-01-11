@@ -37,7 +37,7 @@ runs:
           echo "QW_COMMIT_TAGS=$(git tag --points-at HEAD | tr '\n' ',')" >> $GITHUB_ENV
       shell: bash
     - name: Build Quickwit
-      run: cross build --release --features release-feature-vendored-set --target ${{ inputs.target }}
+      run: cross build --release --features release-feature-vendored-set --target ${{ inputs.target }} --bin quickwit
       shell: bash
       env:
         QW_COMMIT_DATE: ${{ env.QW_COMMIT_DATE }}
