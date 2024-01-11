@@ -1121,7 +1121,7 @@ mod tests {
         let subworkbench = workbench.subworkbenches.get(&1).unwrap();
         assert!(matches!(
             subworkbench.last_failure_opt,
-            Some(SubworkbenchFailure::ConnectionError)
+            Some(SubworkbenchFailure::TransportError)
         ));
     }
 
