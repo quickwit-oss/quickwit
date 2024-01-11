@@ -178,7 +178,7 @@ where
     }
 
     /// Removes a value from the pool.
-    pub fn remove(&self, key: &K) {
+    fn remove(&self, key: &K) {
         self.pool
             .write()
             .expect("lock should not be poisoned")

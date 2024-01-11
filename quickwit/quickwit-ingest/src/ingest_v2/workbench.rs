@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashSet};
 
 use quickwit_proto::control_plane::{
     GetOrCreateOpenShardsFailure, GetOrCreateOpenShardsFailureReason,
@@ -27,24 +27,31 @@ use quickwit_proto::ingest::router::{
     IngestFailure, IngestFailureReason, IngestResponseV2, IngestSubrequest, IngestSuccess,
 };
 use quickwit_proto::ingest::IngestV2Result;
-use quickwit_proto::types::{ShardId, SubrequestId};
+use quickwit_proto::types::{NodeId, SubrequestId};
 use tracing::warn;
 
 /// A helper struct for managing the state of the subrequests of an ingest request during multiple
 /// persist attempts.
 #[derive(Default)]
 pub(super) struct IngestWorkbench {
-    pub subworkbenches: HashMap<SubrequestId, IngestSubworkbench>,
+    pub subworkbenches: BTreeMap<SubrequestId, IngestSubworkbench>,
     pub num_successes: usize,
     /// The number of batch persist attempts. This is not sum of the number of attempts for each
     /// subrequest.
     pub num_attempts: usize,
     pub max_num_attempts: usize,
+    // List of leaders that have been marked as temporarily unavailable.
+    // These leaders have encountered a transport error during an attempt and will be treated as if
+    // they were out of the pool for subsequent attempts.
+    //
+    // (The point here is to make sure we do not wait for the failure detection to kick the node
+    // out of the ingest node.)
+    pub unavailable_leaders: HashSet<NodeId>,
 }
 
 impl IngestWorkbench {
     pub fn new(ingest_subrequests: Vec<IngestSubrequest>, max_num_attempts: usize) -> Self {
-        let subworkbenches: HashMap<SubrequestId, IngestSubworkbench> = ingest_subrequests
+        let subworkbenches: BTreeMap<SubrequestId, IngestSubworkbench> = ingest_subrequests
             .into_iter()
             .map(|subrequest| {
                 (
@@ -65,6 +72,8 @@ impl IngestWorkbench {
         self.num_attempts += 1;
     }
 
+    /// Returns true if all subrequests were successful or if the number of
+    /// attempts has been exhausted.
     pub fn is_complete(&self) -> bool {
         self.num_successes >= self.subworkbenches.len()
             || self.num_attempts >= self.max_num_attempts
@@ -96,18 +105,6 @@ impl IngestWorkbench {
         &mut self,
         open_shards_failure: GetOrCreateOpenShardsFailure,
     ) {
-        let Some(subworkbench) = self
-            .subworkbenches
-            .get_mut(&open_shards_failure.subrequest_id)
-        else {
-            warn!(
-                "could not find subrequest `{}` in workbench",
-                open_shards_failure.subrequest_id
-            );
-            return;
-        };
-        subworkbench.num_attempts += 1;
-
         let last_failure = match open_shards_failure.reason() {
             GetOrCreateOpenShardsFailureReason::IndexNotFound => SubworkbenchFailure::IndexNotFound,
             GetOrCreateOpenShardsFailureReason::SourceNotFound => {
@@ -121,7 +118,7 @@ impl IngestWorkbench {
                 SubworkbenchFailure::Internal("unspecified".to_string())
             }
         };
-        subworkbench.last_failure_opt = Some(last_failure);
+        self.record_failure(open_shards_failure.subrequest_id, last_failure);
     }
 
     pub fn record_persist_success(&mut self, persist_success: PersistSuccess) {
@@ -137,44 +134,39 @@ impl IngestWorkbench {
         subworkbench.persist_success_opt = Some(persist_success);
     }
 
-    pub fn record_persist_failure(&mut self, persist_failure: &PersistFailure) {
-        let Some(subworkbench) = self.subworkbenches.get_mut(&persist_failure.subrequest_id) else {
-            warn!(
-                "could not find subrequest `{}` in workbench",
-                persist_failure.subrequest_id
-            );
+    fn record_failure(&mut self, subrequest_id: SubrequestId, failure: SubworkbenchFailure) {
+        let Some(subworkbench) = self.subworkbenches.get_mut(&subrequest_id) else {
+            warn!("could not find subrequest `{}` in workbench", subrequest_id);
             return;
         };
         subworkbench.num_attempts += 1;
-        subworkbench.last_failure_opt = Some(SubworkbenchFailure::Persist((
-            persist_failure.shard_id,
-            persist_failure.reason(),
-        )));
+        subworkbench.last_failure_opt = Some(failure);
     }
 
     pub fn record_no_shards_available(&mut self, subrequest_id: SubrequestId) {
-        let Some(subworkbench) = self.subworkbenches.get_mut(&subrequest_id) else {
-            warn!("could not find subrequest `{}` in workbench", subrequest_id);
-            return;
-        };
-        subworkbench.num_attempts += 1;
-        subworkbench.last_failure_opt = Some(SubworkbenchFailure::NoShardsAvailable);
+        self.record_failure(subrequest_id, SubworkbenchFailure::NoShardsAvailable);
+    }
+
+    /// Marks a node as unavailable for the span of the workbench.
+    ///
+    /// Remaining attempts will treat the node as if it was not in the ingester pool.
+    pub fn record_connection_error(&mut self, subrequest_id: SubrequestId) {
+        self.record_failure(subrequest_id, SubworkbenchFailure::TransportError);
+    }
+
+    pub fn record_persist_failure(&mut self, persist_failure: &PersistFailure) {
+        let failure = SubworkbenchFailure::Persist(persist_failure.reason());
+        self.record_failure(persist_failure.subrequest_id, failure);
     }
 
     pub fn record_internal_error(&mut self, subrequest_id: SubrequestId, error_message: String) {
-        let Some(subworkbench) = self.subworkbenches.get_mut(&subrequest_id) else {
-            warn!("could not find subrequest `{}` in workbench", subrequest_id);
-            return;
-        };
-        subworkbench.num_attempts += 1;
-        subworkbench.last_failure_opt = Some(SubworkbenchFailure::Internal(error_message));
+        self.record_failure(subrequest_id, SubworkbenchFailure::Internal(error_message));
     }
 
     pub fn into_ingest_response(self) -> IngestV2Result<IngestResponseV2> {
         let num_subworkbenches = self.subworkbenches.len();
         let mut successes = Vec::with_capacity(self.num_successes);
         let mut failures = Vec::with_capacity(num_subworkbenches - self.num_successes);
-
         for subworkbench in self.subworkbenches.into_values() {
             if let Some(persist_success) = subworkbench.persist_success_opt {
                 let success = IngestSuccess {
@@ -195,8 +187,7 @@ impl IngestWorkbench {
                 failures.push(failure);
             }
         }
-        assert!(successes.len() + failures.len() == num_subworkbenches);
-
+        assert_eq!(successes.len() + failures.len(), num_subworkbenches);
         Ok(IngestResponseV2 {
             successes,
             failures,
@@ -225,7 +216,10 @@ pub(super) enum SubworkbenchFailure {
     IndexNotFound,
     SourceNotFound,
     NoShardsAvailable,
-    Persist((ShardId, PersistFailureReason)),
+    // Transport error: we failed to reach the ingester.
+    TransportError,
+    // This is an error supplied by the ingester.
+    Persist(PersistFailureReason),
     Internal(String),
 }
 
@@ -236,7 +230,10 @@ impl SubworkbenchFailure {
             Self::SourceNotFound => IngestFailureReason::SourceNotFound,
             Self::Internal(_) => IngestFailureReason::Internal,
             Self::NoShardsAvailable => IngestFailureReason::NoShardsAvailable,
-            Self::Persist((_shard_id, persist_failure_reason)) => (*persist_failure_reason).into(),
+            // In our last attempt, we did not manage to reach the ingester.
+            // We can consider that as a no shards available.
+            Self::TransportError => IngestFailureReason::NoShardsAvailable,
+            Self::Persist(persist_failure_reason) => (*persist_failure_reason).into(),
         }
     }
 }
@@ -262,13 +259,19 @@ impl IngestSubworkbench {
         self.persist_success_opt.is_none() && self.last_failure_is_transient()
     }
 
+    /// Returns `false` if and only if the last attempt suggest retrying will fail.
+    /// e.g.:
+    /// - the index does not exist
+    /// - the source does not exist.
     fn last_failure_is_transient(&self) -> bool {
         match self.last_failure_opt {
             Some(SubworkbenchFailure::IndexNotFound) => false,
             Some(SubworkbenchFailure::SourceNotFound) => false,
-            Some(SubworkbenchFailure::Internal(_)) => false,
-            Some(SubworkbenchFailure::NoShardsAvailable) => true,
+            Some(SubworkbenchFailure::Internal(_)) => true,
+            // No need to retry no shards were available.
+            Some(SubworkbenchFailure::NoShardsAvailable) => false,
             Some(SubworkbenchFailure::Persist(_)) => true,
+            Some(SubworkbenchFailure::TransportError) => true,
             None => true,
         }
     }
@@ -289,13 +292,31 @@ mod tests {
         assert!(subworkbench.is_pending());
         assert!(subworkbench.last_failure_is_transient());
 
-        subworkbench.last_failure_opt = Some(SubworkbenchFailure::NoShardsAvailable);
+        subworkbench.last_failure_opt = Some(SubworkbenchFailure::TransportError);
         assert!(subworkbench.is_pending());
         assert!(subworkbench.last_failure_is_transient());
+
+        subworkbench.last_failure_opt =
+            Some(SubworkbenchFailure::Internal("timed out".to_string()));
+        assert!(subworkbench.is_pending());
+        assert!(subworkbench.last_failure_is_transient());
+
+        subworkbench.last_failure_opt = Some(SubworkbenchFailure::NoShardsAvailable);
+        assert!(!subworkbench.is_pending());
+        assert!(!subworkbench.last_failure_is_transient());
 
         subworkbench.last_failure_opt = Some(SubworkbenchFailure::IndexNotFound);
         assert!(!subworkbench.is_pending());
         assert!(!subworkbench.last_failure_is_transient());
+        subworkbench.last_failure_opt = Some(SubworkbenchFailure::SourceNotFound);
+        assert!(!subworkbench.is_pending());
+        assert!(!subworkbench.last_failure_is_transient());
+
+        subworkbench.last_failure_opt = Some(SubworkbenchFailure::Persist(
+            PersistFailureReason::RateLimited,
+        ));
+        assert!(subworkbench.is_pending());
+        assert!(subworkbench.last_failure_is_transient());
 
         let persist_success = PersistSuccess {
             ..Default::default()
@@ -477,7 +498,7 @@ mod tests {
         let subworkbench = workbench.subworkbenches.get(&0).unwrap();
         assert!(matches!(
             subworkbench.last_failure_opt,
-            Some(SubworkbenchFailure::Persist((shard_id, reason))) if shard_id == 1 && reason == PersistFailureReason::ResourceExhausted
+            Some(SubworkbenchFailure::Persist(reason)) if reason == PersistFailureReason::ResourceExhausted
         ));
         assert_eq!(subworkbench.num_attempts, 1);
     }

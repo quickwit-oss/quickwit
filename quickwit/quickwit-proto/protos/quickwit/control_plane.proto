@@ -66,6 +66,10 @@ service ControlPlaneService {
 message GetOrCreateOpenShardsRequest {
   repeated GetOrCreateOpenShardsSubrequest subrequests = 1;
   repeated quickwit.ingest.ShardIds closed_shards = 2;
+  // The control plane should return shards that are not present on the supplied leaders.
+  //
+  // The control plane does not change the status of those leaders just from this signal.
+  // It will check the status of its own ingester pool.
   repeated string unavailable_leaders = 3;
 }
 

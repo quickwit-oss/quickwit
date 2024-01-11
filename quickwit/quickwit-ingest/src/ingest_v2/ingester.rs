@@ -273,9 +273,7 @@ impl Ingester {
                     "failed to create mrecordlog queue `{}`: {}",
                     queue_id, io_error
                 );
-                return Err(IngestV2Error::IngesterUnavailable {
-                    ingester_id: shard.leader_id.into(),
-                });
+                return Err(IngestV2Error::Internal(format!("Io Error: {io_error}")));
             }
         };
         let rate_limiter = RateLimiter::from_settings(self.rate_limiter_settings);

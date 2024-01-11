@@ -6,6 +6,10 @@ pub struct GetOrCreateOpenShardsRequest {
     pub subrequests: ::prost::alloc::vec::Vec<GetOrCreateOpenShardsSubrequest>,
     #[prost(message, repeated, tag = "2")]
     pub closed_shards: ::prost::alloc::vec::Vec<super::ingest::ShardIds>,
+    /// The control plane should return shards that are not present on the supplied leaders.
+    ///
+    /// The control plane does not change the status of those leaders just from this signal.
+    /// It will check the status of its own ingester pool.
     #[prost(string, repeated, tag = "3")]
     pub unavailable_leaders: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
