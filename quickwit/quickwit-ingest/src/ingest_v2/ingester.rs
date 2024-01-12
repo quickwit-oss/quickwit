@@ -1605,6 +1605,66 @@ mod tests {
         );
     }
 
+    // This test should be run manually and independently of other tests with the `fail/failpoints`
+    // feature enabled.
+    #[tokio::test]
+    #[ignore]
+    async fn test_ingester_persist_closes_shard_on_io_error() {
+        let scenario = fail::FailScenario::setup();
+        fail::cfg("ingester:append_records", "return").unwrap();
+
+        let (_ingester_ctx, mut ingester) = IngesterForTest::default().build().await;
+
+        let mut state_guard = ingester.state.write().await;
+        let queue_id = queue_id("test-index:0", "test-source", 1);
+        let solo_shard =
+            IngesterShard::new_solo(ShardState::Open, Position::Beginning, Position::Beginning);
+        state_guard.shards.insert(queue_id.clone(), solo_shard);
+
+        state_guard
+            .mrecordlog
+            .create_queue(&queue_id)
+            .await
+            .unwrap();
+
+        let rate_limiter = RateLimiter::from_settings(RateLimiterSettings::default());
+        let rate_meter = RateMeter::default();
+        state_guard
+            .rate_trackers
+            .insert(queue_id.clone(), (rate_limiter, rate_meter));
+
+        drop(state_guard);
+
+        let persist_request = PersistRequest {
+            leader_id: "test-ingester".to_string(),
+            commit_type: CommitTypeV2::Force as i32,
+            subrequests: vec![PersistSubrequest {
+                subrequest_id: 0,
+                index_uid: "test-index:0".to_string(),
+                source_id: "test-source".to_string(),
+                shard_id: 1,
+                doc_batch: Some(DocBatchV2::for_test(["test-doc-foo"])),
+            }],
+        };
+        let persist_response = ingester.persist(persist_request).await.unwrap();
+        assert_eq!(persist_response.leader_id, "test-ingester");
+        assert_eq!(persist_response.successes.len(), 0);
+        assert_eq!(persist_response.failures.len(), 1);
+
+        let persist_failure = &persist_response.failures[0];
+        assert_eq!(persist_failure.subrequest_id, 0);
+        assert_eq!(persist_failure.index_uid, "test-index:0");
+        assert_eq!(persist_failure.source_id, "test-source");
+        assert_eq!(persist_failure.shard_id, 1);
+        assert_eq!(persist_failure.reason(), PersistFailureReason::ShardClosed,);
+
+        let state_guard = ingester.state.read().await;
+        let shard = state_guard.shards.get(&queue_id).unwrap();
+        shard.assert_is_closed();
+
+        scenario.teardown();
+    }
+
     #[tokio::test]
     async fn test_ingester_persist_deletes_dangling_shard() {
         let (_ingester_ctx, mut ingester) = IngesterForTest::default().build().await;

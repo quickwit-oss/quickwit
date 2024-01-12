@@ -22,6 +22,7 @@ use std::iter::once;
 use std::ops::RangeInclusive;
 
 use bytesize::ByteSize;
+use fail::fail_point;
 use mrecordlog::error::{AppendError, DeleteQueueError};
 use mrecordlog::MultiRecordLog;
 use quickwit_proto::ingest::DocBatchV2;
@@ -53,11 +54,19 @@ pub(super) async fn append_non_empty_doc_batch(
             .docs()
             .map(|doc| MRecord::Doc(doc).encode())
             .chain(once(MRecord::Commit.encode()));
+        fail_point!("ingester:append_records", |_| {
+            let io_error = io::Error::from(io::ErrorKind::PermissionDenied);
+            Err(AppendDocBatchError::Io(io_error))
+        });
         mrecordlog
             .append_records(queue_id, None, encoded_mrecords)
             .await
     } else {
         let encoded_mrecords = doc_batch.docs().map(|doc| MRecord::Doc(doc).encode());
+        fail_point!("ingester:append_records", |_| {
+            let io_error = io::Error::from(io::ErrorKind::PermissionDenied);
+            Err(AppendDocBatchError::Io(io_error))
+        });
         mrecordlog
             .append_records(queue_id, None, encoded_mrecords)
             .await
@@ -199,6 +208,31 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(position, Position::offset(2u64));
+    }
+
+    // This test should be run manually and independently of other tests with the `fail/failpoints`
+    // feature enabled.
+    #[tokio::test]
+    #[ignore]
+    async fn test_append_non_empty_doc_batch_io_error() {
+        let scenario = fail::FailScenario::setup();
+        fail::cfg("ingester:append_records", "return").unwrap();
+
+        let tempdir = tempfile::tempdir().unwrap();
+        let mut mrecordlog = MultiRecordLog::open(tempdir.path()).await.unwrap();
+
+        let queue_id = "test-queue".to_string();
+        mrecordlog.create_queue(&queue_id).await.unwrap();
+
+        let doc_batch = DocBatchV2::for_test(["test-doc-foo"]);
+        let append_error =
+            append_non_empty_doc_batch(&mut mrecordlog, &queue_id, &doc_batch, false)
+                .await
+                .unwrap_err();
+
+        assert!(matches!(append_error, AppendDocBatchError::Io(..)));
+
+        scenario.teardown();
     }
 
     #[tokio::test]
