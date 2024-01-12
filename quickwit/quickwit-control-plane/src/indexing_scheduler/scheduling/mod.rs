@@ -452,11 +452,18 @@ fn add_shard_to_indexer(
 /// - 4) convert the new scheduling solution back to the real world by reallocating the shard ids.
 ///
 /// TODO cut into pipelines.
+/// Panics if any sources has no shards.
 pub fn build_physical_indexing_plan(
     sources: &[SourceToSchedule],
     indexer_id_to_cpu_capacities: &FnvHashMap<String, CpuCapacity>,
     previous_plan_opt: Option<&PhysicalIndexingPlan>,
 ) -> PhysicalIndexingPlan {
+    for source in sources {
+        if let SourceToScheduleType::Sharded { shard_ids, .. } = &source.source_type {
+            assert!(!shard_ids.is_empty())
+        }
+    }
+
     // Convert our problem to a scheduling problem.
     let mut id_to_ord_map = IdToOrdMap::default();
 

@@ -139,12 +139,16 @@ fn get_sources_to_schedule(model: &ControlPlaneModel) -> Vec<SourceToSchedule> {
             }
             SourceType::IngestV2 => {
                 // Expect: the source should exist since we just read it from `get_source_configs`.
+                // Note that we keep all shards, including Closed shards:
+                // A closed shards still needs to be indexed.
                 let shard_ids: Vec<ShardId> = model
                     .list_shards_for_source(&source_uid)
                     .expect("source should exist")
                     .map(|shard| shard.shard_id)
                     .collect();
-
+                if shard_ids.is_empty() {
+                    continue;
+                }
                 sources.push(SourceToSchedule {
                     source_uid,
                     source_type: SourceToScheduleType::Sharded {
@@ -695,7 +699,23 @@ mod tests {
                     max_num_pipelines_per_indexer: NonZeroUsize::new(2).unwrap(),
                     desired_num_pipelines: NonZeroUsize::new(2).unwrap(),
                     enabled: true,
-                    // ingest v1
+                    // ingest v2
+                    source_params: SourceParams::Ingest,
+                    transform_config: None,
+                    input_format: Default::default(),
+                },
+            )
+            .unwrap();
+        // ingest v2 without any open shard is skipped.
+        model
+            .add_source(
+                &index_uid,
+                SourceConfig {
+                    source_id: "ingest_v2_without_shard".to_string(),
+                    max_num_pipelines_per_indexer: NonZeroUsize::new(2).unwrap(),
+                    desired_num_pipelines: NonZeroUsize::new(2).unwrap(),
+                    enabled: true,
+                    // ingest v2
                     source_params: SourceParams::Ingest,
                     transform_config: None,
                     input_format: Default::default(),
@@ -717,6 +737,14 @@ mod tests {
                 },
             )
             .unwrap();
+        let shard = Shard {
+            index_uid: index_uid.to_string(),
+            source_id: "ingest_v2".to_string(),
+            shard_id: 17,
+            shard_state: ShardState::Open as i32,
+            ..Default::default()
+        };
+        model.insert_newly_opened_shards(&index_uid, &"ingest_v2".to_string(), vec![shard], 18);
         let shards: Vec<SourceToSchedule> = get_sources_to_schedule(&model);
         assert_eq!(shards.len(), 3);
     }
@@ -816,6 +844,7 @@ mod tests {
 
     use quickwit_config::SourceInputFormat;
     use quickwit_proto::indexing::mcpu;
+    use quickwit_proto::ingest::{Shard, ShardState};
 
     fn kafka_source_params_for_test() -> SourceParams {
         SourceParams::Kafka(KafkaSourceParams {
