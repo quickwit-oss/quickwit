@@ -113,7 +113,7 @@ impl IdToOrdMap {
 fn convert_physical_plan_to_solution(
     plan: &PhysicalIndexingPlan,
     id_to_ord_map: &IdToOrdMap,
-    sources: &[SourceToSchedule],
+    source_ord_map: &FnvHashMap<SourceOrd, &SourceToSchedule>,
     solution: &mut SchedulingSolution,
 ) {
     for (indexer_id, indexing_tasks) in plan.indexing_tasks_per_indexer() {
@@ -125,7 +125,7 @@ fn convert_physical_plan_to_solution(
                     source_id: indexing_task.source_id.clone(),
                 };
                 if let Some(source_ord) = id_to_ord_map.source_ord(&source_uid) {
-                    let source_type = &sources[source_ord as usize].source_type;
+                    let source_type = &source_ord_map.get(&source_ord).unwrap().source_type;
                     match source_type {
                         SourceToScheduleType::Sharded { .. } => {
                             indexer_assignment
@@ -411,13 +411,6 @@ fn convert_scheduling_solution_to_physical_plan(
         }
     }
 
-    assert_post_condition_physical_plan_match_solution(
-        &new_physical_plan,
-        solution,
-        sources,
-        id_to_ord_map,
-    );
-
     new_physical_plan.normalize();
 
     new_physical_plan
@@ -427,7 +420,7 @@ fn convert_scheduling_solution_to_physical_plan(
 fn assert_post_condition_physical_plan_match_solution(
     physical_plan: &PhysicalIndexingPlan,
     solution: &SchedulingSolution,
-    sources: &[SourceToSchedule],
+    source_ord_map: &FnvHashMap<SourceOrd, &SourceToSchedule>,
     id_to_ord_map: &IdToOrdMap,
 ) {
     let num_indexers = physical_plan.indexing_tasks_per_indexer().len();
@@ -437,7 +430,7 @@ fn assert_post_condition_physical_plan_match_solution(
     convert_physical_plan_to_solution(
         physical_plan,
         id_to_ord_map,
-        sources,
+        source_ord_map,
         &mut reconstructed_solution,
     );
     assert_eq!(solution, &reconstructed_solution);
@@ -548,11 +541,14 @@ pub fn build_physical_indexing_plan(
         indexer_cpu_capacities.push(cpu_capacity);
     }
 
+    let mut source_ord_map: FnvHashMap<SourceOrd, &SourceToSchedule> = FnvHashMap::default();
+
     let mut problem = SchedulingProblem::with_indexer_cpu_capacities(indexer_cpu_capacities);
 
     for source in sources {
         if let Some(source_ord) = populate_problem(source, &mut problem) {
             let registered_source_ord = id_to_ord_map.add_source_uid(source.source_uid.clone());
+            source_ord_map.insert(source_ord, source);
             assert_eq!(source_ord, registered_source_ord);
         }
     }
@@ -563,7 +559,7 @@ pub fn build_physical_indexing_plan(
         convert_physical_plan_to_solution(
             previous_plan,
             &id_to_ord_map,
-            sources,
+            &source_ord_map,
             &mut previous_solution,
         );
     }
@@ -572,12 +568,21 @@ pub fn build_physical_indexing_plan(
     let new_solution = scheduling_logic::solve(problem, previous_solution);
 
     // Convert the new scheduling solution back to a physical plan.
-    convert_scheduling_solution_to_physical_plan(
+    let new_physical_plan = convert_scheduling_solution_to_physical_plan(
         &new_solution,
         &id_to_ord_map,
         sources,
         previous_plan_opt,
-    )
+    );
+
+    assert_post_condition_physical_plan_match_solution(
+        &new_physical_plan,
+        &new_solution,
+        &source_ord_map,
+        &id_to_ord_map,
+    );
+
+    new_physical_plan
 }
 
 #[cfg(test)]
@@ -878,5 +883,35 @@ mod tests {
         ];
         let indexers: Vec<&str> = super::pick_indexer(&indexer_capacity).collect();
         assert_eq!(indexers, &["node1", "node3", "node3", "node4", "node4"]);
+    }
+
+    #[test]
+    fn test_solution_reconstruction() {
+        let sources_to_schedule = vec![
+            SourceToSchedule {
+                source_uid: SourceUid {
+                    index_uid: IndexUid::parse("otel-logs-v0_6:01HKYD1SE37C90KSH21CD1M11A")
+                        .unwrap(),
+                    source_id: "_ingest-api-source".to_string(),
+                },
+                source_type: SourceToScheduleType::IngestV1,
+            },
+            SourceToSchedule {
+                source_uid: SourceUid {
+                    index_uid: IndexUid::parse(
+                        "simian_chico_12856033706389338959:01HKYD414H1WVSASC5YD972P39",
+                    )
+                    .unwrap(),
+                    source_id: "_ingest-source".to_string(),
+                },
+                source_type: SourceToScheduleType::Sharded {
+                    shard_ids: vec![1],
+                    load_per_shard: NonZeroU32::new(250).unwrap(),
+                },
+            },
+        ];
+        let mut capacities = FnvHashMap::default();
+        capacities.insert("indexer-1".to_string(), CpuCapacity::from_cpu_millis(8000));
+        build_physical_indexing_plan(&sources_to_schedule, &capacities, None);
     }
 }
