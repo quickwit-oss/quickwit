@@ -284,6 +284,14 @@ impl ShardTable {
             .flat_map(|table_entry| table_entry.shard_entries.values())
     }
 
+    pub(crate) fn all_shards_with_source(
+        &self,
+    ) -> impl Iterator<Item = (&SourceUid, impl Iterator<Item = &ShardEntry>)> + '_ {
+        self.table_entries
+            .iter()
+            .map(|(source, shard_table)| (source, shard_table.shard_entries.values()))
+    }
+
     pub(crate) fn all_shards_mut(&mut self) -> impl Iterator<Item = &mut ShardEntry> + '_ {
         self.table_entries
             .values_mut()

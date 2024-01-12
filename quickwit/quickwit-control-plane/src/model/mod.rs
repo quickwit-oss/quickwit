@@ -248,6 +248,12 @@ impl ControlPlaneModel {
         self.shard_table.all_shards()
     }
 
+    pub(crate) fn all_shards_with_source(
+        &self,
+    ) -> impl Iterator<Item = (&SourceUid, impl Iterator<Item = &ShardEntry>)> + '_ {
+        self.shard_table.all_shards_with_source()
+    }
+
     pub fn list_shards_for_node(
         &self,
         ingester: &NodeId,

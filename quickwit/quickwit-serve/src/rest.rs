@@ -33,6 +33,7 @@ use tracing::{error, info};
 use warp::{redirect, Filter, Rejection, Reply};
 
 use crate::cluster_api::cluster_handler;
+use crate::debugging_api::debugging_handler;
 use crate::delete_task_api::delete_task_api_handlers;
 use crate::elastic_search_api::elastic_api_handlers;
 use crate::health_check_api::health_check_handlers;
@@ -87,6 +88,12 @@ pub(crate) async fn start_rest_server(
     // `/metrics` route.
     let metrics_routes = warp::path("metrics").and(warp::get()).map(metrics_handler);
 
+    // `/debugging` route.
+    let control_plane_service = quickwit_services.control_plane_service.clone();
+    let debugging_routes = warp::path("debugging")
+        .and(warp::get())
+        .then(move || debugging_handler(control_plane_service.clone()));
+
     // `/api/v1/*` routes.
     let api_v1_root_route = api_v1_routes(quickwit_services.clone());
 
@@ -109,6 +116,7 @@ pub(crate) async fn start_rest_server(
         .or(ui_handler())
         .or(health_check_routes)
         .or(metrics_routes)
+        .or(debugging_routes)
         .with(request_counter)
         .recover(recover_fn)
         .with(extra_headers)

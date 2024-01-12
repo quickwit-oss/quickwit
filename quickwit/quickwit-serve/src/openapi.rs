@@ -28,6 +28,7 @@ use utoipa::openapi::Tag;
 use utoipa::OpenApi;
 
 use crate::cluster_api::ClusterApi;
+use crate::debugging_api::DebugApi;
 use crate::delete_task_api::DeleteTaskApi;
 use crate::elastic_search_api::ElasticCompatibleApi;
 use crate::health_check_api::HealthCheckApi;
@@ -76,12 +77,14 @@ pub fn build_docs() -> utoipa::openapi::OpenApi {
         Tag::new("Indexing"),
         Tag::new("Splits"),
         Tag::new("Jaeger"),
+        Tag::new("Debugging"),
     ];
     docs_base.tags = Some(tags);
 
     // Routing
     docs_base.merge_components_and_paths(HealthCheckApi::openapi().with_path_prefix("/health"));
     docs_base.merge_components_and_paths(MetricsApi::openapi().with_path_prefix("/metrics"));
+    docs_base.merge_components_and_paths(DebugApi::openapi().with_path_prefix("/debugging"));
     docs_base.merge_components_and_paths(ClusterApi::openapi().with_path_prefix("/api/v1"));
     docs_base.merge_components_and_paths(DeleteTaskApi::openapi().with_path_prefix("/api/v1"));
     docs_base.merge_components_and_paths(IndexApi::openapi().with_path_prefix("/api/v1"));

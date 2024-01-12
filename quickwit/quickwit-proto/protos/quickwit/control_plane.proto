@@ -21,6 +21,7 @@ syntax = "proto3";
 
 package quickwit.control_plane;
 
+import "quickwit/indexing.proto";
 import "quickwit/ingest.proto";
 import "quickwit/metastore.proto";
 
@@ -59,6 +60,9 @@ service ControlPlaneService {
   // Returns the list of open shards for one or several sources. If the control plane is not able to find any
   // for a source, it will pick a pair of leader-follower ingesters and will open a new shard.
   rpc GetOrCreateOpenShards(GetOrCreateOpenShardsRequest) returns (GetOrCreateOpenShardsResponse);
+
+  // Return some innerstate of the control plane meant to assist debugging.
+  rpc GetDebugState(GetDebugStateRequest) returns (GetDebugStateResponse);
 }
 
 // Shard API
@@ -102,4 +106,22 @@ message GetOrCreateOpenShardsFailure {
   string index_id = 2;
   string source_id = 3;
   GetOrCreateOpenShardsFailureReason reason = 4;
+}
+
+message GetDebugStateRequest {
+}
+
+message GetDebugStateResponse {
+  repeated ShardTableEntry shard_table = 1;
+  repeated PhysicalIndexingPlanEntry physical_index_plan = 2;
+}
+
+message ShardTableEntry {
+  string source_id = 1;
+  repeated quickwit.ingest.Shard shards = 2;
+}
+
+message PhysicalIndexingPlanEntry {
+  string node_id = 1;
+  repeated quickwit.indexing.IndexingTask tasks = 2;
 }
