@@ -340,7 +340,7 @@ impl Event for ShardPositionsUpdate {}
 impl IndexingTask {
     pub fn pipeline_uid(&self) -> PipelineUid {
         self.pipeline_uid
-            .expect("Pipeline UID should always be present.")
+            .expect("`pipeline_uid` should be a required field")
     }
 }
 

@@ -86,11 +86,11 @@ impl FetchStreamTask {
             .unwrap_or_default();
         let (fetch_message_tx, fetch_stream) = ServiceStream::new_bounded(3);
         let mut fetch_task = Self {
+            shard_id: open_fetch_stream_request.shard_id().clone(),
             queue_id: open_fetch_stream_request.queue_id(),
             client_id: open_fetch_stream_request.client_id,
             index_uid: open_fetch_stream_request.index_uid.into(),
             source_id: open_fetch_stream_request.source_id,
-            shard_id: open_fetch_stream_request.shard_id,
             from_position_inclusive,
             state,
             fetch_message_tx,
@@ -163,7 +163,7 @@ impl FetchStreamTask {
                 let fetch_payload = FetchPayload {
                     index_uid: self.index_uid.clone().into(),
                     source_id: self.source_id.clone(),
-                    shard_id: self.shard_id,
+                    shard_id: Some(self.shard_id.clone()),
                     mrecord_batch: Some(mrecord_batch),
                     from_position_exclusive: Some(from_position_exclusive),
                     to_position_inclusive: Some(to_position_inclusive.clone()),
@@ -196,7 +196,7 @@ impl FetchStreamTask {
                     let fetch_eof = FetchEof {
                         index_uid: self.index_uid.clone().into(),
                         source_id: self.source_id.clone(),
-                        shard_id: self.shard_id,
+                        shard_id: Some(self.shard_id.clone()),
                         eof_position: Some(eof_position),
                     };
                     let fetch_message = FetchMessage::new_eof(fetch_eof);
@@ -280,7 +280,7 @@ impl MultiFetchStream {
         shard_id: ShardId,
         from_position_exclusive: Position,
     ) -> IngestV2Result<()> {
-        let queue_id = queue_id(index_uid.as_str(), &source_id, shard_id);
+        let queue_id = queue_id(index_uid.as_str(), &source_id, &shard_id);
         let entry = self.fetch_task_handles.entry(queue_id.clone());
 
         if let Entry::Occupied(_) = entry {
@@ -317,9 +317,9 @@ impl MultiFetchStream {
         &mut self,
         index_uid: &str,
         source_id: &str,
-        shard_id: u64,
+        shard_id: ShardId,
     ) -> IngestV2Result<()> {
-        let queue_id = queue_id(index_uid, source_id, shard_id);
+        let queue_id = queue_id(index_uid, source_id, &shard_id);
 
         if let Some(fetch_stream_handle) = self.fetch_task_handles.remove(&queue_id) {
             fetch_stream_handle.abort();
@@ -338,7 +338,7 @@ impl MultiFetchStream {
         self.fetch_message_rx
             .recv()
             .await
-            .expect("the channel should be open")
+            .expect("channel should be open")
     }
 
     /// Resets the stream by aborting all the active fetch tasks and dropping all queued responses.
@@ -401,7 +401,7 @@ async fn retrying_fetch_stream(
             client_id.clone(),
             index_uid.clone(),
             source_id.clone(),
-            shard_id,
+            shard_id.clone(),
             &mut from_position_exclusive,
             &ingester_ids,
             ingester_pool.clone(),
@@ -471,7 +471,7 @@ async fn fault_tolerant_fetch_stream(
             client_id: client_id.clone(),
             index_uid: index_uid.clone().into(),
             source_id: source_id.clone(),
-            shard_id,
+            shard_id: Some(shard_id.clone()),
             from_position_exclusive: Some(from_position_exclusive.clone()),
         };
         let mut fetch_stream = match ingester.open_fetch_stream(open_fetch_stream_request).await {
@@ -529,7 +529,7 @@ async fn fault_tolerant_fetch_stream(
             match fetch_message_result {
                 Ok(fetch_message) => match &fetch_message.message {
                     Some(fetch_message::Message::Payload(fetch_payload)) => {
-                        let to_position_inclusive = fetch_payload.to_position_inclusive();
+                        let to_position_inclusive = fetch_payload.to_position_inclusive().clone();
 
                         if fetch_message_tx.send(Ok(fetch_message)).await.is_err() {
                             // The consumer was dropped.
@@ -538,7 +538,7 @@ async fn fault_tolerant_fetch_stream(
                         *from_position_exclusive = to_position_inclusive;
                     }
                     Some(fetch_message::Message::Eof(fetch_eof)) => {
-                        let eof_position = fetch_eof.eof_position();
+                        let eof_position = fetch_eof.eof_position().clone();
 
                         // We ignore the send error if the consumer was dropped because we're going
                         // to return anyway.
@@ -628,8 +628,8 @@ pub(super) mod tests {
             client_id: client_id.clone(),
             index_uid: index_uid.clone(),
             source_id: source_id.clone(),
-            shard_id: 1,
-            from_position_exclusive: None,
+            shard_id: Some(ShardId::from(1)),
+            from_position_exclusive: Some(Position::Beginning),
         };
         let (observation_tx, _observation_rx) = watch::channel(Ok(ObservationMessage::default()));
         let state = Arc::new(RwLock::new(IngesterState {
@@ -648,7 +648,7 @@ pub(super) mod tests {
             shard_status_rx,
             1024,
         );
-        let queue_id = queue_id(&index_uid, &source_id, 1);
+        let queue_id = queue_id(&index_uid, &source_id, &ShardId::from(1));
 
         let mut state_guard = state.write().await;
 
@@ -673,7 +673,7 @@ pub(super) mod tests {
 
         assert_eq!(fetch_payload.index_uid, "test-index:0");
         assert_eq!(fetch_payload.source_id, "test-source");
-        assert_eq!(fetch_payload.shard_id, 1);
+        assert_eq!(fetch_payload.shard_id(), ShardId::from(1));
         assert_eq!(fetch_payload.from_position_exclusive(), Position::Beginning);
         assert_eq!(
             fetch_payload.to_position_inclusive(),
@@ -802,7 +802,7 @@ pub(super) mod tests {
 
         assert_eq!(fetch_eof.index_uid, "test-index:0");
         assert_eq!(fetch_eof.source_id, "test-source");
-        assert_eq!(fetch_eof.shard_id, 1);
+        assert_eq!(fetch_eof.shard_id(), ShardId::from(1));
         assert_eq!(fetch_eof.eof_position, Some(Position::eof(3u64)));
 
         fetch_task_handle.await.unwrap();
@@ -819,8 +819,8 @@ pub(super) mod tests {
             client_id: client_id.clone(),
             index_uid: index_uid.clone(),
             source_id: source_id.clone(),
-            shard_id: 1,
-            from_position_exclusive: None,
+            shard_id: Some(ShardId::from(1)),
+            from_position_exclusive: Some(Position::Beginning),
         };
         let (observation_tx, _observation_rx) = watch::channel(Ok(ObservationMessage::default()));
         let state = Arc::new(RwLock::new(IngesterState {
@@ -839,7 +839,7 @@ pub(super) mod tests {
             shard_status_rx,
             1024,
         );
-        let queue_id = queue_id(&index_uid, &source_id, 1);
+        let queue_id = queue_id(&index_uid, &source_id, &ShardId::from(1));
 
         let mut state_guard = state.write().await;
 
@@ -866,7 +866,7 @@ pub(super) mod tests {
 
         assert_eq!(fetch_eof.index_uid, "test-index:0");
         assert_eq!(fetch_eof.source_id, "test-source");
-        assert_eq!(fetch_eof.shard_id, 1);
+        assert_eq!(fetch_eof.shard_id(), ShardId::from(1));
         assert_eq!(fetch_eof.eof_position, Some(Position::Beginning.as_eof()));
 
         fetch_task_handle.await.unwrap();
@@ -883,7 +883,7 @@ pub(super) mod tests {
             client_id: client_id.clone(),
             index_uid: index_uid.clone(),
             source_id: source_id.clone(),
-            shard_id: 1,
+            shard_id: Some(ShardId::from(1)),
             from_position_exclusive: Some(Position::offset(0u64)),
         };
         let (observation_tx, _observation_rx) = watch::channel(Ok(ObservationMessage::default()));
@@ -903,7 +903,7 @@ pub(super) mod tests {
             shard_status_rx,
             1024,
         );
-        let queue_id = queue_id(&index_uid, &source_id, 1);
+        let queue_id = queue_id(&index_uid, &source_id, &ShardId::from(1));
 
         let mut state_guard = state.write().await;
 
@@ -955,7 +955,7 @@ pub(super) mod tests {
 
         assert_eq!(fetch_payload.index_uid, "test-index:0");
         assert_eq!(fetch_payload.source_id, "test-source");
-        assert_eq!(fetch_payload.shard_id, 1);
+        assert_eq!(fetch_payload.shard_id(), ShardId::from(1));
         assert_eq!(
             fetch_payload.from_position_exclusive(),
             Position::offset(0u64)
@@ -989,8 +989,8 @@ pub(super) mod tests {
             client_id: client_id.clone(),
             index_uid: index_uid.clone(),
             source_id: source_id.clone(),
-            shard_id: 1,
-            from_position_exclusive: None,
+            shard_id: Some(ShardId::from(1)),
+            from_position_exclusive: Some(Position::Beginning),
         };
         let (observation_tx, _observation_rx) = watch::channel(Ok(ObservationMessage::default()));
         let state = Arc::new(RwLock::new(IngesterState {
@@ -1030,8 +1030,8 @@ pub(super) mod tests {
             client_id: client_id.clone(),
             index_uid: index_uid.clone(),
             source_id: source_id.clone(),
-            shard_id: 1,
-            from_position_exclusive: None,
+            shard_id: Some(ShardId::from(1)),
+            from_position_exclusive: Some(Position::Beginning),
         };
         let (observation_tx, _observation_rx) = watch::channel(Ok(ObservationMessage::default()));
         let state = Arc::new(RwLock::new(IngesterState {
@@ -1050,7 +1050,7 @@ pub(super) mod tests {
             shard_status_rx,
             30,
         );
-        let queue_id = queue_id(&index_uid, &source_id, 1);
+        let queue_id = queue_id(&index_uid, &source_id, &ShardId::from(1));
 
         let mut state_guard = state.write().await;
 
@@ -1149,7 +1149,7 @@ pub(super) mod tests {
         let client_id = "test-client".to_string();
         let index_uid: IndexUid = "test-index:0".into();
         let source_id: SourceId = "test-source".into();
-        let shard_id: ShardId = 1;
+        let shard_id = ShardId::from(1);
         let mut from_position_exclusive = Position::offset(0u64);
 
         let ingester_ids: Vec<NodeId> = vec!["test-ingester-0".into(), "test-ingester-1".into()];
@@ -1165,7 +1165,7 @@ pub(super) mod tests {
                 assert_eq!(request.client_id, "test-client");
                 assert_eq!(request.index_uid, "test-index:0");
                 assert_eq!(request.source_id, "test-source");
-                assert_eq!(request.shard_id, 1);
+                assert_eq!(request.shard_id(), ShardId::from(1));
                 assert_eq!(request.from_position_exclusive(), Position::offset(0u64));
 
                 Ok(service_stream_1)
@@ -1177,7 +1177,7 @@ pub(super) mod tests {
         let fetch_payload = FetchPayload {
             index_uid: "test-index:0".into(),
             source_id: "test-source".into(),
-            shard_id: 1,
+            shard_id: Some(ShardId::from(1)),
             mrecord_batch: MRecordBatch::for_test(["\0\0test-doc-foo"]),
             from_position_exclusive: Some(Position::offset(0u64)),
             to_position_inclusive: Some(Position::offset(1u64)),
@@ -1188,7 +1188,7 @@ pub(super) mod tests {
         let fetch_eof = FetchEof {
             index_uid: "test-index:0".into(),
             source_id: "test-source".into(),
-            shard_id: 1,
+            shard_id: Some(ShardId::from(1)),
             eof_position: Some(Position::eof(1u64)),
         };
         let fetch_message = FetchMessage::new_eof(fetch_eof);
@@ -1242,7 +1242,7 @@ pub(super) mod tests {
         let client_id = "test-client".to_string();
         let index_uid: IndexUid = "test-index:0".into();
         let source_id: SourceId = "test-source".into();
-        let shard_id: ShardId = 1;
+        let shard_id = ShardId::from(1);
         let mut from_position_exclusive = Position::offset(0u64);
 
         let ingester_ids: Vec<NodeId> = vec!["test-ingester-0".into(), "test-ingester-1".into()];
@@ -1258,7 +1258,7 @@ pub(super) mod tests {
                 assert_eq!(request.client_id, "test-client");
                 assert_eq!(request.index_uid, "test-index:0");
                 assert_eq!(request.source_id, "test-source");
-                assert_eq!(request.shard_id, 1);
+                assert_eq!(request.shard_id(), ShardId::from(1));
                 assert_eq!(request.from_position_exclusive(), Position::offset(0u64));
 
                 Err(IngestV2Error::Internal(
@@ -1274,7 +1274,7 @@ pub(super) mod tests {
                 assert_eq!(request.client_id, "test-client");
                 assert_eq!(request.index_uid, "test-index:0");
                 assert_eq!(request.source_id, "test-source");
-                assert_eq!(request.shard_id, 1);
+                assert_eq!(request.shard_id(), ShardId::from(1));
                 assert_eq!(request.from_position_exclusive(), Position::offset(0u64));
 
                 Ok(service_stream_1)
@@ -1287,7 +1287,7 @@ pub(super) mod tests {
         let fetch_payload = FetchPayload {
             index_uid: "test-index:0".into(),
             source_id: "test-source".into(),
-            shard_id: 1,
+            shard_id: Some(ShardId::from(1)),
             mrecord_batch: MRecordBatch::for_test(["\0\0test-doc-foo"]),
             from_position_exclusive: Some(Position::offset(0u64)),
             to_position_inclusive: Some(Position::offset(1u64)),
@@ -1298,7 +1298,7 @@ pub(super) mod tests {
         let fetch_eof = FetchEof {
             index_uid: "test-index:0".into(),
             source_id: "test-source".into(),
-            shard_id: 1,
+            shard_id: Some(ShardId::from(1)),
             eof_position: Some(Position::eof(1u64)),
         };
         let fetch_message = FetchMessage::new_eof(fetch_eof);
@@ -1352,7 +1352,7 @@ pub(super) mod tests {
         let client_id = "test-client".to_string();
         let index_uid: IndexUid = "test-index:0".into();
         let source_id: SourceId = "test-source".into();
-        let shard_id: ShardId = 1;
+        let shard_id = ShardId::from(1);
         let mut from_position_exclusive = Position::offset(0u64);
 
         let ingester_ids: Vec<NodeId> = vec!["test-ingester-0".into(), "test-ingester-1".into()];
@@ -1369,7 +1369,7 @@ pub(super) mod tests {
                 assert_eq!(request.client_id, "test-client");
                 assert_eq!(request.index_uid, "test-index:0");
                 assert_eq!(request.source_id, "test-source");
-                assert_eq!(request.shard_id, 1);
+                assert_eq!(request.shard_id(), ShardId::from(1));
                 assert_eq!(request.from_position_exclusive(), Position::offset(0u64));
 
                 Ok(service_stream_0)
@@ -1383,7 +1383,7 @@ pub(super) mod tests {
                 assert_eq!(request.client_id, "test-client");
                 assert_eq!(request.index_uid, "test-index:0");
                 assert_eq!(request.source_id, "test-source");
-                assert_eq!(request.shard_id, 1);
+                assert_eq!(request.shard_id(), ShardId::from(1));
                 assert_eq!(request.from_position_exclusive(), Position::offset(1u64));
 
                 Ok(service_stream_1)
@@ -1396,7 +1396,7 @@ pub(super) mod tests {
         let fetch_payload = FetchPayload {
             index_uid: "test-index:0".into(),
             source_id: "test-source".into(),
-            shard_id: 1,
+            shard_id: Some(ShardId::from(1)),
             mrecord_batch: MRecordBatch::for_test(["\0\0test-doc-foo"]),
             from_position_exclusive: Some(Position::offset(0u64)),
             to_position_inclusive: Some(Position::offset(1u64)),
@@ -1410,7 +1410,7 @@ pub(super) mod tests {
         let fetch_eof = FetchEof {
             index_uid: "test-index:0".into(),
             source_id: "test-source".into(),
-            shard_id: 1,
+            shard_id: Some(ShardId::from(1)),
             eof_position: Some(Position::eof(1u64)),
         };
         let fetch_message = FetchMessage::new_eof(fetch_eof);
@@ -1464,7 +1464,7 @@ pub(super) mod tests {
         let client_id = "test-client".to_string();
         let index_uid: IndexUid = "test-index:0".into();
         let source_id: SourceId = "test-source".into();
-        let shard_id: ShardId = 1;
+        let shard_id = ShardId::from(1);
         let mut from_position_exclusive = Position::offset(0u64);
 
         let ingester_ids: Vec<NodeId> = vec!["test-ingester-0".into(), "test-ingester-1".into()];
@@ -1479,10 +1479,12 @@ pub(super) mod tests {
                 assert_eq!(request.client_id, "test-client");
                 assert_eq!(request.index_uid, "test-index:0");
                 assert_eq!(request.source_id, "test-source");
-                assert_eq!(request.shard_id, 1);
+                assert_eq!(request.shard_id(), ShardId::from(1));
                 assert_eq!(request.from_position_exclusive(), Position::offset(0u64));
 
-                Err(IngestV2Error::ShardNotFound { shard_id: 1 })
+                Err(IngestV2Error::ShardNotFound {
+                    shard_id: ShardId::from(1),
+                })
             });
         let ingester_0: IngesterServiceClient = ingester_mock_0.into();
         ingester_pool.insert("test-ingester-0".into(), ingester_0);
@@ -1507,7 +1509,7 @@ pub(super) mod tests {
 
         assert!(matches!(
             fetch_stream_error.ingest_error,
-            IngestV2Error::ShardNotFound { shard_id: 1 }
+            IngestV2Error::ShardNotFound { shard_id } if shard_id == ShardId::from(1)
         ));
         assert!(from_position_exclusive.is_eof());
     }
@@ -1517,7 +1519,7 @@ pub(super) mod tests {
         let client_id = "test-client".to_string();
         let index_uid: IndexUid = "test-index:0".into();
         let source_id: SourceId = "test-source".into();
-        let shard_id: ShardId = 1;
+        let shard_id = ShardId::from(1);
         let from_position_exclusive = Position::offset(0u64);
 
         let ingester_ids: Vec<NodeId> = vec!["test-ingester".into()];
@@ -1538,7 +1540,7 @@ pub(super) mod tests {
                 assert_eq!(request.client_id, "test-client");
                 assert_eq!(request.index_uid, "test-index:0");
                 assert_eq!(request.source_id, "test-source");
-                assert_eq!(request.shard_id, 1);
+                assert_eq!(request.shard_id(), ShardId::from(1));
                 assert_eq!(request.from_position_exclusive(), Position::offset(0u64));
 
                 Err(IngestV2Error::Internal(
@@ -1552,7 +1554,7 @@ pub(super) mod tests {
                 assert_eq!(request.client_id, "test-client");
                 assert_eq!(request.index_uid, "test-index:0");
                 assert_eq!(request.source_id, "test-source");
-                assert_eq!(request.shard_id, 1);
+                assert_eq!(request.shard_id(), ShardId::from(1));
                 assert_eq!(request.from_position_exclusive(), Position::offset(0u64));
 
                 Ok(service_stream_1)
@@ -1564,7 +1566,7 @@ pub(super) mod tests {
                 assert_eq!(request.client_id, "test-client");
                 assert_eq!(request.index_uid, "test-index:0");
                 assert_eq!(request.source_id, "test-source");
-                assert_eq!(request.shard_id, 1);
+                assert_eq!(request.shard_id(), ShardId::from(1));
                 assert_eq!(request.from_position_exclusive(), Position::offset(1u64));
 
                 Ok(service_stream_2)
@@ -1576,7 +1578,7 @@ pub(super) mod tests {
         let fetch_payload = FetchPayload {
             index_uid: "test-index:0".into(),
             source_id: "test-source".into(),
-            shard_id: 1,
+            shard_id: Some(ShardId::from(1)),
             mrecord_batch: MRecordBatch::for_test(["\0\0test-doc-foo"]),
             from_position_exclusive: Some(Position::offset(0u64)),
             to_position_inclusive: Some(Position::offset(1u64)),
@@ -1590,7 +1592,7 @@ pub(super) mod tests {
         let fetch_payload = FetchPayload {
             index_uid: "test-index:0".into(),
             source_id: "test-source".into(),
-            shard_id: 1,
+            shard_id: Some(ShardId::from(1)),
             mrecord_batch: MRecordBatch::for_test(["\0\0test-doc-bar"]),
             from_position_exclusive: Some(Position::offset(1u64)),
             to_position_inclusive: Some(Position::offset(2u64)),

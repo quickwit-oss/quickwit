@@ -69,21 +69,13 @@ impl PhysicalIndexingPlan {
             for task in tasks.iter_mut() {
                 task.shard_ids.sort_unstable();
             }
-            tasks.sort_by(|left, right| {
+            tasks.sort_unstable_by(|left, right| {
                 left.index_uid
                     .cmp(&right.index_uid)
                     .then_with(|| left.source_id.cmp(&right.source_id))
-                    .then_with(|| {
-                        left.shard_ids
-                            .first()
-                            .copied()
-                            .cmp(&right.shard_ids.first().copied())
-                    })
-                    .then_with(|| left.pipeline_uid().cmp(&right.pipeline_uid()))
+                    .then_with(|| left.shard_ids.first().cmp(&right.shard_ids.first()))
+                    .then_with(|| left.pipeline_uid.cmp(&right.pipeline_uid))
             });
-            for task in tasks {
-                task.shard_ids.sort();
-            }
         }
     }
 }

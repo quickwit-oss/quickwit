@@ -1,3 +1,10 @@
 disallowed-methods = [
     "std::path::Path::exists"
 ]
+ignore-interior-mutability = [
+    "bytes::Bytes",
+    "bytestring::ByteString",
+    "quickwit_ingest::ShardInfo",
+    "quickwit_ingest::ShardInfos",
+    "quickwit_proto::types::ShardId",
+]

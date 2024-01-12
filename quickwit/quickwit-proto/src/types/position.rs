@@ -223,6 +223,13 @@ impl<'de> Deserialize<'de> for Position {
     }
 }
 
+impl PartialEq<Position> for &Position {
+    #[inline]
+    fn eq(&self, other: &Position) -> bool {
+        *self == other
+    }
+}
+
 impl prost::Message for Position {
     fn encode_raw<B>(&self, buf: &mut B)
     where B: prost::bytes::BufMut {

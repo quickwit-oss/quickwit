@@ -228,7 +228,8 @@ impl Handler<ShardPositionsUpdate> for ControlPlane {
             return Ok(());
         };
         let known_shard_ids: FnvHashSet<ShardId> = shard_entries
-            .map(|shard_entry| shard_entry.shard_id)
+            .map(|shard_entry| shard_entry.shard_id())
+            .cloned()
             .collect();
         // let's identify the shard that have reached EOF but have not yet been removed.
         let shard_ids_to_close: Vec<ShardId> = shard_positions_update
@@ -286,7 +287,6 @@ fn convert_metastore_error<T>(
         | MetastoreError::NotFound(_) => true,
         MetastoreError::Connection { .. }
         | MetastoreError::Db { .. }
-        | MetastoreError::InconsistentControlPlaneState { .. }
         | MetastoreError::Internal { .. }
         | MetastoreError::Io { .. }
         | MetastoreError::Unavailable(_) => false,
@@ -942,11 +942,10 @@ mod tests {
                 shards: vec![Shard {
                     index_uid: "test-index:0".to_string(),
                     source_id: INGEST_V2_SOURCE_ID.to_string(),
-                    shard_id: 1,
+                    shard_id: Some(ShardId::from(1)),
                     shard_state: ShardState::Open as i32,
                     ..Default::default()
                 }],
-                next_shard_id: 2,
             }];
             let response = ListShardsResponse { subresponses };
             Ok(response)
@@ -982,7 +981,7 @@ mod tests {
         assert_eq!(subresponse.index_uid, "test-index:0");
         assert_eq!(subresponse.source_id, INGEST_V2_SOURCE_ID);
         assert_eq!(subresponse.open_shards.len(), 1);
-        assert_eq!(subresponse.open_shards[0].shard_id, 1);
+        assert_eq!(subresponse.open_shards[0].shard_id(), ShardId::from(1));
 
         universe.assert_quit().await;
     }
@@ -1153,7 +1152,7 @@ mod tests {
                 let subrequest = &delete_shards_request.subrequests[0];
                 assert_eq!(subrequest.index_uid, index_uid_clone);
                 assert_eq!(subrequest.source_id, INGEST_V2_SOURCE_ID);
-                assert_eq!(&subrequest.shard_ids[..], &[17]);
+                assert_eq!(subrequest.shard_ids, [ShardId::from(17)]);
                 Ok(DeleteShardsResponse {})
             },
         );
@@ -1161,7 +1160,7 @@ mod tests {
         let mut shard = Shard {
             index_uid: index_0.index_uid.to_string(),
             source_id: INGEST_V2_SOURCE_ID.to_string(),
-            shard_id: 17,
+            shard_id: Some(ShardId::from(17)),
             leader_id: "test_node".to_string(),
             ..Default::default()
         };
@@ -1175,7 +1174,6 @@ mod tests {
                         index_uid: index_uid_clone.to_string(),
                         source_id: INGEST_V2_SOURCE_ID.to_string(),
                         shards: vec![shard],
-                        next_shard_id: 18,
                     }],
                 };
                 Ok(list_shards_resp)
@@ -1200,7 +1198,7 @@ mod tests {
         control_plane_mailbox
             .ask(ShardPositionsUpdate {
                 source_uid: source_uid.clone(),
-                shard_positions: vec![(17, Position::offset(1_000u64))],
+                shard_positions: vec![(ShardId::from(17), Position::offset(1_000u64))],
             })
             .await
             .unwrap();
@@ -1216,14 +1214,14 @@ mod tests {
             .get("indexer-node-1")
             .unwrap();
         assert_eq!(indexing_tasks.len(), 1);
-        assert_eq!(&indexing_tasks[0].shard_ids, &[17]);
+        assert_eq!(indexing_tasks[0].shard_ids, [ShardId::from(17)]);
         let _ = client_inbox.drain_for_test();
 
         // This update should trigger the deletion of the shard and a new indexing plan.
         control_plane_mailbox
             .ask(ShardPositionsUpdate {
                 source_uid,
-                shard_positions: vec![(17, Position::eof(1_000u64))],
+                shard_positions: vec![(ShardId::from(17), Position::eof(1_000u64))],
             })
             .await
             .unwrap();
@@ -1288,7 +1286,7 @@ mod tests {
                 let subrequest = &delete_shards_request.subrequests[0];
                 assert_eq!(subrequest.index_uid, index_uid_clone);
                 assert_eq!(subrequest.source_id, INGEST_V2_SOURCE_ID);
-                assert_eq!(&subrequest.shard_ids[..], &[17]);
+                assert_eq!(subrequest.shard_ids, [ShardId::from(17)]);
                 Ok(DeleteShardsResponse {})
             },
         );
@@ -1301,7 +1299,6 @@ mod tests {
                         index_uid: index_uid_clone.to_string(),
                         source_id: INGEST_V2_SOURCE_ID.to_string(),
                         shards: vec![],
-                        next_shard_id: 18,
                     }],
                 };
                 Ok(list_shards_resp)
@@ -1326,7 +1323,7 @@ mod tests {
         control_plane_mailbox
             .ask(ShardPositionsUpdate {
                 source_uid: source_uid.clone(),
-                shard_positions: vec![(17, Position::eof(1_000u64))],
+                shard_positions: vec![(ShardId::from(17), Position::eof(1_000u64))],
             })
             .await
             .unwrap();
@@ -1377,14 +1374,13 @@ mod tests {
                         shards: vec![Shard {
                             index_uid: index_uid_clone.to_string(),
                             source_id: source.source_id.to_string(),
-                            shard_id: 15,
+                            shard_id: Some(ShardId::from(15)),
                             leader_id: "node1".to_string(),
                             follower_id: None,
                             shard_state: ShardState::Open as i32,
                             publish_position_inclusive: None,
                             publish_token: None,
                         }],
-                        next_shard_id: 18,
                     }],
                 };
                 Ok(list_shards_resp)
@@ -1394,10 +1390,12 @@ mod tests {
             .expect_retain_shards()
             .times(1)
             .in_sequence(&mut seq)
-            .returning(|mut request| {
+            .returning(|request| {
                 assert_eq!(request.retain_shards_for_sources.len(), 1);
-                let retain_shards_for_source = request.retain_shards_for_sources.pop().unwrap();
-                assert_eq!(&retain_shards_for_source.shard_ids, &[15]);
+                assert_eq!(
+                    request.retain_shards_for_sources[0].shard_ids,
+                    [ShardId::from(15)]
+                );
                 Ok(RetainShardsResponse {})
             });
 
@@ -1454,10 +1452,12 @@ mod tests {
         ingester_mock
             .expect_retain_shards()
             .times(2)
-            .returning(|mut request| {
+            .returning(|request| {
                 assert_eq!(request.retain_shards_for_sources.len(), 1);
-                let retain_shards_for_source = request.retain_shards_for_sources.pop().unwrap();
-                assert_eq!(&retain_shards_for_source.shard_ids, &[15]);
+                assert_eq!(
+                    request.retain_shards_for_sources[0].shard_ids,
+                    [ShardId::from(15)]
+                );
                 Ok(RetainShardsResponse {})
             });
         ingester_pool.insert("node1".into(), ingester_mock.into());
@@ -1499,14 +1499,13 @@ mod tests {
                         shards: vec![Shard {
                             index_uid: index_uid_clone.to_string(),
                             source_id: source.source_id.to_string(),
-                            shard_id: 15,
+                            shard_id: Some(ShardId::from(15)),
                             leader_id: "node1".to_string(),
                             follower_id: None,
                             shard_state: ShardState::Open as i32,
                             publish_position_inclusive: None,
                             publish_token: None,
                         }],
-                        next_shard_id: 18,
                     }],
                 };
                 Ok(list_shards_resp)

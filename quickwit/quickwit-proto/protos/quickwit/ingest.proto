@@ -29,6 +29,14 @@ message Position {
   bytes position = 1;
 }
 
+// The corresponding Rust struct [`crate::types::ShardId`] is defined manually and
+// externally provided during code generation (see `build.rs`).
+//
+// Modify at your own risk.
+message ShardId {
+  bytes shard_id = 1;
+}
+
 enum CommitTypeV2 {
   COMMIT_TYPE_V2_UNSPECIFIED = 0;
   COMMIT_TYPE_V2_AUTO = 1;
@@ -63,7 +71,7 @@ message Shard {
   // Immutable fields
   string index_uid = 1;
   string source_id = 2;
-  uint64 shard_id = 3;
+  ShardId shard_id = 3;
   // The node ID of the ingester to which all the write requests for this shard should be sent to.
   string leader_id = 4;
   // The node ID of the ingester holding a copy of the data.
@@ -83,5 +91,5 @@ message Shard {
 message ShardIds {
   string index_uid = 1;
   string source_id = 2;
-  repeated uint64 shard_ids = 3;
+  repeated ShardId shard_ids = 3;
 }

@@ -21,11 +21,12 @@ use std::collections::HashMap;
 
 use itertools::Itertools;
 use quickwit_doc_mapper::{BinaryFormat, FieldMappingType};
+use quickwit_proto::ingest::Shard;
 use quickwit_proto::metastore::SourceType;
 use quickwit_proto::types::SourceId;
 use serde::{Deserialize, Serialize};
 
-use super::shards::{SerdeShards, Shards};
+use super::shards::Shards;
 use crate::file_backed_metastore::file_backed_index::FileBackedIndex;
 use crate::metastore::DeleteTask;
 use crate::{IndexMetadata, Split};
@@ -62,7 +63,7 @@ pub(crate) struct FileBackedIndexV0_7 {
     splits: Vec<Split>,
     // TODO: Remove `skip_serializing_if` when we release ingest v2.
     #[serde(default, skip_serializing_if = "HashMap::is_empty")]
-    shards: HashMap<SourceId, SerdeShards>,
+    shards: HashMap<SourceId, Vec<Shard>>,
     #[serde(default)]
     delete_tasks: Vec<DeleteTask>,
 }
@@ -82,8 +83,8 @@ impl From<FileBackedIndex> for FileBackedIndexV0_7 {
                 // Skip serializing empty shards since the feature is hidden and disabled by
                 // default. This way, we can still modify the serialization format without worrying
                 // about backward compatibility post `0.7`.
-                if shards.next_shard_id > 1 {
-                    Some((source_id, SerdeShards::from(shards)))
+                if !shards.is_empty() {
+                    Some((source_id, shards.into_shards_vec()))
                 } else {
                     None
                 }
@@ -133,27 +134,32 @@ impl From<FileBackedIndexV0_7> for FileBackedIndex {
                 split.split_metadata.index_uid = index.metadata.index_uid.clone();
             }
         }
-        let mut shards: HashMap<SourceId, Shards> = index
+        let mut per_source_shards: HashMap<SourceId, Shards> = index
             .shards
             .into_iter()
-            .map(|(source_id, serde_shards)| {
+            .map(|(source_id, shards_vec)| {
                 let index_uid = index.metadata.index_uid.clone();
                 (
                     source_id.clone(),
-                    Shards::from_serde_shards(index_uid, source_id, serde_shards),
+                    Shards::from_shards_vec(index_uid, source_id, shards_vec),
                 )
             })
             .collect();
         // TODO: Remove this when we release ingest v2.
         for source in index.metadata.sources.values() {
             if source.source_type() == SourceType::IngestV2
-                && !shards.contains_key(&source.source_id)
+                && !per_source_shards.contains_key(&source.source_id)
             {
                 let index_uid = index.metadata.index_uid.clone();
                 let source_id = source.source_id.clone();
-                shards.insert(source_id.clone(), Shards::empty(index_uid, source_id));
+                per_source_shards.insert(source_id.clone(), Shards::empty(index_uid, source_id));
             }
         }
-        Self::new(index.metadata, index.splits, shards, index.delete_tasks)
+        Self::new(
+            index.metadata,
+            index.splits,
+            per_source_shards,
+            index.delete_tasks,
+        )
     }
 }

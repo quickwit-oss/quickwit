@@ -263,12 +263,12 @@ pub struct OpenShardsSubrequest {
     pub index_uid: ::prost::alloc::string::String,
     #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
-    #[prost(string, tag = "4")]
+    #[prost(message, optional, tag = "4")]
+    pub shard_id: ::core::option::Option<crate::types::ShardId>,
+    #[prost(string, tag = "5")]
     pub leader_id: ::prost::alloc::string::String,
-    #[prost(string, optional, tag = "5")]
+    #[prost(string, optional, tag = "6")]
     pub follower_id: ::core::option::Option<::prost::alloc::string::String>,
-    #[prost(uint64, tag = "6")]
-    pub next_shard_id: u64,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -289,8 +289,6 @@ pub struct OpenShardsSubresponse {
     pub source_id: ::prost::alloc::string::String,
     #[prost(message, repeated, tag = "4")]
     pub opened_shards: ::prost::alloc::vec::Vec<super::ingest::Shard>,
-    #[prost(uint64, tag = "5")]
-    pub next_shard_id: u64,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -307,8 +305,8 @@ pub struct AcquireShardsSubrequest {
     pub index_uid: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,
-    #[prost(uint64, repeated, tag = "3")]
-    pub shard_ids: ::prost::alloc::vec::Vec<u64>,
+    #[prost(message, repeated, tag = "3")]
+    pub shard_ids: ::prost::alloc::vec::Vec<crate::types::ShardId>,
     #[prost(string, tag = "4")]
     pub publish_token: ::prost::alloc::string::String,
 }
@@ -348,8 +346,8 @@ pub struct DeleteShardsSubrequest {
     pub index_uid: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,
-    #[prost(uint64, repeated, tag = "3")]
-    pub shard_ids: ::prost::alloc::vec::Vec<u64>,
+    #[prost(message, repeated, tag = "3")]
+    pub shard_ids: ::prost::alloc::vec::Vec<crate::types::ShardId>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -390,8 +388,6 @@ pub struct ListShardsSubresponse {
     pub source_id: ::prost::alloc::string::String,
     #[prost(message, repeated, tag = "3")]
     pub shards: ::prost::alloc::vec::Vec<super::ingest::Shard>,
-    #[prost(uint64, tag = "4")]
-    pub next_shard_id: u64,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]
