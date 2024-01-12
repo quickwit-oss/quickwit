@@ -11,6 +11,7 @@ async-trait = { workspace = true }
 bytes = { workspace = true }
 bytesize = { workspace = true }
 dyn-clone = { workspace = true }
+fail = { workspace = true }
 flume = { workspace = true }
 fnv = { workspace = true }
 futures = { workspace = true }
