@@ -4930,14 +4930,13 @@ dependencies = [
 
 [[package]]
 name = "predicates"
-version = "3.0.4"
+version = "3.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6dfc28575c2e3f19cb3c73b93af36460ae898d426eba6fc15b9bd2a5220758a0"
+checksum = "68b87bfd4605926cdfefc1c3b5f8fe560e3feca9d5552cf68c466d3d8236c7e8"
 dependencies = [
  "anstyle",
  "difflib",
  "float-cmp",
- "itertools 0.11.0",
  "normalize-line-endings",
  "predicates-core",
  "regex",
@@ -5299,7 +5298,7 @@ dependencies = [
  "openssl-probe",
  "opentelemetry",
  "opentelemetry-otlp",
- "predicates 3.0.4",
+ "predicates 3.1.0",
  "quickwit-actors",
  "quickwit-cluster",
  "quickwit-common",
