@@ -30,7 +30,7 @@ use std::ops::Bound;
 
 use itertools::Itertools;
 use quickwit_common::PrettySample;
-use quickwit_config::{SourceConfig, INGEST_SOURCE_ID};
+use quickwit_config::{SourceConfig, INGEST_V2_SOURCE_ID};
 use quickwit_proto::metastore::{
     AcquireShardsSubrequest, AcquireShardsSubresponse, DeleteQuery, DeleteShardsSubrequest,
     DeleteTask, EntityKind, ListShardsSubrequest, ListShardsSubresponse, MetastoreError,
@@ -85,7 +85,7 @@ impl quickwit_config::TestableForRegression for FileBackedIndex {
 
         let index_metadata = IndexMetadata::sample_for_regression();
         let index_uid = index_metadata.index_uid.clone();
-        let source_id = INGEST_SOURCE_ID.to_string();
+        let source_id = INGEST_V2_SOURCE_ID.to_string();
 
         let split_metadata = SplitMetadata::sample_for_regression();
         let split = Split {
@@ -353,7 +353,7 @@ impl FileBackedIndex {
         if let Some(checkpoint_delta) = checkpoint_delta_opt {
             let source_id = checkpoint_delta.source_id.clone();
 
-            if source_id == INGEST_SOURCE_ID {
+            if source_id == INGEST_V2_SOURCE_ID {
                 let publish_token = publish_token_opt.ok_or_else(|| {
                     let message = format!(
                         "publish token is required for publishing splits for source `{source_id}`"

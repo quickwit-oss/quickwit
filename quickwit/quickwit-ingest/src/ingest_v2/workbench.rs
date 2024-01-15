@@ -150,8 +150,8 @@ impl IngestWorkbench {
     /// Marks a node as unavailable for the span of the workbench.
     ///
     /// Remaining attempts will treat the node as if it was not in the ingester pool.
-    pub fn record_connection_error(&mut self, subrequest_id: SubrequestId) {
-        self.record_failure(subrequest_id, SubworkbenchFailure::TransportError);
+    pub fn record_transport_error(&mut self, subrequest_id: SubrequestId) {
+        self.record_failure(subrequest_id, SubworkbenchFailure::Transport);
     }
 
     pub fn record_persist_failure(&mut self, persist_failure: &PersistFailure) {
@@ -217,7 +217,7 @@ pub(super) enum SubworkbenchFailure {
     SourceNotFound,
     NoShardsAvailable,
     // Transport error: we failed to reach the ingester.
-    TransportError,
+    Transport,
     // This is an error supplied by the ingester.
     Persist(PersistFailureReason),
     Internal(String),
@@ -232,7 +232,7 @@ impl SubworkbenchFailure {
             Self::NoShardsAvailable => IngestFailureReason::NoShardsAvailable,
             // In our last attempt, we did not manage to reach the ingester.
             // We can consider that as a no shards available.
-            Self::TransportError => IngestFailureReason::NoShardsAvailable,
+            Self::Transport => IngestFailureReason::NoShardsAvailable,
             Self::Persist(persist_failure_reason) => (*persist_failure_reason).into(),
         }
     }
@@ -271,7 +271,7 @@ impl IngestSubworkbench {
             // No need to retry no shards were available.
             Some(SubworkbenchFailure::NoShardsAvailable) => false,
             Some(SubworkbenchFailure::Persist(_)) => true,
-            Some(SubworkbenchFailure::TransportError) => true,
+            Some(SubworkbenchFailure::Transport) => true,
             None => true,
         }
     }
@@ -292,7 +292,7 @@ mod tests {
         assert!(subworkbench.is_pending());
         assert!(subworkbench.last_failure_is_transient());
 
-        subworkbench.last_failure_opt = Some(SubworkbenchFailure::TransportError);
+        subworkbench.last_failure_opt = Some(SubworkbenchFailure::Transport);
         assert!(subworkbench.is_pending());
         assert!(subworkbench.last_failure_is_transient());
 

@@ -17,17 +17,18 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use quickwit_proto::types::IndexId;
 use serde::Deserialize;
 
 #[derive(Clone, Debug, Deserialize, PartialEq)]
 #[serde(rename_all(deserialize = "lowercase"))]
 pub enum BulkAction {
-    Index(BulkActionMeta),
     Create(BulkActionMeta),
+    Index(BulkActionMeta),
 }
 
 impl BulkAction {
-    pub fn into_index(self) -> Option<String> {
+    pub fn into_index_id(self) -> Option<IndexId> {
         match self {
             BulkAction::Index(meta) => meta.index_id,
             BulkAction::Create(meta) => meta.index_id,
@@ -39,7 +40,7 @@ impl BulkAction {
 pub struct BulkActionMeta {
     #[serde(alias = "_index")]
     #[serde(default)]
-    pub index_id: Option<String>,
+    pub index_id: Option<IndexId>,
     #[serde(alias = "_id")]
     #[serde(default)]
     pub doc_id: Option<String>,
@@ -47,7 +48,8 @@ pub struct BulkActionMeta {
 
 #[cfg(test)]
 mod tests {
-    use crate::elastic_search_api::model::{BulkAction, BulkActionMeta};
+    use crate::elastic_search_api::model::bulk_body::BulkActionMeta;
+    use crate::elastic_search_api::model::BulkAction;
 
     #[test]
     fn test_bulk_action_serde() {

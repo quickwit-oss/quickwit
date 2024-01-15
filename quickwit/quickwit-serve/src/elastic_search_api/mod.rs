@@ -18,6 +18,7 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 mod bulk;
+mod bulk_v2;
 mod filter;
 mod model;
 mod rest_handler;
@@ -29,6 +30,7 @@ pub use filter::ElasticCompatibleApi;
 use hyper::StatusCode;
 use quickwit_config::NodeConfig;
 use quickwit_ingest::IngestServiceClient;
+use quickwit_proto::ingest::router::IngestRouterServiceClient;
 use quickwit_search::SearchService;
 use rest_handler::{
     es_compat_cluster_info_handler, es_compat_index_multi_search_handler,
@@ -50,6 +52,7 @@ pub fn elastic_api_handlers(
     node_config: Arc<NodeConfig>,
     search_service: Arc<dyn SearchService>,
     ingest_service: IngestServiceClient,
+    ingest_router: IngestRouterServiceClient,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     es_compat_cluster_info_handler(node_config, BuildInfo::get())
         .or(es_compat_search_handler(search_service.clone()))
@@ -59,8 +62,11 @@ pub fn elastic_api_handlers(
         .or(es_compat_index_search_handler(search_service.clone()))
         .or(es_compat_scroll_handler(search_service.clone()))
         .or(es_compat_index_multi_search_handler(search_service))
-        .or(es_compat_bulk_handler(ingest_service.clone()))
-        .or(es_compat_index_bulk_handler(ingest_service))
+        .or(es_compat_bulk_handler(
+            ingest_service.clone(),
+            ingest_router.clone(),
+        ))
+        .or(es_compat_index_bulk_handler(ingest_service, ingest_router))
     // Register newly created handlers here.
 }
 
@@ -113,6 +119,7 @@ mod tests {
     use mockall::predicate;
     use quickwit_config::NodeConfig;
     use quickwit_ingest::{IngestApiService, IngestServiceClient};
+    use quickwit_proto::ingest::router::IngestRouterServiceClient;
     use quickwit_search::MockSearchService;
     use serde_json::Value as JsonValue;
     use warp::Filter;
@@ -147,10 +154,12 @@ mod tests {
                 },
             ))
             .returning(|_| Ok(Default::default()));
+        let ingest_router = IngestRouterServiceClient::from(IngestRouterServiceClient::mock());
         let es_search_api_handler = super::elastic_api_handlers(
             config,
             Arc::new(mock_search_service),
             ingest_service_client(),
+            ingest_router,
         );
         let msearch_payload = r#"
             {"index":"index-1"}
@@ -194,10 +203,13 @@ mod tests {
                     ))
                 }
             });
+
+        let ingest_router = IngestRouterServiceClient::from(IngestRouterServiceClient::mock());
         let es_search_api_handler = super::elastic_api_handlers(
             config,
             Arc::new(mock_search_service),
             ingest_service_client(),
+            ingest_router,
         );
         let msearch_payload = r#"
             {"index":"index-1"}
@@ -229,10 +241,13 @@ mod tests {
     async fn test_msearch_api_return_400_with_malformed_request_header() {
         let config = Arc::new(NodeConfig::for_test());
         let mock_search_service = MockSearchService::new();
+
+        let ingest_router = IngestRouterServiceClient::from(IngestRouterServiceClient::mock());
         let es_search_api_handler = super::elastic_api_handlers(
             config,
             Arc::new(mock_search_service),
             ingest_service_client(),
+            ingest_router,
         );
         let msearch_payload = r#"
             {"index":"index-1"
@@ -257,10 +272,13 @@ mod tests {
     async fn test_msearch_api_return_400_with_malformed_request_body() {
         let config = Arc::new(NodeConfig::for_test());
         let mock_search_service = MockSearchService::new();
+
+        let ingest_router = IngestRouterServiceClient::from(IngestRouterServiceClient::mock());
         let es_search_api_handler = elastic_api_handlers(
             config,
             Arc::new(mock_search_service),
             ingest_service_client(),
+            ingest_router,
         );
         let msearch_payload = r#"
             {"index":"index-1"}
@@ -285,10 +303,13 @@ mod tests {
     async fn test_msearch_api_return_400_with_only_a_header_request() {
         let config = Arc::new(NodeConfig::for_test());
         let mock_search_service = MockSearchService::new();
+
+        let ingest_router = IngestRouterServiceClient::from(IngestRouterServiceClient::mock());
         let es_search_api_handler = super::elastic_api_handlers(
             config,
             Arc::new(mock_search_service),
             ingest_service_client(),
+            ingest_router,
         );
         let msearch_payload = r#"
             {"index":"index-1"}
@@ -312,10 +333,13 @@ mod tests {
     async fn test_msearch_api_return_400_with_no_index() {
         let config = Arc::new(NodeConfig::for_test());
         let mock_search_service = MockSearchService::new();
+
+        let ingest_router = IngestRouterServiceClient::from(IngestRouterServiceClient::mock());
         let es_search_api_handler = super::elastic_api_handlers(
             config,
             Arc::new(mock_search_service),
             ingest_service_client(),
+            ingest_router,
         );
         let msearch_payload = r#"
             {}
@@ -352,10 +376,12 @@ mod tests {
                     ))
                 }
             });
+        let ingest_router = IngestRouterServiceClient::from(IngestRouterServiceClient::mock());
         let es_search_api_handler = super::elastic_api_handlers(
             config,
             Arc::new(mock_search_service),
             ingest_service_client(),
+            ingest_router,
         );
         let msearch_payload = r#"
             {"index": ["index-1", "index-2"]}

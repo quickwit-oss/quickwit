@@ -33,6 +33,7 @@ use tracing::{error, info};
 use warp::{redirect, Filter, Rejection, Reply};
 
 use crate::cluster_api::cluster_handler;
+use crate::debugging_api::debugging_handler;
 use crate::delete_task_api::delete_task_api_handlers;
 use crate::elastic_search_api::elastic_api_handlers;
 use crate::health_check_api::health_check_handlers;
@@ -87,6 +88,12 @@ pub(crate) async fn start_rest_server(
     // `/metrics` route.
     let metrics_routes = warp::path("metrics").and(warp::get()).map(metrics_handler);
 
+    // `/debugging` route.
+    let control_plane_service = quickwit_services.control_plane_service.clone();
+    let debugging_routes = warp::path("debugging")
+        .and(warp::get())
+        .then(move || debugging_handler(control_plane_service.clone()));
+
     // `/api/v1/*` routes.
     let api_v1_root_route = api_v1_routes(quickwit_services.clone());
 
@@ -109,6 +116,7 @@ pub(crate) async fn start_rest_server(
         .or(ui_handler())
         .or(health_check_routes)
         .or(metrics_routes)
+        .or(debugging_routes)
         .with(request_counter)
         .recover(recover_fn)
         .with(extra_headers)
@@ -154,17 +162,6 @@ pub(crate) async fn start_rest_server(
 fn api_v1_routes(
     quickwit_services: Arc<QuickwitServices>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    if !quickwit_services
-        .node_config
-        .rest_config
-        .extra_headers
-        .is_empty()
-    {
-        info!(
-            "Extra headers will be added to all responses: {:?}",
-            quickwit_services.node_config.rest_config.extra_headers
-        );
-    }
     let api_v1_root_url = warp::path!("api" / "v1" / ..);
     api_v1_root_url.and(
         cluster_handler(quickwit_services.cluster.clone())
@@ -206,6 +203,7 @@ fn api_v1_routes(
                 quickwit_services.node_config.clone(),
                 quickwit_services.search_service.clone(),
                 quickwit_services.ingest_service.clone(),
+                quickwit_services.ingest_router_service.clone(),
             )),
     )
 }

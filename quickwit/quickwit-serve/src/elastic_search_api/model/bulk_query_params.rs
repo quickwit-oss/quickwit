@@ -18,10 +18,11 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use quickwit_ingest::CommitType;
+use quickwit_proto::ingest::CommitTypeV2;
 use serde::Deserialize;
 
-#[derive(Clone, Debug, Default, Deserialize, PartialEq)]
-pub struct ElasticIngestOptions {
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq)]
+pub struct ElasticBulkOptions {
     #[serde(default)]
     pub refresh: ElasticRefresh,
 }
@@ -32,7 +33,7 @@ pub struct ElasticIngestOptions {
 /// - Absence of ?refresh parameter or ?refresh=false means no refresh
 /// - Presence of ?refresh parameter without any values or ?refresh=true means force refresh
 /// - ?refresh=wait_for means wait for refresh
-#[derive(Clone, Debug, Deserialize, PartialEq, utoipa::ToSchema)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, utoipa::ToSchema)]
 #[serde(rename_all(deserialize = "snake_case"))]
 #[derive(Default)]
 pub enum ElasticRefresh {
@@ -53,51 +54,62 @@ pub enum ElasticRefresh {
 impl From<ElasticRefresh> for CommitType {
     fn from(val: ElasticRefresh) -> Self {
         match val {
-            ElasticRefresh::False => CommitType::Auto,
-            ElasticRefresh::True => CommitType::Force,
-            ElasticRefresh::WaitFor => CommitType::WaitFor,
+            ElasticRefresh::False => Self::Auto,
+            ElasticRefresh::True => Self::Force,
+            ElasticRefresh::WaitFor => Self::WaitFor,
+        }
+    }
+}
+
+impl From<ElasticRefresh> for CommitTypeV2 {
+    fn from(val: ElasticRefresh) -> Self {
+        match val {
+            ElasticRefresh::False => Self::Auto,
+            ElasticRefresh::True => Self::Force,
+            ElasticRefresh::WaitFor => Self::Wait,
         }
     }
 }
 
 #[cfg(test)]
 mod tests {
-    use crate::elastic_search_api::model::{ElasticIngestOptions, ElasticRefresh};
+    use crate::elastic_search_api::model::bulk_query_params::ElasticRefresh;
+    use crate::elastic_search_api::model::ElasticBulkOptions;
 
     #[test]
     fn test_elastic_refresh_parsing() {
         assert_eq!(
-            serde_qs::from_str::<ElasticIngestOptions>("")
+            serde_qs::from_str::<ElasticBulkOptions>("")
                 .unwrap()
                 .refresh,
             ElasticRefresh::False
         );
         assert_eq!(
-            serde_qs::from_str::<ElasticIngestOptions>("refresh=true")
+            serde_qs::from_str::<ElasticBulkOptions>("refresh=true")
                 .unwrap()
                 .refresh,
             ElasticRefresh::True
         );
         assert_eq!(
-            serde_qs::from_str::<ElasticIngestOptions>("refresh=false")
+            serde_qs::from_str::<ElasticBulkOptions>("refresh=false")
                 .unwrap()
                 .refresh,
             ElasticRefresh::False
         );
         assert_eq!(
-            serde_qs::from_str::<ElasticIngestOptions>("refresh=wait_for")
+            serde_qs::from_str::<ElasticBulkOptions>("refresh=wait_for")
                 .unwrap()
                 .refresh,
             ElasticRefresh::WaitFor
         );
         assert_eq!(
-            serde_qs::from_str::<ElasticIngestOptions>("refresh")
+            serde_qs::from_str::<ElasticBulkOptions>("refresh")
                 .unwrap()
                 .refresh,
             ElasticRefresh::True
         );
         assert_eq!(
-            serde_qs::from_str::<ElasticIngestOptions>("refresh=wait")
+            serde_qs::from_str::<ElasticBulkOptions>("refresh=wait")
                 .unwrap_err()
                 .to_string(),
             "unknown variant `wait`, expected one of `false`, `true`, `wait_for`"

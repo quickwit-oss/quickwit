@@ -27,11 +27,11 @@ use super::model::{
     FieldCapabilityQueryParams, FieldCapabilityRequestBody, MultiSearchQueryParams,
 };
 use crate::elastic_search_api::model::{
-    ElasticIngestOptions, ScrollQueryParams, SearchBody, SearchQueryParams,
+    ElasticBulkOptions, ScrollQueryParams, SearchBody, SearchQueryParams,
 };
 use crate::search_api::extract_index_id_patterns;
 
-const BODY_LENGTH_LIMIT: ByteSize = ByteSize::mb(1);
+const BODY_LENGTH_LIMIT: ByteSize = ByteSize::mib(1);
 const CONTENT_LENGTH_LIMIT: ByteSize = ByteSize::mib(10);
 
 // TODO: Make all elastic endpoint models `utoipa` compatible
@@ -69,7 +69,7 @@ pub(crate) fn elastic_search_filter(
     )
 )]
 pub(crate) fn elastic_bulk_filter(
-) -> impl Filter<Extract = (Bytes, ElasticIngestOptions), Error = Rejection> + Clone {
+) -> impl Filter<Extract = (Bytes, ElasticBulkOptions), Error = Rejection> + Clone {
     warp::path!("_elastic" / "_bulk")
         .and(warp::post())
         .and(warp::body::content_length_limit(
@@ -142,14 +142,14 @@ pub(crate) fn elastic_index_search_filter(
     )
 )]
 pub(crate) fn elastic_index_bulk_filter(
-) -> impl Filter<Extract = (String, Bytes, ElasticIngestOptions), Error = Rejection> + Clone {
+) -> impl Filter<Extract = (String, Bytes, ElasticBulkOptions), Error = Rejection> + Clone {
     warp::path!("_elastic" / String / "_bulk")
         .and(warp::post())
         .and(warp::body::content_length_limit(
             CONTENT_LENGTH_LIMIT.as_u64(),
         ))
         .and(warp::body::bytes())
-        .and(serde_qs::warp::query::<ElasticIngestOptions>(
+        .and(serde_qs::warp::query::<ElasticBulkOptions>(
             serde_qs::Config::default(),
         ))
 }
