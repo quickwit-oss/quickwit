@@ -13,104 +13,74 @@ expected:
         metadata_field: false
         searchable: true
         aggregatable: true
-        indices:
-        - fieldcaps
     nested.name:
       keyword:
         type: keyword
         metadata_field: false
         searchable: true
         aggregatable: true
-        indices:
-        - fieldcaps
       text:
         type: text
         metadata_field: false
         searchable: true
         aggregatable: true
-        indices:
-        - fieldcaps
     host:
       ip:
         type: ip
         metadata_field: false
         searchable: true
         aggregatable: true
-        indices:
-        - fieldcaps
     mixed: # This is a little weird case (values [5, -5.5]), since coercion happens only on the columnar side. That's why `long` is not aggregatable.
       long: 
         metadata_field: false
         searchable: true
         aggregatable: false 
-        indices:
-        - fieldcaps
       double:
         metadata_field: false
         searchable: true
         aggregatable: true
-        indices:
-        - fieldcaps
     date:
       date_nanos:
         metadata_field: false
         searchable: true
         aggregatable: true
-        indices:
-        - fieldcaps
     _field_presence:
       long:
         metadata_field: false
         searchable: true
         aggregatable: false
-        indices:
-        - fieldcaps
     response:
       long:
         metadata_field: false
         searchable: true
         aggregatable: true
-        indices:
-        - fieldcaps
     id:
       long:
         metadata_field: false
         searchable: true
         aggregatable: true
-        indices:
-        - fieldcaps
       double:
         metadata_field: false
         searchable: true
         aggregatable: true
-        indices:
-        - fieldcaps
     name:
       keyword:
         metadata_field: false
         searchable: true
         aggregatable: true
-        indices:
-        - fieldcaps
       text:
         metadata_field: false
         searchable: true
         aggregatable: true
-        indices:
-        - fieldcaps
     tags:
       keyword:
         metadata_field: false
         searchable: true
         aggregatable: true
-        indices:
-        - fieldcaps
       text:
         metadata_field: false
         searchable: true
         aggregatable: true
-        indices:
-        - fieldcaps
 ---
 # Test fields parameter with `.dynamic` suffix
 engines:
@@ -128,21 +98,15 @@ expected:
         metadata_field: false
         searchable: true
         aggregatable: true
-        indices:
-        - fieldcaps
     nested.name:
       keyword:
         metadata_field: false
         searchable: true
         aggregatable: true
-        indices:
-        - fieldcaps
       text:
         metadata_field: false
         searchable: true
         aggregatable: true
-        indices:
-        - fieldcaps
 ---
 # Test fields parameter with wildcard
 method: [GET]
@@ -158,21 +122,15 @@ expected:
         metadata_field: false
         searchable: true
         aggregatable: true
-        indices:
-        - fieldcaps
     nested.name:
       keyword:
         metadata_field: false
         searchable: true
         aggregatable: true
-        indices:
-        - fieldcaps
       text:
         metadata_field: false
         searchable: true
         aggregatable: true
-        indices:
-        - fieldcaps
 ---
 # Test fields parameter with wildcard
 method: [GET]
@@ -188,21 +146,15 @@ expected:
         metadata_field: false
         searchable: true
         aggregatable: true
-        indices:
-        - fieldcaps
     nested.name:
       keyword:
         metadata_field: false
         searchable: true
         aggregatable: true
-        indices:
-        - fieldcaps
       text:
         metadata_field: false
         searchable: true
         aggregatable: true
-        indices:
-        - fieldcaps
 ---
 # Test fields parameter with wildcard
 method: [GET]
@@ -218,8 +170,6 @@ expected:
         metadata_field: false
         searchable: true
         aggregatable: true
-        indices:
-        - fieldcaps
 ---
 # Compare with elastic search
 method: [GET]
@@ -289,9 +239,31 @@ expected:
         metadata_field: false
         searchable: true
         aggregatable: true
+    tags-2:
+      keyword:
+        type: keyword
+        metadata_field: false
+        searchable: true
+        aggregatable: true
         indices:
-          - fieldcaps
           - fieldcaps-2
+---
+# _field_caps without index endpoint
+method: [GET]
+engines:
+  - quickwit
+endpoint: _field_caps?fields=tags*
+expected:
+  indices:
+  - fieldcaps
+  - fieldcaps-2
+  fields:
+    tags:
+      keyword:
+        type: keyword
+        metadata_field: false
+        searchable: true
+        aggregatable: true
     tags-2:
       keyword:
         type: keyword
@@ -318,7 +290,6 @@ expected:
         metadata_field: false
         searchable: true
         aggregatable: true
-
 ---
 # Exact match index + Non matching excact index
 method: [GET]

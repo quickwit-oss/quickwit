@@ -56,12 +56,12 @@ pub fn elastic_api_handlers(
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
     es_compat_cluster_info_handler(node_config, BuildInfo::get())
         .or(es_compat_search_handler(search_service.clone()))
+        .or(es_compat_index_search_handler(search_service.clone()))
+        .or(es_compat_scroll_handler(search_service.clone()))
+        .or(es_compat_index_multi_search_handler(search_service.clone()))
         .or(es_compat_index_field_capabilities_handler(
             search_service.clone(),
         ))
-        .or(es_compat_index_search_handler(search_service.clone()))
-        .or(es_compat_scroll_handler(search_service.clone()))
-        .or(es_compat_index_multi_search_handler(search_service))
         .or(es_compat_bulk_handler(
             ingest_service.clone(),
             ingest_router.clone(),

@@ -55,6 +55,11 @@ use crate::{with_arg, BodyFormat};
 )]
 pub struct SearchApi;
 
+pub(crate) async fn extract_index_id_patterns_default() -> Result<Vec<String>, Rejection> {
+    let index_id_patterns = Vec::new();
+    Ok(index_id_patterns)
+}
+
 pub(crate) async fn extract_index_id_patterns(
     comma_separated_index_id_patterns: String,
 ) -> Result<Vec<String>, Rejection> {

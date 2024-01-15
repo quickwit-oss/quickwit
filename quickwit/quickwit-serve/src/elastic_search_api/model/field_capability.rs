@@ -98,6 +98,7 @@ struct FieldCapabilityEntryResponse {
     // Option since it is filled later
     #[serde(rename = "type")]
     typ: Option<FieldCapabilityEntryType>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     indices: Vec<String>, // [ "index1", "index2" ],
     #[serde(skip_serializing_if = "Vec::is_empty")]
     non_aggregatable_indices: Vec<String>, // [ "index1" ]
@@ -164,6 +165,13 @@ pub fn convert_to_es_field_capabilities_response(
         for field_type in types {
             let mut add_entry = add_entry.clone();
             add_entry.typ = Some(field_type.clone());
+
+            // If the field exists in all indices, we omit field.indices in the response.
+            let exists_in_all_indices = add_entry.indices.len() == indices.len();
+            if exists_in_all_indices {
+                add_entry.indices = Vec::new();
+            }
+
             entry.insert(field_type, add_entry);
         }
     }
