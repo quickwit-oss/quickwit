@@ -22,8 +22,10 @@ use std::collections::btree_map::Entry;
 use std::collections::{BTreeMap, BinaryHeap, HashMap};
 
 use quickwit_proto::indexing::CpuCapacity;
+use tracing::warn;
 
 use super::scheduling_logic_model::*;
+use crate::indexing_scheduler::scheduling::inflate_node_capacities_if_necessary;
 
 // ------------------------------------------------------------------------------------
 // High level algorithm
@@ -39,17 +41,17 @@ fn check_contract_conditions(problem: &SchedulingProblem, solution: &SchedulingS
 }
 
 pub fn solve(
-    problem: &SchedulingProblem,
+    mut problem: SchedulingProblem,
     previous_solution: SchedulingSolution,
-) -> (SchedulingSolution, BTreeMap<SourceOrd, u32>) {
+) -> SchedulingSolution {
+    // We first inflate the indexer capacities to make sure they globally have at least 110% of the
+    // total problem load.
+    inflate_node_capacities_if_necessary(&mut problem);
     let mut solution = previous_solution;
-    check_contract_conditions(problem, &solution);
-    remove_extraneous_shards(problem, &mut solution);
-    enforce_indexers_cpu_capacity(problem, &mut solution);
-    let still_unassigned = place_unassigned_shards(problem, &mut solution);
-    // TODO ideally we should have some smarter logic here to bread first search for a better
-    // solution.
-    (solution, still_unassigned)
+    check_contract_conditions(&problem, &solution);
+    remove_extraneous_shards(&problem, &mut solution);
+    enforce_indexers_cpu_capacity(&problem, &mut solution);
+    place_unassigned_shards(problem, solution)
 }
 
 // -------------------------------------------------------------------------
@@ -88,7 +90,7 @@ fn remove_extraneous_shards(problem: &SchedulingProblem, solution: &mut Scheduli
         }
     }
 
-    let mut indexer_available_capacity: Vec<CpuCapacity> = solution
+    let mut indexer_available_capacity: Vec<i32> = solution
         .indexer_assignments
         .iter()
         .map(|indexer_assignment| indexer_assignment.indexer_available_capacity(problem))
@@ -154,10 +156,11 @@ fn enforce_indexer_cpu_capacity(
     indexer_assignment: &mut IndexerAssignment,
 ) {
     let total_load = indexer_assignment.total_cpu_load(problem);
-    if total_load <= indexer_cpu_capacity {
+    if total_load <= indexer_cpu_capacity.cpu_millis() {
         return;
     }
-    let mut load_to_remove: CpuCapacity = total_load - indexer_cpu_capacity;
+    let mut load_to_remove: CpuCapacity =
+        CpuCapacity::from_cpu_millis(total_load) - indexer_cpu_capacity;
     let mut source_cpu_capacities: Vec<(CpuCapacity, SourceOrd)> = indexer_assignment
         .num_shards_per_source
         .iter()
@@ -183,7 +186,31 @@ fn assert_enforce_nodes_cpu_capacity_post_condition(
     indexer_assignment: &IndexerAssignment,
 ) {
     let total_load = indexer_assignment.total_cpu_load(problem);
-    assert!(total_load <= problem.indexer_cpu_capacity(indexer_assignment.indexer_ord));
+    assert!(
+        total_load
+            <= problem
+                .indexer_cpu_capacity(indexer_assignment.indexer_ord)
+                .cpu_millis()
+    );
+}
+
+fn attempt_place_unassigned_shards(
+    unassigned_shards: &[Source],
+    problem: &SchedulingProblem,
+    partial_solution: &SchedulingSolution,
+) -> Result<SchedulingSolution, NotEnoughCapacity> {
+    let mut solution = partial_solution.clone();
+    let mut indexers_with_most_available_capacity: BinaryHeap<(CpuCapacity, IndexerOrd)> =
+        compute_indexer_available_capacity(problem, &solution);
+    for source in unassigned_shards {
+        place_unassigned_shards_single_source(
+            source,
+            &mut indexers_with_most_available_capacity,
+            &mut solution,
+        )?;
+    }
+    assert_place_unassigned_shards_post_condition(problem, &solution);
+    Ok(solution)
 }
 
 // ----------------------------------------------------
@@ -195,84 +222,85 @@ fn assert_enforce_nodes_cpu_capacity_post_condition(
 //
 // We then try to place as many shards as possible in the node with the
 // highest available capacity.
-
+//
+// If this algorithm fails to place all remaining shards, we inflate the node capacities by 20%
+// in the scheduling problem and start from the beginning.
+#[must_use]
 fn place_unassigned_shards(
-    problem: &SchedulingProblem,
-    solution: &mut SchedulingSolution,
-) -> BTreeMap<SourceOrd, u32> {
-    let mut unassigned_shards: Vec<Source> = compute_unassigned_sources(problem, solution);
+    mut problem: SchedulingProblem,
+    partial_solution: SchedulingSolution,
+) -> SchedulingSolution {
+    let mut unassigned_shards: Vec<Source> =
+        compute_unassigned_sources(&problem, &partial_solution);
     unassigned_shards.sort_by_key(|source| {
         let load = source.num_shards * source.load_per_shard.get();
         Reverse(load)
     });
-    let mut indexers_with_most_available_capacity: BinaryHeap<(CpuCapacity, IndexerOrd)> =
-        compute_indexer_available_capacity(problem, solution);
-    let mut unassignable_shards = BTreeMap::new();
-    for source in unassigned_shards {
-        let num_shards_unassigned = place_unassigned_shards_single_source(
-            &source,
-            &mut indexers_with_most_available_capacity,
-            solution,
-        );
-        // We haven't been able to place this source entirely.
-        if num_shards_unassigned != 0 {
-            unassignable_shards.insert(source.source_ord, num_shards_unassigned);
+
+    // Thanks to the call to `inflate_node_capacities_if_necessary`,
+    // we are certain that even on our first attempt, the total capacity of the indexer exceeds 120%
+    // of the partial solution.
+    //
+    // 1.2^30 is about 240.
+    // If we reach 30 attempts we are certain to have a logical bug.
+    for attempt_number in 0..30 {
+        match attempt_place_unassigned_shards(&unassigned_shards[..], &problem, &partial_solution) {
+            Ok(solution) => {
+                if attempt_number != 0 {
+                    warn!(
+                        attempt_number = attempt_number,
+                        "required to scale node capacity"
+                    );
+                }
+                return solution;
+            }
+            Err(NotEnoughCapacity) => {
+                problem.scale_node_capacities(1.2f32);
+            }
         }
     }
-    assert_place_unassigned_shards_post_condition(problem, solution, &unassignable_shards);
-    unassignable_shards
+    unreachable!("Failed to assign all of the sources");
 }
 
 fn assert_place_unassigned_shards_post_condition(
     problem: &SchedulingProblem,
     solution: &SchedulingSolution,
-    unassigned_shards: &BTreeMap<SourceOrd, u32>,
 ) {
-    // We make sure we all shard are cound as place or unassigned.
+    // We make sure we all shard are as placed.
     for source in problem.sources() {
         let num_assigned_shards: u32 = solution
             .indexer_assignments
             .iter()
             .map(|indexer_assignment| indexer_assignment.num_shards(source.source_ord))
             .sum();
-        assert_eq!(
-            num_assigned_shards
-                + unassigned_shards
-                    .get(&source.source_ord)
-                    .copied()
-                    .unwrap_or(0),
-            source.num_shards
-        );
+        assert_eq!(num_assigned_shards, source.num_shards);
     }
-    // We make sure that all unassigned shard cannot be placed.
+    // We make sure that the node capacity is respected.
     for indexer_assignment in &solution.indexer_assignments {
-        let available_capacity: CpuCapacity =
-            indexer_assignment.indexer_available_capacity(problem);
-        for (&source_ord, &num_shards) in unassigned_shards {
-            assert!(num_shards > 0);
-            let source = problem.source(source_ord);
-            assert!(source.load_per_shard.get() > available_capacity.cpu_millis());
-        }
+        // We call this function just to check that the indexer assignment does not exceed this
+        // capacity. (it includes an assert that panics if it happens).
+        assert_enforce_nodes_cpu_capacity_post_condition(problem, indexer_assignment);
     }
 }
 
+struct NotEnoughCapacity;
+
+/// Return Err(NotEnoughCapacity) iff the algorithm was unable to pack all of the sources
+/// amongst the node with their given node capacity.
 fn place_unassigned_shards_single_source(
     source: &Source,
     indexer_available_capacities: &mut BinaryHeap<(CpuCapacity, IndexerOrd)>,
     solution: &mut SchedulingSolution,
-) -> u32 {
+) -> Result<(), NotEnoughCapacity> {
     let mut num_shards = source.num_shards;
     while num_shards > 0 {
-        let Some(mut node_with_most_capacity) = indexer_available_capacities.peek_mut() else {
-            break;
-        };
+        let mut node_with_most_capacity = indexer_available_capacities.peek_mut().unwrap();
         let node_id = node_with_most_capacity.1;
         let available_capacity = &mut node_with_most_capacity.0;
         let num_placable_shards = available_capacity.cpu_millis() / source.load_per_shard;
         let num_shards_to_place = num_placable_shards.min(num_shards);
-        // We cannot place more shards with this load.
         if num_shards_to_place == 0 {
-            break;
+            return Err(NotEnoughCapacity);
         }
         // TODO take in account colocation.
         // Update the solution, the shard load, and the number of shards to place.
@@ -281,7 +309,7 @@ fn place_unassigned_shards_single_source(
             - CpuCapacity::from_cpu_millis(num_shards_to_place * source.load_per_shard.get());
         num_shards -= num_shards_to_place;
     }
-    num_shards
+    Ok(())
 }
 
 fn compute_unassigned_sources(
@@ -309,6 +337,9 @@ fn compute_unassigned_sources(
     unassigned_sources.into_values().collect()
 }
 
+/// Builds a BinaryHeap with the different indexer capacities.
+///
+/// Panics if one of the indexer is over-assigned.
 fn compute_indexer_available_capacity(
     problem: &SchedulingProblem,
     solution: &SchedulingSolution,
@@ -316,8 +347,12 @@ fn compute_indexer_available_capacity(
     let mut indexer_available_capacity: BinaryHeap<(CpuCapacity, IndexerOrd)> =
         BinaryHeap::with_capacity(problem.num_indexers());
     for indexer_assignment in &solution.indexer_assignments {
-        let available_capacity = indexer_assignment.indexer_available_capacity(problem);
-        indexer_available_capacity.push((available_capacity, indexer_assignment.indexer_ord));
+        let available_capacity: i32 = indexer_assignment.indexer_available_capacity(problem);
+        assert!(available_capacity >= 0i32);
+        indexer_available_capacity.push((
+            CpuCapacity::from_cpu_millis(available_capacity as u32),
+            indexer_assignment.indexer_ord,
+        ));
     }
     indexer_available_capacity
 }
@@ -437,8 +472,7 @@ mod tests {
 
     #[test]
     fn test_compute_unassigned_shards_simple() {
-        let mut problem =
-            SchedulingProblem::with_indexer_cpu_capacities(vec![mcpu(0), mcpu(4_000)]);
+        let mut problem = SchedulingProblem::with_indexer_cpu_capacities(vec![mcpu(4_000)]);
         problem.add_source(4, NonZeroU32::new(1000).unwrap());
         problem.add_source(4, NonZeroU32::new(1_000).unwrap());
         let solution = problem.new_solution();
@@ -488,10 +522,9 @@ mod tests {
     fn test_place_unassigned_shards_simple() {
         let mut problem = SchedulingProblem::with_indexer_cpu_capacities(vec![mcpu(4_000)]);
         problem.add_source(4, NonZeroU32::new(1_000).unwrap());
-        let mut solution = problem.new_solution();
-        let unassigned = place_unassigned_shards(&problem, &mut solution);
+        let partial_solution = problem.new_solution();
+        let solution = place_unassigned_shards(problem, partial_solution);
         assert_eq!(solution.indexer_assignments[0].num_shards(0), 4);
-        assert!(unassigned.is_empty());
     }
 
     #[test]
@@ -534,13 +567,13 @@ mod tests {
         problem.add_source(43, NonZeroU32::new(1).unwrap());
         problem.add_source(379, NonZeroU32::new(1).unwrap());
         let previous_solution = problem.new_solution();
-        solve(&problem, previous_solution);
+        solve(problem, previous_solution);
     }
 
     fn indexer_cpu_capacity_strat() -> impl Strategy<Value = CpuCapacity> {
         prop_oneof![
-            0u32..10_000u32,
-            Just(0u32),
+            1u32..10_000u32,
+            Just(1u32),
             800u32..1200u32,
             1900u32..2100u32,
         ]
@@ -584,7 +617,7 @@ mod tests {
 
     fn num_nodes_strat() -> impl Strategy<Value = usize> {
         prop_oneof![
-            3 => 0usize..3,
+            3 => 1usize..3,
             1 => 4usize..10,
         ]
     }
@@ -628,25 +661,20 @@ mod tests {
     }
 
     #[test]
-    fn test_problem_leading_to_zero_shard() {
-        let mut problem = SchedulingProblem::with_indexer_cpu_capacities(vec![
-            CpuCapacity::from_cpu_millis(0),
-            CpuCapacity::from_cpu_millis(0),
-        ]);
-        problem.add_source(0, NonZeroU32::new(1).unwrap());
+    fn test_problem_missing_capacities() {
+        let mut problem =
+            SchedulingProblem::with_indexer_cpu_capacities(vec![CpuCapacity::from_cpu_millis(100)]);
+        problem.add_source(1, NonZeroU32::new(1).unwrap());
         let mut previous_solution = problem.new_solution();
         previous_solution.indexer_assignments[0].add_shards(0, 0);
-        previous_solution.indexer_assignments[1].add_shards(0, 0);
-        let (solution, still_unassigned) = solve(&problem, previous_solution);
-        assert_eq!(solution.indexer_assignments[0].num_shards(0), 0);
-        assert_eq!(solution.indexer_assignments[1].num_shards(0), 0);
-        assert!(still_unassigned.is_empty());
+        let solution = solve(problem, previous_solution);
+        assert_eq!(solution.indexer_assignments[0].num_shards(0), 1);
     }
 
     proptest! {
         #[test]
         fn test_proptest_post_conditions((problem, solution) in problem_solution_strategy()) {
-            solve(&problem, solution);
+            solve(problem, solution);
         }
     }
 }
