@@ -5732,6 +5732,7 @@ version = "0.7.0"
 dependencies = [
  "anyhow",
  "arc-swap",
+ "async-compression",
  "async-trait",
  "aws-config",
  "aws-sdk-kinesis",

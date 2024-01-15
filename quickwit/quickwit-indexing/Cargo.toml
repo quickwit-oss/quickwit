@@ -16,6 +16,7 @@ aws-smithy-client = { workspace = true, optional = true }
 
 anyhow = { workspace = true }
 arc-swap = { workspace = true }
+async-compression = { workspace = true }
 async-trait = { workspace = true }
 backoff = { workspace = true, optional = true }
 bytes = { workspace = true }

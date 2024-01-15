@@ -47,6 +47,7 @@ debug = false
 anyhow = "1"
 arc-swap = "1.6"
 assert-json-diff = "2"
+async-compression = { version = "0.4", features = ["tokio", "gzip"] }
 async-speed-limit = "0.4"
 async-trait = "0.1"
 backoff = { version = "0.4", features = ["tokio"] }
