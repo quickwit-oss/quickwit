@@ -92,6 +92,10 @@ const SideBar = () => {
           <ListItemLink to="/cluster" primary={<Typography variant="body1">Cluster</Typography>} icon={<GroupWork size="18px" />} />
           <ListItemLink to="/node-info" primary={<Typography variant="body1">Node info</Typography>} icon={<Settings size="18px" />} />
           <ListItemLink to="/api-playground" primary={<Typography variant="body1">API </Typography>} icon={<CodeSSlash size="18px" />} />
+        <ListSubheader sx={{lineHeight: '25px', paddingTop: '10px'}}>
+          <Typography variant="body1">Experimental</Typography>
+        </ListSubheader>
+          <ListItemLink to="/traces" primary={<Typography variant="body1">Traces</Typography>} icon={<GroupWork size="18px" />} />
       </List>
     </SideBarWrapper>
   );
