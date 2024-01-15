@@ -25,6 +25,9 @@
             "x-header-2": "header-value-2"
         }
     },
+    "grpc": {
+        "max_message_size": "10 MB"
+    },
     "storage": {
         "azure": {
             "account": "quickwit-dev"
