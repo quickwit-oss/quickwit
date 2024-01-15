@@ -152,6 +152,7 @@ mod tests {
     use std::str::FromStr;
     use std::sync::atomic::Ordering;
 
+    use bytesize::ByteSize;
     use quickwit_actors::{Actor, ActorContext, ActorExitStatus, Handler, Universe};
     use quickwit_common::tower::{BalanceChannel, Change};
     use tokio::sync::mpsc::error::TrySendError;
@@ -163,6 +164,8 @@ mod tests {
     use crate::hello::MockHello;
     use crate::hello_grpc_client::HelloGrpcClient;
     use crate::{CounterLayer, GoodbyeRequest, GoodbyeResponse};
+
+    const MAX_GRPC_MESSAGE_SIZE: ByteSize = ByteSize::mib(1);
 
     #[tokio::test]
     async fn test_hello_codegen() {
@@ -270,7 +273,7 @@ mod tests {
             "127.0.0.1:6666".parse().unwrap(),
             Endpoint::from_static("http://127.0.0.1:6666").connect_lazy(),
         );
-        let mut grpc_client = HelloClient::from_balance_channel(channel);
+        let mut grpc_client = HelloClient::from_balance_channel(channel, MAX_GRPC_MESSAGE_SIZE);
 
         assert_eq!(
             grpc_client
@@ -319,7 +322,8 @@ mod tests {
 
         // The connectivity check fails if there is no client behind the channel.
         let (balance_channel, _): (BalanceChannel<SocketAddr>, _) = BalanceChannel::new();
-        let mut grpc_client = HelloClient::from_balance_channel(balance_channel);
+        let mut grpc_client =
+            HelloClient::from_balance_channel(balance_channel, MAX_GRPC_MESSAGE_SIZE);
         assert_eq!(
             grpc_client
                 .check_connectivity()
@@ -521,7 +525,7 @@ mod tests {
             "127.0.0.1:7777".parse().unwrap(),
             Endpoint::from_static("http://127.0.0.1:7777").connect_lazy(),
         );
-        HelloClient::from_balance_channel(balance_channed);
+        HelloClient::from_balance_channel(balance_channed, MAX_GRPC_MESSAGE_SIZE);
     }
 
     #[tokio::test]

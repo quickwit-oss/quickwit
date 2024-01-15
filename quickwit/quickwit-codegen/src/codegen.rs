@@ -570,26 +570,29 @@ fn generate_client(context: &CodegenContext) -> TokenStream {
                 }
             }
 
-            pub fn as_grpc_service(&self) -> #grpc_server_package_name::#grpc_server_name<#grpc_server_adapter_name> {
+            pub fn as_grpc_service(&self, max_message_size: bytesize::ByteSize) -> #grpc_server_package_name::#grpc_server_name<#grpc_server_adapter_name> {
                 let adapter = #grpc_server_adapter_name::new(self.clone());
                 #grpc_server_package_name::#grpc_server_name::new(adapter)
-                    .max_decoding_message_size(10 * 1024 * 1024)
-                    .max_encoding_message_size(10 * 1024 * 1024)
+                    .max_decoding_message_size(max_message_size.0 as usize)
+                    .max_encoding_message_size(max_message_size.0 as usize)
             }
 
-            pub fn from_channel(addr: std::net::SocketAddr, channel: tonic::transport::Channel) -> Self
+            pub fn from_channel(addr: std::net::SocketAddr, channel: tonic::transport::Channel, max_message_size: bytesize::ByteSize) -> Self
             {
                 let (_, connection_keys_watcher) = tokio::sync::watch::channel(std::collections::HashSet::from_iter([addr]));
-                let adapter = #grpc_client_adapter_name::new(#grpc_client_package_name::#grpc_client_name::new(channel), connection_keys_watcher);
+                let client = #grpc_client_package_name::#grpc_client_name::new(channel)
+                    .max_decoding_message_size(max_message_size.0 as usize)
+                    .max_encoding_message_size(max_message_size.0 as usize);
+                let adapter = #grpc_client_adapter_name::new(client, connection_keys_watcher);
                 Self::new(adapter)
             }
 
-            pub fn from_balance_channel(balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>) -> #client_name
+            pub fn from_balance_channel(balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>, max_message_size: bytesize::ByteSize) -> #client_name
             {
                 let connection_keys_watcher = balance_channel.connection_keys_watcher();
                 let client = #grpc_client_package_name::#grpc_client_name::new(balance_channel)
-                    .max_decoding_message_size(20 * 1024 * 1024)
-                    .max_encoding_message_size(20 * 1024 * 1024);
+                    .max_decoding_message_size(max_message_size.0 as usize)
+                    .max_encoding_message_size(max_message_size.0 as usize);
                 let adapter = #grpc_client_adapter_name::new(client, connection_keys_watcher);
                 Self::new(adapter)
             }
@@ -933,14 +936,14 @@ fn generate_layer_stack_impl(context: &CodegenContext) -> TokenStream {
                 self.build_from_boxed(Box::new(instance))
             }
 
-            pub fn build_from_channel(self, addr: std::net::SocketAddr, channel: tonic::transport::Channel) -> #client_name
+            pub fn build_from_channel(self, addr: std::net::SocketAddr, channel: tonic::transport::Channel, max_message_size: bytesize::ByteSize) -> #client_name
             {
-                self.build_from_boxed(Box::new(#client_name::from_channel(addr, channel)))
+                self.build_from_boxed(Box::new(#client_name::from_channel(addr, channel, max_message_size)))
             }
 
-            pub fn build_from_balance_channel(self, balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>) -> #client_name
+            pub fn build_from_balance_channel(self, balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>, max_message_size: bytesize::ByteSize) -> #client_name
             {
-                self.build_from_boxed(Box::new(#client_name::from_balance_channel(balance_channel)))
+                self.build_from_boxed(Box::new(#client_name::from_balance_channel(balance_channel, max_message_size)))
             }
 
             pub fn build_from_mailbox<A>(self, mailbox: quickwit_actors::Mailbox<A>) -> #client_name

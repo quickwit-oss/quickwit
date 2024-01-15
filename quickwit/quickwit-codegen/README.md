@@ -12,6 +12,7 @@
 [dependencies]
 async-trait = { workspace = true }
 bytes = { workspace = true }
+bytesize = { workspace = true }
 dyn-clone = { workspace = true }
 http = { workspace = true }
 hyper = { workspace = true }
