@@ -92,7 +92,7 @@ impl<'a> IdToOrdMap<'a> {
             .source_uid_to_source_ord
             .insert(source.source_uid.clone(), source_ord);
         assert!(previous_item.is_none());
-        self.sources.push(&source);
+        self.sources.push(source);
         source_ord
     }
 
