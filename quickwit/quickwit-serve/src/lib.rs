@@ -211,7 +211,10 @@ async fn start_ingest_client_if_needed(
         Ok(ingest_service)
     } else {
         let balance_channel = balance_channel_for_service(cluster, QuickwitService::Indexer).await;
-        let ingest_service = IngestServiceClient::from_balance_channel(balance_channel);
+        let ingest_service = IngestServiceClient::from_balance_channel(
+            balance_channel,
+            node_config.grpc_config.max_message_size,
+        );
         Ok(ingest_service)
     }
 }
@@ -260,6 +263,7 @@ async fn start_control_plane_if_needed(
             balance_channel_for_service(cluster, QuickwitService::ControlPlane).await;
         Ok(ControlPlaneServiceClient::from_balance_channel(
             balance_channel,
+            node_config.grpc_config.max_message_size,
         ))
     }
 }
@@ -277,6 +281,7 @@ pub async fn serve_quickwit(
     let indexer_pool = IndexerPool::default();
     let ingester_pool = IngesterPool::default();
     let universe = Universe::new();
+    let grpc_config = node_config.grpc_config.clone();
 
     // Instantiate a metastore "server" if the `metastore` role is enabled on the node.
     let metastore_server_opt: Option<MetastoreServiceClient> =
@@ -317,7 +322,10 @@ pub async fn serve_quickwit(
 
             let balance_channel =
                 balance_channel_for_service(&cluster, QuickwitService::Metastore).await;
-            let metastore_client = MetastoreServiceClient::from_balance_channel(balance_channel);
+            let metastore_client = MetastoreServiceClient::from_balance_channel(
+                balance_channel,
+                grpc_config.max_message_size,
+            );
             let retry_layer = RetryLayer::new(RetryPolicy::default());
             MetastoreServiceClient::tower()
                 .stack_layer(retry_layer)
@@ -381,6 +389,7 @@ pub async fn serve_quickwit(
     // Setup indexer pool.
     let cluster_change_stream = cluster.ready_nodes_change_stream().await;
     setup_indexer_pool(
+        &node_config,
         cluster_change_stream,
         indexer_pool.clone(),
         indexing_service_opt.clone(),
@@ -554,6 +563,7 @@ pub async fn serve_quickwit(
     });
     let grpc_server = grpc::start_grpc_server(
         grpc_listen_addr,
+        grpc_config.max_message_size,
         quickwit_services.clone(),
         grpc_readiness_trigger,
         grpc_shutdown_signal,
@@ -619,7 +629,7 @@ pub async fn serve_quickwit(
 }
 
 async fn setup_ingest_v2(
-    config: &NodeConfig,
+    node_config: &NodeConfig,
     cluster: &Cluster,
     event_broker: &EventBroker,
     control_plane: ControlPlaneServiceClient,
@@ -627,7 +637,7 @@ async fn setup_ingest_v2(
 ) -> anyhow::Result<(IngestRouterServiceClient, Option<IngesterServiceClient>)> {
     // Instantiate ingest router.
     let self_node_id: NodeId = cluster.self_node_id().into();
-    let replication_factor = config
+    let replication_factor = node_config
         .ingest_api_config
         .replication_factor()
         .expect("replication factor should have been validated")
@@ -644,22 +654,22 @@ async fn setup_ingest_v2(
     // We compute the burst limit as something a bit larger than the content length limit, because
     // we actually rewrite the `\n-delimited format into a tiny bit larger buffer, where the
     // line length is prefixed.
-    let burst_limit = (config.ingest_api_config.content_length_limit.as_u64() * 3 / 2)
+    let burst_limit = (node_config.ingest_api_config.content_length_limit.as_u64() * 3 / 2)
         .clamp(10_000_000, 200_000_000);
     let rate_limiter_settings = RateLimiterSettings {
         burst_limit,
         ..Default::default()
     };
     // Instantiate ingester.
-    let ingester_service_opt = if config.is_service_enabled(QuickwitService::Indexer) {
-        let wal_dir_path = config.data_dir_path.join("wal");
+    let ingester_service_opt = if node_config.is_service_enabled(QuickwitService::Indexer) {
+        let wal_dir_path = node_config.data_dir_path.join("wal");
         fs::create_dir_all(&wal_dir_path)?;
         let ingester = Ingester::try_new(
             cluster.clone(),
             ingester_pool.clone(),
             &wal_dir_path,
-            config.ingest_api_config.max_queue_disk_usage,
-            config.ingest_api_config.max_queue_memory_usage,
+            node_config.ingest_api_config.max_queue_disk_usage,
+            node_config.ingest_api_config.max_queue_memory_usage,
             rate_limiter_settings,
             replication_factor,
         )
@@ -673,6 +683,7 @@ async fn setup_ingest_v2(
     // Setup ingester pool change stream.
     let ingester_service_opt_clone = ingester_service_opt.clone();
     let cluster_change_stream = cluster.ready_nodes_change_stream().await;
+    let max_message_size = node_config.grpc_config.max_message_size;
     let ingester_change_stream = cluster_change_stream.filter_map(move |cluster_change| {
         let ingester_service_opt = ingester_service_opt_clone.clone();
         Box::pin(async move {
@@ -690,6 +701,7 @@ async fn setup_ingest_v2(
                         let ingester_service = IngesterServiceClient::from_channel(
                             node.grpc_advertise_addr(),
                             node.channel(),
+                            max_message_size,
                         );
                         Some(Change::Insert(node_id, ingester_service))
                     }
@@ -781,10 +793,12 @@ async fn setup_control_plane(
 }
 
 fn setup_indexer_pool(
+    node_config: &NodeConfig,
     cluster_change_stream: impl Stream<Item = ClusterChange> + Send + 'static,
     indexer_pool: IndexerPool,
     indexing_service_opt: Option<Mailbox<IndexingService>>,
 ) {
+    let max_message_size = node_config.grpc_config.max_message_size;
     let indexer_change_stream = cluster_change_stream.filter_map(move |cluster_change| {
         let indexing_service_clone_opt = indexing_service_opt.clone();
         Box::pin(async move {
@@ -816,6 +830,7 @@ fn setup_indexer_pool(
                         let client = IndexingServiceClient::from_channel(
                             node.grpc_advertise_addr(),
                             node.channel(),
+                            max_message_size,
                         );
                         Some(Change::Insert(
                             node_id,
@@ -1024,11 +1039,13 @@ mod tests {
         let universe = Universe::with_accelerated_time();
         let (indexing_service_mailbox, _indexing_service_inbox) =
             universe.create_test_mailbox::<IndexingService>();
+        let node_config = NodeConfig::for_test();
 
         let (indexer_change_stream_tx, indexer_change_stream_rx) = mpsc::channel(3);
         let indexer_change_stream = ReceiverStream::new(indexer_change_stream_rx);
         let indexer_pool = IndexerPool::default();
         setup_indexer_pool(
+            &node_config,
             indexer_change_stream,
             indexer_pool.clone(),
             Some(indexing_service_mailbox),
