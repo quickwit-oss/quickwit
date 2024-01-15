@@ -66,6 +66,9 @@ impl PhysicalIndexingPlan {
 
     pub fn normalize(&mut self) {
         for tasks in self.indexing_tasks_per_indexer_id.values_mut() {
+            for task in tasks.iter_mut() {
+                task.shard_ids.sort_unstable();
+            }
             tasks.sort_by(|left, right| {
                 left.index_uid
                     .cmp(&right.index_uid)
