@@ -25,6 +25,7 @@ use once_cell::sync::OnceCell;
 use quickwit_common::uri::Uri;
 use quickwit_config::{GoogleCloudStorageConfig, StorageBackend};
 use regex::Regex;
+use tracing::info;
 
 use super::OpendalStorage;
 use crate::debouncer::DebouncedStorage;
@@ -89,23 +90,16 @@ fn from_uri(
     google_cloud_storage_config: &GoogleCloudStorageConfig,
     uri: &Uri,
 ) -> Result<OpendalStorage, StorageResolverError> {
-    let credential_path = google_cloud_storage_config
-        .resolve_credential_path()
-        .ok_or_else(|| {
-            let message = format!(
-                "could not find Google credential path in environment variable `{}` or storage \
-                 config",
-                GoogleCloudStorageConfig::GOOGLE_CLOUD_STORAGE_CREDENTIAL_PATH_ENV_VAR
-            );
-            StorageResolverError::InvalidConfig(message)
-        })?;
     let (bucket_name, prefix) = parse_google_uri(uri).ok_or_else(|| {
         let message = format!("failed to extract bucket name from google URI: {uri}");
         StorageResolverError::InvalidUri(message)
     })?;
 
     let mut cfg = opendal::services::Gcs::default();
-    cfg.credential_path(&credential_path);
+    if let Some(credential_path) = google_cloud_storage_config.resolve_credential_path() {
+        info!(path=%credential_path, "fetching google cloud storage credentials from path");
+        cfg.credential_path(&credential_path);
+    }
     cfg.bucket(&bucket_name);
     cfg.root(&prefix.to_string_lossy());
 
