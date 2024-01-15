@@ -265,7 +265,7 @@ impl IngestRouter {
                                 .unavailable_leaders
                                 .insert(persist_summary.leader_id);
                             for subrequest_id in persist_summary.subrequest_ids {
-                                workbench.record_connection_error(subrequest_id);
+                                workbench.record_transport_error(subrequest_id);
                             }
                         }
                         IngestV2Error::TooManyRequests
@@ -1121,7 +1121,7 @@ mod tests {
         let subworkbench = workbench.subworkbenches.get(&1).unwrap();
         assert!(matches!(
             subworkbench.last_failure_opt,
-            Some(SubworkbenchFailure::TransportError)
+            Some(SubworkbenchFailure::Transport)
         ));
     }
 
