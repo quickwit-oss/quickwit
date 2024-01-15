@@ -67,7 +67,7 @@ impl GrpcConfig {
     pub fn validate(&self) -> anyhow::Result<()> {
         ensure!(
             self.max_message_size >= ByteSize::mb(1),
-            "max gRPC message size must be at least 1MB, got `{}`",
+            "max gRPC message size (`grpc.max_message_size`) must be at least 1MB, got `{}`",
             self.max_message_size
         );
         Ok(())
