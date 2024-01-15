@@ -343,7 +343,7 @@ mod tests {
             temp_file.write_all(&documents_bytes).unwrap();
         }
         temp_file.flush().unwrap();
-        let params = FileSourceParams::file(temp_file.path().to_path_buf());
+        let params = FileSourceParams::file(temp_file.path());
         let filepath = params
             .filepath
             .as_ref()
@@ -505,7 +505,7 @@ mod tests {
     async fn gzip_bytes(bytes: &[u8]) -> Vec<u8> {
         let mut gzip_documents = Vec::new();
         let mut encoder = GzipEncoder::new(&mut gzip_documents);
-        tokio::io::AsyncWriteExt::write_all(&mut encoder, &bytes)
+        tokio::io::AsyncWriteExt::write_all(&mut encoder, bytes)
             .await
             .unwrap();
         // flush is not sufficient here and reading the file will raise a unexpected end of file
