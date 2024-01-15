@@ -77,24 +77,32 @@ fn populate_problem(
 }
 
 #[derive(Default)]
-struct IdToOrdMap {
+struct IdToOrdMap<'a> {
     indexer_ids: Vec<String>,
-    source_uids: Vec<SourceUid>,
+    sources: Vec<&'a SourceToSchedule>,
     indexer_id_to_indexer_ord: FnvHashMap<String, IndexerOrd>,
     source_uid_to_source_ord: FnvHashMap<SourceUid, SourceOrd>,
 }
 
-impl IdToOrdMap {
-    fn add_source_uid(&mut self, source_uid: SourceUid) -> SourceOrd {
+impl<'a> IdToOrdMap<'a> {
+    // All source added are required to have a different source uid.
+    fn add_source(&mut self, source: &'a SourceToSchedule) -> SourceOrd {
         let source_ord = self.source_uid_to_source_ord.len() as SourceOrd;
-        self.source_uid_to_source_ord
-            .insert(source_uid.clone(), source_ord);
-        self.source_uids.push(source_uid);
+        let previous_item = self
+            .source_uid_to_source_ord
+            .insert(source.source_uid.clone(), source_ord);
+        assert!(previous_item.is_none());
+        self.sources.push(&source);
         source_ord
     }
 
     fn source_ord(&self, source_uid: &SourceUid) -> Option<SourceOrd> {
         self.source_uid_to_source_ord.get(source_uid).copied()
+    }
+
+    fn source(&self, source_uid: &SourceUid) -> Option<(SourceOrd, &'a SourceToSchedule)> {
+        let source_ord = self.source_uid_to_source_ord.get(source_uid).copied()?;
+        Some((source_ord, self.sources[source_ord as usize]))
     }
 
     fn indexer_ord(&self, indexer_id: &str) -> Option<IndexerOrd> {
@@ -113,7 +121,6 @@ impl IdToOrdMap {
 fn convert_physical_plan_to_solution(
     plan: &PhysicalIndexingPlan,
     id_to_ord_map: &IdToOrdMap,
-    source_ord_map: &FnvHashMap<SourceOrd, &SourceToSchedule>,
     solution: &mut SchedulingSolution,
 ) {
     for (indexer_id, indexing_tasks) in plan.indexing_tasks_per_indexer() {
@@ -124,9 +131,8 @@ fn convert_physical_plan_to_solution(
                     index_uid: IndexUid::from(indexing_task.index_uid.clone()),
                     source_id: indexing_task.source_id.clone(),
                 };
-                if let Some(source_ord) = id_to_ord_map.source_ord(&source_uid) {
-                    let source_type = &source_ord_map.get(&source_ord).unwrap().source_type;
-                    match source_type {
+                if let Some((source_ord, source)) = id_to_ord_map.source(&source_uid) {
+                    match &source.source_type {
                         SourceToScheduleType::Sharded { .. } => {
                             indexer_assignment
                                 .add_shards(source_ord, indexing_task.shard_ids.len() as u32);
@@ -420,19 +426,13 @@ fn convert_scheduling_solution_to_physical_plan(
 fn assert_post_condition_physical_plan_match_solution(
     physical_plan: &PhysicalIndexingPlan,
     solution: &SchedulingSolution,
-    source_ord_map: &FnvHashMap<SourceOrd, &SourceToSchedule>,
     id_to_ord_map: &IdToOrdMap,
 ) {
     let num_indexers = physical_plan.indexing_tasks_per_indexer().len();
     assert_eq!(num_indexers, solution.indexer_assignments.len());
     assert_eq!(num_indexers, id_to_ord_map.indexer_ids.len());
     let mut reconstructed_solution = SchedulingSolution::with_num_indexers(num_indexers);
-    convert_physical_plan_to_solution(
-        physical_plan,
-        id_to_ord_map,
-        source_ord_map,
-        &mut reconstructed_solution,
-    );
+    convert_physical_plan_to_solution(physical_plan, id_to_ord_map, &mut reconstructed_solution);
     assert_eq!(solution, &reconstructed_solution);
 }
 
@@ -541,14 +541,11 @@ pub fn build_physical_indexing_plan(
         indexer_cpu_capacities.push(cpu_capacity);
     }
 
-    let mut source_ord_map: FnvHashMap<SourceOrd, &SourceToSchedule> = FnvHashMap::default();
-
     let mut problem = SchedulingProblem::with_indexer_cpu_capacities(indexer_cpu_capacities);
 
     for source in sources {
         if let Some(source_ord) = populate_problem(source, &mut problem) {
-            let registered_source_ord = id_to_ord_map.add_source_uid(source.source_uid.clone());
-            source_ord_map.insert(source_ord, source);
+            let registered_source_ord = id_to_ord_map.add_source(source);
             assert_eq!(source_ord, registered_source_ord);
         }
     }
@@ -556,12 +553,7 @@ pub fn build_physical_indexing_plan(
     // Populate the previous solution.
     let mut previous_solution = problem.new_solution();
     if let Some(previous_plan) = previous_plan_opt {
-        convert_physical_plan_to_solution(
-            previous_plan,
-            &id_to_ord_map,
-            &source_ord_map,
-            &mut previous_solution,
-        );
+        convert_physical_plan_to_solution(previous_plan, &id_to_ord_map, &mut previous_solution);
     }
 
     // Compute the new scheduling solution
@@ -578,7 +570,6 @@ pub fn build_physical_indexing_plan(
     assert_post_condition_physical_plan_match_solution(
         &new_physical_plan,
         &new_solution,
-        &source_ord_map,
         &id_to_ord_map,
     );
 

@@ -241,7 +241,7 @@ fn place_unassigned_shards(
     // we are certain that even on our first attempt, the total capacity of the indexer exceeds 120%
     // of the partial solution.
     //
-    // 1.2^30 > 240.
+    // 1.2^30 is about 240.
     // If we reach 30 attempts we are certain to have a logical bug.
     for attempt_number in 0..30 {
         match attempt_place_unassigned_shards(&unassigned_shards[..], &problem, &partial_solution) {
