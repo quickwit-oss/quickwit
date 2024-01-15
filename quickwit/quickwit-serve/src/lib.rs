@@ -456,6 +456,7 @@ pub async fn serve_quickwit(
     ));
 
     let (search_job_placer, search_service) = setup_searcher(
+        &node_config,
         cluster_change_stream,
         metastore_through_control_plane.clone(),
         storage_resolver.clone(),
@@ -716,6 +717,7 @@ async fn setup_ingest_v2(
 }
 
 async fn setup_searcher(
+    node_config: &NodeConfig,
     cluster_change_stream: impl Stream<Item = ClusterChange> + Send + 'static,
     metastore: MetastoreServiceClient,
     storage_resolver: StorageResolver,
@@ -731,6 +733,7 @@ async fn setup_searcher(
     )
     .await?;
     let search_service_clone = search_service.clone();
+    let max_message_size = node_config.grpc_config.max_message_size;
     let searcher_change_stream = cluster_change_stream.filter_map(move |cluster_change| {
         let search_service_clone = search_service_clone.clone();
         Box::pin(async move {
@@ -746,8 +749,11 @@ async fn setup_searcher(
                         Some(Change::Insert(grpc_addr, search_client))
                     } else {
                         let timeout_channel = Timeout::new(node.channel(), Duration::from_secs(30));
-                        let search_client =
-                            create_search_client_from_channel(grpc_addr, timeout_channel);
+                        let search_client = create_search_client_from_channel(
+                            grpc_addr,
+                            timeout_channel,
+                            max_message_size,
+                        );
                         Some(Change::Insert(grpc_addr, search_client))
                     }
                 }
@@ -1102,15 +1108,21 @@ mod tests {
 
     #[tokio::test]
     async fn test_setup_searcher() {
+        let node_config = NodeConfig::for_test();
         let searcher_context = Arc::new(SearcherContext::new(SearcherConfig::default(), None));
         let metastore = metastore_for_test();
         let (change_stream_tx, change_stream_rx) = mpsc::unbounded_channel();
         let change_stream = UnboundedReceiverStream::new(change_stream_rx);
         let storage_resolver = StorageResolver::unconfigured();
-        let (search_job_placer, _searcher_service) =
-            setup_searcher(change_stream, metastore, storage_resolver, searcher_context)
-                .await
-                .unwrap();
+        let (search_job_placer, _searcher_service) = setup_searcher(
+            &node_config,
+            change_stream,
+            metastore,
+            storage_resolver,
+            searcher_context,
+        )
+        .await
+        .unwrap();
 
         struct DummyJob(String);
 

@@ -145,7 +145,11 @@ pub(crate) async fn start_grpc_server(
         enabled_grpc_services.insert("search");
         let search_service = services.search_service.clone();
         let grpc_search_service = GrpcSearchAdapter::from(search_service);
-        Some(SearchServiceServer::new(grpc_search_service))
+        Some(
+            SearchServiceServer::new(grpc_search_service)
+                .max_decoding_message_size(max_message_size.0 as usize)
+                .max_encoding_message_size(max_message_size.0 as usize),
+        )
     } else {
         None
     };

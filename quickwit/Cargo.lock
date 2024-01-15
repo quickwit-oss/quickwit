@@ -6004,6 +6004,7 @@ dependencies = [
  "async-trait",
  "base64 0.21.5",
  "bytes",
+ "bytesize",
  "chitchat",
  "fnv",
  "futures",

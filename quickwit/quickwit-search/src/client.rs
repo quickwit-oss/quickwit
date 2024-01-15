@@ -22,6 +22,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 
+use bytesize::ByteSize;
 use futures::{StreamExt, TryStreamExt};
 use http::Uri;
 use quickwit_proto::search::{
@@ -33,7 +34,7 @@ use quickwit_proto::tonic::Request;
 use quickwit_proto::{tonic, SpanContextInterceptor};
 use tokio_stream::wrappers::UnboundedReceiverStream;
 use tower::timeout::Timeout;
-use tracing::*;
+use tracing::{info_span, warn, Instrument};
 
 use crate::error::parse_grpc_error;
 use crate::SearchService;
@@ -313,7 +314,10 @@ impl SearchServiceClient {
 /// Creates a [`SearchServiceClient`] from a socket address.
 /// The underlying channel connects lazily and is set up to time out after 5 seconds. It reconnects
 /// automatically should the connection be dropped.
-pub fn create_search_client_from_grpc_addr(grpc_addr: SocketAddr) -> SearchServiceClient {
+pub fn create_search_client_from_grpc_addr(
+    grpc_addr: SocketAddr,
+    max_message_size: ByteSize,
+) -> SearchServiceClient {
     let uri = Uri::builder()
         .scheme("http")
         .authority(grpc_addr.to_string().as_str())
@@ -322,23 +326,21 @@ pub fn create_search_client_from_grpc_addr(grpc_addr: SocketAddr) -> SearchServi
         .expect("The URI should be well-formed.");
     let channel = Endpoint::from(uri).connect_lazy();
     let timeout_channel = Timeout::new(channel, Duration::from_secs(5));
-    let client =
-        quickwit_proto::search::search_service_client::SearchServiceClient::with_interceptor(
-            timeout_channel,
-            SpanContextInterceptor,
-        );
-    SearchServiceClient::from_grpc_client(client, grpc_addr)
+    create_search_client_from_channel(grpc_addr, timeout_channel, max_message_size)
 }
 
 /// Creates a [`SearchServiceClient`] from a pre-established connection (channel).
 pub fn create_search_client_from_channel(
     grpc_addr: SocketAddr,
     channel: Timeout<Channel>,
+    max_message_size: ByteSize,
 ) -> SearchServiceClient {
     let client =
         quickwit_proto::search::search_service_client::SearchServiceClient::with_interceptor(
             channel,
             SpanContextInterceptor,
-        );
+        )
+        .max_decoding_message_size(max_message_size.0 as usize)
+        .max_encoding_message_size(max_message_size.0 as usize);
     SearchServiceClient::from_grpc_client(client, grpc_addr)
 }
