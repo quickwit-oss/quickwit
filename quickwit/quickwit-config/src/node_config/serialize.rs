@@ -323,6 +323,13 @@ fn validate(node_config: &NodeConfig) -> anyhow::Result<()> {
     if node_config.peer_seeds.is_empty() {
         warn!("peer seed list is empty");
     }
+
+    if node_config.metastore_uri.protocol().is_file() {
+        warn!(
+            metastore_uri = %node_config.metastore_uri, "Using file-backed metastore comes with certain limitations, please refer to https://quickwit.io/docs/configuration/metastore-config for more details."
+        );
+    }
+
     Ok(())
 }
 
