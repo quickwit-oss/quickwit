@@ -21,6 +21,7 @@ use std::collections::BTreeSet;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
+use bytesize::ByteSize;
 use quickwit_common::tower::BoxFutureInfaillible;
 use quickwit_config::service::QuickwitService;
 use quickwit_proto::indexing::IndexingServiceClient;
@@ -38,6 +39,7 @@ use crate::QuickwitServices;
 /// Starts and binds gRPC services to `grpc_listen_addr`.
 pub(crate) async fn start_grpc_server(
     grpc_listen_addr: SocketAddr,
+    max_message_size: ByteSize,
     services: Arc<QuickwitServices>,
     readiness_trigger: BoxFutureInfaillible<()>,
     shutdown_signal: BoxFutureInfaillible<()>,
@@ -48,7 +50,7 @@ pub(crate) async fn start_grpc_server(
     // Mount gRPC metastore service if `QuickwitService::Metastore` is enabled on node.
     let metastore_grpc_service = if let Some(metastore_server) = &services.metastore_server_opt {
         enabled_grpc_services.insert("metastore");
-        Some(metastore_server.as_grpc_service())
+        Some(metastore_server.as_grpc_service(max_message_size))
     } else {
         None
     };
@@ -60,7 +62,7 @@ pub(crate) async fn start_grpc_server(
         if let Some(indexing_service) = services.indexing_service_opt.clone() {
             enabled_grpc_services.insert("indexing");
             let indexing_service = IndexingServiceClient::from_mailbox(indexing_service);
-            Some(indexing_service.as_grpc_service())
+            Some(indexing_service.as_grpc_service(max_message_size))
         } else {
             None
         }
@@ -73,7 +75,7 @@ pub(crate) async fn start_grpc_server(
         .is_service_enabled(QuickwitService::Indexer)
     {
         enabled_grpc_services.insert("ingest-api");
-        Some(services.ingest_service.as_grpc_service())
+        Some(services.ingest_service.as_grpc_service(max_message_size))
     } else {
         None
     };
@@ -82,7 +84,11 @@ pub(crate) async fn start_grpc_server(
         .is_service_enabled(QuickwitService::Indexer)
     {
         enabled_grpc_services.insert("ingest-router");
-        Some(services.ingest_router_service.as_grpc_service())
+        Some(
+            services
+                .ingest_router_service
+                .as_grpc_service(max_message_size),
+        )
     } else {
         None
     };
@@ -94,7 +100,7 @@ pub(crate) async fn start_grpc_server(
         services
             .ingester_service_opt
             .as_ref()
-            .map(|ingester_service| ingester_service.as_grpc_service())
+            .map(|ingester_service| ingester_service.as_grpc_service(max_message_size))
     } else {
         None
     };
@@ -104,7 +110,11 @@ pub(crate) async fn start_grpc_server(
         .is_service_enabled(QuickwitService::ControlPlane)
     {
         enabled_grpc_services.insert("control-plane");
-        Some(services.control_plane_service.as_grpc_service())
+        Some(
+            services
+                .control_plane_service
+                .as_grpc_service(max_message_size),
+        )
     } else {
         None
     };
@@ -135,7 +145,11 @@ pub(crate) async fn start_grpc_server(
         enabled_grpc_services.insert("search");
         let search_service = services.search_service.clone();
         let grpc_search_service = GrpcSearchAdapter::from(search_service);
-        Some(SearchServiceServer::new(grpc_search_service))
+        Some(
+            SearchServiceServer::new(grpc_search_service)
+                .max_decoding_message_size(max_message_size.0 as usize)
+                .max_encoding_message_size(max_message_size.0 as usize),
+        )
     } else {
         None
     };

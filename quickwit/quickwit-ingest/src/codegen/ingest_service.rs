@@ -210,36 +210,42 @@ impl IngestServiceClient {
     }
     pub fn as_grpc_service(
         &self,
+        max_message_size: bytesize::ByteSize,
     ) -> ingest_service_grpc_server::IngestServiceGrpcServer<
         IngestServiceGrpcServerAdapter,
     > {
         let adapter = IngestServiceGrpcServerAdapter::new(self.clone());
         ingest_service_grpc_server::IngestServiceGrpcServer::new(adapter)
-            .max_decoding_message_size(10 * 1024 * 1024)
-            .max_encoding_message_size(10 * 1024 * 1024)
+            .max_decoding_message_size(max_message_size.0 as usize)
+            .max_encoding_message_size(max_message_size.0 as usize)
     }
     pub fn from_channel(
         addr: std::net::SocketAddr,
         channel: tonic::transport::Channel,
+        max_message_size: bytesize::ByteSize,
     ) -> Self {
         let (_, connection_keys_watcher) = tokio::sync::watch::channel(
             std::collections::HashSet::from_iter([addr]),
         );
+        let client = ingest_service_grpc_client::IngestServiceGrpcClient::new(channel)
+            .max_decoding_message_size(max_message_size.0 as usize)
+            .max_encoding_message_size(max_message_size.0 as usize);
         let adapter = IngestServiceGrpcClientAdapter::new(
-            ingest_service_grpc_client::IngestServiceGrpcClient::new(channel),
+            client,
             connection_keys_watcher,
         );
         Self::new(adapter)
     }
     pub fn from_balance_channel(
         balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
+        max_message_size: bytesize::ByteSize,
     ) -> IngestServiceClient {
         let connection_keys_watcher = balance_channel.connection_keys_watcher();
         let client = ingest_service_grpc_client::IngestServiceGrpcClient::new(
                 balance_channel,
             )
-            .max_decoding_message_size(20 * 1024 * 1024)
-            .max_encoding_message_size(20 * 1024 * 1024);
+            .max_decoding_message_size(max_message_size.0 as usize)
+            .max_encoding_message_size(max_message_size.0 as usize);
         let adapter = IngestServiceGrpcClientAdapter::new(
             client,
             connection_keys_watcher,
@@ -590,15 +596,24 @@ impl IngestServiceTowerLayerStack {
         self,
         addr: std::net::SocketAddr,
         channel: tonic::transport::Channel,
+        max_message_size: bytesize::ByteSize,
     ) -> IngestServiceClient {
-        self.build_from_boxed(Box::new(IngestServiceClient::from_channel(addr, channel)))
+        self.build_from_boxed(
+            Box::new(IngestServiceClient::from_channel(addr, channel, max_message_size)),
+        )
     }
     pub fn build_from_balance_channel(
         self,
         balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
+        max_message_size: bytesize::ByteSize,
     ) -> IngestServiceClient {
         self.build_from_boxed(
-            Box::new(IngestServiceClient::from_balance_channel(balance_channel)),
+            Box::new(
+                IngestServiceClient::from_balance_channel(
+                    balance_channel,
+                    max_message_size,
+                ),
+            ),
         )
     }
     pub fn build_from_mailbox<A>(

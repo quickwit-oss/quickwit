@@ -13,11 +13,12 @@ documentation = "https://quickwit.io/docs/"
 anyhow = { workspace = true }
 async-trait = { workspace = true }
 bytes = { workspace = true }
+bytesize = { workspace = true }
 bytestring = { workspace = true }
 dyn-clone = { workspace = true }
+futures = { workspace = true, optional = true }
 http = { workspace = true }
 hyper = { workspace = true }
-futures = { workspace = true, optional = true }
 mockall = { workspace = true, optional = true }
 opentelemetry = { workspace = true }
 prost = { workspace = true }

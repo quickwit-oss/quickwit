@@ -1203,6 +1203,8 @@ mod tests {
     use crate::ingest_v2::test_utils::MultiRecordLogTestExt;
     use crate::MRecord;
 
+    const MAX_GRPC_MESSAGE_SIZE: ByteSize = ByteSize::mib(1);
+
     pub(super) struct IngesterForTest {
         node_id: NodeId,
         ingester_pool: IngesterPool,
@@ -1910,6 +1912,7 @@ mod tests {
         let follower_grpc_client = IngesterServiceClient::from_channel(
             "127.0.0.1:7777".parse().unwrap(),
             follower_channel,
+            MAX_GRPC_MESSAGE_SIZE,
         );
 
         leader_ctx

@@ -53,7 +53,6 @@ A wildcard, single origin, or multiple origins can be specified as part of the `
 Example of a REST configuration:
 
 ```yaml
-
 rest:
   listen_port: 1789
   extra_headers:
@@ -65,8 +64,27 @@ rest:
 #   cors_allow_origins:                                   # Or allow multiple origins
 #     - https://my-hdfs-logs.domain.com
 #     - https://my-hdfs.other-domain.com
-
 ```
+
+## gRPC configuration
+
+This section contains the configuration options for gRPC services and clients used for internal communication between nodes.
+
+| Property | Description | Env variable | Default value |
+| --- | --- | --- | --- |
+| `max_message_size` | The maximum size (in bytes) of messages exchanged by internal gRPC clients and services. | | `20 MiB` |
+
+Example of a gRPC configuration:
+
+```yaml
+grpc:
+  max_message_size: 30 MiB
+```
+
+:::warning
+We advise changing the default value of 20 MiB only if you encounter the following error:
+`Error, message length too large: found 24732228 bytes, the limit is: 20971520 bytes.` In that case, increase `max_message_size` by increments of 10 MiB until the issue disappears. This is a temporary fix: the next version of Quickwit, 0.8, will rely exclusively on gRPC streaming endpoints and handle messages of any length.
+:::
 
 ## Storage configuration
 

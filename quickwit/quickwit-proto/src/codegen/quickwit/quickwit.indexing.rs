@@ -65,36 +65,44 @@ impl IndexingServiceClient {
     }
     pub fn as_grpc_service(
         &self,
+        max_message_size: bytesize::ByteSize,
     ) -> indexing_service_grpc_server::IndexingServiceGrpcServer<
         IndexingServiceGrpcServerAdapter,
     > {
         let adapter = IndexingServiceGrpcServerAdapter::new(self.clone());
         indexing_service_grpc_server::IndexingServiceGrpcServer::new(adapter)
-            .max_decoding_message_size(10 * 1024 * 1024)
-            .max_encoding_message_size(10 * 1024 * 1024)
+            .max_decoding_message_size(max_message_size.0 as usize)
+            .max_encoding_message_size(max_message_size.0 as usize)
     }
     pub fn from_channel(
         addr: std::net::SocketAddr,
         channel: tonic::transport::Channel,
+        max_message_size: bytesize::ByteSize,
     ) -> Self {
         let (_, connection_keys_watcher) = tokio::sync::watch::channel(
             std::collections::HashSet::from_iter([addr]),
         );
+        let client = indexing_service_grpc_client::IndexingServiceGrpcClient::new(
+                channel,
+            )
+            .max_decoding_message_size(max_message_size.0 as usize)
+            .max_encoding_message_size(max_message_size.0 as usize);
         let adapter = IndexingServiceGrpcClientAdapter::new(
-            indexing_service_grpc_client::IndexingServiceGrpcClient::new(channel),
+            client,
             connection_keys_watcher,
         );
         Self::new(adapter)
     }
     pub fn from_balance_channel(
         balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
+        max_message_size: bytesize::ByteSize,
     ) -> IndexingServiceClient {
         let connection_keys_watcher = balance_channel.connection_keys_watcher();
         let client = indexing_service_grpc_client::IndexingServiceGrpcClient::new(
                 balance_channel,
             )
-            .max_decoding_message_size(20 * 1024 * 1024)
-            .max_encoding_message_size(20 * 1024 * 1024);
+            .max_decoding_message_size(max_message_size.0 as usize)
+            .max_encoding_message_size(max_message_size.0 as usize);
         let adapter = IndexingServiceGrpcClientAdapter::new(
             client,
             connection_keys_watcher,
@@ -273,17 +281,26 @@ impl IndexingServiceTowerLayerStack {
         self,
         addr: std::net::SocketAddr,
         channel: tonic::transport::Channel,
+        max_message_size: bytesize::ByteSize,
     ) -> IndexingServiceClient {
         self.build_from_boxed(
-            Box::new(IndexingServiceClient::from_channel(addr, channel)),
+            Box::new(
+                IndexingServiceClient::from_channel(addr, channel, max_message_size),
+            ),
         )
     }
     pub fn build_from_balance_channel(
         self,
         balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
+        max_message_size: bytesize::ByteSize,
     ) -> IndexingServiceClient {
         self.build_from_boxed(
-            Box::new(IndexingServiceClient::from_balance_channel(balance_channel)),
+            Box::new(
+                IndexingServiceClient::from_balance_channel(
+                    balance_channel,
+                    max_message_size,
+                ),
+            ),
         )
     }
     pub fn build_from_mailbox<A>(

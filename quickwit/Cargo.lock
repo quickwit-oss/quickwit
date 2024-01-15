@@ -5383,6 +5383,7 @@ version = "0.7.0"
 dependencies = [
  "anyhow",
  "async-trait",
+ "bytesize",
  "dyn-clone",
  "futures",
  "http",
@@ -5913,6 +5914,7 @@ dependencies = [
  "anyhow",
  "async-trait",
  "bytes",
+ "bytesize",
  "bytestring",
  "dyn-clone",
  "futures",
@@ -6001,6 +6003,7 @@ dependencies = [
  "async-trait",
  "base64 0.21.5",
  "bytes",
+ "bytesize",
  "chitchat",
  "fnv",
  "futures",

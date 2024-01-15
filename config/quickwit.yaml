@@ -41,6 +41,9 @@ version: 0.7
 #     x-header-1: header-value-1
 #     x-header-2: header-value-2
 #
+# grpc:
+#   max_message_size: 10 MiB
+#
 # IP address advertised by the node, i.e. the IP address that peer nodes should use to connect to the node for RPCs.
 # The environment variable `QW_ADVERTISE_ADDRESS` can also be used to override this value.
 # The default advertise address is `listen_address`. If `listen_address` is unspecified (`0.0.0.0`),

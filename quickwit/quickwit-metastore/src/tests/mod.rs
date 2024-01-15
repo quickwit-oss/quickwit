@@ -20,6 +20,7 @@
 use std::collections::BTreeSet;
 
 use async_trait::async_trait;
+use bytesize::ByteSize;
 use itertools::Itertools;
 use quickwit_proto::metastore::metastore_service_grpc_client::MetastoreServiceGrpcClient;
 use quickwit_proto::metastore::{
@@ -39,6 +40,8 @@ pub(crate) mod split;
 use self::shard::RunTests;
 use crate::metastore::MetastoreServiceStreamSplitsExt;
 use crate::{ListSplitsRequestExt, MetastoreServiceExt, Split};
+
+const MAX_GRPC_MESSAGE_SIZE: ByteSize = ByteSize::mib(1);
 
 #[async_trait]
 pub trait DefaultForTest {
@@ -60,7 +63,9 @@ impl DefaultForTest for MetastoreServiceGrpcClientAdapter<MetastoreServiceGrpcCl
         let (client, server) = tokio::io::duplex(1024);
         tokio::spawn(async move {
             Server::builder()
-                .add_service(MetastoreServiceClient::new(metastore).as_grpc_service())
+                .add_service(
+                    MetastoreServiceClient::new(metastore).as_grpc_service(MAX_GRPC_MESSAGE_SIZE),
+                )
                 .serve_with_incoming(futures::stream::iter(vec![Ok::<_, std::io::Error>(server)]))
                 .await
         });

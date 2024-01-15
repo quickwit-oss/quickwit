@@ -727,36 +727,44 @@ impl MetastoreServiceClient {
     }
     pub fn as_grpc_service(
         &self,
+        max_message_size: bytesize::ByteSize,
     ) -> metastore_service_grpc_server::MetastoreServiceGrpcServer<
         MetastoreServiceGrpcServerAdapter,
     > {
         let adapter = MetastoreServiceGrpcServerAdapter::new(self.clone());
         metastore_service_grpc_server::MetastoreServiceGrpcServer::new(adapter)
-            .max_decoding_message_size(10 * 1024 * 1024)
-            .max_encoding_message_size(10 * 1024 * 1024)
+            .max_decoding_message_size(max_message_size.0 as usize)
+            .max_encoding_message_size(max_message_size.0 as usize)
     }
     pub fn from_channel(
         addr: std::net::SocketAddr,
         channel: tonic::transport::Channel,
+        max_message_size: bytesize::ByteSize,
     ) -> Self {
         let (_, connection_keys_watcher) = tokio::sync::watch::channel(
             std::collections::HashSet::from_iter([addr]),
         );
+        let client = metastore_service_grpc_client::MetastoreServiceGrpcClient::new(
+                channel,
+            )
+            .max_decoding_message_size(max_message_size.0 as usize)
+            .max_encoding_message_size(max_message_size.0 as usize);
         let adapter = MetastoreServiceGrpcClientAdapter::new(
-            metastore_service_grpc_client::MetastoreServiceGrpcClient::new(channel),
+            client,
             connection_keys_watcher,
         );
         Self::new(adapter)
     }
     pub fn from_balance_channel(
         balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
+        max_message_size: bytesize::ByteSize,
     ) -> MetastoreServiceClient {
         let connection_keys_watcher = balance_channel.connection_keys_watcher();
         let client = metastore_service_grpc_client::MetastoreServiceGrpcClient::new(
                 balance_channel,
             )
-            .max_decoding_message_size(20 * 1024 * 1024)
-            .max_encoding_message_size(20 * 1024 * 1024);
+            .max_decoding_message_size(max_message_size.0 as usize)
+            .max_encoding_message_size(max_message_size.0 as usize);
         let adapter = MetastoreServiceGrpcClientAdapter::new(
             client,
             connection_keys_watcher,
@@ -3017,17 +3025,26 @@ impl MetastoreServiceTowerLayerStack {
         self,
         addr: std::net::SocketAddr,
         channel: tonic::transport::Channel,
+        max_message_size: bytesize::ByteSize,
     ) -> MetastoreServiceClient {
         self.build_from_boxed(
-            Box::new(MetastoreServiceClient::from_channel(addr, channel)),
+            Box::new(
+                MetastoreServiceClient::from_channel(addr, channel, max_message_size),
+            ),
         )
     }
     pub fn build_from_balance_channel(
         self,
         balance_channel: quickwit_common::tower::BalanceChannel<std::net::SocketAddr>,
+        max_message_size: bytesize::ByteSize,
     ) -> MetastoreServiceClient {
         self.build_from_boxed(
-            Box::new(MetastoreServiceClient::from_balance_channel(balance_channel)),
+            Box::new(
+                MetastoreServiceClient::from_balance_channel(
+                    balance_channel,
+                    max_message_size,
+                ),
+            ),
         )
     }
     pub fn build_from_mailbox<A>(

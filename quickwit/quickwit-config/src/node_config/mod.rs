@@ -54,6 +54,36 @@ pub struct RestConfig {
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct GrpcConfig {
+    #[serde(default = "GrpcConfig::default_max_message_size")]
+    pub max_message_size: ByteSize,
+}
+
+impl GrpcConfig {
+    fn default_max_message_size() -> ByteSize {
+        ByteSize::mib(20)
+    }
+
+    pub fn validate(&self) -> anyhow::Result<()> {
+        ensure!(
+            self.max_message_size >= ByteSize::mb(1),
+            "max gRPC message size (`grpc.max_message_size`) must be at least 1MB, got `{}`",
+            self.max_message_size
+        );
+        Ok(())
+    }
+}
+
+impl Default for GrpcConfig {
+    fn default() -> Self {
+        Self {
+            max_message_size: Self::default_max_message_size(),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
 pub struct IndexerConfig {
     #[serde(default = "IndexerConfig::default_split_store_max_num_bytes")]
     pub split_store_max_num_bytes: ByteSize,
@@ -92,7 +122,7 @@ impl IndexerConfig {
     }
 
     pub fn default_split_store_max_num_bytes() -> ByteSize {
-        ByteSize::gb(100)
+        ByteSize::gib(100)
     }
 
     pub fn default_split_store_max_num_splits() -> usize {
@@ -245,7 +275,7 @@ impl IngestApiConfig {
         self.replication_factor()?;
         ensure!(
             self.max_queue_disk_usage > ByteSize::mib(256),
-            "max_queue_disk_usage must be at least 256MB, got `{}`",
+            "max_queue_disk_usage must be at least 256 MiB, got `{}`",
             self.max_queue_disk_usage
         );
         ensure!(
@@ -341,6 +371,7 @@ pub struct NodeConfig {
     pub metastore_uri: Uri,
     pub default_index_root_uri: Uri,
     pub rest_config: RestConfig,
+    pub grpc_config: GrpcConfig,
     pub storage_configs: StorageConfigs,
     pub metastore_configs: MetastoreConfigs,
     pub indexer_config: IndexerConfig,
@@ -395,9 +426,9 @@ impl NodeConfig {
     }
 
     pub fn redact(&mut self) {
+        self.metastore_configs.redact();
         self.metastore_uri.redact();
         self.storage_configs.redact();
-        self.metastore_configs.redact();
     }
 
     #[cfg(any(test, feature = "testsuite"))]
@@ -414,7 +445,7 @@ mod tests {
     use crate::IndexerConfig;
 
     #[test]
-    fn test_index_config_serialization() {
+    fn test_indexer_config_serialization() {
         {
             let indexer_config: IndexerConfig = serde_json::from_str(r#"{}"#).unwrap();
             assert_eq!(&indexer_config, &IndexerConfig::default());
@@ -467,7 +498,7 @@ mod tests {
             .unwrap();
             assert_eq!(
                 indexer_config.validate().unwrap_err().to_string(),
-                "max_queue_disk_usage must be at least 256MB, got `100.0 MB`"
+                "max_queue_disk_usage must be at least 256 MiB, got `100.0 MB`"
             );
         }
         {
@@ -484,5 +515,35 @@ mod tests {
                  MB)"
             );
         }
+    }
+
+    #[test]
+    fn test_grpc_config_serialization() {
+        let grpc_config: GrpcConfig = serde_json::from_str(r#"{}"#).unwrap();
+        assert_eq!(
+            grpc_config.max_message_size,
+            GrpcConfig::default().max_message_size
+        );
+
+        let grpc_config: GrpcConfig = serde_yaml::from_str(
+            r#"
+                max_message_size: 4MiB
+            "#,
+        )
+        .unwrap();
+        assert_eq!(grpc_config.max_message_size, ByteSize::mib(4));
+    }
+
+    #[test]
+    fn test_grpc_config_validate() {
+        let grpc_config = GrpcConfig {
+            max_message_size: ByteSize::mb(1),
+        };
+        assert!(grpc_config.validate().is_ok());
+
+        let grpc_config = GrpcConfig {
+            max_message_size: ByteSize::kb(1),
+        };
+        assert!(grpc_config.validate().is_err());
     }
 }
