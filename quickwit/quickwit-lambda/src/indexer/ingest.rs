@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -169,7 +169,7 @@ pub async fn ingest(args: IngestArgs) -> anyhow::Result<IndexingStatistics> {
         metastore
             .create_index(CreateIndexRequest::try_from_index_config(index_config)?)
             .await?;
-        debug!("Index created");
+        debug!("index created");
     } else if args.overwrite {
         info!(
             index_id = *INDEX_ID,
@@ -221,9 +221,9 @@ pub async fn ingest(args: IngestArgs) -> anyhow::Result<IndexingStatistics> {
     let indexing_pipeline_handle = indexing_server_mailbox
         .ask_for_res(DetachIndexingPipeline { pipeline_id })
         .await?;
-    debug!("Wait for indexing statistics");
+    debug!("wait for indexing statistics");
     let statistics = start_statistics_reporting_loop(indexing_pipeline_handle, false).await?;
-    debug!("Indexing completed, tear down actors");
+    debug!("indexing completed, tear down actors");
     merge_pipeline_handle.quit().await;
     universe
         .send_exit_with_success(&indexing_server_mailbox)
@@ -232,9 +232,9 @@ pub async fn ingest(args: IngestArgs) -> anyhow::Result<IndexingStatistics> {
     universe.quit().await;
 
     if args.clear_cache {
-        info!("Clearing local cache directory...");
+        info!("clearing local cache directory");
         clear_cache_directory(&config.data_dir_path).await?;
-        info!("Local cache directory cleared.");
+        info!("local cache directory cleared");
     }
 
     if statistics.num_invalid_docs > 0 {

@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -143,7 +143,7 @@ pub fn setup_lambda_tracer() -> anyhow::Result<()> {
 
 pub fn flush_tracer() {
     if let Some(Some(tracer_provider)) = TRACER_PROVIDER.get() {
-        debug!("Flush tracers");
+        debug!("flush tracers");
         for res in tracer_provider.force_flush() {
             if let Err(err) = res {
                 debug!(err=?err, "Failed to flush tracer");

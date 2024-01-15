@@ -1,4 +1,4 @@
-// Copyright (C) 2023 Quickwit, Inc.
+// Copyright (C) 2024 Quickwit, Inc.
 //
 // Quickwit is offered under the AGPL v3.0 and as commercial software.
 // For commercial licensing, contact us at hello@quickwit.io.
@@ -33,7 +33,7 @@ pub(crate) async fn load_node_config(
     let config = NodeConfig::load(ConfigFormat::Yaml, config_template.as_bytes())
         .await
         .with_context(|| format!("Failed to parse node config `{config_template}`."))?;
-    info!(config=?config, "Loaded node config.");
+    info!(config=?config, "loaded node config");
     let storage_resolver = StorageResolver::configured(&config.storage_configs);
     let metastore_resolver =
         MetastoreResolver::configured(storage_resolver.clone(), &config.metastore_configs);
