@@ -197,6 +197,9 @@ fn convert_scheduling_solution_to_physical_plan_single_node_single_source(
     mut previous_tasks: &[&IndexingTask],
     source: &SourceToSchedule,
 ) -> Vec<IndexingTask> {
+    if remaining_num_shards_to_schedule_on_node == 0 {
+        return Vec::new();
+    }
     match &source.source_type {
         SourceToScheduleType::Sharded {
             shard_ids,
