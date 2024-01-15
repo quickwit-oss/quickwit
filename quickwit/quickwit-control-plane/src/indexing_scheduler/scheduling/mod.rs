@@ -322,6 +322,10 @@ fn pick_indexer(capacity_per_node: &[(String, u32)]) -> impl Iterator<Item = &st
 /// and shard ids) and builds a physical plan, attempting to make as little change as possible
 /// to the existing pipelines.
 ///
+/// All indexers listed in the `id_to_ord_map` should be listed in the physical solution, including
+/// the indexers that do not have any tasks assigned.
+///
+///
 /// We do not support moving shard from one pipeline to another, so if required this function may
 /// also return instruction about deleting / adding new shards.
 fn convert_scheduling_solution_to_physical_plan(
