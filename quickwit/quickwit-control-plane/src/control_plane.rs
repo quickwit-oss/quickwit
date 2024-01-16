@@ -136,9 +136,7 @@ impl Actor for ControlPlane {
         self.indexing_scheduler
             .schedule_indexing_plan_if_needed(&self.model);
 
-        self.ingest_controller
-            .sync_with_all_ingesters(&self.model)
-            .await;
+        self.ingest_controller.sync_with_all_ingesters(&self.model);
 
         ctx.schedule_self_msg(CONTROL_PLAN_LOOP_INTERVAL, ControlPlanLoop)
             .await;
@@ -382,8 +380,7 @@ impl Handler<DeleteIndexRequest> for ControlPlane {
         self.model.delete_index(&index_uid);
 
         self.ingest_controller
-            .sync_with_ingesters(&ingester_needing_resync, &self.model)
-            .await;
+            .sync_with_ingesters(&ingester_needing_resync, &self.model);
 
         // TODO: Refine the event. Notify index will have the effect to reload the entire state from
         // the metastore. We should update the state of the control plane.
@@ -499,8 +496,7 @@ impl Handler<DeleteSourceRequest> for ControlPlane {
             };
 
         self.ingest_controller
-            .sync_with_ingesters(&ingester_needing_resync, &self.model)
-            .await;
+            .sync_with_ingesters(&ingester_needing_resync, &self.model);
 
         self.model.delete_source(&source_uid);
 
