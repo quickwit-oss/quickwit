@@ -43,6 +43,7 @@ use rand::seq::SliceRandom;
 use tokio::time::timeout;
 use tracing::{error, info, warn};
 
+use crate::ingest::wait_handle::WaitHandle;
 use crate::metrics::CONTROL_PLANE_METRICS;
 use crate::model::{ControlPlaneModel, ScalingMode, ShardEntry, ShardStats};
 
@@ -117,24 +118,28 @@ impl IngestController {
         model: &ControlPlaneModel,
     ) {
         for ingester in ingesters {
-            self.sync_with_ingester(ingester, model).await;
+            self.sync_with_ingester(ingester, model);
         }
     }
 
     pub(crate) async fn sync_with_all_ingesters(&self, model: &ControlPlaneModel) {
         let ingesters: Vec<NodeId> = self.ingester_pool.keys();
         for ingester in ingesters {
-            self.sync_with_ingester(&ingester, model).await;
+            self.sync_with_ingester(&ingester, model);
         }
     }
 
-    async fn sync_with_ingester(&self, ingester: &NodeId, model: &ControlPlaneModel) {
+    /// Syncs the ingester in a fire and forget manner.
+    ///
+    /// The returned oneshot is just here for unit test to wait for the operation to terminate.
+    fn sync_with_ingester(&self, ingester: &NodeId, model: &ControlPlaneModel) -> WaitHandle {
         info!(ingester = %ingester, "sync_with_ingester");
+        let (wait_drop_guard, wait_handle) = WaitHandle::new();
         let Some(mut ingester_client) = self.ingester_pool.get(ingester) else {
             // TODO: (Maybe) We should mark the ingester as unavailable, and stop advertise its
             // shard to routers.
             warn!("failed to sync with ingester `{ingester}`: not available");
-            return;
+            return wait_handle;
         };
 
         let mut retain_shards_req = RetainShardsRequest::default();
@@ -157,9 +162,12 @@ impl IngestController {
                 {
                     error!(%retain_shards_err, "retain shards error");
                 }
+                // just a way to force moving the drop guard.
+                drop(wait_drop_guard);
             },
             operation,
         );
+        wait_handle
     }
 
     /// Pings an ingester to determine whether it is available for hosting a shard. If a follower ID
@@ -671,6 +679,8 @@ pub enum PingError {
 mod tests {
 
     use std::collections::BTreeSet;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
 
     use quickwit_config::{SourceConfig, SourceParams, INGEST_V2_SOURCE_ID};
     use quickwit_ingest::{RateMibPerSec, ShardInfo};
@@ -1714,19 +1724,25 @@ mod tests {
         let mut ingester_mock1 = IngesterServiceClient::mock();
         let ingester_mock2 = IngesterServiceClient::mock();
         let ingester_mock3 = IngesterServiceClient::mock();
+
+        let count_calls = Arc::new(AtomicUsize::new(0));
+        let count_calls_clone = count_calls.clone();
         ingester_mock1
             .expect_retain_shards()
             .once()
-            .returning(|mut request| {
+            .returning(move |mut request| {
                 assert_eq!(request.retain_shards_for_sources.len(), 1);
                 let retain_shards_for_source = request.retain_shards_for_sources.pop().unwrap();
                 assert_eq!(&retain_shards_for_source.shard_ids, &[1, 3]);
+                count_calls_clone.fetch_add(1, Ordering::SeqCst);
                 Ok(RetainShardsResponse {})
             });
         ingester_pool.insert("node-1".into(), ingester_mock1.into());
         ingester_pool.insert("node-2".into(), ingester_mock2.into());
         ingester_pool.insert("node-3".into(), ingester_mock3.into());
         let node_id = "node-1".into();
-        ingest_controller.sync_with_ingester(&node_id, &model).await;
+        let wait_handle = ingest_controller.sync_with_ingester(&node_id, &model);
+        wait_handle.wait().await;
+        assert_eq!(count_calls.load(Ordering::SeqCst), 1);
     }
 }
