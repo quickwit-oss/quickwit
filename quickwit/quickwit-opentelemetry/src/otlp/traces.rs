@@ -73,6 +73,7 @@ doc_mapping:
     - name: service_name
       type: text
       tokenizer: raw
+      fast: true
     - name: resource_attributes
       type: json
       tokenizer: raw
