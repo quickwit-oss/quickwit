@@ -17,9 +17,11 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::collections::HashSet;
 use std::net::{Ipv4Addr, SocketAddr};
 use std::sync::Arc;
 
+use quickwit_config::service::QuickwitService;
 use quickwit_config::SearcherConfig;
 use quickwit_proto::metastore::MetastoreServiceClient;
 use quickwit_proto::search::{SearchRequest, SearchResponse};
@@ -29,6 +31,7 @@ use quickwit_search::{
 };
 use quickwit_serve::{search_request_from_api_request, SearchRequestQueryString};
 use quickwit_storage::StorageResolver;
+use quickwit_telemetry::payload::{QuickwitFeature, QuickwitTelemetryInfo, TelemetryEvent};
 use tokio::sync::OnceCell;
 use tracing::debug;
 
@@ -104,6 +107,12 @@ pub async fn search(args: SearchArgs) -> anyhow::Result<SearchResponseRest> {
     debug!(args=?args, "lambda-search");
     let (node_config, storage_resolver, metastore) =
         load_node_config(CONFIGURATION_TEMPLATE).await?;
+    let services: HashSet<String> =
+        HashSet::from_iter([QuickwitService::Searcher.as_str().to_string()]);
+    let telemetry_info =
+        QuickwitTelemetryInfo::new(services, HashSet::from_iter([QuickwitFeature::AwsLambda]));
+    let _telemetry_handle_opt = quickwit_telemetry::start_telemetry_loop(telemetry_info);
+    quickwit_telemetry::send_telemetry_event(TelemetryEvent::RunCommand).await;
     let search_request = search_request_from_api_request(vec![INDEX_ID.clone()], args.query)?;
     debug!(search_request=?search_request, "search-request");
     let search_response: SearchResponse = single_node_search(

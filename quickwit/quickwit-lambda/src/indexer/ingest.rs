@@ -48,6 +48,7 @@ use quickwit_proto::indexing::CpuCapacity;
 use quickwit_proto::metastore::{CreateIndexRequest, MetastoreError, MetastoreService};
 use quickwit_proto::types::{NodeId, PipelineUid};
 use quickwit_storage::StorageResolver;
+use quickwit_telemetry::payload::{QuickwitFeature, QuickwitTelemetryInfo, TelemetryEvent};
 use tracing::{debug, info, instrument};
 
 use super::environment::{CONFIGURATION_TEMPLATE, DISABLE_MERGE, INDEX_CONFIG_URI, INDEX_ID};
@@ -186,6 +187,12 @@ pub async fn ingest(args: IngestArgs) -> anyhow::Result<IndexingStatistics> {
         ..Default::default()
     };
     let runtimes_config = RuntimesConfig::default();
+    let services: HashSet<String> =
+        HashSet::from_iter([QuickwitService::Indexer.as_str().to_string()]);
+    let telemetry_info =
+        QuickwitTelemetryInfo::new(services, HashSet::from_iter([QuickwitFeature::AwsLambda]));
+    let _telemetry_handle_opt = quickwit_telemetry::start_telemetry_loop(telemetry_info);
+    quickwit_telemetry::send_telemetry_event(TelemetryEvent::RunCommand).await;
     start_actor_runtimes(
         runtimes_config,
         &HashSet::from_iter([QuickwitService::Indexer]),
