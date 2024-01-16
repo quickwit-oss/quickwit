@@ -112,7 +112,7 @@ impl IngestController {
     /// Sends a retain shard request to the given list of ingesters.
     ///
     /// If the request fails, we just log an error.
-    pub(crate) async fn sync_with_ingesters(
+    pub(crate) fn sync_with_ingesters(
         &self,
         ingesters: &BTreeSet<NodeId>,
         model: &ControlPlaneModel,
@@ -122,7 +122,7 @@ impl IngestController {
         }
     }
 
-    pub(crate) async fn sync_with_all_ingesters(&self, model: &ControlPlaneModel) {
+    pub(crate) fn sync_with_all_ingesters(&self, model: &ControlPlaneModel) {
         let ingesters: Vec<NodeId> = self.ingester_pool.keys();
         for ingester in ingesters {
             self.sync_with_ingester(&ingester, model);
