@@ -1,9 +1,10 @@
 name: Build and publish AWS Lambda packages
 
 on:
-  # push:
-  #   tags:
-  #     - "v*"
+  push:
+    tags:
+      - "v*"
+      - "lambda-v*"
   workflow_dispatch:
 
 env:
@@ -55,5 +56,5 @@ jobs:
         with:
           file: ${{ env.SEARCHER_PACKAGE_LOCATION }};${{ env.INDEXER_PACKAGE_LOCATION }}
           overwrite: true
-          draft: ${{ env.QW_LAMBDA_VERSION != env.PRERELEASE_VERSION_NAME }}
+          draft: true
           tag_name: aws-lambda-${{ env.QW_LAMBDA_VERSION }}
