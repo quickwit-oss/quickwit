@@ -19,8 +19,8 @@ pub struct IndexingTask {
     #[prost(message, optional, tag = "4")]
     pub pipeline_uid: ::core::option::Option<crate::types::PipelineUid>,
     /// The shards assigned to the indexer.
-    #[prost(uint64, repeated, tag = "3")]
-    pub shard_ids: ::prost::alloc::vec::Vec<u64>,
+    #[prost(message, repeated, tag = "3")]
+    pub shard_ids: ::prost::alloc::vec::Vec<crate::types::ShardId>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]

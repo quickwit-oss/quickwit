@@ -22,7 +22,7 @@ use std::fmt;
 use quickwit_common::retry::Retryable;
 use serde::{Deserialize, Serialize};
 
-use crate::types::{IndexId, IndexUid, QueueId, SourceId, SplitId};
+use crate::types::{IndexId, IndexUid, QueueId, ShardId, SourceId, SplitId};
 use crate::{ServiceError, ServiceErrorCode};
 
 pub mod events;
@@ -112,9 +112,6 @@ pub enum MetastoreError {
     #[error("access forbidden: {message}")]
     Forbidden { message: String },
 
-    #[error("control plane state is inconsistent with that of the metastore")]
-    InconsistentControlPlaneState,
-
     #[error("internal error: {message}; cause: `{cause}`")]
     Internal { message: String, cause: String },
 
@@ -178,7 +175,6 @@ impl ServiceError for MetastoreError {
             Self::Db { .. } => ServiceErrorCode::Internal,
             Self::FailedPrecondition { .. } => ServiceErrorCode::BadRequest,
             Self::Forbidden { .. } => ServiceErrorCode::MethodNotAllowed,
-            Self::InconsistentControlPlaneState { .. } => ServiceErrorCode::BadRequest,
             Self::Internal { .. } => ServiceErrorCode::Internal,
             Self::InvalidArgument { .. } => ServiceErrorCode::BadRequest,
             Self::Io { .. } => ServiceErrorCode::Internal,
@@ -304,5 +300,13 @@ impl ListIndexesMetadataRequest {
         ListIndexesMetadataRequest {
             index_id_patterns: vec!["*".to_string()],
         }
+    }
+}
+
+impl OpenShardsSubrequest {
+    pub fn shard_id(&self) -> &ShardId {
+        self.shard_id
+            .as_ref()
+            .expect("`shard_id` should be a required field")
     }
 }

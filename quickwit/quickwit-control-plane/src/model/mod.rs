@@ -38,7 +38,7 @@ use quickwit_proto::metastore::{
 };
 use quickwit_proto::types::{IndexId, IndexUid, NodeId, ShardId, SourceId, SourceUid};
 use serde::Serialize;
-pub(super) use shard_table::{NextShardId, ScalingMode, ShardEntry, ShardStats, ShardTable};
+pub(super) use shard_table::{ScalingMode, ShardEntry, ShardStats, ShardTable};
 use tracing::{info, instrument, warn};
 
 /// The control plane maintains a model in sync with the metastore.
@@ -127,7 +127,6 @@ impl ControlPlaneModel {
                     index_uid,
                     source_id,
                     shards,
-                    next_shard_id,
                 } = list_shards_subresponse;
                 let source_uid = SourceUid {
                     index_uid: IndexUid::parse(&index_uid).map_err(|invalid_index_uri| {
@@ -138,7 +137,7 @@ impl ControlPlaneModel {
                     source_id,
                 };
                 self.shard_table
-                    .initialize_source_shards(source_uid, shards, next_shard_id);
+                    .initialize_source_shards(source_uid, shards);
             }
         }
         info!(
@@ -280,20 +279,15 @@ impl ControlPlaneModel {
         self.shard_table.list_shards(source_uid)
     }
 
-    pub fn next_shard_id(&self, source_uid: &SourceUid) -> Option<ShardId> {
-        self.shard_table.next_shard_id(source_uid)
-    }
-
     /// Inserts the shards that have just been opened by calling `open_shards` on the metastore.
     pub fn insert_newly_opened_shards(
         &mut self,
         index_uid: &IndexUid,
         source_id: &SourceId,
-        shards: Vec<Shard>,
-        next_shard_id: NextShardId,
+        opened_shards: Vec<Shard>,
     ) {
         self.shard_table
-            .insert_newly_opened_shards(index_uid, source_id, shards, next_shard_id);
+            .insert_newly_opened_shards(index_uid, source_id, opened_shards);
     }
 
     /// Finds open shards for a given index and source and whose leaders are not in the set of
@@ -303,7 +297,7 @@ impl ControlPlaneModel {
         index_uid: &IndexUid,
         source_id: &SourceId,
         unavailable_leaders: &FnvHashSet<NodeId>,
-    ) -> Option<(Vec<ShardEntry>, NextShardId)> {
+    ) -> Option<Vec<ShardEntry>> {
         self.shard_table
             .find_open_shards(index_uid, source_id, unavailable_leaders)
     }
@@ -405,20 +399,18 @@ mod tests {
                     index_uid: "test-index-0:0".to_string(),
                     source_id: INGEST_V2_SOURCE_ID.to_string(),
                     shards: vec![Shard {
-                        shard_id: 42,
+                        shard_id: Some(ShardId::from(42)),
                         index_uid: "test-index-0:0".to_string(),
                         source_id: INGEST_V2_SOURCE_ID.to_string(),
                         shard_state: ShardState::Open as i32,
                         leader_id: "node1".to_string(),
                         ..Default::default()
                     }],
-                    next_shard_id: 43,
                 },
                 metastore::ListShardsSubresponse {
                     index_uid: "test-index-1:0".to_string(),
                     source_id: INGEST_V2_SOURCE_ID.to_string(),
                     shards: Vec::new(),
-                    next_shard_id: 1,
                 },
             ];
             let response = metastore::ListShardsResponse { subresponses };
@@ -457,10 +449,7 @@ mod tests {
             .unwrap()
             .collect();
         assert_eq!(shards.len(), 1);
-        assert_eq!(shards[0].shard_id, 42);
-
-        let next_shard_id = model.next_shard_id(&source_uid_0).unwrap();
-        assert_eq!(next_shard_id, 43);
+        assert_eq!(shards[0].shard_id(), ShardId::from(42));
 
         let source_uid_1 = SourceUid {
             index_uid: "test-index-1:0".into(),
@@ -472,9 +461,6 @@ mod tests {
             .unwrap()
             .collect();
         assert_eq!(shards.len(), 0);
-
-        let next_shard_id = model.next_shard_id(&source_uid_1).unwrap();
-        assert_eq!(next_shard_id, 1);
     }
 
     #[test]

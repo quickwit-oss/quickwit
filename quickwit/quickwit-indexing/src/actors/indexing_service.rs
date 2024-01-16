@@ -523,7 +523,7 @@ impl IndexingService {
                 continue;
             };
             let assignment = Assignment {
-                shard_ids: task.shard_ids.iter().copied().collect(),
+                shard_ids: task.shard_ids.iter().cloned().collect(),
             };
             let message = AssignShards(assignment);
 
@@ -665,7 +665,7 @@ impl IndexingService {
                     .last_observation()
                     .shard_ids
                     .iter()
-                    .copied()
+                    .cloned()
                     .collect(),
             })
             .collect();

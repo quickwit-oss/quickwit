@@ -195,6 +195,12 @@ impl MRecordBatch {
 }
 
 impl Shard {
+    pub fn shard_id(&self) -> &ShardId {
+        self.shard_id
+            .as_ref()
+            .expect("`shard_id` should be a required field")
+    }
+
     pub fn is_open(&self) -> bool {
         self.shard_state().is_open()
     }
@@ -208,11 +214,13 @@ impl Shard {
     }
 
     pub fn queue_id(&self) -> super::types::QueueId {
-        queue_id(&self.index_uid, &self.source_id, self.shard_id)
+        queue_id(&self.index_uid, &self.source_id, self.shard_id())
     }
 
-    pub fn publish_position_inclusive(&self) -> Position {
-        self.publish_position_inclusive.clone().unwrap_or_default()
+    pub fn publish_position_inclusive(&self) -> &Position {
+        self.publish_position_inclusive
+            .as_ref()
+            .expect("`publish_position_inclusive` should be a required field")
     }
 }
 
@@ -253,7 +261,7 @@ impl ShardIds {
     pub fn queue_ids(&self) -> impl Iterator<Item = QueueId> + '_ {
         self.shard_ids
             .iter()
-            .map(|shard_id| queue_id(&self.index_uid, &self.source_id, *shard_id))
+            .map(|shard_id| queue_id(&self.index_uid, &self.source_id, shard_id))
     }
 }
 

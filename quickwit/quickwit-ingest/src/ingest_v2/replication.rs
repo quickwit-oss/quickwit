@@ -541,8 +541,8 @@ impl ReplicationTask {
         }
         for subrequest in replicate_request.subrequests {
             let queue_id = subrequest.queue_id();
-            let from_position_exclusive = subrequest.from_position_exclusive();
-            let to_position_inclusive = subrequest.to_position_inclusive();
+            let from_position_exclusive = subrequest.from_position_exclusive().clone();
+            let to_position_inclusive = subrequest.to_position_inclusive().clone();
 
             let Some(shard) = state_guard.shards.get(&queue_id) else {
                 let replicate_failure = ReplicateFailure {
@@ -745,7 +745,7 @@ mod tests {
         ObservationMessage, ReplicateSubrequest, ReplicateSuccess,
     };
     use quickwit_proto::ingest::{DocBatchV2, Shard};
-    use quickwit_proto::types::queue_id;
+    use quickwit_proto::types::{queue_id, ShardId};
     use tokio::sync::watch;
 
     use super::*;
@@ -837,7 +837,7 @@ mod tests {
         let replica_shard = Shard {
             index_uid: "test-index:0".to_string(),
             source_id: "test-source".to_string(),
-            shard_id: 1,
+            shard_id: Some(ShardId::from(1)),
             shard_state: ShardState::Open as i32,
             leader_id: "test-leader".to_string(),
             follower_id: Some("test-follower".to_string()),
@@ -874,8 +874,10 @@ mod tests {
                         subrequest_id: subrequest.subrequest_id,
                         index_uid: subrequest.index_uid.clone(),
                         source_id: subrequest.source_id.clone(),
-                        shard_id: subrequest.shard_id,
-                        replication_position_inclusive: Some(subrequest.to_position_inclusive()),
+                        shard_id: subrequest.shard_id.clone(),
+                        replication_position_inclusive: Some(
+                            subrequest.to_position_inclusive().clone(),
+                        ),
                     })
                     .collect::<Vec<_>>();
 
@@ -900,25 +902,25 @@ mod tests {
                 subrequest_id: 0,
                 index_uid: "test-index:0".to_string(),
                 source_id: "test-source".to_string(),
-                shard_id: 1,
+                shard_id: Some(ShardId::from(1)),
                 doc_batch: Some(DocBatchV2::for_test(["test-doc-foo"])),
-                from_position_exclusive: None,
+                from_position_exclusive: Some(Position::Beginning),
                 to_position_inclusive: Some(Position::offset(0u64)),
             },
             ReplicateSubrequest {
                 subrequest_id: 1,
                 index_uid: "test-index:0".to_string(),
                 source_id: "test-source".to_string(),
-                shard_id: 2,
+                shard_id: Some(ShardId::from(2)),
                 doc_batch: Some(DocBatchV2::for_test(["test-doc-bar", "test-doc-baz"])),
-                from_position_exclusive: None,
+                from_position_exclusive: Some(Position::Beginning),
                 to_position_inclusive: Some(Position::offset(1u64)),
             },
             ReplicateSubrequest {
                 subrequest_id: 2,
                 index_uid: "test-index:1".to_string(),
                 source_id: "test-source".to_string(),
-                shard_id: 1,
+                shard_id: Some(ShardId::from(1)),
                 doc_batch: Some(DocBatchV2::for_test(["test-qux", "test-doc-tux"])),
                 from_position_exclusive: Some(Position::offset(0u64)),
                 to_position_inclusive: Some(Position::offset(2u64)),
@@ -942,7 +944,7 @@ mod tests {
         let replicate_success_0 = &replicate_response.successes[0];
         assert_eq!(replicate_success_0.index_uid, "test-index:0");
         assert_eq!(replicate_success_0.source_id, "test-source");
-        assert_eq!(replicate_success_0.shard_id, 1);
+        assert_eq!(replicate_success_0.shard_id(), ShardId::from(1));
         assert_eq!(
             replicate_success_0.replication_position_inclusive(),
             Position::offset(0u64)
@@ -951,7 +953,7 @@ mod tests {
         let replicate_success_1 = &replicate_response.successes[1];
         assert_eq!(replicate_success_1.index_uid, "test-index:0");
         assert_eq!(replicate_success_1.source_id, "test-source");
-        assert_eq!(replicate_success_1.shard_id, 2);
+        assert_eq!(replicate_success_1.shard_id(), ShardId::from(2));
         assert_eq!(
             replicate_success_1.replication_position_inclusive(),
             Position::offset(1u64)
@@ -960,7 +962,7 @@ mod tests {
         let replicate_success_2 = &replicate_response.successes[2];
         assert_eq!(replicate_success_2.index_uid, "test-index:1");
         assert_eq!(replicate_success_2.source_id, "test-source");
-        assert_eq!(replicate_success_2.shard_id, 1);
+        assert_eq!(replicate_success_2.shard_id(), ShardId::from(1));
         assert_eq!(
             replicate_success_2.replication_position_inclusive(),
             Position::offset(2u64)
@@ -1044,7 +1046,7 @@ mod tests {
             replica_shard: Some(Shard {
                 index_uid: "test-index:0".to_string(),
                 source_id: "test-source".to_string(),
-                shard_id: 1,
+                shard_id: Some(ShardId::from(1)),
                 shard_state: ShardState::Open as i32,
                 leader_id: "test-leader".to_string(),
                 follower_id: Some("test-follower".to_string()),
@@ -1067,7 +1069,7 @@ mod tests {
             replica_shard: Some(Shard {
                 index_uid: "test-index:0".to_string(),
                 source_id: "test-source".to_string(),
-                shard_id: 2,
+                shard_id: Some(ShardId::from(2)),
                 shard_state: ShardState::Open as i32,
                 leader_id: "test-leader".to_string(),
                 follower_id: Some("test-follower".to_string()),
@@ -1090,7 +1092,7 @@ mod tests {
             replica_shard: Some(Shard {
                 index_uid: "test-index:1".to_string(),
                 source_id: "test-source".to_string(),
-                shard_id: 1,
+                shard_id: Some(ShardId::from(1)),
                 shard_state: ShardState::Open as i32,
                 leader_id: "test-leader".to_string(),
                 follower_id: Some("test-follower".to_string()),
@@ -1110,7 +1112,7 @@ mod tests {
 
         let state_guard = state.read().await;
 
-        let queue_id_01 = queue_id("test-index:0", "test-source", 1);
+        let queue_id_01 = queue_id("test-index:0", "test-source", &ShardId::from(1));
 
         let replica_shard_01 = state_guard.shards.get(&queue_id_01).unwrap();
         replica_shard_01.assert_is_replica();
@@ -1120,7 +1122,7 @@ mod tests {
 
         assert!(state_guard.mrecordlog.queue_exists(&queue_id_01));
 
-        let queue_id_02 = queue_id("test-index:0", "test-source", 2);
+        let queue_id_02 = queue_id("test-index:0", "test-source", &ShardId::from(2));
 
         let replica_shard_02 = state_guard.shards.get(&queue_id_02).unwrap();
         replica_shard_02.assert_is_replica();
@@ -1128,7 +1130,7 @@ mod tests {
         replica_shard_02.assert_replication_position(Position::Beginning);
         replica_shard_02.assert_truncation_position(Position::Beginning);
 
-        let queue_id_11 = queue_id("test-index:1", "test-source", 1);
+        let queue_id_11 = queue_id("test-index:1", "test-source", &ShardId::from(1));
 
         let replica_shard_11 = state_guard.shards.get(&queue_id_11).unwrap();
         replica_shard_11.assert_is_replica();
@@ -1147,27 +1149,27 @@ mod tests {
                     subrequest_id: 0,
                     index_uid: "test-index:0".to_string(),
                     source_id: "test-source".to_string(),
-                    shard_id: 1,
+                    shard_id: Some(ShardId::from(1)),
                     doc_batch: Some(DocBatchV2::for_test(["test-doc-foo"])),
-                    from_position_exclusive: None,
+                    from_position_exclusive: Some(Position::Beginning),
                     to_position_inclusive: Some(Position::offset(0u64)),
                 },
                 ReplicateSubrequest {
                     subrequest_id: 1,
                     index_uid: "test-index:0".to_string(),
                     source_id: "test-source".to_string(),
-                    shard_id: 2,
+                    shard_id: Some(ShardId::from(2)),
                     doc_batch: Some(DocBatchV2::for_test(["test-doc-bar", "test-doc-baz"])),
-                    from_position_exclusive: None,
+                    from_position_exclusive: Some(Position::Beginning),
                     to_position_inclusive: Some(Position::offset(1u64)),
                 },
                 ReplicateSubrequest {
                     subrequest_id: 2,
                     index_uid: "test-index:1".to_string(),
                     source_id: "test-source".to_string(),
-                    shard_id: 1,
+                    shard_id: Some(ShardId::from(1)),
                     doc_batch: Some(DocBatchV2::for_test(["test-doc-qux", "test-doc-tux"])),
-                    from_position_exclusive: None,
+                    from_position_exclusive: Some(Position::Beginning),
                     to_position_inclusive: Some(Position::offset(1u64)),
                 },
             ],
@@ -1190,7 +1192,7 @@ mod tests {
         let replicate_success_0 = &replicate_response.successes[0];
         assert_eq!(replicate_success_0.index_uid, "test-index:0");
         assert_eq!(replicate_success_0.source_id, "test-source");
-        assert_eq!(replicate_success_0.shard_id, 1);
+        assert_eq!(replicate_success_0.shard_id(), ShardId::from(1));
         assert_eq!(
             replicate_success_0.replication_position_inclusive(),
             Position::offset(0u64)
@@ -1199,7 +1201,7 @@ mod tests {
         let replicate_success_1 = &replicate_response.successes[1];
         assert_eq!(replicate_success_1.index_uid, "test-index:0");
         assert_eq!(replicate_success_1.source_id, "test-source");
-        assert_eq!(replicate_success_1.shard_id, 2);
+        assert_eq!(replicate_success_1.shard_id(), ShardId::from(2));
         assert_eq!(
             replicate_success_1.replication_position_inclusive(),
             Position::offset(1u64)
@@ -1208,7 +1210,7 @@ mod tests {
         let replicate_success_2 = &replicate_response.successes[2];
         assert_eq!(replicate_success_2.index_uid, "test-index:1");
         assert_eq!(replicate_success_2.source_id, "test-source");
-        assert_eq!(replicate_success_2.shard_id, 1);
+        assert_eq!(replicate_success_2.shard_id(), ShardId::from(1));
         assert_eq!(
             replicate_success_2.replication_position_inclusive(),
             Position::offset(1u64)
@@ -1241,7 +1243,7 @@ mod tests {
                 subrequest_id: 0,
                 index_uid: "test-index:0".to_string(),
                 source_id: "test-source".to_string(),
-                shard_id: 1,
+                shard_id: Some(ShardId::from(1)),
                 doc_batch: Some(DocBatchV2::for_test(["test-doc-moo"])),
                 from_position_exclusive: Some(Position::offset(0u64)),
                 to_position_inclusive: Some(Position::offset(1u64)),
@@ -1265,7 +1267,7 @@ mod tests {
         let replicate_success_0 = &replicate_response.successes[0];
         assert_eq!(replicate_success_0.index_uid, "test-index:0");
         assert_eq!(replicate_success_0.source_id, "test-source");
-        assert_eq!(replicate_success_0.shard_id, 1);
+        assert_eq!(replicate_success_0.shard_id(), ShardId::from(1));
         assert_eq!(
             replicate_success_0.replication_position_inclusive(),
             Position::offset(1u64)
@@ -1314,7 +1316,7 @@ mod tests {
             memory_capacity,
         );
 
-        let queue_id_01 = queue_id("test-index:0", "test-source", 1);
+        let queue_id_01 = queue_id("test-index:0", "test-source", &ShardId::from(1));
         let replica_shard = IngesterShard::new_replica(
             leader_id,
             ShardState::Closed,
@@ -1335,7 +1337,7 @@ mod tests {
                 subrequest_id: 0,
                 index_uid: "test-index:0".to_string(),
                 source_id: "test-source".to_string(),
-                shard_id: 1,
+                shard_id: Some(ShardId::from(1)),
                 doc_batch: Some(DocBatchV2::for_test(["test-doc-foo"])),
                 from_position_exclusive: Position::offset(0u64).into(),
                 to_position_inclusive: Some(Position::offset(1u64)),
@@ -1358,7 +1360,7 @@ mod tests {
         let replicate_failure = &replicate_response.failures[0];
         assert_eq!(replicate_failure.index_uid, "test-index:0");
         assert_eq!(replicate_failure.source_id, "test-source");
-        assert_eq!(replicate_failure.shard_id, 1);
+        assert_eq!(replicate_failure.shard_id(), ShardId::from(1));
         assert_eq!(
             replicate_failure.reason(),
             ReplicateFailureReason::ShardClosed
@@ -1399,7 +1401,7 @@ mod tests {
             memory_capacity,
         );
 
-        let queue_id_01 = queue_id("test-index:0", "test-source", 1);
+        let queue_id_01 = queue_id("test-index:0", "test-source", &ShardId::from(1));
         let replica_shard = IngesterShard::new_replica(
             leader_id,
             ShardState::Open,
@@ -1420,9 +1422,9 @@ mod tests {
                 subrequest_id: 0,
                 index_uid: "test-index:0".to_string(),
                 source_id: "test-source".to_string(),
-                shard_id: 1,
+                shard_id: Some(ShardId::from(1)),
                 doc_batch: Some(DocBatchV2::for_test(["test-doc-foo"])),
-                from_position_exclusive: None,
+                from_position_exclusive: Some(Position::Beginning),
                 to_position_inclusive: Some(Position::offset(0u64)),
             }],
             replication_seqno: 0,
@@ -1443,7 +1445,7 @@ mod tests {
         let replicate_failure_0 = &replicate_response.failures[0];
         assert_eq!(replicate_failure_0.index_uid, "test-index:0");
         assert_eq!(replicate_failure_0.source_id, "test-source");
-        assert_eq!(replicate_failure_0.shard_id, 1);
+        assert_eq!(replicate_failure_0.shard_id(), ShardId::from(1));
         assert_eq!(
             replicate_failure_0.reason(),
             ReplicateFailureReason::ResourceExhausted

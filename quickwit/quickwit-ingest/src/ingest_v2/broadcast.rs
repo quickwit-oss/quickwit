@@ -47,7 +47,7 @@ const BROADCAST_INTERVAL_PERIOD: Duration = if cfg!(test) {
 const ONE_MIB: ByteSize = ByteSize::mib(1);
 
 /// Broadcasted information about a primary shard.
-#[derive(Debug, Clone, Copy, Eq, PartialEq, Ord, PartialOrd)]
+#[derive(Debug, Clone, Eq, PartialEq, Ord, PartialOrd)]
 pub struct ShardInfo {
     pub shard_id: ShardId,
     pub shard_state: ShardState,
@@ -72,11 +72,10 @@ impl<'de> Deserialize<'de> for ShardInfo {
         let value = String::deserialize(deserializer)?;
         let mut parts = value.split(':');
 
-        let shard_id = parts
+        let shard_id: ShardId = parts
             .next()
             .ok_or_else(|| serde::de::Error::custom("invalid shard info"))?
-            .parse::<ShardId>()
-            .map_err(|_| serde::de::Error::custom("invalid shard ID"))?;
+            .into();
 
         let shard_state_str = parts
             .next()
@@ -351,12 +350,12 @@ mod tests {
     #[test]
     fn test_shard_info_serde() {
         let shard_info = ShardInfo {
-            shard_id: 1,
+            shard_id: ShardId::from(1),
             shard_state: ShardState::Open,
             ingestion_rate: RateMibPerSec(42),
         };
         let serialized = serde_json::to_string(&shard_info).unwrap();
-        assert_eq!(serialized, r#""1:open:42""#);
+        assert_eq!(serialized, r#""00000000000000000001:open:42""#);
 
         let deserialized = serde_json::from_str::<ShardInfo>(&serialized).unwrap();
         assert_eq!(deserialized, shard_info);
@@ -377,7 +376,7 @@ mod tests {
                     source_id: "test-source".to_string(),
                 },
                 vec![ShardInfo {
-                    shard_id: 1,
+                    shard_id: ShardId::from(1),
                     shard_state: ShardState::Open,
                     ingestion_rate: RateMibPerSec(42),
                 }]
@@ -417,7 +416,7 @@ mod tests {
                     source_id: "test-source".to_string(),
                 },
                 vec![ShardInfo {
-                    shard_id: 1,
+                    shard_id: ShardId::from(1),
                     shard_state: ShardState::Closed,
                     ingestion_rate: RateMibPerSec(42),
                 }]
@@ -493,7 +492,7 @@ mod tests {
 
         let mut state_guard = state.write().await;
 
-        let queue_id_01 = queue_id("test-index:0", "test-source", 1);
+        let queue_id_01 = queue_id("test-index:0", "test-source", &ShardId::from(1));
         let shard =
             IngesterShard::new_solo(ShardState::Open, Position::Beginning, Position::Beginning);
         state_guard.shards.insert(queue_id_01.clone(), shard);
@@ -568,7 +567,7 @@ mod tests {
                 assert_eq!(event.shard_infos.len(), 1);
 
                 let shard_info = event.shard_infos.iter().next().unwrap();
-                assert_eq!(shard_info.shard_id, 1);
+                assert_eq!(shard_info.shard_id, ShardId::from(1));
                 assert_eq!(shard_info.shard_state, ShardState::Open);
                 assert_eq!(shard_info.ingestion_rate, 42u16);
             })
@@ -584,7 +583,7 @@ mod tests {
         };
         let key = make_key(&source_uid);
         let value = serde_json::to_string(&vec![ShardInfo {
-            shard_id: 1,
+            shard_id: ShardId::from(1),
             shard_state: ShardState::Open,
             ingestion_rate: RateMibPerSec(42),
         }])

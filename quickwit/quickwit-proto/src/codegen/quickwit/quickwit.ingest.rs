@@ -28,8 +28,8 @@ pub struct Shard {
     pub index_uid: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,
-    #[prost(uint64, tag = "3")]
-    pub shard_id: u64,
+    #[prost(message, optional, tag = "3")]
+    pub shard_id: ::core::option::Option<crate::types::ShardId>,
     /// The node ID of the ingester to which all the write requests for this shard should be sent to.
     #[prost(string, tag = "4")]
     pub leader_id: ::prost::alloc::string::String,
@@ -60,8 +60,8 @@ pub struct ShardIds {
     pub index_uid: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,
-    #[prost(uint64, repeated, tag = "3")]
-    pub shard_ids: ::prost::alloc::vec::Vec<u64>,
+    #[prost(message, repeated, tag = "3")]
+    pub shard_ids: ::prost::alloc::vec::Vec<crate::types::ShardId>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[serde(rename_all = "snake_case")]

@@ -61,7 +61,7 @@ service IngesterService {
 message RetainShardsForSource {
   string index_uid = 1;
   string source_id = 2;
-  repeated uint64 shard_ids = 3;
+  repeated quickwit.ingest.ShardId shard_ids = 3;
 }
 
 message RetainShardsRequest {
@@ -81,7 +81,7 @@ message PersistSubrequest {
   uint32 subrequest_id = 1;
   string index_uid = 2;
   string source_id = 3;
-  uint64 shard_id = 4;
+  quickwit.ingest.ShardId shard_id = 4;
   quickwit.ingest.DocBatchV2 doc_batch = 5;
 }
 
@@ -95,7 +95,7 @@ message PersistSuccess {
   uint32 subrequest_id = 1;
   string index_uid = 2;
   string source_id = 3;
-  uint64 shard_id = 4;
+  quickwit.ingest.ShardId shard_id = 4;
   quickwit.ingest.Position replication_position_inclusive = 5;
 }
 
@@ -111,7 +111,7 @@ message PersistFailure {
   uint32 subrequest_id = 1;
   string index_uid = 2;
   string source_id = 3;
-  uint64 shard_id = 4;
+  quickwit.ingest.ShardId shard_id = 4;
   PersistFailureReason reason = 5;
 }
 
@@ -165,7 +165,7 @@ message ReplicateSubrequest {
   uint32 subrequest_id = 1;
   string index_uid = 2;
   string source_id = 3;
-  uint64 shard_id = 4;
+  quickwit.ingest.ShardId shard_id = 4;
   quickwit.ingest.Position from_position_exclusive = 5;
   quickwit.ingest.Position to_position_inclusive = 6;
   ingest.DocBatchV2 doc_batch = 7;
@@ -183,7 +183,7 @@ message ReplicateSuccess {
   uint32 subrequest_id = 1;
   string index_uid = 2;
   string source_id = 3;
-  uint64 shard_id = 4;
+  quickwit.ingest.ShardId shard_id = 4;
   quickwit.ingest.Position replication_position_inclusive = 5;
 }
 
@@ -199,7 +199,7 @@ message ReplicateFailure {
   uint32 subrequest_id = 1;
   string index_uid = 2;
   string source_id = 3;
-  uint64 shard_id = 4;
+  quickwit.ingest.ShardId shard_id = 4;
   ReplicateFailureReason reason = 5;
 }
 
@@ -211,7 +211,7 @@ message TruncateShardsRequest {
 message TruncateShardsSubrequest {
   string index_uid = 1;
   string source_id = 2;
-  uint64 shard_id = 3;
+  quickwit.ingest.ShardId shard_id = 3;
   // The position up to which the shard should be truncated (inclusive).
   quickwit.ingest.Position truncate_up_to_position_inclusive = 4;
 }
@@ -224,7 +224,7 @@ message OpenFetchStreamRequest {
   string client_id = 1;
   string index_uid = 2;
   string source_id = 3;
-  uint64 shard_id = 4;
+  quickwit.ingest.ShardId shard_id = 4;
   quickwit.ingest.Position from_position_exclusive = 5;
 }
 
@@ -238,7 +238,7 @@ message FetchMessage {
 message FetchPayload {
   string index_uid = 1;
   string source_id = 2;
-  uint64 shard_id = 3;
+  quickwit.ingest.ShardId shard_id = 3;
   quickwit.ingest.MRecordBatch mrecord_batch = 4;
   quickwit.ingest.Position from_position_exclusive = 5;
   quickwit.ingest.Position to_position_inclusive = 6;
@@ -247,7 +247,7 @@ message FetchPayload {
 message FetchEof {
   string index_uid = 1;
   string source_id = 2;
-  uint64 shard_id = 3;
+  quickwit.ingest.ShardId shard_id = 3;
   quickwit.ingest.Position eof_position = 4;
 }
 

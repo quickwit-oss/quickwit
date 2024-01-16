@@ -79,9 +79,8 @@ pub(crate) struct FileBackedIndex {
 #[cfg(any(test, feature = "testsuite"))]
 impl quickwit_config::TestableForRegression for FileBackedIndex {
     fn sample_for_regression() -> Self {
-        use quickwit_proto::ingest::Shard;
-
-        use self::shards::SerdeShards;
+        use quickwit_proto::ingest::{Shard, ShardState};
+        use quickwit_proto::types::{Position, ShardId};
 
         let index_metadata = IndexMetadata::sample_for_regression();
         let index_uid = index_metadata.index_uid.clone();
@@ -99,17 +98,14 @@ impl quickwit_config::TestableForRegression for FileBackedIndex {
         let shard = Shard {
             index_uid: index_uid.clone().into(),
             source_id: source_id.clone(),
-            shard_id: 1,
+            shard_id: Some(ShardId::from(1)),
+            shard_state: ShardState::Open as i32,
             leader_id: "leader-ingester".to_string(),
             follower_id: Some("follower-ingester".to_string()),
+            publish_position_inclusive: Some(Position::Beginning),
             ..Default::default()
         };
-
-        let serde_shards = SerdeShards {
-            next_shard_id: 2,
-            shards: vec![shard],
-        };
-        let shards = Shards::from_serde_shards(index_uid.clone(), source_id.clone(), serde_shards);
+        let shards = Shards::from_shards_vec(index_uid.clone(), source_id.clone(), vec![shard]);
         let per_source_shards = HashMap::from_iter([(source_id, shards)]);
 
         let delete_task = DeleteTask {

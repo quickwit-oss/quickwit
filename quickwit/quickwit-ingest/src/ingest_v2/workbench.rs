@@ -280,6 +280,7 @@ impl IngestSubworkbench {
 #[cfg(test)]
 mod tests {
     use quickwit_proto::ingest::ingester::PersistFailureReason;
+    use quickwit_proto::types::ShardId;
 
     use super::*;
 
@@ -487,7 +488,7 @@ mod tests {
 
         let persist_failure = PersistFailure {
             subrequest_id: 0,
-            shard_id: 1,
+            shard_id: Some(ShardId::from(1)),
             reason: PersistFailureReason::ResourceExhausted as i32,
             ..Default::default()
         };

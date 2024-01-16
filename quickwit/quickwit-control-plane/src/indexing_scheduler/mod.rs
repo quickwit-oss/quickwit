@@ -144,7 +144,8 @@ fn get_sources_to_schedule(model: &ControlPlaneModel) -> Vec<SourceToSchedule> {
                 let shard_ids: Vec<ShardId> = model
                     .list_shards_for_source(&source_uid)
                     .expect("source should exist")
-                    .map(|shard| shard.shard_id)
+                    .map(|shard| shard.shard_id())
+                    .cloned()
                     .collect();
                 if shard_ids.is_empty() {
                     continue;
@@ -749,11 +750,11 @@ mod tests {
         let shard = Shard {
             index_uid: index_uid.to_string(),
             source_id: "ingest_v2".to_string(),
-            shard_id: 17,
+            shard_id: Some(ShardId::from(17)),
             shard_state: ShardState::Open as i32,
             ..Default::default()
         };
-        model.insert_newly_opened_shards(&index_uid, &"ingest_v2".to_string(), vec![shard], 18);
+        model.insert_newly_opened_shards(&index_uid, &"ingest_v2".to_string(), vec![shard]);
         let shards: Vec<SourceToSchedule> = get_sources_to_schedule(&model);
         assert_eq!(shards.len(), 3);
     }
