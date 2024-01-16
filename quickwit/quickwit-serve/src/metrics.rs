@@ -94,6 +94,14 @@ impl<B> RestMetricsRecorder<B> {
             _phantom: PhantomData,
         }
     }
+
+    fn record_latency(self, latency: Duration) {
+        self.histogram
+            .lock()
+            .expect("Failed to unlock histogram")
+            .clone()
+            .map(|histogram| histogram.observe(latency.as_secs_f64()));
+    }
 }
 
 impl<B, FailureClass> OnFailure<FailureClass> for RestMetricsRecorder<B> {
@@ -105,16 +113,6 @@ impl<B, FailureClass> OnFailure<FailureClass> for RestMetricsRecorder<B> {
     ) {
         SERVE_METRICS.http_requests_error.inc();
         self.clone().record_latency(latency);
-    }
-}
-
-impl<B> RestMetricsRecorder<B> {
-    fn record_latency(self, latency: Duration) {
-        if let Some(mutex) = Arc::into_inner(self.histogram) {
-            if let Some(histogram) = mutex.into_inner().expect("Failed to unlock histogram") {
-                histogram.observe(latency.as_secs_f64());
-            }
-        }
     }
 }
 
