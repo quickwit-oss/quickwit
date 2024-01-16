@@ -123,7 +123,7 @@ search_settings:
 
 ## Setup Vector
 
-Our sink here will be Quickwit ingest API `http://127.0.0.1:7280/api/v1/otel-logs-v0_6/ingest`.
+Our sink here will be Quickwit ingest API `http://127.0.0.1:7280/api/v1/otel-logs-v0_7/ingest`.
 To keep it simple in this tutorial, we will use a log source called `demo_logs` that generates logs in a given format. Let's choose the common `syslog` format
 (Vector does not generate logs in the OpenTelemetry format directly!) and use the transform feature to map the `syslog` format into the OpenTelemetry format.
 
@@ -178,7 +178,7 @@ method = "post"
 inputs = ["remap_syslog"]
 encoding.codec = "json"
 framing.method = "newline_delimited"
-uri = "http://127.0.0.1:7280/api/v1/otel-logs-v0_6/ingest"
+uri = "http://127.0.0.1:7280/api/v1/otel-logs-v0_7/ingest"
 ```
 Download the above Vector config file.
 
@@ -195,8 +195,8 @@ docker run -v $(pwd)/vector.toml:/etc/vector/vector.toml:ro -p 8383:8383 --net=h
 ## Search logs
 
 Quickwit is now ingesting logs coming from Vector and you can search them either with `curl` or by using the UI:
-- `curl -XGET http://127.0.0.1:7280/api/v1/otel-logs-v0_6/search?query=severity_text:ERROR`
-- Open your browser at `http://127.0.0.1:7280/ui/search?query=severity_text:ERROR&index_id=otel-logs-v0_6&max_hits=10` and play with it!
+- `curl -XGET http://127.0.0.1:7280/api/v1/otel-logs-v0_7/search?query=severity_text:ERROR`
+- Open your browser at `http://127.0.0.1:7280/ui/search?query=severity_text:ERROR&index_id=otel-logs-v0_7&max_hits=10` and play with it!
 
 ## Compute aggregation on severity_text
 
@@ -227,7 +227,7 @@ Let's craft a nice aggregation query to count how many `INFO`, `DEBUG`, `WARN`, 
 ```
 
 ```bash
-curl -XPOST -H "Content-Type: application/json" http://127.0.0.1:7280/api/v1/otel-logs-v0_6/search --data @aggregation-query.json
+curl -XPOST -H "Content-Type: application/json" http://127.0.0.1:7280/api/v1/otel-logs-v0_7/search --data @aggregation-query.json
 ```
 
 ## Going further
