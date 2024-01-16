@@ -82,6 +82,10 @@ pub struct IndexerCounters {
     /// This value is used to trigger commit and for observation.
     pub num_docs_in_workbench: u64,
 
+    /// Number of ProcessDocBatch received by the indexer to
+    /// build this split.
+    pub num_doc_batches_in_workbench: u64,
+
     /// Metrics describing the load and indexing performance of the
     /// pipeline. This is only updated for cooperative indexers.
     pub pipeline_metrics_opt: Option<PipelineMetrics>,
@@ -292,6 +296,7 @@ impl IndexerState {
             .extend(batch.checkpoint_delta)
             .context("batch delta does not follow indexer checkpoint")?;
         let mut memory_usage_delta: u64 = 0;
+        counters.num_doc_batches_in_workbench += 1;
         for doc in batch.docs {
             let ProcessedDoc {
                 doc,
@@ -652,7 +657,14 @@ impl Indexer {
         }
         let num_splits = splits.len() as u64;
         let split_ids = splits.iter().map(|split| split.split_id()).join(",");
-        info!(commit_trigger=?commit_trigger, split_ids=%split_ids, num_docs=self.counters.num_docs_in_workbench, "send-to-index-serializer");
+        info!(
+            index=self.indexer_state.pipeline_id.index_uid.as_str(),
+            source=self.indexer_state.pipeline_id.source_id.as_str(),
+            pipeline_uid=%self.indexer_state.pipeline_id.pipeline_uid,
+            commit_trigger=?commit_trigger,
+            num_batches=%self.counters.num_doc_batches_in_workbench,
+            split_ids=%split_ids,
+            num_docs=self.counters.num_docs_in_workbench, "send-to-index-serializer");
         ctx.send_message(
             &self.index_serializer_mailbox,
             IndexedSplitBatchBuilder {
@@ -666,6 +678,7 @@ impl Indexer {
         )
         .await?;
         self.counters.num_docs_in_workbench = 0;
+        self.counters.num_doc_batches_in_workbench = 0;
         self.counters.num_splits_emitted += num_splits;
         self.counters.num_split_batches_emitted += 1;
         Ok(())
@@ -830,6 +843,7 @@ mod tests {
                 num_splits_emitted: 1,
                 num_split_batches_emitted: 1,
                 num_docs_in_workbench: 1, //< the num docs in split counter has been reset.
+                num_doc_batches_in_workbench: 1, //< the num docs in split counter has been reset.
                 pipeline_metrics_opt: None,
             }
         );
@@ -1075,6 +1089,7 @@ mod tests {
                 num_splits_emitted: 1,
                 num_split_batches_emitted: 1,
                 num_docs_in_workbench: 0,
+                num_doc_batches_in_workbench: 0,
                 pipeline_metrics_opt: None,
             }
         );
@@ -1148,6 +1163,7 @@ mod tests {
                 num_splits_emitted: 1,
                 num_split_batches_emitted: 1,
                 num_docs_in_workbench: 0,
+                num_doc_batches_in_workbench: 0,
                 pipeline_metrics_opt: None,
             }
         );
@@ -1237,6 +1253,7 @@ mod tests {
             indexer_counters,
             IndexerCounters {
                 num_docs_in_workbench: 2,
+                num_doc_batches_in_workbench: 1,
                 num_splits_emitted: 0,
                 num_split_batches_emitted: 0,
                 pipeline_metrics_opt: None,
@@ -1249,6 +1266,7 @@ mod tests {
             indexer_counters,
             IndexerCounters {
                 num_docs_in_workbench: 0,
+                num_doc_batches_in_workbench: 0,
                 num_splits_emitted: 2,
                 num_split_batches_emitted: 1,
                 pipeline_metrics_opt: None,
@@ -1597,6 +1615,7 @@ mod tests {
                 num_splits_emitted: 0,
                 num_split_batches_emitted: 0,
                 num_docs_in_workbench: 0, //< the num docs in split counter has been reset.
+                num_doc_batches_in_workbench: 2, //< the num docs in split counter has been reset.
                 pipeline_metrics_opt: None,
             }
         );

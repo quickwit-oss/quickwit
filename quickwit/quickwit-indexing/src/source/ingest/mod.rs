@@ -438,7 +438,11 @@ impl IngestSource {
             return Ok(());
         }
 
-        warn!("resetting pipeline");
+        warn!(
+            index_uid = self.client_id.source_uid.index_uid.as_str(),
+            pipeline_uid = self.client_id.pipeline_uid,
+            "resetting pipeline"
+        );
         self.assigned_shards.clear();
         self.fetch_stream.reset();
         self.publish_lock.kill().await;
