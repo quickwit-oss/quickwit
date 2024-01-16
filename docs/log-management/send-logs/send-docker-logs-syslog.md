@@ -1,5 +1,5 @@
 ---
-title: Send docker logs into Q (using syslog)
+title: Send docker logs into Quickwit (using syslog)
 sidebar_label: Docker syslog config
 description: Send docker logs into Quickwit
 tags: [otel, docker, collector, log]
@@ -15,6 +15,7 @@ You only need a minute to get your Quickwit log UI!
 ## OTEL collector configuration
 
 The following collector configuration will listen to RFC5424-compliant logs transmitted by docker over tcp, parse them and send them to Quickwit through gRPC at `http://quickwit:7281`.
+
 
 ```yaml title="otel-collector-config.yaml"
 receivers:
@@ -48,11 +49,14 @@ service:
       exporters: [otlp]
 ```
 
+
 ## Start the OTEL collector and a Quickwit instance
 
 Let's use `docker compose` with the following configuration:
 
 The following boilerplate config includes a fragment that can be used to enable the syslog log-driver on docker-compose services.
+
+The tag should be kept shorter than 32 printable US ASCII characters or parsing will fail. Docker will use the container tag to fill the appname and msgid fields of the syslog message as defined in RFC5424, the spec defines byte lengths for those fields.
 
 ``` yaml title="docker-compose.yaml"
 version: '3.9'
@@ -67,7 +71,7 @@ x-syslog-logging: &logging
 
 ```
 
-This snippet makes sure container networking behaves correctly on linux for the collector to export to quickwit.
+This snippet makes sure container networking behaves correctly on linux for the collector to export to Quickwit.
 
 ``` yaml
 networks:
@@ -79,7 +83,7 @@ networks:
       - subnet: "192.168.32.0/20"
 ```
 
-And here you have both the collector and quickwit services. Notice the use of the logging fragment and logging network on both containers.
+And here you have both the collector and Quickwit services. Notice the use of the logging fragment and logging network on both containers.
 
 ``` yaml
 services:
@@ -112,7 +116,7 @@ services:
       logging:
 ```
 
-For good measure, let's add Grafana+quickwit-datasource to the mix.
+For good measure, let's add Grafana+Quickwit-datasource to the mix.
 
 ``` yaml
   grafana:
