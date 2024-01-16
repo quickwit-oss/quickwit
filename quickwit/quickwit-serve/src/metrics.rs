@@ -110,14 +110,8 @@ impl<B, FailureClass> OnFailure<FailureClass> for RestMetricsRecorder<B> {
 
 impl<B> RestMetricsRecorder<B> {
     fn record_latency(self, latency: Duration) {
-        match self
-            .histogram
-            .lock()
-            .expect("Failed to unlock histogram")
-            .clone()
-        {
-            None => {}
-            Some(histogram) => {
+        if let Some(mutex) = Arc::into_inner(self.histogram) {
+            if let Some(histogram) = mutex.into_inner().expect("Failed to unlock histogram") {
                 histogram.observe(latency.as_secs_f64());
             }
         }
