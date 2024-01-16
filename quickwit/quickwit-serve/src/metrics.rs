@@ -96,11 +96,14 @@ impl<B> RestMetricsRecorder<B> {
     }
 
     fn record_latency(self, latency: Duration) {
-        self.histogram
+        if let Some(histogram) = self
+            .histogram
             .lock()
             .expect("Failed to unlock histogram")
             .clone()
-            .map(|histogram| histogram.observe(latency.as_secs_f64()));
+        {
+            histogram.observe(latency.as_secs_f64())
+        }
     }
 }
 
