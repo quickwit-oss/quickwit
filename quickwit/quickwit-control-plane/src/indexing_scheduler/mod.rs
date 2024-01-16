@@ -154,7 +154,8 @@ fn get_sources_to_schedule(model: &ControlPlaneModel) -> Vec<SourceToSchedule> {
                     source_type: SourceToScheduleType::Sharded {
                         shard_ids,
                         // FIXME
-                        load_per_shard: NonZeroU32::new(250u32).unwrap(),
+                        load_per_shard: NonZeroU32::new(PIPELINE_FULL_CAPACITY.cpu_millis() / 4)
+                            .unwrap(),
                     },
                 });
             }
