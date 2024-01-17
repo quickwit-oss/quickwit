@@ -25,6 +25,7 @@ mod multi_search;
 mod scroll;
 mod search_body;
 mod search_query_params;
+mod search_response;
 
 pub use bulk_body::BulkAction;
 pub use bulk_query_params::ElasticBulkOptions;
@@ -40,6 +41,7 @@ use quickwit_proto::search::{SortDatetimeFormat, SortOrder};
 pub use scroll::ScrollQueryParams;
 pub use search_body::SearchBody;
 pub use search_query_params::SearchQueryParams;
+pub use search_response::ElasticSearchResponse;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Eq, PartialEq)]

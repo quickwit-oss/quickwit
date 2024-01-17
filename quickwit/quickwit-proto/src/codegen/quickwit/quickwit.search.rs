@@ -223,6 +223,19 @@ pub struct SearchResponse {
     /// Scroll Id (only set if scroll_secs was set in the request)
     #[prost(string, optional, tag = "6")]
     pub scroll_id: ::core::option::Option<::prost::alloc::string::String>,
+    #[prost(message, repeated, tag = "7")]
+    pub matching_keywords_by_field_name: ::prost::alloc::vec::Vec<
+        MatchingKeywordsByFieldName,
+    >,
+}
+#[derive(Serialize, Deserialize, utoipa::ToSchema)]
+#[allow(clippy::derive_partial_eq_without_eq)]
+#[derive(Clone, PartialEq, ::prost::Message)]
+pub struct MatchingKeywordsByFieldName {
+    #[prost(string, tag = "1")]
+    pub field_name: ::prost::alloc::string::String,
+    #[prost(string, repeated, tag = "2")]
+    pub keywords: ::prost::alloc::vec::Vec<::prost::alloc::string::String>,
 }
 #[derive(Serialize, Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]

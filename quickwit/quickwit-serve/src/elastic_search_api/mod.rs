@@ -176,11 +176,13 @@ mod tests {
         assert_eq!(resp.status(), 200);
         assert!(resp.headers().get("x-elastic-product").is_none(),);
         let string_body = String::from_utf8(resp.body().to_vec()).unwrap();
+        println!("string_body {:?}", string_body);
         let es_msearch_response: MultiSearchResponse = serde_json::from_str(&string_body).unwrap();
         assert_eq!(es_msearch_response.responses.len(), 2);
         for response in es_msearch_response.responses {
             assert_eq!(response.status, 200);
             assert_eq!(response.error, None);
+            println!("response {:?}", response);
             assert!(response.response.is_some())
         }
     }

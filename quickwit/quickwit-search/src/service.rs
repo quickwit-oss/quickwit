@@ -425,6 +425,7 @@ pub(crate) async fn scroll(
         elapsed_time_micros: start.elapsed().as_micros() as u64,
         scroll_id: next_scroll_id.as_ref().map(ToString::to_string),
         errors: Vec::new(),
+        matching_keywords_by_field_name: Vec::new(),
         aggregation: None,
     })
 }

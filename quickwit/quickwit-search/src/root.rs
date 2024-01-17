@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::time::Duration;
 
 use anyhow::Context;
@@ -35,8 +35,8 @@ use quickwit_proto::metastore::{
 };
 use quickwit_proto::search::{
     FetchDocsRequest, FetchDocsResponse, Hit, LeafHit, LeafSearchRequest, LeafSearchResponse,
-    PartialHit, SearchRequest, SearchResponse, SnippetRequest, SortDatetimeFormat, SortField,
-    SortValue, SplitIdAndFooterOffsets,
+    MatchingKeywordsByFieldName, PartialHit, SearchRequest, SearchResponse, SnippetRequest,
+    SortDatetimeFormat, SortField, SortValue, SplitIdAndFooterOffsets,
 };
 use quickwit_proto::types::{IndexUid, SplitId};
 use quickwit_query::query_ast::{
@@ -801,6 +801,7 @@ async fn root_search_aux(
     searcher_context: &SearcherContext,
     indexes_metas_for_leaf_search: &IndexesMetasForLeafSearch,
     search_request: SearchRequest,
+    matching_keywords_map: BTreeMap<String, BTreeSet<String>>,
     split_metadatas: Vec<SplitMetadata>,
     cluster_client: &ClusterClient,
 ) -> crate::Result<SearchResponse> {
@@ -832,12 +833,21 @@ async fn root_search_aux(
         searcher_context,
     )?;
 
+    let matching_keywords_by_field_name = matching_keywords_map
+        .into_iter()
+        .map(|(field_name, keywords)| MatchingKeywordsByFieldName {
+            field_name,
+            keywords: keywords.into_iter().collect(),
+        })
+        .collect();
+
     Ok(SearchResponse {
         aggregation: aggregation_result_json_opt,
         num_hits: first_phase_result.num_hits,
         hits,
         elapsed_time_micros: 0u64,
         errors: Vec::new(),
+        matching_keywords_by_field_name,
         scroll_id: scroll_key_and_start_offset_opt
             .as_ref()
             .map(ToString::to_string),
@@ -958,6 +968,7 @@ pub async fn root_search(
             searcher_context,
             &HashMap::default(),
             search_request,
+            BTreeMap::default(),
             Vec::new(),
             cluster_client,
         )
@@ -978,6 +989,10 @@ pub async fn root_search(
         &mut search_request,
         &request_metadata.sort_fields_is_datetime,
     )?;
+
+    // extract keywords per field name.
+    let matching_keywords_per_field =
+        extract_matching_keywords_from_query(&request_metadata.query_ast_resolved);
 
     // update_search_after_datetime_in_nanos(&mut search_request)?;
     if let Some(timestamp_field) = &request_metadata.timestamp_field_opt {
@@ -1005,6 +1020,7 @@ pub async fn root_search(
         searcher_context,
         &request_metadata.indexes_meta_for_leaf_search,
         search_request,
+        matching_keywords_per_field,
         split_metadatas,
         cluster_client,
     )
@@ -1387,8 +1403,83 @@ pub fn jobs_to_fetch_docs_requests(
     Ok(fetch_docs_requests)
 }
 
+/// Extract matching keywords from the query AST for highlighting in Grafana.
+/// This is not an accurate implementation as it doesn't use the tokenizer.
+/// We consider it sufficient for highlighting in Grafana.
+#[derive(Default)]
+struct ExtractMatchingKeywords {
+    keywords_by_field_name: BTreeMap<String, BTreeSet<String>>,
+}
+
+impl<'a> QueryAstVisitor<'a> for ExtractMatchingKeywords {
+    type Err = std::convert::Infallible;
+
+    fn visit_bool(&mut self, bool_query: &'a BoolQuery) -> Result<(), Self::Err> {
+        // we only want to visit sub-queries which are positive requirements
+        for ast in bool_query
+            .should
+            .iter()
+            .chain(bool_query.must.iter().chain(bool_query.filter.iter()))
+        {
+            self.visit(ast)?;
+        }
+        Ok(())
+    }
+
+    fn visit_term(&mut self, term_query: &'a TermQuery) -> Result<(), Self::Err> {
+        self.keywords_by_field_name
+            .entry(term_query.field.clone())
+            .or_insert_with(BTreeSet::new)
+            .insert(term_query.value.clone());
+        Ok(())
+    }
+
+    fn visit_term_set(&mut self, term_query: &'a TermSetQuery) -> Result<(), Self::Err> {
+        term_query
+            .terms_per_field
+            .iter()
+            .for_each(|(field, terms)| {
+                self.keywords_by_field_name
+                    .entry(field.clone())
+                    .or_insert_with(BTreeSet::new)
+                    .extend(terms.iter().cloned());
+            });
+        Ok(())
+    }
+
+    fn visit_full_text(
+        &mut self,
+        full_text_query: &'a quickwit_query::query_ast::FullTextQuery,
+    ) -> Result<(), Self::Err> {
+        self.keywords_by_field_name
+            .entry(full_text_query.field.clone())
+            .or_insert_with(BTreeSet::new)
+            // FIXME: normally, we want to use the tokenizer to extract the keywords.
+            // However we're ok to be approximate as this is only used for highlighting in the
+            // plugin grafana.
+            .extend(
+                full_text_query
+                    .text
+                    .split_whitespace()
+                    .map(|s| s.to_string()),
+            );
+        Ok(())
+    }
+}
+
+fn extract_matching_keywords_from_query(
+    query_ast: &QueryAst,
+) -> BTreeMap<String, BTreeSet<String>> {
+    let mut visitor: ExtractMatchingKeywords = ExtractMatchingKeywords::default();
+    visitor
+        .visit(query_ast)
+        .expect("can't fail unwrapping Infallible");
+    visitor.keywords_by_field_name
+}
+
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeSet;
     use std::ops::Range;
     use std::str::FromStr;
     use std::sync::{Arc, RwLock};
@@ -3970,5 +4061,101 @@ mod tests {
             vec!["test-index-2", "test-index-1", "test-index-1"]
         );
         Ok(())
+    }
+
+    #[test]
+    fn test_extract_keywords() {
+        let simple_term: QueryAst = quickwit_query::query_ast::TermQuery {
+            field: "my_field".to_string(),
+            value: "my_value".to_string(),
+        }
+        .into();
+        let simple_term_2: QueryAst = quickwit_query::query_ast::TermQuery {
+            field: "my_field_2".to_string(),
+            value: "my_value_2".to_string(),
+        }
+        .into();
+        let mut terms_per_field = HashMap::new();
+        let mut terms_values = BTreeSet::new();
+        terms_values.insert("my_value_1".to_string());
+        terms_values.insert("my_value_2".to_string());
+        terms_per_field.insert("my_field_set".to_string(), terms_values);
+        let term_set_query: QueryAst =
+            quickwit_query::query_ast::TermSetQuery { terms_per_field }.into();
+        {
+            // simple term query
+            let mut keywords_extractor = ExtractMatchingKeywords::default();
+            keywords_extractor.visit(&simple_term).unwrap();
+            assert_eq!(keywords_extractor.keywords_by_field_name.len(), 1);
+            assert!(keywords_extractor
+                .keywords_by_field_name
+                .get("my_field")
+                .unwrap()
+                .contains("my_value"));
+        }
+        {
+            // simple term query inside a must bool query
+            let bool_query_must = quickwit_query::query_ast::BoolQuery {
+                must: vec![simple_term.clone()],
+                ..Default::default()
+            };
+            let mut keywords_extractor = ExtractMatchingKeywords::default();
+            keywords_extractor.visit(&bool_query_must.into()).unwrap();
+            assert_eq!(keywords_extractor.keywords_by_field_name.len(), 1);
+            assert!(keywords_extractor
+                .keywords_by_field_name
+                .get("my_field")
+                .unwrap()
+                .contains("my_value"));
+        }
+        {
+            // simple term query inside a should bool query
+            // range inside a should bool query
+            let bool_query_should = quickwit_query::query_ast::BoolQuery {
+                should: vec![simple_term.clone()],
+                ..Default::default()
+            };
+            let mut keywords_extractor = ExtractMatchingKeywords::default();
+            keywords_extractor.visit(&bool_query_should.into()).unwrap();
+            assert_eq!(keywords_extractor.keywords_by_field_name.len(), 1);
+            assert!(keywords_extractor
+                .keywords_by_field_name
+                .get("my_field")
+                .unwrap()
+                .contains("my_value"));
+        }
+        {
+            // test term_set_query
+            let mut keywords_extractor = ExtractMatchingKeywords::default();
+            keywords_extractor.visit(&term_set_query).unwrap();
+            assert_eq!(keywords_extractor.keywords_by_field_name.len(), 1);
+            let keyword_set = keywords_extractor
+                .keywords_by_field_name
+                .get("my_field_set")
+                .unwrap();
+            assert!(keyword_set.contains("my_value_1"));
+            assert!(keyword_set.contains("my_value_2"));
+        }
+        {
+            // test multiple terms
+            let bool_query_should = quickwit_query::query_ast::BoolQuery {
+                should: vec![simple_term.clone(), simple_term_2.clone()],
+                must_not: vec![term_set_query.clone()],
+                ..Default::default()
+            };
+            let mut keywords_extractor = ExtractMatchingKeywords::default();
+            keywords_extractor.visit(&bool_query_should.into()).unwrap();
+            assert_eq!(keywords_extractor.keywords_by_field_name.len(), 2);
+            assert!(keywords_extractor
+                .keywords_by_field_name
+                .get("my_field")
+                .unwrap()
+                .contains("my_value"));
+            assert!(keywords_extractor
+                .keywords_by_field_name
+                .get("my_field_2")
+                .unwrap()
+                .contains("my_value_2"));
+        }
     }
 }
