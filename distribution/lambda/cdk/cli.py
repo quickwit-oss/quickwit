@@ -24,8 +24,7 @@ from cdk.stacks.examples import hdfs_stack, mock_data_stack
 region = os.environ["CDK_REGION"]
 
 example_host = "quickwit-datasets-public.s3.amazonaws.com"
-# the publicly hosted file is compressed and suffixed with ".gz"
-example_hdfs_file = "hdfs-logs-multitenants.json"
+example_hdfs_file = "hdfs-logs-multitenants.json.gz"
 INDEXING_BOTO_CONFIG = botocore.config.Config(
     retries={"max_attempts": 0}, read_timeout=60 * 15
 )
@@ -139,17 +138,16 @@ def upload_hdfs_src_file():
     except botocore.exceptions.ClientError as e:
         if e.response["Error"]["Code"] != "404":
             raise e
-    print(f"download dataset https://{example_host}/{example_hdfs_file}.gz")
+    print(f"download dataset https://{example_host}/{example_hdfs_file}")
     conn = http.client.HTTPSConnection(example_host)
-    conn.request("GET", f"/{example_hdfs_file}.gz")
+    conn.request("GET", f"/{example_hdfs_file}")
     response = conn.getresponse()
     if response.status != 200:
         print(f"Failed to fetch dataset")
         exit(1)
     with tempfile.NamedTemporaryFile() as tmp:
-        unzipped_resp = gzip.GzipFile(mode="rb", fileobj=response)
         while True:
-            chunk = unzipped_resp.read(1024 * 1024)
+            chunk = response.read(1024 * 1024)
             if len(chunk) == 0:
                 break
             tmp.write(chunk)

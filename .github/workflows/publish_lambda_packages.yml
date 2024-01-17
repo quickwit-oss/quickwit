@@ -3,12 +3,7 @@ name: Build and publish AWS Lambda packages
 on:
   push:
     tags:
-      - "v*"
-      - "lambda-v*"
-  workflow_dispatch:
-
-env:
-  PRERELEASE_VERSION_NAME: beta
+      - "lambda-beta-*"
 
 jobs:
   build-lambdas:
@@ -28,9 +23,6 @@ jobs:
       - name: Extract asset version of release
         run: echo "QW_LAMBDA_VERSION=${GITHUB_REF/refs\/tags\//}" >> $GITHUB_ENV
         if: ${{ github.event_name == 'push' }}
-      - name: Setting version as prerelease
-        run: echo "QW_LAMBDA_VERSION=${{ env.PRERELEASE_VERSION_NAME }}" >> $GITHUB_ENV
-        if: ${{ github.event_name != 'push' }}
       - name: Retrieve and export commit date, hash, and tags
         run: |
             echo "QW_COMMIT_DATE=$(TZ=UTC0 git log -1 --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_ENV
@@ -57,4 +49,4 @@ jobs:
           file: ${{ env.SEARCHER_PACKAGE_LOCATION }};${{ env.INDEXER_PACKAGE_LOCATION }}
           overwrite: true
           draft: true
-          tag_name: aws-lambda-${{ env.QW_LAMBDA_VERSION }}
+          tag_name: aws-${{ env.QW_LAMBDA_VERSION }}

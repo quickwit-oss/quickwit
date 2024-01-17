@@ -3,7 +3,8 @@
 SHELL := bash
 .SHELLFLAGS := -eu -o pipefail -c
 
-QW_LAMBDA_VERSION?=beta
+# Update this when cutting a new release
+QW_LAMBDA_VERSION?=beta-01
 PACKAGE_BASE_URL=https://github.com/quickwit-oss/quickwit/releases/download/aws-lambda-$(QW_LAMBDA_VERSION)/
 SEARCHER_PACKAGE_FILE=quickwit-lambda-searcher-$(QW_LAMBDA_VERSION)-x86_64.zip
 INDEXER_PACKAGE_FILE=quickwit-lambda-indexer-$(QW_LAMBDA_VERSION)-x86_64.zip
@@ -36,10 +37,16 @@ package:
 	  cp -u ../../quickwit/target/lambda/indexer/bootstrap.zip $(INDEXER_PACKAGE_PATH)
 	else
 	  if ! [ -f $(SEARCHER_PACKAGE_PATH) ]; then
+	  	echo "Downloading package $(PACKAGE_BASE_URL)$(SEARCHER_PACKAGE_FILE)"
 	    curl -C - -Ls -o $(SEARCHER_PACKAGE_PATH) $(PACKAGE_BASE_URL)$(SEARCHER_PACKAGE_FILE)
+	  else
+	  	echo "Using cached package $(SEARCHER_PACKAGE_PATH)"
 	  fi
 	  if ! [ -f $(INDEXER_PACKAGE_PATH) ]; then
+	  	echo "Downloading package $(PACKAGE_BASE_URL)$(INDEXER_PACKAGE_FILE)"
 	  	curl -C - -Ls -o $(INDEXER_PACKAGE_PATH) $(PACKAGE_BASE_URL)$(INDEXER_PACKAGE_FILE)
+	  else
+	  	echo "Using cached package $(INDEXER_PACKAGE_PATH)"
 	  fi
 	fi
 
