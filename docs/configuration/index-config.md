@@ -491,12 +491,13 @@ src.port:53 AND query_params.ctk:e42bb897d
 ### Field name validation rules
 
 Currently Quickwit only accepts field name that matches the following regular expression:
-`[a-zA-Z][_\.\-a-zA-Z0-9]*$`
+`^[@$_\-a-zA-Z][@$_\.\-a-zA-Z0-9]{0,254}$`
 
 In plain language:
 - it needs to have at least one character.
-- it should only contain latin letter `[a-zA-Z]` digits `[0-9]` or (`.`, `-`, `_`).
-- the first character needs to be a letter.
+- it can only contain uppercase and lowercase ASCII letters `[a-zA-Z]`, digits `[0-9]`, hyphens `-`, `$`, `@` and underscores `_`;
+- it must not start with a dot or a digit.
+- it must be different from Quickwit's reserved field mapping names `_source`, `_dynamic`, `_field_presence`.
 
 :::caution
 For field names containing the `.` character, you will need to escape it when referencing them. Otherwise the `.` character will be interpreted as a JSON object property access. Because of this, it is recommended to avoid using field names containing the `.` character.
