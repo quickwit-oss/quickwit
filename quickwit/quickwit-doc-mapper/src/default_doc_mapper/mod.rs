@@ -52,8 +52,8 @@ pub const FIELD_MAPPING_NAME_PATTERN: &str = r"^[@$_\-a-zA-Z][@$_\.\-a-zA-Z0-9]{
 /// Returns `Ok(())` if the name can be used for a field mapping.
 ///
 /// A field mapping name:
-/// - may only contain uppercase and lowercase ASCII letters `[a-zA-Z]`, digits `[0-9]`, hyphens
-///   `-`, `$`, `@` and underscores `_`;
+/// - can only contain uppercase and lowercase ASCII letters `[a-zA-Z]`, digits `[0-9]`, `.`,
+///   hyphens `-`, underscores `_`, at `@` and dollar `$` signs;
 /// - must not start with a dot or a digit;
 /// - must be different from Quickwit's reserved field mapping names `_source`, `_dynamic`,
 ///   `_field_presence`;

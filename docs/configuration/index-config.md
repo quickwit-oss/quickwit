@@ -495,7 +495,7 @@ Currently Quickwit only accepts field name that matches the following regular ex
 
 In plain language:
 - it needs to have at least one character.
-- it can only contain uppercase and lowercase ASCII letters `[a-zA-Z]`, digits `[0-9]`, hyphens `-`, `$`, `@` and underscores `_`;
+- it can only contain uppercase and lowercase ASCII letters `[a-zA-Z]`, digits `[0-9]`, `.`, hyphens `-`, underscores `_`, at `@` and dollar `$` signs.
 - it must not start with a dot or a digit.
 - it must be different from Quickwit's reserved field mapping names `_source`, `_dynamic`, `_field_presence`.
 

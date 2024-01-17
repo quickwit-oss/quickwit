@@ -146,3 +146,5 @@ storage:
     flavor: minio
     endpoint: http://127.0.0.1:9000
 ```
+
+Note: `default_index_root_uri` or index URIs do not include the endpoint, you should set it as a typical S3 path such as `s3://indexes`.
