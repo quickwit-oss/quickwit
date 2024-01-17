@@ -598,7 +598,6 @@ impl Ingester {
                     source_id: subrequest.source_id,
                     shard_id: subrequest.shard_id,
                     from_position_exclusive: Some(from_position_exclusive),
-                    to_position_inclusive: Some(current_position_inclusive),
                     doc_batch: Some(doc_batch),
                 };
                 replicate_subrequests
@@ -677,6 +676,7 @@ impl Ingester {
                 }
             };
             for replicate_success in replicate_response.successes {
+                // TODO verify replication_position_inclusive matches what's expected locally
                 let persist_success = PersistSuccess {
                     subrequest_id: replicate_success.subrequest_id,
                     index_uid: replicate_success.index_uid,

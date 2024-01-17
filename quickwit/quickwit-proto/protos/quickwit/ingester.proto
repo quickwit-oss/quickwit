@@ -167,7 +167,9 @@ message ReplicateSubrequest {
   string source_id = 3;
   quickwit.ingest.ShardId shard_id = 4;
   quickwit.ingest.Position from_position_exclusive = 5;
-  quickwit.ingest.Position to_position_inclusive = 6;
+  // used to be to_position_inclusive, now the roles are reverted and this is
+  // sent in the response instead of given in the request
+  reserved 6;
   ingest.DocBatchV2 doc_batch = 7;
 }
 
