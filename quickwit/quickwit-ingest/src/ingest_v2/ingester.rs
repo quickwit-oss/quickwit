@@ -269,7 +269,7 @@ impl Ingester {
         info!(
             index_uid = shard.index_uid,
             source = shard.source_id,
-            shard = shard.shard_id,
+            shard = %shard.shard_id(),
             "init primary shard"
         );
         let Entry::Vacant(entry) = state.shards.entry(queue_id.clone()) else {
