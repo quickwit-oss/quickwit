@@ -17,6 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
+use std::fmt;
 use std::fmt::{Display, Formatter};
 use std::str::FromStr;
 
@@ -30,9 +31,15 @@ const ULID_SIZE: usize = 16;
 #[derive(Clone, Copy, Default, Hash, Eq, PartialEq, Ord, PartialOrd)]
 pub struct PipelineUid(Ulid);
 
-impl std::fmt::Debug for PipelineUid {
-    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
+impl fmt::Debug for PipelineUid {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
         write!(f, "Pipeline({})", self.0)
+    }
+}
+
+impl Display for PipelineUid {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        self.0.fmt(f)
     }
 }
 
@@ -54,12 +61,6 @@ impl FromStr for PipelineUid {
         let pipeline_ulid =
             Ulid::from_string(pipeline_uid_str).map_err(|_| "invalid pipeline uid")?;
         Ok(PipelineUid(pipeline_ulid))
-    }
-}
-
-impl Display for PipelineUid {
-    fn fmt(&self, f: &mut Formatter) -> std::fmt::Result {
-        self.0.fmt(f)
     }
 }
 
