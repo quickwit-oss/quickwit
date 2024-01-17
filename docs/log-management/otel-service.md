@@ -5,7 +5,7 @@ sidebar_position: 4
 
 Quickwit natively supports the [OpenTelemetry Protocol (OTLP)](https://opentelemetry.io/docs/reference/specification/protocol/otlp/) and provides a gRPC endpoint to receive spans from an OpenTelemetry collector. This endpoint is enabled by default.
 
-When enabled, Quickwit will start the gRPC service ready to receive spans from an OpenTelemetry collector. The spans are indexed on  the `otel-trace-v0` index, and this index will be automatically created if not present. The index doc mapping is described in the next [section](#trace-and-span-data-model).
+When enabled, Quickwit will start the gRPC service ready to receive logs from an OpenTelemetry collector. The logs are indexed in the `otel-logs-v0_7` index by default, and this index will be automatically created if not present. The index doc mapping is described in the next [section](#trace-and-span-data-model).
 
 If for any reason, you want to disable this endpoint, you can:
 - Set the `QW_ENABLE_OTLP_ENDPOINT` environment variable to `false` when starting Quickwit.
@@ -17,61 +17,72 @@ indexer:
     enable_otlp_endpoint: false
 ```
 
+## Sending logs in your own index
+
+You can send logs in the index of your choice by setting the header `qw-otel-logs-index` of your gRPC request to the targeted index ID.
+
+
 ## OpenTelemetry logs data model
 
-Quickwit sends OpenTelemetry logs into the `otel-logs-v0` index which is automatically created if you enable the OpenTelemetry service.
+Quickwit sends OpenTelemetry logs into the `otel-logs-v0_7` index by default which is automatically created if you enable the OpenTelemetry service.
 The doc mapping of this index described below is derived from the [OpenTelemetry logs data model](https://opentelemetry.io/docs/reference/specification/logs/data-model/).
 
 ```yaml
 
 version: 0.7
 
-index_id: otel-logs-v0
+index_id: otel-logs-v0_7
 
 doc_mapping:
   mode: strict
   field_mappings:
-    - name: timestamp_secs
+    - name: timestamp_nanos
       type: datetime
       input_formats: [unix_timestamp]
+      output_format: unix_timestamp_nanos
       indexed: false
       fast: true
-      fast_precision: seconds
-      stored: false
-    - name: timestamp_nanos
-      type: u64
-      indexed: false
+      fast_precision: milliseconds
     - name: observed_timestamp_nanos
-      type: u64
-      indexed: false
+      type: datetime
+      input_formats: [unix_timestamp]
+      output_format: unix_timestamp_nanos
     - name: service_name
       type: text
       tokenizer: raw
+      fast: true
     - name: severity_text
       type: text
       tokenizer: raw
+      fast: true
     - name: severity_number
       type: u64
+      fast: true
     - name: body
       type: json
+      tokenizer: default
     - name: attributes
       type: json
       tokenizer: raw
+      fast: true
     - name: dropped_attributes_count
       type: u64
       indexed: false
     - name: trace_id
-      type: text
-      tokenizer: raw
+      type: bytes
+      input_format: hex
+      output_format: hex
     - name: span_id
-      type: text
-      tokenizer: raw
+      type: bytes
+      input_format: hex
+      output_format: hex
     - name: trace_flags
       type: u64
       indexed: false
     - name: resource_attributes
       type: json
       tokenizer: raw
+      fast: true
     - name: resource_dropped_attributes_count
       type: u64
       indexed: false
@@ -88,13 +99,13 @@ doc_mapping:
       type: u64
       indexed: false
 
-  timestamp_field: timestamp_secs
+  timestamp_field: timestamp_nanos
 
 indexing_settings:
   commit_timeout_secs: 5
 
 search_settings:
-  default_search_fields: []
+  default_search_fields: [body.message]
 ```
 
 ## UI Integration
@@ -108,10 +119,7 @@ You can also send traces to Quickwit that you can visualize in Jaeger UI, as exp
 ## Known limitations
 
 There are a few limitations on the log management setup in Quickwit 0.7:
-- Aggregations are not available on sparse fields and JSON field, this will be fixed in 0.7. This means that only the timestamp field can support aggregations.
-- The ingest API does not provide High-Availability and High-Durability, this will be fixed in Q2/Q3.
-- Grafana and Elasticsearch query API support are planned for Q2 2023.
-- OTLP gRPC service index documents only in the `otel-logs-v0` index.
-- OTLP HTTP is not available but it should be easy to add.
+- The ingest API does not provide High-Availability and High-Durability, this will be fixed in 0.8.
+- OTLP HTTP is only available with the Binary Protobuf Encoding. OTLP HTTP with JSON encoding is not planned yet, but this can be easily fixed in the next version. Please open an issue if you need this feature.
 
 If you are interested in new features or discover other limitations, please open an issue on [GitHub](https://github.com/quickwit-oss/quickwit).
