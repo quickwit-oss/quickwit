@@ -256,6 +256,8 @@ impl Handler<ControlPlanLoop> for ControlPlane {
         _message: ControlPlanLoop,
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
+        self.indexing_scheduler
+            .schedule_indexing_plan_if_needed(&self.model);
         self.indexing_scheduler.control_running_plan(&self.model);
         ctx.schedule_self_msg(CONTROL_PLAN_LOOP_INTERVAL, ControlPlanLoop)
             .await;
