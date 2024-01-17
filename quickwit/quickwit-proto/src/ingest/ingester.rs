@@ -17,11 +17,19 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use crate::types::{queue_id, Position, QueueId};
+use crate::types::{queue_id, Position, QueueId, ShardId};
 
 include!("../codegen/quickwit/quickwit.ingest.ingester.rs");
 
 pub use ingester_service_grpc_server::IngesterServiceGrpcServer;
+
+impl FetchEof {
+    pub fn shard_id(&self) -> &ShardId {
+        self.shard_id
+            .as_ref()
+            .expect("`shard_id` should be a required field")
+    }
+}
 
 impl FetchMessage {
     pub fn new_payload(payload: FetchPayload) -> Self {
@@ -48,8 +56,14 @@ impl FetchMessage {
 }
 
 impl FetchPayload {
+    pub fn shard_id(&self) -> &ShardId {
+        self.shard_id
+            .as_ref()
+            .expect("`shard_id` should be a required field")
+    }
+
     pub fn queue_id(&self) -> QueueId {
-        queue_id(&self.index_uid, &self.source_id, self.shard_id)
+        queue_id(&self.index_uid, &self.source_id, self.shard_id())
     }
 
     pub fn num_mrecords(&self) -> usize {
@@ -60,40 +74,74 @@ impl FetchPayload {
         }
     }
 
-    pub fn from_position_exclusive(&self) -> Position {
-        self.from_position_exclusive.clone().unwrap_or_default()
+    pub fn from_position_exclusive(&self) -> &Position {
+        self.from_position_exclusive
+            .as_ref()
+            .expect("`from_position_exclusive` should be a required field")
     }
 
-    pub fn to_position_inclusive(&self) -> Position {
-        self.to_position_inclusive.clone().unwrap_or_default()
+    pub fn to_position_inclusive(&self) -> &Position {
+        self.to_position_inclusive
+            .as_ref()
+            .expect("`to_position_inclusive` should be a required field")
     }
 }
 
 impl FetchEof {
-    pub fn eof_position(&self) -> Position {
-        self.eof_position.clone().unwrap_or_default()
+    pub fn eof_position(&self) -> &Position {
+        self.eof_position
+            .as_ref()
+            .expect("`eof_position` should be a required field")
     }
 }
 
 impl OpenFetchStreamRequest {
-    pub fn queue_id(&self) -> QueueId {
-        queue_id(&self.index_uid, &self.source_id, self.shard_id)
+    pub fn shard_id(&self) -> &ShardId {
+        self.shard_id
+            .as_ref()
+            .expect("`shard_id` should be a required field")
     }
 
-    pub fn from_position_exclusive(&self) -> Position {
-        self.from_position_exclusive.clone().unwrap_or_default()
+    pub fn queue_id(&self) -> QueueId {
+        queue_id(&self.index_uid, &self.source_id, self.shard_id())
+    }
+
+    pub fn from_position_exclusive(&self) -> &Position {
+        self.from_position_exclusive
+            .as_ref()
+            .expect("`from_position_exclusive` should be a required field")
     }
 }
 
 impl PersistSubrequest {
+    pub fn shard_id(&self) -> &ShardId {
+        self.shard_id
+            .as_ref()
+            .expect("`shard_id` should be a required field")
+    }
+
     pub fn queue_id(&self) -> QueueId {
-        queue_id(&self.index_uid, &self.source_id, self.shard_id)
+        queue_id(&self.index_uid, &self.source_id, self.shard_id())
     }
 }
 
 impl PersistSuccess {
+    pub fn shard_id(&self) -> &ShardId {
+        self.shard_id
+            .as_ref()
+            .expect("`shard_id` should be a required field")
+    }
+
     pub fn queue_id(&self) -> QueueId {
-        queue_id(&self.index_uid, &self.source_id, self.shard_id)
+        queue_id(&self.index_uid, &self.source_id, self.shard_id())
+    }
+}
+
+impl PersistFailure {
+    pub fn shard_id(&self) -> &ShardId {
+        self.shard_id
+            .as_ref()
+            .expect("`shard_id` should be a required field")
     }
 }
 
@@ -164,35 +212,65 @@ impl AckReplicationMessage {
 }
 
 impl ReplicateSubrequest {
+    pub fn shard_id(&self) -> &ShardId {
+        self.shard_id
+            .as_ref()
+            .expect("`shard_id` should be a required field")
+    }
+
     pub fn queue_id(&self) -> QueueId {
-        queue_id(&self.index_uid, &self.source_id, self.shard_id)
+        queue_id(&self.index_uid, &self.source_id, self.shard_id())
     }
 
-    pub fn from_position_exclusive(&self) -> Position {
-        self.from_position_exclusive.clone().unwrap_or_default()
+    pub fn from_position_exclusive(&self) -> &Position {
+        self.from_position_exclusive
+            .as_ref()
+            .expect("`from_position_exclusive` should be a required field")
     }
 
-    pub fn to_position_inclusive(&self) -> Position {
-        self.to_position_inclusive.clone().unwrap_or_default()
+    pub fn to_position_inclusive(&self) -> &Position {
+        self.to_position_inclusive
+            .as_ref()
+            .expect("`to_position_inclusive` should be a required field")
     }
 }
 
 impl ReplicateSuccess {
-    pub fn replication_position_inclusive(&self) -> Position {
+    pub fn shard_id(&self) -> &ShardId {
+        self.shard_id
+            .as_ref()
+            .expect("`shard_id` should be a required field")
+    }
+
+    pub fn replication_position_inclusive(&self) -> &Position {
         self.replication_position_inclusive
-            .clone()
-            .unwrap_or_default()
+            .as_ref()
+            .expect("`replication_position_inclusive` should be a required field")
+    }
+}
+
+impl ReplicateFailure {
+    pub fn shard_id(&self) -> &ShardId {
+        self.shard_id
+            .as_ref()
+            .expect("`shard_id` should be a required field")
     }
 }
 
 impl TruncateShardsSubrequest {
-    pub fn queue_id(&self) -> QueueId {
-        queue_id(&self.index_uid, &self.source_id, self.shard_id)
+    pub fn shard_id(&self) -> &ShardId {
+        self.shard_id
+            .as_ref()
+            .expect("`shard_id` should be a required field")
     }
 
-    pub fn truncate_up_to_position_inclusive(&self) -> Position {
+    pub fn queue_id(&self) -> QueueId {
+        queue_id(&self.index_uid, &self.source_id, self.shard_id())
+    }
+
+    pub fn truncate_up_to_position_inclusive(&self) -> &Position {
         self.truncate_up_to_position_inclusive
-            .clone()
-            .unwrap_or_default()
+            .as_ref()
+            .expect("`truncate_up_to_position_inclusive` should be a required field")
     }
 }

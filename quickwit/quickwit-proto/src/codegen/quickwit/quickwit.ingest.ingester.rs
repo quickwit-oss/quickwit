@@ -6,8 +6,8 @@ pub struct RetainShardsForSource {
     pub index_uid: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,
-    #[prost(uint64, repeated, tag = "3")]
-    pub shard_ids: ::prost::alloc::vec::Vec<u64>,
+    #[prost(message, repeated, tag = "3")]
+    pub shard_ids: ::prost::alloc::vec::Vec<crate::types::ShardId>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]
 #[allow(clippy::derive_partial_eq_without_eq)]
@@ -41,8 +41,8 @@ pub struct PersistSubrequest {
     pub index_uid: ::prost::alloc::string::String,
     #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
-    #[prost(uint64, tag = "4")]
-    pub shard_id: u64,
+    #[prost(message, optional, tag = "4")]
+    pub shard_id: ::core::option::Option<crate::types::ShardId>,
     #[prost(message, optional, tag = "5")]
     pub doc_batch: ::core::option::Option<super::DocBatchV2>,
 }
@@ -67,8 +67,8 @@ pub struct PersistSuccess {
     pub index_uid: ::prost::alloc::string::String,
     #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
-    #[prost(uint64, tag = "4")]
-    pub shard_id: u64,
+    #[prost(message, optional, tag = "4")]
+    pub shard_id: ::core::option::Option<crate::types::ShardId>,
     #[prost(message, optional, tag = "5")]
     pub replication_position_inclusive: ::core::option::Option<crate::types::Position>,
 }
@@ -82,8 +82,8 @@ pub struct PersistFailure {
     pub index_uid: ::prost::alloc::string::String,
     #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
-    #[prost(uint64, tag = "4")]
-    pub shard_id: u64,
+    #[prost(message, optional, tag = "4")]
+    pub shard_id: ::core::option::Option<crate::types::ShardId>,
     #[prost(enumeration = "PersistFailureReason", tag = "5")]
     pub reason: i32,
 }
@@ -193,8 +193,8 @@ pub struct ReplicateSubrequest {
     pub index_uid: ::prost::alloc::string::String,
     #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
-    #[prost(uint64, tag = "4")]
-    pub shard_id: u64,
+    #[prost(message, optional, tag = "4")]
+    pub shard_id: ::core::option::Option<crate::types::ShardId>,
     #[prost(message, optional, tag = "5")]
     pub from_position_exclusive: ::core::option::Option<crate::types::Position>,
     #[prost(message, optional, tag = "6")]
@@ -226,8 +226,8 @@ pub struct ReplicateSuccess {
     pub index_uid: ::prost::alloc::string::String,
     #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
-    #[prost(uint64, tag = "4")]
-    pub shard_id: u64,
+    #[prost(message, optional, tag = "4")]
+    pub shard_id: ::core::option::Option<crate::types::ShardId>,
     #[prost(message, optional, tag = "5")]
     pub replication_position_inclusive: ::core::option::Option<crate::types::Position>,
 }
@@ -241,8 +241,8 @@ pub struct ReplicateFailure {
     pub index_uid: ::prost::alloc::string::String,
     #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
-    #[prost(uint64, tag = "4")]
-    pub shard_id: u64,
+    #[prost(message, optional, tag = "4")]
+    pub shard_id: ::core::option::Option<crate::types::ShardId>,
     #[prost(enumeration = "ReplicateFailureReason", tag = "5")]
     pub reason: i32,
 }
@@ -263,8 +263,8 @@ pub struct TruncateShardsSubrequest {
     pub index_uid: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,
-    #[prost(uint64, tag = "3")]
-    pub shard_id: u64,
+    #[prost(message, optional, tag = "3")]
+    pub shard_id: ::core::option::Option<crate::types::ShardId>,
     /// The position up to which the shard should be truncated (inclusive).
     #[prost(message, optional, tag = "4")]
     pub truncate_up_to_position_inclusive: ::core::option::Option<
@@ -286,8 +286,8 @@ pub struct OpenFetchStreamRequest {
     pub index_uid: ::prost::alloc::string::String,
     #[prost(string, tag = "3")]
     pub source_id: ::prost::alloc::string::String,
-    #[prost(uint64, tag = "4")]
-    pub shard_id: u64,
+    #[prost(message, optional, tag = "4")]
+    pub shard_id: ::core::option::Option<crate::types::ShardId>,
     #[prost(message, optional, tag = "5")]
     pub from_position_exclusive: ::core::option::Option<crate::types::Position>,
 }
@@ -319,8 +319,8 @@ pub struct FetchPayload {
     pub index_uid: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,
-    #[prost(uint64, tag = "3")]
-    pub shard_id: u64,
+    #[prost(message, optional, tag = "3")]
+    pub shard_id: ::core::option::Option<crate::types::ShardId>,
     #[prost(message, optional, tag = "4")]
     pub mrecord_batch: ::core::option::Option<super::MRecordBatch>,
     #[prost(message, optional, tag = "5")]
@@ -336,8 +336,8 @@ pub struct FetchEof {
     pub index_uid: ::prost::alloc::string::String,
     #[prost(string, tag = "2")]
     pub source_id: ::prost::alloc::string::String,
-    #[prost(uint64, tag = "3")]
-    pub shard_id: u64,
+    #[prost(message, optional, tag = "3")]
+    pub shard_id: ::core::option::Option<crate::types::ShardId>,
     #[prost(message, optional, tag = "4")]
     pub eof_position: ::core::option::Option<crate::types::Position>,
 }

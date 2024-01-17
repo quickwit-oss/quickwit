@@ -214,14 +214,14 @@ impl IngestSource {
         };
         let assigned_shard = self
             .assigned_shards
-            .get_mut(&fetch_payload.shard_id)
+            .get_mut(fetch_payload.shard_id())
             .expect("shard should be assigned");
 
         assigned_shard.status = IndexingStatus::Active;
 
         let partition_id = assigned_shard.partition_id.clone();
-        let from_position_exclusive = fetch_payload.from_position_exclusive();
-        let to_position_inclusive = fetch_payload.to_position_inclusive();
+        let from_position_exclusive = fetch_payload.from_position_exclusive().clone();
+        let to_position_inclusive = fetch_payload.to_position_inclusive().clone();
 
         for mrecord in decoded_mrecords(mrecord_batch) {
             match mrecord {
@@ -252,14 +252,14 @@ impl IngestSource {
     ) -> anyhow::Result<()> {
         let assigned_shard = self
             .assigned_shards
-            .get_mut(&fetch_eof.shard_id)
+            .get_mut(fetch_eof.shard_id())
             .expect("shard should be assigned");
 
         assigned_shard.status = IndexingStatus::ReachedEof;
 
         let partition_id = assigned_shard.partition_id.clone();
         let from_position_exclusive = assigned_shard.current_position_inclusive.clone();
-        let to_position_inclusive = fetch_eof.eof_position();
+        let to_position_inclusive = fetch_eof.eof_position().clone();
 
         batch_builder
             .checkpoint_delta
@@ -335,7 +335,7 @@ impl IngestSource {
             let truncate_shards_subrequest = TruncateShardsSubrequest {
                 index_uid: self.client_id.source_uid.index_uid.clone().into(),
                 source_id: self.client_id.source_uid.source_id.clone(),
-                shard_id,
+                shard_id: Some(shard_id),
                 truncate_up_to_position_inclusive: Some(truncate_up_to_position_inclusive),
             };
             if let Some(follower_id) = &shard.follower_id_opt {
@@ -415,7 +415,7 @@ impl IngestSource {
             || self
                 .assigned_shards
                 .keys()
-                .copied()
+                .cloned()
                 .filter(|shard_id| !new_assigned_shard_ids.contains(shard_id))
                 .any(|removed_shard_id| {
                     let Some(assigned_shard) = self.assigned_shards.get(&removed_shard_id) else {
@@ -576,12 +576,12 @@ impl Source for IngestSource {
             Vec::with_capacity(acquire_shards_subresponse.acquired_shards.len());
 
         for acquired_shard in acquire_shards_subresponse.acquired_shards {
+            let shard_id = acquired_shard.shard_id().clone();
             let leader_id: NodeId = acquired_shard.leader_id.into();
             let follower_id_opt: Option<NodeId> = acquired_shard.follower_id.map(Into::into);
             let index_uid: IndexUid = acquired_shard.index_uid.into();
             let source_id: SourceId = acquired_shard.source_id;
-            let shard_id = acquired_shard.shard_id;
-            let partition_id = PartitionId::from(shard_id);
+            let partition_id = PartitionId::from(shard_id.as_str());
             let mut current_position_inclusive = acquired_shard
                 .publish_position_inclusive
                 .unwrap_or_default();
@@ -595,7 +595,7 @@ impl Source for IngestSource {
                     follower_id_opt.clone(),
                     index_uid,
                     source_id,
-                    shard_id,
+                    shard_id.clone(),
                     from_position_exclusive,
                 ))
                 .await
@@ -611,7 +611,7 @@ impl Source for IngestSource {
             } else {
                 IndexingStatus::Active
             };
-            truncate_up_to_positions.push((shard_id, current_position_inclusive.clone()));
+            truncate_up_to_positions.push((shard_id.clone(), current_position_inclusive.clone()));
 
             let assigned_shard = AssignedShard {
                 leader_id,
@@ -636,7 +636,7 @@ impl Source for IngestSource {
             Vec::with_capacity(checkpoint.num_partitions());
 
         for (partition_id, position) in checkpoint.iter() {
-            let shard_id = partition_id.as_u64().expect("shard ID should be a u64");
+            let shard_id = ShardId::from(partition_id.as_str());
             truncate_up_to_positions.push((shard_id, position));
         }
         self.truncate(truncate_up_to_positions).await;
@@ -714,7 +714,7 @@ mod tests {
             .expect_acquire_shards()
             .withf(|request| {
                 assert_eq!(request.subrequests.len(), 1);
-                request.subrequests[0].shard_ids == [0]
+                request.subrequests[0].shard_ids == [ShardId::from(0)]
             })
             .once()
             .returning(|request| {
@@ -730,7 +730,7 @@ mod tests {
                             follower_id: None,
                             index_uid: "test-index:0".to_string(),
                             source_id: "test-source".to_string(),
-                            shard_id: 0,
+                            shard_id: Some(ShardId::from(0)),
                             shard_state: ShardState::Open as i32,
                             publish_position_inclusive: Some(Position::offset(10u64)),
                             publish_token: Some(publish_token.to_string()),
@@ -744,7 +744,7 @@ mod tests {
             .once()
             .withf(|request| {
                 assert_eq!(request.subrequests.len(), 1);
-                request.subrequests[0].shard_ids == [1]
+                request.subrequests[0].shard_ids == [ShardId::from(1)]
             })
             .returning(|request| {
                 assert_eq!(request.subrequests.len(), 1);
@@ -762,7 +762,7 @@ mod tests {
                             follower_id: None,
                             index_uid: "test-index:0".to_string(),
                             source_id: "test-source".to_string(),
-                            shard_id: 1,
+                            shard_id: Some(ShardId::from(1)),
                             shard_state: ShardState::Open as i32,
                             publish_position_inclusive: Some(Position::offset(11u64)),
                             publish_token: Some(publish_token.to_string()),
@@ -775,7 +775,7 @@ mod tests {
             .expect_acquire_shards()
             .withf(|request| {
                 assert_eq!(request.subrequests.len(), 1);
-                request.subrequests[0].shard_ids == [1, 2]
+                request.subrequests[0].shard_ids == [ShardId::from(1), ShardId::from(2)]
             })
             .once()
             .returning(|request| {
@@ -795,7 +795,7 @@ mod tests {
                                 follower_id: None,
                                 index_uid: "test-index:0".to_string(),
                                 source_id: "test-source".to_string(),
-                                shard_id: 1,
+                                shard_id: Some(ShardId::from(1)),
                                 shard_state: ShardState::Open as i32,
                                 publish_position_inclusive: Some(Position::offset(11u64)),
                                 publish_token: Some(publish_token.to_string()),
@@ -805,7 +805,7 @@ mod tests {
                                 follower_id: None,
                                 index_uid: "test-index:0".to_string(),
                                 source_id: "test-source".to_string(),
-                                shard_id: 2,
+                                shard_id: Some(ShardId::from(2)),
                                 shard_state: ShardState::Open as i32,
                                 publish_position_inclusive: Some(Position::offset(12u64)),
                                 publish_token: Some(publish_token.to_string()),
@@ -827,7 +827,7 @@ mod tests {
             .expect_open_fetch_stream()
             .withf(|request| {
                 request.from_position_exclusive() == Position::offset(10u64)
-                    && request.shard_id == 0
+                    && request.shard_id() == ShardId::from(0)
             })
             .once()
             .returning(move |request| {
@@ -847,7 +847,7 @@ mod tests {
             .expect_open_fetch_stream()
             .withf(|request| {
                 request.from_position_exclusive() == Position::offset(11u64)
-                    && request.shard_id == 1
+                    && request.shard_id() == ShardId::from(1)
             })
             .times(2)
             .returning(move |request| {
@@ -867,7 +867,7 @@ mod tests {
             .expect_open_fetch_stream()
             .withf(|request| {
                 request.from_position_exclusive() == Position::offset(12u64)
-                    && request.shard_id == 2
+                    && request.shard_id() == ShardId::from(2)
             })
             .once()
             .returning(move |request| {
@@ -884,7 +884,7 @@ mod tests {
             });
         ingester_mock_0
             .expect_truncate_shards()
-            .withf(|truncate_req| truncate_req.subrequests[0].shard_id == 0)
+            .withf(|truncate_req| truncate_req.subrequests[0].shard_id() == ShardId::from(0))
             .once()
             .returning(|request| {
                 assert_eq!(request.ingester_id, "test-ingester-0");
@@ -904,7 +904,7 @@ mod tests {
 
         ingester_mock_0
             .expect_truncate_shards()
-            .withf(|truncate_req| truncate_req.subrequests[0].shard_id == 1)
+            .withf(|truncate_req| truncate_req.subrequests[0].shard_id() == ShardId::from(1))
             .once()
             .returning(|request| {
                 assert_eq!(request.ingester_id, "test-ingester-0");
@@ -924,8 +924,8 @@ mod tests {
             .expect_truncate_shards()
             .withf(|truncate_req| {
                 truncate_req.subrequests.len() == 2
-                    && truncate_req.subrequests[0].shard_id == 1
-                    && truncate_req.subrequests[1].shard_id == 2
+                    && truncate_req.subrequests[0].shard_id() == ShardId::from(1)
+                    && truncate_req.subrequests[1].shard_id() == ShardId::from(2)
             })
             .once()
             .returning(|request| {
@@ -983,7 +983,7 @@ mod tests {
 
         // We assign [0] (previously []).
         // The stream does not need to be reset.
-        let shard_ids: BTreeSet<ShardId> = once(0).collect();
+        let shard_ids: BTreeSet<ShardId> = once(0).map(ShardId::from).collect();
         let publish_lock = source.publish_lock.clone();
         source
             .assign_shards(shard_ids, &doc_processor_mailbox, &ctx)
@@ -997,7 +997,7 @@ mod tests {
 
         // We assign [0,1] (previously [0]). This should just add the shard 1.
         // The stream does not need to be reset.
-        let shard_ids: BTreeSet<ShardId> = (0..2).collect();
+        let shard_ids: BTreeSet<ShardId> = (0..2).map(ShardId::from).collect();
         let publish_lock = source.publish_lock.clone();
         source
             .assign_shards(shard_ids, &doc_processor_mailbox, &ctx)
@@ -1010,7 +1010,7 @@ mod tests {
         // We assign [1,2]. (previously [0,1]) This should reset the stream
         // because the shard 0 has to be removed.
         // The publish lock should be killed and a new one should be created.
-        let shard_ids: BTreeSet<ShardId> = (1..3).collect();
+        let shard_ids: BTreeSet<ShardId> = (1..3).map(ShardId::from).collect();
         let publish_lock = source.publish_lock.clone();
         source
             .assign_shards(shard_ids, &doc_processor_mailbox, &ctx)
@@ -1039,7 +1039,7 @@ mod tests {
 
         assert_eq!(source.assigned_shards.len(), 2);
 
-        let assigned_shard = source.assigned_shards.get(&1).unwrap();
+        let assigned_shard = source.assigned_shards.get(&ShardId::from(1)).unwrap();
         let expected_assigned_shard = AssignedShard {
             leader_id: "test-ingester-0".into(),
             follower_id_opt: None,
@@ -1049,7 +1049,7 @@ mod tests {
         };
         assert_eq!(assigned_shard, &expected_assigned_shard);
 
-        let assigned_shard = source.assigned_shards.get(&2).unwrap();
+        let assigned_shard = source.assigned_shards.get(&ShardId::from(2)).unwrap();
         let expected_assigned_shard = AssignedShard {
             leader_id: "test-ingester-0".into(),
             follower_id_opt: None,
@@ -1089,7 +1089,7 @@ mod tests {
                 let subrequest = &request.subrequests[0];
                 assert_eq!(subrequest.index_uid, "test-index:0");
                 assert_eq!(subrequest.source_id, "test-source");
-                assert_eq!(subrequest.shard_ids, vec![1, 2]);
+                assert_eq!(subrequest.shard_ids, [ShardId::from(1), ShardId::from(2)]);
 
                 let response = AcquireShardsResponse {
                     subresponses: vec![AcquireShardsSubresponse {
@@ -1101,7 +1101,7 @@ mod tests {
                                 follower_id: None,
                                 index_uid: "test-index:0".to_string(),
                                 source_id: "test-source".to_string(),
-                                shard_id: 1,
+                                shard_id: Some(ShardId::from(1)),
                                 shard_state: ShardState::Open as i32,
                                 publish_position_inclusive: Some(Position::eof(11u64)),
                                 publish_token: Some(publish_token.to_string()),
@@ -1111,7 +1111,7 @@ mod tests {
                                 follower_id: None,
                                 index_uid: "test-index:0".to_string(),
                                 source_id: "test-source".to_string(),
-                                shard_id: 2,
+                                shard_id: Some(ShardId::from(2)),
                                 shard_state: ShardState::Open as i32,
                                 publish_position_inclusive: Some(Position::Beginning.as_eof()),
                                 publish_token: Some(publish_token.to_string()),
@@ -1134,7 +1134,7 @@ mod tests {
                 let subrequest_0 = &request.subrequests[0];
                 assert_eq!(subrequest_0.index_uid, "test-index:0");
                 assert_eq!(subrequest_0.source_id, "test-source");
-                assert_eq!(subrequest_0.shard_id, 1);
+                assert_eq!(subrequest_0.shard_id(), ShardId::from(1));
                 assert_eq!(
                     subrequest_0.truncate_up_to_position_inclusive(),
                     Position::eof(11u64)
@@ -1143,7 +1143,7 @@ mod tests {
                 let subrequest_1 = &request.subrequests[1];
                 assert_eq!(subrequest_1.index_uid, "test-index:0");
                 assert_eq!(subrequest_1.source_id, "test-source");
-                assert_eq!(subrequest_1.shard_id, 2);
+                assert_eq!(subrequest_1.shard_id(), ShardId::from(2));
                 assert_eq!(
                     subrequest_1.truncate_up_to_position_inclusive(),
                     Position::Beginning.as_eof()
@@ -1188,7 +1188,8 @@ mod tests {
             ActorContext::for_test(&universe, source_mailbox, observable_state_tx);
 
         // In this scenario, the indexer will be able to acquire shard 1 and 2.
-        let shard_ids: BTreeSet<ShardId> = BTreeSet::from_iter([1, 2]);
+        let shard_ids: BTreeSet<ShardId> =
+            BTreeSet::from_iter([ShardId::from(1), ShardId::from(2)]);
 
         source
             .assign_shards(shard_ids, &doc_processor_mailbox, &ctx)
@@ -1200,7 +1201,10 @@ mod tests {
                 index_uid: IndexUid::parse("test-index:0").unwrap(),
                 source_id: "test-source".to_string(),
             },
-            vec![(1, Position::eof(11u64)), (2, Position::Beginning.as_eof())],
+            vec![
+                (ShardId::from(1), Position::eof(11u64)),
+                (ShardId::from(2), Position::Beginning.as_eof()),
+            ],
         );
         let local_update = shard_positions_update_rx.recv().await.unwrap();
         assert_eq!(local_update, expected_local_update);
@@ -1232,7 +1236,7 @@ mod tests {
                 let subrequest = &request.subrequests[0];
                 assert_eq!(subrequest.index_uid, "test-index:0");
                 assert_eq!(subrequest.source_id, "test-source");
-                assert_eq!(subrequest.shard_ids, vec![1, 2]);
+                assert_eq!(subrequest.shard_ids, [ShardId::from(1), ShardId::from(2)]);
 
                 let response = AcquireShardsResponse {
                     subresponses: vec![AcquireShardsSubresponse {
@@ -1244,7 +1248,7 @@ mod tests {
                                 follower_id: None,
                                 index_uid: "test-index:0".to_string(),
                                 source_id: "test-source".to_string(),
-                                shard_id: 1,
+                                shard_id: Some(ShardId::from(1)),
                                 shard_state: ShardState::Open as i32,
                                 publish_position_inclusive: Some(Position::offset(11u64)),
                                 publish_token: Some(publish_token.to_string()),
@@ -1254,7 +1258,7 @@ mod tests {
                                 follower_id: None,
                                 index_uid: "test-index:0".to_string(),
                                 source_id: "test-source".to_string(),
-                                shard_id: 2,
+                                shard_id: Some(ShardId::from(2)),
                                 shard_state: ShardState::Closed as i32,
                                 publish_position_inclusive: Some(Position::eof(22u64)),
                                 publish_token: Some(publish_token.to_string()),
@@ -1277,7 +1281,7 @@ mod tests {
                 );
                 assert_eq!(request.index_uid, "test-index:0");
                 assert_eq!(request.source_id, "test-source");
-                assert_eq!(request.shard_id, 1);
+                assert_eq!(request.shard_id(), ShardId::from(1));
                 assert_eq!(request.from_position_exclusive(), Position::offset(11u64));
 
                 let (_service_stream_tx, service_stream) = ServiceStream::new_bounded(1);
@@ -1291,12 +1295,12 @@ mod tests {
                 assert_eq!(request.subrequests.len(), 2);
                 request
                     .subrequests
-                    .sort_by_key(|subrequest| subrequest.shard_id);
+                    .sort_unstable_by(|left, right| left.shard_id.cmp(&right.shard_id));
 
                 let subrequest = &request.subrequests[0];
                 assert_eq!(subrequest.index_uid, "test-index:0");
                 assert_eq!(subrequest.source_id, "test-source");
-                assert_eq!(subrequest.shard_id, 1);
+                assert_eq!(subrequest.shard_id(), ShardId::from(1));
                 assert_eq!(
                     subrequest.truncate_up_to_position_inclusive(),
                     Position::offset(11u64)
@@ -1305,7 +1309,7 @@ mod tests {
                 let subrequest = &request.subrequests[1];
                 assert_eq!(subrequest.index_uid, "test-index:0");
                 assert_eq!(subrequest.source_id, "test-source");
-                assert_eq!(subrequest.shard_id, 2);
+                assert_eq!(subrequest.shard_id(), ShardId::from(2));
                 assert_eq!(
                     subrequest.truncate_up_to_position_inclusive(),
                     Position::eof(22u64)
@@ -1350,7 +1354,7 @@ mod tests {
             ActorContext::for_test(&universe, source_mailbox, observable_state_tx);
 
         // In this scenario, the indexer will only be able to acquire shard 1.
-        let shard_ids: BTreeSet<ShardId> = (1..3).collect();
+        let shard_ids: BTreeSet<ShardId> = (1..3).map(ShardId::from).collect();
         assert_eq!(
             shard_positions_update_rx.try_recv().unwrap_err(),
             TryRecvError::Empty
@@ -1368,7 +1372,10 @@ mod tests {
                 index_uid: IndexUid::parse("test-index:0").unwrap(),
                 source_id: "test-source".to_string(),
             },
-            vec![(1, Position::offset(11u64)), (2, Position::eof(22u64))],
+            vec![
+                (ShardId::from(1), Position::offset(11u64)),
+                (ShardId::from(2), Position::eof(22u64)),
+            ],
         );
         assert_eq!(
             local_shard_positions_update,
@@ -1413,7 +1420,7 @@ mod tests {
 
         // In this scenario, the ingester receives fetch responses from shard 1 and 2.
         source.assigned_shards.insert(
-            1,
+            ShardId::from(1),
             AssignedShard {
                 leader_id: "test-ingester-0".into(),
                 follower_id_opt: None,
@@ -1423,7 +1430,7 @@ mod tests {
             },
         );
         source.assigned_shards.insert(
-            2,
+            ShardId::from(2),
             AssignedShard {
                 leader_id: "test-ingester-1".into(),
                 follower_id_opt: None,
@@ -1437,7 +1444,7 @@ mod tests {
         let fetch_payload = FetchPayload {
             index_uid: "test-index:0".into(),
             source_id: "test-source".into(),
-            shard_id: 1,
+            shard_id: Some(ShardId::from(1)),
             mrecord_batch: MRecordBatch::for_test([
                 "\0\0test-doc-foo",
                 "\0\0test-doc-bar",
@@ -1452,7 +1459,7 @@ mod tests {
         let fetch_payload = FetchPayload {
             index_uid: "test-index:0".into(),
             source_id: "test-source".into(),
-            shard_id: 2,
+            shard_id: Some(ShardId::from(2)),
             mrecord_batch: MRecordBatch::for_test(["\0\0test-doc-qux"]),
             from_position_exclusive: Some(Position::offset(22u64)),
             to_position_inclusive: Some(Position::offset(23u64)),
@@ -1463,7 +1470,7 @@ mod tests {
         let fetch_eof = FetchEof {
             index_uid: "test-index:0".into(),
             source_id: "test-source".into(),
-            shard_id: 2,
+            shard_id: Some(ShardId::from(2)),
             eof_position: Some(Position::eof(23u64)),
         };
         let fetch_message = FetchMessage::new_eof(fetch_eof);
@@ -1502,14 +1509,14 @@ mod tests {
             .emit_batches(&doc_processor_mailbox, &ctx)
             .await
             .unwrap();
-        let shard = source.assigned_shards.get(&2).unwrap();
+        let shard = source.assigned_shards.get(&ShardId::from(2)).unwrap();
         assert_eq!(shard.status, IndexingStatus::ReachedEof);
 
         fetch_message_tx
             .send(Err(FetchStreamError {
                 index_uid: "test-index:0".into(),
                 source_id: "test-source".into(),
-                shard_id: 1,
+                shard_id: ShardId::from(1),
                 ingest_error: IngestV2Error::Internal("test-error".to_string()),
             }))
             .await
@@ -1519,13 +1526,13 @@ mod tests {
             .emit_batches(&doc_processor_mailbox, &ctx)
             .await
             .unwrap();
-        let shard = source.assigned_shards.get(&1).unwrap();
+        let shard = source.assigned_shards.get(&ShardId::from(1)).unwrap();
         assert_eq!(shard.status, IndexingStatus::Error);
 
         let fetch_payload = FetchPayload {
             index_uid: "test-index:0".into(),
             source_id: "test-source".into(),
-            shard_id: 1,
+            shard_id: Some(ShardId::from(1)),
             mrecord_batch: MRecordBatch::for_test(["\0\0test-doc-baz"]),
             from_position_exclusive: Some(Position::offset(14u64)),
             to_position_inclusive: Some(Position::offset(15u64)),
@@ -1537,7 +1544,7 @@ mod tests {
             .emit_batches(&doc_processor_mailbox, &ctx)
             .await
             .unwrap();
-        let shard = source.assigned_shards.get(&1).unwrap();
+        let shard = source.assigned_shards.get(&ShardId::from(1)).unwrap();
         assert_eq!(shard.status, IndexingStatus::Active);
     }
 
@@ -1563,7 +1570,7 @@ mod tests {
                 let subrequest = &request.subrequests[0];
                 assert_eq!(subrequest.index_uid, "test-index:0");
                 assert_eq!(subrequest.source_id, "test-source");
-                assert_eq!(subrequest.shard_ids, vec![1]);
+                assert_eq!(subrequest.shard_ids, [ShardId::from(1)]);
 
                 let response = AcquireShardsResponse {
                     subresponses: vec![AcquireShardsSubresponse {
@@ -1574,7 +1581,7 @@ mod tests {
                             follower_id: None,
                             index_uid: "test-index:0".to_string(),
                             source_id: "test-source".to_string(),
-                            shard_id: 1,
+                            shard_id: Some(ShardId::from(1)),
                             shard_state: ShardState::Open as i32,
                             publish_position_inclusive: Some(Position::Beginning),
                             publish_token: Some(publish_token.to_string()),
@@ -1592,10 +1599,12 @@ mod tests {
             .returning(|request| {
                 assert_eq!(request.index_uid, "test-index:0");
                 assert_eq!(request.source_id, "test-source");
-                assert_eq!(request.shard_id, 1);
+                assert_eq!(request.shard_id(), ShardId::from(1));
                 assert_eq!(request.from_position_exclusive(), Position::Beginning);
 
-                Err(IngestV2Error::ShardNotFound { shard_id: 1 })
+                Err(IngestV2Error::ShardNotFound {
+                    shard_id: ShardId::from(1),
+                })
             });
 
         let ingester_0: IngesterServiceClient = ingester_mock_0.into();
@@ -1624,7 +1633,7 @@ mod tests {
         let ctx: SourceContext =
             ActorContext::for_test(&universe, source_mailbox, observable_state_tx);
 
-        let shard_ids: BTreeSet<ShardId> = BTreeSet::from_iter([1]);
+        let shard_ids: BTreeSet<ShardId> = BTreeSet::from_iter([ShardId::from(1)]);
 
         source
             .assign_shards(shard_ids, &doc_processor_mailbox, &ctx)
@@ -1636,7 +1645,7 @@ mod tests {
             .await
             .unwrap();
 
-        let shard = source.assigned_shards.get(&1).unwrap();
+        let shard = source.assigned_shards.get(&ShardId::from(1)).unwrap();
         assert_eq!(shard.status, IndexingStatus::NotFound);
         assert_eq!(
             shard.current_position_inclusive,
@@ -1675,21 +1684,21 @@ mod tests {
                 assert_eq!(request.subrequests.len(), 3);
 
                 let subrequest_0 = &request.subrequests[0];
-                assert_eq!(subrequest_0.shard_id, 1);
+                assert_eq!(subrequest_0.shard_id(), ShardId::from(1));
                 assert_eq!(
                     subrequest_0.truncate_up_to_position_inclusive(),
                     Position::offset(11u64)
                 );
 
                 let subrequest_1 = &request.subrequests[1];
-                assert_eq!(subrequest_1.shard_id, 2);
+                assert_eq!(subrequest_1.shard_id(), ShardId::from(2));
                 assert_eq!(
                     subrequest_1.truncate_up_to_position_inclusive(),
                     Position::offset(22u64)
                 );
 
                 let subrequest_2 = &request.subrequests[2];
-                assert_eq!(subrequest_2.shard_id, 3);
+                assert_eq!(subrequest_2.shard_id(), ShardId::from(3));
                 assert_eq!(
                     subrequest_2.truncate_up_to_position_inclusive(),
                     Position::eof(33u64)
@@ -1709,14 +1718,14 @@ mod tests {
                 assert_eq!(request.subrequests.len(), 2);
 
                 let subrequest_0 = &request.subrequests[0];
-                assert_eq!(subrequest_0.shard_id, 2);
+                assert_eq!(subrequest_0.shard_id(), ShardId::from(2));
                 assert_eq!(
                     subrequest_0.truncate_up_to_position_inclusive(),
                     Position::offset(22u64)
                 );
 
                 let subrequest_1 = &request.subrequests[1];
-                assert_eq!(subrequest_1.shard_id, 3);
+                assert_eq!(subrequest_1.shard_id(), ShardId::from(3));
                 assert_eq!(
                     subrequest_1.truncate_up_to_position_inclusive(),
                     Position::eof(33u64)
@@ -1736,7 +1745,7 @@ mod tests {
                 assert_eq!(request.subrequests.len(), 1);
 
                 let subrequest_0 = &request.subrequests[0];
-                assert_eq!(subrequest_0.shard_id, 4);
+                assert_eq!(subrequest_0.shard_id(), ShardId::from(4));
                 assert_eq!(
                     subrequest_0.truncate_up_to_position_inclusive(),
                     Position::offset(44u64)
@@ -1778,7 +1787,7 @@ mod tests {
 
         // In this scenario, the ingester 2 is not available and the shard 6 is no longer assigned.
         source.assigned_shards.insert(
-            1,
+            ShardId::from(1),
             AssignedShard {
                 leader_id: "test-ingester-0".into(),
                 follower_id_opt: None,
@@ -1788,7 +1797,7 @@ mod tests {
             },
         );
         source.assigned_shards.insert(
-            2,
+            ShardId::from(2),
             AssignedShard {
                 leader_id: "test-ingester-0".into(),
                 follower_id_opt: Some("test-ingester-1".into()),
@@ -1798,7 +1807,7 @@ mod tests {
             },
         );
         source.assigned_shards.insert(
-            3,
+            ShardId::from(3),
             AssignedShard {
                 leader_id: "test-ingester-1".into(),
                 follower_id_opt: Some("test-ingester-0".into()),
@@ -1808,7 +1817,7 @@ mod tests {
             },
         );
         source.assigned_shards.insert(
-            4,
+            ShardId::from(4),
             AssignedShard {
                 leader_id: "test-ingester-2".into(),
                 follower_id_opt: Some("test-ingester-3".into()),
@@ -1818,7 +1827,7 @@ mod tests {
             },
         );
         source.assigned_shards.insert(
-            5,
+            ShardId::from(5),
             AssignedShard {
                 leader_id: "test-ingester-2".into(),
                 follower_id_opt: Some("test-ingester-3".into()),
@@ -1845,12 +1854,12 @@ mod tests {
                 source_id: "test-source".to_string(),
             },
             vec![
-                (1u64, Position::offset(11u64)),
-                (2u64, Position::offset(22u64)),
-                (3u64, Position::eof(33u64)),
-                (4u64, Position::offset(44u64)),
-                (5u64, Position::Beginning),
-                (6u64, Position::offset(66u64)),
+                (ShardId::from(1u64), Position::offset(11u64)),
+                (ShardId::from(2u64), Position::offset(22u64)),
+                (ShardId::from(3u64), Position::eof(33u64)),
+                (ShardId::from(4u64), Position::offset(44u64)),
+                (ShardId::from(5u64), Position::Beginning),
+                (ShardId::from(6u64), Position::offset(66u64)),
             ],
         );
         assert_eq!(local_shards_update, expected_local_shards_update);
