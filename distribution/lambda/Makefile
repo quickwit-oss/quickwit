@@ -3,7 +3,7 @@
 SHELL := bash
 .SHELLFLAGS := -eu -o pipefail -c
 
-QW_LAMBDA_VERSION?=$(shell git tag --sort=committerdate | grep -E "lambda-beta-" | tail -1 | cut -b 8-)
+QW_LAMBDA_VERSION?=$(shell git tag --sort=committerdate | grep -E "aws-lambda-beta-" | tail -1 | cut -b 12-)
 $(if $(QW_LAMBDA_VERSION),,$(error "Version tag not found, try 'git fetch --tags' or specify QW_LAMBDA_VERSION=beta-<version>"))
 PACKAGE_BASE_URL=https://github.com/quickwit-oss/quickwit/releases/download/aws-lambda-$(QW_LAMBDA_VERSION)/
 SEARCHER_PACKAGE_FILE=quickwit-lambda-searcher-$(QW_LAMBDA_VERSION)-x86_64.zip

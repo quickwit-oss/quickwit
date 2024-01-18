@@ -3,7 +3,7 @@ name: Build and publish AWS Lambda packages
 on:
   push:
     tags:
-      - "lambda-beta-*"
+      - "aws-lambda-beta-*"
 
 jobs:
   build-lambdas:
