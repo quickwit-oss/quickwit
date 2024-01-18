@@ -59,6 +59,7 @@ def load_data(path):
 def run_request_with_retry(run_req, expected_status_code=None, num_retries=10, wait_time=0.5):
     for try_number in range(num_retries + 1):
         r = run_req()
+        print("Got status code", r.status_code)
         if expected_status_code is None or r.status_code == expected_status_code:
             return r
         print("Failed with", r.text, r.status_code)
@@ -148,7 +149,7 @@ def check_result_dict(result, expected, context_path=""):
     for (k, v) in expected.items():
         child = result.get(k, None)
         if child is None:
-            raise Exception("Missing key %s at context %s" % (k, context_path))
+            raise Exception("Missing key `%s` at context %s" % (k, context_path))
         check_result(child, v, context_path + "." + k)
 
 class PathTree:

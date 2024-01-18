@@ -42,7 +42,7 @@ use warp::{Filter, Rejection};
 use self::rest_handler::{
     es_compat_index_count_handler, es_compat_index_field_capabilities_handler,
 };
-use crate::elastic_search_api::model::ElasticSearchError;
+use crate::elasticsearch_api::model::ElasticSearchError;
 use crate::json_api_response::JsonApiResponse;
 use crate::{BodyFormat, BuildInfo};
 
@@ -129,8 +129,8 @@ mod tests {
 
     use super::elastic_api_handlers;
     use super::model::ElasticSearchError;
-    use crate::elastic_search_api::model::MultiSearchResponse;
-    use crate::elastic_search_api::rest_handler::es_compat_cluster_info_handler;
+    use crate::elasticsearch_api::model::MultiSearchResponse;
+    use crate::elasticsearch_api::rest_handler::es_compat_cluster_info_handler;
     use crate::rest::recover_fn;
     use crate::BuildInfo;
 

@@ -73,8 +73,8 @@ impl From<ElasticRefresh> for CommitTypeV2 {
 
 #[cfg(test)]
 mod tests {
-    use crate::elastic_search_api::model::bulk_query_params::ElasticRefresh;
-    use crate::elastic_search_api::model::ElasticBulkOptions;
+    use crate::elasticsearch_api::model::bulk_query_params::ElasticRefresh;
+    use crate::elasticsearch_api::model::ElasticBulkOptions;
 
     #[test]
     fn test_elastic_refresh_parsing() {

@@ -1,0 +1,2 @@
+method: [POST]
+endpoint: "_bulk"

@@ -30,7 +30,7 @@ use utoipa::OpenApi;
 use crate::cluster_api::ClusterApi;
 use crate::debugging_api::DebugApi;
 use crate::delete_task_api::DeleteTaskApi;
-use crate::elastic_search_api::ElasticCompatibleApi;
+use crate::elasticsearch_api::ElasticCompatibleApi;
 use crate::health_check_api::HealthCheckApi;
 use crate::index_api::IndexApi;
 use crate::indexing_api::IndexingApi;

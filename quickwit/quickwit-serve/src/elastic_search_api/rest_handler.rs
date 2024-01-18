@@ -45,7 +45,7 @@ use warp::{Filter, Rejection};
 use super::filter::{
     elastic_cluster_info_filter, elastic_field_capabilities_filter, elastic_index_count_filter,
     elastic_index_field_capabilities_filter, elastic_index_search_filter,
-    elastic_multi_search_filter, elastic_scroll_filter, elastic_search_filter,
+    elastic_multi_search_filter, elastic_scroll_filter, elasticsearch_filter,
 };
 use super::model::{
     build_list_field_request_for_es_api, convert_to_es_field_capabilities_response,
@@ -87,7 +87,7 @@ pub fn es_compat_cluster_info_handler(
 pub fn es_compat_search_handler(
     _search_service: Arc<dyn SearchService>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    elastic_search_filter().then(|_params: SearchQueryParams| async move {
+    elasticsearch_filter().then(|_params: SearchQueryParams| async move {
         // TODO
         let api_error = ApiError {
             service_code: ServiceErrorCode::NotSupportedYet,
