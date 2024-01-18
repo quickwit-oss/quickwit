@@ -3,8 +3,8 @@
 SHELL := bash
 .SHELLFLAGS := -eu -o pipefail -c
 
-# Update this when cutting a new release
-QW_LAMBDA_VERSION?=beta-01
+QW_LAMBDA_VERSION?=$(shell git tag --sort=committerdate | grep -E "aws-lambda-beta-" | tail -1 | cut -b 12-)
+$(if $(QW_LAMBDA_VERSION),,$(error "Version tag not found, try 'git fetch --tags' or specify QW_LAMBDA_VERSION=beta-<version>"))
 PACKAGE_BASE_URL=https://github.com/quickwit-oss/quickwit/releases/download/aws-lambda-$(QW_LAMBDA_VERSION)/
 SEARCHER_PACKAGE_FILE=quickwit-lambda-searcher-$(QW_LAMBDA_VERSION)-x86_64.zip
 INDEXER_PACKAGE_FILE=quickwit-lambda-indexer-$(QW_LAMBDA_VERSION)-x86_64.zip
@@ -65,10 +65,15 @@ deploy-hdfs: package check-env
 deploy-mock-data: package check-env
 	cdk deploy -a cdk/app.py MockDataStack
 
-destroy-hdfs:
+# address https://github.com/aws/aws-cdk/issues/20060
+before-destroy:
+	touch $(INDEXER_PACKAGE_PATH)
+	touch $(SEARCHER_PACKAGE_PATH)
+
+destroy-hdfs: before-destroy
 	cdk destroy -a cdk/app.py HdfsStack
 
-destroy-mock-data:
+destroy-mock-data: before-destroy
 	cdk destroy -a cdk/app.py MockDataStack
 
 clean:

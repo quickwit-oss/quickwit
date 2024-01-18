@@ -83,9 +83,9 @@ Before running a system in the Cloud, it is always a good idea to get a rough es
 
 ### Prerequisites
 
-We use [AWS CDK](https://aws.amazon.com/cdk/) for our infrastructure automation script. Install it using [npm](https://docs.npmjs.com/downloading-and-installing-node-js-and-npm):
+We use [AWS CDK](https://aws.amazon.com/cdk/) for our infrastructure automation script. Install or upgrade it using [npm](https://docs.npmjs.com/downloading-and-installing-node-js-and-npm):
 ```bash
-npm install -g aws-cdk 
+npm install -g aws-cdk@latest
 ```
 We also use the `curl` and `make` commands. For instance on Debian based distributions:
 ```bash
@@ -94,11 +94,15 @@ sudo apt update && sudo apt install curl make
 
 You also need AWS credentials to be properly configured in your shell. One way is using the [credentials file](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html).
 
-Finally, clone the Quickwit repository:
+Finally, clone the Quickwit repository and install the Python dependencies (Python3.10 required) in a virtual environment:
 ```bash
 git clone https://github.com/quickwit-oss/quickwit.git
 cd quickwit/distribution/lambda
+python3 -m venv .venv
+source .venv/bin/activate
+pip install .
 ```
+
 ### Deploy
 Configure the AWS region and [account id](https://docs.aws.amazon.com/IAM/latest/UserGuide/console_account-alias.html) where you want to deploy the example stack:
 ```bash
