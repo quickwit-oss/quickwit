@@ -38,11 +38,12 @@ use quickwit_proto::ServiceErrorCode;
 use quickwit_query::query_ast::{QueryAst, UserInputQuery};
 use quickwit_query::BooleanOperand;
 use quickwit_search::{SearchError, SearchService};
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use warp::{Filter, Rejection};
 
 use super::filter::{
-    elastic_cluster_info_filter, elastic_field_capabilities_filter,
+    elastic_cluster_info_filter, elastic_field_capabilities_filter, elastic_index_count_filter,
     elastic_index_field_capabilities_filter, elastic_index_search_filter,
     elastic_multi_search_filter, elastic_scroll_filter, elastic_search_filter,
 };
@@ -51,6 +52,7 @@ use super::model::{
     ElasticSearchError, FieldCapabilityQueryParams, FieldCapabilityRequestBody,
     FieldCapabilityResponse, MultiSearchHeader, MultiSearchQueryParams, MultiSearchResponse,
     MultiSearchSingleResponse, ScrollQueryParams, SearchBody, SearchQueryParams,
+    SearchQueryParamsCount,
 };
 use super::{make_elastic_api_response, TrackTotalHits};
 use crate::format::BodyFormat;
@@ -116,6 +118,16 @@ pub fn es_compat_index_search_handler(
     elastic_index_search_filter()
         .and(with_arg(search_service))
         .then(es_compat_index_search)
+        .map(|result| make_elastic_api_response(result, BodyFormat::default()))
+}
+
+/// GET or POST _elastic/{index}/_count
+pub fn es_compat_index_count_handler(
+    search_service: Arc<dyn SearchService>,
+) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
+    elastic_index_count_filter()
+        .and(with_arg(search_service))
+        .then(es_compat_index_count)
         .map(|result| make_elastic_api_response(result, BodyFormat::default()))
 }
 
@@ -285,6 +297,27 @@ fn partial_hit_from_search_after_param(
         }
     }
     Ok(Some(parsed_search_after))
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct ElasticSearchCountResponse {
+    count: u64,
+}
+
+async fn es_compat_index_count(
+    index_id_patterns: Vec<String>,
+    search_params: SearchQueryParamsCount,
+    search_body: SearchBody,
+    search_service: Arc<dyn SearchService>,
+) -> Result<ElasticSearchCountResponse, ElasticSearchError> {
+    let search_params: SearchQueryParams = search_params.into();
+    let (search_request, _append_shard_doc) =
+        build_request_for_es_api(index_id_patterns, search_params, search_body)?;
+    let search_response: SearchResponse = search_service.root_search(search_request).await?;
+    let search_response_rest: ElasticSearchCountResponse = ElasticSearchCountResponse {
+        count: search_response.num_hits,
+    };
+    Ok(search_response_rest)
 }
 
 async fn es_compat_index_search(

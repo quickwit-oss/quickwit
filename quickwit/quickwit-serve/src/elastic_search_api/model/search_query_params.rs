@@ -152,6 +152,64 @@ pub struct SearchQueryParams {
     pub version: Option<bool>,
 }
 
+#[serde_with::skip_serializing_none]
+#[derive(Default, Debug, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SearchQueryParamsCount {
+    #[serde(default)]
+    pub allow_no_indices: Option<bool>,
+    #[serde(default)]
+    pub analyze_wildcard: Option<bool>,
+    #[serde(default)]
+    pub analyzer: Option<String>,
+    #[serde(default)]
+    pub default_operator: Option<BooleanOperand>,
+    #[serde(default)]
+    pub df: Option<String>,
+    #[serde(serialize_with = "to_simple_list")]
+    #[serde(deserialize_with = "from_simple_list")]
+    #[serde(default)]
+    pub expand_wildcards: Option<Vec<ExpandWildcards>>,
+    #[serde(default)]
+    pub ignore_throttled: Option<bool>,
+    #[serde(default)]
+    pub ignore_unavailable: Option<bool>,
+    #[serde(default)]
+    pub lenient: Option<bool>,
+    #[serde(default)]
+    pub max_concurrent_shard_requests: Option<u64>,
+    #[serde(default)]
+    pub preference: Option<String>,
+    #[serde(default)]
+    pub q: Option<String>,
+    #[serde(default)]
+    pub request_cache: Option<bool>,
+    #[serde(serialize_with = "to_simple_list")]
+    #[serde(deserialize_with = "from_simple_list")]
+    #[serde(default)]
+    pub routing: Option<Vec<String>>,
+}
+impl From<SearchQueryParamsCount> for SearchQueryParams {
+    fn from(value: SearchQueryParamsCount) -> Self {
+        SearchQueryParams {
+            allow_no_indices: value.allow_no_indices,
+            analyze_wildcard: value.analyze_wildcard,
+            analyzer: value.analyzer,
+            default_operator: value.default_operator,
+            df: value.df,
+            expand_wildcards: value.expand_wildcards,
+            ignore_throttled: value.ignore_throttled,
+            ignore_unavailable: value.ignore_unavailable,
+            preference: value.preference,
+            q: value.q,
+            request_cache: value.request_cache,
+            routing: value.routing,
+            size: Some(0),
+            ..Default::default()
+        }
+    }
+}
+
 // Parse a single sort field parameter from ES sort query string parameter.
 fn parse_sort_field_str(sort_field_str: &str) -> Result<SortField, SearchError> {
     if let Some((field, order_str)) = sort_field_str.split_once(':') {

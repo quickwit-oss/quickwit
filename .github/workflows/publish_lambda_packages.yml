@@ -1,0 +1,52 @@
+name: Build and publish AWS Lambda packages
+
+on:
+  push:
+    tags:
+      - "lambda-beta-*"
+
+jobs:
+  build-lambdas:
+    name: Build Quickwit Lambdas
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Ubuntu packages
+        run: sudo apt-get -y install protobuf-compiler python3 python3-pip
+      - name: Install rustup
+        run: curl https://sh.rustup.rs -sSf | sh -s -- --default-toolchain none -y
+      - name: Install python dependencies
+        run: pip install ./distribution/lambda  
+      - name: Mypy lint
+        run: mypy distribution/lambda/
+
+      - name: Extract asset version of release
+        run: echo "QW_LAMBDA_VERSION=${GITHUB_REF/refs\/tags\//}" >> $GITHUB_ENV
+        if: ${{ github.event_name == 'push' }}
+      - name: Retrieve and export commit date, hash, and tags
+        run: |
+            echo "QW_COMMIT_DATE=$(TZ=UTC0 git log -1 --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_ENV
+            echo "QW_COMMIT_HASH=$(git rev-parse HEAD)" >> $GITHUB_ENV
+            echo "QW_COMMIT_TAGS=$(git tag --points-at HEAD | tr '\n' ',')" >> $GITHUB_ENV
+      - name: Build Quickwit Lambdas
+        run: make package
+        env:
+          QW_COMMIT_DATE: ${{ env.QW_COMMIT_DATE }}
+          QW_COMMIT_HASH: ${{ env.QW_COMMIT_HASH }}
+          QW_COMMIT_TAGS: ${{ env.QW_COMMIT_TAGS }}
+          QW_LAMBDA_BUILD: 1
+        working-directory: ./distribution/lambda
+      - name: Extract package locations
+        run: |
+          echo "SEARCHER_PACKAGE_LOCATION=./distribution/lambda/$(make searcher-package-path)" >> $GITHUB_ENV
+          echo "INDEXER_PACKAGE_LOCATION=./distribution/lambda/$(make indexer-package-path)" >> $GITHUB_ENV
+        working-directory: ./distribution/lambda
+      - name: Upload Lambda archives
+        uses: quickwit-inc/upload-to-github-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          file: ${{ env.SEARCHER_PACKAGE_LOCATION }};${{ env.INDEXER_PACKAGE_LOCATION }}
+          overwrite: true
+          draft: true
+          tag_name: aws-${{ env.QW_LAMBDA_VERSION }}

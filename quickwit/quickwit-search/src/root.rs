@@ -576,6 +576,47 @@ async fn search_partial_hits_phase_with_scroll(
     }
 }
 
+/// Check if the request is a count request without any filters, so we can just return the split
+/// metadata count.
+///
+/// This is done by exclusion, so we will need to keep it up to date if fields are added.
+fn is_metadata_count_request(request: &SearchRequest) -> bool {
+    let query_ast: QueryAst = serde_json::from_str(&request.query_ast).unwrap();
+    if query_ast != QueryAst::MatchAll {
+        return false;
+    }
+    if request.max_hits != 0 {
+        return false;
+    }
+
+    // TODO: if the start and end timestamp encompass the whole split, it is still a count query
+    // So some could be checked on metadata
+    if request.start_timestamp.is_some() || request.end_timestamp.is_some() {
+        return false;
+    }
+    if request.aggregation_request.is_some()
+        || !request.snippet_fields.is_empty()
+        || request.search_after.is_some()
+    {
+        return false;
+    }
+    true
+}
+
+/// Get a leaf search response that returns the num_docs of the split
+fn get_count_from_metadata(split_metadatas: &[SplitMetadata]) -> Vec<LeafSearchResponse> {
+    split_metadatas
+        .iter()
+        .map(|metadata| LeafSearchResponse {
+            num_hits: metadata.num_docs as u64,
+            partial_hits: Vec::new(),
+            failed_splits: Vec::new(),
+            num_attempted_splits: 1,
+            intermediate_aggregation_result: None,
+        })
+        .collect()
+}
+
 #[instrument(level = "debug", skip_all)]
 pub(crate) async fn search_partial_hits_phase(
     searcher_context: &SearcherContext,
@@ -584,20 +625,29 @@ pub(crate) async fn search_partial_hits_phase(
     split_metadatas: &[SplitMetadata],
     cluster_client: &ClusterClient,
 ) -> crate::Result<LeafSearchResponse> {
-    let jobs: Vec<SearchJob> = split_metadatas.iter().map(SearchJob::from).collect();
-    let assigned_leaf_search_jobs = cluster_client
-        .search_job_placer
-        .assign_jobs(jobs, &HashSet::default())
-        .await?;
-    let mut leaf_request_tasks = Vec::new();
-    for (client, client_jobs) in assigned_leaf_search_jobs {
-        let leaf_requests =
-            jobs_to_leaf_requests(search_request, indexes_metas_for_leaf_search, client_jobs)?;
-        for leaf_request in leaf_requests {
-            leaf_request_tasks.push(cluster_client.leaf_search(leaf_request, client.clone()));
-        }
-    }
-    let leaf_search_responses: Vec<LeafSearchResponse> = try_join_all(leaf_request_tasks).await?;
+    let leaf_search_responses: Vec<LeafSearchResponse> =
+        if is_metadata_count_request(search_request) {
+            get_count_from_metadata(split_metadatas)
+        } else {
+            let jobs: Vec<SearchJob> = split_metadatas.iter().map(SearchJob::from).collect();
+            let assigned_leaf_search_jobs = cluster_client
+                .search_job_placer
+                .assign_jobs(jobs, &HashSet::default())
+                .await?;
+            let mut leaf_request_tasks = Vec::new();
+            for (client, client_jobs) in assigned_leaf_search_jobs {
+                let leaf_requests = jobs_to_leaf_requests(
+                    search_request,
+                    indexes_metas_for_leaf_search,
+                    client_jobs,
+                )?;
+                for leaf_request in leaf_requests {
+                    leaf_request_tasks
+                        .push(cluster_client.leaf_search(leaf_request, client.clone()));
+                }
+            }
+            try_join_all(leaf_request_tasks).await?
+        };
 
     // Creates a collector which merges responses into one
     let merge_collector =

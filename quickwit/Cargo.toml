@@ -19,6 +19,7 @@ members = [
   "quickwit-integration-tests",
   "quickwit-jaeger",
   "quickwit-janitor",
+  "quickwit-lambda",
   "quickwit-macros",
   "quickwit-macros/impl",
   "quickwit-metastore",
@@ -34,6 +35,10 @@ members = [
   "quickwit-storage",
   "quickwit-telemetry",
 ]
+default-members = [
+  "quickwit-cli",
+  "quickwit-metastore"
+]
 
 [profile.dev]
 debug = false
@@ -42,6 +47,7 @@ debug = false
 anyhow = "1"
 arc-swap = "1.6"
 assert-json-diff = "2"
+async-compression = { version = "0.4", features = ["tokio", "gzip"] }
 async-speed-limit = "0.4"
 async-trait = "0.1"
 backoff = { version = "0.4", features = ["tokio"] }
@@ -67,6 +73,7 @@ env_logger = "0.10"
 fail = "0.5"
 flume = "0.11"
 fnv = "1"
+flate2 = "1.0"
 futures = "0.3"
 futures-util = { version = "0.3.25", default-features = false }
 google-cloud-auth = "0.12.0"
@@ -252,6 +259,7 @@ reqsign = { version = "0.14", default-features = false }
 
 quickwit-actors = { version = "0.7.0", path = "./quickwit-actors" }
 quickwit-aws = { version = "0.7.0", path = "./quickwit-aws" }
+quickwit-cli = { version = "0.7.0", path = "./quickwit-cli" }
 quickwit-cluster = { version = "0.7.0", path = "./quickwit-cluster" }
 quickwit-codegen = { version = "0.7.0", path = "./quickwit-codegen" }
 quickwit-codegen-example = { version = "0.7.0", path = "./quickwit-codegen/example" }

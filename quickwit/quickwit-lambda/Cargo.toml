@@ -1,0 +1,59 @@
+[package]
+name = "quickwit-lambda"
+version = "0.7.0"
+authors = ["Quickwit, Inc. <hello@quickwit.io>"]
+edition = "2021"
+license = "AGPL-3.0-or-later"                               # For a commercial, license, contact hello@quickwit.io
+description = "Quickwit is a cost-efficient search engine."
+repository = "https://github.com/quickwit-oss/quickwit"
+homepage = "https://quickwit.io/"
+documentation = "https://quickwit.io/docs/"
+
+[[bin]]
+name = "indexer"
+path = "src/bin/indexer.rs"
+
+[[bin]]
+name = "searcher"
+path = "src/bin/searcher.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+aws_lambda_events = "0.12.0"
+chitchat = { workspace = true }
+flate2 = { workspace = true }
+lambda_http = "0.8.3"
+lambda_runtime = "0.8.3"
+once_cell = { workspace = true }
+opentelemetry =  { workspace = true }
+opentelemetry-otlp = { workspace = true, features = [
+    "reqwest-client",
+    "reqwest-rustls",
+    "http-proto",
+] }
+rand = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+time = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-opentelemetry = { workspace = true }
+tracing-subscriber = { workspace = true, features = [ "json" ] }
+
+quickwit-actors = { workspace = true }
+quickwit-cluster = { workspace = true }
+quickwit-cli = { workspace = true }
+quickwit-common = { workspace = true }
+quickwit-config = { workspace = true }
+quickwit-index-management = { workspace = true }
+quickwit-directories = { workspace = true }
+quickwit-doc-mapper = { workspace = true }
+quickwit-indexing = { workspace = true }
+quickwit-ingest = { workspace = true }
+quickwit-metastore = { workspace = true }
+quickwit-proto = { workspace = true }
+quickwit-rest-client = { workspace = true }
+quickwit-search = { workspace = true }
+quickwit-serve = { workspace = true }
+quickwit-storage = { workspace = true }
+quickwit-telemetry = { workspace = true }
