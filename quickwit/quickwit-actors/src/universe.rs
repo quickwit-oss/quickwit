@@ -23,7 +23,7 @@ use std::time::Duration;
 
 use crate::mailbox::create_mailbox;
 use crate::registry::ActorObservation;
-use crate::scheduler::start_scheduler;
+use crate::scheduler::{start_scheduler, NoAdvanceTimeGuard};
 use crate::spawn_builder::{SpawnBuilder, SpawnContext};
 use crate::{Actor, ActorExitStatus, Command, Inbox, Mailbox, QueueCapacity};
 
@@ -135,6 +135,10 @@ impl Universe {
             .await
             .values()
             .any(|status| matches!(status, ActorExitStatus::Panicked)));
+    }
+
+    pub fn no_advance_guard(&self) -> NoAdvanceTimeGuard {
+        self.spawn_ctx().scheduler_client.no_advance_time_guard()
     }
 }
 

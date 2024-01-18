@@ -47,6 +47,7 @@ use quickwit_proto::types::{IndexUid, NodeId, ShardId, SourceUid};
 use serde::Serialize;
 use tracing::error;
 
+use crate::debouncer::Debouncer;
 use crate::indexing_scheduler::{IndexingScheduler, IndexingSchedulerState};
 use crate::ingest::IngestController;
 use crate::model::{ControlPlaneModel, ControlPlaneModelMetrics};
@@ -59,10 +60,15 @@ pub(crate) const CONTROL_PLAN_LOOP_INTERVAL: Duration = if cfg!(any(test, featur
     Duration::from_secs(3)
 };
 
+/// Minimum period between two reschedules.
+const DEBOUNCE_COOLDOWN_PERIOD: Duration = Duration::from_secs(5);
+
 #[derive(Debug)]
 struct ControlPlanLoop;
 
-#[derive(Debug)]
+#[derive(Debug, Default)]
+struct RebuildPlan;
+
 pub struct ControlPlane {
     metastore: MetastoreServiceClient,
     model: ControlPlaneModel,
@@ -75,6 +81,7 @@ pub struct ControlPlane {
     // the different ingesters.
     indexing_scheduler: IndexingScheduler,
     ingest_controller: IngestController,
+    rebuild_plan_debouncer: Debouncer,
 }
 
 impl ControlPlane {
@@ -100,6 +107,7 @@ impl ControlPlane {
                 metastore: metastore.clone(),
                 indexing_scheduler,
                 ingest_controller,
+                rebuild_plan_debouncer: Debouncer::new(DEBOUNCE_COOLDOWN_PERIOD),
             }
         })
     }
@@ -133,8 +141,7 @@ impl Actor for ControlPlane {
             .await
             .context("failed to initialize the model")?;
 
-        self.indexing_scheduler
-            .schedule_indexing_plan_if_needed(&self.model);
+        self.rebuild_plan_debounced(ctx);
 
         self.ingest_controller.sync_with_all_ingesters(&self.model);
 
@@ -145,6 +152,11 @@ impl Actor for ControlPlane {
 }
 
 impl ControlPlane {
+    fn rebuild_plan_debounced(&mut self, ctx: &ActorContext<Self>) {
+        self.rebuild_plan_debouncer
+            .self_send_with_cooldown::<_, RebuildPlan>(ctx);
+    }
+
     /// Deletes a set of shards from the metastore and the control plane model.
     ///
     /// If the shards were already absent this operation is considered successful.
@@ -152,6 +164,7 @@ impl ControlPlane {
         &mut self,
         source_uid: &SourceUid,
         shards: &[ShardId],
+        ctx: &ActorContext<ControlPlane>,
     ) -> anyhow::Result<()> {
         let delete_shards_subrequest = DeleteShardsSubrequest {
             index_uid: source_uid.index_uid.to_string(),
@@ -173,8 +186,7 @@ impl ControlPlane {
             .await
             .context("failed to delete shards in metastore")?;
         self.model.delete_shards(source_uid, shards);
-        self.indexing_scheduler
-            .schedule_indexing_plan_if_needed(&self.model);
+        self.rebuild_plan_debounced(ctx);
         Ok(())
     }
 
@@ -211,13 +223,27 @@ impl ControlPlane {
 }
 
 #[async_trait]
+impl Handler<RebuildPlan> for ControlPlane {
+    type Reply = ();
+
+    async fn handle(
+        &mut self,
+        _message: RebuildPlan,
+        _ctx: &ActorContext<Self>,
+    ) -> Result<(), ActorExitStatus> {
+        self.indexing_scheduler.rebuild_indexing_plan(&self.model);
+        Ok(())
+    }
+}
+
+#[async_trait]
 impl Handler<ShardPositionsUpdate> for ControlPlane {
     type Reply = ();
 
     async fn handle(
         &mut self,
         shard_positions_update: ShardPositionsUpdate,
-        _ctx: &ActorContext<Self>,
+        ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         let Some(shard_entries) = self
             .model
@@ -240,7 +266,7 @@ impl Handler<ShardPositionsUpdate> for ControlPlane {
         if shard_ids_to_close.is_empty() {
             return Ok(());
         }
-        self.delete_shards(&shard_positions_update.source_uid, &shard_ids_to_close)
+        self.delete_shards(&shard_positions_update.source_uid, &shard_ids_to_close, ctx)
             .await?;
         Ok(())
     }
@@ -323,7 +349,7 @@ impl Handler<CreateIndexRequest> for ControlPlane {
     async fn handle(
         &mut self,
         request: CreateIndexRequest,
-        _ctx: &ActorContext<Self>,
+        ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
         let index_config = match metastore_serde_utils::from_json_str(&request.index_config_json) {
             Ok(index_config) => index_config,
@@ -341,8 +367,7 @@ impl Handler<CreateIndexRequest> for ControlPlane {
 
         self.model.add_index(index_metadata);
 
-        self.indexing_scheduler
-            .schedule_indexing_plan_if_needed(&self.model);
+        self.rebuild_plan_debounced(ctx);
 
         let response = CreateIndexResponse {
             index_uid: index_uid.into(),
@@ -361,7 +386,7 @@ impl Handler<DeleteIndexRequest> for ControlPlane {
     async fn handle(
         &mut self,
         request: DeleteIndexRequest,
-        _ctx: &ActorContext<Self>,
+        ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
         let index_uid: IndexUid = request.index_uid.clone().into();
 
@@ -382,8 +407,7 @@ impl Handler<DeleteIndexRequest> for ControlPlane {
 
         // TODO: Refine the event. Notify index will have the effect to reload the entire state from
         // the metastore. We should update the state of the control plane.
-        self.indexing_scheduler
-            .schedule_indexing_plan_if_needed(&self.model);
+        self.rebuild_plan_debounced(ctx);
 
         let response = EmptyResponse {};
         Ok(Ok(response))
@@ -399,7 +423,7 @@ impl Handler<AddSourceRequest> for ControlPlane {
     async fn handle(
         &mut self,
         request: AddSourceRequest,
-        _ctx: &ActorContext<Self>,
+        ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
         let index_uid: IndexUid = request.index_uid.clone().into();
         let source_config: SourceConfig =
@@ -419,8 +443,7 @@ impl Handler<AddSourceRequest> for ControlPlane {
 
         // TODO: Refine the event. Notify index will have the effect to reload the entire state from
         // the metastore. We should update the state of the control plane.
-        self.indexing_scheduler
-            .schedule_indexing_plan_if_needed(&self.model);
+        self.rebuild_plan_debounced(ctx);
 
         let response = EmptyResponse {};
         Ok(Ok(response))
@@ -436,7 +459,7 @@ impl Handler<ToggleSourceRequest> for ControlPlane {
     async fn handle(
         &mut self,
         request: ToggleSourceRequest,
-        _ctx: &ActorContext<Self>,
+        ctx: &ActorContext<Self>,
     ) -> Result<Self::Reply, ActorExitStatus> {
         let index_uid: IndexUid = request.index_uid.clone().into();
         let source_id = request.source_id.clone();
@@ -449,8 +472,7 @@ impl Handler<ToggleSourceRequest> for ControlPlane {
         let has_changed = self.model.toggle_source(&index_uid, &source_id, enable)?;
 
         if has_changed {
-            self.indexing_scheduler
-                .schedule_indexing_plan_if_needed(&self.model);
+            self.rebuild_plan_debounced(ctx);
         }
 
         Ok(Ok(EmptyResponse {}))
@@ -466,7 +488,7 @@ impl Handler<DeleteSourceRequest> for ControlPlane {
     async fn handle(
         &mut self,
         request: DeleteSourceRequest,
-        _ctx: &ActorContext<Self>,
+        ctx: &ActorContext<Self>,
     ) -> Result<ControlPlaneResult<EmptyResponse>, ActorExitStatus> {
         let index_uid: IndexUid = request.index_uid.clone().into();
         let source_id = request.source_id.clone();
@@ -498,8 +520,7 @@ impl Handler<DeleteSourceRequest> for ControlPlane {
 
         self.model.delete_source(&source_uid);
 
-        self.indexing_scheduler
-            .schedule_indexing_plan_if_needed(&self.model);
+        self.rebuild_plan_debounced(ctx);
         let response = EmptyResponse {};
 
         Ok(Ok(response))
@@ -529,9 +550,7 @@ impl Handler<GetOrCreateOpenShardsRequest> for ControlPlane {
                 return Ok(Err(control_plane_error));
             }
         };
-        // TODO: Why do we return an error if the indexing scheduler fails?
-        self.indexing_scheduler
-            .schedule_indexing_plan_if_needed(&self.model);
+        self.rebuild_plan_debounced(ctx);
         Ok(Ok(response))
     }
 }
@@ -548,8 +567,7 @@ impl Handler<LocalShardsUpdate> for ControlPlane {
         self.ingest_controller
             .handle_local_shards_update(local_shards_update, &mut self.model, ctx.progress())
             .await;
-        self.indexing_scheduler
-            .schedule_indexing_plan_if_needed(&self.model);
+        self.rebuild_plan_debounced(ctx);
         Ok(Ok(()))
     }
 }
@@ -1113,7 +1131,7 @@ mod tests {
     #[tokio::test]
     async fn test_delete_shard_on_eof() {
         quickwit_common::setup_logging_for_tests();
-        let universe = Universe::default();
+        let universe = Universe::with_accelerated_time();
         let node_id = NodeId::new("control-plane-node".to_string());
         let indexer_pool = IndexerPool::default();
         let (client_mailbox, client_inbox) = universe.create_test_mailbox();
@@ -1215,6 +1233,7 @@ mod tests {
         assert_eq!(indexing_tasks[0].shard_ids, [ShardId::from(17)]);
         let _ = client_inbox.drain_for_test();
 
+        universe.sleep(Duration::from_secs(30)).await;
         // This update should trigger the deletion of the shard and a new indexing plan.
         control_plane_mailbox
             .ask(ShardPositionsUpdate {

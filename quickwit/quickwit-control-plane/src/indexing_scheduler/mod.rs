@@ -196,7 +196,7 @@ impl IndexingScheduler {
 
     // Should be called whenever a change in the list of index/shard
     // has happened.
-    pub(crate) fn schedule_indexing_plan_if_needed(&mut self, model: &ControlPlaneModel) {
+    pub(crate) fn rebuild_indexing_plan(&mut self, model: &ControlPlaneModel) {
         crate::metrics::CONTROL_PLANE_METRICS.schedule_total.inc();
 
         let sources = get_sources_to_schedule(model);
@@ -252,7 +252,7 @@ impl IndexingScheduler {
                 // If there is no plan, the node is probably starting and the scheduler did not find
                 // indexers yet. In this case, we want to schedule as soon as possible to find new
                 // indexers.
-                self.schedule_indexing_plan_if_needed(model);
+                self.rebuild_indexing_plan(model);
                 return;
             };
 
@@ -278,7 +278,7 @@ impl IndexingScheduler {
         );
         if !indexing_plans_diff.has_same_nodes() {
             info!(plans_diff=?indexing_plans_diff, "running plan and last applied plan node IDs differ: schedule an indexing plan");
-            self.schedule_indexing_plan_if_needed(model);
+            self.rebuild_indexing_plan(model);
         } else if !indexing_plans_diff.has_same_tasks() {
             // Some nodes may have not received their tasks, apply it again.
             info!(plans_diff=?indexing_plans_diff, "running tasks and last applied tasks differ: reapply last plan");
