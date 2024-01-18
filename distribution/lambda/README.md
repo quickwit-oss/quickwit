@@ -4,7 +4,7 @@
 ## Prerequisites
 
 - Install AWS CDK Toolkit (cdk command)
-  - `npm install -g aws-cdk `
+  - `npm install -g aws-cdk`
 - Ensure `curl` and `make` are installed
 - To run the invocation example `make` commands, you will also need Python 3.10
   or later and `pip` installed (see [Python venv](#python-venv) below).
