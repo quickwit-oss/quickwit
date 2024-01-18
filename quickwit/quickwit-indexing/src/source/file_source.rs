@@ -153,6 +153,8 @@ impl TypedSourceFactory for FileSourceFactory {
             let (dir_uri, file_name) = dir_and_filename(filepath)?;
             let storage = ctx.storage_resolver.resolve(&dir_uri).await?;
             let file_size = storage.file_num_bytes(file_name).await?.try_into().unwrap();
+            // If it's a gzip file, we can't seek to a specific offset, we need to start from the
+            // beginning of the file, decompress and skip the first `offset` bytes.
             if filepath.extension().map_or(false, |ext| ext == "gz") {
                 let stream = storage
                     .get_slice_stream(
