@@ -138,6 +138,6 @@ Congratz! You finished this tutorial! You can level up with the following tutori
 
 ## Next steps
 
-- [Advanced Lambda tutorial](tutorial-aws-lambda.md) which covers an end-to-end use cases
-- [Search REST API](/docs/reference/rest-api)
-- [Query language](/docs/reference/query-language)
+- [Advanced Lambda tutorial](../../guides/e2e-serverless-aws-lambda) which covers an end-to-end use cases
+- [Search REST API](../../reference/rest-api)
+- [Query language](../../reference/query-language)
