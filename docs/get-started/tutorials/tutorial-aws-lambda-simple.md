@@ -54,6 +54,7 @@ Configure the AWS region and [account id](https://docs.aws.amazon.com/IAM/latest
 
 ```bash
 export CDK_ACCOUNT=123456789
+# us-east-1 is where the Quickwit public dataset bucket is located
 export CDK_REGION=us-east-1
 ```
 
@@ -62,7 +63,10 @@ If this region/account pair was not bootstrapped by CDK yet, run:
 cdk bootstrap aws://$CDK_ACCOUNT/$CDK_REGION
 ```
 
-This initializes some basic resources to host artifacts such as Lambda packages.
+This initializes some basic resources to host artifacts such as Lambda packages. We can now deploy the stack:
+```bash
+cdk deploy -a cdk/app.py
+```
 
 ## Index the HDFS logs dataset
 
@@ -82,13 +86,19 @@ Here is an example of a log entry of the dataset:
 }
 ```
 
-If you have a few minutes ahead of you, you can index the whole dataset which is available on our public S3 bucket.
+If you have 5 minutes ahead of you, you can index the whole dataset which is available on our public S3 bucket.
 
 ```bash
 python cli.py index s3://quickwit-datasets-public/hdfs-logs-multitenants.json.gz
 ```
 
-If not, just index the 10,000 documents dataset:
+:::note
+
+Once the indexing Lambda is started, you cannot stop it manually. A keyboard interrupt will stop the client but not the function. If you try running it again, you might get a `TooManyRequestsException` error. That's because the concurrency of the indexer is set to 1 to avoid race conditions on the metastore.
+
+:::
+
+If you don't want to wait, just index the 10,000 documents dataset:
 
 ```bash
 python cli.py index s3://quickwit-datasets-public/hdfs-logs-multitenants-10000.json
@@ -102,7 +112,7 @@ Let's start with a query on the field `severity_text` and look for errors: `seve
 python cli.py search '{"query":"severity_text:ERROR"}'
 ```
 
-It should respond under 1 second and return 10 hits out of 345 if you indexed the whole dataset. If you index the first 10,000 documents, you won't have any hits, try to query `INFO` logs instead.
+It should respond in under 1 second and return 10 hits out of 345 if you indexed the whole dataset. If you index the first 10,000 documents, you won't have any hits, try to query `INFO` logs instead.
 
 
 Let's now run a more advanced query: a date histogram with a term aggregation on the `severity_text`` field:
