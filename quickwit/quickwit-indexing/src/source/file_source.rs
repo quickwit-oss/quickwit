@@ -17,13 +17,14 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use std::fmt;
-use std::ops::Range;
+use std::ffi::OsStr;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::Duration;
+use std::{fmt, io};
 
 use anyhow::Context;
+use async_compression::tokio::bufread::GzipDecoder;
 use async_trait::async_trait;
 use bytes::Bytes;
 use quickwit_actors::{ActorExitStatus, Mailbox};
@@ -32,7 +33,7 @@ use quickwit_config::FileSourceParams;
 use quickwit_metastore::checkpoint::{PartitionId, SourceCheckpoint};
 use quickwit_proto::types::Position;
 use serde::Serialize;
-use tokio::io::{AsyncBufReadExt, AsyncRead, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncRead, AsyncReadExt, BufReader};
 use tracing::info;
 
 use crate::actors::DocProcessor;
@@ -53,7 +54,7 @@ pub struct FileSource {
     source_id: String,
     params: FileSourceParams,
     counters: FileSourceCounters,
-    reader: BufReader<Box<dyn AsyncRead + Send + Unpin>>,
+    reader: FileSourceReader,
 }
 
 impl fmt::Debug for FileSource {
@@ -139,7 +140,7 @@ impl TypedSourceFactory for FileSourceFactory {
         checkpoint: SourceCheckpoint,
     ) -> anyhow::Result<FileSource> {
         let mut offset = 0;
-        let reader: Box<dyn AsyncRead + Send + Unpin> = if let Some(filepath) = &params.filepath {
+        let reader: FileSourceReader = if let Some(filepath) = &params.filepath {
             let partition_id = PartitionId::from(filepath.to_string_lossy().to_string());
             offset = checkpoint
                 .position_for_partition(&partition_id)
@@ -152,18 +153,27 @@ impl TypedSourceFactory for FileSourceFactory {
             let (dir_uri, file_name) = dir_and_filename(filepath)?;
             let storage = ctx.storage_resolver.resolve(&dir_uri).await?;
             let file_size = storage.file_num_bytes(file_name).await?.try_into().unwrap();
-            storage
-                .get_slice_stream(
-                    file_name,
-                    Range {
-                        start: offset,
-                        end: file_size,
-                    },
-                )
-                .await?
+            if offset > file_size {
+                return Err(anyhow::anyhow!(
+                    "offset {} can't be greater than the file size {}",
+                    offset,
+                    file_size
+                ));
+            }
+            // If it's a gzip file, we can't seek to a specific offset, we need to start from the
+            // beginning of the file, decompress and skip the first `offset` bytes.
+            if filepath.extension() == Some(OsStr::new("gz")) {
+                let stream = storage.get_slice_stream(file_name, 0..file_size).await?;
+                FileSourceReader::new(Box::new(GzipDecoder::new(BufReader::new(stream))), offset)
+            } else {
+                let stream = storage
+                    .get_slice_stream(file_name, offset..file_size)
+                    .await?;
+                FileSourceReader::new(stream, 0)
+            }
         } else {
             // We cannot use the checkpoint.
-            Box::new(tokio::io::stdin())
+            FileSourceReader::new(Box::new(tokio::io::stdin()), 0)
         };
         let file_source = FileSource {
             source_id: ctx.source_id().to_string(),
@@ -172,10 +182,47 @@ impl TypedSourceFactory for FileSourceFactory {
                 current_offset: offset as u64,
                 num_lines_processed: 0,
             },
-            reader: BufReader::new(reader),
+            reader,
             params,
         };
         Ok(file_source)
+    }
+}
+
+struct FileSourceReader {
+    reader: BufReader<Box<dyn AsyncRead + Send + Unpin>>,
+    num_bytes_to_skip: usize,
+}
+
+impl FileSourceReader {
+    fn new(reader: Box<dyn AsyncRead + Send + Unpin>, num_bytes_to_skip: usize) -> Self {
+        Self {
+            reader: BufReader::new(reader),
+            num_bytes_to_skip,
+        }
+    }
+
+    // This function is only called for GZIP file.
+    // Because they cannot be seeked into, we have to scan them to the right initial position.
+    async fn skip(&mut self) -> io::Result<()> {
+        // Allocate once a 64kb buffer.
+        let mut buf = [0u8; 64000];
+        while self.num_bytes_to_skip > 0 {
+            let num_bytes_to_read = self.num_bytes_to_skip.min(buf.len());
+            let num_bytes_read = self
+                .reader
+                .read_exact(&mut buf[..num_bytes_to_read])
+                .await?;
+            self.num_bytes_to_skip -= num_bytes_read;
+        }
+        Ok(())
+    }
+
+    async fn read_line<'a>(&mut self, buf: &'a mut String) -> io::Result<usize> {
+        if self.num_bytes_to_skip > 0 {
+            self.skip().await?;
+        }
+        self.reader.read_line(buf).await
     }
 }
 
@@ -194,10 +241,11 @@ pub(crate) fn dir_and_filename(filepath: &Path) -> anyhow::Result<(Uri, &Path)> 
 
 #[cfg(test)]
 mod tests {
-    use std::io::Write;
+    use std::io::{Cursor, Write};
     use std::num::NonZeroUsize;
     use std::path::PathBuf;
 
+    use async_compression::tokio::write::GzipEncoder;
     use quickwit_actors::{Command, Universe};
     use quickwit_config::{SourceConfig, SourceInputFormat, SourceParams};
     use quickwit_metastore::checkpoint::{SourceCheckpoint, SourceCheckpointDelta};
@@ -208,10 +256,19 @@ mod tests {
     use crate::source::SourceActor;
 
     #[tokio::test]
-    async fn test_file_source() -> anyhow::Result<()> {
+    async fn test_file_source() {
+        aux_test_file_source(false).await;
+        aux_test_file_source(true).await;
+    }
+
+    async fn aux_test_file_source(gzip: bool) {
         let universe = Universe::with_accelerated_time();
         let (doc_processor_mailbox, indexer_inbox) = universe.create_test_mailbox();
-        let params = FileSourceParams::file("data/test_corpus.json");
+        let params = if gzip {
+            FileSourceParams::file("data/test_corpus.json.gz")
+        } else {
+            FileSourceParams::file("data/test_corpus.json")
+        };
         let source_config = SourceConfig {
             source_id: "test-file-source".to_string(),
             desired_num_pipelines: NonZeroUsize::new(1).unwrap(),
@@ -232,7 +289,8 @@ mod tests {
             params,
             SourceCheckpoint::default(),
         )
-        .await?;
+        .await
+        .unwrap();
         let file_source_actor = SourceActor {
             source: Box::new(file_source),
             doc_processor_mailbox,
@@ -255,23 +313,38 @@ mod tests {
             batch[1].downcast_ref::<Command>().unwrap(),
             Command::ExitWithSuccess
         ));
-        Ok(())
     }
 
     #[tokio::test]
-    async fn test_file_source_several_batch() -> anyhow::Result<()> {
+    async fn test_file_source_several_batch() {
+        aux_test_file_source_several_batch(false).await;
+        aux_test_file_source_several_batch(true).await;
+    }
+
+    async fn aux_test_file_source_several_batch(gzip: bool) {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::with_accelerated_time();
         let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
-        use tempfile::NamedTempFile;
-        let mut temp_file = NamedTempFile::new()?;
-        let temp_path = temp_file.path().to_path_buf();
+        let mut documents_bytes = Vec::new();
         for _ in 0..20_000 {
-            temp_file.write_all(r#"{"body": "hello happy tax payer!"}"#.as_bytes())?;
-            temp_file.write_all("\n".as_bytes())?;
+            documents_bytes
+                .write_all(r#"{"body": "hello happy tax payer!"}"#.as_bytes())
+                .unwrap();
+            documents_bytes.write_all("\n".as_bytes()).unwrap();
         }
-        temp_file.flush()?;
-        let params = FileSourceParams::file(temp_path);
+        let mut temp_file: tempfile::NamedTempFile = if gzip {
+            tempfile::Builder::new().suffix(".gz").tempfile().unwrap()
+        } else {
+            tempfile::NamedTempFile::new().unwrap()
+        };
+        if gzip {
+            let gzip_documents = gzip_bytes(&documents_bytes).await;
+            temp_file.write_all(&gzip_documents).unwrap();
+        } else {
+            temp_file.write_all(&documents_bytes).unwrap();
+        }
+        temp_file.flush().unwrap();
+        let params = FileSourceParams::file(temp_file.path());
         let filepath = params
             .filepath
             .as_ref()
@@ -299,7 +372,8 @@ mod tests {
             params,
             SourceCheckpoint::default(),
         )
-        .await?;
+        .await
+        .unwrap();
         let file_source_actor = SourceActor {
             source: Box::new(source),
             doc_processor_mailbox,
@@ -337,7 +411,6 @@ mod tests {
             "00000000000000500010..00000000000000700000"
         );
         assert!(matches!(command, &Command::ExitWithSuccess));
-        Ok(())
     }
 
     fn extract_position_delta(checkpoint_delta: &SourceCheckpointDelta) -> Option<String> {
@@ -349,16 +422,34 @@ mod tests {
 
     #[tokio::test]
     async fn test_file_source_resume_from_checkpoint() {
+        aux_test_file_source_resume_from_checkpoint(false).await;
+        aux_test_file_source_resume_from_checkpoint(true).await;
+    }
+
+    async fn aux_test_file_source_resume_from_checkpoint(gzip: bool) {
         quickwit_common::setup_logging_for_tests();
         let universe = Universe::with_accelerated_time();
         let (doc_processor_mailbox, doc_processor_inbox) = universe.create_test_mailbox();
-        use tempfile::NamedTempFile;
-        let mut temp_file = NamedTempFile::new().unwrap();
+        let mut documents_bytes = Vec::new();
         for i in 0..100 {
-            temp_file.write_all(format!("{i}\n").as_bytes()).unwrap();
+            documents_bytes
+                .write_all(format!("{i}\n").as_bytes())
+                .unwrap();
+        }
+        let mut temp_file: tempfile::NamedTempFile = if gzip {
+            tempfile::Builder::new().suffix(".gz").tempfile().unwrap()
+        } else {
+            tempfile::NamedTempFile::new().unwrap()
+        };
+        let temp_file_path = temp_file.path().canonicalize().unwrap();
+        if gzip {
+            let gzipped_documents = gzip_bytes(&documents_bytes).await;
+            temp_file.write_all(&gzipped_documents).unwrap();
+        } else {
+            temp_file.write_all(&documents_bytes).unwrap();
         }
         temp_file.flush().unwrap();
-        let temp_file_path = temp_file.path().canonicalize().unwrap();
+
         let params = FileSourceParams::file(&temp_file_path);
         let mut checkpoint = SourceCheckpoint::default();
         let partition_id = PartitionId::from(temp_file_path.to_string_lossy().to_string());
@@ -410,5 +501,67 @@ mod tests {
         );
         let indexer_messages: Vec<RawDocBatch> = doc_processor_inbox.drain_for_test_typed();
         assert!(&indexer_messages[0].docs[0].starts_with(b"2\n"));
+    }
+
+    async fn gzip_bytes(bytes: &[u8]) -> Vec<u8> {
+        let mut gzip_documents = Vec::new();
+        let mut encoder = GzipEncoder::new(&mut gzip_documents);
+        tokio::io::AsyncWriteExt::write_all(&mut encoder, bytes)
+            .await
+            .unwrap();
+        // flush is not sufficient here and reading the file will raise a unexpected end of file
+        // error.
+        tokio::io::AsyncWriteExt::shutdown(&mut encoder)
+            .await
+            .unwrap();
+        gzip_documents
+    }
+
+    #[tokio::test]
+    async fn test_skip_reader() {
+        {
+            // Skip 0 bytes.
+            let mut reader = FileSourceReader::new(Box::new("hello".as_bytes()), 0);
+            let mut buf = String::new();
+            reader.read_line(&mut buf).await.unwrap();
+            assert_eq!(buf, "hello");
+        }
+        {
+            // Skip 2 bytes.
+            let mut reader = FileSourceReader::new(Box::new("hello".as_bytes()), 2);
+            let mut buf = String::new();
+            reader.read_line(&mut buf).await.unwrap();
+            assert_eq!(buf, "llo");
+        }
+        {
+            let input = "hello";
+            let cursor = Cursor::new(input.clone());
+            let mut reader = FileSourceReader::new(Box::new(cursor), 5);
+            let mut buf = String::new();
+            assert!(reader.read_line(&mut buf).await.is_ok());
+        }
+        {
+            let input = "hello";
+            let cursor = Cursor::new(input.clone());
+            let mut reader = FileSourceReader::new(Box::new(cursor), 10);
+            let mut buf = String::new();
+            assert!(reader.read_line(&mut buf).await.is_err());
+        }
+        {
+            let input = "hello world".repeat(10000);
+            let cursor = Cursor::new(input.clone());
+            let mut reader = FileSourceReader::new(Box::new(cursor), 64000);
+            let mut buf = String::new();
+            reader.read_line(&mut buf).await.unwrap();
+            assert_eq!(buf, input[64000..]);
+        }
+        {
+            let input = "hello world".repeat(10000);
+            let cursor = Cursor::new(input.clone());
+            let mut reader = FileSourceReader::new(Box::new(cursor), 64001);
+            let mut buf = String::new();
+            reader.read_line(&mut buf).await.unwrap();
+            assert_eq!(buf, input[64001..]);
+        }
     }
 }
