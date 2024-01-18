@@ -341,6 +341,7 @@ fn partial_hit_from_search_after_param(
         return Err(ElasticsearchError::new(
             StatusCode::BAD_REQUEST,
             "sort and search_after are of different length".to_string(),
+            None,
         ));
     }
     let mut parsed_search_after = PartialHit::default();
@@ -354,6 +355,7 @@ fn partial_hit_from_search_after_param(
                             "invalid search_after doc id, must be of form \
                              `{split_id}:{segment_id: u32}:{doc_id: u32}`"
                                 .to_string(),
+                            None,
                         )
                     })?;
                 parsed_search_after.split_id = address.split;
@@ -364,6 +366,7 @@ fn partial_hit_from_search_after_param(
                 return Err(ElasticsearchError::new(
                     StatusCode::BAD_REQUEST,
                     "search_after doc id must be of string type".to_string(),
+                    None,
                 ));
             }
         } else {
@@ -371,6 +374,7 @@ fn partial_hit_from_search_after_param(
                 ElasticsearchError::new(
                     StatusCode::BAD_REQUEST,
                     "invalid search_after field value, expect bool, number or string".to_string(),
+                    None,
                 )
             })?;
             // TODO make cleaner once we support Vec
@@ -531,6 +535,7 @@ async fn es_compat_index_cat_indices(
             ElasticsearchError::new(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 format!("Failed to serialize cat indices response: {}", serde_errror),
+                None,
             )
         })?;
 

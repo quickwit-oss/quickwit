@@ -82,7 +82,7 @@ async fn elastic_ingest_bulk(
     mut ingest_service: IngestServiceClient,
     ingest_router: IngestRouterServiceClient,
 ) -> Result<ElasticBulkResponse, ElasticsearchError> {
-    if enable_ingest_v2() {
+    if enable_ingest_v2() || bulk_options.enable_ingest_v2 {
         return elastic_bulk_ingest_v2(default_index_id, body, bulk_options, ingest_router).await;
     }
     let now = Instant::now();
@@ -94,12 +94,14 @@ async fn elastic_ingest_bulk(
             ElasticsearchError::new(
                 StatusCode::BAD_REQUEST,
                 format!("Malformed action/metadata line [#{line_number}]. Details: `{error}`"),
+                None,
             )
         })?;
         let (_, source) = lines.next().ok_or_else(|| {
             ElasticsearchError::new(
                 StatusCode::BAD_REQUEST,
                 "expected source for the action".to_string(),
+                None,
             )
         })?;
         // when ingesting on /my-index/_bulk, if _index: is set to something else than my-index,
@@ -112,6 +114,7 @@ async fn elastic_ingest_bulk(
                 ElasticsearchError::new(
                     StatusCode::BAD_REQUEST,
                     format!("missing required field: `_index` in the line [#{line_number}]."),
+                    None,
                 )
             })?;
         let doc_batch_builder = doc_batch_builders
@@ -136,6 +139,7 @@ async fn elastic_ingest_bulk(
     let bulk_response = ElasticBulkResponse {
         took_millis,
         errors,
+        items: Vec::new(),
     };
     Ok(bulk_response)
 }
