@@ -31,7 +31,7 @@ use quickwit_proto::types::IndexId;
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
-use crate::elastic_search_api::model::{BulkAction, ElasticBulkOptions, ElasticSearchError};
+use crate::elasticsearch_api::model::{BulkAction, ElasticBulkOptions, ElasticSearchError};
 use crate::ingest_api::lines;
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -118,10 +118,10 @@ mod tests {
     use warp::{Filter, Rejection, Reply};
 
     use super::*;
-    use crate::elastic_search_api::bulk_v2::ElasticBulkResponse;
-    use crate::elastic_search_api::filter::elastic_bulk_filter;
-    use crate::elastic_search_api::make_elastic_api_response;
-    use crate::elastic_search_api::model::ElasticSearchError;
+    use crate::elasticsearch_api::bulk_v2::ElasticBulkResponse;
+    use crate::elasticsearch_api::filter::elastic_bulk_filter;
+    use crate::elasticsearch_api::make_elastic_api_response;
+    use crate::elasticsearch_api::model::ElasticSearchError;
     use crate::format::extract_format_from_qs;
     use crate::with_arg;
 

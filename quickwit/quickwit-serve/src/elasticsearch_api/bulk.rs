@@ -31,9 +31,9 @@ use quickwit_proto::types::IndexId;
 use warp::{Filter, Rejection};
 
 use super::bulk_v2::{elastic_bulk_ingest_v2, ElasticBulkResponse};
-use crate::elastic_search_api::filter::{elastic_bulk_filter, elastic_index_bulk_filter};
-use crate::elastic_search_api::make_elastic_api_response;
-use crate::elastic_search_api::model::{BulkAction, ElasticBulkOptions, ElasticSearchError};
+use crate::elasticsearch_api::filter::{elastic_bulk_filter, elastic_index_bulk_filter};
+use crate::elasticsearch_api::make_elastic_api_response;
+use crate::elasticsearch_api::model::{BulkAction, ElasticBulkOptions, ElasticSearchError};
 use crate::format::extract_format_from_qs;
 use crate::ingest_api::lines;
 use crate::with_arg;
@@ -152,9 +152,9 @@ mod tests {
     use quickwit_proto::ingest::router::IngestRouterServiceClient;
     use quickwit_search::MockSearchService;
 
-    use crate::elastic_search_api::bulk_v2::ElasticBulkResponse;
-    use crate::elastic_search_api::elastic_api_handlers;
-    use crate::elastic_search_api::model::ElasticSearchError;
+    use crate::elasticsearch_api::bulk_v2::ElasticBulkResponse;
+    use crate::elasticsearch_api::elastic_api_handlers;
+    use crate::elasticsearch_api::model::ElasticSearchError;
     use crate::ingest_api::setup_ingest_service;
 
     #[tokio::test]
