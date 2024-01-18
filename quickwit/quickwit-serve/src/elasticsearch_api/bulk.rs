@@ -33,7 +33,7 @@ use warp::{Filter, Rejection};
 use super::bulk_v2::{elastic_bulk_ingest_v2, ElasticBulkResponse};
 use crate::elasticsearch_api::filter::{elastic_bulk_filter, elastic_index_bulk_filter};
 use crate::elasticsearch_api::make_elastic_api_response;
-use crate::elasticsearch_api::model::{BulkAction, ElasticBulkOptions, ElasticSearchError};
+use crate::elasticsearch_api::model::{BulkAction, ElasticBulkOptions, ElasticsearchError};
 use crate::format::extract_format_from_qs;
 use crate::ingest_api::lines;
 use crate::with_arg;
@@ -82,7 +82,7 @@ async fn elastic_ingest_bulk(
     bulk_options: ElasticBulkOptions,
     mut ingest_service: IngestServiceClient,
     ingest_router: IngestRouterServiceClient,
-) -> Result<ElasticBulkResponse, ElasticSearchError> {
+) -> Result<ElasticBulkResponse, ElasticsearchError> {
     if enable_ingest_v2() {
         return elastic_bulk_ingest_v2(default_index_id, body, bulk_options, ingest_router).await;
     }
@@ -92,13 +92,13 @@ async fn elastic_ingest_bulk(
 
     while let Some((line_number, line)) = lines.next() {
         let action = serde_json::from_slice::<BulkAction>(line).map_err(|error| {
-            ElasticSearchError::new(
+            ElasticsearchError::new(
                 StatusCode::BAD_REQUEST,
                 format!("Malformed action/metadata line [#{line_number}]. Details: `{error}`"),
             )
         })?;
         let (_, source) = lines.next().ok_or_else(|| {
-            ElasticSearchError::new(
+            ElasticsearchError::new(
                 StatusCode::BAD_REQUEST,
                 "expected source for the action".to_string(),
             )
@@ -110,7 +110,7 @@ async fn elastic_ingest_bulk(
             .into_index_id()
             .or_else(|| default_index_id.clone())
             .ok_or_else(|| {
-                ElasticSearchError::new(
+                ElasticsearchError::new(
                     StatusCode::BAD_REQUEST,
                     format!("missing required field: `_index` in the line [#{line_number}]."),
                 )
@@ -154,7 +154,7 @@ mod tests {
 
     use crate::elasticsearch_api::bulk_v2::ElasticBulkResponse;
     use crate::elasticsearch_api::elastic_api_handlers;
-    use crate::elasticsearch_api::model::ElasticSearchError;
+    use crate::elasticsearch_api::model::ElasticsearchError;
     use crate::ingest_api::setup_ingest_service;
 
     #[tokio::test]
@@ -437,7 +437,7 @@ mod tests {
             .reply(&elastic_api_handlers)
             .await;
         assert_eq!(resp.status(), 400);
-        let es_error: ElasticSearchError = serde_json::from_slice(resp.body()).unwrap();
+        let es_error: ElasticsearchError = serde_json::from_slice(resp.body()).unwrap();
         assert_eq!(es_error.status, StatusCode::BAD_REQUEST);
         assert_eq!(
             es_error.error.reason.unwrap(),

@@ -31,7 +31,7 @@ use quickwit_proto::types::IndexId;
 use serde::{Deserialize, Serialize};
 use tracing::warn;
 
-use crate::elasticsearch_api::model::{BulkAction, ElasticBulkOptions, ElasticSearchError};
+use crate::elasticsearch_api::model::{BulkAction, ElasticBulkOptions, ElasticsearchError};
 use crate::ingest_api::lines;
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -46,20 +46,20 @@ pub(crate) async fn elastic_bulk_ingest_v2(
     body: Bytes,
     bulk_options: ElasticBulkOptions,
     mut ingest_router: IngestRouterServiceClient,
-) -> Result<ElasticBulkResponse, ElasticSearchError> {
+) -> Result<ElasticBulkResponse, ElasticsearchError> {
     let now = Instant::now();
     let mut ingest_request_builder = IngestRequestV2Builder::default();
     let mut lines = lines(&body).enumerate();
 
     while let Some((line_no, line)) = lines.next() {
         let action = serde_json::from_slice::<BulkAction>(line).map_err(|error| {
-            ElasticSearchError::new(
+            ElasticsearchError::new(
                 StatusCode::BAD_REQUEST,
                 format!("unsupported or malformed action on line #{line_no}: `{error}`"),
             )
         })?;
         let (_, source) = lines.next().ok_or_else(|| {
-            ElasticSearchError::new(
+            ElasticsearchError::new(
                 StatusCode::BAD_REQUEST,
                 format!("associated source data with action on line #{line_no} is missing"),
             )
@@ -72,7 +72,7 @@ pub(crate) async fn elastic_bulk_ingest_v2(
             .into_index_id()
             .or_else(|| default_index_id.clone())
             .ok_or_else(|| {
-                ElasticSearchError::new(
+                ElasticsearchError::new(
                     StatusCode::BAD_REQUEST,
                     format!("`_index` field of action on line #{line_no} is missing"),
                 )
@@ -95,7 +95,7 @@ pub(crate) async fn elastic_bulk_ingest_v2(
             // This custom logic for Airmail is temporary.
             if failure.reason() == IngestFailureReason::IndexNotFound {
                 let reason = format!("index `{}` not found", failure.index_id);
-                let elasticsearch_error = ElasticSearchError::new(StatusCode::NOT_FOUND, reason);
+                let elasticsearch_error = ElasticsearchError::new(StatusCode::NOT_FOUND, reason);
                 return Err(elasticsearch_error);
             }
         }
@@ -121,7 +121,7 @@ mod tests {
     use crate::elasticsearch_api::bulk_v2::ElasticBulkResponse;
     use crate::elasticsearch_api::filter::elastic_bulk_filter;
     use crate::elasticsearch_api::make_elastic_api_response;
-    use crate::elasticsearch_api::model::ElasticSearchError;
+    use crate::elasticsearch_api::model::ElasticsearchError;
     use crate::format::extract_format_from_qs;
     use crate::with_arg;
 
@@ -289,7 +289,7 @@ mod tests {
             .await;
         assert_eq!(response.status(), 400);
 
-        let es_error: ElasticSearchError = serde_json::from_slice(response.body()).unwrap();
+        let es_error: ElasticsearchError = serde_json::from_slice(response.body()).unwrap();
         assert_eq!(es_error.status, StatusCode::BAD_REQUEST);
 
         let reason = es_error.error.reason.unwrap();
@@ -309,7 +309,7 @@ mod tests {
             .await;
         assert_eq!(response.status(), 400);
 
-        let es_error: ElasticSearchError = serde_json::from_slice(response.body()).unwrap();
+        let es_error: ElasticsearchError = serde_json::from_slice(response.body()).unwrap();
         assert_eq!(es_error.status, StatusCode::BAD_REQUEST);
 
         let reason = es_error.error.reason.unwrap();
@@ -330,7 +330,7 @@ mod tests {
             .await;
         assert_eq!(response.status(), 400);
 
-        let es_error: ElasticSearchError = serde_json::from_slice(response.body()).unwrap();
+        let es_error: ElasticsearchError = serde_json::from_slice(response.body()).unwrap();
         assert_eq!(es_error.status, StatusCode::BAD_REQUEST);
 
         let reason = es_error.error.reason.unwrap();
@@ -367,7 +367,7 @@ mod tests {
             .await;
         assert_eq!(response.status(), 404);
 
-        let es_error: ElasticSearchError = serde_json::from_slice(response.body()).unwrap();
+        let es_error: ElasticsearchError = serde_json::from_slice(response.body()).unwrap();
         assert_eq!(es_error.status, StatusCode::NOT_FOUND);
 
         let reason = es_error.error.reason.unwrap();
