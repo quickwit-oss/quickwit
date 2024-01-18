@@ -131,6 +131,7 @@ async fn elastic_ingest_bulk(
         commit: commit_type.into(),
     };
     ingest_service.ingest(ingest_request).await?;
+
     let took_millis = now.elapsed().as_millis() as u64;
     let errors = false;
     let bulk_response = ElasticBulkResponse {
