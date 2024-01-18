@@ -3,7 +3,7 @@ title: Search with AWS Lambda
 description: Index and search using AWS Lambda on 20 million log entries
 tags: [aws, integration]
 icon_url: /img/tutorials/aws-logo.png
-sidebar_position: 3
+sidebar_position: 4
 ---
 
 In this tutorial, we will index and search about 20 million log entries (7 GB decompressed) located on AWS S3 with Quickwit Lambda.
@@ -12,8 +12,6 @@ Concretely, we will deploy an AWS CloudFormation stack with the Quickwit Lambdas
 
 ![Tutorial stack overview](../../assets/images/quickwit-lambda-service.svg)
 
-Let's go!
-
 ## Install
 
 ### Install AWS CDK
@@ -21,11 +19,6 @@ Let's go!
 We will use [AWS CDK](https://aws.amazon.com/cdk/) for our infrastructure automation script. Install it using [npm](https://docs.npmjs.com/downloading-and-installing-node-js-and-npm):
 ```bash
 npm install -g aws-cdk 
-```
-We also use the `curl` and `make` commands. For instance on Debian based distributions:
-```bash
-sudo apt update && sudo apt install curl make
-```
 
 You also need AWS credentials to be properly configured in your shell. One way is using the [credentials file](https://docs.aws.amazon.com/cli/latest/userguide/cli-configure-files.html).
 
@@ -37,7 +30,7 @@ cd tutorials/simple-lambda-stack
 
 ### Setup python environment
 
-We use python to define the AWS CloudFormation stack we need to deploy, and a python CLI to invoke Lambdas.
+We use python 3.10 to define the AWS CloudFormation stack we need to deploy, and a python CLI to invoke Lambdas.
 Let's install those few packages (boto3, aws-cdk-lib, click, pyyaml).
 
 ```bash
@@ -45,6 +38,14 @@ Let's install those few packages (boto3, aws-cdk-lib, click, pyyaml).
 pip install --user pipenv
 pipenv shell
 pipenv install
+```
+
+### Download Quickwit Lambdas
+
+```bash
+mkdir -p cdk.out
+wget -P cdk.out https://github.com/quickwit-oss/quickwit/releases/download/aws-lambda-beta-01/quickwit-lambda-indexer-beta-01-x86_64.zip
+wget -P cdk.out https://github.com/quickwit-oss/quickwit/releases/download/aws-lambda-beta-01/quickwit-lambda-searcher-beta-01-x86_64.zip
 ```
 
 ### Bootstrap and deploy

@@ -1,9 +1,9 @@
 ---
-title: Serverless Search on AWS Lambda
+title: Serverless E2E with Lambda
 description: Index and search using AWS Lambda based on an end to end usecase.
 tags: [aws, integration]
 icon_url: /img/tutorials/aws-logo.png
-sidebar_position: 3
+sidebar_position: 5
 ---
 
 In this tutorial, we’ll show you how to run Quickwit on Lambda on a complete use case. We’ll present you the associated cloud resources, a cost estimate and how to deploy the whole stack using AWS CDK.
