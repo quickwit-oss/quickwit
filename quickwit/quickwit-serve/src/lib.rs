@@ -120,6 +120,8 @@ const READINESS_REPORTING_INTERVAL: Duration = if cfg!(any(test, feature = "test
     Duration::from_secs(10)
 };
 
+const MAX_CONCURRENT_METASTORE_REQUESTS: usize = 6;
+
 struct QuickwitServices {
     pub node_config: Arc<NodeConfig>,
     pub cluster: Cluster,
@@ -296,6 +298,7 @@ pub async fn serve_quickwit(
                 .stack_add_source_layer(broker_layer.clone())
                 .stack_delete_source_layer(broker_layer.clone())
                 .stack_toggle_source_layer(broker_layer)
+                .stack_layer(tower::limit::GlobalConcurrencyLimitLayer::new(MAX_CONCURRENT_METASTORE_REQUESTS))
                 .build(metastore);
             Some(metastore)
         } else {

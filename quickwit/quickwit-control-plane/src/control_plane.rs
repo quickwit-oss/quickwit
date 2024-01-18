@@ -18,6 +18,8 @@
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
 use std::collections::BTreeSet;
+use std::fmt;
+use std::fmt::Formatter;
 use std::time::Duration;
 
 use anyhow::Context;
@@ -82,6 +84,12 @@ pub struct ControlPlane {
     indexing_scheduler: IndexingScheduler,
     ingest_controller: IngestController,
     rebuild_plan_debouncer: Debouncer,
+}
+
+impl fmt::Debug for ControlPlane {
+    fn fmt(&self, f: &mut Formatter) -> fmt::Result {
+        f.debug_struct("ControlPlane").finish()
+    }
 }
 
 impl ControlPlane {
