@@ -86,13 +86,19 @@ Here is an example of a log entry of the dataset:
 }
 ```
 
-If you have a few minutes ahead of you, you can index the whole dataset which is available on our public S3 bucket.
+If you have 5 minutes ahead of you, you can index the whole dataset which is available on our public S3 bucket.
 
 ```bash
 python cli.py index s3://quickwit-datasets-public/hdfs-logs-multitenants.json.gz
 ```
 
-If not, just index the 10,000 documents dataset:
+:::note
+
+Once the indexing Lambda is started, you cannot stop it manually. A keyboard interrupt will stop the client but not the function. If you try running it again, you might get a `TooManyRequestsException` error. That's because the concurrency of the indexer is set to 1 to avoid race conditions on the metastore.
+
+:::
+
+If you don't want to wait, just index the 10,000 documents dataset:
 
 ```bash
 python cli.py index s3://quickwit-datasets-public/hdfs-logs-multitenants-10000.json
