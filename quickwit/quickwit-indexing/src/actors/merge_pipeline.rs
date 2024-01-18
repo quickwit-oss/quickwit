@@ -406,8 +406,7 @@ impl MergePipeline {
             Health::Healthy => {}
             Health::FailureOrUnhealthy => {
                 self.terminate().await;
-                ctx.schedule_self_msg(*quickwit_actors::HEARTBEAT, Spawn { retry_count: 0 })
-                    .await;
+                ctx.schedule_self_msg(*quickwit_actors::HEARTBEAT, Spawn { retry_count: 0 });
             }
             Health::Success => {
                 return Err(ActorExitStatus::Success);
@@ -427,8 +426,7 @@ impl Handler<SuperviseLoop> for MergePipeline {
     ) -> Result<(), ActorExitStatus> {
         self.perform_observe().await;
         self.perform_health_check(ctx).await?;
-        ctx.schedule_self_msg(Duration::from_secs(1), supervise_loop_token)
-            .await;
+        ctx.schedule_self_msg(Duration::from_secs(1), supervise_loop_token);
         Ok(())
     }
 }
@@ -460,8 +458,7 @@ impl Handler<Spawn> for MergePipeline {
                 Spawn {
                     retry_count: spawn.retry_count + 1,
                 },
-            )
-            .await;
+            );
         }
         Ok(())
     }

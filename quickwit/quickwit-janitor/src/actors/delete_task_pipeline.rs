@@ -278,8 +278,7 @@ impl Handler<Observe> for DeleteTaskPipeline {
                 publisher: handles.publisher.last_observation().clone(),
             }
         }
-        ctx.schedule_self_msg(OBSERVE_PIPELINE_INTERVAL, Observe)
-            .await;
+        ctx.schedule_self_msg(OBSERVE_PIPELINE_INTERVAL, Observe);
         Ok(())
     }
 }

@@ -109,7 +109,7 @@ impl Handler<Loop> for PingSender {
         if self.num_ping_emitted == 10 {
             return Err(ActorExitStatus::Success);
         }
-        ctx.schedule_self_msg(Duration::from_secs(1), Loop).await;
+        ctx.schedule_self_msg(Duration::from_secs(1), Loop);
         Ok(())
     }
 }
