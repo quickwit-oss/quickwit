@@ -39,6 +39,37 @@ pub(crate) struct ElasticBulkResponse {
     #[serde(rename = "took")]
     pub took_millis: u64,
     pub errors: bool,
+    pub items: Vec<ElasticBulkItemAction>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub(crate) enum ElasticBulkItemAction {
+    #[serde(rename = "index")]
+    Index(ElasticBulkItem),
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub(crate) struct ElasticBulkItem {
+    #[serde(rename = "_index")]
+    pub index_id: IndexId,
+    #[serde(rename = "status")]
+    pub status_code: u16,
+    pub error: Option<ElasticBulkError>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub(crate) struct ElasticBulkError {
+    #[serde(rename = "index")]
+    pub index_id: Option<IndexId>,
+    #[serde(rename = "type")]
+    pub error_type: String,
+    pub reason: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum ElasticBulkAction {
+    Index,
 }
 
 pub(crate) async fn elastic_bulk_ingest_v2(
@@ -91,18 +122,30 @@ pub(crate) async fn elastic_bulk_ingest_v2(
         let took_millis = now.elapsed().as_millis() as u64;
         let errors = !ingest_response_v2.failures.is_empty();
 
+        let mut items = Vec::new();
+
         for failure in ingest_response_v2.failures {
-            // This custom logic for Airmail is temporary.
-            if failure.reason() == IngestFailureReason::IndexNotFound {
-                let reason = format!("index `{}` not found", failure.index_id);
-                let elasticsearch_error = ElasticsearchError::new(StatusCode::NOT_FOUND, reason);
-                return Err(elasticsearch_error);
+            match failure.reason() {
+                IngestFailureReason::IndexNotFound => {
+                    let item = ElasticBulkItem {
+                        index_id: failure.index_id,
+                        status_code: StatusCode::NOT_FOUND.as_u16(),
+                        error: None,
+                    };
+                    items.push(ElasticBulkItemAction::Index(item));
+                }
+                _ => {
+                    // TODO
+                }
             }
         }
         let bulk_response = ElasticBulkResponse {
             took_millis,
             errors,
+            items,
         };
+        let bulk_response_json = serde_json::to_string(&bulk_response).unwrap();
+        println!("{}", bulk_response_json);
         Ok(bulk_response)
     } else {
         Ok(ElasticBulkResponse::default())

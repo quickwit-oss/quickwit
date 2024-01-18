@@ -24,6 +24,7 @@ hex = { workspace = true }
 http-serde = { workspace = true }
 humantime = { workspace = true }
 hyper = { workspace = true }
+indexmap = { workspace = true }
 itertools = { workspace = true }
 mime_guess = { workspace = true }
 num_cpus = { workspace = true }
