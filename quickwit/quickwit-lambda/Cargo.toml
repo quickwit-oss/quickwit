@@ -1,6 +1,6 @@
 [package]
 name = "quickwit-lambda"
-version = "0.6.5-dev"
+version = "0.7.0"
 authors = ["Quickwit, Inc. <hello@quickwit.io>"]
 edition = "2021"
 license = "AGPL-3.0-or-later"                               # For a commercial, license, contact hello@quickwit.io
@@ -41,8 +41,8 @@ tracing-opentelemetry = { workspace = true }
 tracing-subscriber = { workspace = true, features = [ "json" ] }
 
 quickwit-actors = { workspace = true }
-quickwit-cli = { workspace = true }
 quickwit-cluster = { workspace = true }
+quickwit-cli = { workspace = true }
 quickwit-common = { workspace = true }
 quickwit-config = { workspace = true }
 quickwit-index-management = { workspace = true }

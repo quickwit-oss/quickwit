@@ -5932,6 +5932,7 @@ dependencies = [
  "opentelemetry",
  "opentelemetry-otlp",
  "quickwit-actors",
+ "quickwit-cli",
  "quickwit-cluster",
  "quickwit-common",
  "quickwit-config",
