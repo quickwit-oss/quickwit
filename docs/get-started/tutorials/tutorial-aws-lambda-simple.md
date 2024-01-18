@@ -1,6 +1,6 @@
 ---
-title: Serverless Search on AWS Lambda
-description: Index and search using AWS Lambda based on an end to end usecase.
+title: Search with AWS Lambda
+description: Index and search using AWS Lambda on 20 million log entries
 tags: [aws, integration]
 icon_url: /img/tutorials/aws-logo.png
 sidebar_position: 3
