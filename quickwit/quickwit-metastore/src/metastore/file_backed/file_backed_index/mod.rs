@@ -727,11 +727,33 @@ mod tests {
 
     use quickwit_doc_mapper::tag_pruning::TagFilterAst;
     use quickwit_doc_mapper::{BinaryFormat, FieldMappingType};
-    use quickwit_proto::types::IndexUid;
+    use quickwit_proto::ingest::Shard;
+    use quickwit_proto::metastore::ListShardsSubrequest;
+    use quickwit_proto::types::{IndexUid, SourceId};
 
     use super::FileBackedIndex;
-    use crate::file_backed_metastore::file_backed_index::split_query_predicate;
+    use crate::file_backed::file_backed_index::split_query_predicate;
     use crate::{ListSplitsQuery, Split, SplitMetadata, SplitState};
+
+    impl FileBackedIndex {
+        pub(crate) fn insert_shards(&mut self, source_id: &SourceId, shards: Vec<Shard>) {
+            self.per_source_shards
+                .get_mut(source_id)
+                .unwrap()
+                .insert_shards(shards)
+        }
+
+        pub(crate) fn list_all_shards(&self, source_id: &SourceId) -> Vec<Shard> {
+            self.per_source_shards
+                .get(source_id)
+                .unwrap()
+                .list_shards(ListShardsSubrequest {
+                    ..Default::default()
+                })
+                .unwrap()
+                .shards
+        }
+    }
 
     fn make_splits() -> [Split; 3] {
         [
