@@ -1,6 +1,6 @@
 ---
 title: E2E Serverless with Lambdas
-description: Index and search using AWS Lambda for an end-to-end usecase
+description: Index and search using AWS Lambda for an end-to-end use case
 tags: [aws, integration]
 icon_url: /img/tutorials/aws-logo.png
 sidebar_position: 5
