@@ -17,7 +17,7 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-use elasticsearch_dsl::search::SearchResponse as ElasticSearchResponse;
+use elasticsearch_dsl::search::SearchResponse as ElasticsearchResponse;
 use elasticsearch_dsl::ErrorCause;
 use hyper::StatusCode;
 use serde::{Deserialize, Serialize};
@@ -25,7 +25,7 @@ use serde_with::formats::PreferMany;
 use serde_with::{serde_as, OneOrMany};
 
 use super::search_query_params::ExpandWildcards;
-use super::ElasticSearchError;
+use super::ElasticsearchError;
 use crate::simple_list::{from_simple_list, to_simple_list};
 
 // Multi search doc: https://www.elastic.co/guide/en/elasticsearch/reference/current/search-multi-search.html
@@ -96,14 +96,14 @@ pub struct MultiSearchSingleResponse {
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     #[serde(flatten)]
-    pub response: Option<ElasticSearchResponse>,
+    pub response: Option<ElasticsearchResponse>,
     #[serde(default)]
     #[serde(skip_serializing_if = "Option::is_none")]
     pub error: Option<ErrorCause>,
 }
 
-impl From<ElasticSearchResponse> for MultiSearchSingleResponse {
-    fn from(response: ElasticSearchResponse) -> Self {
+impl From<ElasticsearchResponse> for MultiSearchSingleResponse {
+    fn from(response: ElasticsearchResponse) -> Self {
         MultiSearchSingleResponse {
             status: StatusCode::OK,
             response: Some(response),
@@ -112,8 +112,8 @@ impl From<ElasticSearchResponse> for MultiSearchSingleResponse {
     }
 }
 
-impl From<ElasticSearchError> for MultiSearchSingleResponse {
-    fn from(error: ElasticSearchError) -> Self {
+impl From<ElasticsearchError> for MultiSearchSingleResponse {
+    fn from(error: ElasticsearchError) -> Self {
         MultiSearchSingleResponse {
             status: error.status,
             response: None,

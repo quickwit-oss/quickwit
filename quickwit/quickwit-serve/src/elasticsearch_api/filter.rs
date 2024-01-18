@@ -27,7 +27,7 @@ use super::model::{
     FieldCapabilityQueryParams, FieldCapabilityRequestBody, MultiSearchQueryParams,
     SearchQueryParamsCount,
 };
-use crate::elastic_search_api::model::{
+use crate::elasticsearch_api::model::{
     ElasticBulkOptions, ScrollQueryParams, SearchBody, SearchQueryParams,
 };
 use crate::search_api::{extract_index_id_patterns, extract_index_id_patterns_default};
@@ -50,7 +50,7 @@ pub(crate) fn elastic_cluster_info_filter() -> impl Filter<Extract = (), Error =
 }
 
 #[utoipa::path(get, tag = "Search", path = "/_search")]
-pub(crate) fn elastic_search_filter(
+pub(crate) fn elasticsearch_filter(
 ) -> impl Filter<Extract = (SearchQueryParams,), Error = Rejection> + Clone {
     warp::path!("_elastic" / "_search")
         .and(warp::get().or(warp::post()).unify())

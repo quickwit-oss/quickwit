@@ -26,15 +26,15 @@ use quickwit_search::SearchError;
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ElasticSearchError {
+pub struct ElasticsearchError {
     #[serde(with = "http_serde::status_code")]
     pub status: StatusCode,
     pub error: ErrorCause,
 }
 
-impl ElasticSearchError {
+impl ElasticsearchError {
     pub fn new(status: StatusCode, reason_string: String) -> Self {
-        ElasticSearchError {
+        ElasticsearchError {
             status,
             error: ErrorCause {
                 reason: Some(reason_string),
@@ -49,7 +49,7 @@ impl ElasticSearchError {
     }
 }
 
-impl From<SearchError> for ElasticSearchError {
+impl From<SearchError> for ElasticsearchError {
     fn from(search_error: SearchError) -> Self {
         let status = search_error.error_code().to_http_status_code();
         // Fill only reason field to keep it simple.
@@ -62,14 +62,14 @@ impl From<SearchError> for ElasticSearchError {
             ty: None,
             additional_details: Default::default(),
         };
-        ElasticSearchError {
+        ElasticsearchError {
             status,
             error: reason,
         }
     }
 }
 
-impl From<IngestServiceError> for ElasticSearchError {
+impl From<IngestServiceError> for ElasticsearchError {
     fn from(ingest_service_error: IngestServiceError) -> Self {
         let status = ingest_service_error.error_code().to_http_status_code();
 
@@ -82,14 +82,14 @@ impl From<IngestServiceError> for ElasticSearchError {
             ty: None,
             additional_details: Default::default(),
         };
-        ElasticSearchError {
+        ElasticsearchError {
             status,
             error: reason,
         }
     }
 }
 
-impl From<IngestV2Error> for ElasticSearchError {
+impl From<IngestV2Error> for ElasticsearchError {
     fn from(ingest_error: IngestV2Error) -> Self {
         let status = ingest_error.error_code().to_http_status_code();
 
@@ -102,7 +102,7 @@ impl From<IngestV2Error> for ElasticSearchError {
             ty: None,
             additional_details: Default::default(),
         };
-        ElasticSearchError {
+        ElasticsearchError {
             status,
             error: reason,
         }

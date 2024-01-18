@@ -42,7 +42,7 @@ use warp::{Filter, Rejection};
 use self::rest_handler::{
     es_compat_index_count_handler, es_compat_index_field_capabilities_handler,
 };
-use crate::elastic_search_api::model::ElasticSearchError;
+use crate::elasticsearch_api::model::ElasticsearchError;
 use crate::json_api_response::JsonApiResponse;
 use crate::{BodyFormat, BuildInfo};
 
@@ -103,7 +103,7 @@ impl From<i64> for TrackTotalHits {
 }
 
 fn make_elastic_api_response<T: serde::Serialize>(
-    elasticsearch_result: Result<T, ElasticSearchError>,
+    elasticsearch_result: Result<T, ElasticsearchError>,
     format: BodyFormat,
 ) -> JsonApiResponse {
     let status_code = match &elasticsearch_result {
@@ -128,9 +128,9 @@ mod tests {
     use warp::Filter;
 
     use super::elastic_api_handlers;
-    use super::model::ElasticSearchError;
-    use crate::elastic_search_api::model::MultiSearchResponse;
-    use crate::elastic_search_api::rest_handler::es_compat_cluster_info_handler;
+    use super::model::ElasticsearchError;
+    use crate::elasticsearch_api::model::MultiSearchResponse;
+    use crate::elasticsearch_api::rest_handler::es_compat_cluster_info_handler;
     use crate::rest::recover_fn;
     use crate::BuildInfo;
 
@@ -263,7 +263,7 @@ mod tests {
             .reply(&es_search_api_handler)
             .await;
         assert_eq!(resp.status(), 400);
-        let es_error: ElasticSearchError = serde_json::from_slice(resp.body()).unwrap();
+        let es_error: ElasticsearchError = serde_json::from_slice(resp.body()).unwrap();
         assert!(es_error
             .error
             .reason
@@ -294,7 +294,7 @@ mod tests {
             .reply(&es_search_api_handler)
             .await;
         assert_eq!(resp.status(), 400);
-        let es_error: ElasticSearchError = serde_json::from_slice(resp.body()).unwrap();
+        let es_error: ElasticsearchError = serde_json::from_slice(resp.body()).unwrap();
         assert!(es_error
             .error
             .reason
@@ -324,7 +324,7 @@ mod tests {
             .reply(&es_search_api_handler)
             .await;
         assert_eq!(resp.status(), 400);
-        let es_error: ElasticSearchError = serde_json::from_slice(resp.body()).unwrap();
+        let es_error: ElasticsearchError = serde_json::from_slice(resp.body()).unwrap();
         assert!(es_error
             .error
             .reason
@@ -355,7 +355,7 @@ mod tests {
             .reply(&es_search_api_handler)
             .await;
         assert_eq!(resp.status(), 400);
-        let es_error: ElasticSearchError = serde_json::from_slice(resp.body()).unwrap();
+        let es_error: ElasticsearchError = serde_json::from_slice(resp.body()).unwrap();
         assert_eq!(
             es_error.error.reason.unwrap(),
             "Invalid argument: `_msearch` request header must define at least one index"

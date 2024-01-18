@@ -23,7 +23,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use bytes::Bytes;
-use elasticsearch_dsl::search::{Hit as ElasticHit, SearchResponse as ElasticSearchResponse};
+use elasticsearch_dsl::search::{Hit as ElasticHit, SearchResponse as ElasticsearchResponse};
 use elasticsearch_dsl::{HitsMetadata, Source, TotalHits, TotalHitsRelation};
 use futures_util::StreamExt;
 use hyper::StatusCode;
@@ -45,11 +45,11 @@ use warp::{Filter, Rejection};
 use super::filter::{
     elastic_cluster_info_filter, elastic_field_capabilities_filter, elastic_index_count_filter,
     elastic_index_field_capabilities_filter, elastic_index_search_filter,
-    elastic_multi_search_filter, elastic_scroll_filter, elastic_search_filter,
+    elastic_multi_search_filter, elastic_scroll_filter, elasticsearch_filter,
 };
 use super::model::{
     build_list_field_request_for_es_api, convert_to_es_field_capabilities_response,
-    ElasticSearchError, FieldCapabilityQueryParams, FieldCapabilityRequestBody,
+    ElasticsearchError, FieldCapabilityQueryParams, FieldCapabilityRequestBody,
     FieldCapabilityResponse, MultiSearchHeader, MultiSearchQueryParams, MultiSearchResponse,
     MultiSearchSingleResponse, ScrollQueryParams, SearchBody, SearchQueryParams,
     SearchQueryParamsCount,
@@ -87,7 +87,7 @@ pub fn es_compat_cluster_info_handler(
 pub fn es_compat_search_handler(
     _search_service: Arc<dyn SearchService>,
 ) -> impl Filter<Extract = (impl warp::Reply,), Error = Rejection> + Clone {
-    elastic_search_filter().then(|_params: SearchQueryParams| async move {
+    elasticsearch_filter().then(|_params: SearchQueryParams| async move {
         // TODO
         let api_error = ApiError {
             service_code: ServiceErrorCode::NotSupportedYet,
@@ -138,7 +138,7 @@ pub fn es_compat_index_multi_search_handler(
     elastic_multi_search_filter()
         .and(with_arg(search_service))
         .then(es_compat_index_multi_search)
-        .map(|result: Result<MultiSearchResponse, ElasticSearchError>| {
+        .map(|result: Result<MultiSearchResponse, ElasticsearchError>| {
             let status_code = match &result {
                 Ok(_) => StatusCode::OK,
                 Err(err) => err.status,
@@ -161,7 +161,7 @@ fn build_request_for_es_api(
     index_id_patterns: Vec<String>,
     search_params: SearchQueryParams,
     search_body: SearchBody,
-) -> Result<(quickwit_proto::search::SearchRequest, bool), ElasticSearchError> {
+) -> Result<(quickwit_proto::search::SearchRequest, bool), ElasticsearchError> {
     let default_operator = search_params.default_operator.unwrap_or(BooleanOperand::Or);
     // The query string, if present, takes priority over what can be in the request
     // body.
@@ -211,7 +211,7 @@ fn build_request_for_es_api(
         .take_while_inclusive(|sort_field| !is_doc_field(sort_field))
         .collect();
     if sort_fields.len() >= 3 {
-        return Err(ElasticSearchError::from(SearchError::InvalidArgument(
+        return Err(ElasticsearchError::from(SearchError::InvalidArgument(
             format!("only up to two sort fields supported at the moment. got {sort_fields:?}"),
         )));
     }
@@ -248,12 +248,12 @@ fn is_doc_field(field: &quickwit_proto::search::SortField) -> bool {
 fn partial_hit_from_search_after_param(
     search_after: Vec<serde_json::Value>,
     sort_order: &[quickwit_proto::search::SortField],
-) -> Result<Option<PartialHit>, ElasticSearchError> {
+) -> Result<Option<PartialHit>, ElasticsearchError> {
     if search_after.is_empty() {
         return Ok(None);
     }
     if search_after.len() != sort_order.len() {
-        return Err(ElasticSearchError::new(
+        return Err(ElasticsearchError::new(
             StatusCode::BAD_REQUEST,
             "sort and search_after are of different length".to_string(),
         ));
@@ -264,7 +264,7 @@ fn partial_hit_from_search_after_param(
             if let Some(value_str) = value.as_str() {
                 let address: quickwit_search::GlobalDocAddress =
                     value_str.parse().map_err(|_| {
-                        ElasticSearchError::new(
+                        ElasticsearchError::new(
                             StatusCode::BAD_REQUEST,
                             "invalid search_after doc id, must be of form \
                              `{split_id}:{segment_id: u32}:{doc_id: u32}`"
@@ -276,14 +276,14 @@ fn partial_hit_from_search_after_param(
                 parsed_search_after.doc_id = address.doc_addr.doc_id;
                 return Ok(Some(parsed_search_after));
             } else {
-                return Err(ElasticSearchError::new(
+                return Err(ElasticsearchError::new(
                     StatusCode::BAD_REQUEST,
                     "search_after doc id must be of string type".to_string(),
                 ));
             }
         } else {
             let value = SortByValue::try_from_json(value).ok_or_else(|| {
-                ElasticSearchError::new(
+                ElasticsearchError::new(
                     StatusCode::BAD_REQUEST,
                     "invalid search_after field value, expect bool, number or string".to_string(),
                 )
@@ -300,7 +300,7 @@ fn partial_hit_from_search_after_param(
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-struct ElasticSearchCountResponse {
+struct ElasticsearchCountResponse {
     count: u64,
 }
 
@@ -309,12 +309,12 @@ async fn es_compat_index_count(
     search_params: SearchQueryParamsCount,
     search_body: SearchBody,
     search_service: Arc<dyn SearchService>,
-) -> Result<ElasticSearchCountResponse, ElasticSearchError> {
+) -> Result<ElasticsearchCountResponse, ElasticsearchError> {
     let search_params: SearchQueryParams = search_params.into();
     let (search_request, _append_shard_doc) =
         build_request_for_es_api(index_id_patterns, search_params, search_body)?;
     let search_response: SearchResponse = search_service.root_search(search_request).await?;
-    let search_response_rest: ElasticSearchCountResponse = ElasticSearchCountResponse {
+    let search_response_rest: ElasticsearchCountResponse = ElasticsearchCountResponse {
         count: search_response.num_hits,
     };
     Ok(search_response_rest)
@@ -325,13 +325,13 @@ async fn es_compat_index_search(
     search_params: SearchQueryParams,
     search_body: SearchBody,
     search_service: Arc<dyn SearchService>,
-) -> Result<ElasticSearchResponse, ElasticSearchError> {
+) -> Result<ElasticsearchResponse, ElasticsearchError> {
     let start_instant = Instant::now();
     let (search_request, append_shard_doc) =
         build_request_for_es_api(index_id_patterns, search_params, search_body)?;
     let search_response: SearchResponse = search_service.root_search(search_request).await?;
     let elapsed = start_instant.elapsed();
-    let mut search_response_rest: ElasticSearchResponse =
+    let mut search_response_rest: ElasticsearchResponse =
         convert_to_es_search_response(search_response, append_shard_doc);
     search_response_rest.took = elapsed.as_millis() as u32;
     Ok(search_response_rest)
@@ -342,7 +342,7 @@ async fn es_compat_index_field_capabilities(
     search_params: FieldCapabilityQueryParams,
     search_body: FieldCapabilityRequestBody,
     search_service: Arc<dyn SearchService>,
-) -> Result<FieldCapabilityResponse, ElasticSearchError> {
+) -> Result<FieldCapabilityResponse, ElasticsearchError> {
     let search_request =
         build_list_field_request_for_es_api(index_id_patterns, search_params, search_body)?;
     let search_response: ListFieldsResponse =
@@ -390,7 +390,7 @@ async fn es_compat_index_multi_search(
     payload: Bytes,
     multi_search_params: MultiSearchQueryParams,
     search_service: Arc<dyn SearchService>,
-) -> Result<MultiSearchResponse, ElasticSearchError> {
+) -> Result<MultiSearchResponse, ElasticsearchError> {
     let mut search_requests = Vec::new();
     let str_payload = from_utf8(&payload)
         .map_err(|err| SearchError::InvalidQuery(format!("invalid UTF-8: {}", err)))?;
@@ -405,7 +405,7 @@ async fn es_compat_index_multi_search(
             ))
         })?;
         if request_header.index.is_empty() {
-            return Err(ElasticSearchError::from(SearchError::InvalidArgument(
+            return Err(ElasticsearchError::from(SearchError::InvalidArgument(
                 "`_msearch` request header must define at least one index".to_string(),
             )));
         }
@@ -448,10 +448,10 @@ async fn es_compat_index_multi_search(
                 let search_response: SearchResponse =
                     search_service.clone().root_search(search_request).await?;
                 let elapsed = start_instant.elapsed();
-                let mut search_response_rest: ElasticSearchResponse =
+                let mut search_response_rest: ElasticsearchResponse =
                     convert_to_es_search_response(search_response, append_shard_doc);
                 search_response_rest.took = elapsed.as_millis() as u32;
-                Ok::<_, ElasticSearchError>(search_response_rest)
+                Ok::<_, ElasticsearchError>(search_response_rest)
             }
         });
     let max_concurrent_searches =
@@ -474,7 +474,7 @@ async fn es_compat_index_multi_search(
 async fn es_scroll(
     scroll_query_params: ScrollQueryParams,
     search_service: Arc<dyn SearchService>,
-) -> Result<ElasticSearchResponse, ElasticSearchError> {
+) -> Result<ElasticsearchResponse, ElasticsearchError> {
     let start_instant = Instant::now();
     let Some(scroll_id) = scroll_query_params.scroll_id.clone() else {
         return Err(SearchError::InvalidArgument("missing scroll_id".to_string()).into());
@@ -492,7 +492,7 @@ async fn es_scroll(
     };
     let search_response: SearchResponse = search_service.scroll(scroll_request).await?;
     // TODO append_shard_doc depends on the initial request, but we don't have access to it
-    let mut search_response_rest: ElasticSearchResponse =
+    let mut search_response_rest: ElasticsearchResponse =
         convert_to_es_search_response(search_response, false);
     search_response_rest.took = start_instant.elapsed().as_millis() as u32;
     Ok(search_response_rest)
@@ -501,7 +501,7 @@ async fn es_scroll(
 fn convert_to_es_search_response(
     resp: SearchResponse,
     append_shard_doc: bool,
-) -> ElasticSearchResponse {
+) -> ElasticsearchResponse {
     let hits: Vec<ElasticHit> = resp
         .hits
         .into_iter()
@@ -512,7 +512,7 @@ fn convert_to_es_search_response(
     } else {
         None
     };
-    ElasticSearchResponse {
+    ElasticsearchResponse {
         timed_out: false,
         hits: HitsMetadata {
             total: Some(TotalHits {

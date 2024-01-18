@@ -23,7 +23,7 @@ use quickwit_proto::search::{ListFieldType, ListFieldsEntryResponse, ListFieldsR
 use serde::{Deserialize, Serialize};
 
 use super::search_query_params::*;
-use super::ElasticSearchError;
+use super::ElasticsearchError;
 use crate::simple_list::{from_simple_list, to_simple_list};
 
 #[serde_with::skip_serializing_none]
@@ -182,7 +182,7 @@ pub fn build_list_field_request_for_es_api(
     index_id_patterns: Vec<String>,
     search_params: FieldCapabilityQueryParams,
     _search_body: FieldCapabilityRequestBody,
-) -> Result<quickwit_proto::search::ListFieldsRequest, ElasticSearchError> {
+) -> Result<quickwit_proto::search::ListFieldsRequest, ElasticsearchError> {
     Ok(quickwit_proto::search::ListFieldsRequest {
         index_id_patterns,
         fields: search_params.fields.unwrap_or_default(),

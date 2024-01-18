@@ -35,7 +35,7 @@ use warp::{redirect, Filter, Rejection, Reply};
 use crate::cluster_api::cluster_handler;
 use crate::debugging_api::debugging_handler;
 use crate::delete_task_api::delete_task_api_handlers;
-use crate::elastic_search_api::elastic_api_handlers;
+use crate::elasticsearch_api::elastic_api_handlers;
 use crate::health_check_api::health_check_handlers;
 use crate::index_api::index_management_handlers;
 use crate::indexing_api::indexing_get_handler;
