@@ -19,10 +19,6 @@ jobs:
         run: pip install ./distribution/lambda  
       - name: Mypy lint
         run: mypy distribution/lambda/
-
-      - name: Extract asset version of release
-        run: echo "QW_LAMBDA_VERSION=${GITHUB_REF/refs\/tags\//}" >> $GITHUB_ENV
-        if: ${{ github.event_name == 'push' }}
       - name: Retrieve and export commit date, hash, and tags
         run: |
             echo "QW_COMMIT_DATE=$(TZ=UTC0 git log -1 --format=%cd --date=format-local:%Y-%m-%dT%H:%M:%SZ)" >> $GITHUB_ENV
