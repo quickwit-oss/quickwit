@@ -298,7 +298,9 @@ pub async fn serve_quickwit(
                 .stack_add_source_layer(broker_layer.clone())
                 .stack_delete_source_layer(broker_layer.clone())
                 .stack_toggle_source_layer(broker_layer)
-                .stack_layer(tower::limit::GlobalConcurrencyLimitLayer::new(MAX_CONCURRENT_METASTORE_REQUESTS))
+                .stack_layer(tower::limit::GlobalConcurrencyLimitLayer::new(
+                    MAX_CONCURRENT_METASTORE_REQUESTS,
+                ))
                 .build(metastore);
             Some(metastore)
         } else {

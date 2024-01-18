@@ -10,7 +10,7 @@ RUN touch .gitignore_for_build_directory \
 
 FROM rust:bullseye AS bin-builder
 
-ARG CARGO_FEATURES=release-feature-set
+# ARG CARGO_FEATURES=release-feature-set
 ARG CARGO_PROFILE=release
 ARG QW_COMMIT_DATE
 ARG QW_COMMIT_HASH
@@ -40,7 +40,7 @@ WORKDIR /quickwit
 
 RUN echo "Building workspace with feature(s) '$CARGO_FEATURES' and profile '$CARGO_PROFILE'" \
     && cargo build \
-        --features $CARGO_FEATURES \
+        # --features $CARGO_FEATURES \
         $(test "$CARGO_PROFILE" = "release" && echo "--release") \
     && echo "Copying binaries to /quickwit/bin" \
     && mkdir -p /quickwit/bin \
