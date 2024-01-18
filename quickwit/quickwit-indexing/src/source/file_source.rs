@@ -165,6 +165,7 @@ impl TypedSourceFactory for FileSourceFactory {
                         },
                     )
                     .await?;
+                assert!(file_size >= offset, "file size should be >= offset");
                 FileSourceReader::new(Box::new(GzipDecoder::new(BufReader::new(stream))), offset)
             } else {
                 let stream = storage
@@ -210,11 +211,15 @@ impl FileSourceReader {
     }
 
     async fn skip(&mut self) -> io::Result<()> {
+        // Allocate once a 64kb buffer.
         let mut buf = [0u8; 64000];
         while self.num_bytes_to_skip > 0 {
-            let buffer_len = self.num_bytes_to_skip.min(buf.len());
-            let bytes_read = self.reader.read_exact(&mut buf[..buffer_len]).await?;
-            self.num_bytes_to_skip -= bytes_read;
+            let num_bytes_to_read = self.num_bytes_to_skip.min(buf.len());
+            let num_bytes_read = self
+                .reader
+                .read_exact(&mut buf[..num_bytes_to_read])
+                .await?;
+            self.num_bytes_to_skip -= num_bytes_read;
         }
         Ok(())
     }
@@ -242,7 +247,7 @@ pub(crate) fn dir_and_filename(filepath: &Path) -> anyhow::Result<(Uri, &Path)> 
 
 #[cfg(test)]
 mod tests {
-    use std::io::Write;
+    use std::io::{Cursor, Write};
     use std::num::NonZeroUsize;
     use std::path::PathBuf;
 
@@ -516,5 +521,53 @@ mod tests {
             .await
             .unwrap();
         gzip_documents
+    }
+
+    #[tokio::test]
+    async fn test_skip_reader() {
+        {
+            // Skip 0 bytes.
+            let mut reader = FileSourceReader::new(Box::new("hello".as_bytes()), 0);
+            let mut buf = String::new();
+            reader.read_line(&mut buf).await.unwrap();
+            assert_eq!(buf, "hello");
+        }
+        {
+            // Skip 2 bytes.
+            let mut reader = FileSourceReader::new(Box::new("hello".as_bytes()), 2);
+            let mut buf = String::new();
+            reader.read_line(&mut buf).await.unwrap();
+            assert_eq!(buf, "llo");
+        }
+        {
+            let input = "hello";
+            let cursor = Cursor::new(input.clone());
+            let mut reader = FileSourceReader::new(Box::new(cursor), 5);
+            let mut buf = String::new();
+            assert!(reader.read_line(&mut buf).await.is_ok());
+        }
+        {
+            let input = "hello";
+            let cursor = Cursor::new(input.clone());
+            let mut reader = FileSourceReader::new(Box::new(cursor), 10);
+            let mut buf = String::new();
+            assert!(reader.read_line(&mut buf).await.is_err());
+        }
+        {
+            let input = "hello world".repeat(10000);
+            let cursor = Cursor::new(input.clone());
+            let mut reader = FileSourceReader::new(Box::new(cursor), 64000);
+            let mut buf = String::new();
+            reader.read_line(&mut buf).await.unwrap();
+            assert_eq!(buf, input[64000..]);
+        }
+        {
+            let input = "hello world".repeat(10000);
+            let cursor = Cursor::new(input.clone());
+            let mut reader = FileSourceReader::new(Box::new(cursor), 64001);
+            let mut buf = String::new();
+            reader.read_line(&mut buf).await.unwrap();
+            assert_eq!(buf, input[64001..]);
+        }
     }
 }
