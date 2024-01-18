@@ -37,6 +37,7 @@ members = [
 ]
 default-members = [
   "quickwit-cli",
+  "quickwit-indexing",
   "quickwit-metastore"
 ]
 
