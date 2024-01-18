@@ -157,7 +157,7 @@ mod tests {
 
     use crate::elasticsearch_api::bulk_v2::ElasticBulkResponse;
     use crate::elasticsearch_api::elastic_api_handlers;
-    use crate::elasticsearch_api::model::ElasticsearchError;
+    use crate::elasticsearch_api::model::ElasticSearchError;
     use crate::ingest_api::setup_ingest_service;
 
     #[tokio::test]

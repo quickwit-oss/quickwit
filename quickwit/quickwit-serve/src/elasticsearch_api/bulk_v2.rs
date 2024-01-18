@@ -22,9 +22,7 @@ use std::time::Instant;
 use hyper::StatusCode;
 use quickwit_config::INGEST_V2_SOURCE_ID;
 use quickwit_ingest::IngestRequestV2Builder;
-use quickwit_proto::ingest::router::{
-    IngestFailureReason, IngestRouterService, IngestRouterServiceClient,
-};
+use quickwit_proto::ingest::router::{IngestRouterService, IngestRouterServiceClient, IngestFailureReason};
 use quickwit_proto::ingest::CommitTypeV2;
 use quickwit_proto::types::IndexId;
 use serde::{Deserialize, Serialize};
@@ -39,6 +37,31 @@ pub(crate) struct ElasticBulkResponse {
     #[serde(rename = "took")]
     pub took_millis: u64,
     pub errors: bool,
+    pub items: Vec<ElasticBulkItem>,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub(crate) struct ElasticBulkItem {
+    pub action: ElasticBulkAction,
+    pub response: ElasticBulkActionResponse,
+}
+
+pub(crate) struct ElasticBulkActionResponse {
+    #[serde(rename = "_index")]
+    pub index_id: IndexId,
+    pub status_code: StatusCode,
+    pub error: Option<ElasticBulkError>,
+}
+
+pub(crate) struct ElasticBulkError {
+    #[serde(rename = "index")]
+    pub index_id: Option<IndexId>,
+    #[serde(rename = "type")]
+    pub error_type: String,
+    pub reason: String,
+}
+
+pub(crate) enum ElasticBulkAction {
 }
 
 pub(crate) async fn elastic_bulk_ingest_v2(
@@ -90,7 +113,6 @@ pub(crate) async fn elastic_bulk_ingest_v2(
         let ingest_response_v2 = ingest_router.ingest(ingest_request).await?;
         let took_millis = now.elapsed().as_millis() as u64;
         let errors = !ingest_response_v2.failures.is_empty();
-
         for failure in ingest_response_v2.failures {
             // This custom logic for Airmail is temporary.
             if failure.reason() == IngestFailureReason::IndexNotFound {
@@ -99,9 +121,20 @@ pub(crate) async fn elastic_bulk_ingest_v2(
                 return Err(elasticsearch_error);
             }
         }
+        let mut items = Vec::new();
+        // for failure in ingest_response_v2.failures {
+        //     match failure.reason() {
+        //         IngestFailureReason::IndexNotFound => {
+
+        //         }
+        //         _ => {
+        //             // TODO
+        //         }
+        // }
         let bulk_response = ElasticBulkResponse {
             took_millis,
             errors,
+            items,
         };
         Ok(bulk_response)
     } else {
