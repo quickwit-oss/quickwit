@@ -39,7 +39,7 @@ pub use multi_search::{
 use quickwit_proto::search::{SortDatetimeFormat, SortOrder};
 pub use scroll::ScrollQueryParams;
 pub use search_body::SearchBody;
-pub use search_query_params::SearchQueryParams;
+pub use search_query_params::{SearchQueryParams, SearchQueryParamsCount};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Eq, PartialEq)]

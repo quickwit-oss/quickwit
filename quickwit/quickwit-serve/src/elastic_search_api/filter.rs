@@ -25,6 +25,7 @@ use warp::{Filter, Rejection};
 
 use super::model::{
     FieldCapabilityQueryParams, FieldCapabilityRequestBody, MultiSearchQueryParams,
+    SearchQueryParamsCount,
 };
 use crate::elastic_search_api::model::{
     ElasticBulkOptions, ScrollQueryParams, SearchBody, SearchQueryParams,
@@ -154,6 +155,17 @@ pub(crate) fn elastic_field_capabilities_filter() -> impl Filter<
 > + Clone {
     warp::path!("_elastic" / "_field_caps")
         .and_then(extract_index_id_patterns_default)
+        .and(warp::get().or(warp::post()).unify())
+        .and(serde_qs::warp::query(serde_qs::Config::default()))
+        .and(json_or_empty())
+}
+
+#[utoipa::path(get, tag = "Count", path = "/{index}/_count")]
+pub(crate) fn elastic_index_count_filter(
+) -> impl Filter<Extract = (Vec<String>, SearchQueryParamsCount, SearchBody), Error = Rejection> + Clone
+{
+    warp::path!("_elastic" / String / "_count")
+        .and_then(extract_index_id_patterns)
         .and(warp::get().or(warp::post()).unify())
         .and(serde_qs::warp::query(serde_qs::Config::default()))
         .and(json_or_empty())
