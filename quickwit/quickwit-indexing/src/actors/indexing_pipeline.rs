@@ -290,8 +290,7 @@ impl IndexingPipeline {
             Health::FailureOrUnhealthy => {
                 self.terminate().await;
                 let first_retry_delay = wait_duration_before_retry(0);
-                ctx.schedule_self_msg(first_retry_delay, Spawn { retry_count: 0 })
-                    .await;
+                ctx.schedule_self_msg(first_retry_delay, Spawn { retry_count: 0 });
             }
             Health::Success => {
                 return Err(ActorExitStatus::Success);
@@ -510,8 +509,7 @@ impl Handler<SuperviseLoop> for IndexingPipeline {
     ) -> Result<(), ActorExitStatus> {
         self.perform_observe(ctx);
         self.perform_health_check(ctx).await?;
-        ctx.schedule_self_msg(SUPERVISE_INTERVAL, supervise_loop_token)
-            .await;
+        ctx.schedule_self_msg(SUPERVISE_INTERVAL, supervise_loop_token);
         Ok(())
     }
 }
@@ -543,8 +541,7 @@ impl Handler<Spawn> for IndexingPipeline {
                 Spawn {
                     retry_count: spawn.retry_count + 1,
                 },
-            )
-            .await;
+            );
         }
         Ok(())
     }

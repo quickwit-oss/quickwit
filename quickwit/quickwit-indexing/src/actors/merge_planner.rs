@@ -446,8 +446,7 @@ impl Handler<RefreshMetrics> for MergePlanner {
             RefreshMetrics {
                 incarnation_started_at: self.incarnation_started_at,
             },
-        )
-        .await;
+        );
         Ok(())
     }
 }

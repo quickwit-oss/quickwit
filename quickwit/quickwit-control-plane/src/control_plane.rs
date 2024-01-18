@@ -138,8 +138,7 @@ impl Actor for ControlPlane {
 
         self.ingest_controller.sync_with_all_ingesters(&self.model);
 
-        ctx.schedule_self_msg(CONTROL_PLAN_LOOP_INTERVAL, ControlPlanLoop)
-            .await;
+        ctx.schedule_self_msg(CONTROL_PLAN_LOOP_INTERVAL, ControlPlanLoop);
 
         Ok(())
     }
@@ -257,8 +256,7 @@ impl Handler<ControlPlanLoop> for ControlPlane {
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         self.indexing_scheduler.control_running_plan(&self.model);
-        ctx.schedule_self_msg(CONTROL_PLAN_LOOP_INTERVAL, ControlPlanLoop)
-            .await;
+        ctx.schedule_self_msg(CONTROL_PLAN_LOOP_INTERVAL, ControlPlanLoop);
         Ok(())
     }
 }

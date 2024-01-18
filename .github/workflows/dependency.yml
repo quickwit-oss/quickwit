@@ -18,4 +18,6 @@ jobs:
       - name: "Dependency Review"
         uses: actions/dependency-review-action@v3
         with:
-          allow-ghsas: GHSA-xpp3-xrff-w6rh # this refers to a RocksDB vulnerability on an API we do not use.
+          # This is an minor vuln on the rsa crate, used for
+          # google storage.
+          allow-ghsas: GHSA-c38w-74pg-36hr,GHSA-4grx-2x9w-596c
