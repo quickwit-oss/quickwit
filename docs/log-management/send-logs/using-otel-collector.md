@@ -29,8 +29,11 @@ exporters:
   otlp/quickwit:
     endpoint: host.docker.internal:7281
     tls:
-      insecure: true
-
+      insecure: true  
+    # By default, logs are sent to the otel-logs-v0_7.
+    # You can customize the index ID By setting this header.
+    # headers:
+    #   qw-otel-logs-index: otel-logs-v0_7
 service:
   pipelines:
     logs:
@@ -58,6 +61,10 @@ exporters:
     endpoint: 127.0.0.1:7281
     tls:
       insecure: true
+    # By default, logs are sent to the otel-logs-v0_7.
+    # You can customize the index ID By setting this header.
+    # headers:
+    #   qw-otel-logs-index: otel-logs-v0_7
 
 service:
   pipelines:

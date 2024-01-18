@@ -38,14 +38,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Indexing Service.
     let mut prost_config = prost_build::Config::default();
-    prost_config.extern_path(
-        ".quickwit.indexing.PipelineUid",
-        "crate::types::PipelineUid",
-    );
+    prost_config
+        .extern_path(
+            ".quickwit.indexing.PipelineUid",
+            "crate::types::PipelineUid",
+        )
+        .extern_path(".quickwit.ingest.ShardId", "crate::types::ShardId");
 
     Codegen::builder()
         .with_prost_config(prost_config)
         .with_protos(&["protos/quickwit/indexing.proto"])
+        .with_includes(&["protos"])
         .with_output_dir("src/codegen/quickwit")
         .with_result_type_path("crate::indexing::IndexingResult")
         .with_error_type_path("crate::indexing::IndexingError")
@@ -55,6 +58,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Metastore service.
     let mut prost_config = prost_build::Config::default();
     prost_config
+        .extern_path(".quickwit.ingest.ShardId", "crate::types::ShardId")
         .field_attribute("DeleteQuery.index_uid", "#[serde(alias = \"index_id\")]")
         .field_attribute("DeleteQuery.query_ast", "#[serde(alias = \"query\")]")
         .field_attribute(
@@ -87,6 +91,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "Position.position",
         ])
         .extern_path(".quickwit.ingest.Position", "crate::types::Position")
+        .extern_path(".quickwit.ingest.ShardId", "crate::types::ShardId")
         .type_attribute("Shard", "#[derive(Eq)]")
         .field_attribute(
             "Shard.follower_id",

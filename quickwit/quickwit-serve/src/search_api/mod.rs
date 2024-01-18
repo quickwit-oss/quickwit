@@ -32,6 +32,7 @@ mod tests {
     use std::net::SocketAddr;
     use std::sync::Arc;
 
+    use bytesize::ByteSize;
     use futures::TryStreamExt;
     use quickwit_common::ServiceStream;
     use quickwit_indexing::MockSplitBuilder;
@@ -128,7 +129,10 @@ mod tests {
         start_test_server(grpc_addr, Arc::new(mock_search_service)).await?;
 
         let searcher_pool = SearcherPool::default();
-        searcher_pool.insert(grpc_addr, create_search_client_from_grpc_addr(grpc_addr));
+        searcher_pool.insert(
+            grpc_addr,
+            create_search_client_from_grpc_addr(grpc_addr, ByteSize::mib(1)),
+        );
         let search_job_placer = SearchJobPlacer::new(searcher_pool);
         let cluster_client = ClusterClient::new(search_job_placer.clone());
         let stream = root_search_stream(

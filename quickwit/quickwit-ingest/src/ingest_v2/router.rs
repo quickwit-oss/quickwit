@@ -230,20 +230,23 @@ impl IngestRouter {
                     }
                     for persist_failure in persist_response.failures {
                         workbench.record_persist_failure(&persist_failure);
+
                         if persist_failure.reason() == PersistFailureReason::ShardClosed {
+                            let shard_id = persist_failure.shard_id().clone();
                             let index_uid: IndexUid = persist_failure.index_uid.into();
                             let source_id: SourceId = persist_failure.source_id;
                             closed_shards
                                 .entry((index_uid, source_id))
                                 .or_default()
-                                .push(persist_failure.shard_id);
+                                .push(shard_id);
                         } else if persist_failure.reason() == PersistFailureReason::ShardNotFound {
+                            let shard_id = persist_failure.shard_id().clone();
                             let index_uid: IndexUid = persist_failure.index_uid.into();
                             let source_id: SourceId = persist_failure.source_id;
                             deleted_shards
                                 .entry((index_uid, source_id))
                                 .or_default()
-                                .push(persist_failure.shard_id);
+                                .push(shard_id);
                         }
                     }
                 }
@@ -333,7 +336,7 @@ impl IngestRouter {
                 subrequest_id: subrequest.subrequest_id,
                 index_uid: shard.index_uid.clone().into(),
                 source_id: shard.source_id.clone(),
-                shard_id: shard.shard_id,
+                shard_id: Some(shard.shard_id.clone()),
                 doc_batch: subrequest.doc_batch.clone(),
             };
             per_leader_persist_subrequests
@@ -558,14 +561,14 @@ mod tests {
                     RoutingEntry {
                         index_uid: "test-index-0:0".into(),
                         source_id: "test-source".to_string(),
-                        shard_id: 1,
+                        shard_id: ShardId::from(1),
                         shard_state: ShardState::Closed,
                         leader_id: "test-ingester-0".into(),
                     },
                     RoutingEntry {
                         index_uid: "test-index-0:0".into(),
                         source_id: "test-source".to_string(),
-                        shard_id: 2,
+                        shard_id: ShardId::from(2),
                         shard_state: ShardState::Open,
                         leader_id: "test-ingester-0".into(),
                     },
@@ -612,7 +615,7 @@ mod tests {
             ShardIds {
                 index_uid: "test-index-0:0".into(),
                 source_id: "test-source".to_string(),
-                shard_ids: vec![1],
+                shard_ids: vec![ShardId::from(1)],
             }
         );
         assert_eq!(
@@ -703,7 +706,7 @@ mod tests {
                             open_shards: vec![Shard {
                                 index_uid: "test-index-0:0".to_string(),
                                 source_id: "test-source".to_string(),
-                                shard_id: 1,
+                                shard_id: Some(ShardId::from(1)),
                                 shard_state: ShardState::Open as i32,
                                 ..Default::default()
                             }],
@@ -716,14 +719,14 @@ mod tests {
                                 Shard {
                                     index_uid: "test-index-1:0".to_string(),
                                     source_id: "test-source".to_string(),
-                                    shard_id: 1,
+                                    shard_id: Some(ShardId::from(1)),
                                     shard_state: ShardState::Open as i32,
                                     ..Default::default()
                                 },
                                 Shard {
                                     index_uid: "test-index-1:0".to_string(),
                                     source_id: "test-source".to_string(),
-                                    shard_id: 2,
+                                    shard_id: Some(ShardId::from(2)),
                                     shard_state: ShardState::Open as i32,
                                     ..Default::default()
                                 },
@@ -834,14 +837,14 @@ mod tests {
             .find_entry("test-index-0", "test-source")
             .unwrap();
         assert_eq!(routing_entry_0.len(), 1);
-        assert_eq!(routing_entry_0.all_shards()[0].shard_id, 1);
+        assert_eq!(routing_entry_0.all_shards()[0].shard_id, ShardId::from(1));
 
         let routing_entry_1 = routing_table
             .find_entry("test-index-1", "test-source")
             .unwrap();
         assert_eq!(routing_entry_1.len(), 2);
-        assert_eq!(routing_entry_1.all_shards()[0].shard_id, 1);
-        assert_eq!(routing_entry_1.all_shards()[1].shard_id, 2);
+        assert_eq!(routing_entry_1.all_shards()[0].shard_id, ShardId::from(1));
+        assert_eq!(routing_entry_1.all_shards()[1].shard_id, ShardId::from(2));
 
         let subworkbench = workbench.subworkbenches.get(&2).unwrap();
         assert!(matches!(
@@ -888,7 +891,7 @@ mod tests {
                     subrequest_id: 0,
                     index_uid: "test-index-0:0".to_string(),
                     source_id: "test-source".to_string(),
-                    shard_id: 1,
+                    shard_id: Some(ShardId::from(1)),
                     ..Default::default()
                 }],
                 failures: Vec::new(),
@@ -939,7 +942,7 @@ mod tests {
                     subrequest_id: 0,
                     index_uid: "test-index-0:0".to_string(),
                     source_id: "test-source".to_string(),
-                    shard_id: 1,
+                    shard_id: Some(ShardId::from(1)),
                     reason: PersistFailureReason::RateLimited as i32,
                 }],
             });
@@ -975,14 +978,14 @@ mod tests {
             vec![
                 Shard {
                     index_uid: "test-index-0:0".to_string(),
-                    shard_id: 1,
+                    shard_id: Some(ShardId::from(1)),
                     shard_state: ShardState::Open as i32,
                     leader_id: "test-ingester-0".to_string(),
                     ..Default::default()
                 },
                 Shard {
                     index_uid: "test-index-0:0".to_string(),
-                    shard_id: 2,
+                    shard_id: Some(ShardId::from(2)),
                     shard_state: ShardState::Open as i32,
                     leader_id: "test-ingester-0".to_string(),
                     ..Default::default()
@@ -1007,14 +1010,14 @@ mod tests {
                         subrequest_id: 0,
                         index_uid: "test-index-0:0".to_string(),
                         source_id: "test-source".to_string(),
-                        shard_id: 1,
+                        shard_id: Some(ShardId::from(1)),
                         reason: PersistFailureReason::ShardNotFound as i32,
                     },
                     PersistFailure {
                         subrequest_id: 1,
                         index_uid: "test-index-0:0".to_string(),
                         source_id: "test-source".to_string(),
-                        shard_id: 2,
+                        shard_id: Some(ShardId::from(2)),
                         reason: PersistFailureReason::ShardClosed as i32,
                     },
                 ],
@@ -1033,7 +1036,7 @@ mod tests {
         assert_eq!(routing_table_entry.len(), 1);
 
         let shard = routing_table_entry.all_shards()[0];
-        assert_eq!(shard.shard_id, 2);
+        assert_eq!(shard.shard_id, ShardId::from(2));
         assert_eq!(shard.shard_state, ShardState::Closed);
     }
 
@@ -1144,7 +1147,7 @@ mod tests {
             vec![Shard {
                 index_uid: "test-index-0:0".to_string(),
                 source_id: "test-source".to_string(),
-                shard_id: 1,
+                shard_id: Some(ShardId::from(1)),
                 shard_state: ShardState::Open as i32,
                 leader_id: "test-ingester-0".to_string(),
                 ..Default::default()
@@ -1157,7 +1160,7 @@ mod tests {
                 Shard {
                     index_uid: "test-index-1:0".to_string(),
                     source_id: "test-source".to_string(),
-                    shard_id: 1,
+                    shard_id: Some(ShardId::from(1)),
                     shard_state: ShardState::Open as i32,
                     leader_id: "test-ingester-0".to_string(),
                     follower_id: Some("test-ingester-1".to_string()),
@@ -1166,7 +1169,7 @@ mod tests {
                 Shard {
                     index_uid: "test-index-1:0".to_string(),
                     source_id: "test-source".to_string(),
-                    shard_id: 2,
+                    shard_id: Some(ShardId::from(2)),
                     shard_state: ShardState::Open as i32,
                     leader_id: "test-ingester-1".to_string(),
                     follower_id: Some("test-ingester-2".to_string()),
@@ -1189,7 +1192,7 @@ mod tests {
                 assert_eq!(subrequest.subrequest_id, 0);
                 assert_eq!(subrequest.index_uid, "test-index-0:0");
                 assert_eq!(subrequest.source_id, "test-source");
-                assert_eq!(subrequest.shard_id, 1);
+                assert_eq!(subrequest.shard_id(), ShardId::from(1));
                 assert_eq!(
                     subrequest.doc_batch,
                     Some(DocBatchV2::for_test(["test-doc-foo", "test-doc-bar"]))
@@ -1199,7 +1202,7 @@ mod tests {
                 assert_eq!(subrequest.subrequest_id, 1);
                 assert_eq!(subrequest.index_uid, "test-index-1:0");
                 assert_eq!(subrequest.source_id, "test-source");
-                assert_eq!(subrequest.shard_id, 1);
+                assert_eq!(subrequest.shard_id(), ShardId::from(1));
                 assert_eq!(
                     subrequest.doc_batch,
                     Some(DocBatchV2::for_test(["test-doc-qux"]))
@@ -1212,14 +1215,14 @@ mod tests {
                             subrequest_id: 0,
                             index_uid: "test-index-0:0".to_string(),
                             source_id: "test-source".to_string(),
-                            shard_id: 1,
+                            shard_id: Some(ShardId::from(1)),
                             replication_position_inclusive: Some(Position::offset(1u64)),
                         },
                         PersistSuccess {
                             subrequest_id: 1,
                             index_uid: "test-index-1:0".to_string(),
                             source_id: "test-source".to_string(),
-                            shard_id: 1,
+                            shard_id: Some(ShardId::from(1)),
                             replication_position_inclusive: Some(Position::offset(0u64)),
                         },
                     ],
@@ -1239,7 +1242,7 @@ mod tests {
                 assert_eq!(subrequest.subrequest_id, 0);
                 assert_eq!(subrequest.index_uid, "test-index-0:0");
                 assert_eq!(subrequest.source_id, "test-source");
-                assert_eq!(subrequest.shard_id, 1);
+                assert_eq!(subrequest.shard_id(), ShardId::from(1));
                 assert_eq!(
                     subrequest.doc_batch,
                     Some(DocBatchV2::for_test(["test-doc-moo", "test-doc-baz"]))
@@ -1251,7 +1254,7 @@ mod tests {
                         subrequest_id: 0,
                         index_uid: "test-index-0:0".to_string(),
                         source_id: "test-source".to_string(),
-                        shard_id: 1,
+                        shard_id: Some(ShardId::from(1)),
                         replication_position_inclusive: Some(Position::offset(3u64)),
                     }],
                     failures: Vec::new(),
@@ -1274,7 +1277,7 @@ mod tests {
                 assert_eq!(subrequest.subrequest_id, 1);
                 assert_eq!(subrequest.index_uid, "test-index-1:0");
                 assert_eq!(subrequest.source_id, "test-source");
-                assert_eq!(subrequest.shard_id, 2);
+                assert_eq!(subrequest.shard_id(), ShardId::from(2));
                 assert_eq!(
                     subrequest.doc_batch,
                     Some(DocBatchV2::for_test(["test-doc-tux"]))
@@ -1286,7 +1289,7 @@ mod tests {
                         subrequest_id: 1,
                         index_uid: "test-index-1:0".to_string(),
                         source_id: "test-source".to_string(),
-                        shard_id: 2,
+                        shard_id: Some(ShardId::from(2)),
                         replication_position_inclusive: Some(Position::offset(0u64)),
                     }],
                     failures: Vec::new(),
@@ -1354,7 +1357,7 @@ mod tests {
             vec![Shard {
                 index_uid: "test-index-0:0".to_string(),
                 source_id: "test-source".to_string(),
-                shard_id: 1,
+                shard_id: Some(ShardId::from(1)),
                 shard_state: ShardState::Open as i32,
                 leader_id: "test-ingester-0".to_string(),
                 ..Default::default()
@@ -1375,7 +1378,7 @@ mod tests {
                 assert_eq!(subrequest.subrequest_id, 0);
                 assert_eq!(subrequest.index_uid, "test-index-0:0");
                 assert_eq!(subrequest.source_id, "test-source");
-                assert_eq!(subrequest.shard_id, 1);
+                assert_eq!(subrequest.shard_id(), ShardId::from(1));
                 assert_eq!(
                     subrequest.doc_batch,
                     Some(DocBatchV2::for_test(["test-doc-foo"]))
@@ -1388,7 +1391,7 @@ mod tests {
                         subrequest_id: 0,
                         index_uid: "test-index-0:0".to_string(),
                         source_id: "test-source".to_string(),
-                        shard_id: 1,
+                        shard_id: Some(ShardId::from(1)),
                         reason: PersistFailureReason::RateLimited as i32,
                     }],
                 };
@@ -1406,7 +1409,7 @@ mod tests {
                 assert_eq!(subrequest.subrequest_id, 0);
                 assert_eq!(subrequest.index_uid, "test-index-0:0");
                 assert_eq!(subrequest.source_id, "test-source");
-                assert_eq!(subrequest.shard_id, 1);
+                assert_eq!(subrequest.shard_id(), ShardId::from(1));
                 assert_eq!(
                     subrequest.doc_batch,
                     Some(DocBatchV2::for_test(["test-doc-foo"]))
@@ -1418,7 +1421,7 @@ mod tests {
                         subrequest_id: 0,
                         index_uid: "test-index-0:0".to_string(),
                         source_id: "test-source".to_string(),
-                        shard_id: 1,
+                        shard_id: Some(ShardId::from(1)),
                         replication_position_inclusive: Some(Position::offset(0u64)),
                     }],
                     failures: Vec::new(),
@@ -1461,7 +1464,7 @@ mod tests {
             "test-source",
             vec![Shard {
                 index_uid: "test-index-0:0".to_string(),
-                shard_id: 1,
+                shard_id: Some(ShardId::from(1)),
                 shard_state: ShardState::Open as i32,
                 leader_id: "test-ingester".to_string(),
                 ..Default::default()
@@ -1477,12 +1480,12 @@ mod tests {
             },
             shard_infos: BTreeSet::from_iter([
                 ShardInfo {
-                    shard_id: 1,
+                    shard_id: ShardId::from(1),
                     shard_state: ShardState::Closed,
                     ingestion_rate: RateMibPerSec(0),
                 },
                 ShardInfo {
-                    shard_id: 2,
+                    shard_id: ShardId::from(2),
                     shard_state: ShardState::Open,
                     ingestion_rate: RateMibPerSec(0),
                 },
@@ -1500,9 +1503,9 @@ mod tests {
             .unwrap()
             .all_shards();
         assert_eq!(shards.len(), 2);
-        assert_eq!(shards[0].shard_id, 1);
+        assert_eq!(shards[0].shard_id, ShardId::from(1));
         assert_eq!(shards[0].shard_state, ShardState::Closed);
-        assert_eq!(shards[1].shard_id, 2);
+        assert_eq!(shards[1].shard_id, ShardId::from(2));
         assert_eq!(shards[1].shard_state, ShardState::Open);
         drop(state_guard);
 
@@ -1511,7 +1514,7 @@ mod tests {
                 index_uid: "test-index-0:0".into(),
                 source_id: "test-source".to_string(),
             },
-            shard_positions: vec![(1, Position::eof(0u64))],
+            shard_positions: vec![(ShardId::from(1), Position::eof(0u64))],
         };
         event_broker.publish(shard_positions_update);
 
@@ -1525,7 +1528,7 @@ mod tests {
             .unwrap()
             .all_shards();
         assert_eq!(shards.len(), 1);
-        assert_eq!(shards[0].shard_id, 2);
+        assert_eq!(shards[0].shard_id, ShardId::from(2));
         drop(state_guard);
     }
 }

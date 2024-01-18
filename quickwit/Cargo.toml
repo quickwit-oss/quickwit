@@ -62,7 +62,7 @@ cron = "0.12.0"
 dialoguer = "0.10.3"
 dotenv = "0.15"
 dyn-clone = "1.0.10"
-enum-iterator = "1.4"
+enum-iterator = "1.5"
 env_logger = "0.10"
 fail = "0.5"
 flume = "0.11"
@@ -279,7 +279,7 @@ quickwit-serve = { version = "0.7.0", path = "./quickwit-serve" }
 quickwit-storage = { version = "0.7.0", path = "./quickwit-storage" }
 quickwit-telemetry = { version = "0.7.0", path = "./quickwit-telemetry" }
 
-tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "014328e", default-features = false, features = [
+tantivy = { git = "https://github.com/quickwit-oss/tantivy/", rev = "108f30b", default-features = false, features = [
   "lz4-compression",
   "mmap",
   "quickwit",

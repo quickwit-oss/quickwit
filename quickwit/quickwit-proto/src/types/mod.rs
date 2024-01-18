@@ -30,17 +30,17 @@ pub use ulid::Ulid;
 
 mod pipeline_uid;
 mod position;
+mod shard_id;
 
 pub use pipeline_uid::PipelineUid;
 pub use position::Position;
+pub use shard_id::ShardId;
 
 pub type IndexId = String;
 
 pub type SourceId = String;
 
 pub type SplitId = String;
-
-pub type ShardId = u64;
 
 pub type SubrequestId = u32;
 
@@ -50,16 +50,20 @@ pub type PublishToken = String;
 /// Uniquely identifies a shard and its underlying mrecordlog queue.
 pub type QueueId = String; // <index_uid>/<source_id>/<shard_id>
 
-pub fn queue_id(index_uid: &str, source_id: &str, shard_id: u64) -> QueueId {
-    format!("{}/{}/{}", index_uid, source_id, shard_id)
+pub fn queue_id(index_uid: &str, source_id: &str, shard_id: &ShardId) -> QueueId {
+    format!("{index_uid}/{source_id}/{shard_id}")
 }
 
 pub fn split_queue_id(queue_id: &str) -> Option<(IndexUid, SourceId, ShardId)> {
     let mut parts = queue_id.split('/');
     let index_uid = parts.next()?;
     let source_id = parts.next()?;
-    let shard_id = parts.next()?.parse::<u64>().ok()?;
-    Some((index_uid.into(), source_id.to_string(), shard_id))
+    let shard_id = parts.next()?;
+    Some((
+        index_uid.into(),
+        source_id.to_string(),
+        ShardId::from(shard_id),
+    ))
 }
 
 /// Index identifiers that uniquely identify not only the index, but also
@@ -397,8 +401,8 @@ mod tests {
     #[test]
     fn test_queue_id() {
         assert_eq!(
-            queue_id("test-index:0", "test-source", 1),
-            "test-index:0/test-source/1"
+            queue_id("test-index:0", "test-source", &ShardId::from(1u64)),
+            "test-index:0/test-source/00000000000000000001"
         );
     }
 
@@ -410,14 +414,11 @@ mod tests {
         let splits = split_queue_id("test-index:0/test-source");
         assert!(splits.is_none());
 
-        let splits = split_queue_id("test-index:0/test-source/a");
-        assert!(splits.is_none());
-
         let (index_uid, source_id, shard_id) =
-            split_queue_id("test-index:0/test-source/1").unwrap();
+            split_queue_id("test-index:0/test-source/00000000000000000001").unwrap();
         assert_eq!(index_uid, "test-index:0");
         assert_eq!(source_id, "test-source");
-        assert_eq!(shard_id, 1);
+        assert_eq!(shard_id, ShardId::from(1u64));
     }
 
     #[test]

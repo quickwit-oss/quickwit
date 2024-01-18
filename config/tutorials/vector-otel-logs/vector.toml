@@ -46,4 +46,4 @@ method = "post"
 inputs = ["remap_syslog"]
 encoding.codec = "json"
 framing.method = "newline_delimited"
-uri = "http://127.0.0.1:7280/api/v1/otel-logs-v0_6/ingest"
+uri = "http://127.0.0.1:7280/api/v1/otel-logs-v0_7/ingest"

@@ -17,34 +17,38 @@
 // You should have received a copy of the GNU Affero General Public License
 // along with this program. If not, see <http://www.gnu.org/licenses/>.
 
-syntax = "proto3";
+use tokio::sync::oneshot;
 
-package quickwit.indexing;
-
-import "quickwit/ingest.proto";
-
-service IndexingService {
-  // Apply an indexing plan on the node.
-  rpc ApplyIndexingPlan(ApplyIndexingPlanRequest) returns (ApplyIndexingPlanResponse);
+pub struct WaitHandle {
+    rx: oneshot::Receiver<()>,
 }
 
-message ApplyIndexingPlanRequest {
-  repeated IndexingTask indexing_tasks = 1;
+impl WaitHandle {
+    pub fn new() -> (WaitDropGuard, WaitHandle) {
+        let (tx, rx) = oneshot::channel();
+        let wait_drop_guard = WaitDropGuard(tx);
+        let wait_handle = WaitHandle { rx };
+        (wait_drop_guard, wait_handle)
+    }
+
+    pub async fn wait(self) {
+        let _ = self.rx.await;
+    }
 }
 
-message PipelineUid {
-  bytes pipeline_uid = 1;
-}
+pub struct WaitDropGuard(oneshot::Sender<()>);
 
-message IndexingTask {
-  // The tasks's index UID.
-  string index_uid = 1;
-  // The task's source ID.
-  string source_id = 2;
-  // pipeline id
-  PipelineUid pipeline_uid = 4;
-  // The shards assigned to the indexer.
-  repeated quickwit.ingest.ShardId shard_ids = 3;
+#[cfg(test)]
+mod tests {
+    use tokio::sync::oneshot::error::TryRecvError;
+    #[tokio::test]
+    async fn test_wait_handle_simple() {
+        let (wait_drop_handle, mut wait_handle) = super::WaitHandle::new();
+        assert!(matches!(
+            wait_handle.rx.try_recv().unwrap_err(),
+            TryRecvError::Empty
+        ));
+        drop(wait_drop_handle);
+        wait_handle.wait().await;
+    }
 }
-
-message ApplyIndexingPlanResponse {}
