@@ -964,12 +964,6 @@ checksum = "9e1b586273c5702936fe7b7d6896644d8be71e6314cfe09d3167c95f712589e8"
 
 [[package]]
 name = "base64"
-version = "0.20.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "0ea22880d78093b0cbe17c89f64a7d457941e65759157ec6cb31a31d652b05e5"
-
-[[package]]
-name = "base64"
 version = "0.21.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9d297deb1925b89f2ccc13d7635fa0714f12c87adce1c75356b39ca9b7178567"
@@ -3432,7 +3426,7 @@ dependencies = [
  "http-body 1.0.0",
  "http-body-util",
  "hyper 1.1.0",
- "lambda_runtime 0.9.1",
+ "lambda_runtime",
  "mime",
  "percent-encoding",
  "pin-project-lite",
@@ -3441,30 +3435,6 @@ dependencies = [
  "serde_urlencoded",
  "tokio-stream",
  "url",
-]
-
-[[package]]
-name = "lambda_runtime"
-version = "0.8.3"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "deca8f65d7ce9a8bfddebb49d7d91b22e788a59ca0c5190f26794ab80ed7a702"
-dependencies = [
- "async-stream",
- "base64 0.20.0",
- "bytes",
- "futures",
- "http 0.2.11",
- "http-body 0.4.6",
- "http-serde 1.1.3",
- "hyper 0.14.28",
- "lambda_runtime_api_client 0.8.0",
- "serde",
- "serde_json",
- "serde_path_to_error",
- "tokio",
- "tokio-stream",
- "tower",
- "tracing",
 ]
 
 [[package]]
@@ -3483,7 +3453,7 @@ dependencies = [
  "http-serde 2.0.0",
  "hyper 1.1.0",
  "hyper-util",
- "lambda_runtime_api_client 0.9.0",
+ "lambda_runtime_api_client",
  "serde",
  "serde_json",
  "serde_path_to_error",
@@ -3491,18 +3461,6 @@ dependencies = [
  "tokio-stream",
  "tower",
  "tracing",
-]
-
-[[package]]
-name = "lambda_runtime_api_client"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "690c5ae01f3acac8c9c3348b556fc443054e9b7f1deaf53e9ebab716282bf0ed"
-dependencies = [
- "http 0.2.11",
- "hyper 0.14.28",
- "tokio",
- "tower-service",
 ]
 
 [[package]]
@@ -6073,7 +6031,7 @@ dependencies = [
  "chitchat",
  "flate2",
  "lambda_http",
- "lambda_runtime 0.8.3",
+ "lambda_runtime",
  "once_cell",
  "opentelemetry",
  "opentelemetry-otlp",
