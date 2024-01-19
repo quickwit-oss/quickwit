@@ -22,7 +22,7 @@ anyhow = { workspace = true }
 aws_lambda_events = "0.12.0"
 chitchat = { workspace = true }
 flate2 = { workspace = true }
-lambda_http = "0.8.3"
+lambda_http = "0.9.1"
 lambda_runtime = "0.8.3"
 once_cell = { workspace = true }
 opentelemetry =  { workspace = true }
