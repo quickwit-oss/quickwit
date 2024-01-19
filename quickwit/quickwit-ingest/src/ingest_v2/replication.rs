@@ -866,9 +866,7 @@ mod tests {
                     .map(|subrequest| {
                         let batch_len = subrequest.doc_batch.as_ref().unwrap().num_docs();
                         let replication_position_inclusive = subrequest
-                            .from_position_exclusive
-                            .clone()
-                            .unwrap_or_default()
+                            .from_position_exclusive()
                             .as_usize()
                             .map_or(batch_len - 1, |pos| pos + batch_len);
                         ReplicateSuccess {

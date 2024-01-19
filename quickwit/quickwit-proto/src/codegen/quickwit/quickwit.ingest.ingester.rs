@@ -197,7 +197,7 @@ pub struct ReplicateSubrequest {
     pub shard_id: ::core::option::Option<crate::types::ShardId>,
     #[prost(message, optional, tag = "5")]
     pub from_position_exclusive: ::core::option::Option<crate::types::Position>,
-    #[prost(message, optional, tag = "7")]
+    #[prost(message, optional, tag = "6")]
     pub doc_batch: ::core::option::Option<super::DocBatchV2>,
 }
 #[derive(serde::Serialize, serde::Deserialize, utoipa::ToSchema)]

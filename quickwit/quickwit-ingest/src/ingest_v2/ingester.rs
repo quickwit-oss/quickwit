@@ -48,7 +48,7 @@ use quickwit_proto::ingest::ingester::{
     TruncateShardsResponse,
 };
 use quickwit_proto::ingest::{CommitTypeV2, IngestV2Error, IngestV2Result, Shard, ShardState};
-use quickwit_proto::types::{queue_id, NodeId, Position, QueueId};
+use quickwit_proto::types::{queue_id, NodeId, Position, QueueId, SourceId};
 use tokio::sync::{watch, RwLock};
 use tracing::{debug, error, info, warn};
 
@@ -403,9 +403,10 @@ impl Ingester {
         }
         let mut persist_successes = Vec::with_capacity(persist_request.subrequests.len());
         let mut persist_failures = Vec::new();
-        let mut replicate_subrequests: HashMap<NodeId, Vec<(ReplicateSubrequest, String)>> =
+        let mut replicate_subrequests: HashMap<NodeId, Vec<(ReplicateSubrequest, QueueId)>> =
             HashMap::new();
-        let mut local_persist_subrequests: Vec<LocalPersistSubrequest> = Vec::new();
+        let mut local_persist_subrequests: Vec<LocalPersistSubrequest> =
+            Vec::with_capacity(persist_request.subrequests.len());
 
         // Keep track of the shards that need to be closed following an IO error.
         let mut shards_to_close: HashSet<QueueId> = HashSet::new();
@@ -1227,10 +1228,10 @@ pub async fn wait_for_ingester_decommission(ingester_opt: Option<IngesterService
 }
 
 struct LocalPersistSubrequest {
-    queue_id: String,
+    queue_id: QueueId,
     subrequest_id: u32,
     index_uid: String,
-    source_id: String,
+    source_id: SourceId,
     shard_id: Option<quickwit_proto::types::ShardId>,
     doc_batch: quickwit_proto::ingest::DocBatchV2,
     expected_position_inclusive: Option<Position>,
