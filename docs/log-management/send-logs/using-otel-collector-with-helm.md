@@ -144,10 +144,12 @@ config:
   exporters:
     otlp:
       endpoint: quickwit-indexer.qw-tutorial.svc.cluster.local:7281
-      # Quickwit OTEL gRPC endpoint does not support compression yet.
-      compression: none
       tls:
         insecure: true
+      # By default, logs are sent to the otel-logs-v0_7.
+      # You can customize the index ID By setting this header.
+      # headers:
+      #   qw-otel-logs-index: otel-logs-v0_7
   service:
     pipelines:
       logs:

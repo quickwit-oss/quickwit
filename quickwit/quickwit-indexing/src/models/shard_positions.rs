@@ -229,7 +229,7 @@ impl ShardPositionsService {
         };
         let shard_positions: Vec<(ShardId, Position)> = shard_positions_map
             .iter()
-            .map(|(&shard_id, position)| (shard_id, position.clone()))
+            .map(|(shard_id, position)| (shard_id.clone(), position.clone()))
             .collect();
         self.event_broker.publish(ShardPositionsUpdate {
             source_uid,
@@ -350,27 +350,30 @@ mod tests {
 
         event_broker1.publish(LocalShardPositionsUpdate::new(
             source_uid.clone(),
-            vec![(1, Position::Beginning)],
+            vec![(ShardId::from(1), Position::Beginning)],
         ));
         event_broker1.publish(LocalShardPositionsUpdate::new(
             source_uid.clone(),
-            vec![(2, Position::offset(10u64))],
+            vec![(ShardId::from(2), Position::offset(10u64))],
         ));
         event_broker1.publish(LocalShardPositionsUpdate::new(
             source_uid.clone(),
-            vec![(1, Position::offset(10u64))],
+            vec![(ShardId::from(1), Position::offset(10u64))],
         ));
         event_broker2.publish(LocalShardPositionsUpdate::new(
             source_uid.clone(),
-            vec![(2, Position::offset(10u64))],
+            vec![(ShardId::from(2), Position::offset(10u64))],
         ));
         event_broker2.publish(LocalShardPositionsUpdate::new(
             source_uid.clone(),
-            vec![(2, Position::offset(12u64))],
+            vec![(ShardId::from(2), Position::offset(12u64))],
         ));
         event_broker2.publish(LocalShardPositionsUpdate::new(
             source_uid.clone(),
-            vec![(1, Position::Beginning), (2, Position::offset(12u64))],
+            vec![
+                (ShardId::from(1), Position::Beginning),
+                (ShardId::from(2), Position::offset(12u64)),
+            ],
         ));
 
         let mut updates1: Vec<Vec<(ShardId, Position)>> = Vec::new();
@@ -384,10 +387,19 @@ mod tests {
         assert_eq!(
             updates1,
             vec![
-                vec![(1, Position::Beginning)],
-                vec![(1, Position::Beginning), (2, Position::offset(10u64))],
-                vec![(1, Position::offset(10u64)), (2, Position::offset(10u64)),],
-                vec![(1, Position::offset(10u64)), (2, Position::offset(12u64)),],
+                vec![(ShardId::from(1), Position::Beginning)],
+                vec![
+                    (ShardId::from(1), Position::Beginning),
+                    (ShardId::from(2), Position::offset(10u64))
+                ],
+                vec![
+                    (ShardId::from(1), Position::offset(10u64)),
+                    (ShardId::from(2), Position::offset(10u64)),
+                ],
+                vec![
+                    (ShardId::from(1), Position::offset(10u64)),
+                    (ShardId::from(2), Position::offset(12u64)),
+                ],
             ]
         );
 
@@ -401,10 +413,16 @@ mod tests {
         assert_eq!(
             updates2,
             vec![
-                vec![(2, Position::offset(10u64))],
-                vec![(2, Position::offset(12u64))],
-                vec![(1, Position::Beginning), (2, Position::offset(12u64))],
-                vec![(1, Position::offset(10u64)), (2, Position::offset(12u64))],
+                vec![(ShardId::from(2), Position::offset(10u64))],
+                vec![(ShardId::from(2), Position::offset(12u64))],
+                vec![
+                    (ShardId::from(1), Position::Beginning),
+                    (ShardId::from(2), Position::offset(12u64))
+                ],
+                vec![
+                    (ShardId::from(1), Position::offset(10u64)),
+                    (ShardId::from(2), Position::offset(12u64))
+                ],
             ]
         );
 
@@ -442,33 +460,33 @@ mod tests {
         {
             event_broker.publish(LocalShardPositionsUpdate::new(
                 source_uid.clone(),
-                vec![(1, Position::Beginning)],
+                vec![(ShardId::from(1), Position::Beginning)],
             ));
             tokio::time::sleep(Duration::from_secs(1)).await;
             let value = cluster.get_self_key_value(&key).await.unwrap();
-            assert_eq!(&value, r#"{"1":""}"#);
+            assert_eq!(&value, r#"{"00000000000000000001":""}"#);
         }
         {
             event_broker.publish(LocalShardPositionsUpdate::new(
                 source_uid.clone(),
                 vec![
-                    (1, Position::offset(1_000u64)),
-                    (2, Position::offset(2_000u64)),
+                    (ShardId::from(1), Position::offset(1_000u64)),
+                    (ShardId::from(2), Position::offset(2_000u64)),
                 ],
             ));
             tokio::time::sleep(Duration::from_secs(1)).await;
             let value = cluster.get_self_key_value(&key).await.unwrap();
             assert_eq!(
                 &value,
-                r#"{"1":"00000000000000001000","2":"00000000000000002000"}"#
+                r#"{"00000000000000000001":"00000000000000001000","00000000000000000002":"00000000000000002000"}"#
             );
         }
         {
             event_broker.publish(LocalShardPositionsUpdate::new(
                 source_uid.clone(),
                 vec![
-                    (1, Position::offset(999u64)),
-                    (3, Position::offset(3_000u64)),
+                    (ShardId::from(1), Position::offset(999u64)),
+                    (ShardId::from(3), Position::offset(3_000u64)),
                 ],
             ));
             tokio::time::sleep(Duration::from_secs(1)).await;
@@ -476,7 +494,7 @@ mod tests {
             // We do not update the position that got lower, nor the position that disappeared
             assert_eq!(
                 &value,
-                r#"{"1":"00000000000000001000","2":"00000000000000002000","3":"00000000000000003000"}"#
+                r#"{"00000000000000000001":"00000000000000001000","00000000000000000002":"00000000000000002000","00000000000000000003":"00000000000000003000"}"#
             );
         }
         universe.assert_quit().await;

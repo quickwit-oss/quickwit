@@ -46,6 +46,10 @@ impl PartitionId {
     pub fn as_u64(&self) -> Option<u64> {
         self.0.parse().ok()
     }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
 }
 
 impl fmt::Display for PartitionId {

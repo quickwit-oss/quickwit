@@ -323,9 +323,9 @@ message OpenShardsSubrequest {
   uint32 subrequest_id = 1;
   string index_uid = 2;
   string source_id = 3;
-  string leader_id = 4;
-  optional string follower_id = 5;
-  uint64 next_shard_id = 6;
+  quickwit.ingest.ShardId shard_id = 4;
+  string leader_id = 5;
+  optional string follower_id = 6;
 }
 
 message OpenShardsResponse {
@@ -337,7 +337,6 @@ message OpenShardsSubresponse {
   string index_uid = 2;
   string source_id = 3;
   repeated quickwit.ingest.Shard opened_shards = 4;
-  uint64 next_shard_id = 5;
 }
 
 message AcquireShardsRequest {
@@ -347,7 +346,7 @@ message AcquireShardsRequest {
 message AcquireShardsSubrequest {
   string index_uid = 1;
   string source_id = 2;
-  repeated uint64 shard_ids = 3;
+  repeated quickwit.ingest.ShardId shard_ids = 3;
   string publish_token = 4;
 }
 
@@ -370,7 +369,7 @@ message DeleteShardsRequest {
 message DeleteShardsSubrequest {
   string index_uid = 1;
   string source_id = 2;
-  repeated uint64 shard_ids = 3;
+  repeated quickwit.ingest.ShardId shard_ids = 3;
 }
 
 message DeleteShardsResponse {
@@ -394,5 +393,4 @@ message ListShardsSubresponse {
   string index_uid = 1;
   string source_id = 2;
   repeated quickwit.ingest.Shard shards = 3;
-  uint64 next_shard_id = 4;
 }

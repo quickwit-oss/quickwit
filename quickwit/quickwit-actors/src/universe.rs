@@ -192,7 +192,7 @@ mod tests {
             ctx: &ActorContext<Self>,
         ) -> Result<(), ActorExitStatus> {
             self.count += 1;
-            ctx.schedule_self_msg(Duration::from_secs(60), Loop).await;
+            ctx.schedule_self_msg(Duration::from_secs(60), Loop);
             Ok(())
         }
     }

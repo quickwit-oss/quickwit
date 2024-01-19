@@ -25,7 +25,7 @@ use quickwit_config::TestableForRegression;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 
-use crate::file_backed_metastore::file_backed_index::FileBackedIndex;
+use crate::file_backed::file_backed_index::FileBackedIndex;
 use crate::{IndexMetadata, SplitMetadata};
 
 /// In order to avoid confusion, we need to make sure that the

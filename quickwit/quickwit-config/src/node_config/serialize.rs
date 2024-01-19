@@ -29,7 +29,7 @@ use quickwit_common::uri::Uri;
 use serde::{Deserialize, Serialize};
 use tracing::{info, warn};
 
-use super::RestConfig;
+use super::{GrpcConfig, RestConfig};
 use crate::config_value::ConfigValue;
 use crate::qw_env_vars::*;
 use crate::service::QuickwitService;
@@ -185,6 +185,9 @@ struct NodeConfigBuilder {
     #[serde(rename = "rest")]
     #[serde(default)]
     rest_config_builder: RestConfigBuilder,
+    #[serde(rename = "grpc")]
+    #[serde(default)]
+    grpc_config: GrpcConfig,
     #[serde(rename = "storage")]
     #[serde(default)]
     storage_configs: StorageConfigs,
@@ -237,6 +240,8 @@ impl NodeConfigBuilder {
         let rest_config = self
             .rest_config_builder
             .build_and_validate(listen_ip, env_vars)?;
+
+        self.grpc_config.validate()?;
 
         let gossip_listen_port = self
             .gossip_listen_port
@@ -297,6 +302,7 @@ impl NodeConfigBuilder {
             metastore_uri,
             default_index_root_uri,
             rest_config,
+            grpc_config: self.grpc_config,
             metastore_configs: self.metastore_configs,
             storage_configs: self.storage_configs,
             indexer_config: self.indexer_config,
@@ -343,6 +349,7 @@ impl Default for NodeConfigBuilder {
             metastore_uri: ConfigValue::none(),
             default_index_root_uri: ConfigValue::none(),
             rest_config_builder: RestConfigBuilder::default(),
+            grpc_config: GrpcConfig::default(),
             storage_configs: StorageConfigs::default(),
             metastore_configs: MetastoreConfigs::default(),
             indexer_config: IndexerConfig::default(),
@@ -434,6 +441,7 @@ pub fn node_config_for_test() -> NodeConfig {
         metastore_uri,
         default_index_root_uri,
         rest_config,
+        grpc_config: GrpcConfig::default(),
         storage_configs: StorageConfigs::default(),
         metastore_configs: MetastoreConfigs::default(),
         indexer_config: IndexerConfig::default(),
@@ -488,6 +496,8 @@ mod tests {
             config.rest_config.extra_headers.get("x-header-2").unwrap(),
             "header-value-2"
         );
+        assert_eq!(config.grpc_config.max_message_size, ByteSize::mb(10));
+
         assert_eq!(
             config.gossip_listen_addr,
             SocketAddr::new(IpAddr::V4(Ipv4Addr::UNSPECIFIED), 2222)
@@ -1126,7 +1136,7 @@ mod tests {
     async fn test_rest_config_accepts_multi_origin() {
         let rest_config_yaml = r#"
             version: 0.7
-            rest: 
+            rest:
               cors_allow_origins:
                 - https://www.my-domain.com
         "#;

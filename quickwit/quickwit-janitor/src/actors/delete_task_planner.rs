@@ -414,8 +414,7 @@ impl Handler<PlanDeleteLoop> for DeleteTaskPlanner {
         ctx: &ActorContext<Self>,
     ) -> Result<(), ActorExitStatus> {
         self.handle(PlanDeleteOperations, ctx).await?;
-        ctx.schedule_self_msg(PLANNER_REFRESH_INTERVAL, PlanDeleteLoop)
-            .await;
+        ctx.schedule_self_msg(PLANNER_REFRESH_INTERVAL, PlanDeleteLoop);
         Ok(())
     }
 }

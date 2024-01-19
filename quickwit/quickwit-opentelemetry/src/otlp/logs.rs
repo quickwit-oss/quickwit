@@ -44,7 +44,7 @@ use super::{
 use crate::otlp::extract_attributes;
 use crate::otlp::metrics::OTLP_SERVICE_METRICS;
 
-pub const OTEL_LOGS_INDEX_ID: &str = "otel-logs-v0_6";
+pub const OTEL_LOGS_INDEX_ID: &str = "otel-logs-v0_7";
 
 const OTEL_LOGS_INDEX_CONFIG: &str = r#"
 version: 0.7
@@ -68,6 +68,7 @@ doc_mapping:
     - name: service_name
       type: text
       tokenizer: raw
+      fast: true
     - name: severity_text
       type: text
       tokenizer: raw
