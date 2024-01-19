@@ -32,6 +32,7 @@ mod sequencer;
 mod uploader;
 #[cfg(feature = "vrl")]
 mod vrl_processing;
+mod global_merge_executor;
 
 pub use doc_processor::{DocProcessor, DocProcessorCounters};
 pub use index_serializer::IndexSerializer;
