@@ -1,7 +1,17 @@
 
-# CDK template for running Quickwit on AWS Lambda
+# Quickwit on AWS Lambda
 
-## Prerequisites
+- Get the latest [Lambda binaries](https://github.com/quickwit-oss/quickwit/releases/tag/aws-lambda-beta-01)
+- Read the [beta release announcement](https://quickwit.io/blog/quickwit-lambda-beta)
+
+## Quickstart
+
+- [Search on 20 million log dataset on S3 with lambda](https://quickwit.io/docs/get-started/tutorials/tutorial-aws-lambda-simple)
+- [E2E use case with HTTP API](https://quickwit.io/docs/guides/e2e-serverless-aws-lambda)
+
+## Build and run yourself
+
+### Prerequisites
 
 - Install AWS CDK Toolkit (cdk command)
   - `npm install -g aws-cdk`
@@ -9,7 +19,7 @@
 - To run the invocation example `make` commands, you will also need Python 3.10
   or later and `pip` installed (see [Python venv](#python-venv) below).
 
-## AWS Lambda service quotas
+### AWS Lambda service quotas
 
 For newly created AWS accounts, a conservative quota of 10 concurrent executions
 is applied to Lambda in each individual region. If that's the case, CDK won't be
@@ -19,7 +29,7 @@ console](https://console.aws.amazon.com/servicequotas/home/services/lambda/quota
 
 > **Note:** The request can take hours or even days to be processed.
 
-## Python venv
+### Python venv
 
 This project is set up like a standard Python project. The initialization
 process also creates a virtualenv within this project, stored under the `.venv`
@@ -53,7 +63,7 @@ poetry shell
 poetry install
 ```
 
-## Example stacks
+### Example stacks
 
 Provided demonstration setups:
 - HDFS example data: index the the [HDFS
@@ -63,7 +73,7 @@ Provided demonstration setups:
   data every X minutes to S3. Those file trigger the Quickwit indexer lambda
   automatically.
 
-## Deploy and run
+### Deploy and run
 
 The Makefile is a usefull entrypoint to show how the Lambda deployment can used.
 
@@ -89,7 +99,7 @@ make deploy-mock-data
 make invoke-mock-data-searcher
 ```
 
-## Set up a search API
+### Set up a search API
 
 You can configure an HTTP API endpoint around the Quickwit Searcher Lambda. The
 mock data example stack shows such a configuration. The API Gateway is enabled
@@ -111,7 +121,7 @@ Note that the response is always gzipped compressed, regardless the
 curl -d '{"query":"quantity:>5", "max_hits": 10}' -H "Content-Type: application/json" -H "x-api-key: my-at-least-20-char-long-key" -X POST https://{api_id}.execute-api.{region}.amazonaws.com/api/v1/mock-sales/search --compressed
 ```
 
-## Useful CDK commands
+### Useful CDK commands
 
  * `cdk ls`          list all stacks in the app
  * `cdk synth`       emits the synthesized CloudFormation template
