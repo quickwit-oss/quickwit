@@ -92,7 +92,7 @@ pub struct IndexerConfig {
     #[serde(default = "IndexerConfig::default_max_concurrent_split_uploads")]
     pub max_concurrent_split_uploads: usize,
     /// Limits the IO throughput of the `SplitDownloader` and the `MergeExecutor`.
-    /// On hardware where IO is constraints, it makes sure that Merges (a batch operation)
+    /// On hardware where IO is constrained, it makes sure that Merges (a batch operation)
     /// does not starve indexing itself (as it is a latency sensitive operation).
     #[serde(default)]
     pub max_merge_write_throughput: Option<ByteSize>,

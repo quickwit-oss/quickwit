@@ -350,6 +350,7 @@ mod tests {
     use std::time::Duration;
     use bytesize::ByteSize;
 
+    use bytesize::ByteSize;
     use tokio::io::{sink, AsyncWriteExt};
     use tokio::time::Instant;
 
