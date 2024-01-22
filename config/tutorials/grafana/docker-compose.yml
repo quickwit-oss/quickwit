@@ -10,7 +10,7 @@ networks:
 
 services:
   quickwit:
-    image: quickwit/quickwit:${QUICKWIT_VERSION:-0.7.0}
+    image: quickwit/quickwit:${QUICKWIT_VERSION:-0.7.1}
   grafana:
     image: grafana/grafana-oss:${GRAFANA_VERSION:-9.4.7}
     container_name: grafana
